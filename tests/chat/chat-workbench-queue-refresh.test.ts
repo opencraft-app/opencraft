@@ -62,3 +62,54 @@ for (const notify of [true, false]) test(`a ${notify ? "queue change" : "local s
     lease.release();
   } finally { await runtime.dispose(); }
 });
+
+
+test("queue add ACK supplies exact custody for early Steer without a list refresh", async () => {
+  let acceptAdd!: () => void;
+  const steers: unknown[] = [];
+  const active = { id: "running", status: "inProgress", items: [] };
+  const thread = { id: "one", name: "Queue", cwd: "/workspace", status: { type: "active" }, turns: [active] };
+  const transport = new MemoryTransport({ receive(frame, peer: InMemoryAppServerPeer) {
+    const request = JSON.parse(frame);
+    if (request.id === undefined) return;
+    const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
+    if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "queue-test",
+      capabilities: { extensions: { "opencraft/thread-queue": { version: 2, atomicSteer: true, reorder: true, perItemPause: true } } } });
+    else if (request.method === "thread/read") send({ thread });
+    else if (request.method === "thread/resume") send({ thread, model: "test", modelProvider: "test", cwd: "/workspace",
+      runtimeWorkspaceRoots: ["/workspace"], instructionSources: [], serviceTier: null, reasoningEffort: null,
+      approvalsReviewer: "user", approvalPolicy: "on-request", sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, activePermissionProfile: null,
+      initialTurnsPage: { data: [active], nextCursor: null }, turnsBackwardsCursor: null, itemsBackwardsCursor: null });
+    else if (request.method === "thread/queue/list") { /* Deliberately withhold list/notifications. */ }
+    else if (request.method === "model/list") send({ data: [{ id: "test", model: "test", isDefault: true, inputModalities: ["text"] }], nextCursor: null });
+    else if (request.method === "thread/queue/add") acceptAdd = () => send({ queuedSubmission: {
+      id: "ack-only", clientUserMessageId: request.params.clientUserMessageId, input: request.params.input, createdAt: 101, pausedReason: null,
+    } });
+    else if (request.method === "thread/queue/steer") { steers.push(request.params); send({ turnId: "running" }); }
+    else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
+    else send({});
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "queue-test", transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("one");
+    for (let i = 0; i < 10; i++) await tick();
+    assert.equal(lease.getSnapshot().authoritative, true);
+    assert.equal(lease.getSnapshot().activeTurn?.turnId, "running");
+    const composer = createComposerController({ type: "enqueue-follow-up", key: createConversationKey("queue-test", "one") },
+      { now: () => 100, createId: () => "queue-early" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "queue" }] }] } });
+    const send = lease.submit(composer.createSubmitIntent());
+    for (let i = 0; i < 10; i++) await tick();
+    const pending = lease.getSnapshot().queuedSubmissions[0]!;
+    assert.equal(pending.steerable, true);
+    const promotion = lease.steerQueuedSubmission(pending.commandId);
+    assert.equal(lease.getSnapshot().queuedSubmissions[0]?.operation, "starting");
+    assert.deepEqual(steers, []);
+    acceptAdd();
+    await Promise.all([send, promotion]);
+    assert.deepEqual(steers, [{ threadId: "one", queuedSubmissionId: "ack-only", expectedTurnId: "running" }]);
+    assert.equal(lease.getSnapshot().queuedSubmissions.length, 0);
+    lease.release();
+  } finally { await runtime.dispose(); }
+});

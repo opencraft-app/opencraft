@@ -12,7 +12,7 @@ const vite = await createServer({ configFile: false, root: process.cwd(), logLev
   plugins: [{ name: "notification-fixture", configureServer(server) { server.middlewares.use((req, res, next) => {
     if (req.url?.split("?")[0] !== "/") return next();
     res.setHeader("content-type", "text/html");
-    res.end('<html><head><title>OpenCraft notification verification</title></head><body><div id="root"></div><script type="module" src="/tests/fixtures/turn-notifications.tsx"></script></body></html>');
+    res.end('<html><head><meta name="viewport" content="width=device-width, initial-scale=1"><title>OpenCraft notification verification</title></head><body><div id="root"></div><script type="module" src="/tests/fixtures/turn-notifications.tsx"></script></body></html>');
   }); } }],
 });
 let browser: any;
@@ -20,6 +20,10 @@ try {
   await vite.listen();
   const origin = `http://127.0.0.1:${(vite.httpServer!.address() as any).port}`;
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
+  const switchArtifacts = await mkdtemp(join(tmpdir(), "opencraft-settings-switch-"));
+  await verifySettingsSwitches(browser, origin, switchArtifacts);
+  console.log(`PASS Chat Settings switch geometry, touch target, keyboard, disabled and themes. Screenshots: ${switchArtifacts}`);
+  if (!process.env.OPENCRAFT_SETTINGS_SWITCH_ONLY) {
   const context = await browser.newContext({ permissions: ["notifications"], viewport: { width: 1100, height: 800 } });
   const page = await context.newPage(); const errors: string[] = [];
   page.on("pageerror", (error: Error) => errors.push(error.message));
@@ -74,5 +78,64 @@ try {
   await deniedPage.getByText("尚未获得通知权限，你可以稍后重新开启。").waitFor();
   assert.equal(await deniedPage.evaluate(() => (window as any).__turnNotificationFixture.preference()), false);
   await denied.close();
+  assert.deepEqual(errors, []);
   console.log(`PASS real Chat Settings/Intl/IndexedDB/typed Clients/Notification Worker: conversation title and corresponding user request, explicit opt-in, three independent Host clients, terminal states, dedup/reconnect, history suppression, Settings/View switching, disable/persistence, denied permission, click navigation port. OS popup clicking is simulated. Screenshot: ${screenshot}`);
+  }
 } finally { await browser?.close(); await vite.close(); }
+
+async function verifySettingsSwitches(browser: any, origin: string, artifacts: string) {
+  const geometryErrors: string[] = [];
+  // Exercise the actual Chat Settings with touch capability, including an
+  // unsupported notification switch, rather than only resizing a pointer page.
+  for (const touch of [false, true]) {
+    const geometryContext = await browser.newContext({ hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
+    await geometryContext.addInitScript(() => { delete (window as any).Notification; });
+    const geometryPage = await geometryContext.newPage();
+    geometryPage.on("pageerror", (error: Error) => geometryErrors.push(error.message));
+    await geometryPage.addInitScript("window.__name = value => value");
+    await geometryPage.goto(origin);
+    const followUp = geometryPage.getByRole("switch", { name: "回复时立即跟进", exact: true });
+    await followUp.waitFor();
+    for (const width of [320, 390, 820, 1280]) for (const theme of ["light", "dark"]) {
+      await geometryPage.setViewportSize({ width, height: 900 });
+      await geometryPage.evaluate(mode => (window as any).__turnNotificationFixture.theme(mode), theme);
+      if (process.env.OPENCRAFT_SETTINGS_SWITCH_NEGATIVE_CONTROL) await geometryPage.addStyleTag({
+        content: '.settings-control-switch::before { width: 48px; height: 44px; }',
+      });
+      for (const checked of [false, true]) {
+        if (await followUp.getAttribute("aria-checked") !== String(checked)) {
+          await followUp.focus(); await geometryPage.keyboard.press("Space");
+          await geometryPage.waitForFunction(value => document.querySelector('[aria-label="回复时立即跟进"]')?.getAttribute("aria-checked") === String(value), checked);
+        }
+        const geometry = await geometryPage.locator('[role="switch"]').evaluateAll(elements => elements.map(element => {
+          const hit = element.getBoundingClientRect(), track = getComputedStyle(element, "::before");
+          const thumb = element.querySelector("span")!.getBoundingClientRect();
+          return { hit: { width: hit.width, height: hit.height }, track: { width: parseFloat(track.width), height: parseFloat(track.height) },
+            thumb: { width: thumb.width, height: thumb.height, x: thumb.x - hit.x, y: thumb.y - hit.y },
+            checked: element.getAttribute("aria-checked") === "true", background: getComputedStyle(element).backgroundColor };
+        }));
+        for (const value of geometry) {
+          assert.deepEqual(value.track, { width: 36, height: 20 }, "track stays elongated in every density");
+          assert.equal(value.background, "rgba(0, 0, 0, 0)", "the hit area has no painted background");
+          assert.equal(value.thumb.width, 16); assert.equal(value.thumb.height, 16);
+          assert.equal(value.thumb.y, (value.hit.height - value.thumb.height) / 2, "thumb stays vertically centered");
+          assert.equal(value.thumb.x, (value.hit.width - value.track.width) / 2 + 2 + (value.checked ? 16 : 0), "thumb stays inset at both endpoints");
+          if (touch) assert.ok(value.hit.width >= 44 && value.hit.height >= 44, "touch target remains accessible");
+        }
+      }
+      await geometryPage.waitForFunction(() => !document.querySelector('[aria-label="回复时立即跟进"]')?.hasAttribute("disabled"));
+      await followUp.scrollIntoViewIfNeeded();
+      const before = await followUp.getAttribute("aria-checked"), box = await followUp.boundingBox();
+      // This point is outside the painted track in touch density.
+      if (touch) await geometryPage.touchscreen.tap(box!.x + box!.width / 2, box!.y + 2);
+      else await followUp.click();
+      await geometryPage.waitForFunction(value => document.querySelector('[aria-label="回复时立即跟进"]')?.getAttribute("aria-checked") !== value, before);
+      const disabledSwitch = geometryPage.getByRole("switch", { name: "轮次结束提醒", exact: true });
+      assert.equal(await disabledSwitch.isDisabled(), true);
+      assert.equal(await disabledSwitch.getAttribute("aria-checked"), "false");
+      if (width === 390) await geometryPage.screenshot({ path: join(artifacts, `switch-${touch ? "touch" : "pointer"}-${theme}.png`) });
+    }
+    await geometryContext.close();
+  }
+  assert.deepEqual(geometryErrors, []);
+}

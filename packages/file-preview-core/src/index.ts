@@ -1,3 +1,4 @@
+export const MAX_FILE_PREVIEW_BYTES = 25 * 1024 * 1024;
 export type PreviewErrorCode = "too-large" | "encrypted" | "invalid" | "timeout" | "busy";
 export class FilePreviewError extends Error {
   constructor(readonly code: PreviewErrorCode) { super({ "too-large": "File exceeds preview limit", encrypted: "Password-protected document", invalid: "Invalid document", timeout: "Preview opening timed out", busy: "Preview capacity is in use" }[code]); this.name = "FilePreviewError"; }

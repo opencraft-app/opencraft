@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
+import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 
@@ -9,19 +12,22 @@ import { createReadStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { createRequire } from "node:module";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 import { copyAllServerRuntime } from "./package-mcp-app-runtime.mjs";
 import { copySshRuntime } from "./package-ssh-runtime.mjs";
 import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
+import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
+import { buildConversationCli } from './build-conversation-cli.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export function assertHeadlessBuildHost(platform = process.platform, arch = process.arch) {
-  if (platform !== "linux" || arch !== "x64") {
-    throw new Error("headless-linux-amd64-tar must be built on native Linux x64");
+export function assertHeadlessBuildHost(platform = process.platform, arch = process.arch, architecture = 'amd64') {
+  const expected = architecture === 'amd64' ? 'x64' : architecture === 'arm64' ? 'arm64' : null;
+  if (platform !== "linux" || !expected || arch !== expected) {
+    throw new Error(`headless-linux-${architecture}-tar must be built on native Linux ${expected ?? architecture}`);
   }
 }
 
@@ -37,9 +43,12 @@ export function headlessWebHostDefinitions() {
 }
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
+  await buildTranscriptCacheRuntime(dirname(output));
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
+  await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],
     // Product-local packages resolve first; this is a trusted build fallback.
@@ -54,6 +63,12 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
     outfile: output,
     logLevel: "warning",
   });
+}
+
+export function buildHumanAccountBundle(output) {
+  return build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: output,
+    bundle: true, platform: 'node', format: 'esm', target: 'node26',
+    banner: { js: "import { createRequire as createOpenCraftRequire } from 'node:module'; const require = createOpenCraftRequire(import.meta.url);" } });
 }
 
 function run(command, args, options = {}) {
@@ -84,6 +99,7 @@ async function copyRuntimeModules(stageRoot) {
     await mkdir(dirname(target), { recursive: true });
     await cp(resolve(sourceBase, entry.from), target);
   }
+  await buildDshCapabilityPlugin(join(stageRoot, 'runtime/dsh/opencraft-capability-plugin.mjs'));
   await cp(join(repositoryRoot, "runtime/dsh/package.json"), join(stageRoot, "runtime/dsh/package.json"));
   await cp(join(repositoryRoot, "runtime/dsh/package-lock.json"), join(stageRoot, "runtime/dsh/package-lock.json"));
   await cp(join(repositoryRoot, "runtime/dsh/node_modules"), join(stageRoot, "runtime/dsh/node_modules"), {
@@ -131,7 +147,8 @@ async function inventory(root, directory = root) {
 }
 
 export async function packageHeadlessLinux(composition = {}) {
-  assertHeadlessBuildHost();
+  const architecture = composition.architecture ?? 'amd64';
+  assertHeadlessBuildHost(process.platform, process.arch, architecture);
   const outputOverride = process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT;
   if (outputOverride !== undefined && !isAbsolute(outputOverride)) {
     throw new Error("OPENCRAFT_HEADLESS_PACKAGE_OUTPUT must be absolute");
@@ -151,7 +168,7 @@ export async function packageHeadlessLinux(composition = {}) {
 
   const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
   const output = outputOverride
-    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-amd64.tar.gz`);
+    ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-${architecture}.tar.gz`);
   const temporary = await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
   const stage = join(temporary, "opencraft-server");
   try {
@@ -162,8 +179,9 @@ export async function packageHeadlessLinux(composition = {}) {
     await cp(join(repositoryRoot, "scripts/headless-server-launcher.sh"), join(stage, "bin/opencraft-server"));
     await chmod(join(stage, "bin/opencraft-server"), 0o755);
     await buildHeadlessBundle(join(stage, "runtime/server.mjs"), composition);
-    await build({ entryPoints: [join(repositoryRoot, 'scripts/human-account.ts')], outfile: join(stage, 'runtime/human-account.mjs'),
-      bundle: true, platform: 'node', format: 'esm', target: 'node26' });
+    await buildConversationCli(join(stage, 'runtime/opencraft-cli.mjs'));
+    await writeFile(join(stage, 'bin/opencraft'), '#!/bin/sh\nexec "$(dirname "$0")/node" "$(dirname "$0")/../runtime/opencraft-cli.mjs" "$@"\n', { mode: 0o755 });
+    await buildHumanAccountBundle(join(stage, 'runtime/human-account.mjs'));
     await build({ entryPoints: [join(repositoryRoot, 'scripts/codex-account-reference.ts')], outfile: join(stage, 'runtime/codex-account-reference.mjs'),
       bundle: true, platform: 'node', format: 'esm', target: 'node26' });
     // Optional native installation assets; startup never installs services.
@@ -180,7 +198,7 @@ export async function packageHeadlessLinux(composition = {}) {
       schemaVersion: 1,
       version,
       platform: "linux",
-      architecture: "amd64",
+      architecture,
       nodeVersion: process.version,
       buildId: versionInfo.buildId,
       files,
@@ -196,7 +214,7 @@ export async function packageHeadlessLinux(composition = {}) {
 }
 
 const isMain = process.argv[1] != null
-  && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url));
 if (isMain) {
   packageHeadlessLinux().then((path) => process.stdout.write(`${path}\n`)).catch((error) => {
     console.error(error);

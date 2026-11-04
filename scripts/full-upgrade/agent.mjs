@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-import { realpath as realEntryPath } from 'node:fs/promises';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { pageControl, reconcileWebChildren } from './page.mjs';
 import { webChildControl } from './web-child.mjs';
 import { Journal } from './journal.mjs';
@@ -16,7 +15,7 @@ export async function startAgent(config, entry = process.argv[1]) {
   await privateDirectory(config.stateRoot);
   const journal = await new Journal(join(config.stateRoot, 'agent')).open();
   const identity = await entryIdentity(entry), bootId = await bootIdentity();
-  // P3 adapters intentionally absent. Persisted uncertain work cannot acquire
+  // Persisted uncertain work cannot acquire
   // permission from a fresh process, a new boot, or a healthy website.
   for (const job of await journal.list()) {
     if (!['blocked', 'completed', 'rolled-back', 'active-draining', 'recovery-required', 'failed', 'deferred'].includes(job.state)) {
@@ -41,10 +40,15 @@ export async function startAgent(config, entry = process.argv[1]) {
       }).catch(() => {});
       return result;
     }
+    if (input.action.startsWith('full-')) {
+      invariant(identifier(input.operationId), 'invalid-operation');
+      return request(socketPath(config, 'helper'), input, 120000);
+    }
     if (input.action.startsWith('page-')) return pageControl(config, input, journal, bootId);
     if (input.action === 'web-admission') {
       await reconcileWebChildren(config, journal, bootId);
-      return { recoveryRequired: (await journal.list()).some(job => job.state === 'recovery-required' && job.steps[0]?.action === 'official-web-transaction') };
+      const parents = config.fullRecipePath ? (await request(socketPath(config, 'helper'), { action: 'full-status' })).jobs : [];
+      return { recoveryRequired: parents.some(job => !['completed','rolled-back','deferred','active-draining'].includes(job.state) && job.steps.some(step => step.intent && !step.receipt)) || (await journal.list()).some(job => job.state === 'recovery-required' && job.steps[0]?.action === 'official-web-transaction') };
     }
     if (input.action === 'web-child') return webChildControl(config, input, journal, bootId);
     if (input.action === 'status') return { ...PROTOCOL, role: 'agent', identity, pid: process.pid, bootId,
@@ -80,6 +84,6 @@ export async function main(args = process.argv.slice(2)) {
   invariant(args.length === 2 && args[0] === '--config', 'expected-fixed-config');
   await startAgent(await readConfig(resolve(args[1])));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(await realEntryPath(resolve(process.argv[1]))).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   main().catch(() => { process.stderr.write('upgrade-agent startup failed\n'); process.exitCode = 1; });
 }

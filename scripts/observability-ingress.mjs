@@ -1,11 +1,12 @@
 import { request as httpRequest } from 'node:http';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual, randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { socketRequest, nodeObserver, observationGrafanaBasePath } from '../packages/observability-contract/node.mjs';
+import { backgroundRefreshLog } from '../packages/observability-query/rpc-work.mjs';
 import { sanitizeEvent } from '../packages/observability-contract/index.mjs';
 
 function send(res,status,value){res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(value));}
-export async function createObservabilityIngress(path,{access,actors,executionHealth}={}) {
+export async function createObservabilityIngress(path,{access,actors,executionHealth,identity}={}) {
   if(!path)return null;
   const info=await stat(path);if(!info.isFile()||(info.mode&0o077)!==0||info.uid!==process.getuid())throw Error('Observation configuration must be private');
   const config=JSON.parse(await readFile(path,'utf8'));
@@ -47,7 +48,23 @@ export async function createObservabilityIngress(path,{access,actors,executionHe
   }
   void observeDependencies();const healthTimer=setInterval(()=>void observeDependencies(),30000);healthTimer.unref();
   const rates=new Map();let ingressActive=0;
-  return {close:()=>{closed=true;clearInterval(healthTimer);observer.close();},async handle(req,res){
+  return {readTiming: event => {
+    // Background refreshes are not foreground latency. Emit one compact slow/
+    // failed completion, while native/storage child records remain telemetry.
+    try {
+      const record = backgroundRefreshLog({ ...event, component: 'gateway' });
+      if (record) console.info('[opencraft background-refresh]', JSON.stringify(record));
+    } catch { /* Logging cannot affect a read or its original telemetry. */ }
+    return observer.emit({ ...event, sourceRevision: identity?.sourceRevision ?? null, buildId: identity?.buildId ?? null });
+  },close:()=>{closed=true;clearInterval(healthTimer);observer.close();},
+    async gatewayShutdown(count, update) {
+      if (!update) return;
+      // Flush this one receipt directly before shutdown; the periodic queue is
+      // deliberately lossy and cannot prove a release disconnected zero clients.
+      await socketRequest(config.socketPath, '/events', { events: [{ schemaVersion: 1, kind: 'lifecycle', lifecycle: 'deployment',
+        component: 'gateway', producerId: update.updateId, eventId: update.updateId, operationId: update.updateId,
+        at: Date.now(), buildId: update.buildId, count, originClass: 'operator' }] });
+    }, async handle(req,res){
     const url=new URL(req.url,'http://localhost');if(!url.pathname.startsWith('/__opencraft_observe/'))return false;
     const principal=access?.authenticate(req),role=principal?access.role(principal):null;
     const full=role==='admin';

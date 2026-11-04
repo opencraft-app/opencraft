@@ -1,9 +1,9 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 /** One-time recovery of the fixed 2026-10-14 legacy managed entry. Never a boot hook. */
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { SSH_CONNECTION_MIGRATIONS } from '../../apps/opencraft-daemon/src/ssh-connection-store.js';
 
 export const LEGACY_JOIN_SOURCE_SHA256 = 'ac9737d51dfe4b5b9896f9de96070f5a69b115f71c7fdad1d5fe7217d6877686';
@@ -40,7 +40,7 @@ export function prepareJoinLegacyFallback(source: Buffer): { bytes: Buffer; sour
   const bytes = Buffer.from(text.slice(0, at) + `!${legacySshHistoryExpression()}` + text.slice(at + anchor.length));
   return { bytes, sourceSha256, outputSha256: createHash('sha256').update(bytes).digest('hex') };
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const [input, output] = process.argv.slice(2);
   if (!input || !output || process.argv.length !== 4 || resolve(input) === resolve(output)) throw new Error('Pass distinct explicit input and new output paths');
   const result = prepareJoinLegacyFallback(await readFile(input));

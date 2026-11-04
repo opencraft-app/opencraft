@@ -1,3 +1,4 @@
+import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -11,6 +12,7 @@ import { ModelConfigurationRepository, ModelCredentialRepository } from "../../.
 // Real locked DSH + Host + JSON-RPC + persistence. Only inference is local,
 // synthetic and free; no user credentials, sessions or model service are used.
 const root = await mkdtemp(join(tmpdir(), "opencraft-goal-"));
+const policy = new ModelPolicyStore(join(root,"model-policy.sqlite"));
 const requests: any[] = [], notifications: any[] = [];
 const held: Array<() => void> = [];
 let automatic = false, automaticRequests = 0;
@@ -64,7 +66,7 @@ const connect = async () => {
   await call("initialize", { clientInfo: { name: "goal-fixture", version: "1" }, capabilities: {} });
 };
 const start = async () => {
-  host = await launch({ dataDirectory: join(root, "runtime"), modelStorageDirectory: directory,
+  host = await launch({ modelPolicyPath: join(root,"model-policy.sqlite"), dataDirectory: join(root, "runtime"), modelStorageDirectory: directory,
     descriptorPath: join(root, "host-connection.json"),
     ...(packagedEntry ? { dshCapabilityPlugin: join(dirname(resolve(packagedEntry)), "dsh-capability-plugin.mjs") } : {}),
     dshExecutable: resolve("runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js") });
@@ -142,6 +144,16 @@ try {
   await call("thread/goal/clear", { threadId: cold }); release();
   await wait(() => completed(cold).length > 0, "clear finishes active round");
   assert.equal(await goal(cold), null);
+  automatic = false;
+  const restricted = await create();
+  await set(restricted,{objective:"policy boundary",status:"active"});
+  await wait(()=>held.length>0,"policy first round running");
+  policy.write(0,[{engine:"dsh",model}],"fixture-admin");
+  const policyRequests=requests.length;
+  release();
+  await new Promise(resolve=>setTimeout(resolve,500));
+  assert.equal(requests.length,policyRequests,"new goal round cannot infer after policy update");
+  await set(restricted,{status:"paused"});
   console.log(JSON.stringify({ status: "passed", nativeRuntime: "0.1.1-rc.2", modelRequests: requests.length,
     verified: ["native Goal CRUD", "pause/resume", "same-session continuation admission", "continuation after socket loss and owner reconnect", "session-scoped notification", "native goal tools and final answer", "history parity", "cold restore disarmed", "explicit rearm", "unsupported token budget rejected"] }));
 
@@ -150,5 +162,6 @@ try {
   socket?.terminate(); await host?.close();
   endpoint.closeAllConnections();
   await new Promise<void>(resolve => endpoint.close(() => resolve()));
+  policy.close();
   await rm(root, { recursive: true, force: true });
 }

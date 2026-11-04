@@ -334,6 +334,8 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
 
 export function createTerminalWorkbenchPanelPlugin(
   registry: WorkbenchTerminalSessionRegistry,
+  resolveScope?: (ownerId: string) => { threadId?: string | null; projectId?: string | null },
+  restoreOwner?: (ownerId: string) => Promise<void>,
 ) {
   const TerminalPanel = createTerminalPanel(registry);
   const activeTerminalSessionId = (state: ConversationPanelState): string | null => {
@@ -378,6 +380,10 @@ export function createTerminalWorkbenchPanelPlugin(
           observePanelOwner(ownerId);
           return registry.listForOwner(ownerId).map(terminalTab);
         },
+        ...(restoreOwner ? { hydrateTabs: async (ownerId: string) => {
+          await restoreOwner(ownerId);
+          return registry.listForOwner(ownerId).map(terminalTab);
+        } } : {}),
         createTab: ({ sessionId }) => terminalTab(sessionId),
         disposeTab: (tab, _ownerId, reason) => {
           // Unmount/owner eviction/plugin replacement is not user intent to kill.
@@ -397,7 +403,7 @@ export function createTerminalWorkbenchPanelPlugin(
         creationLabel: "Terminal",
         run: (context) => {
           const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
-            resourceOwnerId: context.resourceOwnerId });
+            threadId: context.threadId, projectId: context.projectId, resourceOwnerId: context.resourceOwnerId, ...resolveScope?.(context.resourceOwnerId) });
           ctx.workbenchPanels.open(context.ownerId, "terminal", { sessionId });
           observePanelOwner(context.ownerId);
         },

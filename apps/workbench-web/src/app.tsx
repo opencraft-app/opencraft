@@ -1,5 +1,8 @@
+import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
+import { composerCapabilitiesKey } from "./runtime/composer-capabilities-query";
 import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
 import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
+import { completeConversationComposerSubmission } from "./runtime/composer-submission-admission";
 import { configureDesktopServer } from './runtime/configure-desktop-server';
 import { desktopServerPort } from './runtime/desktop-server-connections';
 import { useThreadOrchestrationTimeline } from "./runtime/use-thread-orchestration-timeline";
@@ -45,7 +48,7 @@ import { DEFAULT_APPLICATION_BRANDING } from "@opencraft/extension-contract";
 import { applyApplicationBranding } from "./runtime/application-branding";
 import { shouldTypeToCompose } from "./type-to-compose";
 import { findStandaloneHostComposerAction } from "@opencraft/workbench-runtime";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useDefaultFollowUpAction } from "./runtime/use-default-follow-up-action";
 import { useIntl } from "@opencraft/i18n/react";
 import { groupWorkInMachines, machineName, machineRole } from "./runtime/work-in-presentation";
@@ -148,6 +151,7 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
+import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
 import { WorkbenchToolNavigation, useWorkbenchToolActions } from "./components/workbench-tool-navigation";
@@ -691,6 +695,8 @@ export function App({
       creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
     } : action);
   const panelToolbarContext: PanelToolbarActionContext = {
+    threadId: draft ? null : activeThreadId,
+    projectId: draft?.target.execution.workspace.projectId ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.projectId ?? null,
     ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
     cwd: snapshot.conversation?.execution.cwd ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.cwd
       ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
@@ -698,7 +704,7 @@ export function App({
   const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
   const threadShortcutCommands = activeThreadLease !== null && sideChatAction
     && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
-    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label },
+    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
       ...(hostShortcutCommands ?? []).filter(command => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name)]
     : hostShortcutCommands;
   const presentedPanelRenderers = presentation.filePreviewOnly
@@ -755,7 +761,7 @@ export function App({
   const historyPaintOwnsView = historyPaintAttempt?.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
   const historyPaintTurns = historyPaintOwnsView ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size : 0;
   const historyPaintLength = historyLengthBucket(historyPaintTurns,
-    !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false);
+    !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false, visibleTimeline?.historyTurnCount);
   const historyPaintEngine = historyEngine(engineExtensions, displayThreadId);
   const historyPaintReady = historyPaintOwnsView && (visibleTimeline?.frames.length ?? 0) > 0;
   const onHistoryVisibleContentReady = useCallback(() => {
@@ -1010,24 +1016,10 @@ export function App({
         throw error;
       }
 
-      if (localQueueAdmission) {
-        return submission.then(() => true, error => {
-          clearLatestTurnPlacement(submittedPlacement);
-          throw error;
-        });
-      }
       if (intent.target.type !== "new-thread") {
-        // The active Conversation Runtime synchronously publishes an optimistic
-        // item before its transport command begins. At that point it owns the
-        // immutable submission and the Composer draft has been consumed. Do
-        // not retain the same text in the EditorView while a remote Host (for
-        // example Hermes over enterprise service) is still acknowledging the command.
-        void submission.catch(() => {
-          clearLatestTurnPlacement(submittedPlacement);
-          // Failure presentation belongs to the Conversation Runtime's
-          // optimistic item. A later Composer draft must remain untouched.
-        });
-        return true;
+        return completeConversationComposerSubmission(submittedIntent, submission,
+          activeThreadLease?.getSnapshot() ?? null,
+          () => clearLatestTurnPlacement(submittedPlacement));
       }
 
       // The Conversation Scope synchronously owns the immutable first Turn,
@@ -1233,6 +1225,7 @@ export function App({
     },
     [openBrowserTab, panelRuntime.panels, panelOwnerId],
   );
+  const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
   const loadOlderConversation = useStableEvent(
     () => activeThreadLease?.loadOlder() ?? Promise.resolve(),
   );
@@ -1277,6 +1270,48 @@ export function App({
     draft === null ? activeThreadId : null,
     presentation.runtimeHostConfiguration,
   );
+  const setupModelPage = resolveHostModelSettingsPage(
+    settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
+    snapshot.hostId, extensionPlatform, internalDeveloperMode,
+  );
+  const draftConnectionObservation = useRef({ hostId: snapshot.hostId, wasReady: false });
+  if (draftConnectionObservation.current.hostId !== snapshot.hostId) draftConnectionObservation.current = { hostId: snapshot.hostId, wasReady: false };
+  useEffect(() => {
+    if (activeHostConnectionPhase === "ready") draftConnectionObservation.current.wasReady = true;
+  }, [activeHostConnectionPhase, snapshot.hostId]);
+  const initialConnectionFailed = snapshot.error !== null && !draftConnectionObservation.current.wasReady;
+  const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
+  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.model,
+    () => composerController.getSnapshot().draft.selections.model);
+  const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
+    ?? composerCatalog.models.find(model => model.isDefault)?.model ?? null;
+  const modelReadiness = useQuery({
+    queryKey: [...composerCapabilitiesKey(snapshot.hostId), "setup", snapshot.connectionGeneration, setupSelectedModel],
+    enabled: draft !== null && supportsModelSetup && activeHostConnectionPhase === "ready",
+    retry: false, staleTime: 60_000,
+    queryFn: async ({ signal }) => {
+      const ready = await readHostModelReadiness((hostId, method, params) => hostCatalog.agentRuntimes.request(hostId, method, params), snapshot.hostId, setupSelectedModel);
+      signal.throwIfAborted();
+      return ready;
+    },
+  });
+  const noUsableModels = (composerCatalog.modelsReady && composerCatalog.models.length === 0)
+    || (supportsModelSetup && modelReadiness.data === false);
+  const draftSetupKind = !embedded && presentation.runtimeHostConfiguration && draft !== null
+    ? (activeHostConnectionPhase === "error" || (activeHostConnectionPhase !== "ready" && initialConnectionFailed)) ? "connection" as const
+      : activeHostConnectionPhase === "ready" && ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error) ? "catalog-error" as const
+        : activeHostConnectionPhase === "ready" && noUsableModels && !composerCatalog.modelError && !modelReadiness.error ? "models" as const : null
+    : null;
+  const draftSetupNotice = draftSetupKind === null ? undefined : <DraftSetupNotice
+    kind={draftSetupKind} hostName={activeHost.label}
+    onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
+    onConnectionSettings={() => openSettingsFromConversation("machines")}
+    onRetry={() => {
+      if (draftSetupKind === "connection") void runtime.reconnect().catch(() => undefined);
+      else { composerCatalog.retryModels(); void modelReadiness.refetch(); }
+    }}
+  />;
   const composerWorkspaceRoots = useMemo<readonly string[]>(() => {
     if (draft !== null) {
       return draft.target.execution.workspace.runtimeWorkspaceRoots;
@@ -1297,6 +1332,7 @@ export function App({
   );
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
+      policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
       models: projectComposerModelChoices(composerCatalog.models),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
@@ -2063,6 +2099,8 @@ export function App({
         ) : draft !== null && draft.submission === null ? (
           <NewThreadDraftPage
             key={draft.id}
+            setupNotice={draftSetupNotice}
+            setupBlocksSubmission={draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
             activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
             composerPresentationEnabled={conversationRouteOpen}
             draft={draft}
@@ -2193,6 +2231,7 @@ export function App({
                         restoreSnapshot,
                       );
                   }}
+                  onLoadItemDetails={loadItemDetails}
                   onLoadOlder={
                     !showingDisplayCache && snapshot.conversation?.history.hasOlder
                       ? loadOlderConversation
@@ -2252,7 +2291,7 @@ export function App({
                         controller={composerController}
                         defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
                         availableFollowUpActions={followUpCapability?.queue === false && followUpCapability?.steer === false ? [] : snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true
-                          || snapshot.conversation.queuedSubmissions.some(item => item.local)
+                          || snapshot.conversation.queuedSubmissions.some(item => item.local && item.state === "unknown")
                           ? ["queue"]
                           : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}

@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { deviceLoginMaintenanceReason } from "./device-login-maintenance.js";
 import type { CodexAccountView } from "@opencraft/appserver-protocol";
 import { AccountPoolStore } from "./store.js";
 import { CodexAccountPoolProxy } from "./codex-proxy.js";
@@ -8,7 +9,7 @@ import { CodexSubscriptionService } from "./codex-usage.js";
 import { CodexResetCreditService } from "./codex-reset-credits.js";
 import { createCodexMaintenanceClient } from "./codex-maintenance-client.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
-import { startCodexAccountPoolServer } from "./server.js";
+import { startCodexAccountPoolServer, type AccountPoolUncertainDiagnostic } from "./server.js";
 
 function string(value: unknown): string { return typeof value === "string" ? value : ""; }
 
@@ -21,6 +22,17 @@ export interface CodexAccountServiceOptions {
   readonly proxyPort?: number;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
+  readonly ownerHandoff?: {
+    admissionOpen(): boolean;
+    onUncertain(route: string, diagnostic: AccountPoolUncertainDiagnostic): void | Promise<void>;
+    retained?: CodexAccountRetainedState;
+  };
+}
+
+export interface CodexAccountRetainedState {
+  imageAffinities: ReturnType<CodexAccountPoolProxy["handoffAffinities"]>;
+  resetReceipts: ReturnType<CodexResetCreditService["handoffReceipts"]>;
+  loginReceipts: ReturnType<CodexDeviceLoginService["handoffReceipts"]>;
 }
 
 /** One owner for inference credentials, login and background account maintenance. */
@@ -32,29 +44,44 @@ export class CodexAccountService {
   private server: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | null = null;
   private readonly requests = new Set<Promise<unknown>>();
   private closing: Promise<void> | null = null;
+  private readonly refresh: AccountCredentialRefreshManager;
+  private readonly maintenanceReady: () => Promise<void>;
+  private activation?: Promise<void>;
 
   private constructor(private readonly options: CodexAccountServiceOptions) {
     const store = new AccountPoolStore({
       databasePath: join(options.dataDirectory, "account-pool.sqlite"),
       secretsDirectory: join(options.dataDirectory, "secrets"),
+      preserveAffinity: options.ownerHandoff?.admissionOpen() === false,
     });
     this.store = store;
     const createClient = options.createMaintenanceClient
       ?? (codexHome => createCodexMaintenanceClient({ executable: options.executable, codexHome }));
-    const refresh = new AccountCredentialRefreshManager({ store, refresh: createManagedCodexRefresh({
+    const managedRefresh = createManagedCodexRefresh({
       refreshRoot: join(options.dataDirectory, "refresh"), createClient,
-    }) });
+      deferRecovery: options.ownerHandoff?.admissionOpen() === false,
+    });
+    this.maintenanceReady = managedRefresh.ready;
+    const refresh = new AccountCredentialRefreshManager({ store, refresh: managedRefresh });
+    this.refresh = refresh;
     this.subscriptions = new CodexSubscriptionService({ store, fetch: options.fetch,
+      admissionOpen: options.ownerHandoff?.admissionOpen,
       resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
     this.resetCreditService = new CodexResetCreditService({ store, fetch: options.fetch,
       resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
       refreshUsage: accountId => this.subscriptions.refreshAccount(accountId) });
     this.login = new CodexDeviceLoginService({ store, loginRoot: join(options.dataDirectory, "login"), createClient,
+      deferRecovery: options.ownerHandoff?.admissionOpen() === false,
       onAccountImported: account => { void this.subscriptions.refreshAccount(account.id).catch(() => undefined); },
     });
     this.proxy = new CodexAccountPoolProxy({ store,
       upstreamBaseUrl: options.upstreamBaseUrl ?? "https://chatgpt.com/backend-api/codex",
       fetch: options.fetch, resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
+    if (options.ownerHandoff?.retained) {
+      this.proxy.restoreAffinities(options.ownerHandoff.retained.imageAffinities);
+      this.resetCreditService.restoreReceipts(options.ownerHandoff.retained.resetReceipts);
+      this.login.restoreReceipts(options.ownerHandoff.retained.loginReceipts);
+    }
   }
   private readonly proxy: CodexAccountPoolProxy;
 
@@ -62,10 +89,47 @@ export class CodexAccountService {
     const service = new CodexAccountService(options);
     try {
       await service.login.ready();
-      service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort });
-      service.subscriptions.start();
+      if (options.ownerHandoff) service.validateCredentials(options.ownerHandoff.admissionOpen() === false);
+      service.server = await startCodexAccountPoolServer({ proxy: service.proxy, port: options.proxyPort,
+        admissionOpen: options.ownerHandoff?.admissionOpen, onUncertain: options.ownerHandoff?.onUncertain });
+      if (options.ownerHandoff?.admissionOpen() !== false) await service.activate();
       return service;
     } catch (error) { await service.close(); throw error; }
+  }
+
+  activate(): Promise<void> {
+    return this.activation ??= (async () => {
+      await this.login.activate(); await this.maintenanceReady(); this.subscriptions.start();
+    })();
+  }
+
+  handoffObservation() {
+    const counts = { requests: this.requests.size, proxy: this.server?.activeCount() ?? 0,
+      oauth: this.login.activeCount(), refresh: this.refresh.activeCount(),
+      subscriptions: this.subscriptions.activeCount(), resetCredits: this.resetCreditService.activeCount() };
+    return { counts, activeCount: Object.values(counts).reduce((a, b) => a + b, 0),
+      historicalCount: this.store.affinityCount() + this.proxy.handoffAffinities().length
+        + this.login.historicalCount() + this.resetCreditService.historicalCount() };
+  }
+
+  retainedState(): CodexAccountRetainedState {
+    if (this.handoffObservation().activeCount !== 0) throw new Error("Account service is not drained");
+    return { imageAffinities: this.proxy.handoffAffinities(), resetReceipts: this.resetCreditService.handoffReceipts(),
+      loginReceipts: this.login.handoffReceipts() };
+  }
+
+  validateCredentials(requireAccountCredentials = true): void {
+    try {
+      const token = this.store.issueHostToken("local-codex");
+      if (this.store.authenticateHostToken(token) !== "local-codex") throw new Error("Invalid account Host identity");
+      // Frozen successors attest external credentials before readiness. Open
+      // owners must keep control/login available when an external owner is down.
+      // Local records and Host authentication remain strict in both modes.
+      for (const account of this.store.listAccounts()) {
+        if (account.credentialConfigured) this.store.validateCredential(account.id, requireAccountCredentials);
+      }
+      this.accountViews();
+    } catch { throw new Error("Account credential validation failed"); }
   }
 
   launch() {
@@ -79,6 +143,13 @@ export class CodexAccountService {
     this.requests.add(operation);
     void operation.finally(() => this.requests.delete(operation)).catch(() => undefined);
     return operation;
+  }
+
+  async interruptForMaintenance(): Promise<void> {
+    if (this.options.ownerHandoff?.admissionOpen() !== false || this.closing) {
+      throw new Error("Account maintenance requires a fenced live owner");
+    }
+    await this.server!.interruptForMaintenance();
   }
 
   close(): Promise<void> {
@@ -145,7 +216,10 @@ export class CodexAccountService {
       case "opencraft/codex/accounts/deviceLogin/start": result = await login.start(); break;
       case "opencraft/codex/accounts/deviceLogin/poll": {
         const polled = await login.poll(string(params.sessionId));
-        if (polled.status !== "complete") result = polled;
+        if (polled.status === "error") {
+          const reason = await deviceLoginMaintenanceReason(this.options.dataDirectory, string(params.sessionId), polled);
+          result = reason ? { ...polled, reason } : polled;
+        } else if (polled.status !== "complete") result = polled;
         else {
           const account = this.accountViews().find(candidate => candidate.id === polled.account.id);
           if (account === undefined) throw new Error("Codex account was not found after login");

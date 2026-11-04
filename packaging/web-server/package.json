@@ -4,7 +4,7 @@
   "description": "OpenCraft self-hosted website and managed execution gateway updates",
   "type": "module",
   "bin": {
-    "opencraft": "runtime/cli.mjs",
+    "opencraft": "runtime/opencraft-cli.mjs",
     "opencraft-web": "runtime/cli.mjs"
   },
   "files": [

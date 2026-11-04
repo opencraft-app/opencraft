@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
@@ -69,7 +70,7 @@ export async function signAndNotarizeMacos(appPath, environment = process.env, {
   return app;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const appPath = process.argv[2];
   if (!appPath) throw new Error("Usage: sign-notarize-macos <OpenCraft.app>");
   const app = await signAndNotarizeMacos(appPath);

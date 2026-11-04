@@ -1,8 +1,8 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { createServer } from 'node:http';
 import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 import { PACKAGE_NAME } from './releases.mjs';
 
@@ -63,7 +63,7 @@ export async function createControlledReleaseRegistry({ catalogPath }) {
     async close() { closed = true; for (const socket of sockets) socket.destroy(); if (server.listening) await new Promise(resolve => server.close(resolve)); },
   };
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const registry = await createControlledReleaseRegistry({ catalogPath: process.env.OPENCRAFT_RELEASE_CATALOG });
   const port = Number(process.env.OPENCRAFT_REGISTRY_PORT || 18882);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid registry port');

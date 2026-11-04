@@ -178,7 +178,7 @@ bot/self/subtype events; normalizes direct messages and app mentions; and replie
 with [chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)
 to the original channel/thread without broadcasting. Group replies need a bot
 mention to enter this adapter. Attachments, welcome events, interactive cards,
-generic proactive pushes and token-by-token generation are outside this implementation. Native WeCom standalone channel posts are described below.
+Generic proactive pushes and token-by-token generation remain outside the conversational tool interface; the optional local availability notification adapter below provides a fixed-recipient alert path. Native WeCom standalone channel posts are described below.
 
 Core's existing shared-instance native conversation permissions are unchanged.
 This feature does not provide private filesystem/history isolation per person.
@@ -296,3 +296,16 @@ refresh their catalog at the normal idle boundary; new-session reservations
 include the declaration. No native Core restart or connection-mode change is
 required. See `tests/extensions/wecom-history.test.ts` for the real signed MCP composition
 with a synthetic provider and durable write/race/restart regression coverage.
+
+### 本机可用性通知
+
+核心提供可选`OPENCRAFT_AVAILABILITY_NOTIFICATION_CONFIG`私有配置入口，用于部署者明确
+授权的故障/恢复单聊。该入口是0600 Unix socket加本机Bearer认证，不注册Web/relay路径。
+请求只含incident/kind/site/host/engine/errorCode；接收者由私有配置固定，并逐次验证现有
+channel、sender→human绑定与真人准入。客户端不能传任意收件人或消息正文。
+
+WeCom通过现有长连接的`aibot_send_msg`主动发送Markdown（chat_type=1），不会新建机器人
+连接。依据[官方长连接文档101463](https://developer.work.weixin.qq.com/document/path/101463)，
+用户须先给机器人发过消息；errcode=0仅代表平台受理，不表示用户已读。发送前持久化claim，
+同incident/kind去重；明确未发送或平台明确拒绝允许同ID重试，ACK未知保留unknown，不自动重发。此能力不开放通用主动发信工具。
+业务进程整体不可用时该通道也不可用，部署者应保留本地事件并另规划独立兜底。

@@ -1,7 +1,7 @@
 import {
   APP_HOST_PROTOCOL_VERSION,
+  APP_HOST_SEND_NOT_ADMITTED,
   stampLogicalClientFrame,
-  routeLogicalClientFrame,
   LOGICAL_CLIENT_FIELD,
   type AppHostErrorPayload,
   type AppHostToRendererMessage,
@@ -17,6 +17,16 @@ export interface WorkbenchRequestIdentity {
   connectionContext(request: IncomingMessage): TransportSubmissionContext | null;
   /** Owns provider-specific routes after core admission; false leaves the route to the gateway. */
   handle(request: IncomingMessage, response: ServerResponse): boolean | Promise<boolean>;
+}
+
+function isIndependentReadFrame(frame: unknown): boolean {
+  if (typeof frame !== "string") return false;
+  try {
+    const request = JSON.parse(frame);
+    return request !== null && typeof request === "object"
+      && (typeof request.id === "string" || typeof request.id === "number")
+      && ["model/list", "thread/list", "thread/read", "thread/turns/list", "thread/items/list", "thread/history/cancel"].includes(request.method);
+  } catch { return false; }
 }
 
 export interface AppHostServerPort {
@@ -89,10 +99,21 @@ interface HostSlot {
   lastState: TransportStatus["state"];
 }
 
+class HostSendNotAdmittedError extends Error {
+  readonly code = APP_HOST_SEND_NOT_ADMITTED;
+  readonly retryable: boolean;
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.retryable = (cause as { retryable?: unknown } | null)?.retryable !== false;
+  }
+}
+
 function normalizeError(cause: unknown): AppHostErrorPayload {
   const candidate = cause as { code?: unknown; retryable?: unknown } | null;
   return {
-    code: typeof candidate?.code === "string" ? candidate.code : "APP_HOST_FAILURE",
+    code: typeof candidate?.code === "string"
+      && (candidate.code !== APP_HOST_SEND_NOT_ADMITTED || cause instanceof HostSendNotAdmittedError)
+      ? candidate.code : "APP_HOST_FAILURE",
     message: cause instanceof Error ? cause.message : String(cause),
     retryable: candidate?.retryable === true,
   };
@@ -285,13 +306,16 @@ export class AppHostServer {
       return { hostId: message.hostId, generation: record.generation };
     }
     if (message.type === "host/send") {
-      this.forwardingAdmissions.get(message)?.();
-      const record = this.requireWritableClaim(
-        connection,
-        message.hostId,
-        message.leaseId,
-        message.generation,
-      );
+      let record: HostRecord;
+      try {
+        this.forwardingAdmissions.get(message)?.();
+        record = this.requireWritableClaim(
+          connection, message.hostId, message.leaseId, message.generation,
+        );
+      } catch (cause) {
+        // Only this boundary proves that native forwarding never began.
+        throw new HostSendNotAdmittedError(cause);
+      }
       const frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
       const claim = this.slots.get(message.hostId)!.claims.get(this.claimKey(connection, message.leaseId))!;
@@ -485,7 +509,12 @@ export class AppHostServer {
           if (status.state !== "open") record.forwarding.abort(lostHostConnection(status));
           else if (record.forwarding.signal.aborted) record.forwarding = new AbortController();
           slot.lastState = status.state;
-          this.publish(slot.hostId, generation, { type: "host/status", hostId: slot.hostId, generation, status });
+          // Native-local RPC ids are not evidence for any Renderer claim.
+          // Project only the protocol's shared failure disposition.
+          const publicStatus = { ...status, ...(status.failure ? {
+            failure: { code: status.failure.code, recovery: status.failure.recovery },
+          } : {}) };
+          this.publish(slot.hostId, generation, { type: "host/status", hostId: slot.hostId, generation, status: publicStatus });
         };
         // Keep each acquired disposer even if a later subscription throws.
         physical.disposers.push(transport.subscribeMessage(frame => {
@@ -644,21 +673,23 @@ export class AppHostServer {
   }
 
   private publish(hostId: string, generation: number, message: AppHostToRendererMessage): void {
+    if (this.options.logicalClientRouting && message.type === "host/frame") {
+      const payload = JSON.parse(message.frame) as Record<string, unknown>;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) throw new Error("Invalid logical RPC frame");
+      const target = payload[LOGICAL_CLIENT_FIELD];
+      if (target !== undefined) {
+        if (typeof target !== "string") return;
+        const claim = this.slots.get(hostId)?.claims.get(target);
+        if (!claim || !this.connections.has(claim.connection) || claim.generation !== generation || !claim.connection.ownsHost(hostId, generation)) return;
+        const { [LOGICAL_CLIENT_FIELD]: _target, ...body } = payload;
+        claim.connection.post({ ...message, frame: JSON.stringify(body), leaseId: claim.leaseId });
+        return;
+      }
+      // Only ownerless notifications may fan out to admitted connections.
+      if (payload.id !== undefined && payload.id !== null) return;
+    }
     for (const connection of this.connections) {
-      if (!connection.ownsHost(hostId, generation)) continue;
-      if (this.options.logicalClientRouting && message.type === "host/frame") {
-        const slot = this.slots.get(hostId);
-        const claims = [...slot?.claims ?? []].filter(([, claim]) => claim.connection === connection && claim.generation === generation);
-        const ids = claims.map(([id]) => id);
-        const frame = routeLogicalClientFrame(message.frame, ids);
-        const payload = JSON.parse(message.frame) as Record<string, unknown>;
-        const target = payload[LOGICAL_CLIENT_FIELD];
-        // Requests and responses require an owner. Only untargeted
-        // notifications may fan out across admitted leases.
-        if (target === undefined && payload.id !== undefined && payload.id !== null) continue;
-        const leaseId = target === undefined ? undefined : claims.find(([id]) => id === target)?.[1].leaseId;
-        if (frame !== null) connection.post({ ...message, frame, ...(leaseId === undefined ? {} : { leaseId }) });
-      } else connection.post(message);
+      if (connection.ownsHost(hostId, generation)) connection.post(message);
     }
   }
 
@@ -812,6 +843,13 @@ export class AppHostServerConnection {
       ? message.hostId : "";
     if (typeof message === "object" && message !== null && "type" in message && message.type === "host/send") {
       this.admitForwarding(this, message as RendererToAppHostMessage);
+      // Discovery and history reads observe native state without ordering behind
+      // an unrelated Turn's tool preparation. Cancellation must reach that same
+      // independent lane. Writable frames retain their existing FIFO.
+      if (isIndependentReadFrame((message as { frame?: unknown }).frame)) {
+        void this.receive(message);
+        return;
+      }
     }
     const operation = (this.receiveOperations.get(hostId) ?? Promise.resolve()).then(
       () => this.receive(message),

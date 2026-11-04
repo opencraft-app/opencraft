@@ -25,8 +25,9 @@ Recovery keeps the original root turn ID and increments its attempt count
 **before** native submission. It permits at most three automatic attempts across
 process restarts. Another interruption after the third attempt stops automatic
 continuation; Pi also aborts its suspended native task. A new human message
-starts a new chain. Ordinary model failures and capacity retries keep their
-existing semantics; this policy is for lost execution.
+starts a new chain. Provider failures use the separate durable provider retry queue described in
+[execution and models](architecture/platform/execution-and-models.md#codex-model-capacity-retry);
+this policy is for lost execution.
 
 Each attempt durably separates preparation from native dispatch. Preparation
 failures, including a restart during preparation, remain retryable within that

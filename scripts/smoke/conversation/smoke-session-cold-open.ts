@@ -53,7 +53,7 @@ const appHost=new AppHostServer({logicalClientRouting:true,createTransport(){
     type: 'reasoning', id: `long-reasoning-${i}`, summary: [`Long active reasoning ${i}`], content: [], startedAtMs: 1700000000000 + i,
    })));
    switch(rpc.method){
-    case 'initialize':result={userAgent:'cold-open-fixture',codexHome:'/fixture',platformFamily:'unix',platformOs:'linux',capabilities:{extensions:{'opencraft/resume-history':{version:1,mode:previewStage?'message-window':'paginated',initialTurnsPage:true}}}};break;
+    case 'initialize':result={userAgent:'cold-open-fixture',codexHome:'/fixture',platformFamily:'unix',platformOs:'linux',capabilities:{extensions:{...(previewStage?{'opencraft/message-window-history':{version:1}}:{}),'opencraft/resume-history':{version:1,mode:previewStage?'message-window':'paginated',initialTurnsPage:true}}}};break;
     case 'thread/list':result={data:[{...thread,historyMode:previewStage?'message-window':'paginated'}],nextCursor:null};break;
     case 'thread/read':result={thread:{...thread,historyMode:previewStage?'message-window':'paginated'}};break;
     case 'thread/resume':result={thread:{...thread,historyMode:previewStage?'message-window':'paginated'},model:'fixture-model',modelProvider:'openai',cwd:'/fixture',runtimeWorkspaceRoots:['/fixture'],approvalPolicy:'on-request',approvalsReviewer:'user',sandbox:{type:'readOnly'},initialTurnsPage:{data:[turn],nextCursor:null}};break;

@@ -1,11 +1,11 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { chmod, mkdir, realpath, unlink } from "node:fs/promises";
+import { chmod, mkdir, readFile, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { acquireCodexWriter, CODEX_CORE_PROTOCOL_VERSION, CodexCoreControlClient, CodexCoreUnavailableError, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import type { CodexCoreOptions } from "./main.js";
 import { startControlServer } from "./control-server.js";
-import { nativeReady, removeStaleSocket } from "./native-process.js";
+import { makeNativeFamilyKillable, nativeReady, removeStaleSocket } from "./native-process.js";
 import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.js";
 
 export interface CodexAppServerOptions {
@@ -73,7 +73,7 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     control = await startControlServer(options.endpoint, options.authToken, async request => ({
       status: request.method === "GET" && request.url === "/health" && !failed && ready ? 200 : 503,
       value: request.method === "GET" && request.url === "/health" && !failed && ready
-        ? { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
+        ? { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
           callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
         : { error: "Codex AppServer unavailable" },
@@ -88,11 +88,22 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     child = options.spawnAppServer?.({ args, cwd: options.runtimeDirectory, env })
       ?? spawn(options.executable, args, { cwd: options.runtimeDirectory, env, stdio: ["pipe", "pipe", "pipe"] });
     ownsNative = true;
-    child.stdout.resume(); child.stderr.on("data", chunk => process.stderr.write(chunk));
-    const failure = (error: Error) => { failed = true; if (!closing) options.onFailure?.(error); };
+    child.stdout.resume(); // Native stderr may contain tool output or private environment values.
+    child.stderr.resume();
+    const failure = (error: Error) => { if (failed) return; failed = true; if (!closing) options.onFailure?.(error); };
     child.once("error", failure);
+    child.once("exit", (code, signal) => failure(new Error(`Codex AppServer exited (${code ?? signal ?? "unknown"})`)));
     child.once("close", (code, signal) => failure(new Error(`Codex AppServer exited (${code ?? signal ?? "unknown"})`)));
+    // A protected APP must not pass OOM immunity to its native process. Do
+    // this before publishing readiness, even when the external guard is down.
+    const protectedApp = process.platform === "linux" && (await readFile("/proc/self/oom_score_adj", "utf8")).trim() === "-1000";
+    if (protectedApp) {
+      if (!child.pid || child.pid === process.pid) throw new Error("Native process identity is unavailable");
+      await makeNativeFamilyKillable(child.pid);
+    }
     authSocket = await nativeReady(nativeListener, child, launch.auth);
+    // The npm launcher may have forked native during its own initialization.
+    if (protectedApp) await makeNativeFamilyKillable(child.pid!);
     relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");

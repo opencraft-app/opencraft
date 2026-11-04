@@ -1,3 +1,5 @@
+import { verifyCurrentRecovery } from './recover-current.mjs';
+import { existsSync, readFileSync } from 'node:fs';
 import { upgradeBridge } from './full-upgrade.mjs';
 import { atomicJson as durableJson } from '../full-upgrade/durable.mjs';
 import { loadUserPlugins, assertUserPluginCompatibility } from './user-plugins.mjs';
@@ -10,6 +12,7 @@ import { createServer, request as httpRequest } from 'node:http';
 import { createConnection } from 'node:net';
 import { readFile, writeFile, mkdir, rename, rm, cp, stat, readdir, open } from 'node:fs/promises';
 import { join, resolve, dirname } from 'node:path';
+import { createLocalTreeReleaseSource } from './local-tree-release.mjs';
 import { createLocalReleaseSource } from './local-release.mjs';
 import semver from 'semver';
 import { createHeadlessBackendProxy, isHeadlessBackendPath, validHeadlessBackendRoutes } from './headless-backend.mjs';
@@ -97,7 +100,7 @@ function lease(worker) {
 }
 
 export async function createManagedWebServer({ initialRelease, stateDirectory, registry, channel, userconfig, publicOrigin,
-  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, upgradeConfigPath = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
+  appServerTarget = null, codexServerTarget = null, headlessBackendTarget = null, relayIngressTarget = null, relayInternalPort = null, localAccessFile = null, hyperNodeUser = '', execution = null, rollbackRecovery = null, recoveryMarker = null, upgradeConfigPath = null, stateWriter = atomicJson, source = createNpmReleaseSource({ registry, channel, userconfig, stateFile: join(resolve(stateDirectory), 'full-release-state.json') }) }) {
   const headlessBackend = createHeadlessBackendProxy(headlessBackendTarget);
   const relayIngress = createHeadlessBackendProxy(relayIngressTarget);
   if (relayIngress && (!headlessBackend || !Number.isInteger(relayInternalPort) || relayInternalPort < 0 || relayInternalPort > 65535)) throw new Error('Relay ingress requires a protected Headless backend and loopback internal port');
@@ -196,13 +199,14 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
     }
     async function snapshot(request) {
       const executionStatus = execution ? await execution.status() : null;
-      return { schemaVersion: 1, enabled: true, localInstall: true, authenticated: authenticated(request),
+      return { schemaVersion: 1, enabled: true, localInstall: true, localTreeInstall: fullReleaseTrust ? 1 : 0, authenticated: authenticated(request),
         current: { version: persisted.current.version, buildId: persisted.current.buildId },
         latest: latest ? { version: latest.version, buildId: latest.buildId } : null,
         checking: checking !== null, checkedAt, checkError, checkErrorCode, packageName: PACKAGE_NAME, channel: source.channel || channel || 'latest',
         updateAvailable: latest !== null && isNewerVersion(latest.version, persisted.current.version),
         canRollback: persisted.previous !== null, recoveryRequired: await webRecoveryRequired(),
         execution: executionStatus,
+        recovery: { maintenanceMarker: recoveryMarker !== null, rollbackHook: rollbackRecovery !== null },
         // A terminal job is visible only after its persistence and cleanup finish.
         job: operation && persisted.job && !busy(persisted.job) ? { ...persisted.job, phase: 'starting', error: null } : persisted.job };
     }
@@ -211,10 +215,11 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
       catch (error) { if (!closed) { latest = null; checkError = error.message; checkErrorCode = ['authentication', 'network', 'unavailable', 'registry'].includes(error.code) ? error.code : null; } }
       finally { checkedAt = new Date().toISOString(); checking = null; }
     }
-    async function activate(release, job) {
+    async function activate(release, job, rollback = false) {
       const candidate = await startWorker(release, environment); track(candidate);
       try {
         if (execution) await execution.apply(release);
+        if (rollback && rollbackRecovery) await rollbackRecovery();
         if (closed) throw new Error('Deployment is stopping');
         const next = { schemaVersion: 1, current: release, previous: persisted.current, job: { ...job, phase: 'completed', error: null } };
         await writeDeploymentState(statePath, next);
@@ -228,7 +233,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         retire(candidate);
         if (execution) {
           try { await execution.apply(persisted.current); }
-          catch { throw new Error(`${error.message}; execution rollback failed; inspect the execution service`); }
+          catch (rollbackError) { throw new Error(`${error.message}; execution rollback failed (${rollbackError.code === 'EXECUTION_READINESS_FAILED' ? rollbackError.reason : 'execution-rollback-error'}); inspect the execution service`); }
         }
         throw error;
       }
@@ -268,10 +273,11 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
           }
         }
         else {
-          const archive = await releaseSource.download(selected, staging);
+          const archive = releaseSource.prepare ? null : await releaseSource.download(selected, staging);
           job.phase = 'verifying'; persisted.job = { ...job };
           await childState('verifying');
-          const unpacked = await unpackRelease(archive, join(staging, 'unpacked'), { stateFile: join(directory, 'full-release-state.json') });
+          const unpacked = releaseSource.prepare ? await releaseSource.prepare(selected, staging)
+            : await unpackRelease(archive, join(staging, 'unpacked'), { stateFile: join(directory, 'full-release-state.json') });
           if (unpacked.version !== selected.version || unpacked.buildId !== selected.buildId) throw new Error('Downloaded release differs from the checked release');
           await assertReleaseProfile(unpacked, persisted.current);
           releaseContainer = join(directory, 'releases', job.id);
@@ -297,7 +303,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
         }
         job.phase = 'starting'; persisted.job = { ...job };
         await childState('starting');
-        await activate(release, job); activated = true;
+        await activate(release, job, rollback); activated = true;
         try { await childState('completed'); } catch { console.error('[opencraft update] Child receipt requires reconciliation'); }
       } catch (error) {
         persisted = { ...original, job: { ...job, phase: 'failed', error: error.message } };
@@ -369,6 +375,7 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
           }
           if (!authenticated(request)) { json(response, 401, { error: 'Deployment administrator access required' }); return; }
           if (pathname.startsWith(`${WEB_UPDATE_PATH}/full/`)) {
+            if (recoveryMarker && existsSync(recoveryMarker)) { json(response, 409, { error: 'Managed recovery maintenance is active' }); return; }
             if (!upgrade) { json(response, 503, { error: 'Upgrade control unavailable' }); return; }
             const action = pathname.slice((WEB_UPDATE_PATH + '/full/').length);
             if (!['check', 'start', 'stop'].includes(action) || !input || Object.keys(input).some(k => !['planDigest', 'jobId'].includes(k))) {
@@ -383,6 +390,37 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
             json(response, 202, { ok: true, jobId: persisted.job.id }); return;
           }
           if (operation || busy(persisted.job) || checking) { json(response, 409, { error: 'Another update operation is running' }); return; }
+          if (pathname === `${WEB_UPDATE_PATH}/recover-current`) {
+            // Reserve synchronously before any verification await. The server
+            // already owns the deployment writer lock; updates/handoffs wait.
+            if (!input || Object.keys(input).some(k => !['jobId', 'version', 'buildId'].includes(k))
+              || input.jobId !== persisted.job?.id || persisted.job?.phase !== 'failed'
+              || input.version !== persisted.current.version || input.buildId !== persisted.current.buildId) {
+              json(response, 409, { error: 'recovery-identity-mismatch' }); return;
+            }
+            if (recoveryMarker && existsSync(recoveryMarker)
+              && request.headers['x-opencraft-recovery-id'] !== readFileSync(recoveryMarker, 'utf8').trim()) {
+              json(response, 409, { error: 'Managed recovery maintenance is active' }); return;
+            }
+            const expected = persisted; const worker = active;
+            operation = (async () => {
+              const verified = await verifyCurrentRecovery({ directory, persisted: expected, execution,
+                trust: fullReleaseTrust, input,
+                active: () => !closed && active === worker && worker.alive && worker.release.releaseRoot === expected.current.releaseRoot });
+              // Commit evidence before the terminal child receipt. Either crash
+              // gap stays unknown and can be retried with the same exact job.
+              await writeDeploymentState(statePath, verified.next); persisted = verified.next;
+              await durableJson(join(directory, 'upgrade-children', input.jobId + '.json'), verified.child);
+              try { await upgrade?.({ action: 'web-child', operationId: input.jobId }); } catch { /* durable owner receipt reconciles later */ }
+            })().catch(async error => {
+              // Preserve the original install/rollback error and all unknown
+              // receipts. Never persist arbitrary dependency exception text.
+              persisted = { ...persisted, job: { ...persisted.job, recoveryError: /^recovery-(verifier-unavailable|identity-mismatch|child-mismatch|retained-identity-mismatch|retained-verification-failed|execution-verification-failed|owner-changed)$/.test(error.message) ? error.message : 'recovery-verification-failed' } };
+              await writeDeploymentState(statePath, persisted);
+            }).catch(() => console.error('[opencraft update] Recovery receipt requires inspection'))
+              .finally(() => { operation = null; });
+            json(response, 202, { ok: true, jobId: input.jobId }); return;
+          }
           if (await webRecoveryRequired(true)) { json(response, 409, { error: 'local-recovery-required' }); return; }
           // Recheck admission after the asynchronous recovery observation.
           if (pathname === `${WEB_UPDATE_PATH}/install` && persisted.job && input?.version === persisted.job.version
@@ -395,17 +433,25 @@ export async function createManagedWebServer({ initialRelease, stateDirectory, r
           if (pathname === `${WEB_UPDATE_PATH}/install`) {
             if (!latest || input?.version !== latest.version || !isNewerVersion(latest.version, persisted.current.version)) { json(response, 409, { error: 'Check updates again before installing' }); return; }
             selected = { ...latest };
-          } else if (pathname === `${WEB_UPDATE_PATH}/install-local`) {
+          } else if (([`${WEB_UPDATE_PATH}/install-local`, `${WEB_UPDATE_PATH}/install-local-tree`].includes(pathname))) {
             if (!semver.valid(input?.version) || !isNewerVersion(input.version, persisted.current.version)
               || typeof input.buildId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(input.buildId)) {
               json(response, 409, { error: 'Local release must have a newer exact version and valid build identity' }); return;
             }
-            releaseSource = createLocalReleaseSource(input.archive, { stateFile: join(directory, 'full-release-state.json') });
+            releaseSource = pathname.endsWith('/install-local-tree')
+              ? createLocalTreeReleaseSource(input.tree, input.manifestSha256, { stateFile: join(directory, 'full-release-state.json') })
+              : createLocalReleaseSource(input.archive, { stateFile: join(directory, 'full-release-state.json') });
             selected = { version: input.version, buildId: input.buildId, integrity: input.integrity };
           } else if (pathname === `${WEB_UPDATE_PATH}/rollback`) {
             if (!persisted.previous) { json(response, 409, { error: 'No previous release is available' }); return; }
             selected = { ...persisted.previous }; rollback = true;
           } else { json(response, 404, { error: 'Unknown update action' }); return; }
+          // Synchronous final admission closes the status/marker race: no await
+          // may occur between this check and reserving the update operation.
+          if (recoveryMarker && existsSync(recoveryMarker)
+            && !(rollback && request.headers['x-opencraft-recovery-id'] === readFileSync(recoveryMarker, 'utf8').trim())) {
+            json(response, 409, { error: 'Managed recovery maintenance is active' }); return;
+          }
           operation = install(selected, rollback, releaseSource).catch(() => console.error('[opencraft update] Cannot persist update result; inspect the deployment state')).finally(() => { operation = null; });
           json(response, 202, { ok: true, jobId: persisted.job.id });
         } catch { if (!response.headersSent) json(response, 400, { error: 'Invalid update request' }); }

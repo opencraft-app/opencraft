@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 
 import assert from "node:assert/strict";
 import { execFile, spawn } from "node:child_process";
@@ -222,7 +223,7 @@ export async function smokeHeadlessPackage(archive) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const archive = process.argv[2] || join(repositoryRoot, "release/OpenCraft-server-0.1.0-linux-amd64.tar.gz");
   smokeHeadlessPackage(resolve(archive)).catch((error) => {
     console.error(error);

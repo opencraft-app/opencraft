@@ -1,3 +1,4 @@
+import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp,rm } from 'node:fs/promises';
@@ -56,11 +57,11 @@ async function fixture(t:any){
   async read(){return {entries:[{turnId:'t',role:'user',text:'Question'},{turnId:'t',role:'tool',text:'PRIVATE TOOL OUTPUT'},{turnId:'t',role:'assistant',text:'Answer'}],nextCursor:null};}};
  const execution:OrchestrationExecutionPort={async create(id,_source,_args,admit){if(!admit())throw new CollaborationError(403,'revoked');if(!creations.has(id)){const child={threadId:'child-'+(++creates)};creations.set(id,child);states.set(child.threadId,{threadId:child.threadId,turnId:null,rootTurnId:null,state:'starting'});}if(dropCreate){dropCreate=false;throw Error('Gateway lost after native creation');}return creations.get(id)!;},
   async snapshot(id){return states.get(id)??{threadId:id,turnId:null,rootTurnId:null,state:'active'};},async acknowledge(){}};
- let collaboration=new Collaboration(join(root,'collaboration.sqlite'),actors,native,()=>now,()=>current),broker=new ThreadOrchestrationBroker(collaboration,execution,()=>now);
+ let collaboration=new Collaboration(join(root,'collaboration.sqlite'),actors,native,()=>now,()=>current),storage=new OrchestrationRuntimeWorker(join(root,'collaboration.sqlite'));await storage.start();let broker=new ThreadOrchestrationBroker(collaboration,execution,()=>now,storage);
  collaboration.authorizeExecution(a,'parent','human-input',[{type:'text',text:'Delegate the review'}]);collaboration.executionStarted('parent','human-input','parent-turn');
- t.after(async()=>{await broker.close();await collaboration.close();actors.close();await rm(root,{recursive:true,force:true});});
+ t.after(async()=>{await broker.close();await storage.close();await collaboration.close();actors.close();await rm(root,{recursive:true,force:true});});
  return {root,a,b,actors,native,execution,inputs,creations,states,get creates(){return creates;},get service(){return collaboration;},get broker(){return broker;},advance(ms:number){now+=ms;},dropCreate(){dropCreate=true;},revoke(){current=false;},
-  async restart(){await broker.close();await collaboration.close();collaboration=new Collaboration(join(root,'collaboration.sqlite'),actors,native,()=>now,()=>current);broker=new ThreadOrchestrationBroker(collaboration,execution,()=>now);},
+  async restart(){await broker.close();await storage.close();await collaboration.close();collaboration=new Collaboration(join(root,'collaboration.sqlite'),actors,native,()=>now,()=>current);storage=new OrchestrationRuntimeWorker(join(root,'collaboration.sqlite'));await storage.start();broker=new ThreadOrchestrationBroker(collaboration,execution,()=>now,storage);},
   invoke(key:string,name:string,args:Record<string,unknown>,source='parent',turn='parent-turn'){return broker.invoke(source,turn,`${source}:${turn}:${key}`,name,args) as Promise<any>;}};
 }
 
@@ -105,8 +106,8 @@ test('root delegation budget is shared with spawned descendants and replay consu
 
 test('recovery suppresses false parent interruptions and completion is delivered once after restart',async t=>{
  const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review'});await f.service.pump();
- const recovering={threadId:spawn.threadId,turnId:'retry',rootTurnId:'root',state:'recovering' as const};f.states.set(spawn.threadId,recovering);f.broker.observe(recovering);f.advance(6000);await f.broker.reconcile();await f.service.pump();assert.equal(f.inputs.filter(input=>input.threadId==='parent').length,0);
- const complete={...recovering,state:'completed' as const,summary:'Review finished'};f.states.set(spawn.threadId,complete);f.broker.observe(complete);f.advance(2100);await f.restart();await f.broker.reconcile();await f.service.pump();
+ const recovering={threadId:spawn.threadId,turnId:'retry',rootTurnId:'root',state:'recovering' as const};f.states.set(spawn.threadId,recovering);await f.broker.observe(recovering);f.advance(6000);await f.broker.reconcile();await f.service.pump();assert.equal(f.inputs.filter(input=>input.threadId==='parent').length,0);
+ const complete={...recovering,state:'completed' as const,summary:'Review finished'};f.states.set(spawn.threadId,complete);await f.broker.observe(complete);f.advance(2100);await f.restart();await f.broker.reconcile();await f.service.pump();
  const notices=f.inputs.filter(input=>input.threadId==='parent');assert.equal(notices.length,1);assert.match(notices[0]!.input,/<opencraft_child_update/);assert.match(notices[0]!.input,/completed/);
  f.advance(10_000);await f.broker.reconcile();await f.service.pump();assert.equal(f.inputs.filter(input=>input.threadId==='parent').length,1);
  assert.equal(f.service.usageSubmission('parent',ACTOR_ID(notices[0]!.id))?.sourceKind,'system');
@@ -129,7 +130,7 @@ test('inspect remains text-only and an absent or revoked delegation cannot use s
 test('an exhausted root notifies once and direct human input is preserved in the parent notice',async t=>{
  const f=await fixture(t),child=await f.invoke('spawn','thread_spawn',{prompt:'Review'});
  f.service.authorizeExecution(f.a,child.threadId,'direct-input',[{type:'text',text:'Human correction'}]);f.service.executionStarted(child.threadId,'direct-input','human-turn');
- const state={threadId:child.threadId,turnId:'human-turn',rootTurnId:'human-root',state:'exhausted' as const};f.states.set(child.threadId,state);f.broker.observe(state);f.advance(2100);
+ const state={threadId:child.threadId,turnId:'human-turn',rootTurnId:'human-root',state:'exhausted' as const};f.states.set(child.threadId,state);await f.broker.observe(state);f.advance(2100);
  await f.broker.reconcile();await f.service.pump();let notices=f.inputs.filter(input=>input.threadId==='parent');assert.equal(notices.length,1);assert.match(notices[0]!.input,/Direct user input occurred/);
  assert.equal(f.service.orchestration.relation(child.threadId)?.userInputExcerpt,'Human correction');await f.restart();await f.broker.reconcile();await f.service.pump();notices=f.inputs.filter(input=>input.threadId==='parent');assert.equal(notices.length,1);
 });
@@ -203,7 +204,7 @@ test('a timed-out wait on a readable non-child survives restart and wakes its ca
 test('revocation after confirmed creation records its owner and failure, sends no prompt and still ACKs',async t=>{
  const f=await fixture(t),create=f.execution.create;let acks=0;f.execution.create=async(...args)=>{const child=await create(...args);f.revoke();return child;};f.execution.acknowledge=async()=>{acks++;return true;};
  await assert.rejects(f.invoke('late-revoke','thread_spawn',{prompt:'Do not send'}),error=>error instanceof CollaborationError&&error.status===403);await f.service.pump();assert.equal(f.inputs.length,0);
- assert.equal(f.service.orchestration.threads()[0]?.ownerActorId,f.a.actorId);assert.equal(f.service.orchestration.operation('parent:parent-turn:late-revoke')?.state,'failed');assert.equal(acks,1);
+ assert.equal(f.service.orchestration.threads()[0]?.ownerActorId,f.a.actorId);assert.equal(f.service.orchestration.operation('parent:parent-turn:late-revoke')?.state,'failed');await f.broker.reconcile();assert.equal(acks,1);
 });
 
 test('a live wait abandoned by Gateway death still wakes once after the persistent target settles',async t=>{
@@ -216,14 +217,14 @@ test('a live wait abandoned by Gateway death still wakes once after the persiste
 });
 
 test('a confirmed human stop marks direct intervention even when the child started from Agent input',async t=>{
- const f=await fixture(t),child=await f.invoke('stop-child','thread_spawn',{prompt:'Review'});f.broker.observe({threadId:child.threadId,turnId:'turn',rootTurnId:'root',state:'interrupted_by_user'});
+ const f=await fixture(t),child=await f.invoke('stop-child','thread_spawn',{prompt:'Review'});await f.broker.observe({threadId:child.threadId,turnId:'turn',rootTurnId:'root',state:'interrupted_by_user'});
  assert.equal(f.service.orchestration.relation(child.threadId)?.hasDirectUserInput,true);
 });
 
 test('UI control reads separate timed-out tool, delivery and child facts across restart',async t=>{
  const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review',visibility:'hidden'});
  f.states.set(spawn.threadId,{threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'active'});
- f.broker.observe(f.states.get(spawn.threadId)!);
+ await f.broker.observe(f.states.get(spawn.threadId)!);
  const wait=await f.invoke('wait','thread_wait',{threadIds:[spawn.threadId],timeoutMs:0});
  assert.equal(wait.settled,false);
  const calls=[{turnId:'parent-turn',itemId:'spawn'},{turnId:'parent-turn',itemId:'wait'}];
@@ -235,9 +236,9 @@ test('UI control reads separate timed-out tool, delivery and child facts across 
  assert.equal(before.calls[1]!.deliveryStatus,null);
  assert.deepEqual(f.service.threadTopology(spawn.threadId),{parentThreadId:'parent',visibility:'hidden'});
  await f.restart();assert.deepEqual(read(),before);
- f.broker.observe({threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'recovering'});
+ await f.broker.observe({threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'recovering'});
  assert.equal(read().calls[1]!.childRuntimeStatus[spawn.threadId],'recovering');
- f.broker.observe({threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'completed'});
+ await f.broker.observe({threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'completed'});
  assert.equal(read().calls[1]!.childRuntimeStatus[spawn.threadId],'completed');
  assert.equal(f.service.orchestration.operation('parent:parent-turn:wait')!.result && (f.service.orchestration.operation('parent:parent-turn:wait')!.result as any).settled,false);
 });
@@ -260,7 +261,7 @@ test('UI ledger projection checks source and each child read authority and exact
 test('ordinary authorized wait targets retain independent runtime facts after polling and restart',async t=>{
  const f=await fixture(t);
  f.states.set('ordinary',{threadId:'ordinary',turnId:'ordinary-turn',rootTurnId:'ordinary-turn',state:'active'});
- const receipt=await f.invoke('ordinary-wait','thread_wait',{threadIds:['ordinary'],timeoutMs:1});
+ const receipt=await f.invoke('ordinary-wait','thread_wait',{threadIds:['ordinary'],timeoutMs:1});await f.broker.reconcile();
  assert.equal(receipt.settled,false);assert.equal(f.service.orchestration.relation('ordinary'),null);
  const calls=[{turnId:'parent-turn',itemId:'ordinary-wait'}],read=()=>f.service.orchestrationView(f.a,'parent',calls);
  assert.equal(read().calls[0]!.childRuntimeStatus.ordinary,'active');

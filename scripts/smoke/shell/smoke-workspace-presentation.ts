@@ -108,9 +108,15 @@ try {
           await page.screenshot({ path: `${output}/overflow-${theme}-${width}.png` });
         }
         assert.equal(geometry.dock.left >= 0 && geometry.dock.right <= geometry.width && geometry.dock.bottom <= geometry.height, true);
+        const row = await dock.locator('form').boundingBox();
+        assert.ok(row && row.height < 60, 'all browser controls occupy one row');
         for (const button of await dock.locator('button:visible').all()) {
           const r = await button.boundingBox(); assert(r && r.width >= 44 && r.height >= 44);
+          assert.ok(row && r.y >= row.y && r.y + r.height <= row.y + row.height, 'control stays on the address row');
+          assert.ok(r.x >= geometry.dock.left && r.x + r.width <= geometry.dock.right, 'touch target stays inside the viewport');
         }
+        const address = await dock.getByRole('textbox', { name: 'Web address', exact: true }).boundingBox();
+        assert.ok(address && address.width >= 60, 'address retains usable space at narrow widths');
       }
       await page.setViewportSize({ width: 390, height: 480 });
       await settleMobileViewport(page);
@@ -131,7 +137,7 @@ try {
       // smoke-composer-safe-bottom; this fixture checks the browser consumer.
       await page.evaluate(()=>{document.documentElement.dataset.timelineKeyboardOpen='true';});
       await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingBottom==='0px');
-      assert.equal(await dock.locator('.browser-mobile-dock__actions').isVisible(),false);
+      assert.equal(await dock.getByRole('button', { name: 'Keyboard', exact: true }).isVisible(),true, 'remote keyboard remains independently accessible while open');
       assert.equal(await page.locator('.app-shell-row').evaluate(e=>getComputedStyle(e).paddingBottom),'0px','keyboard projection drops the real 34px inset');
       await page.evaluate(()=>{delete document.documentElement.dataset.timelineKeyboardOpen;});
       await page.waitForFunction(()=>getComputedStyle(document.querySelector('.app-shell-row')!).paddingBottom==='34px');
@@ -143,12 +149,15 @@ try {
       assert.equal(await page.evaluate(() => (window as any).fixture.keyboardRequests.length), 1);
       assert.equal(await page.evaluate(() => (window as any).fixture.keyboardRequests[0].gesture), true);
       await page.screenshot({ path: output + '/mobile-' + theme + '-browse.png' });
-      await dock.locator('button:has-text("Agent")').tap();
-      await page.locator('.browser-agent-sheet__header').waitFor();
+      await dock.getByRole('button', { name: 'Agent', exact: true }).tap();
+      await page.locator('.thread-composer-overlay__latest[data-visible="true"]').waitFor();
+      assert.equal(await page.locator('.browser-agent-sheet__header').count(), 0, 'no separate Agent sheet header');
+      assert.equal(await dock.getByRole('button', { name: 'Agent', exact: true }).innerText(), '', 'Agent uses its icon and accessible name');
       await editor.fill('Keep this mobile draft');
       await page.evaluate(() => document.documentElement.style.setProperty('--safe-layout-inset-bottom','34px'));
       const browserComposerPadding=page.locator('.thread-composer-overlay-host[data-mobile-browser="true"] .thread-composer-overlay__padding');
-      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),'8px','body portal retains only its ordinary gap');
+      const dockAllocation = await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom);
+      assert.ok(parseFloat(dockAllocation) < 80, 'single-row dock reservation');
       const assertPortalGeometry = async (inset: number, timeout = 5000) => {
         try { await page.waitForFunction(inset => {
           const anchor = document.querySelector('.main-content-body');
@@ -157,9 +166,8 @@ try {
           const composer = host?.querySelector('.opencraft-composer-shell');
           if (!anchor || !host || !surface || !composer) return false;
           const a = anchor.getBoundingClientRect(), h = host.getBoundingClientRect(), b = surface.getBoundingClientRect(), c = composer.getBoundingClientRect();
-          // The sheet surface has the outer 8px gap; its unchanged 12px padding
-          // and 1px border put the nested Composer another 13px inside it.
-          return a.bottom === innerHeight - inset && h.bottom === a.bottom && b.bottom === h.bottom - 8 && c.bottom === b.bottom - 13;
+          const dock = document.querySelector('.browser-mobile-dock')!.getBoundingClientRect();
+          return a.bottom === innerHeight - inset && h.bottom === a.bottom && Math.abs(c.bottom - (dock.top - 8)) < 1 && c.bottom === b.bottom;
         }, inset, { timeout }); } catch (error) {
           await writeFile(output + '/portal-failure-' + theme + '.json', JSON.stringify(await page.evaluate(() => ({ anchor:document.querySelector('.main-content-body')?.getBoundingClientRect().toJSON(), host:document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')?.getBoundingClientRect().toJSON(), composer:document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"] .opencraft-composer-shell')?.getBoundingClientRect().toJSON(), height:innerHeight, html:document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')?.outerHTML.slice(0,700) })), null, 2));
           throw error;
@@ -169,12 +177,13 @@ try {
           hostBottom: document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')!.getBoundingClientRect().bottom,
           surfaceBottom: document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"] .thread-composer-overlay__interactive')!.getBoundingClientRect().bottom,
           composerBottom: document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"] .opencraft-composer-shell')!.getBoundingClientRect().bottom,
+          dockTop: document.querySelector('.browser-mobile-dock')!.getBoundingClientRect().top,
           height: innerHeight,
         }));
         assert.equal(geometry.anchorBottom, geometry.height - inset);
         assert.equal(geometry.hostBottom, geometry.anchorBottom, 'body portal measures the protected content anchor');
-        assert.equal(geometry.surfaceBottom, geometry.hostBottom - 8, 'effective painted sheet gap is exactly 8px');
-        assert.equal(geometry.composerBottom, geometry.surfaceBottom - 13, 'nested Composer preserves existing 12px padding and 1px border');
+        assert.ok(Math.abs(geometry.surfaceBottom - (geometry.dockTop - 8)) < 1, 'Composer sits above the one browser rail');
+        assert.equal(geometry.composerBottom, geometry.surfaceBottom, 'original Composer has no enclosing sheet padding');
         assert.ok(geometry.composerBottom <= geometry.hostBottom - 8);
         return geometry;
       };
@@ -186,16 +195,37 @@ try {
       await page.screenshot({ path: output + '/portal-safe-34-' + theme + '.png' });
       const wrongAnchor = await page.addStyleTag({ content: '.thread-composer-overlay-host[data-mobile-browser="true"] { top: 0 !important; height: 100vh !important; }' });
       await page.waitForFunction(() => document.querySelector('.thread-composer-overlay-host[data-mobile-browser="true"]')!.getBoundingClientRect().bottom === innerHeight);
-      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),'8px');
-      await assert.rejects(assertPortalGeometry(34, 300), 'viewport-sized portal must fail even when CSS padding remains 8px');
+      assert.equal(await browserComposerPadding.evaluate(e=>getComputedStyle(e).paddingBottom),dockAllocation);
+      await assert.rejects(assertPortalGeometry(34, 300), 'viewport-sized portal must fail even with the same dock allocation');
       await wrongAnchor.evaluate(e => e.remove());
       await assertPortalGeometry(34);
       await writeFile(output + '/portal-geometry-' + theme + '.json', JSON.stringify({ portalSafe, portalKeyboard, portalRestored, wrongAnchorRejected: true }, null, 2));
       await page.evaluate(() => document.documentElement.style.removeProperty('--safe-layout-inset-bottom'));
       await assertPortalGeometry(0);
       assert.equal(await editor.evaluate(e => e === (window as any).originalEditor), true);
+      const latest = page.locator('.thread-composer-overlay__latest[data-visible="true"]');
+      for (const width of [320, 390, 430]) {
+        await page.setViewportSize({ width, height: 844 });
+        await settleMobileViewport(page);
+        await assertPortalGeometry(0);
+        const card = await latest.boundingBox(), composer = await page.locator('.thread-composer-overlay-host[data-mobile-browser="true"] .opencraft-composer-shell').boundingBox();
+        assert.ok(card && composer && card.x > composer.x && card.x + card.width < composer.x + composer.width, 'recent turn is inset behind the original Composer');
+        assert.ok(composer && composer.x >= 0 && composer.x + composer.width <= width, 'Composer cannot protrude outside the phone');
+        assert.ok(card && card.y >= 0, 'recent reply stays inside visible height');
+      }
+      await page.evaluate(() => { document.documentElement.dataset.timelineKeyboardOpen = 'true'; });
+      for (const height of [480, 320]) {
+        await page.setViewportSize({ width: 390, height });
+        await settleMobileViewport(page);
+        await assertPortalGeometry(0);
+        await page.waitForFunction(() => document.querySelector('.thread-composer-overlay__latest[data-visible="true"]')!.getBoundingClientRect().top >= 0, undefined, { timeout: 3000 });
+        assert.equal(await dock.getByRole('button', { name: 'Keyboard', exact: true }).isVisible(), true);
+      }
+      await page.evaluate(() => { delete document.documentElement.dataset.timelineKeyboardOpen; });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settleMobileViewport(page);
       await page.screenshot({ path: output + '/mobile-' + theme + '-agent.png' });
-      await page.getByRole('button', { name: 'Close Agent', exact: true }).tap();
+      await dock.getByRole('button', { name: 'Agent', exact: true }).tap();
       await dock.getByRole('button', { name: 'Tabs', exact: true }).tap();
       const overview = page.getByRole('dialog', { name: 'Tabs', exact: true });
       await overview.waitFor();
@@ -218,10 +248,17 @@ try {
       await page.waitForFunction(()=>(window as any).fixture.pages.listForOwner('scope').length===1);
       await overview.getByRole('button', { name: 'New browser tab', exact: true }).tap();
       await page.waitForFunction(() => (window as any).fixture.pages.listForOwner('scope').length === 2);
-      await dock.locator('button:has-text("Agent")').tap();
+      await dock.getByRole('button', { name: 'Agent', exact: true }).tap();
       assert.match(await editor.innerText(), /Keep this mobile draft/);
       assert.equal(await editor.evaluate(e => e === (window as any).originalEditor), true);
-      await page.getByRole('button', { name: 'Close Agent', exact: true }).tap();
+      await dock.getByRole('button', { name: 'Agent', exact: true }).tap();
+      await dock.getByRole('button', { name: 'More browser actions', exact: true }).tap();
+      const more = page.getByRole('dialog', { name: 'More browser actions', exact: true });
+      await more.waitFor();
+      assert.equal(await more.getByRole('button', { name: 'Reload', exact: true }).isVisible(), true);
+      await more.getByRole('button', { name: 'Back to workspace', exact: true }).tap();
+      await page.getByRole('button', { name: 'Open preview', exact: true }).tap();
+      await dock.waitFor();
       await page.evaluate(() => { document.documentElement.dataset.uiDensity='compact'; });
       await page.locator('.browser-panel__toolbar').waitFor();
       assert.equal(await dock.count(), 0);
@@ -230,6 +267,10 @@ try {
       await page.setViewportSize({ width: 1280, height: 844 });
       await page.locator('.browser-panel__toolbar').waitFor();
       assert.equal(await dock.count(), 0);
+      // A manually hidden desktop overlay is detached; reveal it through its
+      // existing desktop control before checking the preserved editor node.
+      const desktopToggle = page.getByRole('button', { name: 'Show floating composer', exact: true });
+      if (await desktopToggle.count()) await desktopToggle.click();
       assert.equal(await editor.evaluate(e => e === (window as any).originalEditor), true);
       await page.close();
     }

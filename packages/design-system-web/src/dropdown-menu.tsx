@@ -1,13 +1,12 @@
 import * as Primitive from "@radix-ui/react-dropdown-menu";
 import { Slot } from "@radix-ui/react-slot";
 import { forwardRef, useContext, useState, type ComponentPropsWithoutRef, type PointerEventHandler } from "react";
-import { useComposedRefs } from "@radix-ui/react-compose-refs";
-import { MenuInteraction as Activation, MenuDismissSurface } from "./menu-interaction";
+import { MenuInteraction as Activation } from "./menu-interaction";
 import { useTouchMenuTrigger } from "./use-touch-menu-trigger";
 import { useRadixMenuWindowBlurGuard } from "./use-radix-menu-window-blur-guard";
 
 // Radix retains menu semantics, focus, keyboard and nested portals. Shared
-// content consumes outside contacts independently of the root focus modality.
+// outside dismissal uses the native target without a page-wide hit surface.
 export * from "@radix-ui/react-dropdown-menu";
 
 export type DropdownMenuProps = Omit<ComponentPropsWithoutRef<typeof Primitive.Root>, "modal"> & {
@@ -24,8 +23,8 @@ export function Root({ open: controlled, defaultOpen = false, onOpenChange, dism
     if (controlled === undefined) setLocal(next);
     onOpenChange?.(next);
   };
-  // Pointer isolation belongs to Content's dismiss surface. A document-wide
-  // modal focus/pointer lock would also exclude an editor retaining focus.
+  // Menus leave page hit testing and scrolling native. Auxiliary consumers
+  // retain their editor focus lease without a document-wide modal lock.
   return <Primitive.Root {...props} modal={false} open={open} onOpenChange={change}>
     <Activation.Provider value={{ open, change }}>{children}</Activation.Provider>
   </Primitive.Root>;
@@ -64,13 +63,6 @@ export const Trigger = forwardRef<HTMLButtonElement, ComponentPropsWithoutRef<ty
   </Primitive.Trigger>;
 });
 
-export const Content = forwardRef<HTMLDivElement, ComponentPropsWithoutRef<typeof Primitive.Content>>(function Content(props, ref) {
-  const [content, setContent] = useState<HTMLDivElement | null>(null);
-  const composedRef = useComposedRefs(ref, setContent);
-  return <>
-    <MenuDismissSurface content={content} />
-    <Primitive.Content {...props} ref={composedRef} />
-  </>;
-});
+export const Content = Primitive.Content;
 
 export { Root as DropdownMenu, Trigger as DropdownMenuTrigger, Content as DropdownMenuContent };

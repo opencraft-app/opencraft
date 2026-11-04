@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
@@ -6,6 +8,11 @@ import { createProtocolIngress } from './protocol-ingress.mjs';
 import { installedUpgradeConfig } from './full-upgrade.mjs';
 import { createManagedWebServer } from './server.mjs';
 import { createExecutionDeployment } from '../server-deployment/execution.mjs';
+const rollbackCommand = process.env.OPENCRAFT_ROLLBACK_RECOVERY_COMMAND
+  ? JSON.parse(process.env.OPENCRAFT_ROLLBACK_RECOVERY_COMMAND) : null;
+if (rollbackCommand && (!Array.isArray(rollbackCommand) || !rollbackCommand.length
+  || !rollbackCommand.every(arg => typeof arg === 'string' && arg.length > 0)))
+  throw new Error('Invalid rollback recovery command');
 const executionLink = process.env.OPENCRAFT_EXECUTION_LINK;
 const execution = executionLink ? createExecutionDeployment({
   link: executionLink, unit: process.env.OPENCRAFT_EXECUTION_UNIT, coreUnit: process.env.OPENCRAFT_CODEX_CORE_UNIT,
@@ -26,6 +33,13 @@ const app = await createManagedWebServer({
   initialRelease: process.env.OPENCRAFT_WEB_RELEASE || resolve(dirname(fileURLToPath(import.meta.url)), '..'),
   stateDirectory: process.env.OPENCRAFT_WEB_STATE || resolve(homedir(), '.local/share/opencraft/web'),
   execution,
+  recoveryMarker: process.env.OPENCRAFT_RECOVERY_MAINTENANCE_MARKER || null,
+  rollbackRecovery: rollbackCommand ? async () => {
+    // A deployment-owned hook: no shell, only the configured managed control.
+    // Do not reflect command output (which may contain private diagnostics).
+    try { await promisify(execFile)(rollbackCommand[0], rollbackCommand.slice(1), { timeout: 120000, maxBuffer: 65536 }); }
+    catch { throw new Error('Managed rollback connection recovery failed'); }
+  } : null,
   headlessBackendTarget: process.env.OPENCRAFT_HEADLESS_BACKEND_URL || null,
   relayIngressTarget: process.env.OPENCRAFT_RELAY_INGRESS_URL || null,
   relayInternalPort: process.env.OPENCRAFT_RELAY_INTERNAL_PORT ? Number(process.env.OPENCRAFT_RELAY_INTERNAL_PORT) : null,

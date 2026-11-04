@@ -4,6 +4,7 @@ import type { Readable } from "node:stream";
 import { dirname, join } from "node:path";
 
 export interface DshSupervisorOptions {
+  readonly ownerRequired?: boolean;
   readonly repository?: string;
   readonly executable?: string;
   readonly runtimeDirectory?: string;
@@ -58,13 +59,15 @@ export class DshSupervisor {
       cwd: useSource ? repository : runtimeDirectory,
       env: {
         ...process.env,
+        ...(this.options.ownerRequired ? { OPENCRAFT_DSH_OWNER_REQUIRED: "1" } : {}),
         ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: "1" } : {}),
         ...(this.options.dataDirectory ? { DSH_HOME: this.options.dataDirectory } : {}),
       },
       stdio: ["ignore", "pipe", "pipe"],
     });
     this.child = child;
-    child.stderr.pipe(process.stderr);
+    // Native diagnostics may contain user process output. Keep only bounded readiness parsing.
+    child.stderr.resume();
     return new Promise<string>((resolve, reject) => {
       let stdout = "";
       let settled = false;
@@ -80,7 +83,6 @@ export class DshSupervisor {
       }, this.options.startupTimeoutMs ?? 30_000);
       child.stdout.on("data", (chunk: Buffer) => {
         const text = chunk.toString("utf8");
-        process.stdout.write(`[dsh] ${text}`);
         stdout = (stdout + text).slice(-8192);
         const match = /dsh web:\s*(https?:\/\/[^\s]+)/u.exec(stdout);
         const bridge = /opencraft capability bridge:\s*(http:\/\/127\.0\.0\.1:\d+)/u.exec(stdout);

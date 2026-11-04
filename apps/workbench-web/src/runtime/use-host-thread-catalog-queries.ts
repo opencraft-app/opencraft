@@ -7,6 +7,7 @@ import { mergeThreadCatalogPages, sidebarThreadCatalogQueryKey } from "./thread-
 import { beginObservedOperation } from "./observability";
 import { retryQuery } from "./workbench-application-services";
 import { reportRuntimeError } from "../runtime-error-reporting";
+import { threadCatalogUpdates } from "./thread-catalog-updates";
 
 type CatalogQuery = Omit<Parameters<typeof readHostThreadCatalog>[0], "signal" | "onInitialPage" | "pageCursor"> & {
   readonly enabled: boolean;
@@ -34,6 +35,18 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
   const pool = useMemo(() => new Map<string, Observer>(), [client]);
   const measures = useMemo(() => new Map<Observer, ReturnType<typeof beginObservedOperation>>(), [client]);
   const scope = JSON.stringify(inputs.map(input => input.queryKey));
+  const updates = useMemo(() => inputs.map(input => threadCatalogUpdates(client, input.queryKey, input.profile.hostId)), [client, scope]);
+  updates.forEach((update, index) => { update.enabled = inputs[index]!.enabled; });
+  const liveStore = useMemo(() => ({
+    read: () => updates.map(update => update.getSnapshot()).join(":"),
+    subscribe: (listener: () => void) => { const remove = updates.map(update => update.subscribe(listener)); return () => remove.forEach(stop => stop()); },
+  }), [updates]);
+  useSyncExternalStore(liveStore.subscribe, liveStore.read, liveStore.read);
+  const enabledSignature = inputs.map(input => input.enabled).join(":");
+  useEffect(() => {
+    updates.forEach((update, index) => { update.enabled = inputs[index]!.enabled; });
+    return () => { updates.forEach(update => { update.enabled = false; }); };
+  }, [updates, enabledSignature]);
   const observers = useMemo(() => inputs.map(input => {
     const key = JSON.stringify(input.queryKey);
     let observer = pool.get(key);
@@ -47,6 +60,8 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
     return {
       queryKey: input.queryKey, enabled: input.enabled, initialPageParam: null,
       queryFn: async ({ signal, pageParam }) => {
+        const updates = threadCatalogUpdates(client, input.queryKey, input.profile.hostId);
+        const startedAt = updates.getSnapshot();
         const page = await readHostThreadCatalog({ ...input, signal, pageCursor: pageParam });
         const previous = client.getQueryData<InfiniteData<ThreadListResponse, string | null>>(input.queryKey);
         const position = previous?.pageParams.indexOf(pageParam) ?? -1;
@@ -55,7 +70,7 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
         if (page.nextCursor != null && (page.nextCursor === pageParam || prefix.includes(page.nextCursor))) {
           throw new Error("Repeated thread catalog cursor");
         }
-        return page;
+        return updates.markRead(page, startedAt);
       },
       getNextPageParam: last => last.nextCursor ?? null,
       select: projectPages, staleTime: 30_000, retry: retryHostThreadCatalogQuery,
@@ -68,6 +83,19 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
     return defaulted;
   });
   const optimistic = observers.map((observer, index) => observer.getOptimisticResult(configured[index]!));
+  useEffect(() => {
+    optimistic.forEach((result, index) => {
+      if (result.isFetching || !result.isSuccess) return;
+      const update = updates[index]!;
+      if (!result.hasNextPage) update.acknowledge(result.data);
+      if (!update.hasPending) return;
+      // Fold the tail into the same query cache after its old read settles.
+      // Keep page cursors/identities, and retain no second long-lived directory.
+      const revision = update.getSnapshot();
+      client.setQueryData<InfiniteData<ThreadListResponse, string | null>>(inputs[index]!.queryKey, data => update.materialize(data));
+      update.acknowledge(update.markRead(result.data!, revision));
+    });
+  });
   const store = useMemo(() => {
     let snapshot: Result[] = [];
     return {
@@ -122,5 +150,9 @@ export function useHostThreadCatalogQueries(inputs: readonly CatalogQuery[]) {
     for (const [observer, finish] of measures) if (!observers.includes(observer)) { finish("aborted"); measures.delete(observer); }
   });
   useEffect(() => () => { for (const finish of measures.values()) finish("aborted"); measures.clear(); }, [measures]);
-  return optimistic.map((result, index) => ({ ...result, dataRevision: observers[index]!.getCurrentQuery().state.dataUpdateCount }));
+  return optimistic.map((result, index) => ({ ...result,
+    data: updates[index]!.project(result.data),
+    hasNextPage: result.data === undefined && updates[index]!.project(undefined) !== undefined ? true : result.hasNextPage,
+    dataRevision: observers[index]!.getCurrentQuery().state.dataUpdateCount + updates[index]!.getSnapshot(),
+  }));
 }

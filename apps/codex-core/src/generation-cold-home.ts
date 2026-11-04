@@ -1,3 +1,4 @@
+import { requireCallbackObservation } from "./generation-app-payload.js";
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, mkdtemp, readdir, realpath, rm, writeFile, readFile, open, rename } from "node:fs/promises";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import type { GenerationRecord } from "./generation-registry.js";
 import { GenerationPeer, rpcRecord } from "./generation-peer.js";
 import { generationCopyOwner } from "./generation-files.js";
 import type { GenerationSupervisor } from "./generation-supervisor.js";
+import { nativeHistoryFailures, readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
 
 async function checkDatabases(directory: string): Promise<number> {
   let count = 0;
@@ -25,7 +27,8 @@ async function checkDatabases(directory: string): Promise<number> {
 
 /** Validate a retired HOME under its original absolute pathname in a private mount namespace.
  * Native DBs/rollouts contain absolute paths, so opening a plain relocated copy is insufficient. */
-export function coldHomeValidator(options: { directory: string; socketParentDirectory?: string; supervisor: GenerationSupervisor }) {
+export function coldHomeValidator(options: { directory: string; socketParentDirectory?: string; supervisor: GenerationSupervisor; nativeHistoryFailures?: NativeHistoryFailures }) {
+  const historyFailures = nativeHistoryFailures(options.nativeHistoryFailures);
   const socketParent = options.socketParentDirectory ?? "/tmp";
   const pendingPath = (id: string) => join(options.directory, `${id}.pending.json`);
   const syncDirectory = async () => { const directory = await open(options.directory, "r"); try { await directory.sync(); } finally { await directory.close(); } };
@@ -41,7 +44,11 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
     await rm(pending.socketDirectory, { recursive: true, force: true });
     await rm(pendingPath(old.id)); await syncDirectory();
   };
-  const validate: GenerationColdReplacement = async (old, current, threadIds) => {
+  const validate: GenerationColdReplacement = async (old, current, threadIds, validationOptions) => {
+    const startedAt = Date.now(), timings: Record<string, number> = {};
+    const timed = async <T>(name: string, action: () => Promise<T>): Promise<T> => {
+      const start = Date.now(); try { return await action(); } finally { timings[name] = Date.now() - start; }
+    };
     await mkdir(options.directory, { recursive: true, mode: 0o700 });
     await recoverOne(old);
     const attempt = join(options.directory, `${old.id}-${old.incarnation}-${randomUUID()}`);
@@ -51,17 +58,17 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
     if (originalHome !== configuredHome) throw new Error("Retired HOME identity changed before validation");
     // BindPaths' separator syntax is deliberately rejected for these deployment paths.
     if ([originalHome, validation].some(path => /[\s:\\]/u.test(path))) throw new Error("Cold HOME validation requires systemd paths without whitespace, colon or backslash");
-    await cp(originalHome, backup, { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true });
-    const backupDatabases = await checkDatabases(backup);
-    await cp(backup, validation, { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true });
+    await timed("backupCopyMs", () => cp(originalHome, backup, { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true }));
+    const backupDatabases = await timed("backupIntegrityMs", () => checkDatabases(backup));
+    await timed("validationCopyMs", () => cp(backup, validation, { recursive: true, dereference: false, verbatimSymlinks: true, preserveTimestamps: true }));
     // The configured routing socket parent is stable across TMPDIR changes.
-    await generationCopyOwner(validation, old.executionUid ?? process.getuid!(), old.executionGid ?? process.getgid!());
+    await timed("validationOwnershipMs", () => generationCopyOwner(validation, old.executionUid ?? process.getuid!(), old.executionGid ?? process.getgid!()));
     const socketDirectory = await mkdtemp(join(socketParent, "v-"));
     if (Buffer.byteLength(join(socketDirectory, "control.sock")) >= 108) throw new Error("Cold validation Unix socket path is too long");
     await generationCopyOwner(socketDirectory, old.executionUid ?? process.getuid!(), old.executionGid ?? process.getgid!());
     const { externalUnit: _unit, ...definition } = old;
     const candidate: GenerationRecord = { ...definition, id: `validation-${randomUUID()}`, endpoint: join(socketDirectory, "control.sock"),
-      executable: current.executable, bundle: current.bundle, node: current.node, state: "candidate", incarnation: 0 };
+      executable: current.executable, bundle: current.bundle, node: current.node, nativeLauncher: current.nativeLauncher, state: "candidate", incarnation: 0 };
     // This unit is independent of the routing owner. Persist its identity before starting it.
     const handoffTemporary = `${pendingPath(old.id)}.${randomUUID()}.tmp`;
     await writeFile(handoffTemporary, JSON.stringify({ version: 1, validationId: candidate.id,
@@ -69,7 +76,9 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
     await rename(handoffTemporary, pendingPath(old.id)); await syncDirectory();
     let peer: GenerationPeer | undefined;
     try {
+      const nativeStartedAt = Date.now();
       const health = await options.supervisor.start(candidate, { homeCopy: validation });
+      if (validationOptions?.appBundleOnly && !validationOptions.restoringSourceApp) requireCallbackObservation(health);
       const connection = await GenerationPeer.open(health.nativeSocket, { clientInfo: { name: "opencraft-cold-home-readonly", version: "1" }, capabilities: { experimentalApi: true } }, {
         message: () => {}, disconnected: () => {},
       }); peer = connection.peer;
@@ -77,16 +86,17 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
       const page = rpcRecord(await peer.call("thread/list", { limit: 1, useStateDbOnly: true }));
       if (!Array.isArray(page.data)) throw new Error("Cold HOME directory read failed");
       const ids = [...new Set([...threadIds, ...page.data.map(row => String(rpcRecord(row).id))])];
-      for (const id of ids) {
-        const result = rpcRecord(await peer.call("thread/read", { threadId: id, includeTurns: false }));
-        if (rpcRecord(result.thread).id !== id) throw new Error("Cold HOME Thread identity mismatch");
-      }
+      const history = await readNativeHistory(peer, old.id, ids, historyFailures.failures.filter(row => row.generationId === old.id));
       peer.close(); peer = undefined;
       const identity = await options.supervisor.identify(candidate, health);
       await options.supervisor.stop(candidate, identity);
-      const migratedDatabases = await checkDatabases(validation);
-      const receipt = { version: 1, originalHome, backup, validation, backupDatabases, migratedDatabases,
-        validatedThreadIds: ids, replacementExecutable: current.executable, cliSha256: identity.cliSha256,
+      timings.nativeValidationMs = Date.now() - nativeStartedAt;
+      const migratedDatabases = await timed("validatedIntegrityMs", () => checkDatabases(validation));
+      timings.copyMs = timings.backupCopyMs! + timings.validationCopyMs!;
+      timings.validationMs = timings.backupIntegrityMs! + timings.validationOwnershipMs! + timings.nativeValidationMs! + timings.validatedIntegrityMs!;
+      timings.totalMs = Date.now() - startedAt;
+      const receipt = { version: 1, timings, replacementBundle: current.bundle, appBundleOnly: validationOptions?.appBundleOnly === true, originalHome, backup, validation, backupDatabases, migratedDatabases,
+        validatedThreadIds: ids, history, replacementExecutable: current.executable, cliSha256: identity.cliSha256,
         cliVersion: identity.cliVersion, readonlyNativeRequests: true, originalHomeReplaced: false };
       await writeFile(join(attempt, "receipt.json"), JSON.stringify(receipt, null, 2) + "\n", { mode: 0o600 }); return receipt;
     } finally {
@@ -95,7 +105,7 @@ export function coldHomeValidator(options: { directory: string; socketParentDire
       await recoverOne(old);
     }
   };
-  return Object.assign(validate, { recover: async (generations: readonly GenerationRecord[]) => {
+  return Object.assign(validate, { historyFailures, recover: async (generations: readonly GenerationRecord[]) => {
     await mkdir(options.directory, { recursive: true, mode: 0o700 });
     for (const generation of generations) await recoverOne(generation);
   } });

@@ -1,3 +1,4 @@
+import type { ThreadNoteMethodMap } from "./thread-note";
 import type { SharedInteractionMethodMap } from "./shared-interactions";
 import type { TurnRecoveryMethodMap } from "./turn-recovery";
 import type { ConversationSchedulesMethodMap } from "./conversation-schedules";
@@ -187,6 +188,7 @@ export interface ThreadReadParams {
   watch?: boolean;
   /** Optional opencraft/read-history v1 page. Never resumes execution. */
   initialTurnsPage?: import("./resume-history").ThreadTurnsPageRequest;
+  historyReadId?: string;
   historyCheckpoint?: import("./resume-history").ThreadHistoryCheckpoint;
 }
 
@@ -197,6 +199,8 @@ export interface ThreadReadResponse {
 }
 
 export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
+  /** Complete source count, independent of the returned page. */
+  totalTurnCount?: number;
   backwardsCursor?: string | null;
   itemsPaginationByTurnId?: Readonly<Record<string, unknown>>;
 };
@@ -218,6 +222,8 @@ export type ModelListParams = GeneratedModelListParams & {
 /** OpenCraft can explicitly represent a model without configurable reasoning. */
 export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "defaultReasoningEffort"> & {
   defaultReasoningEffort: GeneratedModelListResponse["data"][number]["defaultReasoningEffort"] | null;
+  policyRestricted?: boolean;
+  policyRestrictedEfforts?: string[];
   /** Optional OpenCraft-owned model metadata supplied by the Host. */
   contextWindow?: number;
   maxTokens?: number;
@@ -337,7 +343,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };
@@ -431,6 +437,11 @@ export interface AppServerMethodMap extends SharedInteractionMethodMap, TurnReco
   "thread/resume": {
     params: ThreadResumeParams;
     result: ThreadResumeResponse;
+  };
+  /** Cancels one optional Host read subscription, never native execution. */
+  "thread/history/cancel": {
+    params: { threadId: string; historyReadId: string };
+    result: { cancelled: boolean };
   };
   "thread/read": {
     params: ThreadReadParams;

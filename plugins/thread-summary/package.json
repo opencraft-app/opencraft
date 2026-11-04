@@ -3,8 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit" },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
   "dependencies": {
     "@deepseek-ai/cordis": "4.0.5",
     "@opencraft/chat-core": "0.1.0",
@@ -12,7 +16,12 @@
     "@opencraft/design-system-web": "0.1.0",
     "@opencraft/i18n": "0.1.0",
     "@opencraft/workbench-panels-react": "0.1.0",
-    "react": "19.3.1"
+    "react": "19.3.1",
+    "yjs": "13.6.27",
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/chat-render-web": "0.1.0"
   },
-  "devDependencies": { "@types/react": "~19.3.0" }
+  "devDependencies": {
+    "@types/react": "~19.3.0"
+  }
 }

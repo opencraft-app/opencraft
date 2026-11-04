@@ -39,6 +39,7 @@ export class ConnectionLifecycleOwner<T> {
   private stableTimer: unknown = null;
   private stableTicket = 0;
   private failures = 0;
+  private plannedRestartUntil = Number.NEGATIVE_INFINITY;
   private pendingWake = false;
   private lastHintAt = Number.NEGATIVE_INFINITY;
   constructor(private readonly input: {
@@ -153,10 +154,11 @@ export class ConnectionLifecycleOwner<T> {
     });
     return promise;
   }
-  lost(cause: unknown, manual = false): void {
+  lost(cause: unknown, manual = false, plannedRestart = false): void {
     if (this.state.phase === "disposed") return;
     // Later ordinary close events cannot downgrade an explicit manual block.
     if (this.state.phase === "blocked") return;
+    if (plannedRestart && !manual && this.plannedRestartUntil <= this.now()) this.plannedRestartUntil = this.now() + 30_000;
     if (this.state.phase === "backoff" && !manual) return;
     const error = cause instanceof Error ? cause : new Error("Connection is unavailable");
     this.cancelRetry();
@@ -170,6 +172,9 @@ export class ConnectionLifecycleOwner<T> {
       const schedule = this.input.delaysMs;
       const base = (schedule ?? delays)[Math.min(this.failures++, (schedule ?? delays).length - 1)] ?? 60_000;
       delayMs = this.jitteredDelay(base, schedule === undefined);
+      // A known service update gets a bounded, responsive retry period. A
+      // prolonged outage returns to the existing exponential schedule.
+      if (this.now() < this.plannedRestartUntil) delayMs = Math.min(delayMs, 2_000);
       if (this.pendingWake) delayMs = Math.min(delayMs, Math.max(0, this.lastHintAt + 5_000 - this.now()));
       this.scheduleRetry(delayMs);
     }

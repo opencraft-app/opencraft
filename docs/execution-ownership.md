@@ -146,6 +146,8 @@ Workbench 在同一 Draft 提交事务内依次完成 `thread/start` 与首个
 
 用户命令的 metadata-only `activate` 与只读历史恢复分别持有等待；旧激活 ACK 不阻塞新的 readonly baseline。激活 ACK 只提交 execution/stream 字段，保留当前历史 source、cursor 和其间观测到的 live settings。准备 await 后重新核对当前 baseline，并在首个写入发送前复核本地资格；创建/fork 已确认后的失败属于部分效果，不能归类为全未发送。完整 historical Resume 与 legacy message-window 保留原组合契约。详见[恢复契约](architecture/platform/connection-recovery-contract.md#execution-activation-and-current-presentation)。
 
+Codex 的执行激活 `thread/resume` 在已有执行准备工具时等待同一项准备，不立即返回重新配置错误，也不安装无执行身份的另一份配置。等待后复核客户端代次；准备失败、断连及无活动准备的退休状态继续受原守卫约束。执行激活的有限请求预算至少为120秒，以覆盖最长90秒准备；只读历史预算和显式无限预算保持各自语义。等待和打开视图均不重放用户输入。
+
 执行准入必须保证检查与提交之间绑定没有变化。Capability 替换和执行准入复用 Host 的 ThreadLifecycle 队列；引擎执行权继续由 execution authority 管理。不能只在 `await validate` 前检查“当前没有执行”，随后无条件卸载工具。
 
 停止任务、审批回复、撤销与队列删除不等待 capability 初始化；仍需验证各自对应的 Thread、Turn、请求身份和权限。控制操作应在故障时保持可达。
@@ -867,3 +869,37 @@ revision. Revocation cancels in-flight transports; uncertain writes are not
 replayed. Upstream errors are generic and reflected secrets are redacted from
 catalogs and results. These are trusted same-UID Host boundaries, not a sandbox
 against malicious shell access to process memory.
+
+
+### Independent Pi owner handoff
+
+The independent Pi/aggregation Host uses a persistent private owner fence before
+checking native Turns, tasks, tool calls, inbox, queues, shell records, schedules,
+recovery and downstream consumer leases. Paused queue items and future schedules
+remain work. Pi 1.3.0 has no separate goal service and supports approvalPolicy
+never; native task/tool authority still includes waiting operations. Reads that
+cannot establish complete coverage remain unknown.
+
+Linux systemd cgroups provide OS work coverage, including nested groups and
+background children. Known persistent shell worker PIDs are identified by their
+native sessions; their jobs remain in the native ledger and extra child processes
+remain OS work. Other topologies do not certify idle. The sole writer is protected
+by a kernel lock as well as the existing Pi owner lock.
+
+The private owner-handoff endpoint implements fence, inspect, release, cold-ready
+and resume. Release closes stores and consumer connections only after complete
+zero occupancy, then confirms OS release before recording it. A successor cannot
+open admission when the old release is uncertain. Cold readiness reads all stores
+and historical native ledgers without creating execution sessions, validates
+model/project state, and binds the proof to the current owner/runtime/config and
+store digests. Resume recomputes that proof. A crashed successor needs a fresh
+proof, and no backup is automatically restored. Remote providers keep their own
+native writers; replacing Pi does not replace ACP or legacy DSH.
+
+
+Private MCP, orchestration and browser tools also keep call custody in the
+native `opencraft.privateCalls` document before dispatch. A confirmed response
+retires that custody. Transport failure or cancellation after dispatch retains
+unknown custody even after the native Turn has settled; cold reads see the same
+fact and refuse a zero-occupancy proof. Arguments and credentials are not copied.
+The generic handoff API cannot invent a domain receipt to clear an unknown call.

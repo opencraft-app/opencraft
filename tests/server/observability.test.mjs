@@ -23,6 +23,20 @@ test('closed schema never exports payloads and rejects malformed known fields',(
   assert(!JSON.stringify(value).includes('canary'));assert(!('actorId' in value));assert.equal(sanitizeEvent(event({operationType:'user-content'}),now),null);
   assert.equal(sanitizeEvent(event({durationMs:-1}),now),null);assert.throws(()=>windowFor({from:'2020-01-01',to:'2026-01-01'},now));
 });
+test('transport failure metadata survives sanitization without accepting error text or invalid causes',()=>{
+  const input=event({kind:'client_signal',clientSignal:'transport_failure',attemptId:'physical-1',
+    transportFailure:'probe-timeout',transportPhase:'ready',networkState:'online',visibility:'hidden',
+    socketReadyState:1,socketCloseCode:1006,socketWasClean:0,socketBufferedBytes:4096,
+    lastMessageAgoMs:26000,probeElapsedMs:26000,lastProbeRttMs:40,transportTimeoutMs:5000,timerLateMs:21000,pagePauseMs:94000,pageResumeAgoMs:30,pageHiddenForMs:1200,
+    reason:'secret-url-canary',url:'secret-url-canary'});
+  const value=sanitizeEvent(input,now);
+  assert(value);assert.equal(value.pagePauseMs,94000);assert.equal(value.pageResumeAgoMs,30);assert.equal(value.pageHiddenForMs,1200);assert.equal(value.probeElapsedMs,26000);assert.equal(value.timerLateMs,21000);
+  assert.equal(value.transportFailure,'probe-timeout');assert.equal(value.socketCloseCode,1006);
+  assert(!JSON.stringify(value).includes('canary'));
+  for(const extra of [{transportFailure:'secret-url-canary'},{transportPhase:'secret'},{socketCloseCode:5000},
+    {socketReadyState:4},{socketWasClean:2},{timerLateMs:-1},{pagePauseMs:-1},{pageResumeAgoMs:0.5},{pageHiddenForMs:-1},{probeElapsedMs:1.5},{attemptId:undefined}])
+    assert.equal(sanitizeEvent({...input,...extra},now),null);
+});
 test('queue drops without blocking, retains bounds and accepts valid event after invalid',()=>{
   const queue=createEventQueue({maxEvents:2,maxBytes:4096,now:()=>now});
   assert.equal(queue.emit(event({kind:'garbage'})),false);assert(queue.emit(event()));assert(queue.emit(event()));assert.equal(queue.emit(event()),false);
@@ -185,7 +199,9 @@ test('unknown component identity clears prior identity; unresponsive snapshot sh
     assert.equal(identity.sourceRevision,undefined);assert.equal(identity.buildId,undefined);assert.equal(identity.observedBy,'gateway');
     const started=performance.now();const snapshot=await service.snapshot();
     assert(performance.now()-started<4500);assert.equal(snapshot.coverage,'partial');
-    assert(Object.values(snapshot.measurements).every(value=>value.availability==='backend_unreachable'));
+    assert(Object.entries(snapshot.measurements).filter(([name])=>name!=='platform.status').every(([,value])=>value.availability==='backend_unreachable'));
+    assert.equal(snapshot.measurements['platform.status'].status,'unknown');
+    assert.deepEqual(snapshot.measurements['platform.status'].targets,[]);
   }finally{stalled.closeAllConnections();await new Promise(resolve=>stalled.close(resolve));await service.close();await rm(directory,{recursive:true,force:true});}
 });
 
@@ -197,7 +213,7 @@ test('v1 evidence upgrades without rewriting migration history and rejects check
     db.prepare('INSERT INTO schema_migrations VALUES(1,?,?,?)').run('bounded-derived-observations',createHash('sha256').update(observationSchemaV1).digest('hex'),now);
     const original=event({actorKind:'human',originClass:'interactive',recoveryId:'existing',kind:'recovery'});
     db.prepare('INSERT INTO events(event_id,at,received,kind,component,actor,body) VALUES(?,?,?,?,?,?,?)').run(original.eventId,now,now,'recovery','web','verified',JSON.stringify(original));db.close();
-    const store=new ObserveStore(path);assert.equal(store.outcome.status,'migrated');assert.equal(store.outcome.appliedVersion,4);
+    const store=new ObserveStore(path);assert.equal(store.outcome.status,'migrated');assert.equal(store.outcome.appliedVersion,6);
     assert.equal(store.events(now-1000,now+1000,Date.now()).find(row=>row.eventId===original.eventId).recoveryId,'existing');
     assert.equal(store.activity(now-1000,now+1000).humans,1);assert.equal(store.recoveries(now-1000,now+1000).value,1);
     store.db.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=1").run();store.close();
@@ -256,6 +272,7 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
   test(`client observation remains usable with ${capability}`, async () => {
     const moduleUrl = new URL('../../apps/workbench-web/src/runtime/observability.ts', import.meta.url).href;
     const contractUrl = new URL('../../packages/observability-contract/index.mjs', import.meta.url).href;
+    const appHostUrl = new URL('../../apps/workbench-web/src/runtime/websocket-app-host.ts', import.meta.url).href;
     const source = `
       import assert from 'node:assert/strict';
       if (${JSON.stringify(capability)} === 'no-randomUUID') Object.defineProperty(globalThis.crypto, 'randomUUID', { configurable: true, value: undefined });
@@ -273,6 +290,7 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       window.open = url => { opened = url; };
       globalThis.fetch = async (url, options) => {
         if (url.endsWith('/capabilities')) { assert.equal(url, base + '/__opencraft_observe/capabilities'); capabilityReads++; return { ok: true, json: async () => ({ telemetry: true, available: true }) }; }
+        if (url.endsWith('/__opencraft_apphost_diagnostic')) throw Error('diagnostic endpoint temporarily unreachable');
         assert.equal(url, base + '/__opencraft_observe/events');
         batches.push(JSON.parse(options.body).events);
         return { ok: true };
@@ -281,10 +299,28 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       const disabled = observation.beginObservedOperation('thread_open'); disabled('ok');
       observation.observeEvent({ kind: 'producer' });
       assert.equal(capabilityReads, 0); assert.deepEqual(batches, []);
+      observation.observeRecovery({hostId:'early-ready',recoveryId:'early-startup',stage:'host-ready',elapsedMs:1});
       const controller = new AbortController();
       await observation.createObservabilityExtension().activate({ signal: controller.signal, commands: { register: (_definition, run) => {openCommand = run;} }, navigation: { register() {} } });
       openCommand(); assert.equal(opened, base + '/__opencraft_observe/grafana/d/opencraft-overview');
+      for (const stage of ['backoff','connecting','host-ready','settled'])
+        observation.observeRecovery({hostId:'early-ready',recoveryId:'early-recovery',stage,elapsedMs:1});
       const finish = observation.beginObservedOperation('thread_open'); finish('ok'); finish('failed');
+      for (const stage of ['connecting','host-ready','settled','backoff','connecting','host-ready','settled'])
+        observation.observeRecovery({hostId:'fixture',recoveryId:'test-recovery',stage,elapsedMs:1});
+      // The one-shot legacy POST fails. The account-attributable queued failure
+      // must still arrive with its original hidden-page context after return.
+      document.visibilityState = 'hidden';
+      window.location = {href:'https://example.test/private-path'};
+      const socket = Object.assign(new EventTarget(), {readyState:0,bufferedAmount:12,send(){},close(){this.readyState=3;}});
+      const {connectWebSocketAppHost} = await import(${JSON.stringify(appHostUrl)});
+      const appHost = connectWebSocketAppHost(() => socket);
+      const connection = appHost.createTransport('private-host').connect();
+      const failed = assert.rejects(connection,/App Host connection failed/);
+      await new Promise(resolve => setImmediate(resolve));
+      socket.dispatchEvent(new Event('error'));
+      await failed; appHost.close();
+      document.visibilityState = 'visible';
       let lifecycle, unsubscribed = false;
       const client = { connectionGeneration: 2, subscribeRequestLifecycle(callback) { lifecycle = callback; return () => { unsubscribed = true; }; } };
       const dispose = observation.installClientObservation(client);
@@ -297,6 +333,10 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       assert(events.length >= 6); assert(unsubscribed);
       const { sanitizeEvent } = await import(${JSON.stringify(contractUrl)});
       assert(events.every(event => sanitizeEvent(event) !== null));
+      const failure = events.find(event => event.clientSignal === 'transport_failure');
+      assert(failure);assert.equal(failure.visibility,'hidden');assert.equal(failure.transportFailure,'socket-error');
+      assert.equal(failure.socketBufferedBytes,12);assert(failure.attemptId);
+      assert(!JSON.stringify(failure).includes('private'));
       assert(events.every(event => event.producerId !== 'unavailable'));
       assert.equal(new Set(events.map(event => event.producerId)).size, 1);
       assert.equal(new Set(events.map(event => event.eventId)).size, events.length);
@@ -306,6 +346,11 @@ for (const capability of ['normal', 'no-randomUUID', 'no-crypto', 'named-server'
       const navigation = events.find(event => event.operationType === 'navigation');
       assert(navigation); assert.notEqual(navigation.operationId, operations[0].operationId);
       const requests = events.filter(event => event.kind === 'rpc');
+      const earlyOutages = events.filter(event => event.measurementScope === 'connection' && event.hostId === 'early-ready');
+      assert.equal(earlyOutages.filter(event => event.outcome === 'ok').length,1,'a Host ready before telemetry activation still measures its first outage');
+      const outages = events.filter(event => event.measurementScope === 'connection' && event.hostId === 'fixture');
+      assert(outages.length >= 2); assert.equal(new Set(outages.map(event => event.recoveryId)).size,1,'cold startup is not an outage');
+      assert.equal(outages.filter(event => event.outcome === 'ok').length,1);
       assert.equal(requests.length, 2); assert.notEqual(requests[0].requestId, requests[1].requestId);
       assert(requests[1].incidentRef); assert.notEqual(requests[1].incidentRef, requests[1].eventId);
       console.log('client observation capability passed');
@@ -389,6 +434,7 @@ test('history first paint labels and foreground-only histograms reach the export
     service.store.ingest([event({...fields,originClass:'probe'}), event({...fields,visibility:'hidden'})]);
     const metrics = await (await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
     assert.match(metrics,/opencraft_thread_history_first_paint_duration_seconds_count\{cache="cold",length_bucket="200to499",engine="pi"\} 1/);
+    assert.match(metrics, /opencraft_thread_history_first_paint_duration_seconds_bucket\{cache="cold",length_bucket="200to499",engine="pi",le="0.15"\} 0/);
     for (const outcome of ['ok','aborted','failed','empty']) assert(metrics.includes(`engine="pi",outcome="${outcome}",origin="interactive"}`));
     assert(!metrics.includes('private-thread'));
     const output = join(directory,'provisioning-source'); await generate(output);
@@ -399,4 +445,54 @@ test('history first paint labels and foreground-only histograms reach the export
       assert(definition.promql.includes('cache, length_bucket, engine'));
     }
   } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test('150ms history boundary starts a coherent cohort beside legacy persisted metrics', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'history-bucket-cohort-'));
+  const service = await startObserve({directory, deploymentId:'test', metricsPort:0});
+  try {
+    // Legacy lifetime counts cannot be mixed with a newly introduced bucket.
+    service.store.db.prepare('INSERT INTO metrics VALUES(?,?,?)').run('history_paint_count', JSON.stringify(['cold','500plus','codex']), 1000);
+    for (const durationMs of [50,150,151]) service.store.ingest([event({operationType:'thread_history_first_paint',cache:'cold',engine:'codex',lengthBucket:'500plus',originClass:'interactive',visibility:'visible',measurementScope:'in_page',durationMs})]);
+    const metrics = await (await fetch(`http://127.0.0.1:${service.metricsAddress.port}/metrics`)).text();
+    for (const [le,count] of [['0.05',1],['0.1',1],['0.15',2],['0.25',3],['+Inf',3]])
+      assert(metrics.includes(`opencraft_thread_history_first_paint_duration_seconds_bucket{cache="cold",length_bucket="500plus",engine="codex",le="${le}"} ${count}\n`));
+    assert(metrics.includes('opencraft_thread_history_first_paint_duration_seconds_count{cache="cold",length_bucket="500plus",engine="codex"} 3\n'));
+  } finally { await service.close(); await rm(directory,{recursive:true,force:true}); }
+});
+
+test('availability migration preserves v4 history and avoids scanning unrelated events', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'opencraft-availability-index-'));
+  const path = join(directory, 'observe.sqlite');
+  let store;
+  try {
+    store = new ObserveStore(path, () => now);
+    const samples = [
+      event({kind:'availability',site:'test',hostId:'local-codex',engine:'codex',outcome:'failed',at:now-1000}),
+      event({kind:'availability',site:'test',hostId:'local-codex',engine:'codex',outcome:'ok'}),
+      event({kind:'availability',site:'test',hostId:'opencraft-server',engine:'pi',outcome:'ok'}),
+    ];
+    assert.equal(store.ingest(samples).accepted, 3);
+    const insert = store.db.prepare('INSERT INTO events(event_id,at,received,kind,component,body) VALUES(?,?,?,?,?,?)');
+    store.db.exec('BEGIN');
+    for (let i=0;i<10000;i++) insert.run('history-'+i,now,now,'resource','gateway',JSON.stringify({kind:'resource',at:now}));
+    store.db.exec('COMMIT');
+    store.db.exec('DROP INDEX IF EXISTS gateway_lifecycle_window; DROP TABLE IF EXISTS connection_outages; DROP INDEX IF EXISTS events_availability; DELETE FROM schema_migrations WHERE version>=5');
+    const history = store.db.prepare('SELECT version,name,checksum,applied_at FROM schema_migrations ORDER BY version').all();
+    store.close(); store = new ObserveStore(path, () => now);
+    const queries = [], prepare = store.db.prepare.bind(store.db);
+    store.db.prepare = sql => {queries.push(sql);return prepare(sql);};
+    assert.equal(store.availability().length, 2);
+    const ratios = store.availabilityRatios(now-2000,now+1);
+    assert.equal(ratios.find(row => row.engine==='codex').ratio, .5);
+    assert.equal(ratios.find(row => row.engine==='pi').ratio, 1);
+    store.db.prepare = prepare;
+    for (const sql of queries) {
+      const plan = prepare('EXPLAIN QUERY PLAN '+sql).all(...Array((sql.match(/\?/g)??[]).length).fill(0));
+      assert.ok(plan.some(row=>/USING INDEX events_availability/.test(row.detail)), 'availability reads must use the partial index: '+JSON.stringify(plan));
+    }
+    assert.equal(store.outcome.appliedVersion, 6);
+    assert.equal(prepare('SELECT count(*) AS n FROM events').get().n, 10003);
+    assert.deepEqual(prepare('SELECT version,name,checksum,applied_at FROM schema_migrations WHERE version<=4 ORDER BY version').all(), history);
+  } finally {store?.close();await rm(directory,{recursive:true,force:true});}
 });

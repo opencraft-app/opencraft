@@ -164,6 +164,24 @@ and before initialization readiness is cached. Retired Web admission waits
 settle locally without releasing physical barriers; late results are fenced.
 Production budgets and executable cases are in the [recovery contract](connection-recovery-contract.md). Explicit
 user retry remains immediate and manual failures remain blocked.
+
+While a page remains visible and has logical transports, the Web AppHost factory
+owns one five-second observation timer shared by its Host leases. It probes the
+current physical route through the existing negotiated `connection/probe`
+capability and reports recovery hints to the existing Host connection owners.
+This covers mobile network stalls and recovery without browser online or
+visibility events. The five-second observation cadence is independent of liveness: a probe allows
+60 seconds without a complete application message, extending for recent valid
+messages up to a five-minute missing-reply ceiling. Ticks neither replace a
+pending probe nor allocate sockets. Browser JS cannot see partial frames or
+native Pong; the quiet allowance accommodates fragmented slow delivery and is
+not a universal guarantee for arbitrarily slow or large messages. The Host owner retains retry
+escalation, validation admission, active-attempt coalescing and manual blocks.
+Only the factory/port may retire its physical socket; probe success grants no
+Host or Thread authority. Hiding the page cancels the timer and probe; the last
+transport release or factory disposal stops observation. Browser wake events
+resume it without adding another timer. This is a bounded scheduling policy,
+not a guarantee of recovery time on an unavailable or suspended mobile route.
 Protocol incompatibility is a permanent failure for the loaded client. The Web
 bridge sends the existing `fatal` envelope with `APP_HOST_PROTOCOL_MISMATCH` and
 `retryable: false` before closing a rejected hello; no Host or lease is admitted.
@@ -350,6 +368,24 @@ localized unknown label.
 
 ### Local connection diagnostic propagation
 
+Web AppHost failures also enter the bounded client observation queue as
+`client_signal/transport_failure`. The physical `attemptId`, original event time,
+failure kind and phase correlate with recovery; ingress applies the existing
+per-producer pseudonyms and verified actor attribution. A hidden-page failure
+retains its original visibility when uploaded after return. The legacy diagnostic
+POST and browser console remain available; a failed POST does not discard the
+queued observation. Queue bounds and retention still apply, so delivery is best effort.
+
+Failure snapshots include socket state/close code/clean-close flag when known,
+buffered bytes, time since the last received message, last successful probe RTT,
+pending probe elapsed time, configured deadline and timer lateness, page visibility
+and the browser's online hint. Timings are local wall-clock observations, not proof
+of network reachability, browser suspension or server processing time. A probe
+timeout means no matching successful probe reply was processed by the deadline;
+it does not identify the underlying cause. No URLs, close reasons, exception text,
+message bodies or credentials are reported. Diagnostics do not change readiness,
+timeouts, reconnect ownership or replay permissions.
+
 TransportFailureDisposition optionally carries immutable, locally generated
 connection diagnostic metadata. The browser renewable lease captures its exact
 WebSocket port when acquiring the lease, so a successor cannot replace the old
@@ -442,3 +478,71 @@ remain available. Changing only this presentation setting does not reset the
 physical connection or interrupt executions. If no eligible target exists, the
 client exposes its existing hostless/management surface instead of silently
 selecting a hidden Host. Visibility is not an authorization policy.
+
+
+## Live conversation directory
+
+Server lifecycle adapters publish `opencraft/thread-catalog/changed` metadata
+facts independently of open Thread subscriptions. The shared
+`ThreadCatalogPublisher` owns a per-incarnation source and revision; facts contain
+an upsert, name/status patch, removal or legacy invalidation, never Turns, tool
+payloads, credentials or temporary title-helper conversations. The native
+Thread creation receipt is authoritative. The Server retains accepted but not
+yet indexed entries in its directory projection until native listing observes
+them; a lagging native index cannot erase an acknowledged creation. Codex allocation is retained until
+its declared first-Turn acceptance boundary. A loaded creation can lack a native Turn reader before its first input. Read current metadata before requesting history: only a positively recorded, never-attempted creation with matching idle native identity, an explicit absent rollout path and current loaded membership may use the saved creation result. A history probe can itself materialize a rollout, so unsupported-history errors are not evidence of emptiness. Attempted or accepted input, active peers, existing files, missing paths and unknown failures never become empty creation evidence. DSH lifecycle commits and Engine
+Host provider receipts (including Pi) use the same event contract.
+
+Hub routing delivers directory facts to admitted directory clients following
+the same readership as `thread/list`. A client need not open or resume a Thread
+to discover it. Directory visibility does not grant message-send or execution
+authority. Existing admission, account scopes and resource permissions remain
+owned by their respective services.
+
+The Workbench applies a scoped tail of unacknowledged Server facts over its
+existing paged query snapshot. New rows paint even during an initial read or a
+blocked later page. Duplicate publisher revisions are ignored; patches cannot
+invent rows and removal tombstones reject late status updates. Successful reads
+acknowledge facts only through the read's starting boundary. Once an old read
+settles, any remaining facts fold into the same query pages without changing
+page cursors; the tail is then released. Reconnection uses the existing Host
+query-recovery snapshot and a fresh publisher incarnation, not a durable cursor
+invented from a socket generation. Old clients retain the invalidation-only
+notification behavior.
+
+### Explicit navigation and suspended connection attempts
+
+HostRuntimeRegistry forwards each explicit connection demand to the idempotent
+runtime connection owner before reusing a startup promise. A resumed browser may
+have advanced past a connection deadline while its timer callback is still queued;
+reusing an outer pending promise must not bypass the owner's expiry check.
+Registry callers share a completion only for the same owner-issued attempt.
+Retired completion cleanup cannot clear the successor's operation, and Host
+removal still fences both completions by registry record identity. This applies
+to mouse and touch conversation selection without changing retry budgets,
+Thread authority, persisted drafts or server execution ownership.
+
+### WebSocket slow delivery and control-frame credit
+
+Web AppHost outbound messages preserve their standard text payload and FIFO
+order, using 16 KiB native continuation frames. Browser WebSocket reassembles
+UTF-8 before delivering one message; no application envelope or replay is added.
+A socket-owned sender admits at most 1024 messages / 128 MiB and requires a
+matching native Pong after every 256 KiB before sending more application bytes.
+The nonce is independent of heartbeat tokens. Local send callbacks only indicate
+local completion; native Pong bounds outstanding data across transparent proxies.
+This window trades maximum high-RTT throughput for bounded control-frame delay;
+small messages share accumulated credit, so many small responses cannot bypass it.
+Missing credit for 60 seconds terminates the socket and settles queued callbacks;
+authorization, unknown delivery outcomes and RPC deadlines retain their owners.
+
+Native heartbeat permits four intervals after local flush (normally 60 seconds).
+Incoming TCP activity, including partial frames, defers expiry up to twenty
+intervals (normally five minutes) without a matching Pong. ws still validates
+framing and closes invalid input. Receive activity is progress, not proof that
+requests or both directions work. Listener and timer ownership ends on close.
+Relay duplex retains stream backpressure and splits outgoing byte writes into
+16 KiB complete outer messages, so reassembly of an outer message cannot retain
+a huge inner message. This does not reorder inner bytes. Standalone relay builds
+need separate managed activation; package installation alone does not update them.
+The independent relay connection lifetime and all admission checks are unchanged.

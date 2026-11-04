@@ -21,6 +21,7 @@ After changes, read the affected task and report the result briefly. Never load 
 
 /** Plugin-owned endpoint. It never opens a second database or exposes the Host token. */
 export async function startTasksAgent(options: {
+  admission?: {run<T>(operation: () => Promise<T>): Promise<T>};
   directory: string;
   skillRoots: readonly string[];
   service: TasksService;
@@ -38,11 +39,15 @@ export async function startTasksAgent(options: {
       for await (const chunk of req) { size += chunk.length; if (size > 131072) { res.writeHead(413).end("{}"); req.destroy(); return; } chunks.push(chunk); }
       if (closed) throw new Error("Tasks agent closed");
       const { method, params } = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const execute = async () => {
       let result: unknown;
       if (method === "opencraft/tasks/catalog" && options.catalog) {
         if (!params || typeof params.search !== "string" || params.search.length > 200 || !Number.isInteger(params.limit) || params.limit < 1 || params.limit > 100 || (params.serverId !== undefined && (typeof params.serverId !== "string" || !params.serverId.trim() || params.serverId.length > 256)) || (params.cursor !== undefined && params.cursor !== null && (typeof params.cursor !== "string" || params.cursor.length > 4096))) throw new Error("Invalid catalog request");
         result = await options.catalog(params.search, params.limit, params.serverId, params.cursor);
       } else result = options.service.handle(method, params, { channel: "agent", actor: null });
+      return result;
+      };
+      const result = await (options.admission ? options.admission.run(execute) : execute());
       res.end(JSON.stringify({ result }));
     } catch (error) {
       const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "number" ? error.code : -32602;

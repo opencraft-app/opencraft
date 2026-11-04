@@ -11,7 +11,7 @@ import { optionalWebAssets } from "./optional-web-assets";
 import { productPublicAssets } from "./product-public-assets.mjs";
 import { resolveServerProductEntry, resolveClientProductEntry, resolveEmbeddedProductEntry } from "./server-product-entry.mjs";
 import { randomBytes } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
@@ -246,6 +246,16 @@ export function createWorkbenchWebConfig(
   function releaseMetadata(metadata: WebReleaseMetadata): Plugin {
     return {
       name: "opencraft-release-metadata",
+      configureServer(server) {
+        // generateBundle does not run in dev. Serve the same Worker URL used by
+        // the built site instead of allowing Vite's HTML fallback to answer it.
+        server.middlewares.use("/__opencraft/opencraft-host-proxy-sw.js", (request, response, next) => {
+          if (!["", "/"].includes(request.url?.split("?")[0] ?? "")) return next();
+          response.setHeader("content-type", "text/javascript; charset=utf-8");
+          response.setHeader("cache-control", "no-cache");
+          response.end(readFileSync(hostProxyServiceWorkerPath, "utf8"));
+        });
+      },
       transformIndexHtml: {
         order: "pre",
         handler() {
@@ -423,6 +433,9 @@ export function createWorkbenchWebConfig(
         "@opencraft/remote-interaction",
         "@opencraft/remote-interaction/touch",
         "@opencraft/remote-interaction/websocket",
+        // Some source compositions export this optional CommonJS leaf.
+        ...(existsSync(fileURLToPath(new URL("../../packages/browser-core/src/metadata-limits.cjs", import.meta.url)))
+          ? ["@opencraft/browser-core/metadata-limits"] : []),
         // Deep CJS shim entries need explicit prebundling with noDiscovery.
         "core-js/es/iterator/index.js",
         "core-js/es/promise/with-resolvers.js",
@@ -518,6 +531,9 @@ export function createWorkbenchWebConfig(
             // Keep the demand-loaded math renderer out of small shared protocol
             // chunks. Their CSS otherwise becomes part of every startup closure.
             { name: "math-renderer", test: /\/packages\/chat-render-web\/src\/extensions\/katex\/(?:katex-math\.tsx|katex\.scss)$/, includeDependenciesRecursively: false },
+            // Optional identity extensions change the small shared-module groups.
+            // Keep visualization's implementation behind its existing lazy boundary.
+            { name: "visualization-renderer", test: /\/packages\/chat-render-web\/src\/renderers\/visualization\/(?:visualization\.(?:tsx|scss)|sandbox\.ts)$/, includeDependenciesRecursively: false },
             // Keep small demand-loaded information styles out of the shared
             // platform chunk; entriesAware's merge threshold would hoist them.
             { name: "information-panel", test: /\/packages\/design-system\/src\/information-panel\.web\.scss$/, includeDependenciesRecursively: false },

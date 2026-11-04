@@ -1,11 +1,12 @@
 import "./preview.web.scss";
 import { Service, type Context } from "@deepseek-ai/cordis";
-import { FilePreviewError, PreviewSessionPool, type PreviewLease } from "@opencraft/file-preview-core";
+import { FilePreviewError, MAX_FILE_PREVIEW_BYTES, PreviewSessionPool, type PreviewLease } from "@opencraft/file-preview-core";
 import { createContext, useContext, useEffect, useState, useRef, useSyncExternalStore, useCallback, useMemo, type ReactNode } from "react";
 import type { IntlShape } from "@opencraft/i18n";
 import { useIntl } from "@opencraft/i18n/react";
 
 export { FilePreviewError } from "@opencraft/file-preview-core";
+export { MAX_FILE_PREVIEW_BYTES } from "@opencraft/file-preview-core";
 export { previewLinkTarget, bindPreviewLinks } from "./links";
 
 export type FilePreviewIntl = Pick<IntlShape, "formatMessage" | "formatNumber">;
@@ -79,7 +80,7 @@ export class FilePreviewService extends Service {
     const extension = filePreviewExtension(input.name);
     const match = [...this.adapters.values()].find(({ adapter }) => extension && adapter.extensions.includes(extension));
     if (!match) throw new Error("Preview adapter unavailable");
-    if (input.blob.size > 25 * 1024 * 1024) throw new FilePreviewError("too-large");
+    if (input.blob.size > MAX_FILE_PREVIEW_BYTES) throw new FilePreviewError("too-large");
     let revision = this.revisions.get(input.blob);
     if (revision === undefined) { revision = ++this.nextRevision; this.revisions.set(input.blob, revision); }
     return this.pool.acquire({ ownerId: input.ownerId, tabId: input.tabId, resource: input.resource,

@@ -926,3 +926,20 @@ test("local Agent Host advertises and persists DSH pins before a session is open
     assert.notEqual(cleared.data.find(row => row.id === "s1")?.pinned, true);
   } finally { await stack.runtime.dispose(); await stack.host.close(); await stack.dsh.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test("DSH catalog creation reaches a directory reader with no Thread attachment", async () => {
+  const workspace = await mkdtemp(join(tmpdir(), "opencraft-catalog-dsh-"));
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, token: "catalog-dsh" });
+  const a = await connect(host.websocketUrl), b = await connect(host.websocketUrl);
+  const notifications: any[] = [];
+  b.on("message", raw => { const frame = JSON.parse(String(raw)); if (frame.method) notifications.push(frame); });
+  try {
+    await request(a, 1, "initialize", {}); await request(b, 2, "initialize", {});
+    const { thread } = await request(a, 3, "thread/start", { cwd: workspace });
+    for (let i = 0; i < 100 && !notifications.some(n => n.method === "opencraft/thread-catalog/changed" && n.params.change?.thread?.id === thread.id); i++) await new Promise(resolve => setTimeout(resolve, 5));
+    const event = notifications.find(n => n.method === "opencraft/thread-catalog/changed" && n.params.change?.thread?.id === thread.id);
+    assert.ok(event, "directory readers receive creation independently of Thread attachments");
+    assert.deepEqual(event.params.change.thread.turns, []);
+  } finally { a.close(); b.close(); await host.close(); await dsh.close(); await rm(workspace, { recursive: true, force: true }); }
+});

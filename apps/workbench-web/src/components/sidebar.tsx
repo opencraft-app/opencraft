@@ -393,11 +393,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         {catalogs.map(catalog => <ExtensionCatalog key={catalog.id} catalog={catalog} />)}
         <SidebarBots items={bots} creation={botCreation} />
         <SidebarListContextMenu store={menus}>
-        <ContextMenu.Trigger asChild onClickCapture={event => {
-          if (menus.getListContextOpen() && "pointerType" in event.nativeEvent && event.nativeEvent.pointerType === "touch") {
-            event.preventDefault(); event.stopPropagation();
-          }
-        }}><section className="sidebar-tasks" aria-label="Tasks" aria-busy={busyCatalog}>
+        <ContextMenu.Trigger asChild><section className="sidebar-tasks" aria-label="Tasks" aria-busy={busyCatalog}>
           <div className="sidebar-list-toolbar"><span>{text("sidebar.conversations", "Conversations")}</span>
             <SidebarFiltersMenu store={menus}>
               <DropdownMenu.Trigger asChild><button type="button" className="sidebar-list-mode-trigger"

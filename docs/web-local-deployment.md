@@ -20,6 +20,8 @@ npm run update:server:local -- --version 0.1.10
 
 配置受管 execution unit 时，仅切换网站、gateway、daemon 与 capability adapter；独立 core/CLI、账户数据和 DSH 引擎保持运行。网关连接会断开并由页面重连；任务连续性限于独立 core 中的 Codex。没有接入受管执行端的部署只更新网站。命令输出已安装版本、buildId、执行健康状态与归档位置，失败返回非零；超时不自动重发安装。
 
+已提交的更新以返回的精确 jobId 为观察对象，只有该 job 到达终态才作成功或失败结论。安装提交和后续轮询共享单调时钟的 15 分钟总预算；状态 HTTP 读取使用剩余预算，短暂断连只重读原 job，不重新提交安装。大型包的 inventory、gzip 和验证可以超过 75 秒，不会被单次 10 秒 HTTP 读取误判失败。completed 仍须匹配目标 version/buildId；不同 job 或发行身份立即拒绝。总预算耗尽只表示结果尚未确认，服务端任务可能继续，须查询或走既有精确对账路径，不能盲目重装。
+
 首次接入仍需按 [服务器执行更新](web-deployment.md#服务器执行端更新) 迁移固定启动器和 unit。旧启动器没有 `/install-local`，不能用源码热升级命令升级启动器自己；下面手工替换步骤只用于首次迁移/入口维护，常规更新不要另行写 `deployment.json`。
 
 `npm run smoke:server-self-upgrade` 在临时 systemd unit、隔离账户与本地合成模型下运行真实 Codex CLI：其 `exec_command` 调用同一源码构建/升级命令，包内 gateway/daemon 重启后原 turn 完成、shell 执行一次、core/CLI PID 不变，再由页面回退。测试结束清理自己的 unit/profile；不代表目标服务器已经迁移或 Electron 可跨 App 重启保持任务。

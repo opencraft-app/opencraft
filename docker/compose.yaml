@@ -1,0 +1,38 @@
+name: opencraft
+services:
+  opencraft:
+    image: ${OPENCRAFT_IMAGE:-opencraft:local}
+    platform: ${OPENCRAFT_PLATFORM:-linux/arm64}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    init: true
+    restart: unless-stopped
+    user: "${OPENCRAFT_UID:?Set the native Host user UID}:${OPENCRAFT_GID:?Set the native Host group GID}"
+    # The existing private Host descriptors use host loopback endpoints.
+    network_mode: host
+    # Execution lease recovery verifies host process birth through /proc.
+    pid: host
+    environment:
+      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR:?Set an absolute host data directory}
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR:?Set an absolute host workspace directory}
+    command: ["--host", "127.0.0.1", "--port", "${OPENCRAFT_PORT:-10000}", "--data-dir", "${OPENCRAFT_DATA_DIR}", "--engines", "dsh,pi", "--default-engine", "pi"]
+    volumes:
+      - type: bind
+        source: ${OPENCRAFT_DATA_DIR}
+        target: ${OPENCRAFT_DATA_DIR}
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${OPENCRAFT_WORKSPACE_DIR}
+        target: ${OPENCRAFT_WORKSPACE_DIR}
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "/opt/opencraft/bin/node", "-e", "fetch('http://127.0.0.1:${OPENCRAFT_PORT:-10000}/health').then(async r=>{const b=await r.json();if(!r.ok || !b.ok || b.hosts?.['local-codex']?.state!=='ready')process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 12s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 30s

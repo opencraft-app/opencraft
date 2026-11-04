@@ -43,6 +43,27 @@ interface ConsumeResult {
 
 /** Shared by the independent Core and embedded Host. No background redemption. */
 export class CodexResetCreditService {
+  activeCount(): number { return this.active.size + this.reads.size; }
+  historicalCount(): number { return [...this.attempts.values()].filter(row => row.outcome !== undefined).length; }
+
+  /** Called only after all accepted requests have settled. Retain unknown as unknown. */
+  handoffReceipts() {
+    if (this.activeCount() !== 0) throw new Error("Reset credits are still active");
+    return [...this.attempts].map(([idempotencyKey, row]) => {
+      if (row.outcome === undefined) throw new Error("Reset credit receipt is incomplete");
+      return { idempotencyKey, accountId: row.accountId, creditId: row.creditId, outcome: row.outcome };
+    }).sort((a, b) => a.idempotencyKey.localeCompare(b.idempotencyKey));
+  }
+
+  restoreReceipts(rows: ReturnType<CodexResetCreditService["handoffReceipts"]>): void {
+    for (const row of rows) {
+      if (!/^[a-zA-Z0-9_-]{8,128}$/u.test(row.idempotencyKey) || text(row.accountId) === null || text(row.creditId) === null
+        || !["unknown", "reset", "nothingToReset", "noCredit", "alreadyRedeemed"].includes(row.outcome)
+        || this.attempts.has(row.idempotencyKey) || this.attempts.size >= 1024) throw new Error("Invalid reset credit receipt");
+      this.attempts.set(row.idempotencyKey, { ...row,
+        result: Promise.resolve({ outcome: row.outcome, credits: null, usageRefreshed: false }) });
+    }
+  }
   private readonly attempts = new Map<string, { accountId: string; creditId: string; result: Promise<ConsumeResult>; outcome?: CodexResetCreditOutcome }>();
   private readonly active = new Map<string, Promise<ConsumeResult>>();
   private readonly reads = new Set<Promise<CodexResetCreditsView>>();

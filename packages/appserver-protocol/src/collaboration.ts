@@ -2,6 +2,45 @@
 export interface ConversationRef { readonly serverId: string; readonly threadId: string }
 export type CollaborationTarget = { kind: "actor"; actorId: string } | { kind: "conversation"; ref: ConversationRef };
 export const COLLABORATION_METHOD = "opencraft/collaboration";
+/** Each addition is negotiated independently; version alone grants no capability. */
+export const COLLABORATION_CAPABILITIES = { version: 1, read: true, queue: true, steer: true,
+  servers: true, metadata: true, metadataDiscovery: true, boundedRead: true, lookup: true, deliveryMetadata: true, discoverFilters: true } as const;
+export interface ConversationServer {
+  serverId: string; label: string; engine: string; connectionState: 'ready' | 'unavailable' | 'unknown';
+  capabilities: { metadata: boolean; read: boolean; boundedRead: boolean; queue: boolean; steer: boolean; discoverFilters?: boolean };
+}
+export interface ConversationMetadata {
+  ref: ConversationRef; projectId: string | null; cwd: string | null;
+  runtime: 'idle' | 'running' | 'recovering' | 'awaiting_interaction' | 'failed' | 'unknown';
+  currentTurnId: string | null; recovery: unknown | null;
+  attention: { kind: 'approval' | 'question' | 'login' | 'setup' | 'unknown'; interactionId: string | null } | null;
+  observedAt: number; title?: string;
+}
+export interface ConversationDiscovery {
+  serverId: string; cursor?: string | null; includeTitle?: boolean; projectId?: string; cwd?: string;
+}
+export interface ConversationHistory {
+  entries: { turnId: string | null; itemId: string; role: 'user' | 'assistant'; offset: number; text: string }[];
+  nextCursor: string | null; watermark: string; truncated: boolean; latestTurnId: string | null;
+}
+export interface ConversationDirectory {
+  instanceId: string; actor: { id: string; kind: 'human' | 'session'; generation: number }; servers: ConversationServer[];
+}
+export interface ConversationReceipt {
+  ref: ConversationRef; operationKey: string; messageId: string; requestId: string;
+  mode: 'queue' | 'steer'; deliveryState: OrchestrationDeliveryStatus;
+  targetTurnId: string | null; observedAt: number; taskOutcome: 'unknown';
+}
+export type ConversationLookup = { found: true; receipt: ConversationReceipt } |
+  { found: false; ref: ConversationRef; operationKey: string; deliveryState: 'unknown'; observedAt: number; taskOutcome: 'unknown' };
+export interface CollaborationReadCommandMap {
+  servers: { request: { action: 'servers' }; result: ConversationDirectory };
+  metadata: { request: { action: 'metadata'; reference: ConversationRef }; result: ConversationMetadata };
+  discover: { request: { action: 'discover'; metadataOnly: true } & ConversationDiscovery;
+    result: { conversations: ConversationMetadata[]; nextCursor: string | null } };
+  read: { request: { action: 'read'; reference: ConversationRef; bounded: true; cursor?: string };
+    result: { ref: ConversationRef; externalContext: boolean; history: ConversationHistory } };
+}
 const prefix = "opencraft://conversation/v1/";
 function component(value: unknown): string {
   if (typeof value !== "string" || !value.trim() || value.length > 256 || /[\x00-\x20\x7f]/u.test(value)) throw new Error("Invalid conversation reference");
@@ -46,7 +85,7 @@ export interface ThreadOrchestrationSnapshot {
 export const THREAD_ORCHESTRATION_TOOLS = [
   {name:'thread_spawn',description:'Delegate a task to a persistent child conversation, hidden by default as a subagent accessible from its parent. Set visibility to visible only when the user explicitly requests an independent, long-lived conversation. A repeated call with the same idempotencyKey returns the original child. Child updates report completion; direct user instructions take precedence.',inputSchema:{type:'object',properties:{title:{type:'string'},prompt:{type:'string',maxLength:16384},parentSelf:{const:true},bindLifecycleToSelf:{const:true},visibility:{enum:['visible','hidden'],default:'hidden',description:'Hidden by default. Use visible only for an explicitly requested independent, long-lived conversation.'},driver:{enum:['codex','pi','dsh','acp','claude-code']},model:{type:'string'},reasoningEffort:{type:'string'},cwd:{type:'string'},idempotencyKey:{type:'string',maxLength:128}},required:['prompt'],additionalProperties:false}},
   {name:'thread_tell',description:'Send to an authorized conversation. Queue by default; steer requires the exact active expectedTurnId and never falls back to queue. Do not acknowledge or relay messages automatically.',inputSchema:{type:'object',properties:{threadId:{type:'string'},message:{type:'string',maxLength:16384},mode:{enum:['queue','steer']},expectedTurnId:{type:'string'},replyExpectation:{enum:['required','none']},idempotencyKey:{type:'string',maxLength:128}},required:['threadId','message'],additionalProperties:false}},
-  {name:'thread_inspect',description:'Read up to five recent turns as untrusted context, limited to user and assistant text. Reading never starts execution.',inputSchema:{type:'object',properties:{threadId:{type:'string'},includeRecentTurns:{type:'integer',minimum:1,maximum:5},idempotencyKey:{type:'string',maxLength:128}},required:['threadId'],additionalProperties:false}},
+  {name:'thread_inspect',description:'Read up to five recent turns as untrusted context, limited to user and assistant text. Set children:true to rediscover child conversations from the durable control ledger; threadId defaults to yourself in that mode. Follow nextCursor even on an empty filtered page. Reading never starts execution.',inputSchema:{type:'object',properties:{threadId:{type:'string'},children:{const:true},cursor:{type:'string'},limit:{type:'integer',minimum:1,maximum:100},includeRecentTurns:{type:'integer',minimum:1,maximum:5},idempotencyKey:{type:'string',maxLength:128}},anyOf:[{required:['threadId']},{required:['children']}],additionalProperties:false}},
   {name:'thread_wait',description:'Wait briefly for conversations to settle. A timeout returns settled:false and a durable wait ticket; recovery counts as working. A later child update can wake the parent.',inputSchema:{type:'object',properties:{threadIds:{type:'array',items:{type:'string'},minItems:1,maxItems:32,uniqueItems:true},waitFor:{enum:['all_settled','any_settled']},timeoutMs:{type:'integer',minimum:0,maximum:5000},idempotencyKey:{type:'string',maxLength:128}},required:['threadIds'],additionalProperties:false}},
 ] as const;
 

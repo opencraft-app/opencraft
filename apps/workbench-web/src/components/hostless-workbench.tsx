@@ -53,6 +53,8 @@ import { Button } from "./ui/button";
 import { useResponsiveSidebarDock } from "./use-responsive-sidebar-dock";
 import { usePersistedSidebarWidth } from "./use-persisted-sidebar-width";
 
+import { WelcomeChoices } from "./desktop-welcome";
+
 const SettingsContent = lazy(async () => {
   const module = await import("./settings-page");
   return { default: module.SettingsContent };
@@ -66,7 +68,7 @@ const EMPTY_SCHEDULE_CATALOG: ScheduledTaskCatalog = {
   scheduleCatalogs: [], threads: [], discovery: null, retryDiscovery: async () => {}, openConversation: async () => false,
 };
 
-/** Valid zero-Host projection: no fake Composer and no built-in connection prompt. */
+/** Zero-Host projection; standalone Web offers explicit setup without creating a Host. */
 export function HostlessWorkbench({
   supervisor,
 }: {
@@ -396,8 +398,8 @@ export function HostlessWorkbench({
                 {extensionProjection.activeViewNode}
               </section>
             ) : (
-              <div className="hostless-workbench__empty-stage">
-                {extensionProjection.emptyWorkbenchNode ?? <section className="hostless-empty-view">
+              <div className={!mobileContainer() && !extensionProjection.emptyWorkbenchNode ? "web-first-use-stage" : "hostless-workbench__empty-stage"}>
+                {extensionProjection.emptyWorkbenchNode ?? <section className={mobileContainer() ? "hostless-empty-view" : "web-first-use-view"}>
                   {mobileContainer() ? <>
                     <h1>{intl.formatMessage(mobileConnectionMessages.title)}</h1>
                     <p>{intl.formatMessage(mobileConnectionMessages.description)}</p>
@@ -406,9 +408,9 @@ export function HostlessWorkbench({
                       <Button variant="secondary" onClick={() => openSettings()}>{intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}</Button>
                     </div>
                   </> : <>
-                    <h1>暂无可用 Agent</h1>
-                    <p>你仍可以调整 OpenCraft 的设备设置。</p>
-                    <Button variant="secondary" onClick={() => openSettings()}>打开设置</Button>
+                    <WelcomeChoices localStartCommand="npm run dev:local" onConnectServer={async (origin, signal) => {
+                      if (!signal.aborted) window.location.assign(origin);
+                    }} />
                   </>}
                 </section>}
               </div>

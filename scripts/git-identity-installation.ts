@@ -16,7 +16,9 @@ export function renderGitIdentityInstallation(input: {
   const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
   const systemdQuote = (value: string) => `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`;
   return {
-    launcher: `#!/bin/sh\n${input.serverReadHosts === undefined ? '' : `export OPENCRAFT_GIT_SERVER_READ_HOSTS=${shellQuote(input.serverReadHosts.join(','))}\n`}${input.personalSshPushHosts === undefined ? '' : `export OPENCRAFT_GIT_PERSONAL_SSH_PUSH_HOSTS=${shellQuote(input.personalSshPushHosts.join(','))}\n`}exec ${shellQuote(input.node)} ${shellQuote(join(input.runtimeDirectory, 'git-identity-wrapper.mjs'))} "$@"\n`,
+    // The command runner may filter inherited variables. Installation constants
+    // belong to this entry point; execution/employee locators remain inherited.
+    launcher: `#!/bin/sh\n${Object.entries(env).filter(([key]) => key.startsWith('OPENCRAFT_GIT_') && key !== 'OPENCRAFT_GIT_MANAGED').map(([key, value]) => `export ${key}=${shellQuote(value!)}`).join('\n')}\nexec ${shellQuote(input.node)} ${shellQuote(join(input.runtimeDirectory, 'git-identity-wrapper.mjs'))} "$@"\n`,
     environmentFile: Object.entries(env).map(([key, value]) => `${key}=${systemdQuote(value!)}`).join('\n') + '\n',
     environment: env,
   };

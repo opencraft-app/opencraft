@@ -572,7 +572,7 @@ export function SettingsContent({
                               </span>
                               <span className="settings-theme-card__copy">
                                 <strong>{theme.label}</strong>
-                                <small>{theme.description ?? "Semantic OpenCraft palette"}</small>
+                                {theme.description && !(intl.locale.toLowerCase().startsWith("zh") && !/[\u4e00-\u9fff]/u.test(theme.description)) ? <small>{theme.description}</small> : null}
                               </span>
                               <span className="settings-theme-card__mark" aria-hidden="true" />
                             </button>

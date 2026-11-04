@@ -411,7 +411,7 @@ never persists clipboard contents.
 
 ### Conversation terminal semantics
 
-The Host remains the sole owner of PTYs and retained process output. The
+The Host authorizes access while its independent PTY owner retains processes and output. The
 renderer application projects those resources through one
 `ConversationTerminalSessionRegistry` keyed by Conversation Scope. Its ordered
 session directory, most recently activated terminal, Host identity, cwd, shell,
@@ -444,6 +444,27 @@ control matter.
 Production routing can send desktop browsers to the Vite deployment and mobile
 browsers to the Expo deployment, or expose the Expo build under a stable path.
 Both connect to the same app-server and consume the same runtime snapshots.
+
+The Host adapter uses private, versioned local socket IPC to the sole PTY owner.
+Environment snapshots are resolved from authenticated account/project scope by
+Host admission, passed only for spawn, and never persisted or logged by the
+owner. The owner enforces existing account/Host and total limits across Host
+connections; disconnecting does not free capacity. Explicit kill remains the
+only user close operation. Request deadlines and lost replies never replay
+spawn or stdin automatically.
+
+Managed Linux Hosts launch a sibling systemd unit (root system manager, or a
+non-root user's available user manager); inability to launch is an explicit
+terminal-unavailable outcome, not a silent control-group-dependent fallback.
+Outside a managed service, the owner is detached from the Host. Windows named
+pipe/native and macOS runtime execution require platform validation; current
+systemd evidence proves Linux only. Packaged owners publish content-addressed
+JS and the complete node-pty native closure into their private data directory,
+so release cleanup does not remove spawn-helper or loaded native assets.
+ESM and CommonJS execution bundles both resolve the owner entry from their real
+module URL; CommonJS builds must supply that URL from __filename.
+Host restart preserves existing processes; owner/machine restart does not.
+Pre-upgrade in-process PTYs cannot be transferred into the new owner.
 
 ### Read-only Office resource previews
 

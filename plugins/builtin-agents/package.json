@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./model-readiness": "./src/model-readiness.ts",
     "./server-connection-identity": "./src/server-connection-identity.ts"
   },
   "dependencies": {

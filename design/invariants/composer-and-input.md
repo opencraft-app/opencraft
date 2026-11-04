@@ -57,6 +57,17 @@ delivery. Queue edits and dictation keep their original paths. Autorepeat and
 concurrent queue actions cannot consume additional rows; late completion cannot
 clear a different conversation's input. Mobile software Return remains newline.
 
+## Steer before queue acknowledgement
+
+Healthy in-flight queue input accepts one immediate Steer intent. The runtime
+owns that intent and waits for exact queue custody rather than disabling the
+initial click or resubmitting the text. Add receipt and queue notification are
+alternative confirmations; canonical client-message history is proof of prior
+consumption. The operation indicator belongs to this row, leaving the next
+draft editable. Editing another row, missing atomic capability, offline waiting
+and unknown delivery retain their fences. Duplicate clicks join one operation;
+late acknowledgements never restore already consumed input.
+
 ## Desktop input ownership
 
 Desktop control presentation preserves the mounted control strip's geometry
@@ -316,15 +327,22 @@ scrollport negative control. The origin shift is an adversarial coordinate test,
 not a native keyboard simulation; this cannot prove native
 floating-keyboard occlusion when the browser supplies no rectangle.
 
-- DIC-13：触控 Web 的触摸输入框长按450ms复用语音插件和现有瞬时输入事务；短点、触发前移动、已有文字选区、鼠标和能力不可用时不接管。首次未聚焦触点只建立编辑器焦点，不进入长按候选；已聚焦编辑器才可开始候选，避免 Safari 键盘/焦点交接把普通空白点击升级为录音。松手完成识别并保留明确发送动作，上滑64px、系统取消、后台和卸载取消并保留原草稿。启动权限尚未完成时的松手只在实际listening后结束该代次。输入框节点和草稿身份保持；由共享交互密度提供至少44px麦克风触摸框；实际 touch 事件才可长按，屏幕宽度不限制入口，覆盖 iPad、折叠屏展开/分屏及混合指针设备。原生接触的 identifier 与touchend/touchcancel持有长按生命周期；派生 PointerEvent 的结束缺失不能使已经松开的短触摸留着计时，更不能延迟启动录音。Composer scoped contact owner 只允许编辑器、菜单或麦克风其中一个触点占用同一物理接触；第二触点进入编辑区外也取消当前手势。
+- DIC-13：输入框仅用于文字编辑；触摸短点、重复点击和长按都不得启动语音，保留浏览器原生聚焦、光标、选区及上下文菜单。语音仅由专用麦克风按钮显式启动，沿用单击/150ms长按、松手完成、取消、权限竞态与草稿连续性契约。共享交互密度提供至少44px麦克风触摸框。 Composer scoped contact owner协调菜单与麦克风；取消、卸载和原生接触结束须释放自己的接触，不能阻断下一次操作。
 
-- WSP-34：交互密度独立于窗口宽度、主题和当前 hover/focus 输入方式。共享安装偏好 `interface.touchFriendly` 为唯一“触控体验”偏好，SettingsSegmented提供 auto/on/off（自动/开启/关闭），默认按 any-pointer:coarse 自动启用；手动选择持久化，恢复自动后继续跟随能力变化。Document 的 data-ui-density 同时投影 shared hit-target/gap token、触控输入框、浮动顶栏与窄屏浏览布局；导航、菜单、Settings、共享按钮及 Composer 复用，不能按手机宽度重判或各自硬编码触摸尺寸。窄布局与可用空间仍由 Shell/容器模型拥有。实际鼠标不能触发输入框听写；显式关闭撤销长按入口。
+- WSP-34：交互密度独立于窗口宽度、主题和当前 hover/focus 输入方式。共享安装偏好 `interface.touchFriendly` 为唯一“触控体验”偏好，SettingsSegmented提供 auto/on/off（自动/开启/关闭），默认按 any-pointer:coarse 自动启用；手动选择持久化，恢复自动后继续跟随能力变化。Document 的 data-ui-density 同时投影 shared hit-target/gap token、触控输入框、浮动顶栏与窄屏浏览布局；导航、菜单、Settings、共享按钮及 Composer 复用，不能按手机宽度重判或各自硬编码触摸尺寸。窄布局与可用空间仍由 Shell/容器模型拥有。输入框不提供听写手势，触控体验偏好仅影响共享呈现和命中区域。
 
 ## Conversation selection quote (2026-10-15)
 
 Selection-to-chat is available only in compact layout. The existing `data-ui-density` authority disables its floating action and selection listeners in touch layout, including live preference changes; native text selection/copy and desktop quote insertion remain available.
 
 Web/Electron Conversation owns one Radix selection menu for its timeline. Selection must remain wholly inside one assistant/user chat document; sender metadata, composer, controls and cross-message ranges do not qualify. Activation revalidates the range and current composer target before insertion; scrolling, resize, Escape or navigation releases the floating surface. Markdown presentation controls are excluded and partial code selections never expand to a full block. ComposerController delegates appendQuote to the physical editor; unsupported, submitting, transient or detached Views reject it. The editor appends literal text as an undoable quote block followed by a normal paragraph, focuses its end and preserves existing draft/assets/context. Selection never submits a message. AppServer compilation uses the existing quote serialization contract.
+
+A submitted user message retains the quote boundary from its immutable document:
+sending, acknowledged and reopened history all use the user-message quote rail.
+The following request is a separate paragraph outside that quote. New-thread
+pending presentation and existing-thread optimistic presentation share the same
+core text projection. Plain queue previews and search remain flattened; quote
+insertion availability and selection ownership do not change.
 
 Selection quote anchors use a Range rectangle intersecting both the conversation scroll root and browser viewport. Long selections retain their full content while positioning at the first visible selected line; wholly offscreen selections expose no action. A DOM-visible but clipped/offscreen paragraph is not a valid floating anchor.
 Sidebar icon rail uses the shared frame width (60px) with centered 44px action
@@ -532,11 +550,13 @@ in the child. Closing releases the child without changing parent history or draf
 
 ### Side chat slash command
 
-An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Explicit submission of the standalone command invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
+An existing conversation’s Composer advertises `/side` alongside its Host shortcuts. Selecting the standalone `/side` suggestion with Enter or a pointer immediately invokes the same Side Chat panel action as the toolbar, with the current conversation owner and working directory. It never sends or queues model input, including during an active turn. A stale owner, unavailable action or failed fork retains the command draft and reports failure. Arguments, attachments, context and code remain ordinary prompt content. New-thread composers do not advertise a fork command.
 
 ### Inline command discovery
 
-Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text; explicit submission owns execution.
+Composer commands are discovered directly from slash suggestions in the editor. A non-empty shortcut catalog must not introduce a command-library button or separate footer menu. Selecting a suggestion inserts editable text by default; explicit submission owns execution. The local `/side` action opts into immediate submission on selection when it is the entire draft without attachments or context. It consumes the command before the asynchronous action starts, without ever inserting a pending command token. Failure restores the command only to the same unmodified draft. It opens the side chat directly without a second Send gesture; other commands retain editable insertion.
+Opening or activating a visible Side Chat panel transfers input focus to its Composer after mount. Inactive, hidden or disposed panels cannot claim focus. Parent submission cleanup respects focus already transferred to another surface; fork failure retains the parent draft and its retry focus.
+
 ### Side chat model display
 
 Side chat displays its fork’s current execution model as compact, non-interactive Composer metadata. It offers no model menu and submits no model, effort or service-tier override; the child conversation retains execution ownership. Main conversation model controls are unchanged.

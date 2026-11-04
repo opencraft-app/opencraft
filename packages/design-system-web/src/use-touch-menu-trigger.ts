@@ -12,7 +12,7 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
     cleanup.current = undefined;
     tap.current = false;
   };
-  useEffect(() => reset, [enabled]);
+  useEffect(() => reset, [enabled, scope]);
 
   return {
     onPointerDown(event) {
@@ -42,6 +42,7 @@ export function useTouchMenuTrigger(enabled: boolean, onTap: () => void): HTMLAt
       document.addEventListener("pointerup", release, true);
       document.addEventListener("pointercancel", abort, true);
       cleanup.current = () => {
+        scope?.release(pointerId);
         document.removeEventListener("pointerdown", anotherPointer, true);
         document.removeEventListener("pointerup", release, true);
         document.removeEventListener("pointercancel", abort, true);

@@ -20,6 +20,7 @@ export interface TimelineBlockBase<TType extends string> {
   readonly type: TType;
   readonly id: string;
   readonly sourceItemIds: readonly ItemId[];
+  readonly historyDetail?: string;
 }
 
 export interface TextTimelineBlock extends TimelineBlockBase<"text"> {
@@ -633,6 +634,8 @@ export interface InteractionWaitPresentation {
 }
 
 export interface TimelineSnapshot {
+  /** Complete source count, not the number of Turns retained in this page. */
+  readonly historyTurnCount?: number;
   readonly interactionWait?: InteractionWaitPresentation;
   readonly key: ConversationKey;
   readonly revision: number;

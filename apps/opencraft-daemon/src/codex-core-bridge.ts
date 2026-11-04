@@ -1,3 +1,4 @@
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { CodexCoreSocket } from "./codex-core-socket";
@@ -29,6 +30,9 @@ export class CodexCoreBridge implements DuplexTransport {
   private readonly connection: CodexCoreSocket;
   private readonly messages = new Set<(frame: string) => void>();
   private readonly statuses = new Set<(status: TransportStatus) => void>();
+  private readonly catalogChanges = new ThreadCatalogPublisher((method, params) => {
+    for (const clientId of this.initialized) this.emit({ method, params }, clientId);
+  }, true);
   private readonly pending = new Map<string, Pending>();
   private readonly waiters: Pending[] = [];
   private readonly initialized = new Set<string>();
@@ -201,6 +205,7 @@ export class CodexCoreBridge implements DuplexTransport {
           }
           return;
         }
+        if ("result" in message) this.catalogChanges.observeResult(pending.method, pending.params, message.result);
         if ("result" in message && (pending.method === "thread/start" || pending.method === "thread/fork")) {
           const threadId = string(record(record(message.result).thread).id);
           if (!this.disconnected.has(pending.clientId)) this.subscribe(threadId, pending.clientId, true);
@@ -235,6 +240,7 @@ export class CodexCoreBridge implements DuplexTransport {
       }
       return;
     }
+    this.catalogChanges.observeNotification(String(message.method), message.params);
     const threadId = string(record(message.params).threadId) || string(record(record(message.params).thread).id);
     if (message.method === "turn/completed") this.human.resolveTurn(threadId, string(record(record(message.params).turn).id));
     if (message.method === "serverRequest/resolved") {
@@ -285,6 +291,7 @@ export class CodexCoreBridge implements DuplexTransport {
   }
   async close(): Promise<void> {
     if (this.connection.status.state === "closed") return;
+    this.catalogChanges.clear();
     this.connection.close();
     this.pending.clear(); this.waiters.length = 0; this.initialized.clear(); this.disconnected.clear();
     this.threads.clear(); this.readers.clear(); this.revisions.clear(); this.serverRequests.clear();

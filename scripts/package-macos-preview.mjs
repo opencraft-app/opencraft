@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn } from "node:child_process";
 import { rm } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -45,6 +46,6 @@ export async function packageMacosPreview(arch, { spawnImpl = spawn } = {}) {
   });
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   await packageMacosPreview(process.argv[2] || process.arch);
 }

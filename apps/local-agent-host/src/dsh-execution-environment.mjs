@@ -1,7 +1,13 @@
 /** The generation routing/checkpoint owner supplies the only native→logical
  * resolver. Both shell facts and persistent terminals consume that same port. */
-export function registerDshExecutionEnvironment(ctx, resolveLogicalThreadId) {
-  const identity = Object.freeze({ resolve: nativeId => resolveLogicalThreadId(nativeId) });
+export function registerDshExecutionEnvironment(ctx, resolveLogicalThreadId, runtime) {
+  const environment = nativeId => {
+    const threadId = resolveLogicalThreadId(nativeId);
+    if (!runtime || !threadId) return {};
+    const snapshot = runtime.snapshot(runtime.execution('opencraft-server', threadId));
+    snapshot.apply(process.env); return snapshot.overlay();
+  };
+  const identity = Object.freeze({ resolve: nativeId => resolveLogicalThreadId(nativeId), environment });
   ctx.provide("opencraftExecutionThread", identity);
   ctx.inject(["shellEnv"], scoped => {
     scoped.shellEnv.register({

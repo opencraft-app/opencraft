@@ -8,6 +8,7 @@ import {
   createReplicaConversationRuntime,
   ContinuationCommandError,
   SubmissionOutcomeUnknownError,
+  SubmissionNotDispatchedError,
   type ConversationCommandPort,
   type ConversationReplicaReader,
 } from "@opencraft/chat-runtime";
@@ -2736,5 +2737,179 @@ test("explicit native human wait without a request replaces Thinking and preserv
     const block = runtime.getSnapshot().timeline.frames.flatMap(frame => frame.blocks).find(block => block.type === "approval");
     assert.equal(block?.type === "approval" && block.responseState, "responding");
     assert.equal(block?.type === "approval" && block.canRespond, false);
+  } finally { runtime.dispose(); }
+});
+
+test("history source total reaches a partial timeline without counting display frames", () => {
+  const replica = new FakeReplica(threadView({ thread: { id: "thread-one", turns: [], historyTurnCount: 601 } }));
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica,
+    commands: commands(), history: { async loadOlder() {} } });
+  try {
+    assert.equal(runtime.getSnapshot().timeline.historyTurnCount, 601);
+    assert.equal(runtime.getSnapshot().history.hasOlder, true);
+    replica.setEntity(threadView({ turnsPagination: { hasLoadedOldest: true } }));
+    assert.equal(runtime.getSnapshot().timeline.historyTurnCount, 1);
+  } finally { runtime.dispose(); }
+});
+
+function pendingQueueFixture(withOutbox = false) {
+  let accept!: (value: SubmissionReceipt) => void;
+  let reject!: (error: Error) => void;
+  const steers: string[] = [];
+  const replica = new FakeReplica(threadView({ pendingInteractions: [] }), !withOutbox);
+  const key = createConversationKey("local", "thread-one");
+  let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [];
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    ...(withOutbox ? { outbox: { read: () => rows, write: (_key: unknown, next: typeof rows) => { rows = next; }, subscribe: () => () => {} } } : {}),
+    commands: commands({
+      submit: () => new Promise((resolve, fail) => { accept = resolve; reject = fail; }),
+      async steerQueuedSubmission(_key, submission) {
+        steers.push(submission.id);
+        assert.deepEqual(submission.input, [{ type: "text", text: "Next", text_elements: [] }]);
+        return asTurnId("turn-one");
+      },
+    }), history: { async loadOlder() {} },
+  });
+  const composer = createComposerController({ type: "enqueue-follow-up", key },
+    { now: () => 100, createId: () => "early-queue" });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+  ] } });
+  const intent = composer.createSubmitIntent();
+  const send = runtime.submit(intent);
+  const row = { id: "server-next", clientUserMessageId: intent.clientMessageId,
+    input: [{ type: "text" as const, text: "Next", text_elements: [] }], createdAt: 101, pausedReason: null };
+  return { runtime, replica, intent, send, row, steers,
+    accept: () => accept({ ...receipt(intent.commandId, intent.clientMessageId), turnId: null,
+      disposition: "queue", queuedSubmissionId: row.id }),
+    reject: (error: Error) => reject(error),
+  };
+}
+
+for (const confirmation of ["ack", "notification"] as const) {
+  test(`pending queue accepts Steer before ${confirmation}, joining duplicate clicks`, async () => {
+    const f = pendingQueueFixture();
+    const pending = f.runtime.getSnapshot().queuedSubmissions[0]!;
+    assert.equal(pending.steerable, true);
+    const steer = f.runtime.steerQueuedSubmission(pending.commandId);
+    assert.equal(f.runtime.steerQueuedSubmission(pending.commandId), steer);
+    assert.equal(f.runtime.getSnapshot().queuedSubmissions[0]?.operation, "starting");
+    assert.deepEqual(f.steers, [], "no resubmission before exact server custody");
+    if (confirmation === "notification") f.runtime.replaceQueuedSubmissions([f.row]);
+    else f.accept();
+    assert.equal(await steer, "turn-one");
+    assert.deepEqual(f.steers, ["server-next"]);
+    if (confirmation === "notification") f.accept();
+    await f.send;
+    assert.equal(f.runtime.getSnapshot().queuedSubmissions.length, 0, "late ACK cannot revive promoted input");
+    f.runtime.dispose();
+  });
+}
+
+for (const unknown of [false, true]) {
+  test(`pending Steer stops on ${unknown ? "unknown delivery" : "queue rejection"} without replay`, async () => {
+    const f = pendingQueueFixture();
+    const steer = f.runtime.steerQueuedSubmission(f.intent.commandId);
+    const error = unknown ? new SubmissionOutcomeUnknownError() : new Error("Queue rejected");
+    const failedSend = assert.rejects(f.send);
+    const failedSteer = assert.rejects(steer);
+    f.reject(error);
+    await Promise.all([failedSend, failedSteer]);
+    assert.deepEqual(f.steers, []);
+    const pending = f.runtime.getSnapshot().queuedSubmissions[0]!;
+    assert.equal(pending.state, unknown ? "unknown" : "failed");
+    assert.equal(pending.steerable, false);
+    f.runtime.dispose();
+  });
+}
+
+test("canonical consumption resolves pending promotion without a second delivery", async () => {
+  const f = pendingQueueFixture();
+  const steer = f.runtime.steerQueuedSubmission(f.intent.commandId);
+  f.replica.setEntity(threadView({ pendingInteractions: [], turns: [{
+    id: "turn-consumed", status: "inProgress", startedAt: 100,
+    params: { clientUserMessageId: f.intent.clientMessageId, input: f.row.input },
+    items: [{ id: "consumed", type: "userMessage", clientId: f.intent.clientMessageId, content: f.row.input }],
+  }] }));
+  assert.equal(await steer, "turn-consumed");
+  f.accept(); await f.send;
+  assert.deepEqual(f.steers, []);
+  assert.equal(f.runtime.getSnapshot().queuedSubmissions.length, 0);
+  f.runtime.dispose();
+});
+
+test("disposing a runtime cancels pending promotion without replay", async () => {
+  const f = pendingQueueFixture();
+  const steer = f.runtime.steerQueuedSubmission(f.intent.commandId);
+  const cancelled = assert.rejects(steer, /disposed/);
+  f.runtime.dispose(); await cancelled;
+  f.accept(); await f.send;
+  assert.deepEqual(f.steers, []);
+});
+
+test("local outbox sending accepts Steer without blocking the next draft", async () => {
+  const f = pendingQueueFixture(true);
+  await f.send;
+  f.replica.setAuthority(true);
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+  const pending = f.runtime.getSnapshot().queuedSubmissions[0]!;
+  assert.equal(pending.local, true);
+  assert.equal(pending.steerable, true);
+  const steer = f.runtime.steerQueuedSubmission(pending.commandId);
+  f.accept(); await steer;
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(f.steers, ["server-next"]);
+  assert.equal(f.runtime.getSnapshot().queuedSubmissions.length, 0);
+  f.runtime.dispose();
+});
+
+for (const reconnect of [false, true]) test(`an explicitly unsent online input transfers once to the durable queue (reconnect=${reconnect})`, async () => {
+  const replica = new FakeReplica(threadView());
+  const key = createConversationKey("local", "thread-one");
+  let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [];
+  const calls: Array<{ type: string; id: string }> = [];
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    outbox: { read: () => rows, write: (_, next) => { rows = next; }, subscribe: () => () => {} },
+    commands: commands({ async submit(input) {
+      calls.push({ type: input.target.type, id: input.clientMessageId });
+      if (input.target.type === "existing-thread") {
+        if (reconnect) replica.setAuthority(false);
+        throw new SubmissionNotDispatchedError();
+      }
+      return { ...receipt(input.commandId, input.clientMessageId), turnId: null, queuedSubmissionId: "host-queue" };
+    } }), history: { async loadOlder() {} },
+  });
+  try {
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "same-id" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "看看" }] }] } });
+    const input = composer.createSubmitIntent();
+    const accepted = await runtime.submit(input);
+    assert.equal(accepted.disposition, "local-queue");
+    if (reconnect) {
+      assert.equal(rows.length, 1); assert.equal(rows[0]!.intent.clientMessageId, input.clientMessageId);
+      assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+      replica.setAuthority(true);
+    }
+    await new Promise(resolve => setTimeout(resolve, 0));
+    assert.deepEqual(calls, [{ type: "existing-thread", id: input.clientMessageId }, { type: "enqueue-follow-up", id: input.clientMessageId }]);
+    assert.equal(rows.length, 0);
+    assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+    assert.equal(runtime.getSnapshot().queuedSubmissions.some(row => row.state === "failed"), false);
+  } finally { runtime.dispose(); }
+});
+
+for (const unknown of [true, false]) test(`an uncertain or permanent online failure never enters the automatic queue (${unknown})`, async () => {
+  const key = createConversationKey("local", "thread-one");
+  let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [], sends = 0;
+  const failure = unknown ? new SubmissionOutcomeUnknownError() : new Error("permanent rejection");
+  const runtime = createReplicaConversationRuntime({ key, replica: new FakeReplica(threadView()),
+    outbox: { read: () => rows, write: (_, next) => { rows = next; }, subscribe: () => () => {} },
+    commands: commands({ async submit() { sends++; throw failure; } }), history: { async loadOlder() {} },
+  });
+  try {
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "failure-id" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "keep this input" }] }] } });
+    await assert.rejects(runtime.submit(composer.createSubmitIntent()), error => error === failure);
+    assert.equal(rows.length, 0); assert.equal(sends, 1);
   } finally { runtime.dispose(); }
 });

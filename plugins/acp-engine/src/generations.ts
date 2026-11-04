@@ -11,6 +11,7 @@ interface Generation { id: string; configPath: string; state: "serving" | "drain
 interface Registry { lastActivation?: { operationId: string | null; generationId: string; epoch: number; owner: string }; admissionEpoch?: number; schemaVersion: 1; current: string; generations: Generation[] }
 export interface AcpGenerationHostOptions {
   id: "acp" | "dsh-acp" | "claude-code";
+  modelPolicyPath?: string;
   dataDirectory: string;
   initialGeneration: { id: string; configPath: string };
   /** Deployment authority counts OS work outside the supervised native peers. */
@@ -97,7 +98,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     if (record.configurationDigest && record.configurationDigest !== digest) { await config.history?.close?.(); throw new Error("Pinned ACP generation command or options changed"); }
     record.configurationDigest = digest;
     if (config.id && config.id !== this.id) { await config.history?.close?.(); throw new Error("ACP generation driver kind cannot change"); }
-    const provider = new AcpEngine({ ...config, id: this.id, dataDirectory: join(this.options.dataDirectory, "generations", record.id) });
+    const provider = new AcpEngine({ ...config, modelPolicyPath: this.options.modelPolicyPath, id: this.id, dataDirectory: join(this.options.dataDirectory, "generations", record.id) });
     if (this.orchestration) provider.setOrchestration(this.orchestration);
     provider.subscribe((method, params) => { for (const listener of this.listeners) listener(method, { ...params, engineGenerationId: record.id }); });
     try {
@@ -251,7 +252,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   occupancy() {
     const state = this.handoff.snapshot();
     const generations = [...this.providers].map(([id, provider]) => ({ id, ...provider.occupancy }));
-    const os = this.options.inspectOsWork?.([...this.providers.values()].flatMap(p => p.processId ? [p.processId] : []));
+    const os = this.options.inspectOsWork?.([...this.providers.values()].flatMap(p => p.processIds));
     const coverage = this.persistenceFailed || state.persistence !== "ready" || os?.coverage !== "complete" || !Number.isSafeInteger(os.activeCount) || os.activeCount! < 0 ? "unknown" : "complete";
     const activeCount = coverage === "complete" ? state.activeCalls + os!.activeCount! + generations.reduce((sum, row) => sum + Object.entries(row).reduce((n, [key, count]) => key === "id" ? n : n + Number(count), 0), 0) : null;
     return { coverage, activeCount, osWork: os ?? { coverage: "unknown", activeCount: null }, historicalCount: this.bindings.size, generations };
@@ -271,7 +272,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
       if (action === "fence") await this.handoff.fence(input);
       else if (action === "release") await this.handoff.release(input, () => this.occupancy(), async () => {
         for (const provider of this.providers.values()) await provider.suspend();
-        if ([...this.providers.values()].some(provider => provider.processId !== null)) throw new Error("ACP native writer did not release");
+        if ([...this.providers.values()].some(provider => provider.processIds.length > 0)) throw new Error("ACP native writer did not release");
         await this.persistence;
         const os = this.options.inspectOsWork?.([]);
         if (os?.coverage !== "complete" || os.activeCount !== 0) throw new Error("ACP OS writer release is unconfirmed");

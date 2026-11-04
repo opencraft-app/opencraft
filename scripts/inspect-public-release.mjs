@@ -1,7 +1,7 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { mkdtemp, readFile, readdir, rm, lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { unpackRelease, PACKAGE_NAME } from './web-deployment/releases.mjs';
@@ -48,7 +48,7 @@ export async function inspectPublicRelease(archive) {
     return { ...release, packageName: manifest.name, execution: metadata, files };
   } finally { await rm(directory, { recursive: true, force: true }); }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   if (process.argv.length !== 3) throw new Error('Usage: node scripts/inspect-public-release.mjs archive.tgz');
   console.log(JSON.stringify(await inspectPublicRelease(process.argv[2]), null, 2));
 }

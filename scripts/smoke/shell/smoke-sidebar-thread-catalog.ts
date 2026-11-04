@@ -4,6 +4,10 @@ import { createServer } from "vite";
 // Real Sidebar + shared theme/Intl, no duplicate test-only rendering.
 const source = `
 import React,{useState}from'react';
+import{QueryClient,QueryClientProvider}from'@tanstack/react-query';
+import{useHostThreadCatalogQueries}from'/apps/workbench-web/src/runtime/use-host-thread-catalog-queries';
+import{bindThreadCatalogNotifications}from'/apps/workbench-web/src/runtime/thread-catalog-notifications';
+import{projectAppServerThread}from'@opencraft/workbench-runtime';
 import{createIntlTestRoot}from'/tests/fixtures/intl-root.tsx';
 import{canDisplayHostThreadCatalog,canReadHostThreadCatalog}from'/apps/workbench-web/src/runtime/host-thread-catalog.ts';
 import{Sidebar}from'/apps/workbench-web/src/components/sidebar.tsx';
@@ -32,7 +36,26 @@ return admitted;}
 window.fixture={setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,connection};
 const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>{},onDelete:async()=>{},onSetPinned:async(target,pinned)=>{actions.push({pin:target.threadId,pinned});setThreads(rows=>rows.map(row=>row.id===target.threadId&&row.connectionHostId===target.hostId?{...row,pinned}:row));}};
 return <div className={location.search.includes('mobile-layout')?'shell-sidebar__column':undefined} data-navigation-layout={location.search.includes('mobile-layout')?'mobile':undefined} style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar key={epoch} threadListGrouping={filterUi?grouping:null} threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote'&&remoteAvailable,rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onOpenSettings={()=>{}} /></div>;}
-createIntlTestRoot(document.getElementById('root')).render(<UiPreferencesProvider runtime={preferences}><App/></UiPreferencesProvider>);`;
+const liveQuery=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false}}});
+const liveProfile={hostId:'live',hostKind:'local',enabled:true,includeInSidebar:true,autoConnect:true,revision:1};
+let liveRows=Array.from({length:150},(_,i)=>({id:'old-'+i,name:'Old '+i,cwd:'/workspace',createdAt:1,updatedAt:300-i,preview:'',ephemeral:false,source:'cli',status:{type:'idle'},turns:[]}));
+let liveReceive,liveRelease,liveHold=false,liveWaiting=false,liveReads=0,liveSequence=0;
+const liveKey=['appserver','live','threads','sidebar-pages','updated_at','desc',false,1,null,0];
+bindThreadCatalogNotifications({subscribeNotification(fn){liveReceive=fn;return()=>{}}},'live',liveQuery);
+const liveRuntime={getSnapshot:()=>({phase:'ready'}),resources:{threads:{async list({cursor,limit}){
+ liveReads++;const offset=Number(cursor??0),data=liveRows.slice(offset,offset+limit),nextCursor=offset+limit<liveRows.length?String(offset+limit):null;
+ if(liveHold&&offset===50){liveWaiting=true;await new Promise(resolve=>{liveRelease=resolve});liveWaiting=false;}
+ return{data,nextCursor};
+}}}};
+const liveRegistry={peekRuntime:()=>liveRuntime,ensureConnected:async()=>liveRuntime};
+function LiveApp(){const[q]=useHostThreadCatalogQueries([{profile:liveProfile,currentProfile:()=>liveProfile,management:null,registry:liveRegistry,enabled:true,queryKey:liveKey}]);
+window.fixture={get waiting(){return liveWaiting},get reads(){return liveReads},get ready(){return !q.isFetching&&!q.hasNextPage},setThemePreference,
+ refetch(){liveHold=true;void liveQuery.invalidateQueries({queryKey:liveKey})},release(){liveHold=false;liveRelease?.()},
+ create(){const thread={...liveRows[0],id:'live-new',name:'New live conversation',updatedAt:1000,turns:[]};liveRows=[thread,...liveRows];liveReceive({method:'opencraft/thread-catalog/changed',params:{version:1,source:'synthetic-server',revision:++liveSequence,change:{type:'upsert',thread}}})},
+ remove(){liveRows=liveRows.filter(row=>row.id!=='live-new');liveReceive({method:'opencraft/thread-catalog/changed',params:{version:1,source:'synthetic-server',revision:++liveSequence,change:{type:'remove',threadId:'live-new'}}})}};
+const threads=(q.data?.data??[]).map(thread=>({...projectAppServerThread(thread),connectionHostId:'live',connectionHostLabel:'Live',...legacyDirectServerProjectionFromHost({hostId:'live',hostKind:'local',label:'Live'})}));
+return <><textarea id='live-draft' aria-label='Draft' style={{position:'fixed',left:330,top:10}} defaultValue='keep draft'/><div style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar threads={threads} activeHostId='live' activeThreadId='old-0' sidebarLayout={layout} threadCatalogs={[{hostId:'live',label:'Live',phase:q.isFetching?'loading':'ready'}]} onSelectThread={()=>{}} onNewTask={()=>{}} onOpenSettings={()=>{}} /></div></>;}
+createIntlTestRoot(document.getElementById('root')).render(<UiPreferencesProvider runtime={preferences}>{location.search.includes('live-catalog')?<QueryClientProvider client={liveQuery}><LiveApp/></QueryClientProvider>:<App/>}</UiPreferencesProvider>);`;
 const vite = await createServer({
   configFile: false, root: process.cwd(), logLevel: "error",
   resolve: { dedupe: ["react", "react-dom"] },
@@ -102,7 +125,34 @@ try {
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
   const scenarios = [{ touch: false, mobileLayout: false }, { touch: true, mobileLayout: true }];
   if (process.env.OPENCRAFT_SIDEBAR_GROUPS_ONLY === '1') scenarios.push({ touch: false, mobileLayout: true });
-  for (const { touch, mobileLayout } of scenarios) for (const theme of ["light", "dark"]) {
+  if (process.env.OPENCRAFT_SMOKE_CATALOG_LIVE_ONLY) {
+    for (const touch of [false, true]) for (const theme of ['light', 'dark']) {
+      const context=await browser.newContext({viewport:{width:1000,height:800},hasTouch:touch,isMobile:touch,reducedMotion:'reduce'});
+      const page=await context.newPage();const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));
+      await page.goto(`${origin}?live-catalog`);
+      await page.waitForFunction(()=> (window as any).fixture?.ready);
+      await page.evaluate(theme=>(window as any).fixture.setThemePreference(theme),theme);
+      const draft=page.locator('#live-draft');await draft.fill('unsent local text');await draft.focus();
+      await page.evaluate(()=>{(window as any).originalDraft=document.querySelector('#live-draft');(window as any).fixture.refetch()});
+      await page.waitForFunction(()=>(window as any).fixture.waiting);
+      await page.evaluate(()=>(window as any).fixture.create());
+      const created=page.locator('.sidebar-activity-item__title').filter({hasText:'New live conversation'});
+      await created.waitFor({state:'visible'});
+      assert.equal(await page.evaluate(()=>(window as any).fixture.waiting),true,'new row paints while an old second page remains blocked');
+      assert.equal(await draft.inputValue(),'unsent local text');
+      assert.equal(await page.evaluate(()=>document.activeElement===(window as any).originalDraft),true);
+      if(process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR)await page.screenshot({path:`${process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR}/live-catalog-${touch ? "touch" : "desktop"}-${theme}.png`});
+      await page.evaluate(()=>(window as any).fixture.release());
+      await page.waitForFunction(()=>(window as any).fixture.ready);
+      await created.waitFor({state:'visible'});
+      await page.evaluate(()=>(window as any).fixture.remove());
+      await created.waitFor({state:'detached'});
+      assert.equal(await page.evaluate(()=>document.querySelector('#live-draft')===(window as any).originalDraft),true);
+      assert.deepEqual(errors,[]);evidence.push({theme,touch,liveQueryAndSidebar:true,threePages:true,immediateWhileBlocked:true,lateReadPreservesCreation:true,removal:true,draftAndFocus:true});
+      await context.close();
+    }
+  }
+  for (const { touch, mobileLayout } of process.env.OPENCRAFT_SMOKE_CATALOG_LIVE_ONLY ? [] : scenarios) for (const theme of ["light", "dark"]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : mobileLayout ? 600 : 900, height: 844 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
     const page = await context.newPage();
     const errors: string[] = [];

@@ -94,16 +94,19 @@ export class CodexSubscriptionService {
     readonly usageUrl?: string;
     readonly now?: () => number;
     readonly refreshIntervalMs?: number;
+    readonly admissionOpen?: () => boolean;
   }) {}
 
   start(): void {
     if (this.timer !== null) return;
-    void this.refreshAll().catch(() => undefined);
+    if (this.options.admissionOpen?.() !== false) void this.refreshAll().catch(() => undefined);
     this.timer = setInterval(() => {
-      void this.refreshAll().catch(() => undefined);
+      if (this.options.admissionOpen?.() !== false) void this.refreshAll().catch(() => undefined);
     }, this.options.refreshIntervalMs ?? DEFAULT_REFRESH_INTERVAL_MS);
     this.timer.unref?.();
   }
+
+  activeCount(): number { return this.flights.size; }
 
   async dispose(): Promise<void> {
     if (this.timer !== null) clearInterval(this.timer);

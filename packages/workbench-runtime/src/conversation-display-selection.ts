@@ -33,7 +33,7 @@ function endedWork(work: WorkStatusItem | null | undefined): WorkStatusItem | nu
 export function retainPreviewMetadata(preview: TimelineSnapshot, display: TimelineSnapshot | null): TimelineSnapshot {
   if (preview.authoritative || display === null || !sameConversation(preview.key, display.key)) return preview;
   const known = indexMessages(display);
-  return { ...preview, frames: preview.frames.map(frame => {
+  return { ...preview, historyTurnCount: preview.historyTurnCount ?? display.historyTurnCount, frames: preview.frames.map(frame => {
     let durationMs = frame.durationMs, workStatus = frame.workStatus, displayDurationMs = frame.displayDurationMs;
     const blocks = frame.blocks.map(block => {
       const prior = known.get(messageKey(frame, block));

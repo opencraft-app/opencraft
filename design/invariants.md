@@ -58,7 +58,7 @@ for overflow, mobile boundaries and state continuity.
 - <a id="mobile-sidebar-theme-surface"></a>[Mobile Sidebar theme surface](invariants/navigation-and-sidebar.md#mobile-sidebar-theme-surface)
 - <a id="sidebar-scroll-ownership"></a>[Sidebar scroll ownership](invariants/navigation-and-sidebar.md#sidebar-scroll-ownership)
 - <a id="native-conversation-pinning"></a>[Native conversation pinning](invariants/navigation-and-sidebar.md#native-conversation-pinning)
-- <a id="mobile-sidebar-gestures"></a>[Mobile sidebar gestures](invariants/navigation-and-sidebar.md#mobile-sidebar-gestures)
+- <a id="mobile-sidebar-gestures"></a>[Mobile sidebar gestures](invariants/navigation-and-sidebar.md#mobile-sidebar-gestures), including synchronous retirement on host interruption or a replacement contact.
 - <a id="unified-sidebar-scroll"></a>[Unified sidebar scroll](invariants/navigation-and-sidebar.md#unified-sidebar-scroll)
 - <a id="application-navigation-restoration"></a>[Application navigation restoration](invariants/navigation-and-sidebar.md#application-navigation-restoration)
 - <a id="application-navigation-glyphs"></a>[Application navigation glyphs](invariants/navigation-and-sidebar.md#application-navigation-glyphs)
@@ -292,9 +292,13 @@ hints. See [Shell layout](invariants/shell-and-layout.md) and
 [appearance](invariants/appearance-and-controls.md). Native status pixels still
 require device acceptance.
 
+## Settings pages
+
+The composition contract for settings routes is [Settings pages](ui/settings-pages.md). Shared controls own the header, section, card, row, notice, and action placement.
+
 ## Settings action and stacked-row layout
 
-SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment.
+SettingsActions can opt into wrapping when several actions must remain reachable in narrow panels. SettingsPanel retains the explicit stacked-row contract as one grid column; long public-key fingerprints can wrap while ordinary rows keep their shared label/control alignment. A value longer than the shared control column uses the remaining row width and may wrap anywhere, rather than breaking inside that fixed column. Settings navigation group labels keep space above the previous item. On a narrow credential card, the key field takes the full row and its actions wrap below it.
 
 ### Settings card content inset
 

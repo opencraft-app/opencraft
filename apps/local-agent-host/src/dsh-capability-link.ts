@@ -53,14 +53,14 @@ export class DshCapabilityLink {
     if (!this.task) this.task = this.poll();
   }
   get sourceGeneration(): number { return this.generation; }
-  private async request(path: string, body?: unknown, endpoint = this.endpoint) {
+  private async request(path: string, body?: unknown, endpoint = this.endpoint, timeoutMs = 5000) {
     if (!endpoint) throw new Error("DSH capability plugin is not ready");
     const generation = this.generation;
     const response = await fetch(endpoint + path, {
       method: body === undefined ? "GET" : "POST",
       headers: { authorization: "Bearer " + this.token, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(5000)]),
+      signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(timeoutMs)]),
     });
     const text = await response.text();
     if (endpoint !== this.endpoint || generation !== this.generation) throw new Error("DSH bridge generation changed; retry required");
@@ -132,6 +132,7 @@ export class DshCapabilityLink {
   async resolveGeneration(logicalSessionId: string): Promise<{ sessionId: string; generation: number; seedThroughSeq?: number; seedThroughTurn?: number }> {
     return this.request("/resolve-generation", { logicalSessionId }) as Promise<{ sessionId: string; generation: number; seedThroughSeq?: number; seedThroughTurn?: number }>;
   }
+  async nativeOwner(action: "inspect" | "fence" | "resume" | "seal-bootstrap" | "seal-release" | "abort-release"): Promise<any> { return this.request("/native-owner", {action}, this.endpoint, 120000); }
   async checkpoint(sessionId: string) { return this.request("/checkpoint", { sessionId }); }
   async createGeneration(input: { logicalSessionId: string; sourceSessionId: string; cwd: string; provider: string; model: string; legacyInstructions?: Record<string, unknown> }): Promise<{ sessionId: string; generation: number; interruptedTurns: number; seedThroughSeq: number; seedThroughTurn: number }> {
     return this.request("/generation", input) as Promise<{ sessionId: string; generation: number; interruptedTurns: number; seedThroughSeq: number; seedThroughTurn: number }>;

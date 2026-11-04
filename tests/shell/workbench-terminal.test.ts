@@ -4,7 +4,7 @@ import test from "node:test";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
 import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserver-transport-memory";
-import { AppServerTerminalController } from "@opencraft/workbench-runtime";
+import { AppServerTerminalController, ConversationTerminalSessionRegistry } from "@opencraft/workbench-runtime";
 import { HostProcessService } from "../../apps/local-agent-host/src/process-service";
 import { createWorkbenchPanelReactRuntime } from "@opencraft/workbench-panels-react";
 import {
@@ -73,7 +73,8 @@ test("terminal contributes a direct shortcut and a type for the shared panel pic
   const runtime = await createWorkbenchPanelReactRuntime();
   const registry = new WorkbenchTerminalSessionRegistry(() => { throw new Error("No host required for contribution test"); });
   const calls: string[] = [];
-  registry.open = options => { calls.push(`new:${options.hostId}:${options.cwd}`); return "new"; };
+  const scopes: unknown[] = [];
+  registry.open = options => { scopes.push({ threadId: options.threadId, projectId: options.projectId }); calls.push(`new:${options.hostId}:${options.cwd}`); return "new"; };
   registry.restore = async hostId => { calls.push(`restore:${hostId}`); return ["restored"]; };
   try {
     await runtime.install(createTerminalWorkbenchPanelPlugin(registry));
@@ -83,10 +84,11 @@ test("terminal contributes a direct shortcut and a type for the shared panel pic
     assert.equal(actions[0]?.creationLabel, "Terminal");
     assert.equal("tabKind" in actions[0]!, false);
     assert.equal("items" in actions[0]!, false);
-    const context = { hostId: "local", ownerId: "view", resourceOwnerId: "resource", cwd: "/workspace" };
+    const context = { hostId: "local", ownerId: "view", resourceOwnerId: "resource", cwd: "/workspace", threadId: null, projectId: "draft-project" };
     await actions[0]!.run(context);
     await actions[0]!.run(context);
     assert.deepEqual(calls, ["new:local:/workspace", "new:local:/workspace"]);
+    assert.deepEqual(scopes, [{ threadId: null, projectId: "draft-project" }, { threadId: null, projectId: "draft-project" }]);
   } finally { await runtime.dispose(); await registry.dispose(); }
 });
 
@@ -125,6 +127,7 @@ async function fixture() {
   return { service, controller, methods,
     disconnect() { for (const peer of peers) peer.close("test link loss"); peers.clear(); },
     async reconnect() { await client.connect({ clientInfo: { name: "pty-test", version: "1" } }); await controller.reconnect(); },
+    client,
     async close() { remove(); await controller.dispose(); await client.close(); service.close(); } };
 }
 
@@ -189,4 +192,45 @@ test("host rejects duplicate process handles, invalid cursors and invalid dimens
     assert.throws(() => service.dispatch("process/attach", { processHandle: "test", afterSequence: -1 }), /cursor/);
     assert.throws(() => service.dispatch("process/resizePty", { processHandle: "test", size: { cols: 0, rows: 24 } }), /size/);
   } finally { service.close(); }
+});
+
+
+test("a fresh application restores the original owned PTY and preserves shell state", async () => {
+  const f = await fixture();
+  const terminal = f.controller;
+  const oldRegistry = new ConversationTerminalSessionRegistry(() => ({ resources: { terminal } } as any));
+  let nextRegistry: ConversationTerminalSessionRegistry | undefined;
+  let newController: AppServerTerminalController | undefined;
+  const runtime = await createWorkbenchPanelReactRuntime();
+  try {
+    const id = oldRegistry.open({ hostId: "local", cwd: "/tmp", resourceOwnerId: "conversation-a", threadId: "thread-a", projectId: "project-a" });
+    const original = oldRegistry.get(id)!;
+    await original.write(Buffer.from("export RESTART_VALUE=still_here; printf 'SHELL_PID=%s\\n' $$\n").toString("base64"));
+    await waitFor(() => /SHELL_PID=\d+/.test(original.getSnapshot().output.map(c => Buffer.from(c.deltaBase64, "base64").toString()).join("")));
+    const before = original.getSnapshot().output.map(c => Buffer.from(c.deltaBase64, "base64").toString()).join("").match(/SHELL_PID=(\d+)/)?.[1];
+    assert.ok(before);
+    await oldRegistry.dispose();
+    await terminal.dispose();
+    newController = new AppServerTerminalController("local", f.client);
+    nextRegistry = new ConversationTerminalSessionRegistry(() => ({ resources: { terminal: newController! } } as any));
+    assert.deepEqual(await nextRegistry.restore("local", "conversation-b"), [], "other owner cannot adopt this terminal");
+    await runtime.install(createTerminalWorkbenchPanelPlugin(nextRegistry, undefined,
+      async ownerId => { await nextRegistry!.restore("local", ownerId); }));
+    runtime.panels.ensureOwner("conversation-a");
+    await waitFor(() => runtime.panels.getOwnerSnapshot("conversation-a").right.tabs.length === 1);
+    const panel = runtime.panels.getOwnerSnapshot("conversation-a");
+    assert.equal(panel.right.open, false, "background restoration cannot open the panel");
+    assert.equal(panel.right.tabs[0]?.resource, id);
+    assert.equal(nextRegistry.getConversationSnapshot("conversation-a").sessions[0]?.cwd, "/tmp");
+    const restored = nextRegistry.get(id)!;
+    await restored.write(Buffer.from("printf 'RESTORED=%s PID=%s\\n' \"$RESTART_VALUE\" $$\n").toString("base64"));
+    await waitFor(() => restored.getSnapshot().output.some(c => Buffer.from(c.deltaBase64, "base64").toString().includes(`RESTORED=still_here PID=${before}`)));
+    runtime.panels.releaseOwner("conversation-a");
+    assert.equal((await newController.list()).processes[0]?.phase, "running", "panel eviction keeps the PTY");
+    runtime.panels.ensureOwner("conversation-a");
+    assert.equal(runtime.panels.getOwnerSnapshot("conversation-a").right.tabs[0]?.resource, id);
+    runtime.panels.close("conversation-a", "right", `terminal:${id}`);
+    await waitFor(() => (f.service.dispatch("process/list", {}) as any).processes.find((p: any) => p.processHandle === restored.processId)?.phase === "exited");
+    assert.deepEqual(nextRegistry.listForOwner("conversation-a"), []);
+  } finally { await runtime.dispose(); await nextRegistry?.dispose(); await newController?.dispose(); await f.close(); }
 });

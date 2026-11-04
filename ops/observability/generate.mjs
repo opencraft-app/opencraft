@@ -66,7 +66,15 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
   await writeFile(resolve(root, 'datasources/default.yaml'), `apiVersion: 1\ndatasources:\n  - name: OpenCraft metrics\n    uid: opencraft-prometheus\n    type: prometheus\n    access: proxy\n    url: http://127.0.0.1:23302\n    isDefault: true\n    editable: false\n    jsonData:\n      httpMethod: POST\n      timeInterval: 15s\n  - name: OpenCraft diagnostics\n    uid: opencraft-loki\n    type: loki\n    access: proxy\n    url: http://127.0.0.1:23303\n    editable: false\n    jsonData:\n      maxLines: 500\n`);
   await writeFile(resolve(root, 'dashboards/default.yaml'), `apiVersion: 1\nproviders:\n  - name: OpenCraft\n    orgId: 1\n    folder: OpenCraft\n    type: file\n    disableDeletion: true\n    allowUiUpdates: false\n    options:\n      path: /etc/grafana/provisioning/dashboards\n`);
 
+  const availabilityMappings=[{type:'value',options:{'1':{text:'可用',color:'green'},'0':{text:'不可用',color:'red'},'-1':{text:'未知',color:'gray'}}}];
   const sections = [
+    {title:'可用性',panels:[
+      {key:'platform.status',legendFormat:'{{site}} · {{host}} · {{engine}}',mappings:availabilityMappings},
+      {key:'availability.ratio',legendFormat:'{{site}} · {{host}} · {{engine}}'},
+      {key:'availability.last_success',legendFormat:'{{site}} · {{host}} · {{engine}}'},
+      {key:'availability.freshness',legendFormat:'{{site}} · {{host}} · {{engine}}'},
+      {key:'errors.summary',legendFormat:'{{component}} · {{engine}} · {{code}}'}
+    ]},
     {
       title: '用户交互与耗时体验',
       panels: [
@@ -113,6 +121,9 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
     {
       title: 'RPC 依赖与网关通信',
       panels: [
+        { key: 'connection.update_disconnections', legendFormat: '{{build}} / {{update}}', description: '停止前实际仍打开的AppHost/AppServer连接数，绑定本次发布。缺失回执为未知。' },
+        { key: 'connection.person_downtime', legendFormat: '{{actor}} / {{day}}', description: '经认证真人的连接丢失至完整恢复时长；同人多页区间取并集，跨UTC日拆分。未完成周期仅累计已观察区间。' },
+        { key: 'connection.unfinished', legendFormat: '{{actor}} / {{day}}', description: '尚未捕获完整恢复终态，不能将缺失样本解释为零中断。' },
         {
           key: 'dependencies.summary',
           legendFormat: '{{method}} [{{outcome}}]',
@@ -178,7 +189,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
       title: '平台健康度与采集覆盖',
       panels: [
         {
-          key: 'platform.status',
+          key: 'collection.freshness',
           legendFormat: '{{component}} (生产者: {{producerId}})',
           mappings: componentMappings,
           description: 'platform.status; resource_sample; ' + queryDefinitionRevision + '。各遥测数据生产者的生存心跳与年龄（秒）。生产者长期未心跳可能表明采集管道中断。'
@@ -260,8 +271,9 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
         const panelId = nextId++;
         p = {
           id: panelId,
-          type: 'timeseries',
+          type: ['platform.status','availability.last_success'].includes(cfg.key)?'stat':'timeseries',
           title: d.title,
+          ...(['platform.status','availability.last_success'].includes(cfg.key)?{options:{graphMode:'none',colorMode:'value'}}:{}),
           description: cfg.description,
           gridPos: { x: col, y: currentY, w: 12, h: 8 },
           datasource: { type: 'prometheus', uid: 'opencraft-prometheus' },
@@ -273,7 +285,8 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
           }],
           fieldConfig: {
             defaults: {
-              unit: d.unit === 'seconds' ? 's' : d.unit === 'bytes' ? 'bytes' : 'short',
+              unit: d.unit === 'seconds' ? 's' : d.unit === 'bytes' ? 'bytes' : d.unit==='timestamp'?'dateTimeFromNow':d.unit==='ratio'?'percentunit':'short',
+              ...(d.unit==='timestamp'?{noValue:'未成功',color:{mode:'fixed',fixedColor:'text'}}:{}),
               mappings: cfg.mappings ?? []
             },
             overrides: []
@@ -306,6 +319,7 @@ export async function generate(directory = dirname(fileURLToPath(import.meta.url
         refresh: '30s',
         time: { from: 'now-15m', to: 'now' },
         tags: ['opencraft', queryDefinitionRevision, '可观测性'],
+        annotations:{list:[{name:'部署与交接',enable:true,iconColor:'orange',datasource:{type:'loki',uid:'opencraft-loki'},expr:'{service_name="opencraft"} | json | kind="lifecycle"',textFormat:'{{lifecycle}} · {{component}}'}]},
         panels
       },
       null,

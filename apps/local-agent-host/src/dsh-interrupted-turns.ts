@@ -4,7 +4,7 @@ import type { DshExecutionAuthority, DshExecutionOwner } from "./dsh-execution-a
 import type { ThreadLifecycle } from "./thread-lifecycle.js";
 
 export function dshInterruptedTurns(directory: string, adapter: DshAppServerAdapter, authority: DshExecutionAuthority,
-  lifecycle: ThreadLifecycle, prepare: (id: string) => Promise<void>, owner: DshExecutionOwner) {
+  lifecycle: ThreadLifecycle, prepare: (id: string) => Promise<void>, owner: DshExecutionOwner, admissionOpen: () => boolean = () => true) {
   const recovery = new InterruptedTurnRecovery(directory, {
     serialize: (id, operation) => lifecycle.enqueue(id, operation),
     inspect: async turn => {
@@ -35,7 +35,7 @@ export function dshInterruptedTurns(directory: string, adapter: DshAppServerAdap
       return started.id;
     },
     changed: (threadId, notice) => adapter.publishRecovery(threadId, notice),
-  });
+  }, 500, admissionOpen);
   adapter.recovery = recovery;
   adapter.recoveryOwner = owner;
   adapter.observeRecoveryExecution = (method, params: any) => {

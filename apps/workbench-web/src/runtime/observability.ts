@@ -6,6 +6,14 @@ import { serverFetch, serverUrl } from './server-context';
 type Event = Record<string, string | number | null>;
 let enabled = false;
 const recoveryContexts = new Map<string,{recoveryId:string;attemptId?:string;generation?:number}>();
+const usableHosts = new Set<string>();
+const connectionOutages = new Map<string, { id: string; started: number }>();
+const historyOperations = new Map<string, string>();
+export function bindHistoryObservation(scope: { hostId: string; threadId: string }, operationId: string): () => void {
+  const key = JSON.stringify([scope.hostId, scope.threadId]);
+  historyOperations.set(key, operationId);
+  return () => { if (historyOperations.get(key) === operationId) historyOperations.delete(key); };
+}
 const enabledListeners = new Set<() => void>();
 export function subscribeObservationEnabled(listener: () => void) {
   enabledListeners.add(listener);if(enabled)listener();
@@ -60,16 +68,59 @@ export function beginObservedOperation(operationType: string, fields: Event = {}
 }
 export function installClientObservation(client: AppServerClient) {
   const clientId=createClientId();
-  return client.subscribeRequestLifecycle(event => {
+  const historyRequests = new Map<string | number, { webSentAt: number; clientQueueMs: number; historySource?: string; operationId?: string }>();
+  const unsubscribe = client.subscribeRequestLifecycle(event => {
+    if (event.type === 'started' && ['thread/read','thread/turns/list'].includes(event.method)) {
+      const params = event.params as { threadId?: unknown } | null;
+      historyRequests.set(event.id, { webSentAt: event.startedAtMs, clientQueueMs: event.queueWaitMs,
+        historySource: event.historySource,
+        operationId: typeof params?.threadId === 'string' ? historyOperations.get(JSON.stringify([event.hostId, params.threadId])) : undefined });
+      return;
+    }
     if (!['completed','failed','timed-out','aborted'].includes(event.type)) return;
     if (!('durationMs' in event)) return;
-    observeEvent({kind:'rpc',requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
+    const history = historyRequests.get(event.id);
+    historyRequests.delete(event.id);
+    const diagnostic: Event = {};
+    if (history) {
+      if (history.historySource) diagnostic.historyReadSource = history.historySource;
+      const responseBytes = "responseBytes" in event ? event.responseBytes : undefined;
+      if (responseBytes !== undefined) diagnostic.bytes = responseBytes;
+      if ("decodeMs" in event && event.decodeMs !== undefined) diagnostic.historyDecodeMs = event.decodeMs;
+      diagnostic.webSentAt = history.webSentAt; diagnostic.clientQueueMs = history.clientQueueMs;
+      if (history.operationId) diagnostic.operationId = history.operationId;
+      const timing = event.type === 'completed' ? (event.result as { __opencraftHistoryTiming?: Record<string, unknown> } | null)?.__opencraftHistoryTiming : undefined;
+      if (timing && typeof timing.pairId === 'string' && /^[a-zA-Z0-9_.:-]{1,128}$/u.test(timing.pairId)) {
+        diagnostic.pairId = timing.pairId;
+        for (const key of ['coreMs','metadataMs','queueMs','sourceMs','reconcileMs','pageMs','projectionMs','scanMs','nativeRpcMs','nativeRpcCount']) {
+          const value = timing[key];
+          if (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER)
+            diagnostic['history' + key[0].toUpperCase() + key.slice(1)] = value;
+        }
+      }
+    }
+    observeEvent({kind:'rpc',...diagnostic,requestId:`${clientId}:${client.connectionGeneration}:${event.id}`,generation:client.connectionGeneration,...recoveryContexts.get(event.hostId),method:methods.has(event.method)?event.method:'other',
+      ...(event.type==='failed'&&Number.isSafeInteger((event.error as Error & {code?:number}).code)?{errorCode:`rpc:${(event.error as Error & {code?:number}).code}`}:{ }),
       outcome:event.type==='completed'?'ok':event.type==='timed-out'?'timeout':event.type==='aborted'?'aborted':'failed',
       durationMs:event.durationMs,measurementScope:'rpc'});
   });
+  return () => { unsubscribe(); historyRequests.clear(); };
 }
 export function observeRecovery(event: Readonly<Record<string,string|number>>) {
   const nativeStage = String(event.stage);
+  const host = typeof event.hostId === 'string' ? event.hostId : null;
+  if (host) {
+    if (nativeStage === 'host-ready') usableHosts.add(host);
+    if (enabled && usableHosts.has(host) && ['transport-unavailable','waiting','backoff','connecting','manual-block'].includes(nativeStage) && !connectionOutages.has(host))
+      connectionOutages.set(host, { id: createClientId(), started: performance.now() });
+    const outage = connectionOutages.get(host);
+    if (enabled && outage) {
+      observeEvent({ kind: 'recovery', recoveryId: outage.id, hostId: host, measurementScope: 'connection',
+        stage: nativeStage === 'settled' ? 'ready' : 'connecting', outcome: nativeStage === 'settled' ? 'ok' : 'progress',
+        durationMs: Math.max(0, performance.now() - outage.started) });
+      if (nativeStage === 'settled') connectionOutages.delete(host);
+    }
+  }
   const mapped: Record<string,string> = {'settled':'ready','host-ready':'initializing','history-started':'history','history-authoritative':'history','history-failed':'failed','history-backoff':'backoff','manual-block':'blocked'};
   const stage = mapped[nativeStage] ?? nativeStage;
   const stages = new Set(['connecting','initializing','backoff','blocked','queued','history','ready','failed']);
@@ -96,7 +147,7 @@ export function createObservabilityExtension(title = 'Platform monitoring'): Tru
     const onVisibility=()=>{if(document.visibilityState==='hidden'){clearTimeout(timer);timer=undefined;}else{observeEvent({kind:'producer'});schedule();}};
     document.addEventListener('visibilitychange',onVisibility);
     const onOnline=()=>schedule();window.addEventListener('online',onOnline);
-    api.signal.addEventListener('abort',()=>{enabled=false;clearTimeout(timer);timer=undefined;pending=[];recent=[];recoveryContexts.clear();pendingBytes=recentBytes=0;document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('online',onOnline);},{once:true});
+    api.signal.addEventListener('abort',()=>{enabled=false;clearTimeout(timer);timer=undefined;pending=[];recent=[];recoveryContexts.clear();connectionOutages.clear();usableHosts.clear();pendingBytes=recentBytes=0;document.removeEventListener('visibilitychange',onVisibility);window.removeEventListener('online',onOnline);},{once:true});
     observeEvent({kind:'producer'});
     if(enabled){
       for(const listener of enabledListeners)listener();

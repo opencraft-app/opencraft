@@ -1,6 +1,8 @@
 import type { AppServerNotification } from "./methods";
 
 export interface AppServerRequestOptions {
+  /** Local diagnostics only; never serialized into engine params. */
+  historySource?: "open" | "snapshot-reread" | "attention" | "overview" | "navigation" | "refresh" | "task-metadata";
   timeoutMs?: number;
   priority?: "background" | "user-visible" | "user-blocking";
   signal?: AbortSignal;

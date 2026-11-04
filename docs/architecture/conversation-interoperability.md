@@ -62,6 +62,19 @@ previews. The native history remains authoritative.
 
 ## Commands, permission and audit
 
+The bundled [CLI](../cli.md) negotiates `servers`, `metadata`,
+`metadataDiscovery` and `boundedRead` independently on this same command lane.
+The directory returns the admitted Actor and stable installation/Server identity.
+Metadata discovery disables native rollout repair and projects only explicit
+metadata; it never substitutes preview text for an absent title. CLI history
+uses native item pagination and chunk continuations instead of full-history
+hydration. Cursors bind the resource, observed native revision and item hash.
+The CLI sends `bounded:true`; this selects a separate bounded projection on the
+same execution owner. It cannot fall back to the legacy conversation reader.
+Codex supports this projection; other engines explicitly reject it until their
+native reads are bounded. Existing UI and model-tool readers retain their wire
+contract.
+
 `opencraft/collaboration` is the initialized Host command lane. `reference`,
 `discover`, `read`, `send`, `delivery` and `cancel` reuse the same core authority as
 model tools and the existing Actor HTTP channel adapter. The wire cannot supply
@@ -121,6 +134,27 @@ merely because a response was lost. Historical submitted facts remain factual
 after revocation.
 
 ## Supported boundary and verification
+
+The CLI's `lookup` action reads the existing Actor/key ledger, reauthorizes the
+canonical conversation, and returns an allowlisted receipt without reading
+message content or triggering the execution pump. Missing keys remain unknown:
+an earlier in-flight request may still commit. `delivery` with `metadataOnly`
+uses the same receipt projection and is negotiated as `deliveryMetadata`.
+Legacy delivery consumers retain their original response. CLI sends issue one
+mutation; disconnections retain the original key and never replay the send.
+Waiting for delivery polls only receipts and recognizes submitted/injected as
+engine acceptance, while taskOutcome remains unknown.
+Discovery filters are separately negotiated and passed to native metadata-only
+catalog reads with a bounded page. Paths are normalized on the Server, without
+using the calling machine's cwd. Engines without filter support reject the
+request before opening a native catalog. Attention is projected from explicit
+native flags, without fetching interaction payloads; unavailable identity stays
+null. A configured public UI base can render the canonical resource link.
+Recovery is read from the existing Host recovery owner. Exact-turn steer uses
+the original execution/queue authority and never falls back to queue.
+Steer skips optional attention reads. Queue is admitted before its bounded
+attention read, which degrades to unknown without preventing admission; recovery enrichment also
+has a bounded optional read and cannot invalidate successful native metadata.
 
 Configured local Codex and enabled Pi/DSH targets can be discovered, read and
 receive messages through the shared core. Actor run bindings and source-tool

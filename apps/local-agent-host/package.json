@@ -31,7 +31,8 @@
     "@opencraft/session-capabilities": "0.1.0",
     "@opencraft/host-recovery": "0.1.0",
     "@opencraft/native-history-node": "0.1.0",
-    "@opencraft/app-host-server": "0.1.0"
+    "@opencraft/app-host-server": "0.1.0",
+    "@opencraft/model-usage-policy": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

@@ -184,6 +184,8 @@ export async function createWebWorkbenchApplication(
   }
   let browserWorkbench: BrowserWorkbenchCoordinator;
   let terminalSessions: ConversationTerminalSessionRegistry | null = null;
+  const terminalHostObservers = new Map<string, () => void>();
+  const releaseTerminalRecovery = () => { for (const remove of terminalHostObservers.values()) remove(); terminalHostObservers.clear(); };
   try {
     await panelRuntime.install(TimelineBlockRendererRegistryService);
     await panelRuntime.install(BuiltinTimelineRendererPlugin);
@@ -247,6 +249,22 @@ export async function createWebWorkbenchApplication(
           origin: window.location.origin, openSocket: endpoint => { const url = new URL(endpoint); url.pathname = serverUrl(url.pathname); return new WebSocket(url); } });
         await panelRuntime.install(createCloudDesktopWorkbenchPanelPlugin({ backend: hostDesktop, surfaces: hostDesktop.surfaces }));
       }
+      const observeTerminalHost = (hostId: string) => {
+        if (terminalHostObservers.has(hostId)) return;
+        const runtime = activeSupervisor.registry.getRuntime(hostId);
+        let readyGeneration: number | null = null;
+        const changed = () => {
+          if (browserAdmission.signal.aborted) return;
+          const snapshot = runtime.getSnapshot();
+          if (snapshot.phase !== "ready") { readyGeneration = null; return; }
+          if (readyGeneration === snapshot.connectionGeneration) return;
+          readyGeneration = snapshot.connectionGeneration;
+          for (const binding of conversationBindings.getSnapshot().bindings)
+            if (binding.hostId === hostId) panelRuntime.panels.refreshOwnerResources(binding.scopeId);
+        };
+        terminalHostObservers.set(hostId, runtime.subscribe(changed));
+        changed();
+      };
       resolveTerminalRuntime = (hostId) => activeSupervisor.registry.getRuntime(hostId);
       await panelRuntime.install(SideChatService, { resolveHost: (hostId: string) => activeSupervisor.registry.ensureConnected(hostId) });
       await panelRuntime.install(createSideChatPanelPlugin(panelRuntime.context.sideChats, conversationBindings, hostId => activeSupervisor.registry.getRuntime(hostId)));
@@ -271,7 +289,17 @@ export async function createWebWorkbenchApplication(
           () => import("@opencraft/plugin-terminal"), signal,
         );
         signal?.throwIfAborted();
-        await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions));
+        await panelRuntime.install(createTerminalWorkbenchPanelPlugin(sessions,
+          ownerId => ({ threadId: conversationBindings.resolve(ownerId as Parameters<typeof conversationBindings.resolve>[0])?.conversationKey?.threadId ?? null }),
+          async ownerId => {
+            if (remoteStorage) { await remoteStorage.whenReady(); conversationBindings.restore(); }
+            const binding = conversationBindings.resolve(ownerId as Parameters<typeof conversationBindings.resolve>[0]);
+            if (!binding) return;
+            observeTerminalHost(binding.hostId);
+            await activeSupervisor.registry.ensureConnected(binding.hostId);
+            if (conversationBindings.resolve(binding.scopeId) !== binding) return;
+            await sessions.restore(binding.hostId, ownerId, { threadId: binding.conversationKey?.threadId ?? null });
+          }));
       };
       if (optionalFeatures === null) await installTerminal();
       else optionalFeatures.add("terminal-presentation", installTerminal);
@@ -294,6 +322,7 @@ export async function createWebWorkbenchApplication(
     browserPages.dispose();
     browserSurfaces.dispose(); releaseStorageErrors?.(); remoteStorage?.dispose();
     conversationBindings.dispose();
+    releaseTerminalRecovery();
     await terminalSessions?.dispose().catch(() => undefined);
     await panelRuntime.dispose().catch(() => undefined);
     await chatRenderRuntime.dispose().catch(() => undefined);
@@ -318,6 +347,7 @@ export async function createWebWorkbenchApplication(
       () => optionalFeatures?.dispose(),
       // Retire consumers before their Host transport provider.
       () => hostProxy.dispose(),
+      releaseTerminalRecovery,
       () => terminalSessions?.dispose(),
       () => panelRuntime.dispose(),
       () => hostDesktop?.dispose(),

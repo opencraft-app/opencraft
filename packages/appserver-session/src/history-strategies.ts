@@ -1,5 +1,6 @@
 import { Context, Service } from "@deepseek-ai/cordis";
 import { isHistoryResponseTooLargeError, type AppServerClient } from "@opencraft/appserver-client";
+import { executionEngineExtension } from "@opencraft/appserver-client";
 import type {
   AppServerThread,
   AppServerThreadItem,
@@ -185,11 +186,12 @@ export async function readTurnsPage(
   limit = 10,
 ): Promise<ThreadTurnsListResponse> {
   let pageLimit = limit;
-  const request = (itemsView: "full" | "notLoaded") => context.client.request("thread/turns/list", {
+  const compact = executionEngineExtension(context.client.initializeResult?.capabilities?.extensions, context.threadId, "opencraft/read-history")?.itemDetails === true;
+  const request = (itemsView: "full" | "notLoaded" | "presentation") => context.client.request("thread/turns/list", {
     threadId: context.threadId, cursor, limit: pageLimit, itemsView, sortDirection: "desc",
   }, { timeoutMs: context.requestTimeoutMs, priority: "user-visible", signal: context.signal });
   while (true) {
-    try { return requireTurnsPage(await request("full"), "thread/turns/list"); }
+    try { return requireTurnsPage(await request(compact ? "presentation" : "full"), "thread/turns/list"); }
     catch (error) {
       if (!isHistoryResponseTooLargeError(error)) throw error;
       if (pageLimit <= 1) return requireTurnsPage(await request("notLoaded"), "thread/turns/list");

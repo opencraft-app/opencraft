@@ -108,9 +108,14 @@ for (const schema of ["current", "without-intent", "missing-pending", "missing-g
       if (schema === "missing-pending") legacy.exec("DROP TABLE dsh_pending_generations");
       if (schema === "missing-generations") legacy.exec("DROP TABLE dsh_session_generations");
       legacy.close();
+      if (schema === "unknown") {
+        assert.throws(() => new DshSessionRouting(path), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.equal(retained.prepare("SELECT native_id FROM dsh_session_generations").get()?.native_id, "s.g1"); retained.close(); return;
+      }
       const routing = new DshSessionRouting(path);
       try {
-        assert.equal(routing.outcome.status, schema === "current" ? "adopted" : schema === "unknown" ? "moved-aside" : "migrated");
+        assert.equal(routing.outcome.status, schema === "current" ? "adopted" : "migrated");
         assert.ok(routing.outcome.backupPath);
         assert.equal(routing.native("s"), hasGeneration ? "s.g1" : "s");
         assert.deepEqual(routing.pending(), pending);

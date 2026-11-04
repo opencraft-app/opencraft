@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import { join, isAbsolute } from 'node:path';
 import { freemem, totalmem } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
+import { collectCgroupPids } from '../server-deployment/owner-cgroup.mjs';
 import { parseReplayState } from '../full-release/contract.mjs';
 
 const exec = promisify(execFile);
@@ -102,14 +103,14 @@ async function unitInfo(unit, bootId) {
   if (!p) return { unit, status: 'unknown', reason: 'unit-unreadable', processes: [] };
   if (p.LoadState === 'not-found') return { unit, status: 'not-installed', processes: [] };
   let pids = p.MainPID && p.MainPID !== '0' ? [Number(p.MainPID)] : [];
-  const members = p.ControlGroup ? await safe(() => text(join('/sys/fs/cgroup', p.ControlGroup, 'cgroup.procs'))) : null;
-  if (members) pids.push(...members.trim().split('\n').map(Number).filter(n => n > 0));
+  const members = p.ControlGroup ? await safe(() => collectCgroupPids(join('/sys/fs/cgroup', p.ControlGroup))) : null;
+  if (members) pids.push(...members);
   pids = [...new Set(pids)].sort((a, b) => a - b);
   const processes = (await Promise.all(pids.map(pid => processInfo(pid, bootId)))).filter(Boolean);
   const after = await properties(unit);
   return { unit, status: p.ActiveState === 'active' ? 'observed' : 'inactive', activeState: p.ActiveState, subState: p.SubState,
     mainPid: Number(p.MainPID), user: p.User, controlGroup: p.ControlGroup,
-    stable: after?.MainPID === p.MainPID && processes.length === pids.length,
+    stable: after?.MainPID === p.MainPID && processes.length === pids.length && (!p.ControlGroup || members !== null),
     nextStart: unknown('unit-files-observed-but-next-launch-not-attested'),
     unitFile: p.FragmentPath ? await fileIdentity(p.FragmentPath) : null,
     dropIns: await Promise.all((p.DropInPaths?.split(' ').filter(Boolean) ?? []).map(fileIdentity)), processes };

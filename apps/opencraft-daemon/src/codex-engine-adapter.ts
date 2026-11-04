@@ -1,14 +1,19 @@
+import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
+import { ProvisionalThreads } from "./provisional-threads.js";
+import { nativeEmptyCreation } from "./native-empty-creation.js";
 import { HostInteractions, InteractionFault } from "@opencraft/app-host-server/interactions";
+import { COLLABORATION_CAPABILITIES } from '@opencraft/appserver-protocol/collaboration';
 import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND, isHumanInteraction, type InteractionSourceRequest } from "@opencraft/appserver-protocol";
 import { projectThreadTopologyResult } from "./thread-orchestration-projection.js";
 import { ExecutionLeaseStore, originalExecutionInputIds, snapshotExecutionSubmission } from "./execution-lease-store.js";
+import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot } from '../../../scripts/execution-environment.js';
 import { CodexOrchestrationControl, OrchestrationControlError } from "./codex-orchestration-control.js";
 import { TokenUsageAttemptWriter } from "./token-usage-attempt-writer.js";
-import { serializeHistoryReply, isHistoryResponseTooLargeError } from "@opencraft/appserver-client";
-import { TranscriptReadCache } from "@opencraft/native-history-node";
+import { serializeHistoryReply, isHistoryResponseTooLargeError, AppServerRpcError, threadUnavailableReason } from "@opencraft/appserver-client";
+import { historyLengthBucket, historyTurnCountBucket, NativeItemPaginationUnsupported, NativeItemReadScheduler, TranscriptReadCache, type HistoryReadContext, type ItemHydrationPath } from "@opencraft/native-history-node";
 import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
-import { InterruptedTurnRecovery, RecoveryNotSubmitted, type RecoveryTurn } from "@opencraft/host-recovery";
+import { InterruptedTurnRecovery, RecoveryNotSubmitted, ProviderTurnRetry, codexProviderFailure, pooledRetryAt, type ProviderRetry, type ProviderFailure, type RecoveryTurn } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { labelUsagePeople } from "./token-usage-people.js";
@@ -24,7 +29,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, stat } from "node:fs/promises";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 import { join } from "node:path";
 import { OpenCraftHostQueue, type HostQueuedSubmission } from "./opencraft-host-queue.js";
@@ -32,6 +37,7 @@ import { OpenCraftHostStateDatabase } from "./opencraft-host-state-database.js";
 import { OpenCraftTokenUsageLedger, type UsageSubmission } from "./token-usage-ledger.js";
 import { CodexTokenUsageRuntime } from "./token-usage-runtime.js";
 import { CodexThreadTitles } from "./codex-thread-titles.js";
+import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { DurableThreadCatalog } from "./durable-thread-catalog.js";
 import { ThreadIdentity, assertSubmissionIdentity, readThreadMessageIds } from "./thread-identity.js";
 import { projectThreadMessageResult, projectThreadMessageNotification } from "./thread-message-projection.js";
@@ -43,6 +49,7 @@ import { CodexNativeCoreTransport } from "./codex-native-core-transport.js";
 import { TasksService, TasksFault } from "@opencraft/plugin-tasks/server";
 import { CODEX_NATIVE_SHARED_METHODS, discoverNativeCodexGoalCapability, projectSharedNativeCodexInitialize } from "./codex-native-surface.js";
 import { projectThreadAttachmentNotification, projectThreadAttachmentResult } from "./thread-message-attachment-projection.js";
+import { readHistoryResourceMetadata } from "./history-resource-metadata.js";
 
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
@@ -96,6 +103,7 @@ function nativeHistoryTooLarge(error: unknown): boolean {
 type RpcRecord = Record<string, unknown>;
 
 interface PendingRequest {
+  readonly historyTiming?: { readonly pairId: string; readonly started: number; nativeStarted?: number };
   usageAttemptId?: string;
   readonly metadataSender?: import("@opencraft/appserver-protocol").MessageSender | null;
   readonly clientId: string;
@@ -114,26 +122,58 @@ interface PendingServerRequest {
 }
 
 const MAX_PENDING_SERVER_REQUESTS = 256;
-const CAPACITY_RETRY_BASE_MS = 1_000;
-const CAPACITY_RETRY_MAX_MS = 120_000;
 const DEFAULT_HISTORY_READ_TIMEOUT_MS = 30_000;
 const MAX_HISTORY_READ_TIMEOUT_MS = 120_000;
 
-export function capacityRetryDelayMs(attempt: number): number {
-  return Math.min(CAPACITY_RETRY_BASE_MS * 2 ** Math.min(attempt, 7), CAPACITY_RETRY_MAX_MS);
+interface SessionMcpCreation {
+  readonly configuration: RpcRecord;
+  bindThread?(threadId: string): void;
+  bind(threadId: string, inputId: string, executionId: string): void;
+  cancel(): void;
 }
-
-interface CapacityRetry {
-  attempt: number;
-  failedTurnId: string;
-  timer: ReturnType<typeof setTimeout> | null;
-  inFlight: boolean;
-  autoTurnId: string | null;
+class SessionMcpRecoveryPending extends Error {
+  constructor() { super("The previous reply is recovering; input was not sent. Retry shortly."); }
 }
-
+type SessionMcpStage = "initial-preparation" | "resolve-tools" | "resolve-environment" | "read-thread"
+  | "check-idle" | "capture-settings" | "preserve-permissions" | "unsubscribe" | "wait-for-unload"
+  | "apply-tools" | "restore-settings" | "release-initial";
+class SessionMcpPreparationFailure extends Error {
+  readonly diagnosticId = randomUUID();
+  constructor(readonly stage: SessionMcpStage, cause: unknown, readonly threadId: string,
+    readonly inputId?: string, readonly nativeStatus?: string) {
+    super(errorMessage(cause), { cause });
+  }
+}
+// Only controlled local messages become public reasons. Native error messages can
+// contain credentials, environment values or paths and never cross this boundary.
+function sessionMcpReason(cause: unknown): string {
+  if (cause instanceof SessionMcpRecoveryPending) return "reconfiguration-pending";
+  const message = cause instanceof Error ? cause.message : "";
+  switch (message) {
+    case "Wait until the Codex thread is idle before changing its tools": return "thread-busy";
+    case "Codex AppServer closed": return "connection-closed";
+    case "Codex AppServer is not initialized": return "connection-not-ready";
+    case "Thread creation belongs to an expired connection":
+    case "Session tool preparation belongs to an expired connection": return "connection-expired";
+    case "Environment belongs to another account or project; start a new session": return "environment-owner-mismatch";
+    case "Environment variables require a Codex owner handoff": return "environment-handoff-required";
+    case "Session tools require an attested execution": return "execution-unattested";
+    case "Cannot preserve this Codex sandbox while refreshing tools": return "sandbox-unsupported";
+    default:
+      if (/^Codex thread\/(?:read|resume|unsubscribe|settings\/update) delivery outcome is unknown after timeout$/.test(message)) return "preparation-timeout";
+      return typeof record(cause).code === "number" ? "native-rpc-failed" : "preparation-failed";
+  }
+}
+function sessionMcpRetryable(cause: unknown): boolean {
+  return ["thread-busy", "connection-closed", "connection-not-ready", "connection-expired",
+    "preparation-timeout", "reconfiguration-pending"].includes(sessionMcpReason(cause));
+}
 interface SharedCodexRoutingOptions {
+  readonly executionEnvironment?: ExecutionEnvironmentRuntime;
   /** Trusted Host composition. Never accepted from renderer requests. */
   readonly sessionMcp?: (threadId: string, inputId?: string, executionId?: string) => Record<string, unknown> | null | Promise<Record<string, unknown> | null>;
+  readonly createSessionMcp?: () => SessionMcpCreation | Promise<SessionMcpCreation>;
+  readonly restoreSessionMcp?: (threadId: string) => SessionMcpCreation | null | Promise<SessionMcpCreation | null>;
   readonly observationComponent?: 'core' | 'gateway';
   readonly tokenUsage?: {
     readonly queryWorkerEntry?: string;
@@ -160,6 +200,8 @@ interface SharedCodexRoutingOptions {
   readonly onStorageOpened?: (outcomes: readonly { name: string; outcome: DatabaseOutcome }[]) => void;
   readonly createThreadMetadata?: (database: import("node:sqlite").DatabaseSync, context: import("@opencraft/appserver-client").ThreadMetadataContext) => import("@opencraft/appserver-client").ThreadMetadataExtension;
   readonly logDiagnostic?: (event: Record<string, unknown>) => void;
+  /** Trusted Host hook for slow history-read resources; defaults to process metadata. */
+  readonly historyResourceMetadata?: () => Promise<Awaited<ReturnType<typeof readHistoryResourceMetadata>>>;
   readonly nativeSubscriptionGraceMs?: number;
   /** Trusted core authority for reserved collaboration inputs; absent means reject. */
   readonly collaborationInput?: {
@@ -183,6 +225,7 @@ interface LocalCodexEngineOptions extends SharedCodexRoutingOptions {
   readonly writerOwnership?: boolean;
   readonly executable: string;
   readonly runtimeDirectory: string;
+  readonly modelPolicyPath?: string;
   readonly dataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly upstreamBaseUrl?: string;
@@ -233,7 +276,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
       ...capabilities,
       extensions: {
         ...extensions,
-        ...(collaboration ? {"opencraft/collaboration": {version:1,read:true,queue:true,steer:true}} : {}),
+        ...(collaboration ? {"opencraft/collaboration": COLLABORATION_CAPABILITIES} : {}),
         [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
@@ -298,7 +341,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly activeTurns = new Map<string, string>();
   private readonly activeGoalThreads = new Set<string>();
   private readonly goalContinuationTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  private readonly capacityRetries = new Map<string, CapacityRetry>();
+  private providerRetry: ProviderTurnRetry | null = null;
   private recovery: InterruptedTurnRecovery | null = null;
   private coreReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private coreReinitializing = false;
@@ -317,6 +360,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   private queue: OpenCraftHostQueue | null = null;
   private schedules: ConversationSchedules | null = null;
   private hostState: OpenCraftHostStateDatabase | null = null;
+  private provisionalThreads: ProvisionalThreads | null = null;
   private get executionLeases(): ExecutionLeaseStore | null { return this.hostState ? new ExecutionLeaseStore(this.hostState.database) : null; }
   private async reconcileExecutionLeases(): Promise<void> {
     const store = this.executionLeases;
@@ -373,6 +417,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   private identity: ThreadIdentity | null = null;
   private get messageSenders() { return this.identity?.senders ?? null; }
   private get threadMetadata() { return this.identity?.metadata ?? null; }
+  private readonly catalogChanges = new ThreadCatalogPublisher((method, params) => {
+    const change = params.change;
+    const topology = change.type === "upsert" ? this.options.collaboration?.topology?.(change.thread.id) : null;
+    const metadata = topology && change.type === "upsert"
+      ? { ...params, change: { ...change, thread: { ...change.thread, ...topology } } } : params;
+    for (const clientId of this.initializedClients) this.emit({ method, params: metadata }, clientId);
+  }, true);
   private durableCatalog: DurableThreadCatalog | null = null;
   private metadataRequests = 0;
   private messageAttachments: OpenCraftMessageAttachments | null = null;
@@ -387,8 +438,16 @@ export class CodexEngineAdapter implements DuplexTransport {
   private readonly coreBridge: CodexCoreBridge | null;
   private readonly nativeCore: CodexNativeCoreTransport | null;
   private transcriptCache: TranscriptReadCache | null = null;
+  private readonly historyItemReadScheduler = new NativeItemReadScheduler(4);
+  private readonly historyAdapterFallbackSignals = new WeakSet<AbortSignal>();
+  private readonly historyUnsupportedItemSignals = new WeakSet<AbortSignal>();
+  private readonly historyReadTraces = new WeakMap<AbortSignal, { pairId: string; nativeRpcMs: number; nativeRpcCount: number; itemHydrationPath: string; turnCountBucket: string; lengthBucket: string; itemQueueMs?: number }>();
+  private readonly historyTurnCounts = new WeakMap<AbortSignal, number>();
   private cachedHistoryInFlight = 0;
-  private readonly cachedHistoryReads = new Map<string, Set<AbortController>>();
+  private readonly cachedHistoryReads = new Map<string, Map<AbortController, string>>();
+  private readonly cachedHistoryFlights = new Map<string, { promise: Promise<RpcRecord>; controller: AbortController; readers: Set<object> }>();
+  private cachedHistoryWaiters = 0;
+  private readonly cachedHistoryCancellations = new Map<string, { threadId: string; cancel(): void }>();
   private readonly nativeTransport: DuplexTransport | null;
   private releaseOverlays: (() => void) | null = null;
   private releaseWriter: (() => void) | null = null;
@@ -420,6 +479,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       },
       serialize: (threadId, work) => this.withThreadOperation(threadId, work),
       changed: (threadId, name) => {
+        this.catalogChanges.observeNotification("thread/name/updated", { threadId, threadName: name });
         this.durableCatalog?.observe("thread/name/updated", { threadId, threadName: name });
         // Native name/set notifications are subscription-scoped; every admitted
         // catalog reader must invalidate even when this Thread has no open View.
@@ -481,8 +541,19 @@ export class CodexEngineAdapter implements DuplexTransport {
     return this.options.kind === "remote" ? undefined : this.options.desktop;
   }
 
+  private historyDiagnostic(event: Record<string, unknown>): void {
+    try { this.diagnostic(event); } catch { /* Read settlement is independent of diagnostics. */ }
+  }
+
+  private noteHistoryReadContext(signal: AbortSignal | undefined, context: HistoryReadContext): void {
+    if (!signal) return;
+    const trace = this.historyReadTraces.get(signal);
+    if (trace) Object.assign(trace, context);
+  }
+
   private diagnostic(event: Record<string, unknown>): void {
-    const entry = { component: "codex-engine-adapter", at: new Date().toISOString(), ...event };
+    const raw = { component: "codex-engine-adapter", at: new Date().toISOString(), ...event };
+    const entry = (this.options.executionEnvironment?.redact(raw) ?? raw) as Record<string, unknown>;
     if (this.options.logDiagnostic) this.options.logDiagnostic(entry);
     else console.info("[codex-engine-diagnostic]", JSON.stringify(entry));
   }
@@ -521,9 +592,11 @@ export class CodexEngineAdapter implements DuplexTransport {
   get storageOutcomes(): readonly { name: string; outcome: DatabaseOutcome }[] {
     return [
       ...(this.hostState ? [{ name: "opencraft-host-state", outcome: this.hostState.outcome }] : []),
+      ...(this.provisionalThreads ? [{ name: "thread-creation-lifecycle", outcome: this.provisionalThreads.outcome }] : []),
       ...(this.tokenUsageState ? [{ name: "token-usage", outcome: this.tokenUsageState.outcome }] : []),
       ...(this.schedules ? [{ name: "conversation-schedules", outcome: this.schedules.outcome }] : []),
       ...(this.recovery ? [{ name: "interrupted-turn-recovery", outcome: this.recovery.outcome }] : []),
+      ...(this.providerRetry ? [{ name: "provider-turn-retry", outcome: this.providerRetry.outcome }] : []),
       ...(this.messageAttachments ? [{ name: "opencraft-message-attachments", outcome: this.messageAttachments.outcome }] : []),
       ...(this.tasks?.outcome ? [{ name: "tasks", outcome: this.tasks.outcome }] : []),
       ...(this.poolStore ? [{ name: "account-pool", outcome: this.poolStore.outcome }] : []),
@@ -575,54 +648,114 @@ export class CodexEngineAdapter implements DuplexTransport {
     const runtimeRoot = join(dataRoot, "runtime");
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     this.hostState = new OpenCraftHostStateDatabase(dataRoot);
+    this.provisionalThreads = new ProvisionalThreads(dataRoot);
     this.executionLeases?.suspend();
     const adapter = this;
     const nativeStorage = new CodexNativeStorage(this.nativeCore?.control ?? null,
       () => string(record(adapter.initializeResult).codexHome) || runtimeRoot);
+    const listTurnItems = async (threadId: string, turnId: string, signal?: AbortSignal, path: ItemHydrationPath = "adapter-oversize-fallback") => {
+      const actualPath = signal && this.historyAdapterFallbackSignals.has(signal) ? "adapter-oversize-fallback" : path;
+      this.noteHistoryReadContext(signal, { itemHydrationPath: actualPath });
+      const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
+      let itemCursor: string | null = null, budget = 100;
+      const seen = new Set<string>();
+      do {
+        let response: any;
+        for (;;) {
+          try { response = await this.requestPhysical("thread/items/list", { threadId, turnId,
+            cursor: itemCursor, limit: budget, sortDirection: "asc" }, 30_000, signal); break; }
+          catch (error) {
+            if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
+            budget = Math.max(1, Math.floor(budget / 2));
+          }
+        }
+        if (!Array.isArray(response.data) || !(response.nextCursor === null || typeof response.nextCursor === "string"))
+          throw new Error("Invalid native Item page");
+        for (const entry of response.data) {
+          const item = record(entry.item ?? entry);
+          if (typeof item.id !== "string" || (typeof entry.turnId === "string" && entry.turnId !== turnId)) throw new Error("Invalid native Item");
+          items.push(item as import("@opencraft/appserver-protocol").AppServerThreadItem);
+        }
+        itemCursor = response.nextCursor;
+        if (itemCursor !== null && seen.has(itemCursor)) throw new Error("Repeated native Item cursor");
+        if (itemCursor !== null) seen.add(itemCursor);
+      } while (itemCursor !== null);
+      return items;
+    };
+    const listTurns = async (threadId: string, cursor: string | null, limit: number, signal?: AbortSignal, sortDirection: "asc" | "desc" = "desc") => {
+        const request = (itemsView: "full" | "notLoaded", pageLimit: number) => this.requestPhysical("thread/turns/list", {
+          threadId, cursor, limit: pageLimit, itemsView, sortDirection,
+        }, 30_000, signal) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
+        let pageLimit = limit, page;
+        for (;;) {
+          try { page = await request("full", pageLimit); break; }
+          catch (fullPageSizeError) {
+            if (!nativeHistoryTooLarge(fullPageSizeError)) throw fullPageSizeError;
+            let headers;
+            try { headers = await request("notLoaded", pageLimit); }
+            catch (headerError) {
+              if (![-32601, -32602].includes(Number(record(headerError).code))) throw headerError;
+              if (pageLimit === 1) throw fullPageSizeError;
+              pageLimit = Math.max(1, Math.floor(pageLimit / 2));
+              continue;
+            }
+            // Once Item pagination is known to be unavailable, the cache must
+            // receive full Turns. Keep the original page-size error so its
+            // bounded page reduction can find a full page that fits.
+            if (signal && this.historyUnsupportedItemSignals.has(signal)) {
+              if (pageLimit === 1) throw fullPageSizeError;
+              pageLimit = Math.max(1, Math.floor(pageLimit / 2));
+              continue;
+            }
+            page = { ...headers, data: headers.data.map(turn => turn.itemsView !== "notLoaded" && turn.items?.length
+              ? turn : { ...turn, items: [], itemsView: "notLoaded" as const }) };
+            if (signal) this.historyAdapterFallbackSignals.add(signal);
+            break;
+          }
+        }
+        if (signal) {
+          const count = (this.historyTurnCounts.get(signal) ?? 0) + page.data.length;
+          if (page.nextCursor === null) this.noteHistoryReadContext(signal, { turnCountBucket: historyTurnCountBucket(count) });
+        }
+        if (signal) this.historyTurnCounts.set(signal, (this.historyTurnCounts.get(signal) ?? 0) + page.data.length);
+        return page;
+      };
     this.transcriptCache = new TranscriptReadCache(dataRoot, {
       get nativeHome() { return string(record(adapter.initializeResult).codexHome) || runtimeRoot; },
       resolveSource: (threadId, path) => nativeStorage.resolve(threadId, path),
-      readThread: async (threadId, signal) => record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread as AppServerThread,
-      listTurns: async (threadId, cursor, limit, signal, sortDirection = "desc") => {
-        const request = (itemsView: "full" | "notLoaded") => this.requestPhysical("thread/turns/list", {
-          threadId, cursor, limit, itemsView, sortDirection,
-        }, 30_000, signal) as Promise<{ data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null }>;
-        let page;
-        try { page = await request("full"); }
+      listTurnItems: async (threadId, turnId, signal, path) => {
+        try { return await listTurnItems(threadId, turnId, signal, path); }
         catch (error) {
-          if (!nativeHistoryTooLarge(error)) throw error;
-          page = await request("notLoaded");
+          if ([-32601, -32602].includes(Number(record(error).code))) {
+            if (signal) this.historyUnsupportedItemSignals.add(signal);
+            throw new NativeItemPaginationUnsupported("Native Item pagination is unavailable", { cause: error });
+          }
+          throw error;
         }
-        for (const turn of page.data) if (turn.itemsView === "notLoaded") {
-          const items: import("@opencraft/appserver-protocol").AppServerThreadItem[] = [];
-          let itemCursor: string | null = null, budget = 100;
-          const seen = new Set<string>();
-          do {
-            let response: any;
-            for (;;) {
-              try { response = await this.requestPhysical("thread/items/list", { threadId, turnId: turn.id,
-                cursor: itemCursor, limit: budget, sortDirection: "asc" }, 30_000, signal); break; }
-              catch (error) {
-                if (budget === 1 || !nativeHistoryTooLarge(error)) throw error;
-                budget = Math.max(1, Math.floor(budget / 2));
-              }
-            }
-            if (!Array.isArray(response.data) || !(response.nextCursor === null || typeof response.nextCursor === "string"))
-              throw new Error("Invalid native Item page");
-            for (const entry of response.data) {
-              const item = record(entry.item ?? entry);
-              if (typeof item.id !== "string" || (typeof entry.turnId === "string" && entry.turnId !== turn.id)) throw new Error("Invalid native Item");
-              items.push(item as import("@opencraft/appserver-protocol").AppServerThreadItem);
-            }
-            itemCursor = response.nextCursor;
-            if (itemCursor !== null && seen.has(itemCursor)) throw new Error("Repeated native Item cursor");
-            if (itemCursor !== null) seen.add(itemCursor);
-          } while (itemCursor !== null);
-          turn.items = items; turn.itemsView = "full";
-        }
-        return page;
       },
-    }, { measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
+      listTurnHeaders: async (threadId, cursor, limit, signal) => {
+        try {
+          const page = await this.requestPhysical("thread/turns/list", {
+            threadId, cursor, limit, itemsView: "notLoaded", sortDirection: "desc",
+          }, 30_000, signal) as { data: import("@opencraft/appserver-protocol").AppServerTurn[]; nextCursor: string | null };
+          return { ...page, data: page.data.map(turn => turn.itemsView !== "notLoaded" && turn.items?.length
+            ? turn : { ...turn, items: [], itemsView: "notLoaded" as const }) };
+        }
+        catch (error) {
+          // An older native reader can serve full pages without a header view.
+          if (![-32601, -32602].includes(Number(record(error).code))) throw error;
+          return listTurns(threadId, cursor, limit, signal);
+        }
+      },
+      readThread: async (threadId, signal) => {
+        const thread = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false }, 30_000, signal)).thread) as AppServerThread;
+        let bytes = -1;
+        try { if (typeof thread.path === "string") bytes = (await stat(thread.path)).size; } catch { /* Missing metadata stays unknown. */ }
+        this.noteHistoryReadContext(signal, { lengthBucket: historyLengthBucket(bytes) });
+        return thread;
+      },
+      listTurns,
+    }, { itemReadScheduler: this.historyItemReadScheduler, measured: metric => this.diagnostic({ event: "thread-read-cache", ...metric }) });
     try {
       const telemetry=new TokenUsageTelemetry();
       this.tokenUsageState = new TokenUsageStateDatabase(dataRoot, this.hostState.path);
@@ -677,6 +810,31 @@ export class CodexEngineAdapter implements DuplexTransport {
         for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
       },
     });
+    this.providerRetry = new ProviderTurnRetry(dataRoot, {
+      serialize: (threadId, operation) => this.withThreadOperation(threadId, operation),
+      inspect: turn => this.inspectProviderRetry(turn),
+      continue: async (turn, current, admit) => {
+        await this.prepareSessionMcp(turn.threadId);
+        if (!current()) return null;
+        const inputId = turn.inputId!;
+        this.options.collaboration?.continuing?.(turn.threadId, turn.turnId, inputId);
+        const identity: UsageSubmission = { threadId: turn.threadId, inputId, actorId: null, actorKind: "session", mode: "start", sourceKind: "system", submittedAt: Date.now() };
+        this.tokenUsage?.submission(identity);
+        const result = record(await this.requestPhysical("turn/start", { threadId: turn.threadId, input: [], clientUserMessageId: inputId }, 30_000, undefined, identity, admit));
+        const turnId = string(record(result.turn).id);
+        if (turnId) this.options.collaboration?.continued?.(turn.threadId, turn.turnId, turnId);
+        return turnId || null;
+      },
+      changed: threadId => {
+        const recovery = this.providerRetry?.notice(threadId) ?? null;
+        if (recovery && ["scheduled", "exhausted", "unconfirmed"].includes(recovery.state)) this.options.collaboration?.orchestration?.observed({
+          threadId, turnId: recovery.turnId, rootTurnId: recovery.rootTurnId,
+          state: recovery.state === "scheduled" ? "recovering" : recovery.state === "exhausted" ? "exhausted" : "unconfirmed",
+        });
+        this.diagnostic({ event: "provider-retry-updated", threadId, state: recovery?.state ?? "cleared", attempts: recovery?.attempts, retryAt: recovery?.retryAt });
+        for (const clientId of this.initializedClients) this.emit({ method: "opencraft/turn-recovery/updated", params: { threadId, recovery } }, clientId);
+      },
+    }, Date.now, Math.random, () => !this.closeOperation && this.physicalInitialized && this.physicalAvailable && !this.admissionPaused());
     this.schedules = new ConversationSchedules(dataRoot, this.scheduleExecutionPort(), Date.now, event => this.diagnostic(event), () => {
       for (const clientId of this.initializedClients) this.emit({ method: "opencraft/schedules/changed", params: {} }, clientId);
     });
@@ -770,7 +928,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     child.once("close", (code, childSignal) => {
       this.diagnostic({ event: "appserver-exit", pid: child.pid ?? null, code, signal: childSignal, intentional: ["closing", "closed"].includes(this.statusValue.state) });
       if (["closing", "closed"].includes(this.statusValue.state)) return;
-      this.fail(new Error(`Codex AppServer exited (${code ?? childSignal ?? "unknown"})${this.stderrTail ? `: ${this.stderrTail}` : ""}`));
+      this.fail(new Error(`Codex AppServer exited (${code ?? childSignal ?? "unknown"})${this.stderrTail && !this.options.executionEnvironment ? `: ${this.stderrTail}` : ""}`));
     });
     const abort = () => { void this.close(); };
     signal?.addEventListener("abort", abort, { once: true });
@@ -814,7 +972,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         ...(queue?.inFlightKeys ?? []), ...pending, ...internal]).size,
       queued: queue?.queued ?? 0, unknown: queue?.unknown ?? 0, activeGoals: this.activeGoalThreads.size,
       pendingTitles: this.threadTitles?.pendingCount ?? 0, pendingApprovals: this.serverRequests.size + this.humanInteractions.size + (this.coreBridge?.pendingApprovals ?? 0),
-      capacityRetries: this.capacityRetries.size };
+      capacityRetries: this.providerRetry?.pendingThreadIds().length ?? 0 };
   }
 
   private applyGenerationFences(state: import("@opencraft/account-pool-host").CodexGenerationFenceState): void {
@@ -840,7 +998,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private generationUsageSnapshot(): { routingEpoch: string; blockedThreadIds: string[]; unscopedBusy: boolean; discoveryComplete: boolean; acknowledgedFenceEpoch: number } {
-    const blocked = new Set<string>([...this.activeTurns.keys(), ...(this.queue?.pendingThreads() ?? []), ...this.activeGoalThreads, ...this.capacityRetries.keys(), ...(this.recovery?.pendingThreadIds() ?? []), ...this.generationReconciling.keys(), ...(this.threadTitles?.pendingThreadIds() ?? []), ...this.generationAdmissionsInFlight.values()]);
+    const blocked = new Set<string>([...this.activeTurns.keys(), ...(this.queue?.pendingThreads() ?? []), ...this.activeGoalThreads, ...(this.providerRetry?.pendingThreadIds() ?? []), ...(this.recovery?.pendingThreadIds() ?? []), ...this.generationReconciling.keys(), ...(this.threadTitles?.pendingThreadIds() ?? []), ...this.generationAdmissionsInFlight.values()]);
     for (const schedule of this.schedules?.list().schedules ?? []) if (schedule.status === "active" || schedule.needsReview) blocked.add(schedule.threadId);
     let unscopedBusy = false;
     for (const request of [...this.pending.values(), ...this.internalRequests.values()]) {
@@ -871,9 +1029,17 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async sendClientMessage(message: RpcRecord, context: TransportSubmissionContext): Promise<void> {
+    delete message[EXECUTION_ENVIRONMENT_FIELD]; delete record(message.params)[EXECUTION_ENVIRONMENT_FIELD];
+    const receivedAt = performance.now();
     const clientId = string(message[LOGICAL_CLIENT_FIELD]);
     if (!clientId) throw new Error("Codex Engine requires a logical client identity");
     delete message[LOGICAL_CLIENT_FIELD];
+    try { await this.checkModelPolicy(message.method, record(message.params)); }
+    catch (cause) {
+      const error=cause as Error & {code?:number;data?:unknown};
+      this.emit({id:message.id,error:{code:error.code ?? -32043,message:error.message,data:error.data}},clientId);return;
+    }
+
     if (message.method === "runtime/client/disconnect") {
       this.diagnostic({ event: "client-disconnect", clientId, pid: this.child?.pid ?? null });
       this.disconnectClient(clientId);
@@ -919,10 +1085,42 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       return;
     }
+    if (id !== null && message.method === "thread/history/cancel") {
+      const params = record(message.params), key = JSON.stringify([clientId, this.clientEpoch(clientId), params.historyReadId]);
+      const reader = this.initializedClients.has(clientId) ? this.cachedHistoryCancellations.get(key) : undefined;
+      const cancelled = !!reader && reader.threadId === params.threadId;
+      if (cancelled) reader!.cancel();
+      this.emit({ id, result: { cancelled } }, clientId);
+      return;
+    }
     const historyParams = record(message.params);
     const cachedRead = message.method === "thread/read" && historyParams.initialTurnsPage !== undefined;
     const cachedPage = message.method === "thread/turns/list" && (historyParams.sortDirection === undefined || historyParams.sortDirection === "desc" || historyParams.sortDirection === "asc")
-      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:") || string(historyParams.cursor).startsWith("transcript-asc:"));
+      && (historyParams.itemsView === "full" || historyParams.itemsView === "notLoaded" || historyParams.itemsView === "presentation") && (historyParams.cursor == null || string(historyParams.cursor).startsWith("transcript:") || string(historyParams.cursor).startsWith("transcript-asc:"));
+    if (id !== null && this.initializedClients.has(clientId)
+      && (message.method === "thread/read" || message.method === "thread/resume")
+      && Object.keys(historyParams).every(key => ["threadId", "includeTurns", "excludeTurns", "watch", "initialTurnsPage", "historyReadId", "history", "path", "model", "modelProvider", "cwd"].includes(key))) {
+      const epoch = this.clientEpoch(clientId);
+      const provisional = await this.provisionalResult(string(historyParams.threadId), historyParams);
+      if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== epoch) return;
+      if (provisional && this.provisionalThreads?.get(string(historyParams.threadId))?.phase === "created") {
+        if (message.method === "thread/resume") {
+          // Native resume requires a rollout. Only a retained callback lane (or
+          // this connection's original subscription) can watch an empty Thread.
+          if (!this.nativeSubscribedThreads.has(string(historyParams.threadId))
+            && !this.nativeCore?.supportsOrchestration) {
+            this.emit({ id, error: { code: -32600, message: "当前连接无法恢复空会话" } }, clientId);
+            return;
+          }
+          this.nativeSubscribedThreads.add(string(historyParams.threadId));
+          this.subscribeThread(string(historyParams.threadId), clientId);
+          this.claimInteractionOwner(string(historyParams.threadId), clientId);
+        } else if (historyParams.watch === true) this.watchHistory(string(historyParams.threadId), clientId);
+        if (this.initializedClients.has(clientId)) this.emit({ id, result: { ...provisional,
+          ...(message.method === "thread/read" ? { initialTurnsPage: { data: [], nextCursor: null } } : {}) } }, clientId);
+        return;
+      }
+    }
     if (id !== null && this.transcriptCache && (cachedRead || cachedPage)) {
       if (!this.initializedClients.has(clientId)) { this.emit({ id, error: { code: -32600, message: "Client is not initialized" } }, clientId); return; }
       // Cache hydration has its own reply; it must not retain the frame send lane.
@@ -978,6 +1176,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const epoch = this.clientEpoch(clientId);
       try {
         const result = await this.durableCatalog.list(record(message.params));
+        this.catalogChanges.observeResult("thread/list", message.params, result);
         if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, result }, clientId, "thread/list");
       } catch {
         if (this.initializedClients.has(clientId) && epoch === this.clientEpoch(clientId)) this.emit({ id, error: { code: -32000, message: "Conversation catalog is unavailable" } }, clientId);
@@ -1039,11 +1238,14 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       if (message.method === "opencraft/turn-recovery/read") {
         const threadId = string(record(message.params).threadId);
-        this.emit({ id, result: { recovery: this.recovery?.notice(threadId) ?? null } }, clientId);
+        this.emit({ id, result: { recovery: this.providerRetry?.notice(threadId) ?? this.recovery?.notice(threadId) ?? null } }, clientId);
         return;
       }
-      if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/queue/add", "thread/queue/steer", "thread/queue/start"].includes(message.method)) {
-        if (!context.collaborationRequestId) this.recovery?.handled(string(record(message.params).threadId), message.method === "turn/interrupt" ? "user_stop" : "user_input");
+      if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/settings/update", "thread/queue/add", "thread/queue/steer", "thread/queue/start"].includes(message.method)) {
+        if (!context.collaborationRequestId) {
+          this.recovery?.handled(string(record(message.params).threadId), message.method === "turn/interrupt" ? "user_stop" : "user_input");
+          this.providerRetry?.handled(string(record(message.params).threadId));
+        }
       }
       if (this.options.kind === "remote" && this.pending.size >= 1024) {
         this.emit({ id, error: { code: -32000, message: "Remote request limit exceeded" } }, clientId);
@@ -1053,12 +1255,20 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (message.method === COLLABORATION_METHOD) {
         try {
           this.validateSubmissionContext(context);
-          if (!this.options.collaboration || !context.actorContext) throw new Error("Authenticated conversation access required");
+          if (!this.options.collaboration) throw Object.assign(new Error('unsupported_capability'), {status:409,code:'unsupported_capability'});
+          if (!context.actorContext) throw Object.assign(new Error('actor_authentication_required'), {status:401,code:'actor_authentication_required'});
           context.resourceOwner?.assertCurrent();
           const result = await this.options.collaboration.command(context.actorContext, record(message.params));
           context.resourceOwner?.assertCurrent();
           if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch) this.emit({id,result},clientId);
-        } catch { this.emit({id,error:{code:-32070,message:"Conversation operation could not be confirmed. Review its receipt before retrying."}},clientId); }
+        } catch (error) {
+          const fault = error as { status?: number; code?: unknown };
+          const code = fault?.code === -32601 ? 'unsupported_capability' : fault?.code;
+          const status = fault?.code === -32601 ? 409 : fault?.status;
+          const known = typeof code === 'string' && /^[a-z_]{1,80}$/u.test(code) && [400,401,403,404,409,503].includes(status ?? 0);
+          this.emit({id,error:{code:-32070,message:"Conversation operation could not be confirmed. Review its receipt before retrying.",
+            ...(known ? {data:{code,status}} : {})}},clientId);
+        }
         return;
       }
       if (message.method.startsWith("opencraft/schedules/")) {
@@ -1161,13 +1371,31 @@ export class CodexEngineAdapter implements DuplexTransport {
         threadId: string(params.threadId), turnId: string(params.turnId), pid: this.child?.pid ?? null,
       });
       if (typeof message.method === "string" && ["turn/start", "thread/delete", "thread/archive"].includes(message.method)) {
-        this.clearCapacityRetry(string(params.threadId));
+        this.providerRetry?.handled(string(params.threadId));
       }
       if (message.method === "thread/resume") this.diagnostic({
         event: "thread-resume-start", clientId, requestId: physicalId,
         threadId: string(params.threadId), pid: this.child?.pid ?? null,
       });
       const forward = async () => {
+        if (message.method === "thread/resume") {
+          // Execution activation joins its existing tool preparation. A view
+          // must not race that owner by installing another configuration.
+          try { await this.sessionMcpRefreshes.get(string(params.threadId)); }
+          catch (cause) {
+            if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch)
+              this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
+            return;
+          }
+        }
+        if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
+        if (message.method === "thread/resume" && this.sessionMcpRetirements.has(string(params.threadId))) {
+          try {
+            if (this.sessionMcpRefreshes.has(string(params.threadId))) throw new SessionMcpRecoveryPending();
+            await this.prepareSessionMcp(string(params.threadId));
+          }
+          catch (cause) { this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId); return; }
+        }
         if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
         if (message.method === "thread/start" || message.method === "thread/fork") {
           try { this.validateSubmissionContext(context); }
@@ -1207,12 +1435,19 @@ export class CodexEngineAdapter implements DuplexTransport {
           }
         }
         if (message.method === "turn/start") {
-          try { await this.prepareSessionMcp(string(params.threadId)); }
-          catch { this.emit({ id, error: { code: -32000, message: "Session tools could not be prepared; input was not sent. Retry after this thread is idle." } }, clientId); return; }
+          try {
+            const threadId = string(params.threadId), inputId = string(params.clientUserMessageId);
+            const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+            await this.prepareSessionMcp(threadId, inputId, executionId);
+          } catch (cause) {
+            this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
+            return;
+          }
           if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
           this.validateSubmissionContext(context);
         }
         const pending: PendingRequest = { clientId, clientEpoch: requestClientEpoch, originalId: id, method: message.method as string, params,
+          ...(["thread/read", "thread/turns/list"].includes(string(message.method)) ? { historyTiming: { pairId: randomUUID(), started: receivedAt } } : {}),
           ...((message.method === "thread/start" || message.method === "thread/fork") ? { metadataSender: context.sender } : {}) };
         if (message.method === "turn/start" || message.method === "turn/steer") {
           const inputId = string(params.clientUserMessageId);
@@ -1242,12 +1477,22 @@ export class CodexEngineAdapter implements DuplexTransport {
           }, 30_000);
           pending.timer.unref();
         }
+        if (message.method === "thread/start" && this.options.executionEnvironment) {
+          const environment = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.scope(context, 'local-codex', params));
+          environment.apply(process.env);
+          if (environment.toJSON().configured && !await this.canInjectEnvironment()) throw new Error("Environment variables require a Codex owner handoff");
+          this.environmentCreations.set(physicalId, environment);
+        }
         this.pending.set(physicalId, pending);
         if (message.method === "thread/resume") {
           const threadId = string(params.threadId);
           this.cancelNativeRelease(threadId);
         }
-        try{await this.writePhysical({ ...message, id: physicalId });}
+        if (pending.historyTiming) pending.historyTiming.nativeStarted = performance.now();
+        try{await this.writePhysical({ ...message, id: physicalId }, () => {
+          this.validateSubmissionContext(context);
+          return this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch;
+        });}
         catch(error){if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");throw error;}
       };
       if (message.method === "thread/resume") {
@@ -1265,17 +1510,91 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async serveCachedHistory(clientId: string, id: string | number, method: string, historyParams: RpcRecord, cachedRead: boolean): Promise<void> {
-    if (this.cachedHistoryInFlight >= 64) {
+    const epoch = this.clientEpoch(clientId);
+    // Only identical concurrent reads in the same logical owner/epoch share a
+    // native cut. Completed reads are never retained, and page shape/watch/
+    // checkpoint parameters remain part of the identity.
+    const { historyReadId, ...readParams } = historyParams;
+    const key = JSON.stringify([clientId, epoch, this.transcriptCache!.readRevision(string(readParams.threadId)), method, readParams], (_key, value) =>
+      value !== null && typeof value === "object" && !Array.isArray(value)
+        ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value);
+    if (this.cachedHistoryWaiters >= 64) {
       this.emit({ id, error: { code: -32073, message: "History reader is busy; retry the read",
         data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
       return;
     }
+    let flight = this.cachedHistoryFlights.get(key);
+    if (!flight) {
+      if (this.cachedHistoryInFlight >= 64) {
+        this.emit({ id, error: { code: -32073, message: "History reader is busy; retry the read",
+          data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+        return;
+      }
+      const controller = new AbortController();
+      flight = { promise: this.readCachedHistory(clientId, method, readParams, cachedRead, controller), controller, readers: new Set() };
+      this.cachedHistoryFlights.set(key, flight);
+      const retire = () => { if (this.cachedHistoryFlights.get(key) === flight) this.cachedHistoryFlights.delete(key); };
+      controller.signal.addEventListener("abort", retire, { once: true });
+      void flight.promise.finally(() => { retire(); controller.signal.removeEventListener("abort", retire); }).catch(() => {});
+    } else this.historyDiagnostic({ event: "history-read-coalesced", method });
+    const reader = {};
+    this.cachedHistoryWaiters++;
+    flight.readers.add(reader);
+    let cancelled = false;
+    const cancellationKey = typeof historyReadId === "string" ? JSON.stringify([clientId, epoch, historyReadId]) : null;
+    const cancel = () => {
+      if (cancelled) return;
+      cancelled = true; this.cachedHistoryWaiters--; flight!.readers.delete(reader);
+      // Settle this RPC through every router now; leaving it unanswered would
+      // retain their translated pending IDs until timeout even with a live peer.
+      if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId)) this.emit({ id,
+        error: { code: -32073, message: "History reader cancelled", data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+      if (flight!.readers.size === 0) flight!.controller.abort(new Error("History reader cancelled"));
+    };
+    const cancellation = { threadId: string(readParams.threadId), cancel };
+    if (cancellationKey) this.cachedHistoryCancellations.set(cancellationKey, cancellation);
+    try {
+      const reply = await flight.promise;
+      if (!cancelled && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId)) this.emit({ id, ...reply }, clientId, method);
+    } finally {
+      if (!cancelled) this.cachedHistoryWaiters--;
+      flight.readers.delete(reader);
+      if (cancellationKey && this.cachedHistoryCancellations.get(cancellationKey) === cancellation) this.cachedHistoryCancellations.delete(cancellationKey);
+    }
+  }
+
+  private async readCachedHistory(clientId: string, method: string, historyParams: RpcRecord, cachedRead: boolean, controller: AbortController): Promise<RpcRecord> {
     this.cachedHistoryInFlight++;
+    const started = performance.now(), pairId = randomUUID();
+    const trace: { pairId: string; nativeRpcMs: number; nativeRpcCount: number; itemHydrationPath: string; turnCountBucket: string; lengthBucket: string; itemQueueMs?: number } =
+      { pairId, nativeRpcMs: 0, nativeRpcCount: 0, itemHydrationPath: "none", turnCountBucket: "unknown", lengthBucket: "unknown" };
+    const phases: Record<string, number> = {};
+    const activePhases = new Map<string, number[]>();
+    let terminalSnapshotCreated = false;
+    const measured = (phase: string, ms: number, context?: HistoryReadContext) => {
+      if (terminalSnapshotCreated) return;
+      if (phase === "start") {
+        const activePhase = context?.activePhase;
+        if (activePhase) { const starts = activePhases.get(activePhase) ?? []; starts.push(performance.now()); activePhases.set(activePhase, starts); }
+        return;
+      }
+      if (phase !== "context") {
+        phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0) + ms;
+        const starts = activePhases.get(phase); starts?.pop();
+        if (starts && starts.length === 0) activePhases.delete(phase);
+      }
+      if (context) {
+        if (typeof context.itemQueueMs === "number") trace.itemQueueMs = Math.max(Number(trace.itemQueueMs ?? 0), context.itemQueueMs);
+        const { itemQueueMs: _itemQueueMs, ...safeContext } = context;
+        Object.assign(trace, safeContext);
+      }
+    };
+    let outcome = "aborted";
     const epoch = this.clientEpoch(clientId), threadId = string(historyParams.threadId);
-    const controller = new AbortController();
+    this.historyReadTraces.set(controller.signal, trace);
     let reads = this.cachedHistoryReads.get(clientId);
-    if (!reads) { reads = new Set(); this.cachedHistoryReads.set(clientId, reads); }
-    reads.add(controller);
+    if (!reads) { reads = new Map(); this.cachedHistoryReads.set(clientId, reads); }
+    reads.set(controller, threadId);
     const configuredTimeout = this.options.kind === "local" ? this.options.historyReadTimeoutMs : undefined;
     const timeoutMs = Math.max(1_000, Math.min(MAX_HISTORY_READ_TIMEOUT_MS, configuredTimeout ?? DEFAULT_HISTORY_READ_TIMEOUT_MS));
     const timer = setTimeout(() => controller.abort(new Error("History read timed out; retry the read")), timeoutMs);
@@ -1285,18 +1604,46 @@ export class CodexEngineAdapter implements DuplexTransport {
       const result = cachedRead ? await this.transcriptCache!.read(threadId, typeof limit === "number" ? limit : 10, () => {
         if (historyParams.watch === true && epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
           this.watchHistory(threadId, clientId);
-      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : "full", controller.signal)
-        : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : "full",
-          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal);
-      if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId)) return;
+      }, record(historyParams.initialTurnsPage).itemsView === "notLoaded" ? "notLoaded" : record(historyParams.initialTurnsPage).itemsView === "presentation" ? "presentation" : "full", controller.signal, measured)
+        : await this.transcriptCache!.page(threadId, historyParams.cursor == null ? null : string(historyParams.cursor), typeof limit === "number" ? limit : 10, undefined, historyParams.itemsView === "notLoaded" ? "notLoaded" : historyParams.itemsView === "presentation" ? "presentation" : "full",
+          historyParams.sortDirection === "asc" ? "asc" : "desc", controller.signal, measured, typeof historyParams.detailItemId === "string" ? historyParams.detailItemId : undefined);
+      const resultThread = record(record(result).thread);
+      const turnCount = Number(resultThread.historyTurnCount);
+      if (Number.isSafeInteger(turnCount) && turnCount >= 0) trace.turnCountBucket = historyTurnCountBucket(turnCount);
+      const rolloutPath = string(resultThread.path);
+      if (rolloutPath) {
+        try { trace.lengthBucket = historyLengthBucket((await stat(rolloutPath)).size); }
+        catch { /* A missing/unavailable rollout size stays unknown. */ }
+      }
+      if (epoch !== this.clientEpoch(clientId) || !this.initializedClients.has(clientId) || controller.signal.aborted) throw new Error("History reader retired");
       if (historyParams.watch === true) this.watchHistory(threadId, clientId);
-      const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
-      this.emit({ id, result: this.messageAttachments
-        ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected }, clientId, method);
+      const projectionStarted = performance.now();
+      measured("start", 0, { activePhase: "projection" });
+      let reply: unknown;
+      try {
+        const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
+        reply = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected;
+      } finally { measured("projection", performance.now() - projectionStarted); }
+      outcome = "ok";
+      return { result: { ...record(reply), __opencraftHistoryTiming: { ...phases, ...trace, coreMs: performance.now() - started } } };
     } catch (error) {
-      if (epoch === this.clientEpoch(clientId) && this.initializedClients.has(clientId))
-        this.emit({ id, error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } }, clientId);
+      outcome = controller.signal.aborted ? "aborted" : "failed";
+      return { error: { code: -32073, message: errorMessage(error), data: { code: "HISTORY_READ_UNAVAILABLE", retryable: true } } };
     } finally {
+      const finishedAt = performance.now();
+      for (const [phase, starts] of activePhases) phases[phase + "Ms"] = (phases[phase + "Ms"] ?? 0)
+        + starts.reduce((total, phaseStarted) => total + Math.max(0, finishedAt - phaseStarted), 0);
+      activePhases.clear();
+      const terminalPhases = { ...phases };
+      const terminalTrace = { ...trace };
+      terminalSnapshotCreated = true;
+      const coreMs = finishedAt - started;
+      const resources = coreMs > 5_000 ? await (this.options.historyResourceMetadata ?? readHistoryResourceMetadata)() : undefined;
+      this.historyDiagnostic({ event: "history-read-stages", pairId, method, outcome,
+        turnCountBucket: terminalTrace.turnCountBucket, lengthBucket: terminalTrace.lengthBucket, itemHydrationPath: terminalTrace.itemHydrationPath,
+        ...terminalPhases, itemQueueMs: terminalTrace.itemQueueMs, nativeRpcMs: terminalTrace.nativeRpcMs, nativeRpcCount: terminalTrace.nativeRpcCount, coreMs,
+        ...(resources ? { resources } : {}) });
+      this.historyReadTraces.delete(controller.signal);
       clearTimeout(timer); this.cachedHistoryInFlight--; reads.delete(controller);
       if (reads.size === 0 && this.cachedHistoryReads.get(clientId) === reads) this.cachedHistoryReads.delete(clientId);
     }
@@ -1315,9 +1662,11 @@ export class CodexEngineAdapter implements DuplexTransport {
   close(): Promise<void> {
     if (this.coreBridge) return this.coreBridge.close();
     if (this.closeOperation !== null) return this.closeOperation;
-    for (const reads of this.cachedHistoryReads.values()) for (const read of reads) read.abort(new Error("Codex AppServer closed"));
+    for (const reads of this.cachedHistoryReads.values()) for (const read of reads.keys()) read.abort(new Error("Codex AppServer closed"));
     this.cachedHistoryReads.clear();
     clearInterval(this.generationUsageTimer);
+    for (const timer of this.queuePreparationRetries.values()) clearTimeout(timer);
+    this.queuePreparationRetries.clear();
     for (const timer of this.generationReconciling.values()) if (timer) clearTimeout(timer);
     this.generationReconciling.clear();
     this.threadTitles?.close();
@@ -1334,7 +1683,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.revokeDesktopOwners();
     this.closeOperation = (async () => {
       await this.transcriptCache?.close(); this.transcriptCache = null;
+      this.provisionalThreads?.close(); this.provisionalThreads = null;
+      this.catalogChanges.clear();
       this.durableCatalog?.close(); this.durableCatalog = null;
+      await this.providerRetry?.close(); this.providerRetry = null;
       await this.recovery?.close(); this.recovery = null;
       await this.schedules?.close(); this.schedules = null;
       for (const dispose of this.remoteDisposers.splice(0)) dispose();
@@ -1402,7 +1754,6 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.activeTurns.clear();
       for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
       this.goalContinuationTimers.clear();
-      this.clearAllCapacityRetries();
       this.activeGoalThreads.clear();
       this.threadOperations.clear();
       this.publishStatus({ state: "closed" });
@@ -1545,7 +1896,8 @@ export class CodexEngineAdapter implements DuplexTransport {
         const value = record(this.initializeResult), capabilities = record(value.capabilities), extensions = record(capabilities.extensions);
         const access = record(extensions[OPENCRAFT_METHOD_ACCESS_EXTENSION]);
         this.initializeResult = { ...value, capabilities: { ...capabilities, extensions: { ...extensions,
-          "opencraft/read-history": { version: 1 },
+          "opencraft/read-history": { version: 1, cancellation: true, itemDetails: true },
+          "opencraft/execution-engines": { version: 1, defaultEngine: "codex", providers: [] },
           [CODEX_MAINTENANCE_EXTENSION]: CODEX_MAINTENANCE_CAPABILITY,
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access, methods: [...new Set([...access.methods, CODEX_MAINTENANCE_READ])] } } : {}),
         } } };
@@ -1570,8 +1922,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.diagnostic({ event: "client-initialize", clientId: waiter.clientId, source: "physical-waiter",
         outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null });
     }
+    // A rejected handshake may already have consumed the router's one-shot
+    // initialize slot. Retire that socket; only reconnect may initialize again.
+    if ("error" in message) this.nativeCore?.resetConnection();
     if ("result" in message) {
-      this.recovery?.wake();
+      this.recovery?.wake(); this.providerRetry?.wake();
       this.schedules?.start();
       for (const threadId of this.queue?.pendingThreads() ?? []) this.scheduleQueueMaintenance(threadId);
       if (this.options.kind !== "remote") void this.discoverActiveGoals()
@@ -1593,6 +1948,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (Number(generation.incarnation) < known) return;
       this.generationIncarnations.set(generation.generationId, Number(generation.incarnation));
     }
+    if (message.method === "turn/completed") {
+      const threadId = string(record(message.params).threadId);
+      const initial = this.sessionMcpInitial.get(threadId);
+      if (initial?.inputId) { initial.reservation.cancel(); this.sessionMcpInitial.delete(threadId); }
+    }
     if (message.method === "opencraft/codex/generation/lost") {
       const params = record(message.params), key = JSON.stringify([generation.routingEpoch, params.generationId, params.incarnation, params.connectionEpoch]);
       if (generation.routingEpoch !== this.generationRoutingEpoch || this.generationLosses.has(key)) return;
@@ -1606,10 +1966,27 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.executionLeases?.suspend(id);
         this.recovery?.lost(id); this.activeTurns.delete(id); this.nativeSubscribedThreads.delete(id); this.reconcileGenerationThread(id);
       }
-      this.recovery?.wake(); return;
+      this.recovery?.wake(); this.providerRetry?.wake(); return;
     }
+    if (message.error && this.options.executionEnvironment) message.error = this.options.executionEnvironment.redact(message.error);
     const id = responseId(message.id);
     if (id !== null) {
+      const environment = this.environmentCreations.get(String(id));
+      if (environment && typeof message.method !== "string") {
+        this.environmentCreations.delete(String(id));
+        const threadId = string(record(record(message.result).thread).id);
+        if (threadId && !("error" in message)) { this.executionEnvironments.set(threadId, environment); this.initialEnvironmentThreads.add(threadId); }
+      }
+      const creation = this.sessionMcpCreations.get(String(id));
+      if (creation && typeof message.method !== "string") {
+        this.sessionMcpCreations.delete(String(id));
+        const threadId = string(record(record(message.result).thread).id);
+        if (threadId && !("error" in message)) {
+          creation.bindThread?.(threadId);
+          this.sessionMcpInitial.set(threadId, { reservation: creation });
+        }
+        else creation.cancel();
+      }
       const internal = this.internalRequests.get(String(id));
       if (internal && typeof message.method !== "string") {
         this.internalRequests.delete(String(id));
@@ -1625,7 +2002,9 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (internal.method === "turn/start" || internal.method === "turn/steer") this.options.collaboration?.started(string(internal.params.threadId),string(internal.params.clientUserMessageId),string(record(record(message.result).turn).id)||string(record(message.result).turnId));
           this.observeUsageAcceptance(internal.method,internal.params,message.result);
           this.observeMetadataResult(internal.method, internal.params, message.result);
-          internal.resolve(message.result);
+          if (internal.method === "thread/start")
+            void this.materializeCreation(message.result, internal.params).then(() => internal.resolve(message.result), internal.reject);
+          else internal.resolve(message.result);
         }
         // Metering metadata reads may have held the Host demand guard when a
         // turn completed. Re-evaluate release after the last internal RPC ends.
@@ -1634,6 +2013,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
       const pending = this.pending.get(String(id));
       if (pending !== undefined && typeof message.method !== "string") {
+        const receivedAt = performance.now();
         this.pending.delete(String(id));
         if (pending.timer) clearTimeout(pending.timer);
         this.observeExecutionReply(pending.method, pending.params, message, executionIncarnation);
@@ -1649,6 +2029,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             }
             this.diagnostic({ event: "client-initialize-failed", reason: errorMessage(error) });
             this.publishStatus({ state: "failed", reason: "Codex initialization failed" });
+            this.nativeCore?.resetConnection();
           });
           return;
         }
@@ -1696,6 +2077,16 @@ export class CodexEngineAdapter implements DuplexTransport {
         if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result, pending.metadataSender);
         if (this.messageSenders && "result" in message) message = { ...message, result: projectThreadMessageResult(
           this.projectSender, pending.method, pending.params, message.result) };
+        if (pending.historyTiming) {
+          const trace = pending.historyTiming, nativeRpcMs = receivedAt - (trace.nativeStarted ?? trace.started);
+          const timing = { pairId: trace.pairId, coreMs: performance.now() - trace.started,
+            nativeRpcMs, nativeRpcCount: 1, projectionMs: performance.now() - receivedAt,
+            ...(pending.method === "thread/read" ? { metadataMs: nativeRpcMs } : {}) };
+          this.historyDiagnostic({ event: "history-native-rpc", pairId: trace.pairId, requestId: String(id), method: pending.method, nativeRpcMs,
+            ...(typeof pending.params.limit === "number" ? { limit: pending.params.limit } : {}) });
+          this.historyDiagnostic({ event: "history-read-stages", method: pending.method, outcome: "result" in message ? "ok" : "failed", ...timing });
+          if ("result" in message) message = { ...message, result: { ...record(message.result), __opencraftHistoryTiming: timing } };
+        }
         const emitReply = () => { if (this.validClientRequest(pending)) this.emit({
           ...message,
           ...(this.messageAttachments && "result" in message ? {
@@ -1706,6 +2097,11 @@ export class CodexEngineAdapter implements DuplexTransport {
         if ("result" in message && ["thread/archive", "thread/delete"].includes(pending.method) && this.transcriptCache)
           void this.transcriptCache.invalidate(string(pending.params.threadId)).then(emitReply, () => {
             if (this.validClientRequest(pending)) this.emit({ id: pending.originalId, error: { code: -32000, message: "Transcript cleanup failed" } }, pending.clientId);
+          });
+        else if ("result" in message && pending.method === "thread/start")
+          void this.materializeCreation(message.result, pending.params).then(emitReply, () => {
+            if (this.validClientRequest(pending)) this.emit({ id: pending.originalId,
+              error: { code: -32000, message: "Could not create this conversation" } }, pending.clientId);
           });
         else emitReply();
         if (["thread/start", "thread/fork", "thread/resume", "turn/start"].includes(pending.method)) {
@@ -1729,19 +2125,20 @@ export class CodexEngineAdapter implements DuplexTransport {
       }
     }
     if (this.threadTitles?.notification(string(message.method), record(message.params))) return;
+    this.catalogChanges.observeNotification(string(message.method), message.params);
     this.durableCatalog?.observe(string(message.method), message.params);
     if (message.method === "thread/archived" || message.method === "thread/deleted") {
       this.schedules?.suspend(threadId);
       void this.transcriptCache?.invalidate(threadId).catch(() => this.diagnostic({ event: "thread-cache-cleanup-failed" }));
     }
     if (message.method === "turn/started" && threadId) {
+      this.initialEnvironmentThreads.delete(threadId);
       const turnId = string(record(record(message.params).turn).id);
       if (turnId) this.executionLeases?.observedStart(threadId, turnId, executionIncarnation);
       if (turnId) this.activeTurns.set(threadId, turnId);
       if (!this.ephemeralThreads.has(threadId) && !this.threadTitles?.owns(threadId)) this.recovery?.started(threadId, turnId);
       if (turnId) this.options.collaboration?.orchestration?.observed({threadId,turnId,rootTurnId:this.recovery?.snapshot(threadId)?.rootTurnId??turnId,state:"active"});
-      const retry = this.capacityRetries.get(threadId);
-      if (retry && !retry.inFlight && retry.autoTurnId !== turnId) this.clearCapacityRetry(threadId);
+      this.providerRetry?.started(threadId, turnId);
     }
     if (message.method === "turn/completed" && threadId) {
       this.activeTurns.delete(threadId);
@@ -1758,9 +2155,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (["completed", "failed", "interrupted"].includes(string(turn.status))) for (const listener of this.scheduleObservers) listener({
         threadId, turnId: string(turn.id), state: turn.status === "completed" && !turn.error ? "completed" : "failed",
       });
-      if (turn.status === "failed" && record(turn.error).codexErrorInfo === "serverOverloaded") {
-        this.scheduleCapacityRetry(threadId, string(turn.id));
-      } else this.clearCapacityRetry(threadId);
+      if (turn.status === "failed") void this.scheduleProviderFailure(threadId, string(turn.id), turn.error);
+      else this.providerRetry?.finished(threadId, string(turn.id));
       this.scheduleQueueMaintenance(threadId);
       if (!record(record(message.params).turn).error) this.scheduleGoalContinuation(threadId);
       this.scheduleNativeRelease(threadId);
@@ -1770,7 +2166,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.scheduleQueueMaintenance(threadId);
       this.scheduleNativeRelease(threadId);
     }
-    if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.clearCapacityRetry(threadId);
+    if ((message.method === "thread/archived" || message.method === "thread/deleted") && threadId) this.providerRetry?.handled(threadId);
     if (message.method === "serverRequest/resolved") {
       const rawId = responseId(record(message.params).requestId);
       if (rawId !== null) this.humanInteractions.resolveNative(rawId, threadId);
@@ -1879,7 +2275,11 @@ export class CodexEngineAdapter implements DuplexTransport {
           return this.options.collaboration.orchestration.tool(string(params.threadId),string(params.turnId),string(message.__opencraftToolCallKey),string(params.tool),record(params.arguments),string(message.__opencraftDelegationId)||undefined,string(message.__opencraftCallbackIncarnation)||undefined);
         }
         return this.options.collaboration.tool(string(params.threadId),string(params.turnId),string(params.tool),record(params.arguments));
-      }).then(value=>respond(true,value),(error:unknown)=>respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying.",status:typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503})).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
+      }).then(value=>respond(true,value),(error:unknown)=>{
+        const status=typeof record(error).status==="number"?record(error).status:error instanceof OrchestrationControlError?error.code:503;
+        this.diagnostic({event:"thread-orchestration-tool-failed",threadId:string(params.threadId),turnId:string(params.turnId),tool:string(params.tool),status});
+        return respond(false,{error:"Conversation operation unavailable or unauthorized. Inspect the original receipt before retrying.",status});
+      }).catch(()=>{}).finally(()=>{if(this.collaborationCalls.get(key)===token)this.collaborationCalls.delete(key);});
       return;
     }
     if (isHumanInteraction(message.method, message.params)) {
@@ -1960,6 +2360,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.emit({ id, error: { code: -32602, message: "Unsubscribe requires threadId" } }, clientId);
       return;
     }
+    for (const [read, readingThread] of this.cachedHistoryReads.get(clientId) ?? []) {
+      if (readingThread === threadId) read.abort(new Error("History reader unsubscribed"));
+    }
     const clients = this.threadClients.get(threadId);
     const watchers = this.historyWatchers.get(threadId);
     watchers?.delete(clientId);
@@ -2001,7 +2404,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private hasHostThreadDemand(threadId: string): boolean {
     if (this.activeGoalThreads.has(threadId)) return true;
-    if (this.capacityRetries.has(threadId)) return true;
+    if (this.providerRetry?.pendingThreadIds().includes(threadId)) return true;
     if (this.activeTurns.has(threadId) || this.queue?.firstUnsettled(threadId) != null) return true;
     if (this.humanInteractions.hasThread(threadId) || [...this.serverRequests.values()].some(request => request.threadId === threadId)) return true;
     if ([...this.pending.values()].some(request => request.params.threadId === threadId
@@ -2014,7 +2417,8 @@ export class CodexEngineAdapter implements DuplexTransport {
       && (this.threadClients.get(threadId)?.size ?? 0) === 0
       && ![...this.pending.values()].some(request => request.params.threadId === threadId
         && (request.method === "thread/resume" || request.method === "turn/start") && this.validClientRequest(request))
-      && !this.hasHostThreadDemand(threadId);
+      && !this.hasHostThreadDemand(threadId)
+      && !["created", "attempted"].includes(this.provisionalThreads?.get(threadId)?.phase ?? "");
   }
 
   private scheduleNativeRelease(threadId: string, minimumDelayMs = 0): void {
@@ -2076,7 +2480,7 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private disconnectClient(clientId: string): void {
-    for (const read of this.cachedHistoryReads.get(clientId) ?? []) read.abort(new Error("History reader disconnected"));
+    for (const read of this.cachedHistoryReads.get(clientId)?.keys() ?? []) read.abort(new Error("History reader disconnected"));
     this.cachedHistoryReads.delete(clientId);
     for (const [threadId, clients] of this.historyWatchers) {
       clients.delete(clientId);
@@ -2275,11 +2679,31 @@ export class CodexEngineAdapter implements DuplexTransport {
     throw new Error(`Permission mode is unavailable on this Codex Host: ${mode}`);
   }
 
+  private async checkModelPolicy(method: unknown, params: RpcRecord): Promise<void> {
+    if (!(method === "turn/start" || method === "thread/goal/set" && params.status !== "paused" && params.status !== "complete" && params.status !== "blocked") || this.options.kind === "remote" || !this.options.modelPolicyPath || !readPolicy(this.options.modelPolicyPath).rules.some(r=>r.engine==="codex")) return;
+      const thread = record(record(await this.requestPhysical("thread/read", {threadId: params.threadId, includeTurns:false})).thread);
+      const catalog = record(await this.requestPhysical("model/list", {})).data;
+      const models = Array.isArray(catalog) ? catalog : [];
+      const {model,effort}=resolvePolicySelection("codex",params,thread,models);
+      assertModelPolicy(this.options.modelPolicyPath, "codex", model, effort, models);
+  }
+
   private async requestPhysical(method: string, params: RpcRecord, timeoutMs = 30_000, signal?: AbortSignal, usageIdentity?:UsageSubmission, admit?: () => boolean): Promise<unknown> {
     if (this.statusValue.state !== "open" || !this.physicalAvailable || !this.physicalInitialized && method !== "initialize") {
       return Promise.reject(new Error("Codex AppServer is not initialized"));
     }
     if (signal?.aborted) return Promise.reject(new Error("Codex request cancelled"));
+    await this.checkModelPolicy(method, params);
+    // Tool retirement is pre-submission work. Start the physical delivery timer
+    // only after it settles; a timed-out preparation must never send later.
+    if (method === "turn/start") {
+      const threadId = string(params.threadId), inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
+      params = { ...params, clientUserMessageId: inputId };
+      const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
+      try { await this.prepareSessionMcp(threadId, inputId, executionId); }
+      catch (cause) { throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
+    }
+    if (signal?.aborted) throw new RecoveryNotSubmitted("Codex preparation was cancelled before submission");
     const id = `opencraft:host:${++this.sequence}`;
     const usageAttemptId=method==="turn/start"||method==="turn/steer"?randomUUID():undefined;
     const usageRuntime=this.tokenUsage,physicalGeneration=this.sessionMcpGeneration;
@@ -2289,7 +2713,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       throw new RecoveryNotSubmitted("Codex request retired before native submission");
     }
     const unknown=()=>{if(usageAttemptId)usageRuntime?.attemptOutcome(usageAttemptId,"unknown");};
-    return new Promise((resolve, reject) => {
+    const trace = signal ? this.historyReadTraces.get(signal) : undefined;
+    const started = performance.now();
+    const operation = new Promise((resolve, reject) => {
       const cleanup = () => signal?.removeEventListener("abort", cancel);
       const cancel = () => {
         this.internalRequests.delete(id); clearTimeout(timer); cleanup();
@@ -2316,6 +2742,14 @@ export class CodexEngineAdapter implements DuplexTransport {
         unknown();reject(error);
       }
     });
+    if (!trace) return operation;
+    try { return await operation; }
+    finally {
+      const nativeRpcMs = performance.now() - started;
+      trace.nativeRpcMs += nativeRpcMs; trace.nativeRpcCount++;
+      this.historyDiagnostic({ event: "history-native-rpc", pairId: trace.pairId, requestId: id, method, nativeRpcMs,
+        ...(typeof params.limit === "number" ? { limit: params.limit } : {}) });
+    }
   }
 
   private rejectInternalRequests(error: Error): void {
@@ -2354,12 +2788,20 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (method === "turn/start" && !this.ephemeralThreads.has(string(params.threadId))) {
       this.recovery?.started(string(params.threadId), string(record(record(result).turn).id), string(params.clientUserMessageId));
     }
+    if (method === "thread/start" && record(record(result).thread).ephemeral !== true) {
+      const threadId = string(record(record(result).thread).id);
+      if (threadId) this.provisionalThreads?.created(threadId, record(result), this.executionEnvironments.get(threadId)?.owner);
+    }
+    if (method === "turn/start") this.provisionalThreads?.accepted(string(params.threadId), string(params.clientUserMessageId), string(record(record(result).turn).id));
+    if (method === "thread/list" && Array.isArray(record(result).data))
+      for (const thread of record(result).data as unknown[]) this.provisionalThreads?.persisted(string(record(thread).id));
     if (method === "thread/start") {
       const configuration = record(params.config)["mcp_servers.opencraft_session"];
       const threadId = string(record(record(result).thread).id);
       if (configuration && threadId) this.sessionMcpConfigurations.set(threadId, structuredClone(configuration));
     }
     this.threadTitles?.observeResult(method, params, result);
+    this.catalogChanges.observeResult(method, params, result);
     this.durableCatalog?.observe(method, params, result);
     try { this.identity?.observeResult(method, params, result, sender); }
     catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
@@ -2452,7 +2894,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         const goal = record(await this.requestPhysical("thread/goal/get", { threadId }));
         this.noteGoal(threadId, goal.goal);
         this.receivePhysicalLine(JSON.stringify({ method: "thread/status/changed", params: { threadId, status: record(result.thread).status } }));
-        this.generationReconciling.delete(threadId); this.recovery?.wake(); this.scheduleQueueMaintenance(threadId);
+        this.generationReconciling.delete(threadId); this.recovery?.wake(); this.providerRetry?.wake(); this.scheduleQueueMaintenance(threadId);
         if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
       }).catch(() => {
         if (this.closeOperation) { this.generationReconciling.delete(threadId); return; }
@@ -2493,14 +2935,14 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.activeTurns.clear(); this.nativeSubscribedThreads.clear();
         this.physicalInitialized = false;
         const initialized = await this.requestPhysical("initialize", { clientInfo: { name: "opencraft-recovery", version: "0.1.0" }, capabilities: { experimentalApi: true } });
-        await this.writePhysical({ method: "initialized", params: {} });
+        // A reconnect may finish before the first View ever initializes.
+        // Populate the same decorated cache as normal initialization, otherwise
+        // that View sends initialize again on this already-initialized socket.
+        await this.completeInitialize({ clientId: "", clientEpoch: 0, originalId: "core-recovery",
+          method: "initialize", params: {} }, { result: initialized });
         if (this.closeOperation) return;
-        this.physicalInitialized = true;
         this.coreReinitializing = false;
         this.publishStatus({ state: "open" });
-        this.tokenUsage?.initialize(initialized);
-        this.recovery?.wake();
-        void this.discoverActiveGoals().catch(() => undefined);
       })().catch(() => {
         if (this.closeOperation) return;
         this.physicalInitialized = false;
@@ -2532,61 +2974,53 @@ export class CodexEngineAdapter implements DuplexTransport {
     this.goalContinuationTimers.set(threadId, timer);
   }
 
-  private clearCapacityRetry(threadId: string): void {
-    const retry = this.capacityRetries.get(threadId);
-    if (retry?.timer) clearTimeout(retry.timer);
-    this.capacityRetries.delete(threadId);
-    if (retry) this.scheduleNativeRelease(threadId);
+  private async scheduleProviderFailure(threadId: string, turnId: string, error: unknown): Promise<void> {
+    const intent = JSON.stringify(this.recovery?.snapshot(threadId));
+    if (this.recovery?.snapshot(threadId)?.state === "handled") return;
+    const failure = codexProviderFailure(error);
+    if (failure.kind !== "rate-limit") { this.providerRetry?.failed(threadId, turnId, failure); return; }
+    const owner = this.providerRetry;
+    if (!owner) return;
+    await this.withThreadOperation(threadId, async () => {
+      try {
+        const accounts = this.poolStore ? this.accountViews(this.poolStore)
+          : record(await this.requestPhysical("opencraft/codex/accounts/list", {}, 5_000)).accounts;
+        if (this.closeOperation || this.providerRetry !== owner || JSON.stringify(this.recovery?.snapshot(threadId)) !== intent) return;
+        // Pool routing owns readiness; native global quotas can belong to another account.
+        failure.retryAt = pooledRetryAt(accounts, Date.now());
+        const page = record(await this.requestPhysical("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+        const latest = record(Array.isArray(page.data) ? page.data[0] : null);
+        if (latest.id === turnId && latest.status === "failed") owner.failed(threadId, turnId, failure);
+      } catch { this.diagnostic({ event: "provider-retry-skipped", threadId, reason: "pool-unavailable" }); }
+    }).catch(() => undefined);
   }
 
-  private clearAllCapacityRetries(): void {
-    for (const threadId of this.capacityRetries.keys()) this.clearCapacityRetry(threadId);
-  }
-
-  private scheduleCapacityRetry(threadId: string, failedTurnId: string): void {
-    if (!threadId || !failedTurnId) return;
-    const previous = this.capacityRetries.get(threadId);
-    if (previous?.failedTurnId === failedTurnId) return;
-    if (previous?.timer) clearTimeout(previous.timer);
-    const attempt = previous ? previous.attempt + 1 : 0;
-    const retry: CapacityRetry = { attempt, failedTurnId, timer: null, inFlight: false, autoTurnId: null };
-    const delayMs = capacityRetryDelayMs(attempt);
-    retry.timer = setTimeout(() => {
-      retry.timer = null;
-      void this.withThreadOperation(threadId, async () => {
-        if (this.capacityRetries.get(threadId) !== retry) return;
-        if (this.activeTurns.has(threadId) || this.queue?.firstAwaitingAdmission(threadId)
-          || !(await this.queueThreadIsIdle(threadId))) {
-          this.clearCapacityRetry(threadId);
-          return;
-        }
-        const response = record(await this.requestPhysical("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
-        const latest = Array.isArray(response.data) ? record(response.data[0]) : {};
-        if (latest.id !== failedTurnId || latest.status !== "failed"
-          || record(latest.error).codexErrorInfo !== "serverOverloaded") {
-          this.clearCapacityRetry(threadId);
-          return;
-        }
-        retry.inFlight = true;
-        const retryInputId=`capacity-retry:${randomUUID()}`;
-        // This owned continuation has no new human input. Record its origin at
-        // creation; a textual prefix in native history never grants this status.
-        this.tokenUsage?.submission({threadId,inputId:retryInputId,actorId:null,actorKind:"session",mode:"start",sourceKind:"system",submittedAt:Date.now()});
-        const started = record(await this.requestPhysical("turn/start", {
-          threadId, input: [], clientUserMessageId: retryInputId,
-        }));
-        retry.autoTurnId = string(record(started.turn).id);
-        if (retry.autoTurnId) this.options.collaboration?.continued?.(threadId, failedTurnId, retry.autoTurnId);
-        retry.inFlight = false;
-        if (!retry.autoTurnId) throw new Error("Codex returned an invalid capacity retry acknowledgement");
-      }).catch(error => {
-        if (this.capacityRetries.get(threadId) === retry) this.clearCapacityRetry(threadId);
-        this.diagnostic({ event: "capacity-retry-failed", threadId, reason: errorMessage(error) });
-      });
-    }, delayMs);
-    retry.timer.unref();
-    this.capacityRetries.set(threadId, retry);
-    this.diagnostic({ event: "capacity-retry-scheduled", threadId, attempt: attempt + 1, delayMs });
+  private async inspectProviderRetry(turn: Readonly<ProviderRetry>): Promise<"live" | "finished" | "handled" | "unknown" | { failure: ProviderFailure }> {
+    if (!this.physicalInitialized || !this.physicalAvailable || this.admissionPaused()) return "unknown";
+    if (this.queue?.firstUnsettled(turn.threadId)) return "handled";
+    const result = record(await this.requestPhysical("thread/read", { threadId: turn.threadId, includeTurns: false }));
+    const thread = record(result.thread);
+    if (thread.ephemeral || thread.archived || thread.canAcceptDirectInput === false) return "handled";
+    if (!await this.queueThreadIsIdle(turn.threadId, true)) return "live";
+    const page = record(await this.requestPhysical("thread/turns/list", { threadId: turn.threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
+    const latest = record(Array.isArray(page.data) ? page.data[0] : null);
+    if (!latest.id) return "unknown";
+    if (latest.id !== turn.turnId) return "handled";
+    if (latest.status === "completed") return "finished";
+    if (latest.status !== "failed") return "unknown";
+    // Summary history deliberately omits error details. The waiting receipt's
+    // classification is bound to this exact failed Turn, not to prose or a scan.
+    // A running successor has no such observed failure fact and cannot reuse it.
+    const failure = Object.hasOwn(latest, "error") ? codexProviderFailure(latest.error)
+      : turn.state === "running" ? { kind: "permanent" as const } : turn.failure;
+    if (failure.kind === "permanent") return "handled";
+    if (failure.kind === "rate-limit") {
+      const accounts = this.poolStore ? this.accountViews(this.poolStore)
+        : record(await this.requestPhysical("opencraft/codex/accounts/list", {}, 5_000)).accounts;
+      failure.retryAt = pooledRetryAt(accounts, Date.now());
+      if (failure.retryAt === undefined) return "handled";
+    }
+    return { failure };
   }
 
   /** Rebuild the Host's active Goal index from Codex's durable Thread state. */
@@ -2612,6 +3046,16 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (cursor !== null) throw new Error("Codex Goal discovery exceeded its safety bound");
   }
 
+  private readonly queuePreparationRetries = new Map<string, ReturnType<typeof setTimeout>>();
+  private scheduleQueuePreparationRetry(threadId: string): void {
+    if (this.closeOperation || this.queuePreparationRetries.has(threadId)) return;
+    const timer = setTimeout(() => {
+      this.queuePreparationRetries.delete(threadId);
+      if (!this.closeOperation) this.scheduleQueueMaintenance(threadId);
+    }, 1_000);
+    timer.unref();
+    this.queuePreparationRetries.set(threadId, timer);
+  }
   private scheduleQueueMaintenance(threadId: string): void {
     if (!threadId || this.queue === null || this.initializeResult === null) return;
     void this.withThreadOperation(threadId, () => this.maintainQueue(threadId)).catch(error => {
@@ -2711,7 +3155,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (thread.canAcceptDirectInput === false) throw new OpenCraftQueueRpcError(-32600, "Thread does not accept direct user input");
   }
 
-  private async queueThreadIsIdle(threadId: string): Promise<boolean> {
+  private async queueThreadIsIdle(threadId: string, allowFailedThread = false): Promise<boolean> {
     let status = await this.threadStatus(threadId);
     if (status === "notLoaded" || this.nativeCore && !this.nativeSubscribedThreads.has(threadId)) {
       // A core-kept active thread is loaded, but this new physical connection
@@ -2719,7 +3163,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       await this.requestPhysical("thread/resume", { threadId, excludeTurns: true });
       status = await this.threadStatus(threadId);
     }
-    return status === "idle";
+    return status === "idle" || allowFailedThread && status === "systemError";
   }
 
   private async historyHasClientMessage(threadId: string, clientId: string, turnId: string | null): Promise<boolean> {
@@ -2768,9 +3212,9 @@ export class CodexEngineAdapter implements DuplexTransport {
     const queue = this.queueStore();
     await this.reconcileQueue(threadId);
     const first = queue.firstAwaitingAdmission(threadId);
-    if (!first || first.state !== "queued") return;
+    if (!first || first.state !== "queued" || ["model-restricted", "session-tools-unavailable"].includes(first.pausedReason ?? "")) return;
     const recovery=this.recovery?.snapshot(threadId);
-    if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake();return;}
+    if(recovery&&['interrupted','preparing','dispatching'].includes(recovery.state)&&this.knownSystemInput(threadId,first.clientUserMessageId)){this.recovery?.wake(); this.providerRetry?.wake();return;}
     if (first.clientUserMessageId.startsWith('actor-input:')) {
       if (this.options.collaborationInput?.available() === false) return;
       const mode = this.options.collaborationInput?.mode(first.clientUserMessageId);
@@ -2783,7 +3227,12 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (mode === 'steer') return;
     }
     if ([...this.pending.values()].some(pending => pending.method === "turn/start" && pending.params.threadId === threadId)) return;
-    if (this.activeTurns.has(threadId) || !(await this.queueThreadIsIdle(threadId))) return;
+    if (this.activeTurns.has(threadId)) return;
+    if (this.sessionMcpRetirements.has(threadId) && !this.sessionMcpRefreshes.has(threadId)) {
+      // An earlier, definitively unsent preparation can leave retirement to
+      // finish. The queued input owns the next refresh; never resume to poll it.
+      if (!["idle", "systemError", "notLoaded"].includes(await this.threadStatus(threadId))) return;
+    } else if (!(await this.queueThreadIsIdle(threadId))) return;
     await this.dispatchQueuedStart(threadId, first.id);
   }
 
@@ -2829,7 +3278,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.emitQueueChanged(threadId);
       return response;
     } catch (error) {
-      queue.settle(threadId, id, "unknown", "steer-delivery-unconfirmed");
+      const unsent = error instanceof RecoveryNotSubmitted;
+      const preparation = unsent && error.cause instanceof SessionMcpPreparationFailure ? error.cause : null;
+      const retryable = unsent && (!preparation || sessionMcpRetryable(preparation.cause));
+      queue.settle(threadId, id, unsent || error instanceof ModelPolicyError ? "queued" : "unknown",
+        error instanceof ModelPolicyError ? "model-restricted" : unsent
+          ? retryable ? "session-tools-recovering" : "session-tools-unavailable" : "steer-delivery-unconfirmed");
+      if (retryable) this.scheduleQueuePreparationRetry(threadId);
       this.emitQueueChanged(threadId);
       throw error;
     }
@@ -2910,7 +3365,12 @@ export class CodexEngineAdapter implements DuplexTransport {
             .map(row => ({ ...this.queueProjection(row), targetTurnId: row.targetTurnId ?? "unknown" })) } : {}),
         };
       } else if (method === "thread/queue/add") {
-        await this.assertDurableQueueThread(threadId);
+        try { await this.assertDurableQueueThread(threadId); }
+        catch (cause) {
+          if (!sessionMcpRetryable(cause)) throw cause;
+          throw new OpenCraftQueueRpcError(-32000, "The session connection is recovering; input was not queued yet.",
+            { code: "QUEUE_NOT_READY", submissionOutcome: "rejected", retryable: true });
+        }
         if (actorClientId.startsWith('actor-input:')) {
           const mode = this.options.collaborationInput?.mode(actorClientId);
           if (!mode) throw new OpenCraftQueueRpcError(-32600, 'Actor request unavailable');
@@ -2985,11 +3445,159 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   // Confirmed configuration belongs to this physical connection. The in-flight
   // map only coalesces preparation; neither map is a configuration authority.
+  private sessionMcpFailure(cause: unknown): RpcRecord {
+    const failure = cause instanceof SessionMcpPreparationFailure ? cause : null;
+    const original = failure ? failure.cause : cause;
+    const detail = record(original);
+    const unavailable = threadUnavailableReason(new AppServerRpcError({ code: typeof detail.code === "number" ? detail.code : -32000,
+      message: errorMessage(original), data: detail.data }));
+    const recovering = original instanceof SessionMcpRecoveryPending;
+    const reason = unavailable ? `thread-${unavailable}` : sessionMcpReason(original);
+    const stage = failure?.stage ?? "initial-preparation";
+    const diagnosticId = failure?.diagnosticId ?? randomUUID();
+    const nativeCode = typeof detail.code === "number" ? detail.code : null;
+    const diagnostic = { diagnosticId, stage, reason, nativeCode,
+      ...(failure?.nativeStatus ? { nativeStatus: failure.nativeStatus } : {}) };
+    this.diagnostic({ event: "session-mcp-preparation-failed", category: recovering ? "recovering" : "unavailable",
+      ...diagnostic, ...(failure ? { threadId: failure.threadId, inputId: failure.inputId } : {}) });
+    const message = unavailable ? "This conversation is unavailable; input was not sent."
+      : recovering ? original.message
+      : reason === "thread-busy" ? "The previous turn is still active; input was not sent. Wait for it to finish and retry."
+      : "Session tools are unavailable; input was not sent. Reconnect and retry.";
+    return { code: unavailable === "archived" ? -32071 : unavailable ? -32600 : -32000,
+      message: `${message} [${stage}/${reason}; ref ${diagnosticId}]`,
+      data: { code: unavailable === "archived" ? "THREAD_ARCHIVED" : unavailable ? "THREAD_NOT_FOUND"
+        : recovering ? "SESSION_TOOLS_RECOVERING" : "SESSION_TOOLS_UNAVAILABLE",
+        submissionOutcome: "rejected", retryable: !unavailable && sessionMcpRetryable(original), ...diagnostic } };
+  }
+
+  private readonly sessionMcpCreations = new Map<string, SessionMcpCreation>();
+  private readonly sessionMcpInitial = new Map<string, { reservation: SessionMcpCreation; inputId?: string }>();
+  private readonly sessionMcpRetirements = new Map<string, RpcRecord>();
   private readonly sessionMcpConfigurations = new Map<string, unknown>();
+  // A recovered creation attests its owner, but not a freshly applied configuration key.
+  private readonly executionEnvironments = new Map<string, { readonly owner: string; readonly key?: string }>();
+  private readonly environmentCreations = new Map<string, ExecutionEnvironmentSnapshot>();
+  private readonly initialEnvironmentThreads = new Set<string>();
+  private async canInjectEnvironment(threadId?: string): Promise<boolean> {
+    if (!this.nativeCore) return true;
+    try {
+      const health = await this.nativeCore.control.health();
+      if (!health.routingEpoch) return health.environmentVariablesVersion === 1;
+      if (health.environmentRoutingVersion !== 1) return false;
+      return record(await this.requestPhysical("opencraft/environment/capability", { threadId })).supported === true;
+    } catch { return false; }
+  }
   private readonly sessionMcpRefreshes = new Map<string, Promise<void>>();
   private sessionMcpGeneration = 0;
+  private async materializeCreation(value: unknown, params: RpcRecord): Promise<void> {
+    const thread = record(record(value).thread), threadId = string(thread.id), path = thread.path;
+    const store = this.provisionalThreads;
+    if (params.ephemeral === true || thread.ephemeral === true || store?.get(threadId)?.phase !== "created"
+      || typeof path !== "string" || !path || existsSync(path)) return;
+    try {
+      // Stock Native flushes its own session metadata before hydrating history.
+      // No input, model request, resume or file write is performed by the Host.
+      await this.requestPhysical("thread/read", { threadId, includeTurns: true });
+    } catch (cause) {
+      const fault = cause instanceof AppServerRpcError || cause instanceof OpenCraftQueueRpcError ? cause : null;
+      if (fault?.code !== -32601 || !/^list_turns is not supported yet$/u.test(fault.message)
+        || !nativeEmptyCreation(threadId, path)) throw cause;
+    }
+    if (this.provisionalThreads !== store || !existsSync(path)) throw new Error("Native creation was not persisted");
+  }
+  private async provisionalResult(threadId: string, params: RpcRecord = {}): Promise<RpcRecord | null> {
+    const store = this.provisionalThreads;
+    const created = store?.get(threadId);
+    if (!created || created.phase !== "created") return null;
+    const result = created.result, thread = record(result.thread);
+    if (params.history != null || ["model", "modelProvider", "cwd", "path"].some(key =>
+      params[key] != null && !isDeepStrictEqual(params[key], key === "path" ? thread.path : result[key] ?? thread[key]))) return null;
+    const loaded = record(await this.requestPhysical("thread/loaded/list", {}));
+    if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created"
+      || !Array.isArray(loaded.data) || !loaded.data.includes(threadId)) return null;
+    // A native peer can accept input while this Host is absent. Positive
+    // current history always defeats the saved empty creation, even if this
+    // Host never observed that peer's Turn acknowledgement.
+    let live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: false })).thread);
+    if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created" || string(live.id) !== threadId) return null;
+    // Metadata is safe before the first Turn; a history probe can fail and
+    // materialize a rollout. Only a positively located, idle, unmaterialized
+    // allocation may use creation evidence without asking for its history.
+    const allocated = string(record(live.status).type) === "idle"
+      && typeof live.path === "string" && live.path.length > 0
+      && (!existsSync(live.path) || nativeEmptyCreation(threadId, live.path));
+    try {
+      if (!allocated) live = record(record(await this.requestPhysical("thread/read", { threadId, includeTurns: true })).thread);
+      if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created" || string(live.id) !== threadId) return null;
+      const turns = Array.isArray(live.turns) ? live.turns : [];
+      if (turns.length) {
+        const first = record(turns[0]);
+        store!.accepted(threadId, originalExecutionInputIds({ items: Array.isArray(first.items) ? first.items : [] })[0] ?? `native:${string(first.id)}`, string(first.id));
+        return null;
+      }
+    } catch (cause) {
+      const nativeError = cause instanceof AppServerRpcError || cause instanceof OpenCraftQueueRpcError ? cause : null;
+      if (nativeError?.code !== -32600
+        || !/history_missing|no rollout|thread.*not found/iu.test(nativeError.message)) throw cause;
+      const stillLoaded = record(await this.requestPhysical("thread/loaded/list", {}));
+      if (!Array.isArray(stillLoaded.data) || !stillLoaded.data.includes(threadId)) return null;
+    }
+    if (allocated) {
+      const current = record(await this.requestPhysical("thread/loaded/list", {}));
+      if (!Array.isArray(current.data) || !current.data.includes(threadId)) return null;
+      if (!existsSync(live.path as string))
+        await this.materializeCreation({ ...result, thread: { ...thread, path: live.path } }, {});
+    }
+    if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created") return null;
+    // Never hide a file that has appeared since creation. Normal history remains authoritative.
+    if (typeof live.path === "string" && existsSync(live.path) && !nativeEmptyCreation(threadId, live.path)) {
+      store!.persisted(threadId); return null;
+    }
+    return { ...result, thread: { ...thread, turns: [], creationPhase: "created" } };
+  }
   private async prepareSessionMcp(threadId: string, inputId?: string, executionId?: string): Promise<void> {
-    if (!threadId || !this.options.sessionMcp) return;
+    try { await this.prepareSessionMcpInternal(threadId, inputId, executionId); }
+    catch (cause) {
+      throw cause instanceof SessionMcpPreparationFailure ? cause
+        : new SessionMcpPreparationFailure("initial-preparation", cause, threadId, inputId);
+    }
+  }
+  private async prepareSessionMcpInternal(threadId: string, inputId?: string, executionId?: string): Promise<void> {
+    if (!threadId || !this.options.sessionMcp && !this.options.executionEnvironment || this.ephemeralThreads.has(threadId)) return;
+    let keepInitialEnvironment = !!(this.options.executionEnvironment && inputId && this.initialEnvironmentThreads.has(threadId));
+    let initial = this.sessionMcpInitial.get(threadId);
+    const creation = this.provisionalThreads?.get(threadId);
+    if (!initial && creation?.phase === "created") {
+      const generation = this.sessionMcpGeneration;
+      const reservation = await this.options.restoreSessionMcp?.(threadId);
+      if (generation !== this.sessionMcpGeneration) throw new Error("Thread creation belongs to an expired connection");
+      if (reservation) { initial = { reservation }; this.sessionMcpInitial.set(threadId, initial); }
+    }
+    if (!keepInitialEnvironment && this.options.executionEnvironment && inputId
+      && creation?.phase === "created" && (initial || !this.options.sessionMcp)) {
+      if (!creation.environmentOwner) throw new Error("Environment belongs to another account or project; start a new session");
+      // Native still owns the creation-time environment. Preserve it without
+      // claiming that the current vault configuration has already been applied.
+      this.executionEnvironments.set(threadId, { owner: creation.environmentOwner });
+      this.initialEnvironmentThreads.add(threadId);
+      keepInitialEnvironment = true;
+    }
+    if (keepInitialEnvironment) {
+      const runtime = this.options.executionEnvironment!;
+      const current = runtime.snapshot(runtime.execution('local-codex', threadId, inputId));
+      if (current.owner !== this.executionEnvironments.get(threadId)?.owner) throw new Error("Environment belongs to another account or project; start a new session");
+    }
+    if (initial && !this.sessionMcpRetirements.has(threadId) && (!inputId || !initial.inputId || initial.inputId === inputId)) {
+      if (inputId) {
+        if (!executionId) throw new Error("Session tools require an attested execution");
+        initial.reservation.bind(threadId, inputId, executionId); initial.inputId = inputId;
+      }
+      if (!this.options.executionEnvironment || keepInitialEnvironment) return;
+    }
+    if (keepInitialEnvironment) {
+      return;
+    }
     for (;;) {
       const pending = this.sessionMcpRefreshes.get(threadId);
       if (pending) {
@@ -3008,69 +3616,164 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   private async refreshSessionMcp(threadId: string, generation: number, inputId?: string, executionId?: string): Promise<void> {
-    const current = () => {
-      if (generation !== this.sessionMcpGeneration) throw new Error("Session tool preparation belongs to an expired connection");
-    };
-    const configuration = structuredClone(await this.options.sessionMcp!(threadId, inputId, executionId));
-    current();
-    const previous = this.sessionMcpConfigurations.get(threadId);
-    if (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined)) return;
-    const request = async (method: string, params: RpcRecord): Promise<unknown> => {
+    let stage: SessionMcpStage = "resolve-tools";
+    let nativeStatus: string | undefined;
+    try {
+      const current = () => {
+        if (generation !== this.sessionMcpGeneration) throw new Error("Session tool preparation belongs to an expired connection");
+      };
+      stage = "resolve-tools";
+      const configuration = structuredClone(await this.options.sessionMcp?.(threadId, inputId, executionId) ?? null);
+      stage = "resolve-environment";
+      let environment = this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
+      if (environment && !await this.canInjectEnvironment(threadId)) {
+        if (environment.toJSON().configured) throw new Error("Environment variables require a Codex owner handoff");
+        environment = undefined;
+      }
+      if (environment) environment.apply(process.env);
       current();
-      const result = await this.requestPhysical(method, params);
-      current();
-      return result;
-    };
-    const read = record(await request("thread/read", { threadId, includeTurns: false }));
-    const thread = record(read.thread);
-    if (thread.ephemeral === true) {
-      if (configuration) throw new Error("Session capabilities require a durable Codex thread");
-      return;
+      const previous = this.sessionMcpConfigurations.get(threadId);
+      if (!this.sessionMcpRetirements.has(threadId)
+        && (isDeepStrictEqual(previous, configuration) || (configuration === null && previous === undefined))
+        && (!environment || environment.key === this.executionEnvironments.get(threadId)?.key)) return;
+      const request = async (method: string, params: RpcRecord): Promise<unknown> => {
+        current();
+        const result = await this.requestPhysical(method, params);
+        current();
+        return result;
+      };
+      stage = "read-thread";
+      const read = record(await request("thread/read", { threadId, includeTurns: false }));
+      const thread = record(read.thread);
+      if (thread.ephemeral === true) {
+        this.ephemeralThreads.add(threadId);
+        return;
+      }
+      stage = "check-idle";
+      let status = string(record(thread.status).type);
+      nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
+      if (!["idle", "systemError", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
+      this.cancelNativeRelease(threadId);
+      const retirement = this.sessionMcpRetirements.get(threadId);
+      const waitForUnload = async () => {
+        stage = "wait-for-unload";
+        // Native unsubscribe releases a subscription, not the Thread runtime.
+        // Keep this admitted input in preparation while native's retirement runs;
+        // never resubmit input or reattach the old runtime to poll readiness.
+        if (!this.options.executionEnvironment) {
+          const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
+          status = string(record(record(snapshot.thread).status).type);
+          nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
+          if (status !== "notLoaded") throw new SessionMcpRecoveryPending();
+          return;
+        }
+        const deadline = Date.now() + 90_000;
+        while (status !== "notLoaded") {
+          current();
+          if (Date.now() >= deadline) throw new SessionMcpRecoveryPending();
+          await new Promise<void>(resolve => setTimeout(resolve, 250));
+          const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
+          status = string(record(record(snapshot.thread).status).type);
+          nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
+          if (!["idle", "systemError", "notLoaded"].includes(status)) throw new SessionMcpRecoveryPending();
+        }
+      };
+      if (retirement && status !== "notLoaded") await waitForUnload();
+      stage = "capture-settings";
+      const live = retirement ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
+      const resume: RpcRecord = {};
+      for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
+        if (live[key] !== undefined) resume[key] = live[key];
+      stage = "preserve-permissions";
+      const profile = string(record(live.activePermissionProfile).id);
+      if (profile) resume.permissions = profile;
+      else {
+        const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
+        if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
+        if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
+      }
+      // Once native configuration can change, the old confirmation is no longer
+      // valid either. A partial failure must not make a later rollback look applied.
+      this.sessionMcpConfigurations.delete(threadId);
+      if (status !== "notLoaded") {
+        this.sessionMcpRetirements.set(threadId, live);
+        stage = "unsubscribe";
+        await request("thread/unsubscribe", { threadId });
+        this.nativeSubscribedThreads.delete(threadId);
+        await waitForUnload();
+      }
+      stage = "apply-tools";
+      await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
+        "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
+        ...(environment ? { 'shell_environment_policy.set': environment.overlay() } : {}),
+      } });
+      this.sessionMcpRetirements.delete(threadId);
+      if (Object.keys(live).length) {
+        const settings: RpcRecord = { threadId };
+        if (profile) settings.permissions = profile;
+        else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
+        for (const key of ["approvalPolicy", "approvalsReviewer", "model", "serviceTier", "collaborationMode"])
+          if (live[key] !== undefined && live[key] !== null) settings[key] = live[key];
+        if (live.reasoningEffort) settings.effort = live.reasoningEffort;
+        stage = "restore-settings";
+        await request("thread/settings/update", settings);
+      }
+      this.sessionMcpConfigurations.set(threadId, configuration);
+      if (environment) this.executionEnvironments.set(threadId, environment);
+      this.sessionMcpRetirements.delete(threadId);
+      stage = "release-initial";
+      this.sessionMcpInitial.get(threadId)?.reservation.cancel();
+      this.sessionMcpInitial.delete(threadId);
+    } catch (cause) {
+      throw new SessionMcpPreparationFailure(stage, cause, threadId, inputId, nativeStatus);
     }
-    const status = string(record(thread.status).type);
-    if (!["idle", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
-    this.cancelNativeRelease(threadId);
-    const live = status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true }));
-    const resume: RpcRecord = {};
-    for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
-      if (live[key] !== undefined) resume[key] = live[key];
-    const profile = string(record(live.activePermissionProfile).id);
-    if (profile) resume.permissions = profile;
-    else {
-      const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
-      if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
-      if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
-    }
-    // Once native configuration can change, the old confirmation is no longer
-    // valid either. A partial failure must not make a later rollback look applied.
-    this.sessionMcpConfigurations.delete(threadId);
-    if (status !== "notLoaded") {
-      await request("thread/unsubscribe", { threadId });
-      // Native keeps durable threads in its catalog after unsubscribe. The
-      // idle resume boundary rebuilds the session configuration without relying
-      // on thread/read or loaded/list as an unloading acknowledgement.
-    }
-    await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
-      "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
-    } });
-    if (Object.keys(live).length) {
-      const settings: RpcRecord = { threadId };
-      if (profile) settings.permissions = profile;
-      else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
-      for (const key of ["approvalPolicy", "approvalsReviewer", "model", "serviceTier", "collaborationMode"])
-        if (live[key] !== undefined && live[key] !== null) settings[key] = live[key];
-      if (live.reasoningEffort) settings.effort = live.reasoningEffort;
-      await request("thread/settings/update", settings);
-    }
-    this.sessionMcpConfigurations.set(threadId, configuration);
   }
+
   private async writePhysical(message: RpcRecord, admit?: () => boolean): Promise<void> {
+    if (message.method === "thread/fork") {
+      const params = record(message.params);
+      // Native fork starts from Host defaults, even when its source is loaded.
+      // Copy only execution choices; credentials and tool configuration retain
+      // their own lifecycle. A path fork ignores threadId, so do not read it.
+      if (string(params.threadId) && !string(params.path)) {
+        const source = record(await this.requestPhysical("thread/resume", { threadId: params.threadId, excludeTurns: true }));
+        const inherited: RpcRecord = {};
+        for (const key of ["model", "modelProvider", "serviceTier"])
+          if (!Object.hasOwn(params, key) && source[key] !== undefined) inherited[key] = source[key];
+        const config = record(params.config);
+        if (!Object.hasOwn(config, "model_reasoning_effort") && source.reasoningEffort != null) {
+          inherited.config = { ...config, model_reasoning_effort: source.reasoningEffort };
+        }
+        message = { ...message, params: { ...params, ...inherited } };
+      }
+    }
+    const initialEnvironment = this.environmentCreations.get(String(message.id));
+    if (message.method === "thread/start" && initialEnvironment) {
+      const params = record(message.params);
+      message = { ...message, params: { ...params, config: { ...record(params.config), "shell_environment_policy.set": initialEnvironment.overlay() } } };
+    }
+    if ((message.method === "thread/start" || message.method === "thread/fork")
+      && record(message.params).ephemeral === true && this.options.sessionMcp) {
+      const params = record(message.params);
+      message = { ...message, params: { ...params, config: { ...record(params.config),
+        "mcp_servers.opencraft_session": { enabled: false, url: "http://127.0.0.1:1/mcp" },
+      } } };
+    }
+    if (message.method === "thread/start" && record(message.params).ephemeral !== true && this.options.createSessionMcp) {
+      const generation = this.sessionMcpGeneration;
+      const creation = await this.options.createSessionMcp();
+      if (generation !== this.sessionMcpGeneration) { creation.cancel(); throw new Error("Thread creation belongs to an expired connection"); }
+      const params = record(message.params);
+      params.config = { ...record(params.config), "mcp_servers.opencraft_session": creation.configuration };
+      this.sessionMcpCreations.set(String(message.id), creation);
+    }
     if (message.method === "turn/start") {
       const params = record(message.params), threadId = string(params.threadId);
       const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
       message = { ...message, params: { ...params, clientUserMessageId: inputId } };
       const executionId = this.executionLeases?.begin(threadId, inputId, this.nativeCore?.executionIncarnation);
-      await this.prepareSessionMcp(threadId, inputId, executionId);
+      try { await this.prepareSessionMcp(threadId, inputId, executionId); }
+      catch (cause) { throw new RecoveryNotSubmitted(string(this.sessionMcpFailure(cause).message), { cause }); }
     }
     if ((this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && (message.method === "turn/start" || message.method === "turn/steer")) {
       const params=record(message.params),delegationId=this.options.collaboration?.inputDelegation?.(string(params.threadId),string(params.clientUserMessageId),string(params.expectedTurnId)||undefined);
@@ -3092,31 +3795,43 @@ export class CodexEngineAdapter implements DuplexTransport {
         message = { ...message, params: { ...params, summary: "auto" } };
       }
     }
-    if (admit && (!this.physicalAvailable || !admit())) throw new RecoveryNotSubmitted("Automatic recovery was revoked before native submission");
-    if (message.method === "turn/start" && this.executionLeases) {
-      const params = record(message.params);
-      const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
-      message = { ...message, params: { ...params, clientUserMessageId: inputId } };
-      // This durable write precedes the physical send: native tools may start before the ACK.
-      this.executionLeases.begin(string(params.threadId), inputId, this.nativeCore?.executionIncarnation);
+    try {
+      if (admit && (!this.physicalAvailable || !admit())) throw new RecoveryNotSubmitted("Automatic recovery was revoked before native submission");
+      if (message.method === "turn/start" && this.executionLeases) {
+        const params = record(message.params);
+        const inputId = string(params.clientUserMessageId) || `internal-input:${randomUUID()}`;
+        message = { ...message, params: { ...params, clientUserMessageId: inputId } };
+        // This durable write precedes the physical send: native tools may start before the ACK.
+        this.executionLeases.begin(string(params.threadId), inputId, this.nativeCore?.executionIncarnation);
+      }
+      if (message.method === "turn/start") this.provisionalThreads?.attempted(string(record(message.params).threadId), string(record(message.params).clientUserMessageId));
+      if (this.options.kind === "remote") {
+        return await this.options.transport.send(JSON.stringify(message)).catch(() => {
+          this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));
+          this.publishStatus({ state: "failed", reason: "Remote delivery outcome is unknown", failure: { code: "SSH_DELIVERY_UNKNOWN", recovery: "automatic" } });
+          throw new Error("Remote delivery outcome is unknown");
+        });
+      }
+      if (this.nativeCore) return await this.nativeTransport!.send(JSON.stringify(message));
+      if (this.child === null || this.child.stdin.destroyed) throw new Error("Codex AppServer stdin is closed");
+      this.child.stdin.write(`${JSON.stringify(message)}\n`);
+    } catch (error) {
+      const creation = this.sessionMcpCreations.get(String(message.id));
+      if (creation) { creation.cancel(); this.sessionMcpCreations.delete(String(message.id)); }
+      throw error;
     }
-    if (this.options.kind === "remote") {
-      return this.options.transport.send(JSON.stringify(message)).catch(() => {
-        this.rejectInternalRequests(new Error("Remote delivery outcome is unknown"));
-        this.publishStatus({ state: "failed", reason: "Remote delivery outcome is unknown", failure: { code: "SSH_DELIVERY_UNKNOWN", recovery: "automatic" } });
-        throw new Error("Remote delivery outcome is unknown");
-      });
-    }
-    if (this.nativeCore) return this.nativeTransport!.send(JSON.stringify(message));
-    if (this.child === null || this.child.stdin.destroyed) throw new Error("Codex AppServer stdin is closed");
-    this.child.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   private emit(message: RpcRecord, clientId?: string, method = ""): void {
     if ("result" in message && this.options.collaboration?.topology) message = {...message,
       result:projectThreadTopologyResult(method,message.result,id => this.options.collaboration!.topology!(id))};
+    const started = performance.now();
     const frame = serializeHistoryReply(clientId ? { ...message, [LOGICAL_CLIENT_FIELD]: clientId } : message, method);
+    const serialized = performance.now();
     for (const listener of this.listeners) listener(frame);
+    const timing = record(record(message.result).__opencraftHistoryTiming);
+    if (typeof timing.pairId === "string") this.historyDiagnostic({ event: "history-read-return", pairId: timing.pairId,
+      method, bytes: Buffer.byteLength(frame), serializeMs: serialized - started, publishMs: performance.now() - serialized });
   }
 
   private readonly fail = (error: Error): void => {
@@ -3126,7 +3841,6 @@ export class CodexEngineAdapter implements DuplexTransport {
     for(const request of this.pending.values())if(request.usageAttemptId)this.tokenUsage?.attemptOutcome(request.usageAttemptId,"unknown");
     for (const timer of this.goalContinuationTimers.values()) clearTimeout(timer);
     this.goalContinuationTimers.clear();
-    this.clearAllCapacityRetries();
     this.publishStatus({ state: "failed", reason: error.message, failure: { code: "codex-appserver-exited", recovery: "automatic" } });
   };
 
@@ -3138,6 +3852,12 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.sessionMcpGeneration += 1;
       this.sessionMcpConfigurations.clear();
       this.sessionMcpRefreshes.clear();
+      this.environmentCreations.clear(); this.executionEnvironments.clear(); this.initialEnvironmentThreads.clear();
+
+      for (const creation of this.sessionMcpCreations.values()) creation.cancel();
+      for (const [threadId, initial] of this.sessionMcpInitial)
+        if (!initial.reservation.bindThread) initial.reservation.cancel();
+      this.sessionMcpCreations.clear(); this.sessionMcpInitial.clear(); this.sessionMcpRetirements.clear();
     }
     for (const listener of this.statusListeners) listener(status);
   }

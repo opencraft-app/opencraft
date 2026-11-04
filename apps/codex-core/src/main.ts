@@ -107,7 +107,8 @@ export async function startCodexCore(options: CodexCoreOptions) {
       ?? spawn(options.executable, args, { cwd: options.runtimeDirectory, env, stdio: ["pipe", "pipe", "pipe"] });
     ownsNative = true;
     child.stdout.resume();
-    child.stderr.on("data", chunk => process.stderr.write(chunk));
+    // Native stderr may contain tool output or private environment values.
+    child.stderr.resume();
     let startupError: Error | null = null;
     const failed = (error: Error) => {
       startupError = error;
@@ -118,7 +119,7 @@ export async function startCodexCore(options: CodexCoreOptions) {
     authSocket = await nativeReady(nativeSocket, child, launch.auth);
     if (startupError) throw startupError;
     await chmod(nativeSocket, 0o600);
-    health = { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child.pid!, nativeSocket };
+    health = { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child.pid!, nativeSocket };
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(options.endpoint, () => { server.off("error", reject); ownsControl = true; resolve(); });

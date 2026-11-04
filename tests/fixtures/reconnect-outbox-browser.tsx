@@ -7,20 +7,25 @@ import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { createBrowserConversationOutbox } from "../../apps/workbench-web/src/runtime/browser-conversation-outbox";
 import { queuedSubmissionPresentation } from "../../apps/workbench-web/src/queued-submission-presentation";
+import { completeConversationComposerSubmission } from "../../apps/workbench-web/src/runtime/composer-submission-admission";
 import { initializeAppearanceTheme, setThemePreference } from "../../apps/workbench-web/src/appearance-theme";
 import "../../apps/workbench-web/src/styles/app.scss";
 initializeAppearanceTheme();
-let account = "account-one";
-const store = createBrowserConversationOutbox({ storage: sessionStorage, scope: () => account });
+let account: string | null = "account-one";
+const canDispatch = () => account !== null;
+const store = createBrowserConversationOutbox({ storage: sessionStorage, scope: () => account, canDispatch });
 const runtime = createAppServerWorkbenchRuntime({ hostId: "fixture", outbox: store.forProfile(1),
+  canDispatchOutbox: canDispatch,
   autoReconnect: true, reconnectDelaysMs: [100, 200], requestTimeoutMs: 2000,
   createTransport: () => new WebSocketTransport({ url: location.origin.replace(/^http/, "ws") + "/fixture-rpc" }),
 });
 await runtime.connect();
 const lease = await runtime.acquireThread("thread-one"); lease.setRecoveryVisibility(true);
 const controller = createComposerController({ type: "existing-thread", key: createConversationKey("fixture", "thread-one") }, { now: Date.now, createId: () => crypto.randomUUID() });
+const submittedIntents: import("@opencraft/composer-core").SubmitIntent[] = [];
 (window as any).fixture = { runtime: runtime.getSnapshot, snapshot: lease.getSnapshot, setThemePreference,
-  account: (next: string) => { account = next; store.refreshScope(); }, draft: () => controller.getSnapshot().draft,
+  account: (next: string | null) => { account = next; store.refreshScope(); }, draft: () => controller.getSnapshot().draft,
+  submissions: () => submittedIntents,
   failStorage: () => { Storage.prototype.setItem = () => { throw new Error("Storage unavailable"); }; },
 };
 function App() {
@@ -31,7 +36,7 @@ function App() {
       availableFollowUpActions={!snapshot.authoritative || snapshot.queuedSubmissions.some(row => row.local)
         ? ["queue"] : (["steer", "queue"] as const).filter(action => runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
       queuedSubmissions={snapshot.queuedSubmissions.map(row => queuedSubmissionPresentation(row, false))}
-      onSubmit={intent => lease.submit(intent).then(() => true)} onCancel={() => {}}
+      onSubmit={intent => { submittedIntents.push(intent); return completeConversationComposerSubmission(intent, lease.submit(intent), lease.getSnapshot(), () => {}); }} onCancel={() => {}}
       onDeleteQueuedSubmission={id => lease.deleteQueuedSubmission(id)} />
   </main>;
 }

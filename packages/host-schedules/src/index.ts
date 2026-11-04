@@ -45,7 +45,8 @@ export class ConversationSchedules {
 
   constructor(directory: string, private readonly port: ScheduleExecutionPort,
     private readonly now = Date.now, private readonly diagnostic: (event: { event: string; scheduleId?: string }) => void = () => {},
-    private readonly changed: () => void = () => {}) {
+    private readonly changed: () => void = () => {},
+    private readonly admissionOpen: () => boolean = () => true) {
     this.managed = openManagedDatabase({ path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
       validateSchema: createSchemaValidator(schema), migrations: [{ version: 1, name: "conversation-schedules", sql: schema }] });
     this.outcome = this.managed.outcome;
@@ -195,13 +196,22 @@ export class ConversationSchedules {
     void this.tick();
   }
   tick(): Promise<void> {
-    if (this.stopped) return Promise.resolve();
+    if (this.stopped || !this.admissionOpen()) return Promise.resolve();
     const operation = Promise.resolve().then(() => this.advance()).catch(() => this.diagnostic({ event: "schedule-tick-failed" }));
     this.pending.add(operation);
     void operation.finally(() => this.pending.delete(operation));
     return operation;
   }
+  handoffObservation() {
+    const plans = this.db.prepare("SELECT value FROM schedules").all().map(row => JSON.parse(String(row.value)));
+    const runs = this.db.prepare("SELECT value FROM schedule_runs").all().map(row => JSON.parse(String(row.value)));
+    if (plans.some(row => !row || typeof row.threadId !== "string" || !["active", "paused", "completed", "deleted"].includes(row.status))
+      || runs.some(row => !row || typeof row.threadId !== "string" || !["waiting", "submitting", "running", "completed", "failed", "unknown", "reviewed"].includes(row.state))) throw new Error("Invalid schedule custody");
+    return { flights: this.pending.size + this.flights.size, plans: plans.filter(row => ["active", "paused"].includes(row.status)).length,
+      unfinished: runs.filter(row => unfinished.has(row.state)).length };
+  }
   private async advance() {
+    if (!this.admissionOpen()) return;
     const schedules = this.db.prepare("SELECT value FROM schedules").all().map(row => JSON.parse(String(row.value)) as ConversationSchedule);
     const started: Promise<void>[] = [];
     for (const snapshot of schedules) {

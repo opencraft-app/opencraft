@@ -29,7 +29,7 @@ import { CommandViewStateContext } from "../../conversation/command-view-state";
 import { ThinkingActivityIcon } from "../../activity-glyphs";
 import { ThinkingLabel } from "../../thinking-label";
 import { useWorkbenchPresentationActive } from "../../workbench-presentation-activity";
-import { ConversationDetailContext, useToolActivityPresentation } from "../render-contexts";
+import { ConversationDetailContext, useToolActivityPresentation, useHistoryItemDetail } from "../render-contexts";
 import { ActivityDisclosure, CadencedShimmer, useActivityOpen } from "./activity-disclosure";
 import { activityIcon } from "./activity-icon";
 
@@ -246,6 +246,7 @@ export function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: 
     views?.set(block.id, { open: next, scrollTop: 0, scrollLeft: 0, followOutput: true });
     setLocalOpen(next);
   };
+  useHistoryItemDetail(block, open);
   const running = presentation.state === "running";
   const elapsed = useCommandElapsed(block, running);
   const skill = skillReadPresentation(block, detailLevel);

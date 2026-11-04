@@ -19,9 +19,9 @@ export async function checkSavedModel(input:RuntimeSavedModelCheckParams,source:
   const api=provider.protocol;
   if(api!=='openai-completions'&&api!=='openai-responses')throw new Error('当前协议暂不支持连接检查');
   const issue=modelBaseUrlError(provider.baseUrl);if(issue||!provider.baseUrl.trim())throw new Error(issue??'请先保存 API 基础地址');
-  const apiKey=provider.credentialRef?await source.credential(provider.credentialRef):undefined;
-  if(!apiKey)throw new Error('此连接没有可用的 API Key，请先保存密钥');
+  const apiKey=provider.authentication!=="none"&&provider.credentialRef?await source.credential(provider.credentialRef):undefined;
+  if(!apiKey&&provider.authentication!=='none')throw new Error('此连接没有可用的 API Key，请先保存密钥');
   const latest=await source.read();
   if(latest.revision!==snapshot.revision||!isDeepStrictEqual(latest.providers.find(p=>p.id===provider.id),provider))throw new Error('配置已更新，请刷新后重新检查');
-  return probe({baseURL:provider.baseUrl,api,model:input.model,apiKey});
+  return probe({baseURL:provider.baseUrl,api,model:input.model,...(apiKey?{apiKey}:{})});
 }

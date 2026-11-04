@@ -80,6 +80,16 @@ function transportFixture(closeTimeoutMs = 20) {
   return { transport, sockets };
 }
 
+test('standard service restart close frames retain an automatic recovery classification', async () => {
+  const f = transportFixture(), connecting = f.transport.connect();
+  f.sockets[0]!.emitOpen(); await connecting;
+  f.sockets[0]!.emitClose(1012);
+  assert.equal(f.transport.status.state, 'closed');
+  assert.equal(f.transport.status.failure?.code, 'APP_SERVER_RESTARTING');
+  assert.equal(f.transport.status.failure?.recovery, 'automatic');
+  await f.transport.close();
+});
+
 async function connectCurrent(fixture: ReturnType<typeof transportFixture>): Promise<FakeSocket> {
   const connected = fixture.transport.connect();
   const socket = fixture.sockets.at(-1);

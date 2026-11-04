@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { createServer, type ServerResponse } from "node:http";
 import { mkdir, mkdtemp, readFile, writeFile, chown, chmod, copyFile, cp, stat } from "node:fs/promises";
-import { join, resolve, dirname } from "node:path";
+import { join, resolve, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { zstdDecompressSync, gunzipSync } from "node:zlib";
@@ -83,8 +83,10 @@ store.addAccount({ id: "synthetic", provider: "codex", label: "Synthetic", upstr
 const cwd = process.env.OPENCRAFT_DRILL_SOURCE_ROOT ?? resolve(import.meta.dirname, "../../.."), control = new CodexCoreControlClient(endpoint, token);
 let executionOldCli = oldCli, executionNewCli = newCli, executionBundle = join(cwd, "apps/codex-core/dist/app-server.cjs");
 {
-  await cp(dirname(dirname(oldCli)), join(root, "cli-old"), { recursive: true });
-  await cp(dirname(dirname(newCli)), join(root, "cli-new"), { recursive: true });
+  for (const [cli, name] of [[oldCli, "cli-old"], [newCli, "cli-new"]]) {
+    if (basename(dirname(cli!)) === "bin") await cp(dirname(dirname(cli!)), join(root, name!), { recursive: true });
+    else { await mkdir(join(root, name!, "bin"), { recursive: true, mode: 0o700 }); await copyFile(cli!, join(root, name!, "bin/codex")); await chmod(join(root, name!, "bin/codex"), 0o755); }
+  }
   executionOldCli = join(root, "cli-old/bin/codex"); executionNewCli = join(root, "cli-new/bin/codex");
   executionBundle = join(root, "app-server.cjs"); await copyFile(join(cwd, "apps/codex-core/dist/app-server.cjs"), executionBundle);
 }
@@ -108,7 +110,10 @@ async function startRoutingOwner() {
       "--property=Restart=on-failure", "--property=RestartSec=1", "--property=KillMode=control-group", "--property=TimeoutStopSec=infinity",
       `--working-directory=${cwd}`, `--setenv=HOME=${join(root, "home")}`, `--setenv=TMPDIR=${root}`, "--", process.execPath, ...args]);
     else execFileSync("systemctl", ["start", routingUnit]);
-    await wait(() => new CodexCoreControlClient(routerEndpoint, token).appServerHealth(), "routing systemd owner starts/recover bootstrap");
+    await wait(async () => {
+      const state = await admin(undefined, undefined, true);
+      return state.handoff.phase === "open" ? new CodexCoreControlClient(routerEndpoint, token).appServerHealth() : state;
+    }, "routing systemd owner starts/recover bootstrap");
     const pid = Number(execFileSync("systemctl", ["show", routingUnit, "-p", "MainPID", "--value"], { encoding: "utf8" }).trim());
     assert.ok(pid > 0);
     assert.equal(execFileSync("systemctl", ["show", routingUnit, "-p", "RuntimeDirectory", "--value"], { encoding: "utf8" }).trim(), "", "routing unit must not own sibling socket-directory cleanup");
@@ -126,9 +131,9 @@ async function startRoutingOwner() {
   if (!output.includes("codex-routing-owner-ready")) throw new Error(`Routing owner startup failed: ${errors.trim()}`);
   return { pid: child.pid!, nativeSocket: join(root, "routing/native.sock"), async close(signal: NodeJS.Signals = "SIGTERM") { if (child.exitCode !== null || child.signalCode !== null) return; const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(signal); await exited; } };
 }
-async function admin(operation?: string, params?: object) {
+async function admin(operation?: string, params?: object, handoff = false) {
   const { request } = await import("node:http");
-  return new Promise<any>((resolve, reject) => { const req = request({ socketPath: routerEndpoint, path: "/generations", method: operation ? "POST" : "GET", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" } }, res => { const chunks: Buffer[] = []; res.on("data", c => chunks.push(c)); res.on("end", () => { const value = JSON.parse(Buffer.concat(chunks).toString()); res.statusCode === 200 ? resolve(value) : reject(new Error(JSON.stringify(value))); }); }); req.on("error", reject); req.end(operation ? JSON.stringify({ operation, params }) : undefined); });
+  return new Promise<any>((resolve, reject) => { const req = request({ socketPath: routerEndpoint, path: handoff ? "/owner-handoff" : "/generations", method: operation ? "POST" : "GET", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" } }, res => { const chunks: Buffer[] = []; res.on("data", c => chunks.push(c)); res.on("end", () => { const value = JSON.parse(Buffer.concat(chunks).toString()); res.statusCode === 200 ? resolve(value) : reject(new Error(JSON.stringify(value))); }); }); req.on("error", reject); req.end(operation ? JSON.stringify(handoff ? { action: operation, ...params } : { operation, params }) : undefined); });
 }
 const report: any = { root, evidence, versions, executionUid, executionGid, adopting, routingUnderSystemd, scenarios: [] };
 try {
@@ -147,7 +152,7 @@ try {
   }
   const interruptedBootstrap = new CodexGenerationRegistry(options.registryDirectory); interruptedBootstrap.register(bootstrap.generation); interruptedBootstrap.close();
   service = await startRoutingOwner();
-  socket = new WebSocket(`ws+unix://${service.nativeSocket}:/`); await new Promise<void>((resolve, reject) => { socket!.once("open", resolve); socket!.once("error", reject); });
+  socket = new WebSocket(`ws+unix://${service.nativeSocket}:/${process.env.OPENCRAFT_DRILL_ROUTER_HANDOFF === "1" ? "?opencraftLane=router-drill" : ""}`); await new Promise<void>((resolve, reject) => { socket!.once("open", resolve); socket!.once("error", reject); });
   let seq = 0; const pending = new Map<number, { resolve(v: any): void; reject(e: Error): void }>(), notifications: any[] = [];
   const receive = (raw: WebSocket.RawData) => { const m = JSON.parse(String(raw)); if (m.id !== undefined && !m.method) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p?.reject(new Error(m.error.message)) : p?.resolve(m.result); } else notifications.push(m); }; socket.on("message", receive);
   const rpc = (method: string, params: object = {}) => { const id = ++seq; return new Promise<any>((resolve, reject) => { pending.set(id, { resolve, reject }); socket!.send(JSON.stringify({ id, method, params })); }); };
@@ -156,6 +161,40 @@ try {
   async function completed(ids: { threadId: string; turnId: string }) { await wait(() => notifications.some(m => m.method === "turn/completed" && m.params.turn.id === ids.turnId), `turn ${ids.turnId}`); const read = await rpc("thread/read", { threadId: ids.threadId, includeTurns: true }); assert.equal(read.thread.turns.find((t: any) => t.id === ids.turnId).status, "completed"); }
   const before = await admin(), oldBefore = before.generations.find((g: any) => g.id === "old").runtime;
   if (adopting) assert.deepEqual(oldBefore, report.externalBefore, "adoption preserves existing non-root APP/native identity");
+  if (process.env.OPENCRAFT_DRILL_ROUTER_HANDOFF === "1") {
+    const expectation = async () => { const h = (await admin(undefined, undefined, true)).handoff;
+      return { expectedOwner: h.owner, expectedEpoch: h.epoch, operationId: "real-router-handoff", fence: "real-router-fence" }; };
+    const handoff = async (action: string, extra = {}) => admin(action, { ...await expectation(), ...extra }, true);
+    const shell = await turn("OLD-SHELL");
+    await wait(() => readFile(markers.shell, "utf8").then(text => text.includes("start"), () => false), "native shell starts once");
+    await assert.rejects(rpc("initialize"), /already initialized/);
+    const maintenanceStart = Date.now(); await handoff("fence");
+    await assert.rejects(rpc("thread/start"), /fenced/); await assert.rejects(rpc("thread/resume", { threadId: shell.threadId }), /fenced/);
+    assert.ok((await handoff("inspect")).proof.activeCount > 0);
+    socket!.terminate(); socket = undefined;
+    await wait(async () => (await handoff("inspect")).proof.activeCount === 0, "consumer/native admission drain");
+    const proof = (await handoff("inspect")).proof;
+    assert.equal(proof.coverage, "complete"); await handoff("release", { proof: proof.identity });
+    await service.close(); service = await startRoutingOwner();
+    const cold = await handoff("cold-ready");
+    const failedInput = await expectation(), recoveryStart = Date.now();
+    await service.close("SIGKILL"); service = await startRoutingOwner();
+    await assert.rejects(admin("resume", { ...failedInput, identity: cold.ready.identity }, true));
+    const restored = await handoff("cold-ready"); await handoff("resume", { identity: restored.ready.identity });
+    const recoveryMs = Date.now() - recoveryStart, maintenanceMs = Date.now() - maintenanceStart;
+    socket = new WebSocket(`ws+unix://${service.nativeSocket}:/${process.env.OPENCRAFT_DRILL_ROUTER_HANDOFF === "1" ? "?opencraftLane=router-drill" : ""}`);
+    await new Promise<void>((resolve, reject) => { socket!.once("open", resolve); socket!.once("error", reject); }); socket.on("message", receive);
+    await rpc("initialize", { clientInfo: { name: "router-successor-consumer", version: "1" }, capabilities: { experimentalApi: true } });
+    await rpc("thread/resume", { threadId: shell.threadId });
+    await writeFile(markers.barrier, "resubscribed");
+    await completed(shell);
+    assert.equal(await readFile(markers.shell, "utf8"), "start\ndone\n");
+    const after = await admin(); assert.deepEqual(after.generations.find((g: any) => g.id === "old").runtime, oldBefore);
+    assert.equal(after.fences.routes.find((r: any) => r.threadId === shell.threadId).generationId, "old");
+    assert.ok((await rpc("thread/list", { limit: 100 })).data.some((t: any) => t.id === shell.threadId));
+    report.scenarios.push({ name: "router protocol release / candidate crash / current-data recovery / native resubscription", shell,
+      recoveryMs, maintenanceMs, nativeUnchanged: true, shellStarts: 1, shellCompletions: 1, original: oldBefore });
+  } else {
   const ephemeral = (await rpc("thread/start", { cwd: root, model: "gpt-test", approvalPolicy: "never", sandbox: "danger-full-access", ephemeral: true })).thread.id;
   const oldIdle = (await rpc("thread/start", { cwd: root, model: "gpt-test", approvalPolicy: "never", sandbox: "danger-full-access" })).thread.id;
   const stream = await turn("OLD-STREAM"), shell = await turn("OLD-SHELL"); await wait(() => ticks >= 2 && readFile(markers.shell, "utf8").then(t => t.includes("start"), () => false), "live stream and shell");
@@ -236,7 +275,7 @@ try {
   const routingPidBefore = service.pid; await service.close("SIGKILL"); service = await startRoutingOwner(); assert.notEqual(service.pid, routingPidBefore);
   const restarted = await admin(); assert.equal(restarted.generations.find((g: any) => g.state === "active").id, "new");
   assert.deepEqual(restarted.generations.map((g: any) => [g.id, g.runtime]), identities);
-  socket = new WebSocket(`ws+unix://${service.nativeSocket}:/`); await new Promise<void>((resolve, reject) => { socket!.once("open", resolve); socket!.once("error", reject); }); socket.on("message", receive);
+  socket = new WebSocket(`ws+unix://${service.nativeSocket}:/${process.env.OPENCRAFT_DRILL_ROUTER_HANDOFF === "1" ? "?opencraftLane=router-drill" : ""}`); await new Promise<void>((resolve, reject) => { socket!.once("open", resolve); socket!.once("error", reject); }); socket.on("message", receive);
   await rpc("initialize", { clientInfo: { name: "generation-native-drill-reconnect", version: "1" }, capabilities: { experimentalApi: true } });
   await rpc("thread/resume", { threadId: fresh.threadId });
   const reconnect = await turn("NEW-THREAD", fresh.threadId); await completed(reconnect);
@@ -251,6 +290,7 @@ try {
   assert.equal(socket.readyState, WebSocket.OPEN);
   assert.ok(notifications.some(m => m.method === "opencraft/codex/generation/lost" && m.params.generationId === "new"));
   report.scenarios.push({ name: "default generation crash recovers independently while other generation stream completes", live, recovered, before: activeBefore, after: (await admin()).generations.find((g: any) => g.id === "new").runtime });
+  }
   }
   report.scope = process.env.OPENCRAFT_DRILL_GENERATION_ONLY === "1" ? "generation-only" : "full-lifecycle";
   report.requests = requests; report.status = "passed";

@@ -155,7 +155,7 @@ export class BrowserThreadAttention {
         try {
           const page = await client.request("thread/turns/list", {
             threadId: thread.id, cursor: null, limit: 1, itemsView: "notLoaded", sortDirection: "desc",
-          }, { priority: "background", timeoutMs: 10_000 });
+          }, { priority: "background", timeoutMs: 10_000, signal: this.controller.signal, historySource: "attention" });
           if (!current()) return;
           this.checked.set(key, stamp);
           const turn = page.data[0];

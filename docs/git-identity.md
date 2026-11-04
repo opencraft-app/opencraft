@@ -9,6 +9,12 @@ The local Linux adapter requires Node with `node:sqlite`, Python 3 for kernel
 peer credentials, `getconf`, Git 2.34 or newer and OpenSSH `ssh-keygen` for SSH
 signatures. Installing the runtime does not alter global Git configuration.
 
+The installed Git launcher supplies its fixed managed paths, broker socket and
+host policies on every invocation. Command runners may filter inherited
+environment variables, so a parent environment file alone is insufficient.
+Thread and execution locators remain inherited and are never supplied by the
+installation; the broker still resolves employee identity from trusted records.
+
 `EmployeeGitVaultStore` owns `employee-git-vault.sqlite` and its separate 32-byte
 owner-only key. Managed schema v1 stores an encrypted document per account and
 exact host. AES-256-GCM authenticates an unambiguous version/account/host/field
@@ -129,3 +135,6 @@ disables interactive authentication and forwarding, and never falls back after
 failure. Only a public key has a temporary filesystem projection. Unconfigured
 employees retain the original environment. The trusted shared-UID boundary above
 still applies to authentication sockets and encrypted storage.
+
+
+Deployments can restrict bearer-token delivery with `httpsCredentialHosts`. Hosts outside that allowlist never receive an HTTPS credential, including while an old token is being retired. An explicit `sshAuth: null` record can retain identity metadata before an SSH key is generated; it does not contain an authentication token or generate a key.

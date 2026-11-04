@@ -203,6 +203,15 @@ function createUpstreamFetch(override?: typeof fetch): typeof fetch {
 }
 
 export class CodexAccountPoolProxy {
+  handoffAffinities() { return [...this.imageTurns].sort(([a], [b]) => a.localeCompare(b)); }
+  restoreAffinities(rows: ReturnType<CodexAccountPoolProxy["handoffAffinities"]>): void {
+    if (!Array.isArray(rows) || rows.length > 8192) throw new Error("Invalid image affinities");
+    for (const [key, row] of rows) {
+      if (typeof key !== "string" || key.length > 2048 || !row || typeof row.affinityId !== "string"
+        || row.affinityId.length > 512 || !Number.isSafeInteger(row.expiresAt) || this.imageTurns.has(key)) throw new Error("Invalid image affinity");
+      this.imageTurns.set(key, row);
+    }
+  }
   private readonly imageTurns = new Map<string, { affinityId: string; expiresAt: number }>();
   private readonly store: AccountPoolStore;
   private readonly upstreamBaseUrl: string;
@@ -232,7 +241,7 @@ export class CodexAccountPoolProxy {
     this.resolveCredential = options.resolveCredential;
   }
 
-  async handle(request: Request): Promise<Response> {
+  async handle(request: Request, onDispatch?: () => void): Promise<Response> {
     const route = new URL(request.url).pathname;
     const imageRequest = request.method === "POST" && ["/v1/images/generations", "/v1/images/edits"].includes(route);
     const mcpRequest = route === "/api/codex/ps/mcp" && ["GET", "POST", "DELETE"].includes(request.method);
@@ -305,9 +314,13 @@ export class CodexAccountPoolProxy {
       const upstreamStartedAt = this.now();
       let upstream: Response;
       try {
-        upstream = await this.fetch(upstreamUrl(this.upstreamBaseUrl, request.url), {
+        const target = upstreamUrl(this.upstreamBaseUrl, request.url);
+        const headers = requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId);
+        request.signal.throwIfAborted();
+        onDispatch?.();
+        upstream = await this.fetch(target, {
           method: request.method,
-          headers: requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId),
+          headers,
           ...(request.method === "GET" || request.method === "DELETE" ? {} : { body }),
           signal: request.signal,
         });

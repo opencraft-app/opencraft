@@ -12,6 +12,8 @@ export interface WorkbenchReasoningEffortChoice {
  * AppServer owns availability; renderers only present this projection.
  */
 export interface WorkbenchComposerModelChoice {
+  readonly policyRestricted?: boolean;
+  readonly policyRestrictedEfforts?: readonly string[];
   readonly groupKey?: string | null;
   readonly groupLabel?: string | null;
   readonly configuredRole?: "primary" | "fallback" | null;
@@ -60,6 +62,8 @@ export function projectComposerModelChoices(
   return models
     .filter((model) => !model.hidden)
     .map((model) => Object.freeze({
+      policyRestricted: model.policyRestricted,
+      policyRestrictedEfforts: model.policyRestrictedEfforts,
       id: model.id,
       value: model.model,
       label: model.displayName,
@@ -73,7 +77,7 @@ export function projectComposerModelChoices(
       maxTokens: model.maxTokens ?? null,
       source: model.source ?? null,
       serviceTiers: (model.serviceTiers?.length ? model.serviceTiers : (model.additionalSpeedTiers ?? []).map(id => ({ id, name: humanizeCatalogValue(id), description: "" }))).map(tier => Object.freeze({ ...tier })),
-      defaultEffort: reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort).defaultEffort,
+      defaultEffort: model.policyRestricted ? model.defaultReasoningEffort : reasoningCapability(model.supportedReasoningEfforts.map(e=>e.reasoningEffort),model.defaultReasoningEffort).defaultEffort,
       efforts: model.supportedReasoningEfforts.map((effort) => Object.freeze({
         value: effort.reasoningEffort,
         label: reasoningEffortLabel(effort.reasoningEffort),

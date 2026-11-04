@@ -1093,8 +1093,15 @@ Direct trusted handle calls retain their ordinary writable-claim checks.
 These are different retirement outcomes: a forwarding operation already issued
 to the provider has an unknown remote result; an obsolete queued intent must not
 newly cross that provider boundary. Neither outcome automatically replays work.
-While its native owner and claim remain live, a queued frame retains normal FIFO
-ordering. Service-owned Host lifetime, Actor identity and execution ownership are
+While its native owner and claim remain live, a queued writable frame retains
+normal FIFO ordering. Independent `model/list` and `thread/list` requests bypass
+this writable queue: a provider send may await asynchronous Turn/tool preparation,
+which must not hold catalog discovery until that unrelated operation completes.
+Catalog forwarding still captures and revalidates the same claim/native admission,
+passes the same submission context and signal, and returns only its own ACK/error.
+This is concurrent execution of independent reads, with no cached response, retry
+or mutation reordering. Callers requiring read-after-write await the write RPC
+response before requesting its catalog. Service-owned Host lifetime, Actor identity and execution ownership are
 unchanged. Remote claim reclamation and Host state projection remain independent
 obligations, not consequences of ending this local forwarding wait.
 
@@ -1398,3 +1405,57 @@ reentry, successful-disposer counts and local connect/send outcomes. The provide
 diary freezes the first accepted call count so repeated success cannot overwrite
 its own baseline. Synthetic observation controls and immutable old/new factory
 comparisons are separate; no SUT private state, prototypes or source are patched.
+
+
+## Rejected send admission and stale Host recovery
+
+A reachable Hub does not prove that a logical Host lease is still writable.
+When `host/send` fails its captured admission or current claim check, the Server
+returns `APP_HOST_SEND_NOT_ADMITTED` before native forwarding. Errors during or
+after forwarding cannot use this code. The Client retires only the captured
+current lease and publishes failure to the existing Host recovery owner.
+
+The local failure carries the rejected frame's RPC id. Only that pending RPC
+receives `NOT_DISPATCHED`; other in-flight requests retain uncertain transport
+failure. A late old rejection cannot retire a successor. Legacy servers without
+explicit admission proof remain conservative. This does not replay native frames
+or introduce another connection owner.
+
+Shared native `host/status` publishes only the protocol's failure code and
+recovery disposition. A native-local no-dispatch RPC id must never cross this
+boundary: another logical claim may have reused that numeric id for a write that
+was already admitted. Only the matching `host/send` rejection grants local proof.
+
+## Core health during history recovery
+
+Concurrent consumers of one Core control client share only the health request
+that is currently in flight. A completed response is never retained as a cache
+or as admission authority. Every generation-directory read still fetches its
+current directory and checks the routing epoch before using native storage.
+
+Each consumer owns its cancellation. Cancelling one waiter leaves other
+waiters intact; retiring the last waiter aborts the HTTP request. A replacement
+history slot cannot join the retired request. Health responses are copied for
+each consumer. History RPCs keep their independent sockets, payload limits and
+deadlines; sharing health never replays a request or resets execution. The
+concurrent read, cancellation and epoch regressions are in
+`tests/execution/core-read-recovery-burst.test.ts`.
+
+## Empty native creation durability
+
+Native `thread/start` 的成功回执可能只代表内存分配。官方 0.162 在首条输入前不一定
+写 rollout；仅 metadata read、resume、unsubscribe 或 paginated 创建不能保证冷恢复。
+Host 在返回持久会话的创建成功前，要求 Native 通过原 `thread/read(includeTurns=true)`
+形成自己的初始记录。不会写入/合成 rollout、发起 Turn、调用模型或更换 Thread ID。
+特定 `-32601/list_turns is not supported yet` 只有在 Native 已真实写出匹配 Thread ID
+的单条 `session_meta` 时才允许作为历史能力不足处理，其他错误原样失败。
+
+创建生命周期与物理持久化不同：零输入的原生元数据记录不表示 attempted/accepted。
+已知 `created`、Native 当前 loaded/idle、匹配单条 Native `session_meta` 的会话可保持
+空创建投影；发现任何额外记录、已有输入、不匹配 ID、未知格式或读取失败，均不能
+从该证明投影空历史。仍活在 Native 中的旧 `created` 分配可在恢复读取时补此持久化；
+原 Native 已死且从未落盘的旧会话不从缺失记录反推内容，既有精确 coldUnavailable
+归档仍原样保留。ephemeral 不提升为持久会话，已尝试/不确定输入不重新分配或重放。
+
+行为证据是 stock Native 的创建→真实 Core/Native 重启→原 ID resume→首次 Turn 完整
+completed，模型请求恰一次；Host 替换、缺 callback、丢首 Turn ACK 继续保留各自边界。

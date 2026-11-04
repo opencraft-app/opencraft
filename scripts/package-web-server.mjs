@@ -1,10 +1,12 @@
 #!/usr/bin/env node
+import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 import { optimizeWebImages } from './optimize-web-images.mjs';
 import { packageWebResources, copyPdfLicenses } from './package-web-resources.mjs';
 import { mkdir, readFile, writeFile, cp, rm, chmod } from 'node:fs/promises';
 import { dirname, join, resolve, relative } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { build } from 'esbuild';
@@ -22,8 +24,16 @@ import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { packageFullRuntime } from './full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
+import { buildConversationCli } from './build-conversation-cli.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false }) {
+
+export function executionModuleOptions(format) {
+  return format === 'esm'
+    ? { define: {}, banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } }
+    : { define: { 'import.meta.url': 'import_meta_url' }, banner: { js: "const import_meta_url = require('node:url').pathToFileURL(__filename).href;" } };
+}
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, completeRuntime = false, dryRun = false, prepareOnly = false }) {
+  if (prepareOnly && !fullRelease) throw new Error('Prepared trees require a signed full release');
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
   assertPackageName(packageName); assertPackageName(resourcePackageName);
   if (packageName === resourcePackageName) throw new Error('Web and resource packages must have different names');
@@ -58,6 +68,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const html = await readFile(indexPath, 'utf8');
   await writeFile(indexPath, html.replace('</head>', `<meta name="opencraft-web-updates" content="/__opencraft_updates">${resources ? `<meta name="opencraft-web-resources" content="${web.buildId}">` : ''}</head>`));
   manifest.version = version;
+  await buildConversationCli(join(packageRoot, 'runtime/opencraft-cli.mjs'));
   manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));
@@ -75,7 +86,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     bundle: true, platform: 'node', format: 'esm', target: 'node24',
     define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)),
       'process.env.OPENCRAFT_FULL_UPGRADE_PROFILE_JSON': JSON.stringify(JSON.stringify(fullUpgradeProfile)) } });
-  for (const entry of ['agent', 'helper', 'watchdog', 'control', 'install', 'acp-host-owner']) {
+  for (const entry of ['agent', 'helper', 'watchdog', 'control', 'parent', 'install', 'acp-host-owner', 'pi-host-owner']) {
     await build({ entryPoints: [join(repositoryRoot, `scripts/full-upgrade/${entry}.mjs`)], outfile: join(packageRoot, `runtime/upgrade-${entry}.mjs`),
       bundle: true, platform: 'node', format: 'esm', target: 'node24',
       define: { 'process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON': JSON.stringify(JSON.stringify(fullReleaseTrust)) } });
@@ -103,6 +114,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
       ['apps/opencraft-daemon/src/token-usage-query-worker.ts', 'token-usage-query-worker.mjs', 'esm'],
+      ['packages/access-control/src/orchestration-runtime.worker.ts', 'orchestration-runtime-worker.mjs', 'esm'],
+      ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-acp-execution-environment.mjs', 'dsh-acp-execution-environment.mjs', 'esm'],
       ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs', 'esm'],
@@ -110,11 +123,18 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['scripts/server-deployment/acp-host.mjs', 'acp-host.mjs', 'esm'],
     ]) {
       await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(packageRoot, 'execution', target),
-        bundle: true, platform: 'node', format, target: 'node22', define:{'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}, external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node', '@earendil-works/pi-*', '@earendil-works/chord'],
+        bundle: true, platform: 'node', format, target: 'node22', define:{...executionModuleOptions(format).define,'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}, external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node', '@earendil-works/pi-*', '@earendil-works/chord'],
         plugins: [{ name: 'execution-pty', setup(builder) { builder.onResolve({ filter: /^node-pty$/ }, () => ({ path: './native/node-pty/lib/index.js', external: true })); builder.onResolve({ filter: /^ssh2$/ }, () => ({ path: './native/node_modules/ssh2/lib/index.js', external: true })); } }],
-        ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
+        banner: executionModuleOptions(format).banner });
     }
+    // Opt-in deployment tooling only; packaging never changes a host unit or policy.
+    await cp(join(repositoryRoot, 'scripts/server-deployment/tool-memory-guard.py'), join(packageRoot, 'runtime/tool-memory-guard.py'));
+    await cp(join(repositoryRoot, 'scripts/server-deployment/prepare-tool-memory-guard.mjs'), join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'));
+    await cp(join(repositoryRoot, 'config/tool-memory-guard.json'), join(packageRoot, 'runtime/tool-memory-guard.sample.json'));
+    await chmod(join(packageRoot, 'runtime/prepare-tool-memory-guard.mjs'), 0o755);
+    manifest.bin['opencraft-tool-memory-prepare'] = 'runtime/prepare-tool-memory-guard.mjs';
     await buildPiShellRuntime(join(packageRoot, 'execution'));
+    await buildTerminalOwnerRuntime(join(packageRoot, 'execution'));
     if (executionProfile === 'headless') {
       await packageBrowserRuntime(join(packageRoot, 'runtime/browser'));
       await copySshRuntime(join(packageRoot, 'execution/native/node_modules'));
@@ -147,7 +167,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     manifest.os = [process.platform];
     manifest.cpu = [process.arch];
     manifest.opencraftExecution = { protocolVersion: 1, platform: process.platform, arch: process.arch, nodeAbi: process.versions.modules, profile: executionProfile,
-      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1, independentAcpHost: 1 } : {}) };
+      ...(executionProfile === 'headless' ? { independentDshHost: 1, independentEngineHost: 1, independentAcpHost: 1, storageWriterProtocol: 2 } : {}) };
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-execution.service'), join(packageRoot, 'opencraft-execution.service'));
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-engine-host.service'), join(packageRoot, 'opencraft-engine-host.service'));
@@ -176,7 +196,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       compressedBytes: result.size, unpackedBytes: result.unpackedSize, entries: result.entryCount, components };
   }
   if (fullRelease) {
-    const result = await sealPackage({ packageRoot, directory, ...fullRelease });
+    const result = await sealPackage({ packageRoot, directory, ...fullRelease, prepareOnly });
+    if (result.preparedTree) return { version, buildId: web.buildId, packageRoot, images, preparedTree: result.preparedTree, fullRelease: result.fullRelease };
     return { version, buildId: web.buildId, packageRoot, archive: join(directory, result.filename), integrity: result.integrity, sha: result.shasum, images, fullRelease: result.fullRelease };
   }
   const { stdout } = await promisify(execFile)('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 });
@@ -187,9 +208,10 @@ export async function packageWebServerFromEnvironment(composition = {}) {
   return packageWebServer({ version: process.env.OPENCRAFT_RELEASE_VERSION,
     execution: process.env.OPENCRAFT_PACKAGE_EXECUTION === '1',
     executionProfile: process.env.OPENCRAFT_EXECUTION_PROFILE || 'daemon',
+    prepareOnly: process.env.OPENCRAFT_PACKAGE_PREPARE_ONLY === '1',
     completeRuntime: process.env.OPENCRAFT_PACKAGE_FULL_RELEASE === '1', dryRun: process.env.OPENCRAFT_PACKAGE_DRY_RUN === '1',
     output: process.env.OPENCRAFT_WEB_PACKAGE_OUTPUT || join(repositoryRoot, '.local/web-packages'), ...composition });
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   console.log(JSON.stringify(await packageWebServerFromEnvironment(), null, 2));
 }

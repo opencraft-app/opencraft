@@ -18,6 +18,9 @@ export interface AppServerTerminalSnapshot {
   readonly error: Error | null;
 }
 export interface OpenAppServerTerminalOptions {
+  readonly resourceOwnerId?: string;
+  readonly threadId?: string | null;
+  readonly projectId?: string | null;
   readonly command: readonly string[];
   readonly cwd?: string | null;
   readonly cols: number;
@@ -36,10 +39,11 @@ export interface AppServerTerminalSession {
 }
 export interface AppServerTerminalResourcePort {
   open(options: OpenAppServerTerminalOptions): AppServerTerminalSession;
-  attach(processId: string): AppServerTerminalSession;
-  list(): Promise<{ processes: Array<Omit<ProcessSnapshot, "output">> }>;
+  attach(processId: string, scope?: { threadId?: string | null; projectId?: string | null }): AppServerTerminalSession;
+  list(scope?: { threadId?: string | null; projectId?: string | null }): Promise<{ processes: Array<Omit<ProcessSnapshot, "output">> }>;
 }
 interface Session {
+  scope: { threadId?: string | null; projectId?: string | null };
   snapshot: AppServerTerminalSnapshot;
   listeners: Set<() => void>;
   ready: Promise<void>;
@@ -78,7 +82,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
       }
     })];
   }
-  list() { return this.client.request("process/list", {}); }
+  list(scope: { threadId?: string | null; projectId?: string | null } = {}) { return this.client.request("process/list", scope); }
   /** Called after AppServer initialize, not merely after the transport opens. */
   async reconnect() {
     await Promise.allSettled([...this.sessions].filter(([, s]) => s.snapshot.phase === "disconnected").map(([id, s]) => {
@@ -91,11 +95,12 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     const size = { cols: cell(options.cols), rows: cell(options.rows) };
     const id = "opencraft-terminal:" + crypto.randomUUID();
     const session = this.create(id);
+    session.scope = { threadId: options.threadId, projectId: options.projectId };
     const generation = this.client.connectionGeneration;
     session.ready = this.client.request("process/spawn", {
       processHandle: id, command: [...options.command], tty: true, size,
       streamStdoutStderr: true, outputBytesCap: null, timeoutMs: null,
-      cwd: options.cwd, env: options.env === undefined ? undefined : { ...options.env },
+      ...({ resourceOwnerId: options.resourceOwnerId, threadId: options.threadId, projectId: options.projectId }), cwd: options.cwd, env: options.env === undefined ? undefined : { ...options.env },
     }).then(() => {
       if (generation === this.client.connectionGeneration && session.snapshot.phase === "starting") this.update(session, { phase: "running" });
     }).catch(cause => {
@@ -105,9 +110,10 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     void session.ready.catch(() => undefined);
     return this.handle(id, session);
   }
-  attach(id: string): AppServerTerminalSession {
+  attach(id: string, scope: { threadId?: string | null; projectId?: string | null } = {}): AppServerTerminalSession {
     if (this.sessions.has(id)) throw new Error("Process already attached to this controller");
     const session = this.create(id);
+    session.scope = scope;
     session.ready = this.sync(id, session);
     void session.ready.catch(() => undefined);
     return this.handle(id, session);
@@ -116,7 +122,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     if (this.disposed || this.client.status.state !== "open") throw new Error("Terminal Host is not connected");
     const session: Session = { snapshot: Object.freeze({ revision: 0, hostId: this.hostId, processId: id,
       connectionGeneration: this.client.connectionGeneration, phase: "starting", output: [], exitCode: null, error: null }),
-      listeners: new Set(), ready: Promise.resolve(), disposed: false, cursor: 0, buffered: null };
+      scope: {}, listeners: new Set(), ready: Promise.resolve(), disposed: false, cursor: 0, buffered: null };
     this.sessions.set(id, session);
     return session;
   }
@@ -125,7 +131,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     const afterSequence = session.cursor;
     session.buffered = [];
     try {
-      const result = await this.client.request("process/attach", { processHandle: id, afterSequence });
+      const result = await this.client.request("process/attach", { ...session.scope, processHandle: id, afterSequence });
       if (generation !== this.client.connectionGeneration || session.disposed) return;
       this.output(session, [...result.output, ...session.buffered ?? []]);
       session.buffered = null;
@@ -145,13 +151,13 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     };
     return { processId: id, getSnapshot: () => session.snapshot,
       subscribe: listener => { session.listeners.add(listener); return () => session.listeners.delete(listener); },
-      write: async deltaBase64 => { await live(); await this.client.request("process/writeStdin", { processHandle: id, deltaBase64 }); },
-      resize: async (cols, rows) => { const size = { cols: cell(cols), rows: cell(rows) }; await live(); await this.client.request("process/resizePty", { processHandle: id, size }); },
+      write: async deltaBase64 => { await live(); await this.client.request("process/writeStdin", { ...session.scope, processHandle: id, deltaBase64 }); },
+      resize: async (cols, rows) => { const size = { cols: cell(cols), rows: cell(rows) }; await live(); await this.client.request("process/resizePty", { ...session.scope, processHandle: id, size }); },
       terminate: async () => {
         await session.ready;
         if (session.snapshot.phase === "exited") return;
         await live(); this.update(session, { phase: "stopping" });
-        try { await this.client.request("process/kill", { processHandle: id }); }
+        try { await this.client.request("process/kill", { ...session.scope, processHandle: id }); }
         catch (cause) { this.update(session, { phase: "disconnected", error: errorFrom(cause) }); throw cause; }
       },
       dispose: async () => { session.disposed = true; session.listeners.clear(); this.sessions.delete(id); },

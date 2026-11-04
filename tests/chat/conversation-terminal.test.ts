@@ -86,7 +86,7 @@ function fixture(bufferLimit = 16_000) {
   };
   const runtime = { resources: { terminal } } as unknown as AppServerWorkbenchRuntime;
   const registry = new ConversationTerminalSessionRegistry(() => runtime, bufferLimit);
-  return { registry, sessions };
+  return { registry, sessions, terminal };
 }
 
 function toolHarness(host: RegistryConversationTerminalToolHost) {
@@ -238,4 +238,46 @@ test("read_thread_terminal is an unnamespaced no-argument tool scoped by Host an
     harness.dispose();
     await registry.dispose();
   }
+});
+
+
+test("a late process directory cannot restore terminals after an explicit resource close", async () => {
+  const f = fixture();
+  const id = f.registry.open({ hostId: "host-1", cwd: null, resourceOwnerId: "owner" });
+  let resolve!: (value: any) => void;
+  (f.terminal as any).list = () => new Promise(done => { resolve = done; });
+  const restoring = f.registry.restore("host-1", "owner");
+  f.registry.release(id);
+  resolve({ processes: [{ processHandle: "another", phase: "running", context: { resourceOwnerId: "owner" } }] });
+  assert.deepEqual(await restoring, []);
+  assert.deepEqual(f.registry.listForOwner("owner"), []);
+  await f.registry.dispose();
+});
+
+
+test("closing a different owner cannot cancel restoration of this owner's live terminal", async () => {
+  const f = fixture();
+  const closing = f.registry.open({ hostId: "host-1", cwd: null, resourceOwnerId: "other" });
+  let finish!: (value: any) => void;
+  (f.terminal as any).list = () => new Promise(resolve => { finish = resolve; });
+  (f.terminal as any).attach = (id: string) => new FakeTerminalSession(id);
+  const restoring = f.registry.restore("host-1", "owner");
+  f.registry.release(closing);
+  finish({ processes: [{ processHandle: "kept", phase: "running", context: { resourceOwnerId: "owner", cwd: "/tmp", shell: "/bin/bash" } }] });
+  assert.equal((await restoring).length, 1);
+  assert.equal(f.registry.listForOwner("owner").length, 1);
+  await f.registry.dispose();
+});
+
+
+test("a new restore cannot reattach a terminal whose accepted close is still in flight", async () => {
+  const f = fixture();
+  const id = f.registry.open({ hostId: "host-1", cwd: null, resourceOwnerId: "owner" });
+  let finish!: () => void;
+  f.sessions[0]!.terminate = () => new Promise<void>(resolve => { finish = resolve; });
+  (f.terminal as any).list = async () => ({ processes: [{ processHandle: f.sessions[0]!.processId, phase: "running", context: { resourceOwnerId: "owner" } }] });
+  f.registry.release(id);
+  assert.deepEqual(await f.registry.restore("host-1", "owner"), []);
+  assert.deepEqual(f.registry.listForOwner("owner"), []);
+  finish(); await f.registry.dispose();
 });

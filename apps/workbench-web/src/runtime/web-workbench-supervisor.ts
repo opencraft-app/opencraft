@@ -239,6 +239,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     const composerActionRenderers = new ComposerActionRendererRegistry();
     const imageEditors = new ImageEditorContributionRegistry();
     const platform = currentWorkbenchPlatform();
+    const rawBootstrapLocation = readWorkbenchBootstrapLocation(
+      new URL(window.location.href), window.history.state, options.navigationMode,
+    );
+
     const websiteConfig = platform === "web" ? parseWebDeploymentConfig(
         document.getElementById("opencraft-deployment-config")?.textContent ?? null,
       ) : null;
@@ -246,10 +250,16 @@ export async function createWebWorkbenchApplicationSupervisor(
       websiteConfig,
       {
         hosts: import.meta.env.VITE_APPSERVER_HOSTS_JSON,
+        appServerUrl: import.meta.env.VITE_APPSERVER_WS_URL,
         builtinAgents: import.meta.env.VITE_WEB_BUILTIN_AGENTS,
         hypernode: import.meta.env.VITE_HYPERNODE_PLUGIN,
         extensions: import.meta.env.VITE_WEB_EXTENSIONS,
       },
+      platform === "web" && workbenchProductId === "opencraft"
+        ? rememberedThreadId(window.localStorage, "hypernode", "configured") !== null ? "hypernode"
+          : rawBootstrapLocation?.kind === "thread" ? rawBootstrapLocation.key.hostId
+            : rawBootstrapLocation?.hostId ?? readLocalPreference(currentProductStorageKey("opencraft.active-host-id"))
+        : null,
     );
     const bootstrapDefinitions = parseWebHostDefinitions(
       platform === "web" ? deployment.hosts : import.meta.env.VITE_APPSERVER_HOSTS_JSON as string | undefined,
@@ -422,7 +432,7 @@ export async function createWebWorkbenchApplicationSupervisor(
             signal?.throwIfAborted();
             const runtime = await agentRuntimes.ensureReady(hostId);
             signal?.throwIfAborted();
-            const { thread } = await runtime.resources.protocol.request("thread/read", { threadId, includeTurns: false }, { signal, priority: "background" });
+            const { thread } = await runtime.resources.protocol.request("thread/read", { threadId, includeTurns: false }, { signal, priority: "background", historySource: "task-metadata" });
             const status = thread.status;
             const type = status && typeof status === "object" && "type" in status ? status.type : null;
             const flags = status && typeof status === "object" && "activeFlags" in status ? status.activeFlags : null;
@@ -469,23 +479,22 @@ export async function createWebWorkbenchApplicationSupervisor(
       return createVoiceInputExtension(options.speechInputProvider, options.speechInputProvider
         ? {} : platform === "web" ? { webSpeech: { usePreferences: useVoiceInputPreference, fetcher: serverFetch } } : {});
     });
+    const requestSettingsHost: Parameters<(typeof import("@opencraft/plugin-builtin-agents"))["createBuiltinAgentsExtension"]>[0]["requestHost"] = async (hostId, method, params) => {
+      const result = await agentRuntimes.request(hostId, method, params);
+      if (changesComposerCapabilities(method)) {
+        // Both local and server settings use the same Host-scoped catalog owner.
+        void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
+      }
+      return result;
+    };
     if (import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN === "true"
       && (platform === "electron" || deployment.builtinAgents)) {
       await extensions.loadOptional("opencraft.builtin-agents", async () => {
         const { createBuiltinAgentsExtension } = await import("@opencraft/plugin-builtin-agents");
-        const requestHost: Parameters<typeof createBuiltinAgentsExtension>[0]["requestHost"] = async (hostId, method, params) => {
-          const result = await agentRuntimes.request(hostId, method, params);
-          if (changesComposerCapabilities(method)) {
-            // UI requests start after application construction. Invalidate the
-            // existing host-scoped catalog owner, never a session's selection.
-            void invalidateComposerCapabilities(queryClient, hostId).catch(() => undefined);
-          }
-          return result;
-        };
         return platform === "web"
-          ? createBuiltinAgentsExtension({ platform: "web", requestHost, includeCodexAccounts: headlessAppHost === null })
+          ? createBuiltinAgentsExtension({ platform: "web", requestHost: requestSettingsHost, includeCodexAccounts: headlessAppHost === null })
           : createBuiltinAgentsExtension({
-            requestHost,
+            requestHost: requestSettingsHost,
             createTransport: (hostId) => {
               if (electronAppHost === null) throw new Error("Electron App Host is unavailable");
               return electronAppHost.createTransport(hostId);
@@ -497,8 +506,9 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional("opencraft.headless-model-services", async () => {
         const { createHeadlessModelServicesExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessModelServicesExtension({
+          fetcher: serverFetch,
           hostId: "opencraft-server",
-          requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+          requestHost: requestSettingsHost,
         });
       });
     }
@@ -524,7 +534,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         const sshServers = await readSshServerCatalog();
         const { createHeadlessServerExtension } = await import("@opencraft/plugin-builtin-agents");
         return createHeadlessServerExtension({
-          requestHost: (hostId, method, params) => agentRuntimes.request(hostId, method, params),
+          requestHost: requestSettingsHost,
           createTransport: hostId => (hostId.startsWith("ssh:") && sshManagement && sshManagement.getSnapshot().available !== false ? remoteAppHost! : headlessAppHost).createTransport(hostId),
           workspaceBrowseRoots: bootstrapDefinitions.find((host) => host.hostId === "opencraft-server")?.workspaceBrowseRoots ?? [],
           sshServers: sshManagement!.getSnapshot().available !== false ? [] : sshServers,
@@ -534,10 +544,14 @@ export async function createWebWorkbenchApplicationSupervisor(
     }
     // Keep this expression direct: Vite can erase the entire dynamic-import
     // edge from product builds instead of merely disabling it at runtime.
-    if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false" && deployment.hypernode) {
+    let legacyHypernodeProfile: import("@opencraft/workbench-runtime").HostConnectionProfile | undefined;
+    if (import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN !== "false") {
       await extensions.loadOptional("opencraft.hypernode", async () => {
-        const { createHyperNodeExtension } = await import("@opencraft/plugin-hypernode");
-        return createHyperNodeExtension({ url: appServerUrl() });
+        const { createHyperNodeExtension, createHyperNodeProfile } = await import("@opencraft/plugin-hypernode");
+        const retainedDefault = deployment.hypernode && websiteConfig === null && !deployment.hosts
+          && !import.meta.env.VITE_APPSERVER_WS_URL?.trim() && import.meta.env.VITE_HYPERNODE_PLUGIN !== "enabled";
+        if (retainedDefault) legacyHypernodeProfile = createHyperNodeProfile({ url: appServerUrl() });
+        return createHyperNodeExtension({ url: appServerUrl(), includeDefaultProfile: deployment.hypernode && !retainedDefault });
       });
     }
     for (const definition of clientProduct?.extensions({
@@ -616,6 +630,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     databaseName: currentProductDatabaseName("opencraft-host-connections"),
     formerDatabaseName: currentProductDatabaseName("vela-host-connections"),
     seed: bootstrapDefinitions.map(hostDefinitionProfile),
+    ...(legacyHypernodeProfile ? { fallback: legacyHypernodeProfile } : {}),
     ephemeral: [
       ...hostProfileContributions.list(),
       ...(options.ephemeralHostProfiles ?? []),
@@ -683,9 +698,6 @@ export async function createWebWorkbenchApplicationSupervisor(
     && !configuredHostProfiles.getSnapshot().profiles.some(profile => profile.hostId === "hypernode");
   const resolveWebsiteLocation = restoreLegacyWebsite ? resolveLegacyWebsiteLocation : undefined;
   if (restoreLegacyWebsite) try { restoreLegacyWebsiteSelection(window.localStorage); } catch { /* unavailable legacy selection storage */ }
-  const rawBootstrapLocation = readWorkbenchBootstrapLocation(
-    new URL(window.location.href), window.history.state, options.navigationMode,
-  );
   const requestedBootstrapLocation = resolveWebsiteLocation?.(rawBootstrapLocation) ?? rawBootstrapLocation;
   if (!configuredHostProfiles.getSnapshot().profiles.some(profile => profile.enabled)) {
     await environmentDirectory.refresh().catch(() => undefined);
@@ -924,7 +936,9 @@ export async function createWebWorkbenchApplicationSupervisor(
             { browser: browserToolHost, terminal: terminalToolHost, connectors },
             { hostId: profile.hostId },
           );
-          const catalog = bindThreadCatalogNotifications(client, profile.hostId, queryClient);
+          const catalogScope = clientResources.getSnapshot();
+          const catalog = bindThreadCatalogNotifications(client, profile.hostId, queryClient,
+            () => clientResources.getSnapshot() === catalogScope);
           return () => { stopObservation(); stopDiagnostics(); catalog(); tools(); };
         },
         });
@@ -1034,6 +1048,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
+    getSubmissionSender: () => platformAccounts.getSnapshot().contribution?.getSnapshot().submissionSender ?? null,
     isInputRetained: (scopeId) => conversationViews.hasRetainedInput(scopeId),
     // Local persisted input may restore its client identity and placement.
     // A canonical promotion alias still wins; execution locks never restore.
@@ -1076,7 +1091,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   let displayWritesSuspended = false;
   let displayResumeAfterGeneration = -1;
   const displayContinuity: BrowserDisplayContinuity = {
-    retainSubmission: (intent, receipt) => currentDisplayContinuity.retainSubmission(intent, receipt),
+    retainSubmission: (intent, receipt, sender) => currentDisplayContinuity.retainSubmission(intent, receipt, sender),
     peekSubmission: (hostId, threadId) => currentDisplayContinuity.peekSubmission(hostId, threadId),
     peek: (hostId, threadId) => currentDisplayContinuity.peek(hostId, threadId),
     async load(hostId, threadId) {

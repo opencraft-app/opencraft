@@ -60,7 +60,7 @@ export interface CodexDeviceLoginView {
 export type CodexDeviceLoginPollView =
   | { readonly status: "pending" }
   | { readonly status: "complete"; readonly account: CodexAccountView }
-  | { readonly status: "error"; readonly message: string };
+  | { readonly status: "error"; readonly message: string; readonly reason?: "maintenance-interrupted" };
 
 export interface AppServerCodexAccountMethodMap {
   "opencraft/codex/accounts/resetCredits/list": {

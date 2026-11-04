@@ -1,3 +1,4 @@
+import { TERMINAL_RESOURCE_LIMITS } from "@opencraft/appserver-protocol";
 import type { AppServerWorkbenchRuntime } from "./appserver-runtime";
 import type {
   AppServerTerminalPhase,
@@ -9,6 +10,8 @@ const DEFAULT_TERMINAL_COMMAND = Object.freeze(["/bin/bash", "--noprofile", "--n
 export const CONVERSATION_TERMINAL_BUFFER_LIMIT = 16_000;
 
 export interface ConversationTerminalOpenOptions {
+  readonly threadId?: string | null;
+  readonly projectId?: string | null;
   readonly resourceOwnerId?: string;
   readonly hostId: string;
   readonly cwd: string | null;
@@ -98,6 +101,9 @@ export class ConversationTerminalSessionRegistry {
   private readonly ownerSnapshots = new Map<string, ConversationTerminalDirectorySnapshot>();
   private readonly ownerListeners = new Map<string, Set<() => void>>();
   private disposed = false;
+  private restoreRevision = 0;
+  private readonly ownerRestoreRevisions = new Map<string, number>();
+  private readonly retiredSessions = new Map<string, { hostId: string; ownerId: string | null }>();
 
   constructor(
     private readonly resolveRuntime: (hostId: string) => AppServerWorkbenchRuntime,
@@ -110,9 +116,11 @@ export class ConversationTerminalSessionRegistry {
 
   open(options: ConversationTerminalOpenOptions): string {
     this.ensureOpen();
+    if ([...this.sessions.values()].filter(session => session.hostId === options.hostId).length >= TERMINAL_RESOURCE_LIMITS.retainedPerHost)
+      throw new Error("Terminal tab limit reached. Close an existing terminal before creating another.");
     const runtime = this.resolveRuntime(options.hostId);
     const session = runtime.resources.terminal.open({
-      command: DEFAULT_TERMINAL_COMMAND,
+      resourceOwnerId: options.resourceOwnerId, command: DEFAULT_TERMINAL_COMMAND, threadId: options.threadId, projectId: options.projectId,
       cwd: options.cwd,
       cols: options.cols ?? 80,
       rows: options.rows ?? 24,
@@ -189,27 +197,38 @@ export class ConversationTerminalSessionRegistry {
   }
 
   releaseOwner(ownerId: string): void {
+    this.invalidateRestore(ownerId);
     for (const sessionId of [...this.listForOwner(ownerId)]) this.release(sessionId);
     this.owners.delete(ownerId);
     this.ownerSnapshots.delete(ownerId);
     this.ownerListeners.delete(ownerId);
   }
 
-  async restore(hostId: string): Promise<string[]> {
+  async restore(hostId: string, ownerId?: string, scope?: { threadId?: string | null; projectId?: string | null }): Promise<string[]> {
     this.ensureOpen();
     const terminal = this.resolveRuntime(hostId).resources.terminal;
-    const { processes } = await terminal.list();
-    if (this.disposed) return [];
-    return processes.filter((process) => process.phase === "running").map((process) => {
+    this.invalidateRestore(ownerId ?? null);
+    const revision = ownerId === undefined ? this.restoreRevision : this.ownerRestoreRevisions.get(ownerId) ?? 0;
+    const { processes } = await terminal.list(scope);
+    const currentRevision = ownerId === undefined ? this.restoreRevision : this.ownerRestoreRevisions.get(ownerId) ?? 0;
+    if (this.disposed || revision !== currentRevision) return [];
+    const runningIds = new Set(processes.filter(process => process.phase === "running").map(process => JSON.stringify([hostId, process.processHandle])));
+    for (const [id, retired] of this.retiredSessions) {
+      if (ownerId !== undefined && retired.hostId === hostId && retired.ownerId === ownerId && !runningIds.has(id))
+        this.retiredSessions.delete(id);
+    }
+    return processes.filter((process) => process.phase === "running"
+      && !this.retiredSessions.has(JSON.stringify([hostId, process.processHandle]))
+      && (ownerId === undefined || process.context?.resourceOwnerId === ownerId)).map((process) => {
       const sessionId = JSON.stringify([hostId, process.processHandle]);
       if (!this.sessions.has(sessionId)) {
         this.register(sessionId, {
-          ownerId: null,
+          ownerId: process.context?.resourceOwnerId ?? null,
           hostId,
-          cwd: "",
-          shell: "unknown",
+          cwd: process.context?.cwd ?? "",
+          shell: process.context?.shell ?? "unknown",
           title: "Terminal",
-          session: terminal.attach(process.processHandle),
+          session: terminal.attach(process.processHandle, { threadId: process.context?.threadId, projectId: process.context?.projectId }),
         });
       }
       return sessionId;
@@ -219,6 +238,8 @@ export class ConversationTerminalSessionRegistry {
   release(sessionId: string): void {
     const entry = this.sessions.get(sessionId);
     if (entry === undefined) return;
+    this.invalidateRestore(entry.ownerId);
+    this.retiredSessions.set(sessionId, { hostId: entry.hostId, ownerId: entry.ownerId });
     this.sessions.delete(sessionId);
     entry.unsubscribe();
     if (entry.ownerId !== null) {
@@ -246,8 +267,15 @@ export class ConversationTerminalSessionRegistry {
     this.owners.clear();
     this.ownerSnapshots.clear();
     this.ownerListeners.clear();
+    this.retiredSessions.clear();
+    this.ownerRestoreRevisions.clear();
     entries.forEach((entry) => entry.unsubscribe());
     await Promise.allSettled(entries.map(({ session }) => session.dispose()));
+  }
+
+  private invalidateRestore(ownerId: string | null): void {
+    ++this.restoreRevision;
+    if (ownerId !== null) this.ownerRestoreRevisions.set(ownerId, (this.ownerRestoreRevisions.get(ownerId) ?? 0) + 1);
   }
 
   private register(

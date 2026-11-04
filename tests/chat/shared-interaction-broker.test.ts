@@ -18,7 +18,7 @@ function fixture() {
   } });
   const snapshot = (epoch: string, revision: number, requests: any[] = [{ id: "approval", method: "item/commandExecution/requestApproval",
     params: { threadId: "thread", turnId: "turn", itemId: "item" }, state: "pending", receivedAtMs: 1 }]) => ({ threadId: "thread", epoch, revision, canRespond: true, requests });
-  return { broker, stored, calls, snapshot, emit: (value: any) => notify({ method: SHARED_INTERACTIONS_CHANGED, params: value }),
+  return { broker, client, stored, calls, snapshot, emit: (value: any) => notify({ method: SHARED_INTERACTIONS_CHANGED, params: value }),
     disconnect: () => status({ state: "closed" }), finish: (value: any) => finish(value) };
 }
 
@@ -56,5 +56,24 @@ test("source availability is independent of subscription permission", () => {
   const f = fixture();
   try { const snapshot = f.snapshot("source", 1); snapshot.requests[0].canRespond = false; f.emit(snapshot);
     assert.equal([...f.stored.values()][0].canRespond, false);
+  } finally { f.broker.dispose(); }
+});
+
+test("mixed Hosts use each conversation engine's complete approval capability set", async () => {
+  const f = fixture();
+  try {
+    // The default engine supports shared approvals; an alternate engine does not.
+    // A third engine explicitly supports them and must still recover approvals.
+    f.client.initializeResult.capabilities.extensions["opencraft/execution-engines"] = { version: 1,
+      providers: [{ id: "no-approvals", threadPrefix: "plain_", extensions: {} },
+        { id: "approvals", threadPrefix: "shared_", extensions: { [SHARED_INTERACTIONS_EXTENSION]: { version: 1 } } }] };
+    await f.broker.sync("plain_original");
+    assert.equal(f.calls.length, 0);
+    const alternate = f.broker.sync("shared_original");
+    f.finish({ ...f.snapshot("source", 1), threadId: "shared_original", requests: [] }); await alternate;
+    assert.equal(f.calls.length, 1);
+    const read = f.broker.sync("thread");
+    f.finish(f.snapshot("source", 1)); await read;
+    assert.equal(f.stored.size, 1);
   } finally { f.broker.dispose(); }
 });

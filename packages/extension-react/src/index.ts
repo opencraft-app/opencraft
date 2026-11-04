@@ -194,3 +194,4 @@ export * from "./thread-list-grouping";
 export { createDeferredView } from "./deferred-view";
 
 export * from "./thread-participation";
+export { EnvironmentVariablesEditor, type EnvironmentEditorLabels, type EnvironmentEditorPort } from './environment-variables-editor';

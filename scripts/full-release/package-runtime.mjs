@@ -6,6 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createHash } from 'node:crypto';
 import { copyDependencyClosure } from './closure.mjs';
+import { cachedRuntime } from './runtime-cache.mjs';
 import { COMPONENT_LIMITS } from './components.mjs';
 import { prepareDshRuntime } from '../prepare-dsh-runtime.mjs';
 const exec = promisify(execFile);
@@ -46,20 +47,21 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
     await writeFile(join(target, 'package-license.json'), JSON.stringify(record)); coreLicenses.push(record);
   }
   await writeFile(join(full, 'core/identity.json'), JSON.stringify({ schemaVersion: 1, sourceRevision, buildId }));
-  await prepareDshRuntime({ root: repositoryRoot, log: () => {},
-    install: runtime => installRuntime(runtime) });
   // Installation runs solely in the separately pinned runtime, never a live HOME.
   const codex = join(repositoryRoot, 'runtime/codex');
   const codexPackage = JSON.parse(await readFile(join(codex, 'package.json')));
   const codexLock = JSON.parse(await readFile(join(codex, 'package-lock.json')));
   const version = codexPackage.dependencies['@openai/codex'];
   if (!/^\d+\.\d+\.\d+$/.test(version) || codexLock.packages['node_modules/@openai/codex']?.version !== version) throw new Error('CLI requires an exact lock');
-  await installRuntime(codex, true);
   const records = [];
   await mkdir(join(packageRoot, 'release/locks'), { recursive: true });
   for (const [name, roots] of [['codex', ['@openai/codex']], ['dsh', ['@deepseek-ai/dsh', 'ajv']]]) {
     const source = join(repositoryRoot, 'runtime', name), target = join(full, name);
-    const versions = await copyDependencyClosure(join(target, 'node_modules'), roots, createRequire(join(source, 'package.json')), source);
+    const versions = await cachedRuntime({ repositoryRoot, name, destination: target, build: async destination => {
+      if (name === 'dsh') await prepareDshRuntime({ root: repositoryRoot, log: () => {}, install: runtime => installRuntime(runtime) });
+      else await installRuntime(codex, true);
+      return copyDependencyClosure(join(destination, 'node_modules'), roots, createRequire(join(source, 'package.json')), source);
+    } });
     const lock = await readFile(join(source, 'package-lock.json'));
     await cp(join(source, 'package.json'), join(target, 'package.json')); await writeFile(join(packageRoot, 'release/locks', name + '.json'), lock);
     await cp(join(repositoryRoot, 'LICENSE'), join(target, 'LICENSE'));

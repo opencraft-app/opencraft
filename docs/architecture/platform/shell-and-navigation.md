@@ -516,3 +516,18 @@ the launcher only when the desktop is still current and no other control took it
 Reduced motion removes zoom/stagger/press movement; reduced transparency and
 forced colors use the shared opaque material. Animation never supplies permission,
 changes a catalog entry, creates a task or writes another history implementation.
+
+## Unified bottom navigation density
+
+The unified desktop-layout footer consumes shared density tokens rather than a
+fixed desktop enlargement. Compact mode uses the existing 36px application
+control role, 20px footer glyphs, 4px block padding and 4px action gaps. Touch mode
+keeps a 44px hit floor, 24px footer glyphs, 12px padding and 8px gaps. The footer's
+icon and block-padding roles do not resize adjacent Settings or labeled mobile
+navigation. Avatar canvases follow the footer glyph plus one spacing unit.
+
+The installation touch-friendly preference and coarse-pointer default remain
+the single density owner. Explicit compact mode works on touch-capable hardware;
+clicks, taps and mouse movement never replace that choice. Shell retains route,
+portal, list-scroll and draft ownership across preference changes. The real
+AppShell probe is `scripts/smoke/shell/smoke-footer-density.ts`.

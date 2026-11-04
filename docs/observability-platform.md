@@ -130,15 +130,73 @@ Actor 种类与流量来源是正交字段：`actorKind` 区分 human/agent/serv
 
 ## 4. 操作与指标语义
 
+### 网关发布与人的连接连续性
+
+`connection.update_disconnections` 导出每次受管重启停止前仍打开的 AppHost 与原始 AppServer RPC 连接总数，绑定更新器该次 `updateId` 和目标 `buildId`。这是连接数，包含当时仍连着的只读探针，不等同受影响人数或之后的失败重试次数。更新器先写短期观测意图，旧网关核对实际发行指针，再于关闭浏览器前直接写入 Observe；此意图不授权退出或取得 writer 锁。捕获到零才表示该次实际为零；强杀或观测链路失败而没有回执时为未知，不补零。普通手动停止不混入发布统计。
+
+`connection.person_downtime` 是经过服务端身份核验、部署内伪名化的真人每日累计断开时长。浏览器首次可用后的连接失效开始计时，直到原 Runtime 完成重连、初始化及资源恢复的 `settled`；首次冷启动不计为断开。客户端用单调时钟测量，服务器按事件时间拆成 UTC 日，同一人多个 Host/页面的重叠区间取并集，不将多个标签页时长直接相加。记录以独立 outage ID 去重并持久化，网关/Observe 重启不重置当天已捕获时长。
+
+未观察到 `settled` 的周期单列 `connection.unfinished`，时长仅累计最新捕获的区间，不把后台、离线、丢报或关闭的页面无限外推，也不宣称零等待。指标是已观察到的时长；旧客户端、未启用观测或丢失样本的完整性边界须与采集覆盖和丢报指标一起判断。派生库追加迁移6，保留旧迁移SQL和历史；回退使用兼容该数据库版本的发行，不回灌旧快照。
+
 ### 历史首屏显示耗时（已实现）
 
 `thread_open` 现有计时仍止于导航准备/提交。新增 `thread_history_first_paint` 从明确点开会话开始，保持跨导航准备与历史读取，直到虚拟列表已有历史行、完成滚动恢复且跨过绘制帧后结算。这是 DOM + requestAnimationFrame 的 paint proxy，不代表浏览器合成器硬件呈现时间。复用保留 View 也产生独立测量；正在展示的同一会话重复点击不产生新测量。初次页面恢复/浏览器 POP 不属于本项明确点开采样。
 
 事件只有低基数 `cache`（保留 View 为 warm，否则 cold）、`lengthBucket`（lt50、50to199、200to499、500plus、unknown）、`engine`（Host 声明的 codex/pi/dsh/unknown）和 `outcome`。长度为完整历史中的不同轮数；分页/持久显示缓存未提供完整总轮数时使用 unknown，不额外拉取历史。会话身份仅在本地隔离迟到绘制回调，不进入事件。
 
+历史索引分页返回可选 `totalTurnCount`，只读首屏的 Thread 元数据携带 `historyTurnCount`；Replica 投影、内存及持久展示缓存保留该总数，与裁剪后的消息窗口独立。完整历史没有索引总数时按原始 Turn 数计数，不按可见帧计数；旧展示缓存或不能提供总数的 Host 仍明确 unknown，不能把最后10轮当作短会话。Codex adapter 显式声明执行引擎，混合 Host 的 provider 声明仍由其装配 owner 持有。
+
+直方图包含 0.05、0.1、0.15、0.25 秒等边界，并显式导出零桶。桶结构升级时服务使用新的内部累计代次，所有桶、count、sum 同时从零开始，指标名和标签不变；旧 Prometheus 历史保留，旧内部累计值不与新桶混算。跨部署窗口应剔除升级边缘，至少等两个 scrape，5分钟图等待完整5分钟。精确达标比例使用部署后窗口 `sum(increase(opencraft_thread_history_first_paint_duration_seconds_bucket{length_bucket="500plus",le="0.15"}[24h])) / sum(increase(opencraft_thread_history_first_paint_duration_seconds_count{length_bucket="500plus"}[24h]))`；首次24小时窗口须从实际部署时刻起算。500plus自然样本为空时不能评估目标；建议每个待评估cache/engine分组积累至少100条再看尾部，同时报告样本量。严格小于150ms在此累计桶上按小于等于150ms近似，原始事件可精确复核。
+
 切走/替换/销毁为 aborted，准备或历史失败为 failed，权威空历史为 empty；只有可见交互的 ok 样本进入 `opencraft_thread_history_first_paint_duration_seconds`。终态另进入 `opencraft_thread_history_first_paint_total`，保留 cache、length_bucket、engine、outcome、origin。原交互指标保持原标签与历史。
 
 `operations.history_paint_p50` 与 `operations.history_paint_p95` 是同一查询注册表生成的中文看板图，按冷/热、长度桶、引擎展示 5 分钟滑窗分位数。部署前没有同口径真实首屏样本，不能从原 thread_open 或新图倒推 Stage 0 的真实用户前后改善；新采样与既有受控验收分别报告。
+
+### 历史读取分阶段诊断
+
+只读 `thread/read` 和 `thread/turns/list` 结果附带可选 `__opencraftHistoryTiming`。
+Host 每次生成随机 `pairId`，Web RPC 保存该 ID、`webSentAt`、`clientQueueMs`，
+以及白名单的 `historyCoreMs`、`historyMetadataMs`、`historyQueueMs`、`historySourceMs`、
+`historyReconcileMs`、`historyScanMs`、`historyPageMs`、`historyProjectionMs`、
+`historyNativeRpcMs` 和 `historyNativeRpcCount`。缺失阶段保持缺失，旧 Host 兼容。
+字段只进入受控明细，不成为指标标签。`operationId` 在请求发出时从本地 Host/Thread
+对应首屏操作捕获；替换打开后旧请求仍关联原操作。Host/Thread 身份不进入事件。
+
+`history-read-stages` 日志按 `pairId` 关联 Web；`history-native-rpc` 按相同 ID
+列出物理 `requestId`，关联 router 的 `history-route-stages`：`routeReadyMs`
+包含路由、代次就绪及接纳前等待，`nativeRpcMs` 为原生往返。metadata 为前置原生
+Thread 元数据；queue 为同会话缓存串行等待；source 为来源解析和验证；reconcile
+包含 rollout 扫描、原生分页和缓存写入；scan 仅计本地 rollout 增量扫描；page 包含
+索引读页、正文恢复和来源复核；projection 为发送者与附件投影。core 从 Host 读入口
+到返回构造，Web RPC 终态包含往返与客户端接收；序列化及返回传输留在 Web 总耗时中。
+阶段可嵌套，不能相加阶段分位数或把 native RPC 再加进 reconcile。
+
+阶段计时在成功、失败和取消时均于阶段边界的 `finally` 记录；尚未取得的阶段保持缺失。
+终态写出前收束并快照阶段耗时与规模字段；异步资源采集期间到达的迟到回调不再修改该事件。
+`queueMs` 仍表示同一 Thread 的缓存串行等待。共享 Item 分页调度器按 Thread 轮转，保留
+全局四个在途请求及 Thread 内 FIFO；`itemQueueMs` 是本次读取中单个 Item 等待调度槽的
+最大耗时，作为独立字段记录，不能与 `queueMs` 混为一谈。router 对每次 `thread/read`
+记录 `history-route-stages`，即使原生 RPC 尚未发出也会记录；此时 `nativeRpcMs` 为 null，
+并带 `outcome`。事件只含请求 ID、方法、时长和结果，不含 Thread ID 或请求参数。
+仅保留安全整数 ID 或 Host 生成的有界 `opencraft:*` ID，其他 ID 用 null。
+
+当 `coreMs` 超过 5 秒时，`history-read-stages` 附带固定结构的 `resources`：
+`loadavg` 的 1/5/15 分钟平均值，以及 CPU、IO、内存 PSI 的 some/full avg10/avg60/avg300。
+仅从 `/proc/loadavg` 和 `/proc/pressure/{cpu,io,memory}` 提取数值，不记录原始文件、PID
+或 total 计数；不可读取时用 null 并标记 unavailable。资源字段只用于受控诊断明细。
+
+`history-read-stages` 另带低基数 `itemHydrationPath`：`cache-page` 表示缓存页
+拿到 `notLoaded` Turn 后按需取 Item，`adapter-oversize-fallback` 表示整页超限后
+由兼容降级路径按需取 Item，`none` 表示本次未触发 Item hydration。该字段用于区分
+读取路径，不包含会话或 Turn 身份。`turnCountBucket` 和 `lengthBucket` 在历史
+metadata 或分页头可用时尽早记录；长度只通过 `stat` 取字节规模，不读取 rollout 正文。
+这样取消、期限到达或后续 Item RPC 失败时，终态事件仍可保留已知规模桶。
+路径字段为受控诊断明细，不作为指标标签。
+
+原生 Codex 固定二进制没有导出内部文件读取、投影和分页的单独时间，原生往返仍包含
+其内部排队和处理，不能直接标为纯投影耗时。必须用同请求 router 和 Host 数据判断
+等待边界，必要时在原生源码 owner 增加内部探针。诊断不新增历史、模型或 Resume
+请求，不改变取消、缓存新鲜度、分页或执行所有权。
 
 ### 4.1 用户等待的范围
 
@@ -340,3 +398,86 @@ CLI's own build/source identity separately from server components.
 ### Named-server deployment paths (2026-10-22)
 
 Browser capabilities, telemetry and dashboard navigation use the selected server context. Operator-owned `grafanaBasePath` in ingress and observation-service configuration must match Grafana root_url for that named-server prefix. The relay preserves already-scoped HTML paths exactly once; ingress maps authorized Grafana requests to the configured Unix-socket path. These URL transformations never establish identity or expand target ACL. Each deployment owns independent storage and deploymentId; missing component capture stays partial.
+
+增量历史核对从十个完整原生 Turn 开始，沿原 cursor 继续到所有脏 Turn 的最老边界；
+完整重建仍读取全部历史。这样小增量不再反复投影一百轮未变的工具输出。此改动不减少
+最终返回的 Item、正文或旧页，不用窗口轮数替代完整轮数；原生大小限制仍按原策略缩页。
+
+直接转发的 metadata-only `thread/read` 和原生 cursor 页同样返回关联计时，覆盖首屏
+窗口因大小限制回退的读取。它们没有缓存串行等待、来源验证或索引读页阶段，这些字段
+缺失而非伪造零；`nativeRpcMs` 包含直通原生往返，`projectionMs` 包含回复处理和投影。
+原生 RPC 自身仍未拆分内部排队与磁盘/投影时间。
+
+## 业务可用性与主动告警
+
+`platform.status`表示真实新连接探测的可用性：按site/hostId/engine分开，任一失败为degraded，
+缺样本或超过90秒为unknown，不再用producer心跳代替。`collection.freshness`独立报告采集；
+`availability.ratio`为5分钟内实际探测成功比例，`availability.last_success`为最近成功。
+Observe `/health`中的`ready`只说明查询服务已启动；`ok/status`反映探测可用性，`collection`
+保存采集覆盖和后端健康。Headless业务health还必须汇总已有Host readiness，unavailable或
+connecting不能返回ok。业务进程的readiness不替代每分钟全新initialize/thread/list。
+
+部署者拥有探针与通知调度，不把私有产品装配放进公共核心。核心接收严格字段白名单的
+availability/lifecycle事件，指标不含事件ID或用户身份。故障按component/engine/errorCode归组；
+仅保留稳定分类或数值RPC码，不导出原始异常。默认总览首屏显示“新连接、成功率、最近成功、
+拨测、故障分类”，采集新鲜度另列。
+
+事件数量超过500时，snapshot的events是明细样本（eventSampleTruncated=true），eventSummary
+和eventCount覆盖选定窗口全部已存事件；长事故的Prometheus测量单列measurementsWindow（最长24小时），
+不缩短完整事件聚合窗口；timeline保留部署、重启与显式owner_handoff。
+truncated=false仅指聚合完整，不代表明细全量；baseline.compare拒绝用抽样明细作可靠比较。
+
+拨测状态与成功率的查询只读取 `kind=availability` 的事件，使用受管 v5 部分索引。
+既有观测库通过增量迁移保留事件及 v1–v4 迁移回执；健康、指标和看板刷新不得随其他类型历史事件量线性扫描。
+
+### Web AppHost reachability diagnostics
+
+The WebSocket bridge records `probe-received`, `probe-response`, and
+`probe-written` with the physical attempt ID and a server-local probe sequence.
+Wall-clock event time allows comparison with client failure reports; monotonic
+`responseMs` measures bridge receipt through response preparation, while
+`elapsedMs` on `probe-written` includes the local socket write callback. Socket
+state and buffered bytes describe the local output queue. A successful write
+does not acknowledge delivery to the browser. These records separate missing
+ingress, delayed response preparation, and delayed local output without changing
+probe deadlines or reconnection policy.
+
+Instrumentation admits at most one probe per second per connection, retains at
+most eight unanswered observations, and reports those as `probe-abandoned` when
+the socket closes. Access rejection is reported as `probe-rejected`. Request IDs,
+message bodies, URLs, credentials, and raw errors are excluded. The sequence is
+generated locally rather than copied from the request.
+
+
+### Web 页面暂停诊断（2026-11-03）
+
+手机页面可随时隐藏、冻结或进入往返缓存；错误回调的前台/在线状态不能排除先前暂停。
+连接失败沿原有有界诊断补充 pagePauseMs（最近一次观察到的暂停区间）、
+pageResumeAgoMs（距观察到恢复的时间）、pageHiddenForMs（当前未结束区间）。
+只记录已观察的页面生命周期；未见起点的缓存恢复不补造暂停时长，缺字段不按零解释。
+这些 wall-clock 区间不代表网络可用性或操作系统实际冻结时长；最后消息时间是 JS 回调时间。
+同一页面的多个物理连接共用记录，重复生命周期通知不重置起点。
+新增 pagehide/freeze/resume 监听仅记诊断，不改变原有超时、恢复、授权或 Relay 回收策略。
+
+
+### Background refresh completion logs
+
+A cached foreground read and the background job it schedules have different
+latency meanings. Native read timing carries optional `caller` and `traceRole`
+fields. Slow (at least 1000ms) or unsuccessful `background-refresh` completions
+also emit a compact `[opencraft background-refresh]` log with
+`workClass: background`, method, outcome, duration and available causal links.
+Fast successful refreshes stay in telemetry without extra console output;
+native/storage child events do not each produce a completion log. Payloads,
+cursors, error text and resource identities are excluded. Logging failure must
+not alter read results or original telemetry admission.
+
+The shared `rpcWorkClass` and `rpcLatencySummary` query helpers derive
+foreground/background/unknown from existing event metadata, including historical
+records. Browser RPCs remain foreground; server-refresh callers and background
+roots are background; unclassified dependencies remain unknown. Summary groups
+retain component, kind, stage and traceRole so a whole background scan is never
+merged with its native/storage children or with foreground RPC latency. Causal
+trace links remain available for attribution; adjacency in time is insufficient.
+No storage schema migration is required. Observe must retain these optional event fields; installations already accepting them need no observer update. Older consumers that drop the metadata can only classify those dependencies as unknown. This log/query
+classification does not change refresh scheduling, cursor recovery or timeouts.

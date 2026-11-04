@@ -3,9 +3,13 @@ import test from "node:test";
 import { createElement } from "react";
 import * as React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { IntlProvider } from "react-intl";
+import messages from "../../apps/workbench-web/src/i18n/locales/zh-CN.json";
 import { ModelServicesController } from "../../plugins/builtin-agents/src/model-services/controller";
 import { createModelServicesView } from "../../plugins/builtin-agents/src/model-services/view";
 import { LocalAgentSettingsService, type HostProtocolRequest } from "../../plugins/builtin-agents/src/local-agent-settings-service";
+
+const renderWithIntl = (element: React.ReactNode) => renderToStaticMarkup(createElement(IntlProvider, { locale: "zh-CN", messages }, element));
 
 function fixture(discovered: readonly { id: string; input?: readonly ("text" | "image")[]; reasoningEfforts?: false | Record<string, string> }[] = []) {
   const calls: { method: string; params: any }[] = [];
@@ -17,7 +21,7 @@ function fixture(discovered: readonly { id: string; input?: readonly ("text" | "
     if (method === "runtime/providers/list") return { providers: [provider] };
     if (method === "runtime/models/list") return { groups: [{ id: "test", models: [{ id: "test-model", name: "Test model" }] }] };
     if (method === "runtime/models/discover") return { models: discovered };
-    if (method === "runtime/providers/apply") { if (params.expectedRevision !== revision) throw new Error("settings-conflict"); config = { ...config, baseURL: params.baseURL, ...(params.models ? { models: params.models } : {}), apiKeyEnv: "UPDATED_REF" }; revision++; return { saved: true, revision }; }
+    if (method === "runtime/providers/apply") { if (params.expectedRevision !== revision) throw new Error("settings-conflict"); config = { ...config, baseURL: params.baseURL, ...(params.models ? { models: params.models } : {}), ...(params.credential.kind === "unauthenticated" ? {authentication:"none",apiKeyEnv:undefined} : {authentication:undefined,apiKeyEnv:"UPDATED_REF"}) }; revision++; return { saved: true, revision }; }
     if (method === "runtime/models/probe") return { ok: true, elapsedMs: 1, model: params.model };
     if (method === "runtime/models/check") return { ok: true, elapsedMs: 1, model: params.model };
     if (method === "runtime/credentials/describe") return { credentials: { UPDATED_REF: { configured: true } } };
@@ -33,7 +37,7 @@ test("configured connections collapse without claiming a successful probe; dirty
   const f = fixture(); await f.service.refresh(); f.controller.select('test');
   const draft = f.controller.draft(f.provider); draft.credentialSet = true;
   const View = createModelServicesView(f.controller);
-  const render = () => renderToStaticMarkup(createElement(View, {} as any));
+  const render = () => renderWithIntl(createElement(View, {} as any));
   assert.match(render(), /连接已配置/);
   assert.match(render(), /连接已配置 · 已启用/);
   f.provider.enabled = false;
@@ -162,7 +166,7 @@ test("model settings show discovered thinking levels beside the corresponding mo
   await f.service.refresh(); f.controller.select("test");
   await f.controller.fetchModels(f.provider);
   const View = createModelServicesView(f.controller);
-  const markup = renderToStaticMarkup(createElement(View, {} as any));
+  const markup = renderWithIntl(createElement(View, {} as any));
   assert.match(markup, /思考档位：低、高、最高/u);
   assert.match(markup, /aria-label="模型操作：test-model"/u);
   f.controller.dispose(); f.service.dispose();
@@ -204,10 +208,23 @@ test("loading providers uses only an accessible in-place pending icon", () => {
   const controller = new ModelServicesController(service);
   void service.refresh();
   const View = createModelServicesView(controller);
-  const markup = renderToStaticMarkup(createElement(View, {} as any));
+  const markup = renderWithIntl(createElement(View, {} as any));
   assert.match(markup, /model-services__pending/u);
   assert.match(markup, /role="status" aria-label="正在加载提供商"/u);
   assert.doesNotMatch(markup, />正在加载提供商/u);
   controller.dispose();
   service.dispose();
+});
+
+
+test("choosing no-auth clears draft key and preserves an explicit mode through save; turning it off cannot reuse an old secret",async()=>{
+ const f=fixture();await f.service.refresh();const provider=f.service.getSnapshot().providers!.providers[0]!;
+ f.controller.edit(provider,{},"synthetic-draft-key");
+ f.controller.edit(provider,{authentication:"none",credentialRef:""});assert.equal(f.controller.draft(provider).key,"");
+ await f.controller.save(provider);
+ assert.equal(f.calls.filter(call=>call.method==="runtime/providers/apply").at(-1)!.params.credential.kind,"unauthenticated");
+ assert.equal(f.controller.draft(provider).config.authentication,"none");
+ f.controller.edit(provider,{authentication:undefined,credentialRef:""});await f.controller.save(provider);
+ assert.equal(f.calls.filter(call=>call.method==="runtime/providers/apply").at(-1)!.params.credential.kind,"none");
+ f.controller.dispose();f.service.dispose();
 });

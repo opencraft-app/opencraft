@@ -16,10 +16,17 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (frame.method === 'session/new') {
       const sessionId = `native-${sessions.size + 1}`;
       for (const server of params.mcpServers) { await mcp(server, 'init', 'initialize'); await mcp(server, 'list', 'tools/list'); }
-      sessions.set(sessionId, params); return result(frame.id, { sessionId });
+      sessions.set(sessionId, params); return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
     }
-    if (frame.method === 'session/resume') { sessions.set(params.sessionId, params); return result(frame.id, {}); }
-    if (frame.method === 'session/set_config_option') return result(frame.id, { configOptions: [] });
+    if (frame.method === 'session/resume') { sessions.set(params.sessionId, params); return result(frame.id, process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:'default-native',availableModels:[{modelId:'default-native',name:'Default'}]}} : {}); }
+    if (frame.method === 'session/set_config_option') {
+      if(process.env.ACP_TEST_MODEL_CONFIG_ID && (!sessions.has(params.sessionId) || params.configId!==process.env.ACP_TEST_MODEL_CONFIG_ID)) return send({id:frame.id,error:{code:-32602,message:'Unknown session or config id'}});
+      return result(frame.id,{configOptions:process.env.ACP_TEST_MODEL_CONFIG_ID ? [{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:params.value,options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}] : []});
+    }
+    if(frame.method==='fixture/modelUpdate') {
+      send({method:'session/update',params:{sessionId:params.sessionId,update:{sessionUpdate:'config_option_update',configOptions:[{id:'model-selector',category:'model',currentValue:'blocked-native',options:[{value:'blocked-native',name:'Blocked'}]}]}}});
+      return result(frame.id,{});
+    }
     if (frame.method === 'session/cancel') { const pending = prompts.get(params.sessionId); if (pending) { clearTimeout(pending.timer); prompts.delete(params.sessionId); result(pending.id, { stopReason: 'cancelled' }); } return; }
     if (frame.method === 'session/prompt') {
       const text = params.prompt.map(item => item.text).join('');

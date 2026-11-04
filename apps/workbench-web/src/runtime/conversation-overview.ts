@@ -41,7 +41,7 @@ export function createConversationOverviewPort(options: {
       const check = () => { signal.throwIfAborted(); if (options.getClient(source.id) !== client || client.connectionGeneration !== generation) throw new Error("Conversation source changed"); };
       const request: AppServerClient["request"] = async (method, params, requestOptions) => {
         check();
-        const response = await client.request(method, params, { ...requestOptions, signal, priority: "background", timeoutMs: 15000 });
+        const response = await client.request(method, params, { ...requestOptions, signal, priority: "background", timeoutMs: 15000, historySource: "overview" });
         check(); return response;
       };
       const catalog = new Map<string, { thread: Thread; archived: boolean }>();

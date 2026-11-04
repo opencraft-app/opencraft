@@ -100,3 +100,16 @@ test('only a confirmed Native rejection becomes a durable create failure; transp
   assert.deepEqual(await f.invoke('create',{settings:{cwd:'/workspace'}}),{rejected:{status:400}});
   f.port.request=async()=>{throw Error('Connection lost after send');};await assert.rejects(f.invoke('create',{settings:{cwd:'/workspace'}}),/Connection lost/);
 });
+
+test('a Codex native full-access source exports the portable profile only for cross-driver preparation', async () => {
+  const f=fixture(), original=f.port.request;
+  f.port.request=async(method,params,admit)=>method==='thread/resume'
+    ? {cwd:'/workspace',approvalPolicy:'never',sandbox:{type:'dangerFullAccess'},activePermissionProfile:{id:':danger-full-access'}}
+    : original(method,params,admit);
+  const native=await f.invoke('prepare',{arguments:{}});
+  assert.equal(native.permissions,':danger-full-access','same-driver creation preserves the native profile');
+  const portable=await f.invoke('prepare',{arguments:{},sourceOnly:true});
+  assert.equal(portable.permissions,permissionModeProfileId('full'),'foreign drivers consume the shared permission contract');
+  f.port.request=async()=>({cwd:'/workspace',approvalPolicy:'never',sandbox:{type:'dangerFullAccess'},activePermissionProfile:{id:'custom-unknown'}});
+  assert.equal((await f.invoke('prepare',{arguments:{},sourceOnly:true})).permissions,'custom-unknown','unknown custom policies cannot be promoted to Full access');
+});

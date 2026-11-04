@@ -92,11 +92,14 @@ interface Suggestion {
   detail: string;
   uri?: string | null;
   metadata?: Readonly<Record<string, unknown>>;
+  submitOnSelect?: boolean;
 }
 
 export interface ComposerShortcutCommand {
   readonly name: string;
   readonly description: string;
+  /** Selecting a standalone local action is its explicit execution gesture. */
+  readonly submitOnSelect?: boolean;
 }
 
 interface SuggestionQuery {
@@ -127,6 +130,8 @@ export interface ComposerModelOption {
   readonly maxTokens?: number | null;
   readonly source?: "builtin" | "custom" | null;
   readonly defaultEffort: string | null;
+  readonly policyRestricted?: boolean;
+  readonly policyRestrictedEfforts?: readonly string[];
   readonly efforts: readonly ComposerReasoningEffortOption[];
   readonly serviceTiers?: readonly { readonly id: string; readonly name: string; readonly description: string }[];
 }
@@ -161,6 +166,7 @@ export interface ComposerAgentModelGroup {
 }
 
 export interface ComposerSelectionCatalog {
+  readonly policyRestricted?: boolean;
   readonly agentGroups?: readonly ComposerAgentModelGroup[];
   readonly models: readonly ComposerModelOption[];
   /** Cached names/capabilities for the selected model only; never selectable choices. */
@@ -698,6 +704,8 @@ export interface ComposerQueuedSubmissionPresentation {
   readonly state: "submitting" | "queued" | "failed" | "unknown";
   readonly operation: "idle" | "updating" | "deleting" | "starting";
   readonly actionable: boolean;
+  /** Accept Steer intent while queue custody is still being acknowledged. */
+  readonly steerable?: boolean;
   readonly dismissible?: boolean;
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
@@ -1067,8 +1075,8 @@ export const OpenCraftComposer = forwardRef<
     ? effectiveSelections?.effort : undefined;
   const requestedEffort = composerSnapshot.draft.selections.effort ?? effectiveEffort;
   const displayEffortValue = existingConversation ? requestedEffort ?? null : undefined;
-  const selectedEffortValue = existingConversation && requestedEffort == null ? null : selectedModel ? resolveReasoningEffort(
-    reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),
+  const selectedEffortValue = selectedModel?.policyRestrictedEfforts?.includes(requestedEffort ?? selectedModel.defaultEffort ?? "") ? requestedEffort ?? selectedModel.defaultEffort : existingConversation && requestedEffort == null ? null : selectedModel ? resolveReasoningEffort(
+    reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.efforts.some(e=>e.value===selectedModel.defaultEffort) ? selectedModel.defaultEffort : null),
     requestedEffort,
   ) ?? null : null;
   const requestedServiceTier = composerSnapshot.draft.selections.serviceTier !== undefined
@@ -1118,6 +1126,7 @@ export const OpenCraftComposer = forwardRef<
     kind: "command",
     label: command.name,
     detail: command.description,
+    submitOnSelect: command.submitOnSelect,
   })) ?? localCommandSuggestions;
   const filteredSuggestions =
     suggestionQuery == null
@@ -1319,7 +1328,7 @@ export const OpenCraftComposer = forwardRef<
   }, [controller, finishQueueEdit]);
 
   const submit = useCallback(
-    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false) => {
+    async (followUpActionOverride?: ComposerFollowUpAction, dictationFinished = false, consumeSelectedCommand = false) => {
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
@@ -1362,16 +1371,33 @@ export const OpenCraftComposer = forwardRef<
             // of silently resolving the Host default model.
             model: selectedModel?.value ?? selectedModelValue,
             ...(modelSelectionPolicy === "user" && requestedServiceTier !== undefined ? { serviceTier: selectedModel ? selectedServiceTier : requestedServiceTier } : {}),
-            ...(selectedModel && (!existingConversation || requestedEffort != null) ? { effort: resolveReasoningEffort(reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.defaultEffort),intent.selections.effort ?? effectiveEffort) } : {}),
+            ...(selectedModel && (!existingConversation || requestedEffort != null) ? { effort: selectedModel.policyRestrictedEfforts?.includes(intent.selections.effort ?? effectiveEffort ?? selectedModel.defaultEffort ?? "") ? intent.selections.effort ?? effectiveEffort ?? selectedModel.defaultEffort ?? undefined : resolveReasoningEffort(reasoningCapability(selectedModel.efforts.map(e=>e.value),selectedModel.efforts.some(e=>e.value===selectedModel.defaultEffort) ? selectedModel.defaultEffort : null),intent.selections.effort ?? effectiveEffort) } : {}),
           } };
         }
       } catch {
         return;
       }
+      const submittedDraftId = controller.getSnapshot().draft.id;
+      let consumedDocument: ComposerDocument | null = null;
+      const restoreSelectedCommand = () => {
+        const draft = controller.getSnapshot().draft;
+        if (consumeSelectedCommand && draft.id === submittedDraftId
+          && encodeComposerTarget(draft.target) === encodeComposerTarget(intent.target)
+          && draft.document === consumedDocument
+          && draft.attachments.length === 0 && draft.context.length === 0) {
+          controller.dispatch({ type: "set-document", document: intent.document });
+        }
+      };
       const submissionToken = Symbol("composer-submission");
       pendingSubmissionRef.current = { controller, token: submissionToken };
       view.setProps({ editable: () => false });
       controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+      // Local commands are consumed before their async action starts. Keep the
+      // immutable intent for failure recovery instead of showing a pending chip.
+      if (consumeSelectedCommand) {
+        view.dispatch(view.state.tr.delete(0, view.state.doc.content.size).setMeta("addToHistory", false));
+        consumedDocument = controller.getSnapshot().draft.document;
+      }
       try {
         if (
           editingQueuedSubmissionId !== null &&
@@ -1397,6 +1423,7 @@ export const OpenCraftComposer = forwardRef<
           editingQueuedSubmissionId === null &&
           followUpAction !== null &&
           !awaitSubmission &&
+          !consumeSelectedCommand &&
           submission !== false
         ) {
           if (
@@ -1415,12 +1442,18 @@ export const OpenCraftComposer = forwardRef<
         const accepted = await submission;
         if (
           accepted !== false &&
+          (!consumeSelectedCommand || (controller.getSnapshot().draft.id === submittedDraftId
+            && controller.getSnapshot().draft.document === consumedDocument)) &&
           encodeComposerTarget(controller.getSnapshot().draft.target) ===
             encodeComposerTarget(intent.target)
         )
           clear();
-        else controller.dispatch({ type: "set-lifecycle", phase: "editing" });
+        else {
+          restoreSelectedCommand();
+          controller.dispatch({ type: "set-lifecycle", phase: "editing" });
+        }
       } catch (error) {
+        restoreSelectedCommand();
         controller.dispatch({
           type: "set-lifecycle",
           phase: "failed",
@@ -1448,6 +1481,11 @@ export const OpenCraftComposer = forwardRef<
           // can focus the replacement EditorView without reviving this one.
           requestAnimationFrame(() => {
             if (disabledRef.current) return;
+            const activeElement = view.dom.ownerDocument.activeElement;
+            // A local action may have opened another input surface. Submission
+            // cleanup must not steal the focus that surface has already taken.
+            if (activeElement !== null && activeElement !== view.dom.ownerDocument.body
+              && !stackRef.current?.contains(activeElement)) return;
             controller.focus();
           });
         }
@@ -1524,6 +1562,21 @@ export const OpenCraftComposer = forwardRef<
     if (view == null || query == null || view.composing || !isCurrentSuggestion) return;
     const actualQuery = querySuggestion(view.state);
     if (actualQuery?.kind !== query.kind || actualQuery.from !== query.from || actualQuery.to !== query.to || actualQuery.query !== query.query) return;
+    const draft = controller.getSnapshot().draft;
+    const commandTransaction = suggestion.kind === "command" && suggestion.submitOnSelect
+      ? view.state.tr.insertText(`/${suggestion.label}`, query.from, query.to)
+      : null;
+    const commandDocument = commandTransaction === null ? null
+      : proseMirrorToComposerDocument(commandTransaction.doc);
+    if (commandTransaction !== null && commandDocument !== null && commandDocument.blocks.length === 1
+      && commandDocument.blocks[0]?.type === "paragraph"
+      && composerDocumentToPlainText(commandDocument).trim() === `/${suggestion.label}`
+      && draft.attachments.length === 0 && draft.context.length === 0) {
+      // Do not insert a token that would remain visible until the fork finishes.
+      view.dispatch(commandTransaction);
+      void submitActionRef.current(undefined, false, true);
+      return;
+    }
     const token = composerSchema.nodes.token.create({
       id: suggestion.id,
       kind: suggestion.kind,
@@ -1548,7 +1601,7 @@ export const OpenCraftComposer = forwardRef<
     );
     view.dispatch(transaction.scrollIntoView());
     view.focus();
-  }, []);
+  }, [controller]);
 
   const moveSuggestion = useCallback((delta: number) => {
     if (suggestionQueryRef.current === null || editorViewRef.current?.composing) return false;
@@ -1989,7 +2042,7 @@ export const OpenCraftComposer = forwardRef<
     const effort = resolveReasoningEffort(
       reasoningCapability(
         model.efforts.map((candidate) => candidate.value),
-        model.defaultEffort,
+        model.efforts.some(e=>e.value===model.defaultEffort) ? model.defaultEffort : null,
       ),
       supportsCurrentEffort ? selectedEffortValue : undefined,
     );
@@ -2142,6 +2195,9 @@ export const OpenCraftComposer = forwardRef<
               item.actionable &&
               (editingQueuedSubmissionId === null ||
                 item.id === editingQueuedSubmissionId),
+            steerable:
+              (item.steerable ?? item.actionable) &&
+              (editingQueuedSubmissionId === null || item.id === editingQueuedSubmissionId),
             dismissible:
               item.dismissible &&
               (editingQueuedSubmissionId === null ||
@@ -2502,6 +2558,7 @@ export const OpenCraftComposer = forwardRef<
                 onOpenChange={changePicker("intelligence")} onSelect={selectModel} portalContainer={portalContainer}
                 focus={intelligenceFocus} /> : null}
               {!modelDisplayOnly && modelSelectionPolicy === "user" ? <ComposerModelPicker
+                policyRestricted={selectionCatalog?.policyRestricted || catalogModels.some(m=>m.policyRestricted)}
                 hasSelectedModel={selectedModel !== null}
                 label={compactSelectedModelLabel} modelLabel={modelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}

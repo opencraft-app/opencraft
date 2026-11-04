@@ -221,6 +221,8 @@ test("public headless mode requires explicit acknowledgement and keeps one HTTP 
 
 test("Linux tar packaging refuses foreign native build hosts before touching outputs", () => {
   assert.doesNotThrow(() => assertHeadlessBuildHost("linux", "x64"));
+  assert.doesNotThrow(() => assertHeadlessBuildHost("linux", "arm64", "arm64"));
+  assert.throws(() => assertHeadlessBuildHost("linux", "x64", "arm64"), /native Linux arm64/u);
   assert.throws(() => assertHeadlessBuildHost("darwin", "arm64"), /native Linux x64/u);
   assert.throws(() => assertHeadlessBuildHost("linux", "arm64"), /native Linux x64/u);
 });
@@ -596,6 +598,18 @@ test("AppHost diagnostics correlate two browser sockets and reject payload field
   });
   assert.equal(accepted.status, 202);
   assert.deepEqual(diagnostics.find(item => item.event === "client-failure"), { serverProtocolVersion: 2, event: "client-failure", ...valid });
+  const timing = { ...valid, failure: "probe-timeout", phase: "ready", readyState: 1,
+    eventAtMs: Date.now(), visibility: "hidden", networkState: "offline", bufferedBytes: 123,
+    lastMessageAgoMs: 26000, probeElapsedMs: 26000, lastProbeRttMs: 40, timeoutMs: 5000, timerLateMs: 21000, pagePauseMs: 94000, pageResumeAgoMs: 30, pageHiddenForMs: 1200, wasClean: 0 };
+  const sendDiagnostic = body => fetch(`${origin}/__opencraft_apphost_diagnostic`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+  });
+  assert.equal((await sendDiagnostic(timing)).status, 202);
+  assert.deepEqual(diagnostics.filter(item => item.event === "client-failure").at(-1),
+    { serverProtocolVersion: 2, event: "client-failure", ...timing });
+  for (const extra of [{ networkState: "private-network" }, { bufferedBytes: -1 }, { timerLateMs: 1.5 }, { pagePauseMs: -1 }, { pageResumeAgoMs: 1.5 }, { pageHiddenForMs: -1 },
+    { wasClean: 2 }, { visibility: "unknown" }, { reason: "private-error-canary" }])
+    assert.equal((await sendDiagnostic({ ...timing, ...extra })).status, 400);
   const recovery = { kind: "recovery", recoveryId: "recovery-test-1", stage: "history-started", attemptId: attempts[1], eventAtMs: 1792411504000, elapsedMs: 830, requests: 2, responseBytes: 4150, projectionMs: 0.4, extraConversations: 0 };
   const recoveryAccepted = await fetch(`${origin}/__opencraft_apphost_diagnostic`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(recovery),
@@ -750,7 +764,8 @@ test('incompatible independent Core does not prevent HTTP startup or another Hos
       if (health.hosts['local-codex'].state === 'unavailable') break;
       await new Promise(done => setTimeout(done, 10));
     }
-    assert.equal(health.ok, true);
+    assert.equal(health.ok, false);
+    assert.equal((await fetch(app.url + '/__opencraft_health')).status, 503);
     assert.equal(health.hosts['local-codex'].state, 'unavailable');
     assert.equal(health.hosts['local-codex'].code, 'codex-host-unavailable');
     assert.ok(!health.storage.some(row => row.name === 'account-pool'), 'gateway must not become a second account writer');

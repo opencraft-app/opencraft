@@ -41,10 +41,10 @@
   "devDependencies": {
     "@electron/notarize": "2.5.0",
     "@electron/osx-sign": "1.3.3",
-    "@electron/universal": "2.0.3",
+    "@electron/universal": "3.0.6",
     "@resvg/resvg-js": "2.6.2",
     "@types/ws": "^8.18.2",
-    "electron": "44.8.0",
+    "electron": "44.9.1",
     "electron-builder": "26.18.0",
     "esbuild": "0.28.2",
     "typescript": "^5.9.3"
@@ -66,11 +66,12 @@
     ],
     "extraResources": [
       { "from": "build/native", "to": "native", "filter": ["opencraft-speech-helper"] },
-      { "from": "../local-agent-host/src/dsh-capability-plugin.mjs", "to": "runtime/dsh/opencraft-capability-plugin.mjs" },
+      { "from": "build/dsh-capability-plugin.mjs", "to": "runtime/dsh/opencraft-capability-plugin.mjs" },
       { "from": "../local-agent-host/src/dsh-execution-environment.mjs", "to": "runtime/dsh/dsh-execution-environment.mjs" },
       { "from": "../local-agent-host/src/dsh-skill-catalog.mjs", "to": "runtime/dsh/dsh-skill-catalog.mjs" },
       { "from": "../local-agent-host/src/dsh-skill-invocation.mjs", "to": "runtime/dsh/dsh-skill-invocation.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-engine.mjs", "to": "runtime/dsh/dsh-thread-engine.mjs" },
+      { "from": "../local-agent-host/src/dsh-native-owner.mjs", "to": "runtime/dsh/dsh-native-owner.mjs" },
       { "from": "../local-agent-host/src/dsh-background-jobs.mjs", "to": "runtime/dsh/dsh-background-jobs.mjs" },
       { "from": "../local-agent-host/src/dsh-instructions.mjs", "to": "runtime/dsh/dsh-instructions.mjs" },
       { "from": "../local-agent-host/src/dsh-thread-storage.mjs", "to": "runtime/dsh/dsh-thread-storage.mjs" },
@@ -88,6 +89,7 @@
           "**/*"
         ]
       },
+      { "from": "../opencraft-daemon/dist/terminal-pty-owner.mjs", "to": "runtime/terminal-pty-owner.mjs" },
       {
         "from": "../opencraft-daemon/dist/main.cjs",
         "to": "runtime/opencraft-daemon.cjs"

@@ -1,6 +1,7 @@
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import scss from "postcss-scss";
 import selectorParser from "postcss-selector-parser";
@@ -173,7 +174,7 @@ export async function checkControlOwnership(base = root) {
   return errors;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const errors = await checkControlOwnership();
   if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
   else console.log("Shared control ownership checks passed.");

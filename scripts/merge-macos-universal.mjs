@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
@@ -15,7 +16,6 @@ import {
 } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
 import { makeUniversalApp } from "@electron/universal";
 
 const execFileAsync = promisify(execFile);
@@ -165,7 +165,7 @@ function parseArguments(argv) {
   return values;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const values = parseArguments(process.argv.slice(2));
   const output = await mergeMacosUniversal({
     x64AppPath: values.get("x64"),

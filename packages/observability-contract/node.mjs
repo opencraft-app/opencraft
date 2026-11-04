@@ -27,6 +27,7 @@ export function nodeObserver(component,{socketPath=process.env.OPENCRAFT_OBSERVE
   function emit(fields){try{if(closed)return false;const accepted=queue.emit({schemaVersion:1,component,producerId,eventId:randomUUID(),at:Date.now(),...(fields.outcome==='failed'||fields.outcome==='timeout'?{incidentRef:randomUUID()}:{}),...fields});if(accepted&&!timer&&!busy){timer=setTimeout(flush,10000);timer.unref();}return accepted;}catch{return false;}}
   if(processResources){
     const heartbeat=()=>{emit({kind:'resource',sourceRevision,buildId,rssBytes:process.memoryUsage().rss,heapBytes:process.memoryUsage().heapUsed,cpuSeconds:(process.cpuUsage().system+process.cpuUsage().user)/1e6,observedBy:'self',identitySource:'self',producerMode:'native',dropped:queue.stats().dropped+transportDropped,rejected:queue.stats().rejected,originClass:'operator'});};
+    emit({kind:'lifecycle',lifecycle:'restart',sourceRevision,buildId,originClass:'operator'});
     heartbeat();healthTimer=setInterval(heartbeat,30000);healthTimer.unref();
   }
   const observer={emit,stats:queue.stats,close(){closed=true;clearTimeout(timer);if(healthTimer)clearInterval(healthTimer);instances.delete(key);},

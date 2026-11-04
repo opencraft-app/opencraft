@@ -11,6 +11,7 @@ import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
+import { createWebSocketSender } from "../packages/relay-protocol/src/websocket-sender.mjs";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -117,6 +118,9 @@ function bridgeAppServerSocket(client, request, options) {
   const querySession = options.createAppServerQuerySession?.(frame => {
     if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
   });
+  const dshPending = new Set();
+  const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
+  const dshKey = packet => JSON.stringify([packet.__opencraftClient ?? "",packet.id]);
   const forward = async (data, isBinary) => {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
@@ -125,7 +129,10 @@ function bridgeAppServerSocket(client, request, options) {
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
       const frame = identitySession ? await identitySession.prepareNative(data.toString("utf8"), options.submissionContext) : data;
-      if (frame !== null) upstream.send(frame, { binary: isBinary });
+      if (frame !== null) {
+        if (!isBinary) { const packet = dshPacket(frame);if (packet && packet.id !== undefined && typeof packet.method === "string") dshPending.add(dshKey(packet));if(dshPending.size>4096)throw new Error("DSH consumer request limit"); }
+        upstream.send(frame, { binary: isBinary });
+      }
     } catch {
       client.close(1011, "Thread identity service unavailable"); upstream.close();
     }
@@ -171,6 +178,14 @@ function bridgeAppServerSocket(client, request, options) {
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
         const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
         if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
+        if (!isBinary) {
+          const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
+          if (proof && dshPending.has(key)) {
+            if (typeof proof.id !== "string" || typeof proof.receipt !== "string") throw new Error("Invalid DSH receipt");
+            upstream.send(JSON.stringify({jsonrpc:"2.0",method:"opencraft/owner/receipt",params:proof}));
+          }
+          if (packet && !packet.method && packet.id !== undefined) dshPending.delete(key);
+        }
       } catch {
         client.close(1011, "Thread identity service unavailable"); upstream.close();
       }
@@ -227,7 +242,8 @@ export function appHostFrameRejection(message) {
 const appHostAttemptPattern = /^(?:[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}|client-[0-9]{10,15}-[a-z0-9]{1,20})$/iu;
 const appHostFailureKinds = new Set(["socket-error", "socket-close", "handshake-timeout", "probe-timeout", "invalid-response"]);
 const appHostPhases = new Set(["connecting", "socket-open", "ready"]);
-const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode"]);
+const appHostDiagnosticNumbers = ["eventAtMs", "bufferedBytes", "lastMessageAgoMs", "probeElapsedMs", "lastProbeRttMs", "timeoutMs", "timerLateMs", "pagePauseMs", "pageResumeAgoMs", "pageHiddenForMs"];
+const appHostDiagnosticKeys = new Set(["attemptId", "failure", "phase", "readyState", "ageMs", "closeCode", "visibility", "networkState", "wasClean", ...appHostDiagnosticNumbers]);
 
 const recoveryDiagnosticKeys = new Set(["kind", "recoveryId", "stage", "attemptId", "eventAtMs", "method", "elapsedMs", "attempt", "delayMs", "demand", "durationMs", "requests", "responseBytes", "projectionMs", "extraConversations", "nativeReads", "nativeEvents", "displayVersion", "messages", "timestamps", "workClocks", "authoritative", "cacheHit", "storageFailure", "renderedTimes", "visibleTimes", "touch", "viewportWidth"]);
 const recoveryStages = new Set(["display-load", "display-save", "display-paint", "transport-unavailable", "manual-block", "waiting", "backoff", "connecting", "initializing", "host-ready", "resources", "revalidate", "provider-history", "history-started", "history-backoff", "request-slow", "request-failed", "history-authoritative", "history-failed", "history-authoritative-failed", "capability-ready", "capability-ready-failed", "replica-ready", "replica-ready-failed", "settled"]);
@@ -265,15 +281,26 @@ function validAppHostDiagnostic(report) {
     && appHostFailureKinds.has(report.failure)
     && appHostPhases.has(report.phase)
     && Number.isInteger(report.readyState) && report.readyState >= 0 && report.readyState <= 3
-    && Number.isInteger(report.ageMs) && report.ageMs >= 0 && report.ageMs <= 86_400_000
+    && Number.isSafeInteger(report.ageMs) && report.ageMs >= 0
+    && appHostDiagnosticNumbers.every(key => report[key] === undefined || (Number.isSafeInteger(report[key]) && report[key] >= 0))
+    && (report.visibility === undefined || ["visible", "hidden"].includes(report.visibility))
+    && (report.networkState === undefined || ["online", "offline", "unknown"].includes(report.networkState))
+    && (report.wasClean === undefined || [0, 1].includes(report.wasClean))
     && (report.closeCode === undefined || (Number.isInteger(report.closeCode) && report.closeCode >= 0 && report.closeCode <= 4999));
 }
 
 function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = () => true, submissionContext = { sender: null }) {
+  const send = createWebSocketSender(client);
   const listeners = new Set();
   const pendingConnects = new Set();
   let connection = null;
   let frameSequence = 0;
+  let probeSequence = 0;
+  let lastProbeObservedAt = -Infinity;
+  const probes = new Map();
+  const probeDetail = probe => ({ probeSequence: probe.sequence, eventAtMs: Date.now(),
+    elapsedMs: Math.max(0, performance.now() - probe.started),
+    readyState: client.readyState, bufferedBytes: client.bufferedAmount });
   const frameContext = () => ({ frameSequence, phase: connection === null ? "awaiting-hello" : "ready" });
   const port = {
     postMessage(message) {
@@ -281,7 +308,18 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
       if (message?.type === "response" && pendingConnects.delete(message.requestId)) {
         logDiagnostic("host-connect", { ok: message.ok === true });
       }
-      if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+      const probe = message?.type === "response" ? probes.get(message.requestId) : undefined;
+      if (probe) {
+        probes.delete(message.requestId);
+        const responseMs = Math.max(0, performance.now() - probe.started);
+        logDiagnostic("probe-response", { ...probeDetail(probe), responseMs, ok: message.ok === true });
+        if (client.readyState === WebSocket.OPEN) {
+          send(JSON.stringify(message), error => {
+            // A completed local write does not acknowledge browser receipt.
+            logDiagnostic("probe-written", { ...probeDetail(probe), responseMs, ok: !error });
+          });
+        }
+      } else if (client.readyState === WebSocket.OPEN) send(JSON.stringify(message));
     },
     subscribe(listener) {
       listeners.add(listener);
@@ -302,17 +340,34 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (rejection !== null) {
       logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), ...rejection });
       if (rejection.reason === "protocol-version" && client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ type: "fatal", error: {
+        send(JSON.stringify({ type: "fatal", error: {
           code: "APP_HOST_PROTOCOL_MISMATCH",
           message: "Client and server versions are incompatible. Update or reload the client to reconnect.",
           retryable: false,
-        } }));
+        } }), () => client.close(1008, "Invalid App Host request"));
+        return;
       }
       client.close(1008, "Invalid App Host request");
       return;
     }
+    if (message.type === "connection/probe") {
+      const started = performance.now();
+      const sequence = ++probeSequence;
+      // Observe normal five-second probes, bounded even for a flooding peer.
+      if (started - lastProbeObservedAt >= 1000 && probes.size < 8 && !probes.has(message.requestId)) {
+        lastProbeObservedAt = started;
+        const probe = { sequence, started };
+        probes.set(message.requestId, probe);
+        logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence });
+      }
+    }
     if (!authorize(message)) {
-      client.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
+      const probe = probes.get(message.requestId);
+      if (probe) {
+        probes.delete(message.requestId);
+        logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
+      }
+      send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
         error: { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
       return;
     }
@@ -329,7 +384,11 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (message.type === "host/connect") pendingConnects.add(message.requestId);
     for (const listener of listeners) listener(message);
   });
-  client.once("close", () => connection?.close());
+  client.once("close", () => {
+    for (const probe of probes.values()) logDiagnostic("probe-abandoned", probeDetail(probe));
+    probes.clear();
+    connection?.close();
+  });
   client.once("error", () => connection?.close());
 }
 
@@ -390,6 +449,7 @@ export async function createWorkbenchWebServer({
   appHostServer = null,
   sshServerDescriptors = [],
   sshManagement = null,
+  fileDownloads = null,
   getStorageOutcomes,
   getPluginHealth,
   getExecutionHealth,
@@ -399,6 +459,7 @@ export async function createWorkbenchWebServer({
   speechService = null,
   remoteBrowserService = null,
   /** @type {import('@opencraft/app-host-server').WorkbenchRequestIdentity | null} */
+  modelPolicyService = null,
   identityService = null,
   localAccess = null,
   accessService = null,
@@ -446,7 +507,17 @@ export async function createWorkbenchWebServer({
     catch { /* Observability must not affect the connection. */ }
   };
 
-  const server = createServer(async (request, response) => {
+  let closing = false;
+  const pendingRequests = new Set();
+  const trackRequest = handler => (...args) => {
+    const operation = Promise.resolve().then(() => handler(...args));
+    pendingRequests.add(operation);
+    void operation.then(() => pendingRequests.delete(operation), () => {
+      pendingRequests.delete(operation); args[1]?.destroy?.();
+    });
+  };
+  const server = createServer(trackRequest(async (request, response) => {
+    if (closing) { response.writeHead(503, {connection:'close'}); response.end('{}'); return; }
     // Capture bounded error codes only, including admission failures before the
     // IM handler. Never retain request bodies, headers, identities or credentials.
     if ((request.url ?? "").split("?")[0] === "/__opencraft_im") {
@@ -532,6 +603,19 @@ export async function createWorkbenchWebServer({
         if (identity) { const unwatch = accessService.watch(identity, () => response.destroy()); response.once('close', unwatch); }
         if (await accessService.handle(request, response)) return;
       }
+      if (url.pathname === "/__opencraft_files") {
+        if (!fileDownloads) { sendJson(response, 404, { error: "missing" }); return; }
+        await fileDownloads.handle(request, response, hostId => {
+          try {
+            return sameOrigin(request, false)
+              && (!hostId.startsWith("ssh:") || sshManagement?.authorized(request) === true)
+              && (local || (!authService?.invalidSession(request)
+                && (accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204) === 204))
+              && (!actorService || actorService.legacyAdmissionStatus(request) === 204);
+          } catch { return false; }
+        });
+        return;
+      }
       if (url.pathname.startsWith("/__opencraft_observe/")) {
         if (observability && await observability.handle(request, response)) return;
         sendJson(response, url.pathname.endsWith("/capabilities") ? 200 : 503, url.pathname.endsWith("/capabilities") ? {available:false,telemetry:false} : {error:{code:"observation_unavailable",retryable:true}}); return;
@@ -549,6 +633,7 @@ export async function createWorkbenchWebServer({
         if (request.method !== "GET") { sendJson(response, 405, { error: "method_not_allowed" }); return; }
         response.writeHead(204, { "cache-control": "private, no-store" }); response.end(); return;
       }
+      if (modelPolicyService && await modelPolicyService(request, response)) return;
       if (identityService && await identityService.handle(request, response)) return;
       if (url.pathname.startsWith("/__opencraft_speech/")) {
         if (speechService === null) {
@@ -578,12 +663,16 @@ export async function createWorkbenchWebServer({
       if (url.pathname === "/health" && getExecutionHealth) {
         try {
           const health = await getExecutionHealth();
-          sendJson(response, health.ok === true ? 200 : 503, { ...health, storage: getStorageOutcomes?.() ?? [], ...(getPluginHealth ? {plugins:getPluginHealth()} : {}), ...(getHostReadiness ? { hosts: getHostReadiness() } : {}) });
+          const hosts=getHostReadiness?.()??{};
+          const ok=health.ok===true && Object.values(hosts).every(host=>host.state==='ready');
+          sendJson(response, ok ? 200 : 503, { ...health, ok, storage: getStorageOutcomes?.() ?? [], ...(getPluginHealth ? {plugins:getPluginHealth()} : {}), ...(getHostReadiness ? { hosts: getHostReadiness() } : {}) });
         } catch { sendJson(response, 503, { ok: false }); }
         return;
       }
       if (url.pathname === "/__opencraft_health") {
-        sendJson(response, 200, { ok: true, appServerConfigured: normalizedTarget !== null, ...(getPluginHealth ? {plugins:getPluginHealth()} : {}), ...(getHostReadiness ? { hosts: getHostReadiness() } : {}), ...(getStorageOutcomes ? { storage: getStorageOutcomes() } : {}) });
+        const hosts=getHostReadiness?.()??{};
+        const ok=Object.values(hosts).every(host=>host.state==='ready');
+        sendJson(response, ok ? 200 : 503, { ok, appServerConfigured: normalizedTarget !== null, ...(getPluginHealth ? {plugins:getPluginHealth()} : {}), ...(getHostReadiness ? { hosts: getHostReadiness() } : {}), ...(getStorageOutcomes ? { storage: getStorageOutcomes() } : {}) });
         return;
       }
       if (url.pathname === "/__opencraft_ssh_servers") {
@@ -633,9 +722,8 @@ export async function createWorkbenchWebServer({
           sendJson(response, 400, { ok: false, error: "Invalid App Host diagnostic" });
           return;
         }
-        emitAppHostDiagnostic({ event: "client-failure", attemptId: report.attemptId,
-          failure: report.failure, phase: report.phase, readyState: report.readyState,
-          ageMs: report.ageMs, ...(report.closeCode === undefined ? {} : { closeCode: report.closeCode }) });
+        // The closed validator above permits only local transport metadata.
+        emitAppHostDiagnostic({ event: "client-failure", ...report });
         sendJson(response, 202, { ok: true });
         return;
       }
@@ -700,7 +788,7 @@ export async function createWorkbenchWebServer({
       if (!response.headersSent) sendJson(response, 500, { ok: false, error: "Internal server error" });
       else response.destroy(error);
     }
-  });
+  }));
 
   // A supported 32 MiB attachment expands to ~43 MiB in Base64, then travels
   // inside JSON-RPC and (for Codex) an AppHost envelope. Keep a bounded 48 MiB
@@ -724,7 +812,8 @@ export async function createWorkbenchWebServer({
     }
   }, webSocketHeartbeatIntervalMs) : null;
   heartbeat?.unref();
-  server.on("upgrade", async (request, socket, head) => {
+  server.on("upgrade", trackRequest(async (request, socket, head) => {
+    if (closing) { socket.destroy(); return; }
     if (hubService?.node?.handleUpgrade(request, socket, head)) return;
     let url;
     try {
@@ -772,6 +861,7 @@ export async function createWorkbenchWebServer({
     } catch {
       socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n"); return;
     }
+    if (closing) { socket.destroy(); return; }
     if (admissionStatus !== 204) {
       logAppHost("upgrade-rejected", { reason: "identity-admission", code: admissionStatus });
       socket.end(`HTTP/1.1 ${admissionStatus} ${admissionStatus === 401 ? "Unauthorized" : "Forbidden"}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n`); return;
@@ -884,7 +974,7 @@ export async function createWorkbenchWebServer({
       socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
       return;
     }
-    if (socket.destroyed) return;
+    if (closing || socket.destroyed) { socket.destroy(); return; }
     if (!actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
@@ -900,7 +990,7 @@ export async function createWorkbenchWebServer({
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
       });
     });
-  });
+  }));
 
   return {
     server,
@@ -916,18 +1006,34 @@ export async function createWorkbenchWebServer({
         });
       });
     },
-    close() {
+    close(update = null, retireIngress = () => undefined) {
+      closing = true;
       speechService?.close();
       remoteBrowserService?.close();
       unsubscribeRevocation?.();
       if (heartbeat !== null) clearInterval(heartbeat);
-      for (const client of websocketServer.clients) client.terminate();
+      const disconnected = [...websocketServer.clients].filter(client => client.readyState === WebSocket.OPEN).length;
+      const receipt = observability?.gatewayShutdown?.(disconnected, update)?.catch(() => {});
+      const clients = [...websocketServer.clients];
+      const clientClosures = clients.map(client => new Promise(done => {
+        if (client.readyState === WebSocket.CLOSED) { done(); return; }
+        client.once('close',done);
+        if (update && client.readyState === WebSocket.OPEN) client.close(1012);
+        else client.terminate();
+      }));
+      let deadline;
+      const closeClients = Promise.race([Promise.allSettled(clientClosures),new Promise(done => {deadline=setTimeout(done,250);})])
+        .finally(()=>{clearTimeout(deadline);for(const client of clients)if(client.readyState!==WebSocket.CLOSED)client.terminate();});
+      // Carrier sockets must outlive the restart close frame. Conversely,
+      // externally owned Hub upgrades must retire before HTTP close can finish.
+      const ingressClosed = closeClients.then(retireIngress);
+      const requestsClosed = ingressClosed.then(() => Promise.allSettled([...pendingRequests]));
       for (const client of desktopWebSockets.clients) client.terminate();
       websocketServer.close();
       desktopWebSockets.close();
-      return new Promise((resolvePromise, reject) => {
+      return Promise.all([receipt, requestsClosed, new Promise((resolvePromise, reject) => {
         server.close((error) => error ? reject(error) : resolvePromise());
-      });
+      })]).then(() => undefined);
     },
   };
 }

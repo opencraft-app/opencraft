@@ -1,4 +1,6 @@
 export { APP_HOST_PROTOCOL_VERSION } from "./version.mjs";
+/** The server rejected this send before invoking the native transport. */
+export const APP_HOST_SEND_NOT_ADMITTED = "APP_HOST_SEND_NOT_ADMITTED";
 import { APP_HOST_PROTOCOL_VERSION } from "./version.mjs";
 import { LOGICAL_CLIENT_FIELD } from "./routing.mjs";
 export { LOGICAL_CLIENT_FIELD } from "./routing.mjs";

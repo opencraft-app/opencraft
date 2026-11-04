@@ -11,6 +11,7 @@ export interface AcpTransportOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  redactError?: (message: string) => string;
   onNotification(method: string, params: AcpObject): void;
   onRequest(method: string, params: AcpObject): Promise<unknown>;
   onExit?(): void;
@@ -89,7 +90,7 @@ export class AcpStdioTransport {
     const call = this.pending.get(frame.id);
     if (!call) return;
     this.pending.delete(frame.id); clearTimeout(call.timer);
-    frame.error ? call.reject(new AcpProtocolError(Number(frame.error.code), String(frame.error.message), frame.error.data)) : call.resolve(frame.result);
+    frame.error ? call.reject(new AcpProtocolError(Number(frame.error.code), this.options.redactError?.(String(frame.error.message)) ?? String(frame.error.message), this.options.redactError ? undefined : frame.error.data)) : call.resolve(frame.result);
   }
   async close(): Promise<void> {
     if (this.closing) return;

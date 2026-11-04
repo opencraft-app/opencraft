@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, access } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import {ownerAdmissionEdits,patchDshOwnerAdmission,verifyDshOwnerAdmission} from "../../scripts/patch-dsh-owner-admission.mjs";
 import { prepareDshRuntime } from "../../scripts/prepare-dsh-runtime.mjs";
 import { threadEnvironmentEdit, terminalThreadEnvironmentEdit } from "../../scripts/patch-dsh-thread-environment.mjs";
 import checkDesktopTarget from "../../scripts/check-desktop-target.cjs";
@@ -29,6 +30,10 @@ async function fixture(t) {
     await mkdir(join(entry, "lib"), { recursive: true });
     await writeFile(join(entry, "package.json"), '{"version":"0.1.1-rc.2"}');
     await writeFile(join(entry, "lib/bin.js"), "// fixture");
+    for (const [name,edits] of Object.entries(ownerAdmissionEdits)) {
+      const module = join(runtime,`node_modules/@deepseek-ai/${name}/lib`);
+      await mkdir(module,{recursive:true});await writeFile(join(module,'index.js'),edits.map(([before])=>before).join("\n"));
+    }
     const bash = join(runtime, "node_modules/@deepseek-ai/dsh-bash-local/lib");
     await mkdir(bash, { recursive: true });
     await writeFile(join(bash, "index.js"), threadEnvironmentEdit[0]);
@@ -151,4 +156,15 @@ test("Mac ZIP matrix artifacts match electron-builder naming", async () => {
     const target = matrix.targets.find(target => target.id === `electron-macos-${arch}-zip`);
     assert.deepEqual(target.artifacts, [`apps/workbench-electron/release/${name}`]);
   }
+});
+
+test("native owner patch is complete, idempotent and refuses drift before rewriting peers",async t=>{
+ const f=await fixture(t);await f.install(f.runtime);
+ await assert.rejects(verifyDshOwnerAdmission(f.runtime),/missing/);
+ await patchDshOwnerAdmission(f.runtime);await verifyDshOwnerAdmission(f.runtime);
+ const path=join(f.runtime,"node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js"),once=await readFile(path,"utf8");
+ await patchDshOwnerAdmission(f.runtime);assert.equal(await readFile(path,"utf8"),once);
+ await writeFile(join(f.runtime,"node_modules/@deepseek-ai/dsh-agent/lib/index.js"),"unsupported drift");
+ await assert.rejects(patchDshOwnerAdmission(f.runtime),/boundary changed/);
+ assert.equal(await readFile(path,"utf8"),once);
 });

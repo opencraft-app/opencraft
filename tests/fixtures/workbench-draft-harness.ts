@@ -140,7 +140,7 @@ export function createHarness(
       } else if (message.method === "thread/fork") {
         const ephemeral = (message.params as { ephemeral?: boolean }).ephemeral === true;
         const respond = () => send({ thread: { ...fixtureThread(ephemeral ? "thread-fork-ephemeral" : "thread-fork"), forkedFromId: "thread-created", ephemeral },
-          model: "fixture-model", modelProvider: "openai", cwd: "/workspace", approvalPolicy: "on-request", approvalsReviewer: "user",
+          model: "fixture-model", modelProvider: "openai", reasoningEffort: "high", serviceTier: "priority", cwd: "/workspace", approvalPolicy: "on-request", approvalsReviewer: "user",
           sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, runtimeWorkspaceRoots: ["/workspace"],
         });
         if (holdFork) releaseFork = respond;

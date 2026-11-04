@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -6,6 +7,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { patchDshThreadEnvironment } from "./patch-dsh-thread-environment.mjs";
 import { patchDshProviderLifecycle } from "./patch-dsh-provider-lifecycle.mjs";
+
+import { patchDshOwnerAdmission } from "./patch-dsh-owner-admission.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -69,10 +72,11 @@ export async function prepareDshRuntime({ root = repositoryRoot, install = insta
   // Reapply/verify on every build, including an already installed runtime.
   await patchDshProviderLifecycle(runtime);
   await patchDshThreadEnvironment(runtime);
+  await patchDshOwnerAdmission(runtime);
   log(`[opencraft] DSH runtime ${version} verified at ${runtime}`);
   return executable;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   await prepareDshRuntime();
 }

@@ -20,3 +20,14 @@ test("unsupported Hosts and malformed or cross-thread projections cannot fabrica
   resource.observe("t", notice); assert.deepEqual(resource.getSnapshot("t"), notice);
   resource.observe("t", null); assert.equal(resource.getSnapshot("t"), null);
 });
+
+test("scheduled provider retries survive refresh while malformed timing is rejected", async () => {
+  const scheduled: TurnRecoveryNotice = { ...notice, state: "scheduled", reason: "provider-failure", retryAt: 1_000_000, limit: 4 };
+  const resource = new ThreadRecoveryResource({ supported: () => true, read: async () => ({ recovery: scheduled }) });
+  await resource.refresh("t");
+  assert.deepEqual(resource.getSnapshot("t"), scheduled);
+  resource.observe("t", { ...scheduled, retryAt: -1 });
+  assert.deepEqual(resource.getSnapshot("t"), scheduled);
+  resource.observe("t", null);
+  assert.equal(resource.getSnapshot("t"), null);
+});

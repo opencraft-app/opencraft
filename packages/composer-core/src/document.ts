@@ -111,21 +111,29 @@ function paragraphText(paragraph: ComposerParagraphNode): string {
   return paragraph.children.map(inlineText).join("");
 }
 
-function blockText(block: ComposerBlockNode): string {
+function blockText(block: ComposerBlockNode, preserveQuotes = false): string {
   switch (block.type) {
     case "paragraph": return paragraphText(block);
     case "code-block": return block.text;
     case "divider": return "---";
-    case "quote": return block.children.map(blockText).join("\n");
+    case "quote": {
+      const text = block.children.map(child => blockText(child, preserveQuotes)).join("\n");
+      return preserveQuotes ? text.split(/\r\n?|\n/u).map(line => `> ${line}`).join("\n") : text;
+    }
     case "list": return block.items.map((item, index) => {
       const marker = block.ordered ? `${(block.start ?? 1) + index}.` : "-";
-      return `${marker} ${item.children.map(blockText).join("\n")}`;
+      return `${marker} ${item.children.map(child => blockText(child, preserveQuotes)).join("\n")}`;
     }).join("\n");
   }
 }
 
 export function composerDocumentToPlainText(value: ComposerDocument): string {
-  return value.blocks.map(blockText).join("\n");
+  return value.blocks.map(block => blockText(block)).join("\n");
+}
+
+/** Timeline text retains quote boundaries; search and queue previews stay plain. */
+export function composerDocumentToMessageText(value: ComposerDocument): string {
+  return value.blocks.map(block => blockText(block, true)).join("\n\n");
 }
 
 function blockIsEmpty(block: ComposerBlockNode): boolean {

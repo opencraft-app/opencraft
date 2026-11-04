@@ -4,6 +4,7 @@ export type AccountCredentialRefreshReason = "expired" | "unauthorized";
 
 /** Coordinates account-pool refreshes; the injected callback owns provider-specific renewal. */
 export class AccountCredentialRefreshManager {
+  activeCount(): number { return this.flights.size; }
   private readonly flights = new Map<string, Promise<AccountPoolSecret>>();
   private readonly store: AccountPoolStore;
   private readonly now: () => number;

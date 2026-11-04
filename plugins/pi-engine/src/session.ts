@@ -1,3 +1,9 @@
+import { piModel } from './contract.js';
+import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
+
+import type { ExecutionEnvironmentRuntime, ExecutionEnvironmentSnapshot } from "../../../scripts/execution-environment.js";
+import { createHash, randomUUID } from "node:crypto";
+import { PiPrivateCallsDoc, type PiPrivateCalls } from "./private-calls.js";
 import { join } from "node:path";
 import { PiShellWorker, PiShellDoc, shellText, shellDescription } from "./shell.js";
 import { isDeepStrictEqual } from "node:util";
@@ -6,7 +12,7 @@ import { piSkillsPrompt } from "./skills.js";
 import { ModelRuntime, loadProjectContextFiles } from "@earendil-works/pi-coding-agent";
 import { BACKGROUND_CONTEXT as context, type Context } from "@earendil-works/chord/context";
 import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, createRegistry, defineDoc, defineExtension, defineTool,
-  Harness, MemoryStorage, section, watchEvents, type AgentEventStream, type Conversation, type Storage, type ContextView,
+  Harness, MemoryStorage, section, watchEvents, hook, GenerationTask, type AgentEventStream, type Conversation, type Storage, type ContextView,
   type EntryRecord, type SubmissionRecord, type TaskRecord, type AgentState, type LiveState, type UsageState } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
@@ -24,6 +30,8 @@ export interface PiSnapshot {
   usage: UsageState;
   inbox: readonly Value[];
   queue?: PiQueueState;
+  privateCalls?: PiPrivateCalls;
+  shell?: { records: import("./shell.js").ShellRecord[]; paused: boolean };
 }
 export const createPiModels = (directory: string) => ModelRuntime.create({ allowModelNetwork: false, authPath: `${directory}/auth.json`, modelsPath: `${directory}/models.json` });
 export interface PiForkContext {
@@ -55,14 +63,21 @@ export class PiDurableSession {
   private tasks = new Map<number, TaskRecord<any, any, any>>();
   private reads: Promise<unknown> = Promise.resolve();
   private shell!: PiShellWorker;
+  private readonly environmentWorkers = new Map<string, PiShellWorker>();
   private shellSchema!: Value;
   private shellEvents: Promise<unknown> = Promise.resolve();
   private shellLaunches = 0;
+  private shellNotifications = 0;
   private readonly shellWaiters = new Map<string, () => void>();
   private readonly earlyShellNotifications = new Map<string, Value[]>();
   private replaceTools!: (tools: Value[]) => void;
   private constructor(private readonly options: { threadId: string; cwd: string; file: string; agentDirectory: string; models: ModelRuntime; tools: Value[];
-    ephemeral?: boolean; inherited?: PiForkContext;
+    modelPolicyPath?: string;
+    policyCatalog?():Promise<Value[]>;
+    onPolicyDenied?(error:ModelPolicyError):void;
+    ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; projectId?: string | null;
+    admissionOpen?(): boolean;
+    admitBackground?<T>(operation: () => Promise<T>): Promise<T>;
     prepareRecovery?(snapshot: PiSnapshot): Promise<Value[] | undefined>;
     onSnapshot(snapshot: PiSnapshot): Promise<void> | void; onTool(request: Value, signal: AbortSignal): Promise<unknown>; onExit(error: Error): void }) {}
   static async open(options: PiDurableSession["options"]) {
@@ -74,11 +89,25 @@ export class PiDurableSession {
     if (!this.options.ephemeral) this.release = await lockfile.lock(this.options.file, { realpath: false, stale: 10_000,
       retries: { retries: 12, minTimeout: 1000, maxTimeout: 1000 } });
     this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
-      onNotification: event => { this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }); },
+      onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
       onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
     });
     this.shellSchema = (await this.shell.start()).parameters;
     const registry = createRegistry();
+    const admittedGenerations=new Set<string>();
+    registry.install(defineExtension({name:"opencraft.model-policy",hooks:[hook(GenerationTask,{
+      beforeRequest:async (_request,api) => {
+        if(!this.options.modelPolicyPath)return _request;
+        const agent=await api.snapshot(AgentDoc,api.conversationId,context);
+        const ref=agent?.model;
+        const key=JSON.stringify([api.taskId,ref,agent?.thinkingLevel]);
+        if(admittedGenerations.has(key))return _request;
+        const catalog=await this.options.policyCatalog?.() ?? (this.options.models.getAvailableSnapshot?.() ?? []).map((m:any)=>({model:piModel(m.provider,m.id)}));
+        assertModelPolicy(this.options.modelPolicyPath,"pi",ref ? piModel(ref.provider,ref.modelId) : null,agent?.thinkingLevel === "off" ? "none" : agent?.thinkingLevel,catalog);
+        admittedGenerations.add(key);
+        return _request;
+      },
+    })]}));
     // Keep native file tools. Shell commands use the conversation-owned yielding PTY.
     registry.install(defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
     registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
@@ -113,22 +142,35 @@ export class PiDurableSession {
       // The native intent is unsafe to replay: reconnect never repeats an external effect.
       execute: async (args: unknown, api: Value, ctx: Context) => {
         if (this.closed || ctx.abortSignal?.aborted) throw new Error("Platform tool cancelled");
-        let cancel: (() => void) | undefined;
-        const cancelled = new Promise<never>((_resolve, reject) => {
-          cancel = () => reject(new Error("Platform tool cancelled"));
-          ctx.abortSignal?.addEventListener("abort", cancel, { once: true });
-        });
+        const callKey = createHash("sha256").update(JSON.stringify([api.taskId, api.callId])).digest("hex");
         const origin = await this.root.commit(async tx => {
           const live = await tx.doc(LiveDoc, this.root.id);
           const owns = [...live.tools ?? [], ...live.nestedTools ?? []].some(slot => slot.taskId === api.taskId);
           if (!owns || live.run?.inputs[0] === undefined) throw new Error("Tool execution has expired");
           const input = await this.storage.submission(live.run.inputs[0], ctx);
           if (!input?.requestId) throw new Error("Tool execution has no native submission");
+          const calls = await tx.doc(PiPrivateCallsDoc, this.root.id);
+          if (calls.calls[callKey]) throw new Error("Private tool outcome requires reconciliation");
+          calls.calls[callKey] = { state: "pending" };
           return input.requestId;
         }, ctx);
-        let result: Value;
-        try { result = await Promise.race([this.options.onTool({ id: api.callId, name: tool.piName, arguments: args, turnId: origin }, ctx.abortSignal ?? new AbortController().signal), cancelled]) as Value; }
-        finally { if (cancel) ctx.abortSignal?.removeEventListener("abort", cancel); }
+        let cancel: (() => void) | undefined;
+        const cancelled = new Promise<never>((_resolve, reject) => {
+          cancel = () => reject(new Error("Platform tool cancelled"));
+          ctx.abortSignal?.addEventListener("abort", cancel, { once: true });
+        });
+        let result: Value, entered = false;
+        try {
+          if (ctx.abortSignal?.aborted) throw new Error("Platform tool cancelled");
+          entered = true;
+          result = await Promise.race([this.options.onTool({ id: api.callId, name: tool.piName, arguments: args, turnId: origin }, ctx.abortSignal ?? new AbortController().signal), cancelled]) as Value;
+          await this.root.commit(async tx => { delete (await tx.doc(PiPrivateCallsDoc, this.root.id)).calls[callKey]; }, context);
+        } catch (error) {
+          // Cancellation/timeout is not evidence that the external operation
+          // ended. Never erase custody merely because the native task settled.
+          await this.root.commit(async tx => { const calls = await tx.doc(PiPrivateCallsDoc, this.root.id); if (entered) calls.calls[callKey] = { state: "unknown" }; else delete calls.calls[callKey]; }, context);
+          throw error;
+        } finally { if (cancel) ctx.abortSignal?.removeEventListener("abort", cancel); }
         const output = (result?.contentItems ?? []).map((item: Value) => {
           if (item.type === "inputText" && typeof item.text === "string") return { type: "text" as const, text: item.text };
           if (item.type === "inputImage") return decodeImage(item.imageUrl);
@@ -141,8 +183,10 @@ export class PiDurableSession {
     this.storage = this.options.ephemeral ? new MemoryStorage() : await openNodeSqliteStorage(this.options.file);
     this.harness = await Harness.open(this.storage, { models: this.options.models, registry, env: target => {
       const cwd = target.cwd ?? this.options.cwd;
-      let env = this.environments.get(cwd);
-      if (!env) { env = new NodeExecutionEnv({ cwd, shellEnv: { OPENCRAFT_THREAD_ID: this.options.threadId } }); this.environments.set(cwd, env); }
+      const snapshot = this.environmentSnapshot();
+      const key = JSON.stringify([cwd, snapshot?.key]);
+      let env = this.environments.get(key);
+      if (!env) { env = new NodeExecutionEnv({ cwd, shellEnv: { ...snapshot?.apply(process.env), OPENCRAFT_THREAD_ID: this.options.threadId } }); this.environments.set(key, env); }
       return env;
     } }, context);
     void this.harness.closed.then(end => {
@@ -173,8 +217,37 @@ export class PiDurableSession {
       if (!this.closed && end.reason === "listener_error") this.options.onExit(end.error);
     });
   }
+  private environmentSnapshot(inputId?: string): ExecutionEnvironmentSnapshot | undefined {
+    const runtime = this.options.executionEnvironment;
+    return runtime?.snapshot(runtime.execution('opencraft-server', this.options.threadId, inputId, this.options.projectId));
+  }
+  private async environmentWorker(snapshot?: ExecutionEnvironmentSnapshot): Promise<PiShellWorker> {
+    if (!snapshot) return this.shell;
+    let worker = this.environmentWorkers.get(snapshot.key);
+    if (!worker) {
+      if (this.shellLaunches === 0) {
+        const active = new Set(await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records.filter(record => record.state === "running").map(record => record.generation), context));
+        for (const [key, previous] of this.environmentWorkers) if (!active.has(previous.generation)) {
+          await previous.stop(); this.environmentWorkers.delete(key);
+        }
+      }
+      if (this.environmentWorkers.size >= 64) throw new Error("Shell environment limit reached; reopen the session");
+      worker = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId, randomUUID()), threadId: this.options.threadId, environment: snapshot,
+        onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
+        onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)); },
+      });
+      this.environmentWorkers.set(snapshot.key, worker);
+    }
+    await worker.start(); return worker;
+  }
   private async executeShell(args: Value, api: Value, ctx: Context, waitMs: number | undefined = undefined) {
     if (this.closed || ctx.abortSignal?.aborted) throw new Error("Pi shell call cancelled");
+    const inputId = this.options.executionEnvironment ? await this.root.commit(async tx => {
+      const live = await tx.doc(LiveDoc, this.root.id);
+      return live.run?.inputs[0] === undefined ? null : (await this.storage.submission(live.run.inputs[0], ctx))?.requestId ?? null;
+    }, ctx) : null;
+    const environment = this.environmentSnapshot(inputId ?? undefined);
+    let shell = await this.environmentWorker(environment);
     const isLaunch = typeof args.command === "string" || args.spawn != null || args.mode === "monitor" && args.sessionId == null;
     if (isLaunch && this.shellLaunches >= 8) throw new Error("Too many concurrent shell launches");
     if (isLaunch) this.shellLaunches++;
@@ -192,8 +265,9 @@ export class PiDurableSession {
         // Document proxies are valid only inside their native transaction.
         return found ? JSON.parse(JSON.stringify(found)) as typeof found : undefined;
       }, context);
-      if (!record) return { output: [{ type: "text" as const, text: "Shell session does not belong to this conversation" }], isError: true };
-      if (record.generation !== this.shell.generation || record.state !== "running")
+      if (!record || environment && record.environmentOwner !== environment.owner) return { output: [{ type: "text" as const, text: "Shell session does not belong to this conversation" }], isError: true };
+      shell = [this.shell, ...this.environmentWorkers.values()].find(worker => worker.generation === record.generation) ?? shell;
+      if (record.generation !== shell.generation || record.state !== "running")
         return { output: [{ type: "text" as const, text: `Session ${record.id}: ${record.state}\n${record.output}` }], isError: record.state === "interrupted" || record.isError };
     }
     const cwd = (await api.agent(ctx)).cwd ?? this.options.cwd;
@@ -202,7 +276,7 @@ export class PiDurableSession {
       ...(isLaunch && (args.mode == null || args.mode === "dispatch") ? { background: true, handsFree: { ...args.handsFree, autoExitOnQuiet: false } } : {}),
       ...(isLaunch && args.mode === "monitor" ? { background: true } : {}),
     };
-    const result = await this.shell.call(params, ctx.abortSignal);
+    const result = await shell.call(params, ctx.abortSignal);
     const id = result.details?.sessionId;
     if (!isLaunch && args.kill === true && typeof args.sessionId === "string" && !result.isError && result.details?.status === "killed") {
       // The extension suppresses completion delivery for an agent-handled kill.
@@ -226,7 +300,7 @@ export class PiDurableSession {
           doc.records.splice(index, 1);
         }
         doc.records.push({ id, state: "running", command: args.command ?? "spawn", output: shellText(result).slice(-16384),
-          detached: waitMs == null || waitMs === 0, createdAtMs: Date.now(), generation: this.shell.generation, ...(input?.requestId ? { turnId: input.requestId } : {}) });
+          detached: waitMs == null || waitMs === 0, createdAtMs: Date.now(), generation: shell.generation, ...(environment ? { environmentOwner: environment.owner } : {}), ...(input?.requestId ? { turnId: input.requestId } : {}) });
       }, context);
       const early = this.earlyShellNotifications.get(id);
       if (early) { this.earlyShellNotifications.delete(id); for (const event of early) await this.shellNotification(event); }
@@ -269,10 +343,9 @@ export class PiDurableSession {
         if (doc.paused || !Number.isSafeInteger(message.details.eventId)) return true;
         const requestId = `pi-shell:${record.generation}:${id}:event:${message.details.eventId}`;
         if (!await tx.submissionByRequest(this.root.id, requestId)) {
-          const { admitSubmission } = await nativeAdmissions();
-          await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: message.content.slice(-16384),
-            entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
-            { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+          record.monitorEvents ??= [];
+          if (!record.monitorEvents.some(event => event.id === message.details.eventId))
+            record.monitorEvents.push({ id: message.details.eventId, content: message.content.slice(-16384), createdAtMs: Date.now() });
         }
         return true;
       }
@@ -308,24 +381,39 @@ export class PiDurableSession {
     if (notify) await this.deliverShellNotifications();
   }
   private async deliverShellNotifications() {
-    if (this.closed) return;
-    const records = await this.root.commit(async tx => (await tx.doc(PiShellDoc, this.root.id)).records
-      .filter(record => record.state !== "running" && !record.notified && record.detached).map(record => record.id), context);
-    for (const id of records) {
-      if (this.closed) break;
+    if (this.closed || this.options.admissionOpen?.() === false) return;
+    // Import before entering the admission boundary. The entire commit stays
+    // counted, and its final native mutation checks the fence again.
+    const { admitSubmission } = await nativeAdmissions();
+    let entered = false, admitted = false;
+    const deliver = async () => {
+      entered = true;
       await this.root.commit(async tx => {
         const doc = await tx.doc(PiShellDoc, this.root.id);
-        const record = doc.records.find(record => record.id === id);
-        if (doc.paused || !record || record.notified) return;
-        const requestId = `pi-shell:${record.generation}:${record.id}`;
-        const { admitSubmission } = await nativeAdmissions();
-        await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
-          entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
-          { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
-        record.notified = true;
+        if (doc.paused) return;
+        for (const record of doc.records) {
+          while (record.monitorEvents?.length) {
+            const event = record.monitorEvents[0]!;
+            if (this.closed || this.options.admissionOpen?.() === false) return;
+            const requestId = `pi-shell:${record.generation}:${record.id}:event:${event.id}`;
+            await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: event.content,
+              entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: event.createdAtMs } } }, Date.now(),
+              { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+            record.monitorEvents.shift(); admitted = true;
+          }
+          if (record.state === "running" || record.notified || !record.detached) continue;
+          if (this.closed || this.options.admissionOpen?.() === false) return;
+          const requestId = `pi-shell:${record.generation}:${record.id}`;
+          await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
+            entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
+            { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
+          record.notified = true; admitted = true;
+        }
       }, context);
-    }
-    if (records.length) this.harness.resume();
+    };
+    try { await (this.options.admitBackground ? this.options.admitBackground(deliver) : deliver()); }
+    catch (error) { if (error instanceof ModelPolicyError) { this.options.onPolicyDenied?.(error); return; } if (entered || this.options.admissionOpen?.() !== false) throw error; }
+    if (admitted && this.options.admissionOpen?.() !== false) this.harness.resume();
   }
   private async pages<T>(read: (cursor: any) => Promise<{ items: readonly T[]; next?: any }>): Promise<T[]> {
     const values: T[] = []; let cursor: any;
@@ -367,7 +455,9 @@ export class PiDurableSession {
         const task = await tx.task(id as any); if (!task) continue;
         tasks.set(id, task); if (task.owner !== undefined && !tasks.has(task.owner)) ids.add(task.owner);
       }
-      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue };
+      const shell = JSON.parse(JSON.stringify(await tx.doc(PiShellDoc, this.root.id))) as PiSnapshot["shell"];
+      const privateCalls = JSON.parse(JSON.stringify(await tx.doc(PiPrivateCallsDoc, this.root.id))) as PiPrivateCalls;
+      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell, privateCalls };
     }, context)).then(snapshot => {
       this.entries = [...snapshot.entries]; this.tasks = new Map(snapshot.tasks);
       for (const record of snapshot.submissions) this.submissions.set(record.id, record);
@@ -480,10 +570,10 @@ export class PiDurableSession {
       queue.items.push(item); return item;
     }, context);
   }
-  async changeQueue(action: "update" | "delete" | "reorder" | "pause", id?: string, replacement?: PiQueuedInput, order?: string[]) {
+  async changeQueue(action: "update" | "delete" | "reorder" | "pause", id?: string, replacement?: PiQueuedInput, order?: string[], reason: "user-stopped" | "model-restricted" = "user-stopped") {
     return this.root.commit(async tx => {
       const queue = await tx.doc(PiQueueDoc, this.root.id);
-      if (action === "pause") { queue.paused = true; queue.pauseReason = "user-stopped"; return null; }
+      if (action === "pause") { queue.paused = true; queue.pauseReason = reason; return null; }
       if (action === "reorder") {
         if (!order || order.length !== queue.items.length || new Set(order).size !== order.length
           || queue.items.some(item => item.state !== "queued" || !order.includes(item.id))) throw new Error("Pi queue order changed; refresh before reordering");
@@ -532,21 +622,25 @@ export class PiDurableSession {
       else queue.items.splice(index, 1);
     }, context);
   }
-  resume() { this.harness.resume(); }
+  get backgroundWork() { return this.shellLaunches + this.shellNotifications + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
+  get idleWorkerPid() { return this.shell?.pid; }
+  get workerProcessIds() { return [this.shell, ...this.environmentWorkers.values()].flatMap(worker => worker?.pid ? [worker.pid] : []); }
+  resumeBackground() { return this.deliverShellNotifications(); }
+  resume() { if (this.options.admissionOpen?.() !== false) this.harness.resume(); }
   /** Host-only provenance; no model message and no human sender is fabricated. */
   async recordRecovery(turnId: string, inputId: string) {
     await this.root.commit(tx => tx.appendEntry(this.root.id, { kind: "opencraft.systemRecovery",
       data: { turnId, inputId, sourceKind: "system", createdAtMs: Date.now() } }), context);
   }
   async abort() {
-    await this.root.commit(async tx => { const doc = await tx.doc(PiShellDoc, this.root.id); doc.paused = true; }, context);
+    await this.root.commit(async tx => { const doc = await tx.doc(PiShellDoc, this.root.id); doc.paused = true; for (const record of doc.records) record.monitorEvents = []; }, context);
     await this.root.abort(context);
-    await this.shell?.stop();
+    await Promise.all([this.shell?.stop(), ...[...this.environmentWorkers.values()].map(worker => worker.stop())]);
     await this.interruptShells("Stopped by the user; the command was not replayed.", false);
   }
   async close() {
     if (this.closed) return; this.closed = true;
-    try { await this.shell?.stop(); await this.shellEvents.catch(() => {}); try { await this.stream?.stop(); } finally { await this.harness?.close(context); } }
+    try { await Promise.all([this.shell?.stop(), ...[...this.environmentWorkers.values()].map(worker => worker.stop())]); await this.shellEvents.catch(() => {}); try { await this.stream?.stop(); } finally { await this.harness?.close(context); } }
     finally {
       try { await Promise.all([...this.environments.values()].map(env => env.cleanup(context))); }
       finally { await this.release?.(); }

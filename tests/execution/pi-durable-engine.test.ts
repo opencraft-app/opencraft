@@ -1249,3 +1249,39 @@ test('Pi restores execution-scoped Host tools from the durable original input be
  assert.equal((await done).status,'completed');assert.equal(refreshes.length,1);assert.equal(calls,1);
  const read=await reopened.request('thread/read',{threadId:created.thread.id,includeTurns:true},noTools);assert.equal(read.thread.turns.length,1);
 });
+
+test("Pi Engine Host publishes a durable creation to another directory client", async t => {
+  const f = await fixture(t, []);
+  const host = await startEngineHost({ providers: [f.engine], defaultEngine: "pi" });
+  const a = new WebSocket(host.websocketUrl), b = new WebSocket(host.websocketUrl);
+  const received: any[] = [];
+  b.on("message", raw => { const frame = JSON.parse(String(raw)); if (frame.method) received.push(frame); });
+  await Promise.all([a, b].map(socket => new Promise<void>((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); })));
+  t.after(async () => { a.close(); b.close(); await host.close(); });
+  let sequence = 0;
+  const rpc = (socket: WebSocket, method: string, params = {}): Promise<any> => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    const timer = setTimeout(() => { socket.off("message", listener); reject(new Error(`Timed out: ${method}`)); }, 5000);
+    const listener = (raw: WebSocket.RawData) => { const frame = JSON.parse(String(raw)); if (frame.id !== id || frame.method) return;
+      clearTimeout(timer); socket.off("message", listener); frame.error ? reject(new Error(frame.error.message)) : resolve(frame.result); };
+    socket.on("message", listener); socket.send(JSON.stringify({ id, method, params }));
+  });
+  await rpc(a, "initialize"); await rpc(b, "initialize");
+  const { thread } = await rpc(a, "thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory });
+  for (let i = 0; i < 100 && !received.some(n => n.method === "opencraft/thread-catalog/changed"); i++) await new Promise(resolve => setTimeout(resolve, 5));
+  const event = received.find(n => n.method === "opencraft/thread-catalog/changed" && n.params.change?.thread?.id === thread.id);
+  assert.ok(event, "Pi creation is a directory fact, independent of native Thread notifications");
+  assert.deepEqual(event.params.change.thread.turns, []);
+  assert.equal(received.some(n => n.method === "item/started"), false);
+});
+
+test("older mixed-Host pages can read an empty Pi approval baseline without acquiring approval authority", async t => {
+  const f = await fixture(t, []);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  const snapshot = await f.engine.request("opencraft/interactions/read", { threadId: thread.id }, noTools);
+  assert.equal(snapshot.threadId, thread.id);
+  assert.deepEqual(snapshot.requests, []);
+  assert.equal(snapshot.canRespond, false);
+  assert.deepEqual(await f.engine.request("opencraft/interactions/read", { threadId: thread.id }, noTools), snapshot);
+  await assert.rejects(f.engine.request("opencraft/interactions/respond", { threadId: thread.id, interactionId: "missing" }, noTools), /does not support/);
+});

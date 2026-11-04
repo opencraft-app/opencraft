@@ -53,8 +53,9 @@ test("actual Host acknowledges generation fences, preserves queued admissions, a
     async function rpc(method: string, params: object = {}) { const id = ++seq; await engine!.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client" })); await wait(() => frames.some(m => m.id === id && !m.method), method); const reply = frames.find(m => m.id === id && !m.method); if (reply.error) throw new Error(reply.error.message); return reply.result; }
     const init = await rpc("initialize"); assert.deepEqual(init.capabilities.extensions["opencraft.codex-generations"], { version: 1 });
     assert.equal(frames.some(m => "__opencraftGeneration" in m), false, "private routing metadata never escapes Host");
-    const { thread } = await rpc("thread/start", {}); await runtime.activate("new", 1);
+    // Establish the Host baseline before changing the epoch read by its initial goal scan.
     await wait(() => (runtime.registry.metadata("host-usage") as any)?.discoveryComplete === true, "Host publishes real discovery proof");
+    const { thread } = await rpc("thread/start", {}); await runtime.activate("new", 1);
     // Hold a submission accepted before the fence in Host/native queues.
     await rpc("fixture/holdNextTurn");
     await rpc("thread/queue/add", { threadId: thread.id, clientUserMessageId: "queued", input: [{ type: "text", text: "run once" }] });

@@ -96,7 +96,7 @@ export class WeComPlugin {
         if (!entry || entry.socket !== socket) return;
         this.pending.delete(reqId); clearTimeout(entry.timer);
         if (frame.errcode === 0) { this.observations.lastAcknowledgementAt = Date.now(); entry.resolve(); }
-        else entry.reject(new Error('WeCom request rejected'));
+        else entry.reject(Object.assign(new Error('WeCom request rejected'),{deliveryState:'rejected'}));
         return;
       }
       if(frame.cmd === 'aibot_event_callback' && (object(frame.body)?.eventtype === 'disconnected_event' || object(object(frame.body)?.event)?.eventtype === 'disconnected_event')) { this.close();this.stateChanged('disconnected');return; }
@@ -150,11 +150,19 @@ export class WeComPlugin {
     if(!answer.trim()||Buffer.byteLength(answer)>20_000)throw new Error('WeCom reply too large');
     await this.send(socket,{cmd:'aibot_respond_msg',headers:{req_id:address.reqId},body:{msgtype:'stream',stream:{id:address.streamId,finish:true,content:answer}}});
   }
+  /** Official long-connection proactive single-chat command; shares the existing owner. */
+  async sendDirect(userid: string, content: string, requestId: string) {
+    const socket = this.socket;
+    if (!socket || this.phase !== 'ready' || !userid || userid.length > 512 || /[\x00-\x1f\x7f]/u.test(userid)
+      || !content.trim() || Buffer.byteLength(content) > 20_000 || !/^[a-zA-Z0-9_.:-]{1,128}$/u.test(requestId)) throw Object.assign(new Error('WeCom push unavailable'),{deliveryState:'not_sent'});
+    await this.send(socket, {cmd:'aibot_send_msg',headers:{req_id:requestId},body:{chatid:userid,chat_type:1,msgtype:'markdown',markdown:{content}}});
+    return {delivered:true,receiptId:requestId};
+  }
   private track(job: Promise<void>) { this.jobs.add(job); void job.finally(() => this.jobs.delete(job)).catch(() => {}); }
   private send(socket: WebSocket, frame: Frame, acknowledged?: () => void): Promise<void> {
-    if (this.stopped || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error('WeCom disconnected'));
+    if (this.stopped || this.socket !== socket || socket.readyState !== WebSocket.OPEN) return Promise.reject(Object.assign(new Error('WeCom disconnected'),{deliveryState:'not_sent'}));
     const reqId = frame.headers?.req_id ?? randomUUID();
-    if (this.pending.has(reqId) || this.pending.size >= 128) return Promise.reject(new Error('WeCom request busy'));
+    if (this.pending.has(reqId) || this.pending.size >= 128) return Promise.reject(Object.assign(new Error('WeCom request busy'),{deliveryState:'not_sent'}));
     return new Promise((resolve,reject) => {
       const timer = setTimeout(() => { this.pending.delete(reqId); reject(new Error('WeCom acknowledgement unknown')); },ackTimeout); timer.unref();
       // Commit subscription readiness in the ACK event itself. A callback may

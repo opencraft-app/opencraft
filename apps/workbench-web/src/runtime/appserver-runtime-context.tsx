@@ -982,6 +982,7 @@ export function useProjectCatalog(): ProjectCatalogSnapshot {
 
 export interface ComposerCatalogSnapshot {
   readonly personalDefaultsPending: boolean;
+  readonly modelsReady: boolean;
   readonly models: readonly Model[];
   readonly displayModels: readonly Model[];
   readonly permissionProfiles: readonly PermissionProfileSummary[];
@@ -1082,8 +1083,8 @@ export function useComposerCatalog(
   const catalogActions = useMemo(() => ({
     onModelMenuOpen: () => {
       if (!enabled) return;
-      const failed = queryClient.getQueryState(options.queryKey)?.error != null;
-      void queryClient.fetchQuery({ ...options, ...(failed ? { staleTime: 0 } : {}) }).catch(() => undefined);
+      // Recheck server restrictions whenever a user opens the selector.
+      void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined);
     },
     retryModels: () => { if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
   }), [enabled, options, queryClient, snapshot.hostId]);
@@ -1126,6 +1127,7 @@ export function useComposerCatalog(
 
   return {
     personalDefaultsPending: personalDefaults.isPending,
+    modelsReady: currentModels !== undefined,
     models: currentModels ?? [],
     displayModels: currentModels ?? cachedComposerModelMetadata(queryClient, snapshot.hostId, runtime.resources.composerCatalog),
     permissionProfiles: permissionProfileData,

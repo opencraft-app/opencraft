@@ -1,4 +1,5 @@
 import { useIntl } from "@opencraft/i18n/react";
+import { SettingsGroup, SettingsRow } from "@opencraft/extension-react";
 import { ModalSurface } from "./modal/modal-surface";
 import { shortcutLabel, type WorkbenchShortcutCommand } from "../workbench-shortcuts";
 import "./workbench-shortcut-help.scss";
@@ -15,7 +16,7 @@ export function WorkbenchShortcutList() {
     ["help", intl.formatMessage({ id: "shortcuts.title", defaultMessage: "Keyboard shortcuts" })],
   ];
   return <div className="workbench-shortcut-list">
-    <dl>{rows.map(([command, label]) => <div key={command}><dt>{label}</dt><dd><kbd>{shortcutLabel(command)}</kbd></dd></div>)}</dl>
+    <SettingsGroup>{rows.map(([command, label]) => <SettingsRow key={command} label={label}><kbd>{shortcutLabel(command)}</kbd></SettingsRow>)}</SettingsGroup>
     <p>{intl.formatMessage({ id: "shortcuts.aliases", defaultMessage: "Also supported: {sidebar} for the sidebar and {panel} for the tool panel." }, {
       sidebar: shortcutLabel("sidebar", navigator.platform, 1), panel: shortcutLabel("panel", navigator.platform, 1),
     })}</p>

@@ -11,8 +11,9 @@ const loadPanel = () => import("./composer-model-panel");
 const ComposerModelPanel = lazy(loadPanel);
 
 /** Presentation only. Catalog, selection and remembered defaults retain their owners. */
-export function ComposerModelPicker({ hasSelectedModel, label, modelLabel, fullLabel, effortLabel, disabled, open, onOpenChange, portalContainer, focus,
+export function ComposerModelPicker({ policyRestricted, hasSelectedModel, label, modelLabel, fullLabel, effortLabel, disabled, open, onOpenChange, portalContainer, focus,
   efforts, effort, defaultEffort, onEffortChange, serviceTiers, serviceTier, displayFast, onServiceTierChange, children }: {
+  readonly policyRestricted?: boolean;
   readonly label: string;
   readonly hasSelectedModel: boolean;
   readonly modelLabel: string;
@@ -116,6 +117,7 @@ export function ComposerModelPicker({ hasSelectedModel, label, modelLabel, fullL
               renderHeader={title} preservesEditorFocus={focus.preservesEditorFocus} onEffortChange={onEffortChange} />
           </Suspense>}
           </AnimatedContent>
+          {policyRestricted ? <div className="opencraft-composer-model-status__hint">{intl.formatMessage({id:"modelPolicy.hint",defaultMessage:"Some options are disabled by your administrator."})}</div> : null}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

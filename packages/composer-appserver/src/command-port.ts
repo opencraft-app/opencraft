@@ -125,8 +125,25 @@ export function createAppServerConversationCommandPort(
       intent = { ...intent, selections };
     }
     let resolved: SubmitCompilerOptions | undefined;
-    try { resolved = await config.resolveCompilerOptions?.(intent); }
-    catch (cause) { throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", `无法确认模型能力，尚未发送请求：${cause instanceof Error ? cause.message : String(cause)}`); }
+    let capabilityTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      resolved = await Promise.race([
+        config.resolveCompilerOptions?.(intent),
+        new Promise<SubmitCompilerOptions>(resolve => { capabilityTimer = setTimeout(() => resolve({ reasoning: undefined }), 2000); }),
+      ]);
+    }
+    catch (cause) {
+      if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") throw cause;
+      if (cause instanceof SubmitCompileError) throw cause;
+      // Catalog availability is advisory; the Host validates model and effort.
+      resolved = { reasoning: undefined };
+    } finally {
+      clearTimeout(capabilityTimer);
+    }
+    if (!resolved?.serviceTiers?.includes(intent.selections.serviceTier ?? "")) {
+      const { serviceTier: _serviceTier, ...selections } = intent.selections;
+      intent = { ...intent, selections };
+    }
     return compileSubmitIntent(intent, { ...config.compiler, ...resolved });
   };
   const now = config.now ?? Date.now;
@@ -183,6 +200,7 @@ export function createAppServerConversationCommandPort(
     intent: SubmitIntent,
     options?: { readonly canDispatch: () => boolean },
     onAdmission?: () => void,
+    onCreationAccepted?: () => void,
   ): Promise<SubmissionReceipt> => {
     const method = intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
       : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start";
@@ -204,6 +222,7 @@ export function createAppServerConversationCommandPort(
       config.onDiagnostic?.(diagnostic, intent);
     let threadId: string;
     let turnId: string | null;
+    let queuedSubmissionId: string | undefined;
     let disposition: SubmissionReceipt["disposition"];
 
     switch (intent.target.type) {
@@ -224,6 +243,7 @@ export function createAppServerConversationCommandPort(
             : { projectId: intent.target.execution.workspace.projectId }),
         }, requestOptions);
         onAdmission?.();
+        onCreationAccepted?.();
         threadId = started.thread.id;
         const turn = await config.client.request("turn/start", {
           threadId,
@@ -244,6 +264,7 @@ export function createAppServerConversationCommandPort(
           ...forkOptions(compiled.threadOptions),
         }, requestOptions);
         onAdmission?.();
+        onCreationAccepted?.();
         threadId = forked.thread.id;
         const turn = await config.client.request("turn/start", {
           threadId,
@@ -287,17 +308,21 @@ export function createAppServerConversationCommandPort(
       }
       case "enqueue-follow-up": {
         threadId = intent.target.key.threadId;
-        await config.client.request("thread/queue/add", {
+        const added = await config.client.request("thread/queue/add", {
           threadId,
           input: [...compiled.input],
           clientUserMessageId: intent.clientMessageId,
         }, requestOptions);
+        // Older peers can acknowledge admission without returning queue custody.
+        // Keep that success; a subsequent queue baseline supplies the exact ID.
+        queuedSubmissionId = added.queuedSubmission?.id;
         turnId = null;
         break;
       }
     }
 
     const receipt: SubmissionReceipt = {
+      ...(queuedSubmissionId === undefined ? {} : { queuedSubmissionId }),
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,
       hostId,
@@ -354,8 +379,22 @@ export function createAppServerConversationCommandPort(
     createThread,
     async submit(intent, options) {
       let admitted = false;
-      try { return await execute(intent, options, () => { admitted = true; }); }
+      let creationAccepted = false;
+      try { return await execute(intent, options, () => { admitted = true; }, () => { creationAccepted = true; }); }
       catch (cause) {
+        if ((intent.target.type === "existing-thread" || intent.target.type === "enqueue-follow-up")
+          && cause instanceof AppServerRpcError) {
+          const data = cause.data as { code?: unknown; submissionOutcome?: unknown; retryable?: unknown } | null;
+          // A structured rejection proves the original input never reached the
+          // engine. Only the existing outbox may transfer it to the Host queue.
+          if (data?.submissionOutcome === "rejected" && data.retryable === true
+            && ["SESSION_TOOLS_UNAVAILABLE", "SESSION_TOOLS_RECOVERING", "QUEUE_NOT_READY"].includes(String(data.code)))
+            throw new SubmissionNotDispatchedError(1_000);
+        }
+        if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") {
+          if (creationAccepted) throw new SubmissionOutcomeUnknownError({ cause });
+          throw new SubmissionNotDispatchedError();
+        }
         if (cause instanceof AppServerClientError && cause.code === "NOT_CONNECTED") {
           // A later RPC may be unsent after an earlier creation already committed.
           if (admitted) throw new SubmissionOutcomeUnknownError({ cause });
@@ -364,7 +403,9 @@ export function createAppServerConversationCommandPort(
         const hermesCode = cause instanceof AppServerRpcError
           ? (cause.data as { hermesCode?: unknown } | undefined)?.hermesCode : undefined;
         if ((cause instanceof AppServerClientError && ["TIMEOUT", "TRANSPORT_ERROR", "ABORTED"].includes(cause.code))
-          || ["timeout", "disconnected", "disposed"].includes(String(hermesCode))) {
+          || ["timeout", "disconnected", "disposed"].includes(String(hermesCode))
+          || (cause instanceof AppServerRpcError && typeof cause.data === "object" && cause.data !== null
+            && "submissionOutcome" in cause.data && cause.data.submissionOutcome === "unknown")) {
           throw new SubmissionOutcomeUnknownError({ cause });
         }
         throw cause;

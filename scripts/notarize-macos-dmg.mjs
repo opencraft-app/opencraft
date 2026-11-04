@@ -1,10 +1,10 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 
 import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
-import { fileURLToPath } from "node:url";
 import { stapleAndValidateMacos } from "./staple-macos.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -41,7 +41,7 @@ export async function notarizeMacosDmg(dmgPath, environment = process.env, run =
   return dmg;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   if (!process.argv[2]) throw new Error("Usage: notarize-macos-dmg <OpenCraft.dmg>");
   const dmg = await notarizeMacosDmg(process.argv[2]);
   process.stdout.write(`[opencraft] notarized and stapled ${dmg}\n`);

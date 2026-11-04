@@ -1,5 +1,21 @@
 # 受管 Headless 与独立 Codex core
 
+## Headless writer 与退出交接
+
+`storageWriterProtocol: 2` 使用 `server.lock` 的 SQLite EXCLUSIVE 内核锁保护整个数据根；Hub 状态使用同一机制。锁是永久普通文件，禁止删除或替换。获得内核锁后核验上任 PID、Linux boot ID 与进程 start ticks，区别 PID 复用；暂停的活进程不会因心跳过期失去独占。正常退出先撤销入口与浏览器连接，等待所有消费者和 writer 关闭、刷盘，最后记录释放并关闭内核锁。任何 disposer 失败仍执行剩余收尾，但不签发根锁释放；受管进程非零退出后由内核回收。SIGKILL 无法执行用户态 flush，只能保证进程死亡后独占释放，数据库由自身事务恢复。
+
+首次从旧心跳目录锁迁入，优先由旧 owner 正常关闭并释放自己的目录锁；无法正常关闭时，由部署所有者另行完成候选与旧 owner 的精确证明和受控协议交接。内核锁库不会自动转换旧目录；无身份的残留目录即使很旧也拒绝接管，年龄不能证明所有者已退出。新协议不能回退至旧锁实现；更新器在移动发行指针前拒绝不声明 protocol 2 的回退包。失败后保留当前数据，走兼容发行的前向恢复，不恢复旧数据库或删锁。普通 kernel-lock→kernel-lock 交接无需固定等待或清理锁文件。
+
+回归入口：`tests/server/headless-lifecycle.test.mjs` 驱动真实 Headless 子进程的慢 flush、SIGTERM 与 SIGKILL；`tests/storage/process-writer-lock.test.ts` 验证暂停、PID 复用、legacy 拒绝及锁 inode 保留。
+
+关闭顺序区分浏览器连接与承载它的入口：默认Web先停止新HTTP/upgrade准入，发出关闭帧并等待对端确认（250ms为上限，确认即继续），再通过carrier阶段退役SSH/HTTP ingress、outbound relay与Hub peer，避免吞掉更新提示或让Hub升级连接阻塞HTTP退出。最后等待已接纳的HTTP/upgrade handler完成，再关闭Host、flush存储和释放根锁；HTTP socket消失不能冒充其handler已结束。自定义Web adapter应实现相同carrier阶段，或自行承担它所拥有的连接排空；不让未知在途写入跨过根锁释放。
+
+## 浏览器跨网关更新的恢复
+
+现行方案保留单一网关进程与数据owner。受管更新在停止旧网关前写入短期观测意图，旧进程核对当前目标发行后发送标准WebSocket close 1012；正常手动停止保持原分类。浏览器与共享连接owner沿原协议重连、initialize并恢复资源；已知更新的前30秒，重试间隔最多2秒，超过该期限恢复普通指数退避。权限拒绝仍需原授权流程；未知送达不盲重放。重复退出信号等待同一shutdown promise，不能提前退出正在刷盘的daemon。
+
+`npm run smoke:gateway-continuity` 使用完整Headless Web、真实Chromium、真实网关子进程替换和合成引擎，比较稳定AppHost入口原型与当前恢复方案，断言选择的恢复路径在30秒内获得新的列表响应且草稿保留。它只证明隔离的读取场景；生产身份、真实在途执行、首条输入和旧页面的验收须另留实机回执。稳定socket自身不能证明AppHost租约、原生执行或完整页面可用。发布影响与人的累计等待沿现有[观测契约](observability-platform.md#网关发布与人的连接连续性)记录。
+
 本方式保留 Headless 的下游 Host/HTTP/WS 语义，Core 默认合并原生 Codex CLI 和账户维护；显式拆分模式由独立 APP Server owner 持原生执行，账号 Core 仅持账户维护。
 独立网站和版本化 Headless execution 通过同一更新事务切换；DSH 引擎、core 与 CLI 独立维护。
 首次迁移必须停止旧内嵌 writer 后才能打开其原 Codex 目录；有活动任务时继续准备，等待自然结束。

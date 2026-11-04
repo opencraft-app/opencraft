@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 import { WebSocketServer } from "ws";
+import { mkdirSync, writeFileSync, appendFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
 
 const endpoint = process.argv[2];
 const server = createServer();
@@ -22,17 +24,29 @@ sockets.on("connection", socket => {
     if (method === "initialize") { send({ id, result: { serverInfo: { name: "fake", version: "1" } } }); return; }
     if (method === "thread/start") {
       const thread = { id: `${process.env.FAKE_CODEX_THREAD_PREFIX ?? "thread"}-${++sequence}`, createdAt: 1, updatedAt: 1, cwd: params.cwd ?? "/synthetic", historyMode: "legacy", status: { type: "idle" }, turns: [] };
+      if (process.env.FAKE_EMPTY_HISTORY_UNSUPPORTED) thread.path = join(process.cwd(), "native-fixture-rollouts", `${thread.id}.jsonl`);
       threads.set(thread.id, thread); subscribed.add(thread.id);
       send({ id, result: { thread } }); return;
+    }
+    if (method === "thread/resume" && process.env.FAKE_REQUIRE_DURABLE_RESUME && !threads.get(params.threadId)?.turns.length) {
+      send({ id, error: { code: -32600, message: "history_missing: no rollout exists before first Turn" } }); return;
     }
     if (method === "fixture/readPending") { send({ id, result: { count: pendingReads } }); return; }
     if (method === "fixture/holdNextRead") { holdNextRead = params.untilRelease ? -1 : params.delay; send({ id, result: {} }); return; }
     if (method === "fixture/holdNextTurn") { holdNextTurn = true; send({ id, result: {} }); return; }
     if (method === "fixture/releaseReads") { for (const reply of heldReads.splice(0)) reply(); send({ id, result: {} }); return; }
     if (method === "fixture/releaseTurns") { for (const reply of heldTurns.splice(0)) reply(); send({ id, result: {} }); return; }
+    if (method === "thread/read" && params.includeTurns === true && process.env.FAKE_EMPTY_HISTORY_UNSUPPORTED && !threads.get(params.threadId)?.turns.length) {
+      // Stock 0.162 writes its own session_meta before reporting unsupported
+      // list_turns. Keep this fixture at the observed native boundary.
+      const thread = threads.get(params.threadId);
+      mkdirSync(dirname(thread.path), { recursive: true });
+      if (!existsSync(thread.path)) writeFileSync(thread.path, JSON.stringify({ type: "session_meta", payload: { id: thread.id } }) + "\n");
+      send({ id, error: { code: -32601, message: "list_turns is not supported yet" } }); return;
+    }
     if (method === "thread/read") { const wait = holdNextRead; holdNextRead = 0; const reply = () => { if (wait) pendingReads--; send({ id, result: { thread: threads.get(params.threadId) } }); }; if (wait === -1) { pendingReads++; heldReads.push(reply); } else if (wait) { pendingReads++; setTimeout(reply, wait); } else reply(); return; }
     if (method === "thread/items/list") { send({ id, result: { data: (threads.get(params.threadId)?.turns ?? []).flatMap(turn => turn.items.map(item => ({ item }))), nextCursor: null } }); return; }
-    if (method === "thread/list") { send({ id, result: { data: [...threads.values()], nextCursor: null } }); return; }
+    if (method === "thread/list") { send({ id, result: { data: [...threads.values()].filter(t => !process.env.FAKE_REQUIRE_DURABLE_RESUME || t.turns.length), nextCursor: null } }); return; }
     if (method === "thread/loaded/list") { send({ id, result: { data: [...threads.keys()] } }); return; }
     if (method === "thread/goal/get") { send({ id, result: { goal: threads.get(params.threadId)?.goal ?? null } }); return; }
     if (method === "thread/goal/set") {
@@ -44,6 +58,8 @@ sockets.on("connection", socket => {
     if (method === "turn/start") {
       const thread = threads.get(params.threadId);
       const turn = { id: `turn-${++sequence}`, status: "inProgress", items: [{ id: `user-${sequence}`, type: "userMessage", content: params.input, clientId: params.clientUserMessageId }] };
+      if (thread.path && existsSync(thread.path)) appendFileSync(thread.path,
+        JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: params.input } }) + "\n");
       thread.turns.push(turn); thread.status = { type: "active", activeFlags: [] };
       const reply = () => send({ id, result: { turn } });
       const wait = holdNextTurn; holdNextTurn = false;
@@ -62,12 +78,15 @@ sockets.on("connection", socket => {
       }
       if (!threads.has(params.threadId)) { send({ id, error: { code: -1, message: "Missing thread" } }); return; }
       subscribed.add(params.threadId);
+      if (process.env.FAKE_UNLOAD_ON_UNSUBSCRIBE) threads.get(params.threadId).status = { type: "idle" };
       const reply = () => send({ id, result: { thread: threads.get(params.threadId) } });
       if (params.fixtureDelay) setTimeout(reply, 100); else reply();
       return;
     }
     if (method === "thread/unsubscribe") {
-      send({ id, result: { status: subscribed.delete(params.threadId) ? "unsubscribed" : "notSubscribed" } }); return;
+      const removed = subscribed.delete(params.threadId);
+      if (process.env.FAKE_UNLOAD_ON_UNSUBSCRIBE && ![...subscriptions.values()].some(ids => ids.has(params.threadId))) threads.get(params.threadId).status = { type: "notLoaded" };
+      send({ id, result: { status: removed ? "unsubscribed" : "notSubscribed" } }); return;
     }
     if (method === "fixture/publish") {
       for (const [client, ids] of subscriptions) if (ids.has(params.threadId)) {

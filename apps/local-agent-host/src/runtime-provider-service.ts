@@ -217,7 +217,7 @@ export class RuntimeProviderService {
       const speech = object(value).api === HUNYUAN_SPEECH.api;
       return { ...provider, configured, enabled: configured && object(value).enabled !== false,
         ...(provider.settingsNs === CUSTOM_NS ? { configuration: { modelDeclarations: true, apis: speech ? [HUNYUAN_SPEECH.api] : APIS,
-          modelType: speech ? "asr" as const : "chat" as const, canToggle: true, canProbe: !speech,
+          modelType: speech ? "asr" as const : "chat" as const, canToggle: true, canProbe: !speech, canUseWithoutAuthentication: !speech && provider.provider !== "openai-codex",
           ...(!speech && provider.provider === "ollama-cloud" ? { defaultBaseURL: "https://ollama.com/v1", defaultApi: "openai-completions" as const, defaultCredentialRef: "OLLAMA_API_KEY" } : {}),
         } } : {}),
         // The pinned native DeepSeek adapter speaks Chat Completions. These are
@@ -328,10 +328,13 @@ export class RuntimeProviderService {
     if (input.models !== undefined) set("models", input.models);
 
     let stagedRef: string | null = null;
+    if (["replace", "reference", "none"].includes(input.credential?.kind)) {
+      ops.push({ op: "unset", path: [...path, "authentication"] });
+    }
     switch (input.credential?.kind) {
       case "keep": {
         const oldEndpoint = typeof current.baseURL === "string" ? endpoint(current.baseURL, false) : "";
-        if (!create && baseURL !== oldEndpoint && !input.credential.allowEndpointChange
+        if (!create && current.authentication !== "none" && baseURL !== oldEndpoint && !input.credential.allowEndpointChange
           && !(id === "ollama-cloud" && typeof current.apiKeyEnv !== "string")) throw new Error("Changing the endpoint requires confirmation before reusing its credential");
         if (create) set("apiKeyEnv", `OPENCRAFT_UNBOUND_${randomUUID().replaceAll("-", "_")}`);
         else if (id === "ollama-cloud" && typeof current.apiKeyEnv !== "string") set("apiKeyEnv", "OLLAMA_API_KEY");
@@ -350,10 +353,19 @@ export class RuntimeProviderService {
         // An explicit empty binding must not fall through to an inherited/default secret.
         set("apiKeyEnv", `OPENCRAFT_UNBOUND_${randomUUID().replaceAll("-", "_")}`);
         break;
+      case "unauthenticated":
+        if (ns !== CUSTOM_NS || speech || id === "openai-codex" || !baseURL || !APIS.includes((input.api ?? current.api) as typeof APIS[number])) {
+          throw new Error("Explicit unauthenticated mode requires an OpenAI-compatible endpoint");
+        }
+        set("authentication", "none");
+        ops.push({ op: "unset", path: [...path, "apiKeyEnv"] });
+        break;
       default: throw new Error("Choose how this provider authenticates");
     }
     // Every enabling command uses the same validation, including direct apply.
-    if (input.enabled === true && input.credential.kind !== "replace") {
+    const unauthenticated = input.credential.kind === "unauthenticated"
+      || (input.credential.kind === "keep" && current.authentication === "none");
+    if (input.enabled === true && input.credential.kind !== "replace" && !unauthenticated) {
       const ref = input.credential.kind === "reference" ? input.credential.ref : current.apiKeyEnv;
       if (input.credential.kind === "none" || typeof ref !== "string") throw new Error("Configure authentication before enabling this provider");
       const credentials = await this.client.call<{ credentials: Record<string, { configured: boolean }> }>("credentials.describe", { refs: [ref], ...(speech ? { storedOnly: true } : {}) });

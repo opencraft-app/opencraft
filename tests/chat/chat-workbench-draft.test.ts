@@ -50,6 +50,21 @@ test("Workbench exposes Fork and Side Chat only for explicitly declared lifecycl
 });
 
 
+test("opening a durable fork preserves its acknowledged effort and Fast tier without another resume", async () => {
+  const harness = createHarness();
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const child = await runtime.resources.threads.fork!({ threadId: "thread-created", excludeTurns: true });
+    const lease = await runtime.acquireThread(child.id);
+    await waitForAuthoritative(lease);
+    assert.equal(lease.getSnapshot().execution.effort, "high");
+    assert.equal(lease.getSnapshot().execution.serviceTier, "priority");
+    assert.equal(harness.requests.filter(request => request.method === "thread/resume").length, 0);
+    lease.release();
+  } finally { await runtime.dispose(); }
+});
+
 test("an acknowledged durable Fork stays in the default catalog until the Host lists it", async () => {
   const harness = createHarness(false, false, [], false, undefined, false, false, false, false, { version: 1, fork: true });
   const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });

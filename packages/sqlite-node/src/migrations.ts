@@ -32,13 +32,20 @@ export function validateHistory(database: DatabaseSync, migrations: readonly Has
   return rows.length;
 }
 
-export function transaction(database: DatabaseSync, action: () => void): void {
-  database.exec("BEGIN IMMEDIATE");
+let savepointSequence = 0;
+export function transaction<T>(database: DatabaseSync, action: () => T): T {
+  const savepoint = database.isTransaction ? `opencraft_${++savepointSequence}` : null;
+  database.exec(savepoint ? `SAVEPOINT ${savepoint}` : "BEGIN IMMEDIATE");
   try {
-    action();
-    database.exec("COMMIT");
+    const result = action();
+    if (result && typeof result === "object" && "then" in result) throw new Error("SQLite transactions must be synchronous");
+    database.exec(savepoint ? `RELEASE ${savepoint}` : "COMMIT");
+    return result;
   } catch (error) {
-    if (database.isTransaction) database.exec("ROLLBACK");
+    if (database.isTransaction) {
+      if (savepoint) database.exec(`ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`);
+      else database.exec("ROLLBACK");
+    }
     throw error;
   }
 }

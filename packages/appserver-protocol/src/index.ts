@@ -17,6 +17,7 @@ export * from "./skill-catalog";
 export * from "./host-storage";
 export * from "./attachments";
 export * from "./thread-pins";
+export * from "./thread-catalog";
 export * from "./message-sender";
 
 export * from "./tasks";
@@ -28,3 +29,5 @@ export * from "./schedule-time";
 export * from "./turn-recovery";
 
 export * from "./shared-interactions";
+
+export * from "./thread-note";

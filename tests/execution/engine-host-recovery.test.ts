@@ -281,3 +281,35 @@ test("Skill catalogs follow draft models and immutable thread owners without lea
   for (const call of legacy) assert.deepEqual(call.params, { cwds: ["/tmp"] });
   await assert.rejects(names({ threadId: 42 }), /Invalid Skill catalog target/);
 });
+
+test("history cancellation crosses engine routing before a Thread is opened", async t => {
+  const { JsonRpcAppServerClient } = await import("@opencraft/appserver-client");
+  const calls: Array<{ method: string; params: any }> = [];
+  let rejectRead!: (error: Error) => void;
+  const provider: any = {
+    id: "codex", label: "Codex", threadPrefix: "codex_", modelPrefix: "codex:",
+    extensions: { "opencraft/read-history": { version: 1, cancellation: true } },
+    ownsThread: (id: string) => id.startsWith("codex_"), ownsModel: () => false,
+    subscribe: () => () => {}, disconnect() {}, async close() {},
+    async request(method: string, params: any) {
+      calls.push({ method, params });
+      if (method === "thread/turns/list") return new Promise((_, reject) => { rejectRead = reject; });
+      if (method === "thread/history/cancel") { rejectRead(new Error("cancelled")); return { cancelled: true }; }
+      return {};
+    },
+  };
+  const host = await startEngineHost({ providers: [provider], defaultEngine: "codex" });
+  const client = new JsonRpcAppServerClient({ hostId: "router-cancellation", transport: new WebSocketTransport({ url: host.websocketUrl, createSocket: url => new WebSocket(url) as any }) });
+  t.after(async () => { await client.close(); await host.close(); });
+  await client.connect({ clientInfo: { name: "test", version: "1" } });
+  const controller = new AbortController();
+  const reading = client.request("thread/turns/list", { threadId: "codex_thread", cursor: null, limit: 1, itemsView: "notLoaded", sortDirection: "desc" }, { signal: controller.signal });
+  const rejected = assert.rejects(reading, error => (error as any).code === "ABORTED");
+  await until(() => !!rejectRead); controller.abort(); await rejected;
+  await until(() => calls.some(c => c.method === "thread/history/cancel"));
+  const read = calls.find(c => c.method === "thread/turns/list")!;
+  const cancel = calls.find(c => c.method === "thread/history/cancel")!;
+  assert.equal(typeof read.params.historyReadId, "string");
+  assert.deepEqual(cancel.params, { threadId: "codex_thread", historyReadId: read.params.historyReadId });
+  assert.equal(calls.some(c => ["thread/resume", "turn/start", "turn/interrupt"].includes(c.method)), false);
+});

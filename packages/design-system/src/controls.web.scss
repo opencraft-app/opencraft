@@ -86,7 +86,10 @@
 // Application rail glyphs are not menu-leading icons. Preserve a shared box
 // across outline/selected variants and inherit state color from the button.
 @mixin application-navigation-glyph {
-  > svg {
+  // Native buttons and shared Button labels project the same glyph role.
+  > svg,
+  > .ui-button__label > svg,
+  [data-navigation-glyph-variant] {
     flex: 0 0 var(--size-application-navigation-icon);
     width: var(--size-application-navigation-icon);
     height: var(--size-application-navigation-icon);
@@ -105,6 +108,14 @@
     &:hover:not(:disabled) { color: var(--color-text); }
   }
   &[aria-current="page"] { color: var(--color-text); }
+}
+
+// Icon-only application entrances share the rail's complete square hit area.
+@mixin application-navigation-icon-control {
+  @include application-navigation-control;
+  height: var(--size-application-navigation-hit-min);
+  min-height: var(--size-application-navigation-hit-min);
+  padding: 0;
 }
 
 // Footer entrances are sidebar items, not raised buttons. Keep the resting

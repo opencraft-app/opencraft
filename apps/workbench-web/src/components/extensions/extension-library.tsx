@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useIntl } from "@opencraft/i18n/react";
 import { projectExtensionCatalog, type ExtensionManager, type ExtensionSupervisor } from "@opencraft/extension-runtime";
 import { SettingsControlPair, SettingsGroup, SettingsListItem, SettingsNotice, SettingsSelect, SettingsSwitch, SettingsTextInput } from "@opencraft/extension-react";
 import { useInternalDeveloperMode } from "../../internal-developer-mode";
@@ -10,6 +11,8 @@ import "./extension-library.scss";
 const statusLabels: Record<string, string> = { active: "运行中", disabled: "已停用", loading: "正在加载", activating: "正在启动", deactivating: "正在停止", incompatible: "需要兼容版本", failed: "运行失败" };
 
 export function ExtensionLibrary({ supervisor, manager }: { supervisor: Pick<ExtensionSupervisor, "subscribe" | "getSnapshot" | "contributions">; manager: ExtensionManager }) {
+  const intl = useIntl();
+  const sameLanguage = (text: string) => !intl.locale.toLowerCase().startsWith("zh") || /[\u4e00-\u9fff]/u.test(text);
   const runtime = useSyncExternalStore(supervisor.subscribe, supervisor.getSnapshot, supervisor.getSnapshot);
   const installations = useSyncExternalStore(manager.subscribe, manager.getSnapshot, manager.getSnapshot);
   const contributions = useSyncExternalStore(supervisor.contributions.subscribe, supervisor.contributions.getSnapshot, supervisor.contributions.getSnapshot);
@@ -64,7 +67,7 @@ export function ExtensionLibrary({ supervisor, manager }: { supervisor: Pick<Ext
         </SettingsSelect>}
       />
       <SettingsGroup>{filtered.map(row => <SettingsListItem key={row.id}
-        label={row.name} description={row.description || row.capabilities.join("、") || row.id}
+        label={row.name} description={(row.description && sameLanguage(row.description) ? row.description : "") || row.capabilities.join("、") || row.id}
         metadata={`${row.source === "builtin" ? "内建" : "用户安装"} · ${row.version} · ${statusLabels[row.status] ?? row.status}`}
         error={errors[row.id] || row.error || (row.updateError ? "上次操作失败，当前版本仍在运行" : undefined)}
         actions={<>

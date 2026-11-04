@@ -1,7 +1,7 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 
 export const portableTargets = ['web-browser', 'electron-renderer', 'electron-host', 'expo-web', 'expo-ios-bundle'];
 const auditDirectories = ['.', 'runtime/dsh', 'apps/bridges/hermes'];
@@ -113,4 +113,4 @@ function main() {
     `## Selected CI work\n\n- Portable builds: ${plan.targets.join(', ') || 'none'}\n- Dependency audits: ${plan.audits.join(', ') || 'none'}\n- Managed Web: ${plan.managedWeb}\n- Extension contracts: ${plan.extensions}\n- Server tests: ${plan.headlessTests}\n- Server archive: ${plan.headlessPackage}\n- macOS native compile: ${plan.native}\n- Full matrix requested: ${eventName === 'workflow_dispatch' && fullMatrix}\n- Diff unavailable: ${unknownDiff}\n`);
   console.log(JSON.stringify(plan, null, 2));
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) main();

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
+import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
 
 // Only vulnerability findings may be advisory. Registry/tool failures must fail CI.
 export function auditOutcome({ status, report, reportOnly = false }) {
@@ -39,4 +39,4 @@ function main() {
   process.exitCode = ['pass', 'reported'].includes(outcome) ? 0 : 1;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main();
+if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) main();

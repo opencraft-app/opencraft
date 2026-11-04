@@ -1,3 +1,5 @@
+import { useIntl } from "@opencraft/i18n/react";
+import { useOptionalAsyncNotices } from "../async-notices";
 import {
   createDefaultToolActivityPresenterRegistry,
   presentToolActivity,
@@ -17,6 +19,7 @@ import {
   createContext,
   useContext,
   useMemo,
+  useEffect,
   useSyncExternalStore,
   type ReactNode,
 } from "react";
@@ -52,6 +55,22 @@ export const AsyncQuestionContext = createContext<AsyncQuestionContextValue>({
   states: new Map(), answers: new Map(), queuedIds: new Set(), drafts: {}, submittingIds: new Set(), errors: {},
   answer: null, updateDraft: () => undefined,
 });
+export const HistoryItemDetailContext = createContext<((ids: readonly string[], signal: AbortSignal) => Promise<void>) | null>(null);
+export function useHistoryItemDetail(block: TimelineBlock, open: boolean): void {
+  const load = useContext(HistoryItemDetailContext);
+  const intl = useIntl(), notices = useOptionalAsyncNotices();
+  const ids = JSON.stringify(block.sourceItemIds);
+  useEffect(() => {
+    if (!open || !block.historyDetail || !load) return;
+    const controller = new AbortController();
+    void load(JSON.parse(ids), controller.signal).catch(error => {
+      if (controller.signal.aborted || error?.code === "ABORTED") return;
+      notices?.error({ key: `history-item:${ids}`, message: intl.formatMessage({ id: "chat.restore.failed", defaultMessage: "Could not load this conversation" }) });
+    });
+    return () => controller.abort();
+  }, [open, block.historyDetail, ids, load, notices, intl]);
+}
+
 export const ConversationDetailContext = createContext<ConversationDetailLevel>("STEPS_COMMANDS");
 
 export interface SetupContextCatalogValue {
@@ -95,5 +114,5 @@ export function useToolActivityPresentation(
 ): ToolActivityPresentation {
   const registry = useContext(ToolActivityPresenterContext);
   const version = useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
-  return useMemo(() => presentToolActivity(block, registry), [block, registry, version]);
+  return useMemo(() => { const result = presentToolActivity(block, registry); return block.historyDetail ? { ...result, canExpand: true } : result; }, [block, registry, version]);
 }

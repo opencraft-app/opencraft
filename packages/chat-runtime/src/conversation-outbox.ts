@@ -41,6 +41,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   let generation = 0;
   let disposed = false;
   let draining = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let hydrated = false;
   const read = (): Promise<void> => {
     const owner = generation;
@@ -78,6 +79,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   const notify = () => { if (!disposed) { revision++; dispatch?.publish(); for (const listener of listeners) listener(); } };
   const drain = async () => {
     if (disposed || draining || !dispatch?.ready() || (dispatch?.blocked() ?? true)) return;
+    if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
     draining = true;
     const owner = generation;
     try {
@@ -118,6 +120,13 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
           await commit(() => entries.map(entry => entry.intent.commandId === head.intent.commandId
             ? { ...entry, state, error: state === "waiting" ? undefined : error instanceof Error ? error.message : String(error) } : entry));
           notify();
+          if (error instanceof SubmissionNotDispatchedError && error.retryAfterMs !== undefined
+            && Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0) {
+            retryTimer = setTimeout(() => {
+              retryTimer = null;
+              if (!disposed && owner === generation) wake();
+            }, Math.max(100, Math.min(10_000, error.retryAfterMs)));
+          }
           break;
         }
       }
@@ -241,6 +250,10 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
         });
       } catch (error) { if (!disposed && owner === generation) storageError = error instanceof Error ? error : new Error(String(error)); }
     },
-    dispose() { disposed = true; generation++; dispatch = null; stop(); listeners.clear(); },
+    dispose() {
+      disposed = true; generation++; dispatch = null;
+      if (retryTimer !== null) clearTimeout(retryTimer);
+      retryTimer = null; stop(); listeners.clear();
+    },
   };
 }

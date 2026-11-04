@@ -137,7 +137,7 @@ export class CodexAccountsService {
           this.publish({ phase: "ready", accounts: [...this.snapshot.accounts.filter(account => account.id !== result.account.id), result.account]
             .sort((left, right) => left.priority - right.priority), login: null, error: null });
         } else if (result.status === "error") {
-          this.publish({ ...this.snapshot, login: null, error: result.message });
+          this.publish({ ...this.snapshot, login: null, error: result.reason === "maintenance-interrupted" ? "登录被维护中断，请重新登录" : result.message });
         }
         return result;
       } finally {

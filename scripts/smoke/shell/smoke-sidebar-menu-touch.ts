@@ -23,7 +23,7 @@ const root=createIntlTestRoot(document.getElementById('root'));window.dispose=()
 const vite = await createServer({
   configFile: false, root: process.cwd(), logLevel: "error", resolve: { dedupe: ["react", "react-dom"] },
   cacheDir: `node_modules/.vite-sidebar-menu-touch-${process.env.OPENCRAFT_SMOKE_ENGINE??"chromium"}`, esbuild: { jsx: "automatic" },
-  optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "@radix-ui/react-context-menu", "@radix-ui/react-dropdown-menu", "@tanstack/react-query"] },
+  optimizeDeps: { include: ["react", "react-dom/client", "react/jsx-runtime", "@radix-ui/react-context-menu", "@radix-ui/react-dropdown-menu", "@radix-ui/react-compose-refs", "@tanstack/react-query"] },
   server: { host: "127.0.0.1", port: 0, hmr: false },
   plugins: [{ name: "sidebar-touch-fixture", resolveId: id => id === "/fixture.tsx" ? id : null, load: id => id === "/fixture.tsx" ? source : null,
     configureServer(server) { server.middlewares.use((req, res, next) => {
@@ -54,8 +54,7 @@ try {
       const outsideContact = async () => {
         const b = (await outside.boundingBox())!;
         const x = b.x + b.width / 2, y = b.y + b.height / 2;
-        // Address the outside coordinate itself: locator actionability correctly
-        // rejects clicking an element covered by the dismiss surface.
+        // Native coordinates must reach the row on the first outside contact.
         if (touch) await page.touchscreen.tap(x, y); else await page.mouse.click(x, y);
       };
       const open = async () => {
@@ -64,11 +63,21 @@ try {
       };
       await open();
       await page.screenshot({ path: `${output}/outside-${theme}-${touch}.png` });
+      assert.equal(await page.locator('[data-menu-dismiss-surface]').count(), 0, "open menu has no full-page dismiss surface");
+      const position = (await outside.boundingBox())!;
+      const scrollBefore = await outside.evaluate(el => {
+        let parent = el.parentElement;
+        while (parent && parent.scrollHeight <= parent.clientHeight) parent = parent.parentElement;
+        (window as any).outsideScrollport = parent;
+        return parent?.scrollTop ?? 0;
+      });
+      await page.mouse.move(position.x + 10, position.y + position.height / 2);
+      await page.mouse.wheel(0, 40);
+      await page.waitForFunction(before => (window as any).outsideScrollport.scrollTop > before + 10, scrollBefore);
+      await page.evaluate(before => (window as any).outsideScrollport.scrollTop = before, scrollBefore);
+      await page.getByRole("menu").waitFor();
       await outsideContact(); await page.getByRole("menu").waitFor({ state: "hidden" });
-      assert.deepEqual(await page.evaluate(() => (window as any).actions), [], "first outside contact only dismisses");
-      assert.equal(await page.locator('[data-menu-dismiss-surface]').count(), 0, "dismiss surface leaves with menu");
-      await outsideContact();
-      assert.deepEqual(await page.evaluate(() => (window as any).actions), ["navigate"], "next contact navigates once");
+      assert.deepEqual(await page.evaluate(() => (window as any).actions), ["navigate"], "first outside contact navigates once and dismisses");
       await page.evaluate(() => (window as any).actions = []);
       // Context entry uses the same outside contract and keeps its opening release inert.
       const row = page.getByText("Conversation 3", { exact: true });
@@ -87,7 +96,21 @@ try {
         throw error;
       }); await outsideContact();
       await page.getByRole("menu").waitFor({ state: "hidden" });
-      assert.deepEqual(await page.evaluate(() => (window as any).actions), [], "context outside contact cannot navigate");
+      assert.deepEqual(await page.evaluate(() => (window as any).actions), ["navigate"], "context outside contact navigates once and dismisses");
+      await page.evaluate(() => (window as any).actions = []);
+      const listTrigger = page.locator('.sidebar-list-toolbar').getByText('Conversations', { exact: true });
+      if (touch && !webkitMode) {
+        const session = await page.context().newCDPSession(page);
+        const b = (await listTrigger.boundingBox())!;
+        await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: b.x + 10, y: b.y + b.height / 2, id: 2 }] });
+        await page.getByRole("menu").waitFor();
+        await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+        await session.detach();
+      } else await listTrigger.click({ button: "right" });
+      await page.getByRole("menu").waitFor();
+      assert.deepEqual(await page.evaluate(() => (window as any).actions), [], "list context opening release cannot navigate");
+      await outsideContact(); await page.getByRole("menu").waitFor({ state: "hidden" });
+      assert.deepEqual(await page.evaluate(() => (window as any).actions), ["navigate"], "list context first outside contact navigates");
       // Selecting Rename transfers focus to the existing Dialog, without a stale blocker.
       await open(); await activate(page.getByRole("menuitem", { name: "Rename", exact: true }));
       await page.getByRole("dialog").waitFor();

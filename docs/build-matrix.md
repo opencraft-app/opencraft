@@ -24,6 +24,20 @@ so each surface is an explicit matrix target with its own artifact contract.
 | `expo-android-internal-apk` | Expo prebuild + Gradle release | Installable internal APK | Linux/macOS with JDK and Android SDK |
 | `expo-android-release-apk` | Expo prebuild + Gradle, external PKCS12 signing | Configured public application ID, signed APK and filing text | Linux with JDK, Android SDK and release key |
 
+## Local source development
+
+`npm run dev` aliases `dev:local`: the existing pinned engine preparation,
+Local Agent Host, and Vite run together, with a same-origin `/appserver` proxy.
+The private Host URL stays in the Node process; proxy upgrades require the
+printed loopback Web origin. This is a local development entry, not a server
+installation or remote authentication bridge. `dev:web` remains frontend-only.
+Each checkout installs its own dependencies. Data defaults to
+`~/.opencraft/dev-local` (override `OPENCRAFT_DEV_DATA_DIRECTORY`); the existing
+storage owner claim rejects simultaneous writers. Startup failure and shutdown
+close both the Web server and the Host and release the claim. The runner uses
+`node --import tsx` so the tsx CLI signal relay cannot force termination before
+asynchronous cleanup finishes; repeated stop signals join the same cleanup.
+
 ## Repository-owned Electron source fork
 
 [`vendor/electron`](../vendor/electron/README.md) owns the fixed Electron source
@@ -398,6 +412,13 @@ Host definitions may use root-relative WebSocket paths such as `/appserver` and
 `/codex-appserver`. The browser resolves them against its current HTTP or HTTPS
 origin, so one Web build works behind both authenticated entry points.
 
+### Docker Compose
+
+The Linux ARM64 container entry is maintained in [`docker/`](../docker/README.md).
+It packages the Headless gateway and exports matching native Codex/Pi execution
+owners for the host, with independent bind-mounted data and workspaces. The
+container build is separate from the single-owner archive target below.
+
 ### Headless Linux server archive
 
 `headless-linux-amd64-tar` builds a separate single-owner server artifact from
@@ -743,3 +764,44 @@ The startup-resource policy rejects this module in the required bootstrap graph;
 initial Thread baseline and cancellation admission remain in the Session core.
 Both ordinary hidden-map builds and release builds retain their existing asset
 naming, minification, startup byte limits and separate browser compatibility checks.
+
+## Full-runtime packaging cache
+
+On Linux x64, `OPENCRAFT_PACKAGE_CACHE_DIR` optionally reuses assembled Codex/DSH
+runtime dependency closures. Keys include pinned manifests/locks, transformation
+and patch sources, Node/ABI, platform, architecture and libc. Cached payloads
+are copied to independent files and their complete inventory, SHA256 and modes
+are verified before use; a missing or invalid entry rebuilds normally. The
+cache is trusted build infrastructure and must only be writable by the build
+owner. Remove its directory while idle to force a cold build.
+
+Core and release identities, provenance, signing, final compression and archive
+verification are generated for every release. `OPENCRAFT_PACKAGE_TIMINGS=1`
+emits inventory, npm-pack and archive-verification durations to stderr; runtime
+cache messages report hit/miss duration. The JSON packaging result is unchanged.
+
+### Single-selection streamed full-release archives
+
+Signed full releases reserve their two signature metadata paths before running
+npm's installed `npm-packlist` rules once. The manifest and signature replace
+those placeholders in that same staging transaction; the selected names and
+npm's original tar options/order then drive a streaming archive writer. Default
+gzip level 9 produces the same bytes as `npm pack`, including bin modes and
+bundled dependencies, without a second selection or a whole-archive buffer.
+
+`OPENCRAFT_PACKAGE_GZIP_LEVEL` accepts integers 1–9, default 9. A lower level
+trades larger transfers for less compression CPU. Signing, exclusive release
+identity, archive budgets and the final independent archive verification still
+apply. Changing compression for an already completed release cannot overwrite
+its bound integrity. Signed content inventories are always rebuilt per release.
+
+When `OPENCRAFT_PACKAGE_CACHE_DIR` is set, npm selection can reuse unchanged
+top-level directories. The key covers their names/types/link targets, every
+package/ignore/lock policy file in the staging tree, and npm/Node/toolchain identity.
+Only the root package version, `opencraftWeb.buildId` and `opencraftFullRelease`
+identity are normalized; ordinary file contents are still hashed on every build.
+Changed directories use the original npm walker; root manifests and ignore files
+are always processed. External or broken links disable reuse, and a damaged cache
+causes a fresh scan. No npm/minimatch prototypes or matching rules are modified.
+`[package-selection]` reports reuse and elapsed time. Removing the cache restores
+cold selection; this cache never replaces signing or independent archive checks.

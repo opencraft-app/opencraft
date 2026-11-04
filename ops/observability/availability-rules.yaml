@@ -1,0 +1,23 @@
+groups:
+  - name: availability
+    interval: 15s
+    rules:
+      - alert: NewConnectionUnavailable
+        expr: opencraft_probe_consecutive_failures >= 2
+        labels:
+          severity: critical
+        annotations:
+          summary: 新连接失败
+      - alert: AvailabilityMonitorMissing
+        expr: up{job="availability"} == 0 or time() - opencraft_probe_monitor_last_cycle_timestamp_seconds > 90
+        labels:
+          severity: critical
+        annotations:
+          summary: 拨测中断
+      - alert: AvailabilityNotificationUnavailable
+        expr: opencraft_probe_notification_ready == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: 通知未送达

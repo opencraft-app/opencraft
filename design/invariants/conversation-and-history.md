@@ -327,3 +327,65 @@ AI follow-up cards keep title/decision/state/time/Owner static and selectable. A
 ## Touch message footer clocks
 
 User and assistant message footer clocks are visible at rest for touch input through the shared coarse-pointer/no-hover/current-touch policy. Desktop pointer clocks remain hidden at rest and reveal on existing message hover/focus. Keep time metadata, slot geometry, history cache and action-button availability; elapsed work duration is separate.
+
+
+## Concurrent native history reads
+
+Identical in-flight Host reads share a native cut only within the same logical
+client and epoch, including page shape, watch and checkpoint parameters. JSON
+object key order does not distinguish otherwise identical parameters. Cache
+invalidation changes admission generation so a new reader cannot join a retired cut. A
+completed result is never retained for later readers. The optional read-history
+cancellation capability carries an opaque read identity through RPC-id routing;
+cancelling one waiter leaves peers active, while the last waiter retires the
+operation immediately. Every cancelled RPC settles through intermediate routers.
+Disconnect and logical unsubscribe retire the relevant work; a replacement never
+joins an aborted flight or receives its late result. Execution is independent.
+
+Live metadata and rollout source authorization prepare outside the projection
+lane. Reconciliation, indexed pages, invalidation and final source validation
+remain serialized; snapshot-source watermarks are observed inside that lane.
+Native authority, cursor epochs and notification-overlap canonical rereads are
+unchanged. Read provenance, payload bytes, decode and return timings are bounded
+diagnostics, not presentation state or native-internal profiling.
+
+## Deferred history presentation bodies
+
+The optional read-history `itemDetails` capability lets presentation readers request
+`itemsView: presentation`. Old clients keep full history bodies. The initial passive
+read requests one latest Turn; existing viewport backfill obtains older pages only
+when needed. Every returned Item keeps native order and identity. Large settled
+command output/command text, patch diffs and generic MCP result content can carry an
+opaque `historyDetail.cursor`; message content, attachment identities, in-progress
+Items and App/surface metadata retain their existing semantics. Unknown tool shapes
+remain full. Native history and the disposable projection retain complete bodies.
+
+Opening a detail reads one exact Item using its transcript epoch cursor, one Turn
+and `detailItemId`. A stale cursor fails rather than returning another epoch. The
+Session fences generation, source lifetime and the original Item reference; live
+replacements cannot be overwritten by late details. Cancellation and navigation
+retire this read through the existing read cancellation path. The detail replaces
+only that Item, preserving clocks, ordering, disclosure state and reading position.
+MCP Apps remain independent of detail disclosure. No execution Resume is acquired.
+
+AppHost parses a physical publication once and strips its logical target once,
+then routes it only to that admitted connection/lease. Untargeted notifications
+retain fanout; ownerless requests/responses and invalid targets remain undelivered.
+Connection count must not multiply large reply JSON parsing work.
+
+Each detail disclosure has an independent read/cancellation lifetime; one Item's
+cancellation or failure cannot block another. Hook-only Turn updates preserve
+unchanged Item references. A new passive baseline tags retained summaries with a
+client-local read generation, included in the renderer detail token, so an open
+disclosure restarts hydration after reconnect without changing native epochs.
+
+A Host reconnect must populate the same decorated initialization cache before
+publishing readiness, even when no View initialized before the disconnect. The
+first View then consumes that cache; it must not initialize an already initialized
+native routing socket again. The native one-initialize contract remains authoritative.
+
+A rejected initial Core handshake or a failure while completing that handshake
+retires the raw routing socket after returning the failure to its callers. A
+failed initialize may already have consumed that socket's one-initialize slot.
+The existing delayed reconnect establishes a fresh routing connection; it never
+replays a submitted execution request or changes the retained callback lane's owner.

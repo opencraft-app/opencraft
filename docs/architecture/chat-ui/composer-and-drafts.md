@@ -4,6 +4,18 @@
 
 ## Browser reconnect outbox
 
+An existing online text submission can also enter this outbox after a structured
+Host tool-preparation rejection proves it was never dispatched and explicitly
+marks the reason retryable. The local owner must persist the unchanged intent
+before releasing its failed optimistic row, then transfer the same message ID
+to the Host queue. A queue-admission rejection may schedule a bounded retry while
+ready; disconnect, disposal or scope replacement fences that wakeup. Positive
+server queue custody supersedes a matching local row during acknowledgement
+handoff, so the Composer renders each input once. Unknown delivery, permanent
+configuration errors, creation and explicit steering retain their existing
+recovery policy. Unsupported attachment/context handles keep the original input
+for explicit retry rather than promise automatic persistence.
+
 Existing Web/Electron conversations can accept text while their Host is offline
 or their Replica baseline is recovering. `ConversationRuntime` owns a local
 outbox distinct from the Host execution queue. The platform injects
@@ -14,6 +26,14 @@ profile revision and Thread. Local persistence must succeed before the Composer 
 Storage denial, capacity errors and unsupported attachment/context handles retain
 the draft. New Thread creation still requires a connection. Native/embedded
 consumers without this port retain their existing admission behavior.
+
+A ready connection alone does not consume a draft. The Web submit boundary
+checks that the same command and client message identity is already published
+in the target conversation's pending or queued submissions; otherwise it awaits
+admission, retaining the draft if identity restoration, hydration or persistence
+fails. Already owned online submissions release the editor before remote ACK.
+An unchanged failed retry keeps its delivery identity even when EditorView
+serializes an equivalent document again, while settlement uses the current draft.
 
 The original immutable message and client identity survive reload. Once the
 existing recovery owner has restored an authoritative live baseline, one drain
@@ -41,6 +61,24 @@ is rechecked after asynchronous compilation immediately before sending.
 Reopening a document/process restores locally accepted input when its Runtime is
 reacquired; this is not cross-device delivery, and Web storage may be evicted.
 Background open conversations remain resident for recovery.
+
+## Queue-to-Steer admission continuity
+
+A live authoritative conversation accepts Steer intent on an in-flight queue
+submission before its add acknowledgement. This authority is separate from edit,
+delete and reorder custody. The row immediately becomes busy; the editor stays
+available for another draft and healthy local queue traffic does not remove the
+composer's direct Steer choice. Duplicate promotion requests join the same
+client-message identity until settlement.
+
+ConversationRuntime waits for the exact server queue identity from either
+`thread/queue/add`'s receipt or the authoritative queue notification, then uses
+the existing atomic queue-to-active-turn command (or starts that queue item if
+idle). An older ACK without a queue payload still confirms admission; exact
+custody comes from the subsequent queue baseline rather than an invented ID. Canonical history consumption settles the intent without sending again.
+Failure, unknown delivery and disposal retire the wait without replay. Offline
+waiting input and restored or uncertain delivery keep their existing fences.
+Promotion does not grant server membership or atomic-steering capability.
 
 ## Attachment staging during reconnect
 
@@ -765,6 +803,19 @@ startup status row or spinner. A rejected submission still exposes its error and
 explicit retry action. This presentation does not change creation, binding,
 queuing, or the Conversation footer's ownership of follow-up input.
 
+The Draft scope captures optional sender display metadata synchronously at
+submission, outside the immutable command payload. Pending presentation and the
+temporary Thread handoff use that same snapshot, so an acknowledgement does not
+insert an avatar/name row. Account changes cannot relabel an existing submission;
+an exact retry retains its snapshot and a new input captures its own. Missing
+identity remains absent, and authoritative server attribution still wins.
+
+User messages do not display sending or steering lifecycle copy, including
+pending, accepted, cancelled and declined steering. Delivery and steering states
+remain available to the runtime; failed, blocked and unconfirmed delivery still
+show actionable feedback. Attachment-only steering does not reserve an empty
+status footer.
+
 ## Composer image attachment preview
 
 Draft image thumbnails open the shared zoomable image viewport in a Radix modal.
@@ -860,4 +911,84 @@ ancestor scroll does not independently reject a click the browser accepted;
 pointer cancellation, multiple contacts and context-menu gestures still cancel
 activation. The microphone button retires its pending hold on native touch end
 and cancellation as well as pointer release. A completed short contact must not
-leave a timer that starts recording over the editor later.
+leave a timer that starts recording over the editor later. The editor has no voice hold candidate: touch, repeated taps and
+long presses retain native text editing. Only the explicit microphone action
+starts dictation; completion and cancellation retain the existing transient input
+transaction and draft ownership.
+
+
+## New Draft creation after rejected Host admission
+
+A New chat creation may join its existing Host connection owner and retry once
+when the Server explicitly rejected the request before native forwarding. The
+same immutable intent, Draft and attachments survive this recovery. Capability
+lookup preserves this typed rejection so a stale lease cannot leave the Draft
+stuck behind a generic model-capability error.
+
+The command port distinguishes a rejected first creation from a later rejected
+Turn after `thread/start` or `thread/fork` already returned. The latter keeps
+`SubmissionOutcomeUnknownError` and cannot restart creation automatically. Other
+pending writes, timeouts, lost acknowledgements and legacy untyped failures never
+inherit no-dispatch proof. Retry failures are presented by the Draft owner rather
+than escaping the button handler as unhandled Promise rejections.
+
+### Engine-scoped recovery prerequisites
+
+A mixed Host advertises default-engine extensions and a complete extension set
+for each alternate engine. Approval baseline reads and native wait reattachment
+must resolve the original Thread's engine before using shared interactions.
+An engine without shared interactions skips that read; it must not inherit the
+default engine's capability and repeatedly fail history recovery. Engines that
+advertise shared interactions still restore their pending approvals before the
+Replica grants sending authority. Transport recovery, watched history, and exact
+outbox acknowledgement remain owned by their existing services. For already
+loaded older mixed-Host clients, Pi accepts a read-only empty shared-approval
+baseline with no response authority; this does not advertise shared approvals
+or add an approval response method.
+
+### First-input creation recovery
+
+A created Thread, an attempted first input, a native acceptance receipt and a
+persisted transcript are distinct facts. The local Codex Host records positive
+creation evidence before returning its acknowledgement. A replacement Host may
+restore that exact empty creation only while no first input was attempted, the
+native process still lists the same loaded identity, and no rollout exists.
+Legacy or missing evidence, an uncertain send and accepted/persisted history do
+not qualify for an empty-history fallback. The existing generation route remains
+bound to the original native identity. Recovery also requires the original
+native subscription or an attested retained callback lane. A routing protocol
+version alone does not attest that capability. A combined Core without that
+lane rejects empty-Thread resume rather than claiming that events are restored.
+Once native acceptance is known, normal demand-based subscription release
+applies; only created/attempted input protects the provisional context.
+
+Creation-time MCP credentials retain their original endpoint and persistent
+Thread binding across a managed listener replacement. They bind once to the
+first attested execution; listing or recovering a creation never authorizes a
+tool call. A first-Turn dispatch retires empty-history eligibility before the
+native write. The Composer keeps its Draft until native acceptance; unknown
+outcomes still require positive message acknowledgement rather than replay.
+
+A later input composed while the accepted first Turn is still promoting has a
+different command/message identity. It waits for promotion and then enters the
+original conversation's next-Turn queue with its own receipt. It cannot reuse
+the first input's receipt to clear unsent content.
+
+If promotion fails after acceptance, an unchanged Composer retry retains its
+original command/message identity, recorded when the Controller creates the
+intent so the Web editor's direct failure transition and projected model
+selections retain it too. Editing content, submission settings, or execution
+placement creates a new identity. Retry state belongs to the owning Draft and is retired
+when acceptance settles, the Draft clears, or its controller is disposed.
+
+## Sent user-message quote continuity
+
+The immutable Composer document projects to timeline text with structural quote
+markers and separate top-level paragraphs. Both the optimistic existing-thread
+runtime and the pending/new-thread route use the same core projection; plain
+search and queue previews keep their original flattened contract. Native
+compilation prefixes every quoted line, including blank lines and nested blocks,
+while preserving non-text input entries. The existing user-message document
+renderer supplies the quote rail, with the user's following request outside it.
+Acknowledgement and reopening history retain the same quote boundary; they do
+not add a second quote block or fabricate a link to the source message.

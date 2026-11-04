@@ -174,7 +174,7 @@ test("baseline migration is sole DDL authority and matches hypernode initializeS
   }
 });
 
-test("DshExecutionAuthority manages SQLite lifecycle: fresh, up-to-date, adopted, and moved-aside", async () => {
+test("DshExecutionAuthority manages SQLite lifecycle: fresh, up-to-date, adopted, and rejected legacy", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-execution-lifecycle-"));
   const path = join(root, "execution.sqlite");
   try {
@@ -196,7 +196,7 @@ test("DshExecutionAuthority manages SQLite lifecycle: fresh, up-to-date, adopted
   }
 });
 
-test("DshExecutionAuthority adopts legacy matching database and moves aside mismatched legacy database", async () => {
+test("DshExecutionAuthority adopts legacy matching database and rejects mismatched legacy database", async () => {
   for (const matching of [true, false]) {
     const root = await mkdtemp(join(tmpdir(), `opencraft-execution-legacy-${matching ? "match" : "mismatch"}-`));
     const path = join(root, "execution.sqlite");
@@ -238,13 +238,19 @@ test("DshExecutionAuthority adopts legacy matching database and moves aside mism
       }
       raw.close();
 
+      if (!matching) {
+        assert.throws(() => new DshExecutionAuthority(path, "boot-legacy"), (error: unknown) => (error as { kind?: string }).kind === "unsupported-legacy");
+        const retained = new DatabaseSync(path, { readOnly: true });
+        assert.ok(retained.prepare("SELECT name FROM sqlite_master WHERE type='table'").get()); retained.close();
+        continue;
+      }
       const authority = new DshExecutionAuthority(path, "boot-legacy");
       try {
-        assert.equal(authority.outcome.status, matching ? "adopted" : "moved-aside");
+        assert.equal(authority.outcome.status, "adopted");
         assert.ok(authority.outcome.backupPath);
         const files = await readdir(root);
         assert.ok(files.some(f => f.includes(".pre-v1-")));
-        assert.equal(files.some(f => f.includes(".legacy-")), !matching);
+        assert.equal(files.some(f => f.includes(".legacy-")), false);
 
         if (matching) {
           const projected = authority.projectInput("t-legacy", { type: "user/message", seq: 1, time: 1, data: { source: { kind: "user", rpcId: "rpc-legacy" } } });
@@ -303,4 +309,19 @@ test("known missing execution objects preserve inputs, queue, epochs and previou
       } finally { again.close(); }
     } finally { await rm(root, { recursive: true, force: true }); }
   }
+});
+
+
+test("deleted queue records remain retained terminal history during handoff",()=>{
+ const authority=new DshExecutionAuthority(":memory:");
+ try{
+  const first=authority.queueStore.add("t","one","local-user",[{type:"text",text:"fixture"}]).submission;
+  assert.equal(authority.handoffObservation().activeCount,1);
+  assert.equal(authority.queueStore.delete("t",first.id),true);
+  assert.equal(authority.handoffObservation().activeCount,0);
+  assert.equal(authority.queueStore.find("t",first.id)?.state,"deleted");
+  const second=authority.queueStore.add("t","two","local-user",[{type:"text",text:"future work"}]).submission;
+  assert.equal(authority.handoffObservation().activeCount,1);
+  assert.equal(authority.queueStore.find("t",second.id)?.state,"queued");
+ }finally{authority.close();}
 });
