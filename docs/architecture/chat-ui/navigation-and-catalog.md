@@ -6,8 +6,8 @@
 
 The shared catalog projection prefers a nonblank saved name, then the message
 preview, then the native agent nickname. An unnamed child without those fields
-uses its role and the last eight characters of its Thread ID (or `Thread` and
-the suffix when no role exists). Empty root conversations retain `New chat`.
+uses its role and a `#`-prefixed suffix of the last eight characters of its
+Thread ID (or just the suffix when no role exists). Empty root conversations retain `New chat`.
 These are display fallbacks; they do not rename or write to the native Thread.
 
 The sidebar's nested lists use an inset vertical border at each parent level,
