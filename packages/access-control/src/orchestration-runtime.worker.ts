@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
+import { updateExecutionRequest } from './execution-request-state.js';
 
 // This handle is lent by the installation owner after migration. No create,
 // migration, recovery, or ownership takeover is permitted in the child.
@@ -24,6 +25,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
         const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
         switch(method){
           case 'observe':ledger.observeSnapshot(payload.snapshot);break;
+          case 'updateExecution':updateExecutionRequest(db,payload);break;
           case 'targets':result=[...new Set([...ledger.observedRuntimeThreads(payload.includeTerminal),
             ...ledger.threads().filter(thread=>payload.includeTerminal||!['idle','error'].includes(thread.runtimeStatus)).map(thread=>thread.threadId),
             ...ledger.activeWaits().flatMap(ticket=>ticket.targetThreadIds)])];break;

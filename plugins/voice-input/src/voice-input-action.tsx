@@ -1,12 +1,12 @@
 import { MicrophoneIcon } from "@opencraft/design-system-web/action-icons";
 import { IconButton } from "@opencraft/design-system-web/button";
+import { useTouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import type { ComposerActionHost } from "@opencraft/extension-react";
 import type { ComposerTransientTextInput, ComposerAudioLevels } from "@opencraft/composer-core";
 import { DictationCompletion } from "./dictation-completion";
 import { DictationPressGesture } from "./dictation-press-gesture";
-import { useMobileEditorVoiceHold } from "./mobile-editor-voice-hold";
 
 import type {
   SpeechInputError,
@@ -21,7 +21,6 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
   return function VoiceInputAction({
     mutations,
     disabled,
-    platform,
   }: ComposerActionHost) {
     const buttonRef = useRef<HTMLButtonElement | null>(null);
     const sessionRef = useRef<SpeechInputSession | null>(null);
@@ -35,14 +34,15 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
     const holdFinishRef = useRef(false);
     const finishRecognitionRef = useRef<(() => Promise<boolean>) | null>(null);
     const pressGesture = useMemo(() => new DictationPressGesture(), []);
+    const touchScope = useTouchContactScope();
     useEffect(() => {
       // The trigger stays mounted but becomes inert when the voice Footer claims
       // its region. Pointer release belongs to the gesture, not that DOM button.
-      const release = (event: PointerEvent) => pressGesture.release(event.pointerId);
-      const blur = () => pressGesture.release();
+      const release = (event: PointerEvent) => { pressGesture.release(event.pointerId); touchScope?.release(event.pointerId); };
+      const blur = () => { pressGesture.release(); touchScope?.cancel(); };
       // Native contact retirement is independent of derived pointer delivery.
       // A short mic tap must not leave its 150ms hold armed after lift-off.
-      const touchEnd = (event: TouchEvent) => { if (event.touches.length === 0) pressGesture.release(); };
+      const touchEnd = (event: TouchEvent) => { if (event.touches.length === 0) { pressGesture.release(); touchScope?.release(); } };
       window.addEventListener("pointerup", release, true);
       window.addEventListener("pointercancel", release, true);
       window.addEventListener("blur", blur);
@@ -53,7 +53,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         window.removeEventListener("pointercancel", release, true); window.removeEventListener("blur", blur);
         window.removeEventListener("touchend", touchEnd, true); window.removeEventListener("touchcancel", blur, true);
       };
-    }, [pressGesture]);
+    }, [pressGesture, touchScope]);
     const audioLevels = useMemo(() => {
       const listeners = new Set<(level: number) => void>();
       return { subscribe: (listener: (level: number) => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -65,6 +65,7 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
 
     const cancel = () => {
       pressGesture.reset(); holdFinishRef.current = false;
+      touchScope?.cancel();
       finishRecognitionRef.current = null;
       completionRef.current?.settle(false); completionRef.current = null;
       activeRef.current = false;
@@ -230,10 +231,6 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         void finishRecognitionRef.current?.();
       }
     };
-    useMobileEditorVoiceHold(buttonRef, {
-      enabled: platform === "web" && !disabled && available && !activeRef.current,
-      start, finish: finishHeldRecording, cancel,
-    });
     const listening = phase === "listening";
     const active = listening || phase === "starting" || phase === "transcribing" || phase === "failed";
     const label = !available
@@ -258,11 +255,13 @@ export function createVoiceInputAction(provider: SpeechInputProvider) {
         title={label}
         onPointerDown={event => {
           if (disabled || !available || event.button !== 0 || activeRef.current) return;
+          if ((event.pointerType === "touch" || event.pointerType === "pen")
+            && touchScope !== null && !touchScope.claim(event.pointerId, "microphone")) return;
           event.currentTarget.setPointerCapture?.(event.pointerId);
           pressGesture.press(start, finishHeldRecording, event.pointerId);
         }}
-        onPointerUp={event => pressGesture.release(event.pointerId)}
-        onPointerCancel={event => pressGesture.release(event.pointerId)}
+        onPointerUp={event => { pressGesture.release(event.pointerId); touchScope?.release(event.pointerId); }}
+        onPointerCancel={event => { pressGesture.release(event.pointerId); touchScope?.cancel(event.pointerId); }}
         onClick={() => {
           if (disabled || !available) return;
           if (pressGesture.consumeClick()) return;

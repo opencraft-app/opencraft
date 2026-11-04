@@ -23,6 +23,7 @@ interface Page {
   inputAcknowledgements: boolean; inputQueue: RemoteBrowserInputQueue | null;
   control: Control; controlGeneration: number; acquiring: { kind: 'human' | 'agent'; promise: Promise<string>; generation: number } | null; agentQueue: Promise<unknown>; serverInitialNavigation: boolean; gestureActive: boolean;
   media: H264MediaSource | null; video: HTMLVideoElement | null; cancelVideoReady: (() => void) | null; id: BrowserPageId; lease: string; container: HTMLDivElement; canvas: HTMLCanvasElement; receiver: HTMLInputElement; editor: string | null; keyboard: RemoteKeyboardPolicy | null; keyboardIntent: { pointer: number; x: number; y: number; editor: string | null; until: number; completed: boolean } | null; ime: RemoteBrowserIme | null; editable: boolean; nativeIme: boolean; multiTouch: boolean;
+  serverClosed?: boolean;
   events: BrowserSurfaceEvents; navigation: number; url: BrowserUrl | null | undefined; socket: WebSocket | null;
   restored: boolean; resumed: boolean; ready: Promise<void>; opened: boolean; disconnected: boolean; displaced: boolean; closed: boolean; visible: boolean; watching?: boolean; blocked: boolean;
   pending: Map<string, Pending>; decoder: VideoDecoder | null; latest: VideoFrame | null; raf: number;
@@ -115,7 +116,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   }
   private root: HTMLElement | null = null;
   private storageIds = new Map<BrowserPageId, string>();
-  constructor(private readonly storage: BrowserMetadataStorage = localStorage, private readonly storageKey = serverStorageKey('opencraft.remote-browser-storage.v1'), private readonly admitted: () => boolean = () => true) {
+  constructor(private readonly storage: BrowserMetadataStorage = localStorage, private readonly storageKey = serverStorageKey('opencraft.remote-browser-storage.v1'), private readonly admitted: () => boolean = () => true, private readonly whenAdmitted?: () => Promise<void>) {
     this.restoreStorage();
   }
   restoreStorage() {
@@ -129,7 +130,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     this.storageIds.set(id, storage); this.persistStorage();
   }
   forget(id: BrowserPageId) { this.storageIds.delete(id); this.persistStorage(); }
-  private persistStorage() { try { this.storage.setItem(this.storageKey, JSON.stringify(Object.fromEntries(this.storageIds))); } catch {} }
+  private persistStorage() { if (!this.admitted()) return; try { this.storage.setItem(this.storageKey, JSON.stringify(Object.fromEntries(this.storageIds))); } catch {} }
 
   private hostIdentities = new Set<BrowserPageId>();
   bindHostIdentity(id: BrowserPageId) { this.hostIdentities.add(id); }
@@ -154,10 +155,10 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       park: () => this.park(id), close: () => this.release(id, false), clearCover: () => {}, cover: () => {} };
   }
   navigate(id: BrowserPageId, _title: string, url: BrowserUrl | null, events: BrowserSurfaceEvents, force = false): boolean {
-    if (!this.admitted()) throw Object.assign(new Error('Remote browser awaits authenticated initialization'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
     const absent = !this.pages.has(id);
     if (absent && !this.hostIdentities.has(id)) this.backing?.(id);
     const p = this.ensure(id, events); p.events = events;
+    if (p.serverClosed) return false;
     // A transferred viewer must not compete with its replacement during layout
     // or state synchronization. Explicit reload is the user's takeover intent.
     if (p.displaced && !force) return false;
@@ -205,7 +206,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   private release(id: BrowserPageId, destroy: boolean) {
     const p = this.pages.get(id); if (!p || p.closed) return;
     this.retireMenu(p);
-    if (destroy) this.discard(p.lease);
+    if (destroy && !p.serverClosed) this.discard(p.lease);
     p.closed = true; if (p.reconnect) clearTimeout(p.reconnect); if (p.resizeTimer) clearTimeout(p.resizeTimer);
     p.inputDispose(); p.mediaReceiver?.dispose(); p.socket?.close(); this.resetDecoder(p);
     this.rejectPending(p); p.container.remove(); this.pages.delete(id); this.hostIdentities.delete(id);
@@ -247,6 +248,19 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     this.retirements.clear(); this.root = null;
   }
   fail(error: Error) { this.inputFailed = true; this.storageError = error; for (const p of this.pages.values()) { p.blocked = true; p.resetInput(); this.resetKeyboard(p); p.container.style.pointerEvents = 'none'; p.events.onError(error.message); } }
+  private sessionClosed(p: Page): boolean {
+    if (!p.events.onSessionClosed) return false;
+    if (!p.serverClosed) { p.serverClosed = true; p.events.onSessionClosed(); }
+    return true;
+  }
+  private watchConnection(p: Page) {
+    const ready = p.ready;
+    void ready.catch(error => {
+      if (p.closed || p.ready !== ready) return;
+      if (error.code === 'SESSION_CLOSED' && this.sessionClosed(p)) return;
+      p.events.onError(error.message);
+    });
+  }
   private require(id: BrowserPageId) { const p = this.pages.get(id); if (!p) throw new Error('Browser page closed'); return p; }
   private ensure(id: BrowserPageId, events: BrowserSurfaceEvents): Page {
     const old = this.pages.get(id); if (old) return old;
@@ -269,7 +283,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       nativeCopy: false, interaction: 0, menuIntent: null, restored: false, resumed: false, ready: Promise.resolve(), opened: false, disconnected: false, displaced: false, closed: false, visible: false, blocked: false, pending: new Map(), decoder: null,
       viewportMeasured: false, width: 1280, height: 720, viewport: { width: 1280, height: 720 }, sentViewport: '', resizeTimer: null, resizing: false,
       latest: null, raf: 0, reconnect: null, connection: 0, retries: 0, needsKey: true, automation: null!, resetPointers: () => {}, resetInput: () => {}, inputDispose: () => {} };
-    if (!this.storageIds.has(id)) { this.storageIds.set(id, p.lease); this.persistStorage(); }
+    if (this.admitted() && !this.storageIds.has(id)) { this.storageIds.set(id, p.lease); this.persistStorage(); }
     const call = (method: string, input?: unknown): Promise<any> => {
       if (['inspect', 'readContext', 'wait'].includes(method)) return p.ready.then(() => this.call(p, 'automation', { method, input }));
       const operation = p.agentQueue.catch(() => {}).then(async () => {
@@ -286,7 +300,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       fill: input => call('fill', input), press: input => call('press', input), scroll: input => call('scroll', input),
       wait: input => call('wait', input), dispose: () => {} };
     this.pages.set(id, p); if (this.storageError) p.events.onError(this.storageError.message); p.inputDispose = this.bindInput(p);
-    p.ready = this.connect(p); void p.ready.catch(error => { if (!p.closed) p.events.onError(error.message); });
+    p.ready = this.connect(p); this.watchConnection(p);
     return p;
   }
   private rejectPending(p: Page) { for (const request of p.pending.values()) { clearTimeout(request.timer); request.reject(new BrowserAutomationError('PAGE_CLOSED', 'Browser disconnected', true)); } p.pending.clear(); }
@@ -304,9 +318,20 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     ++p.connection; p.displaced = false;
     if (p.reconnect) clearTimeout(p.reconnect);
     p.reconnect = null; p.socket?.close(); this.resetTransport(p); p.retries = 0;
-    p.ready = this.connect(p); void p.ready.catch(error => { if (!p.closed) p.events.onError(error.message); });
+    p.ready = this.connect(p); this.watchConnection(p);
   }
   private connect(p: Page): Promise<void> {
+    // Restored panels may mount while the offline shell is still authenticating.
+    // Give them a presentation port immediately; only admit physical resources
+    // after the authoritative metadata has loaded.
+    if (!this.admitted()) return (this.whenAdmitted?.() ?? Promise.reject(new Error('Remote browser awaits authenticated initialization'))).then(() => {
+      if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
+      if (!this.admitted()) throw new Error('Remote browser awaits authenticated initialization');
+      this.restoreStorage();
+      p.lease = (this.storageIds.get(p.id) ?? p.lease).replace(':', '-');
+      this.storageIds.set(p.id, p.lease); this.persistStorage();
+      return this.connect(p);
+    });
     // Native creation must follow the metadata commit, including reconnect.
     if (this.storage.flush) return this.storage.flush().then(() => {
       if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
@@ -414,6 +439,8 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
         // cleanly is not itself a Tab close. Retain compatibility with the
         // existing server's explicit 1000 close reason.
         if (terminalError || event.code === 1008 || event.code === 1000 && event.reason === 'Browser tab closed') {
+          if ((terminalError instanceof BrowserAutomationError && terminalError.code === 'SESSION_CLOSED'
+            || event.code === 1000 && event.reason === 'Browser tab closed') && this.sessionClosed(p)) return;
           p.events.onError(terminalError?.message || (event.code === 1008
             ? event.reason === 'Invalid browser request' ? 'Browser request rejected; reload this tab'
               : 'Browser authorization expired; reload OpenCraft'
@@ -422,7 +449,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
         p.events.onError('Browser disconnected; reconnecting');
         p.reconnect = setTimeout(() => {
           if (!current()) return;
-          p.reconnect = null; p.ready = this.connect(p); void p.ready.catch(() => {});
+          p.reconnect = null; p.ready = this.connect(p); this.watchConnection(p);
         }, Math.min(5000, 250 * 2 ** Math.min(p.retries++, 5)));
       };
     });

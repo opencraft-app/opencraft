@@ -851,6 +851,8 @@ try {
         assert.equal(await button.count(),1,'one accessible creation action');
         assert.equal(await panel.locator('.sidebar-tasks > .sidebar-new-chat').count(),0,'mobile inline row removed');
         const before=await button.boundingBox();assert.ok(before);
+        assert.equal(await button.getAttribute('data-control-surface'),'floating','creation retains its glass button surface');
+        assert.equal(await button.locator('.ui-liquid-glass').count(),1,'creation glass remains rendered');
         const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
         const column=await panel.locator('.shell-sidebar__column').boundingBox();assert.ok(column);
         assert.ok(Math.abs(initialViewport.y+initialViewport.height-column.y-column.height)<1,
@@ -874,6 +876,8 @@ try {
         const settings=panel.getByRole('button',{name:'Settings',exact:true});
         assert.equal(await settings.count(),1,'one accessible settings action');
         const gear=await settings.boundingBox();assert.ok(gear);
+        assert.equal(await settings.getAttribute('data-control-surface'),'floating','settings retains its glass button surface');
+        assert.equal(await settings.locator('.ui-liquid-glass').count(),1,'settings glass remains rendered');
         // Floating controls keep their own safe inset; the list continues behind
         // them, while end padding brings the final row fully above them.
         assert.ok(Math.abs(viewport.y+viewport.height-column.y-column.height)<1,
