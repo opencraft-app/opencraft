@@ -2,6 +2,19 @@
 
 [Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
 
+## Child conversation labels and hierarchy
+
+The shared catalog projection prefers a nonblank saved name, then the message
+preview, then the native agent nickname. An unnamed child without those fields
+uses its role and the last eight characters of its Thread ID (or `Thread` and
+the suffix when no role exists). Empty root conversations retain `New chat`.
+These are display fallbacks; they do not rename or write to the native Thread.
+
+The sidebar's nested lists use an inset vertical border at each parent level,
+with shared spacing and border tokens. The line belongs to the child group,
+does not intercept input, and follows the same filtered, Host-scoped topology
+as the rows. Search results with an absent parent remain roots.
+
 ## Sidebar Goal reads on multi-engine Hosts
 
 The catalog's Goal scheduler and activity projection check the capability for

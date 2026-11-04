@@ -32,7 +32,11 @@ export function projectAppServerThread(
   return {
     id: thread.id,
     pinned: thread.pinned === true,
-    title: thread.name?.replace(/^☁️\s*/u, "") || thread.preview || "New chat",
+    title: thread.name?.replace(/^☁️\s*/u, "").trim() || thread.preview?.trim()
+      || thread.agentNickname?.trim()
+      || (thread.parentThreadId != null
+        ? `${thread.agentRole?.trim() || "Thread"} · ${thread.id.slice(-8)}`
+        : "New chat"),
     project: parts.at(-1) ?? "Workspace",
     lineage: thread.parentThreadId != null ? "subagent" : thread.forkedFromId != null ? "fork" : "root",
     parentThreadId: thread.parentThreadId ?? null,
