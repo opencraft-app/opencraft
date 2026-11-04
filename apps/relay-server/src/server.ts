@@ -239,20 +239,24 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       const upstream = httpRequest({ host: new URL(auth.route.origin).hostname, method: req.method, path: req.url,
         createConnection: () => stream!, headers: headers(req, auth.route.signer.issue(auth.principal, req.method!, req.url!)) }, result => {
         const context = selected.get(req);
+        const targetPath = (req.url ?? '/').split('?')[0]!;
+        const standalonePreview = targetPath === '/__opencraft_preview' || targetPath.startsWith('/__opencraft_preview/');
+        // Preview documents already own their relative URLs, CSP and sandbox.
+        // Workbench HTML injection would corrupt them and buffer large reports.
         // Old entry bookmarks can load the Workbench without deployment context,
         // hiding Settings → Servers. Canonicalize only admitted HTML navigation,
         // preserving this instance and deep link; never replay API request bodies.
-        if (!context && options.serverSelection && auth.route.origin === options.authentication?.origin
+        if (!standalonePreview && !context && options.serverSelection && auth.route.origin === options.authentication?.origin
           && req.method === 'GET' && req.headers.accept?.includes('text/html')
           && result.statusCode === 200 && String(result.headers['content-type']).includes('text/html')) {
           result.resume();
           res.writeHead(303, { location: serverBase(auth.route.instanceId) + req.url!, 'cache-control': 'private, no-store' });
           res.end(); return;
         }
-        if (context && (result.statusCode ?? 502) >= 400 && req.method === 'GET' && req.headers.accept?.includes('text/html')) {
+        if (!standalonePreview && context && (result.statusCode ?? 502) >= 400 && req.method === 'GET' && req.headers.accept?.includes('text/html')) {
           result.resume(); res.writeHead(303, {location:SERVERS_PATH,'cache-control':'no-store'});res.end();return;
         }
-        if (context && String(result.headers['content-type']).includes('text/html')) {
+        if (!standalonePreview && context && String(result.headers['content-type']).includes('text/html')) {
           const encoding=result.headers['content-encoding'];
           const decoder=encoding==='gzip'?createGunzip():encoding==='br'?createBrotliDecompress():encoding==='deflate'?createInflate():null;
           if(encoding && encoding!=='identity' && !decoder){result.resume();failure(res,502);return;}

@@ -1126,5 +1126,7 @@
   "welcome.retry": "Cuba lagi",
   "welcome.connection.settings": "Tetapan sambungan",
   "modelServices.noAuth.title": "Tanpa pengesahan",
-  "modelServices.noAuth.description": "Gunakan hanya jika titik akhir ini tidak memerlukan kunci API. Kunci tersimpan dan persekitaran tidak akan dihantar."
+  "modelServices.noAuth.description": "Gunakan hanya jika titik akhir ini tidak memerlukan kunci API. Kunci tersimpan dan persekitaran tidak akan dihantar.",
+  "preview.externalHint": "Buka laporan HTML ini dalam pelayar untuk melihat kandungan dan menggunakan kawalan interaktif.",
+  "preview.externalUnavailable": "Pratonton tidak dapat dibuka. Cuba lagi atau muat turun fail asal."
 }

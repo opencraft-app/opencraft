@@ -10,6 +10,7 @@ export interface WebDeploymentConfig {
   readonly builtinAgents: boolean;
   readonly hypernode: boolean;
   readonly fileDownloads?: boolean;
+  readonly htmlPreviews?: boolean;
   readonly extensions?: readonly string[];
   readonly machineDisplayNames?: Readonly<Record<string, string>>;
 }
@@ -41,6 +42,7 @@ export function parseWebDeploymentConfig(raw: string | null): WebDeploymentConfi
     throw new Error("Invalid website deployment configuration");
   }
   const record = value as Record<string, unknown>;
+  if (record.htmlPreviews !== undefined && typeof record.htmlPreviews !== "boolean") throw new Error("Invalid HTML preview capability");
   if (record.fileDownloads !== undefined && typeof record.fileDownloads !== "boolean") throw new Error("Invalid website file download capability");
   if (!Array.isArray(record.hosts) || typeof record.builtinAgents !== "boolean"
     || typeof record.hypernode !== "boolean") {
@@ -50,7 +52,7 @@ export function parseWebDeploymentConfig(raw: string | null): WebDeploymentConfi
   const names = record.machineDisplayNames;
   if (names !== undefined && (typeof names !== "object" || names === null || Array.isArray(names)
     || Object.entries(names).some(([id, name]) => !id || typeof name !== "string" || !name.trim() || name.trim().length > 64 || /\p{Cc}/u.test(name)))) throw new Error("Invalid website machine display names");
-  return { ...(record.fileDownloads === undefined ? {} : { fileDownloads: record.fileDownloads as boolean }), ...(record.userPlugins === undefined ? {} : { userPlugins: parseServerInstalledExtensions(record.userPlugins) }), ...(names === undefined ? {} : { machineDisplayNames: Object.freeze(Object.fromEntries(Object.entries(names).map(([id, name]) => [id, (name as string).trim()]))) }), ...(record.extensions === undefined ? {} : { extensions: record.extensions as string[] }), hosts: record.hosts, builtinAgents: record.builtinAgents, hypernode: record.hypernode };
+  return { ...(record.htmlPreviews === undefined ? {} : { htmlPreviews: record.htmlPreviews as boolean }), ...(record.fileDownloads === undefined ? {} : { fileDownloads: record.fileDownloads as boolean }), ...(record.userPlugins === undefined ? {} : { userPlugins: parseServerInstalledExtensions(record.userPlugins) }), ...(names === undefined ? {} : { machineDisplayNames: Object.freeze(Object.fromEntries(Object.entries(names).map(([id, name]) => [id, (name as string).trim()]))) }), ...(record.extensions === undefined ? {} : { extensions: record.extensions as string[] }), hosts: record.hosts, builtinAgents: record.builtinAgents, hypernode: record.hypernode };
 }
 
 export function resolveWebDeploymentConfig(
