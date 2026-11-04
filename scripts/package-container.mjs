@@ -19,17 +19,20 @@ for (const [source, target] of [
   ['scripts/container-deployment/gateway.mjs', 'container-gateway.mjs'],
   ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs'],
   ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs'],
+  ['scripts/server-deployment/sandbox-command.mjs', 'sandbox-command.mjs'],
+  ['scripts/container-deployment/hands-execution-owner.mjs', 'hands-execution-owner.mjs'],
 ]) await buildHeadlessBundle(join(root, 'runtime', target), { headlessEntry: join(repository, source) });
 for (const [source, target, format] of [
   ['apps/codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
   ['apps/codex-core/src/app-server-bin.ts', 'codex-app-server.cjs', 'cjs'],
   ['scripts/container-deployment/host.mjs', 'native-host.mjs', 'esm'],
+  ['scripts/container-deployment/hands.mjs', 'native-hands.mjs', 'esm'],
 ]) await build({ entryPoints: [join(repository, source)], outfile: join(root, 'runtime', target),
   bundle: true, platform: 'node', format, target: 'node26',
   ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
 await writeFile(join(root, 'bin/opencraft-host'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" --env-file-if-exists=.env "$opencraft_root/runtime/native-host.mjs" "$@"\n');
 await chmod(join(root, 'bin/opencraft-host'), 0o755);
-await writeFile(join(root, 'bin/opencraft-hands'), '#!/bin/sh\nset -eu\n: "${OPENCRAFT_BROWSER_DATA_DIR:?Set OPENCRAFT_BROWSER_DATA_DIR}"\numask 077\nmkdir -p "$OPENCRAFT_BROWSER_DATA_DIR"\nchmod 700 "$OPENCRAFT_BROWSER_DATA_DIR"\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/browser/owner.cjs"\n');
+await writeFile(join(root, 'bin/opencraft-hands'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/native-hands.mjs"\n');
 await chmod(join(root, 'bin/opencraft-hands'), 0o755);
 await cp(join(repository, 'LICENSE'), join(root, 'LICENSE'));
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));

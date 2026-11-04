@@ -45,6 +45,9 @@ services:
     volumes:
       - *data-volume
       - *workspace-volume
+    depends_on:
+      hands:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "/opt/opencraft/bin/node", "-e", "const f=require('node:fs'),p=process.env.OPENCRAFT_DATA_DIR+'/run/';for(const n of ['codex-core.sock','codex-app-server.sock','engine-host.json','dsh-host.json'])if(!f.existsSync(p+n))process.exit(1)"]
       interval: 10s
@@ -53,9 +56,12 @@ services:
       retries: 6
     stop_grace_period: 60s
 
-  # Hands owns live browser tabs and their native process independently.
+  # Hands owns live browser tabs plus the fixed Codex exec-server process.
   hands:
     <<: *runtime
+    cpus: 4.0
+    mem_limit: 8g
+    pids_limit: 4096
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -63,6 +69,10 @@ services:
     entrypoint: ["/opt/opencraft/bin/opencraft-hands"]
     environment:
       OPENCRAFT_BROWSER_DATA_DIR: ${OPENCRAFT_DATA_DIR}/hands
+      OPENCRAFT_HANDS_EXECUTION_SOCKET: ${OPENCRAFT_DATA_DIR}/hands/exec-owner.sock
+      OPENCRAFT_HANDS_EXECUTION_TOKEN: ${OPENCRAFT_DATA_DIR}/hands/exec-owner.token
+      OPENCRAFT_CODEX_EXECUTABLE: /opt/opencraft/runtime/codex/bin/codex
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
       HOME: ${OPENCRAFT_DATA_DIR}/hands
     # Chromium creates its own PID/network sandbox namespaces. Docker's
     # default capability set cannot do that; keep only the capabilities the
@@ -71,8 +81,9 @@ services:
     cap_add: [SYS_ADMIN, SETUID, SETGID, SYS_CHROOT]
     volumes:
       - *hands-volume
+      - *workspace-volume
     healthcheck:
-      test: ["CMD", "/opt/opencraft/bin/node", "-e", "const f=require('node:fs'),p=process.env.OPENCRAFT_BROWSER_DATA_DIR+'/owner.sock';if(!f.existsSync(p)||!f.lstatSync(p).isSocket())process.exit(1)"]
+      test: ["CMD", "/opt/opencraft/bin/node", "-e", "const f=require('node:fs'),d=process.env.OPENCRAFT_BROWSER_DATA_DIR;for(const p of [d+'/owner.sock',d+'/exec-owner.sock'])if(!f.existsSync(p)||!f.lstatSync(p).isSocket())process.exit(1)"]
       interval: 10s
       timeout: 5s
       start_period: 30s

@@ -2,6 +2,7 @@ import { lstat, readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { createSandboxPool, DEFAULT_SANDBOX_RESOURCES, SandboxFault, type SandboxBackend, type SandboxPool, type SandboxPoolPolicy } from "@opencraft/sandbox";
 import { systemdSandboxBackend, type SystemdSandboxOptions } from "./systemd.js";
+import { handsUnixSandboxBackend } from "./hands-unix.js";
 
 const invalid = () => new SandboxFault("SANDBOX_POLICY", "Execution sandbox configuration is invalid");
 function record(value: unknown): Record<string, unknown> {
@@ -18,6 +19,12 @@ export type SandboxBackendFactory = (options: unknown) => SandboxBackend | Promi
 
 /** The assembly selects a provider. Engine consumers only use SandboxPool. */
 export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>> = Object.freeze({
+  "hands-unix": async raw => {
+    const value = record(raw);
+    if (Object.keys(value).some(key => !["endpoint", "tokenFile"].includes(key))
+      || ![value.endpoint, value.tokenFile].every(path => typeof path === "string" && path.startsWith("/"))) throw invalid();
+    return handsUnixSandboxBackend(value as unknown as { endpoint: string; tokenFile: string });
+  },
   "linux-systemd": async raw => {
     const value = record(raw);
     const accepted = ["scope", "uid", "gid", "inheritHostIdentity", "userNamespaceMapping", "parentSlice", "ownerUnit", "tasksMax", "poolTasksMax", "fileDescriptorsPerProcess"];

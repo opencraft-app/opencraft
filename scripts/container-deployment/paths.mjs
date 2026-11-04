@@ -19,6 +19,9 @@ export function deploymentPaths(env = process.env) {
     engineConfig: join(dataDirectory, 'run', 'engine-host-config.json'),
     dshDescriptor: join(dataDirectory, 'run', 'dsh-host.json'),
     dshConfig: join(dataDirectory, 'run', 'dsh-host-config.json'),
+    sandboxConfig: join(dataDirectory, 'run', 'codex-hands-sandbox.json'),
+    handsExecutionEndpoint: join(dataDirectory, 'hands', 'exec-owner.sock'),
+    handsExecutionToken: join(dataDirectory, 'hands', 'exec-owner.token'),
   };
 }
 

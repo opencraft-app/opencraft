@@ -66,6 +66,12 @@ try {
     skillsDirectory: join(paths.dataDirectory, 'skills'),
     taskCodexCoreEndpoint: paths.coreEndpoint, taskCodexCoreTokenFile: paths.tokenPath,
   }) + '\n', { mode: 0o600 });
+  await writeFile(paths.sandboxConfig, JSON.stringify({
+    schemaVersion: 1,
+    backend: { id: 'hands-unix', options: { endpoint: paths.handsExecutionEndpoint, tokenFile: paths.handsExecutionToken } },
+    pool: { idPrefix: 'codex-hands', capacity: { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 } },
+    environment: { mode: 'selected', names: ['PATH', 'LANG', 'LC_ALL', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE'] },
+  }) + '\n', { mode: 0o600 });
   await mkdir(join(paths.dataDirectory, 'codex'), { recursive: true, mode: 0o700 });
   // One fixed proxy port for this independently supervised execution lifetime.
   const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
@@ -83,7 +89,7 @@ try {
     '--endpoint', paths.appServerEndpoint, '--core-endpoint', paths.coreEndpoint,
     '--token-file', paths.tokenPath, '--codex-executable', join(root, 'runtime/codex/bin/codex'),
     '--runtime-directory', paths.runtimeDirectory, '--data-directory', join(paths.dataDirectory, 'codex'),
-  ]);
+  ], { OPENCRAFT_SANDBOX_CONFIG: paths.sandboxConfig });
   start('dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig });
   start('engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig });
   let ready = false;

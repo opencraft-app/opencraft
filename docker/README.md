@@ -6,18 +6,19 @@ containers:
 | Service | Owns | Does not own |
 | --- | --- | --- |
 | `gateway` | HTTP/WebSocket admission, authentication, protocol translation and routing | model execution, task lifetime or native browser pages |
-| `brain` | Codex Core/AppServer, DSH/Pi execution and task/session lifetime | public ingress or browser tab lifetime |
-| `hands` | the private remote-browser owner, Electron worker and live browser tabs | account admission or conversation execution |
+| `brain` | Codex Core/AppServer, DSH/Pi execution and task/session lifetime | public ingress, browser tabs or Codex native filesystem/shell execution |
+| `hands` | remote-browser resources and the pinned Codex `exec-server` | account admission, AppServer state or conversation orchestration |
 
 Recreating `gateway` leaves Brain tasks and Hands tabs alive. The Gateway
 reattaches to both through private descriptors/sockets and never receives a
 Docker socket. All three services use the same reviewed image, so Docker stores
 the large runtime layers once.
 
-The current Brain still runs native Codex filesystem/terminal tools beside its
-AppServer. Moving those tools behind a separate remote-execution protocol is a
-future trust-boundary change, not something this Compose file pretends to do.
-Hands is therefore the browser resource owner in this version.
+Brain keeps Codex AppServer and its writable native session state. Its managed
+environment forwards only the pinned `codex exec-server --listen stdio` process
+to Hands over a private mode-0600 Unix socket. Each environment has a connection
+lease; owner loss terminates the process group and never replays input. This is
+not a general remote shell: other executables and argument vectors are rejected.
 
 ## First installation
 
@@ -52,10 +53,12 @@ to `0.0.0.0`.
 ## Storage and permissions
 
 `OPENCRAFT_HOST_DATA_DIR` is mounted as `OPENCRAFT_DATA_DIR` in Brain and
-Gateway. Hands receives only the `hands/` subdirectory and keeps native browser
-state and its private mode-0600 owner socket there; it cannot read the account,
+Gateway. Hands receives only the `hands/` subdirectory and keeps browser and
+exec-server sockets plus their private token there; it cannot read the account,
 conversation or engine state beside that directory. `OPENCRAFT_HOST_WORKSPACE_DIR` is mounted
-as `OPENCRAFT_WORKSPACE_DIR` in Brain and Gateway. Every container uses the same
+as `OPENCRAFT_WORKSPACE_DIR` in all three containers: Brain uses it for DSH/Pi,
+Gateway projects it to clients, and Codex native tools execute against it only
+inside Hands. Every container uses the same
 container-side identity; descriptors and process leases fail closed if the
 containers disagree about it.
 

@@ -55,7 +55,10 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.equal(hands.environment.HOME, '/data/.opencraft/hands');
   assert.deepEqual(hands.volumes.map(v => [v.source, v.target]), [
     ['/home/demo/.opencraft/hands', '/data/.opencraft/hands'],
+    ['/srv/projects', '/data'],
   ]);
+  assert.equal(hands.environment.OPENCRAFT_HANDS_EXECUTION_SOCKET, '/data/.opencraft/hands/exec-owner.sock');
+  assert.equal(hands.environment.OPENCRAFT_WORKSPACE_DIR, '/data');
   // Some Compose versions omit false-valued bind options from JSON output.
   assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
     ['bind', '/home/demo/.opencraft', '/data/.opencraft', false], ['bind', '/srv/projects', '/data', false],
