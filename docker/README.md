@@ -149,6 +149,8 @@ install -D -o root -g root -m 0755 \
 install -D -o root -g root -m 0600 \
   packaging/container-build/opencraft-github-build.env.example \
   /etc/opencraft-github-build.env
+# Set OPENCRAFT_BUILD_REPOSITORY to this host's absolute OpenCraft checkout.
+${EDITOR:-vi} /etc/opencraft-github-build.env
 install -D -o root -g root -m 0644 \
   packaging/container-build/opencraft-github-build.service \
   /etc/systemd/system/opencraft-github-build.service
