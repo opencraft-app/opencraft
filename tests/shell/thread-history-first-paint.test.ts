@@ -60,7 +60,7 @@ test('durable View lookup is inside the timer, cancellation is fenced, and real 
     await new Promise(resolve=>setTimeout(resolve,10));
     let resolveView!: (value: any)=>void;
     let mounted=0;
-    nav=createWorkbenchNavigationTransaction(a,{setViewId(){},cancelPending(){},mountInitial(){mounted++;},prepare:async()=>({commit:()=>true,cancel(){}})} as any,scopes,
+    nav=createWorkbenchNavigationTransaction(a,{setViewId(){},cancelPending(){},mountInitial(){mounted++;},prepare:async()=>({commit:()=>{mounted++;return true;},cancel(){}})} as any,scopes,
       {mode:'memory',isRetainedView:()=>false,restoreViewId:()=>new Promise(resolve=>{resolveView=resolve;})});
     const opening=nav.selectConversation(b);
     const duringLookup=nav.historyFirstPaint.getSnapshot();
@@ -72,14 +72,14 @@ test('durable View lookup is inside the timer, cancellation is fenced, and real 
     assert.equal(restored.viewId,'restored-view');assert.equal(restored.cache,'warm');
     nav.historyFirstPaint.settle(restored,'ok',{engine:'pi',lengthBucket:'lt50'});
     nav.dispose();
-    nav=createWorkbenchNavigationTransaction(a,{setViewId(){},cancelPending(){},mountInitial(){mounted++;},prepare:async()=>({commit:()=>true,cancel(){}})} as any,scopes,
+    nav=createWorkbenchNavigationTransaction(a,{setViewId(){},cancelPending(){},mountInitial(){mounted++;},prepare:async()=>({commit:()=>{mounted++;return true;},cancel(){}})} as any,scopes,
       {mode:'memory',isRetainedView:()=>false,restoreViewId:()=>new Promise(resolve=>{resolveView=resolve;})});
     const cancelled=nav.selectConversation(b);
     await Promise.resolve();
     nav.openSettings();resolveView(asRouteScopeId('obsolete-view'));
     assert.equal(await cancelled,false);assert.equal(mounted,1);
     assert.equal(nav.historyFirstPaint.getSnapshot(),null);nav.dispose();
-    nav=createWorkbenchNavigationTransaction(a,{setViewId(){},cancelPending(){},prepare:async()=>({commit:()=>true,cancel(){}})} as any,scopes,
+    nav=createWorkbenchNavigationTransaction(a,{setViewId(){},cancelPending(){},prepare:async()=>({commit:()=>{mounted++;return true;},cancel(){}})} as any,scopes,
       {mode:'memory',isRetainedView:()=>false,restoreViewId:async()=>{await new Promise(resolve=>setTimeout(resolve,10));return undefined;}});
     assert.equal(await nav.selectConversation(b),true);
     const uncached=nav.historyFirstPaint.getSnapshot()!;

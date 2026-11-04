@@ -296,8 +296,8 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
         ...extensions,
         ...(collaboration ? {"opencraft/collaboration": {...COLLABORATION_CAPABILITIES,modelSettings,threadDefaults,threadDefaultsObserve:threadDefaults}} : {}),
         ...(threadDefaults?{[THREAD_DEFAULTS_CAPABILITY]:{version:1,scope:THREAD_DEFAULTS_SCOPE,finalAdmission:true,read:true,write:true}}:{}),
-        ...(stopControl ? {[CONVERSATION_STOP_CAPABILITY]:{version:1,exactTurn:true,observe:true},
-          [CONVERSATION_QUEUE_CANCEL_CAPABILITY]:{version:1,finalAdmission:true}} : {}),
+        ...(stopControl ? {[CONVERSATION_STOP_CAPABILITY]:{version:1,exactTurn:true,observe:true}} : {}),
+        [CONVERSATION_QUEUE_CANCEL_CAPABILITY]: {version:1,finalAdmission:true},
         [OPENCRAFT_THREAD_PINS_EXTENSION]: OPENCRAFT_THREAD_PINS_CAPABILITY,
         [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging,
         ...(desktop ? { [OPENCRAFT_DESKTOP_EXTENSION]: desktop } : {}),
@@ -472,6 +472,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     const topology = change.type === "upsert" ? this.options.collaboration?.topology?.(change.thread.id) : null;
     const metadata = topology && change.type === "upsert"
       ? { ...params, change: { ...change, thread: { ...change.thread, ...topology } } } : params;
+    if (this.durableCatalog) { this.durableCatalog.observe(method, metadata); return; }
     for (const clientId of this.initializedClients) this.emit({ method, params: metadata }, clientId);
   }, true);
   private durableCatalog: DurableThreadCatalog | null = null;
@@ -2527,7 +2528,8 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (this.threadTitles?.notification(string(message.method), record(message.params))) return;
     this.catalogChanges.observeNotification(string(message.method), message.params);
-    this.durableCatalog?.observe(string(message.method), message.params);
+    // Allocation metadata is provisional until the catalog publisher observes first input acceptance.
+    if (message.method !== "thread/started") this.durableCatalog?.observe(string(message.method), message.params);
     if (message.method === "thread/archived" || message.method === "thread/deleted") {
       this.schedules?.suspend(threadId);
       void this.transcriptCache?.invalidate(threadId).catch(() => this.diagnostic({ event: "thread-cache-cleanup-failed" }));
@@ -3214,7 +3216,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     this.threadTitles?.observeResult(method, params, result);
     this.catalogChanges.observeResult(method, params, result);
-    this.durableCatalog?.observe(method, params, result);
+    if (method !== "thread/start") this.durableCatalog?.observe(method, params, result);
     try { this.identity?.observeResult(method, params, result, sender); }
     catch { this.diagnostic({ event: "thread-metadata-observation-failed" }); }
   }

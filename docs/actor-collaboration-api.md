@@ -228,3 +228,11 @@ CLI 返回 `orchestration_rejected`，模型工具保留对应状态。传输丢
 继续按原 receipt 对账，不改为成功或自动重放。Gateway 的
 `thread-orchestration` / `thread-orchestration-tool-failed` 诊断仅记录调用路径、
 operation/thread/turn ID、状态与数值 RPC code，不记录参数、prompt、凭据或原始异常正文。
+
+Local Host queue cancellation advertises its own final-admission capability,
+independently of exact running-Turn control and its stable Server identity.
+The existing trusted Actor request still owns the queued input, and its
+resource-owner admission is checked immediately before deletion. This does not
+grant wire callers authority to forge Actor context or manage another input.
+
+The shared durable directory consumes committed catalog events. Native `thread/start` responses and `thread/started` allocation notifications remain provisional until first input acceptance, including when Host overlays are enabled.

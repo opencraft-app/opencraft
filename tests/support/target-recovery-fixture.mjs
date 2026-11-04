@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { signedInspectionFixture } from './full-upgrade-fixture.mjs';
 import { sha256 } from '../../scripts/full-release/contract.mjs';
-export async function targetRecoveryFixture(t) {
-  const root = await mkdtemp(join(tmpdir(), 'recover-target-'));
+export async function targetRecoveryFixture(t, { parent = tmpdir() } = {}) {
+  const root = await mkdtemp(join(parent, 'recover-target-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const id = '89eed8a6-6d26-49c8-a11c-3bf9d89a98e1';
   const webState = join(root, 'web');

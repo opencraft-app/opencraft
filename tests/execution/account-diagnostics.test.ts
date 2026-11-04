@@ -22,3 +22,11 @@ test("usage HTTP failure is distinct from authentication and transport failure",
   assert.equal(accountFailureDiagnostic(Object.assign(new Error("private path"), { code: "ENOENT" })).code, "ENOENT");
   assert.equal(accountFailureDiagnostic(null).reason, "unclassified");
 });
+
+
+test("repeated refresh failures remain bounded and preserve unauthorized classification", () => {
+  for (const prefix of ["token refresh failed ", "refresh "]) {
+    assert.equal(accountFailureDiagnostic(new Error(prefix.repeat(20_000))).reason, "unclassified");
+    assert.equal(accountFailureDiagnostic(new Error(prefix.repeat(20_000) + "401 Unauthorized")).reason, "oauth-refresh-unauthorized");
+  }
+});

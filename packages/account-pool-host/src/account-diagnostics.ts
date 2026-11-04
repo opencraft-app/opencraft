@@ -4,6 +4,9 @@ import { createHash } from "node:crypto";
 export function accountFailureDiagnostic(error: unknown) {
   const message = error instanceof Error ? error.message : "";
   const http = /^Codex usage refresh failed \(HTTP ([1-5][0-9]{2})\)$/u.exec(message);
+  const normalized = message.toLowerCase();
+  const unauthorizedRefresh = (normalized.includes("token refresh failed") && normalized.includes("401", normalized.indexOf("token refresh failed") + "token refresh failed".length))
+    || (normalized.includes("refresh") && normalized.includes("401 unauthorized", normalized.indexOf("refresh") + "refresh".length));
   const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
   const reason = /refresh_token_reused|refresh token has already been used/iu.test(message) ? "refresh-token-reused"
     : /refresh_token_expired|refresh token (?:has )?expired/iu.test(message) ? "refresh-token-expired"
@@ -14,7 +17,7 @@ export function accountFailureDiagnostic(error: unknown) {
     : /Your access token could not be refreshed/iu.test(message) ? "refresh-login-required"
     : /unsupported_country_region_territory/iu.test(message) ? "unsupported-region"
     : /workspace routing discovery unauthorized/iu.test(message) ? "workspace-routing-unauthorized"
-    : /token refresh failed.*401|refresh.*401 Unauthorized/iu.test(message) ? "oauth-refresh-unauthorized"
+    : unauthorizedRefresh ? "oauth-refresh-unauthorized"
     : message === "Codex account cannot refresh without a refresh token" ? "refresh-token-missing"
     : message === "Codex refresh changed account identity" ? "account-identity-mismatch"
     : message === "Account credentials are unavailable" ? "credential-unavailable"

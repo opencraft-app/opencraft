@@ -27,6 +27,7 @@ test('maintenance diagnostics classify native stderr without exposing its conten
   const root=await mkdtemp(join(tmpdir(),'oc-maint-diagnostics-'));
   const script=join(root,'native.mjs');
   await writeFile(script,`#!${process.execPath}
+import {createInterface} from 'node:readline';
 createInterface({input:process.stdin}).on('line',line=>{const v=JSON.parse(line);if(v.method==='initialize'){process.stderr.write('refresh_token_reused synthetic-private-refresh\\n');console.log(JSON.stringify({id:v.id,result:{}}));}});
 `,{mode:0o700});
   const client=await createCodexMaintenanceClient({executable:script,codexHome:root});

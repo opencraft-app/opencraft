@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 // service crashes the process despite passing a callback to stdin.write().
 const serviceUrl = new URL('../../scripts/remote-browser-service.mjs', import.meta.url).href;
 const probe = String.raw`
+import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

@@ -4,8 +4,8 @@ import { mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { recoverLocalServer } from '../../scripts/recover-server-local.mjs';
 import { targetRecoveryFixture as fixture } from '../support/target-recovery-fixture.mjs';
-test('HTTP resumes the original owner once, retains failure, and refuses concurrent/duplicate activation', async t => {
-  const f = await fixture({ after() {} });
+test('HTTP resumes the original owner once, retains failure, and refuses concurrent/duplicate activation', { skip: process.getuid?.() !== 0 }, async t => {
+  const f = await fixture({ after() {} }, { parent: (await import('node:os')).homedir() });
   let app, agent, release = () => {};
   t.after(async () => { release(); await app?.close(); if (agent) { await new Promise(r => agent.server.close(r)); await agent.journal.close(); } await rm(f.root, { recursive: true, force: true }); });
   process.env.OPENCRAFT_FULL_RELEASE_TRUST_JSON = JSON.stringify(f.trust);
