@@ -2,8 +2,9 @@
 Description=Build the latest OpenCraft main image daily
 
 [Timer]
-OnCalendar=*-*-* 02:00:00 Asia/Shanghai
-RandomizedDelaySec=10m
+OnActiveSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=1s
 Persistent=true
 Unit=opencraft-github-build.service
 

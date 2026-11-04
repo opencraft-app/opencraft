@@ -160,9 +160,10 @@ systemctl enable --now opencraft-github-build.timer
 systemctl start opencraft-github-build.service  # optional immediate build
 ```
 
-The default schedule is once daily at 02:00 Asia/Shanghai with up to ten minutes
-of randomized delay. `systemctl list-timers opencraft-github-build.timer` shows
-the next run; build logs are available through
+The timer checks one minute after activation and one minute after each completed
+check or build. An unchanged Git revision exits without building, while a long
+build cannot overlap its successor. `systemctl list-timers
+opencraft-github-build.timer` shows the next run; build logs are available through
 `journalctl -u opencraft-github-build.service`.
 
 ## Validation

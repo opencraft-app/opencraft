@@ -140,6 +140,8 @@ test('the local GitHub builder is locked, revision-pinned and advances its movin
   assert.ok(builder.indexOf('docker build') < builder.indexOf('mv "$temporary_success" "$success_file"'));
   assert.match(service, /Type=oneshot/u);
   assert.match(service, /TimeoutStartSec=2h/u);
-  assert.match(timer, /OnCalendar=\*-\*-\* 02:00:00 Asia\/Shanghai/u);
+  assert.match(timer, /OnActiveSec=1min/u);
+  assert.match(timer, /OnUnitInactiveSec=1min/u);
+  assert.match(timer, /AccuracySec=1s/u);
   assert.match(timer, /Persistent=true/u);
 });
