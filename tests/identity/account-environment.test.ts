@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
@@ -38,7 +38,7 @@ test('two employees and two projects remain separate; project deletion restores 
 
 test('all values are encrypted on disk; saved secrets never appear in read or mutation views', async t => {
   const { root, vault, env } = await fixture(t);
-  const secret = 'synthetic-sensitive-marker-7c1f', normal = 'synthetic-normal-marker-3c93';
+  const secret = 'synthetic-' + randomUUID(), normal = 'synthetic-normal-marker-3c93';
   const result = env.replace('alice', a, 0, [entry(secret), entry(normal, false, 'SERVICE_REGION')]);
   assert.equal(JSON.stringify(result).includes(secret), false);
   assert.equal(result.variables[0]!.value, null); assert.equal(result.variables[1]!.value, normal);
