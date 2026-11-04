@@ -451,3 +451,47 @@ test("evidence write failure at the native send boundary prevents the mutation f
     assert.equal(f.owner!.isOpen(), false); assert.equal(f.owner!.snapshot().persistence, "unknown");
   } finally { await f.close(); }
 });
+
+
+test("a held retained directory cannot block fresh active rows or erase its prior route", async () => {
+  const f = await fixture();
+  try {
+    const old = (await f.rpc("thread/start")).thread;
+    f.registry.activate("new", 1);
+    const fresh = (await f.rpc("thread/start")).thread;
+    const newest = (await f.rpc("thread/start")).thread;
+    const held = f.hold("old", "thread/list");
+    const started = performance.now(), page = await f.rpc("thread/list", { limit: 1 });
+    await held.entered;
+    assert.ok(performance.now() - started < 2800, "page must fit the outer history read deadline");
+    assert.deepEqual(page.data.map((row: any) => row.id), [newest.id]);
+    assert.ok(page.nextCursor);
+    const second = await f.rpc("thread/list", { limit: 1, cursor: page.nextCursor });
+    assert.deepEqual(second.data.map((row: any) => row.id), [fresh.id]);
+    assert.deepEqual(second.catalog, { state: "error", coverage: "partial" });
+    assert.equal(second.nextCursor, null);
+    assert.equal(f.calls.filter(call => call.generation === "old" && call.method === "thread/list").length, 1,
+      "a continuation cannot retry a failed source within its pinned view");
+    assert.deepEqual(page.catalog, { state: "error", coverage: "partial" });
+    assert.equal(f.registry.route(old.id)!.generationId, "old");
+    held.release();
+    const recovered = await f.rpc("thread/list", { limit: 10 });
+    assert.equal(recovered.catalog, undefined);
+    assert.deepEqual(recovered.data.map((row: any) => row.id), [newest.id, fresh.id, old.id]);
+  } finally { await f.close(); }
+});
+
+test("all unavailable directory sources return explicit partial coverage without forgetting routes", async () => {
+  const f = await fixture();
+  try {
+    const old = (await f.rpc("thread/start")).thread;
+    f.registry.activate("new", 1);
+    const fresh = (await f.rpc("thread/start")).thread;
+    f.hold("old", "thread/list"); f.hold("new", "thread/list");
+    const page = await f.rpc("thread/list", { limit: 10 });
+    assert.deepEqual(page.data, []);
+    assert.deepEqual(page.catalog, { state: "error", coverage: "partial" });
+    assert.equal(f.registry.route(old.id)!.generationId, "old");
+    assert.equal(f.registry.route(fresh.id)!.generationId, "new");
+  } finally { await f.close(); }
+});

@@ -326,7 +326,7 @@ class RoutingSession {
       throw reason;
     } finally { release?.(); }
   }
-  private readonly cursors = new Map<string, { epoch: number; params: RpcRecord; queues: Map<string, { data: RpcRecord[]; next: string | null; fetched: boolean }>; seen: Set<string>; touched: number }>();
+  private readonly cursors = new Map<string, { epoch: number; params: RpcRecord; queues: Map<string, { data: RpcRecord[]; next: string | null; fetched: boolean }>; unavailable: Set<string>; seen: Set<string>; touched: number }>();
   private async listThreads(params: RpcRecord): Promise<RpcRecord> {
     const cursor = text(params.cursor);
     let state = cursor ? this.cursors.get(cursor) : undefined;
@@ -334,40 +334,77 @@ class RoutingSession {
     for (const [key, value] of this.cursors) if (Date.now() - value.touched > 300_000) this.cursors.delete(key);
     if (!state) {
       const { cursor: _cursor, ...filters } = params;
-      state = { epoch: this.registry.epoch(), params: filters, seen: new Set(), touched: Date.now(),
-        queues: new Map(this.registry.list().filter(g => !["candidate", "discarded", "retiring"].includes(g.state)).map(g => [g.id, { data: [], next: null, fetched: false }])) };
+      // Start with the current execution owner when a retained fleet exceeds
+      // the bounded read concurrency; output ordering is still metadata-owned.
+      const generations = this.registry.list().filter(g => !["candidate", "discarded", "retiring"].includes(g.state))
+        .sort((a, b) => Number(b.state === "active") - Number(a.state === "active"));
+      state = { epoch: this.registry.epoch(), params: filters, seen: new Set(), unavailable: new Set(), touched: Date.now(),
+        queues: new Map(generations.map(g => [g.id, { data: [], next: null, fetched: false }])) };
     }
+    const view = state;
     const limit = params.limit === undefined ? 100 : Number(params.limit);
     if (!Number.isInteger(limit) || limit < 1) throw error("Invalid directory page size");
+    // One page must fit inside the enclosing history RPC's eight-second
+    // deadline. A late read cannot publish into this completed cursor view.
+    const deadline = performance.now() + 2000;
+    const bounded = async <T>(read: () => Promise<T>): Promise<T> => {
+      const remaining = deadline - performance.now();
+      if (remaining <= 0) throw error("Directory source read budget exhausted", true);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([Promise.resolve().then(read), new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(error("Directory source read budget exhausted", true)), remaining);
+        })]);
+      } finally { clearTimeout(timer); }
+    };
+    const fill = async () => {
+      const sources = [...view.queues].filter(([id, q]) => !view.unavailable.has(id) && !q.data.length && (!q.fetched || q.next !== null));
+      let position = 0, discovered = false;
+      await Promise.all(Array.from({ length: Math.min(4, sources.length) }, async () => {
+        for (;;) {
+          const entry = sources[position++]; if (!entry) return;
+          const [generationId, queue] = entry;
+          try {
+            while (!queue.data.length && (!queue.fetched || queue.next !== null)) {
+              const { peer } = await bounded(() => this.peer(generationId));
+              const page = rpcRecord(await bounded(() => peer.call("thread/list", { ...view.params, limit,
+                ...(queue.next ? { cursor: queue.next } : {}) }, undefined, Math.max(1, deadline - performance.now()))));
+              if (this.closed || view.epoch !== this.registry.epoch()) throw error("Directory read scope changed", true);
+              if (!Array.isArray(page.data)) throw error("Invalid native Thread directory");
+              const rows = page.data.map(rpcRecord), next = typeof page.nextCursor === "string" ? page.nextCursor : null;
+              if (queue.fetched && next !== null && queue.next === next) throw error("Native directory cursor did not advance");
+              for (const row of rows) this.registry.discover(text(row.id), generationId);
+              discovered ||= rows.length > 0;
+              queue.data = rows; queue.next = next; queue.fetched = true;
+            }
+          } catch {
+            // Preserve this source's durable rows in the outer directory. Its
+            // absence in a partial page never certifies deletion or retirement.
+            view.unavailable.add(generationId);
+          }
+        }
+      }));
+      if (discovered) this.router.routesUpdated();
+    };
     const data: RpcRecord[] = [], descending = params.sortDirection !== "asc";
     const sortKey = params.sortKey === "created_at" ? "createdAt" : "updatedAt";
     while (data.length < limit) {
-      for (const [generationId, queue] of state.queues) {
-        while (!queue.data.length && (!queue.fetched || queue.next !== null)) {
-          const { peer } = await this.peer(generationId);
-          const page = rpcRecord(await peer.call("thread/list", { ...state.params, limit, ...(queue.next ? { cursor: queue.next } : {}) }));
-          if (!Array.isArray(page.data)) throw error("Invalid native Thread directory");
-          const before = queue.next; queue.data = page.data.map(rpcRecord); queue.next = typeof page.nextCursor === "string" ? page.nextCursor : null;
-          if (queue.fetched && queue.next !== null && before === queue.next) throw error("Native directory cursor did not advance");
-          queue.fetched = true;
-          for (const row of queue.data) this.registry.discover(text(row.id), generationId);
-          this.router.routesUpdated();
-        }
-      }
-      const heads = [...state.queues.entries()].filter(([, q]) => q.data.length);
+      await fill();
+      const heads = [...view.queues.entries()].filter(([id, q]) => !view.unavailable.has(id) && q.data.length);
       if (!heads.length) break;
       heads.sort((a, b) => {
         const delta = Number(a[1].data[0]![sortKey] ?? 0) - Number(b[1].data[0]![sortKey] ?? 0);
         return (descending ? -delta : delta) || text(a[1].data[0]!.id).localeCompare(text(b[1].data[0]!.id));
       });
       const row = heads[0]![1].data.shift()!, tid = text(row.id);
-      if (!state.seen.has(tid)) { state.seen.add(tid); data.push(row); }
+      if (!view.seen.has(tid)) { view.seen.add(tid); data.push(row); }
     }
-    if (state.epoch !== this.registry.epoch()) throw error("Generation admission changed during directory read", true);
+    if (view.epoch !== this.registry.epoch()) throw error("Generation admission changed during directory read", true);
     if (cursor) this.cursors.delete(cursor);
-    const more = [...state.queues.values()].some(q => q.data.length || q.next !== null || !q.fetched), nextCursor = more ? `ocg-directory:${randomUUID()}` : null;
-    if (nextCursor) { state.touched = Date.now(); this.cursors.set(nextCursor, state); }
-    return { data, nextCursor };
+    const more = [...view.queues].some(([id, q]) => !view.unavailable.has(id) && (q.data.length || q.next !== null || !q.fetched));
+    const nextCursor = more ? `ocg-directory:${randomUUID()}` : null;
+    if (nextCursor) { view.touched = Date.now(); this.cursors.set(nextCursor, view); }
+    return { data, nextCursor, ...(view.unavailable.size ? { catalog: { state: "error", coverage: "partial" } } : {}) };
   }
   private generationLost(id: string, incarnation: number, connectionEpoch: string, currentIncarnation: number): void {
     this.emit({ method: "opencraft/codex/generation/lost", params: { generationId: id, incarnation, connectionEpoch, threadIds: this.registry.threadIds(id) },
