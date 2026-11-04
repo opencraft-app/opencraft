@@ -7,14 +7,16 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import lockfile from 'proper-lockfile';
 import { deploymentPaths, readPrivateToken } from './paths.mjs';
+import { handsResources } from './resources.mjs';
 import { coreHealth } from '../server-deployment/execution.mjs';
 import { readDshHostIdentity } from '../server-deployment/dsh-host-client.mjs';
 import { readEngineHostIdentity } from '../server-deployment/engine-host-client.mjs';
 
-// Run this launcher on the Linux host, independently of Docker's lifecycle.
+// Run this launcher as the independent Brain owner, outside Gateway's lifecycle.
 if (process.platform !== 'linux' || !['x64', 'arm64'].includes(process.arch))
   throw new Error('The native execution bundle requires matching Linux arm64 or amd64');
 const paths = deploymentPaths();
+const executionResources = handsResources();
 await mkdir(paths.dataDirectory, { recursive: true, mode: 0o700 });
 const info = await stat(paths.dataDirectory);
 if (info.uid !== process.getuid() || (info.mode & 0o077) !== 0)
@@ -66,6 +68,12 @@ try {
     skillsDirectory: join(paths.dataDirectory, 'skills'),
     taskCodexCoreEndpoint: paths.coreEndpoint, taskCodexCoreTokenFile: paths.tokenPath,
   }) + '\n', { mode: 0o600 });
+  await writeFile(paths.sandboxConfig, JSON.stringify({
+    schemaVersion: 1,
+    backend: { id: 'hands-unix', options: { endpoint: paths.handsExecutionEndpoint, tokenFile: paths.handsExecutionToken } },
+    pool: { idPrefix: 'codex-hands', capacity: executionResources, defaults: executionResources },
+    environment: { mode: 'selected', names: ['PATH', 'LANG', 'LC_ALL', 'HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE'] },
+  }) + '\n', { mode: 0o600 });
   await mkdir(join(paths.dataDirectory, 'codex'), { recursive: true, mode: 0o700 });
   // One fixed proxy port for this independently supervised execution lifetime.
   const listener = createServer(); listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
@@ -83,7 +91,7 @@ try {
     '--endpoint', paths.appServerEndpoint, '--core-endpoint', paths.coreEndpoint,
     '--token-file', paths.tokenPath, '--codex-executable', join(root, 'runtime/codex/bin/codex'),
     '--runtime-directory', paths.runtimeDirectory, '--data-directory', join(paths.dataDirectory, 'codex'),
-  ]);
+  ], { OPENCRAFT_SANDBOX_CONFIG: paths.sandboxConfig });
   start('dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig });
   start('engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig });
   let ready = false;

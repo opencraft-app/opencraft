@@ -77,14 +77,20 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
   }
   const server = createServer(socket => {
     socket.on('error', () => socket.destroy());
-    if (peer || closing) { socket.end(JSON.stringify({ type: 'owner-busy' }) + '\n', () => socket.destroy()); return; }
-    peer = socket; let accepted = false, count = 0;
+    let accepted = false, count = 0;
     const greeting = setTimeout(() => socket.destroy(), 5000); greeting.unref();
     readMessages(socket, 256 * 1024, message => {
       if (!accepted) {
+        if (message.type === 'probe' && message.protocol === PROTOCOL) {
+          clearTimeout(greeting);
+          void ready.then(() => { send(socket, { type: 'healthy', protocol: PROTOCOL, workerPid: child.pid }); socket.end(); }, () => socket.destroy());
+          return;
+        }
+        if (peer || closing) { clearTimeout(greeting); send(socket, { type: 'owner-busy' }); socket.end(); return; }
         if (message.type !== 'attach' || message.protocol !== PROTOCOL) {
           send(socket, { type: 'owner-incompatible', protocol: PROTOCOL }); socket.end(); return;
         }
+        peer = socket;
         accepted = true; clearTimeout(greeting);
         void fence.then(() => ready).then(async () => {
           if (peer !== socket || socket.destroyed) return;
@@ -126,7 +132,16 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
     await unlink(socketPath).catch(() => {});
   } };
 }
-module.exports = { PROTOCOL, readMessages, createBrowserOwner };
+function installOwnerSignals(owner, runtime = process) {
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return; stopping = true;
+    void owner.close().then(() => { runtime.exitCode = 0; }, () => { runtime.exitCode = 1; });
+  };
+  runtime.once('SIGINT', stop); runtime.once('SIGTERM', stop);
+  return stop;
+}
+module.exports = { PROTOCOL, readMessages, createBrowserOwner, installOwnerSignals };
 
 if (require.main === module) {
   const executable = join(__dirname, 'electron/electron');
@@ -135,5 +150,5 @@ if (require.main === module) {
   void createBrowserOwner({ socketPath: join(env.OPENCRAFT_BROWSER_DATA_DIR, 'owner.sock'),
     spawnWorker: () => spawn(executable, [...flags, join(__dirname, 'worker.cjs')], { env, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], serialization: 'json' }),
     onFailure: () => { process.exitCode = 1; },
-  }).catch(() => { process.exitCode = 1; });
+  }).then(owner => installOwnerSignals(owner)).catch(() => { process.exitCode = 1; });
 }

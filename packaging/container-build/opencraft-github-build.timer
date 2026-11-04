@@ -1,0 +1,12 @@
+[Unit]
+Description=Build the latest OpenCraft main image daily
+
+[Timer]
+OnActiveSec=1min
+OnUnitInactiveSec=1min
+AccuracySec=1s
+Persistent=true
+Unit=opencraft-github-build.service
+
+[Install]
+WantedBy=timers.target

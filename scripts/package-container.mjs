@@ -12,23 +12,31 @@ await mkdir(output, { recursive: true });
 process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT = join(output, 'server.tar.gz');
 console.log('Building the verified Headless archive and native runtimes');
 const archive = await packageHeadlessLinux({ architecture: process.arch === 'arm64' ? 'arm64' : 'amd64' });
-console.log('Preparing container gateway and independent native Host entries');
+console.log('Preparing container Gateway, Brain and Hands owner entries');
 execFileSync('tar', ['-xzf', archive, '-C', output]);
 const root = join(output, 'opencraft-server');
 for (const [source, target] of [
   ['scripts/container-deployment/gateway.mjs', 'container-gateway.mjs'],
   ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs'],
   ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs'],
+  ['scripts/server-deployment/sandbox-command.mjs', 'sandbox-command.mjs'],
+  ['scripts/container-deployment/hands-execution-owner.mjs', 'hands-execution-owner.mjs'],
+  ['scripts/container-deployment/health.mjs', 'container-health.mjs'],
 ]) await buildHeadlessBundle(join(root, 'runtime', target), { headlessEntry: join(repository, source) });
 for (const [source, target, format] of [
   ['apps/codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
   ['apps/codex-core/src/app-server-bin.ts', 'codex-app-server.cjs', 'cjs'],
   ['scripts/container-deployment/host.mjs', 'native-host.mjs', 'esm'],
+  ['scripts/container-deployment/hands.mjs', 'native-hands.mjs', 'esm'],
 ]) await build({ entryPoints: [join(repository, source)], outfile: join(root, 'runtime', target),
   bundle: true, platform: 'node', format, target: 'node26',
   ...(format === 'esm' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}) });
 await writeFile(join(root, 'bin/opencraft-host'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" --env-file-if-exists=.env "$opencraft_root/runtime/native-host.mjs" "$@"\n');
 await chmod(join(root, 'bin/opencraft-host'), 0o755);
+await writeFile(join(root, 'bin/opencraft-hands'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/native-hands.mjs"\n');
+await chmod(join(root, 'bin/opencraft-hands'), 0o755);
+await writeFile(join(root, 'bin/opencraft-health'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/container-health.mjs" "$@"\n');
+await chmod(join(root, 'bin/opencraft-health'), 0o755);
 await cp(join(repository, 'LICENSE'), join(root, 'LICENSE'));
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
 const files = [];
@@ -41,6 +49,6 @@ async function inventory(directory) {
   }
 }
 await inventory(root);
-await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-external-host',
+await writeFile(join(root, 'manifest.json'), JSON.stringify({ ...manifest, delivery: 'docker-compose-owners',
   files: [...files, ...manifest.files.filter(file => file.link)].sort((a, b) => a.path.localeCompare(b.path)) }, null, 2) + '\n');
-console.log('Container and native Host payload ready');
+console.log('Container owner payload ready');

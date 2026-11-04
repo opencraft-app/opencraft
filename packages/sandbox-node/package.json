@@ -8,7 +8,8 @@
     "./systemd": "./src/systemd.ts",
     "./runtime": "./src/runtime.ts",
     "./command": "./src/command.ts",
-    "./engine": "./src/engine.ts"
+    "./engine": "./src/engine.ts",
+    "./hands-unix": "./src/hands-unix.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

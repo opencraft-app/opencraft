@@ -1,36 +1,120 @@
 name: opencraft
+
+x-runtime: &runtime
+  image: ${OPENCRAFT_IMAGE:-opencraft:local}
+  platform: ${OPENCRAFT_PLATFORM:-linux/amd64}
+  init: true
+  restart: unless-stopped
+  user: "${OPENCRAFT_UID:?Set the deployment user UID}:${OPENCRAFT_GID:?Set the deployment user group GID}"
+  network_mode: host
+
+x-data-volume: &data-volume
+  type: bind
+  source: ${OPENCRAFT_HOST_DATA_DIR:?Set the absolute host data directory}
+  target: ${OPENCRAFT_DATA_DIR:?Set the absolute container data directory}
+  bind:
+    create_host_path: false
+
+x-workspace-volume: &workspace-volume
+  type: bind
+  source: ${OPENCRAFT_HOST_WORKSPACE_DIR:?Set the absolute host workspace directory}
+  target: ${OPENCRAFT_WORKSPACE_DIR:?Set the absolute container workspace directory}
+  bind:
+    create_host_path: false
+
+x-hands-volume: &hands-volume
+  type: bind
+  source: ${OPENCRAFT_HOST_DATA_DIR}/hands
+  target: ${OPENCRAFT_DATA_DIR}/hands
+  bind:
+    create_host_path: false
+
 services:
-  opencraft:
-    image: ${OPENCRAFT_IMAGE:-opencraft:local}
-    platform: ${OPENCRAFT_PLATFORM:-linux/arm64}
+  # Brain owns task and engine lifetime. Recreating Gateway must not stop it.
+  brain:
+    <<: *runtime
     build:
       context: ..
       dockerfile: docker/Dockerfile
       target: runtime
-    init: true
-    restart: unless-stopped
-    user: "${OPENCRAFT_UID:?Set the native Host user UID}:${OPENCRAFT_GID:?Set the native Host group GID}"
-    # The existing private Host descriptors use host loopback endpoints.
-    network_mode: host
-    # Execution lease recovery verifies host process birth through /proc.
+    pid: host
+    entrypoint: ["/opt/opencraft/bin/opencraft-host"]
+    environment:
+      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+    volumes:
+      - *data-volume
+      - *workspace-volume
+    depends_on:
+      hands:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/opt/opencraft/bin/opencraft-health", "brain"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    stop_grace_period: 60s
+
+  # Hands owns live browser tabs plus the fixed Codex exec-server process.
+  hands:
+    <<: *runtime
+    cpus: ${OPENCRAFT_HANDS_CPUS:-4.0}
+    mem_limit: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
+    pids_limit: 4096
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    entrypoint: ["/opt/opencraft/bin/opencraft-hands"]
+    environment:
+      OPENCRAFT_BROWSER_DATA_DIR: ${OPENCRAFT_DATA_DIR}/hands
+      OPENCRAFT_HANDS_EXECUTION_SOCKET: ${OPENCRAFT_DATA_DIR}/hands/exec-owner.sock
+      OPENCRAFT_HANDS_EXECUTION_TOKEN: ${OPENCRAFT_DATA_DIR}/hands/exec-owner.token
+      OPENCRAFT_CODEX_EXECUTABLE: /opt/opencraft/runtime/codex/bin/codex
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+      OPENCRAFT_HANDS_CPUS: ${OPENCRAFT_HANDS_CPUS:-4.0}
+      OPENCRAFT_HANDS_MEMORY_BYTES: ${OPENCRAFT_HANDS_MEMORY_BYTES:-8589934592}
+      HOME: ${OPENCRAFT_DATA_DIR}/hands
+    # Chromium creates its own PID/network sandbox namespaces. Docker's
+    # default capability set cannot do that; keep only the capabilities the
+    # sandbox helper needs instead of disabling Chromium's sandbox.
+    cap_drop: [ALL]
+    cap_add: [SYS_ADMIN, SETUID, SETGID, SYS_CHROOT]
+    volumes:
+      - *hands-volume
+      - *workspace-volume
+    healthcheck:
+      test: ["CMD", "/opt/opencraft/bin/opencraft-health", "hands"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    stop_grace_period: 30s
+
+  # Gateway owns admission and protocol translation, never task or tab lifetime.
+  gateway:
+    <<: *runtime
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
     pid: host
     environment:
-      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR:?Set an absolute host data directory}
-      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR:?Set an absolute host workspace directory}
+      OPENCRAFT_DATA_DIR: ${OPENCRAFT_DATA_DIR}
+      OPENCRAFT_WORKSPACE_DIR: ${OPENCRAFT_WORKSPACE_DIR}
+      OPENCRAFT_BROWSER_OWNER_SOCKET: ${OPENCRAFT_DATA_DIR}/hands/owner.sock
     command: ["--host", "127.0.0.1", "--port", "${OPENCRAFT_PORT:-10000}", "--data-dir", "${OPENCRAFT_DATA_DIR}", "--engines", "dsh,pi", "--default-engine", "pi"]
     volumes:
-      - type: bind
-        source: ${OPENCRAFT_DATA_DIR}
-        target: ${OPENCRAFT_DATA_DIR}
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${OPENCRAFT_WORKSPACE_DIR}
-        target: ${OPENCRAFT_WORKSPACE_DIR}
-        bind:
-          create_host_path: false
+      - *data-volume
+      - *workspace-volume
+    depends_on:
+      brain:
+        condition: service_healthy
+      hands:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "/opt/opencraft/bin/node", "-e", "fetch('http://127.0.0.1:${OPENCRAFT_PORT:-10000}/health').then(async r=>{const b=await r.json();if(!r.ok || !b.ok || b.hosts?.['local-codex']?.state!=='ready')process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "/opt/opencraft/bin/node", "-e", "fetch('http://127.0.0.1:${OPENCRAFT_PORT:-10000}/health').then(async r=>{const b=await r.json();if(!r.ok||!b.ok||b.hosts?.['local-codex']?.state!=='ready')process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 12s
       start_period: 30s
