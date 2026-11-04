@@ -128,13 +128,16 @@ test('container candidates carry pinned bases, source identity and both public a
   assert.ok(workflow.indexOf('npm ci --no-audit --no-fund') < workflow.indexOf('node --test tests/server/container-deployment.test.mjs'));
 });
 
-test('the local GitHub builder is locked, revision-pinned and advances its moving tag only after success', async () => {
+test('the local GitHub builder is portable, locked, revision-pinned and advances its moving tag only after success', async () => {
   const root = new URL('../..', import.meta.url);
-  const [builder, service, timer] = await Promise.all([
+  const [builder, environmentExample, service, timer] = await Promise.all([
     readFile(new URL('scripts/container-deployment/build-from-github.sh', root), 'utf8'),
+    readFile(new URL('packaging/container-build/opencraft-github-build.env.example', root), 'utf8'),
     readFile(new URL('packaging/container-build/opencraft-github-build.service', root), 'utf8'),
     readFile(new URL('packaging/container-build/opencraft-github-build.timer', root), 'utf8'),
   ]);
+  assert.match(environmentExample, /^OPENCRAFT_BUILD_REPOSITORY=\/path\/to\/opencraft$/mu);
+  assert.doesNotMatch(environmentExample, /\/root\/|imconnect/u);
   assert.match(builder, /flock -n 9/u);
   assert.match(builder, /refs\/remotes\/origin\/\$branch\^\{commit\}/u);
   assert.match(builder, /org\.opencontainers\.image\.revision/u);
