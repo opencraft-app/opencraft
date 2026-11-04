@@ -4,7 +4,9 @@ import test from "node:test";
 import { createComposerController, type SubmissionReceipt, type SubmitIntent } from "@opencraft/composer-core";
 import {
   createConversationScopeRegistry,
+  createConversationDisplayContinuity,
   createWorkbenchSubmissionPipeline,
+  submittedMessageDisplay,
 } from "@opencraft/workbench-runtime";
 
 const receipt: SubmissionReceipt = {
@@ -40,6 +42,66 @@ function createIntent(draftId: string): SubmitIntent {
     createdAt: 1,
   };
 }
+
+test("first-message sender is captured before creation and retained through the display handoff", async () => {
+  const account = { kind: "employee" as const, loginName: "alice" };
+  const scopes = createConversationScopeRegistry({ getSubmissionSender: () => account });
+  const draft = scopes.openDraft({ draftId: "sender-draft",
+    execution: { hostId: "local", workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+  const cache = createConversationDisplayContinuity({ namespace: "sender-test", storage: {
+    async load() { return null; }, async save() {}, async remove() {},
+  } });
+  let release!: () => void;
+  const waiting = new Promise<void>(resolve => { release = resolve; });
+  const intent = createIntent(draft.id);
+  const pipeline = createWorkbenchSubmissionPipeline({ scopes,
+    async submitNewThread(command) {
+      assert.equal(command, intent, "display identity stays outside the command");
+      assert.equal("sender" in command, false);
+      const sender = scopes.getDraft(draft.id)!.submissionSender;
+      await waiting;
+      cache.retainSubmission(command, receipt, sender);
+      return receipt;
+    },
+    async submitExistingThread() { throw new Error("unused"); },
+    async submitFirstTurn() { throw new Error("first turn already accepted"); },
+    async promoteDraft(id) { scopes.promoteDraft(id); },
+  });
+  const operation = pipeline.submit(intent);
+  try {
+    const pending = scopes.getDraft(draft.id)!;
+    assert.deepEqual(submittedMessageDisplay(pending.submission!, pending.submissionSender).sender,
+      { kind: "employee", loginName: "alice" }, "sender paints before creation finishes");
+    account.loginName = "bob";
+    assert.equal(pending.submissionSender?.loginName, "alice", "account mutation cannot rewrite a submitted message");
+    release();
+    await operation;
+    const block = cache.peekSubmission("local", "thread-one")!.frames[0]!.blocks[0]!;
+    assert.equal(block.type, "user-message");
+    if (block.type !== "user-message") throw new Error("missing first message");
+    assert.deepEqual(block.sender, { kind: "employee", loginName: "alice" }, "route handoff keeps the same sender");
+    assert.equal(scopes.getDraft(draft.id), null);
+  } finally { release(); await operation.catch(() => undefined); scopes.dispose(); }
+});
+
+test("retry preserves submit-time sender while a new input captures its own sender", () => {
+  let name: string | null = "alice";
+  const scopes = createConversationScopeRegistry({ getSubmissionSender: () => name === null ? null : { kind: "employee", loginName: name } });
+  const draft = scopes.openDraft({ draftId: "sender-retry",
+    execution: { hostId: "local", workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+  const intent = createIntent(draft.id);
+  try {
+    scopes.beginSubmit(draft.id, intent);
+    scopes.failDraft(draft.id, new Error("not dispatched"));
+    name = "bob";
+    assert.equal(scopes.beginSubmit(draft.id, intent).submissionSender?.loginName, "alice");
+    scopes.failDraft(draft.id, new Error("not dispatched"));
+    assert.equal(scopes.beginSubmit(draft.id, { ...intent, clientMessageId: "new-input" }).submissionSender?.loginName, "bob");
+    scopes.failDraft(draft.id, new Error("not dispatched"));
+    name = null;
+    assert.equal(scopes.beginSubmit(draft.id, { ...intent, clientMessageId: "anonymous-input" }).submissionSender, null);
+  } finally { scopes.dispose(); }
+});
 
 test("an accepted first Turn retries promotion without submitting twice", async () => {
   const scopes = createConversationScopeRegistry();

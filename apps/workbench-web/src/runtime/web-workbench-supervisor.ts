@@ -1048,6 +1048,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       ? createWorkbenchThreadLocation(initialHostId, persistedThreadId)
       : null;
   const conversationScopes = createConversationScopeRegistry({
+    getSubmissionSender: () => platformAccounts.getSnapshot().contribution?.getSnapshot().submissionSender ?? null,
     isInputRetained: (scopeId) => conversationViews.hasRetainedInput(scopeId),
     // Local persisted input may restore its client identity and placement.
     // A canonical promotion alias still wins; execution locks never restore.
@@ -1090,7 +1091,7 @@ export async function createWebWorkbenchApplicationSupervisor(
   let displayWritesSuspended = false;
   let displayResumeAfterGeneration = -1;
   const displayContinuity: BrowserDisplayContinuity = {
-    retainSubmission: (intent, receipt) => currentDisplayContinuity.retainSubmission(intent, receipt),
+    retainSubmission: (intent, receipt, sender) => currentDisplayContinuity.retainSubmission(intent, receipt, sender),
     peekSubmission: (hostId, threadId) => currentDisplayContinuity.peekSubmission(hostId, threadId),
     peek: (hostId, threadId) => currentDisplayContinuity.peek(hostId, threadId),
     async load(hostId, threadId) {

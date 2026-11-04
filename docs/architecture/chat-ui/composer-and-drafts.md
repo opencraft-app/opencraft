@@ -803,6 +803,19 @@ startup status row or spinner. A rejected submission still exposes its error and
 explicit retry action. This presentation does not change creation, binding,
 queuing, or the Conversation footer's ownership of follow-up input.
 
+The Draft scope captures optional sender display metadata synchronously at
+submission, outside the immutable command payload. Pending presentation and the
+temporary Thread handoff use that same snapshot, so an acknowledgement does not
+insert an avatar/name row. Account changes cannot relabel an existing submission;
+an exact retry retains its snapshot and a new input captures its own. Missing
+identity remains absent, and authoritative server attribution still wins.
+
+User messages do not display sending or steering lifecycle copy, including
+pending, accepted, cancelled and declined steering. Delivery and steering states
+remain available to the runtime; failed, blocked and unconfirmed delivery still
+show actionable feedback. Attachment-only steering does not reserve an empty
+status footer.
+
 ## Composer image attachment preview
 
 Draft image thumbnails open the shared zoomable image viewport in a Radix modal.
