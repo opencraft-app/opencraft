@@ -53,11 +53,13 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
       }
     }
   }
-  // Retain the native executor transport with its independently switched Core payload.
-  // Codex uses pipes; terminal consumers use execution/native's packaged node-pty.
-  await build({ absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'scripts/server-deployment/sandbox-command.mjs')],
-    outfile: join(full, 'core/sandbox-command.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node26',
-    external: ['node-pty'], banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
+  if (enabled.has('codex')) {
+    // Retain the native executor transport with its independently switched Core payload.
+    // Codex uses pipes; terminal consumers use execution/native's packaged node-pty.
+    await build({ absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'scripts/server-deployment/sandbox-command.mjs')],
+      outfile: join(full, 'core/sandbox-command.mjs'), bundle: true, platform: 'node', format: 'esm', target: 'node26',
+      external: ['node-pty'], banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } });
+  }
   const coreLicenses = [];
   for (const [directory, manifest] of bundledPackages) {
     const label = manifest.name.replaceAll('/', '_') + '-' + manifest.version;

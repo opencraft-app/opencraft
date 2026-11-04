@@ -10,7 +10,7 @@
   "dependencies": {
     "@opencraft/identity-core": "*",
     "@opencraft/relay-protocol": "*",
-    "ws": "^8.22.0"
+    "ws": "^8.22.1"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
