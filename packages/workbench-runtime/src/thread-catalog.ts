@@ -35,7 +35,7 @@ export function projectAppServerThread(
     title: thread.name?.replace(/^☁️\s*/u, "").trim() || thread.preview?.trim()
       || thread.agentNickname?.trim()
       || (thread.parentThreadId != null
-        ? `${thread.agentRole?.trim() || "Thread"} · ${thread.id.slice(-8)}`
+        ? [thread.agentRole?.trim(), `#${thread.id.slice(-8)}`].filter(Boolean).join(" · ")
         : "New chat"),
     project: parts.at(-1) ?? "Workspace",
     lineage: thread.parentThreadId != null ? "subagent" : thread.forkedFromId != null ? "fork" : "root",

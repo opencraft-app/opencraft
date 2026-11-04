@@ -50,7 +50,7 @@ try {
     const row=(id:string)=>page.locator('[data-thread-id="'+id+'"] > .sidebar-activity-row .sidebar-activity-item');
     await row('child-review-00000001').waitFor();
     assert.match(await row('child-review-00000001').innerText(),/Atlas/);
-    assert.match(await row('child-empty-00000003').innerText(),/reviewer · 00000003/);
+    assert.match(await row('child-empty-00000003').innerText(),/reviewer · #00000003/);
     assert.equal(await page.locator('[data-thread-id="hidden"]').count(),0);
     assert.equal(await page.locator('.sidebar-thread-tree__children').count(),2);
     const groups=await page.locator('.sidebar-thread-tree__children').evaluateAll(elements=>elements.map(element=>{
