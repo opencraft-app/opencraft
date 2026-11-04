@@ -56,8 +56,8 @@ test("Activity metadata owns project copy while serverOrigin retains Server prov
   assert.deepEqual(sidebarActivityMetadata({
     ...local,
     serverOrigin: threadServerOrigin({
-      serverId: "server:9.134.163.40",
-      label: "9.134.163.40",
+      serverId: "server:192.0.2.40",
+      label: "192.0.2.40",
     }),
     project: "V8",
   }), { project: "V8" });

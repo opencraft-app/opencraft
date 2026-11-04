@@ -39,11 +39,22 @@ OPENCRAFT_GID=$(id -g)
 OPENCRAFT_PORT=10000
 OPENCRAFT_IMAGE=opencraft:local
 OPENCRAFT_PLATFORM=linux/amd64
+OPENCRAFT_HANDS_CPUS=4.0
+OPENCRAFT_HANDS_MEMORY_BYTES=8589934592
 EOF
+node ../scripts/container-deployment/compose-release.mjs doctor
 docker compose build
 docker compose up -d --wait
 docker compose ps
 ```
+
+The default Hands execution budget is 4 CPUs and 8 GiB. The deployment doctor
+requires another 2 GiB of host RAM for Brain, Gateway and the operating system,
+and at least 5 GiB free on the data filesystem. An intentionally
+oversubscribed experiment can pass `--allow-oversubscription`; that flag records
+an operator decision, not a production sizing recommendation. If the Hands
+budget is changed, Compose, Brain admission and the kernel verification all
+consume the same two values and reject disagreement.
 
 Open `http://127.0.0.1:10000`. The default listener is loopback-only. An
 Internet-facing installation still needs the existing HTTPS and admission
@@ -85,18 +96,33 @@ after verifying browser startup.
 
 ## Upgrade and rollback
 
-Build a content-addressed or versioned image tag, update `OPENCRAFT_IMAGE`, then
-apply services in owner-first order:
+Build a content-addressed or versioned image reference, then use the transaction
+tool. It checks paths, ownership, capacity, disk and rendered Compose config;
+uses a deployment lock; applies and waits for each owner in strict dependency
+order (`hands`, `brain`, `gateway`); and writes `.env` only after all three are
+healthy:
 
 ```sh
-docker compose up -d --no-deps brain hands
-docker compose up -d --no-deps gateway
-docker compose ps
+node ../scripts/container-deployment/compose-release.mjs doctor
+node ../scripts/container-deployment/compose-release.mjs upgrade \
+  ghcr.io/opencraft-app/opencraft@sha256:REPLACE_WITH_VERIFIED_DIGEST
 ```
 
-An unchanged Brain or Hands container is not recreated. A Gateway-only release
-can use `docker compose up -d --no-deps gateway`. Keep the previous image tag for
-code rollback. A code rollback does not undo a database migration.
+If a stage fails, the tool reapplies the previous image in the same owner order.
+After a successful change, this explicit command reuses the recorded previous
+image:
+
+```sh
+node ../scripts/container-deployment/compose-release.mjs rollback
+```
+
+Mutable `latest`, untagged and local development images are refused unless the
+operator explicitly passes `--allow-mutable-image`. Keep the previous digest in
+the registry. A code rollback does not undo a database migration and must never
+be represented as data rollback; take a cold data backup before a migration.
+An unchanged owner is not recreated. A reviewed Gateway-only change may still
+use `docker compose up -d --no-deps --wait gateway` when its image digest is
+already persisted in `.env`.
 
 Before intentionally replacing Brain, let active tasks finish. Before replacing
 Hands, close or checkpoint important live tabs; a compatible Gateway-only change

@@ -1,6 +1,10 @@
 # syntax=docker/dockerfile:1
-ARG NODE_VERSION=26.7.0
-FROM node:${NODE_VERSION}-bookworm-slim AS build
+ARG NODE_IMAGE=node:26.7.0-bookworm-slim@sha256:4db36457f406501e6f608802e5da617e5fbd0e80b75901b6a09de1ae5a667d32
+ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:99c0b25c46d0214d5a2091092e7908907dcaecd6a962cde0ac700acee222b6f3
+FROM ${NODE_IMAGE} AS build
+ARG OPENCRAFT_BUILD_ID=development
+ARG OPENCRAFT_SOURCE_REVISION=unknown
+ARG SOURCE_DATE_EPOCH
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 ENV ELECTRON_SKIP_BINARY_DOWNLOAD=1
@@ -15,7 +19,9 @@ RUN --mount=type=cache,target=/root/.npm env -u ELECTRON_SKIP_BINARY_DOWNLOAD no
 FROM scratch AS host-artifact
 COPY --from=build /out/opencraft-server/ /
 
-FROM debian:bookworm-slim AS runtime
+FROM ${RUNTIME_IMAGE} AS runtime
+ARG OPENCRAFT_BUILD_ID=development
+ARG OPENCRAFT_SOURCE_REVISION=unknown
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates git openssh-client libatomic1 libasound2 libatk-bridge2.0-0 libatk1.0-0 \
     fonts-noto-cjk fonts-noto-color-emoji \
@@ -24,6 +30,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 1000 opencraft && useradd --uid 1000 --gid 1000 --no-create-home opencraft
 COPY --from=build /out/opencraft-server /opt/opencraft
+LABEL org.opencontainers.image.title="OpenCraft" \
+      org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \
+      org.opencontainers.image.source="https://github.com/opencraft-app/opencraft" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
+      org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
 RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
     && chmod 4755 /opt/opencraft/runtime/browser/electron/chrome-sandbox
 ENV PATH=/opt/opencraft/bin:$PATH

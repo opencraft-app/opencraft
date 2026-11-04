@@ -77,14 +77,20 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
   }
   const server = createServer(socket => {
     socket.on('error', () => socket.destroy());
-    if (peer || closing) { socket.end(JSON.stringify({ type: 'owner-busy' }) + '\n', () => socket.destroy()); return; }
-    peer = socket; let accepted = false, count = 0;
+    let accepted = false, count = 0;
     const greeting = setTimeout(() => socket.destroy(), 5000); greeting.unref();
     readMessages(socket, 256 * 1024, message => {
       if (!accepted) {
+        if (message.type === 'probe' && message.protocol === PROTOCOL) {
+          clearTimeout(greeting);
+          void ready.then(() => { send(socket, { type: 'healthy', protocol: PROTOCOL, workerPid: child.pid }); socket.end(); }, () => socket.destroy());
+          return;
+        }
+        if (peer || closing) { clearTimeout(greeting); send(socket, { type: 'owner-busy' }); socket.end(); return; }
         if (message.type !== 'attach' || message.protocol !== PROTOCOL) {
           send(socket, { type: 'owner-incompatible', protocol: PROTOCOL }); socket.end(); return;
         }
+        peer = socket;
         accepted = true; clearTimeout(greeting);
         void fence.then(() => ready).then(async () => {
           if (peer !== socket || socket.destroyed) return;

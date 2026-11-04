@@ -21,6 +21,7 @@ for (const [source, target] of [
   ['scripts/server-deployment/dsh-host.mjs', 'dsh-host.mjs'],
   ['scripts/server-deployment/sandbox-command.mjs', 'sandbox-command.mjs'],
   ['scripts/container-deployment/hands-execution-owner.mjs', 'hands-execution-owner.mjs'],
+  ['scripts/container-deployment/health.mjs', 'container-health.mjs'],
 ]) await buildHeadlessBundle(join(root, 'runtime', target), { headlessEntry: join(repository, source) });
 for (const [source, target, format] of [
   ['apps/codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
@@ -34,6 +35,8 @@ await writeFile(join(root, 'bin/opencraft-host'), '#!/bin/sh\nset -eu\nopencraft
 await chmod(join(root, 'bin/opencraft-host'), 0o755);
 await writeFile(join(root, 'bin/opencraft-hands'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/native-hands.mjs"\n');
 await chmod(join(root, 'bin/opencraft-hands'), 0o755);
+await writeFile(join(root, 'bin/opencraft-health'), '#!/bin/sh\nset -eu\nopencraft_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)\nexec "$opencraft_root/bin/node" "$opencraft_root/runtime/container-health.mjs" "$@"\n');
+await chmod(join(root, 'bin/opencraft-health'), 0o755);
 await cp(join(repository, 'LICENSE'), join(root, 'LICENSE'));
 const manifest = JSON.parse(await readFile(join(root, 'manifest.json'), 'utf8'));
 const files = [];

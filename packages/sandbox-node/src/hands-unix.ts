@@ -153,6 +153,7 @@ export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptio
     frames(socket, async frame => {
       try {
         if (!opened) {
+          if (frame.type === "probe" && frame.protocol === 1) { send({ type: "healthy", protocol: 1, resources: options.resources }); socket.end(); return; }
           if (frame.type !== "open" || typeof frame.token !== "string") throw Error();
           const left = createHash("sha256").update(frame.token).digest(), right = createHash("sha256").update(token).digest();
           if (!timingSafeEqual(left, right) || !frame.identity || JSON.stringify(frame.resources) !== JSON.stringify(options.resources)) { send({ type: "rejected" }); socket.end(); return; }

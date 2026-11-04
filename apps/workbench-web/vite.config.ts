@@ -97,7 +97,9 @@ export function createWorkbenchWebConfig(
   }
 
   function createWebReleaseMetadata(): WebReleaseMetadata {
-    const builtAt = new Date().toISOString();
+    const epoch = process.env.SOURCE_DATE_EPOCH?.trim();
+    if (epoch && !/^\d+$/u.test(epoch)) throw new Error("SOURCE_DATE_EPOCH must be whole Unix seconds");
+    const builtAt = new Date(epoch ? Number(epoch) * 1000 : Date.now()).toISOString();
     const generatedBuildId = `${builtAt.replace(/[-:.TZ]/gu, "").slice(0, 14)}-${randomBytes(6).toString("hex")}`;
     const buildId = process.env.OPENCRAFT_BUILD_ID?.trim() || generatedBuildId;
     if (!/^[a-zA-Z0-9._-]{1,128}$/u.test(buildId)) {

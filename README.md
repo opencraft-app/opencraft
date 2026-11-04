@@ -64,7 +64,7 @@ the [local server replacement guide](docs/web-local-deployment.md).
 
 ### Docker Compose
 
-For a Linux ARM64 Docker installation with independent data storage and
+For a Linux amd64 or ARM64 Docker installation with independent data storage and
 execution on the host, use the [Docker Compose deployment guide](docker/README.md).
 
 ### Desktop with the bundled Local Agent

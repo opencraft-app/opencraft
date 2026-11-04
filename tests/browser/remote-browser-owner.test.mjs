@@ -43,6 +43,25 @@ async function fixture(t) {
   return { owner, socketPath, service };
 }
 
+async function probe(socketPath) {
+  const socket = connect(socketPath); await once(socket, 'connect');
+  const received = once(socket, 'data');
+  socket.write(JSON.stringify({ type: 'probe', protocol: 1 }) + '\n');
+  const response = JSON.parse(String((await received)[0]).trim());
+  socket.destroy(); return response;
+}
+
+test('health probes validate the worker without taking over the Gateway attachment', async t => {
+  const f = await fixture(t);
+  assert.deepEqual(await probe(f.socketPath), { type: 'healthy', protocol: 1, workerPid: f.owner.child.pid });
+  const client = await connectBrowserOwner(f.socketPath);
+  try {
+    assert.deepEqual(await probe(f.socketPath), { type: 'healthy', protocol: 1, workerPid: f.owner.child.pid });
+    assert.equal(client.workerPid, f.owner.child.pid);
+    assert.deepEqual(client.inventory, []);
+  } finally { client.kill(); }
+});
+
 test('a replacement Gateway adopts the same native document/form/scroll and retires old input control', async t => {
   const f = await fixture(t), first = f.service(); await first.start();
   const key = JSON.stringify(['synthetic-owner', 'browser-logical-tab']), id = createHash('sha256').update(key).digest('hex');

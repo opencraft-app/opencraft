@@ -20,10 +20,14 @@ for (const entry of ['browser/owner.cjs', 'hands-execution-owner.mjs']) {
   child.once('error', () => void stop(1)); child.once('exit', () => { if (!stopping) void stop(1); }); children.push(child);
 }
 process.once('SIGINT', () => void stop(0)); process.once('SIGTERM', () => void stop(0));
-for (let attempt = 0; attempt < 120; attempt++) {
+let ready = false;
+for (let attempt = 0; attempt < 120 && !stopping; attempt++) {
   try {
     const sockets = await Promise.all([join(data, 'owner.sock'), process.env.OPENCRAFT_HANDS_EXECUTION_SOCKET].map(path => stat(path)));
-    if (sockets.every(value => value.isSocket())) { console.log('OpenCraft Hands browser and Codex exec-server owner ready.'); break; }
+    if (sockets.every(value => value.isSocket())) { ready = true; break; }
   } catch {}
-  if (attempt === 119) await stop(1); else await new Promise(resolve => setTimeout(resolve, 500));
+  if (attempt < 119) await new Promise(resolve => setTimeout(resolve, 500));
 }
+if (!ready && !stopping) await stop(1);
+if (stopping) await stopping;
+else console.log('OpenCraft Hands browser and Codex exec-server owner ready.');
