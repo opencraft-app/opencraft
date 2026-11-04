@@ -257,3 +257,13 @@ lease, focus or keyboard policy.
 Conversation rows expose the logical tabs held by their canonical Host+Thread binding, including tabs retained without a visible presentation. The coordinator owns a stable, per-conversation subscribable metadata projection (tab identity, title and URL); reads do not create a binding, open a panel, prepare a surface or attach to a native page. Title/navigation updates reuse unchanged projections and notify only the affected conversation. Binding promotion also refreshes the directory.
 
 The row resource menu lists tab titles, opens an existing tab in its original scope, and offers explicit close-all for that conversation. It shares the Sidebar's exclusive menu owner. Leaving the conversation or dismissing this menu does not destroy tabs or take input control. Counts describe retained logical tabs, not measured CPU or memory, native liveness or viewer/controller ownership.
+
+### Remote surface admission during offline Shell startup
+
+A restored panel can mount before authenticated remote browser metadata is ready.
+The remote surface supplies its local presentation port immediately and keeps its
+ready promise pending until admission completes. It must not write lease metadata
+or open a physical browser connection before admission. After admission it restores
+the authoritative lease mapping, commits metadata and then connects. Authentication
+failure follows the surface error path; closing the surface before admission prevents
+late admission from reopening it.
