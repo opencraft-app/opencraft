@@ -159,6 +159,9 @@ export class BrowserPresentationCoordinator {
   }
   private measureRecord(record: PresentationRecord): void {
     if (record.disposed || this.records.get(record.snapshot.id) !== record) return;
+    // Project the slot's inherited input boundary onto the external guest;
+    // neither its resource lease nor viewport belongs to this input state.
+    record.host.setPresentationInputBlocked(Boolean(record.slot.closest("[inert]")));
     const slot = record.slot.getBoundingClientRect(), aperture = record.aperture.getBoundingClientRect();
     const bounds = intersectBrowserPresentationBounds(
       { x: slot.left, y: slot.top, width: slot.width, height: slot.height },

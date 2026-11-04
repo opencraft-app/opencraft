@@ -591,3 +591,37 @@ The private IPC and request queues are bounded; disconnected or timed-out
 mutations have unknown outcomes and must not be automatically replayed.
 Runtime JS and the native node-pty closure are retained outside release cleanup.
 Old PTYs created inside a pre-upgrade Host cannot be adopted retroactively.
+
+
+## Page-owned overlay presentation
+
+Shell owns a stable page-overlay host alongside the physical page. DOM features
+portal content into `ShellPageOverlayContext`; they do not select document.body
+or write viewport-fixed bounds. Shell alone measures the content slot within its
+frame and moves the overlay plane with the page's existing MotionValue. Its frame
+uses the same visual-viewport projection and safe-area allocation as the page.
+The overlay target remains stable across sidebar, panel and capacity transitions;
+changing layout must not remount the composer or replace its draft/controller.
+
+An external compositor plane is required above browser/native guests. Its use is
+a Shell implementation detail, not a separate feature geometry owner. The same
+page veil and dismissal boundary cover DOM overlays and external guests; the
+page and its DOM-overlay host share input blocking. The Browser presentation
+adapter projects its logical slot's inherited inert boundary onto the physical
+guest, independently from staging and automation input ownership. Releasing one
+boundary cannot release another or reclaim focus, and does not retire a page,
+change its viewport or request input authority.
+
+Desktop docked layout continues to allocate widths. Desktop floating navigation
+covers page overlays. Touch sidebar travel instead puts the foreground above
+the stationary drawer and applies the same translation to the page and overlay
+plane. The Shell owns these layer relationships; features cannot compensate by
+raising individual z-index values or listening for sidebar progress themselves.
+Menus and dialogs retain their existing Workbench presentation root and input
+priority. This contract does not move a browser resource between DOM parents.
+
+Acceptance uses the real AppShell, Composer and Browser components in
+`scripts/smoke/shell/smoke-workspace-presentation.ts --page-presentation`, alongside
+the existing mobile and desktop workspace consumers. Held movement, reversal,
+cancellation, safe frame, input blocking and retained editor/guest identity are
+separate assertions; browser emulation does not establish physical iPhone input.

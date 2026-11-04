@@ -647,3 +647,14 @@ Draft has a Thread. Existing conversations carry their Thread ID as well; the
 trusted Host resolves its project binding. A working directory or panel owner
 identifier never substitutes for account/project execution authority. See
 [account environment variables](account-environment.md).
+
+
+## Page overlay ownership
+
+A floating composer remains part of its page. Shell supplies its stable overlay
+host, frame, page motion, veil, clipping and input boundary. Feature code owns
+composer content and draft identity, without viewport-fixed positioning or its
+own sidebar subscriptions. Native/browser surfaces retain their physical host
+and adapt the same page input boundary. Desktop width allocation, desktop
+floating navigation and touch page travel remain distinct layout policies.
+See [page-owned overlay presentation](../design/invariants/shell-and-layout.md#page-owned-overlay-presentation).

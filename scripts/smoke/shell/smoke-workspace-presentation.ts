@@ -5,6 +5,7 @@ const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "play
 const browserName = process.env.OPENCRAFT_SMOKE_BROWSER ?? 'chromium';
 assert(['chromium', 'webkit'].includes(browserName), 'Select chromium or webkit');
 const mobile = process.argv.includes('--mobile-browser');
+const pagePresentation = process.argv.includes('--page-presentation');
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-workspace-presentation";
 async function settleMobileViewport(page: any) {
   await page.waitForFunction(() => {
@@ -37,7 +38,7 @@ import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src
 import{AsyncNoticesProvider}from'/apps/workbench-web/src/components/async-notices.tsx';
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();const ctx=new Context();await ctx.plugin(WorkbenchPanelService);const panels=ctx.workbenchPanels;const key=createConversationKey('fixture-host','parent');
-const params=new URLSearchParams(location.search);const mobile=params.has('mobile');
+const params=new URLSearchParams(location.search);const mobile=params.has('mobile');const topology=params.has('page-presentation');
 if(mobile){document.documentElement.dataset.uiDensity='touch';;setThemePreference(params.get('theme')==='dark'?'dark':'light');}
 const controller=createComposerController({type:'existing-thread',key},{now:Date.now,createId:()=>crypto.randomUUID()});const closed=[];const submitted=[];
 await ctx.plugin(WorkbenchPanelRendererRegistryService);
@@ -52,11 +53,12 @@ function Tool(){return <div style={{height:'100%',padding:20}}><input aria-label
 const renderers=[{kind:'terminal',Component:Tool},...ctx.workbenchPanelRenderers.getSnapshot()];
 const subscribe=f=>panels.subscribeOwner('scope',f),get=()=>panels.getOwnerSnapshot('scope');
 
-function FixtureHeader(){const shell=useShellPresentation();return <button type='button' onClick={()=>shell?.toggleRightPanel()}>Open preview</button>}
-function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);const [width,setWidth]=useState(275);const [enabled,setEnabled]=useState(true);
-window.fixture={state,closed,submitted,controller,panels,keyboardRequests,setThemePreference,setEnabled,pages,openBrowser:()=>workbench.open('scope',{initialUrl:location.origin+'/browser-fixture',panelOwnerId:'scope'})};
+function FixtureHeader(){const shell=useShellPresentation();return <>{topology&&<button data-fixture-sidebar onClick={()=>shell?.toggleSidebar()}>Toggle sidebar</button>}<button type='button' onClick={()=>shell?.toggleRightPanel()}>Open preview</button></>}
+function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);const [width,setWidth]=useState(275);const [enabled,setEnabled]=useState(true);const[unified,setUnified]=useState(true);
+window.fixture={state,closed,submitted,setSidebar,setUnified,controller,panels,keyboardRequests,setThemePreference,setEnabled,pages,openBrowser:()=>workbench.open('scope',{initialUrl:location.origin+'/browser-fixture',panelOwnerId:'scope'})};
 const panel=()=> <RightPanel state={state} presentationId='view' renderers={renderers} toolbarActions={panels.getToolbarActionSnapshot()} toolbarActionContext={{ownerId:'scope',resourceOwnerId:'scope',hostId:'fixture-host',cwd:null}} onAction={a=>panels.dispatch('scope',a)} onCloseTab={t=>panels.close('scope',t.region,t.id)}/>;
-return <AppShell layoutScope='scope' mainContentLayout='default' header={<FixtureHeader/>} floatingSidebarHeader={()=>null} leftPanel={<p>Navigation</p>} sidebarOpen={sidebar} sidebarWidth={width} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={setWidth} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanel={panel('right')} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onRightPanelOpenChange={open=>panels.dispatch('scope',{type:'set-region-open',region:'right',open})}>
+const navigation=topology&&unified?{layout:'unified',actions:[],account:{snapshot:{phase:'anonymous'},onOpen:()=>{}},onOpenSettings:()=>{}}:undefined;
+return <AppShell navigation={navigation} layoutScope='scope' mainContentLayout='default' header={<FixtureHeader/>} floatingSidebarHeader={()=>null} leftPanel={<div><p>Navigation</p><button data-fixture-drawer-action onClick={()=>closed.push("drawer-action")}>Drawer action</button></div>} sidebarOpen={sidebar} sidebarWidth={width} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={setWidth} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanel={panel('right')} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onRightPanelOpenChange={open=>panels.dispatch('scope',{type:'set-region-open',region:'right',open})}>
 <div style={{height:'100%',display:'flex',flexDirection:'column'}}><p style={{flex:1}}>Parent conversation</p>
 <ThreadComposerPresentation scopeId='scope' controller={controller} activeTabId={state.right.activeTabId} enabled={enabled} timeline={{key,revision:1,phase:'live',authoritative:true,anchorFrameIds:new Map(),frames:[{id:'user-frame',type:'user',turnId:'turn',status:'complete',durationMs:null,hookStats:null,anchors:[],blocks:[{id:'user-block',type:'text',text:'User intro must not be duplicated',sourceItemIds:[],streaming:false}]},{id:'assistant-frame',type:'assistant',turnId:'turn',status:'complete',durationMs:1000,hookStats:null,anchors:[],blocks:[{id:'answer',type:'text',text:'Latest answer preview\\n\\n'+('A bounded response paragraph.\\n\\n'.repeat(40)),sourceItemIds:['answer'],streaming:false,completed:true,phase:'final_answer'}]}]}} documentContext={{conversationId:'parent',hostId:'fixture-host',cwd:null,theme:'light'}}>
 <div className='thread-composer-region'><OpenCraftComposer controller={controller} onSubmit={async intent=>{submitted.push(intent.target)}} onCancel={()=>{}} /></div>
@@ -68,7 +70,81 @@ const errors: string[] = [];
 try {
   await mkdir(output, { recursive: true }); await vite.listen();
   browser = await playwright[browserName].launch({ headless: true, ...(browserName === 'chromium' ? { executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] } : {}) });
-  if (mobile) {
+  if (pagePresentation) {
+    const receipts: unknown[] = [];
+    for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+      const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion });
+      const page = await context.newPage();
+      page.on('pageerror', error => errors.push(error.message));
+      await page.addInitScript('window.__name=value=>value');
+      await page.goto(vite.resolvedUrls!.local[0]! + '?mobile=1&page-presentation=1');
+      await page.waitForFunction(() => Boolean((window as any).fixture));
+      await page.evaluate(() => { const f=(window as any).fixture; f.openBrowser(); if(!f.panels.getOwnerSnapshot('scope').rightPanelFullWidth)f.panels.dispatch('scope',{type:'toggle-right-full-width'}); });
+      await page.getByRole('button', { name: 'Open preview', exact: true }).click();
+      await page.getByRole('button', { name: 'Agent', exact: true }).click();
+      const editor=page.locator('.opencraft-composer-editor');
+      await editor.click();
+      await page.keyboard.insertText('Preserve this draft');
+      await page.waitForFunction(()=>(window as any).fixture.controller.getSnapshot().draft.document && JSON.stringify((window as any).fixture.controller.getSnapshot().draft.document).includes('Preserve this draft'));
+      await editor.evaluate(e => { (window as any).originalEditor=e; });
+      await page.locator('.web-browser-frame').evaluate(e => { (window as any).originalGuest=e; });
+      const summary=page.locator('.thread-composer-overlay__summary');
+      await summary.waitFor();
+      await page.waitForTimeout(500);
+      let box=(await summary.boundingBox())!;
+      const cdp=await context.newCDPSession(page);
+      const touch=(type:string,x=0)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'||type==='touchCancel'?[]:[{x,y:box.y+box.height/2,id:1}]});
+      const geometry=()=>page.evaluate(()=>{
+        const rect=(s:string)=>document.querySelector(s)!.getBoundingClientRect();
+        const anchor=rect('.main-content-body'),overlay=rect('.thread-composer-overlay-host'),row=rect('.app-shell-row');
+        const content=document.querySelector('.app-shell-page-overlays') as HTMLElement;
+        return {rowX:row.x,anchorX:anchor.x,overlayX:overlay.x,anchorBottom:anchor.bottom,overlayBottom:overlay.bottom,
+          blocked:content?.inert??false,inputBlocked:!!document.querySelector('[contenteditable="true"]')!.closest('[inert]'),
+          guestBlocked:!!document.querySelector('.web-browser-frame')!.closest('[inert]'),
+          sameEditor:document.querySelector('[contenteditable="true"]')===(window as any).originalEditor,
+          sameGuest:document.querySelector('.web-browser-frame')===(window as any).originalGuest};
+      });
+      const check=async(label:string,moving:boolean)=>{
+        await page.waitForTimeout(35);
+        const g=await geometry();
+        assert.ok(Math.abs(g.anchorX-g.overlayX)<1, label+': page and input move together '+JSON.stringify(g));
+        assert.ok(Math.abs(g.anchorBottom-g.overlayBottom)<1, label+': common safe frame');
+        assert.ok(g.sameEditor&&g.sameGuest, label+': original editor and guest survive');
+        if(moving){assert.ok(g.rowX>15,label+': real held movement');assert.ok(g.blocked&&g.inputBlocked&&g.guestBlocked,label+': page-wide input boundary');}
+        receipts.push({reducedMotion,label,...g});
+      };
+      await check('rest',false);
+      await touch('touchStart',80);
+      for(const x of [112,152,192]){await touch('touchMove',x);await check('held-'+x,true);}
+      await touch('touchMove',125);await check('reversed',true);
+      await touch('touchCancel');await page.waitForTimeout(650);await check('cancelled',false);
+      box=(await summary.boundingBox())!;
+      await touch('touchStart',80);
+      for(const x of [115,155,195,245,300]){await touch('touchMove',x);await page.waitForTimeout(20);}
+      await touch('touchEnd');await page.waitForTimeout(650);await check('opened',true);
+      await page.screenshot({path:output+'/page-open-'+reducedMotion+'.png'});
+      await page.locator('[data-fixture-drawer-action]').click();
+      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.closed),['drawer-action']);
+      await page.locator('.app-shell-mobile-page-dismiss').evaluate((e:HTMLElement)=>e.click());
+      await page.waitForTimeout(650);await check('closed',false);
+      assert.equal(await editor.textContent(),'Preserve this draft');
+      await page.setViewportSize({width:1400,height:900});
+      await page.evaluate(()=>{document.documentElement.dataset.uiDensity='pointer';(window as any).fixture.setSidebar(true)});
+      await page.waitForTimeout(700);await check('desktop-docked',false);
+      await page.evaluate(()=>{(window as any).fixture.setSidebar(false);(window as any).fixture.setUnified(false)});
+      await page.waitForTimeout(650);
+      await page.mouse.move(2,150);await page.waitForTimeout(650);
+      await check('desktop-floating',false);
+      const desktopLayers=await page.evaluate(()=>({page:Number(getComputedStyle(document.querySelector('.app-shell-page-presentation')!).zIndex),drawer:Number(getComputedStyle(document.querySelector('.app-shell-floating-overlay-root')!).zIndex)}));
+      assert.ok(desktopLayers.page<desktopLayers.drawer,'desktop drawer covers page overlays');
+      await page.screenshot({path:output+'/desktop-floating-'+reducedMotion+'.png'});
+      await context.close();
+    }
+    assert.deepEqual(errors,[]);
+    await writeFile(output+'/page-presentation.json',JSON.stringify(receipts,null,2));
+    console.log('Page presentation passed:',receipts.length,'geometry/continuity samples');
+    process.exitCode=0;
+  } else if (mobile) {
     for (const theme of ['light', 'dark']) {
       console.log('Mobile browser:',theme);
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion: 'reduce' });
