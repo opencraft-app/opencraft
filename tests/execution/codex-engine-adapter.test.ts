@@ -720,7 +720,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       { version: 1, fork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true },
     );
     assert.deepEqual((first.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false });
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false, modelSettings: false });
 
     await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.id === "a:start");
@@ -1011,7 +1011,7 @@ test("Codex Host queue Steer capability does not depend on a patched native mark
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false, modelSettings: false },
     );
   } finally {
     await adapter.close();
@@ -1058,7 +1058,7 @@ test("older native queue marker does not change Host queue capabilities", async 
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false, modelSettings: false },
     );
   } finally {
     await adapter.close();
@@ -1926,7 +1926,7 @@ test("Codex provider retry classifies terminal native failures and respects stop
     await adapter.connect(); await initializeClient(adapter, frames, "writer");
     for (const code of ["internalServerError", { responseTooManyFailedAttempts: { httpStatusCode: 502 } }, "unauthorized", "sandboxError", "contextWindowExceeded", "usageLimitExceeded"]) {
       const threadId = (await rpc("thread/start", { cwd: root, testNoServerRequest: true })).thread.id;
-      const before = (await rpc("test/readAcceptedInputs", {})).data.length;
+      const before = (await rpc("test/readAcceptedInputs", {})).data.filter((entry: any) => entry.params.threadId === threadId).length;
       await rpc("turn/start", { threadId, input: [{ type: "text", text: "Original task" }] });
       await rpc("test/completeTurn", { threadId, codexErrorInfo: code });
       // Rate-limit discovery runs inside the per-thread lane; wait for that lane to settle.
@@ -1935,7 +1935,10 @@ test("Codex provider retry classifies terminal native failures and respects stop
       const expected = code === "internalServerError" || typeof code === "object";
       assert.equal(result.recovery?.state === "scheduled", expected);
       if (expected) {
-        await rpc("turn/interrupt", { threadId, turnId: "already-failed" });
+        const stopId = `policy-stop-${++sequence}`;
+        await adapter.send(JSON.stringify({ id: stopId, method: "turn/interrupt", params: { threadId, turnId: "already-failed" }, [LOGICAL_CLIENT_FIELD]: "writer" }));
+        const stopped = await waitFor(frames, frame => frame.id === stopId);
+        assert.equal((stopped.error as any)?.code, -32600, "Native rejects the stale Turn while user Stop still revokes recovery");
         (adapter as any).providerRetry.now = () => Date.now() + 1_000_000;
         await (adapter as any).providerRetry.recover();
         const inputs = (await rpc("test/readAcceptedInputs", {})).data.filter((entry: any) => entry.params.threadId === threadId);

@@ -43,13 +43,13 @@ export const sandboxMessage = (message: unknown): string => JSON.stringify(messa
 /** Loader settings supplied by a task only enter its bounded process. */
 export const sandboxControllerEnvironment = (): Record<string, string> => ({ PATH: "/usr/local/bin:/usr/bin:/bin", LANG: "C.UTF-8" });
 
-export function prepareSandboxInvocation(options: { runner: string; configuration: string; owner: string; command: SandboxCommand["command"]; cwd: string; env: Readonly<Record<string, string | undefined>>; terminal?: boolean; lifecycleLog?: string }) {
+export function prepareSandboxInvocation(options: { runner: string; configuration: string; owner: string; command: SandboxCommand["command"]; cwd: string; env: Readonly<Record<string, string | undefined>>; terminal?: boolean; lifecycleLog?: string; runnerExecArgv?: readonly string[] }) {
   if (!isAbsolute(options.runner) || !isAbsolute(options.configuration)) throw new SandboxFault("SANDBOX_POLICY", "Sandbox runner requires explicit absolute paths");
   const envelope: SandboxCommand = { command: options.command, cwd: options.cwd,
     env: Object.fromEntries(Object.entries(options.env).filter((entry): entry is [string, string] => entry[1] !== undefined)) };
   const input = sandboxMessage(envelope);
   if (Buffer.byteLength(input) > 384 * 1024) throw new SandboxFault("SANDBOX_POLICY", "Sandbox command exceeds its transport budget");
-  return { argv: [process.execPath, "--max-old-space-size=128", options.runner, "--config", options.configuration, "--owner", options.owner,
+  return { argv: [process.execPath, ...(options.runnerExecArgv ?? []), "--max-old-space-size=128", options.runner, "--config", options.configuration, "--owner", options.owner,
     ...(options.terminal ? ["--terminal"] : []), ...(options.lifecycleLog ? ["--lifecycle-log", options.lifecycleLog] : []), "--input-stdin"], env: sandboxControllerEnvironment(), input, dispose() {} };
 }
 

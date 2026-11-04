@@ -44,7 +44,6 @@ export async function apply(ctx, config) {
   if (config.ownerRequired && globalThis[Symbol.for("opencraft.dsh.owner.v1")]) throw new Error("Native owner reload requires process restart");
   const nativeOwner = config.ownerRequired ? createDshNativeOwner(ctx, join(process.env.DSH_HOME, "owner-handoff"), config.token) : null;
   if (nativeOwner) globalThis[Symbol.for("opencraft.dsh.owner.v1")] = nativeOwner;
-  await registerDshSubprocessSandbox(ctx);
   const backgroundJobs = createBackgroundJobProofs(ctx);
   const promptSlots = await import(new URL("../../dsh-system-prompt/lib/index.js", config.toolsModuleUrl).href);
   const instructions = createInstructionController(promptSlots);

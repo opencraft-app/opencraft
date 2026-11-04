@@ -238,3 +238,7 @@ the header, including bytes in the same read; EOF, malformed/oversized headers
 and cancellation fail closed. Loader values and credentials stay outside the
 controller argv/environment. Preparation, parsing and cleanup perform no
 synchronous filesystem operations on an engine dispatch thread.
+
+Source checkouts explicitly select the controller and worker TypeScript loaders by
+absolute module URL when launching from a task directory. Packaged runtime bundles
+use their sealed JavaScript entries and do not depend on the development loader.

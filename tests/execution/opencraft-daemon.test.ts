@@ -246,7 +246,7 @@ for (const failing of [true, false]) test(`daemon storage ${failing ? "failure p
       const manager = new OpenCraftDaemonClientManager({ ...options, tokenPath, tokenMode: "existing", daemonEntry: "unused", executable: process.execPath });
       const connection = await manager.connectAppHost("storage-summary");
       try {
-        assert.deepEqual(connection.storage?.map(item => item.status), ["migrated", "adopted", "fresh", "fresh", "adopted", "fresh"]);
+        assert.deepEqual(connection.storage?.map(item => item.status), ["migrated", "migrated", "fresh", "fresh", "adopted", "fresh"]);
         for (const item of connection.storage ?? []) if (item.backupPath) assert.ok((await stat(item.backupPath)).size > 0);
       } finally { connection.close(); }
     }

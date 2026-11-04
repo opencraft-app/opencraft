@@ -253,13 +253,13 @@ export class ThreadDirectory {
       try {
         const seen = new Set<string>(), cursors = new Set<string>();
         const staged: Thread[] = [];
-        let cursor: string | null = null, watermark = previous?.watermark ?? 0, complete = false;
+        let cursor: string | null = null, watermark = previous?.watermark ?? 0, complete = false, partial = false;
         for (let page = 0; page < DIRECTORY_MAX_SOURCE_PAGES; page++) {
           metric.sourceReads++;
           const response = object(await this.port.list({ archived: archived === 1, limit: 200,
             sortKey: "updated_at", sortDirection: "desc", useStateDbOnly: true, cursor }, this.#abort.signal));
           if (this.#closed) return;
-          if (threadDirectoryIncomplete(response)) throw new Error("Source directory coverage is incomplete");
+          partial ||= threadDirectoryIncomplete(response);
           if (!Array.isArray(response.data) || !(response.nextCursor == null || typeof response.nextCursor === "string")) throw new Error("Invalid catalog page");
           if(this.port.streamingSync && response.data.length>200)throw new Error("Oversized metadata page");
           let oldest = Infinity;
@@ -283,7 +283,7 @@ export class ThreadDirectory {
           if ((this.#fences.get(row.id) ?? 0) <= startedObservation)
             this.#put(row, this.port.archived ? Number(this.port.archived(row.id)) : archived, startedRevision, true, metric);
         }, metric)) return;
-        if (full) {
+        if (full && !partial) {
           if(this.port.streamingSync){
             const upper=Number(this.database.prepare('SELECT rowid AS n FROM opencraft_thread_catalog ORDER BY rowid DESC LIMIT 1').get()?.n??0);
             for(let position=0;position<upper;position+=1024){
@@ -301,13 +301,17 @@ export class ThreadDirectory {
           }
         }
         this.#commit(() => {
-          this.database.prepare("UPDATE opencraft_catalog_sync SET last_success_ms=?,watermark=?,last_full_ms=?,state='ready' WHERE archived=?")
-            .run(this.now(), watermark, full ? this.now() : previous?.last_full_ms ?? null, archived);
+          this.database.prepare("UPDATE opencraft_catalog_sync SET last_success_ms=?,watermark=?,last_full_ms=?,state=? WHERE archived=?")
+            .run(partial ? previous?.last_success_ms ?? (seen.size ? this.now() : null) : this.now(),
+              partial ? previous?.watermark ?? 0 : watermark,
+              full && !partial ? this.now() : previous?.last_full_ms ?? null, partial ? "error" : "ready", archived);
           if (this.port.archivePartitioned === false) this.database.prepare(`INSERT INTO opencraft_catalog_sync(archived,last_success_ms,watermark,last_full_ms,state)
             SELECT 1,last_success_ms,watermark,last_full_ms,state FROM opencraft_catalog_sync WHERE archived=0
             ON CONFLICT(archived) DO UPDATE SET last_success_ms=excluded.last_success_ms,watermark=excluded.watermark,last_full_ms=excluded.last_full_ms,state=excluded.state`).run();
         }, metric);
-        const ready = { lastSuccessAt: this.now(), state: "ready", coverage: "complete" as const };
+        failed ||= partial;
+        const ready = { lastSuccessAt: partial ? previous?.last_success_ms ?? (seen.size ? this.now() : null) : this.now(),
+          state: partial ? "error" : "ready", coverage: partial ? "partial" as const : "complete" as const };
         this.#coverage.set(archived, ready);
         if (this.port.archivePartitioned === false) this.#coverage.set(1, ready);
         // Coverage becomes ready only after all committed chunks and absence reconciliation.
@@ -505,8 +509,9 @@ export class ThreadDirectory {
     }
     const id = row?.id ?? input.threadId;
     if (typeof id !== "string" || !id) return;
-    const stored = this.database.prepare("SELECT metadata_json,archived FROM opencraft_thread_catalog WHERE thread_id=?").get(id);
+    const stored = this.database.prepare("SELECT metadata_json,archived,deleted FROM opencraft_thread_catalog WHERE thread_id=?").get(id);
     if (!stored) { this.markDirty(id); return; }
+    if (stored.deleted) return;
     const current = JSON.parse(String(stored.metadata_json)) as Thread;
     let archived = Number(stored.archived);
     if (["thread/archive", "thread/archived"].includes(method)) archived = 1;

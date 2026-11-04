@@ -35,13 +35,14 @@ export class PiShellWorker {
     const bundled = new URL("./pi-shell-worker.mjs", import.meta.url);
     const entry = await sandboxFileExists(bundled) ? bundled : new URL("./shell-worker.ts", import.meta.url);
     const bundledRunner = new URL("./sandbox-command.mjs", import.meta.url);
-    const runner = fileURLToPath(await sandboxFileExists(bundledRunner) ? bundledRunner : new URL("../../../scripts/server-deployment/sandbox-command.mjs", import.meta.url));
+    const packagedRunner = await sandboxFileExists(bundledRunner);
+    const runner = fileURLToPath(packagedRunner ? bundledRunner : new URL("../../../scripts/server-deployment/sandbox-command.mjs", import.meta.url));
     return this.starting ??= new Promise((resolve, reject) => {
       this.intentional = false; this.stopping = undefined; this.generation = randomUUID();
       const workerArgs = [JSON.stringify({ cwd: this.options.cwd, directory: this.options.directory })];
-      const execArgv = entry.pathname.endsWith(".ts") ? ["--import", "tsx"] : [];
+      const execArgv = entry.pathname.endsWith(".ts") ? ["--import", import.meta.resolve("tsx")] : [];
       const env = { ...(this.options.environment?.apply(process.env) ?? process.env), OPENCRAFT_THREAD_ID: this.options.threadId, PI_CODING_AGENT_DIR: this.options.directory };
-      const invocation = configuration ? prepareSandboxInvocation({ runner, configuration, owner: "pi", cwd: this.options.cwd,
+      const invocation = configuration ? prepareSandboxInvocation({ runner, runnerExecArgv: packagedRunner ? undefined : ["--import", import.meta.resolve("tsx")], configuration, owner: "pi", cwd: this.options.cwd,
         command: [process.execPath, ...execArgv, fileURLToPath(entry), ...workerArgs, "--stdio"], env }) : undefined;
       const child = this.child = invocation ? spawn(invocation.argv[0]!, invocation.argv.slice(1), {
         cwd: this.options.cwd, env: invocation.env, stdio: ["pipe", "pipe", "inherit"],

@@ -3,3 +3,10 @@ ea463f3cf3113b5544cfe82368e6d497bf4d7115:tests/identity/git-identity-broker.test
 
 # Adjacent PEM header validation literals, not key material; exact historical finding.
 a99ce34d47ae3e534ccb6ebff566ee0795f03b02:scripts/employee-git-vault-store.ts:private-key:45
+
+# Immutable historical test environment canary, not an operational credential.
+723e61a4da854f143e6624808685c413645ed426:tests/identity/account-environment.test.ts:generic-api-key:41
+
+# Immutable generated OpenAPI SHA256 exports; digest constants, not API keys.
+2493a6dbb4b6430341e48e68399ba4b670fdb2da:packages/vela-chat-client-core/src/generated/openapi-lock.ts:generic-api-key:1
+2493a6dbb4b6430341e48e68399ba4b670fdb2da:packages/vela-chat-client-core/src/generated/openapi-lock.ts:generic-api-key:3
