@@ -131,3 +131,35 @@ test("real remote adapter serves its server-owned catalog and keeps advanced nat
   await rpc("thread/list",query);assert.equal(nativeLists,2,"another reader list does not rescan the remote directory");
   await rpc("thread/list",{...query,searchTerm:"native"});assert.equal(nativeLists,3,"advanced filters retain native admission and semantics");
 });
+
+test("partial source coverage imports healthy rows without deleting cached rows or advancing the full watermark", async t => {
+  const { owner } = await fixture(t); let partial = false, at = 100;
+  const catalog = new DurableThreadCatalog(owner.database, { list: async p => ({
+    data: p.archived ? [] : [row(partial ? "fresh" : "retained", partial ? 9 : 1)], nextCursor: null,
+    ...(partial ? { catalog: { state: "error", coverage: "partial" } } : {}),
+  }), changed: () => {} }, () => at); t.after(() => catalog.close());
+  await catalog.refresh(); partial = true; at += 3_600_001;
+  await assert.rejects(catalog.refresh(), /refresh failed/);
+  const page = await catalog.list(query);
+  assert.deepEqual(page.data.map(row => row.id), ["fresh", "retained"]);
+  assert.equal(page.catalog.state, "error"); assert.equal(page.catalog.coverage, "partial");
+  assert.equal(page.catalog.lastSuccessAt, 100);
+  const state = owner.database.prepare("SELECT watermark,last_full_ms FROM opencraft_catalog_sync WHERE archived=0").get();
+  assert.equal(state?.watermark, 1); assert.equal(state?.last_full_ms, 100);
+  partial = false; at += 1;
+  await catalog.refresh();
+  assert.deepEqual((await catalog.list(query)).data.map(row => row.id), ["retained"]);
+});
+
+test("first partial import exposes healthy rows and all-source failure cannot certify an empty directory", async t => {
+  const { owner } = await fixture(t); let healthy = true;
+  const catalog = new DurableThreadCatalog(owner.database, { list: async p => ({
+    data: healthy && !p.archived ? [row("fresh", 5)] : [], nextCursor: null,
+    catalog: { state: "error", coverage: "partial" },
+  }), changed: () => {} }); t.after(() => catalog.close());
+  const page = await catalog.list(query);
+  assert.deepEqual(page.data.map(row => row.id), ["fresh"]); assert.equal(page.catalog.coverage, "partial");
+  healthy = false; await assert.rejects(catalog.refresh(), /refresh failed/);
+  assert.deepEqual((await catalog.list(query)).data.map(row => row.id), ["fresh"]);
+  await assert.rejects(catalog.list({ ...query, archived: true }), /refresh failed/);
+});

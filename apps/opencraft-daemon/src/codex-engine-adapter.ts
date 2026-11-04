@@ -3026,11 +3026,13 @@ export class CodexEngineAdapter implements DuplexTransport {
   /** Rebuild the Host's active Goal index from Codex's durable Thread state. */
   private async discoverActiveGoals(): Promise<void> {
     const scan = ++this.generationGoalScan; this.generationDiscoveryComplete = false;
-    let cursor: string | null = null;
+    let cursor: string | null = null, partial = false;
     for (let page = 0; page < 1_000 && this.statusValue.state === "open"; page++) {
       const response = record(await this.requestPhysical("thread/list", {
         limit: 100, useStateDbOnly: true, ...(cursor ? { cursor } : {}),
       }));
+      const coverage = record(response.catalog);
+      partial ||= coverage.coverage === "partial" || coverage.coverage === "unknown" || coverage.state === "error" || coverage.state === "warming";
       if (!Array.isArray(response.data)) throw new Error("Codex Thread list has no data");
       for (const thread of response.data) {
         const threadId = string(record(thread).id);
@@ -3039,7 +3041,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.noteGoal(threadId, result.goal);
         if (this.activeGoalThreads.has(threadId)) this.scheduleGoalContinuation(threadId);
       }
-      if (response.nextCursor === null) { if (scan === this.generationGoalScan) this.generationDiscoveryComplete = true; return; }
+      if (response.nextCursor === null) { if (partial) throw new Error("Codex Goal discovery is incomplete"); if (scan === this.generationGoalScan) this.generationDiscoveryComplete = true; return; }
       if (typeof response.nextCursor !== "string" || response.nextCursor === cursor) throw new Error("Codex Thread list did not advance");
       cursor = response.nextCursor;
     }

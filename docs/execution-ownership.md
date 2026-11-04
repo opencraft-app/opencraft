@@ -914,7 +914,11 @@ or an authoritative empty catalog. Directory consumers must retain cached rows
 and routes for unavailable sources and retry with a new head read. Continuations
 retain their original source coverage and still expire on admission changes.
 
-This requires the matching directory-coverage reader integration. Returning a
-partial page does not certify compatibility with a reader that ignores coverage.
+The upstream durable directory reader imports healthy rows while retaining cached
+rows on partial coverage. It advances neither the complete watermark nor full-scan
+completion, and it reports partial/error coverage; an all-source failure cannot
+certify an empty directory. Goal discovery also keeps its completion claim false
+until all directory sources are covered. Advanced native query consumers must
+continue to inspect coverage.
 It neither replays mutations nor stops retained execution owners. The registry's
 existing synchronous SQLite implementation remains a separate concern.

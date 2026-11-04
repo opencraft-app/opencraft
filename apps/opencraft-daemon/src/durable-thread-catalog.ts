@@ -64,7 +64,8 @@ export class DurableThreadCatalog {
     const last = rows.at(-1);
     return { data: rows.map(row => JSON.parse(String(row.metadata_json)) as Thread),
       nextCursor: more && last ? cursorPrefix + JSON.stringify([archived, last.updated_at, last.thread_id]) : null,
-      backwardsCursor: null, catalog: { lastSuccessAt: sync?.last_success_ms ?? null, state: sync?.state ?? "syncing" } };
+      backwardsCursor: null, catalog: { lastSuccessAt: sync?.last_success_ms ?? null, state: sync?.state ?? "syncing",
+        coverage: sync?.state === "error" ? "partial" : sync?.last_success_ms == null ? "unknown" : "complete" } };
   }
   #state(archived: number): Sync | undefined { return this.database.prepare("SELECT * FROM opencraft_catalog_sync WHERE archived=?").get(archived) as Sync | undefined; }
   refresh(): Promise<void> {
@@ -90,11 +91,14 @@ export class DurableThreadCatalog {
       try {
         const seen = new Set<string>(), cursors = new Set<string>();
         const staged: Thread[] = [];
-        let cursor: string | null = null, watermark = previous?.watermark ?? 0, complete = false;
+        let cursor: string | null = null, watermark = previous?.watermark ?? 0, complete = false, partial = false;
         for (let page = 0; page < 1000; page++) {
           const response = object(await this.port.list({ archived: archived === 1, limit: 200,
             sortKey: "updated_at", sortDirection: "desc", useStateDbOnly: true, cursor }, this.#abort.signal));
           if (this.#closed) return;
+          const coverage = object(response.catalog);
+          partial ||= coverage.coverage === "partial" || coverage.coverage === "unknown"
+            || coverage.state === "error" || coverage.state === "warming" || Array.isArray(response.unavailableEngines) && response.unavailableEngines.length > 0;
           if (!Array.isArray(response.data) || !(response.nextCursor == null || typeof response.nextCursor === "string")) throw new Error("Invalid catalog page");
           let oldest = Infinity;
           for (const value of response.data) {
@@ -111,12 +115,15 @@ export class DurableThreadCatalog {
         this.database.exec("SAVEPOINT catalog_sync");
         try {
           for (const row of staged) this.#put(row, archived, startedRevision);
-          if (full) {
+          if (full && !partial) {
             const rows = this.database.prepare("SELECT thread_id FROM opencraft_thread_catalog WHERE archived=? AND revision<=? AND deleted=0").all(archived, startedRevision);
             for (const row of rows) if (!seen.has(String(row.thread_id))) this.database.prepare("UPDATE opencraft_thread_catalog SET deleted=1,revision=? WHERE thread_id=?").run(++this.#revision, row.thread_id);
           }
-          this.database.prepare("UPDATE opencraft_catalog_sync SET last_success_ms=?,watermark=?,last_full_ms=?,state='ready' WHERE archived=?")
-            .run(this.now(), watermark, full ? this.now() : previous?.last_full_ms ?? null, archived);
+          this.database.prepare("UPDATE opencraft_catalog_sync SET last_success_ms=?,watermark=?,last_full_ms=?,state=? WHERE archived=?")
+            .run(partial ? previous?.last_success_ms ?? (staged.length ? this.now() : null) : this.now(),
+              partial ? previous?.watermark ?? 0 : watermark,
+              full && !partial ? this.now() : previous?.last_full_ms ?? null, partial ? "error" : "ready", archived);
+          failed ||= partial;
           this.database.exec("RELEASE catalog_sync");
         } catch (error) { this.database.exec("ROLLBACK TO catalog_sync; RELEASE catalog_sync"); throw error; }
         this.port.observed?.(this.database.prepare("SELECT thread_id FROM opencraft_thread_catalog WHERE deleted=0").all().map(row => String(row.thread_id)));
