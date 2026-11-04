@@ -125,6 +125,7 @@ test('container candidates carry pinned bases, source identity and both public a
   for (const architecture of ['amd64', 'arm64']) assert.match(workflow, new RegExp(`architecture: ${architecture}`, 'u'));
   for (const argument of ['OPENCRAFT_BUILD_ID', 'OPENCRAFT_SOURCE_REVISION', 'SOURCE_DATE_EPOCH'])
     assert.match(workflow, new RegExp(`--build-arg "${argument}=`, 'u'));
+  assert.ok(workflow.indexOf('npm ci --no-audit --no-fund') < workflow.indexOf('node --test tests/server/container-deployment.test.mjs'));
 });
 
 test('the local GitHub builder is locked, revision-pinned and advances its moving tag only after success', async () => {

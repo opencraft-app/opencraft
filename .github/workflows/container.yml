@@ -69,6 +69,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
+      - run: npm ci --no-audit --no-fund
       - run: node --test tests/server/container-deployment.test.mjs tests/browser/remote-browser-owner.test.mjs
       - run: node --import tsx --test tests/execution/hands-unix-sandbox.test.ts
       - name: Build identified container candidate
