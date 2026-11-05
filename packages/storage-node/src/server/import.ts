@@ -7,7 +7,8 @@ import { SERVER_LEGACY_MIGRATIONS, serverLegacyOptions, type ServerStoreId } fro
 
 import { SERVER_MIGRATIONS } from "./migrations.generated.js";
 
-const baselineContractHash = createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, 2))).digest("hex");
+const baselineContractHashes = new Set([1, 2].map(count =>
+  createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, count))).digest("hex")));
 const stores = Object.keys(SERVER_LEGACY_MIGRATIONS) as ServerStoreId[];
 const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const encode = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === "bigint" ? { bigint: String(item) }
@@ -52,7 +53,7 @@ function verifySources(database: DatabaseSync, directory: string, installedHash:
   const receipts = database.prepare("SELECT source,source_digest FROM opencraft_server_imports").all();
   const completed = new Set(receipts.map(row => String(row.source)));
   if (receipts.some(row => !stores.includes(String(row.source) as ServerStoreId))
-    || stores.some(store => !completed.has(store) && (!additiveStores.has(store) || installedHash !== baselineContractHash))) {
+    || stores.some(store => !completed.has(store) && (!additiveStores.has(store) || !baselineContractHashes.has(String(installedHash))))) {
     throw new SqliteLifecycleError("history-mismatch", "Incomplete Server import receipts");
   }
   for (const store of stores) {

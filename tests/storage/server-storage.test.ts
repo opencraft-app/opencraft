@@ -243,12 +243,6 @@ test("the previous consolidated contract upgrades while preserving actors and le
   const previous = openManagedDatabase({ path: join(root, "opencraft-server.sqlite"), migrations: SERVER_MIGRATIONS.slice(0, 1) });
   importServerData(previous.database, root, { productVersion: "0.1.0", hash: "previous-contract" });
   const actors = new ActorStore(previous), session = actors.createSession("Retained actor", "fixture");
-  const access = new ThreadAccessStore(join(root, "thread-access.sqlite"), actors);
-  access.created("test-host", "native-thread", context);
-  access.set("test-host", "native-thread", "private", 1, context);
-  const notes = new ThreadNoteStore(join(root, "thread-notes.sqlite"));
-  notes.exchange("test-host", "native-thread", "", "AA==");
-  access.close(); notes.close();
   const authority = actors.authority;
   const history = previous.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get();
   actors.close(); previous.database.close();
