@@ -402,6 +402,7 @@ test("Local Agent Host advertises and owns attachment staging", async () => {
     const initialized = await request(socket, 901, "initialize", {
       clientInfo: { name: "attachment-test", version: "1" },
     });
+    assert.deepEqual(initialized.capabilities.extensions["opencraft/terminal-restore"], { version: 1 });
     assert.deepEqual(
       initialized.capabilities.extensions["opencraft/attachment-staging"],
       {

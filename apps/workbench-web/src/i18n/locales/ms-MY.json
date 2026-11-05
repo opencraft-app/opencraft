@@ -1,4 +1,8 @@
 {
+  "terminal.restoreUnavailable": "Pelayan ini tidak dapat menyambung semula terminal ini. Buka terminal baharu untuk meneruskan.",
+  "terminal.disconnected": "Terminal terputus. Menunggu pelayan menyambung semula.",
+  "terminal.unavailable": "Terminal tidak tersedia. Cuba buka terminal baharu.",
+  "terminal.new": "Terminal baharu",
   "turnRecovery.scheduled": "Model tidak tersedia buat sementara waktu. Percubaan semula automatik dijadualkan (sehingga {limit} kali).",
   "chat.continue.failed": "Sambungan respons tidak dapat disahkan. Semak perbualan sebelum mencuba lagi.",
   "composer.model.failedTitle": "Model tidak dapat dimuatkan",

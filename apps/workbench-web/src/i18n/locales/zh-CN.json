@@ -1,4 +1,8 @@
 {
+  "terminal.restoreUnavailable": "此服务器无法重新连接这个终端。请新建终端以继续。",
+  "terminal.disconnected": "终端连接已断开，正在等待服务器恢复连接。",
+  "terminal.unavailable": "终端暂不可用，请尝试新建终端。",
+  "terminal.new": "新建终端",
   "turnRecovery.scheduled": "模型暂时不可用，已安排自动重试（最多 {limit} 次）。",
   "chat.continue.failed": "无法确认回复是否已继续，请查看会话后重试。",
   "composer.model.failedTitle": "暂时无法加载模型",

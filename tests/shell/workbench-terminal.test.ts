@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { JsonRpcAppServerClient } from "@opencraft/appserver-client";
-import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
+import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage, OPENCRAFT_TERMINAL_RESTORE_EXTENSION } from "@opencraft/appserver-protocol";
 import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserver-transport-memory";
 import { AppServerTerminalController, ConversationTerminalSessionRegistry } from "@opencraft/workbench-runtime";
 import { HostProcessService } from "../../apps/local-agent-host/src/process-service";
@@ -114,7 +114,8 @@ async function fixture() {
       methods.push(message.method);
       try {
         const result = message.method === "initialize"
-          ? { codexHome: "/tmp", platformFamily: "unix", platformOs: process.platform, userAgent: "test" }
+          ? { codexHome: "/tmp", platformFamily: "unix", platformOs: process.platform, userAgent: "test",
+            capabilities: { extensions: { [OPENCRAFT_TERMINAL_RESTORE_EXTENSION]: { version: 1 } } } }
           : service.dispatch(message.method, message.params);
         peer.send(encodeJsonRpcMessage({ id: message.id, result }));
       } catch (cause) {

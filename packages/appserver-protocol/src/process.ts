@@ -1,4 +1,21 @@
+import { allowsAppServerMethod, OPENCRAFT_METHOD_ACCESS_EXTENSION, parseAppServerMethodAccess } from "./method-access";
+
 /** Host-owned PTYs, independent of Agent runs. attach/list are OpenCraft extensions. */
+export const OPENCRAFT_TERMINAL_RESTORE_EXTENSION = "opencraft/terminal-restore";
+
+/** Admission alone is not feature support. Legacy native servers lack attach/list. */
+export function supportsTerminalMethod(
+  extensions: Readonly<Record<string, unknown>> | null | undefined,
+  method: keyof AppServerProcessMethodMap,
+): boolean {
+  if (!allowsAppServerMethod(extensions, method)) return false;
+  if (method !== "process/attach" && method !== "process/list") return true;
+  const capability = extensions?.[OPENCRAFT_TERMINAL_RESTORE_EXTENSION];
+  return (typeof capability === "object" && capability !== null
+    && !Array.isArray(capability) && "version" in capability && capability.version === 1)
+    || parseAppServerMethodAccess(extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION])?.methods.includes(method) === true;
+}
+
 export interface ProcessOutput {
   processHandle: string;
   sequence: number;

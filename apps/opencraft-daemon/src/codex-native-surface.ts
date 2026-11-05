@@ -9,6 +9,7 @@ import {
   OPENCRAFT_THREAD_GOAL_EXTENSION,
   OPENCRAFT_ATTACHMENT_STAGING_EXTENSION,
   OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  OPENCRAFT_TERMINAL_RESTORE_EXTENSION,
   parseThreadGoalCapability,
   type OpenCraftThreadGoalCapability,
 } from "@opencraft/appserver-protocol";
@@ -46,6 +47,7 @@ export function projectSharedNativeCodexInitialize(value: unknown, goalCapabilit
   extensions["opencraft/read-history"] = { version: 1, initialTurnsPage: false };
   for (const extension of [OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_THREAD_GOAL_EXTENSION,
     OPENCRAFT_ATTACHMENT_STAGING_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, OPENCRAFT_DESKTOP_EXTENSION,
+    OPENCRAFT_TERMINAL_RESTORE_EXTENSION,
     "opencraft/host-capabilities", "opencraft/loopback-http", "opencraft/browser"]) delete extensions[extension];
   // Only these lifecycle operations are routed by this shared-native surface.
   extensions[OPENCRAFT_THREAD_LIFECYCLE_EXTENSION] = {

@@ -1,4 +1,8 @@
 {
+  "terminal.restoreUnavailable": "This server cannot reconnect this terminal. Open a new terminal to continue.",
+  "terminal.disconnected": "Terminal disconnected. Waiting for the server to reconnect.",
+  "terminal.unavailable": "The terminal is unavailable. Try opening a new terminal.",
+  "terminal.new": "New terminal",
   "turnRecovery.scheduled": "The model is temporarily unavailable. Automatic retry is scheduled (up to {limit} retries).",
   "chat.continue.failed": "Could not confirm the continuation. Check the conversation before retrying.",
   "composer.model.failedTitle": "Couldn't load models",
