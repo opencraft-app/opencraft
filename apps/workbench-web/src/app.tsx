@@ -15,7 +15,8 @@ import { ConversationToolbarSizing } from "./components/toolbar-dock-state";
 import { conversationToolbarActionIds } from "./components/toolbar-dock-model";
 import { useConversationDisplay } from "./runtime/use-conversation-display";
 import { displayTimingCounts } from "./runtime/display-timing-diagnostics";
-import { reportDisplayEvent } from "./runtime/recovery-diagnostics";
+import { canReportDisplayEvent } from "./runtime/recovery-diagnostics";
+import { reportDisplayPaint } from "./runtime/display-paint-diagnostics";
 import { serverFetch } from "./runtime/server-context";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
@@ -34,7 +35,8 @@ import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel } f
 import { WorkbenchShortcutHelp } from "./components/workbench-shortcut-help";
 import { WorkbenchPresentationActivityProvider } from "./components/workbench-presentation-activity";
 import { ConversationSearch, type ConversationSearchTarget } from "./components/conversation-search";
-import { OVERHOME_VIEW_ID } from "./runtime/mini-apps";
+import { projectMiniApps, OVERHOME_VIEW_ID } from "./runtime/mini-apps";
+import { ApplicationsSidebarFrame } from "./components/applications-sidebar";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./components/application-desktop-motion";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import { IdentityAvatarContext } from "@opencraft/extension-react";
@@ -135,6 +137,7 @@ import {
   type ConversationScrollApi,
 } from "./components/conversation";
 import {
+  connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
   conversationRecoveryPresentation,
@@ -313,6 +316,8 @@ export function App({
   const notices = useAsyncNotices();
   const modelSelectionPolicy = embedded?.modelSelectionPolicy ?? (embedded ? "host-default" : "user");
   const internalDeveloperMode = useInternalDeveloperMode();
+  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications" | "settings">("context");
+  const applicationsSelected = sidebarDestination === "applications";
   const [accountOpen, setAccountOpen] = useState(false);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
@@ -541,7 +546,13 @@ export function App({
   const conversationSurfaceVisible = conversationRouteOpen
     || (managementSettingsOpen && !standaloneManagementOpen);
   const shellSidebarOpen = presentation.contextSidebar ? sidebarOpen : false;
+  const openConversationSidebar = useCallback(() => {
+    setSidebarDestination("context");
+    workbenchNavigation.openChat();
+  }, [workbenchNavigation]);
+  useEffect(() => { if (routeSettingsOpen) setSidebarDestination("context"); }, [routeSettingsOpen]);
   const openSettingsFromConversation = useCallback((slug?: string) => {
+    setSidebarDestination("context");
     const focusedElement = document.activeElement;
     if (
       focusedElement instanceof HTMLElement &&
@@ -592,6 +603,10 @@ export function App({
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
+  const miniAppSettingsOpen = projectMiniApps(settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
+    type => hostCatalog.platformViewRenderers.resolve(type) !== null).some(app => app.target.kind === "settings"
+      && workbenchNavigationSnapshot.applicationRoute.kind === "settings"
+      && app.target.pageId === workbenchNavigationSnapshot.applicationRoute.slug);
   const connectorPresentation = useConnectorPresentation(hostCatalog.connectorManager, hostCatalog.connectorApprovals,
     { hostId: hostCatalog.selectedHostId, scopeId: conversationViewIdentity.scopeId }, extensionProjection.manageConnectors);
   const composerEndActions = (
@@ -779,20 +794,8 @@ export function App({
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
   useEffect(() => {
-    if (!displayCounts.messages) return;
-    const frame = requestAnimationFrame(() => {
-      const times = [...document.querySelectorAll(".thread-user-message time, [data-assistant-message-sent-time]")];
-      const visibleTimes = times.filter(element => {
-        const rect = element.getBoundingClientRect();
-        if (!rect.width || !rect.height) return false;
-        for (let node: Element | null = element; node; node = node.parentElement) {
-          const style = getComputedStyle(node);
-          if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
-        }
-        return true;
-      }).length;
-      reportDisplayEvent("display-paint", { ...displayCounts, renderedTimes: times.length, visibleTimes });
-    });
+    if (!displayCounts.messages || !canReportDisplayEvent()) return;
+    const frame = requestAnimationFrame(() => reportDisplayPaint(displayCounts));
     return () => cancelAnimationFrame(frame);
     // The signature reports coverage transitions, not every streaming delta.
   }, [displaySignature, displayScope, displayHostId, displayThreadId]);
@@ -833,8 +836,7 @@ export function App({
   });
   const conversationRecovering = activeThreadId !== null
     && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate);
-  const connectionRecovering = snapshot.phase === "connecting" || snapshot.phase === "reconnecting"
-    || (snapshot.phase === "error" && conversationRecoveryIsPending("cold-error", recoveryDiagnostic, recoveryRequiresUpdate));
+  const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate);
   const recoveryPlaceholder = connectionRecovering
     ? intl.formatMessage({ id: "chat.composer.reconnecting", defaultMessage: "Reconnecting…" })
     : conversationRecovering
@@ -1560,6 +1562,7 @@ export function App({
     workbenchNavigation.closeSettings();
   }, [workbenchNavigation]);
   const selectSettingsSection = useCallback((section: string, mode?: "push" | "replace") => {
+    setSidebarDestination("context");
     workbenchNavigation.openSettings(section, mode);
   }, [workbenchNavigation]);
   const workNavigationActions = useWorkbenchToolActions({
@@ -1567,18 +1570,18 @@ export function App({
     extensionContributions: hostCatalog.extensionContributions,
     onSectionChange: selectSettingsSection,
   });
-  const settingsNavigation = settingsOpen ? (
+  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
     <Suspense fallback={null}>
       <SettingsNavigation
-        section={settingsSection}
+        section={sidebarDestination === "settings" ? "" : settingsSection}
         onSectionChange={selectSettingsSection}
         extensionContributions={hostCatalog.extensionContributions}
         profiles={hostCatalog.profiles}
         machines={machines}
         activeHostId={snapshot.hostId}
         showArchivedConversations={archivedConversationsAvailable}
-        onBack={closeSettings}
-        presentation={managementSettingsOpen ? "dialog" : "sidebar"}
+        onBack={openConversationSidebar}
+        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
       />
     </Suspense>
   ) : null;
@@ -1844,7 +1847,7 @@ export function App({
     <AppShellHeader
       conversationHeader={conversationSurfaceVisible}
       subtitle={conversationContribution?.subtitle}
-      navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={workbenchNavigation.openChat} /> : undefined}
+      navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
       headerActionSizing={conversationActionSizing}
       headerAction={<span className="conversation-header-actions"><ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
         <Suspense fallback={conversationMenuSizing}>
@@ -1883,6 +1886,7 @@ export function App({
       onToggleRightPanel={toggleRightPanel}
       onHome={invokeHeaderHome}
       onBack={workbenchNavigation.back}
+
       onForward={workbenchNavigation.forward}
       navigationActions={presentedHeaderNavigationActions}
       routeHeaderActive={routeHeader.active}
@@ -1979,16 +1983,17 @@ export function App({
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
-            settingsActive: routeSettingsOpen,
-            updatesActive: routeSettingsOpen && workbenchNavigationSnapshot.applicationRoute.kind === 'settings' && workbenchNavigationSnapshot.applicationRoute.slug === 'updates',
+            applicationsInSidebar: true,
+            settingsInSidebar: true,
+            settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
+            updatesActive: routeSettingsOpen && !applicationsSelected && workbenchNavigationSnapshot.applicationRoute.kind === 'settings' && workbenchNavigationSnapshot.applicationRoute.slug === 'updates',
             actions: [
-              { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen,
-                onInvoke: workbenchNavigation.openChat },
-              ...extensionProjection.primaryActions, ...extensionProjection.footerActions, ...workNavigationActions,
+              { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen && sidebarDestination === "context",
+                onInvoke: openConversationSidebar },
               { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
-                icon: "grid", active: extensionViewOpen && workbenchNavigationSnapshot.applicationRoute.kind === "extension-view"
-                  && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID,
-                onInvoke: () => workbenchNavigation.openExtensionView(OVERHOME_VIEW_ID) },
+                icon: "grid", active: applicationsSelected,
+                onInvoke: () => setSidebarDestination("applications") },
+              ...extensionProjection.footerActions, ...workNavigationActions,
               { id: "shell.search", title: intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" }) + ` (${shortcutLabel("search")})`, icon: "search", onInvoke: () => setConversationSearchOpen(true) },
             ],
             account: extensionProjection.account === null ? null : {
@@ -2002,7 +2007,7 @@ export function App({
                 await extensionProjection.account?.provider.signOut?.();
               } : undefined,
             },
-            onOpenSettings: () => openSettingsFromConversation(),
+            onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
             onOpenUpdates: () => openSettingsFromConversation('updates'),
           }}
           layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
@@ -2034,7 +2039,7 @@ export function App({
           header={embedded !== undefined && draft !== null && draft.submission === null && !presentation.rightPanel ? null : header}
           floatingSidebarHeader={(onDock) => !presentation.contextSidebar ? null : (
             <AppShellNavigationControls
-              brand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={workbenchNavigation.openChat} /> : undefined}
+              brand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
               hostRole="transient"
               sidebarOpen={false}
               canGoBack={canGoBack}
@@ -2042,12 +2047,16 @@ export function App({
               onToggleSidebar={onDock}
               onHome={invokeHeaderHome}
               onBack={workbenchNavigation.back}
+
               onForward={workbenchNavigation.forward}
               actions={presentedHeaderNavigationActions}
             />
           )}
-          leftPanel={!presentation.contextSidebar ? null : (
-            routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
+          leftPanel={!presentation.contextSidebar ? null : <ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar}
+            selected={applicationsSelected} actions={extensionProjection.primaryActions}
+            contributions={hostCatalog.extensionContributions} renderers={hostCatalog.platformViewRenderers}
+            host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
+            {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               searchInDialog={presentation.shellNavigation}
               threads={multiHostCatalog.threads}
               threadCatalogs={multiHostCatalog.catalogs}
@@ -2079,8 +2088,8 @@ export function App({
                   : null
               }
 
-            /> : null
-          )}
+            /> : null}
+          </ApplicationsSidebarFrame>}
           rightPanel={panelHost ? null : rightPanelView}
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
@@ -2111,7 +2120,8 @@ export function App({
               id: "chat.companionHeading",
               defaultMessage: "What would you like to do together today?",
             }) : undefined}
-            placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
+            placeholderPending={recoveryPlaceholder !== undefined}
+                        placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
               id: "chat.companionPlaceholder",
               defaultMessage: "Share your thoughts, or ask me to help with something",
             }) : undefined)}
@@ -2295,9 +2305,9 @@ export function App({
                           ? ["queue"]
                           : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
                         portalContainer={portalContainer}
-                        isUnstable={activeThreadId !== null
-                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic)}
-                        isRecovering={conversationRecovering}
+                        isUnstable={snapshot.phase === "reconnecting" || (activeThreadId !== null
+                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic))}
+                        isRecovering={connectionRecovering || conversationRecovering}
                         isStreaming={draft === null && isStreaming}
                         isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
                         awaitSubmission
@@ -2337,6 +2347,7 @@ export function App({
                         entryActions={composerDesktopEntry}
                         endActions={composerEndActions}
                         modelSelectionPolicy={modelSelectionPolicy}
+                        placeholderPending={recoveryPlaceholder !== undefined}
                         placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
                           id: "chat.companionFollowupPlaceholder",
                           defaultMessage: "Tell me what you'd like to do next",

@@ -1,3 +1,4 @@
+import { Button } from '@opencraft/design-system-web/button';
 import { useEffect, useRef, useState } from 'react';
 import { useIntl } from '@opencraft/i18n/react';
 import { GlobeIcon } from '@opencraft/design-system-web/action-icons';
@@ -38,8 +39,9 @@ export function BrowserResourcesButton({ surfaces, workbench, ownerId, showLabel
     return () => { ++generation.current; };
   }, [open, surfaces]);
   if (!surfaces?.listResources || !surfaces.closeResource) return null;
+  const Control = showLabel ? Button : 'button';
   return <>
-    <button type="button" className="browser-toolbar-button" title={title} aria-label={title} onClick={() => setOpen(true)}><GlobeIcon size={15} />{showLabel ? <span>{title}</span> : null}</button>
+    <Control type="button" className={showLabel ? undefined : "browser-toolbar-button"} {...(showLabel ? { variant: 'secondary' as const, contentLayout: 'row' as const } : {})} title={title} aria-label={title} onClick={() => setOpen(true)}><GlobeIcon size={showLabel ? undefined : 15} />{showLabel ? <span>{title}</span> : null}</Control>
     {open ? <ModalSurface label={title} size="wide" onDismiss={() => setOpen(false)} closeLabel={intl.formatMessage({ id: 'common.close', defaultMessage: 'Close' })}>
       <SettingsPanel title={title} actions={<SettingsButton variant="quiet" disabled={busy} onClick={() => void refresh()}>{intl.formatMessage({ id: 'common.refresh', defaultMessage: 'Refresh' })}</SettingsButton>}>
         <p>{intl.formatMessage({ id: 'browser.resources.description', defaultMessage: 'All saved pages in your account, including pages without a conversation. Closing a page discards its unsaved content.' })}</p>

@@ -69,3 +69,37 @@ input and hides the key editor; switching back requires an explicit credential
 choice. Save and cancel keep their existing roles. The shared Settings Shell owns
 scrolling and page gutters; narrow/touch presentation keeps the description and
 switch reachable without a second configuration page.
+
+## Settings as a peer sidebar destination
+
+Settings categories occupy their own sidebar list, alongside the separate
+conversation list and application catalog. The application catalog must not be
+prepended to Settings. Choosing Applications hides retained Settings context and
+suspends its bottom action portal; choosing Settings restores its categories.
+Touch settings shares `SidebarReturnToApp` with Applications in the bottom-left
+Shell action host. The persistent Header keeps the sidebar trigger and omits the
+redundant return arrow. Direct entry can open the drawer and return through the
+existing navigation transaction without relying on browser history; independent
+management dialogs retain their own close controls.
+
+The Settings footer entrance is list selection, not page navigation. It keeps the
+current main page visible in the split and publishes only the categories and bottom
+return action. Before a category is selected, no category claims to be the active
+page. Explicit category selection uses the normal Router transaction and dismisses
+the touch sidebar. Shortcut and direct-route entry remain route navigation.
+
+## Shared sidebar reading inset
+
+Applications and Settings category lists use `NavigationList inset="sidebar"`.
+The shared list owns `--padding-sidebar-content-inline`; app/settings wrappers
+must not add another horizontal gutter or a width-specific substitute. Touch
+Shell brand, conversation roots and bottom action edges consume that same token.
+Rows retain the shared navigation row padding, leading glyph slot and content gap.
+The list exposes `--offset-navigation-content-inline` from those current row
+metrics so Settings headings align with the leading glyph. Dialog/standalone
+navigation retains the default list inset. Check actual row, glyph and label
+coordinates across both destinations, plus changing the shared inset once.
+
+Sidebar rows reserve `--size-sidebar-navigation-leading-slot` for artwork of
+different semantic sizes; a shared grid keeps label starts independent of SVG
+width. Leading glyphs are start-aligned without a consumer-specific margin.

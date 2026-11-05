@@ -64,15 +64,19 @@ Expo Layout/Navigation 拥有：
 
 ### Newera mobile browser chrome
 
-The unified touch experience uses bottom browser chrome when a narrow window
-presents an active full-width browser panel. Compact density, wide windows and
-non-browser panels retain their existing chrome. The installation's density
+The unified touch experience uses a shared bottom rail when a narrow window
+presents a full-width panel, regardless of tab kind. Its leftmost action returns
+to the workspace directly. Browser history back lives in browser utilities.
+Compact density and wide windows retain their existing chrome. The installation's density
 projection and Shell's actual full-width state select presentation; neither
 changes the remote page's shared viewport or device profile.
 
 BrowserPanel owns local address editing and consumes the original Page commands.
-RightPanel projects its existing tabs/actions through PanelNavigationContext for
-the mobile overview, including non-browser tabs; overview cards display actual
+RightPanel projects its existing tabs, plugin creation actions and close capabilities
+through PanelNavigationContext. PanelMobileToolbar owns the shared rail and mobile
+overview for browser, terminal, file and extension-defined tabs. BrowserPanel fills
+its address, keyboard and utility slots; ordinary panels show the active title
+and their contributed utilities. Overview navigation entries display actual
 metadata rather than pretending to be live screenshots. Radix ModalSurface owns
 focus, dismissal and input exclusion. Opening the overview does not create a
 second browser page or close the active logical resource.
@@ -81,8 +85,9 @@ The browser renderer and mobile-specific chrome/styles load on demand from the
 registered panel type; registering navigation must not eagerly load its UI into
 the startup graph. Existing startup resource budgets remain unchanged.
 
-The existing FloatingComposer owner initializes each Newera mobile browser to
-on-demand presentation once. Agent reveals the same editor and latest-turn
+The existing FloatingComposer owner initializes each Newera touch panel to
+on-demand presentation once. All touch tab kinds share the measured body-level
+plane and rail reservation, so Agent cannot cover the return or tab controls. Agent reveals the same editor and latest-turn
 renderer; hiding, resizing and switching chrome preserve drafts. A direct keyboard
 button consumes the existing native editing capability and invokes showKeyboard
 synchronously in its local gesture. No remote async notification forces a Web

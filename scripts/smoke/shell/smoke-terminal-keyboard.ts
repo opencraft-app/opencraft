@@ -16,7 +16,7 @@ await vite.listen();
 const browser = await chromium.launch({ headless: true, args: ["--no-sandbox"], executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
 const evidence: unknown[] = [];
 try {
-  for (const device of [{ name: "iphone", width: 390, height: 844, platform: "iPhone" }, { name: "ipad", width: 1024, height: 1366, platform: "MacIntel" }, { name: "ipad-split", width: 600, height: 1024, platform: "MacIntel" }, { name: "ipad-landscape", width: 1366, height: 1024, platform: "MacIntel" }, { name: "iphone-landscape", width: 844, height: 390, platform: "iPhone" }]) {
+  for (const device of [{ name: "iphone-small", width: 320, height: 720, platform: "iPhone" }, { name: "iphone-large", width: 430, height: 932, platform: "iPhone" }, { name: "iphone", width: 390, height: 844, platform: "iPhone" }, { name: "ipad", width: 1024, height: 1366, platform: "MacIntel" }, { name: "ipad-split", width: 600, height: 1024, platform: "MacIntel" }, { name: "ipad-landscape", width: 1366, height: 1024, platform: "MacIntel" }, { name: "iphone-landscape", width: 844, height: 390, platform: "iPhone" }]) {
     const context = await browser.newContext({ viewport: device, hasTouch: true, isMobile: true });
     await context.addInitScript(({ width, height, platform }) => {
       (window as any).__name = (v: unknown) => v;
@@ -34,6 +34,8 @@ try {
     }, device);
     const page = await context.newPage();
     const errors: string[] = []; page.on("pageerror", e => { errors.push(e.message); console.error("PAGEERROR", e.message); });
+    page.on("console", message => { if (message.type() === "error") console.error("BROWSER", message.text()); });
+    page.on("requestfailed", request => console.error("REQUEST", request.url(), request.failure()?.errorText));
     await page.goto(vite.resolvedUrls!.local[0]!);
     const editor = page.locator(".opencraft-composer-editor");
     await editor.waitFor({state:"attached"});
@@ -42,6 +44,54 @@ try {
     await page.locator(".xterm-screen").waitFor();
     await editor.waitFor();
     if (device.name === "ipad") await page.evaluate(() => (window as any).fixture.setThemePreference("dark"));
+    // The real Shell owns the bottom bar; terminal actions must live inside it.
+    const keyboard = page.getByRole('button', { name: 'Show keyboard', exact: true });
+    const paste = page.getByRole('button', { name: 'Paste', exact: true });
+    await keyboard.waitFor();
+    const touchDock = await keyboard.evaluate(el => el.closest('.panel-mobile-dock') !== null);
+    assert.equal(await page.locator('.terminal-panel__toolbar').count(), touchDock ? 0 : 1);
+    await editor.focus();
+    await keyboard.tap();
+    assert.ok(await page.locator('.xterm-helper-textarea').evaluate(el => el === document.activeElement));
+    const buttonBounds = await keyboard.boundingBox();
+    assert.ok(buttonBounds && buttonBounds.width >= 44 && buttonBounds.height >= 44);
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: async () => 'clipboard sample' } });
+      (window as any).fixture.writes.length = 0;
+      (window as any).keptToolbarTerminal = document.querySelector('.xterm');
+    });
+    await paste.tap();
+    await page.waitForFunction(() => (window as any).fixture.writes.join('').includes('clipboard sample'));
+    await page.evaluate(() => {
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { readText: async () => { throw new Error('denied'); } } });
+    });
+    await paste.tap();
+    await page.locator('.terminal-panel__clipboard-status').waitFor();
+    assert.equal(await page.locator('.terminal-panel__paste-entry').count(), 0);
+    assert.equal(await page.getByRole('button', { name: '发送到终端', exact: true }).count(), 0);
+    await page.locator('.xterm-helper-textarea').evaluate(element => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', 'system paste sample');
+      element.dispatchEvent(new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }));
+    });
+    await page.waitForFunction(() => (window as any).fixture.writes.join('').includes('system paste sample'));
+    assert.ok(await page.evaluate(() => document.querySelector('.xterm') === (window as any).keptToolbarTerminal));
+    await page.screenshot({ path: `${output}/${device.name}-toolbar.png` });
+    evidence.push({ device: device.name, toolbar: { keyboardFocus: true, directPaste: true, deniedClipboardHasNoForm: true, systemPasteEvent: true, sameTerminal: true } });
+    if (process.env.OPENCRAFT_TERMINAL_TOOLBAR_ONLY === '1') {
+      await page.evaluate(height => (window as any).setViewport(height, 0), Math.round(device.height * .52));
+      await keyboard.tap();
+      await page.waitForTimeout(200);
+      const bounds = await keyboard.boundingBox();
+      assert.ok(bounds && bounds.y + bounds.height <= Math.round(device.height * .52) + 1);
+      await paste.tap();
+      await page.locator('.terminal-panel__clipboard-status').waitFor();
+      assert.equal(await page.locator('.terminal-panel__paste-entry').count(), 0);
+      await page.screenshot({ path: `${output}/${device.name}-toolbar-keyboard.png` });
+      assert.deepEqual(errors, []);
+      await context.close();
+      continue;
+    }
     // Native keyboard focus reveal is a separate path from viewport numbers.
     // Start with the terminal, shrink while its cursor helper is at the old row,
     // then move directly to Composer without dismissing/resetting the keyboard.

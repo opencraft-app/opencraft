@@ -115,7 +115,7 @@ test("shared actions retain semantic mapping and classic/core role geometry", ()
       assert.match(markup, new RegExp(`width="${style === "classic" ? 15 : 14}"`));
       assert.match(markup, new RegExp(`height="${style === "classic" ? 15 : 14}"`));
       assert.match(markup, /aria-hidden="true"/);
-      if (name === "folder") assert.match(markup, new RegExp(`fill="${style === "classic" && selected ? "currentColor" : "none"}"`));
+      if (name === "folder") assert.match(markup, /fill="none"/);
     }
   }
 });

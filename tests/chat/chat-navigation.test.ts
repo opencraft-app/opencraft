@@ -553,3 +553,21 @@ test("V3 recovery index is demand driven, preserves unchanged reconnects and fen
     assert.deepEqual(source.getSnapshot().anchors.map(a => a.turnKey), ["fresh", "tail-3"]);
   } finally { release({ data: [], nextCursor: null }); source.dispose(); }
 });
+
+test("an explicit indexed tool target keeps its identity through hydration even without a user prompt",async()=>{
+ const tool={id:"tool",type:"commandExecution",command:"synthetic",aggregatedOutput:"needle"};
+ let view:ThreadView={...createEmptyThreadView("local","thread"),resumeState:"resumed",connectionGeneration:1,turns:[]};
+ let removeDuringProjection=false;
+ const source=createV3ConversationNavigationSource({threadId:"thread",port:{
+  getView:()=>view,subscribeView:()=>()=>{},
+  listTurns:async params=>({data:[{id:"tools-only",itemsView:params.itemsView,items:params.itemsView==="full"?[tool]:[]}],nextCursor:null}),
+  commitHydratedTurn(hydrated){view={...view,revision:view.revision+1,turns:[hydrated]};return{hostId:view.hostId,threadId:view.threadId,connectionGeneration:1,viewRevision:view.revision};},
+  projectionBarrier:{waitUntilProjected:async()=>{if(removeDuringProjection)view={...view,turns:[{id:"tools-only",items:[]}]};return 7;}},
+ }});
+ try {
+  await source.prepare();const anchor=source.getSnapshot().anchors[0]!;
+  const prepared=await source.prepareTarget(anchor.id,{itemId:"tool"});assert.equal(prepared?.itemId,"tool");assert.equal(prepared?.turnKey,"tools-only");assert.equal(prepared?.projectionRevision,7);
+  assert.equal(await source.prepareTarget(anchor.id,{itemId:"missing"}),null);
+  removeDuringProjection=true;assert.equal(await source.prepareTarget(anchor.id,{itemId:"tool"}),null);
+ }finally{source.dispose();}
+});

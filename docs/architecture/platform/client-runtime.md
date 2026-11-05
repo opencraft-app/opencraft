@@ -97,3 +97,40 @@ without an IDB recipe. In the absence of an explicit deployment/Host override,
 a retained HyperNode route or active selection keeps that existing target
 available. This compatibility read never deletes or rewrites recipes, history,
 or drafts; empty installations still receive no implicit target.
+
+### Stable window chrome projection
+
+Window chrome snapshots publish only when renderer kind, platform or either safe-area
+inset changes. Viewport resize still reaches the CSS and layout owners; an unchanged
+chrome projection must not independently rerender the whole Workbench. Overlay,
+fullscreen and native safe-area changes continue through the same hook.
+
+## Management presentation loads on entry
+
+Shell region registration exposes lightweight deferred components for the
+Connector Library and Extension Library. Registering the regions does not import
+these management interfaces or their setup/detail presentation. Their existing
+managers, authorization and application lifetime remain unchanged. The selected
+View acquires its presentation through `createDeferredView`: a late import cannot
+mount into a retired consumer, the loaded component receives current props, and
+successful modules are shared on reentry. Loading stays inside the selected
+region instead of suspending or unmounting the surrounding Shell or Composer.
+The startup graph policy keeps these management modules outside its critical
+closure; production graph evidence and browser navigation tests cover different
+parts of this contract.
+
+Shared modal primitives and catalog/icon metadata already needed by entry controls
+remain in one explicit shared output group. Deferring a management consumer must
+not fragment those same startup dependencies into a separate request per consumer
+set. Startup evidence records both byte counts and request counts; it never treats
+fewer bytes alone as proof of a faster first paint.
+
+## Bounded display-paint observation
+
+Display diagnostics retain their existing timestamp visibility semantics and
+anonymous per-page report budget. A paint batch reads each shared ancestor's
+computed visibility at most once, and releases that cache after measurement.
+Later opacity, visibility, display or geometry changes therefore remain visible
+to the next batch. The measurement entrance rechecks the reporting budget after
+its scheduled frame starts; an exhausted episode must not scan the DOM merely
+to produce an observation the reporter will discard.

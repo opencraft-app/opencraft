@@ -1,3 +1,4 @@
+import { useRevealSearchItem } from "../../conversation/search-target";
 import { CheckIcon as Check, ChevronRightIcon as ChevronRight, CopyIcon as Copy } from "@opencraft/design-system-web/action-icons";
 import {
   formatAutomaticApprovalReviewSummary,
@@ -27,7 +28,6 @@ import { useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNod
 import { ConversationDocumentContext } from "../../conversation/document-context";
 import { CommandViewStateContext } from "../../conversation/command-view-state";
 import { ThinkingActivityIcon } from "../../activity-glyphs";
-import { ThinkingLabel } from "../../thinking-label";
 import { useWorkbenchPresentationActive } from "../../workbench-presentation-activity";
 import { ConversationDetailContext, useToolActivityPresentation, useHistoryItemDetail } from "../render-contexts";
 import { ActivityDisclosure, CadencedShimmer, useActivityOpen } from "./activity-disclosure";
@@ -42,27 +42,26 @@ export function ReasoningBlock({ block, presentation, active = block.streaming, 
   readonly onCollapsedChange?: (collapsed: boolean) => void;
 }) {
   const document = useContext(ConversationDocumentContext);
-  const intl = useIntl();
   const [localCollapsed, setLocalCollapsed] = useState(true);
   const selected = presentation ?? presentReasoning(block, active);
-  const open = !(collapsed ?? localCollapsed);
+  const hasDetail = selected?.source === "detail";
+  const open = hasDetail && !(collapsed ?? localCollapsed);
   if (selected === null) return <></>;
   return <div className="thread-reasoning" data-conversation-row="activity" data-reasoning-id={block.id} data-reasoning-active={active}>
     <ActivityDisclosure
       icon={<ThinkingActivityIcon />}
-      summary={active ? <ThinkingLabel /> : intl.formatMessage({ id: "chat.thought", defaultMessage: "Thought" })}
-      detail={selected.header}
+      summary={selected.header}
       running={active}
       open={open}
       onOpenChange={next => (onCollapsedChange ?? setLocalCollapsed)(!next)}
       unmountBodyWhenCollapsed
     >
-      <div className="thread-activity-item__prose">
+      {hasDetail ? <div className="thread-activity-item__prose">
         <WebChatDocument documentId={`reasoning:${block.id}`} source={selected.content} streaming={active}
           conversationId={document.conversationId} hostId={document.hostId} cwd={document.cwd} theme={document.theme}
           onOpenResource={document.onOpenResource} loadMediaSource={document.loadMediaSource}
           onMeasurementRequest={document.onMeasurementRequest} />
-      </div>
+      </div> : null}
     </ActivityDisclosure>
   </div>;
 }
@@ -246,6 +245,7 @@ export function CommandBlock({ block }: { block: Extract<TimelineBlock, { type: 
     views?.set(block.id, { open: next, scrollTop: 0, scrollLeft: 0, followOutput: true });
     setLocalOpen(next);
   };
+  useRevealSearchItem(block.sourceItemIds, () => setOpen(true));
   useHistoryItemDetail(block, open);
   const running = presentation.state === "running";
   const elapsed = useCommandElapsed(block, running);

@@ -172,3 +172,13 @@ styles do not silently re-emit every global font variable. The application loads
 the global typography/tokens entry once. `generate:typography --check` checks both
 files, and the real Sass regression checks that a local numeric role emits no
 `:root` while global typography still supplies the required variables.
+
+### Optical start in touch conversation lists
+
+Touch drawer conversation titles opt into the shared `optical-start` mixin when
+starting with fullwidth opening punctuation, such as `【` or `（`. Prefer native
+`text-spacing-trim: trim-start`; older engines use a half-em leading-bearing
+trim. Never apply both. Preserve the title string, text box, hit target, nested
+indentation and ellipsis. Latin, Han and ASCII punctuation stay unchanged.
+Desktop retains its current spacing. This is an optical edge policy, not a font
+replacement or a per-title padding adjustment.

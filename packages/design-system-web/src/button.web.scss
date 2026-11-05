@@ -222,7 +222,7 @@
 .ui-button[data-size="navigation"][data-control-surface="floating"] {
   min-height: var(--size-material-liquid-control);
   width: auto;
-  padding-inline: calc(var(--spacing) * 5);
+  padding-inline: var(--padding-floating-navigation-inline);
   &[data-content-layout="icon"] {
     min-width: var(--size-material-liquid-control);
     width: var(--size-material-liquid-control);
@@ -246,3 +246,35 @@
 .ui-button[data-variant="hero"]:active:not(:disabled) {
   background: var(--color-background-button-primary-active);
 }
+
+// Object headings keep document typography, a neutral surface and the shared input target.
+.ui-button.ui-object-title-button {
+  @include typography.role(settings-label);
+  min-width: 0;
+  min-height: var(--size-control-hit-min);
+  padding: 0;
+  justify-content: flex-start;
+  text-align: start;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+  color: var(--color-text);
+  background: transparent;
+  @include controls.hover-capable {
+    &:hover:not(:disabled):not(:active) { background: transparent; text-decoration: underline; text-underline-offset: .18em; }
+  }
+}
+
+// The title remains the sole keyboard stop; sibling actions keep their native behavior.
+.ui-object-action-surface:not([data-action-disabled]) {
+  cursor: pointer;
+  @include controls.hover-capable {
+    &:hover .ui-object-title-button:not(:disabled) {
+      text-decoration: underline;
+      text-underline-offset: .18em;
+    }
+  }
+}
+
+.ui-button.ui-object-title-button[data-object-prominence="reading"] { @include typography.role(panel-title); }

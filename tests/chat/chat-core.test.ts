@@ -2969,17 +2969,19 @@ test("real Codex reasoning keeps content when the summary array is empty", () =>
   assert.equal(block.detail, "Inspected the renderer layout.\nChecked the scroll transaction.");
 });
 
-test("reasoning presentation uses actual summary once, falls back to returned detail, and defaults collapsed", () => {
+test("reasoning header uses summary, body uses detail with summary fallback, and defaults collapsed", () => {
   const block: Extract<TimelineBlock, { type: "reasoning" }> = {
     type: "reasoning", id: "reasoning:item", sourceItemIds: [asItemId("item")],
     summary: "  First summary line\n\nLatest summary line  ",
     detail: "A second representation of the same reasoning.", streaming: true,
   };
   assert.deepEqual(presentReasoning(block), {
-    content: "First summary line\n\nLatest summary line", header: "Latest summary line",
-    source: "summary", initiallyCollapsed: true,
+    content: block.detail, header: "Latest summary line",
+    source: "detail", initiallyCollapsed: true,
   });
   assert.equal(presentReasoning(block, false)?.header, "First summary line");
+  assert.equal(presentReasoning({ ...block, detail: null })?.content, block.summary.trim());
+  assert.equal(presentReasoning({ ...block, detail: "## Detail\n\n- Full body" })?.content, "## Detail\n\n- Full body");
   assert.deepEqual(presentReasoning({ ...block, summary: " \n ", detail: "Returned detail\nNext line", streaming: false }), {
     content: "Returned detail\nNext line", header: "Returned detail", source: "detail", initiallyCollapsed: true,
   });
@@ -2990,7 +2992,7 @@ test("reasoning presentation uses actual summary once, falls back to returned de
 test("reasoning header is plain visible Markdown text while selected body retains its canonical markup", () => {
   const block: Extract<TimelineBlock, { type: "reasoning" }> = {
     type: "reasoning", id: "reasoning:markdown", sourceItemIds: [asItemId("markdown")],
-    summary: "# **Calculating dates**\n\n- Read [the source](file:///work/a.ts) and `a_b`", detail: "Not selected", streaming: true,
+    summary: "# **Calculating dates**\n\n- Read [the source](file:///work/a.ts) and `a_b`", detail: null, streaming: true,
   };
   assert.equal(presentReasoning(block)?.header, "Read the source and a_b");
   assert.equal(presentReasoning(block, false)?.header, "Calculating dates");

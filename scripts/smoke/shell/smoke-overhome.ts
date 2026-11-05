@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
+import { build } from "esbuild";
+import { createRequire } from "node:module";
+const require = createRequire(import.meta.url);
 const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const hostless = process.argv.includes("--hostless");
 const motionOnly = process.argv.includes("--motion-only");
@@ -32,7 +35,15 @@ const vite = await createServer({ configFile: false, root: process.cwd(), cacheD
   define: { "import.meta.env.VITE_OPENCRAFT_PRESENTATION": JSON.stringify(JSON.stringify({ iconStyle: "classic" })), "process.env.NEXT_PUBLIC_REGION": '"cn"', "process.env.NEXT_PUBLIC_PREVIEW_LOCALES": '""',
     "import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN": '"false"', "import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN": '"false"' },
   esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom"] }, server: { host: "127.0.0.1", port: 0, hmr: false },
-  plugins: [{ name: "overhome-smoke", resolveId: id => id === "/proof.tsx" ? id : null, load: id => id === "/proof.tsx" ? source : null,
+  plugins: [{ name: "overhome-smoke", resolveId: id => id === "/proof.tsx" ? id : null, async load(id) {
+    if (id === "/proof.tsx") return source;
+    if (/\/packages\/(browser-core|remote-interaction)\/src\/.*\.cjs$/.test(id)) {
+      const names = Object.keys(require(id));
+      const bundled = await build({ stdin: { resolveDir: process.cwd(), contents: `export {${names.join(",")}} from ${JSON.stringify(id)}` }, bundle: true, format: "esm", platform: "browser", write: false });
+      return bundled.outputFiles[0].text;
+    }
+    return null;
+  },
     configureServer(server) { server.middlewares.use((request, response, next) => {
       if (request.url !== "/") return next(); response.setHeader("content-type", "text/html");
       response.end('<meta name="viewport" content="width=device-width, initial-scale=1"><div id="app"></div><script type="module" src="/proof.tsx"></script>');
@@ -61,10 +72,17 @@ try {
     await editor.evaluate(element => { (window as any).retainedEditor = element; });
   }
   await showSidebar();
+  assert.equal(await page.locator('[data-action-id="shell.applications.header"]:visible').count(), 0, "no duplicate right header launcher");
+  const sidebarEntrance = page.locator('[data-action-id="shell.applications.sidebar"]:visible');
+  await sidebarEntrance.waitFor();
+  await sidebarEntrance.click();
+  assert.equal(await sidebarEntrance.getAttribute("aria-expanded"), "false");
+  await sidebarEntrance.click();
+  assert.equal(await sidebarEntrance.getAttribute("aria-expanded"), "true");
   const launch = async () => {
-    const entrance = page.locator('[data-action-id="shell.applications.header"]:visible, [data-action-id="shell.applications"]:visible, .shell-navigation__entrance[data-surface="applications"]:visible').first();
-    if (!await entrance.count()) await showSidebar();
-    await entrance.tap();
+    // The sidebar entrance toggles the inline catalog; legacy desktop routes
+    // remain addressable and are exercised directly by this desktop probe.
+    await page.evaluate(() => (window as any).proof.open());
   };
   await launch();
   await page.locator(".overhome").waitFor();
@@ -80,6 +98,13 @@ try {
   assert.equal(await page.locator('[data-action-id="opencraft.schedules"]').count(), 0, "no duplicate sidebar launch");
   await page.getByRole("button", { name: "定时任务", exact: true }).click();
   await page.locator(".scheduled-tasks-page").waitFor();
+  await showSidebar();
+  const sidebarApp = page.locator('[data-sidebar-miniapp-id="opencraft.schedules.app"]:visible');
+  await sidebarApp.waitFor();
+  assert.equal(await sidebarApp.getAttribute("aria-current"), "page", "miniapp Settings retains the app list and current destination");
+  assert.equal(await sidebarApp.getAttribute("data-content-layout"), "row", "application sidebar uses labeled rows");
+  await page.screenshot({ path: output + "/sidebar-app-list.png" });
+
   assert.equal((await page.evaluate(() => (window as any).proof.route())).applicationRoute.slug, "opencraft.schedules");
   await page.evaluate(() => (window as any).proof.back()); await page.locator(".overhome").waitFor();
   await page.evaluate(() => (window as any).proof.back()); await page.locator(".overhome").waitFor({ state: "hidden" });

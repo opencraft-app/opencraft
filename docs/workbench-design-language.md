@@ -565,6 +565,12 @@ no per-row glass backdrop or pill material; only neutral hover, press and curren
 state fills. A navigation destination is distinct from an independent Shell action. The header trailing group keeps one
 shared backdrop, fitted to its existing compact action height on desktop and its
 existing Newera capsule on touch; never nest glass under each grouped action.
+The touch panel bottom rail uses the same floating ControlSurface and one group
+backdrop, with integrated IconButton actions. All-tab navigation reuses the flat
+NavigationItem state treatment and shared fields/actions rather than a custom
+card/button palette. ModalSurface retains popup paint and focus ownership.
+The latest-turn preview retains shared panel material and a localized Button
+disclosure; its reading geometry remains with the Composer owner.
 The transcript return/working control and floating Composer change summary reuse
 this same material. The floating summary action consumes `controls.density-target`
 to retain a 44px touch hit area without enlarging its compact pointer target. New chat retains its existing text capsule for emphasis.

@@ -8,6 +8,21 @@
   box-sizing: border-box;
   padding-inline: var(--padding-navigation-list-inline);
 }
+
+// The list owns the Shell surface inset; consumers must not add a second gutter.
+.ui-navigation-list[data-navigation-inset="sidebar"] {
+  padding-inline: var(--padding-sidebar-content-inline);
+  // Evaluate row geometry in the current density/presentation, not at :root.
+  --offset-navigation-content-inline: var(--padding-navigation-row-inline);
+  // Artwork may retain its semantic size; labels still start in one column.
+  .ui-navigation-item[data-content-layout="row"] {
+    display: grid;
+    text-align: start;
+    grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
+    > svg.ui-action-glyph { margin-inline: 0; justify-self: start; }
+  }
+}
+
 .ui-navigation-group {
   --navigation-group-focus-space: calc(var(--width-control-focus-ring) + var(--offset-control-focus-ring));
   // Scrollers retain the whole focus contour without widening the painted row.
@@ -27,3 +42,21 @@
   border-radius: var(--radius-control);
   > svg.ui-action-glyph { @include icons.navigation-leading-icon; }
 }
+
+// Compact destination navigation shares the standard navigation action box
+// with adjacent Settings/account controls; state paint remains Button-owned.
+.ui-button.ui-navigation-item[data-size="navigation"][data-content-layout="icon"] {
+  width: var(--size-application-navigation-hit-min);
+  height: var(--size-application-navigation-hit-min);
+  min-width: var(--size-application-navigation-hit-min);
+  min-height: var(--size-application-navigation-hit-min);
+  padding: 0;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  > .ui-button__label > svg {
+    width: var(--size-application-navigation-icon);
+    height: var(--size-application-navigation-icon);
+  }
+}
+
+.ui-navigation-list[data-navigation-compact="true"] { padding-inline: 0; }

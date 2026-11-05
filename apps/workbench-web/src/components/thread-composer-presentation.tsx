@@ -1,3 +1,4 @@
+import { Button, IconButton } from '@opencraft/design-system-web/button';
 import { ChevronDownIcon as ChevronDown, AddIcon as Plus } from "@opencraft/design-system-web/action-icons";
 import {
   createContext,
@@ -19,6 +20,8 @@ import {
   groupTimelineFramesByTurn,
   type TimelineSnapshot,
 } from "@opencraft/chat-core";
+import { WebConversationContentWindow } from "@opencraft/timeline-host-web";
+import { ConversationContentWindowContext } from "./conversation/content-window";
 import type { ComposerController } from "@opencraft/composer-core";
 import type { BrowserTabId } from "@opencraft/browser-core";
 import { useOptionalBrowserRuntime } from "../browser/browser-runtime-context";
@@ -59,9 +62,10 @@ export function useFloatingComposerControls(activeTabId: string) {
   return { store, state, shown: state.enabled && !state.collapsedTabs.has(activeTabId) };
 }
 
-export function FloatingComposerToggle({ activeTabId, label }: {
+export function FloatingComposerToggle({ activeTabId, label, touchChrome = false }: {
   activeTabId: string;
   label?: string;
+  touchChrome?: boolean;
 }) {
   const intl = useIntl();
   const { store, shown } = useFloatingComposerControls(activeTabId);
@@ -70,10 +74,11 @@ export function FloatingComposerToggle({ activeTabId, label }: {
   const mobile = useTouchBrowserLayout();
   if (!shell?.rightPanelFullWidth) return null;
   const toggleLabel = shown ? "Hide floating composer" : "Show floating composer";
+  const Control = touchChrome ? IconButton : 'button';
   return (
-    <button
+    <Control
       type="button"
-      className="browser-toolbar-button"
+      className={touchChrome ? "panel-mobile-dock__button" : "browser-toolbar-button"}
       aria-label={mobile ? intl.formatMessage({ id: 'browser.agent.title', defaultMessage: 'Agent' }) : toggleLabel}
       title={toggleLabel}
       aria-pressed={shown}
@@ -82,9 +87,9 @@ export function FloatingComposerToggle({ activeTabId, label }: {
         if (mobile && !shown) store.focus(activeTabId);
       }}
     >
-      <MessageSquare size={14} aria-hidden="true" />
+      <MessageSquare size={touchChrome ? undefined : 14} aria-hidden="true" />
       {label ? <span>{label}</span> : null}
-    </button>
+    </Control>
   );
 }
 
@@ -107,6 +112,22 @@ function windowIsFocused() {
   return (window as any).opencraftDesktop?.getWindowFocused?.() ?? document.hasFocus();
 }
 
+/** The portalled reply has a different DOM scroll root from its Conversation. */
+function LatestTurnReadingSurface({ children }: { children: ReactNode }) {
+  const [contentWindow] = useState(() => new WebConversationContentWindow());
+  const attach = useCallback((element: HTMLDivElement | null) => {
+    contentWindow.attach(element);
+  }, [contentWindow]);
+  useEffect(() => () => contentWindow.dispose(), [contentWindow]);
+  return (
+    <div className="thread-composer-overlay__response" ref={attach}>
+      <ConversationContentWindowContext.Provider value={contentWindow}>
+        {children}
+      </ConversationContentWindowContext.Provider>
+    </div>
+  );
+}
+
 export function ThreadComposerPresentation({
   children,
   controller,
@@ -126,6 +147,7 @@ export function ThreadComposerPresentation({
   documentContext?: ConversationDocumentContextValue;
   forceExpanded?: boolean;
 }) {
+  const intl = useIntl();
   const newera = useTouchBrowserLayout();
   const shell = useShellPresentation();
   const shellAnchor = useContext(ComposerOverlayAnchorContext);
@@ -180,11 +202,11 @@ export function ThreadComposerPresentation({
     : page.navigation.isLoading
     ? "loading"
     : "ready";
-  const floating = overlay && browserTabId !== null;
-  const mobileBrowser = floating && newera;
+  const floating = overlay && (browserTabId !== null || newera);
+  const mobilePanel = floating && newera;
   useLayoutEffect(() => {
-    if (mobileBrowser && activeTabId) store.prepareMobileBrowser(activeTabId);
-  }, [mobileBrowser, activeTabId, store]);
+    if (mobilePanel && activeTabId) store.prepareMobilePanel(activeTabId);
+  }, [mobilePanel, activeTabId, store]);
   // Shell owns the overlay plane for DOM and native-guest presentations alike.
   const overlayContainer = useShellPageOverlay();
   const view = projectFloatingComposer(state, {
@@ -192,10 +214,11 @@ export function ThreadComposerPresentation({
     tabId: activeTabId,
     readiness,
     forceExpanded,
-    onDemand: mobileBrowser,
+    onDemand: mobilePanel,
+    presentation: mobilePanel ? "touch" : "pointer",
   });
   const [expanded, setExpanded] = useState(false);
-  useEffect(() => { if (mobileBrowser && view.interactive) setExpanded(true); }, [mobileBrowser, view.interactive]);
+  useEffect(() => { if (mobilePanel && view.interactive) setExpanded(true); }, [mobilePanel, view.interactive]);
   const [collapsed, setCollapsed] = useState<Readonly<Record<string, boolean>>>(
     {}
   );
@@ -298,7 +321,7 @@ export function ThreadComposerPresentation({
       );
       host.current?.style.setProperty(
         "--right-panel-composer-preview-max-height",
-        floating && !mobileBrowser
+        floating && !mobilePanel
           ? "22.5rem"
           : `max(0px, calc(${previewSpace}px - var(--min-height-workspace-tool-visible)))`
       );
@@ -337,7 +360,7 @@ export function ThreadComposerPresentation({
       element.style.removeProperty("--right-panel-composer-overlay-height");
       element.style.removeProperty("--right-panel-composer-overlay-reserve");
     };
-  }, [overlay, shellAnchor, floating, mobileBrowser, view.mounted, view.handles, Boolean(latest && documentContext)]);
+  }, [overlay, shellAnchor, floating, mobilePanel, view.mounted, view.handles, Boolean(latest && documentContext)]);
   useEffect(() => {
     if (!overlay || !view.peeked || !page) return;
     return browser?.surfaces.trackPointerNearBottom?.(
@@ -514,7 +537,7 @@ export function ThreadComposerPresentation({
             <div
               ref={host}
               className="thread-composer-overlay-host"
-              data-mobile-browser={mobileBrowser || undefined}
+              data-mobile-panel={mobilePanel || undefined}
               data-anchor="shell"
               data-testid="right-panel-composer-overlay-host"
             >
@@ -563,19 +586,18 @@ export function ThreadComposerPresentation({
                           ref={latestSurface}
                           className="thread-composer-overlay__latest"
                           data-visible={
-                            mobileBrowser || !floating || view.density === "expanded"
+                            mobilePanel || !floating || view.density === "expanded"
                           }
                           inert={
-                            (floating && !mobileBrowser && view.density !== "expanded") ||
+                            (floating && !mobilePanel && view.density !== "expanded") ||
                             undefined
                           }
                           aria-hidden={
-                            (floating && !mobileBrowser && view.density !== "expanded") ||
+                            (floating && !mobilePanel && view.density !== "expanded") ||
                             undefined
                           }
                         >
-                          <button
-                            type="button"
+                          <Button variant="ghost" size="navigation" contentLayout="row"
                             className="thread-composer-overlay__summary"
                             aria-expanded={expanded}
                             aria-controls={previewId}
@@ -590,13 +612,13 @@ export function ThreadComposerPresentation({
                               }
                             }}
                           >
-                            <span>
+                            <span className="thread-composer-overlay__summary-label">
                               {latest.status === "streaming"
-                                ? "Working"
-                                : "Latest turn"}
+                                ? intl.formatMessage({ id: 'chat.working', defaultMessage: 'Working' })
+                                : intl.formatMessage({ id: 'chat.latestTurn', defaultMessage: 'Latest turn' })}
                             </span>
                             <ChevronDown size={14} aria-hidden="true" />
-                          </button>
+                          </Button>
                           <AnimatePresence initial={false}>
                             {expanded ? (
                               <motion.div
@@ -613,7 +635,7 @@ export function ThreadComposerPresentation({
                                 }}
                                 transition={{ duration: reduced ? 0 : 0.15 }}
                               >
-                                <div className="thread-composer-overlay__response">
+                                <LatestTurnReadingSurface key={latest.turnKey}>
                                   <ConversationDocumentContext.Provider
                                     value={documentContext}
                                   >
@@ -631,7 +653,7 @@ export function ThreadComposerPresentation({
                                       }
                                     />
                                   </ConversationDocumentContext.Provider>
-                                </div>
+                                </LatestTurnReadingSurface>
                               </motion.div>
                             ) : null}
                           </AnimatePresence>
@@ -642,7 +664,7 @@ export function ThreadComposerPresentation({
                         className="thread-composer-overlay__editor-slot"
                       />
                     </div>
-                    {view.handles && !mobileBrowser ? (
+                    {view.handles && !mobilePanel ? (
                       <button
                         type="button"
                         className="thread-composer-overlay__hide"
@@ -668,7 +690,7 @@ export function ThreadComposerPresentation({
                 </div>
               </div>
             </div>
-            {view.handles && !mobileBrowser ? (
+            {view.handles && !mobilePanel ? (
               <div ref={revealHost} className="thread-composer-reveal-host" data-anchor="shell">
                 <div className="thread-composer-reveal-zone">
                   <button

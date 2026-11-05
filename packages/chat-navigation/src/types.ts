@@ -73,6 +73,8 @@ export interface PreparedConversationNavigationTarget extends ConversationNaviga
 }
 
 export interface PrepareConversationNavigationTargetOptions {
+  /** An explicit search selection within the anchor's Turn. */
+  readonly itemId?: string;
   readonly signal?: AbortSignal;
 }
 

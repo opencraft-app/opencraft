@@ -1,3 +1,4 @@
+import { useRevealSearchItem } from "../../conversation/search-target";
 import { useIntl } from "@opencraft/i18n/react";
 import { collaborationMessages, collaborationStateMessage } from "./collaboration-messages";
 import { CheckIcon as Check, ChevronRightIcon as ChevronRight, LoadingRingIcon as LoaderCircle, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
@@ -194,6 +195,7 @@ export function ToolCallBlock({ block }: { block: Tool }) {
   const hasCustomBody = content !== undefined && content !== null && content !== false;
   const [open, setOpen] = useActivityOpen(block.kind !== "mcp" && presentation.state === "running"
     && (presentation.canExpand || hasCustomBody), false, `tool:${block.id}`);
+  useRevealSearchItem(block.sourceItemIds, () => setOpen(true));
   useHistoryItemDetail(block, open);
   const icon = customIcon?.(block, presentation);
   if (block.kind === "image-view") return <ImageViewToolBlock block={block} />;

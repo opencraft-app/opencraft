@@ -467,11 +467,13 @@ export function createV3ConversationNavigationSource(
           options,
         );
         if (isAborted() || generation() !== expectedGeneration) return null;
-        const target = { turnKey: anchor.turnKey, itemId: anchor.itemId, projectionRevision };
+        const itemId = options?.itemId ?? anchor.itemId;
+        if (itemId !== null && !config.port.getView()?.turns.find(turn => turn.id === anchor.turnKey)?.items?.some(item => item.id === itemId)) return null;
+        const target = { turnKey: anchor.turnKey, itemId, projectionRevision };
         const currentAnchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
         if (
           currentAnchor === undefined
-          || conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target)
+          || (options?.itemId === undefined && conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target))
         ) return null;
         return {
           ...target,
@@ -488,7 +490,8 @@ export function createV3ConversationNavigationSource(
       ) return null;
       const prompt = hydrated.prompts.find((candidate) => candidate.itemId === anchor.itemId)
         ?? hydrated.prompts[0];
-      if (prompt === undefined) return null;
+      if (prompt === undefined && options?.itemId === undefined) return null;
+      if (options?.itemId !== undefined && !hydrated.turn.items?.some(item => item.id === options.itemId)) return null;
       const commit = config.port.commitHydratedTurn(
         hydrated.turn,
         locators.map((locator) => locator.turnId),
@@ -498,13 +501,14 @@ export function createV3ConversationNavigationSource(
       if (isAborted() || generation() !== expectedGeneration) return null;
       const target = {
         turnKey: anchor.turnKey,
-        itemId: prompt.itemId,
+        itemId: options?.itemId ?? prompt!.itemId,
         projectionRevision,
       };
+      if (options?.itemId !== undefined && !config.port.getView()?.turns.find(turn => turn.id === anchor.turnKey)?.items?.some(item => item.id === options.itemId)) return null;
       const currentAnchor = snapshot.anchors.find((candidate) => candidate.id === anchorId);
       if (
         currentAnchor === undefined
-        || conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target)
+        || (options?.itemId === undefined && conversationNavigationTargetVersion(currentAnchor) !== conversationNavigationTargetVersion(target))
       ) return null;
       return {
         ...target,

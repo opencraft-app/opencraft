@@ -41,9 +41,12 @@ const displayStartedAt = Date.now();
 const displayEpisode = `recovery-${displayStartedAt.toString(36)}-0`;
 let displayReports = 0;
 const lastDisplayFields = new Map<string, string>();
+/** Read before gathering DOM diagnostics that can no longer be reported. */
+export function canReportDisplayEvent(): boolean { return displayReports < 64; }
+
 export function reportDisplayEvent(stage: "display-load" | "display-save" | "display-paint", fields: Readonly<Record<string, number>>) {
   const signature = JSON.stringify(fields);
-  if (lastDisplayFields.get(stage) === signature || displayReports >= 64) return;
+  if (lastDisplayFields.get(stage) === signature || !canReportDisplayEvent()) return;
   lastDisplayFields.set(stage, signature);
   displayReports++;
   reportRecoveryEvent({ recoveryId: displayEpisode, stage, displayVersion: 1,

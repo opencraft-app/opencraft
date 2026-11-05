@@ -105,3 +105,8 @@ export function nativeTypographyStyle(role: TypographyRoleName, platform: string
   const { family, ...metrics } = typographyRole(role, "native");
   return { ...metrics, ...(family === "mono" ? { fontFamily: nativeMonoFontFamily(platform) } : {}) };
 }
+
+/** Fullwidth opening marks whose leading half-cell may be trimmed in UI lists. */
+export function hasFullWidthOpeningPunctuation(text: string): boolean {
+  return /^[（［｛〈《「『【〔〖〘〚]/u.test(text);
+}

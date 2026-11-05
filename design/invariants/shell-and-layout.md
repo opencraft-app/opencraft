@@ -206,15 +206,26 @@ source-item key as message projections.
 
 ## Floating material ownership
 
-Touch narrow full-width browser chrome combines back, a flexible address field,
-the icon-only Agent toggle, independent remote keyboard, tabs and more in one
-bottom material rail. Reload/stop and workspace return live in more. Address
-editing expands the same input in place; a remote software keyboard does not
-hide its keyboard control. Mouse presentation retains its desktop toolbar.
-The active browser supplies the mobile chrome projection; Shell retains drawer,
-safe-area and visual viewport ownership. Its duplicate top controls are hidden
-only while that active mobile browser provides workspace, tab and utility
-actions. Native Safari controls remain outside the document's ownership.
+Touch narrow full-width panels share one bottom material rail across every tab
+kind. The rail consumes the same floating ControlSurface as Shell chrome, with
+one shared LiquidGlassBackdrop for the group. Buttons use the shared Button and
+IconButton owners; the feature does not repaint or resize their internals. The
+all-tab overview uses NavigationList/NavigationGroup/NavigationItem for current,
+hover and focus, shared close/create actions and SettingsTextInput for search.
+ModalSurface owns the overview and utilities surface; no feature-level material
+or button paint is layered on top. The latest-turn reading card consumes shared
+panel material, and its localized disclosure uses Button. The leftmost action always returns to the workspace in one tap; browser
+history back/forward remain browser utilities. A flexible center displays the
+browser address or the active panel title. The icon-only Agent toggle and all-tab
+selector remain available when switching between browser, terminal, file and
+extension-defined panels. The selector reads the existing panel owner, including
+all types, their close capabilities and the available creation actions; it does
+not maintain a browser-only directory. Browser keyboard and more actions occupy
+browser-specific slots. Address editing expands the same input in place; a
+remote software keyboard does not hide its keyboard control. Mouse presentation
+retains its desktop toolbar. Shell retains drawer, safe-area and visual viewport
+ownership and hides duplicate top controls while the shared mobile panel chrome
+is active. Native Safari controls remain outside the document's ownership.
 The dock reserves a stable content area; software-keyboard state reuses the
 existing viewport projection rather than adding another resize observer.
 Agent is on demand in this presentation, retaining the original Composer node,
@@ -222,11 +233,17 @@ draft, footer and conversation owner. The existing latest-turn renderer floats
 as a narrower separate card behind that Composer, including process and reply
 content; there is no enclosing Agent sheet or extra heading. Both stay inside
 the protected Shell extent and above the rail using the same dock allocation.
-The preview owns bounded scrolling; the Composer remains in front and the rail
-remains reachable. Overview dialogs use the shared modal adapter.
+The preview owns bounded scrolling and its own content-window observer rooted
+in that scrollport. Portalled rows must not inherit the main timeline observer:
+its DOM root does not contain them. The same thread and Turn renderers supply
+all process and reply content; long activity remains windowed against the preview
+itself. The Composer remains in front and the rail remains reachable. Overview dialogs use the shared modal adapter.
 Verification: `scripts/smoke/shell/smoke-workspace-presentation.ts` covers real
 Shell/Browser/Composer touch consumers, rail capacity, keyboard/safe-area
-projection, draft/editor/page identity and mouse presentation. System keyboard
+projection, draft/editor/page identity and mouse presentation. `scripts/smoke/conversation/smoke-conversation-overlay-content.ts` also
+covers a hundred-item active Turn inside the real Conversation footer, scrolling
+through process and commentary, streaming updates and the original draft/editor
+after returning to chat on pointer and touch. System keyboard
 behavior on a physical phone remains device acceptance.
 
 Shared floating surfaces consume design-system `material.web` and theme-owned
@@ -347,6 +364,9 @@ Other Shell, navigation, style and spring implementations retain their owners.
   releases resources through the original service lifecycle.
 
 ## Shell pane ownership
+
+应用目录的开关位于导航栏 Home 紧右侧，使用共享 grid 图标和 aria-expanded；开关仅折叠或展开同一侧栏目录，不导航或关闭触控抽屉。目录不再显示顶部重复「应用」按钮。sidebar-primary 扩展入口与 miniapp 同列显示，sidebar-footer 保留在导航栏；平台监控沿既有命令打开监控页，权限与能力探测不变。折叠、主题和路由切换保留聊天草稿及上下文实例。
+
 
 2026-10-14 主工作台导航拓扑更新：Web/Electron 的应用入口与当前页面上下文合并为单个 Sidebar（`ShellNavigationConfig.layout=unified`），桌面内部60px图标栏承载Home/扩展目的地，既有移动抽屉信号下同一组入口改为列表上方纵向全宽菜单（新建/设置在底部悬浮、列表全宽），桌面邻接列承载会话或设置列表，Settings/账户在竖栏底部。在任务等未提供上下文列表的桌面页面，Sidebar 仅保留图标栏宽度，主区域紧邻图标栏填满释放的空间；不显示空上下文的 resize 入口，不写回会话列表的保存宽度，切回会话恢复原宽度。窄屏保留完整抽屉与同一组应用导航动作，新建与设置在底部独立悬浮，隐藏个人头像/账号入口且不保留底板。整个 Sidebar 只有一个宽度、一个显隐入口；不显示独立 Applications 抽屉、Pin 或 compact 应用栏。旧 rail 偏好不参与该布局的空间预算，也不改写它们。浮动/固定呈现移动同一组 portal 内容，不复制上下文、草稿或滚动 owner；窄屏选择目的地关闭浮层。此条替代主工作台原有并排 Primary/Context 呈现，嵌入产品无 Shell 导航时沿用原契约。单一 leftPanelSlot 保留现有路由、扩展与空间策略。
 
@@ -625,3 +645,108 @@ Acceptance uses the real AppShell, Composer and Browser components in
 the existing mobile and desktop workspace consumers. Held movement, reversal,
 cancellation, safe frame, input blocking and retained editor/guest identity are
 separate assertions; browser emulation does not establish physical iPhone input.
+
+## Tab group toolbar slots
+
+TabGroupToolbar owns the shared touch toolbar composition, with scene-supplied
+leading/content/contextual action slots and a persistent trailing tab switcher.
+Optional actions, More availability, tab type and address editing cannot move or
+hide the switcher. Existing panel services remain the sole tab state owner;
+the toolbar does not create another tab group model. Editing may hide contextual
+actions while retaining the switcher's slot and shared touch target.
+
+Terminal renderers contribute keyboard and paste controls through the public
+PanelRendererProps touch-toolbar container. The Shell owns the bottom bar and
+its trailing tab slot; the renderer keeps the live xterm instance, clipboard
+request identity and paste draft. Keyboard focus is requested synchronously from
+the user's gesture. Touch mode has no duplicate floating paste button. Paste reads the clipboard
+and immediately uses xterm.paste; it has no intermediary entry form or send
+step. Blocked access or an empty clipboard produces a short status notice;
+system paste continues through the focused terminal and browser permission
+requirements remain in force.
+
+### Touch drawer navigation and detached footer controls
+
+In unified touch drawers, the brand is the Home entrance and the in-sidebar
+application catalog entrance lives beside Settings in the bottom action row.
+New conversation, Applications and Settings keep separate shared Button surfaces
+and a common baseline. Desktop retains Home and Applications in its rail.
+The native list scrollport spans the entire drawer, including behind the glass
+footer controls and safe bottom inset. Shell measures both action hosts and
+reserves their maximum height as scroll content padding, so final rows and
+pagination can clear the controls even when an update notice adds a row. The
+footer hosts stay transparent with pointer events limited to their controls.
+Retain existing portal owners, catalog state, draft and route semantics.
+Use a common 16px leading edge for brand, catalog, group labels and root titles;
+retain nested thread indentation. Group headings reset browser heading margins
+and consume the shared metadata role, with touch hit targets preserved.
+
+### Peer sidebar destinations and reachable exit
+
+Conversation, Applications and Settings occupy the same physical sidebar as peer
+lists. Applications opens a standalone full-height catalog, never a prefix above
+conversation history or settings categories. Re-selecting Applications preserves
+that destination instead of toggling a group. Home/brand and the bottom return
+restore the remembered conversation; Settings selects its categories. The selected
+entrance reflects the sidebar destination independently of the underlying page.
+Opening an application still uses its declared existing route/action.
+
+Retain inactive conversation/sidebar content and its scroll state, but suspend its
+primary action portal while Applications owns the slot. Only the active list can
+publish the bottom primary action. Applications and Settings share Back to app;
+Conversation owns New chat, using the same Button geometry and material. Narrow
+capacity preserves the complete wording before its decorative icon.
+
+Touch settings/applications exit through the bottom-left Shell action host. The
+persistent Header does not add a duplicate return arrow; its sidebar trigger stays
+reachable when closed. Direct settings entry can open the drawer and return without
+browser history. Restore conversation/scope/draft through existing navigation
+transactions; management dialogs retain their own close semantics. Desktop Home,
+settings, application destinations and keyboard navigation remain reachable.
+
+Choosing the Settings entrance selects only its category list and preserves the
+current split/drawer progress, main route, conversation, draft and scroll. It does
+not immediately open the last/default Settings page. Only an explicit category
+selection commits the existing Settings route and dismisses the touch drawer.
+Re-selecting Settings is idempotent. Keyboard/direct Settings routes retain their
+existing behavior; direct settings entry still exposes categories and return.
+
+Sidebar destination reading inset is Design System-owned:
+`--padding-sidebar-content-inline` is consumed by `NavigationList inset="sidebar"`
+for Applications and Settings, and by touch Shell brand/root/footer edges.
+Do not accumulate an app wrapper gutter and a separate Settings breakpoint gutter.
+The shared list derives `--offset-navigation-content-inline` from row/glyph metrics
+for heading alignment; page/dialog navigation keeps its default inset.
+
+Touch sidebar New chat, Applications and Settings retain their individual shared floating glass surfaces above the full-height list. The surrounding footer hosts paint no separate background. Desktop retains integrated ghost surfaces. Shell owns placement, safe-area spacing, hit geometry and measured scroll clearance.
+
+### Application context list
+
+Application pages use the existing context pane for the installed miniapp list.
+Rows share NavigationList/NavigationItem, show icon and name, and obtain selection
+from the Router. The same projection covers zero-Host and connected workbenches,
+including standalone miniapp Settings pages. Chat keeps its conversation list;
+general Settings keeps its sections. Transient selection uses the Shell dismissal
+owner and preserves the retained conversation and draft. Catalog filtering and
+retirement match the application desktop; scrolling stays inside the context pane.
+
+The application frame retains both catalog and route context, with a shared
+grid-icon button selecting the standalone catalog exclusively. Inactive context
+is hidden and suspends its primary-action portal. Chat context retains its existing
+scroll owner; selecting Home or the bottom return restores that list.
+
+In the mobile shared scrollport, a Home/catalog navigation grid retains its
+intrinsic block size even when the conversation list is long. Home and catalog
+have separate adjacent touch targets; subsequent destinations stretch across
+the available row and align their icon/text leading edge. The context starts
+after the complete grid rather than underneath overflowing grid children.
+Long labels wrap inside that row without widening the drawer. The floating
+header keeps its existing reserved space and the list remains the sole scroll
+owner. Regression coverage uses the real AppShell and an expanded Sidebar list:
+`OPENCRAFT_GESTURE_NAVIGATION_ONLY=1` in
+`scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts`.
+
+Touch panel workspace entrances reuse the same shared SidebarToggleIcon and
+sidebarToggleGlyphs artwork as Shell navigation. The shared chrome icon token
+owns dock glyph size independently of the touch hit target; action slots must
+not introduce per-feature silhouettes or arbitrary per-icon touch sizes.

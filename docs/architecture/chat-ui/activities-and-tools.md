@@ -57,11 +57,20 @@ Completion, failure or interruption removes the sweep; reduced motion disables b
 
 Engine-returned reasoning is a chronological Item-owned inner disclosure within
 the response's work container, not the body of a tool group's live “Thinking” header.
-All engine adapters consume the same shared disclosure policy: nonempty explicit
-summary text wins; when no summary is returned, the actual returned textual detail/content is available.
-The body selects that content once, without concatenating duplicate summary
-and detail. Empty Items and opaque/encrypted fields create no disclosure and
-cannot be used to fabricate an explanation.
+All engine adapters consume the same shared disclosure policy: the folded row
+shows the returned summary text directly, without a generic Thought/Thinking
+prefix. Its plain-text Markdown preview follows the latest line while active
+and the first line when settled. The expanded Markdown body prefers returned
+detail/content. A summary-only Item is a noninteractive summary row: it has no
+disclosure button, chevron or expanded body. Empty/whitespace detail does not
+enable expansion. When actual detail arrives during streaming, the disclosure
+becomes available with its existing user-choice state. Detail-only Items also
+supply their header preview. Summary and detail are never concatenated.
+Empty Items and opaque/encrypted fields create no disclosure and cannot be used
+to fabricate an explanation. The bounded presentation cache tracks both returned
+fields so independent summary or detail updates cannot leave either view stale.
+Long summary text uses the existing single-line ellipsis within the activity rail;
+opening, streaming and completion retain the user's disclosure choice.
 
 Request policy and disclosure policy are different owners. The Codex Host's
 single native request writer supplies `summary: "auto"` on `turn/start` only

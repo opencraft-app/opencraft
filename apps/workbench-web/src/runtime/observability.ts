@@ -163,7 +163,7 @@ export function createObservabilityExtension(title = 'Platform monitoring'): Tru
     }
     if(capability.available!==true)return;
     api.commands.register({id:'opencraft.observability.open',title},()=>{window.open(serverUrl('/__opencraft_observe/grafana/d/opencraft-overview'),'_blank','noopener,noreferrer');});
-    api.navigation.register({id:'opencraft.observability.navigation',title,surface:'sidebar-footer',icon:'activity',order:40,
+    api.navigation.register({id:'opencraft.observability.navigation',title,surface:'sidebar-primary',icon:'activity',order:40,
       platforms:['web'],target:{kind:'command',commandId:'opencraft.observability.open'}});
   }};
 }

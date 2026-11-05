@@ -478,16 +478,28 @@ sorted by the displayed dwell origin, with unknown/unassigned clocks last.
 The original research handoff/round timestamps and 72-hour helper remain intact
 for other consumers; this clock does not label a person overdue or claim AI execution.
 
-Cards show the shared task-kind badge, title, a bounded decision when applicable,
-current state/time and Owner. Full report and material contents stay in original
-activity/conversation. Card body/title/metadata/Owner are static selectable text,
-never an implicit click target. The only card action is a persistent quiet Open
-chat text button with a directional arrow; multiple chats retain the original
-accessible menu and exact Server/Thread resolver. No View details button or
-missing-link placeholder is shown. Without a navigable chat the card has no action.
-Task editing remains reachable through the ordinary Board/List workspace; those
-entries are not merged in this visual update. Judge and Owner remain distinct;
-avatars retain the existing profile identity resolution.
+Cards show only title, current-state dwell, whether human handling is requested,
+conversation entry, current handler and priority. Summaries, decision questions,
+kind badges, IDs and separate judge rows stay out of the card; original task
+activity/conversation retains the full facts. A verified Needs report's explicit
+judge is the displayed handler; otherwise the task Owner is displayed without
+inferring a judge or changing authorization. Failed/stale activity shows handling
+as unverified. Card body/title/metadata/handler remain static selectable text.
+The only card action is the persistent quiet Open chat entry with a directional
+arrow; multiple links use the original accessible menu and exact Server/Thread
+resolver. Missing navigation renders that action disabled, never a fake link.
+Board/List continue to provide task editing. Profile avatars retain their shared
+identity resolution. Current-state clock rules above remain unchanged; display
+fallback to Owner never establishes a judge or a human-request wait origin.
+
+A local By status / By priority grouping choice shares the same active tasks,
+Owner/scope/search filters and authority/account activation lifetime. Status
+retains Todo / Working / Needs you / In review / Ready to merge. Priority groups
+map existing urgent/high/normal/low/none to P0/P1/P2/P3/Unset respectively; older
+missing priorities remain Unset. No migration, mutation, default-priority backfill
+or second task store is introduced. Grouping survives route remounts and never
+resets filters, status or clock origins. Needs keeps existing dwell ordering;
+priority groups retain the task's stable sortOrder/id order.
 
 Lane headers explain each category directly above the cards, without column
 borders, backgrounds, enforced empty height, or colored top edges. Cards have one
@@ -509,3 +521,48 @@ Narrow layouts may hide the redundant Owner text label, never the shared select 
 Typography, colors, focus, touch targets, shared controls and Radix behavior come
 from the existing design owners. No synthetic prototype task or simulate button
 is shipped.
+
+## Unified work board
+
+Board and AI follow-up share one default board entrance and one task dataset.
+The collaboration, workflow and priority groupings are read-only projections;
+workflow retains all demand-pool columns and completed/canceled tasks, without
+changing business statuses, associations or revisions. Terminal tasks appear
+in a Closed collaboration group, never as new human requests. The list remains
+the full editing surface; New, archives and recycle retain their existing owners.
+
+Cards use only title, state dwell, action-needed indication, conversation action,
+handler and priority. One light card surface has no outer lane frame or nested
+button surface. Title/body remain selectable, and chat is the only card action.
+The current theme owns page/card backgrounds; prototype palette values are not
+imported. Quiet shared controls own hover, focus and touch targets.
+
+Human and Agent readers consume the same filtered task identities and revisions.
+The read panel exposes original workflow, owner, verified current judge/request,
+state clock, exact Server/Thread references, context and report provenance.
+Unavailable collaboration is explicitly unknown; stale requests/clocks never
+authorize an action. Reports are not execution attestations. The JSON projection
+grants no approval or execution permission and does not create a scheduler or
+another writable store. All write intents continue through the original Tasks
+authority with its existing permissions and revision checks. Grouping and Owner
+filters retain activation/account scope and survive conversation round trips.
+The existing assigned-lane clock/floor is unchanged.
+
+### Direct access to task context
+
+A compact card is a summary, not a replacement for the task document. Its title
+opens the existing Tasks editor with the original description, acceptance criteria,
+properties, activity and associations. This works without a linked conversation.
+The rest of the card remains a readable surface; the separate conversation action
+opens only its conversation. The shared object-title control owns wrapping,
+neutral hover/focus and touch targets. TasksEditorSession retains the original
+revision and unsaved draft; closing restores focus to the initiating title.
+No new detail store, migration or implicit save is introduced.
+
+### 整卡详情与独立滚动
+
+整卡点击打开原任务详情，Description、验收标准、属性、活动和草稿仍归原编辑会话。标题保留键盘入口，会话按钮/菜单独立；文字选中不打开详情。看板约束在剩余页面高度，列头固定，每列卡片区独立纵向滚动，横向由看板统一滚动，分组切换保留各组滚动位置。Morning reviewing 导航移除，不删除任务或历史。
+
+### 窄容器单列任务流
+
+容量不足的容器每次显示一列完整卡片，顶部状态标签展示同一投影下的数量；分组通过共享选择菜单切换，负责人筛选进入共享工具弹窗。标题使用共享阅读层级，完整换行；不计时的填充行省略，未关联会话显示文字。滚动后收起搜索/范围控件，输入聚焦时保留；状态标签和筛选入口仍可用。每组所选列与滚动位置按原authority/账号作用域记忆，返回会话、切换视图或扩缩容器均保留，原详情草稿不重建。桌面多列独立滚动保留。

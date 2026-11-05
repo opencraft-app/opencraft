@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 
 import {
+  hasFullWidthOpeningPunctuation,
   typographyRegistry,
   typographyRole,
 } from "@opencraft/design-system/typography";
@@ -98,4 +99,13 @@ test("local typography mixins emit no global variables but the global adapter pr
   const global = compileString('@use "typography.web";', { loadPaths: [directory] }).css;
   assert.match(global, /--font-family-count:/u);
   assert.match(global, /--typography-count-badge-weight: 700/u);
+});
+
+test("optical start only selects fullwidth opening punctuation without rewriting titles", () => {
+  for (const title of ["【虾米】建站后端", "（讨论）", "「主题」", "《文档》"]) {
+    assert.equal(hasFullWidthOpeningPunctuation(title), true);
+  }
+  for (const title of ["OB", "hermes 升级", "账户注销", "[tag]", "(topic)", "】结束", " 【保留空格】", ""]) {
+    assert.equal(hasFullWidthOpeningPunctuation(title), false);
+  }
 });

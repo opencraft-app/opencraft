@@ -72,6 +72,8 @@ test("cache invalidates selected source, active grammar, edits and empty content
   for (const [next, active] of [
     [{ ...block, summary: "", detail: block.summary }, true],
     [block, false],
+    [{ ...block, detail: "New detail with unchanged summary" }, true],
+    [{ ...block, summary: "Updated summary", detail: "New detail with unchanged summary" }, true],
     [{ ...block, summary: "[Link][ref]\n\n[ref]: https://example.test" }, true],
     [{ ...block, summary: "```js\nconst a_b = '*';\n```" }, true],
     [{ ...block, summary: "Literal \\*stars\\* and **unfinished" }, true],
