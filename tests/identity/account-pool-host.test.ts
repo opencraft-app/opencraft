@@ -1869,3 +1869,29 @@ for (const contentType of [undefined, "application/json"] as const) {
  });
  }
 }
+
+test("successful credit headers keep exhausted-subscription conversations eligible regardless of boolean casing", async () => {
+  for (const header of ["x-codex-credits-has-credits", "x-codex-credits-unlimited"]) {
+    for (const value of ["true", "True", "TRUE", "TrUe"]) {
+      const root = await mkdtemp(join(tmpdir(), "oc-credit-case-"));
+      const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+      try {
+        pool.addAccount({ id: "paid", provider: "codex", label: "Paid", upstreamAccountId: "paid", priority: 1, enabled: true, allowCredits: true },
+          { accessToken: "test-only", refreshToken: null, idToken: null, expiresAt: null });
+        const token = pool.issueHostToken("local");
+        let calls = 0;
+        const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://codex.example.test", fetch: async () => {
+          calls++;
+          return new Response(null, { status: 200, headers: {
+            "x-codex-primary-used-percent": "100", "x-codex-primary-reset-after-seconds": "600", [header]: value,
+          } });
+        } });
+        const request = () => new Request("http://localhost/v1/responses", { method: "POST", body: "{}",
+          headers: { "x-opencraft-account-pool-token": token, "thread-id": "credit-conversation" } });
+        assert.equal((await proxy.handle(request())).status, 200);
+        assert.equal((await proxy.handle(request())).status, 200, `${header}: ${value} must allow the next request`);
+        assert.equal(calls, 2);
+      } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
+    }
+  }
+});

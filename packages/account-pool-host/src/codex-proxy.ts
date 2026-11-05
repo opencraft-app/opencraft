@@ -108,7 +108,7 @@ function responseHeaders(upstream: Headers): Headers {
 function quotaFromHeaders(headers: Headers, now: number, status: number): AccountPoolQuotaObservation | null {
   const credits = headers.get("x-codex-credits-has-credits"), unlimited = headers.get("x-codex-credits-unlimited");
   const creditsAvailable = status === 429 ? false
-    : credits !== null || unlimited !== null ? status >= 200 && status < 300 && (credits === "true" || unlimited === "true") : undefined;
+    : credits !== null || unlimited !== null ? status >= 200 && status < 300 && (credits?.toLowerCase() === "true" || unlimited?.toLowerCase() === "true") : undefined;
   const windows = (["primary", "secondary"] as const).flatMap<AccountPoolLimitWindow>(slot => {
     const prefix = `x-codex-${slot}`;
     const raw = headers.get(`${prefix}-used-percent`);

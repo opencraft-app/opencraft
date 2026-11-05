@@ -472,8 +472,9 @@ Account pooling preserves subscription percentages even when extra credits remai
 Verified usage `credits.has_credits` or `credits.unlimited`, without an overage cap,
 permits an enabled account beyond a full subscription window. Window JSON persists
 this optional fact without resetting utilization or changing credential ownership.
-Successful upstream responses can update the credit fact; omitted headers retain
-the latest observation. A real upstream429 explicitly removes that exception.
+Successful upstream responses can update the credit fact; the `x-codex-credits-has-credits`
+and `x-codex-credits-unlimited` header booleans are parsed without case sensitivity
+(including upstream `True` / `False`). Omitted headers retain the latest observation. A real upstream429 explicitly removes that exception.
 Unknown/exhausted credits, authentication errors, disabled accounts and retry
 backoff retain the existing admission rules. Usage refresh owns later recovery.
 
