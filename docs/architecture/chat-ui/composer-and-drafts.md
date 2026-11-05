@@ -4,6 +4,12 @@
 
 ## Browser reconnect outbox
 
+An undispatched submission retains the originating error message and cause when
+the adapter classifies it for retry. The generic connection-waiting message is
+only a fallback when no originating error exists; tool or queue preparation
+failures must not be relabeled as connection failures. Classification and retry
+delays remain independent of the displayed message.
+
 An existing online text submission can also enter this outbox after a structured
 Host tool-preparation rejection proves it was never dispatched and explicitly
 marks the reason retryable. The local owner must persist the unchanged intent

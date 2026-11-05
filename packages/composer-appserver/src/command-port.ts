@@ -389,16 +389,16 @@ export function createAppServerConversationCommandPort(
           // engine. Only the existing outbox may transfer it to the Host queue.
           if (data?.submissionOutcome === "rejected" && data.retryable === true
             && ["SESSION_TOOLS_UNAVAILABLE", "SESSION_TOOLS_RECOVERING", "QUEUE_NOT_READY"].includes(String(data.code)))
-            throw new SubmissionNotDispatchedError(1_000);
+            throw new SubmissionNotDispatchedError(1_000, { cause });
         }
         if (cause instanceof AppServerClientError && cause.code === "NOT_DISPATCHED") {
           if (creationAccepted) throw new SubmissionOutcomeUnknownError({ cause });
-          throw new SubmissionNotDispatchedError();
+          throw new SubmissionNotDispatchedError(undefined, { cause });
         }
         if (cause instanceof AppServerClientError && cause.code === "NOT_CONNECTED") {
           // A later RPC may be unsent after an earlier creation already committed.
           if (admitted) throw new SubmissionOutcomeUnknownError({ cause });
-          if (options) throw new SubmissionNotDispatchedError();
+          if (options) throw new SubmissionNotDispatchedError(undefined, { cause });
         }
         const hermesCode = cause instanceof AppServerRpcError
           ? (cause.data as { hermesCode?: unknown } | undefined)?.hermesCode : undefined;
