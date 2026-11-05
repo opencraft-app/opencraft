@@ -31,6 +31,29 @@ try {
   const track=page.locator(touch?'.shell-sidebar__scroll':'.sidebar-activity-list');
   await track.evaluate(el=>{const h=el.querySelector('[aria-label="Recent"] .sidebar-thread-group-heading')!;el.scrollTop+=h.getBoundingClientRect().top-el.getBoundingClientRect().top+150});
   await page.waitForFunction(()=>{const group=document.querySelector('[aria-label="Recent"]')!;return group.querySelector('.sidebar-thread-group-heading')!.getBoundingClientRect().bottom-group.querySelector('.sidebar-activity-group__items')!.getBoundingClientRect().top>100;});
+  const updates = await track.evaluate(async el => {
+    const settle = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+    await settle();
+    const original = Element.prototype.getBoundingClientRect;
+    let reads = 0;
+    Element.prototype.getBoundingClientRect = function () {
+      if (this.matches('.sidebar-thread-group-heading, .sidebar-activity-group__items')) reads++;
+      return original.call(this);
+    };
+    try {
+      const groups = document.querySelectorAll('.sidebar-activity-group__items').length;
+      for (let i = 0; i < 20; i++) el.dispatchEvent(new Event('scroll'));
+      await settle();
+      const burstReads = reads;
+      reads = 0;
+      const mark = document.createElement('span');
+      document.querySelector('[aria-label="Recent"] .sidebar-activity-item')!.append(mark);
+      await settle(); mark.remove(); await settle();
+      return { groups, burstReads, rowReads: reads };
+    } finally { Element.prototype.getBoundingClientRect = original; }
+  });
+  assert.ok(updates.burstReads <= updates.groups * 4, 'coalesce scroll geometry work');
+  assert.equal(updates.rowReads, 0, 'unchanged row size must not reset geometry subscriptions');
   const before=await heading.screenshot();
   await recent.locator('.sidebar-activity-group__items').evaluate(el=>(el as HTMLElement).style.background='rgb(255, 0, 255)');
   const marked=await heading.screenshot();
@@ -45,7 +68,7 @@ try {
   await page.screenshot({path:join(output,`${touch}-${mode}-scrolled.png`)});
   const first=await recent.locator('.sidebar-activity-item').first().elementHandle();
   await heading.getByRole('button').click();assert.equal(await heading.getByRole('button').getAttribute('aria-expanded'),'false');await heading.getByRole('button').click();assert.equal(await recent.locator('.sidebar-activity-item').first().evaluate((el,old)=>el===old,first),true);
-  await page.setViewportSize({width:touch?420:900,height:650});await page.waitForTimeout(80);assert.deepEqual(errors,[]);evidence.push({touch,mode,change,geometry,disclosure:true,rowIdentity:true,resize:true});await page.close();
+  await page.setViewportSize({width:touch?420:900,height:650});await page.waitForTimeout(80);assert.deepEqual(errors,[]);evidence.push({touch,mode,updates,change,geometry,disclosure:true,rowIdentity:true,resize:true});await page.close();
  }
  console.log(JSON.stringify({passed:evidence.length,output,evidence}));
 } finally {await writeFile(join(output,'report.json'),JSON.stringify(evidence,null,2));await browser?.close();await vite.close();}

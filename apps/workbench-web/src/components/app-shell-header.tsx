@@ -39,6 +39,7 @@ export interface AppShellNavigationControlsProps {
   readonly onToggleSidebar: () => void;
   readonly onHome: () => void;
   readonly onBack: () => void;
+  /** Explicit surface exit, independent of browser history availability. */
   readonly onForward: () => void;
   readonly actions: readonly HeaderNavigationAction[];
 }
@@ -69,11 +70,12 @@ export function AppShellNavigationControls({
   // collapsed navigation rail. Only a docked sidebar owns the expanded rail.
   const sidebarDocked = sidebarOpen && !presentation?.sidebarFloating;
   const presentedActions = useMemo<readonly HeaderNavigationAction[]>(() => {
+    const routeActions = actions;
     if (presentation?.sidebarControlsInSidebar) {
-      return actions.filter(action => action !== "sidebar-toggle" || hostRole === "persistent");
+      return routeActions.filter(action => action !== "sidebar-toggle" || hostRole === "persistent");
     }
-    if (hostRole !== "persistent" || sidebarDocked) return actions;
-    return actions.flatMap(action => action === "sidebar-toggle"
+    if (hostRole !== "persistent" || sidebarDocked) return routeActions;
+    return routeActions.flatMap(action => action === "sidebar-toggle"
       ? [action, "new-task" as const]
       : [action]);
   }, [actions, hostRole, sidebarDocked, presentation?.sidebarControlsInSidebar]);
@@ -256,6 +258,7 @@ export interface AppShellHeaderProps {
   readonly canGoBack: boolean;
   readonly canGoForward: boolean;
   readonly onBack: () => void;
+  /** Explicit surface exit, independent of browser history availability. */
   readonly onForward: () => void;
   /**
    * Route-owned projection of the leading titlebar rail. Window chrome says

@@ -13,19 +13,21 @@ export interface ReasoningContentPresentation {
 /** Select returned text without parsing Markdown or inventing content. */
 export function readReasoningContent(block: ReasoningTimelineBlock): Omit<ReasoningContentPresentation, "header"> | null {
   const summary = block.summary.trim();
-  const content = summary || block.detail?.trim() || "";
+  const detail = block.detail?.trim() || "";
+  const content = detail || summary;
   return content.length === 0 ? null : {
-    content, source: summary.length > 0 ? "summary" : "detail", initiallyCollapsed: true,
+    content, source: detail.length > 0 ? "detail" : "summary", initiallyCollapsed: true,
   };
 }
 
 function compileReasoning(
   selected: Omit<ReasoningContentPresentation, "header">,
   active: boolean,
+  summary: string,
 ): ReasoningContentPresentation {
-  // Use the body's grammar, including references, fences and streaming repair.
+  // Use the shared Markdown grammar for the returned summary, falling back to detail.
   // The compiler is transient: this cache retains plain presentation, not ASTs.
-  const nodes = new ChatDocumentCompiler().compile(selected.content, { streaming: active }).nodes;
+  const nodes = new ChatDocumentCompiler().compile(summary || selected.content, { streaming: active }).nodes;
   const lines = chatDocumentPlainText(nodes).split(/\r?\n/u).map(line => line.trim()).filter(Boolean);
   return { ...selected, header: (active ? lines.at(-1) : lines[0]) ?? "" };
 }
@@ -36,7 +38,7 @@ export function presentReasoning(
   active = block.streaming,
 ): ReasoningContentPresentation | null {
   const selected = readReasoningContent(block);
-  return selected === null ? null : compileReasoning(selected, active);
+  return selected === null ? null : compileReasoning(selected, active, block.summary.trim());
 }
 
 /**
@@ -46,35 +48,37 @@ export function presentReasoning(
  * presentation per Item, bounded by both entry count and retained characters.
  */
 export class ReasoningPresentationCache {
-  private readonly entries = new Map<string, { readonly active: boolean; readonly value: ReasoningContentPresentation }>();
+  private readonly entries = new Map<string, { readonly active: boolean; readonly summary: string; readonly characters: number; readonly value: ReasoningContentPresentation }>();
   private characters = 0;
 
   constructor(private readonly maxEntries = 128, private readonly maxCharacters = 1_000_000) {}
 
   readonly present = (block: ReasoningTimelineBlock, active = block.streaming): ReasoningContentPresentation | null => {
     const selected = readReasoningContent(block);
+    const summary = block.summary.trim();
     const previous = this.entries.get(block.id);
     if (previous !== undefined) {
       this.entries.delete(block.id);
-      this.characters -= previous.value.content.length + previous.value.header.length;
+      this.characters -= previous.characters;
       if (selected !== null && previous.active === active
+        && previous.summary === summary
         && previous.value.content === selected.content && previous.value.source === selected.source) {
         this.entries.set(block.id, previous);
-        this.characters += previous.value.content.length + previous.value.header.length;
+        this.characters += previous.characters;
         return previous.value;
       }
     }
     if (selected === null) return null;
-    const value = compileReasoning(selected, active);
-    const size = value.content.length + value.header.length;
+    const value = compileReasoning(selected, active, summary);
+    const size = value.content.length + value.header.length + (summary === value.content ? 0 : summary.length);
     if (this.maxEntries > 0 && size <= this.maxCharacters) {
       while (this.entries.size >= this.maxEntries || this.characters + size > this.maxCharacters) {
         const oldest = this.entries.entries().next().value;
         if (oldest === undefined) break;
         this.entries.delete(oldest[0]);
-        this.characters -= oldest[1].value.content.length + oldest[1].value.header.length;
+        this.characters -= oldest[1].characters;
       }
-      this.entries.set(block.id, { active, value });
+      this.entries.set(block.id, { active, summary, characters: size, value });
       this.characters += size;
     }
     return value;

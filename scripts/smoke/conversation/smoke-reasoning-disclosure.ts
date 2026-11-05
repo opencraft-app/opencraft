@@ -847,11 +847,9 @@ try {
       for (const phase of ["running", "settled"]) {
         const widths = await page.locator('.thread-reasoning').evaluate(element => {
           const summary = element.querySelector<HTMLElement>('.thread-activity-item__summary')!;
-          const detail = element.querySelector<HTMLElement>('.thread-activity-item__detail')!;
-          return { summary: [summary.clientWidth, summary.scrollWidth], detail: [detail.clientWidth, detail.scrollWidth] };
+          return { summary: [summary.clientWidth, summary.scrollWidth] };
         });
-        assert.ok(widths.summary[0] + 1 >= widths.summary[1], `${phase} thinking label must be fully visible`);
-        assert.ok(widths.detail[0] + 1 < widths.detail[1], `${phase} long preview should truncate first`);
+        assert.ok(widths.summary[0] + 1 < widths.summary[1], `${phase} long reasoning summary should truncate`);
         if (phase === "running") await update("tools");
       }
       // Compare actual icon geometry in the shared activity rail, in every theme/viewport.
@@ -877,7 +875,7 @@ try {
       await reason.waitFor();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false', 'default collapsed even while streaming');
       assert.equal(await reason.locator('.thread-activity-item__prose').count(), 0);
-      assert.match(await reason.locator('.thread-activity-item__detail').innerText(), /Current returned line/);
+      assert.match(await reason.locator('.thread-activity-item__summary').innerText(), /Current returned line/);
       assert.equal(await page.locator('.thread-thinking-placeholder').count(), 0, 'reasoning owns live status');
       assert.equal(await page.locator('.thread-reasoning[data-reasoning-active="true"]').count(), 1);
       await reason.evaluate(element => { (window as any).__reasoningNode = element; });
@@ -889,7 +887,7 @@ try {
       // break or a visual line wrap at phone width; text must be unchanged.
       assert.equal((await reason.locator('.thread-activity-item__prose').innerText()).replace(/\s+/gu, ' '),
         'First returned line Current returned line');
-      assert.doesNotMatch(await reason.innerText(), /Alternate returned detail/);
+      assert.equal((await reason.locator(".thread-activity-item__prose").innerText()).match(/First returned line/gu)?.length, 1, "identical summary and detail are not concatenated");
       await update("grow");
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
       assert.match(await reason.locator('.thread-activity-item__prose').innerText(), /New returned line/);
@@ -925,7 +923,7 @@ try {
       await activate(workToggle);
       await reason.waitFor();
       assert.equal(await toggle.getAttribute('aria-expanded'), 'true', 'completion cannot write collapse choice');
-      assert.match(await reason.locator('.thread-activity-item__detail').innerText(), /First returned line/);
+      assert.match(await reason.locator('.thread-activity-item__summary').innerText(), /First returned line/);
       assert.equal(await page.locator('.thread-thinking-placeholder').count(), 0);
       assert.equal(await page.locator('.thread-reasoning[data-reasoning-active="true"]').count(), 0);
       await activate(workToggle);
@@ -1044,7 +1042,7 @@ try {
       const markdownReason = page.locator('.thread-reasoning');
       const markdownToggle = markdownReason.locator(':scope > .thread-activity-item > .thread-activity-item__header button');
       assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'false');
-      assert.equal((await markdownReason.locator('.thread-activity-item__detail').innerText()).trim(), 'Current check');
+      assert.equal((await markdownReason.locator('.thread-activity-item__summary').evaluate(element => element.firstChild?.textContent ?? '')).trim(), 'Current check');
       await activate(markdownToggle);
       const markdownBody = markdownReason.locator('.opencraft-chat-document');
       await markdownBody.locator('h1 strong').waitFor();
@@ -1064,7 +1062,7 @@ try {
       await markdownReason.evaluate(element => { (window as any).__markdownReasoningNode = element; });
       await update("markdown-grow");
       assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'true');
-      assert.equal((await markdownReason.locator('.thread-activity-item__detail').innerText()).trim(), 'New returned line');
+      assert.equal((await markdownReason.locator('.thread-activity-item__summary').evaluate(element => element.firstChild?.textContent ?? '')).trim(), 'New returned line');
       await markdownBody.locator('strong').filter({ hasText: /^returned$/ }).waitFor();
       assert.equal(await page.evaluate(() => (window as any).__markdownReasoningNode === document.querySelector('.thread-reasoning')), true);
       await update("complete");
@@ -1072,7 +1070,7 @@ try {
       assert.equal(await markdownWork.getAttribute('aria-expanded'), 'false');
       await activate(markdownWork);
       assert.equal(await markdownToggle.getAttribute('aria-expanded'), 'true');
-      assert.equal((await markdownReason.locator('.thread-activity-item__detail').innerText()).trim(), 'Checking the result');
+      assert.equal((await markdownReason.locator('.thread-activity-item__summary').evaluate(element => element.firstChild?.textContent ?? '')).trim(), 'Checking the result');
       await markdownBody.locator('h1 strong').waitFor();
       await page.screenshot({ path: join(output, `${engine}-${theme}-${touch ? 'touch' : 'mouse'}-markdown.png`) });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
@@ -1170,29 +1168,22 @@ try {
       existingToolGroupResizeWarnings: resizeFeedback.map((event: any) => event.action) }));
     await page.close();
   }
-  const localizedLabels = process.argv.includes("--detail-view-only") || process.argv.includes("--diff-reading-only") || process.argv.includes("--diff-position-only") || process.argv.includes("--turn-files-only") || process.argv.includes("--turn-entry-only") || process.argv.includes("--command-view-only") ? [] : [
-    ["zh-Hant", "思考中…", "思考過程"],
-    ["id-ID", "Sedang berpikir…", "Proses berpikir"],
-    ["es", "Pensando…", "Razonamiento"],
-    ["ja-JP", "思考中…", "思考過程"],
-    ["ko-KR", "생각하는 중…", "사고 과정"],
+  const reasoningLocales = process.argv.includes("--detail-view-only") || process.argv.includes("--diff-reading-only") || process.argv.includes("--diff-position-only") || process.argv.includes("--turn-files-only") || process.argv.includes("--turn-entry-only") || process.argv.includes("--command-view-only") ? [] : [
+    "zh-Hant", "id-ID", "es", "ja-JP", "ko-KR",
   ] as const;
-  for (const [locale, running, settled] of ((process.argv.includes("--commands-only") || process.argv.includes("--subagents-only") || process.argv.includes("--command-completion-only")) ? [] : localizedLabels)) {
+  for (const locale of ((process.argv.includes("--commands-only") || process.argv.includes("--subagents-only") || process.argv.includes("--command-completion-only")) ? [] : reasoningLocales)) {
     const page = await browser.newPage({ viewport: { width: 390, height: 900 }, isMobile: true, hasTouch: true });
     await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/?theme=light&locale=${locale}`);
     await page.locator('[data-revision="0"]').waitFor();
     await page.evaluate(() => (window as any).update("long-detail", "codex"));
     await page.locator('[data-revision="1"]').waitFor();
-    for (const [label, revision] of [[running, 1], [settled, 2]] as const) {
+    for (const revision of [1, 2] as const) {
       const header = await page.locator('.thread-reasoning').evaluate(element => {
         const summary = element.querySelector<HTMLElement>('.thread-activity-item__summary')!;
-        const detail = element.querySelector<HTMLElement>('.thread-activity-item__detail')!;
-        return { label: summary.firstChild?.textContent, summary: [summary.clientWidth, summary.scrollWidth],
-          detail: [detail.clientWidth, detail.scrollWidth] };
+        return { label: summary.textContent, summary: [summary.clientWidth, summary.scrollWidth] };
       });
-      assert.equal(header.label, label, `${locale} reasoning label`);
-      assert.ok(header.summary[0] + 1 >= header.summary[1], `${locale} reasoning label must fit`);
-      assert.ok(header.detail[0] + 1 < header.detail[1], `${locale} long preview should truncate`);
+      assert.match(header.label ?? "", /^The user asked/, `${locale} shows returned summary without a generic label`);
+      assert.ok(header.summary[0] + 1 < header.summary[1], `${locale} long summary should truncate`);
       if (revision === 1) {
         await page.evaluate(() => (window as any).update("tools"));
         await page.locator('[data-revision="2"]').waitFor();

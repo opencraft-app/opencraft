@@ -364,7 +364,10 @@ paint entering its own sticky heading. The list observes existing viewport scrol
 only to project overlap; it introduces no scroll writer, scroll state or extra
 scrollport. Row badges and avatar stacks cannot tint or paint over the disclosure.
 Participant popover portals retain their existing floating-surface ownership.
-There are no duplicate headings.
+There are no duplicate headings. Scroll overlap reads coalesce within a frame and complete before clip writes.
+Row content changes retain geometry subscriptions; structural group/item replacement
+reconciles those subscriptions, while real size changes project before paint.
+Disposal cancels pending projection and clears owned clipping styles.
 Historical Shell coverage used `OPENCRAFT_SIDEBAR_STICKY_ONLY=1` in
 `scripts/smoke-sidebar-topology.ts`. That probe is absent from this standalone
 checkout; this record does not establish a current passing sticky-geometry check.
@@ -605,3 +608,62 @@ redeclaring those shared-control properties.
 ### Sidebar bottom action surfaces
 
 Touch New chat, Applications and Settings retain their separate floating glass surfaces above a full-height scrollport. The footer hosts remain transparent. Shell measures both hosts and reserves their maximum height as scroll content padding, including safe areas and stacked update notices, so final rows can scroll above the buttons. Desktop surfaces and shared feedback remain.
+
+## Footer overlay topology
+
+Account popovers and sign-in dropdowns use the shared Workbench presentation
+root (document body for full-page Workbench, the supplied local root for embedded
+presentations), outside the Sidecar's clipping and backdrop-filter tree.
+Radix owns trigger anchoring, viewport collision, dismissal and focus restoration;
+the footer owns only normal-flow entrance geometry. Account content scrolls within
+the available height. Increasing a descendant z-index cannot escape ancestor
+clipping or a stacking context. Keep the application drawer's existing local
+presentation separate from these anchored overlays.
+
+The existing shared-sidebar consumer smoke supports
+`OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY=1`: verify actual corner hit testing beyond the
+Sidecar boundary, short viewports, light/dark themes, stable footer geometry,
+Escape/focus restoration, Settings invocation and preserved draft. Merely finding
+a dialog or inspecting its bounding rectangle does not prove it is painted or
+clickable. This focused regression is a developer check, not a new deployment gate.
+
+## Consistent compact destination controls
+
+The Shell uses the shared NavigationList/NavigationItem for destinations, including
+compact bottom rails. Classic and standard presentation retain the same outline
+artwork when selected: no silhouette filling or heavier selected stroke. Selection
+is expressed by the shared Button surface. Compact destinations and adjacent
+Settings/account actions share control height, corner treatment and interaction
+states. Account portraits remain identity artwork at the existing avatar size;
+the shared gear keeps its optical stroke and shape. Shell owns track placement
+and density variables, while NavigationList.compact and NavigationItem.compact
+own compact list gutter and control geometry. Mobile labeled destinations use the
+same components, with their existing floating Settings action and retained portals.
+
+### Reuse unchanged conversation topology
+
+Selection, pending navigation, menu state and parent presentation updates do not
+change the Host/Thread topology. Sidebar reuses its filtered trees, root lookup
+and task-flow partitions while the immutable catalog, search, Server filter and
+contribution membership stay equal. The contribution filter is evaluated on each
+parent commit before comparing its full Host/Thread membership; contribution
+object identity alone does not prove the filter is unchanged. A changed catalog
+also invalidates titles, parent links, access sections and ordering.
+
+This cache is a disposable projection, not another catalog owner. Dynamic title,
+capability, participation and badge readers continue to run on parent commits;
+menus, selected-root reveal, pagination, focus and scroll retain their existing
+owners. The desktop and touch Sidebar use the same projection.
+
+### Deferred global search presentation
+
+The global shortcut listener and search open intent remain mounted with the
+Shell. The modal surface and its geometry styles remain immediately available; only
+the result content and search logic load on entry.
+Closing before the module resolves must not reopen search, request old content
+or move focus; a later open uses current props and the existing search owner.
+Keyboard, composition, other-modal arbitration, result navigation and touch
+viewport behavior remain the same. Conversation positioning notices keep their
+own eagerly available styles rather than depending on the search dialog having
+been opened. Feature styles consume typography mixins; global text utilities
+remain at the application style owner.

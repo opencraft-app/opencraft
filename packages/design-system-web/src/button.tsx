@@ -62,3 +62,34 @@ export const ButtonPlaceholder = forwardRef<HTMLSpanElement, HTMLAttributes<HTML
     data-size={size} data-density="default" data-variant="ghost"
     data-content-layout={contentLayout} data-control-surface="integrated">{children}</span>;
 });
+
+/** A readable object heading that opens its existing detail surface. */
+export const ObjectTitleButton = forwardRef<HTMLButtonElement, Omit<ButtonProps, "variant" | "surface" | "size" | "contentLayout" | "density"> & { prominence?: "default" | "reading" }>(
+  function ObjectTitleButton({ className, onClick, children, prominence = "default", ...props }, ref) {
+    return <Button {...props} ref={ref} variant="link" size="sm" contentLayout="row"
+      data-object-prominence={prominence} className={["ui-object-title-button", className].filter(Boolean).join(" ")}
+      onClick={event => {
+        const selection = window.getSelection();
+        if (event.detail > 0 && selection && !selection.isCollapsed && event.currentTarget.contains(selection.anchorNode)) return;
+        event.currentTarget.focus({ preventScroll: true });
+        onClick?.(event);
+      }}>{children}</Button>;
+  },
+);
+
+/** Expands an object's native title action to its surface without nesting controls. */
+export function ObjectActionSurface({ children, className, disabled = false, onOpen, ...props }: Omit<HTMLAttributes<HTMLDivElement>, "onClick"> & {
+  disabled?: boolean; onOpen(): void;
+}) {
+  return <div {...props} className={["ui-object-action-surface", className].filter(Boolean).join(" ")}
+    data-action-disabled={disabled || undefined} onClick={event => {
+      const target = event.target;
+      if (disabled || !(target instanceof Element) || target.closest("button,a,input,textarea,select,[role=button],[role=menuitem],[contenteditable=true]")) return;
+      const selection = window.getSelection();
+      if (selection && !selection.isCollapsed && (event.currentTarget.contains(selection.anchorNode) || event.currentTarget.contains(selection.focusNode))) return;
+      const title = event.currentTarget.querySelector<HTMLButtonElement>(".ui-object-title-button");
+      if (!title || title.disabled) return;
+      title.focus({ preventScroll: true });
+      onOpen();
+    }}>{children}</div>;
+}

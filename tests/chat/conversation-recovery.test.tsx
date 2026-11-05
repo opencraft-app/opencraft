@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import {
+  connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
   conversationRecoveryPresentation,
@@ -88,4 +89,16 @@ test('console prints the full allowlisted clipboard snapshot with physical corre
  assert.equal(logConversationRecoveryDiagnostic(diagnostic,1234),expected);
  assert.deepEqual(values,[['[conversation-recovery] details\n'+expected]]);
  assert.match(expected,/attemptId: 11111111-1111-4111-8111-111111111111/);assert.doesNotMatch(expected,/secret/);
+});
+
+
+test("Host recovery stays pending independently of retained history or a Thread lease", () => {
+  for (const phase of ["connecting", "reconnecting"]) {
+    assert.equal(connectionRecoveryIsPending(phase), true);
+    assert.equal(conversationRecoveryIsPending("none"), false, "history can already be authoritative");
+    assert.equal(connectionRecoveryIsPending(phase, undefined, true), false);
+  }
+  for (const phase of ["idle", "ready", "disposed", "error"]) {
+    assert.equal(connectionRecoveryIsPending(phase), false);
+  }
 });

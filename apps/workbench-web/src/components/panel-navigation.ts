@@ -7,6 +7,11 @@ export const PanelNavigationContext = createContext<{
   readonly activeTabId: string | null;
   activate(tabId: string): void;
   close(tab: PanelTabDescriptor): void;
-  createBrowser?: () => void | Promise<void>;
+  readonly creationActions: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly icon: string;
+    run(): void | Promise<void>;
+  }[];
 } | null>(null);
 export const usePanelNavigation = () => useContext(PanelNavigationContext);

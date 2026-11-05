@@ -40,6 +40,17 @@ export function conversationRecoveryIsPending(
   return stage !== undefined;
 }
 
+/** Host recovery also paints before a Thread lease exists or while cached history is retained. */
+export function connectionRecoveryIsPending(
+  phase: string,
+  diagnostic?: ConversationRecoveryDiagnostic,
+  requiresUpdate = false,
+): boolean {
+  if (requiresUpdate) return false;
+  if (phase === "connecting" || phase === "reconnecting") return true;
+  return phase === "error" && conversationRecoveryIsPending("cold-error", diagnostic);
+}
+
 function ClientUpdateRequired() {
   return <FormattedMessage id="chat.reconnect.updateRequired" defaultMessage="Update or reload to reconnect" />;
 }

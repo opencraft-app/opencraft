@@ -8,9 +8,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { PlatformViewRegions } from "@opencraft/extension-react";
-import { WorkbenchConnectorLibrary } from "./connectors/connector-library";
-import { ExtensionLibrary } from "./extensions/extension-library";
+import { createDeferredView, type PlatformViewRegions } from "@opencraft/extension-react";
+
+// Registration is part of the Shell; management presentation loads on entry.
+const WorkbenchConnectorLibrary = createDeferredView(async () =>
+  (await import("./connectors/connector-library")).WorkbenchConnectorLibrary);
+const ExtensionLibrary = createDeferredView(async () =>
+  (await import("./extensions/extension-library")).ExtensionLibrary);
 import { useAppServerHosts } from "../runtime/appserver-runtime-context";
 import { createPortal } from "react-dom";
 

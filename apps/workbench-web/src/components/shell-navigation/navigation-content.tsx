@@ -1,3 +1,5 @@
+import { NavigationList, NavigationItem } from "@opencraft/design-system-web/navigation";
+import { useShellPresentation } from "../shell-presentation";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { GaugeIcon as Gauge, LoginIcon as LogIn, LogoutIcon as LogOut, PersonIcon as User } from "@opencraft/design-system-web/action-icons";
@@ -28,6 +30,10 @@ export interface ShellSignIn {
 
 export interface ShellNavigationConfig {
   readonly layout?: "unified";
+  /** The context pane owns an independent applications list destination. */
+  readonly applicationsInSidebar?: boolean;
+  /** Settings selects categories in-place before a category opens its route. */
+  readonly settingsInSidebar?: boolean;
   readonly actions: readonly NavigationAction[];
   readonly account: ShellAccount | null;
   readonly onOpenSettings: () => void;
@@ -75,12 +81,13 @@ export function NavigationContent({ config, surface, compact = false, includeSet
   onInvoke: (action: () => void) => void;
 }) {
   const intl = useIntl();
-  return surface === "applications" ? <Tooltip.Provider delayDuration={350} disableHoverableContent><nav aria-label={intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" })} className="shell-navigation__items shell-navigation__items--applications">
-    {config.actions.map(action => {
+  const mobile = useShellPresentation()?.mobileSidebar ?? false;
+  return surface === "applications" ? <Tooltip.Provider delayDuration={350} disableHoverableContent><NavigationList compact={compact && !mobile} label={intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" })} className="shell-navigation__items shell-navigation__items--applications">
+    {config.actions.filter(action => !(mobile && config.layout === "unified" && config.applicationsInSidebar && (action.id === "shell.home" || action.id === "shell.applications"))).map(action => {
       const { full: title, short } = shellNavigationLabels(action, intl);
       const badge = action.badge === undefined ? null : <small className="shell-navigation__beta">{action.badge}</small>;
-      return <Tooltip.Root key={action.id}><Tooltip.Trigger asChild><button type="button"
-        data-action-id={action.id} aria-label={title} aria-current={action.active ? "page" : undefined} onClick={() => onInvoke(action.onInvoke)}>
+      return <Tooltip.Root key={action.id}><Tooltip.Trigger asChild><NavigationItem compact={compact && !mobile} type="button"
+        data-action-id={action.id} aria-label={title} aria-expanded={action.expanded} aria-current={action.active ? "page" : undefined} onClick={() => onInvoke(action.onInvoke)}>
         <NavigationIcon name={action.icon} selected={action.active} />
         <span className="shell-navigation__item-label">
           {config.layout === "unified" ? <>
@@ -88,10 +95,10 @@ export function NavigationContent({ config, surface, compact = false, includeSet
             <span className="shell-navigation__item-label--full">{title}{badge}</span>
           </> : <>{title}{!compact ? badge : null}</>}
         </span>
-      </button></Tooltip.Trigger>{compact ? <Tooltip.Portal><Tooltip.Content className="shell-navigation-tooltip" side={tooltipSide} sideOffset={8}>{title}</Tooltip.Content></Tooltip.Portal> : null}</Tooltip.Root>;
+      </NavigationItem></Tooltip.Trigger>{compact ? <Tooltip.Portal><Tooltip.Content className="shell-navigation-tooltip" side={tooltipSide} sideOffset={8}>{title}</Tooltip.Content></Tooltip.Portal> : null}</Tooltip.Root>;
     })}
-    {includeSettings ? <button type="button" data-resource-intent="settings" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></button> : null}
-  </nav></Tooltip.Provider> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
+    {includeSettings ? <NavigationItem compact={compact && !mobile} type="button" data-resource-intent="settings" aria-current={config.settingsActive ? "page" : undefined} title={compact ? intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" }) : undefined} onClick={() => onInvoke(config.onOpenSettings)}><NavigationIcon name="settings" selected={config.settingsActive} /><span className="shell-navigation__item-label"><FormattedMessage id="settings.title" defaultMessage="Settings" /></span></NavigationItem> : null}
+  </NavigationList></Tooltip.Provider> : <AccountContent compact={compact} config={config} onInvoke={onInvoke} />;
 }
 
 function AccountContent({ config, compact, onInvoke }: {

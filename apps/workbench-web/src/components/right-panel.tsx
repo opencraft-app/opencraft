@@ -37,7 +37,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { motion, useTransform } from "motion/react";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAppShellLayoutMotion } from "./app-shell";
 import { useShellPresentation } from "./shell-presentation";
@@ -49,6 +49,8 @@ import {
   resolvePanelTabCommit,
   RIGHT_PANEL_TAB_DROP_TAIL_ID,
 } from "./right-panel-tab-drag";
+
+const PanelMobileToolbar = lazy(() => import('./panel-mobile-toolbar').then(module => ({ default: module.PanelMobileToolbar })));
 
 function panelTitle(tab: PanelTabDescriptor, intl: IntlShape): string {
   if (tab.kind === "cloud-desktop") return intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" });
@@ -376,6 +378,7 @@ export function RightPanel({
       activationConstraint: { distance: 6 },
     }),
   );
+  const [toolbarContainer, setToolbarContainer] = useState<HTMLDivElement | null>(null);
   const [draggedTab, setDraggedTab] = useState<DraggedPanelTab | null>(null);
   const [previewTabIds, setPreviewTabIds] = useState<readonly string[] | null>(
     null,
@@ -402,7 +405,6 @@ export function RightPanel({
       action.creationLabel !== undefined &&
       (action.isAvailable?.(toolbarActionContext) ?? true),
   );
-  const browserCreation = creationActions.find(action => action.id === 'opencraft.browser.new-tab');
   const ActivePanel =
     activeTab === null
       ? null
@@ -514,7 +516,7 @@ export function RightPanel({
       tabs: regionState.tabs, activeTabId: regionState.activeTabId,
       activate: tabId => onAction({ type: 'activate-tab', region, tabId }),
       close: onCloseTab,
-      ...(browserCreation ? { createBrowser: () => browserCreation.run(toolbarActionContext) } : {}),
+      creationActions: creationActions.map(action => ({ id: action.id, label: action.label, icon: action.icon, run: () => action.run(toolbarActionContext) })),
     }}>
     <DndContext
       sensors={sensors}
@@ -525,6 +527,7 @@ export function RightPanel({
       onDragEnd={finishDrag}
     >
       <div className="right-panel-content" data-app-shell-tabs="true" data-panel-region={region}
+        data-mobile-panel={newera && fullWidth && interactive || undefined}
         data-mobile-browser={newera && fullWidth && activeTab?.kind === 'browser' && interactive || undefined}>
         <header className="right-panel-toolbar">
           <motion.div
@@ -673,15 +676,27 @@ export function RightPanel({
               ownerId={state.ownerId}
               presentationId={presentationId}
               active={interactive}
+              touchToolbar={newera && fullWidth}
+              toolbarContainer={toolbarContainer}
             />
           )}
           {residentTabs.map(({ tab, Component }) => <div key={`${state.ownerId}:${tab.id}`}
             className="right-panel-resident" hidden={tab.id !== activeTab?.id}
             inert={!interactive || tab.id !== activeTab?.id || undefined}>
             <Component tab={tab} ownerId={state.ownerId} presentationId={presentationId}
-              active={interactive && tab.id === activeTab?.id} />
+              active={interactive && tab.id === activeTab?.id}
+              touchToolbar={newera && fullWidth}
+              toolbarContainer={tab.id === activeTab?.id ? toolbarContainer : null} />
           </div>)}
         </div>
+        {newera && fullWidth && interactive && activeTab?.kind !== 'browser' ? <Suspense fallback={null}><PanelMobileToolbar panelTabId={regionState.activeTabId ?? ''}
+          actions={<div className="panel-mobile-dock__plugin-actions" ref={setToolbarContainer} />}
+          moreLabel={intl.formatMessage({ id: 'panel.more', defaultMessage: 'More panel actions' })}
+          renderMore={toolbarActions.some(action => action.region === region && action.creationLabel === undefined && (action.isAvailable?.(toolbarActionContext) ?? true))
+            ? run => <div className="panel-mobile-sheet__utilities">{toolbarActions
+              .filter(action => action.region === region && action.creationLabel === undefined && (action.isAvailable?.(toolbarActionContext) ?? true))
+              .map(action => <Button key={action.id} onClick={() => run(() => action.run(toolbarActionContext))}><ToolbarActionIcon icon={action.icon} />{action.label}</Button>)}
+            </div> : undefined} /></Suspense> : null}
       </div>
       {typeof document === "undefined"
         ? null

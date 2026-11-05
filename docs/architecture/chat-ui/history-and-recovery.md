@@ -521,3 +521,35 @@ cursor. Replying uses the original native request context; it does not require
 reloading historical messages. A native withdrawal removes only its own prompt.
 New input remains subject to current history/execution admission. See the
 [native-channel contract](../platform/connection-recovery-contract.md#native-execution-channels-during-history-recovery).
+
+## Long activity content within a Turn
+
+Turn identity remains an execution/navigation boundary, not a limit on mounted
+activity DOM. Long sequences retain all ordered source units and stable flow
+placeholders. The existing Web conversation viewport owns shared visibility and
+height observations; nearby ordinary activity renderers mount within that same
+scrollport. Placeholder geometry never overwrites measured content heights. Turn
+measurement and scroll compensation retain sole ownership of layout transactions.
+
+Small lists, the current tail, explicitly expanded content, focus/selection and
+persistent or interactive surfaces retain their existing lifetimes. Ordinary
+activity details recover when scrolling back; reading choices remain in the
+original Conversation View stores. Recovered content is not a new entrance
+animation. Hidden/disposed viewport observations cannot evict active content.
+User-message search targets remain independent of ordinary activity visibility;
+browser find retains the existing virtualized transcript limitation.
+
+Ordinary synchronous commentary inside activity sequences uses the same mount
+window as tool/reasoning rows. Unchanged unit renderers preserve their committed
+subtrees while the live tail updates; context and registry changes still
+propagate. The original View restore receipt also carries measured content
+heights, so returning to a long reading position does not discard known geometry.
+
+### Composer connection recovery presentation
+
+Host connection recovery paints the shared Composer recovery scan independently
+of a committed Thread lease and retained history authority. Both the new-thread
+draft and retained conversation consume the same pending recovery projection;
+typed content keeps its document and remains visible during recovery. The
+Composer does not append a separate connection explanation below its shell.
+This presentation does not schedule reconnects or change input admission.

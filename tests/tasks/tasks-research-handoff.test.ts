@@ -155,3 +155,28 @@ test("pagination crosses workflow boundaries to recover visible state entry", as
   assert.equal(calls, 2);
   assert.equal(followUpProjection({ ...assigned, status: "todo" }, events).enteredAt, 1000);
 });
+
+import { workBoardReadRecord } from "../../plugins/tasks/src/work-board-read-model";
+test("unified read projection preserves business status, owner, judge and clock independently", () => {
+  const row = { ...assigned, title: "A decision", revision: 8, description: "Context", conversations: [{ serverId: "server-a", threadId: "thread-a", createdAt: 1 }] } as TaskDetail;
+  const read = workBoardReadRecord(row, followUpProjection(row, [review, fact(4)]), true, rollout);
+  assert.equal(read.workflowStatus, "in_review");assert.equal(read.ownerId, "owner");
+  assert.equal(read.collaboration.currentHumanActorId, "judge-a");assert.equal(read.collaboration.handlerId, "judge-a");
+  assert.equal(read.clock.startedAt, rollout);assert.equal(read.revision, 8);
+  assert.deepEqual(read.conversations, [{ serverId: "server-a", threadId: "thread-a" }]);
+  assert.equal(read.collaboration.executionState, "unknown");assert.equal(read.access.grantsExecution, false);assert.equal(read.access.grantsApproval, false);
+});
+test("unreadable collaboration does not publish stale requests, judge or clock", () => {
+  const row = { ...assigned, conversations: [] } as TaskDetail;
+  const read = workBoardReadRecord(row, followUpProjection(row, [review, fact(4)]), false, rollout);
+  assert.equal(read.collaboration.group, "unknown");assert.equal(read.collaboration.actionRequired, null);
+  assert.equal(read.collaboration.currentHumanActorId, null);assert.equal(read.collaboration.request, null);
+  assert.equal(read.collaboration.report, null);assert.equal(read.clock.startedAt, null);
+});
+test("completed work remains readable without reopening a human request or claiming verified execution", () => {
+  const row = { ...assigned, status: "done", conversations: [] } as unknown as TaskDetail;
+  const read = workBoardReadRecord(row, followUpProjection(row, [review, fact(4)]), false, rollout);
+  assert.equal(read.workflowStatus, "done");assert.equal(read.collaboration.group, "closed");
+  assert.equal(read.collaboration.actionRequired, false);assert.equal(read.collaboration.request, null);
+  assert.equal(read.clock.startedAt, null);assert.equal(read.collaboration.executionState, "unknown");
+});

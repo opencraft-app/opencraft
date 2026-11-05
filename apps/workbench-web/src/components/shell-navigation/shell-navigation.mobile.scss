@@ -1,3 +1,4 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 @use "../mobile-glass" as glass;
 @use "@opencraft/design-system/controls.web" as controls;
 
@@ -6,12 +7,18 @@
 .shell-sidebar__column[data-navigation-layout="mobile"] {
   // Share the compact leading edge with group/date/thread text.
   --space-icon-leading-inset: 0px;
-  --padding-navigation-row-inline: var(--padding-sidebar-activity-row-inline);
+  --padding-shell-sidebar-inline: var(--padding-sidebar-content-inline);
+  --padding-sidebar-activity-row-inline: 0px;
+  --padding-navigation-row-inline: 0px;
+  --padding-navigation-list-inline: 0px;
+  --padding-floating-navigation-inline: 8px;
+  --padding-applications-sidebar-list-block: 0px;
+  --height-sidebar-activity-row: 44px;
   // The stationary Sidebar surface reaches the bottom edge. Floating controls
-  // retain their safe inset and ordinary 16px clearance independently of the list.
-  --shell-mobile-actions-bottom-reserve: calc(16px + var(--shell-mobile-safe-bottom));
+  // retain their safe inset and ordinary 12px clearance independently of the list.
+  --shell-mobile-actions-bottom-reserve: calc(12px + var(--shell-mobile-safe-bottom));
   grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
 
   // Navigation and conversations share a native scrollport;
   // display:contents keeps the existing portal/action owners without a second list.
@@ -30,7 +37,7 @@
   .shell-sidebar-navigation {
     .shell-navigation__items--applications {
       > button {
-        @include controls.navigation-control;
+        @include controls.application-navigation-glyph;
         flex-direction: row; justify-content: flex-start;
         width: auto; min-height: 44px; flex-shrink: 0; margin: 2px 8px; gap: var(--gap-navigation-row-content);
         padding: 0 var(--padding-navigation-row-inline);
@@ -49,17 +56,24 @@
     border-start-start-radius: 0;
     background: transparent;
   }
-  // Settings shares the floating action row; no account strip or bottom plate.
+  // Applications and Settings share the detached bottom action row.
   // SafeLayout owns the action row's bottom inset independently of scroll paint.
   .shell-sidebar__rail-footer.sidecar-content-slot {
-    grid-column: 2; grid-row: 1;
+    grid-column: 2; grid-row: 2;
     align-self: end; z-index: 2;
-    padding: 16px 16px 16px 12px;
+    padding: 12px var(--padding-sidebar-content-inline) 12px 8px;
     border: 0; background: transparent;
     pointer-events: none;
   }
   .shell-sidebar__rail-footer .shell-navigation__footer--unified {
-    display: flex; flex-direction: column; gap: 8px; width: auto; padding: 0;
+    display: grid; grid-template-columns: repeat(2, var(--size-material-liquid-control)); gap: 8px; width: auto; padding: 0;
+    > [data-surface="updates"] { grid-column: 1 / -1; justify-self: end; }
+    > [data-surface="applications"] { grid-column: 1; }
+    > [data-surface="settings"] { grid-column: 2; }
+    &:not(:has([data-surface="applications"])) {
+      grid-template-columns: var(--size-material-liquid-control);
+      > [data-surface="settings"] { grid-column: 1; }
+    }
     .shell-navigation__entrance {
       pointer-events: auto;
       justify-content: center;
@@ -71,38 +85,38 @@
   }
   // One native scrolling owner makes search and filters fold out with the list.
   // Keeping them mounted preserves text, focus and open/filter state on resize.
-  .sidebar-panel { height: auto; overflow: visible; }
+  .sidebar-panel { height: auto; overflow: visible; padding-inline: var(--padding-shell-sidebar-inline); }
   .sidebar-content-scroll { flex: 0 0 auto; overflow: visible; contain: none; }
   .sidebar-tasks { flex: 0 0 auto; }
-  .sidebar-thread-group-heading { background: var(--opencraft-sidebar-heading-background, var(--shell-mobile-sidebar-background)); }
+  .sidebar-thread-group-heading { margin: 0; background: var(--opencraft-sidebar-heading-background, var(--shell-mobile-sidebar-background)); }
   .sidebar-thread-group-heading .sidebar-thread-group-toggle {
+    @include typography.role(metadata, secondary);
     min-height: max(44px, var(--size-control-hit-min));
     > svg { opacity: 1; }
   }
   .sidebar-activity-list { flex: 0 0 auto; overflow: visible; }
 }
 
-// The list scrolls behind the floating actions to the bottom edge. End padding
-// lets its final row and pagination scroll clear of the controls and safe area;
-// it must not shorten the scrollport or create an opaque action band.
+// The list paints behind the detached glass controls to the bottom edge.
+// Shell measures the action hosts so the last row can scroll clear of them.
 .shell-sidebar__column[data-navigation-layout="mobile"] {
-  // Paint beneath the glass controls while measured padding clears final rows.
   .shell-sidebar__scroll {
     box-sizing: border-box;
     padding-block-end: calc(var(--shell-mobile-footer-height, 0px) + 8px);
     scroll-padding-block-end: calc(var(--shell-mobile-footer-height, 0px) + 8px);
   }
   .shell-sidebar__floating-action {
-    grid-column: 1; grid-row: 1;
-    align-self: end; justify-self: start;
+    container: sidebar-primary-action / inline-size;
+    grid-column: 1; grid-row: 2;
+    align-self: end; justify-self: stretch;
     z-index: 2; min-width: 0; max-width: 100%; box-sizing: border-box;
-    padding: 16px 0 16px 16px;
+    padding: 12px 0 12px var(--padding-sidebar-content-inline);
     pointer-events: none;
     &:empty { display: none; }
-    .sidebar-new-chat {
+    .shell-sidebar-primary-action {
       pointer-events: auto;
-      width: auto; max-width: 100%; margin: 0;
- gap: 10px;
+      width: 100%; max-width: 100%; margin: 0;
+      gap: 8px;
       > svg { width: 20px; height: 20px; flex-shrink: 0; }
       > span:not(.ui-liquid-glass) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     }
@@ -129,7 +143,7 @@
     > button { pointer-events: auto; }
     > .app-shell-header__window-controls { pointer-events: none; }
     .application-brand {
-      flex: 0 1 auto; min-width: 0; padding: 8px 12px; border-radius: 999px;
+      flex: 0 1 auto; min-width: 0; padding: 8px var(--padding-sidebar-content-inline); border-radius: 999px;
       .application-brand__wordmark { overflow: hidden; text-overflow: ellipsis; }
     }
     > .shell-sidebar__action {
@@ -143,4 +157,30 @@
     .shell-sidebar__scroll { padding-top: var(--height-toolbar); scroll-padding-top: var(--height-toolbar); }
     button[data-action-id="shell.search"] { display: none; }
   }
+}
+
+// Optical alignment is limited to touch drawer titles; desktop geometry and
+// nested conversation indentation remain owned by their existing layout.
+.shell-sidebar__column[data-navigation-layout="mobile"] .sidebar-activity-item__title {
+  @include typography.optical-start;
+}
+
+.shell-sidebar__column[data-navigation-layout="mobile"] {
+  .applications-sidebar { padding-block: 0; }
+  .applications-sidebar__list > button > svg { margin-inline-start: 0; }
+  .sidebar-list-toolbar { padding-inline: 0; margin-block-start: 8px; }
+  .sidebar-thread-group-toggle { padding-inline-start: 0; }
+  .sidebar-activity-more, .sidebar-access-description, .sidebar-activity-empty,
+  .sidebar-activity-pagination, .sidebar-display-mode-label { padding-inline-start: 0; margin-inline-start: 0; }
+}
+[data-mobile-sidebar] .shell-sidebar__header .app-shell-header__window-controls-rail[data-navigation-brand] { padding-inline-start: 0; }
+
+[data-mobile-sidebar] .shell-sidebar__header .app-shell-header__window-controls-rail[data-navigation-brand] > .application-brand {
+  padding-inline: var(--padding-sidebar-content-inline);
+}
+
+// At the narrowest drawer width, retain the complete exit wording. The header
+// keeps its arrow; the bottom pill can omit its decorative arrow to fit.
+@container sidebar-primary-action (max-width: 99px) {
+  .settings-return-to-app > svg { display: none; }
 }

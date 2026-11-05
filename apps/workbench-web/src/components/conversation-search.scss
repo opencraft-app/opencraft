@@ -1,5 +1,5 @@
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
-@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 @use "./mobile-glass" as glass;
 
 .modal-surface.conversation-search[data-appearance="utility"] {
@@ -63,14 +63,6 @@
   max-width: 35%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .conversation-search__status { border-top: 1px solid var(--color-border); }
-.conversation-search-position {
-  @include typography.role(metadata, secondary);
-  position: absolute; top: 16px; left: 20px; right: 20px; z-index: 1;
-  padding: 8px 12px; border: 1px solid var(--color-border);
-  border-radius: var(--radius-md); background: var(--color-background-surface);
-  button { @include typography.role(metadata, primary); min-height: var(--size-control-hit-min);
-    margin-inline-start: 8px; padding: 6px 10px; border: 0; background: transparent; cursor: pointer; }
-}
 
 .conversation-search__heading, .conversation-search__result-icon { display: none; }
 .conversation-search__body { display: contents; }

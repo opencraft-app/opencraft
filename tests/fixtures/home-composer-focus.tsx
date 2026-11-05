@@ -25,7 +25,8 @@ const chrome = { kind: "browser", platform: "linux", safeArea: { left: 0, right:
 const noop = () => {};
 function App() {
   useTimelineViewportHost(chrome);
-  Object.assign(window, { fixture: { controller } });
+  const [recovering, setRecovering] = React.useState(params.has("recovering"));
+  Object.assign(window, { fixture: { controller, setRecovering } });
   return <AppShell layoutScope="home" mainContentLayout="thread-edge-scroll" navigation={{layout:"unified",actions:[],account:null,onOpenSettings:noop}} header={<AppShellHeader
     conversationHeader={!params.has("legacyHeader")} title="Home" project={null} sidebarOpen={false}
     rightPanelOpen={false} rightPanelFullWidth={false} onToggleSidebar={noop} onToggleRightPanel={noop}
@@ -38,7 +39,7 @@ function App() {
       modelSelectionPolicy={params.get("policy") === "session" ? "session" : params.get("policy") === "host-default" ? "host-default" : "user"}
       composerEndActions={toolbar ? <button className="opencraft-composer-icon-button" aria-label="Microphone"><MicrophoneIcon size={16} /></button> : undefined}
       catalog={{ search: async () => [] }} workspaceOptions={[]} activeHostId="fixture" hostOptions={[]}
-      connectionPhase="ready" onSelectHost={noop} onSelectWorkspace={noop} onBrowseWorkspace={noop}
+      placeholderPending={recovering} connectionPhase={recovering ? "reconnecting" : "ready"} onSelectHost={noop} onSelectWorkspace={noop} onBrowseWorkspace={noop}
       onSubmit={() => false} heading="要做点什么？" placeholder="聊聊你的想法，或交给我一件事" />
   </AppShell>;
 }

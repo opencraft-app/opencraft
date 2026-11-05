@@ -3,8 +3,8 @@
 ## Desktop sidebar bottom navigation
 
 Desktop unified navigation uses the bottom row of the full-width sidebar;
-Applications is in the global header immediately before the preview-window
-control. See [navigation ownership](invariants/navigation-and-sidebar.md#desktop-sidebar-bottom-navigation)
+Applications is in the left context pane above its live application list;
+the right header has no duplicate application entrance. See [navigation ownership](invariants/navigation-and-sidebar.md#desktop-sidebar-bottom-navigation)
 for overflow, mobile boundaries and state continuity.
 
 
@@ -31,6 +31,8 @@ for overflow, mobile boundaries and state continuity.
 ### Shell and layout
 Page-owned floating DOM content consumes the Shell overlay host; geometry, motion, clipping and input boundaries belong to Shell. Native/browser surfaces adapt that page boundary without replacing their resources. See [page-owned overlay presentation](invariants/shell-and-layout.md#page-owned-overlay-presentation).
 
+
+应用目录开关由导航栏Home右侧图标承载，sidebar-primary入口由上下文目录投影；见[Shell pane ownership](invariants/shell-and-layout.md#shell-pane-ownership)。
 
 - <a id="owned-dom-projection-names"></a>[Owned DOM projection names](invariants/shell-and-layout.md#owned-dom-projection-names)
 - <a id="experimental-mobile-web-container"></a>[Experimental mobile Web container](invariants/shell-and-layout.md#experimental-mobile-web-container)
@@ -328,3 +330,17 @@ SettingsPanel body allows scroll chaining when embedded in a Settings document.
 A body that fits its content must not consume wheel input needed by the outer
 Settings viewport. Utility modals retain their bounded, independently scrolling
 body; their modal owner controls background interaction.
+
+## Sidebar list selection before Settings navigation
+
+A Shell-owned Settings entrance can declare `settingsInSidebar`: selecting it
+keeps the split drawer open and chooses categories without committing the main
+route. Only a category commits Settings navigation and dismisses the transient
+sidebar. List selection and page routing are separate owners; see
+[peer sidebar destinations](invariants/shell-and-layout.md#peer-sidebar-destinations-and-reachable-exit)
+and [Settings composition](ui/settings-pages.md#settings-as-a-peer-sidebar-destination).
+
+Sidebar destination lists share the foundation content inset and NavigationList
+sidebar variant; containers must not stack separate padding on Apps and Settings.
+See [shared sidebar reading inset](ui/settings-pages.md#shared-sidebar-reading-inset)
+and the [Workbench design language](../docs/workbench-design-language.md#shared-sidebar-content-inset).

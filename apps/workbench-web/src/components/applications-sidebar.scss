@@ -1,0 +1,38 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+.applications-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  height: 100%;
+  box-sizing: border-box;
+  padding-block: var(--spacing);
+  &__list {
+    overflow: auto;
+    overscroll-behavior: contain;
+    gap: var(--gap-navigation-rows);
+    padding-block: var(--padding-applications-sidebar-list-block, var(--spacing));
+    flex: 1;
+  }
+  &__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__empty {
+    @include typography.role(metadata, secondary);
+    padding: var(--spacing) var(--padding-sidebar-content-inline);
+    margin: 0;
+  }
+}
+
+.applications-sidebar-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  &__catalog {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    &[hidden] { display: none; }
+  }
+  &__context { flex: 1; min-height: 0; overflow: hidden; &[hidden] { display: none; } }
+}

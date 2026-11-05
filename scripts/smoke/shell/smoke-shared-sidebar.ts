@@ -9,23 +9,25 @@ import{frame}from'@opencraft/design-system/tokens';
 import{AppShell}from'/apps/workbench-web/src/components/app-shell.tsx';
 import{AppShellHeader}from'/apps/workbench-web/src/components/app-shell-header.tsx';
 import{ApplicationBrand}from'/apps/workbench-web/src/components/application-brand.tsx';
+import{WorkbenchPresentationRootProvider}from'/apps/workbench-web/src/components/workbench-presentation-root.tsx';
 import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();let mounts=0;const actions=[];
 function Context(){const [expanded,setExpanded]=useState(true);useEffect(()=>{mounts++},[]);return <div style={{height:'100%',display:'flex',flexDirection:'column'}}><input aria-label='Sidebar filter' defaultValue='Keep filter'/><button onClick={()=>setExpanded(!expanded)} aria-expanded={expanded}>Local</button><div data-scroll-list style={{overflowY:'auto',flex:1,minHeight:0}}>{expanded?Array.from({length:80},(_,i)=><div key={i} style={{padding:12}}>Task {i}</div>):null}</div></div>}
-function App(){const[open,setOpen]=useState(true);const[width,setWidth]=useState(frame.sidebarUnifiedDefaultWidth);const[context,setContext]=useState(true);const[accountName,setAccountName]=useState(null);
-window.fixture={setOpen,setContext,setWidth,setAccountName,width,setThemePreference,mounts:()=>mounts,actions};
-return <AppShell navigation={{layout:'unified',actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>actions.push('Chat')}],settingsActive:false,onOpenSettings:()=>actions.push('Settings'),account:{snapshot:{phase:accountName?'authenticated':'anonymous',name:accountName,avatarUrl:null},onOpen:()=>actions.push('Sign in'),onRefresh:async()=>{},onSignOut:async()=>{}}}}
+function App(){const[open,setOpen]=useState(true);const[width,setWidth]=useState(frame.sidebarUnifiedDefaultWidth);const[context,setContext]=useState(true);const[accountName,setAccountName]=useState(null);const[signIn,setSignIn]=useState(false);const[unified,setUnified]=useState(true);
+window.fixture={setOpen,setContext,setWidth,setAccountName,setSignIn,setUnified,width,setThemePreference,mounts:()=>mounts,actions};
+return <AppShell navigation={{layout:unified?'unified':undefined,actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>actions.push('Chat')}],settingsActive:false,onOpenSettings:()=>actions.push('Settings'),account:{snapshot:{phase:accountName?'authenticated':'anonymous',name:accountName,avatarUrl:null,planLabel:'Workspace member',usageRemainingPercent:null},signIn:signIn?{pending:false,error:null,options:[{id:'local',label:'Sign in locally',description:'Use workspace account'}],select:()=>actions.push('Sign in locally'),cancel:()=>{},retry:()=>{}}:null,onOpen:()=>actions.push('Sign in'),onRefresh:async()=>{},onSignOut:async()=>{}}}}
 layoutScope='test' mainContentLayout='default' sidebarOpen={open} sidebarWidth={width} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={v=>v!==null&&setWidth(v)} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader navigationBrand={<ApplicationBrand/>} title={null} project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={false} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={dock=><button onClick={dock}>固定侧栏</button>}
 leftPanel={context?<Context/>:null}>
 <div style={{padding:28}} onClick={()=>actions.push('Main')}><h1>Workspace</h1><input aria-label='Main draft' defaultValue='Keep draft'/></div></AppShell>}
-createRoot(document.getElementById('root')).render(<App/>);`;
+const overlayHost=document.getElementById('overlay-host');
+createRoot(document.getElementById('root')).render(location.search.includes('embedded')?<WorkbenchPresentationRootProvider target={overlayHost}><App/></WorkbenchPresentationRootProvider>:<App/>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), publicDir: "apps/workbench-web/public", logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, cacheDir: "node_modules/.vite-shared-sidebar", esbuild: { jsx: "automatic" }, server: { host: "127.0.0.1", port: 0 },
   optimizeDeps: { include: ["react", "react-dom/client", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@tanstack/react-query"] },
   plugins: [{ name: "shared-sidebar-fixture", resolveId: id => id === "/shared-probe.tsx" ? id : null, load: id => id === "/shared-probe.tsx" ? source : null,
-    configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url !== "/") return next(); res.setHeader("content-type", "text/html"); res.end('<div id="root"></div><script type="module" src="/shared-probe.tsx"></script>'); }); },
+    configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url !== "/" && !req.url?.startsWith("/?")) return next(); res.setHeader("content-type", "text/html"); res.end('<div id="root"></div><div id="overlay-host"></div><script type="module" src="/shared-probe.tsx"></script>'); }); },
   }],
 });
 let browser: any; const errors: string[] = [], evidence: unknown[] = [];
@@ -35,7 +37,7 @@ try {
   // Managed website updates: the mobile drawer overlays the list with the
   // update entrance, so the scroll track must reserve two floating actions
   // while a notice is visible and must shrink back when it disappears.
-  {
+  if (process.env.OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY !== "1") {
     const mobileStatus = {
       none: { current: { version: '0.1.12', buildId: 'build-running' }, latest: { version: '0.1.12', buildId: 'build-running' }, updateAvailable: false },
       available: { current: { version: '0.1.12', buildId: 'build-running' }, latest: { version: '0.1.13', buildId: 'build-next' }, updateAvailable: true },
@@ -205,6 +207,88 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`, {timeout:90000});
   await page.waitForLoadState('networkidle');
   await page.getByRole("button", { name: "Chat", exact: true }).waitFor();
+  // A visible DOM box alone misses clipping and competing stacking contexts.
+  // Probe actual hit testing beyond the Sidecar boundary with production CSS.
+  if (process.env.OPENCRAFT_HEADER_TOGGLE_ONLY !== "1") {
+    for (const theme of ["light", "dark"] as const) {
+      await page.evaluate(theme => { (window as any).fixture.setThemePreference(theme); (window as any).fixture.setAccountName("A very long workspace member name"); }, theme);
+      for (const height of [760, 280]) {
+        await page.setViewportSize({ width: 1300, height });
+        await page.waitForTimeout(600);
+        const trigger = page.locator('.shell-navigation__entrance[data-surface="account"]:visible');
+        const footerBefore = await trigger.boundingBox();
+        await trigger.click();
+        const peek = page.locator('.shell-navigation__peek');
+        await peek.waitFor();
+        const geometry = await peek.evaluate(el => {
+          const box = el.getBoundingClientRect();
+          const sidecar = document.querySelector('.app-shell-sidecar')!.getBoundingClientRect();
+          const hits = [box.left + 8, box.right - 8].flatMap(x => [box.top + 8, box.bottom - 8].map(y => el.contains(document.elementFromPoint(x, y))));
+          return { outsideSidecar: el.closest('.app-shell-sidecar') === null, crossesBoundary: box.right > sidecar.right,
+            inViewport: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight, hits };
+        });
+        await page.screenshot({ path: `${output}/account-${theme}-${height}.png` });
+        assert.equal(geometry.outsideSidecar, true, `account overlay must escape the Sidecar clipping/filter tree: ${JSON.stringify(geometry)}`);
+        assert.equal(geometry.crossesBoundary, true, 'exercise the part that used to be clipped');
+        assert.equal(geometry.inViewport, true, 'Radix must keep all edges in the viewport');
+        assert.ok(geometry.hits.every(Boolean), 'all overlay corners must paint above the workspace');
+        assert.deepEqual(await trigger.boundingBox(), footerBefore, 'opening an overlay must preserve footer layout');
+        await page.keyboard.press('Escape');
+        await peek.waitFor({ state: 'hidden' });
+        assert.equal(await trigger.evaluate(el => el === document.activeElement), true);
+        await trigger.click();
+        await peek.getByRole('button', { name: 'Settings', exact: true }).click();
+        await peek.waitFor({ state: 'hidden' });
+        assert.equal(await page.getByRole('textbox', { name: 'Main draft' }).inputValue(), 'Keep draft');
+        evidence.push({ case: `account-topology-${theme}-${height}`, ...geometry });
+      }
+    }
+    // The anonymous dropdown uses the same physical owner, with Radix menu focus.
+    await page.evaluate(() => { (window as any).fixture.setAccountName(null); (window as any).fixture.setSignIn(true); });
+    await page.setViewportSize({ width: 1300, height: 760 });
+    await page.waitForTimeout(600);
+    const signIn = page.locator('.shell-navigation__entrance[data-surface="account"]:visible');
+    await signIn.click();
+    const menu = page.locator('.shell-sign-in-menu');
+    await menu.waitFor();
+    assert.equal(await menu.evaluate(el => el.closest('.app-shell-sidecar') === null), true);
+    await page.keyboard.press('Escape');
+    await menu.waitFor({ state: 'hidden' });
+    assert.equal(await signIn.evaluate(el => el === document.activeElement), true);
+    evidence.push({ case: 'anonymous-menu-presentation-root', passed: true });
+    await page.evaluate(() => { (window as any).fixture.setAccountName('Floating member'); (window as any).fixture.setSignIn(false); (window as any).fixture.setUnified(false); (window as any).fixture.setOpen(false); });
+    await page.waitForTimeout(700);
+    await page.mouse.move(600, 170); await page.mouse.move(2, 170);
+    const floating = page.locator('.app-shell-floating-left-panel');
+    await floating.waitFor();
+    await page.mouse.move(100, 170); await page.waitForTimeout(300);
+    await floating.locator('.shell-navigation__entrance[data-surface="account"]').click();
+    const floatingPeek = page.locator('.shell-navigation__peek');
+    await floatingPeek.waitFor();
+    await floatingPeek.getByRole('button', { name: 'Settings', exact: true }).click();
+    await floatingPeek.waitFor({ state: 'hidden' });
+    evidence.push({ case: 'floating-sidebar-account-settings', passed: true });
+    await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/?embedded`, { timeout: 90000 });
+    await page.waitForSelector('.app-shell-root');
+    await page.evaluate(() => (window as any).fixture.setAccountName('Embedded member'));
+    await page.locator('.shell-navigation__entrance[data-surface="account"]:visible').click();
+    const localPeek = page.locator('#overlay-host .shell-navigation__peek');
+    await localPeek.waitFor();
+    await page.setViewportSize({ width: 1100, height: 280 });
+    await page.waitForTimeout(600);
+    assert.equal(await localPeek.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
+        && el.contains(document.elementFromPoint(box.right - 8, box.top + 8));
+    }), true, 'the supplied presentation root must retain collision and hit testing through resize');
+    await localPeek.getByRole('button', { name: 'Settings', exact: true }).click();
+    await localPeek.waitFor({ state: 'hidden' });
+    evidence.push({ case: 'supplied-presentation-root-open-resize-settings', passed: true });
+  }
+  if (process.env.OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY !== "1") {
+  await page.setViewportSize({ width: 1300, height: 760 });
+  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/`, { timeout: 90000 });
+  await page.waitForLoadState('networkidle');
   // The same header action must remain beside the brand throughout motion.
   const toggle = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible');
   await toggle.waitFor();
@@ -243,7 +327,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   }
   evidence.push({ case: 'persistent-toggle-beside-brand-through-animation', frames: stationary.frames.length });
   await page.screenshot({ path: `${output}/header-expanded.png` });
-  if (process.env.OPENCRAFT_HEADER_TOGGLE_ONLY !== "1") {
+  if (process.env.OPENCRAFT_HEADER_TOGGLE_ONLY !== "1" && process.env.OPENCRAFT_ACCOUNT_TOPOLOGY_ONLY !== "1") {
   const measureFooter = () => page.evaluate(() => {
     const footer = document.querySelector<HTMLElement>('.shell-navigation__footer')!;
     const track = footer.closest('.shell-sidebar__rail-footer')!.getBoundingClientRect();
@@ -276,7 +360,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
       await page.locator('.shell-navigation__entrance[data-surface="account"]').click();
       await page.locator('.shell-navigation__peek').waitFor();
       const openBox=await assertFooter();assert.equal(openBox.trackWidth,after.trackWidth);assert.equal(openBox.accountWidth,after.accountWidth);
-      assert.equal(await page.locator('.shell-navigation__peek').evaluate((el:Element)=>getComputedStyle(el).position),'absolute');
+      assert.equal(await page.locator('.shell-navigation__peek').evaluate((el:Element)=>el.closest('.app-shell-sidecar') === null),true);
       await page.screenshot({path:`${output}/footer-menu.png`});await page.keyboard.press('Escape');
     }
     await page.evaluate(() => (window as any).fixture.setWidth(323));await page.waitForTimeout(600);
@@ -444,6 +528,7 @@ createRoot(document.getElementById('root')).render(<Drawer/>);`;
   assert.equal(await page.getByRole('separator',{name:'Resize applications',exact:true}).count(),0);
   assert.equal(await page.locator('.shell-sidebar__navigation').evaluate(e=>e.getBoundingClientRect().width),48);
   evidence.push({case:'unified-rail-has-no-independent-resizer',passed:true});
+  }
   }
   assert.deepEqual(errors, []); console.log(JSON.stringify(evidence));
 } finally { await writeFile(`${output}/report.json`, JSON.stringify({ evidence, errors }, null, 2)); await browser?.close(); await vite.close(); }

@@ -25,16 +25,16 @@ test("navigation glyph state is projected without changing the semantic name or 
   }
 });
 
-test("Downstream navigation retains its existing silhouette and detailed selected state", () => {
-  for (const name of ["chat", "message-circle", "cloud", "folder", "applications"]) {
-    assert.match(render(name, false, "classic"), /fill="none"/);
-    assert.match(render(name, true, "classic"), /fill="currentColor"/);
+test("classic and standard destinations keep outline artwork and weight when selected", () => {
+  for (const style of ["classic", "standard"] as const) {
+    for (const name of ["home", "columns", "server", "chat", "cloud", "folder", "applications", "bot", "database"]) {
+      for (const selected of [false, true]) {
+        const svg = render(name, selected, style);
+        assert.match(svg, /fill="none"/);
+        assert.match(svg, /stroke-width="2"/);
+      }
+    }
   }
-  for (const name of ["bot", "database", "hard-drive", "server"]) {
-    assert.match(render(name, true, "classic"), /fill="none"/);
-    assert.match(render(name, true, "classic"), /stroke-width="2.5"/);
-  }
-  assert.match(render("message-circle"), /data-action-glyph="chat"/);
 });
 
 test("core navigation uses the downstream outline role without boldening selected glyphs", () => {

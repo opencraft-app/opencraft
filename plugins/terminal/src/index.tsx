@@ -1,3 +1,7 @@
+import { createPortal } from "react-dom";
+import { IconButton } from "@opencraft/design-system-web/button";
+import { KeyboardIcon, PasteIcon } from "@opencraft/design-system-web/action-icons";
+import { useIntl } from "@opencraft/i18n/react";
 import { typographyRegistry, typographyRole } from "@opencraft/design-system/typography";
 import type { Context } from "@deepseek-ai/cordis";
 import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
@@ -93,14 +97,16 @@ export function pasteIntoActiveTerminal(
 }
 
 function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
-  return function TerminalPanel({ tab }: PanelRendererProps) {
+  return function TerminalPanel({ tab, active = true, touchToolbar = false, toolbarContainer = null }: PanelRendererProps) {
+    const intl = useIntl();
     const sessionId = tab.resource ?? "";
     const session = registry.get(sessionId);
     const hostRef = useRef<HTMLDivElement | null>(null);
     const terminalRef = useRef<import("@xterm/xterm").Terminal | null>(null);
+    const activeRef = useRef(active);
+    activeRef.current = active;
     const [presentationError, setPresentationError] = useState<Error | null>(null);
-    const [pasteEntryOpen, setPasteEntryOpen] = useState(false);
-    const [pasteText, setPasteText] = useState("");
+    const [clipboardNotice, setClipboardNotice] = useState<string | null>(null);
     const emptySnapshot = useMemo(() => Object.freeze({
       revision: 0,
       hostId: "",
@@ -118,8 +124,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
     );
 
     useEffect(() => {
-      setPasteEntryOpen(false);
-      setPasteText("");
+      setClipboardNotice(null);
     }, [sessionId]);
 
     useEffect(() => {
@@ -175,6 +180,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
         writePendingOutput();
         removeSessionListener = session.subscribe(writePendingOutput);
         const input = terminal.onData((data) => {
+          setClipboardNotice(null);
           const bytes = new TextEncoder().encode(data);
           void session.write(bytesToBase64(bytes)).catch(setPresentationError);
         });
@@ -265,22 +271,19 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
 
     const pasteFromClipboard = async () => {
       const target = terminalRef.current;
-      const readText = navigator.clipboard?.readText;
-      if (target === null || session?.getSnapshot().phase !== "running") return;
-      if (readText !== undefined) {
-        try {
-          const text = await readText.call(navigator.clipboard);
-          if (target !== terminalRef.current || session?.getSnapshot().phase !== "running") return;
-          if (pasteIntoTerminal(text, target)) return;
-        } catch { /* A native paste field remains available when clipboard reads are blocked. */ }
+      if (target === null || !active || session?.getSnapshot().phase !== "running") return;
+      setClipboardNotice(null);
+      // Focus within the gesture so native system paste still targets this PTY.
+      target.focus();
+      try {
+        const text = await navigator.clipboard.readText();
+        if (target !== terminalRef.current || !activeRef.current || session?.getSnapshot().phase !== "running") return;
+        if (pasteIntoTerminal(text, target)) return;
+        setClipboardNotice(intl.formatMessage({ id: "terminal.clipboardEmpty", defaultMessage: "The clipboard has no text." }));
+      } catch {
+        if (target !== terminalRef.current || !activeRef.current || session?.getSnapshot().phase !== "running") return;
+        setClipboardNotice(intl.formatMessage({ id: "terminal.clipboardUnavailable", defaultMessage: "Clipboard access is blocked. Use system paste in the terminal." }));
       }
-      if (target === terminalRef.current && session?.getSnapshot().phase === "running") setPasteEntryOpen(true);
-    };
-
-    const sendPasteEntry = () => {
-      if (!pasteIntoTerminal(pasteText)) return;
-      setPasteText("");
-      setPasteEntryOpen(false);
     };
 
     if (session === null) {
@@ -293,31 +296,29 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
     }
 
     const error = presentationError ?? snapshot.error;
+    const keyboardLabel = intl.formatMessage({ id: "terminal.showKeyboard", defaultMessage: "Show keyboard" });
+    const pasteLabel = intl.formatMessage({ id: "terminal.paste", defaultMessage: "Paste" });
+    const actions = <>
+      <IconButton type="button" className="panel-mobile-dock__button" aria-label={keyboardLabel} title={keyboardLabel}
+        disabled={!active || snapshot.phase !== "running"}
+        onClick={() => terminalRef.current?.focus()}><KeyboardIcon /></IconButton>
+      <IconButton type="button" className="panel-mobile-dock__button" aria-label={pasteLabel} title={pasteLabel}
+        disabled={!active || snapshot.phase !== "running"}
+        onClick={() => void pasteFromClipboard()}><PasteIcon /></IconButton>
+    </>;
     return (
       <section className="terminal-panel" data-phase={snapshot.phase}>
         <div className="terminal-panel__inset" data-selection="text">
           <div className="terminal-panel__host" ref={hostRef} />
         </div>
-        <div className="terminal-panel__paste-controls">
-          <button disabled={snapshot.phase !== "running"} onClick={() => void pasteFromClipboard()} type="button">粘贴</button>
-          {pasteEntryOpen ? (
-            <div className="terminal-panel__paste-entry">
-              <label htmlFor={`terminal-paste-${sessionId}`}>粘贴或输入文字</label>
-              <textarea
-                id={`terminal-paste-${sessionId}`}
-                onChange={(event) => setPasteText(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") { setPasteEntryOpen(false); setPasteText(""); }
-                }}
-                value={pasteText}
-              />
-              <div className="terminal-panel__paste-actions">
-                <button disabled={pasteText.length === 0 || snapshot.phase !== "running"} onClick={sendPasteEntry} type="button">发送到终端</button>
-                <button onClick={() => { setPasteEntryOpen(false); setPasteText(""); }} type="button">取消</button>
-              </div>
-            </div>
-          ) : null}
-        </div>
+        {touchToolbar ? active && toolbarContainer !== null ? createPortal(actions, toolbarContainer) : null : (
+          <div className="terminal-panel__paste-controls terminal-panel__toolbar">{actions}</div>
+        )}
+        {clipboardNotice !== null ? (
+          <div className="terminal-panel__status terminal-panel__clipboard-status" data-touch-toolbar={touchToolbar || undefined} role="status">
+            {clipboardNotice}
+          </div>
+        ) : null}
         {error !== null ? (
           <div className="terminal-panel__status" role="status">
             {error.message}

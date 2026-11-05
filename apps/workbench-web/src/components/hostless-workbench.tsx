@@ -1,5 +1,5 @@
 import { useTurnNotifications } from "../runtime/turn-notifications-context";
-import { OVERHOME_VIEW_ID } from "../runtime/mini-apps";
+import { projectMiniApps, OVERHOME_VIEW_ID } from "../runtime/mini-apps";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./application-desktop-motion";
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
@@ -49,6 +49,7 @@ import {
   useAppShellRouteHeader,
 } from "./app-shell-route-regions";
 import { Sidebar } from "./sidebar";
+import { ApplicationsSidebarFrame } from "./applications-sidebar";
 import { Button } from "./ui/button";
 import { useResponsiveSidebarDock } from "./use-responsive-sidebar-dock";
 import { usePersistedSidebarWidth } from "./use-persisted-sidebar-width";
@@ -76,6 +77,8 @@ export function HostlessWorkbench({
 }) {
   const intl = useIntl();
   const internalDeveloperMode = useInternalDeveloperMode();
+  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications" | "settings">("context");
+  const applicationsSelected = sidebarDestination === "applications";
   const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearanceTheme();
   const turnNotifications = useTurnNotifications();
@@ -127,7 +130,9 @@ export function HostlessWorkbench({
     };
   }, [sidebarWidth]);
 
-  const openSettings = navigation.openSettings;
+  const openSettings = useCallback((...args: Parameters<typeof navigation.openSettings>) => { setSidebarDestination("context"); navigation.openSettings(...args); }, [navigation]);
+  const openConversationSidebar = useCallback(() => { setSidebarDestination("context"); navigation.openChat(); }, [navigation]);
+  useEffect(() => { if (routeSettingsOpen) setSidebarDestination("context"); }, [routeSettingsOpen]);
   const closeApplicationRoute = navigation.openChat;
   const openExtensionView = navigation.openExtensionView;
   const replaceExtensionViewResource = navigation.replaceExtensionViewResource;
@@ -142,7 +147,7 @@ export function HostlessWorkbench({
     provisionHost: supervisor.provisionHost,
     removeHost: supervisor.removeHost,
     openView: openExtensionView,
-    openSettings: (section: string) => { setAccountOpen(false); openSettings(section); },
+    openSettings: (section: string) => { setAccountOpen(false); navigation.openSettings(section); },
     pushViewResource: pushExtensionViewResource,
     replaceViewResource: replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await supervisor.images.compress(blob)).blob,
@@ -155,7 +160,7 @@ export function HostlessWorkbench({
     host: extensionHost,
     applicationRoute,
     internalDeveloperMode,
-    openSettings,
+    openSettings: navigation.openSettings,
     openView: openExtensionView,
   });
   useEffect(() => {
@@ -194,31 +199,35 @@ export function HostlessWorkbench({
       showRightPanelAction={false}
       onToggleSidebar={toggleSidebar}
       onToggleRightPanel={() => undefined}
-      onHome={closeApplicationRoute}
+      onHome={openConversationSidebar}
       canGoBack={canGoBack}
       canGoForward={canGoForward}
       onBack={navigateBack}
+
       onForward={navigateForward}
       navigationActions={headerNavigationActions}
       routeHeaderActive={routeHeader.active}
       routeHeaderHostRef={routeHeader.hostRef}
     />
   );
-  const settingsNavigation = settingsOpen ? (
+  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
     <Suspense fallback={null}>
       <SettingsNavigation
-        section={settingsSection ?? "appearance"}
+        section={sidebarDestination === "settings" ? "" : settingsSection ?? "appearance"}
         onSectionChange={selectSettingsSection}
         extensionContributions={supervisor.extensions.contributions}
         profiles={profileSnapshot.profiles}
         machines={machines}
         activeHostId=""
-        onBack={closeApplicationRoute}
-        presentation={managementSettingsOpen ? "dialog" : "sidebar"}
+        onBack={openConversationSidebar}
+        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
       />
     </Suspense>
   ) : null;
-  const leftPanel = routeSettingsOpen ? settingsNavigation : (
+  const miniAppSettingsOpen = projectMiniApps(settingsContributionSnapshot, extensionHost.platform, internalDeveloperMode,
+    type => supervisor.platformViewRenderers.resolve(type) !== null).some(app => app.target.kind === "settings"
+      && applicationRoute.kind === "settings" && app.target.pageId === applicationRoute.slug);
+  const leftPanel = miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (
     <Sidebar
       activeHostId=""
       activeThreadId=""
@@ -321,14 +330,16 @@ export function HostlessWorkbench({
       <AppShell
         surface={desktopBackdrop ? "application-desktop" : "default"}
         navigation={{
-          settingsActive: routeSettingsOpen,
-          updatesActive: routeSettingsOpen && applicationRoute.kind === 'settings' && applicationRoute.slug === 'updates',
+          applicationsInSidebar: true,
+            settingsInSidebar: true,
+          settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
+          updatesActive: routeSettingsOpen && !applicationsSelected && applicationRoute.kind === 'settings' && applicationRoute.slug === 'updates',
           actions: [
+            { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: applicationRoute.kind === "conversation" && sidebarDestination === "context", onInvoke: openConversationSidebar },
             { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
-              icon: "grid", active: applicationRoute.kind === "extension-view" && applicationRoute.viewId === OVERHOME_VIEW_ID,
-              onInvoke: () => openExtensionView(OVERHOME_VIEW_ID) },
-            { id: "shell.chat", title: intl.formatMessage({ id: "navigation.chat", defaultMessage: "Chat" }), icon: "chat", active: applicationRoute.kind === "conversation", onInvoke: closeApplicationRoute },
-            ...extensionProjection.primaryActions, ...extensionProjection.footerActions,
+              icon: "grid", active: applicationsSelected,
+              onInvoke: () => setSidebarDestination("applications") },
+            ...extensionProjection.footerActions,
           ],
           account: extensionProjection.account === null ? null : {
             snapshot: extensionProjection.account.snapshot,
@@ -340,7 +351,7 @@ export function HostlessWorkbench({
                 await extensionProjection.account?.provider.signOut?.();
               } : undefined,
           },
-          onOpenSettings: () => openSettings(),
+          onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
           onOpenUpdates: () => openSettings('updates'),
         }}
         layoutScope="hostless"
@@ -358,13 +369,17 @@ export function HostlessWorkbench({
             canGoBack={canGoBack}
             canGoForward={canGoForward}
             onToggleSidebar={onDock}
-            onHome={closeApplicationRoute}
+            onHome={openConversationSidebar}
             onBack={navigateBack}
+
             onForward={navigateForward}
             actions={headerNavigationActions}
           />
         )}
-        leftPanel={routeSettingsOpen || applicationRoute.kind === "conversation" || managementSettingsOpen ? leftPanel : null}
+        leftPanel={<ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar} selected={applicationsSelected} actions={extensionProjection.primaryActions} contributions={supervisor.extensions.contributions}
+          renderers={supervisor.platformViewRenderers} host={extensionHost} route={applicationRoute}>
+          {routeSettingsOpen || applicationRoute.kind === "conversation" || managementSettingsOpen ? leftPanel : null}
+        </ApplicationsSidebarFrame>}
         rightPanel={null}
         rightPanelOpen={false}
         rightPanelFullWidth={false}

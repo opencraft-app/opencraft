@@ -39,3 +39,16 @@ $text-tones: (
   -moz-osx-font-smoothing: auto;
   text-rendering: optimizeLegibility;
 }
+
+// Opt-in glyph alignment: keep content, text box, hit target and ellipsis intact.
+// Older engines trim the conventional half-em bearing; capable engines use
+// their font-aware CJK spacing implementation instead (never apply both).
+@mixin optical-start {
+  &[data-optical-leading-punctuation="true"] {
+    text-indent: -0.5em;
+    @supports (text-spacing-trim: trim-start) {
+      text-indent: 0;
+      text-spacing-trim: trim-start;
+    }
+  }
+}

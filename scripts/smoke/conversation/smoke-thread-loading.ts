@@ -14,7 +14,7 @@ import {buildOpenCraftThemeCssProperties,opencraftNeutralThemePalette,lavenderTh
 import {TimelineBlockRendererProvider,TimelineBlockRendererRegistryService} from '@opencraft/timeline-render-react';
 import {BuiltinTimelineRendererPlugin} from '/apps/workbench-web/src/components/conversation-renderers/builtin-timeline-renderer-plugin.ts';
 import {Conversation} from '/apps/workbench-web/src/components/conversation.tsx';
-import {ConversationRecoveryEmptyState,ConversationRecoveryNotice,conversationRecoveryPresentation,conversationRecoveryIsPending,conversationRecoveryIsUnstable} from '/apps/workbench-web/src/components/conversation-recovery.tsx';
+import {connectionRecoveryIsPending,ConversationRecoveryEmptyState,ConversationRecoveryNotice,conversationRecoveryPresentation,conversationRecoveryIsPending,conversationRecoveryIsUnstable} from '/apps/workbench-web/src/components/conversation-recovery.tsx';
 import {useConversationRecoveryDiagnostic} from '/apps/workbench-web/src/runtime/conversation-recovery-diagnostic.ts';
 import {createComposerController} from '@opencraft/composer-core';
 import {OpenCraftComposer} from '@opencraft/composer-editor';
@@ -41,18 +41,18 @@ function Demo(){
  const [scope,setScope]=useState('a');
  const [tick,setTick]=useState(0);
  window.loadingFixture.setScope=setScope; window.loadingFixture.render=()=>setTick(x=>x+1);
- const warm=state.startsWith('warm')||state==='ready';
+ const warm=state.startsWith('warm')||state==='ready'||state==='host-reconnecting';
  const failed=state.endsWith('error');
  const requiresUpdate=state.endsWith('update-error');
- const diagnostic=useConversationRecoveryDiagnostic({scope,failed,active:state!=='ready',stage:warm?'history':'connection',error:null,runtime:state==='warm-reconnecting'?'reconnecting':failed?'error':'ready',transport:{state:failed?'failed':'open'}});
- const presentation=conversationRecoveryPresentation({authoritative:state==='ready',hasVisibleHistory:warm,failed});
+ const diagnostic=useConversationRecoveryDiagnostic({scope,failed,active:state!=='ready',stage:warm?'history':'connection',error:null,runtime:state==='warm-reconnecting'||state==='host-reconnecting'?'reconnecting':failed?'error':'ready',transport:{state:failed?'failed':'open'}});
+ const presentation=conversationRecoveryPresentation({authoritative:state==='ready'||state==='host-reconnecting',hasVisibleHistory:warm,failed});
  return <main className="local-conversation-page" style={{height:'100vh','--thread-content-top-inset':'0px',background:'var(--color-background-surface)',overflow:'hidden'}}>
   <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
    <Conversation scrollPolicy="natural" timeline={warm?history:null}
      emptyState={<ConversationRecoveryEmptyState failed={failed} requiresUpdate={requiresUpdate}/>}
      footer={<footer style={{padding:8}}>
       {presentation==='warm-error'?<ConversationRecoveryNotice failed requiresUpdate={requiresUpdate}/>:null}
-      <OpenCraftComposer controller={controller} isStreaming={false} isUnstable={conversationRecoveryIsUnstable(presentation,diagnostic)} isRecovering={conversationRecoveryIsPending(presentation,diagnostic,requiresUpdate)} onSubmit={()=>false} onCancel={()=>{}}/>
+      <OpenCraftComposer placeholderPending={conversationRecoveryIsPending(presentation,diagnostic,requiresUpdate)} placeholder={state==='warm-reconnecting'?'正在重新连接…':state==='ready'?'Tell me what to do':'正在加载…'} controller={controller} submissionDisabled={state==='host-reconnecting'} isStreaming={false} isUnstable={diagnostic?.runtime==='reconnecting'||conversationRecoveryIsUnstable(presentation,diagnostic)} isRecovering={connectionRecoveryIsPending(diagnostic?.runtime??'ready',diagnostic,requiresUpdate)||conversationRecoveryIsPending(presentation,diagnostic,requiresUpdate)} onSubmit={()=>false} onCancel={()=>{}}/>
      </footer>}/>
   </TimelineBlockRendererProvider>
  </main>;
@@ -132,6 +132,27 @@ try {
         assert.ok(Number(await scan.evaluate(el => getComputedStyle(el).opacity)) > .99);
         await page.emulateMedia({ reducedMotion: "no-preference" });
       }
+      const placeholder = page.locator('.opencraft-composer-placeholder');
+      const editorNode = await page.locator('.ProseMirror').elementHandle();
+      for (const pendingState of ['cold-view', 'warm-reconnecting']) {
+        await setState(pendingState);
+        await page.waitForFunction(() => document.querySelector('[data-placeholder-pending="true"]') !== null);
+        assert.equal(await placeholder.evaluate(el => getComputedStyle(el, '::after').animationName), 'composer-placeholder-shimmer');
+        await page.waitForTimeout(720);
+        const firstPaint = await placeholder.evaluate(el => getComputedStyle(el, '::after').backgroundPosition);
+        await page.waitForTimeout(180);
+        assert.notEqual(await placeholder.evaluate(el => getComputedStyle(el, '::after').backgroundPosition), firstPaint);
+        if (evidenceDir) await page.screenshot({path:join(evidenceDir, `placeholder-${pendingState}-${width}-${family}-${mode}.png`)});
+        await page.emulateMedia({reducedMotion:'reduce'});
+        assert.equal(await placeholder.evaluate(el => getComputedStyle(el, '::after').animationName), 'none');
+        assert.notEqual(await placeholder.evaluate(el => getComputedStyle(el, '::before').color), 'rgba(0, 0, 0, 0)');
+        await page.emulateMedia({reducedMotion:'no-preference'});
+      }
+      await setState('ready');
+      await page.waitForFunction(() => document.querySelector('[data-placeholder-pending="false"]') !== null);
+      assert.equal(await placeholder.evaluate(el => getComputedStyle(el, '::after').animationName), 'none');
+      await setState('cold-view');
+      assert.equal(await editorNode!.evaluate(el => el === document.querySelector('.ProseMirror')), true);
       await page.emulateMedia({ forcedColors: "active" });
       assert.notEqual(await page.locator(".opencraft-composer-recovery__scan").evaluate(el => getComputedStyle(el).stroke), "none");
       await page.emulateMedia({ forcedColors: "none" });
@@ -142,6 +163,7 @@ try {
       const retry = page.getByRole("button", { name: "Try again" });
       assert.equal(await retry.count(),0);
       assert.equal(await scan.getAttribute("data-active"), "false", "terminal failure stops scanning");
+      assert.equal(await placeholder.evaluate(el => getComputedStyle(el, "::after").animationName), "none");
       if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `silent-cold-error-${width}-${family}-${mode}.png`) });
       await setState("cold-update-error");
       await page.getByRole("alert").waitFor();
@@ -179,16 +201,16 @@ try {
         return { scroll: scroll.scrollTop, anchor: [...document.querySelectorAll("[data-turn-key]")].at(-1)!.getBoundingClientRect().top };
       });
       let loadingTint: number[] = [];
-      for (const state of ["warm-loading", "warm-syncing", "warm-reconnecting", "warm-error", "warm-update-error", "ready"]) {
+      for (const state of ["warm-loading", "warm-syncing", "warm-reconnecting", "host-reconnecting", "warm-error", "warm-update-error", "ready"]) {
         await setState(state);
         if (state === "warm-update-error") await page.locator(".conversation-recovery-notice").waitFor();
         else await page.locator(".conversation-recovery-notice").waitFor({ state: "detached" });
-        assert.equal(await scan.getAttribute("data-active"), state === "warm-loading" || state === "warm-syncing" || state === "warm-reconnecting" ? "true" : "false");
+        assert.equal(await scan.getAttribute("data-active"), state === "warm-loading" || state === "warm-syncing" || state === "warm-reconnecting" || state === "host-reconnecting" ? "true" : "false");
         await page.evaluate(async () => {
           for (let frame = 0; frame < 10; frame++) await new Promise(requestAnimationFrame);
         });
         assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-warning'),
-          state === 'warm-reconnecting' || state.endsWith('error') ? 'true' : null,
+          state === 'warm-reconnecting' || state === 'host-reconnecting' || state.endsWith('error') ? 'true' : null,
           'only actual reconnect/failure warns');
         assert.equal(await page.locator('.opencraft-composer-shell').getAttribute('data-loading'),
           state === 'warm-loading' || state === 'warm-syncing' ? 'true' : null,
@@ -219,7 +241,9 @@ try {
         assert.ok(Math.abs(retained.anchor - original.anchor) <= 1, JSON.stringify({ state, original, ...retained }));
         if (state === "warm-loading" || state === "warm-syncing") assert.ok(Math.abs(retained.scroll - original.scroll) <= 1);
         assert.equal(retained.draft, "Keep my unsent input");
+        assert.equal(await page.locator(".opencraft-composer-connection-hint").count(), 0);
         assert.equal(await page.getByText("Prompt 19", { exact: true }).count(), 1);
+        if (evidenceDir && state === "host-reconnecting") await page.screenshot({ path: join(evidenceDir, `host-reconnecting-${width}-${family}-${mode}.png`) });
         if (state === "warm-loading" || state === "warm-syncing") {
           assert.equal(await page.locator(".conversation-recovery-notice").count(), 0, "background recovery adds no floating chrome");
           if (evidenceDir) await page.screenshot({ path: join(evidenceDir, `sync-${width}-${family}-${mode}.png`) });

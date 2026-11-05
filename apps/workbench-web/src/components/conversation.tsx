@@ -1,7 +1,9 @@
+import { ConversationSearchTargetContext, blockItemIds, useRevealSearchItem } from "./conversation/search-target";
 import { LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { ForkTurnButton } from "./conversation/fork-turn-button";
 import { MessageTimestamp } from "./conversation/message-timestamp";
 import { PatchActivityIcon } from "./activity-glyphs";
+import { ConversationContentWindowContext } from "./conversation/content-window";
 import { ResetIcon as RotateCcw } from "@opencraft/design-system-web/action-icons";
 import { ConversationSelectionMenu } from "./conversation/selection-menu";
 import { ConversationEntryMotionContext, useConversationEntryMotion } from "./conversation/entry-motion";
@@ -178,6 +180,7 @@ function FileChangeActivity({
   const hasDiff = change.unifiedDiff !== null && change.unifiedDiff.trim().length > 0;
   const restoreKey = `patch:${JSON.stringify([block.id, change.path, change.movePath])}`;
   const [open, setOpen] = useActivityOpen(presentation.state === "running", false, restoreKey);
+  useRevealSearchItem(block.sourceItemIds, () => setOpen(true));
   useHistoryItemDetail(block, open);
   const target = change.movePath ?? change.path;
   const openFile = useCallback(() => {
@@ -423,6 +426,11 @@ function Frame({
   const followContentRef = useLatestTurnFollowContentRef();
   const documentContext = useContext(ConversationDocumentContext);
   const frameRef = useRef<HTMLDivElement>(null);
+  useRevealSearchItem(frame.blocks.flatMap(block => block.sourceItemIds), itemId => {
+    for (const unit of assistantPlan?.slots ?? []) {
+      if ((unit.type === "agent-activity" && blockItemIds(unit.blocks).includes(itemId)) || (unit.type === "reasoning" && unit.block.sourceItemIds.some(id => id === itemId))) onActivityCollapsedChange(unit.id, false);
+    }
+  });
   const visibleFrame = frame;
   if (visibleFrame.blocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null) return null;
   if (visibleFrame.type === "user") {
@@ -481,6 +489,7 @@ function Frame({
             <div
               className="thread-frame__slot"
               data-presentation-slot-id={unit.id}
+              data-content-search-unit-keys={unit.type === "agent-activity" ? undefined : JSON.stringify(blockItemIds(unit.type === "subagent-activity" ? unit.blocks : [unit.block]))}
               data-source-item-id={unit.type === "assistant-content" ? unit.block.sourceItemIds[0] : undefined}
               data-assistant-copy-content={unit.type === "assistant-content" && actions?.copyBlockIds.includes(unit.block.id) ? "" : undefined}
               ref={unit.type === "agent-activity" ? undefined : followContentRef}
@@ -633,6 +642,7 @@ function Turn({
 }
 
 export interface ConversationRestoreSnapshot {
+  readonly activityContentHeights?: Readonly<Record<string, number>>;
   readonly agentActivityCollapsedById?: Readonly<Record<string, boolean>>;
   readonly chatReadingPositions?: Readonly<Record<string, ChatReadingPosition>>;
   readonly activityDisclosures?: Readonly<Record<string, ActivityDisclosureState>>;
@@ -829,6 +839,7 @@ export function Conversation({
   if (viewportOwnerRef.current === null) {
     viewportOwnerRef.current = createWebConversationViewportOwner(
       normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx),
+      initialRestoreSnapshot?.activityContentHeights,
     );
   }
   const viewportOwner = viewportOwnerRef.current;
@@ -955,6 +966,7 @@ export function Conversation({
       ?? virtualizerRestoreSnapshotRef.current;
     restoreCallbackRef.current?.({
       agentActivityCollapsedById: activityCollapsedByIdRef.current,
+      activityContentHeights: viewportOwner.contentWindow.capture(),
       chatReadingPositions: Object.fromEntries(chatReadingPositions),
       activityDisclosures: Object.fromEntries(activityDisclosures),
       diffReadingPositions: Object.fromEntries(diffReadingPositions),
@@ -1024,6 +1036,7 @@ export function Conversation({
   );
   return (
     <ChatReadingPositionContext.Provider value={chatReadingPositions}>
+    <ConversationContentWindowContext.Provider value={viewportOwner.contentWindow}>
     <ActivityDisclosureStateContext.Provider value={activityDisclosures}>
     <DiffReadingPositionContext.Provider value={diffReadingPositions}>
     <CommandViewStateContext.Provider value={commandViews}>
@@ -1038,7 +1051,7 @@ export function Conversation({
           <AsyncQuestionContext.Provider value={asyncQuestionContext}>
           <ConversationInteractionContext.Provider value={interactionContext}>
             <SubagentNavigationContext.Provider value={subagentNavigation}>
-              <ConversationDocumentContext.Provider value={presentedDocumentContext}>
+              <ConversationSearchTargetContext.Provider value={searchTarget}><ConversationDocumentContext.Provider value={presentedDocumentContext}>
                 <div
                   className="thread-scroll-layout"
                   data-live-embedded-surface={surfaceCapabilities.hasLiveEmbeddedSurface || undefined}
@@ -1116,7 +1129,7 @@ export function Conversation({
                   {searchTarget && navigationSource && virtualizedTurnListApi ? <ConversationSearchPosition
                     source={navigationSource} target={searchTarget} api={virtualizedTurnListApi} scrollElement={scrollElement} /> : null}
                 </div>
-              </ConversationDocumentContext.Provider>
+              </ConversationDocumentContext.Provider></ConversationSearchTargetContext.Provider>
             </SubagentNavigationContext.Provider>
           </ConversationInteractionContext.Provider>
           </AsyncQuestionContext.Provider>
@@ -1131,6 +1144,7 @@ export function Conversation({
     </CommandViewStateContext.Provider>
     </DiffReadingPositionContext.Provider>
     </ActivityDisclosureStateContext.Provider>
+    </ConversationContentWindowContext.Provider>
     </ChatReadingPositionContext.Provider>
   );
 }

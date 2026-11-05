@@ -215,9 +215,12 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     if (serverFilter.serverId && !names.has(serverFilter.serverId)) names.set(serverFilter.serverId, serverFilter.label);
     return [...names].sort((a, b) => a[1].localeCompare(b[1]));
   }, [threads, serverFilter]);
+  // Contributions can change membership without changing their object identity.
   const allowedReferences = threadListGrouping?.filterThreads?.(references) ?? references;
-  const allowed = new Set(allowedReferences.map(ref => JSON.stringify([ref.hostId, ref.threadId])));
+  const allowedKeys = JSON.stringify(allowedReferences.map(ref => [ref.hostId, ref.threadId]));
   const needle = query.trim().toLocaleLowerCase();
+  const { matching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
+    const allowed = new Set((JSON.parse(allowedKeys) as [string, string][]).map(key => JSON.stringify(key)));
   const matching = threads.filter(thread => thread.visibility !== "hidden" && allowed.has(identity(thread))
     && (!serverFilter.serverId || thread.serverOrigin.serverId === serverFilter.serverId)
     && (!needle || thread.title.toLocaleLowerCase().includes(needle)));
@@ -227,6 +230,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const rootIds = new Set(roots.map(identity));
   const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
   const taskFlow = groupThreadsByTaskFlow(roots);
+    return { matching, matchingById, tree, matchingReferences, taskFlow };
+  }, [threads, references, allowedKeys, needle, serverFilter.serverId]);
   const applicableCatalogs = threadCatalogs.filter(catalog => !serverFilter.serverId
     || catalog.hostId === serverFilter.serverId
     || threads.some(thread => thread.connectionHostId === catalog.hostId && thread.serverOrigin.serverId === serverFilter.serverId));
@@ -459,7 +464,7 @@ function SidebarNewChatButton({ onNewTask }: { onNewTask(): void }) {
   const shell = useShellPresentation();
   const button = <Button type="button" size="navigation" variant="ghost" contentLayout="row"
     surface={shell?.mobileSidebar ? "floating" : "integrated"}
-    className="sidebar-new-chat" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
+    className="sidebar-new-chat shell-sidebar-primary-action" title={`${intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })} (${shortcutLabel("newChat")})`} aria-keyshortcuts={shortcutAria("newChat")} onClick={() => {
     onNewTask();
     shell?.dismissSidebarAfterSelection();
   }}><SquarePen size={16} aria-hidden="true" /><span>{intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}</span></Button>;

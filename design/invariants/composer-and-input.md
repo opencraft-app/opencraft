@@ -654,3 +654,20 @@ draft's selected model. Changing that scope invalidates visible candidates,
 cached directories and pending results while retaining the mounted editor,
 document and focus. Pi discovers candidates and validates selected references
 through its native Skill registry. Discovery exposes metadata only.
+
+
+## Touch floating Composer continuity
+
+A touch panel's floating Composer retains the shared editor and action layout
+when focus leaves or the visual viewport recovers after keyboard dismissal.
+Presentation mode is independent of on-demand visibility: Agent actions own
+show/hide, while focus cannot select desktop compact chrome or reopen a hidden
+panel. The shared Composer derives its empty idle single-line layout from its
+existing draft and editing state. Pointer presentation retains compact behavior.
+Viewport and focus changes preserve the editor node and draft.
+
+A body-level floating Composer uses the Shell viewport owner's fixed-coordinate
+origin plus Shell-local anchor geometry. Client rectangles must not be assigned
+directly as fixed insets while the browser pans its native fixed plane. Keyboard
+open capacity and pan preserve visible editor and send actions above the dock,
+even when the layout viewport size remains unchanged.
