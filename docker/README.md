@@ -96,6 +96,11 @@ common Docker hosts. This is not a privileged container. A runtime that supports
 Chromium's unprivileged user namespace sandbox may remove those capabilities
 after verifying browser startup.
 
+Codex chats without a selected project get a private directory per thread under
+`$OPENCRAFT_HOST_DATA_DIR/hands/projectless-workspaces`. Brain sees them in its
+data mount; Hands sees the same paths in its existing `hands/` mount. Later
+turns reuse the working directory persisted by Codex.
+
 ## Upgrade and rollback
 
 Build a content-addressed or versioned image reference, then use the transaction

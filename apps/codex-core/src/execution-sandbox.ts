@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile, rename } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readSandboxRuntimeConfiguration, verifySystemdExecutionOwner } from "@opencraft/sandbox-node/runtime";
@@ -25,10 +25,20 @@ export async function configureCodexExecutionSandbox(home: string, executable: s
 
 /** Native's stable protocol omits experimental environments. Apply the owner policy
  * at the wire boundary while retaining every caller permission and workspace field. */
-export function codexSandboxRequestPolicy(readThread: (threadId: string) => Promise<unknown>) {
+export function codexSandboxRequestPolicy(readThread: (threadId: string) => Promise<unknown>, projectlessRoot?: string) {
   return async (method: unknown, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
     if (method !== "thread/start" && method !== "turn/start") return params;
     let cwd = params.cwd;
+    if (method === "thread/start" && cwd == null && projectlessRoot !== undefined) {
+      try {
+        if (!isAbsolute(projectlessRoot)) throw new Error("Projectless workspace root must be absolute");
+        await mkdir(projectlessRoot, { recursive: true, mode: 0o700 });
+        const directory = await mkdtemp(join(projectlessRoot, "thread-"));
+        // Native persists cwd on the thread. Future turns use that binding.
+        return { ...params, cwd: directory, runtimeWorkspaceRoots: [directory],
+          environments: [{ environmentId: "opencraft", cwd: directory }] };
+      } catch { throw new ExecutionPreparationError("projectless-workspace-create-failed"); }
+    }
     if (method === "turn/start" && cwd == null) {
       if (typeof params.threadId !== "string" || !params.threadId) throw new ExecutionPreparationError("missing-thread-id");
       let value: { thread?: { cwd?: unknown } } | undefined;

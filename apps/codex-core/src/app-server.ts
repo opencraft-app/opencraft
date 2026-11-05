@@ -19,6 +19,7 @@ export interface CodexAppServerOptions {
   readonly runtimeDirectory: string;
   readonly executable: string;
   readonly executionSandbox?: CodexExecutionSandbox;
+  readonly projectlessWorkspaceDirectory?: string;
   readonly spawnAppServer?: CodexCoreOptions["spawnAppServer"];
   readonly onFailure?: (error: Error) => void;
   readonly waitForCore?: boolean;
@@ -109,7 +110,10 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     if (protectedApp) await makeNativeFamilyKillable(child.pid!);
     if (options.executionSandbox) await nativeOwnerRequest(authSocket, "environment/info", { environmentId: "opencraft" }, 50_000);
     relay = await startOrchestrationCallbackRelay(nativeSocket, nativeListener, options.executionSandbox ? {
-      requestPolicy: codexSandboxRequestPolicy(threadId => nativeOwnerRequest(authSocket!, "thread/read", {threadId, includeTurns: false})),
+      requestPolicy: codexSandboxRequestPolicy(
+        threadId => nativeOwnerRequest(authSocket!, "thread/read", {threadId, includeTurns: false}),
+        options.projectlessWorkspaceDirectory ?? join(dataDirectory, "projectless-workspaces"),
+      ),
     } : undefined);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");

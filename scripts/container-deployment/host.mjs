@@ -91,7 +91,7 @@ try {
     '--endpoint', paths.appServerEndpoint, '--core-endpoint', paths.coreEndpoint,
     '--token-file', paths.tokenPath, '--codex-executable', join(root, 'runtime/codex/bin/codex'),
     '--runtime-directory', paths.runtimeDirectory, '--data-directory', join(paths.dataDirectory, 'codex'),
-  ], { OPENCRAFT_SANDBOX_CONFIG: paths.sandboxConfig });
+  ], { OPENCRAFT_SANDBOX_CONFIG: paths.sandboxConfig, OPENCRAFT_CODEX_PROJECTLESS_DIR: paths.codexProjectlessDirectory });
   start('dsh-host.mjs', [], { OPENCRAFT_DSH_HOST_CONFIG: paths.dshConfig });
   start('engine-host.mjs', [], { OPENCRAFT_ENGINE_HOST_CONFIG: paths.engineConfig });
   let ready = false;

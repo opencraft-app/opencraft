@@ -85,6 +85,26 @@ test("Native thread creation and recovered turns select the provider without wea
   await assert.rejects(policy("turn/start", {threadId: "old", cwd: "relative"}));
 });
 
+test("projectless Codex threads get separate private directories reused by later turns", async t => {
+  const root = await mkdtemp(join(tmpdir(), "codex-projectless-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const threads = new Map<string, {cwd: unknown}>();
+  const workspaceRoot = join(root, "workspaces");
+  const policy = codexSandboxRequestPolicy(async id => ({thread: threads.get(id)}), workspaceRoot);
+  const first = await policy("thread/start", {sandbox: "workspace-write"});
+  const second = await policy("thread/start", {});
+  assert.match(String(first.cwd), /\/workspaces\/thread-/);
+  assert.notEqual(first.cwd, second.cwd);
+  assert.equal((await stat(String(first.cwd))).mode & 0o777, 0o700);
+  assert.deepEqual(first.runtimeWorkspaceRoots, [first.cwd]);
+  assert.equal(first.sandbox, "workspace-write");
+  threads.set("one", {cwd: first.cwd});
+  assert.deepEqual((await policy("turn/start", {threadId:"one"})).environments,
+    [{environmentId:"opencraft", cwd:first.cwd}]);
+  await assert.rejects(policy("turn/start", {threadId:"unknown"}), /missing-workspace/);
+  await assert.rejects(policy("thread/start", {cwd:"relative"}), /invalid-workspace/);
+});
+
 test("sandbox control framing preserves binary stdin after a split header", async () => {
   const invocation = prepareSandboxInvocation({ runner: "/engine/run.mjs", configuration: "/policy.json", owner: "test", command: ["cat"], cwd: "/task", env: {} });
   const stream = new PassThrough(), pending = readSandboxInvocation(stream), data = Buffer.from([0, 255, 10, 17]);

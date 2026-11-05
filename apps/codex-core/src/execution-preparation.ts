@@ -1,4 +1,4 @@
-type PreparationReason = "missing-thread-id" | "thread-read-failed" | "missing-workspace" | "invalid-workspace";
+type PreparationReason = "missing-thread-id" | "thread-read-failed" | "missing-workspace" | "invalid-workspace" | "projectless-workspace-create-failed";
 
 export class ExecutionPreparationError extends Error {
   constructor(readonly reason: PreparationReason) {

@@ -2,7 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createConnection, createServer, type Socket } from "node:net";
 import { chmod, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative } from "node:path";
 import { SandboxCreationFault, SandboxFault, type SandboxBackend, type SandboxEnvironment, type SandboxExit, type SandboxIdentity, type SandboxOutput, type SandboxPoolPolicy, type SandboxProcess, type SandboxResources } from "@opencraft/sandbox";
 
 type Frame = Record<string, unknown> & { type: string; lease?: string };
@@ -107,7 +107,7 @@ export async function handsUnixSandboxBackend(options: HandsUnixBackendOptions):
   };
 }
 
-export interface HandsExecutionOwnerOptions { endpoint: string; tokenFile: string; executable: string; workspace: string; resources: SandboxResources; verifyCgroup?: boolean }
+export interface HandsExecutionOwnerOptions { endpoint: string; tokenFile: string; executable: string; workspace: string; projectlessWorkspace?: string; resources: SandboxResources; verifyCgroup?: boolean }
 export async function verifyHandsCgroup(resources: SandboxResources, root = "/sys/fs/cgroup") {
   let cpu: string, memory: string, tasks: string;
   try {
@@ -130,6 +130,17 @@ export async function verifyHandsCgroup(resources: SandboxResources, root = "/sy
 export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptions) {
   if (![options.endpoint, options.tokenFile, options.executable, options.workspace].every(isAbsolute)) throw Error("Invalid Hands owner configuration");
   const [workspace, executable] = await Promise.all([realpath(options.workspace), realpath(options.executable)]);
+  const projectless = options.projectlessWorkspace;
+  const roots = [workspace];
+  if (projectless !== undefined) {
+    if (!isAbsolute(projectless)) throw Error("Invalid Hands projectless workspace");
+    // A deployment can alias its data mount. Resolve the trusted parent but
+    // reject a projectless root that redirects elsewhere.
+    const canonical = await realpath(projectless);
+    if (canonical !== join(await realpath(dirname(projectless)), basename(projectless)))
+      throw Error("Invalid Hands projectless workspace");
+    roots.push(canonical);
+  }
   if (options.verifyCgroup) await verifyHandsCgroup(options.resources);
   let token: string;
   try { token = await privateToken(options.tokenFile); }
@@ -168,8 +179,11 @@ export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptio
             || command.command[1] !== "exec-server" || command.command[2] !== "--listen" || command.command[3] !== "stdio" || command.terminal
             || typeof command.cwd !== "string" || typeof command.env !== "object" || !command.env
             || Object.entries(command.env).some(([key, value]) => !allowedEnvironment.has(key) || typeof value !== "string" || value.includes("\0"))) throw Error();
-          const cwd = await realpath(command.cwd), rel = relative(workspace, cwd);
-          if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) throw Error();
+          const cwd = await realpath(command.cwd);
+          if (!roots.some(root => {
+            const rel = relative(root, cwd);
+            return rel !== ".." && !rel.startsWith("../") && !isAbsolute(rel);
+          })) throw Error();
           child = spawn(executable, command.command.slice(1), { cwd,
             env: { HOME: dirname(options.tokenFile), ...command.env as Record<string, string> },
             stdio: ["pipe", "pipe", "pipe"], detached: true, shell: false });
