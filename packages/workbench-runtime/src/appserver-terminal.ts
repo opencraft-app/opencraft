@@ -1,5 +1,17 @@
-import type { AppServerClient } from "@opencraft/appserver-client";
-import type { ProcessOutput, ProcessSnapshot } from "@opencraft/appserver-protocol";
+import { AppServerRpcError, type AppServerClient } from "@opencraft/appserver-client";
+import { supportsTerminalMethod, type AppServerProcessMethodMap, type ProcessOutput, type ProcessSnapshot } from "@opencraft/appserver-protocol";
+
+export class TerminalRestoreUnavailableError extends Error {
+  constructor() {
+    super("This server cannot reconnect this terminal. Open a new terminal to continue.");
+    this.name = "TerminalRestoreUnavailableError";
+  }
+}
+
+function unsupportedRestore(cause: unknown): boolean {
+  return cause instanceof AppServerRpcError && (cause.code === -32601
+    || (cause.code === -32600 && /unknown variant\s+[`'"]process\/attach[`'"]/iu.test(cause.message)));
+}
 
 export type AppServerTerminalPhase = "starting" | "running" | "stopping" | "exited" | "failed" | "disconnected";
 export interface AppServerTerminalOutputChunk {
@@ -77,12 +89,18 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
       for (const session of this.sessions.values()) {
         if (status.state === "closed" || status.state === "failed") {
           session.buffered = [];
-          if (session.snapshot.phase !== "exited") this.update(session, { phase: "disconnected", error: new Error(status.reason ?? "Host disconnected") });
+          if (!["exited", "failed"].includes(session.snapshot.phase)) this.update(session, { phase: "disconnected", error: new Error(status.reason ?? "Host disconnected") });
         }
       }
     })];
   }
-  list(scope: { threadId?: string | null; projectId?: string | null } = {}) { return this.client.request("process/list", scope); }
+  private supports(method: keyof AppServerProcessMethodMap): boolean {
+    return supportsTerminalMethod(this.client.initializeResult?.capabilities?.extensions, method);
+  }
+  list(scope: { threadId?: string | null; projectId?: string | null } = {}) {
+    if (!this.supports("process/list")) return Promise.resolve({ processes: [] });
+    return this.client.request("process/list", scope);
+  }
   /** Called after AppServer initialize, not merely after the transport opens. */
   async reconnect() {
     await Promise.allSettled([...this.sessions].filter(([, s]) => s.snapshot.phase === "disconnected").map(([id, s]) => {
@@ -91,6 +109,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     }));
   }
   open(options: OpenAppServerTerminalOptions): AppServerTerminalSession {
+    if (!this.supports("process/spawn")) throw new Error("This server does not support terminals");
     if (!options.command.length) throw new Error("Terminal command must not be empty");
     const size = { cols: cell(options.cols), rows: cell(options.rows) };
     const id = "opencraft-terminal:" + crypto.randomUUID();
@@ -131,6 +150,7 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
     const afterSequence = session.cursor;
     session.buffered = [];
     try {
+      if (!this.supports("process/attach")) throw new TerminalRestoreUnavailableError();
       const result = await this.client.request("process/attach", { ...session.scope, processHandle: id, afterSequence });
       if (generation !== this.client.connectionGeneration || session.disposed) return;
       this.output(session, [...result.output, ...session.buffered ?? []]);
@@ -140,8 +160,12 @@ export class AppServerTerminalController implements AppServerTerminalResourcePor
         exitCode: session.snapshot.exitCode ?? result.exitCode, connectionGeneration: generation,
         error: result.truncated ? new Error("Some terminal output expired while disconnected") : null });
     } catch (cause) {
-      if (generation === this.client.connectionGeneration) this.update(session, { phase: "disconnected", error: errorFrom(cause) });
-      throw cause;
+      const error = unsupportedRestore(cause) ? new TerminalRestoreUnavailableError() : errorFrom(cause);
+      if (generation === this.client.connectionGeneration && !session.disposed) {
+        session.buffered = null;
+        this.update(session, { phase: error instanceof TerminalRestoreUnavailableError ? "failed" : "disconnected", error });
+      }
+      throw error;
     }
   }
   private handle(id: string, session: Session): AppServerTerminalSession {

@@ -10952,6 +10952,17 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   letter-spacing: var(--typography-metadata-tracking);
 }
 
+.terminal-panel__recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-control-group);
+  white-space: normal;
+  overflow-wrap: anywhere;
+
+  > span { flex: 1 1 16em; }
+}
+
 .web-browser-presentation-root {
   position: fixed;
   z-index: var(--layer-workspace-browser);

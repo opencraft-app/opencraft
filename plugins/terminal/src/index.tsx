@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { IconButton } from "@opencraft/design-system-web/button";
+import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { KeyboardIcon, PasteIcon } from "@opencraft/design-system-web/action-icons";
 import { useIntl } from "@opencraft/i18n/react";
 import { typographyRegistry, typographyRole } from "@opencraft/design-system/typography";
@@ -8,6 +8,7 @@ import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
 import type { ConversationPanelState } from "@opencraft/workbench-panels";
 import {
   ConversationTerminalSessionRegistry as WorkbenchTerminalSessionRegistry,
+  TerminalRestoreUnavailableError,
   type ConversationTerminalOpenOptions,
 } from "@opencraft/workbench-runtime";
 import {
@@ -96,8 +97,8 @@ export function pasteIntoActiveTerminal(
   return true;
 }
 
-function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
-  return function TerminalPanel({ tab, active = true, touchToolbar = false, toolbarContainer = null }: PanelRendererProps) {
+function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry, openAnother: (ownerId: string, sessionId: string) => void) {
+  return function TerminalPanel({ tab, ownerId, active = true, touchToolbar = false, toolbarContainer = null }: PanelRendererProps) {
     const intl = useIntl();
     const sessionId = tab.resource ?? "";
     const session = registry.get(sessionId);
@@ -125,6 +126,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
 
     useEffect(() => {
       setClipboardNotice(null);
+      setPresentationError(null);
     }, [sessionId]);
 
     useEffect(() => {
@@ -296,6 +298,7 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
     }
 
     const error = presentationError ?? snapshot.error;
+    const needsNewTerminal = snapshot.phase === "failed";
     const keyboardLabel = intl.formatMessage({ id: "terminal.showKeyboard", defaultMessage: "Show keyboard" });
     const pasteLabel = intl.formatMessage({ id: "terminal.paste", defaultMessage: "Paste" });
     const actions = <>
@@ -320,8 +323,16 @@ function createTerminalPanel(registry: WorkbenchTerminalSessionRegistry) {
           </div>
         ) : null}
         {error !== null ? (
-          <div className="terminal-panel__status" role="status">
-            {error.message}
+          <div className="terminal-panel__status terminal-panel__recovery" role="status">
+            <span>{intl.formatMessage(error instanceof TerminalRestoreUnavailableError
+              ? { id: "terminal.restoreUnavailable", defaultMessage: "This server cannot reconnect this terminal. Open a new terminal to continue." }
+              : snapshot.phase === "disconnected"
+                ? { id: "terminal.disconnected", defaultMessage: "Terminal disconnected. Waiting for the server to reconnect." }
+                : { id: "terminal.unavailable", defaultMessage: "The terminal is unavailable. Try opening a new terminal." })}</span>
+            {needsNewTerminal ? <Button size="sm" disabled={!active} onClick={() => {
+              try { openAnother(ownerId, sessionId); }
+              catch (cause) { setPresentationError(cause instanceof Error ? cause : new Error(String(cause))); }
+            }}>{intl.formatMessage({ id: "terminal.new", defaultMessage: "New terminal" })}</Button> : null}
           </div>
         ) : snapshot.phase === "exited" ? (
           <div className="terminal-panel__status" role="status">
@@ -338,7 +349,6 @@ export function createTerminalWorkbenchPanelPlugin(
   resolveScope?: (ownerId: string) => { threadId?: string | null; projectId?: string | null },
   restoreOwner?: (ownerId: string) => Promise<void>,
 ) {
-  const TerminalPanel = createTerminalPanel(registry);
   const activeTerminalSessionId = (state: ConversationPanelState): string | null => {
     for (const region of [state.right, state.bottom]) {
       const active = region.tabs.find((tab) => tab.id === region.activeTabId);
@@ -358,6 +368,10 @@ export function createTerminalWorkbenchPanelPlugin(
     preview: false,
   });
   return Object.assign(function TerminalWorkbenchPanelPlugin(ctx: Context) {
+    const TerminalPanel = createTerminalPanel(registry, (ownerId, sessionId) => {
+      const next = registry.openAnother(sessionId);
+      ctx.workbenchPanels.open(ownerId, "terminal", { sessionId: next });
+    });
     const observedPanelOwners = new Map<string, () => void>();
     const syncActiveTerminal = (panelOwnerId: string) => {
       const sessionId = activeTerminalSessionId(
@@ -402,6 +416,7 @@ export function createTerminalWorkbenchPanelPlugin(
         label: "New terminal",
         icon: "terminal",
         creationLabel: "Terminal",
+        isAvailable: context => registry.canOpen(context.hostId),
         run: (context) => {
           const sessionId = registry.open({ hostId: context.hostId, cwd: context.cwd,
             threadId: context.threadId, projectId: context.projectId, resourceOwnerId: context.resourceOwnerId, ...resolveScope?.(context.resourceOwnerId) });

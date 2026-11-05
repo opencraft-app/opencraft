@@ -2357,7 +2357,7 @@ export function createAppServerWorkbenchRuntime(
           return terminalController.attach(processId);
         },
         list() {
-          assertMethodAccess("process/list");
+          if (!canRequest("process/list")) return Promise.resolve({ processes: [] });
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
           return terminalController.list();
         },

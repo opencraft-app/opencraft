@@ -1,4 +1,4 @@
-import { SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
@@ -827,6 +827,7 @@ export async function startLocalAgentHost(options: {
               extensions: {
                 ...initialized.capabilities?.extensions,
                 [SHARED_INTERACTIONS_EXTENSION]: { version: 1 },
+                [OPENCRAFT_TERMINAL_RESTORE_EXTENSION]: { version: 1 },
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
                 [TURN_RECOVERY_EXTENSION]: { version: 1 },
