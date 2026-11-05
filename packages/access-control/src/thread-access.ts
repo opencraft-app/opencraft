@@ -1,3 +1,4 @@
+import { TOKEN_USAGE_QUERY } from "@opencraft/appserver-protocol/token-usage";
 import { PermissionReadCache, withPermissionWrite } from "./permission-read-cache.js";
 import { AppServerRpcError, threadUnavailableReason } from '@opencraft/appserver-client';
 import type { DatabaseSync } from 'node:sqlite';
@@ -96,7 +97,7 @@ export class ThreadAccessSession {
   private readonly seen = new Set<string>();
   private track(id: string, serverId?: string) { this.seen.add(JSON.stringify([this.server(id,serverId),id])); }
   private readonly unsubscribe: () => void;
-  constructor(private readonly store: ThreadAccessStore, private readonly server: (threadId: string, serverId?: string) => string,
+  constructor(private readonly store: ThreadAccessStore, private readonly server: (threadId: string, serverId?: string, method?: string) => string,
     private readonly context: ActorContext | undefined, private readonly emit: (frame: string) => void,
     private readonly restoreCreator?: (threadId: string) => Promise<void>,
     private readonly assertCurrent: () => void = () => {},
@@ -116,21 +117,23 @@ export class ThreadAccessSession {
   private key(packet: Value) { return JSON.stringify([packet.__opencraftClient ?? '',packet.id]); }
   private allowed(id: string, serverId?: string) { return this.store.allows(this.server(id,serverId),id,this.context); }
   private denial(packet: Value) { return JSON.stringify({id:packet.id, ...(packet.__opencraftClient === undefined ? {} : {__opencraftClient:packet.__opencraftClient}),error:{code:-32004,message:'Conversation not found or unavailable',data:{code:'THREAD_NOT_FOUND'}}}); }
-  private refs(value: unknown, allowServer = true): {id:string;serverId?:string}[] {
-    if (Array.isArray(value)) return value.flatMap(v => this.refs(v,allowServer));
+  private refs(value: unknown, allowServer = true, inheritedServerId?: string): {id:string;serverId?:string}[] {
+    if (Array.isArray(value)) return value.flatMap(v => this.refs(v,allowServer,inheritedServerId));
     const row = object(value), refs: {id:string;serverId?:string}[] = [];
-    const serverId = allowServer && typeof row.serverId === 'string' ? row.serverId : undefined;
+    const serverId = allowServer ? (typeof row.serverId === 'string' ? row.serverId : inheritedServerId) : undefined;
     for (const key of ['threadId','thread_id']) if (validId(row[key])) refs.push({id:row[key],serverId});
     if (validId(object(row.thread).id)) refs.push({id:String(object(row.thread).id),serverId});
     if (Array.isArray(row.threadIds)) refs.push(...row.threadIds.filter(validId).map(id => ({id,serverId})));
     for (const [key,v] of Object.entries(row)) if (!['threadId','thread_id','threadIds','thread','input','content','turns','items'].includes(key)
-      && v && typeof v === 'object') refs.push(...this.refs(v,allowServer));
+      && v && typeof v === 'object') refs.push(...this.refs(v,allowServer,serverId));
     return refs;
   }
   private permits(ref: {id:string;serverId?:string}) { return this.allowed(ref.id,ref.serverId); }
   private requestRefs(method: string, params: Value) {
     // Native Thread RPCs do not take a serverId; an injected field cannot change their authority.
-    return this.refs(params,method.startsWith('opencraft/tasks/') || method === 'opencraft/collaboration');
+    const refs = this.refs(params,method.startsWith('opencraft/tasks/') || method === 'opencraft/collaboration' || method === TOKEN_USAGE_QUERY);
+    // Deployment statistics can describe another engine, independent of this RPC lane.
+    return method === TOKEN_USAGE_QUERY ? refs.map(ref => ({...ref,serverId:this.server(ref.id,ref.serverId,method)})) : refs;
   }
   async receive(frame: string): Promise<boolean> {
     this.assertCurrent();
@@ -249,20 +252,21 @@ export class ThreadAccessSession {
       // Counts from the shared directory must not reveal hidden rows.
       for (const key of ['total','totalCount','count']) delete result[key];
     }
-    const prune = (value: unknown): unknown => {
-      if (Array.isArray(value)) return value.map(prune).filter(v => v !== undefined);
+    const prune = (value: unknown, inheritedServerId?: string): unknown => {
+      if (Array.isArray(value)) return value.map(entry => prune(entry,inheritedServerId)).filter(v => v !== undefined);
       if (!value || typeof value !== 'object') return value;
       const row = object(value);
+      // Structured responses bind nested rows to their owning Server, not the active engine.
+      const serverId = typeof row.serverId === 'string' ? row.serverId : inheritedServerId;
       // Catalog upserts/read responses carry the same authoritative metadata.
       if (validId(row.id) && typeof row.cwd === 'string' && typeof row.updatedAt === 'number') {
-        if (!allowed(row.id)) return undefined;
-        row.accessMode = policyFor(row.id)!.accessMode;
+        if (!allowed(row.id,serverId)) return undefined;
+        row.accessMode = policyFor(row.id,serverId)!.accessMode;
       }
       const own = [row.threadId,row.thread_id,object(row.thread).id].filter(validId);
-      const serverId = typeof row.serverId === 'string' ? row.serverId : undefined;
       if (own.some(id => !allowed(id,serverId))) return undefined;
       for (const id of own) track(id,serverId);
-      return Object.fromEntries(Object.entries(row).map(([key,v]) => [key, ['turns','items','input','content'].includes(key) ? v : prune(v)]).filter(([,v]) => v !== undefined));
+      return Object.fromEntries(Object.entries(row).map(([key,v]) => [key, ['turns','items','input','content'].includes(key) ? v : prune(v,serverId)]).filter(([,v]) => v !== undefined));
     };
     const projected = prune(packet) as Value | undefined;
     if (projected === undefined || packet.result !== undefined && projected.result === undefined) return packet.id !== undefined && !packet.method ? this.denial(packet) : null;

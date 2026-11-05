@@ -472,7 +472,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     threadAccess = new ThreadAccessStore(serverStorage, actorStore, { permissionOwner: serverStorage.database });
     threadNotes = new ThreadNoteStore(serverStorage);
     const createThreadAccessSession = (hostId, context, emit) => new ThreadAccessSession(threadAccess,
-      (threadId, serverId) => {
+      (threadId, serverId, method) => {
+        if (method === 'opencraft/token-usage/query' && serverId === undefined) return `server:${machineIdentity.machineId}:codex`;
         if (serverId?.startsWith('server:')) return serverId;
         const target = serverId === 'local-codex' || serverId === 'opencraft-server' ? serverId : hostId;
         return ['local-codex','opencraft-server'].includes(target) ? conversationExecution.serverForHost(target,threadId)
