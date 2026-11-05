@@ -161,6 +161,43 @@ test("synchronous readiness loss after custody publication keeps the undispatche
   assert.equal(sent, 1); assert.equal(rows.length, 0); box.dispose();
 });
 
+test("readiness recovery during the waiting write sends the original message once", async () => {
+  let ready = false, revoke = true;
+  let rows: readonly ConversationOutboxEntry[] = [];
+  let releaseWrite!: () => void;
+  let waitingWriteStarted!: () => void;
+  const waitingWrite = new Promise<void>(resolve => { waitingWriteStarted = resolve; });
+  const holdWrite = new Promise<void>(resolve => { releaseWrite = resolve; });
+  const sent: string[] = [];
+  const box = createConversationOutbox({ key,
+    storage: { read: () => rows, async write(_, next) {
+      if (rows[0]?.state === "sending" && next[0]?.state === "waiting") {
+        waitingWriteStarted();
+        await holdWrite;
+      }
+      rows = next;
+    }, subscribe: () => () => {} },
+    ready: () => ready, blocked: () => false, retire() {},
+    publish() { if (revoke && rows[0]?.state === "sending") { revoke = false; ready = false; } },
+    async send(i) {
+      sent.push(i.clientMessageId);
+      return { commandId: i.commandId, clientMessageId: i.clientMessageId,
+        hostId: key.hostId, threadId: key.threadId, turnId: null, acceptedAt: 1, replayed: false };
+    },
+  });
+  try {
+    await box.admit(intent("one"));
+    ready = true; box.wake();
+    await waitingWrite;
+    ready = true; box.wake(); box.wake();
+    assert.deepEqual(sent, []);
+    releaseWrite();
+    await settle();
+    assert.deepEqual(sent, ["client-one"]);
+    assert.equal(rows.length, 0);
+  } finally { box.dispose(); }
+});
+
 test('one local outbox owns cold-start input before a Thread exists and later attaches its live dispatcher', async () => {
   const f = fixture(); const box = f.create();
   await box.admit(intent('cold'));
