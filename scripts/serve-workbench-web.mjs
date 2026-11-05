@@ -103,8 +103,13 @@ function bridgeAppServerSocket(client, request, options) {
   const write = (frame, isBinary = false) => {
     if (client.readyState !== WebSocket.OPEN || options.authorize?.() === false) return;
     if (accessSession && isBinary) { client.close(1003, 'Text frames required'); return; }
-    const projected = accessSession ? accessSession.project(String(frame)) : frame;
-    if (projected !== null) client.send(projected, {binary:isBinary});
+    try {
+      const projected = accessSession ? accessSession.project(String(frame)) : frame;
+      if (projected !== null) client.send(projected, {binary:isBinary});
+    } catch {
+      // An invalid upstream packet cannot bypass policy or escape its socket owner.
+      client.close(1002, 'Invalid RPC frame');
+    }
   };
   client.once('close', () => accessSession?.close());
   const protocolHeader = request.headers["sec-websocket-protocol"];
