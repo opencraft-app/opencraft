@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createConnection } from "node:net";
@@ -41,10 +41,16 @@ test("Hands Unix owner runs only the pinned Codex exec-server and fences its lea
   const root = await mkdtemp(join(tmpdir(), "opencraft-hands-unix-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const workspace = join(root, "workspace"), endpoint = join(root, "owner.sock"), tokenFile = join(root, "owner.token"), executable = join(root, "codex");
-  const projectlessWorkspace = join(root, "projectless"), taskDirectory = join(projectlessWorkspace, "thread-a");
+  const actualData = join(root, "data"), alias = join(root, "data-alias");
+  const projectlessWorkspace = join(alias, "projectless"), taskDirectory = join(projectlessWorkspace, "thread-a");
+  await mkdir(actualData); await symlink(actualData, alias);
   await mkdir(workspace); await mkdir(taskDirectory, { recursive: true });
   await writeFile(executable, "#!/bin/sh\nwhile IFS= read -r line; do printf 'hands:%s\\n' \"$line\"; done\n"); await chmod(executable, 0o755);
   const resources = { cpuMillis: 4000, memoryBytes: 8 * 1024 ** 3 };
+  const redirected = join(alias, "redirected");
+  await symlink(workspace, redirected);
+  await assert.rejects(startHandsExecutionOwner({ endpoint, tokenFile, executable, workspace,
+    projectlessWorkspace: redirected, resources }), /Invalid Hands projectless workspace/);
   const owner = await startHandsExecutionOwner({ endpoint, tokenFile, executable, workspace, projectlessWorkspace, resources }); t.after(() => owner.close());
   assert.deepEqual(await probe(endpoint), { type: "healthy", protocol: 1, resources });
   const pool = await createSandboxPool({ id: "hands-test", capacity: resources }, await handsUnixSandboxBackend({ endpoint, tokenFile })); t.after(() => pool.close());
