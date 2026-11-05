@@ -1,3 +1,4 @@
+import type { ThreadAccessMethodMap } from "./thread-access";
 import type { ThreadNoteMethodMap } from "./thread-note";
 import type { SharedInteractionMethodMap } from "./shared-interactions";
 import type { TurnRecoveryMethodMap } from "./turn-recovery";
@@ -343,7 +344,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends ThreadAccessMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };
@@ -417,6 +418,10 @@ export interface AppServerMethodMap extends ThreadNoteMethodMap, SharedInteracti
   "runtime/models/probe": {
     params: RuntimeModelProbeParams;
     result: RuntimeModelProbeResponse;
+  };
+  "runtime/models/inspect": {
+    params: import("./runtime-settings").RuntimeModelInspectionParams;
+    result: import("./runtime-settings").RuntimeModelInspectionResponse;
   };
   "runtime/models/check": {
     params: import("./runtime-settings").RuntimeSavedModelCheckParams;

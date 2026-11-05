@@ -16,6 +16,7 @@ import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbe
 
 import {
   WebIframeSurfaceHost,
+  type BrowserInputFailureKind,
   type BrowserSurfaceEvents,
   type BrowserSurfaceHost,
 } from "./web-browser-surface-host";
@@ -126,6 +127,11 @@ function createSnapshot(input: {
 
 /** Logical Page owner. It has no panel, iframe, WebContents or viewport state. */
 export class WebBrowserPageRuntime {
+  private readonly inputErrorListeners = new Set<(pageId: BrowserPageId, kind: BrowserInputFailureKind) => void>();
+  onInputError(listener: (pageId: BrowserPageId, kind: BrowserInputFailureKind) => void): () => void {
+    this.inputErrorListeners.add(listener);
+    return () => { this.inputErrorListeners.delete(listener); };
+  }
   private readonly zoom = new Map<BrowserPageId, number>();
   bindStorage(pageId: BrowserPageId, storageId: string) { this.surfaces.bindStorageId?.(pageId, storageId); }
   storageId(pageId: BrowserPageId) { return this.surfaces.existingStorageId?.(pageId) ?? null; }
@@ -329,6 +335,7 @@ export class WebBrowserPageRuntime {
 
   dispose(): void {
     this.sessionClosedHandler = null;
+    this.inputErrorListeners.clear();
     for (const record of this.pages.values()) record.listeners.clear();
     this.pages.clear();
     this.navigationGenerations.clear();
@@ -441,6 +448,10 @@ export class WebBrowserPageRuntime {
         if (this.pages.get(record.id) !== record) return;
         this.sessionClosedHandler?.(record.id);
         if (this.pages.get(record.id) === record) this.close(record.id);
+      },
+      onInputError: (kind) => {
+        if (this.pages.get(record.id) !== record) return;
+        for (const listener of this.inputErrorListeners) listener(record.id, kind);
       },
       onError: (message) => {
         if (this.pages.get(record.id) === record)

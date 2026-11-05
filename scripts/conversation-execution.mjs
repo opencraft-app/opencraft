@@ -52,7 +52,7 @@ export function callConversationHost(appHost, binding, requestId, method, params
             } catch (error) { finish(error); }
           } else if (message.type === 'fatal' || message.type === 'host/status' && ['failed', 'closed'].includes(message.status.state)) finish(new Error('Actor Host closed'));
         },
-      }, clientId, submissionContext ?? { sender: null, collaborationRequestId: requestId });
+      }, clientId, submissionContext ?? { sender: null, collaborationRequestId: requestId }, submissionContext === undefined);
       receive?.({ type: 'hello', protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: clientId });
     } catch (error) { finish(error); }
   });

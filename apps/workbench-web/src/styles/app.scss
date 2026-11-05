@@ -151,6 +151,10 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   &, body { position: static; inset: auto; height: 100vh; }
   body { position: relative; }
   .app-shell-root { position: relative; }
+  // Keep the immersive paint canvas while bounding interactive content by the
+  // CSS dynamic viewport. A larger vh canvas must not carry the Composer below
+  // the exposed window; keyboard contraction still belongs to the viewport port.
+  .app-shell-row { max-height: 100dvh; }
   .app-shell-floating-overlay-root { position: absolute; }
   :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
     right: auto;
@@ -12948,3 +12952,5 @@ html[data-window-host="browser"] body {
   flex-direction: column;
   p { margin: 0; }
 }
+
+.sidebar-access-description { padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 2); @include typography.role(metadata, secondary); }

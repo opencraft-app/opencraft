@@ -461,3 +461,23 @@ export const executionCapabilityBindings = sqliteTable("execution_capability_bin
   threadId: text("thread_id").notNull(),
   sessionJson: text("session_json"),
 }, table => [uniqueIndex("execution_capability_bindings_server_id_thread_id_unique").on(table.serverId, table.threadId)]);
+
+export const threadAccess = sqliteTable("thread_access", {
+  serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
+  creatorActorId: text("creator_actor_id"), accessMode: text("access_mode").notNull(),
+  revision: integer("revision").notNull(), updatedAt: integer("updated_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.serverId, table.threadId] }),
+  check("thread_access_mode", sql.raw("access_mode IN ('shared','private')")),
+  check("thread_access_revision", sql.raw("revision>=1")),
+  check("thread_access_creator", sql.raw("access_mode!='private' OR creator_actor_id IS NOT NULL")),
+]);
+export const threadAccessAudit = sqliteTable("thread_access_audit", {
+  id: integer("id").primaryKey(), serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
+  actorId: text("actor_id").notNull(), accessMode: text("access_mode").notNull(),
+  revision: integer("revision").notNull(), at: integer("at").notNull(),
+});
+export const threadNotes = sqliteTable("thread_notes", {
+  serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
+  state: blob("state", { mode: "buffer" }).notNull(), updatedAt: integer("updated_at").notNull(),
+}, table => [primaryKey({ columns: [table.serverId, table.threadId] })]);

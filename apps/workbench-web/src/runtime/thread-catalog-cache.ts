@@ -6,6 +6,7 @@ import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 type CachedThread = {
   id: string; title: string; project: string; lineage: "root" | "fork" | "subagent";
   updatedAt: number; createdAt: number | null; pinned: boolean;
+  accessMode?: "shared" | "private";
   parentThreadId: string | null; visibility: "visible" | "hidden";
 };
 export type CachedThreadCatalog = { rows: CachedThread[]; complete: boolean };
@@ -36,6 +37,7 @@ export const threadCatalogResource: ClientResourceDefinition<CachedThreadCatalog
         || (row.visibility !== "visible" && row.visibility !== "hidden")) throw new Error("Invalid saved thread identity");
       seen.add(id);
       return { id, title: text(row.title, 512), project: text(row.project, 256), lineage: row.lineage as CachedThread["lineage"],
+        ...(row.accessMode === "private" || row.accessMode === "shared" ? {accessMode:row.accessMode} : {}),
         updatedAt: timestamp(row.updatedAt), createdAt: row.createdAt === null ? null : timestamp(row.createdAt), pinned: row.pinned,
         parentThreadId: row.parentThreadId === null ? null : text(row.parentThreadId, 512), visibility: row.visibility };
     }) };
@@ -46,6 +48,7 @@ export const threadCatalogResource: ClientResourceDefinition<CachedThreadCatalog
 export function cacheThreadCatalog(rows: readonly WorkbenchThread[], complete: boolean): CachedThreadCatalog {
   return { complete: complete && rows.length <= CACHED_THREAD_LIMIT, rows: rows.slice(0, CACHED_THREAD_LIMIT).map(row => ({
     id: row.id, title: row.title.slice(0, 512), project: row.project.slice(0, 256), lineage: row.lineage,
+    ...(row.accessMode === undefined ? {} : { accessMode: row.accessMode }),
     updatedAt: row.updatedAt, createdAt: row.createdAt ?? null, pinned: row.pinned === true,
     parentThreadId: row.parentThreadId ?? null, visibility: row.visibility ?? "visible",
   })) };

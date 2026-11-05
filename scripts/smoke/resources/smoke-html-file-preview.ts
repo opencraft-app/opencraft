@@ -35,6 +35,16 @@ try{
   const button=page.locator('header').getByRole('button',{name:'Open in browser',exact:true});await button.waitFor({timeout:60000});
   await page.getByRole('link',{name:'Download file',exact:true}).waitFor();
   await page.screenshot({path:join(output,`header-${width}-${theme}.png`)});
+  // Exercise the actual srcdoc panel, not just the external report viewer.
+  const inline = page.frameLocator('iframe.workspace-file-html');
+  await inline.locator('summary').first().waitFor();
+  const inlineCount = await inline.locator('details').count();
+  await inline.getByRole('button', {name:'全部展开', exact:true}).click();
+  assert.equal(await inline.locator('details[open]').count(), inlineCount);
+  await inline.getByRole('button', {name:'全部收起', exact:true}).click();
+  assert.equal(await inline.locator('details[open]').count(), 0);
+  assert.equal(await inline.locator('body').evaluate(()=>{try{return Boolean(parent.document)}catch{return false}}), false);
+  assert.equal(await page.locator('iframe.workspace-file-html').getAttribute('sandbox'), 'allow-scripts');
   // Match managed new-window forwarding: a new owned page, no WindowProxy.
   const openedUrls:string[]=[];
   if(managed){

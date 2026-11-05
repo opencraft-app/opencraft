@@ -1,3 +1,4 @@
+import { ResourceStore, type ResourcePreparer, type ResourceStoreOptions } from "./resource-store";
 import { Service, type Context } from "@deepseek-ai/cordis";
 import { blobResourceKey, type BlobResource, type BlobResourceLoader, type BlobCacheStorage,
   type BlobCacheEntry, type BlobLease, type BlobAcquireOptions, type BlobProgress } from "./types";
@@ -5,6 +6,7 @@ import { blobResourceKey, type BlobResource, type BlobResourceLoader, type BlobC
 interface Job {
   key: string; resource: BlobResource; loader: BlobResourceLoader; options: BlobAcquireOptions;
   controller: AbortController; priority: number; order: number; refs: number;
+  expiresAt?: number;
   started: boolean; settled: boolean; state: BlobProgress; listeners: Set<() => void>;
   promise: Promise<Blob>; resolve(blob: Blob): void; reject(error: unknown): void;
 }
@@ -24,6 +26,8 @@ export class BlobResourceService extends Service {
   private running = 0;
   private sequence = 0;
   private closed = false;
+  private presentations = new Set<WeakRef<ResourceStore<unknown>>>();
+  private resourceStores = new WeakMap<object, Map<string, ResourceStore<unknown>>>();
   private concurrency: number;
   private budget: number;
   private maxEntries: number;
@@ -58,6 +62,7 @@ export class BlobResourceService extends Service {
       const cached = this.memory.get(key);
       if (cached && cached.expiresAt > Date.now()) {
         this.remember({ ...cached, accessedAt: Date.now() });
+        job.expiresAt = cached.expiresAt;
         job.settled = true;
         job.state = { phase: "ready", receivedBytes: cached.blob.size, totalBytes: cached.blob.size };
         job.resolve(cached.blob);
@@ -91,13 +96,42 @@ export class BlobResourceService extends Service {
     };
     options.signal?.addEventListener("abort", release, { once: true });
     queueMicrotask(() => this.pump());
-    return { promise, release, getProgress: () => shared.state,
+    return { promise, release, get expiresAt() { return shared.expiresAt; }, getProgress: () => shared.state,
       subscribe: listener => { if (released) return () => {};
         ownedListeners.add(listener); shared.listeners.add(listener);
         return () => { ownedListeners.delete(listener); shared.listeners.delete(listener); }; } };
   }
 
+  /** Ownership stays inside the service, independent of contextual service proxies. */
+  getResourceStore<T>(owner: object, representation: string, prepare: ResourcePreparer<T>, options: ResourceStoreOptions = {}): ResourceStore<T> {
+    if (this.closed) throw new Error("Blob resources disposed");
+    let stores = this.resourceStores.get(owner);
+    if (!stores) { stores = new Map(); this.resourceStores.set(owner, stores); }
+    let store = stores.get(representation);
+    if (!store) { store = this.createResourceStore(prepare, options) as ResourceStore<unknown>; stores.set(representation, store); }
+    return store as ResourceStore<T>;
+  }
+
+  createResourceStore<T>(prepare: ResourcePreparer<T>, options: ResourceStoreOptions = {}): ResourceStore<T> {
+    if (this.closed) throw new Error("Blob resources disposed");
+    const store = new ResourceStore(prepare, { memoryBytes: this.budget, maxEntries: this.maxEntries, ...options });
+    for (const ref of this.presentations) if (!ref.deref()) this.presentations.delete(ref);
+    this.presentations.add(new WeakRef(store as ResourceStore<unknown>));
+    return store;
+  }
+
+  /** Drop file bytes, then refresh prepared results without clearing successful displays. */
+  async refresh(resource: BlobResource): Promise<void> {
+    await this.expireBytes(resource);
+    this.updatePresentations(resource, false);
+  }
+
   async invalidate(resource: BlobResource): Promise<void> {
+    await this.expireBytes(resource);
+    this.updatePresentations(resource, true);
+  }
+
+  private async expireBytes(resource: BlobResource): Promise<void> {
     const key = blobResourceKey(resource);
     const job = this.jobs.get(key);
     if (job) { job.controller.abort(); job.reject(cancelled()); this.jobs.delete(key); }
@@ -105,9 +139,20 @@ export class BlobResourceService extends Service {
     try { await this.storage?.delete(key); } catch { /* disposable cache */ }
   }
 
+  private updatePresentations(resource: BlobResource, discard: boolean): void {
+    for (const ref of this.presentations) {
+      const store = ref.deref();
+      if (store) { if (discard) store.invalidate(resource); else store.refresh(resource); }
+      else this.presentations.delete(ref);
+    }
+  }
+
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    for (const ref of this.presentations) ref.deref()?.close();
+    this.presentations.clear();
+    this.resourceStores = new WeakMap();
     for (const job of this.jobs.values()) { job.controller.abort(); job.reject(cancelled()); }
     this.jobs.clear(); this.memory.clear(); this.usedBytes = 0; this.storage?.close();
   }
@@ -150,6 +195,7 @@ export class BlobResourceService extends Service {
       const maxAge = !Number.isFinite(requestedAge) && !job.resource.version ? 10_000 : requestedAge;
       const entry = { key: job.key, blob, accessedAt: Date.now(),
         expiresAt: cached?.expiresAt ?? Date.now() + Math.max(0, maxAge) };
+      job.expiresAt = entry.expiresAt;
       this.remember(entry);
       if (job.options.persistent && !cached && blob.size <= this.budget) {
         try { await this.storage?.put(entry); } catch { /* quota/private mode: content is still usable */ }

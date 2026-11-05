@@ -1,4 +1,4 @@
-const catalogChanges = new Set(["opencraft/thread-catalog/changed", "thread/started", "thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed", "thread/deleted", "thread/pins/updated", "thread/status/changed", "turn/started", "turn/completed"]);
+const catalogChanges = new Set(["opencraft/thread-access/changed", "opencraft/thread-access/revoked","opencraft/thread-catalog/changed", "thread/started", "thread/name/updated", "thread/archived", "thread/unarchived", "thread/closed", "thread/deleted", "thread/pins/updated", "thread/status/changed", "turn/started", "turn/completed"]);
 export function changesThreadCatalog(method: string): boolean { return catalogChanges.has(method); }
 
 /** The first page backfills native pins outside the recent window. Later

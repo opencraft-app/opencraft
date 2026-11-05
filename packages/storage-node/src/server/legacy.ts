@@ -140,7 +140,21 @@ const EXECUTION_CAPABILITIES_SCHEMA = `CREATE TABLE execution_capability_binding
  session_json TEXT, UNIQUE(server_id,thread_id)
 ) STRICT;`;
 
+const THREAD_ACCESS_SCHEMA = `CREATE TABLE thread_access (
+ server_id TEXT NOT NULL, thread_id TEXT NOT NULL, creator_actor_id TEXT,
+ access_mode TEXT NOT NULL CHECK(access_mode IN ('shared','private')),
+ revision INTEGER NOT NULL CHECK(revision>=1), updated_at INTEGER NOT NULL,
+ PRIMARY KEY(server_id,thread_id), CHECK(access_mode!='private' OR creator_actor_id IS NOT NULL)) STRICT;
+CREATE TABLE thread_access_audit (id INTEGER PRIMARY KEY,server_id TEXT NOT NULL,thread_id TEXT NOT NULL,
+ actor_id TEXT NOT NULL,access_mode TEXT NOT NULL,revision INTEGER NOT NULL,at INTEGER NOT NULL) STRICT;`;
+const THREAD_NOTES_SCHEMA = `CREATE TABLE thread_notes (
+  server_id TEXT NOT NULL, thread_id TEXT NOT NULL, state BLOB NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY(server_id,thread_id)
+) STRICT;`;
+
 export const SERVER_LEGACY_MIGRATIONS = {
+  "thread-access": [{ version: 1, name: "thread-access", sql: THREAD_ACCESS_SCHEMA }],
+  "thread-notes": [{ version: 1, name: "thread-notes", sql: THREAD_NOTES_SCHEMA }],
 
   "actors": [
     { version: 1, name: "actor-identities", sql: ACTORS_SCHEMA },

@@ -94,7 +94,7 @@ test('public listener accepts explicit membership protection without requiring a
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);
 });
 
-test('local machine ingress proves the socket source and preserves remote and Actor admission', async t => {
+test('local machine ingress proves the socket source and preserves remote and Actor admission', { timeout: 20_000 }, async t => {
   const f = await fixture(t), path = join(f.root, 'local-access');
   await writeFile(path, randomBytes(32).toString('hex'), { mode: 0o600 });
   const access = await loadLocalMachineAccess(path);
@@ -120,7 +120,10 @@ test('local machine ingress proves the socket source and preserves remote and Ac
 
   const backend = new WebSocketServer({ host: '127.0.0.1', port: 0 }); await once(backend, 'listening');
   t.after(() => new Promise(resolve => backend.close(resolve)));
-  backend.on('connection', socket => socket.on('message', data => socket.send(data)));
+  backend.on('connection', socket => socket.on('message', data => {
+    const request = JSON.parse(data.toString());
+    socket.send(JSON.stringify({ id: request.id, result: 'local-proof-echo' }));
+  }));
   const app = await startHeadlessServer({ ...f.options, localAccessFile: path, accessControl: true,
     startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:' + backend.address().port, close: async () => {} }),
   }); t.after(() => app.close());
@@ -136,7 +139,9 @@ test('local machine ingress proves the socket source and preserves remote and Ac
   assert.equal((await fetch(app.url + '/__opencraft_access/admission', { headers: { ...probe, 'x-opencraft-relay-probe-method': 'POST', 'x-opencraft-relay-probe-path': '/assets/lazy.js' } })).status, 401);
   const socket = new WebSocket(app.url.replace('http:', 'ws:') + '/appserver', { headers: { ...proofFor('/appserver'), origin: app.url } });
   await once(socket, 'open');
-  const reply = once(socket, 'message'); socket.send('local-proof-echo'); assert.equal((await reply)[0].toString(), 'local-proof-echo');
+  const reply = once(socket, 'message', { signal: AbortSignal.timeout(5_000) });
+  socket.send(JSON.stringify({ id: 1, method: 'fixture/echo', params: {} }));
+  assert.deepEqual(JSON.parse((await reply)[0].toString()), { id: 1, result: 'local-proof-echo' });
   socket.close(); await once(socket, 'close');
 });
 

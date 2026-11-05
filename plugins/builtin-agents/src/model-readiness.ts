@@ -18,7 +18,7 @@ export async function readHostModelReadiness(request: HostProtocolRequest, hostI
   }
   const candidates = providers.providers.filter(provider => (!selected || provider.provider === selected.provider) && provider.active && provider.enabled !== false
     && provider.configuration?.modelType !== 'asr'
-    && models.groups.some(group => group.id === provider.provider && group.models.some(model => model.enabled !== false && model.type !== 'asr' && (!selected || model.id === selected.model))));
+    && models.groups.some(group => group.id === provider.provider && group.models.some(model => model.enabled !== false && (!model.type || model.type === 'chat') && (!selected || model.id === selected.model))));
   const refs = candidates.map(provider => {
     let value: unknown = settings.namespaces.find(namespace => namespace.ns === provider.settingsNs)?.value;
     for (const key of provider.settingsPath) value = value && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined;

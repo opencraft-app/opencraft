@@ -164,6 +164,8 @@ A fresh invalidation then reconciles metadata; it does not serialize subsequent
 events behind network latency. Disposal fences queued callbacks. Neither unknown
 rows nor selected-route execution state are invented to force a group placement.
 Running precedes attention, pins and recent in the existing task-flow projection.
+The default Sidebar places the private Mine section after pinned conversations
+and before Recent. Contributed grouping modes retain their independent Mine section.
 
 The row container paints one continuous selected/hover background across title,
 project, status, participants and actions. Server marks are omitted; provenance
@@ -248,13 +250,16 @@ Customization drag keeps the source slot in layout and paints a noninteractive, 
 
 `packages/workbench-panels-react` provides `ConversationSummaryService`, a single trusted
 renderer contribution with fiber-scoped registration/disposal. The built-in
-`plugins/thread-summary` consumes its public readonly context rather than application internals.
+`plugins/thread-summary` consumes its public context and optional captured note transport rather than application internals.
 `createWebWorkbenchApplication({threadSummary: false})` omits this module and its entry point.
 The host projects the displayed timeline and the existing goal resource, scopes view state by
 account/Host/thread, and supplies guarded semantic open-resource/open-thread callbacks.
 It owns actual-container layout, the toolbar and existing Radix ModalSurface; the plugin owns
-section content and typography. No additional subscription, summary model service, execution
-owner, persistence store or inference request is introduced. History may be partial; only
+section content and typography. The first section is a collaborative Markdown note when the
+Host advertises the note capability. Yjs synchronization and the independent gateway store
+are described in [shared conversation notes](../platform/storage-and-preferences.md#shared-conversation-notes).
+Existing history projections remain read-only and follow the note; no inference request or
+new execution owner is introduced. History may be partial; only
 structured plan/file records and explicit agent states contribute. Terminal completion never
 implies completion of a background process. Desktop and narrow presentation reuse the same
 controlled disclosure/scroll state while the conversation DOM stays mounted.

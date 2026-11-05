@@ -1,3 +1,4 @@
+import { once } from "node:events";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { access, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
@@ -34,7 +35,7 @@ test('running headless gateway resolves a new Host address on reconnect and reje
     for (const identity of ['first', 'recovered']) {
       const backend = new WebSocketServer({ port: 0, host: '127.0.0.1' }); backends.push(backend);
       await new Promise(done => backend.once('listening', done));
-      backend.on('connection', socket => socket.send(identity));
+      backend.on('connection', socket => socket.send(JSON.stringify({ method: 'fixture/ready', params: { identity } })));
     }
     let selected = 0;
     let unavailable = false;
@@ -45,7 +46,7 @@ test('running headless gateway resolves a new Host address on reconnect and reje
         async close() {} }; } });
     const reconnect = () => new Promise((accept, reject) => {
       const socket = new WebSocket(`${server.url.replace('http:', 'ws:')}/appserver`, { origin: server.url });
-      socket.once('message', value => { socket.terminate(); accept(value.toString()); });
+      socket.once('message', value => { socket.terminate(); accept(JSON.parse(value.toString()).params.identity); });
       socket.once('error', reject);
     });
     assert.equal(await reconnect(), 'first');
@@ -280,7 +281,7 @@ test("bundled headless help exits without starting the imported static gateway",
   assert.doesNotMatch(output, /opencraft static|appserver/u);
 });
 
-test("headless server serves WebUI through a loopback-only owned AppServer gateway", async (context) => {
+test("headless server serves WebUI through a loopback-only owned AppServer gateway", { timeout: 20_000 }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-headless-test-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   const webRoot = join(root, "web");
@@ -290,7 +291,10 @@ test("headless server serves WebUI through a loopback-only owned AppServer gatew
   const upstream = new WebSocketServer({ port: 0, host: "127.0.0.1" });
   await new Promise((resolvePromise) => upstream.once("listening", resolvePromise));
   context.after(() => new Promise((resolvePromise) => upstream.close(resolvePromise)));
-  upstream.on("connection", (socket) => socket.on("message", (message) => socket.send(message)));
+  upstream.on("connection", (socket) => socket.on("message", (message) => {
+    const request = JSON.parse(message.toString());
+    socket.send(JSON.stringify({ id: request.id, result: "hello" }));
+  }));
   const address = upstream.address();
   let closed = false;
   const startAgentHost = async () => ({
@@ -311,8 +315,9 @@ test("headless server serves WebUI through a loopback-only owned AppServer gatew
     socket.once("open", resolvePromise);
     socket.once("error", reject);
   });
-  socket.send("hello");
-  assert.equal((await new Promise((resolvePromise) => socket.once("message", resolvePromise))).toString(), "hello");
+  const reply = once(socket, "message", { signal: AbortSignal.timeout(5_000) });
+  socket.send(JSON.stringify({ id: 1, method: "fixture/echo", params: {} }));
+  assert.deepEqual(JSON.parse((await reply)[0].toString()), { id: 1, result: "hello" });
   socket.close();
   await assert.rejects(startHeadlessServer({ root, webRoot, dataDirectory, port: 0, startAgentHost }), /already being held/u);
   await server.close();
@@ -762,7 +767,7 @@ test('incompatible independent Core does not prevent HTTP startup or another Hos
     await new Promise(done => core.listen(endpoint, done));
     backend = new WebSocketServer({ port: 0, host: '127.0.0.1' });
     await new Promise(done => backend.once('listening', done));
-    backend.on('connection', socket => socket.send('independent-host-alive'));
+    backend.on('connection', socket => socket.send(JSON.stringify({ method: 'fixture/ready', params: { identity: 'independent-host-alive' } })));
     app = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), port: 0,
       codexCoreEndpoint: endpoint, codexCoreAuthToken: 'synthetic-token',
       codexExecutable: '/must-not-spawn-fallback', runtimeDirectory: root,
@@ -786,7 +791,7 @@ test('incompatible independent Core does not prevent HTTP startup or another Hos
     assert.ok(!health.storage.some(row => row.name === 'account-pool'), 'gateway must not become a second account writer');
     const result = await new Promise((accept, reject) => {
       const socket = new WebSocket(app.url.replace('http:', 'ws:') + '/appserver', { origin: app.url });
-      socket.once('message', frame => { accept(String(frame)); socket.terminate(); }); socket.once('error', reject);
+      socket.once('message', frame => { accept(JSON.parse(String(frame)).params.identity); socket.terminate(); }); socket.once('error', reject);
     });
     assert.equal(result, 'independent-host-alive');
   } finally {

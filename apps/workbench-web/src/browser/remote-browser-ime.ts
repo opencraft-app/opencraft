@@ -6,7 +6,7 @@ export class RemoteBrowserIme {
   composing = false;
   constructor(private readonly receiver: HTMLTextAreaElement | HTMLInputElement,
     private readonly call: (input: { id: string; type: string; text?: string; editor?: string | null }) => Promise<unknown>,
-    private readonly current: () => boolean, private readonly error: (message: string) => void,
+    private readonly current: () => boolean, private readonly error: (message: string, error?: Error) => void,
     private readonly editor: () => string | null | undefined = () => undefined) {}
   start() {
     // A completed local composition has already queued its terminal command.
@@ -56,6 +56,6 @@ export class RemoteBrowserIme {
     const report = t.live && this.current(); t.live = false;
     if (this.transaction === t) { this.transaction = null; this.composing = false; this.receiver.value = ''; }
     void this.call({ id: t.id, editor: t.editor, type: 'cancel' }).catch(() => {});
-    if (report) this.error(error.message);
+    if (report) this.error(error.message, error);
   }
 }

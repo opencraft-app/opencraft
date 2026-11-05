@@ -3,12 +3,21 @@ import { shouldLoadOlderHistory } from "./scroll";
 
 export type TurnHistoryPageResult = void | "stop";
 
+export type TurnHistoryBackfillDiagnostic = Readonly<{
+  phase: "load-start" | "load-settled" | "stop" | "error";
+  generation: number;
+  before: TurnViewportMetrics;
+  after?: TurnViewportMetrics | null;
+  reason?: "page-stop" | "owner-invalid" | "unchanged-height" | "error";
+}>;
+
 export interface TurnHistoryBackfillPort {
   readonly afterLayout: () => Promise<void>;
   readonly isEnabled: () => boolean;
   readonly loadPage: () => TurnHistoryPageResult | Promise<TurnHistoryPageResult>;
   readonly readMetrics: () => TurnViewportMetrics | null;
   readonly onError?: (error: unknown) => void;
+  readonly onDiagnostic?: (event: TurnHistoryBackfillDiagnostic) => void;
 }
 
 interface ActiveBackfill {
@@ -46,6 +55,7 @@ export class TurnHistoryBackfillCoordinator {
   private async fillViewport(owner: number): Promise<void> {
     if (!this.canContinue(owner)) return;
 
+    let lastBefore: TurnViewportMetrics | null = null;
     try {
       for (;;) {
         const before = this.port.readMetrics();
@@ -55,15 +65,30 @@ export class TurnHistoryBackfillCoordinator {
           distanceFromBottomPx: before.distanceFromBottomPx,
         })) return;
 
+        lastBefore = before;
+        this.port.onDiagnostic?.({ phase: "load-start", generation: owner, before });
         const page = await this.port.loadPage();
         // The host must settle the page's geometry even if ownership changed.
         await this.port.afterLayout();
-        if (!this.canContinue(owner) || page === "stop") return;
-
+        if (!this.canContinue(owner)) {
+          this.port.onDiagnostic?.({ phase: "stop", generation: owner, before, reason: "owner-invalid" });
+          return;
+        }
         const after = this.port.readMetrics();
-        if (after === null || after.scrollHeightPx === before.scrollHeightPx) return;
+        this.port.onDiagnostic?.({ phase: "load-settled", generation: owner, before, after });
+        if (page === "stop") {
+          this.port.onDiagnostic?.({ phase: "stop", generation: owner, before, after, reason: "page-stop" });
+          return;
+        }
+
+        if (after === null || after.scrollHeightPx === before.scrollHeightPx) {
+          this.port.onDiagnostic?.({ phase: "stop", generation: owner, before, after, reason: "unchanged-height" });
+          return;
+        }
       }
     } catch (error) {
+      const before = lastBefore ?? this.port.readMetrics();
+      if (before !== null) this.port.onDiagnostic?.({ phase: "error", generation: owner, before, reason: "error" });
       this.port.onError?.(error);
     }
   }

@@ -12,7 +12,8 @@ import {
 } from "@opencraft/chat-core";
 import { ZoomableImage, LazyHighlightedCodeSurface, resolveStandardChatResource } from "@opencraft/chat-render-web";
 import { CircleIcon as Circle, CodeIcon as Code2, GlobeIcon as Globe2, ImageIcon, MessageIcon as MessageSquare } from "@opencraft/design-system-web/action-icons";
-import { lazy, Suspense, useCallback, useContext, useState, type CSSProperties } from "react";
+import { lazy, Suspense, useCallback, useContext, useEffect, useState, type CSSProperties } from "react";
+import { Button } from "@opencraft/design-system-web/button";
 import { AnimatePresence, motion } from "motion/react";
 import { useDisclosureReflow } from "../../use-disclosure-reflow";
 import { useDisclosureHeight } from "../../use-disclosure-height";
@@ -250,10 +251,14 @@ export function ImageViewToolBlock({ block }: { readonly block: Tool }) {
 
 export function GeneratedImageBlock({ block }: { readonly block: Image }) {
   const context = useContext(ConversationDocumentContext);
-  const source = context.resolveGeneratedImageSource?.(block) ?? block.uri ?? block.savedPath;
-  const identity = JSON.stringify([context.hostId, context.conversationId, context.cwd, block.id, source]);
+  const [attempt, setAttempt] = useState(0);
+  // A deferred result can be a text-sized base64 prefix, never an image.
+  useHistoryItemDetail(block, Boolean(block.historyDetail && !block.savedPath));
+  const source = context.resolveGeneratedImageSource?.(block)
+    ?? (block.historyDetail ? block.savedPath : block.uri ?? block.savedPath);
+  const identity = JSON.stringify([context.hostId, context.conversationId, context.cwd, block.id, source, block.savedPath, attempt]);
   return source === null ? <GeneratedImagePending running={block.status === "pending" || block.status === "running"} />
-    : <GeneratedImage key={identity} block={block} source={source} />;
+    : <GeneratedImage key={identity} block={block} source={source} onRetry={() => setAttempt(value => value + 1)} />;
 }
 
 function GeneratedImagePending({ running, loading = false }: { running: boolean; loading?: boolean }) {
@@ -265,13 +270,29 @@ function GeneratedImagePending({ running, loading = false }: { running: boolean;
   </div>;
 }
 
-function GeneratedImage({ block, source }: { block: Image; source: string }) {
+function GeneratedImage({ block, source, onRetry }: { block: Image; source: string; onRetry: () => void }) {
   const context = useContext(ConversationDocumentContext);
+  const intl = useIntl();
   const [open, setOpen] = useState(false);
+  const [failedSources, setFailedSources] = useState<readonly string[]>([]);
+  const activeSource = failedSources.includes(source) ? block.savedPath ?? source : source;
   const resolveDirect = useCallback((path: string) =>
-    context.resolveGeneratedImageSource?.(block) ?? browserReadableImageSource(path, context.resolveImageSource),
-  [block, context.resolveGeneratedImageSource, context.resolveImageSource]);
-  const media = useConversationMediaSource(source, block.id, resolveDirect);
+    (path === source ? context.resolveGeneratedImageSource?.(block) : null) ?? browserReadableImageSource(path, context.resolveImageSource),
+  [block, source, context.resolveGeneratedImageSource, context.resolveImageSource]);
+  const media = useConversationMediaSource(activeSource, block.id, resolveDirect);
+  const markFailed = useCallback(() => {
+    setFailedSources(previous => previous.includes(activeSource) ? previous : [...previous, activeSource]);
+  }, [activeSource]);
+  useEffect(() => {
+    if (media.status === "unavailable") markFailed();
+  }, [media.status, markFailed]);
+  useEffect(() => {
+    if (failedSources.length) media.requestMeasurement("image-load");
+  }, [failedSources]);
+  if (failedSources.includes(activeSource)) return <div className="thread-generated-image-gallery" role="status">
+    <span>{intl.formatMessage({ id: "chat.image.unavailable", defaultMessage: "Image unavailable" })}</span>
+    <Button size="sm" variant="ghost" onClick={onRetry}>{intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}</Button>
+  </div>;
   if (media.source === null) return <GeneratedImagePending
     running={block.status === "pending" || block.status === "running"} loading={media.status === "loading"} />;
   const alt = "Generated image 1";
@@ -279,7 +300,7 @@ function GeneratedImage({ block, source }: { block: Image; source: string }) {
     <div className="thread-generated-image-preview-wrap">
       <button type="button" className="thread-generated-image-preview" data-testid="generated-image-preview"
         aria-label={alt} onClick={() => context.onOpenGeneratedImage ? context.onOpenGeneratedImage(block) : setOpen(true)}>
-        <img src={media.source} alt={alt} draggable onLoad={() => media.requestMeasurement("image-load")} />
+        <img src={media.source} alt={alt} draggable onError={markFailed} onLoad={() => media.requestMeasurement("image-load")} />
       </button>
       {context.onEditGeneratedImage ? <button type="button" className="thread-generated-image-edit"
         aria-label="Edit generated image 1" onClick={() => context.onEditGeneratedImage?.(block)}>Edit</button> : null}

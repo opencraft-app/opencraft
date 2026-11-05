@@ -947,7 +947,12 @@ export async function createWebWorkbenchApplicationSupervisor(
         throw error;
       }
       const stopQueryRecovery = bindHostQueryRecovery(runtime, profile.hostId, queryClient);
-      const stopUnavailable = runtime.resources.threads.subscribeUnavailable?.(threadId => {
+      const stopUnavailable = runtime.resources.threads.subscribeUnavailable?.((threadId, reason) => {
+        // An archived Thread is still a valid user object. Keep its route alive
+        // long enough for the Workbench to render a read-only archive state and
+        // offer an explicit restore action. Missing Threads have no recovery
+        // action and can still be retired from navigation immediately.
+        if (reason !== "not-found") return;
         const memoryScope = threadMemoryScope?.();
         queueMicrotask(() => {
           if (!disposed && memoryScope === threadMemoryScope?.()) forgetUnavailableThread?.(profile.hostId, threadId);

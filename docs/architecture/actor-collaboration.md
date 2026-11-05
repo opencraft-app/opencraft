@@ -262,3 +262,7 @@ Actor 资源记录授权，不能代其他 Hub、工作区或引擎授予权限�
 不能以新身份接口存在宣称历史会话、文件、模型凭据或执行资源已隔离。自然人的原有实例
 准入仍由既有成员策略决定，不因创建主体库自动启用门禁。执行适配、资源控制 API、
 领取队列时的权限重检与撤销 fencing 继续按前述纲领分步落地。
+
+### Private conversation catalog categories
+
+The authenticated Hub projects `accessMode` on authorized catalog rows and full-thread upserts. The native provider cannot select that value. A private row is returned only to its creator; the shared Runtime preserves that read-only field through catalog projection and cached restoration. The Sidebar's Mine category selects private rows; Shared selects the remaining visible rows. Category selection is presentation only and never grants access. Existing participation filters keep their meaning for shared rows; authorized private rows do not depend on loading product participation metadata. Access-change invalidation reconciles both categories without rebuilding the active conversation.

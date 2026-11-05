@@ -1,3 +1,4 @@
+import { useStableEvent } from "@opencraft/react-runtime";
 import { Button } from "@opencraft/design-system-web/button";
 import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, ComposeIcon as SquarePen, SearchIcon as Search, CheckIcon as Check } from "@opencraft/design-system-web/action-icons";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
@@ -17,9 +18,9 @@ import type {
   SidebarEntityCreationCommand,
   SidebarLayoutStore,
 } from "@opencraft/sidebar-layout";
-import type { ReactNode } from "react";
+import type { ReactNode, ComponentProps } from "react";
 import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
-import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadActionCallbacks, type ThreadActionCapabilities } from "./thread-management";
+import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadActionCallbacks, type ThreadActionCapabilities, type ThreadActionOwner } from "./thread-management";
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { SidebarThreadRowMenu, SidebarThreadBadge, SidebarFiltersMenu, SidebarListContextMenu } from "./sidebar-thread-menu";
 import { sidebarActivityDateHeadings, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
@@ -52,7 +53,7 @@ export interface SidebarCatalogItem {
   readonly initiallyCollapsed?: boolean;
   readonly content: ReactNode;
 }
-import { memo, useCallback, useEffect, useId, useMemo, useSyncExternalStore, useLayoutEffect, useRef, useState, useTransition } from "react";
+import { createContext, useContext, memo, useCallback, useEffect, useId, useMemo, useSyncExternalStore, useLayoutEffect, useRef, useState, useTransition } from "react";
 
 interface SidebarProps {
   threads: readonly SidebarThread[];
@@ -148,6 +149,53 @@ const SidebarThreadContent = memo(function SidebarThreadContent({ thread, attent
   return render(thread, attention);
 });
 
+interface SidebarThreadPresentationProps {
+  thread: SidebarThread; attention: boolean; pending: boolean; active: boolean; selected: boolean;
+  title: string; unread: boolean; activityId: string; disabled: boolean;
+  rename: boolean; archive: boolean; fork: boolean; delete: boolean; pin?: boolean; reference?: boolean;
+  threadBadge: ThreadBadgeContribution | null; threadListGrouping: ThreadListGroupingContribution | null;
+  grouping: ThreadListGroupingSnapshot; menus: SidebarThreadMenuStore; actionOwner: ThreadActionOwner;
+  presentationRoot: HTMLElement | null;
+  openConversation(hostId: string, threadId: string): void;
+}
+// A parent commit still reaches arbitrary badge components even when menu chrome
+// can reuse its semantic row props. No persistent state or second data owner.
+const SidebarParentRenderContext = createContext<unknown>(null);
+function LiveSidebarThreadBadge(props: ComponentProps<typeof SidebarThreadBadge>) {
+  useContext(SidebarParentRenderContext);
+  return <SidebarThreadBadge {...props} />;
+}
+const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props: SidebarThreadPresentationProps) {
+  const { thread, attention, pending, active, selected, title, unread, activityId, disabled,
+    threadBadge, threadListGrouping, grouping, menus, actionOwner, presentationRoot, openConversation } = props;
+  const target = { hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned };
+  const capabilities = { rename: props.rename, archive: props.archive, fork: props.fork,
+    delete: props.delete, pin: props.pin, reference: props.reference };
+  const changeOverlay = (kind: OpenSidebarThreadMenu["kind"], open: boolean) => {
+    if (open && disabled) return;
+    menus.update({ hostId: target.hostId, threadId: target.threadId, kind }, open);
+  };
+  const badge = threadBadge && !(grouping.mode && grouping.hideRowBadge) ? <LiveSidebarThreadBadge
+    store={menus} contribution={threadBadge} hostId={thread.connectionHostId} threadId={thread.id}
+    portalContainer={presentationRoot} onOpenChange={open => changeOverlay("badge", open)}
+    onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}
+  /> : null;
+  const metadata = sidebarActivityMetadata(thread);
+  return <SidebarThreadRowMenu key={sidebarThreadIdentity(thread)} store={menus} target={target} owner={actionOwner}
+    capabilities={capabilities} disabled={disabled} activityLabelId={activityId}
+    contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
+    onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
+    onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
+    <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
+      disabled={disabled} title={title} project={metadata.project}
+      tooltip={[title, metadata.project, thread.connectionHostLabel, thread.id].join(" · ")}
+      status={thread.status} unread={unread} goalActive={thread.goalActive}
+      schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
+        onOpenConversation={() => { openConversation(thread.connectionHostId, thread.id); }} />} badge={badge} badgePlacement={threadBadge?.placement}
+      onInvoke={() => { menus.close(); openConversation(thread.connectionHostId, thread.id); }} />
+  </SidebarThreadRowMenu>;
+});
+
 export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const {
     threads, activeHostId, activeThreadId, sidebarLayout, onSelectThread, onNewTask, onOpenSettings,
@@ -172,6 +220,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [pinnedLimit, setPinnedLimit] = useState(PINNED_PAGE_SIZE);
   const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
+  const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
   const actionOwner = useThreadActionOwner(threadActions ?? noThreadActions);
   useEffect(() => {
@@ -189,6 +238,10 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const text = (id: string, defaultMessage: string) => intl.formatMessage({ id, defaultMessage });
   const label = (value: ThreadListLabel) => typeof value === "string" ? value : intl.formatMessage(value);
   const identity = sidebarThreadIdentity;
+  const openRowConversation = useStableEvent((hostId: string, threadId: string) => {
+    onSelectThread(hostId, threadId);
+    dismiss?.();
+  });
   const references = useMemo(() => threads.filter(thread => thread.visibility !== "hidden").map(thread => ({
     hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
   })), [threads]);
@@ -215,21 +268,30 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     if (serverFilter.serverId && !names.has(serverFilter.serverId)) names.set(serverFilter.serverId, serverFilter.label);
     return [...names].sort((a, b) => a[1].localeCompare(b[1]));
   }, [threads, serverFilter]);
-  // Contributions can change membership without changing their object identity.
+  // Contributions may update their filter without replacing the contribution
+  // object. Read it on every commit; only the resulting membership is memoized.
   const allowedReferences = threadListGrouping?.filterThreads?.(references) ?? references;
   const allowedKeys = JSON.stringify(allowedReferences.map(ref => [ref.hostId, ref.threadId]));
   const needle = query.trim().toLocaleLowerCase();
   const { matching, matchingById, tree, matchingReferences, taskFlow } = useMemo(() => {
     const allowed = new Set((JSON.parse(allowedKeys) as [string, string][]).map(key => JSON.stringify(key)));
-  const matching = threads.filter(thread => thread.visibility !== "hidden" && allowed.has(identity(thread))
-    && (!serverFilter.serverId || thread.serverOrigin.serverId === serverFilter.serverId)
-    && (!needle || thread.title.toLocaleLowerCase().includes(needle)));
-  const matchingById = new Map(matching.map(thread => [identity(thread), thread]));
-  const tree = sidebarThreadTree(matching);
-  const roots = tree.roots.map(node => node.thread);
-  const rootIds = new Set(roots.map(identity));
-  const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
-  const taskFlow = groupThreadsByTaskFlow(roots);
+    const matching = threads.filter(thread => thread.visibility !== "hidden"
+      && (thread.accessMode === "private" || allowed.has(identity(thread)))
+      && (!serverFilter.serverId || thread.serverOrigin.serverId === serverFilter.serverId)
+      && (!needle || thread.title.toLocaleLowerCase().includes(needle)));
+    const matchingById = new Map(matching.map(thread => [identity(thread), thread]));
+    // Access categories have independent trees: a private child of a shared
+    // conversation (or the reverse) remains in its own visible section.
+    const sharedTree = sidebarThreadTree(matching.filter(thread => thread.accessMode !== "private"));
+    const mineTree = sidebarThreadTree(matching.filter(thread => thread.accessMode === "private"));
+    const tree = {
+      nodes: new Map([...sharedTree.nodes, ...mineTree.nodes]),
+      rootByIdentity: new Map([...sharedTree.rootByIdentity, ...mineTree.rootByIdentity]),
+    };
+    const roots = sharedTree.roots.map(node => node.thread);
+    const rootIds = new Set(roots.map(identity));
+    const matchingReferences = references.filter(ref => rootIds.has(JSON.stringify([ref.hostId, ref.threadId])));
+    const taskFlow = { ...groupThreadsByTaskFlow(roots), mine: mineTree.roots.map(node => node.thread) };
     return { matching, matchingById, tree, matchingReferences, taskFlow };
   }, [threads, references, allowedKeys, needle, serverFilter.serverId]);
   const applicableCatalogs = threadCatalogs.filter(catalog => !serverFilter.serverId
@@ -254,39 +316,24 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const active = activeHostId === thread.connectionHostId && activeThreadId === thread.id;
     const selected = pendingHostId !== null && pendingThreadId !== null ? pending : active;
     const title = pendingTitle?.(thread.connectionHostId, thread.id) ?? thread.title;
-    const target = { hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned };
     const activityId = `${rowIdPrefix}-${encodeURIComponent(identity(thread))}`;
     const disabled = thread.interactionAvailable === false;
     const capabilities = threadCapabilities?.(thread.connectionHostId, thread.id)
       ?? { rename: !!threadActions, archive: !!threadActions, fork: !!threadActions, delete: !!threadActions, pin: !!threadActions?.onSetPinned };
-    const changeOverlay = (kind: OpenSidebarThreadMenu["kind"], open: boolean) => {
-      if (open && disabled) return;
-      menus.update({ hostId: target.hostId, threadId: target.threadId, kind }, open);
-    };
-    const badge = threadBadge && !(grouping.mode && grouping.hideRowBadge) ? <SidebarThreadBadge
-      store={menus} contribution={threadBadge} hostId={thread.connectionHostId} threadId={thread.id}
-      portalContainer={presentationRoot} onOpenChange={open => changeOverlay("badge", open)}
-      onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}
-    /> : null;
-    const metadata = sidebarActivityMetadata(thread);
-    return <SidebarThreadRowMenu key={identity(thread)} store={menus} target={target} owner={actionOwner}
-      capabilities={capabilities} disabled={disabled} activityLabelId={activityId}
-      contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
-      onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
-      onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
-      <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
-        disabled={disabled} title={title} project={metadata.project}
-        tooltip={[title, metadata.project, thread.connectionHostLabel, thread.id].join(" · ")}
-        status={thread.status} unread={Boolean(thread.unread) && (threadListGrouping?.isParticipant?.({
-          hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
-        }) ?? true)} goalActive={thread.goalActive}
-        schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
-          onOpenConversation={() => { onSelectThread(thread.connectionHostId, thread.id); dismiss?.(); }} />} badge={badge} badgePlacement={threadBadge?.placement}
-        onInvoke={() => { menus.close(); onSelectThread(thread.connectionHostId, thread.id); dismiss?.(); }} />
-    </SidebarThreadRowMenu>;
-  // Parent props invalidate render-time readers even when their function identity
-  // is stable. Only local search/folding/page changes can reuse an unchanged row.
-  }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix]);
+    const unread = Boolean(thread.unread) && (threadListGrouping?.isParticipant?.({
+      hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
+    }) ?? true);
+    return <SidebarParentRenderContext.Provider value={props}>
+      <SidebarThreadPresentation thread={thread} attention={attention} pending={pending} active={active}
+        selected={selected} title={title} unread={unread} activityId={activityId} disabled={disabled}
+        rename={capabilities.rename} archive={capabilities.archive} fork={capabilities.fork}
+        delete={capabilities.delete} pin={capabilities.pin} reference={capabilities.reference}
+        threadBadge={threadBadge} threadListGrouping={threadListGrouping} grouping={grouping} menus={menus}
+        actionOwner={actionOwner} presentationRoot={presentationRoot} openConversation={openRowConversation} />
+    </SidebarParentRenderContext.Provider>;
+  // Parent commits always reevaluate dynamic readers. Scalar row presentation
+  // can reuse menu chrome while the badge still observes parent props updates.
+  }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix, openRowConversation]);
   const renderThread = (thread: SidebarThread, attention = false) => <SidebarThreadContent
     key={identity(thread)} thread={thread} attention={attention} render={renderThreadContent} />;
   const renderTreeNode = (node: SidebarThreadTreeNode<SidebarThread>, attention: boolean): ReactNode => (
@@ -303,7 +350,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention)}</ul> : null;
   };
   const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void) => {
-    if (!rows.length) return null;
+    if (!rows.length && key !== "mine") return null;
     const collapsed = folded[key] ?? false;
     const visible = limit === undefined ? rows : rows.slice(0, limit);
     const dates = key === "recent" ? sidebarActivityDateHeadings(visible, Date.now(), intl.locale) : new Map<SidebarThread, string>();
@@ -313,6 +360,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
       </button></h3>
       <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
+        {key === "mine" ? <div className="sidebar-access-description">{text("sidebar.access.onlyYou", "Only you can see these conversations")}</div> : null}
+        {key === "mine" && !rows.length ? <div className="sidebar-activity-empty">{text("sidebar.access.empty", "No private conversations yet")}</div> : null}
         {visible.map(thread => <div key={identity(thread)}>
           {dates.has(thread) ? <h4 className="sidebar-activity-group__heading">{dates.get(thread)}</h4> : null}
           {renderThreadTree(thread, key === "attention")}
@@ -323,6 +372,15 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     </section>;
   };
   const groupedSections = grouping.mode && threadListGrouping ? threadListGrouping.project(matchingReferences) : null;
+  const visibleSections = [
+    ...(groupedSections ?? Object.entries(taskFlow).filter(([id]) => id !== "mine").map(([id, rows]) => ({
+      id, collapsed: folded[id] ?? false,
+      threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
+        .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })),
+    }))),
+    { id: "mine", collapsed: folded.mine ?? false,
+      threads: taskFlow.mine.slice(0, mineLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
+  ];
   // Row menus, the badge and the list display menu are one exclusive overlay
   // owner; an owner whose row is no longer visible or no longer accepts
   // interaction must not keep the menu open.
@@ -335,31 +393,23 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const key = JSON.stringify([current.hostId, current.threadId]);
     const target = matchingById.get(key);
     const rootKey = tree.rootByIdentity.get(key) ?? key;
-    const visible = target && target.interactionAvailable !== false && (groupedSections
-      ? groupedSections.some(group => !group.collapsed && group.threads.some(ref =>
-          JSON.stringify([ref.hostId, ref.threadId]) === rootKey))
-      : Object.entries(taskFlow).some(([id, rows]) => !(folded[id] ?? false)
-          && rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
-            .some(row => identity(row) === rootKey)));
+    const visible = target && target.interactionAvailable !== false && visibleSections.some(group =>
+      !group.collapsed && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === rootKey));
     if (!visible) menus.close();
   });
   const selectedKey = JSON.stringify(pendingHostId !== null && pendingThreadId !== null
     ? [pendingHostId, pendingThreadId] : [activeHostId, activeThreadId]);
   const selectedRootKey = tree.rootByIdentity.get(selectedKey) ?? selectedKey;
-  const selectedSection = groupedSections
-    ? groupedSections.find(group => group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRootKey))
-    : Object.entries(taskFlow).map(([id, rows]) => ({ id, collapsed: folded[id] ?? false,
-        threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
-          .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) }))
-      .find(group => group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === selectedRootKey));
+  const selectedSection = visibleSections.find(group => group.threads.some(ref =>
+    JSON.stringify([ref.hostId, ref.threadId]) === selectedRootKey));
   const selectedSectionId = selectedSection?.id;
   const selectedVisible = selectedSection !== undefined && !selectedSection.collapsed;
-  const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit });
+  const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit, mineLimit });
   useLayoutEffect(() => {
     const previous = previousSelection.current;
-    previousSelection.current = { key: selectedKey, pinnedLimit, recentLimit };
+    previousSelection.current = { key: selectedKey, pinnedLimit, recentLimit, mineLimit };
     // Revealing more history is a reading action, not a new navigation intent.
-    if (previous.key === selectedKey && (pinnedLimit > previous.pinnedLimit || recentLimit > previous.recentLimit)) return;
+    if (previous.key === selectedKey && (pinnedLimit > previous.pinnedLimit || recentLimit > previous.recentLimit || mineLimit > previous.mineLimit)) return;
     if (!selectedVisible) return;
     const content = contentViewport.current;
     const row = content?.querySelector<HTMLElement>(".sidebar-activity-item.is-selected");
@@ -378,7 +428,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const item = row.getBoundingClientRect();
     if (item.top < top) viewport.scrollTop += item.top - top;
     else if (item.bottom > bottom) viewport.scrollTop += Math.min(item.bottom - bottom, item.top - top);
-  }, [selectedKey, selectedSectionId, selectedVisible, pinnedLimit, recentLimit]);
+  }, [selectedKey, selectedSectionId, selectedVisible, pinnedLimit, recentLimit, mineLimit]);
   const navigationAction = (action: SidebarActionItem) => <SidebarNavigationItem key={action.id} title={action.title}
     active={action.active} icon={<SidebarContributionIcon name={action.icon} />} onInvoke={() => dismissAfter(action.onInvoke)} />;
   const retryLabel = text("sidebar.catalog.retry", "Retry");
@@ -434,8 +484,9 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
             </section>) : <>
               {renderFlowSection("attention", text("sidebar.flow.attention", "Needs your attention"), taskFlow.attention)}
               {renderFlowSection("pinned", text("sidebar.flow.pinned", "Pinned"), taskFlow.pinned, pinnedLimit, setPinnedLimit)}
-              {renderFlowSection("recent", text("sidebar.flow.recent", "Recent"), taskFlow.recent, recentLimit, setRecentLimit)}
             </>}
+            {renderFlowSection("mine", text("sidebar.access.mine", "Mine"), taskFlow.mine, mineLimit, setMineLimit)}
+            {!groupedSections ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"), taskFlow.recent, recentLimit, setRecentLimit) : null}
             {empty ? <div className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</div> : null}
             {catalogErrors.map(catalog => retryFeedback(catalog.hostId, intl.formatMessage(catalog.cachedAt !== undefined
               ? { id: "sidebar.catalog.cached", defaultMessage: "Showing saved {server} conversations; refresh failed" }
