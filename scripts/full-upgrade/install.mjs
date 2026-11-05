@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { failureSummary } from './failure.mjs';
 import { constants, existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 // Explicit official-installation adapter. This is not an HTTP installation API.
 import { readFile, mkdir, chmod, chown, cp, lstat, realpath, symlink, rename } from 'node:fs/promises';
@@ -154,5 +155,5 @@ export async function main(args = process.argv.slice(2)) {
   process.stdout.write(JSON.stringify(await install(options)) + '\n');
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
-  main().catch(() => { process.stderr.write('upgrade provisioning failed\n'); process.exitCode = 1; });
+  main().catch(error => { process.stderr.write(JSON.stringify({ opencraftFailure: failureSummary(error) }) + '\n'); process.exitCode = 1; });
 }
