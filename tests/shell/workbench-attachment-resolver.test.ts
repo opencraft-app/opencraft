@@ -243,7 +243,7 @@ test("Markdown media paths remain Host filesystem paths, not browser file URLs",
   assert.equal(mediaMimeType("/tmp/unknown.bin"), "application/octet-stream");
 });
 
-test("Markdown AppServer media reads share Blob cache and release their object URLs", async () => {
+test("Markdown media retains shared snapshots and URLs until the resource owner disposes", async () => {
   let reads = 0;
   const runtime = {
     resources: {
@@ -269,12 +269,24 @@ test("Markdown AppServer media reads share Blob cache and release their object U
     source: "preview.png",
   };
 
+  assert.equal(load.getSnapshot!(request).status, "loading");
   const first = (await load(request))!; const second = (await load(request))!;
+  assert.equal(first.source, second.source);
   assert.ok(first.source.startsWith("blob:"));
   assert.deepEqual(new Uint8Array(await (await fetch(first.source)).arrayBuffer()), new Uint8Array([1, 2, 3]));
   first.release?.(); second.release?.();
+  const recreated = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "ssh:demo");
+  assert.equal(recreated.getSnapshot!({ ...request, documentId: "another-view" }).value?.source, first.source);
+  const third = (await recreated(request))!;
+  assert.equal(third.source, first.source); third.release?.();
   assert.equal(reads, 1);
+  const pinned = (await load(request))!;
+  await ctx.blobResources.invalidate((await import("../../apps/workbench-web/src/runtime/blob-files")).fileBlobResource(runtime, "ssh:demo", "/workspace/demo/preview.png"));
+  assert.deepEqual(new Uint8Array(await (await fetch(pinned.source)).arrayBuffer()), new Uint8Array([1, 2, 3]), "legacy source lease remains valid during cache invalidation");
+  pinned.release?.();
   await fiber.dispose();
+  assert.equal(load.getSnapshot!(request).status, "unavailable");
+  await assert.rejects(fetch(first.source));
 });
 
 test("historical user attachments use the same Host media boundary as Markdown", () => {
@@ -423,4 +435,85 @@ test("a disconnected chunk upload restarts at zero with fresh upload ID and orig
   assert.deepEqual(cancels, [chunks[0]?.uploadId]);
   assert(chunks.every(chunk => chunk.clientAttachmentId === "attachment-1"));
   assert.equal(fixture.listeners.size, 0);
+});
+
+test("shared media never reuses a source across connection generations", async () => {
+  let generation = 1, reads = 0;
+  const runtime = { resources: { host: { getConnectionGeneration: () => generation },
+    fileSystem: { async readFile() { reads++; return { dataBase64: "AQID" }; } } } } as unknown as AppServerWorkbenchRuntime;
+  const ctx = new Context(), fiber = ctx.plugin(BlobResourceService); await fiber;
+  const load = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "host");
+  const request = { source: "a.png", resolvedTarget: "file:///a.png", resourceKind: "file" as const, documentId: "image", hostId: "host", conversationId: "thread", cwd: "/" };
+  try {
+    const first = (await load(request))!; first.release?.();
+    generation++;
+    assert.equal(load.getSnapshot!(request).status, "loading");
+    const second = (await load(request))!; assert.notEqual(second.source, first.source); second.release?.();
+    assert.equal(reads, 2);
+  } finally { await fiber.dispose(); }
+});
+
+test("ordinary media refresh bypasses old file bytes without withdrawing the displayed source", async () => {
+  let reads = 0, fail = false;
+  const runtime = { resources: { host: {}, fileSystem: { async readFile() {
+    reads++; if (fail) throw new Error("offline"); return { dataBase64: reads === 1 ? "AQID" : "BAUG" };
+  } } } } as unknown as AppServerWorkbenchRuntime;
+  const ctx = new Context(), fiber = ctx.plugin(BlobResourceService); await fiber;
+  const load = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "host");
+  const request = { source: "a.png", resolvedTarget: "file:///a.png", resourceKind: "file" as const, documentId: "image", hostId: "host", conversationId: "thread", cwd: "/" };
+  const {fileBlobResource} = await import("../../apps/workbench-web/src/runtime/blob-files");
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    const first = (await load(request))!;
+    fail = true; await ctx.blobResources.refresh(fileBlobResource(runtime, "host", "/a.png")); await tick();
+    assert.equal(load.getSnapshot!(request).value?.source, first.source);
+    assert.equal(load.getSnapshot!(request).status, "ready"); assert.ok(load.getSnapshot!(request).error);
+    fail = false; await ctx.blobResources.refresh(fileBlobResource(runtime, "host", "/a.png")); await tick();
+    const fresh = load.getSnapshot!(request); assert.notEqual(fresh.value?.source, first.source);
+    assert.deepEqual(new Uint8Array(await (await fetch(fresh.value!.source)).arrayBuffer()), new Uint8Array([4, 5, 6]));
+    assert.equal(reads, 3); assert.equal(fresh.error, null);
+    assert.deepEqual(new Uint8Array(await (await fetch(first.source)).arrayBuffer()), new Uint8Array([1, 2, 3])); first.release?.();
+  } finally { await fiber.dispose(); }
+});
+
+test("replacement image preparation preserves old media on decode failure and releases aborted URLs", async () => {
+  const originalImage = Object.getOwnPropertyDescriptor(globalThis, "Image");
+  const decoding: { src: string; reject: (error: Error) => void }[] = [];
+  class PreparingImage {
+    src = "";
+    decode() { return new Promise<void>((_resolve, reject) => { decoding.push(Object.assign(this, { reject })); }); }
+  }
+  Object.defineProperty(globalThis, "Image", { configurable: true, value: PreparingImage });
+  const runtime = { resources: { host: {}, fileSystem: { async readFile() { return { dataBase64: "AQID" }; } } } } as unknown as AppServerWorkbenchRuntime;
+  const ctx = new Context(), fiber = ctx.plugin(BlobResourceService); await fiber;
+  const load = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "host");
+  const request = { source: "a.png", resolvedTarget: "file:///a.png", resourceKind: "file" as const, documentId: "image", hostId: "host", conversationId: "thread", cwd: "/" };
+  const { fileBlobResource } = await import("../../apps/workbench-web/src/runtime/blob-files");
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+  try {
+    const first = (await load(request))!;
+    assert.equal(decoding.length, 0); // The cold path does not wait for replacement preparation.
+    await ctx.blobResources.refresh(fileBlobResource(runtime, "host", "/a.png")); await tick();
+    assert.equal(decoding.length, 1);
+    assert.equal(load.getSnapshot!(request).value?.source, first.source);
+    assert.equal(load.getSnapshot!(request).isFetching, true);
+    const failedUrl = decoding[0]!.src;
+    decoding[0]!.reject(new Error("invalid image")); await tick();
+    assert.equal(load.getSnapshot!(request).value?.source, first.source);
+    assert.match(String(load.getSnapshot!(request).error), /invalid image/);
+    await assert.rejects(fetch(failedUrl));
+    await ctx.blobResources.refresh(fileBlobResource(runtime, "host", "/a.png")); await tick();
+    assert.equal(decoding.length, 2);
+    const abortedUrl = decoding[1]!.src;
+    first.release?.(); await tick();
+    assert.equal(decoding[1]!.src, "");
+    assert.equal(load.getSnapshot!(request).isFetching, false);
+    assert.equal(load.getSnapshot!(request).value?.source, first.source);
+    await assert.rejects(fetch(abortedUrl));
+    decoding[1]!.reject(new Error("aborted decode")); await tick();
+  } finally {
+    await fiber.dispose();
+    if (originalImage) Object.defineProperty(globalThis, "Image", originalImage);
+    else Reflect.deleteProperty(globalThis, "Image");
+  }
 });

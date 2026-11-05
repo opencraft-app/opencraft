@@ -481,3 +481,25 @@ merged with its native/storage children or with foreground RPC latency. Causal
 trace links remain available for attribution; adjacency in time is insufficient.
 No storage schema migration is required. Observe must retain these optional event fields; installations already accepting them need no observer update. Older consumers that drop the metadata can only classify those dependencies as unknown. This log/query
 classification does not change refresh scheduling, cursor recovery or timeouts.
+
+
+## Chat image diagnostics
+
+`client_signal/chat_media` records the policy, source or decode phase, the Host
+or direct transport, source/content classes, and success/failure. Optional HTTP
+status and redirect facts come from the file transport; RPC codes are bounded.
+`mediaDocumentId` is a SHA256 message-ID digest used to correlate one document,
+not a distributed trace or an access grant. No message text, path, URL, alt,
+response body, credential or raw error is exported. Events that precede telemetry
+activation are bounded to 32 entries and use the existing observation queue.
+
+
+`mediaPolicy` distinguishes renderer resource policy from an enforced browser
+CSP image policy. It reports only `resource` or `csp`, never directive text or
+the blocked URL. HTTP errors preserve their original status without auth fallback.
+
+
+Chat media failures also report the closed `mediaError` class (`none`, `http`, `type`, `abort`, `dom`, `rpc`, `other`). This is classification evidence only: TypeError is not proof of a particular network cause. Error names, messages and URLs are never exported.
+
+
+Media reads report mediaReadAttempts in the closed range 1–5 when known, and network failures report mediaReadPhase=fetch/body. Successful prepared media retain the attempts used to acquire those bytes; cached data need not create a new transport-attempt count. No source URLs, paths, response bodies or raw error text are exported.

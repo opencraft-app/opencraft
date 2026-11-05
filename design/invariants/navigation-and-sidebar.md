@@ -667,3 +667,18 @@ viewport behavior remain the same. Conversation positioning notices keep their
 own eagerly available styles rather than depending on the search dialog having
 been opened. Feature styles consume typography mixins; global text utilities
 remain at the application style owner.
+
+
+## Private conversation section
+
+Conversations exposes Pinned, Mine and Recent as peer collapsible sections, in
+that order. Shared flow keeps its existing attention and contributed grouping;
+Mine remains before Recent in either presentation. Mine contains
+only visible private conversations from the trusted catalog, including pinned
+private conversations. Shared and private trees are projected independently so
+cross-access parent links cannot pull a row into the wrong section. Search and
+server filtering apply to both, without a Mine/Shared tab switch. Mine uses the
+same section heading, folding and paginated row controls as the shared flow, with
+its own page limit and empty state. Permission updates move rows between sections
+without navigating or rebuilding the active conversation or draft. Sidebar
+classification never grants access; the Hub remains the permission authority.

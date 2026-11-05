@@ -80,7 +80,7 @@ function useWorkspaceFileWatches(paths: readonly string[], hostId: string) {
     if (runtime.resources.host.canRequest?.("fs/watch") === false) return;
     void Promise.all(uniquePaths.map(async (path) => {
       const lease = await runtime.resources.fileSystem.watch(path, (changedPaths) => {
-        void Promise.all(changedPaths.map(changed => blobs.invalidate(fileBlobResource(runtime, hostId, changed)))).then(() => queryClient.invalidateQueries({
+        void Promise.all(changedPaths.map(changed => blobs.refresh(fileBlobResource(runtime, hostId, changed)))).then(() => queryClient.invalidateQueries({
           queryKey: ["appserver-fs", hostId],
         }));
       });
@@ -157,7 +157,7 @@ export function WorkspaceResourcePreviewPanel(props: PanelRendererProps) {
   return <WorkspaceResourcePanel {...props} previewOnly />;
 }
 
-const htmlPreviewPolicy = "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
+const htmlPreviewPolicy = "default-src 'none'; img-src data: blob:; media-src data: blob:; font-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'";
 const htmlPreviewAnimationTags = new Set(["animate", "animateMotion", "animateTransform", "set", "discard"]);
 
 function removeHtmlPreviewNavigation(document: DefaultTreeAdapterTypes.Document): void {
@@ -216,7 +216,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
   };
   const loadMediaSource = useMemo(
     () => createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
-    [runtime, blobs, snapshot.hostId],
+    [runtime, blobs, snapshot.hostId, snapshot.connectionGeneration],
   );
   // Start focused on the preview. Visibility belongs to this panel and stays
   // unchanged while browsing files; toggling never remounts the viewer.
@@ -345,7 +345,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
       previewOnly,
       target,
       (path, content) => runtime.resources.fileSystem.writeFile(path, content),
-      (hostId, path) => blobs.invalidate(fileBlobResource(runtime, hostId, path)),
+      (hostId, path) => blobs.refresh(fileBlobResource(runtime, hostId, path)),
     ),
     onSuccess: async (_result, target) => {
       await queryClient.invalidateQueries({
@@ -537,7 +537,7 @@ export function WorkspaceResourcePanel({ tab, ownerId, active, previewOnly = fal
                 className="workspace-file-html"
                 key={documentId}
                 referrerPolicy="no-referrer"
-                sandbox=""
+                sandbox="allow-scripts"
                 srcDoc={htmlPreview}
                 title={`${workspaceResourceBasename(selectedPath)} ${intl.formatMessage({ id: "panel.markdownPreview", defaultMessage: "Preview" })}`}
               />

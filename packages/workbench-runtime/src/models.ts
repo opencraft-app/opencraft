@@ -11,6 +11,8 @@ export interface WorkbenchThread {
   parentThreadId?: string | null;
   /** Hidden conversations remain addressable through their parent. */
   visibility?: "visible" | "hidden";
+  /** Authenticated directory policy; private rows are visible only to their creator. */
+  accessMode?: "shared" | "private";
   time: string;
   /** Canonical AppServer recency timestamp in seconds. */
   updatedAt: number;

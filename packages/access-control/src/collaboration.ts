@@ -84,7 +84,7 @@ export class Collaboration {
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution">) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution">, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
     if (typeof execution.hostId !== 'string' || !execution.hostId.trim() || execution.hostId.length > 256 || /[\x00-\x1f]/u.test(execution.hostId)) throw new CollaborationError(500, 'execution_host_required');
     const managed = openServerRepository(path, "actor-collaboration");
     this.#closeDatabase = managed.close;
@@ -164,7 +164,7 @@ export class Collaboration {
     });
   }
   conversationAllowed(context: ActorContext, ref: ConversationRef, action: string): boolean {
-    if (this.#closed || !this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.#owns(ref.serverId)) return false;
+    if (this.#closed || !this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.#owns(ref.serverId) || !this.resourceAccess(context,ref)) return false;
     const owned = this.orchestration.relation(ref.threadId);
     if (owned?.serverId === ref.serverId) return owned.ownerActorId === context.actorId || this.actors.can(context, encodeConversationRef(ref), action);
     // Historical conversations retain their explicitly shared instance scope.

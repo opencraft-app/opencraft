@@ -538,3 +538,20 @@ window; native ACK results and no-progress recovery remain required.
 A retained worker rejecting display-rate as unsupported is probed only once
 per native generation. Transport failures remain retryable; late old-worker
 rejections cannot change the replacement generation.
+
+
+### Nonfatal local input feedback
+
+Editing, clipboard and human-control refusals use a separate finite semantic
+feedback port. The logical Page forwards only current-record feedback to its
+application consumers; it does not change navigation state, history, loading,
+revision or durable metadata. A per-Workbench bridge under the existing scoped
+notification provider shows a localized warning keyed by Page and operation.
+Multiple views do not create duplicate subscribers; roots and their histories
+remain isolated. No raw RPC/native message is displayed through this port.
+
+Close/dispose retires old feedback ownership. Genuine navigation, connection
+and decoder failures retain the existing page-error path. Successful editing
+never clears an unrelated navigation failure. Standalone legacy surface ports
+without the new callback retain their previous error fallback; the actual Page
+runtime always supplies the nonfatal input channel.

@@ -4,26 +4,7 @@ import { createServer } from 'vite';
 import react from '@vitejs/plugin-react';
 const output = process.env.OPENCRAFT_SUMMARY_EVIDENCE ?? '/tmp/opencraft-thread-summary';
 await mkdir(output, { recursive: true });
-const source = `
-import React,{useState} from 'react';
-import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
-import {createWorkbenchPanelReactRuntime} from '@opencraft/workbench-panels-react';
-import {ThreadSummaryPlugin} from '@opencraft/plugin-thread-summary';
-import {WorkbenchPanelRuntimeProvider} from '/apps/workbench-web/src/runtime/panel-runtime-context';
-import {ConversationSummaryButton,ConversationSummarySurface,ConversationSummaryLayout,useConversationSummary} from '/apps/workbench-web/src/components/conversation-summary';
-import {initializeAppearanceTheme,setThemePreference,setAppearanceThemeId,coreThemeId} from '/apps/workbench-web/src/appearance-theme';
-import {UiPreferencesRuntime,MemoryUiPreferenceStore} from '@opencraft/ui-preferences';
-import {bindInteractionDensity} from '/apps/workbench-web/src/runtime/interaction-density';
-import {bindTouchInteractionMode} from '/apps/workbench-web/src/runtime/pointer-modality';
-import '/apps/workbench-web/src/styles/app.scss';
-initializeAppearanceTheme();
-const preferences=await UiPreferencesRuntime.open({installation:new MemoryUiPreferenceStore()});bindInteractionDensity(document,preferences);bindTouchInteractionMode(document);
-const runtime=await createWorkbenchPanelReactRuntime();const fiber=await runtime.install(ThreadSummaryPlugin);
-const timeline={authoritative:true,frames:[{blocks:[{type:'todo',entries:Array.from({length:16},(_,i)=>({id:String(i),text:['Inspect the current workspace','Build the task information module','Verify desktop and mobile layouts'][i%3]+' '+i,status:i<2?'complete':i===2?'in-progress':'pending'}))}, {type:'patch',changes:['shell-and-layout.md','use-touch-menu-trigger.ts','smoke-composer-add-menu-layout.ts','smoke-home-composer-focus.ts','smoke-sidebar-menu-touch.ts','一个用于验证中英文长文件名截断和扩展名保留的组件.tsx','src/index.ts','tests/index.ts','package.json','styles/task-information.scss','removed-config.json'].map((name,i)=>({path:'/workspace/project/'+name,kind:i===10?'delete':i%3===0?'add':'modify'}))},{type:'command-execution',id:'background',command:'npm run typecheck --workspace @opencraft/workbench-web',status:'running'}, {type:'subagent',id:'agent',label:'Design review',agentId:null,tool:'spawnAgent',status:'complete',activityKind:'started',receiverThreadIds:['child'],agentStates:{child:{status:'running'}},agentPath:null}]}]};
-function App(){const[scope,setScope]=useState('account/host/one');const[filesOnly,setFilesOnly]=useState(false);const[frameWidth,setFrameWidth]=useState(null);const[empty,setEmpty]=useState(false);const summary=useConversationSummary(scope,true);window.fixture={setFrameWidth,setEmpty,setDensity:value=>preferences.set('interface.touchFriendly',value),setFilesOnly,setScope,setThemePreference,setAppearanceThemeId,coreThemeId,dispose:()=>fiber.dispose(),runtime};
-return <WorkbenchPanelRuntimeProvider runtime={runtime}><div style={{height:'100dvh',width:frameWidth??'100%',maxWidth:'100%',display:'flex',flexDirection:'column'}}><header style={{height:56,display:'flex',alignItems:'center',justifyContent:'space-between',padding:'0 24px'}}><span>Workspace / Task information</span><ConversationSummaryButton controller={summary}/></header><div className='local-conversation-page' style={{flex:1,minHeight:0}}><ConversationSummaryLayout controller={summary}><div className='conversation-summary-reading'><div style={{maxWidth:720,margin:'auto',padding:'32px 24px'}}><h1>Build a task information panel</h1><p>Keep progress, files and activity close to the conversation.</p><textarea aria-label='Draft' defaultValue='Preserve this draft' style={{width:'100%',marginTop:48}}/></div></div><ConversationSummarySurface controller={summary} context={{scopeKey:scope,title:'Desktop server onboarding',timeline:empty?null:filesOnly?{...timeline,frames:[{blocks:[timeline.frames[0].blocks[1]]}]}:timeline,goal:filesOnly||empty?null:{objective:'Make ongoing work easy to follow, on desktop and on the phone.',status:'active'},current:scope!=='cached',onOpenResource:path=>window.opened=path,onOpenThread:id=>window.opened=id}}/></ConversationSummaryLayout></div></div></WorkbenchPanelRuntimeProvider>}
-function Root(){return <WorkbenchPanelRuntimeProvider runtime={runtime}><App/></WorkbenchPanelRuntimeProvider>}
-createIntlTestRoot(document.getElementById('root')).render(<Root/>);`;
+import { conversationSummarySource as source } from "../../../tests/fixtures/conversation-summary-source";
 const previewSource = process.env.OPENCRAFT_SUMMARY_PREVIEW_PORT ? source
   .replace('length:16', 'length:3')
   .replace("+' '+i", '')

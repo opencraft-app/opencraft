@@ -1712,6 +1712,15 @@ export function createAppServerWorkbenchRuntime(
         }
       });
       removeGoalNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === 'opencraft/thread-access/revoked' && (notification.params as {local?:boolean}).local !== false) {
+          const threadId = (notification.params as {threadId:string}).threadId;
+          catalogMetadata.delete(threadId); unlistedForks.delete(threadId);
+          markThreadUnavailable(threadId,'not-found');
+          const binding = bindings.get(threadId);
+          if (binding) disposeBinding(binding);
+          publish();
+          return;
+        }
         if (notification.method === "opencraft/turn-recovery/updated") {
           const value = notification.params as { threadId: string; recovery: import("@opencraft/appserver-protocol").TurnRecoveryNotice | null };
           turnRecovery.observe(value.threadId, value.recovery);

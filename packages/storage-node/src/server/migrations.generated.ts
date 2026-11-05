@@ -9,6 +9,11 @@ export const SERVER_MIGRATIONS = [
     "version": 2,
     "name": "0001_execution_capability_bindings",
     "sql": "CREATE TABLE `execution_capability_bindings` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`server_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`session_json` text\n) STRICT;\n--> statement-breakpoint\nCREATE UNIQUE INDEX `execution_capability_bindings_server_id_thread_id_unique` ON `execution_capability_bindings` (`server_id`,`thread_id`);"
+  },
+  {
+    "version": 3,
+    "name": "0002_thread_access_and_notes",
+    "sql": "CREATE TABLE `thread_access` (\n\t`server_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`creator_actor_id` text,\n\t`access_mode` text NOT NULL,\n\t`revision` integer NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tPRIMARY KEY(`server_id`, `thread_id`),\n\tCONSTRAINT \"thread_access_mode\" CHECK(access_mode IN ('shared','private')),\n\tCONSTRAINT \"thread_access_revision\" CHECK(revision>=1),\n\tCONSTRAINT \"thread_access_creator\" CHECK(access_mode!='private' OR creator_actor_id IS NOT NULL)\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `thread_access_audit` (\n\t`id` integer PRIMARY KEY NOT NULL,\n\t`server_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`access_mode` text NOT NULL,\n\t`revision` integer NOT NULL,\n\t`at` integer NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `thread_notes` (\n\t`server_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`state` blob NOT NULL,\n\t`updated_at` integer NOT NULL,\n\tPRIMARY KEY(`server_id`, `thread_id`)\n) STRICT;\n"
   }
 ] as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

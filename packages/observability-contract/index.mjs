@@ -13,14 +13,20 @@ export const components = ['web', 'gateway', 'core', 'codex', 'dsh', 'pi', 'obse
 export const origins = ['interactive', 'automation', 'operator', 'probe', 'unknown'];
 const id = /^[a-zA-Z0-9_.:-]{1,128}$/u;
 const revision = /^[a-zA-Z0-9_.:+-]{1,128}$/u;
-const ids = ['traceId','spanId','parentSpanId','linkedTraceId','linkedSpanId','gatewayPairId','eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
+const ids = ['mediaDocumentId','traceId','spanId','parentSpanId','linkedTraceId','linkedSpanId','gatewayPairId','eventId', 'producerId', 'attemptId', 'operationId', 'executionId', 'recoveryId', 'requestId', 'incidentRef', 'pairId', 'hostId', 'site', 'errorCode'];
 const enums = {
+  mediaPhase: ['policy','source','decode'], mediaSource: ['file','resource','external','data','other'],
+  mediaTransport: ['host','direct'], mediaRedirected: [0,1],
+  mediaContent: ['image','html','other','unknown'],
+  mediaPolicy: ['resource','csp'],
+  mediaError: ['none','http','type','abort','dom','rpc','other'],
+  mediaReadPhase: ['fetch','body'],
   caller: ['sidebar-catalog','thread-catalog','history','client','server-refresh'],
   trigger: ['initial-load','auto-next-page','connection-ready','catalog-notification','explicit-retry','explicit-next-page','query-refetch','cache-refresh','direct-request','unknown'],
   traceRole: ['trigger','query','cause-link','client-rpc','gateway-rpc','native-rpc','background-refresh','storage-work'],
   refreshReason: ['initial-discovery','cached-head','watched-read','repair'],
   directoryRestart: ['source-invalidated'],
-  clientSignal: ['transport_failure','rpc_loop_gap','catalog_query','visible','hidden','freeze','resume','pagehide','pageshow','online','offline','timer_gap','longtask','late_response'],
+  clientSignal: ['chat_media','transport_failure','rpc_loop_gap','catalog_query','visible','hidden','freeze','resume','pagehide','pageshow','online','offline','timer_gap','longtask','late_response'],
   transportFailure: ['socket-error','socket-close','handshake-timeout','probe-timeout','invalid-response'],
   transportPhase: ['connecting','socket-open','ready'], networkState: ['online','offline','unknown'],
   socketReadyState: [0,1,2,3], socketWasClean: [0,1],
@@ -50,6 +56,15 @@ export function sanitizeEvent(input, now = Date.now()) {
   if (event.gatewayPairId && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(event.gatewayPairId)) return null;
   if (!event.eventId || !event.producerId) return null;
   if(event.errorCode && !/^(?:rpc:-?\d{1,10}|none|initialize|thread-list|timeout|connection|not-ready|unavailable|unknown)$/u.test(event.errorCode))return null;
+  if (event.mediaDocumentId !== undefined && !/^[a-f0-9]{64}$/u.test(event.mediaDocumentId)) return null;
+  if (input.mediaHttpStatus !== undefined) {
+    if (!Number.isSafeInteger(input.mediaHttpStatus) || input.mediaHttpStatus < 100 || input.mediaHttpStatus > 599) return null;
+    event.mediaHttpStatus = input.mediaHttpStatus;
+  }
+  if (input.mediaReadAttempts !== undefined) {
+    if (!Number.isSafeInteger(input.mediaReadAttempts) || input.mediaReadAttempts < 1 || input.mediaReadAttempts > 5) return null;
+    event.mediaReadAttempts = input.mediaReadAttempts;
+  }
   for (const key of ['socketBufferedBytes','lastMessageAgoMs','probeElapsedMs','lastProbeRttMs','transportTimeoutMs','timerLateMs','pagePauseMs','pageResumeAgoMs','pageHiddenForMs']) if (input[key] !== undefined) {
     if (!Number.isSafeInteger(input[key]) || input[key] < 0) return null;
     event[key] = input[key];

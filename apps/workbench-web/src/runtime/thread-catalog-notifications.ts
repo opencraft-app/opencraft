@@ -27,6 +27,28 @@ export function bindThreadCatalogNotifications(client: Pick<AppServerClient, "su
   let pending = Promise.resolve();
   const stop = client.subscribeNotification(notification => {
     if (disposed || !isCurrent()) return;
+    if (notification.method === 'opencraft/thread-access/changed') {
+      void queryClient.invalidateQueries({queryKey:['thread-access']});
+      void queryClient.invalidateQueries({predicate:query => query.queryKey.some(key => typeof key === 'string' && key.includes('tasks'))});
+    }
+    if (notification.method === 'opencraft/thread-access/revoked') {
+      const contains = (value: unknown): boolean => {
+        if (Array.isArray(value)) return value.some(contains);
+        if (!value || typeof value !== 'object') return false;
+        const row = value as Record<string,unknown>;
+        return row.threadId === (notification.params as {threadId:string}).threadId || Object.values(row).some(contains);
+      };
+      queryClient.removeQueries({predicate:query => contains(query.state.data)});
+    }
+    if (notification.method === 'opencraft/thread-access/revoked' && (notification.params as {local?:boolean}).local !== false) {
+      const threadId = (notification.params as {threadId:string}).threadId;
+      // Remove cached title immediately, including catalog facts not yet acknowledged by a read.
+      receiveThreadCatalogChange(queryClient,hostId,{version:1,source:`access:${threadId}`,revision:Date.now(),change:{type:'remove',threadId}});
+      const remove = (data: any): any => Array.isArray(data) ? data.filter(row => row?.id !== threadId)
+        : data && typeof data === 'object' ? {...data,...(Array.isArray(data.pages) ? {pages:data.pages.map(remove)} : {}),...(Array.isArray(data.data) ? {data:data.data.filter((row:any) => row?.id !== threadId)} : {})} : data;
+      queryClient.setQueriesData(filter,remove);
+      queryClient.removeQueries({queryKey:['thread-access',hostId,threadId]});
+    }
     if (notification.method === THREAD_CATALOG_CHANGED) {
       const change = parseThreadCatalogChange(notification.params);
       if (change && change.change.type !== "invalidate") {

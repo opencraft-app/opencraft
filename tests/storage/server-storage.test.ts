@@ -12,6 +12,8 @@ import { importServerData } from "../../packages/storage-node/src/server/import.
 import { openServerRepository } from "@opencraft/storage-node/server-repository";
 import { SERVER_LEGACY_MIGRATIONS } from "@opencraft/storage-node/server-legacy";
 import * as schema from "../../packages/storage-node/src/server/schema.js";
+import { ThreadAccessStore } from "../../packages/access-control/src/thread-access.js";
+import { ThreadNoteStore } from "../../plugins/thread-summary/src/note-store.js";
 import { ActorStore } from "@opencraft/access-control/actors";
 import { HumanAccounts } from "@opencraft/access-control/human-accounts";
 import { HumanAccountManagement } from "@opencraft/access-control/account-management";
@@ -45,13 +47,19 @@ async function seed(root: string) {
   const executionSession = { serverId: "test-host", threadId: "native-thread", execution: { inputId: "input-1", executionId: "execution-1" } };
   bindings.prepareExecution("execution-capability-1", { serverId: "test-host", threadId: "native-thread" });
   bindings.bindExecution("execution-capability-1", executionSession);
+  const access = new ThreadAccessStore(join(root, "thread-access.sqlite"), actors);
+  access.created("test-host", "native-thread", context);
+  access.set("test-host", "native-thread", "private", 1, context);
+  const notes = new ThreadNoteStore(join(root, "thread-notes.sqlite"));
+  notes.exchange("test-host", "native-thread", "", "AA==");
+  access.close(); notes.close();
   const authority = actors.authority;
   await collaboration.close(); bindings.close(); management.close(); accounts.close(); members.close(); actors.close();
   return { context, session, login, authority, executionSession, subject: principal.subject };
 }
 
 test("Drizzle schema and recorded snapshot have no ungenerated structural changes", async () => {
-  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0001_snapshot.json", import.meta.url), "utf8"));
+  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0002_snapshot.json", import.meta.url), "utf8"));
   const next = await generateSQLiteDrizzleJson(schema, previous.id);
   assert.deepEqual(await generateSQLiteMigration(previous, next), []);
   const empty = await generateSQLiteDrizzleJson({});
@@ -69,7 +77,7 @@ test("published source SQL retains all migration identities and checksums", () =
   assert.deepEqual(actual, expected);
 });
 
-test("six populated stores consolidate without changing authority, sessions, credentials, grants or bindings", async t => {
+test("registered populated stores consolidate without changing authority, sessions, credentials, grants or bindings", async t => {
   const root = fixture(t), before = await seed(root);
   const originals = Object.keys(SERVER_LEGACY_MIGRATIONS).map(name => join(root, name + ".sqlite"));
   const bytes = originals.map(path => readFileSync(path));
@@ -89,7 +97,7 @@ test("six populated stores consolidate without changing authority, sessions, cre
     assert.equal(collaboration.binding(before.session.id)?.threadId, "native-thread");
     assert.deepEqual(bindings.get("capability-1"), { serverId: "test-host", threadId: "native-thread" });
     assert.deepEqual(bindings.execution("execution-capability-1"), { scope: { serverId: "test-host", threadId: "native-thread" }, session: before.executionSession });
-    assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, 6);
+    assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
     assert.equal(storage.database.prepare("SELECT contract_hash FROM opencraft_server_installation").get()?.contract_hash, SERVER_DATA_CONTRACT.hash);
     for (const receipt of storage.database.prepare("SELECT backup_path FROM opencraft_server_imports").all()) assert.ok(existsSync(String(receipt.backup_path)));
     const restoredRoot = fixture(t);
@@ -122,7 +130,7 @@ test("six populated stores consolidate without changing authority, sessions, cre
   const reopened = await openServerDatabase(root);
   try {
     assert.equal(reopened.database.prepare("SELECT display_name FROM actors WHERE id=?").get(before.session.id)?.display_name, "New title");
-    assert.equal(reopened.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, 6);
+    assert.equal(reopened.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
     assert.equal(reopened.database.prepare("PRAGMA foreign_key_check").all().length, 0);
   } finally { await reopened.close(); }
 });
@@ -132,7 +140,7 @@ test("fresh installs have one core file; the writer fence also covers maintenanc
   try {
     await assert.rejects(openServerDatabase(root), /held/);
     assert.deepEqual(readdirSync(root).filter(f => f.endsWith(".sqlite")), ["opencraft-server.sqlite"]);
-    assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports WHERE source_digest='absent'").get()?.n, 6);
+    assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports WHERE source_digest='absent'").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
     const actors = new ActorStore(storage);
     assert.throws(() => sqliteTransaction(storage.database, () => { actors.createSession("cancelled", "test"); throw new Error("cancel"); }), /cancel/);
     assert.equal(actors.list().length, 0, "nested repository transaction participates in rollback"); actors.close();
@@ -201,7 +209,7 @@ test("process termination during import rolls back; termination after commit res
     try {
       assert.equal(storage.database.prepare("SELECT count(*) AS n FROM actors").get()?.n, 2);
       assert.equal(storage.database.prepare("SELECT count(*) AS n FROM local_accounts").get()?.n, 1);
-      assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, 6);
+      assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
       assert.equal(storage.database.prepare("SELECT count(*) AS n FROM opencraft_server_installation").get()?.n, 1);
     } finally { await storage.close(); }
   }
@@ -235,6 +243,12 @@ test("the previous consolidated contract upgrades while preserving actors and le
   const previous = openManagedDatabase({ path: join(root, "opencraft-server.sqlite"), migrations: SERVER_MIGRATIONS.slice(0, 1) });
   importServerData(previous.database, root, { productVersion: "0.1.0", hash: "previous-contract" });
   const actors = new ActorStore(previous), session = actors.createSession("Retained actor", "fixture");
+  const access = new ThreadAccessStore(join(root, "thread-access.sqlite"), actors);
+  access.created("test-host", "native-thread", context);
+  access.set("test-host", "native-thread", "private", 1, context);
+  const notes = new ThreadNoteStore(join(root, "thread-notes.sqlite"));
+  notes.exchange("test-host", "native-thread", "", "AA==");
+  access.close(); notes.close();
   const authority = actors.authority;
   const history = previous.database.prepare("SELECT * FROM schema_migrations WHERE version=1").get();
   actors.close(); previous.database.close();
@@ -263,4 +277,49 @@ test("the published capability v1 upgrades only its working copy", async t => {
     assert.equal(bindings.executionId({ serverId: "server", threadId: "thread" }), "new");
     bindings.close(); assert.deepEqual(readFileSync(path), bytes);
   } finally { await current.close(); }
+});
+
+async function consolidatedBaseline(root: string) {
+  const before = await seed(root);
+  const owner = await openServerDatabase(root);
+  const receipts = owner.database.prepare("SELECT * FROM opencraft_server_imports WHERE source NOT IN ('thread-access','thread-notes') ORDER BY source").all();
+  // Reconstruct the published v2 database, with its original six receipts.
+  owner.database.exec("DROP TABLE thread_access; DROP TABLE thread_access_audit; DROP TABLE thread_notes; DELETE FROM schema_migrations WHERE version=3; DELETE FROM opencraft_server_imports WHERE source IN ('thread-access','thread-notes')");
+  owner.database.prepare("UPDATE opencraft_server_installation SET contract_hash=?").run(createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, 2))).digest("hex"));
+  await owner.close();
+  return { before, receipts };
+}
+
+test("a consolidated v2 installation imports new access/note sources without replaying its six receipts", async t => {
+  const root = fixture(t), { before, receipts } = await consolidatedBaseline(root);
+  const owner = await openServerDatabase(root);
+  try {
+    assert.deepEqual(owner.database.prepare("SELECT * FROM opencraft_server_imports WHERE source NOT IN ('thread-access','thread-notes') ORDER BY source").all(), receipts);
+    assert.equal(owner.database.prepare("SELECT access_mode FROM thread_access WHERE thread_id='native-thread'").get()?.access_mode, "private");
+    assert.equal(owner.database.prepare("SELECT id FROM actor_authority").get()?.id, before.authority);
+    assert.equal(owner.database.prepare("SELECT count(*) AS n FROM opencraft_server_imports").get()?.n, Object.keys(SERVER_LEGACY_MIGRATIONS).length);
+  } finally { await owner.close(); }
+  const reopened = await openServerDatabase(root);
+  try { assert.equal(reopened.database.prepare("SELECT revision FROM thread_access").get()?.revision, 2); }
+  finally { await reopened.close(); }
+});
+
+test("failed additive import preserves prior authority and receipts without committing partial policy rows", async t => {
+  const root = fixture(t), { before, receipts } = await consolidatedBaseline(root);
+  const notes = new DatabaseSync(join(root, "thread-notes.sqlite"));
+  notes.exec("UPDATE schema_migrations SET checksum='invalid'"); notes.close();
+  await assert.rejects(openServerDatabase(root));
+  const database = new DatabaseSync(join(root, "opencraft-server.sqlite"));
+  try {
+    assert.deepEqual(database.prepare("SELECT * FROM opencraft_server_imports ORDER BY source").all(), receipts);
+    assert.equal(database.prepare("SELECT id FROM actor_authority").get()?.id, before.authority);
+    assert.equal(database.prepare("SELECT count(*) AS n FROM thread_access").get()?.n, 0);
+  } finally { database.close(); }
+});
+
+test("a current installation cannot silently recreate a deleted access import receipt", async t => {
+  const root = fixture(t), owner = await openServerDatabase(root);
+  owner.database.exec("DELETE FROM opencraft_server_imports WHERE source='thread-access'");
+  await owner.close();
+  await assert.rejects(openServerDatabase(root), /Incomplete Server import receipts/);
 });

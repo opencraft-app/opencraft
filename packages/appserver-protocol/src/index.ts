@@ -31,3 +31,4 @@ export * from "./turn-recovery";
 export * from "./shared-interactions";
 
 export * from "./thread-note";
+export * from "./thread-access";

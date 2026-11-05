@@ -144,7 +144,12 @@ PPTX previews reveal the current slide in the thumbnail rail when it is reopened
 Headless websites advertise `htmlPreviews` separately from original downloads.
 The resource header offers Open in browser for HTML on supported local/SSH Hosts;
 static and desktop deployments without that capability retain existing preview and
-download. The inert inline iframe and its script-disabled policy remain unchanged.
+download. The inline preview executes document-local JavaScript in an opaque-origin iframe
+with `sandbox="allow-scripts"`. Its CSP permits inline scripts, but not external
+scripts, network requests, nested frames, workers, or forms. It grants no
+same-origin access, top-level navigation, popups, or application credential bridge.
+Document scripts can implement scaling and local interactions without opening a
+separate viewer. Source access and preview-only file-write restrictions remain.
 Large HTML outside the existing editable-text limit can still use the external action.
 
 The authorized same-origin POST `/__opencraft_preview/tickets` snapshots one HTML

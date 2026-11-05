@@ -70,5 +70,19 @@
       "name": "execution-capability-bindings",
       "checksum": "aaeca16d0761d654cd82a01ecb33d154fc0edf843548d174e66cf24710397f8f"
     }
+  ],
+  "thread-access": [
+    {
+      "version": 1,
+      "name": "thread-access",
+      "checksum": "11661c71a7d44e085e8ecffab86655174a2e7a1eb86b2bf8c791172ab8cb07d5"
+    }
+  ],
+  "thread-notes": [
+    {
+      "version": 1,
+      "name": "thread-notes",
+      "checksum": "c321e8dbb539810e99880bf783b6a192866654538694a43ecfef96e42ed884d8"
+    }
   ]
 }

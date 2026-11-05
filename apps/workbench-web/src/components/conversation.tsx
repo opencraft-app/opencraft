@@ -1,4 +1,5 @@
 import { ConversationSearchTargetContext, blockItemIds, useRevealSearchItem } from "./conversation/search-target";
+import { observeChatMediaDiagnostic } from "../runtime/media-diagnostics";
 import { LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { ForkTurnButton } from "./conversation/fork-turn-button";
 import { MessageTimestamp } from "./conversation/message-timestamp";
@@ -48,6 +49,7 @@ import {
   type TurnFollowRestoreState,
   type VirtualizedTurnRestoreState,
   type VirtualizedTurnListApi,
+  type TurnHistoryBackfillDiagnostic,
 } from "@opencraft/timeline-virtualizer";
 import {
   createWebConversationViewportOwner,
@@ -281,6 +283,7 @@ function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
         documentId={block.id}
         hostId={documentContext.hostId}
         loadMediaSource={documentContext.loadMediaSource}
+        onMediaDiagnostic={observeChatMediaDiagnostic}
         onMeasurementRequest={documentContext.onMeasurementRequest}
         onOpenResource={documentContext.onOpenResource}
         source={block.text}
@@ -670,6 +673,8 @@ export interface ConversationProps {
   readonly onRestoreSnapshotChange?: (snapshot: ConversationRestoreSnapshot) => void;
   readonly onLoadItemDetails?: (ids: readonly string[], signal: AbortSignal) => Promise<void>;
   readonly onLoadOlder?: () => void | "stop" | Promise<void | "stop">;
+  /** Internal, sampled history/viewport diagnostics; never contains message text. */
+  readonly onHistoryViewportDiagnostic?: (event: ConversationHistoryViewportDiagnostic) => void;
   readonly loadingOlder?: boolean;
   readonly onContinueTurn?: (turnId: TurnId) => void;
   readonly continuableTurnId?: TurnId | null;
@@ -695,6 +700,13 @@ export interface ConversationProps {
   readonly surfaceCapabilities?: TimelineSurfaceCapabilities;
   readonly threadDetailLevel?: ConversationDetailLevel;
 }
+
+export type ConversationHistoryViewportDiagnostic = TurnHistoryBackfillDiagnostic & Readonly<{
+  timelineRevision: number | null;
+  renderedTurnCount: number;
+  historyTurnCount: number | null;
+  loadingOlder: boolean;
+}>;
 
 export type ConversationScrollApi = TurnConversationScrollApi;
 
@@ -746,6 +758,7 @@ export function Conversation({
   initialRestoreSnapshot = null,
   onRestoreSnapshotChange,
   onLoadOlder,
+  onHistoryViewportDiagnostic,
   onLoadItemDetails,
   loadingOlder = false,
   onOpenSubagent,
@@ -879,6 +892,15 @@ export function Conversation({
   const cancelPendingTargetPosition = useCallback(() => {
     virtualizerApiRef.current?.cancelPositioning();
   }, []);
+  const reportHistoryViewportDiagnostic = useStableEvent((event: TurnHistoryBackfillDiagnostic) => {
+    onHistoryViewportDiagnostic?.({
+      ...event,
+      timelineRevision: timeline?.revision ?? null,
+      renderedTurnCount: entries.length,
+      historyTurnCount: timeline?.historyTurnCount ?? null,
+      loadingOlder,
+    });
+  });
   const historyBackfill = useTurnHistoryBackfill({
     historyKey: timeline === null
       ? null
@@ -897,6 +919,7 @@ export function Conversation({
     afterLayout: () => new Promise<void>((resolve) => window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => resolve());
     })),
+    onDiagnostic: reportHistoryViewportDiagnostic,
   });
   const loadOlderUntilScrollable = historyBackfill.request;
 

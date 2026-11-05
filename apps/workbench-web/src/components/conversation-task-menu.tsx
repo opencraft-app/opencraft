@@ -1,3 +1,5 @@
+import { useThreadAccessAction, type ThreadAccessPort } from "./thread-access-action";
+import { PermissionShieldIcon } from "@opencraft/design-system-web/action-icons";
 import { LoadingRingIcon as LoaderCircle, MoreIcon as MoreHorizontal, EditIcon as Pencil } from "@opencraft/design-system-web/action-icons";
 import { ShareIcon } from "@opencraft/design-system-web/action-icons";
 import { sharePageLink } from "../runtime/share-page-link";
@@ -26,6 +28,7 @@ const ImSources = lazy(() => import("@opencraft/plugin-im/sources").then(module 
 const ConversationInformationDialog = lazy(() => import("./conversation-information-dialog"));
 
 export interface ConversationTaskMenuProps {
+  readonly access?: ThreadAccessPort;
   readonly im?: { fetcher: typeof fetch; openSettings(): void };
   readonly port?: TasksRequestPort;
   readonly schedules?: ConversationSchedulesRequestPort;
@@ -167,7 +170,8 @@ export function ConversationTaskMenu(props: Props) {
     mutationFn: () => props.onFork!(),
     retry: false,
   });
-  const busy = pin.isPending || archive.isPending || fork.isPending;
+  const access = useThreadAccessAction(props.scope,props.threadId,props.access,true);
+  const busy = pin.isPending || archive.isPending || fork.isPending || access?.pending === true;
   const label = intl.formatMessage({ id: "tasks.relation.actions", defaultMessage: "Conversation actions" });
   const actions: ToolbarDockAction[] = [];
   const add = (id: string, label: string, icon: ToolbarDockAction["icon"], invoke: () => void, dialog = false, pending = false) =>
@@ -179,6 +183,7 @@ export function ConversationTaskMenu(props: Props) {
       if (outcome === "copied") notices.success({ key, message: intl.formatMessage({ id: "page.linkCopied", defaultMessage: "Link copied" }) });
     }).catch(() => notices.error({ key, message: intl.formatMessage({ id: "page.shareFailed", defaultMessage: "Could not share the link. Try again." }) }));
   });
+  if (access) add("access",access.label,<PermissionShieldIcon size={16} aria-hidden="true" />,access.invoke,false,access.pending);
   if (props.onRename) add("rename", intl.formatMessage({ id: "common.rename", defaultMessage: "Rename" }), <Pencil size={16} aria-hidden="true" />,
     () => { rename.reset(); setName(props.title ?? ""); setRenameOpen(true); }, true);
   if (props.onSetPinned) add("pin", intl.formatMessage(props.pinned ? { id: "chat.unpin", defaultMessage: "Unpin" } : { id: "chat.pin", defaultMessage: "Pin" }),

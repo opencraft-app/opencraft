@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { openManagedDatabase, sqliteTransaction, SqliteLifecycleError, durableJson, assertRecoveryState } from "@opencraft/sqlite-node";
 import { SERVER_LEGACY_MIGRATIONS, serverLegacyOptions, type ServerStoreId } from "./legacy.js";
 
+import { SERVER_MIGRATIONS } from "./migrations.generated.js";
+
+const baselineContractHash = createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, 2))).digest("hex");
 const stores = Object.keys(SERVER_LEGACY_MIGRATIONS) as ServerStoreId[];
 const identifier = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const encode = (value: unknown) => JSON.stringify(value, (_key, item) => typeof item === "bigint" ? { bigint: String(item) }
@@ -43,10 +46,17 @@ function sourceDigest(path: string): string {
   } finally { db.close(); }
 }
 
-function verifySources(database: DatabaseSync, directory: string): void {
+// Only stores introduced after the consolidated baseline can lack a receipt.
+const additiveStores = new Set<ServerStoreId>(["thread-access", "thread-notes"]);
+function verifySources(database: DatabaseSync, directory: string, installedHash: unknown): Set<ServerStoreId> {
   const receipts = database.prepare("SELECT source,source_digest FROM opencraft_server_imports").all();
-  if (receipts.length !== stores.length) throw new SqliteLifecycleError("history-mismatch", "Incomplete Server import receipts");
+  const completed = new Set(receipts.map(row => String(row.source)));
+  if (receipts.some(row => !stores.includes(String(row.source) as ServerStoreId))
+    || stores.some(store => !completed.has(store) && (!additiveStores.has(store) || installedHash !== baselineContractHash))) {
+    throw new SqliteLifecycleError("history-mismatch", "Incomplete Server import receipts");
+  }
   for (const store of stores) {
+    if (!completed.has(store)) continue;
     const expected = receipts.find(row => row.source === store)?.source_digest;
     const path = join(directory, `${store}.sqlite`);
     if (!existsSync(path) && expected && expected !== "absent") {
@@ -60,18 +70,23 @@ function verifySources(database: DatabaseSync, directory: string): void {
       throw new SqliteLifecycleError("history-mismatch", `Retired Server source changed (${store}); stop old writers and resolve the data conflict`);
     }
   }
+  return completed as Set<ServerStoreId>;
 }
 
 interface PreparedSource { store: ServerStoreId; signature: string; snapshot?: string; working?: string; history: string }
 
-/** All six source receipts and all business rows commit in one destination transaction. */
+/** Pending source receipts and their business rows commit in one destination transaction. */
 export function importServerData(database: DatabaseSync, directory: string, contract: { productVersion: string; hash: string }): "fresh" | "migrated" | "up-to-date" {
   const installation = database.prepare("SELECT * FROM opencraft_server_installation WHERE singleton=1").get();
+  let pendingStores = stores;
   if (installation) {
-    verifySources(database, directory);
-    database.prepare("UPDATE opencraft_server_installation SET product_version=?,contract_hash=?,completed_at=? WHERE singleton=1")
-      .run(contract.productVersion, contract.hash, Date.now());
-    return "up-to-date";
+    const completed = verifySources(database, directory, installation.contract_hash);
+    pendingStores = stores.filter(store => !completed.has(store));
+    if (!pendingStores.length) {
+      database.prepare("UPDATE opencraft_server_installation SET product_version=?,contract_hash=?,completed_at=? WHERE singleton=1")
+        .run(contract.productVersion, contract.hash, Date.now());
+      return "up-to-date";
+    }
   }
   const root = join(directory, ".server-import");
   mkdirSync(root, { recursive: true, mode: 0o700 });
@@ -86,7 +101,7 @@ export function importServerData(database: DatabaseSync, directory: string, cont
   const backupDirectory = join(root, operationId);
   mkdirSync(backupDirectory, { recursive: true, mode: 0o700 });
   const prepared: PreparedSource[] = [];
-  for (const store of stores) {
+  for (const store of pendingStores) {
     const path = join(directory, `${store}.sqlite`);
     const signature = sourceDigest(path);
     if (signature === "absent") { prepared.push({ store, signature, history: "[]" }); continue; }
@@ -152,7 +167,7 @@ export function importServerData(database: DatabaseSync, directory: string, cont
       for (const table of ["human_logins", "actor_members"]) if (database.prepare(`SELECT 1 FROM ${table} r LEFT JOIN actors a ON a.id=r.actor_id WHERE a.id IS NULL LIMIT 1`).get()) {
         throw new SqliteLifecycleError("history-mismatch", "Server import refers to a missing Actor authority");
       }
-      database.prepare("INSERT INTO opencraft_server_installation VALUES(1,?,?,?)").run(contract.productVersion, contract.hash, Date.now());
+      database.prepare("INSERT INTO opencraft_server_installation VALUES(1,?,?,?) ON CONFLICT(singleton) DO UPDATE SET product_version=excluded.product_version,contract_hash=excluded.contract_hash,completed_at=excluded.completed_at").run(contract.productVersion, contract.hash, Date.now());
     });
   } finally { for (const alias of attached.reverse()) database.exec(`DETACH DATABASE ${alias}`); }
   // A committed import remains successful if maintenance of its journal fails.

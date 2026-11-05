@@ -97,6 +97,16 @@ function allowedInternalDesktopOrigin(request) {
 }
 
 function bridgeAppServerSocket(client, request, options) {
+  const accessSession = options.createAccessSession?.(options.submissionContext, frame => {
+    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+  });
+  const write = (frame, isBinary = false) => {
+    if (client.readyState !== WebSocket.OPEN || options.authorize?.() === false) return;
+    if (accessSession && isBinary) { client.close(1003, 'Text frames required'); return; }
+    const projected = accessSession ? accessSession.project(String(frame)) : frame;
+    if (projected !== null) client.send(projected, {binary:isBinary});
+  };
+  client.once('close', () => accessSession?.close());
   const protocolHeader = request.headers["sec-websocket-protocol"];
   const protocols = typeof protocolHeader === "string"
     ? protocolHeader.split(",").map((value) => value.trim()).filter(Boolean)
@@ -111,13 +121,13 @@ function bridgeAppServerSocket(client, request, options) {
     ? new WebSocket(options.appServerTarget, protocols, upstreamOptions)
     : new WebSocket(options.appServerTarget, upstreamOptions);
   const identitySession = options.identity?.open(frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   });
   const appSession = options.mcpAppsService ? new McpAppsRpcSession(options.mcpAppsService, frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   }) : null;
   const querySession = options.createAppServerQuerySession?.(frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   });
   const dshPending = new Set();
   const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
@@ -126,6 +136,8 @@ function bridgeAppServerSocket(client, request, options) {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
     try {
+      if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
+      if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
@@ -178,7 +190,7 @@ function bridgeAppServerSocket(client, request, options) {
         // Identity restores rewritten request IDs before query initialization is correlated.
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
         const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
-        if (frame !== null) client.send(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, { binary: isBinary });
+        if (frame !== null) write(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, isBinary);
         if (!isBinary) {
           const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
           if (proof && dshPending.has(key)) {
@@ -465,6 +477,7 @@ export async function createWorkbenchWebServer({
   localAccess = null,
   accessService = null,
   actorService = null,
+  createAppServerAccessSession = null,
   actorCollaborationService = null,
   turnPushService = null,
   authService = null,
@@ -996,6 +1009,7 @@ export async function createWorkbenchWebServer({
         hyperNodeUser,
         identity: appServerIdentity,
         createAppServerQuerySession,
+        createAccessSession: createAppServerAccessSession,
         submissionContext,
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
       });

@@ -6,6 +6,7 @@ import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 type CachedThread = {
   id: string; title: string; project: string; lineage: "root" | "fork" | "subagent";
   updatedAt: number; createdAt: number | null; pinned: boolean;
+  accessMode?: "shared" | "private";
   parentThreadId: string | null; visibility: "visible" | "hidden";
 };
 export type CachedThreadCatalog = { rows: CachedThread[]; complete: boolean };
@@ -36,8 +37,10 @@ export const threadCatalogResource: ClientResourceDefinition<CachedThreadCatalog
         || (row.visibility !== "visible" && row.visibility !== "hidden")) throw new Error("Invalid saved thread identity");
       seen.add(id);
       return { id, title: text(row.title, 512), project: text(row.project, 256), lineage: row.lineage as CachedThread["lineage"],
+        ...(row.accessMode === "private" || row.accessMode === "shared" ? {accessMode:row.accessMode} : {}),
         updatedAt: timestamp(row.updatedAt), createdAt: row.createdAt === null ? null : timestamp(row.createdAt), pinned: row.pinned,
-        parentThreadId: row.parentThreadId === null ? null : text(row.parentThreadId, 512), visibility: row.visibility };
+        ...(row.accessMode === undefined ? {} : {accessMode:row.accessMode}),
+    parentThreadId: row.parentThreadId === null ? null : text(row.parentThreadId, 512), visibility: row.visibility };
     }) };
   },
 };
