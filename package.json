@@ -223,7 +223,7 @@
     "smoke:tasks:workbench": "tsx scripts/smoke/tasks/smoke-tasks-workbench.ts",
     "preview:tasks:workbench": "tsx scripts/preview-tasks-workbench.ts",
     "package:web:server": "npm run build:web:release && node scripts/package-web-server.mjs",
-    "test:web-updates": "node --test tests/server/web-deployment*.test.mjs",
+    "test:web-updates": "node --test tests/server/web-deployment*.test.mjs tests/execution/full-parent.test.mjs tests/execution/full-upgrade-failure.test.mjs",
     "serve:web:managed": "node scripts/web-deployment/cli.mjs",
     "test:web-updates:e2e": "npm run build:web:release && playwright test --config config/playwright.web-updates.config.mjs",
     "test:web-updates:live": "playwright test --config config/playwright.web-updates.live.config.mjs",
