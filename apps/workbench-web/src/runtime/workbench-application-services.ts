@@ -239,8 +239,11 @@ export async function refreshBundledHostProfiles(
       : null;
     if (current === undefined || current.providerId !== "opencraft.websocket") continue;
     const refreshEndpoint = typeof providerUrl === "string" && serverEndpointNeedsRefresh(providerUrl, definition.url);
-    if (providerUrl !== definition.url && !refreshEndpoint) continue;
     const refreshRoots = current.workspaceBrowseRoots.length === 0 && definition.workspaceBrowseRoots.length > 0;
+    // A stale/custom endpoint must not prevent an independent deployment-owned
+    // capability repair. Older browser profiles may retain an absolute endpoint
+    // while still missing the workspace roots introduced by a newer release.
+    if (providerUrl !== definition.url && !refreshEndpoint && !refreshRoots) continue;
     if (!refreshEndpoint && !refreshRoots) continue;
     await store.put({
       ...current,

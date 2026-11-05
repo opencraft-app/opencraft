@@ -325,6 +325,30 @@ test("an older bundled Host gains its Linux root without overwriting user profil
   }
 });
 
+test("a stale bundled Host endpoint cannot block workspace root recovery", async () => {
+  const [definition] = parseWebHostDefinitions(JSON.stringify([{
+    hostId: "opencraft-server", label: "Server", kind: "durable", url: "/appserver",
+    workspaceBrowseRoots: ["/"],
+  }]));
+  const databaseName = `headless-stale-endpoint-root-${crypto.randomUUID()}`;
+  const store = await IndexedDbHostConnectionProfileStore.open({ databaseName, factory: indexedDB });
+  try {
+    await store.put({
+      ...hostDefinitionProfile(definition!),
+      providerConfig: { url: "wss://previous.example/appserver" },
+      workspaceBrowseRoots: [],
+      revision: 5,
+    });
+    await refreshBundledHostProfiles(store, [definition!]);
+    const updated = store.getSnapshot().profiles[0]!;
+    assert.deepEqual(updated.workspaceBrowseRoots, ["/"]);
+    assert.deepEqual(updated.providerConfig, { url: "wss://previous.example/appserver" });
+    assert.equal(updated.revision, 6);
+  } finally {
+    store.close();
+  }
+});
+
 test("Host profiles add missing deployment seeds without overwriting saved preferences", async () => {
   const seed: HostConnectionProfile = {
     hostId: "host:seed",
