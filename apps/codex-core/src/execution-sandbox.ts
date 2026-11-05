@@ -2,6 +2,7 @@ import { readFile, writeFile, rename } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { readSandboxRuntimeConfiguration, verifySystemdExecutionOwner } from "@opencraft/sandbox-node/runtime";
+import { ExecutionPreparationError } from "./execution-preparation.js";
 
 export interface CodexExecutionSandbox { configuration: string; runner: string }
 /** The official exec-server owns native filesystem/network sandbox enforcement.
@@ -29,11 +30,14 @@ export function codexSandboxRequestPolicy(readThread: (threadId: string) => Prom
     if (method !== "thread/start" && method !== "turn/start") return params;
     let cwd = params.cwd;
     if (method === "turn/start" && cwd == null) {
-      if (typeof params.threadId !== "string" || !params.threadId) throw new Error("Missing sandbox thread");
-      const value = await readThread(params.threadId) as { thread?: { cwd?: unknown } } | undefined;
+      if (typeof params.threadId !== "string" || !params.threadId) throw new ExecutionPreparationError("missing-thread-id");
+      let value: { thread?: { cwd?: unknown } } | undefined;
+      try { value = await readThread(params.threadId) as typeof value; }
+      catch { throw new ExecutionPreparationError("thread-read-failed"); }
       cwd = value?.thread?.cwd;
     }
-    if (typeof cwd !== "string" || !isAbsolute(cwd) || cwd.includes("\0")) throw new Error("Sandbox requires the thread workspace");
+    if (cwd == null || cwd === "") throw new ExecutionPreparationError("missing-workspace");
+    if (typeof cwd !== "string" || !isAbsolute(cwd) || cwd.includes("\0")) throw new ExecutionPreparationError("invalid-workspace");
     return { ...params, environments: [{ environmentId: "opencraft", cwd }] };
   };
 }
