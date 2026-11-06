@@ -415,7 +415,7 @@ Header 的可见导航 rail 用 `max-content` 在同一次布局中保留真实�
 
 触屏行高仅消费密度token：单行max(32px, --size-control-hit-min)，两行最小max(48px, --size-control-hit-min + 12px)；状态、头像与行菜单垂直居中。漏斗/右键的模式radio与filter checkbox共享indicator槽与文字轴，四种locale/桌面触屏均保留间隔。
 
-core unified Shell 桌面将60px图标栏与列表列分开，移动抽屉纵向菜单位于全宽列表上方；列表标题（含筛选入口）、日期标题与会话行消费同一列表列inset，头像按内容宽度右对齐、右边缘与菜单间距固定。一行/两行共享右边缘，工作目录置于标题下方辅助行，无独立底板，过长省略，不占用标题行宽度。unified默认335px、最小300px（原列表默认275px/最小240px加60px图标栏），旧保存宽度按新最小值夹紧，未保存时消费frame新默认值；手机抽屉先按屏宽减64px保留关闭区域，再以共享frame.sidebarMobileWidthRatio（90%）收窄并取整；不写回桌面宽度、不缩小字体或触控目标；独立/嵌入侧栏保持原宽度。图标行的 icon-label gap、会话层次、右侧状态与菜单命中区保持原语义。下游产品两面保持旧 consumer 留白。
+core unified Shell 桌面将60px图标栏与列表列分开，移动抽屉纵向菜单位于全宽列表上方；列表标题（含筛选入口）、日期标题与会话行消费同一列表列inset，头像按内容宽度右对齐、右边缘与菜单间距固定。一行/两行共享右边缘，工作目录置于标题下方辅助行，无独立底板，过长省略，不占用标题行宽度。unified默认335px、最小300px（原列表默认275px/最小240px加60px图标栏），旧保存宽度按新最小值夹紧，未保存时消费frame新默认值；手机抽屉独立按容器宽度分配，不借用桌面保存宽度；取容器90%与容器减64px的较小值并取整，保留右侧可点击关闭区域；不写回桌面宽度、不缩小字体或触控目标；独立/嵌入侧栏保持原宽度。图标行的 icon-label gap、会话层次、右侧状态与菜单命中区保持原语义。下游产品两面保持旧 consumer 留白。
 
 `scripts/smoke/shell/smoke-sidebar-thread-insets.mjs` 挂载真实 AppShell + Sidebar + ThreadRowMenu，以合成短/长标题、日期组、项目和状态测宽窄固定/浮动、选中/hover浅深几何；此前 Settings 列测试不代替会话消费链。
 
@@ -750,3 +750,7 @@ Touch panel workspace entrances reuse the same shared SidebarToggleIcon and
 sidebarToggleGlyphs artwork as Shell navigation. The shared chrome icon token
 owns dock glyph size independently of the touch hit target; action slots must
 not introduce per-feature silhouettes or arbitrary per-icon touch sizes.
+
+### PWA sidebar and page capacity
+
+Installed browser overlay mode bounds the page row, stationary sidebar portal and page-overlay plane by the same dynamic viewport height. Full-bleed paint remains independent; footer SafeLayout allocates the bottom inset once and its measured height reserves list scroll clearance. Mobile drawer capacity comes from the current container, independent of the saved desktop width. This keeps the page preview narrow without scaling text or touch targets.

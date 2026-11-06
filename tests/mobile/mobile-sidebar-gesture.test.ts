@@ -92,13 +92,13 @@ test("short slow drags return to their initial state; distance or deliberate fli
   assert.equal(sidebarGestureTarget(.9, -.8, 60, false), false, "a reversed flick changes the completion direction");
 });
 
-test("mobile drawer fits small screens, retains a dismissal gutter and does not mutate saved width", () => {
+test("mobile drawer fits its container and retains a dismissal gutter independently of desktop width", () => {
   for (const width of [320, 390, 430]) {
-    assert.ok(mobileSidebarWidth(width, 275) <= width - 64);
-    assert.ok(mobileSidebarWidth(width, 520) <= width - 64);
+    assert.ok(mobileSidebarWidth(width) <= width - 64);
+    assert.ok(mobileSidebarWidth(width) >= 240);
   }
-  assert.equal(mobileSidebarWidth(390, 275), 247, "mobile narrows its projection without rewriting the saved width");
-  assert.equal(mobileSidebarWidth(430, 335), 301, "larger phones also use the narrower mobile projection");
-  assert.equal(mobileSidebarWidth(320, 335), 230, "small screens narrow the already fitted drawer");
-  assert.equal(mobileSidebarWidth(390, 335), 293);
+  assert.equal(mobileSidebarWidth(390), 326, "mobile reserves the page strip independently of desktop width");
+  assert.equal(mobileSidebarWidth(430), 366, "larger phones keep the same dismiss strip");
+  assert.equal(mobileSidebarWidth(320), 256, "small screens give the list the remaining width");
+  assert.equal(mobileSidebarWidth(0), 0);
 });

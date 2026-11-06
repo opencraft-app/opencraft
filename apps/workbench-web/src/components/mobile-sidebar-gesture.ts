@@ -7,10 +7,11 @@ export const MOBILE_GESTURE_DEADZONE = 8;
 // A visible front-page strip remains large enough to dismiss by touch.
 export const MOBILE_SIDEBAR_PAGE_PEEK = 64;
 
-/** Narrow only the mobile projection; saved desktop width and hit targets stay intact. */
-export function mobileSidebarWidth(viewportWidth: number, savedWidth: number): number {
-  const fittedWidth = Math.min(Math.max(0, viewportWidth - MOBILE_SIDEBAR_PAGE_PEEK), Math.max(0, savedWidth));
-  return Math.floor(fittedWidth * frame.sidebarMobileWidthRatio);
+/** Mobile allocates its own reading column, leaving a reachable page dismiss strip.
+ * Desktop's saved width is independent and is never rewritten by this projection. */
+export function mobileSidebarWidth(viewportWidth: number): number {
+  return Math.floor(Math.max(0, Math.min(viewportWidth - MOBILE_SIDEBAR_PAGE_PEEK,
+    viewportWidth * frame.sidebarMobileWidthRatio)));
 }
 
 export function sidebarGestureAxis(dx: number, dy: number): "pending" | "horizontal" | "vertical" {

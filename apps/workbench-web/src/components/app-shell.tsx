@@ -614,7 +614,7 @@ export function AppShell({
     : navigation, [navigation, unifiedNavigation]);
   const floatingWidth = useTransform([liveSidebarWidth, floatingPrimaryWidth, shellWidth], ([context, primary, viewport]) =>
     Math.min(Math.max(0, Number(viewport) - 24), mobileSidebarEnabled
-      ? mobileSidebarWidth(Number(viewport), Number(context))
+      ? mobileSidebarWidth(Number(viewport))
       : contextAvailable ? Number(primary) + Number(context) : Math.max(260, Number(context))));
   const floatingWidthPx = useTransform(floatingWidth, width => `${width}px`);
   const floatingNavigationWidth = contextAvailable ? floatingPrimaryWidth : floatingWidth;
