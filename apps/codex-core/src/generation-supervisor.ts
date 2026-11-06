@@ -28,6 +28,7 @@ export interface GenerationSupervisor {
   inspect?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
   inspectNative?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
   restartFailed?(generation: GenerationRecord, identity: GenerationProcessIdentity): Promise<void>;
+  captureExecutionIdentity?(generation: GenerationRecord, identity: GenerationProcessIdentity): Promise<GenerationProcessIdentity>;
   start(generation: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth>;
   discardUnready(generation: GenerationRecord): Promise<void>;
   identify(generation: GenerationRecord, health: CodexAppServerHealth): Promise<GenerationProcessIdentity>;
@@ -128,6 +129,14 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       if (state.pid !== 0 || !["inactive", "failed"].includes(state.active)) throw reason;
     }
   }
+  /** Unit invocation is fault-stop provenance, outside the established Native handoff identity. */
+  async captureExecutionIdentity(g: GenerationRecord, identity: GenerationProcessIdentity): Promise<GenerationProcessIdentity> {
+    const state = await this.unitState(this.unit(g));
+    const value = await readFile(`/proc/${identity.ownerPid}/stat`, "utf8");
+    const started = value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19];
+    if (state.pid !== identity.ownerPid || started !== identity.ownerStart) throw new Error("Execution fault owner changed before capture");
+    return {...identity, ...(state.invocationId ? {invocationId: state.invocationId} : {})};
+  }
   async identify(g: GenerationRecord, h: CodexAppServerHealth): Promise<GenerationProcessIdentity> {
     const unitState = await this.unitState(this.unit(g));
     const pid = unitState.pid;
@@ -159,7 +168,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const cliVersion = (await execute(childExecutable, ["--version"], { uid: childOwner.uid, gid: childOwner.gid, cwd: g.cwd,
         env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
       if (await start(pid) !== ownerStart || await start(h.codexPid) !== nativeStart || await start(childPid) !== childStart) throw new Error("Generation CLI launcher changed during observation");
-      return { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256, cliVersion, unit: this.unit(g), ...(unitState.invocationId ? {invocationId: unitState.invocationId} : {}),
+      return { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256, cliVersion, unit: this.unit(g),
         launcher: { nodeSha256, entrypointSha256: await digest(g.nativeLauncher.entrypoint), wrapperSha256: await digest(g.executable), childPid, childStart, childExecutable } };
     }
     const file = await stat(g.executable, { bigint: true });
@@ -172,7 +181,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     if (actual !== expected) throw new Error("Generation CLI differs from its fixed executable");
     const cliVersion = (await execute(executable, ["--version"], { uid: g.executionUid ?? process.getuid!(), gid: g.executionGid ?? process.getgid!(), cwd: g.cwd,
       env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
-    const identity = { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256: actual, cliVersion, unit: this.unit(g), ...(unitState.invocationId ? {invocationId: unitState.invocationId} : {}) };
+    const identity = { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256: actual, cliVersion, unit: this.unit(g) };
     this.identities.set(g.id, { stamp, identity }); return identity;
   }
   /** A new kernel identity is adopted only after observing its actual program

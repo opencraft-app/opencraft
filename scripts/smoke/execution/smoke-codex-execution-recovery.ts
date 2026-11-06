@@ -128,8 +128,12 @@ try {
   // Keep an unfinished Turn; recovery has no idle prerequisite.
   await runtime.recoverExecutions(); socket.terminate(); socket = await connect();
   assert.equal(runtime.fences().executionRecoveries?.[0]?.state, "recovered");
+  const [fault] = JSON.parse(await readFile(join(root, "registry/execution-recovery.json"), "utf8"));
+  assert.ok(fault.source.invocationId); assert.ok(fault.target.invocationId);
+  assert.notEqual(fault.source.invocationId, fault.target.invocationId);
   const after: any = runtime.registry.metadata("runtime:one"); assert.notEqual(after.ownerPid, before.ownerPid);
-  await nativeOwnerRequest(socket, "thread/resume", {threadId: thread.id}); await run(thread.id);
+  // Restore the fixture's explicit execution grant; older Native resumes default to read-only.
+  await nativeOwnerRequest(socket, "thread/resume", {threadId: thread.id, approvalPolicy: "never", sandbox: "danger-full-access"}); await run(thread.id);
   assert.deepEqual((await readFile(marker, "utf8")).trim().split("\n"), ["executed", "executed"]);
   console.log(JSON.stringify({passed: true, cli: (await execute(executable, ["--version"])).stdout.trim(), sharedExecutorKilled: true,
     nativeRemainedReadable: true, unfinishedTurnInterruptedWithoutIdle: true, ownerReplaced: true, ordinaryTurnToolSucceededAfterRecovery: true, commandCount: 2, homePreserved: true}));

@@ -128,3 +128,16 @@ The independent signed Core payload also packages its recovery evidence Worker b
 installation boundary. A package regression reproduced a missing Worker at this
 location, then passed the real custody read from a source-independent CJS probe
 using the production Core program packager.
+
+Systemd invocation identity is captured separately for fault source/replacement
+stopping. It is not added to the established Native custody identity, so an
+unchanged older AppServer remains cold-readable during Router maintenance. A
+real supervisor plus continuing-Native inspection regression reproduced the
+legacy upgrade rejection and passed after this separation. The real recovery
+smoke also passed with the deployment-pinned Codex 0.162.1; its direct Native
+resume explicitly restores the fixture's original execution grant.
+
+If systemd source identity capture temporarily fails after an authoritative
+disconnect, the fault is still persisted and execution admission remains blocked.
+Identity capture resumes after the same durable backoff; only a verified source
+authorizes stopping. A lifecycle regression covers capture failure and recovery.

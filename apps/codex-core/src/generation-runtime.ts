@@ -87,6 +87,16 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
         // connection or a single metadata timeout does not authorize a restart.
         if (!this.executionRecovery.blocked(g.id) && !(error instanceof CodexExecutionUnavailableError && error.executionStatus === "disconnected")) continue;
       }
+      const prior = this.executionRecovery.snapshot().find(fault => fault.generationId === g.id && fault.state === "recovering");
+      if (prior && prior.retryAt > this.now()) continue;
+      let sourceIdentity = prior?.source;
+      if (!sourceIdentity) {
+        const identity = this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity;
+        try {
+          sourceIdentity = this.options.supervisor.captureExecutionIdentity
+            ? await this.options.supervisor.captureExecutionIdentity(g, identity) : identity;
+        } catch { /* Persist the confirmed fault and retry identity capture after backoff. */ }
+      }
       await this.executionRecovery.recover(g.id, g.incarnation, async (fault, rememberTarget) => {
         this.recoveringExecutions.add(g.id);
         try {
@@ -101,10 +111,12 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
           }
           if (this.closed) throw new Error("Execution recovery owner is closing");
           await this.open(g.id, true);
-          await rememberTarget(this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity);
+          const targetIdentity = this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity;
+          await rememberTarget(this.options.supervisor.captureExecutionIdentity
+            ? await this.options.supervisor.captureExecutionIdentity(this.registry.get(g.id)!, targetIdentity) : targetIdentity);
           await this.options.supervisor.inspect!(this.registry.get(g.id)!);
         } finally { this.recoveringExecutions.delete(g.id); }
-      }, this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity, this.registry.threadIds(g.id));
+      }, sourceIdentity, this.registry.threadIds(g.id));
 
     }
   }

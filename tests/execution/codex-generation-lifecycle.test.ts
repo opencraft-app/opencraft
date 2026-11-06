@@ -437,3 +437,36 @@ test("controller restart explains only fault-scoped unknown leases and preserves
     await assert.rejects(denied.initializeExecutionRecovery(), /unconfirmed/, "unrelated uncertainty still requires its original recovery contract");
   } finally {await denied?.close(); await replacement?.close(); await f.close();}
 });
+
+
+test("confirmed failure stays durably blocked when source capture fails and retries capture after backoff", async () => {
+  let time = 1_000, captures = 0, disconnected = true;
+  const f = await fixture(() => time);
+  try {
+    f.supervisor.inspectNative = g => f.supervisor.start(g);
+    f.supervisor.inspect = async g => {
+      if (g.id === "new" && disconnected) throw new CodexExecutionUnavailableError("disconnected");
+      return f.supervisor.start(g);
+    };
+    f.supervisor.captureExecutionIdentity = async (_g, identity) => {
+      if (++captures === 1) throw new Error("systemd identity observation temporarily unavailable");
+      return {...identity, invocationId: "synthetic-invocation"};
+    };
+    f.supervisor.restartFailed = async (g, identity) => { await f.supervisor.stop(g, identity); disconnected = false; };
+    await f.runtime.recoverExecutions();
+    const file = join(f.root, "routing/execution-recovery.json");
+    const first = JSON.parse(await (await import("node:fs/promises")).readFile(file, "utf8"))[0];
+    assert.equal(first.state, "recovering"); assert.equal(first.source, undefined);
+    assert.equal(first.retryAt, 2_000); assert.equal(f.runtime.executionRecoveryPending("new"), true);
+    assert.deepEqual(f.stopped, [], "an unverified source cannot authorize stopping an instance");
+    await f.runtime.recoverExecutions();
+    assert.equal(captures, 1, "identity observation also respects the persisted backoff");
+    time = first.retryAt;
+    await f.runtime.recoverExecutions();
+    const recovered = JSON.parse(await (await import("node:fs/promises")).readFile(file, "utf8"))[0];
+    assert.equal(recovered.id, first.id); assert.equal(recovered.state, "recovered");
+    assert.equal(recovered.source.invocationId, "synthetic-invocation");
+    assert.equal(recovered.target.invocationId, "synthetic-invocation");
+    assert.equal(f.runtime.executionRecoveryPending("new"), false); assert.deepEqual(f.stopped, ["new"]);
+  } finally { await f.close(); }
+});
