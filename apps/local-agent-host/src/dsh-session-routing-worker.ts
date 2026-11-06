@@ -13,13 +13,14 @@ export class DshSessionRoutingWorker extends DshRoutingProjection implements Dsh
   private failure?: Error;
   private ready = false;
   private stopping = false;
+  private closeAcknowledged = false;
   private closing?: Promise<void>;
   private storageOutcome?: DatabaseOutcome;
   private constructor(path: string) {
     super();
     this.worker = new Worker(new URL("./dsh-session-routing-worker.mjs", import.meta.url), { workerData: { path }, execArgv: [] });
     this.worker.on("error", error => this.fail(error));
-    this.worker.on("exit", code => { if (!this.stopping || code !== 0 || this.requests.size) this.fail(new Error("DSH routing storage worker exited")); });
+    this.worker.on("exit", () => { if (!this.stopping || !this.closeAcknowledged || this.requests.size) this.fail(new Error("DSH routing storage worker exited")); });
     this.worker.on("message", (reply: Reply) => {
       const request = this.requests.get(reply.id);
       if (!request) return;
@@ -74,6 +75,6 @@ export class DshSessionRoutingWorker extends DshRoutingProjection implements Dsh
   close(): Promise<void> {
     if (this.closing) return this.closing;
     this.stopping = true;
-    return this.closing = (async () => { try { await this.request("close", []); } finally { await this.worker.terminate(); } })();
+    return this.closing = (async () => { try { await this.request("close", []); this.closeAcknowledged = true; } finally { await this.worker.terminate(); } })();
   }
 }

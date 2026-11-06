@@ -956,6 +956,9 @@ Worker and unknown-effect failures fence the port; no stale projection or
 synchronous storage fallback may authorize a native operation.
 Closing prevents new mutations, drains accepted messages and closes the Worker.
 A new owner rebuilds its projection and pending intents from the unchanged tables.
+A confirmed close receipt precedes expected Worker termination; its exit code does
+not turn an already closed port into an unexpected storage failure. Exit without
+that receipt or a prior SQL failure still fences the owner.
 Operation failures close the SQLite handle before reporting failure. An unexpected
 Worker crash retains the existing Daemon storage-owner and recovery rules; losing
 the routing port alone does not authorize another storage owner.
