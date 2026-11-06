@@ -1,3 +1,4 @@
+import { parseThreadTitle } from '@opencraft/appserver-protocol/collaboration';
 import { createHash } from 'node:crypto';
 import { isAbsolute,resolve,sep } from 'node:path';
 import type { TransportSubmissionContext } from '@opencraft/appserver-client/transport';
@@ -35,14 +36,16 @@ export class CodexOrchestrationControl {
       return {acknowledged};
     }
     if(method!=='opencraft/orchestration/create')throw new OrchestrationControlError(400,'Unknown orchestration operation');
-    const settings=object(params.settings),{orchestrationTitle,orchestrationHostIncarnation,orchestrationSourceThreadId,orchestrationCrossDriver,orchestrationDriver:_driver,driver:_kind,...start}=settings;
+    const settings=object(params.settings);
+    if(parseThreadTitle(settings.orchestrationTitle)===null)throw new OrchestrationControlError(400,'A nonblank child title is required');
+    const {orchestrationTitle,orchestrationHostIncarnation,orchestrationSourceThreadId,orchestrationCrossDriver,orchestrationDriver:_driver,driver:_kind,...start}=settings;
     const fingerprint=createHash('sha256').update(JSON.stringify(settings)).digest('hex');
     let result:Record<string,unknown>;
     try{result=object(await this.port.request('thread/start',{...start,__opencraftOrchestrationOperation:operationId,...(orchestrationCrossDriver?{}:{__opencraftOrchestrationSourceThreadId:orchestrationSourceThreadId??threadId}),__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit));}
     catch(error){if(object(object(error).data).orchestrationRejected===true)return {rejected:{status:Number(object(error).code)||503}};throw error;}
     const thread=object(result.thread),childId=text(thread.id);
     if(!childId)throw new OrchestrationControlError(502,'Native child creation has no stable identity');
-    if(orchestrationTitle)try{await this.port.request('thread/name/set',{threadId:childId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);}catch(error){if(object(object(error).data).orchestrationRejected!==true)throw error;}
+    await this.port.request('thread/name/set',{threadId:childId,name:orchestrationTitle,__opencraftOrchestrationOperation:operationId+':title',__opencraftOrchestrationFingerprint:fingerprint,...(orchestrationHostIncarnation?{__opencraftOrchestrationIncarnation:orchestrationHostIncarnation}:{})},admit);
     return {threadId:childId,durability:'pending_first_turn'};
   }
   private async prepare(threadId:string,args:Record<string,unknown>,callbackIncarnation:string,sourceSettings?:Record<string,unknown>,sourceOnly=false):Promise<Record<string,unknown>>{

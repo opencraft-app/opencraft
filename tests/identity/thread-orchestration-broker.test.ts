@@ -24,7 +24,7 @@ test('all Codex Pi and DSH ACP directions retain destination identity and one de
     const parent = prefix[source] + 'parent', turn = 'turn-' + source;
     f.service.authorizeExecution(f.a, parent, 'human:' + source); f.service.executionStarted(parent, 'human:' + source, turn);
     f.execution.create = async (_op, _source, settings) => ({ threadId: prefix[destination] + 'child', driverKind: destination });
-    const args = { driver: destination, prompt: 'Do the delegated task' };
+    const args = { title:'Delegated review', driver: destination, prompt: 'Do the delegated task' };
     const child = await f.broker.invoke(parent, turn, 'spawn:' + source + ':' + destination, 'thread_spawn', args) as any;
     assert.deepEqual(await f.broker.invoke(parent, turn, 'spawn:' + source + ':' + destination, 'thread_spawn', args), child);
     const stored = f.service.orchestration.relation(child.threadId)!;
@@ -76,8 +76,8 @@ test('v3 control facts survive v4 authority upgrade without rewriting migration 
 });
 
 test('spawn replay after gateway loss creates one native child and queues one system input',async t=>{
- const f=await fixture(t);f.dropCreate();await assert.rejects(f.invoke('spawn','thread_spawn',{prompt:'Review'}),/Gateway lost/);assert.equal(f.creates,1);
- await f.restart();const first=await f.invoke('spawn','thread_spawn',{prompt:'Review'});await f.service.pump();const replay=await f.invoke('spawn','thread_spawn',{prompt:'Review'});
+ const f=await fixture(t);f.dropCreate();await assert.rejects(f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'}),/Gateway lost/);assert.equal(f.creates,1);
+ await f.restart();const first=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});await f.service.pump();const replay=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});
  assert.deepEqual(replay,first);assert.equal(f.creates,1);assert.equal(f.inputs.filter(input=>input.threadId===first.threadId).length,1);
  const op=f.service.orchestration.operation('parent:parent-turn:spawn')!;
  assert.equal(f.service.usageSubmission(first.threadId,op.clientMessageId!)?.sourceKind,'system');assert.equal(f.service.inputOrigin(first.threadId,op.clientMessageId!)?.delegatorActorId,f.a.actorId);
@@ -97,15 +97,15 @@ test('cross-user tell rejects with 403 until both send and queue are explicitly 
 });
 
 test('root delegation budget is shared with spawned descendants and replay consumes no additional writes',async t=>{
- const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review'}),op=f.service.orchestration.operation('parent:parent-turn:spawn')!;
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'}),op=f.service.orchestration.operation('parent:parent-turn:spawn')!;
  f.service.executionStarted(spawn.threadId,op.clientMessageId!,'child-turn');
  for(let i=0;i<7;i++)await f.invoke('tell-'+i,'thread_tell',{threadId:'parent',message:'Progress '+i},spawn.threadId,'child-turn');
  await assert.rejects(f.invoke('too-many','thread_tell',{threadId:'parent',message:'One more'},spawn.threadId,'child-turn'),error=>error instanceof CollaborationError&&error.status===429);
- assert.deepEqual(await f.invoke('spawn','thread_spawn',{prompt:'Review'}),spawn);assert.equal(f.creates,1);
+ assert.deepEqual(await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'}),spawn);assert.equal(f.creates,1);
 });
 
 test('recovery suppresses false parent interruptions and completion is delivered once after restart',async t=>{
- const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review'});await f.service.pump();
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});await f.service.pump();
  const recovering={threadId:spawn.threadId,turnId:'retry',rootTurnId:'root',state:'recovering' as const};f.states.set(spawn.threadId,recovering);await f.broker.observe(recovering);f.advance(6000);await f.broker.reconcile();await f.service.pump();assert.equal(f.inputs.filter(input=>input.threadId==='parent').length,0);
  const complete={...recovering,state:'completed' as const,summary:'Review finished'};f.states.set(spawn.threadId,complete);await f.broker.observe(complete);f.advance(2100);await f.restart();await f.broker.reconcile();await f.service.pump();
  const notices=f.inputs.filter(input=>input.threadId==='parent');assert.equal(notices.length,1);assert.match(notices[0]!.input,/<opencraft_child_update/);assert.match(notices[0]!.input,/completed/);
@@ -115,7 +115,7 @@ test('recovery suppresses false parent interruptions and completion is delivered
 function ACTOR_ID(id:string){return 'actor-input:'+id;}
 
 test('short wait returns a persistent ticket while an unavailable child is still recovering',async t=>{
- const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review'});
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});
  f.execution.snapshot=async()=>new Promise(()=>{});
  const started=Date.now(),result=await f.invoke('wait','thread_wait',{threadIds:[spawn.threadId],timeoutMs:20});assert.equal(result.settled,false);assert.ok(Date.now()-started<500);
  await f.restart();assert.equal(f.service.orchestration.wait(result.waitTicketId)?.state,'active');
@@ -124,11 +124,11 @@ test('short wait returns a persistent ticket while an unavailable child is still
 test('inspect remains text-only and an absent or revoked delegation cannot use server tools',async t=>{
  const f=await fixture(t),read=await f.invoke('inspect','thread_inspect',{threadId:'other'});assert.equal(read.entries.length,2);assert.doesNotMatch(JSON.stringify(read),/PRIVATE TOOL OUTPUT/);
  await assert.rejects(f.invoke('missing','thread_tell',{threadId:'other',message:'x'},'unbound','turn'),error=>error instanceof CollaborationError&&error.status===403);
- f.revoke();await assert.rejects(f.invoke('revoked','thread_spawn',{prompt:'x'}),error=>error instanceof CollaborationError&&error.status===403);assert.equal(f.creates,0);
+ f.revoke();await assert.rejects(f.invoke('revoked','thread_spawn',{title:'Delegated review',prompt:'x'}),error=>error instanceof CollaborationError&&error.status===403);assert.equal(f.creates,0);
 });
 
 test('an exhausted root notifies once and direct human input is preserved in the parent notice',async t=>{
- const f=await fixture(t),child=await f.invoke('spawn','thread_spawn',{prompt:'Review'});
+ const f=await fixture(t),child=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});
  f.service.authorizeExecution(f.a,child.threadId,'direct-input',[{type:'text',text:'Human correction'}]);f.service.executionStarted(child.threadId,'direct-input','human-turn');
  const state={threadId:child.threadId,turnId:'human-turn',rootTurnId:'human-root',state:'exhausted' as const};f.states.set(child.threadId,state);await f.broker.observe(state);f.advance(2100);
  await f.broker.reconcile();await f.service.pump();let notices=f.inputs.filter(input=>input.threadId==='parent');assert.equal(notices.length,1);assert.match(notices[0]!.input,/Direct user input occurred/);
@@ -138,9 +138,9 @@ test('an exhausted root notifies once and direct human input is preserved in the
 test('a trusted captured delegation survives later steer while fresh calls use the new human authority',async t=>{
  const f=await fixture(t),original=f.service.delegation('parent','parent-turn').id;
  f.service.authorizeExecution(f.b,'parent','human-steer');f.service.executionStarted('parent','human-steer','parent-turn');assert.equal(f.service.delegation('parent','parent-turn').context.actorId,f.b.actorId);
- const result=await f.broker.invoke('parent','parent-turn','captured-call','thread_spawn',{prompt:'Accepted before steer'},original) as any;
+ const result=await f.broker.invoke('parent','parent-turn','captured-call','thread_spawn',{title:'Delegated review',prompt:'Accepted before steer'},original) as any;
  assert.equal(f.service.orchestration.relation(result.threadId)?.ownerActorId,f.a.actorId);
- const next=await f.invoke('fresh','thread_spawn',{prompt:'Accepted after steer'});assert.equal(f.service.orchestration.relation(next.threadId)?.ownerActorId,f.b.actorId);
+ const next=await f.invoke('fresh','thread_spawn',{title:'Delegated review',prompt:'Accepted after steer'});assert.equal(f.service.orchestration.relation(next.threadId)?.ownerActorId,f.b.actorId);
 });
 
 test('automatic continuation retains bounded authority and exact persisted system identity after restart',async t=>{
@@ -151,7 +151,7 @@ test('automatic continuation retains bounded authority and exact persisted syste
 });
 
 test('a transient snapshot error returns a durable unsettled wait instead of a tool failure',async t=>{
- const f=await fixture(t),child=await f.invoke('spawn','thread_spawn',{prompt:'Review'});f.execution.snapshot=async()=>{throw Error('Host temporarily detached');};
+ const f=await fixture(t),child=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});f.execution.snapshot=async()=>{throw Error('Host temporarily detached');};
  const result=await f.invoke('wait','thread_wait',{threadIds:[child.threadId],timeoutMs:50});assert.equal(result.settled,false);assert.equal(f.service.orchestration.wait(result.waitTicketId)?.state,'active');
 });
 
@@ -164,7 +164,7 @@ test('existing send tool receives the same durable reply after reconnect without
 test('concurrent aliases of one explicit spawn key share one side effect even after its Host receipt is ACKed',async t=>{
  const f=await fixture(t);let prepared=0,release!:()=>void;const gate=new Promise<void>(resolve=>release=resolve);
  f.execution.prepare=async(_id,_source,args)=>{if(++prepared===2)await gate;return args;};f.execution.acknowledge=async id=>{f.creations.delete(id);return true;};
- const args={prompt:'Create once',idempotencyKey:'shared'},a=f.invoke('alias-A','thread_spawn',args),b=f.invoke('alias-B','thread_spawn',args);
+ const args={title:'Delegated review',prompt:'Create once',idempotencyKey:'shared'},a=f.invoke('alias-A','thread_spawn',args),b=f.invoke('alias-B','thread_spawn',args);
  const first=await a;release();assert.deepEqual(await b,first);assert.equal(f.creates,1);
  await f.restart();assert.deepEqual(await f.invoke('alias-B','thread_spawn',args),first);assert.equal(f.creates,1);
 });
@@ -182,14 +182,14 @@ test('wait rechecks target read permission after an asynchronous snapshot and do
 test('committed create receipts retry ACK durably after restart without requiring callback replay',async t=>{
  const f=await fixture(t);let acknowledged=false,attempts=0;
  f.execution.acknowledge=async()=>{attempts++;if(!acknowledged)throw Error('Gateway lost before ACK');return true;};
- const result=await f.invoke('spawn-ack','thread_spawn',{prompt:'Review'});await f.restart();assert.equal(f.service.pendingOrchestrationAcks().length,1);
+ const result=await f.invoke('spawn-ack','thread_spawn',{title:'Delegated review',prompt:'Review'});await f.restart();assert.equal(f.service.pendingOrchestrationAcks().length,1);
  acknowledged=true;await f.broker.reconcile();await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.service.pendingOrchestrationAcks().length,0);assert.equal(f.creates,1);assert.ok(attempts>=2);
- assert.deepEqual(await f.invoke('spawn-ack','thread_spawn',{prompt:'Review'}),result);
+ assert.deepEqual(await f.invoke('spawn-ack','thread_spawn',{title:'Delegated review',prompt:'Review'}),result);
 });
 
 test('a definitive Native creation rejection has a durable failure and ACKs its cached error',async t=>{
  const f=await fixture(t);let rejected=0,acks=0;f.execution.create=async()=>{rejected++;return {rejected:{status:400}};};f.execution.acknowledge=async()=>{acks++;return true;};
- const call=()=>f.invoke('rejected-create','thread_spawn',{prompt:'Rejected'});await assert.rejects(call(),error=>error instanceof CollaborationError&&error.status===400);await f.restart();
+ const call=()=>f.invoke('rejected-create','thread_spawn',{title:'Delegated review',prompt:'Rejected'});await assert.rejects(call(),error=>error instanceof CollaborationError&&error.status===400);await f.restart();
  await assert.rejects(call(),error=>error instanceof CollaborationError&&error.status===400);assert.equal(rejected,1);assert.ok(acks>=1);assert.equal(f.service.orchestration.threads().length,0);
 });
 
@@ -203,7 +203,7 @@ test('a timed-out wait on a readable non-child survives restart and wakes its ca
 
 test('revocation after confirmed creation records its owner and failure, sends no prompt and still ACKs',async t=>{
  const f=await fixture(t),create=f.execution.create;let acks=0;f.execution.create=async(...args)=>{const child=await create(...args);f.revoke();return child;};f.execution.acknowledge=async()=>{acks++;return true;};
- await assert.rejects(f.invoke('late-revoke','thread_spawn',{prompt:'Do not send'}),error=>error instanceof CollaborationError&&error.status===403);await f.service.pump();assert.equal(f.inputs.length,0);
+ await assert.rejects(f.invoke('late-revoke','thread_spawn',{title:'Delegated review',prompt:'Do not send'}),error=>error instanceof CollaborationError&&error.status===403);await f.service.pump();assert.equal(f.inputs.length,0);
  assert.equal(f.service.orchestration.threads()[0]?.ownerActorId,f.a.actorId);assert.equal(f.service.orchestration.operation('parent:parent-turn:late-revoke')?.state,'failed');await f.broker.reconcile();assert.equal(acks,1);
 });
 
@@ -217,12 +217,12 @@ test('a live wait abandoned by Gateway death still wakes once after the persiste
 });
 
 test('a confirmed human stop marks direct intervention even when the child started from Agent input',async t=>{
- const f=await fixture(t),child=await f.invoke('stop-child','thread_spawn',{prompt:'Review'});await f.broker.observe({threadId:child.threadId,turnId:'turn',rootTurnId:'root',state:'interrupted_by_user'});
+ const f=await fixture(t),child=await f.invoke('stop-child','thread_spawn',{title:'Delegated review',prompt:'Review'});await f.broker.observe({threadId:child.threadId,turnId:'turn',rootTurnId:'root',state:'interrupted_by_user'});
  assert.equal(f.service.orchestration.relation(child.threadId)?.hasDirectUserInput,true);
 });
 
 test('UI control reads separate timed-out tool, delivery and child facts across restart',async t=>{
- const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review',visibility:'hidden'});
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review',visibility:'hidden'});
  f.states.set(spawn.threadId,{threadId:spawn.threadId,turnId:'child-turn',rootTurnId:'child-turn',state:'active'});
  await f.broker.observe(f.states.get(spawn.threadId)!);
  const wait=await f.invoke('wait','thread_wait',{threadIds:[spawn.threadId],timeoutMs:0});
@@ -244,7 +244,7 @@ test('UI control reads separate timed-out tool, delivery and child facts across 
 });
 
 test('UI ledger projection checks source and each child read authority and exact Native identities',async t=>{
- const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{prompt:'Review'});
+ const f=await fixture(t),spawn=await f.invoke('spawn','thread_spawn',{title:'Delegated review',prompt:'Review'});
  await assert.rejects(f.service.command(f.b,{action:'orchestration',threadId:spawn.threadId,calls:[]}),/conversation_action_denied/);
  const op=f.service.orchestration.operation('parent:parent-turn:spawn')!;
  f.service.database.prepare('INSERT INTO opencraft_orchestration_tool_calls VALUES(?,?)').run('incarnation:parent:parent-turn:replayed',op.operationId);
@@ -290,13 +290,62 @@ test('v4 to v5 display migration preserves receipts and rejects a changed v5 che
 
 test('spawn defaults to a hidden subagent and preserves explicit visible conversations across restart', async t => {
  const f = await fixture(t);
- const hidden = await f.invoke('default-hidden', 'thread_spawn', {prompt:'Review'});
+ const hidden = await f.invoke('default-hidden', 'thread_spawn', {title:'Delegated review',prompt:'Review'});
  assert.deepEqual(f.service.threadTopology(hidden.threadId), {parentThreadId:'parent',visibility:'hidden'});
  await f.restart();
  assert.equal(f.service.orchestration.relation(hidden.threadId)?.visibility,'hidden');
- const visible = await f.invoke('explicit-visible','thread_spawn',{prompt:'Independent long-lived work',visibility:'visible'});
+ const visible = await f.invoke('explicit-visible','thread_spawn',{title:'Delegated review',prompt:'Independent long-lived work',visibility:'visible'});
  assert.deepEqual(f.service.threadTopology(visible.threadId), {parentThreadId:'parent',visibility:'visible'});
  await f.restart();
  assert.equal(f.service.orchestration.relation(visible.threadId)?.visibility,'visible');
  assert.equal(f.service.orchestration.relation(hidden.threadId)?.visibility,'hidden');
+});
+
+test('spawn requires a meaningful title before any native allocation or input', async t => {
+  const f=await fixture(t);
+  for(const [index,title] of [undefined,null,'',' \t ',42,'x'.repeat(257),'line\nbreak','bad\0title'].entries()) {
+    await assert.rejects(f.invoke('invalid-title-'+index,'thread_spawn',{title,prompt:'Review'}),
+      (error:unknown)=>error instanceof CollaborationError&&error.status===400&&error.code==='thread_title_required');
+  }
+  assert.equal(f.creates,0);assert.equal(f.inputs.length,0);
+  let received:unknown;f.execution.prepare=async(_op,_source,args)=>{received=args.title;return args;};
+  await f.invoke('valid-title','thread_spawn',{title:'  Review navigation  ',prompt:'Review'});
+  assert.equal(received,'Review navigation');assert.equal(f.creates,1);
+});
+
+test('the title tool is self-only and replays its receipt without reverting a newer title', async t => {
+  const f=await fixture(t);let title='',writes=0;
+  f.execution.setTitle=async(_op,target,value,admit)=>{assert.equal(target,'parent');assert.ok(admit());title=value;writes++;};
+  await assert.rejects(f.invoke('foreign-title','thread_set_title',{threadId:'private-B',title:'Not allowed'}),/unexpected_orchestration_field/);
+  await assert.rejects(f.invoke('blank-title','thread_set_title',{title:' '}),/thread_title_required/);
+  assert.deepEqual(await f.invoke('title-a','thread_set_title',{title:'  First task  '}),{threadId:'parent',status:'updated'});
+  await f.invoke('title-b','thread_set_title',{title:'New task'});
+  await f.restart();
+  assert.deepEqual(await f.invoke('title-a','thread_set_title',{title:'  First task  '}),{threadId:'parent',status:'updated'});
+  assert.equal(title,'New task');assert.equal(writes,2);assert.equal(f.inputs.length,0);
+  f.revoke();await assert.rejects(f.invoke('revoked-title','thread_set_title',{title:'Denied'}),/execution_delegation/);
+  assert.equal(writes,2);
+});
+
+test('a lost title save acknowledgement stays unconfirmed and never repeats the old write', async t => {
+  const f=await fixture(t);let title='',writes=0;
+  f.execution.setTitle=async(_op,_thread,value)=>{title=value;writes++;throw Error('lost after save');};
+  const uncertain=await f.invoke('lost-title','thread_set_title',{title:'Original title'});
+  assert.equal(uncertain.status,'unconfirmed');assert.equal(title,'Original title');
+  f.execution.setTitle=async(_op,_thread,value)=>{title=value;writes++;};
+  await f.invoke('new-title','thread_set_title',{title:'New title'});
+  await f.restart();assert.deepEqual(await f.invoke('lost-title','thread_set_title',{title:'Original title'}),uncertain);
+  assert.equal(title,'New title');assert.equal(writes,2);
+});
+
+test('tool schemas require titles and publish the mandatory self-title instruction',async()=>{
+  const {THREAD_ORCHESTRATION_TOOLS,parseThreadTitle}=await import('@opencraft/appserver-protocol/collaboration');
+  const spawn=THREAD_ORCHESTRATION_TOOLS.find(tool=>tool.name==='thread_spawn')!;
+  assert.deepEqual(spawn.inputSchema.required,['title','prompt']);
+  assert.ok(new RegExp(spawn.inputSchema.properties.title.pattern).test('Review navigation'));
+  assert.ok(!new RegExp(spawn.inputSchema.properties.title.pattern).test('   '));
+  const rename=THREAD_ORCHESTRATION_TOOLS.find(tool=>tool.name==='thread_set_title')!;
+  assert.match(rename.description,/MUST call.*beginning of a new conversation/);
+  assert.deepEqual(rename.inputSchema.required,['title']);assert.equal('threadId' in rename.inputSchema.properties,false);
+  assert.equal(parseThreadTitle('  Readable task  '),'Readable task');assert.equal(parseThreadTitle('line\nbreak'),null);
 });

@@ -43,8 +43,8 @@ export class CodexGenerationRouter {
 
 class RoutingSession {
   private readonly epoch = randomUUID();
-  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
-  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string } }>();
+  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean; supportsThreadTitle?:boolean }> }>();
+  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean; supportsThreadTitle?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string } }>();
   private readonly pendingStarts = new Map<string, { forward: () => void; context: RouterLeaseContext }>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean; release?: RouterLease }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean; release?: RouterLease }>();
@@ -80,7 +80,7 @@ class RoutingSession {
   }
   private get registry() { return this.router.runtime.registry; }
   private emit(message: RpcRecord): void { if (!this.closed && this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
-  private async peer(id: string): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> {
+  private async peer(id: string): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean; supportsThreadTitle?:boolean }> {
     const health = await this.router.runtime.ensure(id), generation = this.registry.get(id)!;
     if (this.closed) throw error("Routing connection is closed");
     const existing = this.peers.get(id);
@@ -166,7 +166,7 @@ class RoutingSession {
         }
         this.generationLost(id, incarnation, connectionEpoch, incarnation);
       },
-    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1}));
+    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1,supportsThreadTitle:health.threadTitleToolVersion===1}));
     void operation.then(value => { connectionEpoch = value.peer.connectionEpoch; }).catch(() => {});
     this.peers.set(id, { incarnation, operation });
     try { const value = await operation; if (this.closed) { value.peer.close(); throw error("Routing connection is closed"); } return value; }
@@ -282,12 +282,13 @@ class RoutingSession {
     if (spawning) { process = { ticket, active: true, pending: true, release: this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.processes.set(processHandle, process); }
     let release: (() => void) | undefined, sent = false;
     try {
-      const { peer, supportsOrchestration } = await this.peer(ticket.generationId);
+      const { peer, supportsOrchestration, supportsThreadTitle } = await this.peer(ticket.generationId);
       if(!supportsOrchestration){
         if(params.__opencraftOrchestrationOperation)throw error('This Engine Host does not support orchestration replay');
         delete params.__opencraftDelegationId;
-        if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>!['thread_spawn','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
+        if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>!['thread_spawn','thread_set_title','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
       }
+      if(!supportsThreadTitle&&Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>text(rpcRecord(tool).name)!=='thread_set_title');
       release = this.router.runtime.admit(ticket);
       if (id === undefined) { lease?.sent(); peer.notify(message); return; }
       const nativeStarted = performance.now();

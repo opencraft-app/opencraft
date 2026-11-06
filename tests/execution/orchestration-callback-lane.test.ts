@@ -158,3 +158,24 @@ test('interrupt during sandbox preparation prevents a late turn from starting ac
  assert.equal(input.messages.find(m=>m.id==='starting').error.code,-32800);
  assert.equal(f.requests.filter(m=>m.method==='turn/start').length,0);
 });
+
+test('self-title tool callbacks retain their stable identity across gateway replacement',async t=>{
+ const f=await fixture(t),first=await f.connect();await until(()=>f.requests.some(m=>m.method==='initialized'));
+ const change={...callback,id:'title-call',params:{...callback.params,callId:'set-title',tool:'thread_set_title',arguments:{title:'Task title'}}};
+ f.nativeSockets[0]!.send(JSON.stringify(change));await until(()=>first.messages.some(m=>m.id==='title-call'));
+ const original=first.messages.find(m=>m.id==='title-call');assert.ok(original.__opencraftToolCallKey);
+ first.socket.terminate();await until(()=>first.socket.readyState===WebSocket.CLOSED);
+ const next=await f.connect();await until(()=>next.messages.some(m=>m.id==='title-call'));
+ const replay=next.messages.find(m=>m.id==='title-call');assert.equal(replay.__opencraftToolCallKey,original.__opencraftToolCallKey);
+ next.send({id:replay.id,__opencraftCallbackIncarnation:replay.__opencraftCallbackIncarnation,__opencraftToolCallKey:replay.__opencraftToolCallKey,result:{success:true,contentItems:[]}});
+ await until(()=>f.requests.some(m=>m.id==='title-call'));assert.equal(f.requests.filter(m=>m.id==='title-call').length,1);
+});
+
+test('the self-title tool is supported only when its specific callback capability is advertised',async t=>{
+ const f=await fixture(t);
+ for(const titleVersion of [undefined,1] as const){
+  const transport=new CodexNativeCoreTransport('/unused/core.sock','synthetic-token','title-capability');
+  transport.control.health=async()=>({protocolVersion:1,pid:1,codexPid:2,nativeSocket:f.proxy,routingEpoch:'router',orchestrationRoutingVersion:1,callbackProtocolVersion:1,pendingCallbacks:0,pendingOrchestrationMutations:0,...(titleVersion?{threadTitleToolVersion:titleVersion}:{})});
+  await transport.connect();assert.equal(transport.supportsOrchestration,true);assert.equal(transport.supportsThreadTitle,titleVersion===1);await transport.close();
+ }
+});

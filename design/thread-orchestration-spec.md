@@ -117,7 +117,7 @@ export interface ServerToolInvocationEnvelope {
   readonly turnId: string;
   readonly callId: string;
   readonly delegationId: string;
-  readonly toolName: "thread_spawn" | "thread_tell" | "thread_inspect" | "thread_wait";
+  readonly toolName: "thread_spawn" | "thread_set_title" | "thread_tell" | "thread_inspect" | "thread_wait";
   readonly arguments: Record<string, unknown>;
 }
 ```
@@ -165,9 +165,10 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
 - **幂等承诺**：网关 Broker 在执行任何副作用前，先以 `toolCallKey` 写入 SQLite。若网关在执行后、返回响应前重启，Engine Host 重连重放同一 `toolCallKey` 时，新网关直接返回已落盘的 `result_json`，确保子会话不重复创建、消息不重复投递、工具不因网关重启报错。
 - **权限承诺**：每次调用强制校验 `delegationId` 对应的自然人 `issuerActorId` 是否有效、未撤销、未超配额（默认每委托最多 8 次跨会话写操作），并向 `access-control/collaboration` 核验目标会话权限。
 
-### 3.1 四个内置工具契约
+### 3.1 五个内置工具契约
 1. **`thread_spawn`**：
-   - 输入：`{ title?, prompt, parentSelf?: true, bindLifecycleToSelf?: true, visibility?: "visible"|"hidden", driver?, model?, reasoningEffort?, cwd?, idempotencyKey? }`
+   - 输入：`{ title, prompt, parentSelf?: true, bindLifecycleToSelf?: true, visibility?: "visible"|"hidden", driver?, model?, reasoningEffort?, cwd?, idempotencyKey? }`
+   - `title` 必填、去首尾空白后非空、单行、最多256个UTF-16码元；Schema、Broker和Codex/Pi/ACP创建边界均校验。标题保存未确认时不得将创建报告为成功或派发首条输入。
    - 默认 `visibility: "hidden"`，作为 subagent 仅从父对话进入；只有用户明确要求独立、长期会话才传 `visible`。已有关系不迁移，历史表默认值保留兼容，Broker 显式写入新默认。
    - 权限：新建子会话的 `ownerActorId` 继承 `delegation.issuerActorId`；消耗配额 1 次；首轮输入标记 `usageSourceKind: "system"`。
    - 返回：`{ operationId, threadId, status: "starting", durability: "immediate" | "pending_first_turn", delivery: "sent" }`。
@@ -181,6 +182,12 @@ Thread、Turn 与 native call ID；权限仍从持久输入委托派生，Host �
 4. **`thread_wait`**：
    - 输入：`{ threadIds: string[], waitFor?: "all_settled"|"any_settled", timeoutMs?: 0..5000 }`
    - 行为：在 SQLite 登记持久 `waitTicket` 并立即释放当前会话串行锁；最多等待 `timeoutMs`（默认 3000ms）。若超时仍未完成（或子会话正处于 `@opencraft/host-recovery` 自动续跑中），返回 `{ settled: false, waitTicketId, threads }`，由后续 `parent_system_notice` 异步唤醒父会话。
+
+5. **`thread_set_title`**：
+   - 输入：`{ title, idempotencyKey? }`，仅改当前有有效委托的来源会话，不接受目标Thread参数；沿已有 `thread/name/set` 保存。
+   - 工具指令要求主会话和子会话在新会话开始、实质工作或最终回复前调用；任务改变时更新。模型遵循这条指令与服务器强制spawn标题必填分开记录，不能声称平台已拦截所有原生工具或无标题的原生Turn结束。
+   - 返回：`{threadId,status:"updated"|"unconfirmed"}`；仅updated证明本次保存确认。
+   - Worker在原操作账本上先持久声明写入意图。网关重启或结果丢失保持unconfirmed，同键不重放旧写入覆盖用户/Agent后来设置的标题；已完成请求重放原回执。无新增表或迁移，无新增网络主线程SQL。
 
 ---
 

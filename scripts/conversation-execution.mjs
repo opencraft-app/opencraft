@@ -47,7 +47,12 @@ export function callConversationHost(appHost, binding, requestId, method, params
                     ? {status:frame.error.code}
                     : [-32600,-32601,-32602].includes(frame.error.code) ? {status:400} : {}
                   : {}) }));
-              if (frame.id === 'init') send('operation', method, { ...params, ...(binding.threadId ? {threadId: binding.threadId} : {}) });
+              if (frame.id === 'init') {
+                if (method === 'thread/name/set' && submissionContext?.orchestrationOperationId
+                  && submissionContext.orchestrationCanAdmit?.() !== true)
+                  return finish(Object.assign(new Error('Orchestration delegation revoked'), {status:403}));
+                send('operation', method, { ...params, ...(binding.threadId ? {threadId: binding.threadId} : {}) });
+              }
               else finish(null, frame.result);
             } catch (error) { finish(error); }
           } else if (message.type === 'fatal' || message.type === 'host/status' && ['failed', 'closed'].includes(message.status.state)) finish(new Error('Actor Host closed'));

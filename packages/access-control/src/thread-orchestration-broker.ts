@@ -1,12 +1,12 @@
 import type { OrchestrationRuntimeStorage } from './orchestration-runtime-store.js';
 import { createHash, randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { encodeConversationRef, parseConversationRef } from '@opencraft/appserver-protocol/collaboration';
+import { encodeConversationRef, parseConversationRef, parseThreadTitle } from '@opencraft/appserver-protocol/collaboration';
 import { ACTOR_INPUT_PREFIX, Collaboration, CollaborationError } from './collaboration.js';
 import type { BoundedThreadDelegation, OrchestrationMessageOrigin } from './orchestration-authority.js';
 import type { ChildOutcome, ToolOperation } from './orchestration-ledger.js';
 
-export const ORCHESTRATION_TOOL_NAMES = ['thread_spawn','thread_tell','thread_inspect','thread_wait'] as const;
+export const ORCHESTRATION_TOOL_NAMES = ['thread_spawn','thread_set_title','thread_tell','thread_inspect','thread_wait'] as const;
 export type OrchestrationRuntimeSnapshot = import("@opencraft/appserver-protocol/collaboration").ThreadOrchestrationSnapshot;
 export type OrchestrationExecutionPort = import('@opencraft/appserver-client').AgentDriverContract;
 const text=(value:unknown,max=256)=>{
@@ -113,11 +113,17 @@ export class ThreadOrchestrationBroker {
     let target:string|null=null,mode='read';
     if(name==='thread_spawn'){
       fields(args,['title','prompt','parentSelf','bindLifecycleToSelf','visibility','driver','model','reasoningEffort','cwd','idempotencyKey']);text(args.prompt,16384);
+      const title=parseThreadTitle(args.title);if(title===null)throw new CollaborationError(400,'thread_title_required');args={...args,title};
       for(const field of ['title','model','reasoningEffort','cwd'])if(args[field]!==undefined)text(args[field],field==='cwd'?4096:256);
       if(args.driver!==undefined&&!['codex','pi','dsh','acp','claude-code'].includes(String(args.driver)))throw new CollaborationError(400,'orchestration_driver_unsupported');
       if(args.parentSelf!==undefined&&args.parentSelf!==true||args.bindLifecycleToSelf!==undefined&&args.bindLifecycleToSelf!==true)throw new CollaborationError(400,'invalid_parent_binding');
       if(args.visibility!==undefined&&!['visible','hidden'].includes(String(args.visibility)))throw new CollaborationError(400,'invalid_thread_visibility');
       this.authorize(delegation,threadId,'execution.delegate');mode='start';
+    }else if(name==='thread_set_title'){
+      fields(args,['title','idempotencyKey']);
+      const title=parseThreadTitle(args.title);if(title===null)throw new CollaborationError(400,'thread_title_required');
+      if(!this.execution.setTitle)throw new CollaborationError(409,'unsupported_capability');
+      args={...args,title};target=threadId;mode='title';this.authorize(delegation,threadId,'conversation.read');
     }else if(name==='thread_tell'){
       fields(args,['threadId','message','mode','expectedTurnId','replyExpectation','idempotencyKey']);target=text(args.threadId);text(args.message,16384);mode=args.mode===undefined?'queue':text(args.mode);
       if(!['queue','steer'].includes(mode)||mode==='steer'&&!args.expectedTurnId||mode==='queue'&&args.expectedTurnId!==undefined)throw new CollaborationError(400,'invalid_execution_mode');
@@ -142,6 +148,15 @@ export class ThreadOrchestrationBroker {
     const operation=ledger.accept({toolCallKey:key,delegationId:delegation.id,issuerActorId:delegation.context.actorId,kind:name.slice(7),senderThreadId:threadId,
       targetThreadId:target,clientMessageId:null,mode,arguments:args,...(args.idempotencyKey===undefined?{}:{idempotencyKey:text(args.idempotencyKey,128)})});
     return this.withOperation(operation,async()=>{
+    if(name==='thread_set_title'){
+      const result={threadId,status:'unconfirmed' as 'updated'|'unconfirmed'};
+      if(await this.runtimeStorage.claimTitleWrite(operation.operationId)){
+        if(!this.valid(delegation,turnId))throw new CollaborationError(403,'execution_delegation_revoked');
+        try{await this.execution.setTitle!(operation.operationId,threadId,String(args.title),()=>this.valid(delegation,turnId));result.status='updated';}
+        catch{/* Preserve uncertainty, including loss after the native save. */}
+      }
+      await this.runtimeStorage.finishTitleWrite(key,result);return result;
+    }
     if(name==='thread_spawn'){
       this.collaboration.reserveSpawn(operation.operationId,delegation);
       let settings=this.collaboration.spawnPreparation(operation.operationId);

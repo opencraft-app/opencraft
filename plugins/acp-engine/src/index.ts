@@ -1,3 +1,4 @@
+import { parseThreadTitle } from '@opencraft/appserver-protocol/collaboration';
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -282,6 +283,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "opencraft/orchestration/create") {
       const settings = value(params.settings), operationId = String(params.operationId ?? "");
+      if (parseThreadTitle(settings.orchestrationTitle) === null) return fault("A nonblank child title is required");
       if (!operationId) return fault("ACP creation operation required");
       const preparation = this.preparations.get(operationId) ?? this.creations.get(operationId)?.preparation;
       const { orchestrationGenerationId: _generation, orchestrationDriver: _routingDriver, ...frozen } = settings;
@@ -290,7 +292,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       const { driver: _driver, driverKind: _kind, orchestrationTitle, orchestrationHostIncarnation: _incarnation, ...start } = frozen;
       const created = await this.request("thread/start", { ...start, __opencraftOrchestrationOperation: operationId }, client);
       if (this.preparations.delete(operationId)) await this.savePreparations();
-      if (orchestrationTitle && this.session(created.thread.id).name === null) { const session = this.session(created.thread.id); session.name = String(orchestrationTitle); await this.save(session); }
+      if (orchestrationTitle && this.session(created.thread.id).name === null) { const session = this.session(created.thread.id); session.name = String(orchestrationTitle); await this.save(session); this.notify("thread/name/updated", {threadId:session.id,threadName:session.name}); }
       return { threadId: created.thread.id, driverKind: this.driverKind, durability: "immediate" };
     }
     if (method === "opencraft/orchestration/status") return this.snapshot(String(params.threadId));
@@ -385,7 +387,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, params.initialTurnsPage) : undefined;
       return { thread: this.metadata(session), model: session.model, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
-    if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); session.name = params.name; await this.save(session); return {}; }
+    if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); session.name = params.name; await this.save(session); this.notify("thread/name/updated", {threadId:session.id,threadName:session.name}); return {}; }
     if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; await this.save(session); return {}; }
     if (method === "thread/unsubscribe") { if (runtime.owner === client) runtime.owner = undefined; return {}; }
     if (method === "turn/start") {

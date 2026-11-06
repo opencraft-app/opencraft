@@ -124,6 +124,7 @@ export async function startCodexGenerationService(options: {
         return { status: 200, value: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, routingPid: process.pid,
           appServerPid: execution.pid, codexPid: execution.codexPid, nativeSocket, dataDirectory, proxyBaseUrl,
           environmentRoutingVersion: 1, orchestrationRoutingVersion: 1, routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch,
+          ...(execution.threadTitleToolVersion === 1 ? {threadTitleToolVersion: 1 as const} : {}),
           ...(execution.callbackProtocolVersion === 1 ? { callbackProtocolVersion: 1 as const, pendingCallbacks: execution.pendingCallbacks, pendingOrchestrationMutations: execution.pendingOrchestrationMutations } : {}) } satisfies CodexAppServerHealth };
       }
       if (request.method === "GET" && request.url === "/generations") return { status: 200, value: state() };
