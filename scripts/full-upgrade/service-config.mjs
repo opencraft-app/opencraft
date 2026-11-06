@@ -1,4 +1,4 @@
-import { readFile, lstat, realpath } from 'node:fs/promises';
+import { readFile, lstat, realpath, mkdir } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import { invariant, sha256 } from './durable.mjs';
 import { verifyBytes, parseManifest, parseStrictJson, enforcePolicy } from '../full-release/contract.mjs';
@@ -12,6 +12,16 @@ export async function rootOwned(path) {
     current = dirname(current);
   }
 }
+// Optional root configuration, never a request/recipe argument. A custom root
+// must already exist; changing it selects future pins without moving old ones.
+export async function fullTargetDirectory(config) {
+  const path = config.fullTargetRoot === undefined ? '/opt/opencraft-full-targets' : config.fullTargetRoot;
+  invariant(typeof path === 'string' && isAbsolute(path) && !path.split('/').includes('..'), 'absolute-config-path-required');
+  if (config.fullTargetRoot === undefined) await mkdir(path, { recursive: true, mode: 0o755 });
+  await rootOwned(path);
+  invariant((await lstat(path)).isDirectory(), 'full-target-directory-required');
+  return path;
+}
 export async function readConfig(path) {
   await rootOwned(path);
   const config = JSON.parse(await readFile(path, 'utf8'));
@@ -19,6 +29,7 @@ export async function readConfig(path) {
   for (const key of ['stateRoot', 'controlStateRoot', 'runtimeRoot', 'artifactRoot', 'deployLock', 'profilePath', 'targetRoot', 'webState', 'trustFile']) {
     invariant(typeof config[key] === 'string' && isAbsolute(config[key]), 'absolute-config-path-required');
   }
+  if (config.fullTargetRoot !== undefined) await fullTargetDirectory(config);
   return config;
 }
 export const socketPath = (config, role) => join(config.runtimeRoot + '-' + role, 'control.sock');
