@@ -19,7 +19,7 @@ import {
   type DaemonServerMessage,
 } from "@opencraft/daemon-ipc";
 
-import { DshSessionRouting } from "../../apps/local-agent-host/src/dsh-session-routing.js";
+import { openLocalAgentStorageWithWorker } from "../../apps/local-agent-host/src/storage/local-agent-storage.js";
 import { seedLegacyHostStorage, seedNewerHostStorage } from "../support/local-agent-storage-fixture.js";
 import { OpenCraftDaemonClientManager } from "../../apps/workbench-electron/src/daemon-client.js";
 import { readDaemonMachineIdentity } from "../../apps/opencraft-daemon/src/machine-identity.js";
@@ -254,13 +254,12 @@ for (const failing of [true, false]) test(`daemon storage ${failing ? "failure p
   } finally { await daemon?.close(); process.chdir(cwd); await rm(directory, { recursive: true, force: true }); }
 });
 
-test("competing daemon startup has exactly one storage owner before either can open databases", async t => {
+test("competing daemon startup has exactly one storage owner before either can open databases", async () => {
   const directory = await mkdtemp(join(tmpdir(), "oc-daemon-owners-"));
   const cwd = process.cwd();
   const daemons: Awaited<ReturnType<typeof startOpenCraftDaemon>>[] = [];
   try {
     seedLegacyHostStorage(join(directory, "data"));
-    const opened = t.mock.method(DshSessionRouting.prototype, "close");
     const options = { endpoint: join(directory, "daemon.sock"), runtimeDirectory: cwd, authToken: "x".repeat(48),
       dshExecutable: "unused", dataDirectory: join(directory, "data"), codexExecutable: "unused",
       codexDataDirectory: join(directory, "codex"), nativeCodexHomeDirectory: join(directory, "native") };
@@ -269,9 +268,9 @@ test("competing daemon startup has exactly one storage owner before either can o
     assert.equal(daemons.length, 1);
     const failure = results.find(result => result.status === "rejected");
     assert.ok(failure && failure.status === "rejected"); assert.match(failure.reason.message, /already owned/);
-    assert.equal(opened.mock.callCount(), 0, "loser must not acquire and close stores");
     await daemons[0].close(); daemons.length = 0;
-    assert.equal(opened.mock.callCount(), 1);
+    const reopened = await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
+    try { assert.ok(reopened.summaries.every(row => row.status === "up-to-date")); } finally { await reopened.close(); }
     // The claim protects the data directory even with a different IPC endpoint.
     const first = await startOpenCraftDaemon(options); daemons.push(first);
     await assert.rejects(startOpenCraftDaemon({ ...options, endpoint: join(directory, "other.sock") }), /already owned/);

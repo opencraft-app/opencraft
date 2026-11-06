@@ -938,3 +938,29 @@ until all directory sources are covered. Advanced native query consumers must
 continue to inspect coverage.
 It neither replays mutations nor stops retained execution owners. The registry's
 existing synchronous SQLite implementation remains a separate concern.
+
+### DSH generation routing storage owner
+
+Live Local Agent Hosts open session-routing storage through an owned Worker,
+including schema adoption, migrations and recovery. The Worker alone mutates the
+existing generation and unpublished-intent tables. The network thread consumes a
+committed in-memory projection; stream translation and session-list filtering do
+not prepare or execute SQL. The same projection implementation owns logical/native
+identity, hidden candidates, retired producers and seq/turn offsets on both sides.
+
+`stage` is acknowledged only after its intent commits, before creating the native
+successor. `publish` and restart reconciliation install a new projection only after
+the Worker commits and acknowledges it. Deterministic argument, evidence and stale-authority rejections return the
+confirmed old projection after rollback and leave the owner available. SQL,
+Worker and unknown-effect failures fence the port; no stale projection or
+synchronous storage fallback may authorize a native operation.
+Closing prevents new mutations, drains accepted messages and closes the Worker.
+A new owner rebuilds its projection and pending intents from the unchanged tables.
+Operation failures close the SQLite handle before reporting failure. An unexpected
+Worker crash retains the existing Daemon storage-owner and recovery rules; losing
+the routing port alone does not authorize another storage owner.
+Headless, managed Web and desktop Daemon bundles carry the Worker beside the host.
+
+This boundary covers session routing. Thread catalog, execution authority,
+documents, connectors and task stores retain their existing storage ownership;
+this change is not a claim that all DSH Host storage has left the network thread.
