@@ -194,3 +194,23 @@ test('contract, runtime, loader and regression changes retain builds and add ext
   assert.equal(planChanges(['docs/architecture/extensions-guide.md']).extensions, false);
   assert.equal(planChanges(['package-lock.json']).extensions, true);
 });
+
+// This guards the executable CI configuration, not a product's source shape:
+// these production-owner regressions must be selected and invoked by automation.
+test('AppServer client owner selects an automatic job that executes its lifecycle regressions', () => {
+  for (const path of ['packages/appserver-client/src/client.ts',
+    'tests/protocol/appserver-client.test.ts', 'tests/protocol/appserver-connection-lifecycle.test.ts']) {
+    assert.equal(planChanges([path]).headlessTests, true, path);
+  }
+  const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
+  const clientSuite = scripts['test:appserver-client'].split(/\s+/);
+  for (const file of ['tests/protocol/appserver-client.test.ts', 'tests/protocol/appserver-connection-lifecycle.test.ts']) {
+    assert.ok(clientSuite.includes(file), file);
+    assert.equal(scripts['test:appserver'].split(/\s+/).includes(file), false, 'aggregate delegates instead of duplicating the keeper');
+  }
+  assert.ok(scripts['test:appserver'].includes('npm run test:appserver-client'));
+  const workflow = readFileSync(new URL('../../.github/workflows/build-matrix.yml', import.meta.url), 'utf8');
+  const headlessJob = workflow.split('  linux-headless:')[1]?.split('\n  build-checks:')[0];
+  assert.ok(headlessJob, 'automatic headless job remains present');
+  assert.match(headlessJob, /\n        run: npm run test:appserver-client\n/u);
+});
