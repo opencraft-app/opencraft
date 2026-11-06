@@ -10,18 +10,18 @@ export function driverForThread(threadId) {
 }
 
 /** @returns {import('../packages/appserver-client/src/agent-driver.ts').AgentDriverContract} */
-export function createThreadOrchestrationExecution(getAppHost, { prepared = () => null, enabled = ['codex'] } = {}) {
+export function createThreadOrchestrationExecution(getAppHost, { prepared = () => null, enabled = ['codex'], creationSender = async () => null } = {}) {
   const target = driver => driver === 'dsh' ? 'dsh-acp' : driver;
   const requireDriver = driver => {
     if (!enabled.includes(driver)) throw Object.assign(new Error('Orchestration driver is unavailable'), { status: 400, code: 'orchestration_driver_unsupported' });
     return driver;
   };
-  const invoke = (driver, method, threadId, operationId, params = {}, canAdmit = () => true) => {
+  const invoke = (driver, method, threadId, operationId, params = {}, canAdmit = () => true, sender = null) => {
     requireDriver(driver);
     const host = getAppHost(); if (!host) throw new Error('Orchestration Host unavailable');
     return callConversationHost(host, { hostId: driver === 'codex' ? 'local-codex' : 'opencraft-server', threadId }, operationId,
       method, { operationId, ...(driver === 'codex' ? {} : { driver }), ...params },
-      { sender: null, orchestrationOperationId: operationId, orchestrationCanAdmit: canAdmit });
+      { sender, orchestrationOperationId: operationId, orchestrationCanAdmit: canAdmit });
   };
   return {
     async setTitle(operationId, threadId, title, canAdmit) {
@@ -38,8 +38,14 @@ export function createThreadOrchestrationExecution(getAppHost, { prepared = () =
       return { ...await invoke(destination, 'opencraft/orchestration/prepare', threadId, operationId,
         { arguments: { ...args, cwd: sourceSettings.cwd }, sourceSettings }, canAdmit), orchestrationDriver: destination };
     },
-    create: (operationId, threadId, settings, canAdmit) => invoke(settings.orchestrationDriver ?? target(settings.driver ?? 'codex'),
-      'opencraft/orchestration/create', threadId, operationId, { settings }, canAdmit),
+    async create(operationId, threadId, settings, canAdmit) {
+      // The source's immutable creation record supplies attribution. Model
+      // arguments and the current viewer cannot select a creation identity.
+      const sender = await creationSender(threadId);
+      if (!canAdmit()) throw Object.assign(new Error('Orchestration delegation revoked'), { status: 403 });
+      return invoke(settings.orchestrationDriver ?? target(settings.driver ?? 'codex'),
+        'opencraft/orchestration/create', threadId, operationId, { settings }, canAdmit, sender);
+    },
     acknowledge: async operationId => {
       const settings = prepared(operationId);
       return (await invoke(settings?.orchestrationDriver ?? target(settings?.driver ?? 'codex'), 'opencraft/orchestration/ack', '', operationId)).acknowledged === true;

@@ -463,6 +463,10 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     actorCollaboration.start();
     threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
       enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
+      creationSender: threadId => identity?.inheritedCreationSender?.(threadId,
+        (method, params) => callConversationHost(appHostServer,
+          {hostId:/^(?:pi_|dsh_acp_|acp_|claude_)/u.test(threadId) ? 'opencraft-server' : 'local-codex', threadId:''},
+          'child-creation-attribution', method, params)) ?? null,
     }), Date.now, orchestrationStorage);
     threadOrchestration.start();
     if (options.localDesktop === true) {

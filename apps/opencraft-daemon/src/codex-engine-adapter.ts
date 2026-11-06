@@ -1229,7 +1229,13 @@ export class CodexEngineAdapter implements DuplexTransport {
         return;
       }
       if (message.method.startsWith("opencraft/orchestration/")) {
-        try { const result = await this.orchestrationControl.handle(message.method, record(message.params), context); this.emit({ id, result }, clientId); }
+        try {
+          const result = await this.orchestrationControl.handle(message.method, record(message.params), context);
+          const childId = string(record(result).threadId);
+          if (message.method === 'opencraft/orchestration/create' && childId)
+            this.identity?.observeResult('thread/start', {}, {thread:{id:childId}}, context.sender);
+          this.emit({ id, result }, clientId);
+        }
         catch (error) { this.emit({ id, error: { code: error instanceof OrchestrationControlError ? error.code : -32000, message: errorMessage(error) } }, clientId); }
         return;
       }
@@ -3787,7 +3793,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       const params = record(message.params), tools = Array.isArray(params.dynamicTools) ? params.dynamicTools : [];
       const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration
         ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS.filter(tool=>tool.name!=='thread_set_title'||this.nativeCore?.supportsThreadTitle)] : CONVERSATION_TOOLS;
-      const names = new Set<string>(owned.map(t=>t.name));
+      const names = new Set<string>([...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS].map(t=>t.name));
       message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...owned.map(t=>({type:"function",...t}))]}};
     }
     // Product default, not a second reasoning owner: all native starts (also

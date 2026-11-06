@@ -237,3 +237,9 @@ Codex advertises the self-title tool only after the APP/router handshake include
 capability, so callback protocol v1 alone cannot advertise the new tool. Existing
 Codex Threads keep their native dynamic-tool set; updating a gateway does not
 retroactively add tools to those Threads or upgrade an independent APP owner.
+
+Child creation attribution is an optional, trusted product hook. The source's
+immutable creator record is passed in the Host submission context, never in model
+arguments. On a successful orchestration creation the Host records that provenance
+without attributing a human input or changing execution principals. Unknown
+creation provenance remains unknown, including on replay.

@@ -83,7 +83,7 @@ export class AppServerIdentityOverlay {
 /** Request receipts and handshake state belong to one socket and logical-client epoch. */
 class IdentitySocketSession {
   private readonly pending = new Map<string, { method: string; params: IdentityRecord; sender: TransportSubmissionContext["sender"]; created: number;
-    original: IdentityRecord; key: string; client: string; epoch: number }>();
+    original: IdentityRecord; key: string; client: string; epoch: number; orchestrationCreation: boolean }>();
   private readonly originals = new Map<string, string>();
   private readonly epochs = new Map<string, number>();
   private readonly prefix = `hub-identity:${randomUUID()}:`;
@@ -143,7 +143,9 @@ class IdentitySocketSession {
       if (submissions.has(method)) this.identity.recordSubmission(params, context);
       params = record(this.executions?.prepare({ ...message, id, params }, context, native).params ?? params);
       this.pending.set(id, { method, params, sender: context.sender, created: Date.now(), original: message,
-        key, client: clientId(message), epoch: this.epochs.get(clientId(message)) ?? 0 });
+        key, client: clientId(message), epoch: this.epochs.get(clientId(message)) ?? 0,
+        orchestrationCreation: method === 'opencraft/orchestration/create' && !!context.orchestrationOperationId
+          && context.orchestrationOperationId === params.operationId && context.orchestrationCanAdmit?.() === true });
       this.originals.set(key, id);
       if (mutations.has(method)) {
         const { sender: _sender, creator: _creator, participants: _participants, ...native } = params;
@@ -179,6 +181,8 @@ class IdentitySocketSession {
           ...(Array.isArray(access.methods) ? { [OPENCRAFT_METHOD_ACCESS_EXTENSION]: { ...access,
             methods: [...new Set([...access.methods, ...(this.identity.metadata?.methods ?? [])])] } } : {}) } } } });
     }
+    if (pending.orchestrationCreation && typeof record(message.result).threadId === 'string')
+      this.identity.observeResult('thread/start', {}, {thread:{id:record(message.result).threadId}}, pending.sender);
     this.identity.observeResult(pending.method, pending.params, message.result,
       ["thread/start", "thread/fork"].includes(pending.method) ? pending.sender : undefined);
     return current ? JSON.stringify({ ...reply, result: this.identity.projectResult(pending.method, pending.params, message.result) }) : null;
