@@ -1,4 +1,5 @@
 import { appPayloadRequest, newAppChoice, verifyAppChoice, requireCallbackObservation, type AppPayloadChoice } from "./generation-app-payload.js";
+import { readRouterRecoveryEvidence } from "./router-recovery-evidence.js";
 import { CodexRouterOwner } from "./router-owner.js";
 import { canonicalGenerationPath } from "./generation-files.js";
 import { randomUUID, createHash } from "node:crypto";
@@ -10,6 +11,8 @@ import { GenerationPeer, NativeGenerationError, rpcRecord, type RpcRecord } from
 import type { GenerationRuntimeDirectory } from "./generation-router.js";
 import type { GenerationProcessIdentity, GenerationSupervisor } from "./generation-supervisor.js";
 import { readNativeHistory, type NativeHistoryFailures } from "./native-history-read.js";
+import { CodexExecutionUnavailableError } from "@opencraft/account-pool-host";
+import { ExecutionFaultRecovery, type ExecutionFault } from "./execution-fault-recovery.js";
 
 export type GenerationHostUsage = CodexGenerationHostUsage;
 export interface GenerationColdReplacement {
@@ -20,6 +23,10 @@ const paused = () => new NativeGenerationError({ code: -32000, message: "Codex i
 
 /** Routing/lifecycle authority only. Native and Host remain the task/data authorities. */
 export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
+  private readonly executionRecovery: ExecutionFaultRecovery;
+  private recoveryInitialization: Promise<void> | undefined;
+  private readonly recoveringExecutions = new Set<string>();
+  executionRecoveryChanged: (fault: ExecutionFault) => void = () => {};
   readonly registry: CodexGenerationRegistry;
   readonly owner: CodexRouterOwner;
   private readonly starting = new Map<string, Promise<CodexAppServerHealth>>();
@@ -42,13 +49,77 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     nativeHistoryFailures?: NativeHistoryFailures;
     maintenanceFile?: string;
   }) {
+    this.executionRecovery = new ExecutionFaultRecovery(join(options.directory, "execution-recovery.json"), fault => { this.owner.observeExecutionFaults(this.executionRecovery.evidenceSnapshot()); this.executionRecoveryChanged(fault); }, () => this.now());
     this.registry = new CodexGenerationRegistry(options.directory);
-    try { this.owner = new CodexRouterOwner(this.registry, options.maintenanceFile); }
+    try { this.owner = new CodexRouterOwner(this.registry, options.maintenanceFile, {deferExecutionRecovery: true}); }
     catch (error) { this.registry.close(); throw error; }
     const previous = rpcRecord(this.registry.metadata("retirement-fences"));
     if (this.owner.isOpen()) this.registry.setMetadata("retirement-fences", { epoch: Number(previous.epoch ?? 0) + 1, ids: this.registry.list().filter(g => g.state === "retiring").map(g => g.id) });
   }
   private now(): number { return this.options.now?.() ?? Date.now(); }
+  initializeExecutionRecovery(): Promise<void> {
+    return this.recoveryInitialization ??= (async () => {
+      await this.executionRecovery.initialize();
+      const evidence = this.owner.needsExecutionRecoveryEvidence() ? await readRouterRecoveryEvidence(this.options.directory) : undefined;
+      this.owner.resumeExecutionFaults(this.executionRecovery.evidenceSnapshot(), evidence);
+    })();
+  }
+  executionRecoveryPending(id: string): boolean { return this.executionRecovery.blocked(id); }
+  async inspectHealth(id: string, observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
+    const g = this.registry.get(id);
+    if (!g || !this.options.supervisor.inspect) throw paused();
+    const health = observation === "native" && this.options.supervisor.inspectNative
+      ? await this.options.supervisor.inspectNative(g) : await this.options.supervisor.inspect(g);
+    const identity = await this.options.supervisor.identify(g, health);
+    if (JSON.stringify(identity) !== JSON.stringify(this.registry.metadata(`runtime:${id}`))) throw new Error("Execution owner changed during observation");
+    return health;
+  }
+  async recoverExecutions(): Promise<void> {
+    if (this.closed || !this.owner.isOpen() || !this.options.supervisor.inspect || !this.options.supervisor.restartFailed) return;
+    await this.initializeExecutionRecovery();
+    for (const g of this.registry.list().filter(g => ["active", "ready", "draining"].includes(g.state))) {
+      if (this.starting.has(g.id) || this.checking.has(g.id) || this.retiring.has(g.id) || this.changingPayload.has(g.id)) continue;
+      try {
+        await this.options.supervisor.inspect(g);
+        if (!this.executionRecovery.blocked(g.id)) continue;
+      } catch (error) {
+        // An authoritative disconnected executor establishes the fault; a slow
+        // connection or a single metadata timeout does not authorize a restart.
+        if (!this.executionRecovery.blocked(g.id) && !(error instanceof CodexExecutionUnavailableError && error.executionStatus === "disconnected")) continue;
+      }
+      const prior = this.executionRecovery.snapshot().find(fault => fault.generationId === g.id && fault.state === "recovering");
+      if (prior && prior.retryAt > this.now()) continue;
+      let sourceIdentity = prior?.source;
+      if (!sourceIdentity) {
+        const identity = this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity;
+        try {
+          sourceIdentity = this.options.supervisor.captureExecutionIdentity
+            ? await this.options.supervisor.captureExecutionIdentity(g, identity) : identity;
+        } catch { /* Persist the confirmed fault and retry identity capture after backoff. */ }
+      }
+      await this.executionRecovery.recover(g.id, g.incarnation, async (fault, rememberTarget) => {
+        this.recoveringExecutions.add(g.id);
+        try {
+          const source = fault.source;
+          if (!source) throw new Error("Execution fault source identity is unavailable");
+          this.cached.delete(g.id); this.probes.get(g.id)?.peer.close(); this.probes.delete(g.id);
+          await this.options.supervisor.restartFailed!(this.registry.get(g.id)!, source);
+          if (fault.target && JSON.stringify(fault.target) !== JSON.stringify(source)) {
+            let executable = false;
+            try { await this.options.supervisor.inspect!(this.registry.get(g.id)!); executable = true; } catch { /* The recorded replacement is still unavailable. */ }
+            if (!executable) await this.options.supervisor.restartFailed!(this.registry.get(g.id)!, fault.target);
+          }
+          if (this.closed) throw new Error("Execution recovery owner is closing");
+          await this.open(g.id, true);
+          const targetIdentity = this.registry.metadata(`runtime:${g.id}`) as GenerationProcessIdentity;
+          await rememberTarget(this.options.supervisor.captureExecutionIdentity
+            ? await this.options.supervisor.captureExecutionIdentity(this.registry.get(g.id)!, targetIdentity) : targetIdentity);
+          await this.options.supervisor.inspect!(this.registry.get(g.id)!);
+        } finally { this.recoveringExecutions.delete(g.id); }
+      }, sourceIdentity, this.registry.threadIds(g.id));
+
+    }
+  }
   setRetention(value: Record<string, unknown>) {
     const keys = ["id", "retained", "expectedIncarnation", "expectedEpoch", "expectedOwner", "expectedHost"];
     if (Object.keys(value).length !== keys.length || keys.some(key => !(key in value))
@@ -107,6 +178,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     await this.ensure(generation.id); return this.registry.get(generation.id)!;
   }
   async ensure(id: string, preserveRetiredPayload = false, refresh = false): Promise<CodexAppServerHealth> {
+    if (this.recoveringExecutions.has(id)) throw new NativeGenerationError({code: -32000, message: "Execution environment is recovering", data: {code: "EXECUTION_RECOVERING", retryable: true, notSubmitted: true}});
     if (this.closed || this.retiring.has(id) || this.changingPayload.has(id) || ["retiring", "revoking"].includes(this.registry.get(id)?.state ?? "")) throw paused();
     const pending = this.starting.get(id); if (pending) return pending;
     const cached = this.cached.get(id);
@@ -254,7 +326,12 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
       this.registry.discard(id);
     } finally { this.changingPayload.delete(id); }
   }
-  admit(ticket: GenerationTicket): () => void {
+  async readHealth(id: string): Promise<CodexAppServerHealth> {
+    return this.executionRecovery.blocked(id) || this.recoveringExecutions.has(id) ? this.inspectHealth(id, "native") : this.ensure(id);
+  }
+  admit(ticket: GenerationTicket, readOnly = false): () => void {
+    if (!readOnly && this.executionRecovery.blocked(ticket.generationId)) throw new NativeGenerationError({code: -32000,
+      message: "Execution is recovering", data: {notSubmitted: true, code: "EXECUTION_RECOVERING", retryable: true}});
     if (this.closed || this.retiring.has(ticket.generationId) || !this.registry.valid(ticket)) throw paused();
     const id = ticket.generationId; this.requests.set(id, (this.requests.get(id) ?? 0) + 1);
     let released = false;
@@ -284,6 +361,7 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     let defaultGenerationId: string | null = null;
     try { defaultGenerationId = this.registry.current().generation.id; } catch { /* Bootstrap has no admission yet. */ }
     return { defaultGenerationId, routingEpoch: this.registry.ownerEpoch, fenceEpoch: Number(state.epoch), fencedGenerationIds: state.ids as string[],
+      executionRecoveries: this.executionRecovery.snapshot().map(({id, generationId, incarnation, state, threadIds}) => ({id, generationId, incarnation, state, threadIds})),
       legacyGenerationId: typeof legacy === "string" ? legacy : null, ...(includeRoutes ? { routes: this.registry.routes() } : {}) };
   }
   private fenceHost(id: string, enable: boolean): number {
@@ -412,11 +490,12 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     this.monitor = setInterval(() => {
       if (this.closed || this.monitoring || !this.owner.isOpen()) return;
       this.monitoring = (async () => {
+        await this.recoverExecutions();
         for (const g of this.registry.list().filter(value => ["draining", "retiring"].includes(value.state))) {
           try { const result = await this.retire(g.id); this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), ...result }); }
           catch { this.registry.setMetadata(`drain:${g.id}`, { at: this.now(), retired: false, reasons: ["drain-observation-unavailable"] }); }
         }
-      })().finally(() => { this.monitoring = undefined; });
+      })().catch(() => {}).finally(() => { this.monitoring = undefined; });
     }, intervalMs);
     this.monitor.unref();
   }
@@ -459,6 +538,8 @@ export class CodexGenerationRuntime implements GenerationRuntimeDirectory {
     return values;
   }
   async close(): Promise<void> {
+    this.closed = true;
+    await this.executionRecovery.close();
     this.owner.dispose();
     this.closed = true; clearInterval(this.monitor); await this.monitoring; await Promise.allSettled(this.starting.values());
     for (const { peer } of this.probes.values()) peer.close();

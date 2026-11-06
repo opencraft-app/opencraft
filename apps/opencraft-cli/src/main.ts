@@ -165,7 +165,7 @@ export async function run(argv: string[]) {
     if (candidates.length !== 1) throw new CliError(5, 'AMBIGUOUS_SERVER', 'Choose --server.', false, { servers: candidates.map(server => server.serverId) });
     const server = candidates[0]!;
     if (args[0] === 'status' && args.length === 1) return { connection: selected, selectionSource, instanceId: directory.instanceId,
-      actor: directory.actor, server, connectionState: 'ready' };
+      actor: directory.actor, server, connectionState: server.connectionState };
     if (args[0] !== 'thread') throw new CliError(2, 'INVALID_ARGUMENTS', 'Check --help.');
     if (args[1] === 'list' && args.length === 2) {
       if ((options.project !== undefined || options.cwd !== undefined) && server.capabilities.discoverFilters !== true) throw new CliError(6, 'UNSUPPORTED_CAPABILITY', 'Host lacks discovery filters.');

@@ -47,7 +47,7 @@ test('sandbox preparation failures log their distinct causes without exposing in
   gateway.send({id, method:'turn/start', params:{...params, clientUserMessageId, input:[{text:'private message'}]}});
   await until(() => gateway.messages.some(message => message.id === id));
   assert.deepEqual(gateway.messages.find(message => message.id === id).error,
-    {code:-32084, message:'Execution environment unavailable'});
+    {code:-32084, message:'Execution environment unavailable', data:{notSubmitted:true}});
   const [label, payload] = warnings.mock.calls[index]!.arguments as unknown as [string, string];
   assert.equal(label, '[opencraft-execution-preparation]');
   const event = JSON.parse(payload);

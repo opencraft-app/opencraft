@@ -713,6 +713,8 @@ export interface ComposerQueuedSubmissionPresentation {
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
+  /** Automatic recovery waits do not require a manual Resume action. */
+  readonly resumable?: boolean;
   readonly pausedReason?: string | null;
   readonly error?: string | null;
   readonly unconfirmedTargetTurnId?: string;

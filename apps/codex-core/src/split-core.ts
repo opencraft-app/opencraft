@@ -93,8 +93,8 @@ export async function startSplitCodexCore(options: CodexCoreOptions) {
         if (!accounts) return { status: 503, value: { error: "Account Core writer released" } };
         return { status: 200, value: { dataDirectory, launch: accounts!.launch() } };
       }
-      if (request.method === "GET" && request.url === "/health") {
-        const native = await runtime.appServerHealth();
+      if (request.method === "GET" && (request.url === "/health" || request.url === "/native-health")) {
+        const native = await runtime.appServerHealth(request.url === "/native-health" ? "native" : "execution");
         if (native.dataDirectory !== dataDirectory || native.proxyBaseUrl !== `http://127.0.0.1:${options.proxyPort}`) {
           throw new Error("AppServer identity mismatch");
         }

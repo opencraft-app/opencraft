@@ -53,11 +53,11 @@ export class OpenCraftHostQueue {
   private readonly owner: OpenCraftHostStateDatabase | null;
   readonly outcome: DatabaseOutcome | undefined;
 
-  constructor(dataDirectory: string, database?: DatabaseSync) {
+  constructor(dataDirectory: string, database?: DatabaseSync, options: {recoverPending?: boolean} = {}) {
     this.owner = database === undefined ? new OpenCraftHostStateDatabase(dataDirectory) : null;
     this.db = database ?? this.owner!.database;
     this.outcome = this.owner?.outcome;
-    this.db.prepare("UPDATE opencraft_host_queue SET state='unknown', paused_reason='steer-delivery-unconfirmed', updated_at_ms=? WHERE state='dispatching'").run(Date.now());
+    if (options.recoverPending !== false) this.db.prepare("UPDATE opencraft_host_queue SET state='unknown', paused_reason='steer-delivery-unconfirmed', updated_at_ms=? WHERE state='dispatching'").run(Date.now());
   }
 
   close(): void { this.owner?.close(); }
@@ -121,7 +121,7 @@ export class OpenCraftHostQueue {
   firstUnsettled(threadId: string): HostQueuedSubmission | null { return this.list(threadId)[0] ?? null; }
 
   firstAwaitingAdmission(threadId: string): HostQueuedSubmission | null {
-    const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown') ORDER BY position,created_at_ms,id LIMIT 1")
+    const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown') AND NOT(state='unknown' AND COALESCE(paused_reason,'')='execution-interrupted') ORDER BY position,created_at_ms,id LIMIT 1")
       .get(threadId);
     return row ? this.project(row) : null;
   }
@@ -140,7 +140,7 @@ export class OpenCraftHostQueue {
 
   reorder(threadId: string, ids: readonly string[]): void {
     const unsettled = this.list(threadId);
-    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown"))
+    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown" && row.pausedReason !== "execution-interrupted"))
       throw new Error("Reconcile in-flight delivery before reordering this queue");
     const queued = unsettled.filter(row => row.state === "queued");
     if (ids.length !== queued.length || new Set(ids).size !== ids.length || queued.some(row => !ids.includes(row.id))) {
@@ -161,8 +161,16 @@ export class OpenCraftHostQueue {
   }
 
   settle(threadId: string, id: string, state: "queued" | "steering" | "unknown" | "delivered" | "discarded", reason: string | null = null, turnId: string | null = null): boolean {
-    return this.db.prepare("UPDATE opencraft_host_queue SET state=?,paused_reason=?,target_turn_id=COALESCE(?,target_turn_id),updated_at_ms=? WHERE thread_id=? AND id=? AND state IN ('dispatching','steering','unknown')")
-      .run(state, reason, turnId, Date.now(), threadId, id).changes === 1;
+    return this.db.prepare("UPDATE opencraft_host_queue SET state=?,paused_reason=CASE WHEN ?='unknown' AND paused_reason IN ('execution-fault-unconfirmed','execution-interrupted') THEN paused_reason ELSE ? END,target_turn_id=COALESCE(?,target_turn_id),updated_at_ms=? WHERE thread_id=? AND id=? AND state IN ('dispatching','steering','unknown')")
+      .run(state, state, reason, turnId, Date.now(), threadId, id).changes === 1;
+  }
+
+  /** Unknown work is retained. Only confirmed source exit permits later, explicit new inputs. */
+  interruptExecution(threadId: string, recovered: boolean): void {
+    if (recovered) this.db.prepare("UPDATE opencraft_host_queue SET paused_reason='execution-interrupted',updated_at_ms=? WHERE thread_id=? AND state='unknown' AND paused_reason='execution-fault-unconfirmed'")
+      .run(Date.now(), threadId);
+    else this.db.prepare("UPDATE opencraft_host_queue SET state='unknown',paused_reason='execution-fault-unconfirmed',updated_at_ms=? WHERE thread_id=? AND state IN ('dispatching','steering','unknown') AND COALESCE(paused_reason,'') NOT IN ('execution-fault-unconfirmed','execution-interrupted')")
+      .run(Date.now(), threadId);
   }
 
   discardUnknown(threadId: string, id: string, expectedTurnId: string): boolean {

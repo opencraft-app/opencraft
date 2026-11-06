@@ -12,6 +12,7 @@ let sequence = 0;
 let holdNextRead = 0;
 let pendingReads = 0;
 let holdNextTurn = false;
+let executionStatus = "ready";
 const heldReads = [], heldTurns = [];
 sockets.on("connection", socket => {
   const subscribed = new Set();
@@ -22,6 +23,12 @@ sockets.on("connection", socket => {
     const { id, method, params = {} } = JSON.parse(String(raw));
     if (method === "initialized") return;
     if (method === "initialize") { send({ id, result: { serverInfo: { name: "fake", version: "1" } } }); return; }
+    if (method === "fixture/executionStatus") { executionStatus = params.status; send({ id, result: {} }); return; }
+    if (method === "environment/status") {
+      if (executionStatus === "timeout") return;
+      send({ id, result: { status: executionStatus } }); return;
+    }
+    if (method === "environment/info") { send({ id, result: { shell: { name: "bash", path: "/bin/bash" }, cwd: process.cwd() } }); return; }
     if (method === "thread/start") {
       const thread = { id: `${process.env.FAKE_CODEX_THREAD_PREFIX ?? "thread"}-${++sequence}`, createdAt: 1, updatedAt: 1, cwd: params.cwd ?? "/synthetic", historyMode: "legacy", status: { type: "idle" }, turns: [] };
       if (process.env.FAKE_EMPTY_HISTORY_UNSUPPORTED) thread.path = join(process.cwd(), "native-fixture-rollouts", `${thread.id}.jsonl`);

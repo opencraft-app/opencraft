@@ -924,3 +924,34 @@ until all directory sources are covered. Advanced native query consumers must
 continue to inspect coverage.
 It neither replays mutations nor stops retained execution owners. The registry's
 existing synchronous SQLite implementation remains a separate concern.
+
+### Codex execution failure recovery
+
+A readable AppServer connection does not prove its execution environment works.
+Managed Codex generations observe official environment status independently from
+Native connectivity. A confirmed disconnected executor records a durable fault
+and source identity, then stops that exact instance without waiting for Native,
+Host, goal or OS work to become idle. A changed process birth or systemd
+invocation is not permission to kill a successor. Unconfirmed stops remain blocked;
+failed recovery retries with backoff. Normal retirement still uses its existing drain.
+
+Old dispatched work keeps its interrupted/unknown outcome and is never continued
+by generic generation-loss or provider-retry handling. New explicit inputs use
+the existing persistent queue. Only confirmed source exit, replacement execution
+readiness and committed Host recovery receipts permit those new inputs to run.
+Host fault transitions and receipts use an owned storage Worker; close drains
+submitted work. Re-observing completed receipts must not interrupt successor turns.
+
+Transport status exposes execution independently, including affected conversation
+IDs for retained generations. Existing Views and newly attached Views receive
+the same status; history and Composer stay mounted. Attach-only external servers
+retain their external lifecycle owner. See the [specification](specs/codex-execution-health-and-recovery.md)
+and [decision](adr/0001-codex-execution-fault-recovery.md).
+
+Fault recovery may retire Router custody for the exact source generation and
+incarnation while keeping the original unknown lease records and recovery ID.
+This is distinct from observing Native completion. On controller restart, the
+Router first validates these records against the durable fault journal; it does
+not accept an unattributed or unrelated uncertainty. Recovering generations start
+through the fault monitor rather than ordinary ensure, including when the source
+unit is still deactivating. Stored retry deadlines remain authoritative.

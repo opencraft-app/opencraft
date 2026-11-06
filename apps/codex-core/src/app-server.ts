@@ -8,6 +8,8 @@ import type { CodexCoreOptions } from "./main.js";
 import { startControlServer } from "./control-server.js";
 import { makeNativeFamilyKillable, nativeReady, nativeOwnerRequest, removeStaleSocket } from "./native-process.js";
 import { startOrchestrationCallbackRelay } from "./orchestration-callback-lane.js";
+import { ExecutionLifecycleObserver } from "./execution-lifecycle-observer.js";
+import { sandboxLifecycleLogger } from "@opencraft/sandbox-node/lifecycle";
 
 export interface CodexAppServerOptions {
   readonly endpoint: string;
@@ -41,14 +43,37 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
   let authSocket: Awaited<ReturnType<typeof nativeReady>> | undefined;
   let ownsNative = false, failed = false, ready = false;
   let closing: Promise<void> | undefined;
+  const lifecycle = options.executionSandbox ? sandboxLifecycleLogger(join(runtimeDataDirectory, "runtime", "exec-server-lifecycle.jsonl")) : undefined;
+  const executionLifecycle = options.executionSandbox ? new ExecutionLifecycleObserver(join(runtimeDataDirectory, "runtime", "exec-server-lifecycle.jsonl"), process.pid) : undefined;
+  let executionStatus = "unknown";
+  let healthFlight: Promise<boolean> | undefined;
+  let healthTimer: ReturnType<typeof setInterval> | undefined;
+  const executable = (): Promise<boolean> => {
+    if (closing || failed || !authSocket) return Promise.resolve(false);
+    if (!options.executionSandbox) return Promise.resolve(true);
+    return healthFlight ??= (async () => {
+      const prior = executionStatus;
+      try {
+        if (await executionLifecycle?.disconnected()) executionStatus = "disconnected";
+        else {
+          const result = await nativeOwnerRequest(authSocket!, "environment/status", {environmentId: "opencraft"}, 2_000) as {status?: unknown};
+          executionStatus = ["ready", "pending", "disconnected"].includes(String(result?.status)) ? String(result.status) : "unknown";
+        }
+      } catch { executionStatus = "unknown"; }
+      if (prior !== executionStatus) lifecycle?.({event: "environment-status", status: executionStatus});
+      return !closing && !failed && executionStatus === "ready";
+    })().finally(() => { healthFlight = undefined; });
+  };
   const close = () => closing ??= (async () => {
+    ready = false; clearInterval(healthTimer);
+    lifecycle?.({event: "owner-stop", reason: "owner-close"});
     try {
       await control?.close(); await relay?.close(); authSocket?.terminate();
       if (child && child.exitCode === null && child.signalCode === null) await new Promise<void>(resolve => {
         const timer = setTimeout(() => child?.kill("SIGKILL"), 2_000);
         child!.once("close", () => { clearTimeout(timer); resolve(); }); child!.kill("SIGTERM");
       });
-    } finally { if (ownsNative) await unlink(nativeListener).catch(() => undefined); release(); }
+    } finally { await lifecycle?.flush(); if (ownsNative) await unlink(nativeListener).catch(() => undefined); release(); }
   })();
   try {
     const dataDirectory = await realpath(options.dataDirectory);
@@ -73,18 +98,23 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
     if (!baseSetting) throw new Error("Codex proxy URL is missing");
     const proxyBaseUrl: string = JSON.parse(baseSetting.slice(baseSetting.indexOf("=") + 1));
     // startControlServer validates the private parent before spawning the native listener.
-    control = await startControlServer(options.endpoint, options.authToken, async request => ({
-      status: request.method === "GET" && request.url === "/health" && !failed && ready ? 200 : 503,
-      value: request.method === "GET" && request.url === "/health" && !failed && ready
+    control = await startControlServer(options.endpoint, options.authToken, async request => {
+      const nativeOnly = request.url === "/native-health";
+      const healthy = request.method === "GET" && (request.url === "/health" || nativeOnly) && !failed && ready && (nativeOnly || await executable());
+      return { status: healthy ? 200 : 503,
+      value: healthy
         ? { environmentVariablesVersion: 1, protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, codexPid: child!.pid!, nativeSocket,
           dataDirectory, runtimeDataDirectory: runtimeOwnerRoot, codexHome: runtimeRoot, proxyBaseUrl,
           callbackProtocolVersion: 1, callbackIncarnation: relay?.incarnation, pendingCallbacks: relay?.pendingCallbacks ?? 0, pendingOrchestrationMutations: relay?.pendingMutations ?? 0 } satisfies CodexAppServerHealth
-        : { error: "Codex AppServer unavailable" },
-    }));
+        : { error: ready && !failed && options.executionSandbox ? "Execution environment unavailable" : "Codex AppServer unavailable",
+          ...(ready && !failed && options.executionSandbox ? {code: "EXECUTION_ENVIRONMENT_UNAVAILABLE", executionStatus} : {}) },
+      };
+    });
     if (nativeSocket === options.endpoint) throw new Error("AppServer control endpoint must differ from native.sock");
     await removeStaleSocket(nativeListener);
     await mkdir(runtimeRoot, { recursive: true, mode: 0o700 });
     if (options.runtimeDataDirectory && await realpath(runtimeRoot) !== runtimeRoot) throw new Error("Generation HOME must not alias another directory");
+    await executionLifecycle?.initialize();
     if (options.executionSandbox) await configureCodexExecutionSandbox(runtimeRoot, options.executable, options.executionSandbox);
     const args = ["app-server", "--listen", `unix://${nativeListener}`, ...launch.args];
     const env = { ...process.env, ...launch.env, CODEX_HOME: runtimeRoot,
@@ -113,12 +143,18 @@ export async function startCodexAppServer(options: CodexAppServerOptions) {
       requestPolicy: codexSandboxRequestPolicy(
         threadId => nativeOwnerRequest(authSocket!, "thread/read", {threadId, includeTurns: false}),
         options.projectlessWorkspaceDirectory ?? join(dataDirectory, "projectless-workspaces"),
+        async () => { if (!await executable()) throw new Error("Execution environment unavailable"); },
       ),
     } : undefined);
     options.signal?.throwIfAborted();
     if (failed) throw new Error("Codex AppServer exited during startup");
     await chmod(nativeSocket, 0o600);
     ready = true;
+    if (options.executionSandbox) {
+      await executable();
+      healthTimer = setInterval(() => { void executable(); }, 2_000);
+      healthTimer.unref();
+    }
     return { endpoint: options.endpoint, close };
   } catch (error) { await close(); throw error; }
 }

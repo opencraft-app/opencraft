@@ -7,6 +7,27 @@ import test from "node:test";
 
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
 
+test("confirmed execution recovery retains unknown history but releases later explicit messages across Host restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-exec-queue-"));
+  let queue = new OpenCraftHostQueue(root);
+  try {
+    const old = queue.add("thread", "old-input", [{type: "text", text: "old work"}]);
+    queue.claim("thread", old.id, "old-turn");
+    queue.interruptExecution("thread", false);
+    const next = queue.add("thread", "new-input", [{type: "text", text: "new work"}]);
+    assert.equal(queue.firstAwaitingAdmission("thread")?.id, old.id);
+    queue.interruptExecution("thread", true);
+    // A late rejection of the original send cannot turn the sealed unknown back into a blocker.
+    queue.settle("thread", old.id, "unknown", "steer-delivery-unconfirmed");
+    queue.close(); queue = new OpenCraftHostQueue(root);
+    assert.equal(queue.find("thread", old.id)?.state, "unknown");
+    assert.equal(queue.find("thread", old.id)?.pausedReason, "execution-interrupted");
+    assert.equal(queue.firstAwaitingAdmission("thread")?.id, next.id);
+    assert.equal(queue.claim("thread", old.id, "never-replay"), null);
+    assert.equal(queue.claim("thread", next.id, "new-turn")?.state, "dispatching");
+  } finally { queue.close(); await rm(root, {recursive: true, force: true}); }
+});
+
 test("Host queue claims survive restart as delivery-unknown and never re-enter the pending head", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-host-queue-store-"));
   try {

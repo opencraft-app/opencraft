@@ -181,6 +181,8 @@ export type AppHostToRendererMessage =
       readonly generation: number;
       readonly status: {
         readonly state: AppHostTransportState;
+        readonly execution?: "ready" | "recovering" | "unavailable";
+        readonly executionUnavailableThreadIds?: readonly string[];
         readonly reason?: string;
         readonly failure?: { readonly code: string; readonly recovery: "automatic" | "manual" };
       };
@@ -195,6 +197,8 @@ export type AppHostToRendererMessage =
     };
 
 export interface AppHostConnectResult {
+  readonly execution?: "ready" | "recovering" | "unavailable";
+  readonly executionUnavailableThreadIds?: readonly string[];
   readonly hostId: string;
   readonly generation: number;
 }

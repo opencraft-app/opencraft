@@ -193,3 +193,38 @@ test("unconfirmed router callbacks prevent background native retirement", async 
     assert.equal(stops,0);assert.equal(runtime.registry.get("old")!.state,"draining");
   }finally{await runtime.close();await rm(root,{recursive:true,force:true});}
 });
+
+test("a restarting controller serves its durable recovery before ordinary start can wait on a deactivating unit", async t => {
+  const {ExecutionFaultRecovery} = await import("../../apps/codex-core/src/execution-fault-recovery.js");
+  const {CodexExecutionUnavailableError} = await import("@opencraft/account-pool-host");
+  const {readFile} = await import("node:fs/promises");
+  const root = await mkdtemp(join(tmpdir(), "oc-router-fault-boot-")), directory = join(root, "registry"), data = join(root, "data");
+  await mkdir(data, {mode: 0o700});
+  const registry = new CodexGenerationRegistry(directory);
+  const g = registry.register({id: "one", endpoint: join(root, "app/control.sock"), runtimeDataDirectory: data, executable: process.execPath, node: process.execPath, bundle: process.argv[1]!, cwd: root});
+  registry.ready(g.id); registry.activate(g.id, 0);
+  const source = {ownerPid: 10, ownerStart: "one", nativePid: 11, nativeStart: "two", unit: "deactivating.service", invocationId: "source", cliSha256: "fixed", cliVersion: "fixed"};
+  registry.setMetadata("runtime:one", source); registry.close();
+  const file = join(directory, "execution-recovery.json"), recovery = new ExecutionFaultRecovery(file, () => {});
+  await recovery.recover("one", 1, async () => {throw new Error("Source Native descendants still alive");}, source, []); await recovery.close();
+  const before = JSON.parse(await readFile(file, "utf8"))[0];
+  let starts = 0, stopAttempts = 0;
+  const coreEndpoint = join(root, "accounts/control.sock"), endpoint = join(root, "router/control.sock"), token = "synthetic-fault-boot-control-token";
+  const core = await startControlServer(coreEndpoint, token, async () => ({status: 200, value: {dataDirectory: data, launch: {
+    args: ['chatgpt_base_url="http://127.0.0.1:1"'], env: {OPENCRAFT_CODEX_POOL_AUTH_TOKEN: "synthetic"}, auth: {type: "chatgptAuthTokens", accessToken: "synthetic"}}}}));
+  const original = CodexGenerationRuntime.prototype.startMonitor;
+  t.mock.method(CodexGenerationRuntime.prototype, "startMonitor", function(this: CodexGenerationRuntime) {original.call(this, 5);});
+  let service: Awaited<ReturnType<typeof startCodexGenerationService>> | undefined;
+  try {
+    service = await startCodexGenerationService({endpoint, coreEndpoint, token, tokenFile: join(root, "unused"), registryDirectory: directory, dataDirectory: data, systemdScope: "system", requireHostUsage: false,
+      supervisor: {start: async () => {starts++; throw new Error("Ordinary start cannot finish a deactivating stop");},
+        inspect: async () => {throw new CodexExecutionUnavailableError("disconnected");}, identify: async () => source,
+        restartFailed: async (_g, identity) => {assert.deepEqual(identity, source); stopAttempts++; throw new Error("Stop remains unconfirmed");},
+        stop: async () => {}, discardUnready: async () => {}, processesQuiet: async () => false}});
+    assert.equal(starts, 0); assert.equal(stopAttempts, 0, "durable retryAt is honored at boot");
+    assert.equal(JSON.parse(await readFile(file, "utf8"))[0].retryAt, before.retryAt);
+    for (let n = 0; n < 500 && stopAttempts === 0; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(stopAttempts > 0, "the fault owner resumes stop instead of waiting on ordinary ensure");
+    assert.equal(starts, 0);
+  } finally {await service?.close(); await core.close(); await rm(root, {recursive: true, force: true});}
+});

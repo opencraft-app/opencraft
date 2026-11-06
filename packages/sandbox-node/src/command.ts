@@ -1,6 +1,7 @@
 import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { createSandbox, SandboxFault, type SandboxCommand, type SandboxPool, type SandboxProcess } from "@opencraft/sandbox";
+import type { SandboxLifecycleEvent } from "./lifecycle.js";
 
 /** JSONL readers also recognize Unicode line separators; keep each message on one physical line. */
 export const sandboxMessage = (message: unknown): string => JSON.stringify(message).replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029") + "\n";
@@ -56,37 +57,48 @@ export async function forwardSandboxCommand(options: {
   pool: SandboxPool; owner: string; command: SandboxCommand;
   input: Readable; output: Writable; error: Writable; signal?: AbortSignal;
   onReady?(child: SandboxProcess): void;
+  lifecycle?(event: SandboxLifecycleEvent): void;
 }): Promise<number> {
+  options.lifecycle?.({event: "starting"});
   const sandbox = await createSandbox(options.pool, { owner: options.owner, signal: options.signal });
+  const log = (event: SandboxLifecycleEvent) => options.lifecycle?.({...event, sandboxId: sandbox.identity.id});
   let failed = false, child: SandboxProcess | undefined;
-  const cancel = () => { void sandbox.close().catch(() => { failed = true; }); };
+  let reason: SandboxLifecycleEvent["reason"];
+  const cancel = (cause: SandboxLifecycleEvent["reason"]) => { if (!reason) { reason = cause; log({event: "close-requested", reason}); } void sandbox.close().catch(() => { failed = true; }); };
+  const aborted = () => cancel("signal");
   const output = (target: Writable, data: Uint8Array) => {
     if (failed) return;
-    if (target.destroyed || target.writableLength + data.byteLength > 8 * 1024 * 1024) { failed = true; cancel(); return; }
-    target.write(data, error => { if (error) { failed = true; cancel(); } });
+    if (target.destroyed || target.writableLength + data.byteLength > 8 * 1024 * 1024) { failed = true; cancel("output-closed"); return; }
+    target.write(data, error => { if (error) { failed = true; cancel("output-closed"); } });
   };
-  const outputError = () => { failed = true; cancel(); };
+  const outputError = () => { failed = true; cancel("output-closed"); };
   options.output.on("error", outputError); options.error.on("error", outputError);
+  options.output.on("close", outputError); options.error.on("close", outputError);
   let pendingInput = Promise.resolve();
   const input = (data: Buffer) => {
     options.input.pause();
-    pendingInput = pendingInput.then(() => child!.writeStdin(data)).then(() => { if (!failed) options.input.resume(); }, () => { failed = true; cancel(); });
+    pendingInput = pendingInput.then(() => child!.writeStdin(data)).then(() => { if (!failed) options.input.resume(); }, () => { failed = true; cancel("stdin-write-failed"); });
   };
-  const eof = () => { pendingInput = pendingInput.then(async () => { if (child?.kind === "process") await child.closeStdin(); }).catch(() => { failed = true; cancel(); }); };
-  options.signal?.addEventListener("abort", cancel, { once: true });
+  const eof = () => { log({event: "stdin-eof"}); pendingInput = pendingInput.then(async () => { if (child?.kind === "process") await child.closeStdin(); }).catch(() => { failed = true; cancel("stdin-write-failed"); }); };
+  options.signal?.addEventListener("abort", aborted, { once: true });
   try {
     options.signal?.throwIfAborted();
     child = await sandbox.spawn(options.command, event => output(event.stream === "stdout" ? options.output : options.error, event.data));
+    log({event: "started"});
     options.signal?.throwIfAborted(); options.onReady?.(child);
     options.input.on("data", input); options.input.once("end", eof);
     if (options.input.readableEnded) eof(); else options.input.resume();
     const exit = await child.exited;
+    log({event: "unit-exited", code: exit.code, ...(exit.signal ? {signal: exit.signal} : {})});
     if (failed) throw new SandboxFault("SANDBOX_START", "Sandbox transport failed");
     return exit.code ?? 128;
-  } finally {
+  } catch (error) { log({event: "failed"}); throw error; } finally {
+    if (!reason) log({event: "close-requested", reason: failed ? "transport-failed" : "command-finished"});
     options.input.pause(); options.input.off("data", input); options.input.off("end", eof);
-    options.signal?.removeEventListener("abort", cancel);
+    options.signal?.removeEventListener("abort", aborted);
     options.output.off("error", outputError); options.error.off("error", outputError);
+    options.output.off("close", outputError); options.error.off("close", outputError);
     await sandbox.close();
+    log({event: "closed"});
   }
 }
