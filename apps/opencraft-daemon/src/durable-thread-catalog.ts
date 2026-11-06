@@ -38,7 +38,7 @@ export class DurableThreadCatalog {
       && params.useStateDbOnly !== false;
   }
   start(): void { if (!this.#closed && this.now() - this.#lastAttempt >= this.intervalMs) void this.refresh().catch(() => {}); }
-  async list(params: Record<string, unknown>): Promise<ThreadListResponse & { catalog: { lastSuccessAt: number | null; state: string } }> {
+  async list(params: Record<string, unknown>): Promise<ThreadListResponse & { catalog: { lastSuccessAt: number | null; state: string; coverage: "complete" | "partial" | "unknown" } }> {
     if (!this.supports(params) || this.#closed) throw new Error("Unsupported catalog query");
     const archived = params.archived === true ? 1 : 0;
     let sync = this.#state(archived);

@@ -29,11 +29,11 @@ export class CodexNativeCoreTransport implements DuplexTransport {
   get supportsOrchestration(): boolean { return this.callbackReady; }
   constructor(endpoint: string, token: string, callbackLaneId?: string) {
     this.control = new CodexCoreControlClient(endpoint, token);
-    this.reads = new CodexCoreReadIsolation(signal => this.control.health(signal));
+    this.reads = new CodexCoreReadIsolation(signal => this.control.health(signal, "native"));
     this.connection = new CodexCoreSocket({
       callbackLaneId,
       health: async signal => {
-        const health = await this.control.health(signal);
+        const health = await this.control.health(signal, "native");
         this.standaloneExecution = undefined;
         if (!health.routingEpoch && process.platform === "linux") {
           this.standaloneExecution = (await observeStandaloneCodexExecution(health)).incarnation;
@@ -71,7 +71,7 @@ export class CodexNativeCoreTransport implements DuplexTransport {
     this.usageOperation = operation; return operation;
   }
   private async sendGenerationUsage(snapshot: () => { routingEpoch: string; blockedThreadIds: readonly string[]; unscopedBusy: boolean; discoveryComplete: boolean; acknowledgedFenceEpoch: number }, apply: (state: CodexGenerationFenceState) => void): Promise<void> {
-    const health = await this.control.health(this.lifetime.signal);
+    const health = await this.control.health(this.lifetime.signal, "native");
     if (!health.routingEpoch || snapshot().routingEpoch !== health.routingEpoch) return;
     if (this.generationLease?.routingEpoch !== health.routingEpoch) this.generationLease = await this.control.claimGenerationHost(this.hostInstance, health.routingEpoch, this.lifetime.signal);
     for (let attempt = 0; attempt < 3; attempt++) {

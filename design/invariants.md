@@ -344,3 +344,9 @@ Sidebar destination lists share the foundation content inset and NavigationList
 sidebar variant; containers must not stack separate padding on Apps and Settings.
 See [shared sidebar reading inset](ui/settings-pages.md#shared-sidebar-reading-inset)
 and the [Workbench design language](../docs/workbench-design-language.md#shared-sidebar-content-inset).
+
+- Codex execution recovery preserves the existing Conversation and Composer. The
+  shared queue shows automatic waiting without a manual Resume action, and the
+  Workbench notice owner reports execution failure/recovery without changing the
+  reading layout. Unknown old work stays distinct from newly queued inputs. See
+  [execution recovery](../docs/specs/codex-execution-health-and-recovery.md).

@@ -33,7 +33,11 @@ export function queuedSubmissionPresentation(
   avatars: IdentityAvatarContribution | null = null,
   intl?: IntlShape,
 ): ComposerQueuedSubmissionPresentation {
-  const statusMessage = submission.pausedReason === "session-tools-recovering"
+  const statusMessage = submission.pausedReason === "execution-recovering"
+    ? { id: "chat.queue.executionRecovering", defaultMessage: "Waiting for execution to recover" }
+    : submission.pausedReason === "execution-fault-unconfirmed" || submission.pausedReason === "execution-interrupted"
+      ? { id: "chat.queue.executionInterrupted", defaultMessage: "Execution interrupted · outcome unknown" }
+    : submission.pausedReason === "session-tools-recovering"
     ? { id: "chat.queue.toolsRecovering", defaultMessage: "Waiting for session tools to recover · continues automatically" }
     : submission.pausedReason === "session-tools-unavailable"
       ? { id: "chat.queue.pausedAfterFailure", defaultMessage: "Message not sent. Resume to try again." }
@@ -55,7 +59,8 @@ export function queuedSubmissionPresentation(
     state: submission.state,
     operation: submission.operation,
     actionable: submission.serverSubmissionId !== null,
-    steerable: submission.steerable,
+    steerable: ["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? "") ? false : submission.steerable,
+    resumable: !["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? ""),
     dismissible: (submission.local === true && submission.state !== "submitting") || (submission.state === "failed" && submission.serverSubmissionId === null),
     reorderable: !submission.local && reorderable,
     editableContent: restoreQueuedInput(submission.input),

@@ -8,6 +8,7 @@
     "./systemd": "./src/systemd.ts",
     "./runtime": "./src/runtime.ts",
     "./command": "./src/command.ts",
+    "./lifecycle": "./src/lifecycle.ts",
     "./engine": "./src/engine.ts",
     "./hands-unix": "./src/hands-unix.ts"
   },

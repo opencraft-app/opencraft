@@ -15,7 +15,7 @@ export async function configureCodexExecutionSandbox(home: string, executable: s
   try { if (!(await readFile(path, "utf8")).startsWith(marker)) throw new Error("Existing Codex execution environment requires explicit migration"); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
   const quote = (value: string) => JSON.stringify(value);
-  const args = ["--max-old-space-size=128", selection.runner, "--config", selection.configuration, "--owner", "codex", "--", executable, "exec-server", "--listen", "stdio"];
+  const args = ["--max-old-space-size=128", selection.runner, "--config", selection.configuration, "--owner", "codex", "--lifecycle-owner", String(process.pid), "--lifecycle-log", join(home, "exec-server-lifecycle.jsonl"), "--", executable, "exec-server", "--listen", "stdio"];
   const text = marker + 'default = "opencraft"\ninclude_local = ' + boundedLocal + '\n\n[[environments]]\nid = "opencraft"\n'
     + 'program = ' + quote(process.execPath) + '\nargs = [' + args.map(quote).join(', ') + ']\ninitialize_timeout_sec = 45\n'
     + '[environments.env]\n' + ["NODE_OPTIONS", "NODE_PATH", "LD_PRELOAD", "LD_LIBRARY_PATH", "BASH_ENV", "ENV"].map(key => key + ' = ""\n').join('');
@@ -25,8 +25,9 @@ export async function configureCodexExecutionSandbox(home: string, executable: s
 
 /** Native's stable protocol omits experimental environments. Apply the owner policy
  * at the wire boundary while retaining every caller permission and workspace field. */
-export function codexSandboxRequestPolicy(readThread: (threadId: string) => Promise<unknown>, projectlessRoot?: string) {
+export function codexSandboxRequestPolicy(readThread: (threadId: string) => Promise<unknown>, projectlessRoot?: string, assertExecutable?: () => Promise<void>) {
   return async (method: unknown, params: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    if (["thread/start", "thread/fork", "turn/start", "turn/steer", "command/exec", "process/spawn"].includes(String(method)) || typeof method === "string" && method.startsWith("fs/")) await assertExecutable?.();
     if (method !== "thread/start" && method !== "turn/start") return params;
     let cwd = params.cwd;
     if (method === "thread/start" && cwd == null && projectlessRoot !== undefined) {

@@ -9,19 +9,22 @@ import { GenerationPeer, NativeGenerationError, rpcRecord, type RpcRecord } from
 import { generationThreadPath } from "./generation-thread-path.js";
 import type { CodexRouterOwner, RouterLease, RouterLeaseContext } from "./router-owner.js";
 import { removeStaleSocket } from "./native-process.js";
+import type { ExecutionFault } from "./execution-fault-recovery.js";
 
 const text = (value: unknown) => typeof value === "string" ? value : "";
 const error = (message: string, retryable = false) => new NativeGenerationError({ code: -32080, message, data: { retryable } });
 const threadId = (message: RpcRecord) => text(rpcRecord(message.params).threadId) || text(rpcRecord(rpcRecord(message.params).thread).id);
 const epochSensitiveRead = (method: string) => /(?:\/(?:read|list|get)|^(?:getAuthStatus|getConversationSummary|gitDiffToRemote|fuzzyFileSearch))$/u.test(method);
+const historyReadMethods = new Set(["thread/read", "thread/resume", "thread/turns/list", "thread/items/list", "thread/items/read", "thread/goal/get"]);
 const missingThread = (reason: unknown) => reason instanceof NativeGenerationError && /(?:thread|rollout).*(?:not found|does not exist)|no rollout|unknown thread/iu.test(reason.message);
 
 export interface GenerationRuntimeDirectory {
   readonly registry: CodexGenerationRegistry;
   readonly owner?: CodexRouterOwner;
   ensure(id: string): Promise<CodexAppServerHealth>;
+  readHealth?(id: string): Promise<CodexAppServerHealth>;
   /** Synchronous admission fence; returned release covers the full native RPC. */
-  admit(ticket: GenerationTicket): () => void;
+  admit(ticket: GenerationTicket, readOnly?: boolean): () => void;
   fences?(includeRoutes?: boolean): CodexGenerationFenceState;
   observe(generation: GenerationRecord, message: RpcRecord): void;
 }
@@ -36,6 +39,7 @@ export class CodexGenerationRouter {
     this.sessions.add(session); socket.once("close", () => { this.sessions.delete(session); session.close(); });
   }
   routesUpdated(): void { for (const session of this.sessions) session.flushStarts(); }
+  executionFault(fault: ExecutionFault): void { for (const session of this.sessions) session.executionFault(fault); }
   serverRequestCount(id: string): number { return [...this.sessions].reduce((n, s) => n + s.serverRequestCount(id), 0); }
   handoffCounts() { return { subscriptions: this.sessions.size, connectionTools: [...this.sessions].reduce((n, s) => n + s.toolCount(), 0) }; }
   close(): void { for (const s of this.sessions) s.close(); this.sessions.clear(); }
@@ -80,8 +84,8 @@ class RoutingSession {
   }
   private get registry() { return this.router.runtime.registry; }
   private emit(message: RpcRecord): void { if (!this.closed && this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
-  private async peer(id: string): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> {
-    const health = await this.router.runtime.ensure(id), generation = this.registry.get(id)!;
+  private async peer(id: string, readOnly = false): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> {
+    const health = await (readOnly && this.router.runtime.readHealth ? this.router.runtime.readHealth(id) : this.router.runtime.ensure(id)), generation = this.registry.get(id)!;
     if (this.closed) throw error("Routing connection is closed");
     const existing = this.peers.get(id);
     if (existing?.incarnation === generation.incarnation) return existing.operation;
@@ -181,7 +185,7 @@ class RoutingSession {
     const matches: string[] = [];
     for (const generation of this.registry.list()) {
       if (["candidate", "discarded", "retiring"].includes(generation.state)) continue;
-      const { peer } = await this.peer(generation.id);
+      const { peer } = await this.peer(generation.id, true);
       try { await peer.call("thread/read", { threadId: id, includeTurns: false }); matches.push(generation.id); }
       catch (reason) { if (!missingThread(reason)) throw reason; }
     }
@@ -214,7 +218,7 @@ class RoutingSession {
       this.initializeParams = params;
       const epoch = this.registry.epoch(), current = this.registry.current();
       lease?.update(this.context(method, { ownerEpoch: this.registry.ownerEpoch, generationId: current.generation.id, incarnation: current.generation.incarnation, admissionEpoch: epoch }));
-      const { result } = await this.peer(current.generation.id);
+      const { result } = await this.peer(current.generation.id, true);
       if (epoch !== this.registry.epoch()) throw error("Generation admission changed during initialization; reconnect", true);
       this.initialized = true;
       this.emit({ id, result: { ...result, capabilities: { ...rpcRecord(result.capabilities), extensions: {
@@ -246,7 +250,7 @@ class RoutingSession {
     if (method === "thread/loaded/list") {
       const data = new Set<string>();
       for (const generation of this.registry.list().filter(value => !["retired", "retiring", "candidate", "discarded"].includes(value.state))) {
-        const { peer } = await this.peer(generation.id), result = rpcRecord(await peer.call(method, params));
+        const { peer } = await this.peer(generation.id, true), result = rpcRecord(await peer.call(method, params));
         if (!Array.isArray(result.data) || !result.data.every(v => typeof v === "string")) throw error("Invalid native loaded Thread list");
         for (const tid of result.data as string[]) { this.registry.discover(tid, generation.id); data.add(tid); }
       }
@@ -282,13 +286,14 @@ class RoutingSession {
     if (spawning) { process = { ticket, active: true, pending: true, release: this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.processes.set(processHandle, process); }
     let release: (() => void) | undefined, sent = false;
     try {
-      const { peer, supportsOrchestration } = await this.peer(ticket.generationId);
+      const readOnly = historyReadMethods.has(method);
+      const { peer, supportsOrchestration } = await this.peer(ticket.generationId, readOnly);
       if(!supportsOrchestration){
         if(params.__opencraftOrchestrationOperation)throw error('This Engine Host does not support orchestration replay');
         delete params.__opencraftDelegationId;
         if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>!['thread_spawn','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
       }
-      release = this.router.runtime.admit(ticket);
+      release = this.router.runtime.admit(ticket, readOnly);
       if (id === undefined) { lease?.sent(); peer.notify(message); return; }
       const nativeStarted = performance.now();
       if (method === "thread/read" && timing) timing.nativeStarted = nativeStarted;
@@ -406,15 +411,29 @@ class RoutingSession {
     if (nextCursor) { view.touched = Date.now(); this.cursors.set(nextCursor, view); }
     return { data, nextCursor, ...(view.unavailable.size ? { catalog: { state: "error", coverage: "partial" } } : {}) };
   }
-  private generationLost(id: string, incarnation: number, connectionEpoch: string, currentIncarnation: number): void {
-    this.emit({ method: "opencraft/codex/generation/lost", params: { generationId: id, incarnation, connectionEpoch, threadIds: this.registry.threadIds(id) },
+  executionFault(fault: ExecutionFault): void {
+    const id = fault.generationId, current = this.registry.get(id);
+    if (!current) return;
+    this.generationLost(id, fault.incarnation, `execution-${fault.id}-${fault.state}`, current.incarnation,
+      fault.state === "recovering" ? "execution-environment-failed" : "execution-environment-recovered", fault.id, fault.threadIds);
+    if (fault.state === "recovering") {
+      this.releaseIncarnation(id, fault.incarnation, fault.id);
+      const peer = this.peers.get(id); this.peers.delete(id);
+      if (peer) void peer.operation.then(value => value.peer.close()).catch(() => {});
+    }
+  }
+  private generationLost(id: string, incarnation: number, connectionEpoch: string, currentIncarnation: number, reason?: string, recoveryId?: string, affectedThreadIds?: readonly string[]): void {
+    this.emit({ method: "opencraft/codex/generation/lost", params: { generationId: id, incarnation, connectionEpoch, threadIds: affectedThreadIds ?? this.registry.threadIds(id), ...(reason ? {reason, recoveryId} : {}) },
       __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: id, incarnation: currentIncarnation } });
   }
-  private releaseIncarnation(id: string, incarnation: number): void {
-    for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation && process.active) { process.release?.unknown("generation-replaced"); process.active = false; process.pending = false; }
-    for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation && command.active) { command.release?.unknown("generation-replaced"); command.active = false; }
+  private releaseIncarnation(id: string, incarnation: number, faultId?: string): void {
+    const retire = (lease: import("./router-owner.js").RouterLease | undefined) => {
+      if (faultId) lease?.retireForExecutionFault(faultId); else lease?.unknown("generation-replaced");
+    };
+    for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation && process.active) { retire(process.release); process.active = false; process.pending = false; }
+    for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation && command.active) { retire(command.release); command.active = false; }
     for (const [key, request] of this.serverRequests) if (request.ticket.generationId === id && request.ticket.incarnation === incarnation) {
-      request.release?.unknown("generation-replaced"); this.serverRequests.delete(key); this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
+      retire(request.release); this.serverRequests.delete(key); this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
     }
   }
   flushStarts(): void {

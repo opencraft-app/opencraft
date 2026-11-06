@@ -9,6 +9,8 @@ import { generationDirectory } from "./generation-files.js";
 import { generationArtifactDigest } from "./generation-artifact-digest.js";
 import type { GenerationRecord } from "./generation-registry.js";
 
+import { stopFailedGeneration } from "./generation-fault-stop.js";
+
 const execute = promisify(execFile);
 export interface GenerationProcessIdentity {
   readonly ownerPid: number;
@@ -18,11 +20,14 @@ export interface GenerationProcessIdentity {
   readonly cliSha256: string;
   readonly cliVersion: string;
   readonly unit: string;
+  readonly invocationId?: string;
   readonly launcher?: { readonly nodeSha256: string; readonly entrypointSha256: string; readonly wrapperSha256: string;
     readonly childPid: number; readonly childStart: string; readonly childExecutable: string };
 }
 export interface GenerationSupervisor {
   inspect?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
+  inspectNative?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
+  restartFailed?(generation: GenerationRecord, identity: GenerationProcessIdentity): Promise<void>;
   start(generation: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth>;
   discardUnready(generation: GenerationRecord): Promise<void>;
   identify(generation: GenerationRecord, health: CodexAppServerHealth): Promise<GenerationProcessIdentity>;
@@ -65,22 +70,23 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   }) { this.prefix = createHash("sha256").update(options.registryDirectory).digest("hex").slice(0, 12); }
   private scope(): string[] { return this.options.scope === "user" ? ["--user"] : []; }
   private unit(g: GenerationRecord): string { return g.externalUnit ?? `opencraft-codex-${this.prefix}-${g.id}.service`; }
-  private async unitState(unit: string): Promise<{ pid: number; active: string; file: string }> {
-    const output = (await execute("systemctl", [...this.scope(), "show", "--property=LoadState", "--property=ActiveState", "--property=MainPID", "--property=UnitFileState", "--", unit])).stdout;
+  private async unitState(unit: string): Promise<{ pid: number; active: string; file: string; invocationId?: string }> {
+    const output = (await execute("systemctl", [...this.scope(), "show", "--property=LoadState", "--property=ActiveState", "--property=MainPID", "--property=UnitFileState", "--property=InvocationID", "--", unit], {timeout: 2_000})).stdout;
     const values = Object.fromEntries(output.trim().split("\n").map(line => { const split = line.indexOf("="); return [line.slice(0, split), line.slice(split + 1)]; }));
     const pid = Number(values.MainPID);
     if (!Number.isSafeInteger(pid) || pid < 0 || !values.LoadState || !values.ActiveState) throw new Error("Generation unit state is unverified");
-    return { pid, active: values.ActiveState, file: values.UnitFileState ?? "" };
+    return { pid, active: values.ActiveState, file: values.UnitFileState ?? "", ...(values.InvocationID ? {invocationId: values.InvocationID} : {}) };
   }
   private async disableBoot(unit: string, fileState: string): Promise<void> {
     if (["enabled", "enabled-runtime"].includes(fileState)) await execute("systemctl", [...this.scope(), "disable", "--", unit]);
   }
   async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
-  private async health(g: GenerationRecord): Promise<CodexAppServerHealth> {
-    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth();
+  async inspectNative(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g, "native"); }
+  private async health(g: GenerationRecord, observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
+    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth(observation);
   }
   async start(g: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth> {
-    try { return await this.health(g); } catch { /* Readiness below never signals an existing unit. */ }
+    try { return await this.health(g, ["active", "ready", "draining"].includes(g.state) ? "native" : "execution"); } catch { /* Readiness below never signals an existing unit. */ }
     const unit = this.unit(g);
     const status = await this.unitState(unit);
     if (!["active", "activating", "reloading"].includes(status.active)) {
@@ -110,7 +116,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     }
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
-      try { return await this.health(g); } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
+      try { return await this.health(g, ["active", "ready", "draining"].includes(g.state) ? "native" : "execution"); } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
     }
     throw new Error("Generation did not become ready; its unit is retained for inspection");
   }
@@ -123,7 +129,8 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     }
   }
   async identify(g: GenerationRecord, h: CodexAppServerHealth): Promise<GenerationProcessIdentity> {
-    const pid = (await this.unitState(this.unit(g))).pid;
+    const unitState = await this.unitState(this.unit(g));
+    const pid = unitState.pid;
     if (pid !== h.pid || pid < 1) throw new Error("Generation unit owner identity mismatch");
     const start = async (pid: number) => { const value = await readFile(`/proc/${pid}/stat`, "utf8"); return value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19]!; };
     for (const currentPid of [pid, h.codexPid]) {
@@ -152,7 +159,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const cliVersion = (await execute(childExecutable, ["--version"], { uid: childOwner.uid, gid: childOwner.gid, cwd: g.cwd,
         env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
       if (await start(pid) !== ownerStart || await start(h.codexPid) !== nativeStart || await start(childPid) !== childStart) throw new Error("Generation CLI launcher changed during observation");
-      return { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256, cliVersion, unit: this.unit(g),
+      return { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256, cliVersion, unit: this.unit(g), ...(unitState.invocationId ? {invocationId: unitState.invocationId} : {}),
         launcher: { nodeSha256, entrypointSha256: await digest(g.nativeLauncher.entrypoint), wrapperSha256: await digest(g.executable), childPid, childStart, childExecutable } };
     }
     const file = await stat(g.executable, { bigint: true });
@@ -165,7 +172,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     if (actual !== expected) throw new Error("Generation CLI differs from its fixed executable");
     const cliVersion = (await execute(executable, ["--version"], { uid: g.executionUid ?? process.getuid!(), gid: g.executionGid ?? process.getgid!(), cwd: g.cwd,
       env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
-    const identity = { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256: actual, cliVersion, unit: this.unit(g) };
+    const identity = { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256: actual, cliVersion, unit: this.unit(g), ...(unitState.invocationId ? {invocationId: unitState.invocationId} : {}) };
     this.identities.set(g.id, { stamp, identity }); return identity;
   }
   /** A new kernel identity is adopted only after observing its actual program
@@ -221,6 +228,23 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     if (after.pid !== 0 || !["inactive", "failed"].includes(after.active)) throw new Error("Generation owner is still running");
     if (g.externalUnit) await this.disableBoot(current.unit, state.file);
   }
+  /** Fault recovery interrupts this exact instance; it does not use retirement/drain. */
+  async restartFailed(g: GenerationRecord, expected: GenerationProcessIdentity): Promise<void> {
+    if (expected.unit !== this.unit(g)) throw new Error("Fault recovery unit differs from its fixed definition");
+    await stopFailedGeneration(expected, {
+      state: () => this.unitState(expected.unit),
+      birth: async pid => {
+        try {
+          const value = await readFile(`/proc/${pid}/stat`, "utf8");
+          return value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] ?? null;
+        } catch (error) { if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null; throw error; }
+      },
+      stop: async () => { await execute("systemctl", [...this.scope(), "stop", "--no-block", "--", expected.unit], {timeout: 2_000}); },
+      kill: async () => { await execute("systemctl", [...this.scope(), "kill", "--kill-whom=all", "--signal=SIGKILL", "--", expected.unit], {timeout: 2_000}); },
+      now: Date.now, wait: () => new Promise(resolve => setTimeout(resolve, 100)),
+    });
+  }
+
   async processesQuiet(identity: GenerationProcessIdentity): Promise<boolean> {
     const pending = [identity.nativePid];
     let launcherSeen = !identity.launcher;

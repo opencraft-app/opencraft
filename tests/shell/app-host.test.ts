@@ -1177,3 +1177,58 @@ test("a shared native status cannot export one local RPC's no-dispatch proof to 
     await rejected;
   } finally { client.close(); bridge.close(); await server.close(); }
 });
+
+test("execution recovery reaches existing and newly attached Views without disconnecting readable conversations", async () => {
+  const { createAppServerWorkbenchRuntime } = await import("@opencraft/workbench-runtime");
+  const { createConversationKey } = await import("@opencraft/chat-core");
+  const { intent } = await import("../fixtures/workbench-draft-harness");
+  class Native extends TestTransport {
+    readonly rows: any[] = [];
+    recovery(recovering: boolean) { this.publish({state: "open", execution: recovering ? "recovering" : "ready", executionUnavailableThreadIds: recovering ? ["affected"] : []}); }
+    override async send(frame: string) {
+      await super.send(frame);
+      const request = JSON.parse(frame), params = request.params;
+      if (request.id === undefined) return;
+      let result: any = {};
+      const thread = {id: params?.threadId, createdAt: 1, updatedAt: 1, cwd: "/fixture", status: {type: "idle"}, turns: []};
+      if (request.method === "initialize") result = {userAgent: "execution-health-fixture", capabilities: {extensions: {"opencraft/thread-queue": {version: 2, atomicSteer: true}}}};
+      else if (request.method === "thread/resume" || request.method === "thread/read") result = {thread, model: "fixture", modelProvider: "fixture", cwd: "/fixture", approvalPolicy: "never", approvalsReviewer: "user", sandbox: {type: "readOnly"},
+        runtimeWorkspaceRoots: ["/fixture"], instructionSources: [], serviceTier: null, disabledPluginIds: [], activePermissionProfile: null,
+        reasoningEffort: null, collaborationMode: null, multiAgentMode: "explicitRequestOnly", initialTurnsPage: null, turnsBackwardsCursor: null, itemsBackwardsCursor: null};
+      else if (request.method === "thread/queue/list") result = {data: this.rows, nextCursor: null};
+      else if (request.method === "thread/queue/add") {
+        const row = {id: params.clientUserMessageId, clientUserMessageId: params.clientUserMessageId, input: params.input, createdAt: 1, pausedReason: "execution-recovering"};
+        this.rows.push(row); result = {queuedSubmission: row};
+      } else if (request.method.endsWith("/list")) result = {data: [], nextCursor: null};
+      else if (request.method === "turn/start") result = {turn: {id: "new-turn", status: "inProgress", items: []}};
+      this.receive(JSON.stringify({id: request.id, result}));
+    }
+  }
+  const native = new Native();
+  const server = new AppHostServer({createTransport: () => native});
+  const pair = createPortPair(); server.accept(pair.host, "execution-recovery-view");
+  const bridge = new MessagePortAppHostClient(pair.browser, "execution-recovery-view");
+  const runtime = createAppServerWorkbenchRuntime({hostId: "local", transport: bridge.createTransport("local"), autoReconnect: false});
+  let second: ReturnType<typeof createAppServerWorkbenchRuntime> | undefined;
+  try {
+    await runtime.connect();
+    const lease = await runtime.acquireThread("affected"), healthy = await runtime.acquireThread("healthy");
+    for (let n = 0; n < 200 && (!lease.getSnapshot().authoritative || !healthy.getSnapshot().authoritative); n++) await new Promise(resolve => setTimeout(resolve, 5));
+    native.recovery(true);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runtime.getSnapshot().transport.execution, "recovering");
+    assert.equal(lease.getSnapshot().authoritative, true, "execution failure does not retire readable history");
+    const base = intent({type: "new-thread", draftId: "unused", execution: {hostId: "local", workspace: {cwd: "/fixture", runtimeWorkspaceRoots: []}}});
+    await lease.submit({...base, commandId: "queued-command", clientMessageId: "queued-input", target: {type: "existing-thread", key: createConversationKey("local", "affected")}});
+    assert.equal(native.rows[0]?.clientUserMessageId, "queued-input");
+    assert.equal(native.sent.filter(frame => JSON.parse(frame).method === "turn/start").length, 0);
+    await healthy.submit({...base, commandId: "healthy-command", clientMessageId: "healthy-input", target: {type: "existing-thread", key: createConversationKey("local", "healthy")}});
+    assert.equal(native.sent.filter(frame => JSON.parse(frame).method === "turn/start").length, 1, "unaffected instance remains executable");
+    second = createAppServerWorkbenchRuntime({hostId: "local", transport: bridge.createTransport("local"), autoReconnect: false});
+    await second.connect();
+    assert.equal(second.getSnapshot().transport.execution, "recovering", "attach receipt includes current execution state");
+    native.recovery(false); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(runtime.getSnapshot().transport.execution, "ready");
+    assert.equal(second.getSnapshot().transport.execution, "ready");
+  } finally { await second?.dispose(); await runtime.dispose(); bridge.close(); await server.close(); }
+});

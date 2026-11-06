@@ -166,7 +166,10 @@ input.on("line", line => {
     else readItems(message);
     return;
   }
+  if (message.method === "test/refuseExecution") { globalThis.refuseFixtureExecution = message.params.enabled; send({id: message.id, result: {}}); return; }
   if (message.method === "turn/start") {
+    if (globalThis.refuseFixtureExecution) {send({id: message.id, error: {code: -32084, message: "Execution environment unavailable", data: {notSubmitted: true}}}); return;}
+
     acceptedInputs.push({ method: message.method, params: message.params });
     const threadId = message.params.threadId;
     if (turns.has(threadId)) {
@@ -193,6 +196,7 @@ input.on("line", line => {
     return;
   }
   if (message.method === "turn/steer") {
+    if (globalThis.refuseFixtureExecution) {send({id: message.id, error: {code: -32084, message: "Execution environment unavailable", data: {notSubmitted: true}}}); return;}
     acceptedInputs.push({ method: message.method, params: message.params });
     const threadId = message.params.threadId;
     const turnId = turns.get(threadId);

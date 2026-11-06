@@ -219,6 +219,11 @@ export class AppHostServer {
     if (slot?.phase === "failed") return "failed";
     return slot?.resetOperation || slot?.phase === "closing" ? "closing" : slot?.phase === "starting" ? "connecting" : slot?.record?.physical.transport.status.state ?? slot?.lastState ?? "idle";
   }
+  /** A readable connection can outlive its execution environment. */
+  hostExecutionState(hostId: string): "ready" | "recovering" | "unavailable" | "unknown" {
+    const status = this.slots.get(hostId)?.record?.physical.transport.status;
+    return status?.execution ?? (this.hostState(hostId) === "open" ? "ready" : "unknown");
+  }
 
   /** Trusted explicit connection intent; never grants a Client lease or starts remote work. */
   async ensureHostConnected(hostId: string, assertAdmission?: () => void): Promise<void> {
@@ -310,7 +315,7 @@ export class AppHostServer {
         await this.disconnectClaim(connection, message.hostId, message.leaseId, record.generation);
         throw cause;
       }
-      return { hostId: message.hostId, generation: record.generation };
+      return { hostId: message.hostId, generation: record.generation, execution: record.physical.transport.status.execution, executionUnavailableThreadIds: record.physical.transport.status.executionUnavailableThreadIds };
     }
     if (message.type === "host/send") {
       let record: HostRecord;

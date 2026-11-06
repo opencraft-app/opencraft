@@ -4,7 +4,7 @@ import type { RouterExpectation } from "./router-owner.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { realpath, mkdir, stat, chown, chmod, readFile } from "node:fs/promises";
 import { dirname, isAbsolute, join } from "node:path";
-import { CodexCoreControlClient, CodexCoreUnavailableError, CODEX_CORE_PROTOCOL_VERSION, type CodexAppServerHealth } from "@opencraft/account-pool-host";
+import { CodexCoreControlClient, CodexCoreUnavailableError, CodexExecutionUnavailableError, CODEX_CORE_PROTOCOL_VERSION, type CodexAppServerHealth } from "@opencraft/account-pool-host";
 import { startControlServer, readControlJson } from "./control-server.js";
 import { CodexGenerationRuntime } from "./generation-runtime.js";
 import { CodexGenerationRouter, startGenerationSocket } from "./generation-router.js";
@@ -59,6 +59,7 @@ export async function startCodexGenerationService(options: {
     requireHostUsage: options.requireHostUsage, replaceRetiredHome: validator, executionUid: execution.uid, executionGid: execution.gid,
     runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures, maintenanceFile: options.maintenanceFile });
   const router = new CodexGenerationRouter(runtime); runtime.serverRequestCount = id => router.serverRequestCount(id);
+  runtime.executionRecoveryChanged = fault => router.executionFault(fault);
   const nativeSocket = join(dirname(options.endpoint), "native.sock");
   let socket: Awaited<ReturnType<typeof startGenerationSocket>> | undefined;
   let control: Awaited<ReturnType<typeof startControlServer>> | undefined;
@@ -71,6 +72,7 @@ export async function startCodexGenerationService(options: {
     fences: runtime.fences(true), storage: runtime.registry.outcome });
   const close = () => closing ??= (async () => { runtime.owner.dispose(); await control?.close(); await socket?.close(); await runtime.close(); })();
   try {
+    await runtime.initializeExecutionRecovery();
     if (runtime.owner.isOpen()) await validator.recover(runtime.registry.list());
     socket = await startGenerationSocket(nativeSocket, router);
     await chown(nativeSocket, execution.uid, execution.gid);
@@ -119,8 +121,14 @@ export async function startCodexGenerationService(options: {
         const query = new URL(request.url, "http://local.invalid");
         return { status: 200, value: runtime.directory(query.searchParams.get("threadId") ?? undefined) };
       }
-      if (request.method === "GET" && request.url === "/health") {
-        const current = runtime.registry.current(), execution = await runtime.ensure(current.generation.id);
+      if (request.method === "GET" && (request.url === "/health" || request.url === "/native-health")) {
+        const current = runtime.registry.current();
+        let execution: CodexAppServerHealth;
+        try { execution = await runtime.inspectHealth(current.generation.id, request.url === "/native-health" ? "native" : "execution"); }
+        catch (error) {
+          if (error instanceof CodexExecutionUnavailableError) return {status: 503, value: {code: "EXECUTION_ENVIRONMENT_UNAVAILABLE", executionStatus: error.executionStatus, error: "Execution environment unavailable"}};
+          return {status: 503, value: {error: "Codex AppServer unavailable"}};
+        }
         return { status: 200, value: { protocolVersion: CODEX_CORE_PROTOCOL_VERSION, pid: process.pid, routingPid: process.pid,
           appServerPid: execution.pid, codexPid: execution.codexPid, nativeSocket, dataDirectory, proxyBaseUrl,
           environmentRoutingVersion: 1, orchestrationRoutingVersion: 1, routingEpoch: runtime.registry.ownerEpoch, generationId: current.generation.id, admissionEpoch: current.epoch,
@@ -152,7 +160,12 @@ export async function startCodexGenerationService(options: {
       await runtime.prepare(options.bootstrap.generation, options.bootstrap.legacy === true);
       if (runtime.registry.epoch() === 0) await runtime.activate(options.bootstrap.generation.id, 0);
     }
-    if (runtime.owner.isOpen() && runtime.registry.epoch() > 0) await runtime.ensure(runtime.registry.current().generation.id);
+    if (runtime.owner.isOpen() && runtime.registry.epoch() > 0) {
+      const current = runtime.registry.current().generation.id;
+      // A persisted stop/retry owns startup for this generation. Ordinary ensure
+      // cannot precede the monitor that must finish a deactivating source unit.
+      if (!runtime.executionRecoveryPending(current)) await runtime.ensure(current);
+    }
     options.signal?.throwIfAborted(); runtime.startMonitor();
     return { endpoint: options.endpoint, nativeSocket, close };
   } catch (reason) { await close(); throw reason; }

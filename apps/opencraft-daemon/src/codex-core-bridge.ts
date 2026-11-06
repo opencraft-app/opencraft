@@ -65,7 +65,7 @@ export class CodexCoreBridge implements DuplexTransport {
     private readonly rejectedAdmission?: (method: string, params: unknown, clientId: string) => void) {
     this.control = new CodexCoreControlClient(endpoint, token);
     this.connection = new CodexCoreSocket({
-      health: signal => this.control.health(signal), message: frame => this.receive(frame),
+      health: signal => this.control.health(signal, "native"), message: frame => this.receive(frame),
       status: value => { if (["failed", "closing", "closed"].includes(value.state)) this.human.markSourceUnavailable(); for (const listener of this.statuses) listener(value); },
     });
   }

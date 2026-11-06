@@ -621,7 +621,8 @@ class AppHostChannelTransport implements DuplexTransport {
           throw new Error(`App Host channel ${this.hostId} closed during connection`);
         }
         this.generation = result.generation;
-        this.setStatus({ state: "open" });
+        this.setStatus({ state: "open", ...(result.execution ? {execution: result.execution} : {}),
+          ...(result.executionUnavailableThreadIds ? {executionUnavailableThreadIds: result.executionUnavailableThreadIds} : {}) });
         if (this.closed || this.lifetime !== owner || !owner.active) {
           const retirement = owner.retirement;
           if (retirement) throw appHostError({ code: retirement.failure?.code ?? "APP_HOST_DISCONNECTED",
@@ -733,6 +734,8 @@ class AppHostChannelTransport implements DuplexTransport {
 
   private setStatus(status: TransportStatus): void {
     if (this.currentStatus.state === status.state && this.currentStatus.reason === status.reason
+      && this.currentStatus.execution === status.execution
+      && this.currentStatus.executionUnavailableThreadIds === status.executionUnavailableThreadIds
       && this.currentStatus.failure?.code === status.failure?.code
       && this.currentStatus.failure?.recovery === status.failure?.recovery) return;
     this.currentStatus = status;

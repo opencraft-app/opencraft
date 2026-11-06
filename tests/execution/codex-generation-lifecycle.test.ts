@@ -8,10 +8,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 import { CodexGenerationRuntime } from "../../apps/codex-core/src/generation-runtime.js";
 import type { GenerationSupervisor, GenerationProcessIdentity } from "../../apps/codex-core/src/generation-supervisor.js";
 import type { GenerationRecord } from "../../apps/codex-core/src/generation-registry.js";
-import { CodexCoreControlClient, CodexCoreUnavailableError } from "@opencraft/account-pool-host";
+import { CodexCoreControlClient, CodexCoreUnavailableError, CodexExecutionUnavailableError } from "@opencraft/account-pool-host";
 import { startControlServer } from "../../apps/codex-core/src/control-server.js";
 
-async function fixture() {
+async function fixture(now?: () => number) {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-life-"));
   const running = new Map<string, { close(): Promise<void>; serial: number }>(), serials = new Map<string, number>();
   const stopped: string[] = [], cold: string[] = [];
@@ -43,7 +43,7 @@ async function fixture() {
     async processesQuiet() { return quiet; },
   };
   const runtime = new CodexGenerationRuntime({ directory: join(root, "routing"), dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1234", supervisor,
-    requireHostUsage: true, replaceRetiredHome: async (old, current) => { assert.equal(running.has(old.id), false, "backup cannot inspect a live HOME"); cold.push(old.id); return { replacement: current.executable, backupVerified: true }; } });
+    now, requireHostUsage: true, replaceRetiredHome: async (old, current) => { assert.equal(running.has(old.id), false, "backup cannot inspect a live HOME"); cold.push(old.id); return { replacement: current.executable, backupVerified: true }; } });
   for (const id of ["old", "new"]) await runtime.prepare({ id, endpoint: join(root, id, "control.sock"), runtimeDataDirectory: join(root, id, "data"), executable: `/fixed/${id}/codex`, bundle: `/fixed/${id}/app-server.cjs`, node: process.execPath, cwd: root });
   await runtime.activate("old", 0); runtime.registry.discover("old-thread", "old");
   let sequence = 0;
@@ -52,10 +52,34 @@ async function fixture() {
   const publish = (blockedThreadIds: string[] = [], acknowledgedFenceEpoch = runtime.fences().fenceEpoch, unscopedBusy = false) => runtime.publishHostUsage({ ...lease, sequence: ++sequence, blockedThreadIds, acknowledgedFenceEpoch, unscopedBusy, discoveryComplete: true });
   publish(); await runtime.activate("new", 1);
   const waitFence = async () => { for (let n = 0; n < 200 && !runtime.fences().fencedGenerationIds.includes("old"); n++) await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(runtime.fences().fencedGenerationIds.includes("old"), true); };
-  return { runtime, supervisor, stopped, cold, native, publish, waitFence, running, setQuiet(value: boolean) { quiet = value; }, failNextStop() { failStop = true; },
+  return { root, runtime, supervisor, stopped, cold, native, publish, waitFence, running, setQuiet(value: boolean) { quiet = value; }, failNextStop() { failStop = true; },
     replaceHost() { const previous = lease; lease = host(); sequence = 0; return previous; },
     async close() { await runtime.close(); for (const process of running.values()) await process.close(); await rm(root, { recursive: true, force: true }); } };
 }
+
+test("execution failure restarts only its instance without waiting for busy Native, goals, Host or OS work", async () => {
+  const f = await fixture();
+  let disconnected = true;
+  try {
+    const before = f.runtime.registry.get("new")!.incarnation;
+    const oldIdentity = await f.supervisor.start(f.runtime.registry.get("old")!);
+    f.native.get("new")!.status = "active";
+    f.native.get("new")!.goal = true;
+    f.setQuiet(false); f.publish(["new-thread"], undefined, true);
+    f.supervisor.inspect = async g => {
+      if (g.id === "new" && disconnected) throw new CodexExecutionUnavailableError("disconnected");
+      return f.supervisor.start(g);
+    };
+    f.supervisor.inspectNative = g => f.supervisor.start(g);
+    f.supervisor.restartFailed = async (g, identity) => { await f.supervisor.stop(g, identity); disconnected = false; };
+    await f.runtime.recoverExecutions();
+    assert.deepEqual(f.stopped, ["new"]);
+    assert.equal(f.runtime.registry.get("new")!.incarnation, before + 1);
+    assert.equal((await f.supervisor.start(f.runtime.registry.get("old")!)).codexPid, oldIdentity.codexPid);
+    assert.equal(f.runtime.fences().executionRecoveries?.find(row => row.generationId === "new")?.state, "recovered");
+    assert.equal(f.cold.length, 0, "fault recovery does not migrate or replace the current HOME");
+  } finally { await f.close(); }
+});
 
 test("Host queue and Native goal keep the old owner serving without installing an admission fence", async () => {
   const f = await fixture();
@@ -301,4 +325,115 @@ test("P2c a ready candidate with direct native work is retained even without a r
     await assert.rejects(f.runtime.revoke("spare", 2, proof), /native threads or unknown work/);
     assert.equal(f.running.has("spare"), true); assert.equal(f.runtime.registry.get("spare")!.state, "ready");
   } finally { await f.close(); }
+});
+
+test("a failed replacement is recorded and can be replaced again while the original source stays fixed", async () => {
+  let time = 1_000, stops = 0;
+  const f = await fixture(() => time);
+  try {
+    const g = f.runtime.registry.get("new")!, source = await f.supervisor.identify(g, await f.supervisor.start(g));
+    f.supervisor.inspectNative = g => f.supervisor.start(g);
+    f.supervisor.inspect = async g => {
+      if (g.id === "new" && stops < 2) throw new CodexExecutionUnavailableError("disconnected");
+      return f.supervisor.start(g);
+    };
+    f.supervisor.restartFailed = async (g, expected) => {
+      const current = await f.supervisor.identify(g, await f.supervisor.start(g));
+      if (current.nativeStart !== expected.nativeStart) return; // Original source is already gone; do not stop its successor.
+      await f.supervisor.stop(g, expected); stops++;
+    };
+    await f.runtime.recoverExecutions();
+    const first = JSON.parse(await (await import("node:fs/promises")).readFile(join(f.root, "routing/execution-recovery.json"), "utf8"))[0];
+    assert.equal(first.state, "recovering"); assert.deepEqual(first.source, source);
+    assert.notEqual(first.target.nativeStart, source.nativeStart, "replacement identity is durable before execution verification");
+    time += 1_000;
+    await f.runtime.recoverExecutions();
+    assert.equal(stops, 2, "the failed replacement is actually restarted after backoff");
+    assert.equal(f.runtime.fences().executionRecoveries?.[0]?.state, "recovered");
+  } finally {await f.close();}
+});
+
+test("generation router keeps Native history readable while the execution admission fence remains blocked", async () => {
+  const {CodexGenerationRouter, startGenerationSocket} = await import("../../apps/codex-core/src/generation-router.js");
+  const {default: Client} = await import("ws");
+  const f = await fixture();
+  let socket: import("ws").WebSocket | undefined, listener: Awaited<ReturnType<typeof startGenerationSocket>> | undefined;
+  try {
+    f.runtime.registry.discover("new-thread", "new");
+    f.supervisor.inspect = async g => {if (g.id === "new") throw new CodexExecutionUnavailableError("disconnected"); return f.supervisor.start(g);};
+    f.supervisor.inspectNative = g => f.supervisor.start(g);
+    f.supervisor.restartFailed = async () => {throw new Error("Stop not yet confirmed");};
+    await f.runtime.recoverExecutions();
+    listener = await startGenerationSocket(join(f.root, "router.sock"), new CodexGenerationRouter(f.runtime));
+    socket = new Client(`ws+unix://${join(f.root, "router.sock")}:/`);
+    await new Promise<void>((yes, no) => {socket!.once("open", yes); socket!.once("error", no);});
+    let sequence = 0;
+    const rpc = (method: string, params: object) => new Promise<any>(resolve => {
+      const id = ++sequence;
+      const receive = (raw: import("ws").RawData) => {const response = JSON.parse(String(raw)); if (response.id === id) {socket!.off("message", receive); resolve(response);}};
+      socket!.on("message", receive); socket!.send(JSON.stringify({id, method, params}));
+    });
+    assert.equal((await rpc("initialize", {clientInfo: {name: "history-fault", version: "1"}})).error, undefined);
+    assert.equal((await rpc("thread/read", {threadId: "new-thread", includeTurns: false})).result.thread.id, "new-thread");
+    assert.equal((await rpc("thread/turns/list", {threadId: "new-thread"})).error, undefined);
+    assert.equal((await rpc("turn/start", {threadId: "new-thread", input: []})).error.data.notSubmitted, true);
+  } finally {socket?.terminate(); await listener?.close(); await f.close();}
+});
+
+test("controller restart explains only fault-scoped unknown leases and preserves their evidence without replay", async () => {
+  let time = 1_000, disconnected = true;
+  const f = await fixture(() => time);
+  let replacement: CodexGenerationRuntime | undefined, denied: CodexGenerationRuntime | undefined;
+  try {
+    const g = f.runtime.registry.get("new")!;
+    const rpc = f.runtime.owner.enter({generationId: "new", incarnation: g.incarnation, method: "command/exec"});
+    const callback = f.runtime.owner.retainNativeCallback({generationId: "new", incarnation: g.incarnation, method: "item/tool/call", threadId: "new-thread"});
+    callback.sent();
+    f.supervisor.inspect = async g => {if (g.id === "new" && disconnected) throw new CodexExecutionUnavailableError("disconnected"); return f.supervisor.start(g);};
+    f.supervisor.inspectNative = g => f.supervisor.start(g);
+    f.supervisor.restartFailed = async () => {throw new Error("Stop is not yet confirmed");};
+    await f.runtime.recoverExecutions();
+    const fault = f.runtime.fences().executionRecoveries!.find(row => row.generationId === "new")!;
+    callback.retireForExecutionFault(fault.id); rpc();
+    assert.equal(f.runtime.owner.snapshot().activeCalls, 0);
+    const options = (f.runtime as any).options;
+    await f.runtime.close();
+    replacement = new CodexGenerationRuntime(options);
+    assert.equal(replacement.owner.isOpen(), false, "unconfirmed startup cannot admit before reading the journal");
+    await replacement.initializeExecutionRecovery();
+    assert.equal(replacement.owner.isOpen(), true, "fault-scoped uncertainty allows recovery to continue");
+    assert.equal((replacement.registry.metadata(`router-lease:${callback.id}`) as any).executionFaultId, fault.id);
+    assert.ok((replacement.registry.metadata(`router-lease:${callback.id}`) as any).uncertainty, "unknown evidence is retained");
+    time += 1_000;
+    f.supervisor.restartFailed = async (generation, identity) => {await f.supervisor.stop(generation, identity); disconnected = false;};
+    await replacement.recoverExecutions();
+    assert.equal(replacement.fences().executionRecoveries?.find(row => row.id === fault.id)?.state, "recovered");
+    assert.equal(replacement.owner.currentResponsibilityConfirmed(), true);
+    await replacement.close(); replacement = new CodexGenerationRuntime(options);
+    await replacement.initializeExecutionRecovery();
+    assert.equal(replacement.owner.isOpen(), true, "the completed fault remains restartable");
+    // A second failure must not discard the source proof that still explains
+    // the first failure's retained unknown callback record.
+    const secondGeneration = replacement.registry.get("new")!;
+    const secondRpc = replacement.owner.enter({generationId: "new", incarnation: secondGeneration.incarnation, method: "process/spawn"});
+    const secondCallback = replacement.owner.retainNativeCallback({generationId: "new", incarnation: secondGeneration.incarnation, threadId: "new-thread"});
+    disconnected = true;
+    f.supervisor.restartFailed = async () => {throw new Error("Second source stop pending");};
+    await replacement.recoverExecutions();
+    const secondFault = replacement.fences().executionRecoveries!.find(row => row.generationId === "new")!;
+    assert.notEqual(secondFault.id, fault.id);
+    secondCallback.retireForExecutionFault(secondFault.id); secondRpc();
+    await replacement.close(); replacement = new CodexGenerationRuntime(options);
+    await replacement.initializeExecutionRecovery();
+    assert.equal(replacement.owner.isOpen(), true, "both generations' unknown proofs survive a repeated incident");
+    time += 1_000;
+    f.supervisor.restartFailed = async (generation, identity) => {await f.supervisor.stop(generation, identity); disconnected = false;};
+    await replacement.recoverExecutions();
+    assert.equal(replacement.owner.currentResponsibilityConfirmed(), true);
+    assert.ok((replacement.registry.metadata(`router-lease:${callback.id}`) as any).uncertainty);
+    replacement.owner.uncertain("unattributed");
+    await replacement.close(); replacement = undefined;
+    denied = new CodexGenerationRuntime(options);
+    await assert.rejects(denied.initializeExecutionRecovery(), /unconfirmed/, "unrelated uncertainty still requires its original recovery contract");
+  } finally {await denied?.close(); await replacement?.close(); await f.close();}
 });

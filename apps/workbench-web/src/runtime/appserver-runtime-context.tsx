@@ -419,6 +419,12 @@ export function useThreadPinWriter(): ThreadPinWriter {
 
 /** Observe one Host, independently of the currently presented conversation. */
 export function useHostConnectionPhase(hostId: string) {
+  return useHostStateValue(hostId, snapshot => snapshot.phase, "idle");
+}
+export function useHostExecutionState(hostId: string) {
+  return useHostStateValue(hostId, snapshot => snapshot.transport.execution, undefined);
+}
+function useHostStateValue<T>(hostId: string, select: (snapshot: ReturnType<AppServerWorkbenchRuntime["getSnapshot"]>) => T, fallback: T) {
   const application = useContext(ApplicationRuntimeContext);
   if (application === null) throw new Error("AppServerRuntimeProvider is missing");
   const registry = application.registry;
@@ -437,8 +443,8 @@ export function useHostConnectionPhase(hostId: string) {
       });
       return () => { removeRegistry(); unsubscribe?.(); };
     },
-    () => registry.peekRuntime(hostId)?.getSnapshot().phase ?? "idle",
-    () => "idle",
+    () => { const runtime = registry.peekRuntime(hostId); return runtime ? select(runtime.getSnapshot()) : fallback; },
+    () => fallback,
   );
 }
 
