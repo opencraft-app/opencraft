@@ -1377,26 +1377,42 @@ export class CodexEngineAdapter implements DuplexTransport {
         event: "thread-resume-start", clientId, requestId: physicalId,
         threadId: string(params.threadId), pid: this.child?.pid ?? null,
       });
+      const resumeStage = (stage: string, outcome: string) => {
+        if (message.method === "thread/resume") this.diagnostic({
+          event: "thread-resume-stage", clientId, requestId: physicalId,
+          threadId: string(params.threadId), stage, outcome,
+          elapsedMs: Math.round(performance.now() - receivedAt),
+        });
+      };
+      const ownsRequest = () => this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch;
       const forward = async () => {
         if (message.method === "thread/resume") {
           // Execution activation joins its existing tool preparation. A view
           // must not race that owner by installing another configuration.
-          try { await this.sessionMcpRefreshes.get(string(params.threadId)); }
+          const refresh = this.sessionMcpRefreshes.get(string(params.threadId));
+          if (refresh) resumeStage("tool-refresh", "waiting");
+          try {
+            await refresh;
+            if (refresh) resumeStage("tool-refresh", "ready");
+          }
           catch (cause) {
+            resumeStage("tool-refresh", "failed");
             if (this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch)
               this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId);
             return;
           }
         }
-        if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
+        if (!ownsRequest()) { resumeStage("before-dispatch", "client-replaced"); return; }
         if (message.method === "thread/resume" && this.sessionMcpRetirements.has(string(params.threadId))) {
           try {
+            resumeStage("tool-preparation", "waiting");
             if (this.sessionMcpRefreshes.has(string(params.threadId))) throw new SessionMcpRecoveryPending();
             await this.prepareSessionMcp(string(params.threadId));
+            resumeStage("tool-preparation", "ready");
           }
-          catch (cause) { this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId); return; }
+          catch (cause) { resumeStage("tool-preparation", "failed"); this.emit({ id, error: this.sessionMcpFailure(cause) }, clientId); return; }
         }
-        if (!this.initializedClients.has(clientId) || this.clientEpoch(clientId) !== requestClientEpoch) return;
+        if (!ownsRequest()) { resumeStage("before-dispatch", "client-replaced"); return; }
         if (message.method === "thread/start" || message.method === "thread/fork") {
           try { this.validateSubmissionContext(context); }
           catch (error) { this.emit({ id, error: { code: -32602, message: errorMessage(error) } }, clientId); return; }
@@ -1472,6 +1488,7 @@ export class CodexEngineAdapter implements DuplexTransport {
           pending.timer = setTimeout(() => {
             if (this.pending.get(physicalId) !== pending) return;
             this.pending.delete(physicalId);
+            resumeStage("native-reply", "timed-out");
             if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");
             if (this.validClientRequest(pending)) this.emit({ id, error: { code: -32000, message: "Remote request timed out; delivery outcome is unknown" } }, clientId);
           }, 30_000);
@@ -1491,13 +1508,20 @@ export class CodexEngineAdapter implements DuplexTransport {
         if (pending.historyTiming) pending.historyTiming.nativeStarted = performance.now();
         try{await this.writePhysical({ ...message, id: physicalId }, () => {
           this.validateSubmissionContext(context);
-          return this.initializedClients.has(clientId) && this.clientEpoch(clientId) === requestClientEpoch;
-        });}
-        catch(error){if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");throw error;}
+          const owned = ownsRequest();
+          resumeStage("native-dispatch", owned ? "attempted" : "client-replaced");
+          return owned;
+        }); resumeStage("native-dispatch", "written");}
+        catch(error){resumeStage("native-dispatch", "failed");if(pending.usageAttemptId)this.tokenUsage?.attemptOutcome(pending.usageAttemptId,"unknown");throw error;}
       };
       if (message.method === "thread/resume") {
         const threadId = string(params.threadId);
-        await this.nativeReleases.get(threadId);
+        const release = this.nativeReleases.get(threadId);
+        if (release) resumeStage("native-release", "waiting");
+        try {
+          await release;
+          if (release) resumeStage("native-release", "ready");
+        } catch (error) { resumeStage("native-release", "failed"); throw error; }
         await forward();
       } else if (["turn/start", "turn/steer", "thread/name/set", "thread/delete", "thread/archive"].includes(string(message.method)) && string(params.threadId)) {
         await this.withThreadOperation(string(params.threadId), forward);
@@ -2071,6 +2095,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         }
         if (pending.method === "thread/resume") this.diagnostic({
           event: "thread-resume-finish", clientId: pending.clientId,
+          requestId: String(id),
           threadId: string(pending.params.threadId),
           outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
         });
@@ -2495,9 +2520,13 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (clients.delete(clientId)) affected.add(threadId);
       if (clients.size === 0) this.threadClients.delete(threadId);
     }
-    for (const pending of this.pending.values()) {
+    for (const [requestId, pending] of this.pending) {
       if (pending.clientId !== clientId || (pending.method !== "thread/resume" && pending.method !== "turn/start")) continue;
       pending.invalidated = true;
+      if (pending.method === "thread/resume") this.diagnostic({
+        event: "thread-resume-stage", clientId, requestId, threadId: string(pending.params.threadId),
+        stage: "native-reply", outcome: "client-disconnected",
+      });
       affected.add(string(pending.params.threadId));
     }
     for (const [threadId, owner] of this.threadInteractionOwners) {

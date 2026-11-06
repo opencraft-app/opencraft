@@ -635,6 +635,10 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     await waitFor(frames, frame => frame.id === "a:resume");
     assert.ok(diagnostics.some(event => event.event === "thread-resume-start" && event.clientId === "client-a" && event.threadId === "fixture-thread-1"));
     assert.ok(diagnostics.some(event => event.event === "thread-resume-finish" && event.clientId === "client-a" && event.threadId === "fixture-thread-1" && event.outcome === "succeeded"));
+    const resumeRequestId = diagnostics.find(event => event.event === "thread-resume-start")?.requestId;
+    const resumeEvents = diagnostics.filter(event => event.requestId === resumeRequestId);
+    assert.ok(resumeEvents.some(event => event.event === "thread-resume-stage" && event.stage === "native-dispatch" && event.outcome === "written"));
+    assert.ok(resumeEvents.some(event => event.event === "thread-resume-finish" && event.outcome === "succeeded"));
 
     await adapter.send(JSON.stringify({ id: "b:accounts", method: "opencraft/codex/accounts/list", params: {}, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     const accounts = await waitFor(frames, frame => frame.id === "b:accounts");
