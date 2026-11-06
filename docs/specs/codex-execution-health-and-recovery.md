@@ -122,3 +122,9 @@ commit failures and unsent queued start/steer custody. Packaged Router evidence
 readers passed in ESM and CJS; final affected-workspace type checks and boundary
 checks passed. These follow-up fixes were not submitted to a third independent
 review round.
+
+The independent signed Core payload also packages its recovery evidence Worker beside
+`generations.cjs` in `full/core`. The server execution directory is a separate
+installation boundary. A package regression reproduced a missing Worker at this
+location, then passed the real custody read from a source-independent CJS probe
+using the production Core program packager.
