@@ -25,7 +25,7 @@ import { DshAppServerAdapter, decodeModel } from "./dsh-appserver-adapter.js";
 import { DshClient, DshClientError } from "./dsh-client.js";
 import { DshSupervisor } from "./dsh-supervisor.js";
 import { DshRestartBudget } from "./dsh-restart-budget.js";
-import { openLocalAgentStorage, type LocalAgentStorage } from "./storage/local-agent-storage.js";
+import { openLocalAgentStorageWithWorker, type LocalAgentStorage } from "./storage/local-agent-storage.js";
 import { DshCapabilityBroker, normalizeCapabilities } from "./dsh-capability-broker.js";
 import { HostDocumentService, HostDocumentFault } from "./storage/host-document-service.js";
 import { startTasksAgent } from "@opencraft/plugin-tasks/agent";
@@ -52,7 +52,7 @@ import { LocalAttachmentStagingService } from "./attachments/local-attachment-st
 import { LocalWorkspaceResolver } from "./projectless-workspace.js";
 
 export { acquireLocalAgentStorageOwner } from "./storage/daemon-storage-owner.js";
-export { openLocalAgentStorage } from "./storage/local-agent-storage.js";
+export { openLocalAgentStorage, openLocalAgentStorageWithWorker } from "./storage/local-agent-storage.js";
 
 type JsonRpcMessage = Record<string, unknown>;
 const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
@@ -153,7 +153,7 @@ export async function startLocalAgentHost(options: {
   readonly taskConversationCatalog?: (serverId: string, search: string, limit: number, cursor?: string | null) => Promise<unknown>;
 } = {}) {
   nodeObserver("dsh");
-  const storage = options.storage ?? openLocalAgentStorage({ dataDirectory: options.dataDirectory });
+  const storage = options.storage ?? await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
   const cleanup: (() => void | Promise<void>)[] = [() => storage.close()];
   let stopAccepting: (() => Promise<void>) | undefined;
   let drainThreads: (() => Promise<void>) | undefined;
@@ -308,7 +308,7 @@ export async function startLocalAgentHost(options: {
       }
     });
     if (bridgeUrl) capabilityLink.attach(bridgeUrl);
-    for (const pending of routing.pending()) routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
+    for (const pending of routing.pending()) await routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
   }
   if (capabilityLink) adapter.setBackgroundProofReader((threadId, messageId) => capabilityLink!.backgroundProof(threadId, messageId));
   if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
@@ -473,7 +473,7 @@ export async function startLocalAgentHost(options: {
             for (const session of catalog.items) {
               let current = routing.current(session.sessionId);
               const resolved = await capabilityLink.resolveGeneration(session.sessionId);
-              if (routing.reconcile(session.sessionId, resolved)) current = routing.current(session.sessionId);
+              if (await routing.reconcile(session.sessionId, resolved)) current = routing.current(session.sessionId);
               if (resolved.sessionId !== current.nativeId) throw new Error("Checkpoint and logical routing disagree; recovery requires reconciliation");
               const models = await client.call<{current?:{provider:string;model:string}}>("session.models", { sessionId: session.sessionId });
               if (!models.current) continue;
@@ -481,7 +481,7 @@ export async function startLocalAgentHost(options: {
               // A first interrupted request may not yet have a terminal checkpoint.
               // Capture the already-persisted native log before surface recovery.
               await capabilityLink.checkpoint(current.nativeId);
-              routing.stage(session.sessionId, session.sessionId + ".g" + (current.generation + 1), {
+              await routing.stage(session.sessionId, session.sessionId + ".g" + (current.generation + 1), {
                 expectedNativeId: current.nativeId, generation: current.generation + 1,
                 previousLastSeq: Math.max(-1, ...history.events.map(entry => entry.event.seq)),
                 previousLastTurn: Math.max(0, ...history.events.map(entry => entry.event.data?.turn ?? 0)),
@@ -491,7 +491,7 @@ export async function startLocalAgentHost(options: {
                 cwd: session.cwd ?? homedir(), provider: models.current.provider, model: models.current.model,
                 legacyInstructions: lifecycle.catalog.configuration(session.sessionId),
               });
-              routing.publish(current.nativeId, { logicalId: session.sessionId, nativeId: next.sessionId, generation: next.generation,
+              await routing.publish(current.nativeId, { logicalId: session.sessionId, nativeId: next.sessionId, generation: next.generation,
                 seedThroughSeq: next.seedThroughSeq, seedThroughTurn: next.seedThroughTurn,
                 previousLastSeq: Math.max(-1, ...history.events.map(entry => entry.event.seq)),
                 previousLastTurn: Math.max(0, ...history.events.map(entry => entry.event.data?.turn ?? 0)),

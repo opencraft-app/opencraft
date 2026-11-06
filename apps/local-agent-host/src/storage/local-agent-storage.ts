@@ -3,7 +3,9 @@ import { resolve } from "node:path";
 import { ManagedConnectorService } from "@opencraft/connector-host";
 import { SqliteDocumentStore } from "@opencraft/document-storage/sqlite";
 import { SqliteLifecycleError, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import type { DshSessionRoutingPort } from "../dsh-routing-projection.js";
 import { DshSessionRouting } from "../dsh-session-routing.js";
+import { DshSessionRoutingWorker } from "../dsh-session-routing-worker.js";
 import { ThreadCatalog } from "../thread-catalog.js";
 import { DshExecutionAuthority } from "../dsh-execution-authority.js";
 
@@ -16,7 +18,7 @@ export interface LocalAgentStorageSummary {
   readonly movedAside: boolean;
 }
 
-export function openLocalAgentStorage(options: { readonly dataDirectory?: string } = {}) {
+export function openLocalAgentStorage(options: { readonly dataDirectory?: string; readonly routing?: DshSessionRoutingPort } = {}) {
   const summaries: LocalAgentStorageSummary[] = [];
   const disposers: (() => void)[] = [];
   const outcomes: { name: LocalAgentStorageSummary["name"]; outcome: DatabaseOutcome }[] = [];
@@ -45,7 +47,14 @@ export function openLocalAgentStorage(options: { readonly dataDirectory?: string
       throw new Error(message, { cause: error });
     }
   };
-  const routing = open("session-routing", path => new DshSessionRouting(path), store => store.outcome);
+  // An injected routing port has its own async lifecycle; its caller closes it.
+  const routing = options.routing ?? open("session-routing", path => new DshSessionRouting(path), store => store.outcome);
+  if (options.routing) {
+    const result = routing.outcome;
+    outcomes.push({ name: "session-routing", outcome: result });
+    summaries.push({ name: "session-routing", status: result.status, appliedVersion: result.appliedVersion,
+      ...(result.backupPath === undefined ? {} : { backupPath: result.backupPath }), movedAside: result.movedAsidePaths.length > 0 });
+  }
   const threads = open("threads", path => new ThreadCatalog(path), store => store.outcome);
   const executions = open("executions", path => new DshExecutionAuthority(path), store => store.outcome);
   const documents = open("host-documents", path => new SqliteDocumentStore(path), store => store.outcome);
@@ -54,4 +63,18 @@ export function openLocalAgentStorage(options: { readonly dataDirectory?: string
   return { tasks, routing, threads, executions, documents, connectors, summaries, outcomes, close };
 }
 
-export type LocalAgentStorage = ReturnType<typeof openLocalAgentStorage>;
+export type LocalAgentStorage = Omit<ReturnType<typeof openLocalAgentStorage>, "close"> & { close(): void | Promise<void> };
+
+/** Live Hosts/Daemons use the Worker for routing startup and persistence. The
+ * other five stores still have their original synchronous owners. */
+export async function openLocalAgentStorageWithWorker(options: { readonly dataDirectory?: string } = {}): Promise<LocalAgentStorage> {
+  const routing = await DshSessionRoutingWorker.open(options.dataDirectory
+    ? resolve(options.dataDirectory, "opencraft-session-routing.sqlite") : ":memory:");
+  let storage: ReturnType<typeof openLocalAgentStorage>;
+  try { storage = openLocalAgentStorage({ ...options, routing }); }
+  catch (error) { await routing.close().catch(() => undefined); throw error; }
+  let closing: Promise<void> | undefined;
+  return { ...storage, close() {
+    return closing ??= (async () => { try { storage.close(); } finally { await routing.close(); } })();
+  } };
+}

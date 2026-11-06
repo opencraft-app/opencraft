@@ -1,12 +1,12 @@
 import { DshClient, type DshHistoryEntry, type DshStreamEnvelope } from "./dsh-client.js";
-import { DshSessionRouting } from "./dsh-session-routing.js";
+import type { DshRoutingReader } from "./dsh-routing-projection.js";
 
 /** Only transport identifiers change. Renderer protocol identities stay logical. */
 export class DshRoutedClient extends DshClient {
   private readonly volatileIds = new Set<string>();
   markVolatile(id: string): void { this.volatileIds.add(id); }
   forgetVolatile(_id: string): void { /* Retain the tombstone to hide a released temporary identity. */ }
-  constructor(baseUrl: string, readonly routing: DshSessionRouting, bootstrapToken?: string) { super(baseUrl,30_000,bootstrapToken); }
+  constructor(baseUrl: string, readonly routing: DshRoutingReader, bootstrapToken?: string) { super(baseUrl,30_000,bootstrapToken); }
   private async hydrateImages(nativeId: string, entry: DshHistoryEntry, signal?: AbortSignal): Promise<DshHistoryEntry> {
     if (!["user/message", "assistant/message", "tool/result"].includes(entry.event.type)) return entry;
     const visit = async (value: any): Promise<any> => {

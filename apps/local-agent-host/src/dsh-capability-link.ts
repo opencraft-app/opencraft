@@ -2,7 +2,7 @@ import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
 import { isDeepStrictEqual } from "node:util";
 import { DshCapabilityBroker, type DshHostCapability } from "./dsh-capability-broker.js";
 import { DshExecutionAuthority } from "./dsh-execution-authority.js";
-import type { DshSessionRouting } from "./dsh-session-routing.js";
+import type { DshRoutingReader } from "./dsh-routing-projection.js";
 
 export interface DshCapabilityRegistrationResult {
   readonly registered: number;
@@ -42,7 +42,7 @@ export class DshCapabilityLink {
   private generation = 0;
   private task: Promise<void> | null = null;
   private inFlight = new Set<Promise<void>>();
-  constructor(private readonly token: string, private readonly broker: DshCapabilityBroker, private readonly authority: DshExecutionAuthority, private readonly routing?: DshSessionRouting, private readonly onSkillsChanged?: () => void) {}
+  constructor(private readonly token: string, private readonly broker: DshCapabilityBroker, private readonly authority: DshExecutionAuthority, private readonly routing?: DshRoutingReader, private readonly onSkillsChanged?: () => void) {}
   attach(url: string) {
     if (this.endpoint === url) return;
     this.endpoint = url;

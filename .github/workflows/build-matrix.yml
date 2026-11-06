@@ -180,6 +180,8 @@ jobs:
       - run: npm run check:storage && npm run test:sqlite-node
       - name: AppServer client protocol and connection lifetime
         run: npm run test:appserver-client
+      - name: DSH routing Worker persistence and network liveness
+        run: npx tsx --test tests/execution/dsh-session-routing-worker.test.ts
       - run: npm run test:headless-server
       - run: npm run matrix:build -- headless-linux-amd64-tar
         if: needs.plan.outputs.headless-package == 'true'
