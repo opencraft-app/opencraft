@@ -454,6 +454,13 @@ Completed commands and monitor events enter the native submission kernel using
 stable identities and system provenance. Admission, stop gating and notification
 receipts share a transaction. A completion starts an idle native run or joins the
 follow-up inbox of a busy run; it never invents a human message in the timeline.
+All shell results already queued at a final boundary are consumed together in one
+continuation, with a separate durable receipt for each completion or monitor event.
+Inputs placed together before one native generation share its execution Turn,
+including Host tool calls and restored history. Each notification is admitted in
+its own transaction so native table reads precede table writes.
+Human steering retains its one-at-a-time policy; commands completing after that
+boundary can still wake a later continuation.
 Short commands already returned inline do not trigger a second model continuation.
 Stop pauses delivery before killing shell processes and aborting the native run;
 this also works after the original agent response has already settled. Closing a
@@ -469,6 +476,13 @@ retries, including after restart and completion, and rejects conflicting content
 Original input blocks, context and the target Turn are preserved in native records;
 a display-only admission entry retains them when stop withdraws an unplaced input.
 All corresponding native submissions project into the same OpenCraft Turn.
+An unplaced steer cannot outlive its settled target run. If the native run has
+ended and its target receipt is terminal, the owner withdraws the remaining
+steer from the native inbox and retains its cancelled receipt and display text.
+Later direct-input and background admissions perform that withdrawal in their
+own transaction, before the native boundary can consume obsolete steering.
+Read-only history applies the same interpretation to older ledgers, so a model
+failure cannot remain active solely because an unconsumed steer is still queued.
 
 Native steering projection distinguishes inbox admission (`pending`), actual
 context placement (`accepted`) and withdrawal before placement (`cancelled`). The
