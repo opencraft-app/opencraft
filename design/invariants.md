@@ -344,3 +344,5 @@ Sidebar destination lists share the foundation content inset and NavigationList
 sidebar variant; containers must not stack separate padding on Apps and Settings.
 See [shared sidebar reading inset](ui/settings-pages.md#shared-sidebar-reading-inset)
 and the [Workbench design language](../docs/workbench-design-language.md#shared-sidebar-content-inset).
+
+PWA sidebar and page capacity share the dynamic viewport bound, including the stationary drawer portal and page overlays; the mobile reading column leaves a reachable page dismiss strip independently of desktop width. See [PWA capacity](invariants/shell-and-layout.md#pwa-sidebar-and-page-capacity).

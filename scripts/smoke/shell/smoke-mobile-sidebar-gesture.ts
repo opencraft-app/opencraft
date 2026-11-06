@@ -64,7 +64,7 @@ import '/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const threads=Array.from({length:35},(_,i)=>({id:'thread-'+i,title:'协同对话标题字符完整显示测试'+i,project:'workspace',pinned:true,status:'ready',updatedAt:Date.now()/1000-i,connectionHostId:'fixture',connectionHostLabel:'Synthetic server',...legacyDirectServerProjectionFromHost({hostId:'fixture',hostKind:'remote-ssh',label:'Synthetic server'})}));
-const stationaryProbe=${JSON.stringify(navigationProbe || process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === "1" || process.env.OPENCRAFT_GESTURE_STACK_ONLY === "1")};
+const stationaryProbe=${JSON.stringify(navigationProbe || process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === "1" || process.env.OPENCRAFT_GESTURE_INPLACE_ONLY === "1" || process.env.OPENCRAFT_GESTURE_STACK_ONLY === "1")};
 const brand=<ApplicationBrand branding={joinBrand} onHome={()=>actions.push("Home")}/>;
 let mounts=0;const actions=[];
 const navigationRouter=createApplicationNavigation(null,{mode:'memory'});
@@ -72,7 +72,7 @@ const contributionSnapshot={settingsPages:[]};
 const contributions={subscribe:()=>()=>{},getSnapshot:()=>contributionSnapshot};
 function Context({showNewChat=true}){const[selected,setSelected]=useState('thread-0');window.selectFixtureThread=setSelected;useEffect(()=>{mounts++},[]);return <Sidebar showStart={false} showFooter={false} showNewChat={showNewChat} threads={threads} activeHostId='fixture' activeThreadId={selected} sidebarLayout={layout} onNewTask={()=>actions.push('New chat')} onOpenSettings={()=>{}} onSelectThread={(_host,id)=>actions.push(id)}/>}
 function App(){const preferences=useUiPreferencesRuntime();useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);const route=useSyncExternalStore(navigationRouter.subscribe,navigationRouter.getSnapshot).applicationRoute;const[open,setOpen]=useState(false),[modal,setModal]=useState(false),[showNewChat,setShowNewChat]=useState(true),[conversationHeader,setConversationHeader]=useState(false);window.fixture={setDensity:value=>preferences.set('interface.touchFriendly',value),sidebarOpen:()=>open,setOpen,setModal,setShowNewChat,setConversationHeader,setThemePreference,returnToChat:()=>navigationRouter.openChat(),route:()=>navigationRouter.getSnapshot().applicationRoute,mounts:()=>mounts,actions};
-const navigation={layout:'unified',applicationsInSidebar:${navigationProbe},account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>actions.push('Account'),onRefresh:async()=>{}},settingsActive:route.kind==='settings',onOpenSettings:()=>{actions.push('Settings');navigationRouter.openSettings();},actions:[...(stationaryProbe?[{id:'shell.search',title:'Search conversations',icon:'search',onInvoke:()=>setModal(true)}]:[]),{id:'shell.home',title:'Home',icon:'home',onInvoke:()=>actions.push('Home')},...(${navigationProbe}?[{id:'shell.applications',title:'Applications',icon:'grid',onInvoke:()=>actions.push('Applications')}]:[]),{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>actions.push('Tasks')},{id:'example.workspace.navigation',title:'Collaboration',icon:'messages',onInvoke:()=>actions.push('Collaboration')},{id:'skills',title:'Skills, extensions and cloud tools',icon:'sparkles',onInvoke:()=>actions.push('Skills')}]};
+const navigation={layout:'unified',applicationsInSidebar:${navigationProbe || process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === "1"},account:{snapshot:{phase:'authenticated',name:'Synthetic employee',avatarUrl:null},onOpen:()=>actions.push('Account'),onRefresh:async()=>{}},settingsActive:route.kind==='settings',onOpenSettings:()=>{actions.push('Settings');navigationRouter.openSettings();},actions:[...(stationaryProbe?[{id:'shell.search',title:'Search conversations',icon:'search',onInvoke:()=>setModal(true)}]:[]),{id:'shell.home',title:'Home',icon:'home',onInvoke:()=>actions.push('Home')},...(${navigationProbe || process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === "1"}?[{id:'shell.applications',title:'Applications',icon:'grid',onInvoke:()=>actions.push('Applications')}]:[]),{id:'opencraft.tasks.navigation',title:'Tasks',icon:'columns',onInvoke:()=>actions.push('Tasks')},{id:'example.workspace.navigation',title:'Collaboration',icon:'messages',onInvoke:()=>actions.push('Collaboration')},{id:'skills',title:'Skills, extensions and cloud tools',icon:'sparkles',onInvoke:()=>actions.push('Skills')}]};
 return <><Dialog.Root open={modal} onOpenChange={setModal}><Dialog.Portal container={presentationRoot}><Dialog.Overlay style={{position:'fixed',inset:0,zIndex:100}}/><Dialog.Content style={{position:'fixed',inset:40,zIndex:101,background:'white'}}><Dialog.Title>Gesture exclusion probe</Dialog.Title><Dialog.Description>Touches stay in the dialog.</Dialog.Description>${process.env.OPENCRAFT_GESTURE_ARBITRATION_ONLY === "1" ? `<div style={{height:200,overflow:'auto'}}><WebChatDocument documentId="modal-arbitration" allowWideBlocks={false} source={${JSON.stringify(arbitrationMarkdown)}}/></div>` : ""}</Dialog.Content></Dialog.Portal></Dialog.Root><AppShell sidebarTransientEnabled={${process.env.OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY === "1" ? "false" : "true"}} navigation={navigation} layoutScope={route.kind} mainContentLayout={conversationHeader?'thread-edge-scroll':'default'} sidebarOpen={open} sidebarWidth={335} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} onSidebarCollapse={()=>setOpen(false)} onSidebarExpand={()=>setOpen(true)} onSidebarResizeEnd={()=>{}} rightPanel={null} rightPanelOpen={false} rightPanelFullWidth={false} onRightPanelOpenChange={()=>{}}
 header={<AppShellHeader conversationHeader={conversationHeader} navigationBrand={stationaryProbe ? brand : undefined} title='Workspace' project={null} sidebarOpen={open} rightPanelOpen={false} rightPanelFullWidth={false} showRightPanelAction={stationaryProbe} onToggleSidebar={()=>setOpen(!open)} onToggleRightPanel={()=>{}} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={()=> stationaryProbe ? <AppShellNavigationControls brand={brand} hostRole='transient' sidebarOpen={false} canGoBack={false} canGoForward={false} onToggleSidebar={()=>{}} onHome={()=>{}} onBack={()=>{}} onForward={()=>{}} actions={['sidebar-toggle']}/> : <div style={{height:'100%',display:'flex',alignItems:'center',padding:12}}>Conversations</div>}
@@ -926,6 +926,16 @@ try {
     }
     // Mobile action uses the real Shell portal/scroll/footer owners, not CSS-only markup.
     if (process.env.OPENCRAFT_GESTURE_FAB_ONLY === '1') {
+      if (process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === '1') {
+        await page.evaluate(() => {
+          const html = document.documentElement;
+          html.dataset.windowHost = 'browser'; html.dataset.windowDisplayMode = 'standalone';
+          html.dataset.windowEdgeStrategy = 'legacy-overlay-requested';
+          html.dataset.timelineTracksVisualViewport = 'true'; html.dataset.timelineViewportOccluded = 'false';
+        });
+        await page.addStyleTag({ content: '.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation { height: calc(100dvh + 80px) !important; }' });
+      }
+
       for (const width of [320,390,430]) {
         await page.setViewportSize({width,height:844}); await page.waitForTimeout(250);
         await drag(80,width-50); await opened();
@@ -933,6 +943,22 @@ try {
         assert.equal(await button.count(),1,'one accessible creation action');
         assert.equal(await panel.locator('.sidebar-tasks > .sidebar-new-chat').count(),0,'mobile inline row removed');
         const before=await button.boundingBox();assert.ok(before);
+        if (process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === '1') {
+          const geometry = await page.evaluate(() => {
+            const panel = document.querySelector('.app-shell-floating-left-panel')!.getBoundingClientRect();
+            const row = document.querySelector('.app-shell-row')!.getBoundingClientRect();
+            const portal = document.querySelector('.app-shell-floating-overlay-root')!.getBoundingClientRect();
+            const overlays = document.querySelector('.app-shell-page-presentation')!.getBoundingClientRect();
+            return { panelBottom: panel.bottom, rowHeight: row.height, portalHeight: portal.height, overlayHeight: overlays.height,
+              pagePeek: innerWidth - row.left, visibleHeight: innerHeight };
+          });
+          assert.ok(geometry.panelBottom <= geometry.visibleHeight, JSON.stringify(geometry));
+          assert.equal(geometry.rowHeight, geometry.portalHeight, 'page and drawer share dynamic capacity');
+          assert.equal(geometry.overlayHeight, geometry.portalHeight, 'page overlays share dynamic capacity');
+          assert.ok(geometry.pagePeek >= 64 && geometry.pagePeek < 65, 'only a reachable page strip remains');
+          evidence.push({ pwaCapacity: geometry, theme, reducedMotion, width });
+        }
+
         const initialViewport=await panel.locator('.shell-sidebar__scroll').boundingBox();assert.ok(initialViewport);
         const column=await panel.locator('.shell-sidebar__column').boundingBox();assert.ok(column);
         assert.ok(Math.abs(initialViewport.y+initialViewport.height-column.y-column.height)<1,
@@ -941,7 +967,7 @@ try {
         assert.ok(before.height>=48 && before.width>=100,'comfortable pill touch target');
         const scroll=panel.locator('.shell-sidebar__scroll');
         await scroll.evaluate(e=>{e.scrollTop=0});await page.waitForTimeout(100);
-        const home=panel.locator('[data-action-id="shell.home"]');
+        const home=process.env.OPENCRAFT_GESTURE_PWA_CAPACITY === '1' ? panel.locator('.sidebar-activity-item').first() : panel.locator('[data-action-id="shell.home"]');
         const homeBefore=await home.boundingBox();assert.ok(homeBefore);
         await scroll.evaluate(e=>{e.scrollTop=e.scrollHeight});await page.waitForTimeout(100);
         const homeAfter=await home.boundingBox();assert.ok(homeAfter);
@@ -1037,7 +1063,7 @@ try {
       for (const width of [320, 390, 430]) {
         await page.setViewportSize({width,height:844}); await page.waitForTimeout(250);
         await drag(80,width-50); const box=await opened();
-        assert.ok(Math.abs(box.width-Math.floor(Math.min(335,width-64)*0.90))<1, JSON.stringify({viewport:width,actual:box.width}));
+        assert.ok(Math.abs(box.width-Math.floor(Math.min(width*0.90,width-64)))<1, JSON.stringify({viewport:width,actual:box.width}));
         assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'drawer does not overflow the screen');
         widths.push({viewport:width,drawer:box.width,gutter:width-box.width});
         await page.screenshot({path:`${output}/${theme}-${reducedMotion}-${width}-width.png`});

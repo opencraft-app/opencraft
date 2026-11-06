@@ -154,7 +154,7 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   // Keep the immersive paint canvas while bounding interactive content by the
   // CSS dynamic viewport. A larger vh canvas must not carry the Composer below
   // the exposed window; keyboard contraction still belongs to the viewport port.
-  .app-shell-row { max-height: 100dvh; }
+  :is(.app-shell-row, .app-shell-floating-overlay-root, .app-shell-page-presentation) { max-height: 100dvh; }
   .app-shell-floating-overlay-root { position: absolute; }
   :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
     right: auto;
