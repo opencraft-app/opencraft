@@ -3,12 +3,13 @@ import { Button } from './ui/button';
 import './draft-setup-notice.scss';
 
 /** An actionable projection of the selected Host; never owns a draft or connection. */
-export function DraftSetupNotice({ kind, hostName, onConfigure, onRetry, onConnectionSettings }: {
+export function DraftSetupNotice({ kind, hostName, onConfigure, onRetry, onConnectionSettings, onConnectAgents }: {
   readonly kind: 'models' | 'catalog-error' | 'connection';
   readonly hostName: string;
   readonly onConfigure?: () => void;
   readonly onRetry: () => void;
   readonly onConnectionSettings: () => void;
+  readonly onConnectAgents?: () => void;
 }) {
   const intl = useIntl();
   return <section className="draft-setup-notice thread-layout-width" aria-label={intl.formatMessage({ id: 'welcome.nextStep', defaultMessage: 'Next step' })}>
@@ -23,6 +24,9 @@ export function DraftSetupNotice({ kind, hostName, onConfigure, onRetry, onConne
       </Button> : null}
       {kind !== 'models' ? <Button variant="secondary" onClick={onRetry}>
         {intl.formatMessage({ id: 'welcome.retry', defaultMessage: 'Retry' })}
+      </Button> : null}
+      {onConnectAgents ? <Button variant="secondary" onClick={onConnectAgents}>
+        {intl.formatMessage({ id: 'onboard.agent.reopenAction', defaultMessage: 'Open agent setup' })}
       </Button> : null}
       <Button variant="ghost" onClick={onConnectionSettings}>
         {intl.formatMessage({ id: 'welcome.connection.settings', defaultMessage: 'Connection settings' })}

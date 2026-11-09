@@ -11,6 +11,7 @@ export interface AcpTransportOptions {
   cwd: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
+  parameterizedModelPicker?: boolean;
   redactError?: (message: string) => string;
   onNotification(method: string, params: AcpObject): void;
   onRequest(method: string, params: AcpObject): Promise<unknown>;
@@ -55,7 +56,8 @@ export class AcpStdioTransport {
       };
       child.once("error", stopped); child.once("exit", stopped);
       return this.request("initialize", { protocolVersion: 1,
-        clientInfo: { name: "opencraft", version: "1" }, clientCapabilities: {} });
+        clientInfo: { name: "opencraft", version: "1" },
+        clientCapabilities: this.options.parameterizedModelPicker ? { _meta: { parameterizedModelPicker: true } } : {} });
     })();
   }
   private send(value: unknown): void {

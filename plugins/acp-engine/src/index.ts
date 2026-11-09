@@ -10,11 +10,12 @@ import type { AgentOrchestrationPort, ExecutionEngineClient, ExecutionEngineProv
 import { AppServerRpcError } from "@opencraft/appserver-client";
 import { permissionModeProfileId } from "@opencraft/appserver-protocol";
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
-import { AcpStdioTransport, type AcpObject as Value } from "./transport.js";
+import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 
 export interface AcpEngineOptions {
   executionEnvironment?: ExecutionEnvironmentRuntime;
-  id?: "acp" | "dsh-acp" | "claude-code";
+  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
+  timeoutMs?: number;
   label?: string;
   command: string;
   args?: readonly string[];
@@ -23,21 +24,37 @@ export interface AcpEngineOptions {
   modelPolicyPath?: string;
   dataDirectory: string;
   /** An engine-native reader; opening history must never issue session/resume. */
-  history?: { read(nativeSessionId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }>; close?(): Promise<void> };
+  history?: {
+    read(nativeSessionId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }>;
+    items?(nativeSessionId: string, params: Value): Promise<Value>;
+    snapshot?(nativeSessionId: string, params: Value): Promise<any[]>;
+    usage?(nativeSessionId: string): Promise<Value | null>;
+    close?(): Promise<void>;
+  };
   permission?: "allow-once" | "reject";
   reconnectWindowMs?: number;
 }
 interface Session {
   schemaVersion: 1; id: string; nativeId: string; cwd: string; model: string | null; name: string | null;
   createdAt: number; updatedAt: number; tools: Value[]; archived: boolean;
+  preview?: string;
+  nameOrigin?: "input" | "agent" | "manual";
+  contextUsage?: { usedTokens: number; limitTokens: number; observedAt: number };
   modelConfigId?: string;
+  modelConfigValues?: string[];
+  legacyModelCatalog?: boolean;
+  reasoningConfig?: { id: string; currentValue: string; values: string[] };
+  reasoningModels?: Record<string, { supportedReasoningEfforts: { reasoningEffort: string; description: string }[]; defaultReasoningEffort: string | null }>;
+  parameterConfigs?: { id: string; currentValue: string; values: string[] }[];
+  fastConfig?: { id: string; type: "boolean" | "select"; currentValue: string | boolean; onValue: string | boolean; offValue: string | boolean };
+  fastModels?: Record<string, boolean>;
   modelCatalog?: {id:string;name:string}[];
   receipts: Record<string, HostInputReceipt>;
   lastTurn?: { id: string; status: string };
 }
 export type AcpOrchestrationPort = AgentOrchestrationPort;
 interface Runtime {
-  owner?: ExecutionEngineClient; loaded: boolean; active?: { id: string; delegationId: string | null; inputId?: string; items: Value[]; status: string };
+  owner?: ExecutionEngineClient; loaded: boolean; active?: { id: string; delegationId: string | null; inputId?: string; items: Value[]; status: string; startedAtMs?: number; planSignature?: string; error?: Value };
 }
 interface Creation {
   fingerprint: string; state: "pending" | "created"; threadId?: string;
@@ -52,7 +69,7 @@ const safeId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-
  * downloaded, and no engine is started inside the execution gateway.
  */
 export class AcpEngine implements ExecutionEngineProvider {
-  readonly id: "acp" | "dsh-acp" | "claude-code";
+  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
   readonly label: string;
   readonly threadPrefix: string;
   readonly modelPrefix: string;
@@ -102,13 +119,13 @@ export class AcpEngine implements ExecutionEngineProvider {
   constructor(private readonly options: AcpEngineOptions) {
     if (!isAbsolute(options.cwd) || !isAbsolute(options.dataDirectory) || !options.command.trim()) throw new Error("ACP requires explicit absolute workspace and data paths and an installed command");
     this.id = options.id ?? "acp";
-    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code (ACP)" : this.id === "dsh-acp" ? "DeepSeek Harness (ACP)" : "ACP Agent");
+    this.label = options.label ?? (this.id === "claude-code" ? "Claude" : this.id === "dsh-acp" ? "DeepSeek Harness (ACP)" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "ACP Agent");
     this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_";
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
       ...(options.history ? { "opencraft/read-history": { version: 1, initialTurnsPage: true } } : {}),
-      "opencraft/agent-driver": { version: 1, kind: this.id === "dsh-acp" ? "acp" : this.id, incarnation: this.incarnation, callbackReplay: true },
+      "opencraft/agent-driver": { version: 1, kind: this.id === "claude-code" ? "claude-code" : "acp", incarnation: this.incarnation, callbackReplay: true },
     });
     this.transport = this.createTransport();
     this.inputs = {
@@ -150,6 +167,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string): AcpStdioTransport {
     return new AcpStdioTransport({ ...this.options,
+      parameterizedModelPicker: this.id === "cursor",
       env: environment?.apply({ ...process.env, ...this.options.env }) ?? this.options.env,
       redactError: environment ? message => environment.redact(message) : undefined,
       onNotification: (method, params) => this.update(method, params, threadId),
@@ -165,8 +183,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       },
       onExit: () => {
         for (const [id, state] of this.runtime) if ((!threadId || threadId === id) && state.active?.status === "inProgress") {
-          state.active.status = "failed";
-          this.notify("turn/completed", { threadId: id, turn: this.turn(state), error: { message: "ACP engine connection lost; outcome unconfirmed" } });
+          void this.failPrompt(this.session(id), state, "acpPromptUnconfirmed").catch(() => { this.persistenceFailed = true; });
           state.loaded = false;
         }
       },
@@ -234,12 +251,25 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private metadata(session: Session): Value {
     const state = this.state(session.id);
-    return { id: session.id, cwd: session.cwd, name: session.name, model: session.model, createdAt: session.createdAt, updatedAt: session.updatedAt,
-      preview: "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
+    return { id: session.id, cwd: session.cwd, name: session.name, model: session.model, modelProvider: this.id,
+      reasoningEffort: session.reasoningConfig?.currentValue ?? null, createdAt: session.createdAt, updatedAt: session.updatedAt,
+      ...(session.fastConfig ? { serviceTier: session.fastConfig.currentValue === session.fastConfig.onValue ? "fast" : null } : {}),
+      preview: session.preview ?? "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
       source: "appServer", engineKind: this.id, path: null, ephemeral: false,
+      ...(this.options.history ? { historyMode: "paginated" } : {}),
       ...(this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
   }
-  private turn(runtime: Runtime): Value { return runtime.active ? { id: runtime.active.id, status: runtime.active.status, items: runtime.active.items } : {}; }
+  private sessionResponse(session: Session): Value {
+    return { thread: this.metadata(session), model: session.model ?? `${this.modelPrefix}current`, modelProvider: this.id,
+      cwd: session.cwd, runtimeWorkspaceRoots: [session.cwd], instructionSources: [], disabledPluginIds: [],
+      serviceTier: session.fastConfig?.currentValue === session.fastConfig?.onValue && session.fastConfig ? "fast" : null,
+      reasoningEffort: session.reasoningConfig?.currentValue ?? null, multiAgentMode: "explicitRequestOnly",
+      initialTurnsPage: null, turnsBackwardsCursor: null, itemsBackwardsCursor: null, collaborationMode: null,
+      ...(this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
+        sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } } : {}),
+    };
+  }
+  private turn(runtime: Runtime): Value { return runtime.active ? { id: runtime.active.id, status: runtime.active.status, items: runtime.active.items, ...(runtime.active.error ? { error: runtime.active.error } : {}) } : {}; }
   private async admit<T>(operation: () => Promise<T>): Promise<T> {
     if (this.closed || this.suspending || this.persistenceFailed) throw new Error("ACP generation is closing or suspending");
     this.activeAdmissions++;
@@ -334,6 +364,11 @@ export class AcpEngine implements ExecutionEngineProvider {
           transport = this.createTransport(environment, id);
           this.sessionEnvironments.set(id, environment); this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); this.sessionEnvironments.delete(id); await transport.close(); throw new Error("ACP environment process unavailable"); }
+        } else if (this.id === "cursor") {
+          // Cursor's model manager is process-global. Each conversation owns
+          // its transport so another conversation cannot change its parameters.
+          transport = this.createTransport(undefined, id); this.sessionTransports.set(id, transport);
+          try { await transport.start(); } catch { this.sessionTransports.delete(id); await transport.close(); throw new Error("ACP process unavailable"); }
         }
         let result: Value;
         try {
@@ -352,8 +387,10 @@ export class AcpEngine implements ExecutionEngineProvider {
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(session);
         if (params.model) await this.setModel(session, params.model);
+        if (params.reasoningEffort != null || params.effort != null) await this.setReasoning(session, params.reasoningEffort ?? params.effort);
+        if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
         if (operation) { this.creations.set(operation, { fingerprint, state: "created", threadId: id, preparation: this.preparations.get(operation) }); await this.saveCreations(); }
-        return { thread: this.metadata(session), model: session.model };
+        return this.sessionResponse(session);
       };
       const pending = create(); if (operation) this.creating.set(operation, pending);
       try { return await pending; } finally { if (operation) this.creating.delete(operation); }
@@ -364,7 +401,21 @@ export class AcpEngine implements ExecutionEngineProvider {
       const sessions = [...this.sessions.values()].filter(session => session.archived === (params.archived === true)).sort((a, b) => b.updatedAt - a.updatedAt || a.id.localeCompare(b.id));
       return { data: sessions.slice(offset, offset + limit).map(session => this.metadata(session)), nextCursor: offset + limit < sessions.length ? String(offset + limit) : null };
     }
-    if (method === "model/list") return {data:[...new Map([...this.sessions.values()].flatMap(s => (s.modelCatalog ?? []).map(m => [m.id,{id:m.id,model:m.id,displayName:m.name,hidden:false,isDefault:s.model===m.id,supportedReasoningEfforts:[],defaultReasoningEffort:null}]))).values()],nextCursor:null};
+    if (method === "model/list") {
+      // A live parameterized Cursor catalog supersedes catalogs persisted by
+      // the previous variant picker. Old session records remain resumable.
+      const sessions = [...this.sessions.values()];
+      const catalogSessions = this.id === "cursor" && sessions.some(session => session.parameterConfigs)
+        ? sessions.filter(session => session.parameterConfigs) : sessions;
+      const fastModels = Object.assign({}, ...catalogSessions.map(session => session.fastModels ?? {})) as Record<string, boolean>;
+      const reasoningModels = Object.assign({}, ...catalogSessions.map(session => session.reasoningModels ?? {})) as NonNullable<Session["reasoningModels"]>;
+      return { data: [...new Map(catalogSessions.flatMap(session => (session.modelCatalog ?? []).map(model => [model.id, {
+        id: model.id, model: model.id, displayName: model.name, hidden: false, isDefault: session.model === model.id,
+        supportedReasoningEfforts: reasoningModels[model.id]?.supportedReasoningEfforts ?? [],
+        defaultReasoningEffort: reasoningModels[model.id]?.defaultReasoningEffort ?? null,
+        serviceTiers: fastModels[this.baseModelId(model.id)] ? [{ id: "fast", name: "Fast", description: "" }] : [],
+      }]))).values()], nextCursor: null };
+    }
     if (method === "opencraft/orchestration/ack") {
       const operation = String(params.operationId ?? ""); const creation = this.creations.get(operation);
       if (creation?.state === "created") { this.creations.delete(operation); await this.saveCreations(); }
@@ -372,30 +423,48 @@ export class AcpEngine implements ExecutionEngineProvider {
       return { acknowledged: !creation || creation.state === "created" };
     }
     const session = this.session(String(params.threadId ?? "")), runtime = this.state(session.id);
+    if (method === "opencraft/thread-usage/read") {
+      const source = await this.options.history?.usage?.(session.nativeId).catch(() => null);
+      const live = session.contextUsage;
+      if (!source && !live) return null;
+      return { threadId: session.id, providerId: this.id, observedAt: Math.max(source?.observedAt ?? 0, live?.observedAt ?? 0),
+        context: live && live.observedAt >= (source?.observedAt ?? 0) ? { usedTokens: live.usedTokens, limitTokens: live.limitTokens } : source?.context ?? null,
+        total: source?.total ?? null, last: source?.last ?? null };
+    }
     if (method === "thread/read") {
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, params.initialTurnsPage) : undefined;
-      return { thread: this.metadata(session), ...(initialTurnsPage ? { initialTurnsPage } : {}) };
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
+      const turns = params.includeTurns === true && this.options.history?.snapshot ? await this.options.history.snapshot(session.nativeId, this.historyParams(session, params)) : [];
+      return { thread: { ...this.metadata(session), turns }, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/turns/list") {
       if (!this.options.history) return fault("This ACP peer has no native transcript reader", -32601);
-      return this.options.history.read(session.nativeId, params);
+      return this.options.history.read(session.nativeId, this.historyParams(session, params));
+    }
+    if (method === "thread/items/list") {
+      if (!this.options.history?.items) return fault("This ACP peer has no native item reader", -32601);
+      return this.options.history.items(session.nativeId, this.historyParams(session, params));
     }
     if (method === "thread/resume") {
       await this.resume(session); runtime.owner = client;
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, params.initialTurnsPage) : undefined;
-      return { thread: this.metadata(session), model: session.model, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
+      const reply = this.sessionResponse(session);
+      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.options.history.snapshot(session.nativeId, this.historyParams(session, params));
+      return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
-    if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); session.name = params.name; await this.save(session); return {}; }
+    if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
     if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; await this.save(session); return {}; }
     if (method === "thread/unsubscribe") { if (runtime.owner === client) runtime.owner = undefined; return {}; }
     if (method === "turn/start") {
       if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
       if (params.clientUserMessageId !== undefined && (typeof params.clientUserMessageId !== "string" || !params.clientUserMessageId || params.clientUserMessageId.length > 512)) return fault("Invalid ACP input identity");
+      const continuing = Array.isArray(params.input) && params.input.length === 0;
+      if (continuing && (this.nativeOutcomeUnknown || !["failed", "interrupted"].includes(runtime.active?.status ?? session.lastTurn?.status ?? ""))) return fault("This ACP conversation cannot be continued in its current state");
       await this.resume(session, params.clientUserMessageId);
       if (params.model) await this.setModel(session, params.model);
-      if (params.effort != null || params.reasoningEffort != null) return fault("This ACP driver does not advertise reasoning selection");
+      if (params.effort != null || params.reasoningEffort != null) await this.setReasoning(session, params.effort ?? params.reasoningEffort);
+      if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
       runtime.owner = client;
-      return this.prompt(session, this.promptContent(params.input), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId);
+      return this.prompt(session, continuing ? [{ type: "text", text: "Continue." }] : this.promptContent(params.input), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId);
     }
     if (method === "turn/interrupt") {
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
@@ -418,21 +487,149 @@ export class AcpEngine implements ExecutionEngineProvider {
     return input.map(item => { if (!item || item.type !== "text" || typeof item.text !== "string") return fault("This ACP adapter supports text input only"); return { type: "text", text: item.text }; });
   }
   private captureModels(session: Session, result: Value): void {
-    const option = (Array.isArray(result.configOptions) ? result.configOptions : []).find((o:Value) => o.category === "model" || o.id === "model");
+    const options: Value[] = Array.isArray(result.configOptions) ? result.configOptions : [];
+    const option = options.find(o => o.category === "model" || o.id === "model");
     if (typeof option?.id === "string") session.modelConfigId=option.id;
-    const choices = Array.isArray(result.models?.availableModels) ? result.models.availableModels : (option?.options ?? []).flatMap((o:Value) => o.options ?? [o]);
-    if (choices.length) session.modelCatalog = choices.map((m:Value) => ({id:this.modelPrefix+String(m.modelId ?? m.value),name:String(m.name ?? m.modelId ?? m.value)}));
-    const current=result.models?.currentModelId ?? option?.currentValue;
+    const modelValues: Value[] = (option?.options ?? []).flatMap((o:Value) => o.options ?? [o]);
+    if (option) session.modelConfigValues = modelValues.flatMap(model => typeof model.value === "string" ? [model.value] : []);
+    const legacy = this.id !== "cursor" && Array.isArray(result.models?.availableModels);
+    const choices: Value[] = legacy ? result.models.availableModels : modelValues;
+    if (this.id === "cursor") session.legacyModelCatalog = false;
+    if (legacy) session.legacyModelCatalog = true;
+    if (this.id === "codex" && session.modelCatalog?.some(model => /\[[^\]]+\]$/u.test(model.id))) session.legacyModelCatalog = true;
+    if (choices.length && (legacy || !session.legacyModelCatalog)) session.modelCatalog = choices.flatMap(m => {
+      const id = m.modelId ?? m.value;
+      return typeof id === "string" ? [{ id: this.modelPrefix + id, name: typeof m.name === "string" ? m.name : id }] : [];
+    });
+    const reasoning = options.find(o => o.category === "thought_level" || o.id === "reasoning_effort");
+    if (reasoning && typeof reasoning.id === "string" && typeof reasoning.currentValue === "string") session.reasoningConfig = {
+      id: reasoning.id, currentValue: reasoning.currentValue,
+      values: (reasoning.options ?? []).flatMap((o:Value) => o.options ?? [o]).flatMap((o:Value) => typeof o.value === "string" ? [o.value] : []),
+    };
+    else if (Array.isArray(result.configOptions)) session.reasoningConfig = undefined;
+    let current = this.id === "cursor" ? option?.currentValue : result.models?.currentModelId ?? option?.currentValue;
+    if (this.id !== "cursor" && typeof current === "string" && !result.models?.currentModelId && session.reasoningConfig) {
+      const combined = `${current}[${session.reasoningConfig.currentValue}]`;
+      if (session.modelCatalog?.some(model => model.id === this.modelPrefix + combined)) current = combined;
+    }
     if (typeof current === "string" && current) session.model=this.modelPrefix+current;
+    if (Array.isArray(result.configOptions)) {
+      const fast = options.find(o => o.id === (this.id === "cursor" ? "fast" : "fast-mode"));
+      const values = (fast?.options ?? []).map((o:Value) => o.value);
+      const [on, off] = this.id === "cursor" ? ["true", "false"] : ["on", "off"];
+      session.fastConfig = fast?.type === "boolean" && typeof fast.currentValue === "boolean"
+        ? { id: fast.id, type: "boolean", currentValue: fast.currentValue, onValue: true, offValue: false }
+        : fast?.type === "select" && [on, off].every(value => values.includes(value)) && values.includes(fast.currentValue)
+          ? { id: fast.id, type: "select", currentValue: fast.currentValue, onValue: on!, offValue: off! } : undefined;
+      if (session.model) (session.fastModels ??= {})[this.baseModelId(session.model)] = !!session.fastConfig;
+      if (this.id === "cursor") {
+        session.parameterConfigs = options.filter(o => o.category !== "model" && o.category !== "mode" && o.type === "select"
+          && typeof o.id === "string" && typeof o.currentValue === "string").map(o => ({
+          id: o.id, currentValue: o.currentValue, values: (o.options ?? []).flatMap((choice: Value) => choice.options ?? [choice])
+            .flatMap((choice: Value) => typeof choice.value === "string" ? [choice.value] : []),
+        }));
+        if (session.model) (session.reasoningModels ??= {})[session.model] = {
+          supportedReasoningEfforts: session.reasoningConfig?.values.map(reasoningEffort => ({ reasoningEffort, description: "" })) ?? [],
+          defaultReasoningEffort: session.reasoningModels?.[session.model]?.defaultReasoningEffort ?? session.reasoningConfig?.currentValue ?? null,
+        };
+      }
+    }
   }
+  private baseModelId(model: string): string { return this.id === "codex" ? model.replace(/\[[^\]]+\]$/u, "") : model; }
   private async setModel(session: Session, model: string): Promise<void> {
     if (!this.ownsModel(model)) return fault("Model belongs to another ACP provider");
-    const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: model.slice(this.modelPrefix.length) });
+    if (session.model === model) return;
+    const requested = model.slice(this.modelPrefix.length);
+    if (this.id === "cursor") {
+      // Previous catalogs stored native parameterized variants as model IDs.
+      // Restore only parameters the current peer actually declares.
+      const variant = /^(.*)\[([^\]]*)\]$/u.exec(requested);
+      const base = variant?.[1] ?? requested;
+      if (!session.modelConfigValues?.includes(base)) return fault("This model option is unavailable");
+      this.captureModels(session, await this.native(session).request("session/set_config_option", {
+        sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: base,
+      }));
+      const parameters = variant?.[2] ? variant[2].split(",").map(part => part.split("=")) : [];
+      for (const [id, selected, extra] of parameters) {
+        if (extra !== undefined || !session.parameterConfigs?.some(config => config.id === id && config.values.includes(selected!))) return fault("This model parameter is unavailable");
+      }
+      for (const [id, selected] of parameters) this.captureModels(session, await this.native(session).request("session/set_config_option", {
+        sessionId: session.nativeId, configId: id, value: selected,
+      }));
+      await this.save(session);
+      if (session.model !== this.modelPrefix + base) return fault("The requested model was not selected. Choose another model.");
+      return;
+    }
+    const combined = this.id === "codex" && session.modelConfigValues && !session.modelConfigValues.includes(requested)
+      ? /^(.*)\[([^\]]+)\]$/u.exec(requested) : null;
+    if (combined && (!session.modelConfigValues!.includes(combined[1]!) || !session.modelCatalog?.some(choice => choice.id === model))) return fault("This model option is unavailable");
+    const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: combined?.[1] ?? requested });
     this.captureModels(session, result);
-    const actual=result.models?.currentModelId ?? (result.configOptions ?? []).find((o:Value)=>o.category==="model" || o.id==="model")?.currentValue;
-    session.model = typeof actual === "string" ? this.modelPrefix+actual : model;
+    if (combined) {
+      const config = session.reasoningConfig;
+      if (!config?.values.includes(combined[2]!)) return fault("This reasoning level is unavailable for the selected model");
+      this.captureModels(session, await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: config.id, value: combined[2] }));
+    }
+    if ((!result.models?.currentModelId && !Array.isArray(result.configOptions)) || (Array.isArray(result.configOptions) && result.configOptions.length === 0)) session.model = model;
     await this.save(session);
     if(session.model!==model) return fault("The requested model was not selected. Choose another model.");
+  }
+  private async setReasoning(session: Session, effort: unknown): Promise<void> {
+    const config = session.reasoningConfig;
+    if (this.id !== "cursor" || typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
+    if (config.currentValue === effort) return;
+    this.captureModels(session, await this.native(session).request("session/set_config_option", {
+      sessionId: session.nativeId, configId: config.id, value: effort,
+    }));
+    await this.save(session);
+    if (session.reasoningConfig?.currentValue !== effort) return fault("The requested reasoning level was not selected");
+  }
+  private async setServiceTier(session: Session, tier: unknown): Promise<void> {
+    if (tier !== null && tier !== "fast") return fault("This ACP agent does not support that speed option");
+    const config = session.fastConfig;
+    if (!config) { if (tier === null) return; return fault("Fast mode is unavailable for the selected model"); }
+    const requested = tier === "fast" ? config.onValue : config.offValue;
+    if (requested === config.currentValue) return;
+    const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: config.id,
+      ...(config.type === "boolean" ? { type: "boolean" } : {}), value: requested });
+    this.captureModels(session, result);
+    await this.save(session);
+    if (session.fastConfig?.currentValue !== requested) return fault("The requested speed option was not selected");
+  }
+  /** Only the Host's dedicated discovery session may be used for this probe. */
+  async discoverModelCapabilities(threadId: string): Promise<void> {
+    return this.admit(() => this.serializeThread(threadId, async () => {
+      const session = this.session(threadId), original = session.model;
+      if (this.id === "cursor") {
+        try {
+          const result = await this.native(session).request("_cursor/list_available_models", {});
+          const entries: Value[] = Array.isArray(result.models) ? result.models : [];
+          const known = session.modelConfigValues ?? [];
+          if (entries.length === known.length && new Set(entries.map(entry => entry.value)).size === known.length
+            && entries.every(entry => known.includes(entry.value) && Array.isArray(entry.configOptions))) {
+            for (const entry of entries) {
+              // The extension declares default parameter schemas for every
+              // base model. Project them without changing the live selection.
+              const projection: Session = { ...session, model: this.modelPrefix + entry.value, reasoningModels: {}, fastModels: {} };
+              this.captureModels(projection, { configOptions: entry.configOptions });
+              Object.assign(session.reasoningModels ??= {}, projection.reasoningModels);
+              Object.assign(session.fastModels ??= {}, projection.fastModels);
+            }
+            await this.save(session); return;
+          }
+        } catch (error) {
+          // Older Cursor versions can still declare options through standard
+          // ACP configuration. Transport failures must retain their uncertainty.
+          if (!(error instanceof AcpProtocolError) || error.code !== -32601) throw error;
+        }
+      }
+      try {
+        for (const base of session.modelConfigValues ?? []) {
+          const choice = session.modelCatalog?.find(model => this.baseModelId(model.id) === this.modelPrefix + base);
+          if (choice) await this.setModel(session, choice.id);
+        }
+      } finally { if (original && session.model !== original) await this.setModel(session, original); }
+    }));
   }
   private async resume(session: Session, inputId?: string): Promise<void> {
     await this.start(); const runtime = this.state(session.id);
@@ -444,29 +641,71 @@ export class AcpEngine implements ExecutionEngineProvider {
       const transport = this.createTransport(environment, session.id);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP environment process unavailable"); }
       this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
+    } else if (this.id === "cursor" && !this.sessionTransports.has(session.id)) {
+      const transport = this.createTransport(undefined, session.id);
+      try { await transport.start(); } catch { await transport.close(); throw new Error("ACP process unavailable"); }
+      this.sessionTransports.set(session.id, transport); runtime.loaded = false;
     }
     if (runtime.loaded) return;
     const sessions = value(this.capabilities.sessionCapabilities);
     const method = sessions.resume ? "session/resume" : this.capabilities.loadSession ? "session/load" : null;
     if (!method) return fault("ACP peer cannot resume persisted sessions", -32601);
+    const selection = this.id === "cursor" ? { model: session.model, parameters: session.parameterConfigs?.map(config => ({ ...config })) } : null;
     const result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] });
-    this.captureModels(session, result); await this.save(session);
+    this.captureModels(session, result);
+    if (selection?.model) {
+      await this.setModel(session, selection.model);
+      for (const parameter of selection.parameters ?? []) {
+        const current = session.parameterConfigs?.find(config => config.id === parameter.id);
+        if (current?.values.includes(parameter.currentValue) && current.currentValue !== parameter.currentValue) {
+          this.captureModels(session, await this.native(session).request("session/set_config_option", {
+            sessionId: session.nativeId, configId: parameter.id, value: parameter.currentValue,
+          }));
+          if (session.parameterConfigs?.find(config => config.id === parameter.id)?.currentValue !== parameter.currentValue) return fault("The saved model parameter was not restored");
+        }
+      }
+    }
+    await this.save(session);
     runtime.loaded = true;
+    if (!session.name || session.nameOrigin === "input") void this.refreshTitle(session).catch(() => {});
+  }
+  private async refreshTitle(session: Session): Promise<void> {
+    if (!value(this.capabilities.sessionCapabilities).list) return;
+    const observed = { name: session.name, origin: session.nameOrigin }, cursors = new Set<string>();
+    let cursor: string | undefined;
+    do {
+      const result = await this.native(session).request("session/list", { cwd: session.cwd, ...(cursor ? { cursor } : {}) });
+      if (session.name !== observed.name || session.nameOrigin !== observed.origin) return;
+      const entry = Array.isArray(result.sessions) ? result.sessions.find((entry: Value) => entry?.sessionId === session.nativeId) : undefined;
+      if (typeof entry?.title === "string" && entry.title.trim()) {
+        await this.setTitle(session, Array.from(entry.title.trim()).slice(0, 256).join(""), "agent"); return;
+      }
+      cursor = typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : undefined;
+      if (cursor && cursors.has(cursor)) return;
+      if (cursor) cursors.add(cursor);
+    } while (cursor && !this.closed);
   }
   private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
-    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, null, (session.modelCatalog ?? []).map(m=>({model:m.id})));
+    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, this.id === "cursor" ? session.reasoningConfig?.currentValue ?? null : null,
+      (session.modelCatalog ?? []).map(m=>({model:m.id})));
     if (this.options.executionEnvironment) {
       const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));
       if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");
     }
     if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
-    runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress" };
+    runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
       content: prompt.map(item => ({ type: "text", text: item.text, text_elements: [] })) });
     session.lastTurn = { id: active.id, status: active.status };
+    const firstText = prompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
+    if (!session.preview && firstText) session.preview = Array.from(firstText).slice(0, 160).join("");
+    const initialTitle = !session.name && session.nameOrigin !== "manual" && firstText
+      ? Array.from(firstText).slice(0, 80).join("") : null;
+    if (initialTitle) { session.name = initialTitle; session.nameOrigin = "input"; }
     session.updatedAt = Math.floor(Date.now() / 1000); await this.save(session);
+    if (initialTitle && session.name === initialTitle && session.nameOrigin === "input") this.notify("thread/name/updated", { threadId: session.id, threadName: initialTitle });
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
     void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => {
       if (runtime.active !== active || active.status !== "inProgress") return;
@@ -477,22 +716,61 @@ export class AcpEngine implements ExecutionEngineProvider {
       for (const key of this.callbacks.keys()) if (key.startsWith(`${this.incarnation}:${session.id}:${active.id}:`)) this.callbacks.delete(key);
     }, () => {
       if (runtime.active !== active || active.status !== "inProgress") return;
-      active.status = "failed";
-      session.lastTurn = { id: active.id, status: active.status }; void this.save(session).catch(() => {});
-      this.notify("turn/completed", { threadId: session.id, turn: this.turn(runtime), error: { message: "ACP prompt outcome unconfirmed" } });
+      const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : "acpPromptFailed";
+      void this.failPrompt(session, runtime, code).catch(() => { this.persistenceFailed = true; });
     });
     return { turn: this.turn(runtime) };
+  }
+  private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
+    const active = runtime.active; if (!active || active.status !== "inProgress") return;
+    active.status = "failed";
+    active.error = { message: code, codexErrorInfo: "other", additionalDetails: null };
+    const item = { id: `${active.id}:error`, type: "error", code, message: code };
+    active.items.push(item);
+    session.lastTurn = { id: active.id, status: active.status };
+    const turn = this.turn(runtime);
+    await this.save(session);
+    this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
+    this.notify("turn/completed", { threadId: session.id, turn });
+  }
+  private historyParams(session: Session, params: Value): Value {
+    const active = this.state(session.id).active;
+    return { ...params, threadId: session.id, activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
   }
   private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;
     const session = [...this.sessions.values()].find(entry => entry.nativeId === params.sessionId && (!threadId || entry.id === threadId)); if (!session) return;
     const update = value(params.update);
+    if (update.sessionUpdate === "usage_update") {
+      if (Number.isSafeInteger(update.used) && update.used >= 0 && Number.isSafeInteger(update.size) && update.size > 0
+        && (session.contextUsage?.usedTokens !== update.used || session.contextUsage?.limitTokens !== update.size)) {
+        session.contextUsage = { usedTokens: update.used, limitTokens: update.size, observedAt: Date.now() };
+        void this.save(session).then(() => this.notify("opencraft/usage/changed", { threadId: session.id })).catch(() => { this.persistenceFailed = true; });
+      }
+      return;
+    }
+    if (update.sessionUpdate === "session_info_update") {
+      if (typeof update.title === "string" && update.title.trim()) {
+        void this.setTitle(session, Array.from(update.title.trim()).slice(0, 256).join(""), "agent").catch(() => { this.persistenceFailed = true; });
+      }
+      return;
+    }
     if(update.sessionUpdate === "config_option_update") {
       this.captureModels(session,update);
       void this.save(session).catch(()=>{this.persistenceFailed=true;});
       return;
     }
     const runtime = this.state(session.id), active = runtime.active; if (!active || active.status !== "inProgress") return;
+    if (update.sessionUpdate === "plan" && Array.isArray(update.entries)) {
+      const plan = update.entries.flatMap((raw: unknown) => {
+        const entry = value(raw);
+        return typeof entry.content === "string" && ["pending", "in_progress", "completed"].includes(entry.status)
+          ? [{ step: entry.content, status: entry.status === "in_progress" ? "inProgress" : entry.status }] : [];
+      });
+      const signature = JSON.stringify(plan);
+      if (plan.length && signature !== active.planSignature) { active.planSignature = signature; this.notify("turn/plan/updated", { threadId: session.id, turnId: active.id, explanation: null, plan }); }
+      return;
+    }
     const content = value(update.content);
     if (["agent_message_chunk", "agent_thought_chunk"].includes(update.sessionUpdate) && content.type === "text" && typeof content.text === "string") {
       const type = update.sessionUpdate === "agent_message_chunk" ? "agentMessage" : "reasoning";
@@ -514,6 +792,20 @@ export class AcpEngine implements ExecutionEngineProvider {
         this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
       }
     }
+  }
+  private async setTitle(session: Session, title: string, origin: NonNullable<Session["nameOrigin"]>): Promise<void> {
+    // Older records could only receive a name through manual rename.
+    if (origin === "agent" && (session.nameOrigin === "manual" || session.name && session.nameOrigin === undefined)) return;
+    if (session.name === title && session.nameOrigin === origin) return;
+    const previous = { name: session.name, origin: session.nameOrigin };
+    session.name = title; session.nameOrigin = origin;
+    try { await this.save(session); }
+    catch (error) {
+      if (session.name === title && session.nameOrigin === origin) { session.name = previous.name; session.nameOrigin = previous.origin; }
+      throw error;
+    }
+    // A newer rename may have committed while this write was queued.
+    if (session.name === title && session.nameOrigin === origin) this.notify("thread/name/updated", { threadId: session.id, threadName: title });
   }
   snapshot(threadId: string): Value {
     const runtime = this.state(threadId), active = runtime.active;

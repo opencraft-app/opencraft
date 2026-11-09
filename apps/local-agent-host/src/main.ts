@@ -48,6 +48,8 @@ import type { ProfileSkillsMethod } from "@opencraft/appserver-protocol";
 import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
 import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
+import { AgentOnboardingService, createOnboardingDeps } from "./agent-onboarding.js";
+import { ConnectedAgentHost } from "./connected-agents.js";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
 import { LocalWorkspaceResolver } from "./projectless-workspace.js";
 
@@ -166,6 +168,8 @@ export async function startLocalAgentHost(options: {
     if (failure !== undefined) throw failure;
   };
   try {
+  const agentOnboarding = new AgentOnboardingService();
+  cleanup.push(() => agentOnboarding.close());
   let closing = false;
   let onEngineExit: ((error: Error) => void) | undefined;
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
@@ -290,6 +294,16 @@ export async function startLocalAgentHost(options: {
   )?.trim() || undefined;
   adapter.setWorkspaceResolver(new LocalWorkspaceResolver({
     projectlessRoot: projectlessWorkspaceRoot,
+  }));
+  const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps());
+  cleanup.push(() => connectedAgents.close());
+  cleanup.push(connectedAgents.subscribe((method, params) => {
+    if (method !== "thread/name/updated" || typeof params.threadId !== "string" || typeof params.threadName !== "string") return;
+    const projected = { ...params, threadName: storage.threads.manualTitle(params.threadId) ?? params.threadName };
+    catalogChanges.observeNotification(method, projected);
+    for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+      if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params: projected });
+    }
   }));
   cleanup.push(() => adapter.close());
   cleanup.push(adapter.subscribe((method, params) => {
@@ -598,7 +612,7 @@ export async function startLocalAgentHost(options: {
       })));
       await lifecycle.disconnect(state.key);
     };
-    const unsubscribe = adapter.subscribe((method, params) => {
+    const deliver = (method: string, params: unknown) => {
       const value = params as { threadId?: string; thread?: { id: string }; requestId?: unknown };
       const id = value?.threadId ?? value?.thread?.id;
       if (id) lifecycle.touch(id);
@@ -606,7 +620,9 @@ export async function startLocalAgentHost(options: {
         if (method === "serverRequest/resolved") state.offered.delete(String(value.requestId));
         if (!id || lifecycle.receivesNotifications(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
       }
-    });
+    };
+    const unsubscribe = adapter.subscribe(deliver);
+    const unsubscribeAgents = connectedAgents.subscribe((method, params) => { if (method !== "thread/name/updated") deliver(method, params); });
     const publishShared = (threadId: string, state: LogicalClient) => {
       if (!state.sharedInteractions || !state.initialized || !(state.openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) return;
       sendClient(socket, state.clientId, { jsonrpc: "2.0", method: SHARED_INTERACTIONS_CHANGED,
@@ -666,6 +682,12 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        if (request.method === "opencraft/agents/usage") {
+          if (request.params != null && (typeof request.params !== "object" || Array.isArray(request.params))) throw new Error("Invalid usage query");
+          const params = request.params as { threadId?: unknown; force?: unknown } | undefined;
+          if (params?.threadId !== undefined && typeof params.threadId !== "string" || params?.force !== undefined && typeof params.force !== "boolean") throw new Error("Invalid usage query");
+          send(socket, { jsonrpc: "2.0", id: request.id, result: await connectedAgents.usage(params as { threadId?: string; force?: boolean } ?? {}) }); return;
+        }
         if (request.method === "opencraft/turn-recovery/read") {
           send(socket, { jsonrpc: "2.0", id: request.id, result: { recovery: interrupted.recovery.notice(String((request.params as any)?.threadId ?? "")) } }); return;
         }
@@ -678,6 +700,20 @@ export async function startLocalAgentHost(options: {
         if (request.method.startsWith("opencraft/tasks/")) {
           const result = tasks.handle(request.method, request.params);
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method === "opencraft/agents/onboarding/status" || request.method === "opencraft/agents/onboarding/act" || request.method === "opencraft/agents/onboarding/models") {
+          const result = request.method === "opencraft/agents/onboarding/status"
+            ? await agentOnboarding.status()
+            : request.method === "opencraft/agents/onboarding/models"
+              ? { models: await connectedAgents.listAgentModels(String((request.params as { id?: string } | null)?.id ?? "")) }
+            : await agentOnboarding.act(request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method === "model/list") {
+          const listed = await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[] };
+          const extras = await connectedAgents.models();
+          send(socket, { jsonrpc: "2.0", id: request.id, result: { ...listed, data: [...(listed.data ?? []), ...extras] } }, request.method);
+          return;
         }
         if (request.method === "runtime/machine/read" && options.machineIdentity) {
           send(socket, { jsonrpc: "2.0", id: request.id, result: { machine: options.machineIdentity, agent: "OpenCraft" } }); return;
@@ -770,6 +806,11 @@ export async function startLocalAgentHost(options: {
           if (capabilityLink) await capabilityLink.validate(normalized);
         }
         const dispatchThread = async (method: string, params: Record<string, unknown>) => {
+          if (connectedAgents.owns(method, params)) return connectedAgents.dispatch(method, params);
+          if (method === "thread/list" && params.cursor == null) {
+            const reply = await adapter.dispatchOwned(method, params, owner, request.id as string | number) as { data: unknown[] };
+            return { ...reply, data: [...reply.data, ...await connectedAgents.threads()] };
+          }
           lifecycle.assertClient(state.key);
           await prepareExecution();
           lifecycle.assertClient(state.key);
@@ -831,6 +872,7 @@ export async function startLocalAgentHost(options: {
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
                 [TURN_RECOVERY_EXTENSION]: { version: 1 },
+                "opencraft/agent-usage": { version: 1, providers: ["codex", "cursor"] },
               },
             },
           };
@@ -875,7 +917,7 @@ export async function startLocalAgentHost(options: {
       for (const pending of httpRequests.values()) pending.abort();
       socketClients.delete(socket);
       for (const state of [...clients.values()]) void disconnectClient(state).catch(() => undefined);
-      unsubscribe(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
+      unsubscribe(); unsubscribeAgents(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
     });
   });
   await new Promise<void>((resolvePromise, reject) => {

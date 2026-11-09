@@ -6,6 +6,7 @@ export type { ActionIconProps } from "./icon-glyph";
 export * from "./interface-icons";
 export * from "./image-edit-icons";
 export * from "./activity-icons";
+export { AgentBrandIcon, type AgentBrand } from "./agent-brand-icon";
 export { RecoveryScanArtwork } from "./recovery-scan";
 export * from "./layout-icons";
 export { SidebarToggleIcon } from "./sidebar-toggle-icon";

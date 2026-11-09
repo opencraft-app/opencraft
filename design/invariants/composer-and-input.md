@@ -485,38 +485,52 @@ An installed desktop panel adapter does not imply a composer shortcut. Only an e
 
 ## Composer model/depth hierarchy
 
-Standalone Composer opens its declared effort slider and an optional Fast lightning
-checkbox at the left on first activation when a selectable current model exists.
-Without one, the first activation opens the model list directly, with explicit
-per-Agent empty/loading/error feedback and the available model-configuration action.
-Catalog failures use localized task guidance and a scoped retry, never raw process
-errors or private paths. Retrying retains the menu and draft, disables its own
-action while fetching, and keeps the feedback slot stable; an empty Agent-group
-array still shows the empty state. Adding/configuring a model delegates to the
-existing settings owner and does not invent a Host capability.
-Effort is centered above the full model name, which opens a compact model list
-without capability details. The Composer shows enabled Fast beside the model name.
-High frequency depth changes do not traverse a model list. Presentation never
-adds unsupported speed/effort choices, remounts the editor or writes a default
-by opening. The shared slider capsule variant retains Radix gesture/keyboard
-ownership and previews effort until a completed choice. Desktop uses a compact surface with the shared slider metrics; touch targets keep the density minimum. The right reset commits only a declared model default effort, preserving model/tier/draft and native editor selection; absent defaults disable reset. Embedded session-only
-policy keeps Host-owned reasoning outside its model-only picker.
+Standalone Composer opens one model browser: source tabs, search, a bounded
+model list, then the selected model's supported reasoning choices and optional
+Fast action. Source browsing and search are local presentation state; neither
+changes the active Host, model, draft or remembered defaults. Selecting a model
+commits through the existing Composer/Host owner. Same-named models on different
+Hosts/providers stay distinct. Long catalogs scroll inside their list while
+source, search and related controls remain reachable; reduced motion preserves
+all choices without depending on an animation.
 
+Codex ACP's explicitly advertised `codex:<model>[<effort>]` catalog entries may
+be presented as one family with separate effort choices. Each choice still
+submits the exact advertised concrete model ID, without adding an unsupported
+`effort` override. Names alone never infer capabilities for API or other Agent
+models. Native reasoning and speed controls consume their declared catalog
+capabilities. Switching model families retains a supported existing variant,
+then uses an advertised default or the first advertised option. Opening the menu
+never writes a choice. Session-only policy keeps Host-owned reasoning outside its
+model-only picker.
 
-The capsule's visible thumb and fill consume one shared motion progress; Radix
-retains the immediate semantic stop, pointer capture, hit target and keyboard
-focus. Press scale is paint only. Held input previews without persisting; release
-commits once, cancel restores the authoritative selection, and reversal stops the
-old animation before continuing from current paint. Reduced motion snaps position
-and shape while preserving the same choices. A model/depth view switch keeps the
-same overlay and focus owner, measures its natural content height and stops old
-size animations on replacement or disposal. Effort text transitions only inside
-its stable label slot; Fast feedback is finite and theme-derived. No animation
-completion is allowed to write a selection or mutate a default. Open-panel code
-is loaded separately and prefetched on mouse intent or trigger focus. During
-loading, a non-interactive same-size placeholder retains the menu; when keyboard
-focus is still on that menu, loaded choices take it over without taking an editor
-focus lease.
+The ACP adapter resolves a combined advertised model ID against the peer's
+actual model options and submits the base model and native reasoning configuration
+separately. Config-only replies retain the peer's full concrete model catalog.
+Fast is published per model only after the peer declares its native speed option;
+the selected on/off value is applied before input is accepted. Dedicated discovery
+sessions may inspect those options without changing a user's conversation or
+sending inference. Start/resume replies carry the adapter's real provider, working
+directory and configured permission projection so the ordinary client resume path
+does not depend on missing metadata.
+
+Cursor negotiates its parameterized model picker at ACP initialization and uses
+the peer's base model configuration as the catalog authority. Per-model
+`thought_level` options supply reasoning choices; a native `fast` true/false
+option supplies Fast. Model, reasoning and speed are applied separately before
+input, preserving other native model parameters. Earlier parameterized model
+IDs are restored only against options declared by the current peer. A live base
+catalog replaces persisted variant catalogs without discarding old sessions.
+Cursor's process-global model manager requires a conversation-owned transport;
+discovery and other conversations cannot overwrite its active parameters.
+
+Catalog failures retain cached choices, show localized task guidance and a scoped
+retry, and never expose raw process errors or private paths. Retrying retains the
+menu and draft. Empty catalogs and zero search results have distinct feedback.
+Model configuration delegates to the existing Settings owner. Mouse, touch and
+keyboard share the same model selection semantics. The auxiliary focus owner
+retains the native editor selection on touch choice; explicitly focusing search
+releases that editor focus lease. The editor itself is never remounted.
 
 ## Touch Composer content geometry
 
