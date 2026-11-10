@@ -7,6 +7,9 @@ export function localTestBackend(): SandboxBackend {
     return { resources, capabilities: { terminal: false }, async spawn(command, output) {
       const child = spawn(command.command[0]!, command.command.slice(1), { cwd: command.cwd, env: { ...command.env }, detached: true, stdio: ['pipe','pipe','pipe'] });
       await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+      // A failed pipe write both rejects its callback and emits a stream error.
+      // Observe the latter; writeStdin must still reject so Peer preserves unknown.
+      child.stdin.on('error', () => {});
       groups.push(child.pid!);
       child.stdout.on('data', data => output?.({ stream: 'stdout', data }));
       child.stderr.on('data', data => output?.({ stream: 'stderr', data }));

@@ -77,8 +77,9 @@ terminal outcome. Further real attempts stopped as instructed.
 Consequently no real file read, long-tool steer, nonduplicated real side effect,
 or gateway restart during a running real model turn has been demonstrated.
 The sanitized native recording covers failed history only. Successful steer and
-restart evidence above is fixture-level. The full design §7 P2a row is **not
-passed**; resuming real acceptance requires the coordinating user's decision.
+restart evidence above is fixture-level. The full design §7 P2a row is **unverified**. The maintainer accepted the
+thread-opt-in implementation for integration with this row explicitly deferred;
+real-account revalidation belongs to a separately authorized follow-up task.
 Private run IDs and quota projections remain in ignored local evidence, not in
 this public record. Account-pool ownership/path was retained in source and the
 observed attachment; no account refresh/login was initiated for diagnosis.
@@ -147,3 +148,37 @@ suites 113 passed together. Typechecks passed for bridge-protocol, Host, daemon
 and appserver-client. Codex/daemon builds and the rebuilt Web smoke were repeated
 for this changed client and callback path. The initial broader-check limitations
 and real-account acceptance gap above are unchanged.
+
+## EPIPE stability follow-up
+
+A maintainer observed one intermittent `write EPIPE` in six complete bridge
+runs. A deterministic reproduction closed the child process's actual stdin
+file descriptor while keeping it alive, then wrote a callback acknowledgement
+through `localTestBackend`. The old fixture rejected its write callback but also
+emitted an unhandled stdin stream `error`, producing the same uncaught EPIPE and
+fixture stack. This occurs when the owner-loss test closes bridge input before
+the Host finishes acknowledging its final durable callbacks; it is independent
+of gateway replacement.
+
+The production sandbox adapter already handles that separate stream error event
+and rejects the write promise. The test backend now does the same. No Host
+production write path was changed, no write failure is reported as success, and
+no retry was added. A real closed-pipe regression verifies Promise rejection
+without an uncaught event. A Peer regression verifies that an acknowledgement
+write failure rejects a pending mutation, fences successor writes, and still
+commits both already-received facts without replay.
+
+After the fix, `npm run test:agent-bridge` passed **20 consecutive complete
+runs**, **123 tests per run** (2,460 total), with no retry or relaxed assertion.
+As above, the runner removed the invalid inherited `BASH_FUNC_which%%` shell
+function entry from its environment; production sandbox validation is unchanged.
+The deterministic reproduction failed before the listener fix and passed after.
+
+Before PR publication, the CI-pinned Gitleaks 8.30.1 binary was downloaded with
+its checksum verified. Full candidate-source and reachable-history scans found
+no secrets. Root dependency audit reported 12 high and 6 moderate existing
+findings; all vulnerable package nodes match main. DSH and Hermes installation
+roots reported zero findings, and all lockfile digests stayed unchanged. These
+advisory findings were not hidden or reported as repaired. Newly contributed
+commit metadata uses the maintainer-approved identity; existing main history was
+not rewritten.
