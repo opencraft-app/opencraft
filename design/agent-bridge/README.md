@@ -155,7 +155,7 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | P3 | 通用 ACP bridge；依赖 P1b | 本机一个通用 ACP fixture + Copilot/Amp 各一次最小真实任务；实际 initialize 录制；Copilot 无原生声明时界面无真 steer 假标签 |
 | P3c | ACP resume/history、model/list、客户端 fs/terminal/elicitation 与 Host 实机收尾；依赖 P3 | 真实 Copilot/Amp 经 Host 完成最小任务、一次 steer、close→resume 与 history；Web 仅核对现有 steering 组件不出现 native 假标签 |
 | P3b | DSH ACP 伴生插件；依赖 P3 | 最便宜模型真实任务中 messageId admission→claimed；插件 absent/未 ready、撤回与 claimed 竞态、未消费清理；旧原生 DSH 保留 |
-| P4 | CodeBuddy 用户 adapter 移植；依赖 P3 | 最便宜模型工具中 steer，双回执同 owner/id；slash 拒绝、缺回执 unknown 不重放 |
+| P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收 |
 | P5 | Cursor SDK 用户 steer 移植；依赖 P3 | 最便宜可用模型一次真实任务；complete_delivered 与 followup 分别验证，不能只看本地历史；取消无附件残留 |
 | P6 | AGY hook/IPC/轨迹读取；依赖 P3 | 最便宜模型一次真实任务，hook→新原始 user 行；相同文本歧义、schema 不符、插件缺失拒绝；主线程无 SQLite |
 | P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a | 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |

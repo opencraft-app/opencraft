@@ -9,6 +9,7 @@
  * not establish.
  */
 
+import { codeBuddyDialect } from "./codebuddy";
 import type { AcpInitializeResult, AcpNewSessionResult } from "./acp";
 import type { AcpDialectId, OpenCraftPermissionMode } from "./profile";
 
@@ -232,6 +233,7 @@ const registry = new Map<string, AcpDialect>([
   ["dsh", { ...GENERIC, id: "dsh", nativeSteering: ({ initialize }) => initialize._meta?.midTurnSteering === true }],
   [AMP.id, AMP],
   [COPILOT.id, COPILOT],
+  ["codebuddy", codeBuddyDialect(GENERIC)],
 ]);
 
 /**
