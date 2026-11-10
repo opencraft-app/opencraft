@@ -39,3 +39,6 @@ npx tsx scripts/smoke/agent-bridge/p3-real-acp.ts --agent amp --out /tmp/amp.jso
 ```
 
 Each run consumes real quota and runs exactly one minimal task plus one steer.
+The smoke client answers any `session/request_permission` automatically; the
+full approval interaction (accept/decline/cancel, option ids, duplicate
+resolve) is covered by the deterministic fixture and Host integration tests.

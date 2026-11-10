@@ -184,6 +184,7 @@ export class AcpDeltaTranslator {
   private readonly textStreams = new Map<string, TextStream>();
   private readonly tools = new Map<string, ToolStream>();
   private planSeq = 0;
+  private activeMessageKey: string | null = null;
 
   /** The assembler settles keys per Thread, not per native turn. */
   private key(kind: "message" | "reasoning" | "tool" | "plan", id: string): string {
@@ -218,6 +219,7 @@ export class AcpDeltaTranslator {
     const stream = this.textStreams.get(key);
     if (stream === undefined) return [];
     this.textStreams.delete(key);
+    if (this.activeMessageKey === key) this.activeMessageKey = null;
     if (stream.text.trim().length === 0) return [];
     return [{
       ...this.base(),
@@ -246,7 +248,14 @@ export class AcpDeltaTranslator {
     const key = channel === "agentMessage"
       ? this.key("message", messageKey)
       : this.key("reasoning", "");
-    const out = this.openText(key, channel);
+    const out: BridgeDelta[] = [];
+    if (channel === "agentMessage") {
+      if (this.activeMessageKey !== null && this.activeMessageKey !== key) {
+        out.push(...this.closeText(this.activeMessageKey));
+      }
+      this.activeMessageKey = key;
+    }
+    out.push(...this.openText(key, channel));
     const stream = this.textStreams.get(key)!;
     stream.text += text;
     out.push({ ...this.base(), op: "item.textDelta", nativeKey: key, channel, text });

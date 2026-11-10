@@ -600,3 +600,15 @@ test("repeated ACP plan snapshots use distinct native keys and never reopen a se
   assert.equal(second[1]!.shape.kind, "plan");
   assert.match(second[1]!.shape.text, /two/u);
 });
+
+
+test("a new ACP messageId closes the previous message stream before opening the next", () => {
+  const translator = new AcpDeltaTranslator({ threadId: "thread-messages", nativeTurnId: "native-messages", cwd: "/tmp" });
+  const first = translator.update({ sessionUpdate: "agent_message_chunk", messageId: "a", content: { type: "text", text: "first" } });
+  const second = translator.update({ sessionUpdate: "agent_message_chunk", messageId: "b", content: { type: "text", text: "second" } });
+  assert.deepEqual(first.map((delta) => delta.op), ["item.open", "item.textDelta"]);
+  assert.deepEqual(second.map((delta) => delta.op), ["item.textClose", "item.open", "item.textDelta"]);
+  assert.equal(second[0]!.text, "first");
+  assert.notEqual(first[0]!.nativeKey, second[1]!.nativeKey);
+  assert.equal(second[1]!.nativeKey, second[2]!.nativeKey);
+});
