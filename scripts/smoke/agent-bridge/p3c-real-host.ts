@@ -263,7 +263,7 @@ try {
       "Real account run through apps/agent-bridge-host; one temporary file write and one explicit steer.",
       "Steer evidence is admission only; no context-confirmed claim.",
       "Copilot has no native steering declaration; Amp native-inject is used only for Amp.",
-      "modelList.current was captured before the per-session applied-model override; profile.modelSelection/session.model show the model actually applied.",
+      "modelList.current was captured before the per-session applied-model override; profile.modelSelection shows the model actually applied.",
     ],
     gaps: [
       "History replay is not yet projected into AppServer/Web history.",

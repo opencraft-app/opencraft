@@ -80,8 +80,7 @@ canonical assembler，再执行一次临时文件写入、一次 steer、close/r
 `amp-host.json`。原始 ACP initialize、session/new、任务文件、steer states、
 resume/history 都在文件中；路径已脱敏为 `<workspace>/<host>/<home>`。
 录制发生在 `52698b157d` 修正 applied-model current 之前，因此录音里的
-`modelList.current` 是 session/new 的旧值；`profile.modelSelection` 和
-`session.model` 才是实际应用值。当前代码会用应用值覆盖 current。
+`modelList.current` 是 session/new 的旧值；`profile.modelSelection` 才是实际应用值。当前代码会用应用值覆盖 current。
 证据档位仍是 admission，不能声称 context-confirmed。
 
 ## Web 呈现核对
