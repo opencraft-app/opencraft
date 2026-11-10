@@ -1,6 +1,6 @@
 # 源码核验与 R1/R2 修正
 
-本记录只保留正文依赖的事实；R1/R2 的其余版本号、安装状态、合并祖先关系和真实账号成功记录不作为方案依据。2026-11-11 只读检查，未运行 agent 模型。绝对路径是本机复核入口，不是公开核心的构建依赖。实现批次须重新固定实际 artifact、原生版本和许可证；作者检查不等于已完成法律权利审核。
+本记录只保留正文依赖的事实；R1/R2 的其余版本号、安装状态、合并祖先关系和真实账号成功记录不作为方案依据。2026-11-11 只读检查，未运行 agent 模型。本机 checkout 是复核入口，不是公开核心的构建依赖。实现批次须重新固定实际 artifact、原生版本和许可证；作者检查不等于已完成法律权利审核。
 
 ## 基线与复核方法
 
@@ -14,7 +14,7 @@
 | antigravity-acp | `3b4b7bd` | hook、IPC、队列与 SQLite 行匹配 |
 | amp-acp | `d54d0de` | CLI steer 与 echo；不是 R1 所述已安装快照 |
 
-BB 根为 `/data/code/bb-codex-home-package`，其他仓库均在 `/data/code/<仓库名>`。用 `git rev-parse HEAD` 固定读取基线；`git show -s --format` 核对下列作者提交，随后读取命名源码函数。不从 R1 行号直接推出运行成功。
+BB 根为 BB checkout，其他仓库均为相邻的 Codex / amp-acp / cursor-acp / antigravity-acp checkout。用 `git rev-parse HEAD` 固定读取基线；`git show -s --format` 核对下列作者提交，随后读取命名源码函数。不从 R1 行号直接推出运行成功。
 
 ## 正文依赖的 OpenCraft 事实
 
@@ -40,7 +40,7 @@ BB 根为 `/data/code/bb-codex-home-package`，其他仓库均在 `/data/code/<�
 | --- | --- | --- |
 | BB `docs/provider-bridge-protocol.md`、`provider-plugin-api.md`、`system-overview.md` | 语义 delta / assembler；declaration 上限 + handshake 收窄；语法范围协商；host artifact；客户端/host contract 分离；文档明确 steerMode 无运行消费 | 借鉴架构独立实现，不移植上游代码 |
 | BB `plugins/provider-codex/src/bridge/bridge.ts:2106` 附近 | 转发 turn/steer，带 expectedTurnId，回 RPC 后 input.accepted | 上游；git log 该文件最新作者 Michael Yong，不当作用户 patch |
-| `/data/code/codex/codex-rs/protocol/src/turn_input.rs:178` | Started/Steered 明确不等待 hooks、内存上下文、rollout 或 sampling | 原生 contract 证据，不能以 accepted 证明消费；未把本轮 codex checkout 版本当已安装版本 |
+| Codex checkout `codex-rs/protocol/src/turn_input.rs:178` | Started/Steered 明确不等待 hooks、内存上下文、rollout 或 sampling | 原生 contract 证据，不能以 accepted 证明消费；未把本轮 codex checkout 版本当已安装版本 |
 | BB Claude `src/bridge/sdk-session.ts:314` pushInput、bridge handleTurnSteer | Promise 在 iterable 取出输入时可 resolve，不是模型证据 | 上游；该 sdk-session 最新提交 `3db407dfec` Michael Yong；独立实现 |
 | BB Pi `src/bridge/rpc-session.ts:432`、bridge `:1131` | streamingBehavior steer；bridge 在 steer 返回后发 input.accepted；消费队列单独跟踪 | 上游；最新 rpc-session 修改 `d011a88bc1` Yoann TERUEL，不能把整个文件归给用户 |
 | BB `git show ade7a515df` | 用户提交确实跨 grammar/assembler/client 加 input.delivery 与 ACP 投递分支 | 作者 hxy91819；允许移植该用户 patch 的已核对部分；当前 BB HEAD ACP 文件未命中 input.delivery/resolveAcpSteering，不能混同分支与当前源码 |
