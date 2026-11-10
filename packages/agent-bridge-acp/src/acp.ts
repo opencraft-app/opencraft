@@ -1,3 +1,9 @@
+import { fileURLToPath } from "node:url";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Duplex } from "node:stream";
+import { DshChannel } from "./dsh";
 /**
  * Minimal, bounded ACP (Agent Client Protocol) client over stdio.
  *
@@ -113,6 +119,7 @@ export interface AcpPromptResult {
 }
 
 export interface AcpConnectionOptions {
+  readonly dsh?: boolean;
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
@@ -276,6 +283,8 @@ export interface AcpRequestOptions {
 /** A single ACP agent process. The bridge owns its lifetime. */
 export class AcpConnection {
   private child: ChildProcessWithoutNullStreams | null = null;
+  dsh: DshChannel | undefined;
+  private overlay: string | undefined;
   private nextId = 0;
   private readonly pending = new Map<number, {
     method: string;
@@ -303,16 +312,30 @@ export class AcpConnection {
     return this.child !== null && !this.closing && this.exited === null && this.child.stdin.writable;
   }
 
-  spawn(): void {
+  async spawn(): Promise<void> {
     if (this.child !== null) throw new Error("ACP connection already started");
-    const child = spawn(this.options.command, [...this.options.args], {
+    const args = [...this.options.args];
+    const dsh = this.options.dsh && (process.platform === "linux" || process.platform === "darwin");
+    if (dsh) {
+      this.overlay = await mkdtemp(join(tmpdir(), "opencraft-dsh-"));
+      const patch = join(this.overlay, "steering.json");
+      await writeFile(patch, JSON.stringify([{ insert: [{ id: "opencraft-acp-steering", name: fileURLToPath(new URL("./dsh-steering.mjs", import.meta.url)) }] }]), { mode: 0o600 });
+      args.push("--patch", patch);
+    }
+    const child = spawn(this.options.command, args, {
       cwd: this.options.cwd,
-      env: { ...process.env, ...(this.options.env ?? {}) },
-      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, ...(this.options.env ?? {}), ...(dsh ? { DSH_ACP_STEERING_FD: "3" } : {}) },
+      stdio: dsh ? ["pipe", "pipe", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
     });
-    this.child = child;
-    child.stdout.on("data", (chunk: Buffer) => this.receive(chunk));
-    child.stderr.on("data", (chunk: Buffer) => {
+    this.child = child as ChildProcessWithoutNullStreams;
+    if (dsh && child.stdio[3] instanceof Duplex) {
+      this.dsh = new DshChannel(child.stdio[3], (method, params) => {
+        this.options.onFrame?.("in", { private: true, method, params });
+        this.options.onNotification("opencraft/dsh/" + method, params);
+      });
+    }
+    child.stdout!.on("data", (chunk: Buffer) => this.receive(chunk));
+    child.stderr!.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       for (const line of text.split(/\r?\n/u)) {
         if (line.length === 0) continue;
@@ -320,7 +343,7 @@ export class AcpConnection {
       }
     });
     child.once("error", (error) => this.finish(error));
-    child.stdin.on("error", (error) => this.finish(error));
+    child.stdin!.on("error", (error) => this.finish(error));
     child.once("exit", (code, signal) => {
       this.finish(new Error(`ACP agent exited (${signal ?? String(code)})`));
     });
@@ -469,12 +492,18 @@ export class AcpConnection {
       // connection keeps this empty; a live session advertises its client host.
       clientCapabilities: this.options.clientCapabilities ?? {},
     });
-    return parseInitializeResult(raw);
+    const parsed = parseInitializeResult(raw);
+    if (!this.options.dsh) return parsed;
+    const deadline = Date.now() + 1500;
+    while (this.dsh && !this.dsh.ready && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    return { ...parsed, _meta: { ...parsed._meta, midTurnSteering: this.dsh?.ready === true } };
   }
 
   async close(graceMs = 3_000): Promise<void> {
     if (this.closing) return;
     this.closing = true;
+    this.dsh?.close();
+    if (this.overlay) await rm(this.overlay, { recursive: true, force: true });
     const child = this.child;
     if (child === null) return;
     for (const entry of this.pending.values()) {

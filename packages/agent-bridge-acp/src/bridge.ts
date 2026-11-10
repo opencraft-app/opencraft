@@ -164,6 +164,7 @@ interface InputRecord {
   accepted: boolean;
   queued: boolean;
   terminal: boolean;
+  nativeInputId?: string;
   nativeExecution: boolean;
   admission: { value: AdmissionValue; version: number };
   delivery: { value: "none" | DeliveryMethod; version: number };
@@ -240,6 +241,7 @@ class AcpSession {
     });
 
     const connection = new AcpConnection({
+      dsh: this.profile.dialect === "dsh",
       command: this.profile.agent.command,
       args: this.profile.agent.args,
       cwd,
@@ -261,7 +263,7 @@ class AcpSession {
     });
     this.connection = connection;
     try {
-      connection.spawn();
+      await connection.spawn();
       const initialize = await connection.initialize();
       if (initialize.protocolVersion !== 1) throw unsupported(`ACP protocol ${initialize.protocolVersion} is not supported`);
       this.initializeResult = initialize;
@@ -509,6 +511,7 @@ class AcpSession {
       { scope: { threadId: this.threadId }, op: "turn.open", nativeTurnId },
       { scope: { threadId: this.threadId }, op: "turn.mainRun", state: "running" },
     ]);
+    this.dshTextTurn = input.images.length === 0;
     const prompt = toAcpPrompt(input, this.imagesAllowed);
     const response = this.connection.request("session/prompt", {
       sessionId: this.newSession.sessionId,
@@ -543,11 +546,34 @@ class AcpSession {
     return nativeTurnId;
   }
 
+  private dshAdmissions = new Set<Promise<void>>();
+  private dshSettling = false;
+  private dshTextTurn = true;
+
   private async settleTurn(
     turn: ActiveTurn,
     outcome: { stopReason?: string; error?: Error },
   ): Promise<void> {
     if (this.active !== turn) return;
+    if (this.profile.dialect === "dsh") {
+      this.dshSettling = true;
+      await Promise.allSettled([...this.dshAdmissions]);
+      let cleaned = false;
+      try { await this.connection?.dsh?.settle(this.newSession!.sessionId); cleaned = this.connection?.dsh?.ready === true; } catch { /* keep unknown */ }
+      for (const attempt of turn.steerAttempts.values()) {
+        const record = this.inputs.get(attempt.inputId);
+        if (!record || record.terminal) continue;
+        this.dshClaim(record);
+        if (record.terminal) continue;
+        record.terminal = true;
+        record.outcome = cleaned ? "failed" : "unknown";
+        await this.emit([{ scope: { threadId: this.threadId }, op: "input.outcome", inputId: record.inputId,
+          state: cleaned ? "failed" : "unknown", reason: cleaned ? "DSH input was not claimed and was discarded" : "DSH cleanup outcome unconfirmed; do not replay", version: ++record.admission.version }]);
+      }
+      this.connection?.dsh?.claimed.clear();
+      this.dshSettling = false;
+      if (this.active !== turn) return;
+    }
     const dispatched = turn.dispatched;
     turn.dispatched = undefined;
     if (dispatched !== undefined) {
@@ -628,6 +654,7 @@ class AcpSession {
         inputId: record.inputId,
         deliveryMethod: delivery,
         admitted: true,
+        ...(record.nativeInputId ? { nativeInputId: record.nativeInputId } : {}),
         version: record.delivery.version,
       },
       {
@@ -736,6 +763,30 @@ class AcpSession {
       outcome: "pending",
     };
     this.inputs.set(inputId, record);
+    if (delivery === "native-inject" && this.profile.dialect === "dsh") {
+      if (this.dshSettling || !this.dshTextTurn || input.images.length || !this.connection?.dsh?.ready) {
+        this.inputs.delete(inputId);
+        throw explicitReject("DSH native steering requires a ready private channel and a text-only active turn");
+      }
+      if ([...this.inputs.values()].some(other => other !== record && other.requestedDelivery === "native-inject" && !other.terminal && other.nativeInputId === undefined)) {
+        this.inputs.delete(inputId);
+        throw explicitReject("an earlier DSH admission is unsettled");
+      }
+      const attempt: NativeSteerAttempt = { inputId, text: input.text, settled: false, terminal: false };
+      active.steerAttempts.set(inputId, attempt);
+      this.emitAccepted(record, active.nativeTurnId);
+      record.nativeExecution = true;
+      const pending = this.connection.dsh.request("steer", { sessionId: this.newSession!.sessionId, prompt: [{ type: "text", text: input.text }] }).then((result) => {
+        if (result?.accepted !== true || typeof result.messageId !== "string") throw new AcpRpcError(-32602, "DSH explicitly rejected steering");
+        record.nativeInputId = result.messageId;
+        this.admitNativeSteer(record, attempt);
+        record.outcome = "pending";
+        this.dshClaim(record);
+      }).catch((error) => this.rejectNativeSteer(record, attempt, error));
+      this.dshAdmissions.add(pending);
+      void pending.finally(() => this.dshAdmissions.delete(pending));
+      return { nativeTurnId: active.nativeTurnId, delivery, admission: "pending" };
+    }
     if (delivery === "native-inject") {
       const pending = [...this.inputs.values()].filter((candidate) =>
         candidate !== record && candidate.requestedDelivery === "native-inject"
@@ -806,6 +857,7 @@ class AcpSession {
         inputId: record.inputId,
         deliveryMethod: "native-inject",
         admitted: true,
+        ...(record.nativeInputId ? { nativeInputId: record.nativeInputId } : {}),
         version: record.delivery.version,
       },
       {
@@ -929,6 +981,29 @@ class AcpSession {
     if (this.active?.replacement?.record.inputId === inputId) {
       this.withdrawReplacement(this.active);
       return { state: "withdrawn", outcome: "withdrawn" };
+    }
+    if (this.profile.dialect === "dsh" && record.nativeInputId && this.connection?.dsh) {
+      let result;
+      try {
+        result = await this.connection.dsh.request("withdraw", { sessionId: this.newSession!.sessionId, messageId: record.nativeInputId });
+      } catch {
+        this.dshClaim(record);
+        record.withdrawal = { value: "unknown", version: record.withdrawal.version + 1 };
+        const deltas: BridgeDelta[] = [{ scope: { threadId: this.threadId }, op: "input.withdrawal", inputId, state: "unknown", version: record.withdrawal.version }];
+        if (!record.terminal) {
+          record.terminal = true;
+          record.outcome = "unknown";
+          deltas.push({ scope: { threadId: this.threadId }, op: "input.outcome", inputId, state: "unknown", reason: "DSH withdrawal outcome unconfirmed; do not replay", version: record.withdrawal.version });
+        }
+        await this.emit(deltas);
+        throw unknownOutcome("DSH withdrawal outcome unconfirmed; query the original input without replaying");
+      }
+      this.dshClaim(record);
+      const withdrawn = result?.withdrawn === true && !record.terminal;
+      record.withdrawal = { value: withdrawn ? "withdrawn" : "too-late", version: record.withdrawal.version + 1 };
+      if (withdrawn) { record.terminal = true; record.outcome = "withdrawn"; }
+      await this.emit([{ scope: { threadId: this.threadId }, op: "input.withdrawal", inputId, state: withdrawn ? "withdrawn" : "too-late", version: record.withdrawal.version }]);
+      return { state: record.withdrawal.value, outcome: record.outcome };
     }
     const index = this.queue.findIndex((queued) => queued.record.inputId === inputId);
     if (index >= 0) {
@@ -1123,7 +1198,22 @@ class AcpSession {
       : { outcome: { outcome: "cancelled" } };
   }
 
+  private dshClaim(record: InputRecord): void {
+    if (record.terminal || record.nativeInputId === undefined || !this.connection?.dsh?.claimed.has(record.nativeInputId)) return;
+    record.evidence = { value: "evidence-observed", version: record.evidence.version + 1, kind: "native-input-id" };
+    record.outcome = "delivered";
+    record.terminal = true;
+    void this.emit([{ scope: { threadId: this.threadId }, op: "input.evidence", inputId: record.inputId,
+      evidenceKind: "native-input-id", nativeInputId: record.nativeInputId, version: record.evidence.version }]);
+  }
+
   private onAgentNotification(method: string, params: Record<string, unknown>): void {
+    if (method === "opencraft/dsh/claimed") {
+      if (params.sessionId === this.newSession?.sessionId) {
+        for (const record of this.inputs.values()) if (record.nativeInputId === params.messageId) this.dshClaim(record);
+      }
+      return;
+    }
     if (method !== "session/update") {
       this.host.diagnostic(`ignored ACP notification ${method}`);
       return;
@@ -1198,7 +1288,7 @@ class AcpSession {
         record.outcome = "unknown";
       }
       for (const attempt of active.steerAttempts.values()) {
-        if (attempt.settled) continue;
+        if (attempt.settled && (this.profile.dialect !== "dsh" || this.inputs.get(attempt.inputId)?.terminal)) continue;
         attempt.settled = true;
         attempt.terminal = true;
         const record = this.inputs.get(attempt.inputId);
@@ -1367,6 +1457,7 @@ export class AcpBridge {
 
   private async probeAgent(): Promise<AcpInitializeResult> {
     const connection = new AcpConnection({
+      dsh: this.options.profile.dialect === "dsh",
       command: this.options.profile.agent.command,
       args: this.options.profile.agent.args,
       cwd: this.options.profile.agent.cwd,
@@ -1380,7 +1471,7 @@ export class AcpBridge {
       requestTimeoutMs: 20_000,
     });
     try {
-      connection.spawn();
+      await connection.spawn();
       return await connection.initialize();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1426,6 +1517,7 @@ export class AcpBridge {
     readonly source: string;
   }> {
     const connection = new AcpConnection({
+      dsh: this.options.profile.dialect === "dsh",
       command: this.options.profile.agent.command,
       args: this.options.profile.agent.args,
       cwd: this.options.profile.agent.cwd,
@@ -1437,7 +1529,7 @@ export class AcpBridge {
       requestTimeoutMs: 20_000,
     });
     try {
-      connection.spawn();
+      await connection.spawn();
       const initialize = await connection.initialize();
       const result = parseNewSessionResult(await connection.request("session/new", {
         cwd: this.options.profile.agent.cwd,

@@ -229,6 +229,7 @@ const COPILOT: AcpDialect = {
 
 const registry = new Map<string, AcpDialect>([
   [GENERIC.id, GENERIC],
+  ["dsh", { ...GENERIC, id: "dsh", nativeSteering: ({ initialize }) => initialize._meta?.midTurnSteering === true }],
   [AMP.id, AMP],
   [COPILOT.id, COPILOT],
 ]);
