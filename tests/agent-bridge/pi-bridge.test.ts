@@ -178,6 +178,7 @@ class FakeOwner implements PiOwnerPort {
   private queued: string[] = [];
   rejectNextSteer = false;
   unknownNextSteer = false;
+  appendAfterSnapshot = 0;
 
   constructor(info: PiOwnerCreate) {
     this.info = info;
@@ -196,7 +197,19 @@ class FakeOwner implements PiOwnerPort {
   }
 
   async snapshot(): Promise<PiProjectedSnapshot> {
-    return this.snapshotNow();
+    const value = this.snapshotNow();
+    if (this.appendAfterSnapshot > 0) {
+      this.appendAfterSnapshot--;
+      if (this.appendAfterSnapshot === 0) {
+        const turn = this.turns[0];
+        if (turn) turn.items.push({ type: "agentMessage", id: "a-final", text: " final" });
+      }
+    }
+    return value;
+  }
+
+  hold(): void {
+    this.active = null;
   }
 
   async submit(content: readonly Record<string, unknown>[], _data: Value, requestId: string): Promise<void> {
@@ -415,6 +428,31 @@ test("session/create is idempotent in-process and does not open a second writer"
   await bridge.close();
 });
 
+test("close refuses an active turn and unfences the session after the refusal", async () => {
+  const { bridge, owner } = await setup();
+  await assert.rejects(bridge.command("session/close", { threadId: SCOPE.threadId }),
+    (error: unknown) => error instanceof BridgeRequestError && error.kind === "explicit-reject");
+  const steered = await bridge.command("turn/steer", {
+    threadId: SCOPE.threadId, inputId: "in-after-close-refusal", clientRequestId: "client-after-close-refusal",
+    expectedTurnId: "in-1", input: "still usable",
+  }) as Value;
+  assert.equal(steered.accepted, true);
+  owner.finish("completed");
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+});
+
+test("close diffs one final native snapshot before session.ended", async () => {
+  const { recorder, bridge, owner } = await setup();
+  owner.hold();
+  owner.appendAfterSnapshot = 1;
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+  const deltas = recorder.allDeltas();
+  const finalText = deltas.findIndex(delta => delta.op === "item.textDelta" && (delta as Value).text === " final");
+  const ended = deltas.findIndex(delta => delta.op === "session.ended");
+  assert.ok(finalText >= 0, "a commit after the close fence is still diffed");
+  assert.ok(ended > finalText, "session.ended follows the final delta");
+});
+
 test("turn/start retry after completion is idempotent and does not create a second native run", async () => {
   const { recorder, bridge, owner } = await setup();
   owner.finish("completed");
@@ -469,6 +507,36 @@ test("assembler keeps an admission-only steer failed when the turn ends unconsum
     "a native queue/entry transition reconciles an earlier unknown");
   assert.equal(reconciled.status.admission.value, "accepted",
     "placement evidence also resolves the unknown admission facet for Host release");
+
+  const evidenceFirst = assemble(createAssemblerState(1), [
+    { op: "turn.open", nativeTurnId: "t1", scope },
+    { op: "input.accepted", inputId: "in-3", clientRequestId: "client-3", expectedTurnId: "t1", scope },
+    { op: "input.delivery", inputId: "in-3", deliveryMethod: "native-inject", admitted: true, version: 1, scope },
+    { op: "input.evidence", inputId: "in-3", evidenceKind: "queue-change", evidenceRef: "pi-entry:3", version: 2, scope },
+    { op: "input.outcome", inputId: "in-3", state: "unknown", reason: "late ambiguity", version: 3, scope },
+    { op: "turn.boundary", nativeTurnId: "t1", status: "completed", scope },
+  ] as never, { threadId: SCOPE.threadId, clockSeed: 1 });
+  const evidenceFirstState = evidenceFirst.events.filter(event => event.kind === "input.state").at(-1) as {
+    status: { outcome: string; admission: { value: string } };
+  };
+  assert.equal(evidenceFirstState.status.admission.value, "accepted",
+    "evidence that arrives before an ambiguous outcome still keeps admission accepted");
+  assert.equal(evidenceFirstState.status.outcome, "evidence-observed");
+
+  const staleEvidence = assemble(createAssemblerState(1), [
+    { op: "turn.open", nativeTurnId: "t1", scope },
+    { op: "input.accepted", inputId: "in-4", clientRequestId: "client-4", expectedTurnId: "t1", scope },
+    { op: "input.delivery", inputId: "in-4", deliveryMethod: "native-inject", admitted: true, version: 1, scope },
+    { op: "input.outcome", inputId: "in-4", state: "unknown", reason: "ambiguous", version: 3, scope },
+    { op: "input.evidence", inputId: "in-4", evidenceKind: "queue-change", evidenceRef: "pi-entry:4", version: 2, scope },
+    { op: "turn.boundary", nativeTurnId: "t1", status: "completed", scope },
+  ] as never, { threadId: SCOPE.threadId, clockSeed: 1 });
+  const staleEvidenceState = staleEvidence.events.filter(event => event.kind === "input.state").at(-1) as {
+    status: { outcome: string; admission: { value: string } };
+  };
+  assert.equal(staleEvidenceState.status.admission.value, "unknown",
+    "older evidence must not clear a newer unknown admission");
+  assert.equal(staleEvidenceState.status.outcome, "unknown");
 });
 
 

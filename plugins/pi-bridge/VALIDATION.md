@@ -13,14 +13,14 @@ artifact and no existing engine selects it.
 | `npm run typecheck --workspace @opencraft/agent-bridge-protocol` | passed |
 | `npm run typecheck --workspace @opencraft/agent-bridge-assembler` | passed |
 | `npm run typecheck --workspace @opencraft/agent-bridge-host` | passed (unchanged) |
-| `npm run test:agent-bridge` | **77 passed**. 20 new Pi/Host-settlement cases plus the 57 P1a/P1b cases |
+| `npm run test:agent-bridge` | **79 passed**. 22 new Pi/Host-settlement cases plus the 57 P1a/P1b cases |
 | `npm run check:boundaries` | passed |
-| `node scripts/build-pi-bridge.mjs` | `plugins/pi-bridge/dist/main.mjs`, 9,004,191 bytes, SHA-256 `f6dd7d43c754474b6dc82640bd42f47871e256d7757131af6c983457d2fa754e` |
+| `node scripts/build-pi-bridge.mjs` | `plugins/pi-bridge/dist/main.mjs`, 9,004,964 bytes, SHA-256 `1b6b39dadc32dafdd8995af32d85734478c13b82e342dc40858663e142fa6bb9` |
 | `PI_BRIDGE_KEEP=1 node --import tsx scripts/smoke/execution/smoke-pi-bridge.ts` | passed on the real local Pi account; details below |
 
 ## New deterministic cases
 
-`tests/agent-bridge/pi-bridge.test.ts` (16):
+`tests/agent-bridge/pi-bridge.test.ts` (18):
 
 - declaration exposes only `native-inject`, `admission`/`queue-change`, and no
   `context-confirmed`/`native-input-id`;
@@ -90,14 +90,14 @@ and then a short answer. While the tool was running, the smoke sent two
 byte-identical steers with distinct input ids (`steer-1`, `steer-2`), each
 asking to append `STEER-OK`. Observed:
 
-- `sqlite-holders 550540`, `bridge-pid 550540` — `lsof` saw exactly one writer;
+- `sqlite-holders 854814`, `bridge-pid 854814` — `lsof` saw exactly one writer;
   the old AppServer Pi engine and the Host process held no descriptor.
 - `input.accepted` + `input.delivery(admitted=true)` for both steers.
 - `input.evidence(admission)` for both, keyed by durable submission id.
 - `input.evidence(queue-change)` for both, with distinct evidence refs; no
   `context-confirmed` delta appeared.
-- `tool.txt` became `"alpha\nSTEER-OK\nSTEER-OK\n"` in the final run (another
-  post-fix run produced one line). This is useful behaviour evidence, but the
+- `tool.txt` became `"alpha\nSTEER-OK\nSTEER-OK\n"` in the final run (other
+  post-fix runs produced one line). This is useful behaviour evidence, but the
   protocol evidence remains admission/queue-change only.
 
 Evidence tier: **native admission + native inbox/entry transition
@@ -106,9 +106,9 @@ that the model understood or executed the instruction.
 
 ## Independent review closure
 
-An independent review thread (`thr_udyy2i8p8f`) reviewed commit `18d159583a`.
-It reported seven P1 findings; all were accepted and fixed (a second commit
-follows):
+An independent review thread (`thr_udyy2i8p8f`) reviewed the initial
+implementation commit `18d159583a` (rebased as `27f5c1b88b`). It reported seven
+P1 findings; all were accepted and fixed in `43242a0999`:
 
 1. close→resume reused delta callback ids; fixed with a per-runtime callback id
    and a regression test that walks close→resume→new turn.
@@ -130,6 +130,28 @@ follows):
 7. owner lock/missing-database messages were not classified as explicit
    rejections; fixed with typed failures and Host integration coverage.
 
+### Second review round
+
+The same reviewer then checked `43242a0999` (after rebasing onto main
+`6d263ae20f`) and reported three P1s:
+
+1. `session/close` fenced neither queued turn commands nor the final native
+   snapshot; fixed by setting the runtime closing fence before draining,
+   rejecting later turn commands as explicit, rechecking `activeTurnId` on the
+   final snapshot, diffing that snapshot before `session.ended`, and allowing
+   final emits while `closed` is still false;
+2. a deterministic create refusal left Host route custody forever; fixed with
+   the Host `abandon` operation for invalid/unavailable/orphaned create
+   refusals (pending/exists/locked keep the route for resume) and a Host test
+   that rebinds the same route after a bad cwd;
+3. queue-change admission reconciliation depended on arrival order; fixed by
+   resolving unknown admission in both `applyEvidence` and `applyOutcome`, with
+   version guards so older evidence cannot clear a newer unknown. Both orders
+   and the stale-evidence order have assembler tests.
+
+Per the review workflow, the second round is the final independent pass; the
+main agent fixed and validated these three items directly in `e0a9c4c903`.
+
 ## Gaps and honest limits
 
 - The real accepted-but-unconsumed race did not trigger. Four real attempts
@@ -138,9 +160,15 @@ follows):
   race (`Pi turn ended before steer was consumed`); this run does not claim a
   real reproduction.
 - The real smoke drives the bridge process directly. `pi-host.test.ts` proves
-  the Host launches/handshakes/creates/closes the artifact, but it does not run
-  a real model through the Host. Host durability and restart are P1b's tested
-  scope.
+  the Host launches/handshakes/creates/closes the artifact, rejects stale and
+  missing-session commands, rebinds after a bad create, and keeps one native
+  writer; it does not run a real model through the Host. Host durability and
+  restart are P1b's tested scope.
+- A genuinely ambiguous command outcome still becomes Host `unknown` custody
+  and is not auto-reconciled or replayed. Native evidence can resolve the input
+  facets (and does so in both orders), but the Host command row is a separate
+  P1b/P2 concern; a future explicit reconcile operation must clear it before
+  release. This batch intentionally does not auto-resolve unknown custody.
 - Bridge restart does not auto-resume pending native work in this batch; a
   later provider recovery pass must reconcile it. A live second writer is
   refused by the native lock.

@@ -156,6 +156,15 @@ export class BridgeHost {
       const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...command.params, threadId: receipt.route, executionEpoch: receipt.epoch });
       const state = dispatchSettlement(response);
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
+      if (state === 'rejected' && command.method === 'session/create') {
+        const failure = 'error' in response ? (response.error.data as { failure?: unknown } | undefined)?.failure : undefined;
+        // Only failures that leave no resumable native session release the
+        // fresh route binding. pending/exists/locked/orphaned keep it so the
+        // client can resume or explicitly recover the same native session.
+        if (failure === 'invalid' || failure === 'unavailable' || failure === 'orphaned') {
+          await this.storage.call('abandon', { route: receipt.route, id: command.commandId }).catch(() => {});
+        }
+      }
     } catch {
       await this.storage.call('settle', { id: command.commandId, state: 'unknown' });
     }

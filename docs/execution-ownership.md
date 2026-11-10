@@ -1020,8 +1020,11 @@ the current native snapshot without replaying settled history, and reports an
 active native turn as a recovery hint. The bridge keeps its sessions in a
 separate private data root, so the AppServer Pi engine's catalog cannot adopt
 them. Existing Pi Threads stay on the existing engine; only new Threads routed
-to this bridge use the new path. Deterministic provider refusals settle as
-rejected in the Host; only ambiguous native outcomes consume unknown custody.
+to this bridge use the new path. `session/close` fences new turn commands and
+diffs one final native snapshot before `session.ended`. Deterministic provider
+refusals settle as rejected in the Host; only ambiguous native outcomes consume
+unknown custody. A rejected create that leaves no resumable session releases
+its fresh route binding; pending/exists/locked bindings remain for resume.
 
 The bridge declares native same-turn steer only. Admission and the durable
 inbox/entry transition are evidence-observed; queue removal never becomes

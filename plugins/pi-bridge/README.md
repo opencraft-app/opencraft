@@ -89,7 +89,7 @@ declared native delivery path is `native-inject`; `next-turn` and
 | `model/list` | none; returns `{data, nextCursor}` |
 | `session/create` | `threadId` (Host route), `cwd` (absolute), `model`, optional `thinkingLevel`, `baseInstructions`, `developerInstructions` |
 | `session/resume` | `threadId`; only a bridge-owned durable session |
-| `session/close` | `threadId`; rejects while a native turn is active |
+| `session/close` | `threadId`; fences new turn commands, rejects while a native turn is active, diffs one final native snapshot before `session.ended` |
 | `turn/start` | `threadId`, `inputId`/`clientRequestId`, `input`; returns after durable admission, not after the answer |
 | `turn/steer` | `threadId`, `inputId`/`clientRequestId`, `expectedTurnId`, `input`; returns admission immediately |
 | `turn/stop` | `threadId`; aborts the native run and queued inputs, not a withdrawal |
@@ -112,9 +112,16 @@ recovery pass reconciles it).
 A retry with the same input id is idempotent only while the first steer is
 still admitted/evidence-observed. If the first attempt ended stale, failed or
 unknown, the bridge repeats that typed refusal (or unknown outcome) instead of
-returning a successful duplicate. Deterministic provider refusals
-(`explicit-reject`, `invalid`, `unsupported`, `stale-target`, `auth`, `quota`)
-settle as Host `rejected`; `unknown` is reserved for ambiguous native outcomes.
+returning a successful duplicate. A completed `turn/start` retry is likewise
+idempotent and does not create a second native run.
+
+Deterministic provider refusals (`explicit-reject`, `invalid`, `unsupported`,
+`stale-target`, `auth`, `quota`) settle as Host `rejected`; `unknown` is
+reserved for ambiguous native outcomes. A rejected `session/create` releases
+the fresh Host route binding only for invalid/unavailable/orphaned refusals;
+pending/exists/locked keep the binding so the same native writer can be
+resumed. A genuinely ambiguous command remains unknown custody until an
+explicit reconcile operation; this bridge never auto-replays it.
 
 ## Files and ownership
 

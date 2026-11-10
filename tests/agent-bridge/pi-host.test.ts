@@ -66,6 +66,17 @@ test("Host launches the pinned Pi bridge artifact and owns one native writer", a
   });
   await host.activate("pi-g1", "");
 
+  // A deterministic create refusal must release the fresh route binding;
+  // otherwise the Thread identity is permanently unusable.
+  await host.accept({
+    commandId: "bad-create",
+    serverId: "server-1",
+    threadId: "thread-1",
+    method: "session/create",
+    params: { cwd: join(root, "missing"), model: "test/model" },
+  });
+  const bad = await until(() => host.query("bad-create"), receipt => receipt !== null && receipt.state !== "registered" && receipt.state !== "dispatching");
+  assert.equal(bad.state, "rejected");
   const create = await host.accept({
     commandId: "create",
     serverId: "server-1",

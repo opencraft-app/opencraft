@@ -145,6 +145,7 @@ interface Runtime {
   mutations: Promise<unknown>;
   seq: number;
   closing: boolean;
+  closed: boolean;
   failed: string | null;
 }
 
@@ -245,6 +246,7 @@ export class PiBridge {
     const routeId = string(value.threadId, "threadId");
     const runtime = this.sessions.get(routeId);
     if (!runtime) explicitReject("No bridge-owned Pi session for this thread", { threadId: routeId });
+    if (runtime.closing || runtime.closed) explicitReject("Pi session is closing or closed", { threadId: routeId });
     if (runtime.failed) throw new BridgeRequestError("internal", BRIDGE_ERROR_CODES.internal, runtime.failed);
     return runtime;
   }
@@ -290,6 +292,7 @@ export class PiBridge {
       mutations: Promise.resolve(),
       seq: 0,
       closing: false,
+      closed: false,
       failed: null,
     };
     this.sessions.set(routeId, runtime);
@@ -334,6 +337,7 @@ export class PiBridge {
       mutations: Promise.resolve(),
       seq: 0,
       closing: false,
+      closed: false,
       failed: null,
     };
     this.sessions.set(routeId, runtime);
@@ -503,12 +507,30 @@ export class PiBridge {
 
   private async closeSession(value: Value): Promise<unknown> {
     const runtime = this.runtime(value);
-    await runtime.chain.catch(() => {});
-    const snapshot = await runtime.owner.snapshot();
-    if (snapshot.activeTurnId !== null) explicitReject("Stop the active Pi turn before closing the session", { activeTurnId: snapshot.activeTurnId });
-    runtime.owner.setSnapshotListener(() => {});
-    await this.emit(runtime, runtime.mapper.sessionEnded("session closed"));
+    // Fence new turn commands immediately. Commands already queued in
+    // runtime.mutations run before this task (per-session order); later ones
+    // observe `closing` and settle as explicit refusals rather than unknown.
     runtime.closing = true;
+    await runtime.chain.catch(() => {});
+    const active = await runtime.owner.snapshot();
+    if (active.activeTurnId !== null) {
+      runtime.closing = false;
+      explicitReject("Stop the active Pi turn before closing the session", { activeTurnId: active.activeTurnId });
+    }
+    // Stop accepting live snapshot callbacks, drain the already queued ones,
+    // then diff one final native snapshot before session.ended. This keeps the
+    // last committed item from being lost between the final check and close.
+    runtime.owner.setSnapshotListener(() => {});
+    await runtime.chain.catch(() => {});
+    const finalSnapshot = await runtime.owner.snapshot();
+    if (finalSnapshot.activeTurnId !== null) {
+      runtime.closing = false;
+      runtime.owner.setSnapshotListener(snapshot => this.onSnapshot(runtime, snapshot));
+      explicitReject("Stop the active Pi turn before closing the session", { activeTurnId: finalSnapshot.activeTurnId });
+    }
+    await this.onSnapshotNow(runtime, finalSnapshot);
+    await this.emit(runtime, runtime.mapper.sessionEnded("session closed"));
+    runtime.closed = true;
     await this.factory.close(runtime.owner);
     this.sessions.delete(runtime.routeId);
     return { threadId: runtime.routeId, closed: true };
@@ -538,7 +560,7 @@ export class PiBridge {
   }
 
   private onSnapshot(runtime: Runtime, snapshot: PiProjectedSnapshot): void {
-    if (runtime.closing || runtime.failed) return;
+    if (runtime.closing || runtime.closed || runtime.failed) return;
     const task = () => this.onSnapshotNow(runtime, snapshot);
     const next = runtime.chain.then(task, task);
     runtime.chain = next.catch(() => {});
@@ -551,7 +573,7 @@ export class PiBridge {
   }
 
   private async emit(runtime: Runtime, deltas: readonly BridgeDelta[]): Promise<void> {
-    if (deltas.length === 0 || runtime.closing) return;
+    if (deltas.length === 0 || runtime.closed) return;
     // Keep each callback comfortably below the Host's 1 MiB JSONL frame cap.
     // Order is preserved across the split batches; an individual oversized
     // delta still fails the session rather than being silently truncated.
@@ -601,10 +623,12 @@ export class PiBridge {
   async close(): Promise<void> {
     if (this.closing) return;
     this.closing = true;
+    await this.lifecycle.catch(() => {});
     const runtimes = [...this.sessions.values()];
     this.sessions.clear();
     await Promise.allSettled(runtimes.map(async runtime => {
       runtime.closing = true;
+      runtime.closed = true;
       runtime.owner.setSnapshotListener(() => {});
       await runtime.chain.catch(() => {});
       await runtime.owner.close().catch(() => {});
