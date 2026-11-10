@@ -79,8 +79,24 @@ export class AcpClientHost {
   private readonly terminals = new Map<string, TerminalHandle>();
   private root: string | null = null;
   private closed = false;
+  private readOnly: boolean;
+  private allowWrite: boolean;
+  private allowTerminal: boolean;
 
-  constructor(private readonly options: AcpClientHostOptions) {}
+  constructor(private readonly options: AcpClientHostOptions) {
+    this.readOnly = options.readOnly;
+    this.allowWrite = options.allowWrite;
+    this.allowTerminal = options.allowTerminal;
+  }
+
+  async setPolicy(policy: { readOnly: boolean; allowWrite: boolean; allowTerminal: boolean }): Promise<void> {
+    this.readOnly = policy.readOnly;
+    this.allowWrite = policy.allowWrite;
+    this.allowTerminal = policy.allowTerminal;
+    if (!this.allowTerminal) {
+      await Promise.all([...this.terminals.keys()].map((id) => this.releaseTerminal({ terminalId: id })));
+    }
+  }
 
   async handle(method: string, params: Record<string, unknown>): Promise<unknown | undefined> {
     if (this.closed) throw new AcpRpcError(-32603, "ACP client services are closing");
@@ -100,7 +116,7 @@ export class AcpClientHost {
       case "terminal/release":
         return this.releaseTerminal(params);
       case "elicitation/create":
-        if (this.options.readOnly) throw new AcpRpcError(-32603, "elicitation is disabled in a read-only session");
+        if (this.readOnly) throw new AcpRpcError(-32603, "elicitation is disabled in a read-only session");
         return this.options.onElicitation(params);
       default:
         return undefined;
@@ -161,7 +177,7 @@ export class AcpClientHost {
   }
 
   private async writeTextFile(params: Record<string, unknown>): Promise<null> {
-    if (!this.options.allowWrite) throw new AcpRpcError(-32603, "file writes are disabled in this permission mode");
+    if (!this.allowWrite) throw new AcpRpcError(-32603, "file writes are disabled in this permission mode");
     if (typeof params.content !== "string") throw new AcpRpcError(-32602, "content must be a string");
     const content = params.content;
     if (Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) throw new AcpRpcError(-32602, "content exceeds the bridge write limit");
@@ -177,7 +193,7 @@ export class AcpClientHost {
   }
 
   private async createTerminal(params: Record<string, unknown>): Promise<{ terminalId: string }> {
-    if (!this.options.allowTerminal) throw new AcpRpcError(-32603, "terminal is disabled in this permission mode");
+    if (!this.allowTerminal) throw new AcpRpcError(-32603, "terminal is disabled in this permission mode");
     if (this.terminals.size >= MAX_TERMINALS) throw new AcpRpcError(-32603, "too many terminals");
     const command = stringValue(params.command, "command");
     const rawArgs = Array.isArray(params.args) ? params.args : [];

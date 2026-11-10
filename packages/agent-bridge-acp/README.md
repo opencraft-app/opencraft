@@ -153,8 +153,9 @@ applied. For example, Copilot uses `allow_all=on|off`, Amp uses
 ## ACP client-side services
 
 The bridge advertises `clientCapabilities.fs`, `terminal` and `elicitation`
-only for the parts it can actually execute and the current permission mode
-allows:
+for the services it implements. Authorization is enforced per Turn, not by
+withholding the capability: a downgrade revokes writes/terminals and kills
+existing terminals, an upgrade takes effect without reinitializing the agent.
 
 - `fs/read_text_file` and `fs/write_text_file` stay inside the session cwd;
   symlinks and path escapes are rejected. Read-only sessions can read but not

@@ -877,3 +877,29 @@ test("read-only ACP client services reject writes, terminals and path escapes", 
   await assert.rejects(host.handle("fs/read_text_file", { path: join(outside, "x") }), /escapes/u);
   await host.close();
 });
+
+test("a turn permission downgrade revokes ACP client writes and terminals", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-client-policy-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const host = new AcpClientHost({ cwd: root, readOnly: false, allowWrite: true, allowTerminal: true, onElicitation: async () => ({ action: "decline" }) });
+  await host.handle("fs/write_text_file", { path: "before.txt", content: "before" });
+  await host.setPolicy({ readOnly: true, allowWrite: false, allowTerminal: false });
+  await assert.rejects(host.handle("fs/write_text_file", { path: "after.txt", content: "after" }), /permission mode/u);
+  await assert.rejects(host.handle("terminal/create", { command: process.execPath }), /permission mode/u);
+  assert.equal(await readFile(join(root, "before.txt"), "utf8"), "before");
+  await host.close();
+});
+
+test("model/list reports the applied model, not session/new's pre-selection current", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-model-current-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { model: "expensive", fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CONFIG: "1" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-model-current", cwd: root, permissionMode: "auto" });
+  const listed = await client.request("model/list", { threadId: "thread-model-current" });
+  assert.equal(listed.current, "expensive");
+  assert.deepEqual(listed.models.filter((model: any) => model.current).map((model: any) => model.id), ["expensive"]);
+  await client.close();
+});

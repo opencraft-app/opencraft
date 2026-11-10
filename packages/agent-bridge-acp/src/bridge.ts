@@ -248,10 +248,13 @@ class AcpSession {
       onDiagnostic: (line) => this.host.diagnostic(`acp(${this.profile.providerId}) ${line}`),
       onFrame: (direction, frame) => this.host.traceFrame(direction, frame),
       onExit: (error) => this.onAgentExit(error),
+      // Advertise the client services this bridge implements. The current
+      // turn's permission policy is enforced inside AcpClientHost, so a turn
+      // can narrow or widen the policy without reinitializing the agent.
       clientCapabilities: {
-        fs: { readTextFile: true, writeTextFile: requestedMode === "accept-edits" || requestedMode === "full" },
-        ...(requestedMode === "full" ? { terminal: true } : {}),
-        ...(requestedMode === "read-only" ? {} : { elicitation: {} }),
+        fs: { readTextFile: true, writeTextFile: true },
+        terminal: true,
+        elicitation: {},
       },
       requestTimeoutMs: 30_000,
     });
@@ -339,7 +342,19 @@ class AcpSession {
 
   modelCatalog(): Record<string, unknown> | null {
     if (this.newSession === null) return null;
-    return this.host.catalogForSession(this.newSession);
+    const listed = this.host.catalogForSession(this.newSession);
+    if (this.modelSelection === null) return listed;
+    // session/new reports the pre-selection current model; the applied
+    // modelSelection is the authoritative current value for this session.
+    const current = this.modelSelection.value;
+    return {
+      ...listed,
+      current,
+      models: (listed.models as Record<string, unknown>[]).map((model) => ({
+        ...model,
+        current: model.id === current,
+      })),
+    };
   }
 
   readHistory(params: Record<string, unknown>): Record<string, unknown> {
@@ -446,6 +461,14 @@ class AcpSession {
       });
       await this.applyPermissionPlan(plan);
       this.permissionPlan = plan;
+    }
+    if (this.clientHost !== null && this.permissionPlan !== null) {
+      const mode = this.permissionPlan.requested;
+      await this.clientHost.setPolicy({
+        readOnly: mode === "read-only",
+        allowWrite: mode === "accept-edits" || mode === "full",
+        allowTerminal: mode === "full",
+      });
     }
     if (this.closed || this.closing || this.agentExited || this.active !== null) {
       throw staleTarget("the ACP session changed while the turn was starting");
