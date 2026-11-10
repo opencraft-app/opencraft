@@ -169,13 +169,21 @@ export function applyEvidence(state: CanonicalInputState, delta: InputEvidenceDe
       ...(delta.runId !== undefined ? { runId: delta.runId } : {}),
     } : {}),
   };
+  // A queue/entry transition proves the native owner placed the input. If the
+  // admission facet was still unknown after an ambiguous write, this native
+  // evidence reconciles it; admission-only/echo observations do not.
+  let admission = state.admission;
+  if (admission.value === "unknown"
+    && (delta.evidenceKind === "queue-change" || delta.evidenceKind === "native-input-id" || delta.evidenceKind === "context-confirmed")) {
+    admission = { value: "accepted", version: Math.max(admission.version, delta.version) };
+  }
   let withdrawal = state.withdrawal;
   // Content already reached a native context path: a pending withdrawal is too late.
   if (value === "context-confirmed"
     && (withdrawal.value === "withdraw-requested" || withdrawal.value === "withdrawn")) {
     withdrawal = { value: "too-late", version: Math.max(withdrawal.version, delta.version) };
   }
-  return settle({ ...state, evidence, withdrawal });
+  return settle({ ...state, admission, evidence, withdrawal });
 }
 
 export function applyWithdrawal(state: CanonicalInputState, delta: InputWithdrawalDelta): CanonicalInputState {

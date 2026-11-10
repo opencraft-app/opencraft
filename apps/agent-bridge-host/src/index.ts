@@ -1,4 +1,4 @@
-export { BridgeHost, type HostOptions } from './host.js';
+export { BridgeHost, dispatchSettlement, type HostOptions } from './host.js';
 export { attachGateway } from './server.js';
 export { GatewayInbox } from './inbox.js';
 export type { Command, Receipt, Generation, OutboxEvent } from './types.js';

@@ -177,6 +177,7 @@ class FakeOwner implements PiOwnerPort {
   private active: string | null = null;
   private queued: string[] = [];
   rejectNextSteer = false;
+  unknownNextSteer = false;
 
   constructor(info: PiOwnerCreate) {
     this.info = info;
@@ -210,6 +211,10 @@ class FakeOwner implements PiOwnerPort {
       this.rejectNextSteer = false;
       throw new Error("Pi turn identity changed");
     }
+    if (this.unknownNextSteer) {
+      this.unknownNextSteer = false;
+      throw new Error("storage commit failed after admission");
+    }
     if (this.active !== expectedTurnId) throw new Error("Pi turn identity changed");
     this.submissions.set(requestId, { status: "queued" });
     this.queued.push(requestId);
@@ -229,6 +234,10 @@ class FakeOwner implements PiOwnerPort {
   finish(status: "completed" | "interrupted" = "completed", settleQueued = "failed"): void {
     const turn = this.turns.find(candidate => candidate.id === this.active);
     if (turn) turn.status = status;
+    if (this.active !== null) {
+      const current = this.submissions.get(this.active);
+      if (current) this.submissions.set(this.active, { status: "done", entry: current.entry ?? 1 });
+    }
     for (const id of this.queued.splice(0)) {
       this.submissions.set(id, settleQueued === "failed"
         ? { status: "unanswered", reason: "aborted" }
@@ -354,7 +363,7 @@ test("bridge duplicate text uses distinct native ids and idempotent retry", asyn
   assert.deepEqual(new Set(accepted.map(delta => (delta as Value).inputId)), new Set(["in-a", "in-b"]));
   const before = recorder.allDeltas().length;
   const repeat = await bridge.command("turn/steer", { threadId: SCOPE.threadId, inputId: "in-a", clientRequestId: "client-a", expectedTurnId: "in-1", input: "same" });
-  assert.ok(deepEqualSafe(repeat, { threadId: SCOPE.threadId, inputId: "in-a", duplicate: true }));
+  assert.ok(deepEqualSafe(repeat, { threadId: SCOPE.threadId, inputId: "in-a", duplicate: true, state: "admitted" }));
   assert.equal(recorder.allDeltas().length, before, "an idempotent retry must not increment native executions");
   await bridge.command("turn/stop", { threadId: SCOPE.threadId });
   await bridge.command("session/close", { threadId: SCOPE.threadId });
@@ -406,6 +415,17 @@ test("session/create is idempotent in-process and does not open a second writer"
   await bridge.close();
 });
 
+test("turn/start retry after completion is idempotent and does not create a second native run", async () => {
+  const { recorder, bridge, owner } = await setup();
+  owner.finish("completed");
+  await settle(() => recorder.allDeltas().some(delta => delta.op === "turn.close"), "turn close");
+  const before = recorder.allDeltas().length;
+  const again = await bridge.command("turn/start", { threadId: SCOPE.threadId, inputId: "in-1", clientRequestId: "client-1", input: "work" }) as Value;
+  assert.equal(again.duplicate, true);
+  assert.equal(recorder.allDeltas().length, before, "a completed start retry must not emit or execute again");
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+});
+
 test("owner crash surfaces a typed recovery callback and fences commands", async () => {
   const { recorder, bridge, owner } = await setup();
   owner.crash();
@@ -444,6 +464,71 @@ test("assembler keeps an admission-only steer failed when the turn ends unconsum
     { op: "turn.boundary", nativeTurnId: "t1", status: "completed", scope },
   ] as never, { threadId: SCOPE.threadId, clockSeed: 1 });
   const resolvedStates = resolved.events.filter(event => event.kind === "input.state");
-  assert.equal((resolvedStates.at(-1) as { status: { outcome: string } }).status.outcome, "evidence-observed",
+  const reconciled = resolvedStates.at(-1) as { status: { outcome: string; admission: { value: string } } };
+  assert.equal(reconciled.status.outcome, "evidence-observed",
     "a native queue/entry transition reconciles an earlier unknown");
+  assert.equal(reconciled.status.admission.value, "accepted",
+    "placement evidence also resolves the unknown admission facet for Host release");
+});
+
+
+test("a retry of a stale steer repeats the refusal instead of reporting success", async () => {
+  const { bridge, owner } = await setup();
+  owner.rejectNextSteer = true;
+  const request = { threadId: SCOPE.threadId, inputId: "in-stale", clientRequestId: "client-stale", expectedTurnId: "in-1", input: "late" };
+  await assert.rejects(bridge.command("turn/steer", request),
+    (error: unknown) => error instanceof BridgeRequestError && error.kind === "stale-target");
+  await assert.rejects(bridge.command("turn/steer", request),
+    (error: unknown) => error instanceof BridgeRequestError && error.kind === "stale-target",
+    "the same input id must not turn a stale refusal into a successful duplicate");
+  await bridge.command("turn/stop", { threadId: SCOPE.threadId });
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+});
+
+test("a retry of an unknown steer stays unknown", async () => {
+  const { bridge, owner } = await setup();
+  owner.unknownNextSteer = true;
+  const request = { threadId: SCOPE.threadId, inputId: "in-unknown", clientRequestId: "client-unknown", expectedTurnId: "in-1", input: "maybe" };
+  await assert.rejects(bridge.command("turn/steer", request),
+    (error: unknown) => error instanceof BridgeRequestError && error.kind === "unknown-outcome");
+  await assert.rejects(bridge.command("turn/steer", request),
+    (error: unknown) => error instanceof BridgeRequestError && error.kind === "unknown-outcome",
+    "an ambiguous write must never become an idempotent success");
+  await bridge.command("turn/stop", { threadId: SCOPE.threadId });
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+});
+
+test("resume seeds the native snapshot and does not replay completed turns", async () => {
+  const { recorder, bridge, owner } = await setup();
+  owner.finish("completed");
+  await settle(() => recorder.allDeltas().some(delta => delta.op === "turn.close"), "turn close");
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+  const beforeResume = recorder.frames.length;
+  await bridge.command("session/resume", { threadId: SCOPE.threadId });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(recorder.frames.filter(frame => frame.method === "thread/delta").length,
+    recorder.frames.slice(0, beforeResume).filter(frame => frame.method === "thread/delta").length,
+    "resume must not replay an already settled native turn");
+
+  await bridge.command("turn/start", { threadId: SCOPE.threadId, inputId: "in-2", clientRequestId: "client-2", input: "again" });
+  await settle(() => recorder.allDeltas().some(delta => delta.op === "turn.open" && (delta as Value).nativeTurnId === "in-2"), "new turn");
+  const ids = recorder.frames.filter(frame => frame.method === "thread/delta").map(frame => frame.id);
+  assert.equal(new Set(ids).size, ids.length, "callback ids must be unique across close/resume");
+  await bridge.command("turn/stop", { threadId: SCOPE.threadId });
+  await bridge.command("session/close", { threadId: SCOPE.threadId });
+});
+
+test("mapper seed suppresses historical deltas but keeps streaming an active turn", () => {
+  const mapper = new PiDeltaMapper({ threadId: SCOPE.threadId, nativeSessionId: "native-1", now: () => 1 });
+  const completed = snapshot([turn("t1", "completed", [user("u1", "old"), assistant("a1", "done")])], { }, null);
+  mapper.seed(completed);
+  assert.deepEqual(mapper.diff(completed), []);
+  const active = snapshot([turn("t2", "inProgress", [user("u2", "work"), assistant("a2", "partial")])]);
+  mapper.seed(active);
+  assert.deepEqual(mapper.diff(active), []);
+  const grown = snapshot([turn("t2", "inProgress", [user("u2", "work"), assistant("a2", "partial plus")])]);
+  const deltas = mapper.diff(grown);
+  assert.deepEqual(deltas.map(delta => delta.op), ["item.textDelta"]);
+  assert.equal((deltas[0] as Value).text, " plus");
+  assert.ok(!deltas.some(delta => delta.op === "turn.open"));
 });

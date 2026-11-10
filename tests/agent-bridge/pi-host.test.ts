@@ -101,8 +101,28 @@ test("Host launches the pinned Pi bridge artifact and owns one native writer", a
   assert.equal(probe.response?.result?.owner, "pi-durable");
   assert.equal(probe.response?.result?.activeSessions, 1);
 
+  // A stale steer is a deterministic not-sent refusal. It must settle
+  // rejected, not unknown, or the Host could never release this Thread.
+  await host.accept({
+    commandId: "stale",
+    serverId: "server-1",
+    threadId: "thread-1",
+    method: "turn/steer",
+    params: { inputId: "steer-stale", clientRequestId: "client-stale", expectedTurnId: "missing-turn", input: "late" },
+  });
+  const stale = await until(() => host.query("stale"), receipt => receipt !== null && receipt.state !== "registered" && receipt.state !== "dispatching");
+  assert.equal(stale.state, "rejected");
+
   await host.accept({ commandId: "close", serverId: "server-1", threadId: "thread-1", method: "session/close", params: {} });
   await until(() => host.query("close"), receipt => receipt?.state === "accepted");
+
+  // A deleted native database is a deterministic recovery refusal, not an
+  // ambiguous outcome. Resume must be rejected and release must remain possible.
+  await rm(join(sessions, database));
+  await host.accept({ commandId: "resume-missing", serverId: "server-1", threadId: "thread-1", method: "session/resume", params: {} });
+  const missing = await until(() => host.query("resume-missing"), receipt => receipt !== null && receipt.state !== "registered" && receipt.state !== "dispatching");
+  assert.equal(missing.state, "rejected");
+
   const tail = await host.events(events.at(-1)?.seq ?? 0);
   await host.ack(tail.at(-1)?.seq ?? events.at(-1)?.seq ?? 0);
   await host.releaseThread("server-1", "thread-1");

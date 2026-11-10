@@ -1013,11 +1013,15 @@ single real task cannot trigger.
 `plugins/pi-bridge` is a pinned provider artifact launched by the P1b Host. It
 wraps the existing `PiDurableSession`, not a Pi RPC child and not a second
 transcript writer. A bridge-owned Thread has one native SQLite session and one
-owner lock; `session/create` refuses an existing or orphaned session and
-`session/resume` refuses a live writer. The bridge keeps its sessions in a
+owner lock; `session/create` reserves a pending record before opening the
+native database, refuses an existing or orphaned session, and removes a
+half-created session on failure; `session/resume` refuses a live writer, seeds
+the current native snapshot without replaying settled history, and reports an
+active native turn as a recovery hint. The bridge keeps its sessions in a
 separate private data root, so the AppServer Pi engine's catalog cannot adopt
 them. Existing Pi Threads stay on the existing engine; only new Threads routed
-to this bridge use the new path.
+to this bridge use the new path. Deterministic provider refusals settle as
+rejected in the Host; only ambiguous native outcomes consume unknown custody.
 
 The bridge declares native same-turn steer only. Admission and the durable
 inbox/entry transition are evidence-observed; queue removal never becomes

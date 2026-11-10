@@ -23,7 +23,7 @@ import {
   type DeliveryMethod,
 } from "@opencraft/agent-bridge-protocol";
 import { PiDeltaMapper, type SteerRegistration } from "./mapper.js";
-import type { PiModelInfo, PiOwnerFactory, PiOwnerPort, PiProjectedSnapshot } from "./types.js";
+import { PiSessionOpenError, type PiModelInfo, type PiOwnerFactory, type PiOwnerPort, type PiProjectedSnapshot } from "./types.js";
 
 type Value = Record<string, any>;
 
@@ -139,6 +139,8 @@ interface Runtime {
   readonly routeId: string;
   readonly owner: PiOwnerPort;
   readonly mapper: PiDeltaMapper;
+  readonly callbackId: string;
+  readonly starts: Map<string, { clientRequestId: string; text: string }>;
   chain: Promise<void>;
   mutations: Promise<unknown>;
   seq: number;
@@ -158,6 +160,7 @@ export interface PiBridgeOptions {
 export class PiBridge {
   private readonly sessions = new Map<string, Runtime>();
   private readonly incarnation = randomUUID();
+  private lifecycle: Promise<unknown> = Promise.resolve();
   private closing = false;
   private readonly factory: PiOwnerFactory;
   private readonly send: BridgeCallback;
@@ -193,12 +196,12 @@ export class PiBridge {
       case "model/list":
         return { data: await this.factory.models(), nextCursor: null };
       case "session/create":
-        return this.create(value);
+        return this.serialLifecycle(() => this.create(value));
       case "session/resume":
-        return this.resume(value);
+        return this.serialLifecycle(() => this.resume(value));
       case "session/close": {
         const runtime = this.runtime(value);
-        return this.serial(runtime, () => this.closeSession(value));
+        return this.serialLifecycle(() => this.serial(runtime, () => this.closeSession(value)));
       }
       case "turn/start": {
         const runtime = this.runtime(value);
@@ -273,10 +276,16 @@ export class PiBridge {
     } catch (error) {
       rejectSessionOpen(error);
     }
+    if (this.closing) {
+      await this.factory.close(owner).catch(() => {});
+      throw new BridgeRequestError("internal", BRIDGE_ERROR_CODES.internal, "Bridge closing");
+    }
     const runtime: Runtime = {
       routeId,
       owner,
       mapper: new PiDeltaMapper({ threadId: routeId, nativeSessionId: owner.info.nativeSessionId, now: this.now }),
+      callbackId: randomUUID(),
+      starts: new Map(),
       chain: Promise.resolve(),
       mutations: Promise.resolve(),
       seq: 0,
@@ -311,10 +320,16 @@ export class PiBridge {
     } catch (error) {
       rejectSessionOpen(error);
     }
+    if (this.closing) {
+      await this.factory.close(owner).catch(() => {});
+      throw new BridgeRequestError("internal", BRIDGE_ERROR_CODES.internal, "Bridge closing");
+    }
     const runtime: Runtime = {
       routeId,
       owner,
       mapper: new PiDeltaMapper({ threadId: routeId, nativeSessionId: owner.info.nativeSessionId, now: this.now }),
+      callbackId: randomUUID(),
+      starts: new Map(),
       chain: Promise.resolve(),
       mutations: Promise.resolve(),
       seq: 0,
@@ -325,8 +340,13 @@ export class PiBridge {
     this.attach(runtime);
     try {
       await this.emitIdentity(runtime);
-      await this.refresh(runtime);
+      const baseline = await owner.snapshot();
+      runtime.mapper.seed(baseline);
       owner.setSnapshotListener(snapshot => this.onSnapshot(runtime, snapshot));
+      if (baseline.activeTurnId !== null) {
+        await this.emitRecovery(runtime, "staleTurn",
+          "Native Pi session resumed; existing native turns are not replayed. Hydrate history from the Host projection before relying on this turn.", false);
+      }
       await this.refresh(runtime);
     } catch (error) {
       this.sessions.delete(routeId);
@@ -348,7 +368,17 @@ export class PiBridge {
     const inputId = string(value.inputId ?? value.clientRequestId, "inputId");
     const clientRequestId = string(value.clientRequestId ?? inputId, "clientRequestId");
     if (runtime.mapper.hasInput(inputId)) explicitReject("Input identity already belongs to a steering input", { inputId });
-    const { content, text: _text } = textInput(value.input);
+    const { content, text } = textInput(value.input);
+    const prior = runtime.starts.get(inputId);
+    if (prior && (prior.clientRequestId !== clientRequestId || prior.text !== text)) {
+      explicitReject("Input identity already belongs to different content", { inputId });
+    }
+    const nativePrior = await runtime.owner.execution(inputId);
+    if (nativePrior !== null) {
+      if (nativePrior === "completed") return { threadId: runtime.routeId, inputId, turnId: inputId, accepted: true, duplicate: true, state: "evidence-observed" };
+      if (nativePrior === "running") explicitReject("Pi conversation is busy; use turn/steer", { inputId });
+      explicitReject("Previous input failed; reconcile before retrying", { inputId });
+    }
     const current = await runtime.owner.snapshot();
     if (current.activeTurnId !== null) explicitReject("Pi conversation is busy; use turn/steer", { activeTurnId: current.activeTurnId });
     const data = {
@@ -367,6 +397,7 @@ export class PiBridge {
       // error. The Host must reconcile the same command; it must not resend.
       unknownOutcome(message, { inputId });
     }
+    runtime.starts.set(inputId, { clientRequestId, text });
     void this.refresh(runtime).catch(error => this.fail(runtime, error));
     return { threadId: runtime.routeId, inputId, turnId: inputId, accepted: true };
   }
@@ -380,7 +411,17 @@ export class PiBridge {
     const registration: SteerRegistration = { inputId, clientRequestId, expectedTurnId, text };
     const { duplicate, conflict } = runtime.mapper.registerSteer(registration);
     if (conflict) explicitReject("Client input identity already belongs to different input", { inputId });
-    if (duplicate) return { threadId: runtime.routeId, inputId, duplicate: true };
+    if (duplicate) {
+      const existing = runtime.mapper.query(inputId);
+      if (existing?.state === "unknown") {
+        unknownOutcome(existing.reason ?? "Previous steer outcome is unknown; reconcile before retrying", { inputId });
+      }
+      if (existing?.state === "failed") {
+        if (existing.failureKind === "stale-target") stale(existing.reason ?? "Pi turn identity changed");
+        explicitReject(existing.reason ?? "Input previously failed", { inputId, state: existing.state });
+      }
+      return { threadId: runtime.routeId, inputId, duplicate: true, state: existing?.state ?? null };
+    }
     const data = {
       turnId: expectedTurnId,
       steerTurnId: expectedTurnId,
@@ -395,10 +436,11 @@ export class PiBridge {
       const message = error instanceof Error ? error.message : String(error);
       if (/turn identity changed|no active|not pending|already been dispatched/i.test(message)) {
         await this.emit(runtime, runtime.mapper.acceptedDeltas(registration, false));
+        runtime.mapper.noteFailure(inputId, "rejected", message, "stale-target");
         stale(message);
       }
       await this.emit(runtime, runtime.mapper.acceptedDeltas(registration, true));
-      await this.emit(runtime, runtime.mapper.outcomeDeltas(inputId, "unknown", message));
+      await this.emit(runtime, runtime.mapper.outcomeDeltas(inputId, "unknown", message, "unknown-outcome"));
       unknownOutcome(message, { inputId });
     }
     try {
@@ -472,6 +514,13 @@ export class PiBridge {
     return { threadId: runtime.routeId, closed: true };
   }
 
+  /** Serialize session lifecycle (create/resume/close) across routes. */
+  private serialLifecycle<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.lifecycle.then(task, task);
+    this.lifecycle = next.catch(() => {});
+    return next;
+  }
+
   private serial<T>(runtime: Runtime, task: () => Promise<T>): Promise<T> {
     const next = runtime.mutations.then(task, task);
     runtime.mutations = next.catch(() => {});
@@ -518,7 +567,7 @@ export class PiBridge {
     }
     if (batch.length) batches.push(batch);
     for (const deltas of batches) {
-      await this.send("thread/delta", { threadId: runtime.routeId, deltas }, `${this.incarnation}:delta:${runtime.routeId}:${++runtime.seq}`);
+      await this.send("thread/delta", { threadId: runtime.routeId, deltas }, `${runtime.callbackId}:delta:${++runtime.seq}`);
     }
   }
 
@@ -565,10 +614,11 @@ export class PiBridge {
 
 function rejectSessionOpen(error: unknown): never {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof PiSessionOpenError) explicitReject(message, { failure: error.failure });
   // Session-open failures are deterministic: a pinned model is unavailable,
   // an existing native file must not be adopted, or another writer holds the
   // lock. They are explicit rejections, not ambiguous native outcomes.
-  if (/unavailable|already exists|Orphaned|must be|does not support|No bridge-owned|metadata|locked|ELOCKED/i.test(message)) {
+  if (/(?:^|[^a-z])unavailable|already exists|Orphaned|must be|does not support|No bridge-owned|metadata|already being held|\bELOCKED\b/i.test(message)) {
     explicitReject(message);
   }
   throw error;

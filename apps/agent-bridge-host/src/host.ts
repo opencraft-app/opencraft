@@ -2,7 +2,7 @@ import { isAbsolute } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { createSandboxPool, type SandboxBackend, type SandboxPoolPolicy, type SandboxPool } from '@opencraft/sandbox';
-import { BRIDGE_GRAMMAR_RANGE, BRIDGE_PROTOCOL_VERSION, isBridgeCommand, assertMethodAllowed, negotiateHandshake, type BridgeInitializeResult } from '@opencraft/agent-bridge-protocol';
+import { BRIDGE_GRAMMAR_RANGE, BRIDGE_PROTOCOL_VERSION, isBridgeCommand, assertMethodAllowed, negotiateHandshake, type BridgeInitializeResult, type BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
 import { Storage } from './storage.js';
 import { Peer, successful } from './peer.js';
 import { object, identifier, routeKey, type Command, type Generation, type Receipt } from './types.js';
@@ -16,6 +16,18 @@ function stable(value: unknown): string {
 }
 function hostRefusal(command: Command, message: string): Error & { code: number; kind: string; commandId: string } {
   return Object.assign(Error(message), { code: -32602, kind: 'invalid', commandId: command.commandId });
+}
+
+/**
+ * A typed provider error that deterministically refuses the command means the
+ * native mutation was not performed. Only an ambiguous transport/timeout or
+ * an explicit `unknown-outcome` keeps custody unknown; treating stale/invalid
+ * refusals as unknown would block Thread release forever.
+ */
+export function dispatchSettlement(response: BridgeWireMessage): Receipt['state'] {
+  if (successful(response)) return 'accepted';
+  if ('error' in response) return REFUSED_BRIDGE_ERRORS.has(response.error.kind) ? 'rejected' : 'unknown';
+  return 'unknown';
 }
 
 export interface HostOptions { path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
@@ -142,10 +154,7 @@ export class BridgeHost {
         await this.storage.call('settle', { id: command.commandId, state: 'rejected' }); return;
       }
       const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...command.params, threadId: receipt.route, executionEpoch: receipt.epoch });
-      // These kinds are definitive provider refusals before any native write
-      // (validation, capability gating, auth/quota, stale target). A timeout,
-      // transport loss or internal/unknown-outcome stays `unknown`.
-      const state = successful(response) ? 'accepted' : 'error' in response && REFUSED_BRIDGE_ERRORS.has(response.error.kind) ? 'rejected' : 'unknown';
+      const state = dispatchSettlement(response);
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
     } catch {
       await this.storage.call('settle', { id: command.commandId, state: 'unknown' });

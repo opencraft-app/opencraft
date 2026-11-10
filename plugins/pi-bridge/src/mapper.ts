@@ -134,6 +134,8 @@ interface TrackedInput {
   admitted: boolean;
   terminal: boolean;
   outcome: "unknown" | "rejected" | "failed" | null;
+  outcomeReason?: string;
+  failureKind?: string;
   admissionEvidence: boolean;
   queueEvidence: boolean;
 }
@@ -178,6 +180,42 @@ export class PiDeltaMapper {
 
   private turnStatus(status: string): TurnStatus {
     return TERMINAL_TURN[status] ?? "interrupted";
+  }
+
+  /**
+   * Mark the current native snapshot as already represented. A resumed
+   * bridge cannot know the Host's checkpoint watermark, so it deliberately
+   * emits no historical turn/item deltas. The Host hydrates history from its
+   * own projection or `history/read`; only later native changes are streamed.
+   */
+  seed(snapshot: PiProjectedSnapshot): void {
+    for (const turn of snapshot.turns) {
+      const id = String(turn.id);
+      const status = String(turn.status);
+      const tracked: TrackedTurn = {
+        id,
+        open: status === "inProgress",
+        status,
+        items: new Map(),
+        streams: new Map(),
+      };
+      for (const item of turn.items as readonly Value[]) {
+        const key = String(item.id ?? "");
+        if (!key) continue;
+        const shape = itemShape(item);
+        if (shape === null) continue;
+        if (shape.kind === "userMessage") {
+          tracked.items.set(key, { shape, terminal: true });
+        } else if (isTextShape(shape)) {
+          tracked.items.set(key, { shape, terminal: false });
+          tracked.streams.set(key, { channel: shape.kind, text: shape.text });
+        } else {
+          tracked.items.set(key, { shape, terminal: shape.status !== "inProgress" });
+        }
+      }
+      this.turns.set(id, tracked);
+    }
+    if (snapshot.usage) this.lastUsageKey = JSON.stringify([snapshot.usage.total, snapshot.usage.last]);
   }
 
   hasInput(inputId: string): boolean {
@@ -271,10 +309,22 @@ export class PiDeltaMapper {
     } as BridgeDelta];
   }
 
-  outcomeDeltas(inputId: string, state: "unknown" | "rejected" | "failed", reason: string): BridgeDelta[] {
+  /** Record a rejection that has no wire delta (for example a stale target). */
+  noteFailure(inputId: string, state: "unknown" | "rejected" | "failed", reason: string, failureKind?: string): void {
+    const tracked = this.inputs.get(inputId);
+    if (!tracked) return;
+    tracked.terminal = state !== "unknown";
+    tracked.outcome = state;
+    tracked.outcomeReason = reason;
+    if (failureKind !== undefined) tracked.failureKind = failureKind;
+  }
+
+  outcomeDeltas(inputId: string, state: "unknown" | "rejected" | "failed", reason: string, failureKind?: string): BridgeDelta[] {
     const tracked = this.inputs.get(inputId);
     if (!tracked || tracked.terminal) return [];
     tracked.outcome = state;
+    tracked.outcomeReason = reason;
+    if (failureKind !== undefined) tracked.failureKind = failureKind;
     // `unknown` stays open to later native evidence; a known failure/rejection
     // is terminal and must not be relabelled by a late observation.
     tracked.terminal = state !== "unknown";
@@ -463,6 +513,8 @@ export class PiDeltaMapper {
     readonly state: "registered" | "admitted" | "evidence-observed" | "failed" | "unknown";
     readonly evidenceKind: "admission" | "queue-change" | null;
     readonly version: number;
+    readonly reason?: string;
+    readonly failureKind?: string;
   } | null {
     const tracked = this.inputs.get(inputId);
     if (!tracked) return null;
@@ -477,6 +529,8 @@ export class PiDeltaMapper {
       state,
       evidenceKind: tracked.queueEvidence ? "queue-change" : tracked.admissionEvidence ? "admission" : null,
       version: tracked.version,
+      ...(tracked.outcomeReason === undefined ? {} : { reason: tracked.outcomeReason }),
+      ...(tracked.failureKind === undefined ? {} : { failureKind: tracked.failureKind }),
     };
   }
 }

@@ -73,6 +73,16 @@ export interface PiModelInfo {
   readonly cost: unknown;
 }
 
+export type PiSessionOpenFailure = "unavailable" | "exists" | "pending" | "orphaned" | "locked" | "missing" | "invalid";
+
+/** A deterministic session-open refusal; the bridge reports it as explicit. */
+export class PiSessionOpenError extends Error {
+  constructor(readonly failure: PiSessionOpenFailure, message: string) {
+    super(message);
+    this.name = "PiSessionOpenError";
+  }
+}
+
 export interface PiOwnerFactory {
   models(): Promise<readonly PiModelInfo[]>;
   create(input: {

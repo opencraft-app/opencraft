@@ -98,11 +98,23 @@ declared native delivery path is `native-inject`; `next-turn` and
 | `history/read` | `threadId`, optional `limit` (1–50); bounded native projection |
 | `maintenance/probe` | none; owner/version/incarnation facts |
 
-`session/create` is idempotent in-process for the same cwd/model/instructions;
-a second create for the same Thread never opens another native owner. A
-`session/resume` after a crash opens the same database only after the native
-lock is acquired; the bridge does not auto-resume pending native work in this
-batch (a future provider recovery pass reconciles it).
+`session/create` atomically reserves a pending metadata record before it opens
+the native database and removes the half-created session if any later step
+fails. A second create for the same Thread never opens another native owner. A
+crash between native open and active metadata leaves a recoverable pending
+record; `session/resume` may adopt it after acquiring the native lock. A
+resume seeds the mapper from the current native snapshot and emits no
+historical turn/item deltas, so a Host checkpoint is not duplicated; if an
+active native turn exists it also emits a `staleTurn` recovery hint. The bridge
+does not auto-resume pending native work in this batch (a future provider
+recovery pass reconciles it).
+
+A retry with the same input id is idempotent only while the first steer is
+still admitted/evidence-observed. If the first attempt ended stale, failed or
+unknown, the bridge repeats that typed refusal (or unknown outcome) instead of
+returning a successful duplicate. Deterministic provider refusals
+(`explicit-reject`, `invalid`, `unsupported`, `stale-target`, `auth`, `quota`)
+settle as Host `rejected`; `unknown` is reserved for ambiguous native outcomes.
 
 ## Files and ownership
 

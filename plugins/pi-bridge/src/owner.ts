@@ -8,15 +8,17 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai/models";
 import { PiDurableSession, createPiModels } from "@opencraft/plugin-pi-engine/session";
 import { projectPiSnapshot, tokenUsage } from "@opencraft/plugin-pi-engine/projection";
-import type { PiModelInfo, PiModelRef, PiOwnerCreate, PiOwnerFactory, PiOwnerPort, PiProjectedSnapshot } from "./types.js";
+import { PiSessionOpenError, type PiModelInfo, type PiModelRef, type PiOwnerCreate, type PiOwnerFactory, type PiOwnerPort, type PiProjectedSnapshot } from "./types.js";
 
 interface SessionMetadata {
   readonly version: 1;
+  /** `pending` covers the crash window between native open and active metadata. */
+  readonly state?: "pending" | "active";
   readonly routeId: string;
   readonly ownerThreadId: string;
   readonly nativeSessionId: string;
@@ -202,23 +204,33 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
     await mkdir(this.sessionsDir, { recursive: true, mode: 0o700 });
     const cwd = resolve(input.cwd);
     const info = await stat(cwd).catch(() => undefined);
-    if (!info?.isDirectory()) throw new Error("Pi bridge cwd must be an existing absolute directory");
+    if (!info?.isDirectory()) throw new PiSessionOpenError("invalid", "Pi bridge cwd must be an existing absolute directory");
     const ref = parseModel(input.model);
     const resolved = await this.model(ref);
-    if (!resolved) throw new Error(`Pi model is unavailable: ${piModelId(ref)}`);
+    if (!resolved) throw new PiSessionOpenError("unavailable", `Pi model is unavailable: ${piModelId(ref)}`);
     const thinkingLevel = input.thinkingLevel === undefined
       ? resolved.thinkingLevel
       : normalizeThinking(resolved.model, input.thinkingLevel);
     const ownerId = ownerThreadId(input.routeId);
     const file = join(this.sessionsDir, `${ownerId}.sqlite`);
     const metaFile = join(this.sessionsDir, `${ownerId}.json`);
-    const existing = await readFile(metaFile, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
-    if (existing !== null) throw new Error("Bridge-owned Pi session already exists; use session/resume");
+    let existing = await this.readMetadata(metaFile);
+    if (existing !== null) {
+      const state = existing.state ?? "active";
+      if (state === "pending" && !(await stat(file).then(() => true).catch(() => false))) {
+        // Reservation written before a crash, but the database was never
+        // created. It owns nothing; clear the stale marker and continue.
+        await rm(metaFile, { force: true });
+        existing = null;
+      } else {
+        throw new PiSessionOpenError(state === "pending" ? "pending" : "exists",
+          state === "pending"
+            ? "Pending bridge-owned Pi session needs session/resume recovery"
+            : "Bridge-owned Pi session already exists; use session/resume");
+      }
+    }
     const nativeExists = await stat(file).then(() => true).catch(() => false);
-    if (nativeExists) throw new Error("Orphaned native Pi session needs explicit recovery; create refused");
+    if (nativeExists) throw new PiSessionOpenError("orphaned", "Orphaned native Pi session needs explicit recovery; create refused");
     const create: PiOwnerCreate = {
       routeId: input.routeId,
       ownerThreadId: ownerId,
@@ -229,9 +241,9 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
       ...(input.baseInstructions === undefined ? {} : { baseInstructions: input.baseInstructions }),
       ...(input.developerInstructions === undefined ? {} : { developerInstructions: input.developerInstructions }),
     };
-    const owner = await this.open(create, file);
     const metadata: SessionMetadata = {
       version: 1,
+      state: "pending",
       routeId: create.routeId,
       ownerThreadId: ownerId,
       nativeSessionId: create.nativeSessionId,
@@ -244,30 +256,47 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
       createdAtMs: this.now(),
     };
     try {
-      await this.writeMetadata(metaFile, metadata);
+      await this.reserveMetadata(metaFile, metadata);
     } catch (error) {
-      await owner.close().catch(() => {});
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        throw new PiSessionOpenError("exists", "Bridge-owned Pi session already exists; use session/resume");
+      }
       throw error;
     }
-    this.metadata.set(input.routeId, metadata);
-    return owner;
+    let owner: DurablePiOwner | undefined;
+    try {
+      owner = await this.open(create, file);
+      const active: SessionMetadata = { ...metadata, state: "active" };
+      await this.writeMetadata(metaFile, active);
+      this.metadata.set(input.routeId, active);
+      return owner;
+    } catch (error) {
+      await owner?.close().catch(() => {});
+      if (error instanceof PiSessionOpenError && error.failure === "locked") {
+        // Another writer owns the database. Leave the pending reservation and
+        // native files for a later resume; deleting them would corrupt a live
+        // session.
+        throw error;
+      }
+      // This create call exclusively reserved both paths, so a failed open
+      // owns nothing another writer could still use. Remove the half-created
+      // session instead of leaving an unrecoverable orphan.
+      await Promise.all([metaFile, file, `${file}-wal`, `${file}-shm`].map(path => rm(path, { force: true }).catch(() => {})));
+      throw error;
+    }
   }
 
   async resume(input: { readonly routeId: string }): Promise<PiOwnerPort> {
     const ownerId = ownerThreadId(input.routeId);
     const metaFile = join(this.sessionsDir, `${ownerId}.json`);
-    const raw = await readFile(metaFile, "utf8").catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return null;
-      throw error;
-    });
-    if (raw === null) throw new Error("No bridge-owned Pi session to resume");
-    const metadata = JSON.parse(raw) as SessionMetadata;
+    const metadata = await this.readMetadata(metaFile);
+    if (metadata === null) throw new PiSessionOpenError("missing", "No bridge-owned Pi session to resume");
     if (metadata.version !== 1 || metadata.routeId !== input.routeId || metadata.ownerThreadId !== ownerId) {
-      throw new Error("Pi bridge session metadata does not match this thread");
+      throw new PiSessionOpenError("invalid", "Pi bridge session metadata does not match this thread");
     }
     const file = join(this.sessionsDir, `${ownerId}.sqlite`);
     const native = await stat(file).catch(() => undefined);
-    if (!native?.isFile()) throw new Error("Bridge-owned Pi session database is missing; explicit recovery required");
+    if (!native?.isFile()) throw new PiSessionOpenError("missing", "Bridge-owned Pi session database is missing; explicit recovery required");
     const create: PiOwnerCreate = {
       routeId: metadata.routeId,
       ownerThreadId: metadata.ownerThreadId,
@@ -278,9 +307,17 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
       ...(metadata.baseInstructions === undefined ? {} : { baseInstructions: metadata.baseInstructions }),
       ...(metadata.developerInstructions === undefined ? {} : { developerInstructions: metadata.developerInstructions }),
     };
-    const owner = await this.open(create, file);
-    this.metadata.set(input.routeId, metadata);
-    return owner;
+    let owner: DurablePiOwner | undefined;
+    try {
+      owner = await this.open(create, file);
+      const active: SessionMetadata = { ...metadata, state: "active" };
+      await this.writeMetadata(metaFile, active);
+      this.metadata.set(input.routeId, active);
+      return owner;
+    } catch (error) {
+      await owner?.close().catch(() => {});
+      throw error;
+    }
   }
 
   private async open(info: PiOwnerCreate, file: string): Promise<DurablePiOwner> {
@@ -288,7 +325,9 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
     const resolved = await this.model(info.model);
     if (!resolved) throw new Error(`Pi model is unavailable: ${piModelId(info.model)}`);
     let holder: DurablePiOwner | undefined;
-    const session = await PiDurableSession.open({
+    let session: PiDurableSession;
+    try {
+      session = await PiDurableSession.open({
       threadId: info.ownerThreadId,
       cwd: info.cwd,
       file,
@@ -303,7 +342,13 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
         throw new Error("Pi bridge declares no platform tools");
       },
       onExit: error => holder?.onExit(error),
-    });
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ELOCKED" || /already being held|lockfile/i.test(error instanceof Error ? error.message : "")) {
+        throw new PiSessionOpenError("locked", "Native Pi session is owned by another writer");
+      }
+      throw error;
+    }
     holder = new DurablePiOwner(info, session, resolved.contextWindow);
     try {
       await session.configure({
@@ -327,8 +372,32 @@ export class DurablePiOwnerFactory implements PiOwnerFactory {
       if (metadata) {
         this.metadata.delete(owner.info.routeId);
         const metaFile = join(this.sessionsDir, `${metadata.ownerThreadId}.json`);
-        await this.writeMetadata(metaFile, { ...metadata, closedAtMs: this.now() }).catch(() => {});
+        await this.writeMetadata(metaFile, { ...metadata, state: "active", closedAtMs: this.now() }).catch(() => {});
       }
+    }
+  }
+
+  private async readMetadata(file: string): Promise<SessionMetadata | null> {
+    const raw = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return null;
+      throw error;
+    });
+    if (raw === null) return null;
+    try {
+      return JSON.parse(raw) as SessionMetadata;
+    } catch {
+      throw new PiSessionOpenError("invalid", "Pi bridge session metadata is not valid JSON");
+    }
+  }
+
+  /** Atomically reserve a pending metadata record; EEXIST means another owner won. */
+  private async reserveMetadata(file: string, metadata: SessionMetadata): Promise<void> {
+    const temporary = `${file}.${randomUUID()}.tmp`;
+    await writeFile(temporary, JSON.stringify(metadata), { mode: 0o600 });
+    try {
+      await link(temporary, file);
+    } finally {
+      await rm(temporary, { force: true }).catch(() => {});
     }
   }
 
