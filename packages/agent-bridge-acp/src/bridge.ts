@@ -197,6 +197,7 @@ class AcpSession {
   private startingTurn = false;
   private opened = false;
   private replayingHistory = false;
+  private historyReplayOpen = false;
   private replaySessionId: string | null = null;
   private readonly historyUpdates: Record<string, unknown>[] = [];
   private historyTruncated = false;
@@ -286,6 +287,7 @@ class AcpSession {
           await new Promise<void>((resolveQuiet) => setTimeout(resolveQuiet, 200));
         } finally {
           this.replayingHistory = false;
+          this.historyReplayOpen = true;
         }
       } else {
         newSession = parseNewSessionResult(await connection.request("session/new", { cwd, mcpServers: [] }));
@@ -378,6 +380,7 @@ class AcpSession {
       nextCursor,
       total: this.historyUpdates.length,
       truncated: this.historyTruncated,
+      replaying: this.historyReplayOpen,
     };
   }
 
@@ -488,6 +491,7 @@ class AcpSession {
     if (this.connection === null || this.newSession === null) throw staleTarget("ACP session is not open");
     if (this.closing || this.closed || this.agentExited) throw staleTarget("ACP session is closing");
     if (!this.connection.writable) throw staleTarget("ACP agent is not writable");
+    this.historyReplayOpen = false;
     const nativeTurnId = `acp:${randomUUID()}`;
     const translator = new AcpDeltaTranslator({
       threadId: this.threadId,
@@ -1130,7 +1134,7 @@ class AcpSession {
       this.host.diagnostic("ACP session/update without an update object");
       return;
     }
-    if (this.replayingHistory) {
+    if (this.replayingHistory || this.historyReplayOpen) {
       const size = Buffer.byteLength(JSON.stringify(update), "utf8");
       if (this.historyUpdates.length >= 1_000 || this.historyBytes + size > 4 * 1024 * 1024) {
         this.historyTruncated = true;
@@ -1253,6 +1257,7 @@ class AcpSession {
       ]);
     }
     this.closed = true;
+    this.historyReplayOpen = false;
     await this.clientHost?.close().catch(() => {});
     await this.emit([{
       scope: { threadId: this.threadId },

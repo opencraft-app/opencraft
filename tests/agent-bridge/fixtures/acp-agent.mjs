@@ -308,7 +308,7 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line)
       };
       if (process.env.ACP_FIXTURE_LOAD_AFTER === "1") {
         response(frame.id, sessionState());
-        setTimeout(replayHistory, 10);
+        setTimeout(replayHistory, Number(process.env.ACP_FIXTURE_LOAD_AFTER_MS ?? 10));
       } else {
         replayHistory();
         response(frame.id, sessionState());

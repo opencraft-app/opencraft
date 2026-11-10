@@ -817,6 +817,31 @@ test("history replay arriving just after the load response is still history", as
   await client.close();
 });
 
+test("late replay after the load response stays history and never becomes live deltas", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-late-window-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_AFTER: "1", ACP_FIXTURE_LOAD_AFTER_MS: "500" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/resume", {
+    threadId: "thread-resume-late-window",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  await client.waitFor(() => client.frames, (frames) => frames.some((frame) =>
+    frame.method === "thread/delta" && frame.params.deltas.some((delta: any) => delta.op === "item.textDelta")), 2_000).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const history = await client.request("history/read", { threadId: "thread-resume-late-window", cursor: 0, limit: 10 });
+  assert.equal(history.total, 3);
+  assert.equal(history.replaying, true);
+  assert.equal(client.deltas("thread-resume-late-window").some((delta) => delta.op === "unhandled"), false);
+  await client.close();
+});
+
 test("session/resume is refused when the agent does not declare load", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "acp-no-resume-"));
   t.after(() => rm(root, { recursive: true, force: true }));
