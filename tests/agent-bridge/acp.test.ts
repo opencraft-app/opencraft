@@ -996,3 +996,25 @@ test("concurrent model/list commands share one cold probe", async (t) => {
   assert.equal(all.filter((frame) => frame.method === "session/new").length, 1);
   await client.close();
 });
+
+test("history/read keeps each page at or below 512 KiB even with near-limit updates", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-page-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_PAGE: "1" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/resume", {
+    threadId: "thread-resume-page",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  const history = await client.request("history/read", { threadId: "thread-resume-page", cursor: 0, limit: 10 });
+  assert.equal(history.updates.length, 5);
+  assert(Buffer.byteLength(JSON.stringify(history), "utf8") <= 512 * 1024);
+  assert.equal(history.nextCursor, 5);
+  await client.close();
+});

@@ -312,6 +312,11 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line)
         if (process.env.ACP_FIXTURE_LOAD_HUGE === "1") {
           update({ sessionUpdate: "agent_message_chunk", messageId: "huge-history", content: { type: "text", text: "x".repeat(600 * 1024) } });
         }
+        if (process.env.ACP_FIXTURE_LOAD_PAGE === "1") {
+          for (let index = 0; index < 3; index += 1) {
+            update({ sessionUpdate: "agent_message_chunk", messageId: `page-history-${index}`, content: { type: "text", text: "y".repeat(200 * 1024) } });
+          }
+        }
       };
       if (process.env.ACP_FIXTURE_LOAD_AFTER === "1") {
         response(frame.id, sessionState());

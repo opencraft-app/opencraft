@@ -222,9 +222,10 @@ Current dialects:
   `sessionCapabilities.close`; otherwise it returns `source:"requires-session"`
   rather than orphan a provider session. It never sends a prompt or consumes
   model tokens.
-- History replay is bounded to 1,000 updates / 4 MiB and pages are capped at
-  512 KiB so it fits the Host wire. The Web client does not consume the P3
-  steer-evidence extension yet; the projection check is component-level.
+- History replay is bounded to 1,000 updates / 4 MiB. A single update over
+  256 KiB is dropped and marked truncated; pages are capped at 512 KiB so they
+  fit the Host wire. The Web client does not consume the P3 steer-evidence
+  extension yet; the projection check is component-level.
 
 ## Local validation
 

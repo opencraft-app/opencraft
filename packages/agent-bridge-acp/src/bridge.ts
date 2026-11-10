@@ -369,7 +369,7 @@ class AcpSession {
     for (let index = cursor; index < this.historyUpdates.length && updates.length < limit; index += 1) {
       const update = this.historyUpdates[index]!;
       const size = Buffer.byteLength(JSON.stringify(update), "utf8");
-      if (updates.length > 0 && bytes + size > 512 * 1024) break;
+      if (bytes + size > 512 * 1024) break;
       updates.push({ seq: index + 1, update });
       bytes += size;
     }
