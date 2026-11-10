@@ -113,7 +113,7 @@ let gateway: ReturnType<typeof Bun.serve>;
 let bridge: ReturnType<typeof startServer>;
 let socket: WebSocket;
 let gatewaySocket: { send(frame: string): void } | null = null;
-const pending = new Map<string | number, (value: RpcResponse) => void>();
+const pending: Array<{ id: string | number; resolve: (value: RpcResponse) => void }> = [];
 
 function emit(live: string, type: string, payload: Record<string, unknown> = {}): void {
   gatewaySocket?.send(JSON.stringify({
@@ -160,7 +160,7 @@ function fakeResume(stored: string) {
 function rpc(method: string, params: unknown = {}): Promise<RpcResponse> {
   const id = crypto.randomUUID();
   return new Promise((resolve) => {
-    pending.set(id, resolve);
+    pending.push({ id, resolve });
     socket.send(JSON.stringify({ id, method, params }));
   });
 }
@@ -262,8 +262,12 @@ describe("pre-P9 Hermes AppServer contract recording", () => {
       }
       const id = message.id;
       if (id === null || id === undefined) return;
-      pending.get(id)?.(message);
-      pending.delete(id);
+      // Match this test's own request ids explicitly; never invoke a function
+      // selected by a property name that came from the wire.
+      const index = pending.findIndex((entry) => entry.id === id);
+      if (index < 0) return;
+      const [entry] = pending.splice(index, 1);
+      entry.resolve(message);
     });
     await new Promise<void>((resolve, reject) => {
       socket.addEventListener("open", () => resolve(), { once: true });
