@@ -44,7 +44,7 @@
       "status": "in_progress",
       "rawInput": {
         "command": "printf fixture",
-        "cwd": "/data/code/opencraft-worktrees/agent-bridge-p3"
+        "cwd": "/workspace/project"
       }
     },
     {
