@@ -28,6 +28,7 @@ const log = process.env.ACP_FIXTURE_LOG;
 let nextServerId = 0;
 const pendingServerRequests = new Map();
 const active = new Map();
+let mainPrompts = 0;
 
 function write(frame) {
   const line = JSON.stringify({ jsonrpc: "2.0", ...frame });
@@ -68,11 +69,16 @@ function update(value) {
 }
 function cancelActive() {
   const state = active.get(sessionId);
-  if (state !== undefined) state.cancelled = true;
-  for (const [id, resolve] of pendingServerRequests) {
-    pendingServerRequests.delete(id);
-    resolve({ outcome: { outcome: "cancelled" } });
-  }
+  const apply = () => {
+    if (state !== undefined) state.cancelled = true;
+    for (const [id, resolve] of pendingServerRequests) {
+      pendingServerRequests.delete(id);
+      resolve({ outcome: { outcome: "cancelled" } });
+    }
+  };
+  const cancelDelay = Number(process.env.ACP_FIXTURE_CANCEL_DELAY_MS ?? 0);
+  if (cancelDelay > 0) setTimeout(apply, cancelDelay);
+  else apply();
 }
 async function finishPrompt(state, stopReason) {
   active.delete(sessionId);
@@ -80,6 +86,11 @@ async function finishPrompt(state, stopReason) {
 }
 
 async function runMainPrompt(requestId, params) {
+  mainPrompts += 1;
+  if (process.env.ACP_FIXTURE_PROMPT_ERROR_AFTER === "1" && mainPrompts > 1) {
+    failure(requestId, -32603, "fixture prompt failure");
+    return;
+  }
   const state = { requestId, cancelled: false };
   active.set(sessionId, state);
   if (process.env.ACP_FIXTURE_CRASH === "1") {
@@ -106,10 +117,12 @@ async function runMainPrompt(requestId, params) {
         kind: "edit",
         rawInput: { command: "touch fixture.txt" },
       },
-      options: [
-        { optionId: "allow", name: "Allow once", kind: "allow_once" },
-        { optionId: "reject", name: "Reject", kind: "reject_once" },
-      ],
+      options: process.env.ACP_FIXTURE_PERMISSION_ALLOW_ONLY === "1"
+        ? [{ optionId: "allow", name: "Allow once", kind: "allow_once" }]
+        : [
+          { optionId: "allow", name: "Allow once", kind: "allow_once" },
+          { optionId: "reject", name: "Reject", kind: "reject_once" },
+        ],
     });
     if (state.cancelled) return finishPrompt(state, "cancelled");
     const outcome = answer?.outcome;

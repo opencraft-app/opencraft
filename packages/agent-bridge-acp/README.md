@@ -99,14 +99,20 @@ The bridge never chooses a destructive fallback on its own:
   cannot identify which prompt produced it, so this bridge deliberately does
   not emit echo evidence. This is admission, not context proof.
 - `next-turn` must be requested explicitly. The bridge queued the input, and
-  once the active turn settles it opens a new turn, emits `input.accepted` with
-  the new native turn id and `disposition: "next-turn"`, then
-  `input.delivery = next-turn` and `admission`. It is never labelled
-  `native-inject`.
+  once the active turn settles it opens a new turn and emits `input.accepted`
+  with the new native turn id and `disposition: "next-turn"`. Only after the
+  new native prompt succeeds does it emit `input.delivery = next-turn` and
+  `admission`; a failed prompt emits `input.outcome = unknown` and is never
+  labelled admitted. It is never labelled `native-inject`.
+- An interrupt replacement that has not been written yet is withdrawable, and
+  `turn/stop`/`session/close` remove it before it can start a new turn. Once
+  its native prompt is written, withdrawal is too late and a failed/stopped
+  prompt is unknown, not admitted.
 - `interrupt-replace` must be requested explicitly. The bridge sends ACP
   `session/cancel`, waits for the active prompt to settle, then opens a new turn
-  and records `input.accepted.disposition = "interrupt-replace"` and
-  `delivery = interrupt-replace`. If the cancel cannot be written,
+  and records `input.accepted.disposition = "interrupt-replace"`; on prompt
+  success it records `delivery = interrupt-replace`. Before that prompt is
+  written, `input/withdraw`, `turn/stop` and `session/close` discard it. If the cancel cannot be written,
   the input stays unknown and is not sent.
 - Omitting `delivery` on an instance without native steering is an explicit
   rejection that tells the caller to choose `next-turn` or
@@ -115,8 +121,9 @@ The bridge never chooses a destructive fallback on its own:
 - A session without a stable native input id allows at most one unsettled
   native steer. Late replies after an `unknown` outcome are ignored; the native
   request is never replayed.
-- `input/withdraw` only withdraws an undispatched queued input. A native prompt
-  already written is `too-late`.
+- `input/withdraw` only withdraws an undispatched input: a queued next-turn
+  input or a pending interrupt replacement. A native prompt already written is
+  `too-late`.
 
 ## Permission modes
 

@@ -288,6 +288,7 @@ export class AcpConnection {
       }
     });
     child.once("error", (error) => this.finish(error));
+    child.stdin.on("error", (error) => this.finish(error));
     child.once("exit", (code, signal) => {
       this.finish(new Error(`ACP agent exited (${signal ?? String(code)})`));
     });
@@ -332,7 +333,9 @@ export class AcpConnection {
         this.finish(new Error("ACP agent wrote invalid JSON"));
         return;
       }
-      void this.dispatch(frame);
+      void this.dispatch(frame).catch((error: unknown) => {
+        this.finish(error instanceof Error ? error : new Error(String(error)));
+      });
     }
   }
 
@@ -354,10 +357,10 @@ export class AcpConnection {
       }
       try {
         const result = await this.options.onRequest(frame.method, params);
-        this.send({ jsonrpc: "2.0", id: frame.id, result: result ?? {} });
+        this.safeSend({ jsonrpc: "2.0", id: frame.id, result: result ?? {} });
       } catch (error) {
         const code = error instanceof AcpRpcError ? error.code : -32603;
-        this.send({
+        this.safeSend({
           jsonrpc: "2.0",
           id: frame.id,
           error: { code, message: error instanceof Error ? error.message : "ACP client request failed" },
@@ -375,6 +378,16 @@ export class AcpConnection {
       call.reject(new AcpRpcError(code, typeof frame.error.message === "string" ? frame.error.message : "ACP request failed", frame.error.data, call.method));
     } else {
       call.resolve(frame.result);
+    }
+  }
+
+  private safeSend(value: unknown): void {
+    try {
+      this.send(value);
+    } catch (error) {
+      // The agent may exit while a client request is being answered. This is
+      // the connection's exit condition, not an unhandled rejection.
+      this.finish(error instanceof Error ? error : new Error(String(error)));
     }
   }
 

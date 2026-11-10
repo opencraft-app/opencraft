@@ -612,3 +612,127 @@ test("a new ACP messageId closes the previous message stream before opening the 
   assert.notEqual(first[0]!.nativeKey, second[1]!.nativeKey);
   assert.equal(second[1]!.nativeKey, second[2]!.nativeKey);
 });
+
+test("a read-only policy cancels when the agent offers no reject option", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-readonly-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    mode: "read-only",
+    fixtureEnv: { ACP_FIXTURE_PERMISSION: "1", ACP_FIXTURE_PERMISSION_ALLOW_ONLY: "1", ACP_FIXTURE_DELAY_MS: "10" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-readonly", cwd: root, permissionMode: "read-only" });
+  await client.request("turn/start", { threadId: "thread-readonly", input: { text: "edit a file" } });
+  await client.waitFor(() => client.deltas("thread-readonly"), (deltas) =>
+    deltas.some((delta) => delta.op === "turn.close"));
+  assert.equal(client.deltas("thread-readonly").find((delta) => delta.op === "turn.close").status, "interrupted");
+  assert.equal(client.callbackFor("interaction/request", "thread-readonly").length, 0);
+  await client.close();
+});
+
+test("a queued prompt that fails is unknown, never admitted", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-prompt-fail-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    mode: "auto",
+    fixtureEnv: {
+      ACP_FIXTURE_NATIVE_STEER: "0",
+      ACP_FIXTURE_PROMPT_ERROR_AFTER: "1",
+      ACP_FIXTURE_DELAY_MS: "60",
+    },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-fail", cwd: root, permissionMode: "auto" });
+  await client.request("turn/start", { threadId: "thread-fail", input: { text: "one two three four five six seven eight nine ten" } });
+  await client.waitFor(() => client.deltas("thread-fail"), (deltas) =>
+    deltas.some((delta) => delta.op === "item.textDelta"));
+  await client.request("turn/steer", {
+    threadId: "thread-fail",
+    inputId: "failing-next",
+    clientRequestId: "client-failing-next",
+    delivery: "next-turn",
+    input: { text: "this prompt will fail" },
+  });
+  await client.waitFor(() => client.deltas("thread-fail"), (deltas) =>
+    deltas.some((delta) => delta.op === "input.outcome" && delta.inputId === "failing-next"));
+  const deltas = client.deltas("thread-fail");
+  assert.equal(deltas.some((delta) => delta.op === "input.delivery" && delta.inputId === "failing-next" && delta.admitted), false);
+  const query = await client.request("input/query", { threadId: "thread-fail", inputIds: ["failing-next"] });
+  assert.equal(query.inputs[0].admission.value, "unknown");
+  assert.equal(query.inputs[0].outcome, "unknown");
+  await client.waitFor(() => client.deltas("thread-fail"), (deltas) =>
+    deltas.some((delta) => delta.op === "turn.close" && delta.status === "failed"));
+  await client.close();
+});
+
+test("an interrupt replacement can be withdrawn or stopped before dispatch", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-replacement-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (const action of ["withdraw", "stop"] as const) {
+    const started = await startBridge(root, {
+      mode: "auto",
+      fixtureEnv: {
+        ACP_FIXTURE_NATIVE_STEER: "0",
+        ACP_FIXTURE_DELAY_MS: "600",
+        ACP_FIXTURE_CANCEL_DELAY_MS: "200",
+      },
+    });
+    t.after(() => started.child.kill("SIGTERM"));
+    const client = new BridgeClient(started);
+    await client.initialize();
+    const threadId = `thread-replacement-${action}`;
+    await client.request("session/create", { threadId, cwd: root, permissionMode: "auto" });
+    await client.request("turn/start", { threadId, input: { text: "keep this turn open long enough" } });
+    await client.waitFor(() => client.deltas(threadId), (deltas) =>
+      deltas.some((delta) => delta.op === "turn.open"));
+    const steer = await client.request("turn/steer", {
+      threadId,
+      inputId: `replacement-${action}`,
+      clientRequestId: `client-replacement-${action}`,
+      delivery: "interrupt-replace",
+      input: { text: "replacement text" },
+    });
+    assert.equal(steer.delivery, "interrupt-replace");
+    if (action === "withdraw") {
+      const withdrawn = await client.request("input/withdraw", { threadId, inputId: `replacement-${action}` });
+      assert.equal(withdrawn.state, "withdrawn");
+    } else {
+      const stopped = await client.request("turn/stop", { threadId });
+      assert.equal(stopped.cancelled, true);
+    }
+    await client.waitFor(() => client.deltas(threadId), (deltas) =>
+      deltas.some((delta) => delta.op === "turn.close"));
+    assert.equal(client.deltas(threadId).filter((delta) => delta.op === "turn.open").length, 1, action);
+    assert.equal(client.deltas(threadId).some((delta) => delta.op === "input.delivery" && delta.inputId === `replacement-${action}`), false, action);
+    await client.close();
+  }
+});
+
+test("a permission response written after the agent exits does not crash the bridge", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-dead-write-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    mode: "auto",
+    fixtureEnv: {
+      ACP_FIXTURE_PERMISSION: "1",
+      ACP_FIXTURE_CRASH_AFTER_MS: "150",
+      ACP_FIXTURE_DELAY_MS: "10",
+    },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-dead", cwd: root, permissionMode: "auto" });
+  await client.request("turn/start", { threadId: "thread-dead", input: { text: "ask for approval" } });
+  await client.waitFor(() => client.callbacks, (callbacks) =>
+    callbacks.some((frame) => frame.method === "interaction/request"));
+  await client.waitFor(() => client.deltas("thread-dead"), (deltas) =>
+    deltas.some((delta) => delta.op === "turn.close" && delta.status === "failed"));
+  const query = await client.request("input/query", { threadId: "thread-dead" });
+  assert.deepEqual(query.inputs, []);
+  await client.close();
+});

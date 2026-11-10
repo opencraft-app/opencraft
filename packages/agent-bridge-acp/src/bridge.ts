@@ -129,11 +129,17 @@ interface NativeSteerAttempt {
   terminal: boolean;
 }
 
+interface DispatchedInput {
+  readonly record: InputRecord;
+  readonly delivery: Exclude<DeliveryMethod, "native-inject">;
+}
+
 interface ActiveTurn {
   readonly nativeTurnId: string;
   readonly translator: AcpDeltaTranslator;
   readonly steerAttempts: Map<string, NativeSteerAttempt>;
   replacement?: QueuedInput;
+  dispatched?: DispatchedInput;
   promptSettled: Promise<void>;
 }
 
@@ -156,7 +162,6 @@ interface InputRecord {
   readonly requestedDelivery: DeliveryMethod | null;
   accepted: boolean;
   queued: boolean;
-  dispatched: boolean;
   terminal: boolean;
   nativeExecution: boolean;
   admission: { value: AdmissionValue; version: number };
@@ -404,29 +409,9 @@ class AcpSession {
         record.outcome = "unknown";
       } else {
         this.emitAccepted(record, nativeTurnId, queued.delivery);
-        void this.emit([
-          {
-            scope: { threadId: this.threadId }, nativeTurnId,
-            op: "input.delivery",
-            inputId: record.inputId,
-            deliveryMethod: queued.delivery,
-            admitted: true,
-            version: ++record.delivery.version,
-          },
-          {
-            scope: { threadId: this.threadId }, nativeTurnId,
-            op: "input.evidence",
-            inputId: record.inputId,
-            evidenceKind: "admission",
-            version: ++record.evidence.version,
-          },
-        ]).then(() => {
-          record.admission = { value: "accepted", version: record.admission.version + 1 };
-          record.delivery.value = queued.delivery;
-          record.evidence = { value: "evidence-observed", version: record.evidence.version, kind: "admission" };
-          record.outcome = "delivered";
-        });
-        record.dispatched = true;
+        // The prompt is written, but admission is recorded only after the
+        // native prompt succeeds. A failed prompt must not look delivered.
+        turn.dispatched = { record, delivery: queued.delivery };
         record.queued = false;
         record.nativeExecution = true;
       }
@@ -449,6 +434,12 @@ class AcpSession {
     outcome: { stopReason?: string; error?: Error },
   ): Promise<void> {
     if (this.active !== turn) return;
+    const dispatched = turn.dispatched;
+    turn.dispatched = undefined;
+    if (dispatched !== undefined) {
+      if (outcome.error !== undefined) await this.failDispatched(dispatched, outcome.error);
+      else await this.admitDispatched(dispatched);
+    }
     this.active = null;
     const status = outcome.error !== undefined
       ? "failed"
@@ -490,7 +481,12 @@ class AcpSession {
     if (turn.replacement !== undefined) {
       const replacement = turn.replacement;
       const record = replacement.record;
+      turn.replacement = undefined;
       record.queued = false;
+      if (record.terminal) {
+        this.dispatchQueue();
+        return;
+      }
       try {
         this.startNativeTurn(replacement.input, record.inputId, record.clientRequestId, replacement);
       } catch (error) {
@@ -501,6 +497,64 @@ class AcpSession {
       return;
     }
     this.dispatchQueue();
+  }
+
+  private async admitDispatched(dispatched: DispatchedInput): Promise<void> {
+    const { record, delivery } = dispatched;
+    if (record.terminal) return;
+    record.terminal = true;
+    record.admission = { value: "accepted", version: record.admission.version + 1 };
+    record.delivery = { value: delivery, version: record.delivery.version + 1 };
+    record.evidence = { value: "evidence-observed", version: record.evidence.version + 1, kind: "admission" };
+    record.outcome = "delivered";
+    await this.emit([
+      {
+        scope: { threadId: this.threadId },
+        op: "input.delivery",
+        inputId: record.inputId,
+        deliveryMethod: delivery,
+        admitted: true,
+        version: record.delivery.version,
+      },
+      {
+        scope: { threadId: this.threadId },
+        op: "input.evidence",
+        inputId: record.inputId,
+        evidenceKind: "admission",
+        version: record.evidence.version,
+      },
+    ]);
+  }
+
+  private async failDispatched(dispatched: DispatchedInput, error: Error): Promise<void> {
+    const { record } = dispatched;
+    if (record.terminal) return;
+    record.terminal = true;
+    record.admission = { value: "unknown", version: record.admission.version + 1 };
+    record.delivery = { value: "none", version: record.delivery.version + 1 };
+    record.outcome = "unknown";
+    await this.emit([{
+      scope: { threadId: this.threadId },
+      op: "input.outcome",
+      inputId: record.inputId,
+      state: "unknown",
+      reason: error.message,
+      version: record.admission.version,
+    }]);
+  }
+
+  private withdrawReplacement(active: ActiveTurn): InputRecord | null {
+    const replacement = active.replacement;
+    if (replacement === undefined) return null;
+    active.replacement = undefined;
+    const record = replacement.record;
+    if (!record.terminal) {
+      record.terminal = true;
+      record.queued = false;
+      record.withdrawal = { value: "withdrawn", version: record.withdrawal.version + 1 };
+      record.outcome = "withdrawn";
+    }
+    return record;
   }
 
   private dispatchQueue(): void {
@@ -559,7 +613,6 @@ class AcpSession {
       requestedDelivery: delivery,
       accepted: false,
       queued: false,
-      dispatched: false,
       terminal: false,
       nativeExecution: false,
       admission: { value: "none", version: 0 },
@@ -724,7 +777,13 @@ class AcpSession {
       throw unknownOutcome(`ACP cancel could not be written: ${error instanceof Error ? error.message : String(error)}`);
     }
     this.cancelPendingInteractions();
+    this.withdrawReplacement(active);
     this.clearQueue();
+    if (active.dispatched !== undefined) {
+      const dispatched = active.dispatched;
+      active.dispatched = undefined;
+      await this.failDispatched(dispatched, new Error("the turn was stopped before the native prompt settled"));
+    }
     return { cancelled: true };
   }
 
@@ -750,6 +809,10 @@ class AcpSession {
     const record = this.inputs.get(inputId);
     if (record === undefined) throw invalid("unknown inputId");
     if (record.terminal) return { state: record.withdrawal.value, outcome: record.outcome };
+    if (this.active?.replacement?.record.inputId === inputId) {
+      this.withdrawReplacement(this.active);
+      return { state: "withdrawn", outcome: "withdrawn" };
+    }
     const index = this.queue.findIndex((queued) => queued.record.inputId === inputId);
     if (index >= 0) {
       this.queue.splice(index, 1);
@@ -841,8 +904,16 @@ class AcpSession {
       throw new AcpRpcError(-32602, "permission request for another session");
     }
     const auto = policyDecision(this.permissionPlan.approvalPolicy, request);
-    if (auto === "allow" || auto === "deny") {
-      const decision = chooseOption(request.options, auto);
+    if (auto === "deny") {
+      // A denied policy must never become a human-approvable request just
+      // because the agent omitted a reject option; cancel instead.
+      const decision = chooseOption(request.options, "deny");
+      return decision.kind === "option"
+        ? { outcome: { outcome: "selected", optionId: decision.optionId } }
+        : { outcome: { outcome: "cancelled" } };
+    }
+    if (auto === "allow") {
+      const decision = chooseOption(request.options, "allow");
       if (decision.kind === "option") return { outcome: { outcome: "selected", optionId: decision.optionId } };
     }
     if (this.pendingInteractions.size >= 32) {
@@ -931,6 +1002,11 @@ class AcpSession {
     this.agentExited = true;
     const active = this.active;
     if (active !== null) {
+      if (active.dispatched !== undefined) {
+        const dispatched = active.dispatched;
+        active.dispatched = undefined;
+        void this.failDispatched(dispatched, error);
+      }
       if (active.replacement !== undefined) {
         const record = active.replacement.record;
         record.terminal = true;
@@ -982,6 +1058,12 @@ class AcpSession {
     this.clearQueue();
     const active = this.active;
     if (active !== null) {
+      this.withdrawReplacement(active);
+      if (active.dispatched !== undefined) {
+        const dispatched = active.dispatched;
+        active.dispatched = undefined;
+        await this.failDispatched(dispatched, new Error("the session closed before the native prompt settled"));
+      }
       try {
         this.connection?.notify("session/cancel", { sessionId: this.newSession?.sessionId });
       } catch { /* the connection may already be gone */ }
