@@ -24,6 +24,7 @@ import {
   type EvidenceKind,
 } from "@opencraft/agent-bridge-protocol";
 import { AcpClientHost } from "./client";
+import { CodeBuddyRun, isCodeBuddySteerInput, probeCodeBuddy } from "./codebuddy";
 import {
   AcpConnection,
   AcpConnectionClosedError,
@@ -125,6 +126,7 @@ export interface AcpBridgeOptions {
 
 interface NativeSteerAttempt {
   readonly inputId: string;
+  proof?: { readonly nativeInputId: string; readonly runId: string };
   text: string;
   settled: boolean;
   terminal: boolean;
@@ -139,6 +141,7 @@ interface ActiveTurn {
   readonly nativeTurnId: string;
   readonly translator: AcpDeltaTranslator;
   readonly steerAttempts: Map<string, NativeSteerAttempt>;
+  readonly codebuddy?: CodeBuddyRun;
   replacement?: QueuedInput;
   dispatched?: DispatchedInput;
   promptSettled: Promise<void>;
@@ -168,7 +171,7 @@ interface InputRecord {
   nativeExecution: boolean;
   admission: { value: AdmissionValue; version: number };
   delivery: { value: "none" | DeliveryMethod; version: number };
-  evidence: { value: EvidenceValue; version: number; kind?: EvidenceKind };
+  evidence: { value: EvidenceValue; version: number; kind?: EvidenceKind; nativeInputId?: string; runId?: string };
   withdrawal: { value: WithdrawalValue; version: number };
   outcome: string;
 }
@@ -179,6 +182,7 @@ interface PendingInteraction {
 }
 
 class AcpSession {
+  private readonly codeBuddyOwners = new Set<string>();
   readonly inputs = new Map<string, InputRecord>();
   private readonly pendingInteractions = new Map<string, PendingInteraction>();
   private readonly resolvedInteractions = new Set<string>();
@@ -264,7 +268,9 @@ class AcpSession {
     this.connection = connection;
     try {
       await connection.spawn();
-      const initialize = await connection.initialize();
+      const rawInitialize = await connection.initialize();
+      const initialize = this.profile.dialect === "codebuddy"
+        ? await probeCodeBuddy(connection, rawInitialize) : rawInitialize;
       if (initialize.protocolVersion !== 1) throw unsupported(`ACP protocol ${initialize.protocolVersion} is not supported`);
       this.initializeResult = initialize;
       this.imagesAllowed = initialize.agentCapabilities?.promptCapabilities?.image === true;
@@ -504,6 +510,7 @@ class AcpSession {
       nativeTurnId,
       translator,
       steerAttempts: new Map(),
+      ...(this.profile.dialect === "codebuddy" ? { codebuddy: new CodeBuddyRun(this.codeBuddyOwners) } : {}),
       promptSettled: Promise.resolve(),
     };
     this.active = turn;
@@ -580,6 +587,7 @@ class AcpSession {
       if (outcome.error !== undefined) await this.failDispatched(dispatched, outcome.error);
       else await this.admitDispatched(dispatched);
     }
+    turn.codebuddy?.finish();
     this.active = null;
     const status = outcome.error !== undefined
       ? "failed"
@@ -742,6 +750,12 @@ class AcpSession {
     if (!this.deliveryMethods.includes(delivery)) {
       throw explicitReject(`delivery ${delivery} is not declared by this ACP instance`);
     }
+    if (delivery === "native-inject" && active.codebuddy !== undefined) {
+      if (!isCodeBuddySteerInput(params.input)) {
+        throw explicitReject("CodeBuddy native steer requires plain text without slash commands; choose next-turn or interrupt-replace explicitly");
+      }
+      if (!active.codebuddy.ready) throw explicitReject("CodeBuddy has not identified the active run owner; choose an explicit fallback");
+    }
     const inputId = identifier(params.inputId, "inputId");
     const clientRequestId = identifier(params.clientRequestId, "clientRequestId");
     if (this.inputs.has(inputId)) throw invalid("inputId is already registered");
@@ -804,14 +818,21 @@ class AcpSession {
         terminal: false,
       };
       active.steerAttempts.set(inputId, attempt);
-      const response = this.connection!.request("session/prompt", {
-        sessionId: this.newSession!.sessionId,
-        prompt: toAcpPrompt(input, this.imagesAllowed),
-      }, { timeoutMs: 0 });
-      response.then(
-        () => this.admitNativeSteer(record, attempt),
-        (error: unknown) => this.rejectNativeSteer(record, attempt, error),
-      );
+      if (active.codebuddy !== undefined) {
+        void active.codebuddy.inject(this.connection!, this.newSession!.sessionId, input.text, (proof) => {
+          attempt.proof = proof;
+          this.admitNativeSteer(record, attempt);
+        }).catch((error: unknown) => this.rejectNativeSteer(record, attempt, error));
+      } else {
+        const response = this.connection!.request("session/prompt", {
+          sessionId: this.newSession!.sessionId,
+          prompt: toAcpPrompt(input, this.imagesAllowed),
+        }, { timeoutMs: 0 });
+        response.then(
+          () => this.admitNativeSteer(record, attempt),
+          (error: unknown) => this.rejectNativeSteer(record, attempt, error),
+        );
+      }
       return { nativeTurnId: active.nativeTurnId, delivery, admission: "pending" };
     }
     if (delivery === "interrupt-replace") {
@@ -848,7 +869,7 @@ class AcpSession {
     if (record.terminal) return;
     record.admission = { value: "accepted", version: ++record.admission.version };
     record.delivery = { value: "native-inject", version: ++record.delivery.version };
-    record.evidence = { value: "evidence-observed", version: ++record.evidence.version, kind: "admission" };
+    record.evidence = { value: "evidence-observed", version: ++record.evidence.version, kind: attempt.proof === undefined ? "admission" : "native-input-id", ...attempt.proof };
     record.outcome = "delivered";
     void this.emit([
       {
@@ -864,7 +885,8 @@ class AcpSession {
         scope: { threadId: this.threadId },
         op: "input.evidence",
         inputId: record.inputId,
-        evidenceKind: "admission",
+        evidenceKind: attempt.proof === undefined ? "admission" : "native-input-id",
+        ...attempt.proof,
         version: record.evidence.version,
       },
     ]);
@@ -1268,6 +1290,7 @@ class AcpSession {
       return;
     }
     const active = this.active;
+    active.codebuddy?.observe(update);
     void this.emit(active.translator.update(update));
   }
 
@@ -1287,6 +1310,7 @@ class AcpSession {
         record.queued = false;
         record.outcome = "unknown";
       }
+      active.codebuddy?.finish();
       for (const attempt of active.steerAttempts.values()) {
         if (attempt.settled && (this.profile.dialect !== "dsh" || this.inputs.get(attempt.inputId)?.terminal)) continue;
         attempt.settled = true;
@@ -1362,6 +1386,7 @@ class AcpSession {
   }
 
   async abort(): Promise<void> {
+    this.active?.codebuddy?.finish();
     this.closed = true;
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
@@ -1445,6 +1470,7 @@ export class AcpBridge {
       steer: {
         ...declared.steer,
         deliveryMethods,
+        evidenceKinds: declared.steer.evidenceKinds.filter((kind) => kind !== "native-input-id" || native || this.options.profile.dialect !== "codebuddy"),
         contentLimits: {
           maxBytes: declared.steer.contentLimits.maxBytes,
           allowedContentTypes: images
@@ -1472,7 +1498,9 @@ export class AcpBridge {
     });
     try {
       await connection.spawn();
-      return await connection.initialize();
+      const initialize = await connection.initialize();
+      return this.options.profile.dialect === "codebuddy"
+        ? await probeCodeBuddy(connection, initialize) : initialize;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const kind: BridgeErrorKind = /auth|login|credential|token/i.test(message) ? "auth" : "internal";

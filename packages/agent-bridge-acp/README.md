@@ -20,7 +20,7 @@ deployment bundles the same entry) with this environment:
 | Variable | Meaning |
 | --- | --- |
 | `AGENT_BRIDGE_ACP_PROVIDER` | Provider id in the registration declaration (default: dialect id). |
-| `AGENT_BRIDGE_ACP_DIALECT` | `generic`, `amp` or `copilot`. |
+| `AGENT_BRIDGE_ACP_DIALECT` | `generic`, `amp`, `copilot`, `dsh` or `codebuddy`. |
 | `AGENT_BRIDGE_ACP_COMMAND` | Installed ACP executable (`copilot`, `amp-acp`, …). |
 | `AGENT_BRIDGE_ACP_ARGS` | JSON array of arguments (for example `["--acp"]`). |
 | `AGENT_BRIDGE_ACP_CWD` | Default agent working directory; `session/create.cwd` overrides it. |
@@ -47,7 +47,7 @@ and narrows the registered declaration:
   `next-turn` and `interrupt-replace`.
 - `inputContentTypes` / steer content types include `image` only when the agent
   declares `promptCapabilities.image`.
-- Only `admission` is declared: ACP gives a prompt admission, not proof that
+- Generic ACP declares only `admission`: ACP gives a prompt admission, not proof that
   the next model request contained the text, and text echo is not a stable
   per-input identity.
 - `history` survives only when ACP `loadSession` or
@@ -95,7 +95,7 @@ future gateway projection maps canonical→native before calling the bridge.
 
 The bridge never chooses a destructive fallback on its own:
 
-- `native-inject` is the default **only** when the instance declared it. The
+- `native-inject` is the default **only** when the instance declared it. For generic ACP, the
   bridge sends a concurrent ACP `session/prompt` to the active session. A
   successful ACP reply records `input.delivery = native-inject`, admitted, and
   `input.evidence = admission`. ACP has no stable per-input id and text echo
@@ -189,7 +189,8 @@ dialect module that can:
 - handle a provider-private inbound client method.
 
 A dialect cannot widen the registration declaration. It must add only facts
-the probe established and must keep the same admission-only evidence model.
+the probe established. CodeBuddy has a separately registered `native-input-id`
+evidence upper bound; generic ACP remains admission-only.
 Dialect modules are part of the pinned bridge artifact; loading an arbitrary
 module from an environment variable is deliberately not supported.
 
@@ -199,6 +200,11 @@ Current dialects:
 - `amp`: native steering from Amp ACP's `_meta.midTurnSteering`; concurrent
   prompt injection (the user's amp-acp native steer behavior); permission
   config `default|bypass`; `amp-mode` model selector (`low` is the cheapest).
+- `codebuddy`: after every initialize, a sessionless `session/steer {}` must
+  return `-32602` with `Steer operation requires "sessionId"` in message or
+  string data. Generic mid-turn metadata never substitutes for this probe.
+  Native injection uses the private method and waits for both same-owner
+  admission and same-run message-id insertion. See [P4 validation](VALIDATION.md).
 - `copilot`: no native steering (1.0.102 has no local ACP native path);
   permission config `allow_all`; `model` config selector.
 
@@ -269,3 +275,30 @@ model comprehension). Turn settlement waits for private admissions and a plugin
 cleanup barrier; unclaimed inputs fail after deletion, lost barriers stay unknown.
 Native withdrawal serializes with claimed in the plugin event loop. A lost private
 response never triggers prompt replay, queueing, or interrupt fallback.
+
+## CodeBuddy native steering
+
+Set `AGENT_BRIDGE_ACP_DIALECT=codebuddy` and command `codebuddy` with args
+`["--acp", "--model", "<chosen-model>"]`. Select the cheapest usable model
+from the installed account catalog rather than assuming a default model. CLI
+model selection also works when ACP exposes a model catalog without a writable
+model config option.
+
+Each native Turn has a separate owner learned from the active native update
+stream (`codebuddy.ai/conversationRequestId`). Once learned it is immutable;
+previous Turn owners cannot bind the next Turn. Before learning the owner the
+bridge explicitly refuses native injection. A plain-text, non-slash input sends
+`session/steer {sessionId, contentBlocks, expectedRequestId, clientUserMessageId}`.
+The client message id is generated once per input. Success requires both:
+
+1. `steered:true` with `ownerRequestId` equal to the captured owner.
+2. `user_message_chunk` in the same session/run with that message id, from
+   `update.messageId` or `_meta["codebuddy.ai/messageId"]`.
+
+Receipt order does not matter. Only then does the bridge emit delivery and
+`native-input-id` evidence with `nativeInputId` and `runId`. This proves native
+insertion, not model consumption. Admission has a 3-second timeout; insertion
+waits until the original run ends. Missing receipts, ambiguous errors, stop,
+close or EOF produce unknown without replay or automatic interrupt. Slash,
+images and unknown content fields are refused before a native write; callers
+may explicitly select the existing next-turn or interrupt-replace path.

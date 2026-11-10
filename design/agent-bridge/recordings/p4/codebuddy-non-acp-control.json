@@ -1,0 +1,7 @@
+{
+  "model": "hy3-ioa",
+  "invocation": "codebuddy -p --model hy3-ioa --tools \"\" --strict-mcp-config --mcp-config <empty> --max-turns 1 <minimal prompt>",
+  "exitCode": 0,
+  "stdout": "",
+  "stderr": "ENOENT: no such file or directory, open '<path>'\n"
+}

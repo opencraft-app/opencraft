@@ -15,7 +15,7 @@
 import type { BridgeDeclaration, DeliveryMethod } from "@opencraft/agent-bridge-protocol";
 import { BRIDGE_PROTOCOL_VERSION, BRIDGE_GRAMMAR_RANGE } from "@opencraft/agent-bridge-protocol";
 
-export type AcpDialectId = "generic" | "amp" | "copilot" | "dsh";
+export type AcpDialectId = "generic" | "amp" | "copilot" | "dsh" | "codebuddy";
 /** Mirrors the four product modes; the provider bridge has no client-protocol dependency. */
 export type OpenCraftPermissionMode = "read-only" | "accept-edits" | "auto" | "full";
 
@@ -44,7 +44,7 @@ export function isPermissionMode(value: unknown): value is OpenCraftPermissionMo
 }
 
 export function isDialectId(value: unknown): value is AcpDialectId {
-  return value === "dsh" || value === "generic" || value === "amp" || value === "copilot";
+  return value === "dsh" || value === "generic" || value === "amp" || value === "copilot" || value === "codebuddy";
 }
 
 function jsonArray(value: string | undefined, field: string): string[] {
@@ -120,9 +120,9 @@ export function declarationFor(profile: AcpProfile): BridgeDeclaration {
       installation: false,
       steer: {
         deliveryMethods: staticDeliveryMethods(profile),
-        // ACP has no stable per-input native id, so text echo cannot identify
-        // which prompt produced it. Only the native admission is recorded.
-        evidenceKinds: profile.dialect === "dsh" ? ["admission", "native-input-id"] : ["admission"],
+        // Generic ACP has no stable per-input id. Private DSH/CodeBuddy
+        // receipt kinds are registered upper bounds, established by probe.
+        evidenceKinds: profile.dialect === "dsh" || profile.dialect === "codebuddy" ? ["admission", "native-input-id"] : ["admission"],
         withdrawal: profile.dialect === "dsh" ? "native" : "before-dispatch",
         contentLimits: {
           maxBytes: 360 * 1024,
