@@ -967,3 +967,14 @@ Headless, managed Web and desktop Daemon bundles carry the Worker beside the hos
 This boundary covers session routing. Thread catalog, execution authority,
 documents, connectors and task stores retain their existing storage ownership;
 this change is not a claim that all DSH Host storage has left the network thread.
+
+## Agent Bridge foundation (P1b, opt-in)
+
+`apps/agent-bridge-host` is a separate, explicitly launched execution owner.
+Its sandbox generations, command custody, Worker-owned SQLite checkpoints and
+ordered outbox survive gateway attachment loss. The separate gateway inbox
+commits the existing P1a AppServer projection and cursor before acknowledging
+Host events. Native mutations with unknown outcomes are never replayed.
+Existing engine compositions do not import or select this path. See the
+[Host contract and local acceptance](../apps/agent-bridge-host/README.md) for the
+private attachment, generation draining and conservative Host-crash boundaries.

@@ -7,6 +7,7 @@
     { "path": "./packages/app-host-protocol" },
     { "path": "./packages/agent-bridge-protocol" },
     { "path": "./packages/agent-bridge-assembler" },
+    { "path": "./apps/agent-bridge-host" },
     { "path": "./packages/app-host-client" },
     { "path": "./packages/app-host-server" },
     { "path": "./packages/daemon-ipc" },
