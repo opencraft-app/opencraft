@@ -1,5 +1,6 @@
 /** Opt-in real-account P4 acceptance. No retry, model fallback or default-route change. */
 import assert from "node:assert/strict";
+import { publicP4Frame } from "./p4-recording.js";
 import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
@@ -26,10 +27,11 @@ const env = {
 const wait = (ms: number) => new Promise((done) => setTimeout(done, ms));
 let host: BridgeHost | undefined;
 let cursor = 0;
+let stage = "prepare";
 const events: any[] = [];
 const receipts: Record<string, any> = {};
 const report: Record<string, any> = {
-  schemaVersion: 1, recordedAt: new Date().toISOString(), provider: "codebuddy", model,
+  schemaVersion: 1, recordedAt: new Date().toISOString(), provider: "codebuddy", model: /^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(model) ? model : "custom-model",
   host: "apps/agent-bridge-host", backend: "local test process backend; no production sandbox claim",
   evidenceTier: "unverified-external-blocker", receipts,
 };
@@ -49,7 +51,7 @@ async function send(id: string, method: string, params: Record<string, unknown> 
   while (Date.now() < deadline) {
     const receipt = await host!.query(id);
     if (receipt && ["accepted", "rejected", "unknown", "failed", "not-sent"].includes(receipt.state)) {
-      receipts[id] = { state: receipt.state, response: receipt.response };
+      receipts[id] = { state: receipt.state };
       return receipt;
     }
     await wait(25);
@@ -70,22 +72,29 @@ try {
   report.artifactSha256 = config.digest;
   host = await BridgeHost.open({ path: join(hostRoot, "host.db"), backend: localTestBackend(),
     policy: { id: "p4-smoke", capacity: { cpuMillis: 16_000, memoryBytes: 32 * 1024 ** 3 } } });
+  stage = "activation";
   await host.add(config); await host.activate(config.id, "");
+  stage = "session-create";
   const created = await send("create", "session/create", { cwd: root, permissionMode: "full" });
   if (created.state !== "accepted") throw new Error(`session/create ${created.state}; no model task started`);
+  stage = "turn-start";
   const task = await send("task", "turn/start", { input: {
     text: "Run exactly one harmless Bash command: sleep 8. Then answer ORIGINAL. Do not use other tools.",
   } });
   assert.equal(task.state, "accepted");
-  const nativeTurnId = (task.response?.result as any)?.nativeTurnId;
+  const nativeTurnId = task.response && "result" in task.response
+    ? (task.response.result as Record<string, unknown>).nativeTurnId : undefined;
+  assert.equal(typeof nativeTurnId, "string");
   await until(async () => (await wire()).some((f) => f.direction === "in" && f.frame?.params?.update?.sessionUpdate === "tool_call"
     && f.frame.params.update.status === "in_progress"), "active tool");
+  stage = "steer";
   const steer = await send("steer", "turn/steer", {
     expectedTurnId: nativeTurnId, inputId: "p4-steer", clientRequestId: "p4-client-steer", delivery: "native-inject",
     input: { text: "Replace your final answer with STEER_P4. Do not run another tool." },
   });
   assert.equal(steer.state, "accepted");
   await until(async () => events.some((event) => event.kind === "turn.completed"), "task end");
+  stage = "double-receipt";
   const frames = await wire();
   const request = frames.find((f) => f.direction === "out" && f.frame?.method === "session/steer" && f.frame.params?.sessionId)?.frame;
   assert(request);
@@ -99,10 +108,11 @@ try {
   })?.frame;
   assert(insertion, "same-run insertion receipt required");
   const status = await send("status", "input/query", { inputIds: ["p4-steer"] });
-  assert.equal((status.response?.result as any)?.inputs?.[0]?.outcome, "delivered");
+  const statusResult = status.response && "result" in status.response
+    ? status.response.result as { inputs?: readonly { outcome?: string }[] } : undefined;
+  assert.equal(statusResult?.inputs?.[0]?.outcome, "delivered");
   assert.equal(frames.filter((f) => f.direction === "out" && f.frame?.method === "session/prompt").length, 1);
   assert.equal(frames.filter((f) => f.direction === "out" && f.frame?.method === "session/cancel").length, 0);
-  report.evidenceTier = "native-input-id";
   const steerIndex = frames.findIndex((f) => f.frame === request);
   const toolIndex = frames.findIndex((f) => f.direction === "in" && f.frame?.params?.update?.sessionUpdate === "tool_call"
     && f.frame.params.update.status === "in_progress");
@@ -112,22 +122,29 @@ try {
     && f.frame.params.update.status === "completed");
   assert(toolIndex >= 0 && steerIndex > toolIndex && completedIndex > steerIndex,
     "steer must be written strictly inside the tool execution window");
-  report.doubleReceipt = { request, admission, insertion };
-  report.toolWindow = { started: tool, completed: frames[completedIndex].frame,
+  report.doubleReceipt = { request: publicP4Frame(request), admission: publicP4Frame(admission), insertion: publicP4Frame(insertion) };
+  report.toolWindow = { started: publicP4Frame(tool), completed: publicP4Frame(frames[completedIndex].frame),
     wireOrder: { started: toolIndex, steer: steerIndex, completed: completedIndex } };
   report.turnCount = events.filter((e) => e.kind === "turn.started").length;
+  assert.equal(report.turnCount, 1);
+  const canonical = events.filter((e) => e.kind === "input.state" && e.status?.inputId === "p4-steer").at(-1)?.status;
+  assert.equal(canonical?.outcome, "context-confirmed");
+  assert.equal(canonical?.evidence?.nativeInputId, request.params.clientUserMessageId);
+  assert.equal(canonical?.evidence?.runId, request.params.expectedRequestId);
+  report.canonicalProjectionVerified = true;
+  report.evidenceTier = "native-input-id";
 } catch (error) {
-  report.error = error instanceof Error ? error.message : String(error);
+  report.stage = stage;
+  report.error = "P4 acceptance failed; see stage and native error categories";
   process.exitCode = 1;
 } finally {
   // Keep only control-plane proof on a failed run; no provider stderr or account/config contents.
   report.probes = (await wire()).filter((f) => f.frame?.method === "initialize" ||
     (f.direction === "out" && f.frame?.method === "session/steer" && !f.frame.params?.sessionId) ||
-    (f.direction === "in" && f.frame?.error));
+    (f.direction === "in" && f.frame?.error)).map((f) => ({ direction: f.direction, frame: publicP4Frame(f.frame) }));
   await host?.close().catch(() => {});
   await mkdir(dirname(out), { recursive: true });
-  const sanitized = JSON.stringify(report, null, 2).split(root).join("<workspace>").split(hostRoot).join("<host>")
-    .replace(/\/(?:root|home|data|tmp)\/[^\s"\\]+/g, "<path>");
+  const sanitized = JSON.stringify(report, null, 2);
   await writeFile(out, sanitized + "\n");
   await rm(root, { recursive: true, force: true }); await rm(hostRoot, { recursive: true, force: true });
   console.log(JSON.stringify({ out, evidenceTier: report.evidenceTier, error: report.error }));

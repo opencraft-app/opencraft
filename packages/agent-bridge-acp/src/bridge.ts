@@ -24,7 +24,7 @@ import {
   type EvidenceKind,
 } from "@opencraft/agent-bridge-protocol";
 import { AcpClientHost } from "./client";
-import { CodeBuddyRun, isCodeBuddySteerInput, probeCodeBuddy } from "./codebuddy";
+import { CodeBuddyRun, hasCodeBuddyInputFields, isCodeBuddySteerInput, probeCodeBuddy } from "./codebuddy";
 import {
   AcpConnection,
   AcpConnectionClosedError,
@@ -253,7 +253,10 @@ class AcpSession {
       onRequest: (method, requestParams) => this.onAgentRequest(method, requestParams),
       onNotification: (method, notificationParams) => this.onAgentNotification(method, notificationParams),
       onDiagnostic: (line) => this.host.diagnostic(`acp(${this.profile.providerId}) ${line}`),
-      onFrame: (direction, frame) => this.host.traceFrame(direction, frame),
+      onFrame: (direction, frame) => {
+        this.active?.codebuddy?.onFrame(direction, frame);
+        this.host.traceFrame(direction, frame);
+      },
       onExit: (error) => this.onAgentExit(error),
       // Advertise the client services this bridge implements. The current
       // turn's permission policy is enforced inside AcpClientHost, so a turn
@@ -944,6 +947,9 @@ class AcpSession {
   }
 
   private parseInput(value: unknown): AcpPromptInput {
+    if (this.profile.dialect === "codebuddy" && !hasCodeBuddyInputFields(value)) {
+      throw invalid("CodeBuddy inputs support only text and images; unknown content cannot be discarded");
+    }
     try {
       return parsePromptInput(value, this.promptLimits());
     } catch (error) {
@@ -959,6 +965,7 @@ class AcpSession {
       this.clearQueue();
       return { cancelled: false };
     }
+    active.codebuddy?.finish();
     try {
       this.connection!.notify("session/cancel", { sessionId: this.newSession!.sessionId });
     } catch (error) {
@@ -1360,6 +1367,7 @@ class AcpSession {
     this.clearQueue();
     const active = this.active;
     if (active !== null) {
+      active.codebuddy?.finish();
       this.withdrawReplacement(active);
       if (active.dispatched !== undefined) {
         const dispatched = active.dispatched;

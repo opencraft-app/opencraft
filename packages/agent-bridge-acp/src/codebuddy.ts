@@ -32,12 +32,17 @@ export function codeBuddyDialect(base: AcpDialect): AcpDialect {
   };
 }
 
+/** All CodeBuddy delivery paths must preserve every supported input field. */
+export function hasCodeBuddyInputFields(value: unknown): boolean {
+  return Object.keys(record(value)).every((key) => key === "text" || key === "images");
+}
+
 /** Reject unknown content rather than dropping it while converting to text. */
 export function isCodeBuddySteerInput(value: unknown): boolean {
   const input = record(value);
   return typeof input.text === "string" && input.text.trim().length > 0
     && !input.text.trimStart().startsWith("/")
-    && Object.keys(input).every((key) => key === "text" || key === "images")
+    && hasCodeBuddyInputFields(value)
     && (input.images === undefined || (Array.isArray(input.images) && input.images.length === 0));
 }
 
@@ -48,6 +53,7 @@ export interface CodeBuddyReceipt {
 
 interface Pending {
   readonly owner: string;
+  requestId?: number;
   admitted: boolean;
   inserted: boolean;
   readonly resolve: () => void;
@@ -59,11 +65,54 @@ interface Pending {
 export class CodeBuddyRun {
   private owner: string | null = null;
   private ended = false;
+  private promptRequestId: number | null = null;
   private readonly pending = new Map<string, Pending>();
 
   constructor(private readonly priorOwners: Set<string>) {}
 
   get ready(): boolean { return !this.ended && this.owner !== null; }
+
+  /**
+   * Process response boundaries synchronously in native wire order. Promise
+   * continuations alone would let a chunk after the prompt response in the
+   * same stdout batch count as an insertion before run end.
+   */
+  onFrame(direction: "in" | "out", value: unknown): void {
+    if (this.ended) return;
+    const frame = record(value);
+    const id = typeof frame.id === "number" ? frame.id : typeof frame.id === "string" ? Number(frame.id) : Number.NaN;
+    if (!Number.isSafeInteger(id)) return;
+    if (direction === "out") {
+      if (frame.method === "session/prompt") this.promptRequestId = id;
+      if (frame.method === "session/steer") {
+        const params = record(frame.params);
+        const pending = typeof params.clientUserMessageId === "string" ? this.pending.get(params.clientUserMessageId) : undefined;
+        if (pending !== undefined && params.expectedRequestId === pending.owner) pending.requestId = id;
+      }
+      return;
+    }
+    // Native client requests have their own id space; they are not responses.
+    if (typeof frame.method === "string") return;
+    if (id === this.promptRequestId) {
+      this.finish();
+      return;
+    }
+    for (const [messageId, pending] of this.pending) {
+      if (pending.requestId !== id) continue;
+      const result = record(frame.result);
+      if (frame.error !== undefined || result.steered !== true || result.ownerRequestId !== pending.owner) {
+        this.pending.delete(messageId);
+        const error = record(frame.error);
+        pending.reject(!pending.inserted && typeof error.code === "number"
+          ? new AcpRpcError(error.code, typeof error.message === "string" ? error.message : "CodeBuddy steer failed")
+          : new Error("CodeBuddy steering admission unconfirmed for the target owner; do not replay"));
+      } else {
+        pending.admitted = true;
+        this.settle(messageId, pending);
+      }
+      return;
+    }
+  }
 
   observe(update: Record<string, unknown>): void {
     if (this.ended) return;
@@ -92,17 +141,7 @@ export class CodeBuddyRun {
         contentBlocks: [{ type: "text", text }],
         expectedRequestId: owner,
         clientUserMessageId: id,
-      }, { timeoutMs: 3_000 }).then((value) => {
-        if (!this.pending.has(id)) return;
-        const result = record(value);
-        if (result.steered !== true || result.ownerRequestId !== owner) {
-          this.pending.delete(id);
-          reject(new Error("CodeBuddy steering admission unconfirmed for the target owner; do not replay"));
-          return;
-        }
-        pending.admitted = true;
-        this.settle(id, pending);
-      }, () => {
+      }, { timeoutMs: 3_000 }).catch(() => {
         if (!this.pending.delete(id)) return;
         reject(new Error("CodeBuddy steering admission unconfirmed after request failure; do not replay"));
       });

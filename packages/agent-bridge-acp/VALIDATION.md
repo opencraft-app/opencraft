@@ -1,25 +1,33 @@
 # P4 CodeBuddy validation — 2026-11-11
 
 P4 implements an opt-in dialect, not a default-engine switch. Hermes and the
-parallel DSH adapter are untouched. Source baseline: `cc5e82b176`.
+existing DSH behavior are unchanged. Initial source baseline: `cc5e82b176`. Final integration rebases onto
+`9254a39731` (P3b DSH), with a fresh complete verification below.
 
 ## Deterministic checks
 
 `tests/agent-bridge/codebuddy.test.ts` runs the real bridge against a separate
 native fixture process. It covers both receipt orders (including coalesced
-stdout), both message-id locations, wrong admission owner, wrong insertion
+stdout and insertion/admission after the run boundary), both message-id locations, wrong admission owner, wrong insertion
 owner, wrong session/id, each missing receipt, admission-only pending → unknown,
 slash/image/unknown-content rejection, explicit queue fallback, probe text drift
-and late old-run insertion. The native wire must contain one main prompt and
+and late old-run insertion. It also verifies ignored native cancel, explicit native
+refusal, contradictory refusal/insertion and rejection of unknown fallback fields.
+Successful and unknown deltas are fed through the real assembler and AppServer
+projection, preserving native message id/run id or the unknown terminal state.
+Three recording tests check allowlisted errors, cross-platform paths/credentials
+and correlation-preserving opaque ids. The native wire must contain one main prompt and
 one steer, with no implicit cancel/replay. Success evidence includes the actual
 native message id and run owner.
 
 | Check | Result |
 | --- | --- |
-| CodeBuddy deterministic fixture | 13 passed |
-| `npm run test:agent-bridge`, 10 consecutive runs | 176 passed each, 0 failures each |
-| `npm run typecheck` (root) | passed twice, including final source |
+| CodeBuddy deterministic fixture + recording policy | 21 + 3 passed |
+| `npm run test:agent-bridge`, 10 consecutive runs | 197 passed each, 0 failures each |
+| `npm run typecheck` (root) | passed after rebasing onto `9254a39731` |
 | `npm run check:boundaries` | passed |
+| Strict standalone smoke/recording script typecheck | passed |
+| Final standalone bridge bundle + `node --check` | passed |
 | Staged diff through `gitleaks detect --pipe --redact --no-banner` | no leaks found |
 
 The test environment omits only the invalid exported Bash function name (see
@@ -69,10 +77,24 @@ checks same-owner admission and same-run insertion, and refuses to mark success
 without both. Existing failed recording must not be read as real double-receipt
 acceptance. No real model consumption or Web/client integration is claimed.
 
+## Integration with P3b
+
+The DSH merge was rebased before delivery. Shared-file conflicts retained both
+dialect ids and evidence upper bounds, DSH native withdrawal and its asynchronous
+`AcpConnection.spawn()` lifecycle. CodeBuddy awaits that spawn before its private
+probe. Its receipt observer, Stop handling and unknown-field gate run only for
+CodeBuddy; DSH's side channel and settlement barrier remain unchanged. Native-id
+evidence narrowing added by P4 is likewise scoped to CodeBuddy. Full-suite reruns
+include DSH's cases. Dependencies are now an independent local copy, so removing
+another worktree cannot invalidate this workspace's verification environment.
+
 ## Implementation decisions
 
 - Reimplemented the user's confirmed CodeBuddy patch semantics in an independent
   module; did not copy the shared compatibility proxy or its retry/cancel loop.
+- Evaluate admission and main-prompt completion in native wire order through the
+  existing frame observer; Promise scheduling cannot move a late insertion back
+  inside its run.
 - Use `native-input-id`, with actual message id and run owner, rather than
   a stronger model-consumption claim; insertion is not proof of consumption.
   The shared assembler projects this kind to `context-confirmed` in the design
@@ -95,14 +117,22 @@ account health. The required real tool-time steer/double receipt remains
 **未验（外部阻塞）**. P4 is not full real-account acceptance; a later authorized
 retest must supply both native receipts before that row can be closed.
 
-## Independent review: blocked by automatic approval
+## Independent review and P1 closure
 
-All deterministic checks passed before dispatch. The required `autoreview` /
-`bb-model-routing` workflow prepared a read-only review of the complete staged
-P4 diff. No reviewer thread was created: the first sandboxed call could not
-write the dispatch cache lock; both elevated attempts were rejected by automatic
-approval. Read-only checks confirmed the BB endpoint is the current local
-loopback service and the user's medium route uses configured Codex accounts.
-The second rejection nevertheless required explicit authorization for that
-Codex destination to process repository contents. No alternate dispatch route
-was used. Independent review and P1 closure remain pending that approval.
+One independent review of frozen commit `c0b984c332` accepted six findings.
+The review initially required explicit dispatch authorization; after the parent
+provided it, the configured simple route completed the review. No second review
+or real model acceptance was substituted for that review.
+
+| Finding | Resolution and regression |
+| --- | --- |
+| Insertion after native run end in the same stdout batch counted as delivered | Observe admission and the main prompt response synchronously through the existing native frame hook; before-end coalesced receipts succeed, post-end insertion/admission stays unknown. The new insertion-after-end regression failed on the reviewed source before this fix. |
+| Stop could leave a native input pending when cancel is ignored | Finish the run's evidence tracking on Stop/close, independently of native cancellation acknowledgement; ignored-cancel fixture asserts an unknown outcome delta. |
+| Explicit native RPC refusals were wrapped as unknown | Preserve native RPC errors when no insertion has been observed, matching generic classification; contradictory insertion/refusal remains unknown, without replay. |
+| Explicit fallback silently dropped unknown fields | Validate CodeBuddy input fields before every delivery path; slash and images retain existing explicit fallback support. |
+| Recorder could persist native paths/config/error text | Replace raw errors, content and metadata with allowlisted fields and fixed error categories; hash opaque ids consistently for correlation. Recording tests include macOS, Windows and shell-home paths and synthetic secrets. |
+| Query-only checks missed delta/assembler evidence regressions and owner gate | Assert exact native id/run id in emitted deltas and the real assembler/AppServer projection, unknown outcomes without evidence, and refusal before native owner discovery. |
+
+All six were accepted and fixed locally with targeted regressions. The review
+thread was archived with an accepted decision. Final deterministic checks are
+listed above; there is no claim of a second independent review of the fixes.

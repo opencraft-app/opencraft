@@ -1,4 +1,6 @@
 import test from "node:test";
+import { assemble, createAssemblerState, projectToAppServer } from "../../packages/agent-bridge-assembler/src/index.js";
+import { BRIDGE_SCHEMA_VERSION } from "../../packages/agent-bridge-protocol/src/index.js";
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import { AcpBridge, profileFromEnv } from "../../packages/agent-bridge-acp/src/index.js";
@@ -34,10 +36,12 @@ async function fixture(t: any, scenario = "success") {
     expectedTurnId: turn, inputId, clientRequestId: `client-${inputId}`, delivery: "native-inject", input,
   });
   const status = async () => (await call("input/query")).inputs[0];
-  return { bridge, initialized, frames, deltas, call, start, steer, status };
+  const projected = () => projectToAppServer(assemble(createAssemblerState(BRIDGE_SCHEMA_VERSION), deltas,
+    { threadId: "thread", clockSeed: 1 }).events, { steerEvidenceDeclared: true, schemaVersion: BRIDGE_SCHEMA_VERSION }) as any[];
+  return { bridge, initialized, frames, deltas, call, start, steer, status, projected };
 }
 
-for (const scenario of ["success", "echo-first", "meta-id"]) {
+for (const scenario of ["success", "echo-first", "meta-id", "coalesced-before-end"]) {
   test(`CodeBuddy double receipt: ${scenario}`, async (t) => {
     const f = await fixture(t, scenario);
     assert(f.initialized.effectiveCapabilities.steer.evidenceKinds.includes("native-input-id"));
@@ -51,10 +55,19 @@ for (const scenario of ["success", "echo-first", "meta-id"]) {
     assert.equal(wire.length, 1);
     assert.equal(wire[0].frame.params.expectedRequestId, "owner-1");
     assert.equal(typeof wire[0].frame.params.clientUserMessageId, "string");
+    const id = wire[0].frame.params.clientUserMessageId;
+    const evidence = f.deltas.find((d) => d.op === "input.evidence" && d.inputId === "steer");
+    assert.equal(evidence.evidenceKind, "native-input-id");
+    assert.equal(evidence.nativeInputId, id);
+    assert.equal(evidence.runId, "owner-1");
+    const projected = f.projected().flatMap((n) => n.params.inputs ?? []).find((s) => s.inputId === "steer");
+    assert.equal(projected.outcome, "context-confirmed");
+    assert.equal(projected.evidence.nativeInputId, id);
+    assert.equal(projected.evidence.runId, "owner-1");
     assert.equal(f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/prompt").length, 1);
   });
 }
-for (const scenario of ["missing-admission", "missing-insertion", "wrong-admission-owner", "wrong-insertion-owner", "wrong-id", "wrong-session"]) {
+for (const scenario of ["missing-admission", "missing-insertion", "wrong-admission-owner", "wrong-insertion-owner", "wrong-id", "wrong-session", "insertion-after-end", "admission-after-end"]) {
   test(`CodeBuddy ${scenario}: unknown, never replay`, async (t) => {
     const f = await fixture(t, scenario);
     const turn = await f.start();
@@ -62,6 +75,10 @@ for (const scenario of ["missing-admission", "missing-insertion", "wrong-admissi
     const state = await until(f.status, (s) => s.outcome === "unknown");
     assert.equal(state.delivery.value, "none");
     assert.equal(state.evidence.value, "none");
+    assert(!f.deltas.some((d) => d.op === "input.evidence" && d.inputId === "steer"));
+    assert(f.deltas.some((d) => d.op === "input.outcome" && d.inputId === "steer" && d.state === "unknown"));
+    const projected = f.projected().flatMap((n) => n.params.inputs ?? []).find((s) => s.inputId === "steer");
+    assert.equal(projected.outcome, "unknown");
     const before = f.frames.filter((f) => f.direction === "out" && ["session/prompt", "session/steer"].includes(f.frame.method)).length;
     await f.call("input/query");
     await wait(20);
@@ -81,7 +98,7 @@ test("CodeBuddy probe text drift never declares steering even with generic metad
 test("CodeBuddy rejects slash, image and unknown content before dispatch; explicit queue remains available", async (t) => {
   const f = await fixture(t);
   const turn = await f.start();
-  for (const input of [{ text: "  /help" }, { text: "image", images: [{ mimeType: "image/png", data: "YQ==" }] }, { text: "resource", resource: "file" }]) {
+  for (const input of [{ text: "  /help" }, { text: "image", images: [{ mimeType: "image/png", data: "YQ==" }] }]) {
     await assert.rejects(f.steer(turn, input), /plain text/);
   }
   assert.equal(f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/steer" && f.frame.params.sessionId).length, 0);
@@ -112,4 +129,50 @@ test("CodeBuddy late old-run insertion cannot settle unknown or bind the next ru
   await f.steer(next, { text: "new follow up" }, "new-steer");
   const last = f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/steer" && f.frame.params.sessionId).at(-1)!;
   assert.equal(last.frame.params.expectedRequestId, "owner-2");
+});
+
+
+test("CodeBuddy explicit native refusal preserves rejection and never replays", async (t) => {
+  const f = await fixture(t, "explicit-reject");
+  await f.steer(await f.start());
+  const state = await until(f.status, (s) => s.outcome !== "pending");
+  assert.equal(state.outcome, "rejected");
+  assert(!f.deltas.some((d) => d.op === "input.evidence"));
+  assert.equal(f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/steer" && f.frame.params.sessionId).length, 1);
+});
+
+test("CodeBuddy stop settles unconfirmed input even when native cancel is ignored", async (t) => {
+  const f = await fixture(t, "stop-ignored");
+  await f.steer(await f.start());
+  await until(() => f.frames.some((f) => f.direction === "in" && f.frame.result?.steered === true), Boolean);
+  assert.equal((await f.call("turn/stop")).cancelled, true);
+  assert.equal((await until(f.status, (s) => s.outcome === "unknown")).evidence.value, "none");
+  assert(f.deltas.some((d) => d.op === "input.outcome" && d.state === "unknown"));
+});
+
+test("CodeBuddy rejects unknown content on native and explicit fallback paths", async (t) => {
+  const f = await fixture(t);
+  await f.start();
+  for (const delivery of ["native-inject", "next-turn", "interrupt-replace"]) {
+    await assert.rejects(f.call("turn/steer", { inputId: delivery, clientRequestId: delivery, delivery,
+      input: { text: "resource", resource: "file" } }), /only text and images/);
+  }
+  assert.equal(f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/cancel").length, 0);
+  assert.equal(f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/prompt").length, 1);
+});
+
+test("CodeBuddy refuses native steer until an owner has been discovered", async (t) => {
+  const f = await fixture(t, "ownerless");
+  await assert.rejects(f.steer(await f.start()), /run owner/);
+  assert.equal(f.frames.filter((f) => f.direction === "out" && f.frame.method === "session/steer" && f.frame.params.sessionId).length, 0);
+});
+
+
+test("CodeBuddy contradictory insertion plus native refusal remains unknown", async (t) => {
+  const f = await fixture(t, "explicit-reject-after-insertion");
+  await f.steer(await f.start());
+  const state = await until(f.status, (s) => s.outcome !== "pending");
+  assert.equal(state.outcome, "unknown");
+  assert.equal(state.delivery.value, "none");
+  assert(!f.deltas.some((d) => d.op === "input.evidence"));
 });

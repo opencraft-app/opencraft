@@ -180,7 +180,7 @@ deltas, and the bridge does not claim history before a successful load.
 ## Dialect extension point
 
 `dialect.ts` exports `AcpDialect`, `registerAcpDialect` and
-`resolveAcpDialect`. A later pinned adapter (DSH, CodeBuddy, Cursor, AGY) adds a
+`resolveAcpDialect`. A later pinned adapter (Cursor, AGY) adds a
 dialect module that can:
 
 - narrow/authorize native steering based on its own initialize metadata,
@@ -189,8 +189,8 @@ dialect module that can:
 - handle a provider-private inbound client method.
 
 A dialect cannot widen the registration declaration. It must add only facts
-the probe established. CodeBuddy has a separately registered `native-input-id`
-evidence upper bound; generic ACP remains admission-only.
+the probe established. DSH and CodeBuddy have separately registered `native-input-id`
+evidence upper bounds; generic ACP remains admission-only.
 Dialect modules are part of the pinned bridge artifact; loading an arbitrary
 module from an environment variable is deliberately not supported.
 
@@ -262,6 +262,8 @@ steering shape, asserts no native/inject/fake-steer label, and writes a
 screenshot. It does not claim a Host→AppServer→Web end-to-end path because the
 existing Workbench does not consume `opencraft/steerEvidence/updated` yet.
 
+## DSH native steering
+
 DSH is an opt-in `AGENT_BRIDGE_ACP_DIALECT=dsh` profile with command `dsh`
 (and args `["acp"]`). On Linux/macOS each ACP process receives a private fd 3
 and a temporary overlay loading the bundled `src/dsh-steering.mjs` companion.
@@ -299,6 +301,8 @@ Receipt order does not matter. Only then does the bridge emit delivery and
 `native-input-id` evidence with `nativeInputId` and `runId`. This proves native
 insertion, not model consumption. Admission has a 3-second timeout; insertion
 waits until the original run ends. Missing receipts, ambiguous errors, stop,
-close or EOF produce unknown without replay or automatic interrupt. Slash,
+close or EOF produce unknown without replay or automatic interrupt. Explicit
+native RPC refusals retain generic rejection/failure classification; a refusal
+contradicting an observed insertion remains unknown. Slash,
 images and unknown content fields are refused before a native write; callers
 may explicitly select the existing next-turn or interrupt-replace path.
