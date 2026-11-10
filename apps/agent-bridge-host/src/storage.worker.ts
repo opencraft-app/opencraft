@@ -57,7 +57,7 @@ const busy = (route: string): boolean => {
 const operations: Record<string, (args: any) => any> = {
   ready: () => outcome,
   snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
-    generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions') }),
+    generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
   add: (config: Generation) => tx(() => {
     const previous = get('SELECT * FROM generations WHERE id=?', config.id);
     require(!previous || previous.config === JSON.stringify(config), 'Generation configuration is immutable');

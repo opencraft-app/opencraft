@@ -10,9 +10,10 @@ export class CodexProviderBridge implements DuplexTransport {
   private gateway: BridgeGateway;
   private listeners = new Set<(frame: string) => void>();
   private clients = new Map<string, { evidence: boolean; epoch: number }>();
+  private clientEpoch = 0;
   private subscriptions = new Map<string, Set<string>>();
   private pending = new Map<string, { method: string; client: string }>();
-  private interactions = new Map<string, { threadId: string; clients: Set<string> }>();
+  private interactions = new Map<string, { threadId: string; clients: Map<string, number> }>();
   private poll?: ReturnType<typeof setInterval>;
   private closed = false;
   private connecting?: Promise<void>;
@@ -21,9 +22,7 @@ export class CodexProviderBridge implements DuplexTransport {
     this.gateway = new BridgeGateway(options, (threadId, value) => {
       const frame = object(value);
       if (frame.method === 'interaction/request') {
-        const params = object(frame.params), payload = object(params.payload);
-        this.interactions.set(params.interactionId, { threadId, clients: new Set(this.subscriptions.get(threadId) ?? []) });
-        for (const client of this.subscriptions.get(threadId) ?? []) this.emit({ id: params.interactionId, method: payload.method, params: { ...object(this.gateway.history(threadId, payload.params)), threadId } }, client);
+        this.offerInteraction(threadId, frame);
         return;
       }
       for (const client of this.subscriptions.get(threadId) ?? []) {
@@ -32,6 +31,21 @@ export class CodexProviderBridge implements DuplexTransport {
       }
     });
     legacy.subscribeMessage(frame => { void this.receiveLegacy(frame).catch(() => {}); });
+  }
+  private offerInteraction(threadId: string, frame: Record<string, any>, onlyClient?: string): void {
+    const params = object(frame.params), payload = object(params.payload);
+    const interaction = this.interactions.get(params.interactionId) ?? { threadId, clients: new Map<string, number>() };
+    this.interactions.set(params.interactionId, interaction);
+    for (const client of onlyClient ? [onlyClient] : this.subscriptions.get(threadId) ?? []) {
+      const identity = this.clients.get(client);
+      if (!identity || !this.subscriptions.get(threadId)?.has(client) || interaction.clients.get(client) === identity.epoch) continue;
+      interaction.clients.set(client, identity.epoch);
+      this.emit({ id: params.interactionId, method: payload.method, params: { ...object(this.gateway.history(threadId, payload.params)), threadId } }, client);
+    }
+  }
+  private revokeClient(client: string, threadId?: string): void {
+    for (const [thread, subscribers] of this.subscriptions) if (!threadId || thread === threadId) subscribers.delete(client);
+    for (const interaction of this.interactions.values()) if (!threadId || interaction.threadId === threadId) interaction.clients.delete(client);
   }
   get status() { return this.legacy.status; }
   subscribeStatus(listener: (status: TransportStatus) => void) { return this.legacy.subscribeStatus(listener); }
@@ -90,14 +104,15 @@ export class CodexProviderBridge implements DuplexTransport {
     if (context.validUntil !== undefined && context.validUntil <= Date.now()) throw Error('Execution authorization expired');
     const frame = object(JSON.parse(raw)), p = object(frame.params), client = String(frame[LOGICAL_CLIENT_FIELD] ?? '');
     if (!client) throw Error('Logical client identity required');
-    if (frame.method === 'initialize') this.clients.set(client, { evidence: !!object(object(p.capabilities).extensions)[OPENCRAFT_STEER_EVIDENCE_EXTENSION], epoch: Date.now() });
+    if (frame.method === 'initialize') { this.revokeClient(client); this.clients.set(client, { evidence: !!object(object(p.capabilities).extensions)[OPENCRAFT_STEER_EVIDENCE_EXTENSION], epoch: ++this.clientEpoch }); }
     if (frame.method === 'runtime/client/disconnect') {
-      this.clients.delete(client); for (const subscribers of this.subscriptions.values()) subscribers.delete(client);
+      this.clients.delete(client); this.revokeClient(client);
       return this.legacy.send(raw);
     }
+    if (frame.method === undefined && typeof frame.id === 'string' && frame.id.startsWith('codex-interaction:') && !this.interactions.has(frame.id)) throw Error('Interaction subscription required');
     if (frame.method === undefined && typeof frame.id === 'string' && this.interactions.has(frame.id)) {
       const interaction = this.interactions.get(frame.id)!;
-      if (!interaction.clients.has(client) || !this.clients.has(client) || !('result' in frame)) throw Error('Interaction subscription required');
+      if (interaction.clients.get(client) !== this.clients.get(client)?.epoch || !this.clients.has(client) || !this.subscriptions.get(interaction.threadId)?.has(client) || !('result' in frame)) throw Error('Interaction subscription required');
       await this.gateway.command(interaction.threadId, `interaction:${frame.id}`, 'interaction/resolve', { interactionId: frame.id, result: frame.result });
       this.interactions.delete(frame.id); return;
     }
@@ -141,10 +156,17 @@ export class CodexProviderBridge implements DuplexTransport {
       else if (frame.method === 'thread/read') result = await command('history/read', { view: 'thread', includeTurns: p.includeTurns === true });
       else if (frame.method === 'thread/turns/list') result = await command('history/read', { cursor: p.cursor ?? null });
       else if (frame.method === 'thread/items/list') result = await command('history/read', { turnId: this.gateway.nativeTurn(threadId, p.turnId), cursor: p.cursor ?? null });
-      else if (frame.method === 'thread/unsubscribe') { subscribers.delete(client); result = {}; }
+      else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }
       else if (frame.method === 'opencraft/steer/status') result = await this.gateway.status(threadId, p.inputIds);
       else throw Object.assign(Error('Method unavailable for this bridge thread'), { code: -32601 });
-      if (this.clients.get(client) === identity) this.emit({ id: frame.id, result: this.gateway.history(threadId, result) }, client);
+      const pendingInteractions = ['thread/resume', 'thread/read'].includes(frame.method) ? await this.gateway.pendingInteractions(threadId) : [];
+      if (this.clients.get(client) === identity) {
+        this.emit({ id: frame.id, result: this.gateway.history(threadId, result) }, client);
+        for (const pending of pendingInteractions) {
+          if (this.clients.get(client) !== identity) break;
+          this.offerInteraction(threadId, object(pending), client);
+        }
+      }
     };
     const task = execute();
     if (optIn) this.creations.add(task);

@@ -28,12 +28,12 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   });
   const ws = new WebSocketServer({ server: native });
   let nativePeer: WebSocket | undefined, starts = 0, steers = 0;
-  let approvalAnswer: unknown;
+  let approvalAnswer: unknown, approvalAnswers = 0;
   ws.on('connection', socket => {
     nativePeer = socket;
     socket.on('message', raw => {
       const f = JSON.parse(String(raw));
-      if (f.id === 'native-approval' && f.result) approvalAnswer = f.result;
+      if (f.id === 'native-approval' && f.result) { approvalAnswer = f.result; approvalAnswers++; }
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: f.id, result }));
       const event = (method: string, params: unknown) => socket.send(JSON.stringify({ method, params }));
       if (f.method === 'initialize') reply({ userAgent: 'codex/0.167.0' });
@@ -96,9 +96,34 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   const approval = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval'), Boolean);
   assert.equal(approval.params.threadId, 'bridge:codex:public-new');
   assert.equal(approval.params.turnId, turnId); assert.notEqual(approval.params.itemId, 'tool');
-  await transport.send(JSON.stringify({ id: approval.id, result: { decision: 'decline' }, [LOGICAL_CLIENT_FIELD]: 'client' }));
+  const answerApproval = () => transport!.send(JSON.stringify({ id: approval.id, result: { decision: 'decline' }, [LOGICAL_CLIENT_FIELD]: 'client' }));
+  await request('thread/unsubscribe', { threadId: 'bridge:codex:public-new' });
+  await assert.rejects(answerApproval(), /Interaction subscription required/);
+  assert.equal(approvalAnswer, undefined);
+  // Reinitialize the same logical client: the old grant must not authorize its
+  // new connection lifecycle, even if initialize happens within one millisecond.
+  await request('initialize');
+  await assert.rejects(answerApproval(), /Interaction subscription required/);
+  await request('thread/resume', { threadId: 'bridge:codex:public-new' });
+  await until(() => frames.filter(f => f.id === approval.id && f.method === approval.method).length, n => n === 2);
+  await transport.send(JSON.stringify({ method: 'runtime/client/disconnect', [LOGICAL_CLIENT_FIELD]: 'client' }));
+  await request('initialize');
+  await assert.rejects(answerApproval(), /Interaction subscription required/);
+  // Gateway attachment replacement must recover the very same pending request;
+  // native owner/bridge remains alive and does not send a second callback.
+  await transport.close(); transport = await createTransport();
+  await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
+  await assert.rejects(answerApproval(), /Conversation subscription required|Interaction subscription required|Logical client|Initialized/);
+  await request('thread/resume', { threadId: 'bridge:codex:public-new' });
+  const recovered = await until(() => frames.filter(f => f.id === approval.id && f.method === approval.method), rows => rows.length === 3);
+  assert.deepEqual(recovered[2].params, approval.params);
+  await request('thread/read', { threadId: 'bridge:codex:public-new' });
+  assert.equal(frames.filter(f => f.id === approval.id && f.method === approval.method).length, 3);
+  await answerApproval();
   await until(() => approvalAnswer, Boolean);
   assert.deepEqual(approvalAnswer, { decision: 'decline' });
+  await assert.rejects(answerApproval(), /Interaction subscription required/);
+  assert.equal(approvalAnswers, 1);
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   assert.equal(starts, 1); assert.equal(steers, 1);
@@ -112,6 +137,7 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   const beforeRestart = frames.filter(f => f.method === 'turn/started').length;
   await transport.close(); transport = await createTransport();
   await request('initialize'); await request('thread/resume', { threadId: 'bridge:codex:public-new' });
+  assert.equal(frames.filter(f => f.id === approval.id && f.method === approval.method).length, 3, 'settled approval must not reappear from inbox replay');
   nativePeer!.send(JSON.stringify({ method: 'item/completed', params: { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'completed', aggregatedOutput: 'fixture' } } }));
   nativePeer!.send(JSON.stringify({ method: 'turn/completed', params: { threadId: 'native-new', turn: { id: 'native-turn', status: 'completed' } } }));
   await until(() => frames.some(f => f.method === 'turn/completed'), Boolean);

@@ -102,3 +102,21 @@ was repaired locally with `npm rebuild node-pty` before the passing daemon test.
 `test:workbench:live` could not start because its required canonical AppServer
 lab fixture was absent. The dedicated built Workbench smoke above passed but
 does not replace that lab suite or real-account acceptance.
+
+## Independent review follow-up
+
+The first independent read-only review covered `1fbbafa0db..88761dc70c` and
+identified two P1 issues, both accepted: pending approvals were not restored
+when the gateway reopened, and approval responders retained obsolete subscription
+grants. Recovery now joins replayed request bodies with the Host's current
+interaction ledger, then offers the same interaction ID on subscription recovery.
+Accepted settlement removes eligibility; replay cannot resurrect it. No schema
+migration or separate interaction authority was introduced.
+
+Responder eligibility now requires the current thread subscription and the
+specific initialized client epoch. Unsubscribe, disconnect and reinitialize
+revoke earlier grants; unknown bridge callback IDs cannot fall through to the
+legacy owner. The gateway integration test covers late responses after each
+revocation, a pending approval across gateway replacement, exactly one native
+response, no duplicate offer on repeated reads, and no settled offer after a
+second replacement. Real-account acceptance limitations remain unchanged.

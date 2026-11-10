@@ -13,6 +13,7 @@ export class BridgeGateway {
   private routes = new Map<string, string>();
   private turns = new Map<string, Map<string, string>>();
   private items = new Map<string, Map<string, string>>();
+  private interactions = new Map<string, { threadId: string; frame: unknown }>();
   private cursor = 0;
   private pulling?: Promise<void>;
   constructor(readonly options: BridgeGatewayOptions, private event: (threadId: string, frame: unknown) => void) {
@@ -34,7 +35,8 @@ export class BridgeGateway {
       const route = JSON.parse(row.route);
       if (route[0] === this.options.serverId) this.routes.set(route[1], row.native_id);
     }
-    // Replay mappings only; attaching clients obtain native history separately.
+    // Replay identities and pending request bodies; subscription recovery consults
+    // the Host settlement ledger before offering an interaction again.
     for (;;) {
       const page = await this.inbox.read(this.cursor);
       if (!page.length) break;
@@ -50,6 +52,7 @@ export class BridgeGateway {
     if (serverId !== this.options.serverId) return;
     const payload = row.payload as { kind?: string; event?: CanonicalEvent; method?: string; params?: any };
     if (payload.method === 'thread/identity') { this.pinned.add(threadId); this.routes.set(threadId, payload.params.providerThreadId); }
+    if (payload.method === 'interaction/request' && typeof payload.params?.interactionId === 'string') this.interactions.set(payload.params.interactionId, { threadId, frame: { ...payload, params: { ...payload.params, threadId } } });
     if (payload.kind === 'canonical' && payload.event) {
       const event = payload.event;
       if (event.kind === 'turn.started') {
@@ -72,6 +75,18 @@ export class BridgeGateway {
         for (const row of rows) { this.consume(row, true); this.cursor = row.seq; }
       }
     })().finally(() => { this.pulling = undefined; });
+  }
+  async pendingInteractions(threadId: string): Promise<unknown[]> {
+    await this.pull();
+    // Request bodies survive in the inbox; the Host ledger is the authority for
+    // whether they remain pending after an accepted resolve/stop/close.
+    const snapshot = await this.rpc('/snapshot');
+    const pending = new Set<string>();
+    for (const row of snapshot.interactions) {
+      const route = JSON.parse(row.route);
+      if (route[0] === this.options.serverId && route[1] === threadId) pending.add(row.id);
+    }
+    return [...this.interactions].filter(([id, entry]) => entry.threadId === threadId && pending.has(id)).map(([, entry]) => entry.frame);
   }
   async status(threadId: string, inputIds?: readonly string[]): Promise<unknown> {
     const snapshot = await this.rpc(`/thread?serverId=${encodeURIComponent(this.options.serverId)}&threadId=${encodeURIComponent(threadId)}`);
