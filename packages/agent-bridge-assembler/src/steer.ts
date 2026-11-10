@@ -109,10 +109,20 @@ export function deriveOutcome(state: CanonicalInputState): InputOutcome {
   if (state.withdrawal.value === "too-late") return "too-late";
   if (state.withdrawal.value === "withdrawn") return "withdrawn";
   if (state.evidence.value === "context-confirmed") return "context-confirmed";
+  // Admission-only evidence proves the native owner took the input, not that
+  // it reached a run. A terminal failure/unknown must stay visible in that
+  // case; only a queue/entry transition (or context proof) resolves it.
+  if (state.admission.value === "rejected" || state.admission.value === "failed") {
+    return state.evidence.value === "evidence-observed" && state.evidence.evidenceKind === "queue-change"
+      ? "evidence-observed"
+      : state.admission.value;
+  }
+  if (state.admission.value === "unknown") {
+    return state.evidence.value === "evidence-observed" && state.evidence.evidenceKind === "queue-change"
+      ? "evidence-observed"
+      : "unknown";
+  }
   if (state.evidence.value === "evidence-observed") return "evidence-observed";
-  if (state.admission.value === "rejected") return "rejected";
-  if (state.admission.value === "failed") return "failed";
-  if (state.admission.value === "unknown") return "unknown";
   // A queued input must never be summarised as "delivered".
   if (state.disposition === "queued") return "queued";
   if (state.delivery.value !== "none" || state.admission.value === "accepted") return "delivered";
