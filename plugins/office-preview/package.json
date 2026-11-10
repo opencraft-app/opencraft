@@ -12,9 +12,9 @@
   },
   "dependencies": {
     "@aiden0z/pptx-renderer": "1.4.0",
-    "@deepseek-ai/cordis": "4.0.5",
-    "@extend-ai/react-docx": "0.12.2",
-    "@extend-ai/react-xlsx": "0.19.0",
+    "@deepseek-ai/cordis": "4.1.0",
+    "@extend-ai/react-docx": "0.14.7",
+    "@extend-ai/react-xlsx": "0.20.9",
     "@opencraft/file-preview-web": "0.1.0",
     "docx-preview": "0.4.1",
     "fflate": "0.8.3",

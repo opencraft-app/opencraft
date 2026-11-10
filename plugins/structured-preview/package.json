@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "4.0.5",
+    "@deepseek-ai/cordis": "4.1.0",
     "@opencraft/file-preview-web": "0.1.0",
     "@opencraft/chat-render-web": "0.1.0",
     "@excalidraw/excalidraw": "0.18.1",
@@ -26,6 +26,6 @@
     "@types/react": "~19.3.0",
     "@types/react-dom": "~19.3.0",
     "typescript": "^5.9.3",
-    "sass": "^1.107.1"
+    "sass": "^1.108.1"
   }
 }
