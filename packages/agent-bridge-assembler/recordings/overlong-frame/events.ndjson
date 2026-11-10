@@ -1,0 +1,5 @@
+{"kind":"turn.started","threadId":"thr-fixture","turnId":"t1.1","nativeTurnId":"n1","seq":1,"atMs":1700000000001}
+{"kind":"item.started","threadId":"thr-fixture","turnId":"t1.1","item":{"itemId":"i1.1","nativeKey":"s1","threadId":"thr-fixture","turnId":"t1.1","shape":{"kind":"agentMessage","text":""}},"seq":2,"atMs":1700000000002}
+{"kind":"agentMessage.delta","threadId":"thr-fixture","turnId":"t1.1","itemId":"i1.1","channel":"agentMessage","delta":"[content:3efe16b4][content:fe615880]","seq":3,"atMs":1700000000003}
+{"kind":"item.completed","threadId":"thr-fixture","turnId":"t1.1","item":{"itemId":"i1.1","nativeKey":"s1","threadId":"thr-fixture","turnId":"t1.1","shape":{"kind":"agentMessage","text":"[content:3efe16b4][content:fe615880]"}},"seq":4,"atMs":1700000000004}
+{"kind":"turn.completed","threadId":"thr-fixture","turnId":"t1.1","status":"completed","startedAtMs":1700000000001,"seq":5,"atMs":1700000000005}

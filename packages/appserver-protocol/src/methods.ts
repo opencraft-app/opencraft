@@ -261,7 +261,10 @@ export type TurnSteerParams = GeneratedTurnSteerParams;
 export type TurnSteerResponse = GeneratedTurnSteerResponse & {
   /**
    * Extension used by Hosts that preserve a steer racing Turn completion.
-   * When omitted, the accepted input is treated as `steered`.
+   * When omitted, the accepted input is treated as `steered`, so a queued
+   * input MUST set `disposition: "queued"` explicitly; the additive
+   * steer-evidence notification carries the same disposition for declaring
+   * clients so it is never mistaken for a delivered/steered input.
    */
   readonly disposition?: "steered" | "queued";
 };
@@ -349,6 +352,11 @@ import type {
 export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
+  /** Additive per-input steer evidence status; only served to declaring clients. */
+  "opencraft/steer/status": {
+    params: import("./steer-evidence").OpenCraftSteerStatusParams;
+    result: import("./steer-evidence").OpenCraftSteerStatusResult;
+  };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };
   "mcpServer/resource/read": { params: McpResourceReadParams; result: McpResourceReadResponse };
   "mcpServer/tool/call": { params: McpServerToolCallParams; result: McpServerToolCallResponse };

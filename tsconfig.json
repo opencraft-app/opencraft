@@ -5,6 +5,8 @@
     { "path": "./apps/opencraft-daemon" },
     { "path": "./apps/workbench-web" },
     { "path": "./packages/app-host-protocol" },
+    { "path": "./packages/agent-bridge-protocol" },
+    { "path": "./packages/agent-bridge-assembler" },
     { "path": "./packages/app-host-client" },
     { "path": "./packages/app-host-server" },
     { "path": "./packages/daemon-ipc" },

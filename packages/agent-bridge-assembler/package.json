@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/agent-bridge-assembler",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "dependencies": {
+    "@opencraft/agent-bridge-protocol": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "translator": [],
+  "assembler": [
+    "delta-first-synthesized",
+    "session-reset-settled",
+    "delta-first-synthesized"
+  ]
+}
