@@ -196,7 +196,10 @@ for (const kind of ["local", "remote"] as const) {
       if (kind === "local") await request("test/completeTurn", { threadId: entry.threadId });
     }
     const lifecycle = harness.writes.filter(frame => ["initialize", "thread/start", "thread/fork", "thread/resume"].includes(frame.method as string));
-    assert.equal(lifecycle.length, 4);
+    // A thread-ID fork snapshots the source's execution choices through an
+    // internal thread/resume before thread/fork (9e40699a7a). That expected
+    // lifecycle frame must not receive the turn/start summary default either.
+    assert.equal(lifecycle.length, 5);
     for (const frame of lifecycle) assert.equal(Object.hasOwn(paramsOf(frame), "summary"), false);
   });
 
