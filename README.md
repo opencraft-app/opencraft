@@ -1,193 +1,117 @@
+<div align="center">
+
+<img src="apps/workbench-web/public/opencraft-icon.svg" width="80" height="80" alt="OpenCraft logo" />
+
 # OpenCraft
 
-Contribute through [CONTRIBUTING](CONTRIBUTING.md). To build a client extension, start with the [current boundary guide](docs/extension-development.md) and [runnable example](examples/extensions/README.md).
+### Everyone Agent Everywhere
 
-OpenCraft core is developed in this GitHub upstream. Product providers and
-branding are composed downstream; see [transition status](docs/upstream-transition.md).
-Original contributions use Apache-2.0; existing third-party notices and source
-records are retained. npm publication is deferred.
+**Connect your agents. Share what they can do.**
 
-OpenCraft is a maintainable TypeScript agent workbench. It has two renderer hosts over one
-semantic application model and an explicit supervisor for lifecycle-scoped
-runtimes: Vite/React DOM for desktop Web and Electron, and Expo Router for iOS,
-Android, and Expo Web.
+Connect the agents you run, wherever they live, and make them available to the people you choose.
 
-Branding, installed application identity, storage, and protocol namespaces are
-separate concerns. See [product identity](docs/architecture/product-identity.md)
-for the OpenCraft naming policy and the identifiers intentionally kept stable.
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-## Run
+[![Build](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![Security](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-Use Node **26.7.0** (`nvm install && nvm use`) and npm 11. Public npm access is
-required; desktop packaging also downloads Electron and builder tools from
-their upstream release servers. No private package registry or reference
-source tree is required. Do not copy `node_modules` from another computer.
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
+
+[Get started](#get-started) · [What you can do](#what-you-can-do) · [Documentation](#documentation) · [Contribute](CONTRIBUTING.md)
+
+</div>
+
+## The idea
+
+OpenCraft is an open-source Agent workbench built around **Everyone Agent Everywhere**.
+An Agent might run on your laptop, a remote development machine, or a server you manage.
+Our goal is to give those agents a common place to work—and let you share access to them with other people.
+
+- **Everyone** — Everyone should be able to own, use and share an Agent.
+- **Agent** — Bring your existing agents, connect your model providers, or build an integration for your own runtime.
+- **Everywhere** — Reach agents across machines and use the workbench from the browser, desktop or mobile.
+
+### Connect yours. Share its capabilities.
+
+1. **Connect** an Agent where it already runs, keeping its environment and credentials with its execution Host.
+2. **Authorize** the people or agents you want to work with, choosing the access you grant.
+3. **Collaborate** through conversations and execution requests, with ownership and permissions kept explicit.
+
+The vision is broad: an Agent you connect should be something you can offer to others,
+whether it is your personal coding assistant, a team's specialist, or a service you operate.
+Sharing means granting access to its capabilities; recipients do not need to inherit its credentials.
+
+## What you can do
+
+| Capability | In OpenCraft |
+| --- | --- |
+| **Bring an existing Agent** | Connect installed Codex and Cursor agents, check sign-in, discover native models, and select supported reasoning and Fast settings. Other runtimes connect through their adapters. |
+| **Use your model providers** | Configure API endpoints and credentials through model settings. The execution Host owns the credentials. |
+| **Work across machines** | Connect local and remote execution Hosts, with workspaces, conversations and saved state scoped to the selected Host. |
+| **Keep conversations continuous** | Restore supported native history, keep drafts, inspect tool activity and reported token usage, and send or stop work from one workbench. |
+| **Build collaboration** | Use authenticated Actor messaging, delivery/read receipts and explicit grants. The current single-Hub execution bridge supports bound local Codex sessions. |
+| **Extend the workbench** | Add client extensions, MCP tools and Host-side capabilities through their existing integration boundaries. |
+| **Choose your client** | Use the browser or Electron desktop app; the public Expo app packages the shared Web Workbench for mobile. |
+
+**Current scope.** Each adapter exposes its actual capabilities. The first Actor collaboration loop
+is single-Hub. Broader cross-Hub Agent sharing and a universal plug-and-play bridge for every Agent
+remain development goals. See the [implemented collaboration API](docs/actor-collaboration-api.md),
+[identity and Hub design](docs/architecture/actor-collaboration.md), and
+[execution contracts](docs/execution-ownership.md).
+
+## Get started
+
+Use **Node.js 26.7.0** and **npm 11**. The repository pins Node in [`.nvmrc`](.nvmrc).
 
 ```bash
 git clone https://github.com/opencraft-app/opencraft.git
 cd opencraft
+nvm install && nvm use
 npm ci
 npm run dev
 ```
 
-Private product assembly belongs to downstream workspaces. Trusted local build
-entries can compose the same complete client without making public installation
-depend on a private account provider. See [plugin architecture](docs/plugin-architecture.md).
+Open the printed URL. Connect an installed **Codex** or **Cursor** agent,
+or configure a model provider in Settings. Local development requires no OpenCraft account.
 
-`npm run dev` (also `npm run dev:local`) prepares the pinned DSH engine and
-starts local execution and Web together on a loopback address. Open the printed
-URL, choose **Configure models**, save your provider credentials/endpoint, then
-return to Chat. No OpenCraft account is required. Model credentials remain with
-the execution Host; they are never build inputs. Local development data persists
-in `~/.opencraft/dev-local`, independently of desktop/server installations.
-`OPENCRAFT_DEV_DATA_DIRECTORY` selects another isolated data directory and
-`OPENCRAFT_DEV_PORT` changes the Web port (default 5173). Stop with Ctrl+C.
+`npm run dev` starts local execution and Web together. Development data persists in
+`~/.opencraft/dev-local`; model credentials stay with the execution Host.
 
-`npm run dev:web` starts only the frontend. Without an explicit endpoint or saved
-connection, it offers local-start instructions and an existing server address.
-Opening a server takes you to that server's own website and sign-in flow.
-Explicit `VITE_APPSERVER_HOSTS_JSON`, `VITE_APPSERVER_WS_URL`, and website deployment
-configuration remain supported; a temporary connection failure never clears them.
+| Your next step | Start here |
+| --- | --- |
+| Run with Docker Compose | [Docker deployment](docker/README.md) |
+| Install or manage a self-hosted website | [Web deployment and updates](docs/web-deployment.md) |
+| Develop or package the desktop app | [Development guide](docs/development.md#desktop-with-the-bundled-local-agent) |
+| Run Expo or build for mobile | [Mobile guide](apps/mobile/README.md) |
+| Connect Hosts or customize a build | [Development and build guide](docs/development.md) |
 
-### Managed Web installation and public npm releases
+## Documentation
 
-The self-hosted Web package is `@opencraft-app/opencraft` on the public npm registry
-`https://registry.npmjs.org/`. It includes the website and managed updater.
-The public execution package also includes the managed gateway and daemon; Codex core, CLI and DSH engine remain independently deployed. The first public release supports Linux x64 and Node.js 24. See the
-[Web deployment and public npm release runbook](docs/web-deployment.md) for
-installation, credential selection, publishing, rollback and Playwright checks.
-Source development above uses public dependencies; distributing this Web package
-uses the public npm registry.
+| For | Read |
+| --- | --- |
+| A tour of the project | [Documentation index](docs/README.md) · [Repository layout](docs/repository-layout.md) |
+| Agent identity, access and collaboration | [Actor and Hub design](docs/architecture/actor-collaboration.md) · [Collaboration API](docs/actor-collaboration-api.md) · [Server authentication](docs/server-authentication.md) |
+| Execution and integration | [Execution ownership](docs/execution-ownership.md) · [Session capabilities](docs/session-capabilities.md) · [Plugin architecture](docs/plugin-architecture.md) |
+| Building an extension | [Extension development](docs/extension-development.md) · [Runnable example](examples/extensions/README.md) |
+| Architecture and design | [Platform architecture](docs/platform-architecture.md) · [Interface design](design.md) · [Build matrix](docs/build-matrix.md) |
 
-To build from source and replace an existing server installation directly, follow
-the [local server replacement guide](docs/web-local-deployment.md).
+## Build with us
 
-### Docker Compose
+Help make more agents reachable and useful to more people.
+Contributions to adapters, collaboration, client experiences, documentation and examples are welcome.
 
-For a Linux amd64 or ARM64 Docker installation with independent data storage and
-execution on the host, use the [Docker Compose deployment guide](docker/README.md).
+- [Report a problem or propose an idea](https://github.com/opencraft-app/opencraft/issues).
+- Follow the [contribution guide](CONTRIBUTING.md) for changes to the shared core.
+- Build product-specific identity, branding and services through [downstream composition](docs/upstream-transition.md).
+- Report security vulnerabilities through the private process in [SECURITY.md](SECURITY.md).
 
-### Desktop with the bundled Local Agent
+## License
 
-On the target machine (macOS or Linux with a desktop session):
+Original OpenCraft contributions are licensed under [Apache-2.0](LICENSE).
+Third-party components retain their own licenses and required notices.
 
-```bash
-npm ci
-npm run dev:electron
-```
+<div align="center">
 
-This builds the renderer and main process and prepares DSH from the committed
-`runtime/dsh/package.json` and `package-lock.json`. The runtime uses an isolated
-`npm ci`; it never installs into the root workspace. Use Settings to configure
-your provider/model credentials. Building and the startup smoke test do not
-require an API key.
+**Everyone Agent Everywhere**<br />
+Connect what you run. Share what it can do.
 
-For a macOS QA preview that cannot overwrite an existing window or profile,
-use the isolated profile and ad-hoc package procedure in the
-[build matrix](docs/build-matrix.md). `dev:electron` is a developer loop,
-not proof of a packaged desktop release.
-
-For distribution, build on the **same OS and CPU architecture** as the target:
-
-```bash
-# Apple Silicon Mac; use :x64: instead on an Intel Mac
-npm run package:electron:mac:arm64:zip
-npm run package:electron:mac:arm64:dmg
-# Linux x64
-npm run package:electron:linux:x64:appimage
-```
-
-Native dependencies may need Python 3 and a C/C++ toolchain (Xcode Command Line
-Tools on macOS; make/g++ on Linux). DMG and native iOS builds require macOS;
-iOS also needs Xcode and CocoaPods. macOS signing/notarization credentials are
-optional for local unsigned builds, and required for trusted public distribution.
-Cross-OS/CPU desktop packaging is rejected because DSH contains native modules.
-
-### Expo
-
-```bash
-npm run dev:expo:web
-# On macOS with Xcode/CocoaPods; use an endpoint reachable from the device
-EXPO_PUBLIC_APPSERVER_WS_URL=ws://YOUR_SERVER:9988/rpc npm run dev:expo:ios
-```
-
-Native Expo defaults to loopback, not a developer's server. Set the URL on a
-physical device; loopback there refers to the device itself. Workspace paths
-come from the connected host, not from this checkout.
-
-### Clean-checkout verification
-
-```bash
-npm ci
-npm run prepare:dsh-runtime
-npm test
-npm run matrix:build -- web-browser electron-renderer electron-host expo-web expo-ios-bundle
-npm run smoke:local-agent
-```
-
-See [fresh-machine builds](docs/fresh-machine-builds.md) for platform boundaries,
-optional remote-Mac setup, and what is intentionally not committed.
-
-The Web workbench treats every execution node as a complete Host runtime. A
-managed website injects deployment configuration into HTML before startup:
-`OPENCRAFT_APPSERVER_URL` supplies `local` (managed site), and
-`OPENCRAFT_CODEX_APPSERVER_URL` supplies `local-codex` (managed site). Generic npm
-packages retain both Hosts and built-in Agent settings without deployment build
-variables. `OPENCRAFT_HYPERNODE_USER` remains a private proxy header; managed websites
-disable the HyperNode plugin to avoid a duplicate primary Host.
-
-For development/tests, an explicit build-time Host list takes precedence over
-the website configuration, without merging the lists:
-
-```bash
-VITE_APPSERVER_HOSTS_JSON='[
-  {"hostId":"dev","label":"Development","kind":"remote-ssh","url":"wss://dev.example/rpc"},
-  {"hostId":"durable","label":"Durable","kind":"durable","url":"wss://durable.example/rpc"}
-]' npm run dev:web
-```
-
-Host selection precedes project/folder selection. Threads, Draft workspace,
-Replica state, query keys, panels, and persisted selection are all scoped by
-`hostId`. Host URLs containing credentials are rejected; authentication belongs
-to the Web/Electron transport gateway.
-
-The renderer is semantic React/TypeScript and SCSS. It shares the same renderer across Web and Electron.
-
-## Workspace
-
-See the [repository layout](docs/repository-layout.md) for documentation, tooling,
-build inputs and task records.
-
-- `apps/workbench-web`: React DOM + Vite renderer for browser and Electron.
-- `apps/workbench-electron`: Electron main/preload host without a second UI.
-- `apps/mobile`: Expo Router host for native and Expo Web.
-- `apps/bridges/hermes`: independently installed Bun bridge from Hermes to the AppServer protocol.
-- `packages/appserver-protocol`: Host-aware AppServer contracts and generated native Codex types.
-- `packages/chat-core`: typed `Turn -> DisplayItem` projection.
-- `packages/composer-core`: serializable cross-platform composer blocks.
-- `packages/composer-editor`: ProseMirror composer with IME-safe input,
-  attachments, mentions, skills, commands, history, and send/stop semantics.
-- `packages/design-system`: typed OpenCraft theme compiler plus Web and Native tokens.
-- `packages/workbench-runtime`: renderer-free session store, commands and
-  streaming lifecycle consumed by both renderer hosts.
-
-The Expo host uses React Native, HeroUI Native and Uniwind over one canonical
-React 19 instance. The public entry runs the shared native Workbench; downstream
-products select their own entry and configuration explicitly. See the
-[Expo guide](apps/mobile/README.md) for Expo Go previews, native builds
-and their platform requirements. `npm run build:expo:ios` runs the
-Linux-compatible Metro iOS bundle gate; launching an Apple Simulator and
-compiling the native pods still require macOS and Xcode.
-
-The frame layout contract is documented in
-`docs/workbench-frame-spec.md`. Platform boundaries and reuse rules are documented
-in `docs/platform-architecture.md`. The Cordis-backed extension kernel,
-capability boundary and future marketplace model are documented in
-`docs/plugin-architecture.md`; the AI-native discovery, task lease, execution
-journal and generated-capability model are documented in
-`docs/agent-capability-fabric.md`. The package ownership and proof ladder for
-automated changes are documented in `docs/agent-iteration-guide.md`.
-
-See [SECURITY.md](SECURITY.md) for private vulnerability reporting and the
-repository's security checks. A passing build does not establish that dependencies,
-Git history or third-party licensing are ready for a public release.
+</div>
