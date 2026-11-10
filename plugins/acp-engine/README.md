@@ -8,8 +8,9 @@ attachments only own transport leases.
 
 Supported ACP operations are initialization, new/resumed sessions, text prompts,
 cancellation, model configuration, semantic assistant updates and HTTP MCP tools.
-The driver advertises no fork, deletion, images or reasoning selection. Native
-history replay requires a corresponding engine-native reader. Claude Code may
+The driver advertises no fork, deletion or images. Model, reasoning and Fast
+selection follow the options declared by the native peer. Native history replay
+requires a corresponding engine-native reader. Claude Code may
 use an explicitly configured ACP bridge; configuring a plain Claude CLI does
 not manufacture ACP support.
 
