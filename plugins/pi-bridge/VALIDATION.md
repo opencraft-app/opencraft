@@ -13,9 +13,9 @@ artifact and no existing engine selects it.
 | `npm run typecheck --workspace @opencraft/agent-bridge-protocol` | passed |
 | `npm run typecheck --workspace @opencraft/agent-bridge-assembler` | passed |
 | `npm run typecheck --workspace @opencraft/agent-bridge-host` | passed (unchanged) |
-| `npm run test:agent-bridge` | **79 passed**. 22 new Pi/Host-settlement cases plus the 57 P1a/P1b cases |
+| `npm run test:agent-bridge` | **162 passed**, 10 consecutive full runs. 22 new Pi/Host-settlement cases plus 140 tests already on main (P1a/P1b/P2a/P2c/P3/P3c) |
 | `npm run check:boundaries` | passed |
-| `node scripts/build-pi-bridge.mjs` | `plugins/pi-bridge/dist/main.mjs`, 9,004,964 bytes, SHA-256 `1b6b39dadc32dafdd8995af32d85734478c13b82e342dc40858663e142fa6bb9` |
+| `node scripts/build-pi-bridge.mjs` | `plugins/pi-bridge/dist/main.mjs`, 9,005,011 bytes, SHA-256 `76236bd6d5362e220630b69064f257fb2212c0d73e2c8b3d104926bc879e354a` |
 | `PI_BRIDGE_KEEP=1 node --import tsx scripts/smoke/execution/smoke-pi-bridge.ts` | passed on the real local Pi account; details below |
 
 ## New deterministic cases
@@ -90,14 +90,14 @@ and then a short answer. While the tool was running, the smoke sent two
 byte-identical steers with distinct input ids (`steer-1`, `steer-2`), each
 asking to append `STEER-OK`. Observed:
 
-- `sqlite-holders 854814`, `bridge-pid 854814` — `lsof` saw exactly one writer;
+- `sqlite-holders 2037079`, `bridge-pid 2037079` — `lsof` saw exactly one writer;
   the old AppServer Pi engine and the Host process held no descriptor.
 - `input.accepted` + `input.delivery(admitted=true)` for both steers.
 - `input.evidence(admission)` for both, keyed by durable submission id.
 - `input.evidence(queue-change)` for both, with distinct evidence refs; no
   `context-confirmed` delta appeared.
-- `tool.txt` became `"alpha\nSTEER-OK\nSTEER-OK\n"` in the final run (other
-  post-fix runs produced one line). This is useful behaviour evidence, but the
+- `tool.txt` became `"alpha\nSTEER-OK\n"` in the final rebased run (other
+  runs produced both lines). This is useful behaviour evidence, but the
   protocol evidence remains admission/queue-change only.
 
 Evidence tier: **native admission + native inbox/entry transition
@@ -107,8 +107,9 @@ that the model understood or executed the instruction.
 ## Independent review closure
 
 An independent review thread (`thr_udyy2i8p8f`) reviewed the initial
-implementation commit `18d159583a` (rebased as `27f5c1b88b`). It reported seven
-P1 findings; all were accepted and fixed in `43242a0999`:
+implementation commit `18d159583a` (rebased through `97e1544339` to
+`46dddc9f2a`). It reported seven P1 findings; all were accepted and fixed in
+`769ffcc2a2` (originally `43242a0999`):
 
 1. close→resume reused delta callback ids; fixed with a per-runtime callback id
    and a regression test that walks close→resume→new turn.
@@ -132,8 +133,7 @@ P1 findings; all were accepted and fixed in `43242a0999`:
 
 ### Second review round
 
-The same reviewer then checked `43242a0999` (after rebasing onto main
-`6d263ae20f`) and reported three P1s:
+The same reviewer then checked `769ffcc2a2` and reported three P1s:
 
 1. `session/close` fenced neither queued turn commands nor the final native
    snapshot; fixed by setting the runtime closing fence before draining,
@@ -150,7 +150,11 @@ The same reviewer then checked `43242a0999` (after rebasing onto main
    and the stale-evidence order have assembler tests.
 
 Per the review workflow, the second round is the final independent pass; the
-main agent fixed and validated these three items directly in `e0a9c4c903`.
+main agent fixed and validated these three items directly in
+`fd5ae8e95a` (the review-fix commit; a validation-only commit follows). The
+branch is rebased onto P3c main `2ca8a71eee`; P3c's Host
+`hostRefusal(-32602/invalid)` and `session/resume` validation are preserved
+alongside the P2d settlement map and route abandon.
 
 ## Gaps and honest limits
 
