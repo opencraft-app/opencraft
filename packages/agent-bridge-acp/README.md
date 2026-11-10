@@ -255,3 +255,17 @@ The Web presentation check is
 steering shape, asserts no native/inject/fake-steer label, and writes a
 screenshot. It does not claim a Host→AppServer→Web end-to-end path because the
 existing Workbench does not consume `opencraft/steerEvidence/updated` yet.
+
+DSH is an opt-in `AGENT_BRIDGE_ACP_DIALECT=dsh` profile with command `dsh`
+(and args `["acp"]`). On Linux/macOS each ACP process receives a private fd 3
+and a temporary overlay loading the bundled `src/dsh-steering.mjs` companion.
+Keep that source asset next to the ACP modules when packaging. No default engine
+or existing native DSH route changes. Missing/not-ready companions remove native
+steering from the initialize and session capability projection.
+
+Only text-only active turns accept native steer. Admission records the native
+messageId; matching inbox claimed upgrades evidence to `native-input-id` (not
+model comprehension). Turn settlement waits for private admissions and a plugin
+cleanup barrier; unclaimed inputs fail after deletion, lost barriers stay unknown.
+Native withdrawal serializes with claimed in the plugin event loop. A lost private
+response never triggers prompt replay, queueing, or interrupt fallback.

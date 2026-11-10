@@ -1,0 +1,495 @@
+{
+  "agent": "dsh",
+  "models": {
+    "commandId": "models",
+    "digest": "3c38a8949946182c74fad0f259f62c520a63dc2fbf7b9d7a807acc65519c1946",
+    "epoch": 1,
+    "route": "[\"p3b-real\",\"p3b-dsh\"]",
+    "generation": "p3b-dsh",
+    "method": "model/list",
+    "state": "accepted",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "host-command:models",
+      "result": {
+        "models": [],
+        "current": "[\"ollama-cloud\",\"deepseek-v4.1-flash\"]",
+        "source": "config:model"
+      }
+    }
+  },
+  "steer": {
+    "commandId": "steer",
+    "digest": "e0356c2e45a671ae8d43cb3e662a2864d05fefde74907a3d76fc8365e54a4057",
+    "epoch": 1,
+    "route": "[\"p3b-real\",\"p3b-dsh\"]",
+    "generation": "p3b-dsh",
+    "method": "turn/steer",
+    "state": "accepted",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "host-command:steer",
+      "result": {
+        "nativeTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+        "delivery": "native-inject",
+        "admission": "pending"
+      }
+    }
+  },
+  "query": {
+    "commandId": "query",
+    "digest": "8e6b4c22718d4448592392e7fe1071c0e2768b348bf9084cdd14742e6d6737a7",
+    "epoch": 1,
+    "route": "[\"p3b-real\",\"p3b-dsh\"]",
+    "generation": "p3b-dsh",
+    "method": "input/query",
+    "state": "accepted",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": "host-command:query",
+      "result": {
+        "inputs": [
+          {
+            "inputId": "p3b-steer",
+            "clientRequestId": "p3b-steer-client",
+            "expectedTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+            "disposition": "steered",
+            "nativeExecutions": 1,
+            "registration": {
+              "value": "registered",
+              "version": 0
+            },
+            "admission": {
+              "value": "accepted",
+              "version": 1
+            },
+            "delivery": {
+              "value": "native-inject",
+              "version": 1
+            },
+            "evidence": {
+              "value": "evidence-observed",
+              "version": 2,
+              "kind": "native-input-id"
+            },
+            "withdrawal": {
+              "value": "none",
+              "version": 0
+            },
+            "outcome": "delivered"
+          }
+        ]
+      }
+    }
+  },
+  "privateFrames": [
+    {
+      "direction": "in",
+      "frame": {
+        "private": true,
+        "method": "ready",
+        "params": {}
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "private": true,
+        "method": "ready",
+        "params": {}
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "private": true,
+        "method": "enqueued",
+        "params": {
+          "sessionId": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+          "messageId": "84b82c3d-6c1b-44db-9ec2-20ee1deb3767",
+          "text": "Run exactly one shell command: sleep 8. Then reply DONE. Do not do anything else."
+        }
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "private": true,
+        "method": "claimed",
+        "params": {
+          "sessionId": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+          "messageId": "84b82c3d-6c1b-44db-9ec2-20ee1deb3767"
+        }
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "private": true,
+        "method": "admission",
+        "params": {
+          "messageId": "0215ed93-f6ab-464b-8375-ab5b06e82d51"
+        }
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "private": true,
+        "method": "claimed",
+        "params": {
+          "sessionId": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+          "messageId": "0215ed93-f6ab-464b-8375-ab5b06e82d51"
+        }
+      }
+    }
+  ],
+  "collected": [
+    {
+      "kind": "turn.started",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "nativeTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+      "seq": 1,
+      "atMs": 1794351421943
+    },
+    {
+      "kind": "turn.mainRun",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "state": "running",
+      "seq": 2,
+      "atMs": 1794351421944
+    },
+    {
+      "kind": "item.started",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "item": {
+        "itemId": "i1.1",
+        "nativeKey": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df:reasoning:",
+        "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+        "turnId": "t1.1",
+        "shape": {
+          "kind": "reasoning",
+          "text": ""
+        }
+      },
+      "seq": 3,
+      "atMs": 1794351423838
+    },
+    {
+      "kind": "agentMessage.delta",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "itemId": "i1.1",
+      "channel": "reasoning",
+      "delta": "The user wants exactly one shell command: `sleep 8`. Then reply DONE. Let me do that.",
+      "seq": 4,
+      "atMs": 1794351423839
+    },
+    {
+      "kind": "contextWindow",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "usedTokens": 9053,
+      "modelContextWindow": 524288,
+      "seq": 5,
+      "atMs": 1794351423843
+    },
+    {
+      "kind": "item.started",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "item": {
+        "itemId": "i1.2",
+        "nativeKey": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df:tool:call_5wht5lj1|fc_954290_0",
+        "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+        "turnId": "t1.1",
+        "shape": {
+          "kind": "tool",
+          "name": "bash",
+          "status": "inProgress",
+          "output": null
+        }
+      },
+      "seq": 6,
+      "atMs": 1794351423851
+    },
+    {
+      "kind": "input.state",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "status": {
+        "inputId": "p3b-steer",
+        "clientRequestId": "p3b-steer-client",
+        "nativeSession": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+        "targetNativeTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+        "expectedTurnId": "t1.1",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 0,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "none",
+          "version": 0
+        },
+        "delivery": {
+          "value": "none",
+          "version": 0
+        },
+        "evidence": {
+          "value": "none",
+          "version": 0
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "registered"
+      },
+      "seq": 7,
+      "atMs": 1794351423923
+    },
+    {
+      "kind": "input.state",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "status": {
+        "inputId": "p3b-steer",
+        "clientRequestId": "p3b-steer-client",
+        "nativeSession": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+        "targetNativeTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+        "expectedTurnId": "t1.1",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "native-inject",
+          "version": 1
+        },
+        "evidence": {
+          "value": "none",
+          "version": 0
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "delivered"
+      },
+      "seq": 8,
+      "atMs": 1794351423930
+    },
+    {
+      "kind": "input.state",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "status": {
+        "inputId": "p3b-steer",
+        "clientRequestId": "p3b-steer-client",
+        "nativeSession": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+        "targetNativeTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+        "expectedTurnId": "t1.1",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "native-inject",
+          "version": 1
+        },
+        "evidence": {
+          "value": "evidence-observed",
+          "version": 1,
+          "evidenceKind": "admission"
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "evidence-observed"
+      },
+      "seq": 9,
+      "atMs": 1794351423931
+    },
+    {
+      "kind": "item.completed",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "item": {
+        "itemId": "i1.2",
+        "nativeKey": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df:tool:call_5wht5lj1|fc_954290_0",
+        "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+        "turnId": "t1.1",
+        "shape": {
+          "kind": "tool",
+          "name": "bash",
+          "status": "completed",
+          "output": "(no output)"
+        }
+      },
+      "seq": 10,
+      "atMs": 1794351431883
+    },
+    {
+      "kind": "input.state",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "status": {
+        "inputId": "p3b-steer",
+        "clientRequestId": "p3b-steer-client",
+        "nativeSession": "92ae4267-b91d-45b0-9c27-0e6e8227e06e",
+        "targetNativeTurnId": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df",
+        "expectedTurnId": "t1.1",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "native-inject",
+          "version": 1
+        },
+        "evidence": {
+          "value": "context-confirmed",
+          "version": 2,
+          "evidenceKind": "native-input-id",
+          "nativeInputId": "0215ed93-f6ab-464b-8375-ab5b06e82d51"
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "context-confirmed"
+      },
+      "seq": 11,
+      "atMs": 1794351431887
+    },
+    {
+      "kind": "item.started",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "item": {
+        "itemId": "i1.3",
+        "nativeKey": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df:message:fff0df04-6baf-4735-97d3-37d410358578",
+        "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+        "turnId": "t1.1",
+        "shape": {
+          "kind": "agentMessage",
+          "text": ""
+        }
+      },
+      "seq": 12,
+      "atMs": 1794351432566
+    },
+    {
+      "kind": "agentMessage.delta",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "itemId": "i1.3",
+      "channel": "agentMessage",
+      "delta": "STEERED",
+      "seq": 13,
+      "atMs": 1794351432567
+    },
+    {
+      "kind": "contextWindow",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "usedTokens": 9084,
+      "modelContextWindow": 524288,
+      "seq": 14,
+      "atMs": 1794351432574
+    },
+    {
+      "kind": "item.completed",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "item": {
+        "itemId": "i1.1",
+        "nativeKey": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df:reasoning:",
+        "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+        "turnId": "t1.1",
+        "shape": {
+          "kind": "reasoning",
+          "text": "The user wants exactly one shell command: `sleep 8`. Then reply DONE. Let me do that."
+        }
+      },
+      "seq": 15,
+      "atMs": 1794351432577
+    },
+    {
+      "kind": "item.completed",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "item": {
+        "itemId": "i1.3",
+        "nativeKey": "acp:7c1cf654-828a-4801-99fd-ea4896d5e6df:message:fff0df04-6baf-4735-97d3-37d410358578",
+        "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+        "turnId": "t1.1",
+        "shape": {
+          "kind": "agentMessage",
+          "text": "STEERED"
+        }
+      },
+      "seq": 16,
+      "atMs": 1794351432578
+    },
+    {
+      "kind": "turn.mainRun",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "state": "idle",
+      "seq": 17,
+      "atMs": 1794351432579
+    },
+    {
+      "kind": "turn.completed",
+      "threadId": "[\"p3b-real\",\"p3b-dsh\"]",
+      "turnId": "t1.1",
+      "status": "completed",
+      "startedAtMs": 1794351421943,
+      "seq": 18,
+      "atMs": 1794351432580
+    }
+  ]
+}
