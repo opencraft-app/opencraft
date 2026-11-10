@@ -30,8 +30,21 @@ export function dispatchSettlement(response: BridgeWireMessage): Receipt['state'
   return 'unknown';
 }
 
-export interface HostOptions { path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
+export interface ExecutionCliLease {
+  environment: Readonly<Record<string,string>>;
+  revoke(): Promise<void>;
+}
+/** Configured by trusted Server/Host composition, never by command arguments. */
+export interface ExecutionCliPort {
+  forward?(token:string,body:unknown):Promise<{status:number;body:unknown}>;
+  issue(source: {serverId:string;threadId:string;credential:string}): Promise<ExecutionCliLease>;
+}
+export interface HostOptions { executionCli?: ExecutionCliPort; path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
 export class BridgeHost {
+  private readonly cliGenerations = new Map<string,string>();
+  private readonly cliPending = new Set<string>();
+  private readonly cliClosedTurns = new Map<string,string>();
+  private readonly cliLeases = new Map<string,ExecutionCliLease>();
   private storage: Storage;
   private pool!: SandboxPool;
   private diagnosticPeers = new Map<string, Peer>();
@@ -84,7 +97,19 @@ export class BridgeHost {
       if (createHash('sha256').update(await readFile(config.artifact)).digest('hex') !== config.digest || !config.launch.command.includes(config.artifact)) throw Error('Pinned bridge artifact digest mismatch');
       const peer = new Peer(config, async (callbackId, method, params) => {
         await this.storage.call('callback', { generation: id, id: callbackId, method, params: object(params) });
-      }, this.options.requestTimeoutMs);
+        const p=object(params);
+        const closed=method==='thread/delta' && Array.isArray(p.deltas) ? p.deltas.find((delta:any)=>delta.op==='turn.close' || delta.op==='session.ended') as {nativeTurnId?:string;op:string}|undefined : undefined;
+        if(closed && this.cliClosedTurns.get(String(p.threadId))!==(closed.nativeTurnId??closed.op)) {
+          this.cliClosedTurns.set(String(p.threadId),closed.nativeTurnId??closed.op);
+          const lease=this.cliLeases.get(String(p.threadId));
+          if(lease){await lease.revoke();this.cliLeases.delete(String(p.threadId));}
+        }
+      }, this.options.requestTimeoutMs,()=>{
+        for(const [route,lease] of this.cliLeases)if(this.cliGenerations.get(route)===id) {
+          this.cliLeases.delete(route);this.cliGenerations.delete(route);
+          const task=lease.revoke();this.tasks.add(task);void task.finally(()=>this.tasks.delete(task)).catch(()=>{});
+        }
+      });
       this.diagnosticPeers.set(id, peer);
       try {
         await peer.start(this.pool);
@@ -108,7 +133,7 @@ export class BridgeHost {
           || !Number.isSafeInteger(steer.maxPendingWithoutNativeId) || Number(steer.maxPendingWithoutNativeId) < 1 || Number(steer.maxPendingWithoutNativeId) > upper.steer.maxPendingWithoutNativeId
           || ![upper.steer.withdrawal, 'none'].includes(steer.withdrawal as any)
           || ![upper.steer.fallbackPolicy, 'reject-unknown'].includes(steer.fallbackPolicy as any)) throw Error('Invalid steer limits or policy');
-        this.capabilities.set(id, result.effectiveCapabilities as BridgeInitializeResult['effectiveCapabilities']);
+        this.capabilities.set(id, {...result.effectiveCapabilities as BridgeInitializeResult['effectiveCapabilities'],cliExecutable:!!this.options.executionCli && caps.cliExecutable===true});
         return peer;
       } catch (error) { await peer.close(); throw error; }
     })();
@@ -153,7 +178,23 @@ export class BridgeHost {
       if (!admission.ok) {
         await this.storage.call('settle', { id: command.commandId, state: 'rejected' }); return;
       }
-      const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...command.params, threadId: receipt.route, executionEpoch: receipt.epoch });
+      let cliEnvironment: Readonly<Record<string,string>> | undefined;
+      if(command.method==='turn/start' && this.options.executionCli) {
+        try {
+          if(!this.capabilities.get(receipt.generation)?.cliExecutable)throw Error('cliUnavailable');
+          const credential=command.params.executionSource;
+          if(typeof credential!=='string'||credential.length>4096)throw Error('cliUnavailable');
+          if(this.cliLeases.has(receipt.route)||this.cliPending.has(receipt.route))throw Error('cliUnavailable');
+          this.cliPending.add(receipt.route);
+          const lease=await this.options.executionCli.issue({serverId:command.serverId,threadId:command.threadId,credential});
+          this.cliLeases.set(receipt.route,lease);this.cliGenerations.set(receipt.route,receipt.generation);cliEnvironment=lease.environment;
+        } catch {
+          await this.storage.call('settle',{id:command.commandId,state:'rejected',response:{jsonrpc:'2.0',id:`host-command:${command.commandId}`,
+            error:{code:-32001,kind:'unsupported',message:'cliUnavailable'}}});return;
+        } finally {this.cliPending.delete(receipt.route);}
+      }
+      const {executionSource:_executionSource,...providerParams}=command.params;
+      const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...providerParams, ...(cliEnvironment?{cliEnvironment}:{}), threadId: receipt.route, executionEpoch: receipt.epoch });
       const state = dispatchSettlement(response);
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
       if (state === 'rejected' && command.method === 'session/create') {
@@ -165,9 +206,17 @@ export class BridgeHost {
           await this.storage.call('abandon', { route: receipt.route, id: command.commandId }).catch(() => {});
         }
       }
+      if(state==='rejected' || command.method==='turn/stop' && state==='accepted' || command.method==='session/close' && state==='accepted') {
+        const lease=this.cliLeases.get(receipt.route);
+        if(lease){await lease.revoke();this.cliLeases.delete(receipt.route);}
+      }
     } catch {
       await this.storage.call('settle', { id: command.commandId, state: 'unknown' });
     }
+  }
+  async cli(token:string,body:unknown) {
+    if(this.closing||!this.options.executionCli?.forward)throw Error('cliUnavailable');
+    return this.options.executionCli.forward(token,body);
   }
   threadState(serverId: string, threadId: string): Promise<any> { return this.storage.call('threadState', { route: routeKey(serverId, threadId) }); }
   diagnostics(): unknown { return [...this.diagnosticPeers].map(([generation, peer]) => ({ generation, ...peer.diagnostic() })); }
@@ -186,6 +235,7 @@ export class BridgeHost {
     await Promise.allSettled([...this.admissions]);
     const cleanup = await Promise.allSettled([
       this.pool.close(),
+      ...[...this.cliLeases.values()].map(lease=>lease.revoke()),
       ...[...this.peers.values()].map(async pending => { const peer = await pending.catch(() => undefined); if (peer) await peer.close(); }),
     ]);
     await Promise.allSettled([...this.tasks]);

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { waitForExecutionCliBinding } from '../packages/session-capabilities/src/execution-cli.ts';
+import { BridgeExecutionAdmissionTransport } from '../apps/opencraft-daemon/src/bridge-execution-admission.ts';
 import { openServerDatabase } from "../packages/storage-node/src/server/index.ts";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -74,7 +76,6 @@ import { Collaboration, CollaborationError, CollaborationHttpApi } from '../pack
 import { OrchestrationRuntimeWorker } from '../packages/access-control/src/orchestration-runtime-store.ts';
 import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
 import { createThreadOrchestrationExecution, driverForThread } from './thread-orchestration-execution.mjs';
-import { THREAD_ORCHESTRATION_TOOLS } from '../packages/appserver-protocol/src/collaboration.ts';
 import { createRoutedConversationExecution, callConversationHost } from './conversation-execution.mjs';
 import { PushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
@@ -516,8 +517,14 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     capabilityBindings = new CapabilityBindings(serverStorage);
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilitySigningKey(join(dataDirectory, "session-capabilities.key")), capabilityBindings, {
       descriptorPath:join(dataDirectory,'session-capabilities.json'), retainEndpoint: true,
-      cliDirectory:join(dataDirectory,'thread-cli'),
-      threadCli:(session,request)=>threadOrchestration.cli(session,request),
+      authorizeExecution:async session=>{
+        if(session.serverId!==conversationExecution.serverForThread(session.threadId))throw new CollaborationError(403,'execution_delegation_required');
+        await actorCollaboration.admittedExecution(session.threadId,session.execution.inputId);
+      },
+      threadCli:async(session,request)=>{
+        await waitForExecutionCliBinding(()=>actorCollaboration.admittedExecution(session.threadId,session.execution.inputId));
+        return threadOrchestration.cli(session,request);
+      },
       authorizeInput:(session,inputId)=>actorCollaboration.authorizeInput(session.threadId,inputId,'queue',undefined,session.serverId),
       orchestration: async (session, request) => {
         const fields = ['turnId','callId','name','arguments','inputId','incarnation','toolCallKey'];
@@ -565,7 +572,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       piEngine = new PiEngine({ modelPolicyPath, ...piModels, executionEnvironment: identity?.executionEnvironment, sessionCapabilities: capabilities.scoped(`server:${machineIdentity.machineId}:pi`), dataDirectory, directory: join(dataDirectory, "pi"), attachmentDirectory: join(dataDirectory, "agent", "attachments"), cwd: options.runtimeDirectory ?? join(root, "runtime") });
       // The in-process standalone mode has the same trusted port. Shared-server
       // deployments attach the independent owner through its descriptor instead.
-      piEngine.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS, call: async (threadId, turnId, callId, name, args, _signal, inputId) => {
+      piEngine.setOrchestration({ tools: [], call: async (threadId, turnId, callId, name, args, _signal, inputId) => {
         if (inputId) actorCollaboration.executionStarted(threadId, inputId, turnId);
         const result = await threadOrchestration.invoke(threadId, turnId, JSON.stringify(['pi', piEngine.orchestrationIncarnation, threadId, turnId, callId]), name, args, undefined, piEngine.orchestrationIncarnation);
         return { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(result) }] };
@@ -640,7 +647,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       logicalClientRouting: true,
       physicalHostLifetime: "server",
       createTransport(hostId) {
-        const transport = new ModelPolicyTransport((() => {
+        const transport = new ModelPolicyTransport(new BridgeExecutionAdmissionTransport((() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
           new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}), new ImageGenerationConfiguration(join(dataDirectory,'models'), new ModelCredentialRepository(join(dataDirectory,'models')))), {read:()=>new ModelConfigurationRepository(join(dataDirectory,'models')).read(),credential:async ref=>(await new ModelCredentialRepository(join(dataDirectory,'models')).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
             threadId => conversationExecution.serverForHost('opencraft-server', threadId))), usageQueries, actorId => actorStore.get(actorId));
@@ -718,7 +725,21 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           nativeCodexHomeDirectory: join(dataDirectory, "native-codex"),
           desktop,
         })), mcpApps);
-        })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
+        })(), {
+          admit:async (threadId,inputId,input,context)=>{
+            if(context.collaborationRequestId) {
+              if(inputId!=='actor-input:'+context.collaborationRequestId)throw Error('Invalid admitted input');
+            } else {
+              if(!context.actorContext)throw Error('Execution admission required');
+              actorCollaboration.authorizeExecution(context.actorContext,threadId,inputId,input);
+            }
+            await actorCollaboration.admittedExecution(threadId,inputId);
+            return {serverId:conversationExecution.serverForThread(threadId),threadId,
+              execution:{inputId,executionId:createHash('sha256').update(JSON.stringify([threadId,inputId])).digest('hex')}};
+          },
+          sign:session=>capabilityMcp.token(session),
+          started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
+        }), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
         const scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
         return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {

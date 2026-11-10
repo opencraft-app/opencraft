@@ -89,6 +89,32 @@ export class ThreadOrchestrationBroker {
         expiresAt:delegation.expiresAtMs};
     }
     if(command==='list')return this.listChildren(session.threadId,turnId,input,delegation.id);
+    if(command==='operation') {
+      fields(input,['id']);
+      const operation=this.collaboration.orchestration.operationById(text(input.id));
+      if(!operation || operation.senderThreadId!==session.threadId || operation.delegationId!==delegation.id)
+        throw new CollaborationError(404,'operation_unavailable');
+      if(operation.targetThreadId)this.authorize(delegation,operation.targetThreadId,'conversation.read');
+      return operation;
+    }
+    if(command==='input') {
+      fields(input,['id']);
+      const operation=this.collaboration.orchestration.operationById(text(input.id));
+      if(!operation || operation.senderThreadId!==session.threadId || operation.delegationId!==delegation.id || !operation.clientMessageId || !operation.targetThreadId)
+        throw new CollaborationError(404,'input_unavailable');
+      this.authorize(delegation,operation.targetThreadId,'conversation.read');
+      if(operation.kind==='spawn')return {operationId:operation.operationId,threadId:operation.targetThreadId,
+        inputId:operation.clientMessageId,admission:operation.state,delivery:(operation.result as {delivery?:unknown}|null)?.delivery??null,
+        contextEvidence:null};
+      return this.collaboration.conversationDelivery(delegation.context,this.reference(operation.targetThreadId),
+        operation.clientMessageId.replace(/^actor-input:/u,''));
+    }
+    if(command==='output') {
+      fields(input,['reference','cursor']);
+      const result=await this.collaboration.readConversation(delegation.context,input.reference,input.cursor===undefined?null:text(input.cursor,2048));
+      this.collaboration.executionSource(session.threadId,session.execution);
+      return result;
+    }
     const names:Record<string,string>={spawn:'thread_spawn',tell:'thread_tell',show:'thread_inspect',wait:'thread_wait'};
     const name=names[command];if(!name)throw new CollaborationError(400,'unknown_thread_command');
     const key=request.idempotencyKey===undefined?null:text(request.idempotencyKey,128);
@@ -98,6 +124,13 @@ export class ThreadOrchestrationBroker {
       if(!ref||ref.serverId!==this.reference(ref.threadId).serverId)throw new CollaborationError(400,'invalid_reference');return ref.threadId;
     };
     const mapped={...input};
+    if(command==='tell') {
+      const delivery=mapped.delivery??'queue';delete mapped.delivery;
+      if(!['native','queue','interrupt'].includes(String(delivery)))throw new CollaborationError(400,'invalid_delivery');
+      // Interruption requires an atomic stop/send owner; never emulate it with queue.
+      if(delivery==='interrupt')throw new CollaborationError(409,'unsupported_delivery');
+      mapped.mode=delivery==='native'?'steer':'queue';
+    }
     if(command==='show'||command==='tell'){mapped.threadId=target(mapped.reference);delete mapped.reference;}
     if(command==='wait'){
       if(!Array.isArray(mapped.references))throw new CollaborationError(400,'invalid_wait_targets');

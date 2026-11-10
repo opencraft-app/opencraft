@@ -1,6 +1,5 @@
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, openSync, readFileSync, closeSync, writeFileSync, statSync, lstatSync } from "node:fs";
-import { dirname } from "node:path";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync, lstatSync } from "node:fs";
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -8,50 +7,33 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CapabilityBindings } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
-import { threadCliProvider } from './thread-cli-provider.js';
 
-/** A stable signing key, never a model-visible global credential. Tokens bind a
- * single server/thread. Domain providers reauthorize independently on each call.
- */
-export function capabilitySigningKey(path: string): Buffer {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  let fd: number | undefined;
-  try { fd = openSync(path, "wx", 0o600); writeFileSync(fd, randomBytes(32)); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  finally { if (fd !== undefined) closeSync(fd); }
-  const key = readFileSync(path), info = statSync(path);
-  if (!info.isFile() || (info.mode & 0o077) || key.length !== 32) throw new Error("Invalid capability signing key");
-  return key;
-}
-export function sessionCapabilityToken(key: Buffer, session: CapabilitySession): string {
-  const payload = Buffer.from(JSON.stringify(session.execution ? ["execution", session.serverId, session.threadId, session.execution] : ["session", session.serverId, session.threadId])).toString("base64url");
-  return payload + "." + createHmac("sha256", key).update(payload).digest("base64url");
-}
+export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
+import { sessionCapabilityToken } from "./credentials.js";
 export class SessionCapabilityMcp {
   private url: string | undefined;
   private readonly server;
   private readonly calls = new Set<Server>();
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
-  private readonly releaseCli?: () => void;
   private readonly executionReservations = new Map<string, {
     bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
     session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number;
   }>();
   constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
     private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
+      authorizeExecution?: (session:CapabilitySession)=>Promise<void>;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown>;
-      cliDirectory?: string; threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown> } = {}) {
-    if(options.threadCli && options.cliDirectory)this.releaseCli=capabilities.register(threadCliProvider({directory:options.cliDirectory,
-      config:session=>{
-        if(!this.url||!session.execution)throw Error('Execution CLI unavailable');
-        return {url:new URL('/thread-cli',this.url).href,token:this.token(session)};
-      },context:session=>options.threadCli!(session,{command:'context'})}));
+      threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown> } = {}) {
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
     }); });
     this.server.requestTimeout = 30_000;
     this.server.headersTimeout = 10_000;
+  }
+  get cliEndpoint():string {
+    if(!this.url)throw Error('Capability listener unavailable');
+    return new URL('/thread-cli',this.url).href;
   }
   private signature(payload: string) { return createHmac("sha256", this.key).update(payload).digest(); }
   private sign(claims: readonly string[]): string {
@@ -207,7 +189,7 @@ export class SessionCapabilityMcp {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
     // browser cookies or an untrusted callerSessionId in tool arguments.
-    if (!["/mcp", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
+    if (!["/mcp", "/execution-admission", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
     const authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
@@ -239,6 +221,11 @@ export class SessionCapabilityMcp {
         response.end(JSON.stringify({ error: typeof error.code === "string" ? error.code : error.status===undefined ? "orchestration_outcome_unknown" : "orchestration_rejected" }));
       }
       return;
+    }
+    if(request.url==='/execution-admission') {
+      if(!authenticated.session?.execution || !this.options.authorizeExecution){response.writeHead(403);response.end();return;}
+      try {await this.options.authorizeExecution(authenticated.session);response.writeHead(200);response.end('{}');}
+      catch {response.writeHead(403);response.end();}return;
     }
     if (request.url === "/admission") {
       const inputId = (body as { inputId?: unknown } | null)?.inputId;
@@ -281,7 +268,6 @@ export class SessionCapabilityMcp {
     await transport.handleRequest(request, response, body);
   }
   async close(): Promise<void> {
-    this.releaseCli?.();
     if (this.options.descriptorPath && !this.options.retainEndpoint) {
       try { const value = JSON.parse(await readFile(this.options.descriptorPath, "utf8")); if (value.url === this.url) await rm(this.options.descriptorPath); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }

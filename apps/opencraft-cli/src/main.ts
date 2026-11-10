@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { parseArgs } from 'node:util';
+import { parseArgs, promisify } from 'node:util';
+import { execFile } from 'node:child_process';
 import { threadCli } from '@opencraft/session-capabilities/thread-cli';
 import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { dirname, join, isAbsolute } from 'node:path';
@@ -16,7 +17,7 @@ export { CliError, classify } from './errors';
 interface Profile { sshAlias: string; instanceId: string; defaultServer?: string; sshConfig?: string; webUrl?: string }
 interface Connections { schemaVersion: 1; defaultConnection?: string; connections: Record<string, Profile> }
 const help = `Usage: opencraft <command> [options]
-For Agent parent/child orchestration, call thread_cli in your execution.
+For Agent parent/child orchestration, use opencraft context in the admitted execution.
 Its private launcher uses this CLI's execution mode (OPENCRAFT_THREAD_CLI_CONNECTION).
   connection add <name> --ssh <alias> [--instance <id>] [--default]
   status
@@ -191,6 +192,18 @@ export async function run(argv: string[]) {
   } finally { await client.close(); }
 }
 export async function main(argv = process.argv.slice(2)) {
+  if (process.env.OPENCRAFT_THREAD_CLI) {
+    try {
+      const {stdout,stderr}=await promisify(execFile)(process.env.OPENCRAFT_THREAD_CLI,argv,{maxBuffer:1024*1024});
+      process.stdout.write(stdout);process.stderr.write(stderr);
+    } catch (cause) {
+      const error=cause as {stdout?:string;stderr?:string};
+      if(error.stdout)process.stdout.write(error.stdout);
+      if(error.stderr)process.stderr.write(error.stderr);
+      process.exitCode=1;
+    }
+    return;
+  }
   if (process.env.OPENCRAFT_THREAD_CLI_CONNECTION) {
     try { await threadCli(argv); }
     catch { process.stderr.write('Execution CLI failed; inspect state before retrying an uncertain write\n'); process.exitCode=1; }

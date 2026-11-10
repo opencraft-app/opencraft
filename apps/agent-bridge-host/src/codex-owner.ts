@@ -1,3 +1,4 @@
+import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
 import { CodexCoreControlClient } from '@opencraft/account-pool-host';
 import { codexDeclaration } from './codex-declaration.js';
@@ -48,6 +49,16 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       this.socket.terminate(); throw new CodexBridgeError('unsupported', 'Native Codex version is not supported by this bridge');
     }
     this.write({ method: 'initialized', params: {} });
+  }
+  private readonly retirements = new Map<string,Record<string,any>>();
+  async configureExecution(threadId:string,environment:Readonly<Record<string,string>>):Promise<void> {
+    await refreshCodexExecutionConfiguration(threadId,{'shell_environment_policy.set':environment},{
+      request:(method,params)=>this.request(method,params),current:()=>{if(this.failed)throw Error('Native attachment unavailable');},
+      stage:()=>{},nativeStatus:()=>{},ephemeral:()=>{throw new CodexBridgeError('unsupported','cliUnavailable');},
+      cancelRelease:()=>{},retirement:()=>this.retirements.get(threadId),waitForRetirement:true,
+      pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{},
+      retire:live=>{this.retirements.set(threadId,live);},unsubscribed:()=>{},clearRetirement:()=>{this.retirements.delete(threadId);},
+    });
   }
   private receive(frame: unknown): void {
     if (!frame || typeof frame !== 'object' || Array.isArray(frame)) throw Error('Invalid native frame');

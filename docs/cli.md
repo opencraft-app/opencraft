@@ -108,11 +108,11 @@ desktop CLI admission and Session bearer admission are separate future work.
 
 ## Current execution and child conversations
 
-Human SSH profiles retain the commands above. Inside an authorized Agent
-execution, `thread_cli` returns a private launcher and connection-file path.
-The launcher and the existing CLI share the same execution command implementation;
-the installed CLI selects it with `OPENCRAFT_THREAD_CLI_CONNECTION=<private-path>`.
-It adds context, paginated child discovery, spawn, tell and wait over the existing
-Broker. See [Conversation CLI](thread-cli.md). The environment variable contains a
-file path, never a bearer; do not copy connection files or switch to a human SSH
-profile when execution authorization fails.
+Human SSH profiles retain the commands above. A configured execution Host supplies
+`opencraft` on PATH and `OPENCRAFT_THREAD_CLI` as a private launcher path after
+Server admission. It adds context, paginated child discovery and output,
+spawn/tell/wait, operation lookup and input delivery status over the existing
+Broker. See [Conversation CLI](thread-cli.md). Environment variables contain paths,
+never bearers. Do not copy descriptors or switch to a human SSH profile when
+execution authorization fails. Orchestration discovery no longer uses a
+`thread_cli` MCP tool; other MCP tools retain their existing transports.

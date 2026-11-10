@@ -96,7 +96,7 @@ export class CodexBridgeRuntime {
         return this.owner.request('thread/resume', { threadId: nativeId, excludeTurns: true });
       }
       case 'session/close': await this.adapter.close(threadId); return {};
-      case 'turn/start': return this.adapter.start(threadId, object(p.native));
+      case 'turn/start': return this.adapter.start(threadId, object(p.native), p.cliEnvironment === undefined ? undefined : object(p.cliEnvironment) as Record<string,string>);
       case 'turn/steer': return this.adapter.steer(threadId, p);
       case 'turn/stop': return this.adapter.stop(threadId, identifier(p.expectedTurnId));
       case 'input/query': return this.adapter.query(threadId, identifier(p.inputId));

@@ -277,3 +277,27 @@ test('deterministic provider refusals settle rejected; only ambiguous outcomes s
     assert.equal(dispatchSettlement({ jsonrpc: '2.0', id: '1', error: { kind, code: -32000, message: kind } }), 'unknown', kind);
   }
 });
+
+test('execution CLI issuance follows custody admission, refuses missing proof and revokes at terminal output',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-cli-'));
+  let issued=0,revoked=0;
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async issue(source){assert.equal(source.credential,'signed-source');issued++;
+      return {environment:{OPENCRAFT_THREAD_CLI:'fixture'},async revoke(){revoked++;}};},
+  }});
+  t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});
+  const generation=await config(root);
+  generation.provider={...generation.provider,capabilities:{...generation.provider.capabilities,cliExecutable:true}};
+  const handshake=negotiateHandshake({protocolVersion:1,grammarRange:{min:1,max:1}},generation.provider);assert.ok(handshake.ok);
+  generation.launch={...generation.launch,env:{...generation.launch.env,HANDSHAKE:JSON.stringify(handshake.result)}};
+  await host.add(generation);await host.activate('g1','');
+  await host.accept(command('create'));await accepted(host,'create');
+  await host.accept(command('denied','turn/start'));
+  const denied=await until(()=>host.query('denied'),r=>r?.state==='rejected');
+  assert.equal((denied!.response as any).error.message,'cliUnavailable');assert.equal(issued,0);
+  await assert.rejects(readFile(join(root,'executions')));
+  await host.accept(command('allowed','turn/start',{executionSource:'signed-source'}));await accepted(host,'allowed');
+  assert.equal(issued,1);assert.equal((await readFile(join(root,'executions'),'utf8')).trim().split('\n').length,1);
+  await until(async()=>revoked,count=>count===1);
+  await host.accept(command('allowed','turn/start',{executionSource:'signed-source'}));assert.equal(issued,1);
+});

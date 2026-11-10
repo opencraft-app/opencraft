@@ -3,28 +3,37 @@ export async function threadCli(argv: string[]): Promise<void> {
   const { readFile, lstat } = await import('node:fs/promises');
   const { dirname, join } = await import('node:path');
   const help = `opencraft thread <command> [options]
-  context
+  context (also: opencraft context)
+  output <reference> [--cursor <cursor>]
+  operation show <operation-id>
+  input status <operation-id>
   list --children [--cursor <cursor>] [--limit <1..100>]
   spawn --prompt <text> --idempotency-key <key> [--title <title>] [--driver codex|pi|dsh|acp|claude-code] [--cwd <path>]
   show <opencraft://conversation/v1/...> [--turns <1..5>]
-  tell <reference> --message <text> --idempotency-key <key> [--mode queue|steer] [--expected-turn <id>] [--reply-expectation required|none]
+  tell <reference> --message <text> --idempotency-key <key> [--delivery native|queue|interrupt] [--expected-turn <id>] [--reply-expectation required|none]
   wait <reference>... [--timeout <0..5000>] [--wait-for all_settled|any_settled]
 Output is JSON. Follow nextCursor even on an empty filtered page. Reuse the same key after an uncertain write; never invent a new key to retry it.
 Tool/delivery completion is not task completion. An unsettled wait remains subscribed. Respect direct human input and stops; do not automatically restart stopped work.
 Use an existing conversation for follow-ups. Delegate independent work when useful; review child results and report relevant outcomes. Do not relay acknowledgments automatically.
-This launcher is bound to the execution that opened it. Call thread_cli again in a later execution; do not copy credentials or inspect connection.json.`;
-  if (!argv.length || argv.includes('--help') || argv[0] === 'help') { process.stdout.write(help + '\n'); return; }
+This launcher is bound to the execution that opened it. Rediscover with opencraft context in the current execution; do not copy credentials or inspect connection.json.`;
+  if (!argv.length || argv.includes('--help') || argv[0] === 'help') { process.stdout.write((argv.includes('--json')?JSON.stringify({help}):help) + '\n'); return; }
+  if (argv[0] === 'context') argv.unshift('thread');
   if (argv.shift() !== 'thread') throw Error('Expected opencraft thread; use --help');
   const command = argv.shift(), args: Record<string,unknown> = {}, positions: string[] = [];
+  if (command === 'operation' || command === 'input') {
+    const subcommand=argv.shift();
+    if (subcommand !== (command === 'operation' ? 'show' : 'status')) throw Error('Unknown subcommand');
+  }
   let key: string | undefined;
-  const options: Record<string,string> = {'--prompt':'prompt','--title':'title','--driver':'driver','--cwd':'cwd','--cursor':'cursor','--limit':'limit','--turns':'includeRecentTurns','--message':'message','--mode':'mode','--expected-turn':'expectedTurnId','--reply-expectation':'replyExpectation','--timeout':'timeoutMs','--wait-for':'waitFor'};
-  const allowed: Record<string,readonly string[]> = {context:[],list:['cursor','limit'],spawn:['prompt','title','driver','cwd'],show:['includeRecentTurns'],tell:['message','mode','expectedTurnId','replyExpectation'],wait:['timeoutMs','waitFor']};
+  const options: Record<string,string> = {'--prompt':'prompt','--title':'title','--driver':'driver','--cwd':'cwd','--cursor':'cursor','--limit':'limit','--turns':'includeRecentTurns','--message':'message','--delivery':'delivery','--expected-turn':'expectedTurnId','--reply-expectation':'replyExpectation','--timeout':'timeoutMs','--wait-for':'waitFor'};
+  const allowed: Record<string,readonly string[]> = {context:[],output:['cursor'],operation:[],input:[],list:['cursor','limit'],spawn:['prompt','title','driver','cwd'],show:['includeRecentTurns'],tell:['message','delivery','expectedTurnId','replyExpectation'],wait:['timeoutMs','waitFor']};
   if (!command || !allowed[command]) throw Error('Unknown command; use --help');
   const seen = new Set<string>(); let children = false;
   while (argv.length) {
     const option = argv.shift()!;
     if (!option.startsWith('--')) { positions.push(option); continue; }
     if (seen.has(option)) throw Error('Duplicate option'); seen.add(option);
+    if(option==='--json')continue;
     if (option === '--children' && command === 'list') { children = true; continue; }
     const field = options[option];
     if (option !== '--idempotency-key' && (!field || !allowed[command]!.includes(field))) throw Error('Invalid option; use --help');
@@ -33,7 +42,8 @@ This launcher is bound to the execution that opened it. Call thread_cli again in
     args[field!] = ['limit','includeRecentTurns','timeoutMs'].includes(field!) ? Number(value) : value;
   }
   if (command === 'list' && !children) throw Error('Use list --children');
-  if (['show','tell'].includes(command)) { if (positions.length !== 1) throw Error('One conversation reference required'); args.reference = positions[0]; }
+  if (command === 'operation' || command === 'input') { if(positions.length!==1) throw Error('One identifier required'); args.id=positions[0]; }
+  else if (['show','tell','output'].includes(command)) { if (positions.length !== 1) throw Error('One conversation reference required'); args.reference = positions[0]; }
   else if (command === 'wait') { if (!positions.length) throw Error('Conversation references required'); args.references = positions; }
   else if (positions.length) throw Error('Unexpected positional argument');
   if (['spawn','tell'].includes(command) && !key) throw Error('An explicit --idempotency-key is required');

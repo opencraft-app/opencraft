@@ -6,6 +6,17 @@ import { object, identifier, type Generation } from './types.js';
 export async function attachGateway(host: BridgeHost, token: string, port = 0): Promise<{ server: Server; url: string; close(): Promise<void> }> {
   if (Buffer.byteLength(token) < 32) throw Error('Private Host requires a token of at least 32 bytes');
   const server = createServer(async (request, response) => {
+    if(request.url==='/thread-cli') {
+      if(request.headers.origin!==undefined||request.method!=='POST'){response.writeHead(403).end();return;}
+      try {
+        let bytes=0;const chunks:Buffer[]=[];
+        for await(const chunk of request){bytes+=chunk.length;if(bytes>64*1024)throw Error();chunks.push(chunk);}
+        const auth=request.headers.authorization??'';
+        if(!auth.startsWith('Bearer '))throw Error();
+        const reply=await host.cli(auth.slice(7),JSON.parse(Buffer.concat(chunks).toString()));
+        response.writeHead(reply.status,{'content-type':'application/json','cache-control':'no-store'}).end(JSON.stringify(reply.body));
+      }catch{response.writeHead(403,{'content-type':'application/json'}).end(JSON.stringify({error:'cliUnavailable'}));}return;
+    }
     const supplied = Buffer.from(request.headers.authorization ?? '');
     const expected = Buffer.from(`Bearer ${token}`);
     if (request.headers.origin || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {

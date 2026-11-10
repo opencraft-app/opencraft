@@ -5,7 +5,7 @@ export const codexDeclaration: BridgeDeclaration = {
   probeBasis: 'AppServer v2 turn/steer expectedTurnId and clientUserMessageId; native userMessage clientId events',
   capabilities: {
     model: true, reasoning: false, history: true, usage: true, approval: true,
-    inputContentTypes: ['text'], cliExecutable: false, forkCheckpoint: false, skills: false, installation: false,
+    inputContentTypes: ['text'], cliExecutable: true, forkCheckpoint: false, skills: false, installation: false,
     steer: { deliveryMethods: ['native-inject'], evidenceKinds: ['admission', 'native-input-id'], withdrawal: 'none',
       contentLimits: { maxBytes: 65536, allowedContentTypes: ['text'] }, maxPendingWithoutNativeId: 1, fallbackPolicy: 'reject-unknown' },
   },
