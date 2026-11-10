@@ -212,6 +212,8 @@ export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
 export type ThreadItemsListResponse = CursorPage<ThreadItemPageEntry | AppServerThreadItem>;
 
 export type ThreadStartParams = GeneratedThreadStartParams & {
+  /** Explicit new-thread opt-in; IDs remain stable across transport retries. */
+  readonly agentBridge?: { readonly threadId: string; readonly clientRequestId: string };
   /** Host-owned execution Agent. Omitted means the Host default. */
   agentId?: string | null;
 };

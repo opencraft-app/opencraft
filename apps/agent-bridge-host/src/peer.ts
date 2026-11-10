@@ -11,6 +11,8 @@ export class Peer {
   private decoder = new StringDecoder('utf8');
   private lines = { carry: '', discarding: false };
   private failed?: Error;
+  private nativeFault: string | null = null;
+  diagnostic() { return { failed: !!this.failed, nativeFault: this.nativeFault }; }
   private callbackSequence = 0;
   private incarnation = randomUUID();
   private cleanup?: Promise<void>;
@@ -20,7 +22,12 @@ export class Peer {
     this.sandbox = await createSandbox(pool, { owner: `agent-bridge:${this.config.id}:${this.config.digest}` });
     try {
       this.child = await this.sandbox.spawn(this.config.launch, output => {
-        if (output.stream !== 'stdout') return; // stderr must never enter protocol or persisted user events.
+        if (output.stream !== 'stdout') {
+          // Only this bounded diagnostic code is retained; never expose stderr content.
+          const code = /(?:^|\n)(codex-native-fault:(?:unknown|turn\/(?:started|completed)|item\/(?:started|completed|agentMessage\/delta|reasoning\/textDelta|plan\/delta)|thread\/tokenUsage\/updated):(?:invalid-frame|translation|connection))(?:\n|$)/.exec(Buffer.from(output.data).toString('utf8'));
+          if (code) this.nativeFault = code[1]!;
+          return;
+        }
         const batch = splitLines(this.decoder.write(Buffer.from(output.data)), this.lines);
         this.lines = batch;
         if (batch.oversized.length) this.fail(Error('Bridge frame too large'));

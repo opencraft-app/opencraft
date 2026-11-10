@@ -1362,5 +1362,9 @@
   "chat.agentRequestFailed": "The Agent could not complete this response. You can continue to try again.",
   "chat.agentRequestUnconfirmed": "The Agent connection was interrupted and the response outcome is unknown. Check the conversation before trying again.",
   "chat.continueResponse": "Continue",
-  "agentUsage.teamSpend": "Team on-demand"
+  "agentUsage.teamSpend": "Team on-demand",
+  "chat.steerEvidence.contextConfirmed": "Input confirmed in task context",
+  "chat.steerEvidence.accepted": "Accepted; context not yet confirmed",
+  "chat.steerEvidence.rejected": "Input rejected",
+  "chat.steerEvidence.unconfirmed": "Delivery unconfirmed"
 }

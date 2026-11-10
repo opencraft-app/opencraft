@@ -1364,5 +1364,9 @@
   "chat.agentRequestFailed": "Agent tidak dapat melengkapkan respons ini. Anda boleh meneruskan untuk mencuba lagi.",
   "chat.agentRequestUnconfirmed": "Sambungan Agent terputus dan hasil balasan belum diketahui. Semak perbualan sebelum mencuba lagi.",
   "chat.continueResponse": "Teruskan",
-  "agentUsage.teamSpend": "Atas permintaan pasukan"
+  "agentUsage.teamSpend": "Atas permintaan pasukan",
+  "chat.steerEvidence.contextConfirmed": "Input disahkan dalam konteks tugas",
+  "chat.steerEvidence.accepted": "Diterima; konteks belum disahkan",
+  "chat.steerEvidence.rejected": "Input ditolak",
+  "chat.steerEvidence.unconfirmed": "Penghantaran belum disahkan"
 }

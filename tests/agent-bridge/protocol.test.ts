@@ -254,3 +254,16 @@ test("outcome settlement is unknown without native proof and never replays", () 
   assert.equal(settleCommandOutcome({ ...base, nativeProof: "not-sent" }).outcome, "not-sent");
   assert.equal(settleCommandOutcome({ ...base, replyReceived: true, state: "accepted" }).outcome, "accepted");
 });
+
+test('input evidence status parsing rejects malformed facets and isolates transport-owned data', async () => {
+  const { parseSteerStatusResult } = await import('@opencraft/appserver-protocol');
+  assert.equal(parseSteerStatusResult({ schemaVersion: 2, inputs: [] }), null);
+  assert.equal(parseSteerStatusResult({ schemaVersion: 1, inputs: [{ inputId: 'x', admission: { value: 'accepted', version: -1 } }] }), null);
+  assert.deepEqual(parseSteerStatusResult({ schemaVersion: 1, inputs: [] }), { schemaVersion: 1, inputs: [] });
+  const input = { inputId: 'input', clientRequestId: 'client', expectedTurnId: 'turn', disposition: 'steered', nativeExecutions: 1,
+    registration: null, admission: { value: 'accepted', version: 1 }, delivery: { value: 'native-inject', version: 1 },
+    evidence: { value: 'none', version: 0 }, withdrawal: { value: 'none', version: 0 }, outcome: 'pending' };
+  const parsed = parseSteerStatusResult({ schemaVersion: 1, inputs: [input] }); assert(parsed);
+  input.admission.value = 'rejected';
+  assert.equal(parsed.inputs[0]!.admission.value, 'accepted');
+});

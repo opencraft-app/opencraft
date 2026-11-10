@@ -1014,6 +1014,11 @@ export class CodexEngineAdapter implements DuplexTransport {
   }
 
   async sendWithContext(frame: string, context: TransportSubmissionContext): Promise<void> {
+    const bridgeRequest = record(JSON.parse(frame));
+    if (bridgeRequest.method === 'thread/start' && record(bridgeRequest.params).agentBridge !== undefined) {
+      this.emit({ id: bridgeRequest.id, error: { code: -32601, message: 'Codex provider bridge is not configured for this Host' } }, string(bridgeRequest[LOGICAL_CLIENT_FIELD]));
+      return;
+    }
     if (this.coreBridge) {
       if (context.sender !== null) throw new Error("Codex core mode does not support verified sender attribution");
       return this.coreBridge.send(frame);

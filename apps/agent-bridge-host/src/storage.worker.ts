@@ -93,6 +93,7 @@ const operations: Record<string, (args: any) => any> = {
     run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', command.commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
     return { receipt: receipt(command.commandId), fresh: true };
   }),
+  threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
   query: ({ id }: any) => receipt(id),
   dispatch: ({ id }: any) => tx(() => {
     require(receipt(id)?.state === 'registered', 'Command is not dispatchable');

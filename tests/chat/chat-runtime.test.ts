@@ -2929,3 +2929,25 @@ for (const unknown of [true, false]) test(`an uncertain or permanent online fail
     assert.equal(rows.length, 0); assert.equal(sends, 1);
   } finally { runtime.dispose(); }
 });
+
+test('input evidence stays separate from admission and late query cannot regress its facet or timeline identity', () => {
+  const replica = new FakeReplica(threadView());
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey('local', 'thread-one'), replica, commands: commands(), history: { async loadOlder() {} } });
+  const before = runtime.getSnapshot().timeline.frames.map(frame => frame.id);
+  const status: import('@opencraft/appserver-protocol').SteerInputStatus = {
+    inputId: 'input-one', clientRequestId: 'client-user-one', expectedTurnId: 'turn-one', disposition: 'steered', nativeExecutions: 1,
+    registration: { value: 'registered', version: 1 }, admission: { value: 'none', version: 0 },
+    delivery: { value: 'none', version: 0 }, evidence: { value: 'context-confirmed', version: 3, evidenceKind: 'native-input-id', nativeInputId: 'native-user' },
+    withdrawal: { value: 'none', version: 0 }, outcome: 'context-confirmed',
+  };
+  const message = () => runtime.getSnapshot().timeline.frames.flatMap(frame => frame.blocks).find(block => block.type === 'user-message' && block.clientId === 'client-user-one');
+  try {
+    runtime.updateSteerEvidence([status]);
+    runtime.updateSteerEvidence([{ ...status, admission: { value: 'accepted', version: 1 }, evidence: { value: 'none', version: 0 }, outcome: 'registered' }]);
+    const block = message(); assert.equal(block?.type, 'user-message');
+    if (block?.type !== 'user-message') throw Error('Expected user message');
+    assert.equal(block.steerEvidence?.admission.value, 'accepted');
+    assert.equal(block.steerEvidence?.evidence.value, 'context-confirmed');
+    assert.deepEqual(runtime.getSnapshot().timeline.frames.map(frame => frame.id), before);
+  } finally { runtime.dispose(); }
+});
