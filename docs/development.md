@@ -1,6 +1,6 @@
 # Development and build guide
 
-[English overview](../README.md) · [中文主页](../README.zh-CN.md) · [Contributing](../CONTRIBUTING.md)
+[中文主页](../README.md) · [English overview](../README.en.md) · [Contributing](../CONTRIBUTING.md)
 
 This guide keeps detailed source-development, Host configuration and platform
 build commands together. For installation and delivery requirements, follow the
