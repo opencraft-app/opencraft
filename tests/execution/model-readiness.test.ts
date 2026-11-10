@@ -53,4 +53,5 @@ test('another configured provider cannot make the selected unconfigured model re
  assert.equal(await readHostModelReadiness(request,'target-host','dsh-model:ready-other:working'),true);
  assert.equal(await readHostModelReadiness(request,'target-host','pi:ready-other:working'),true);
  assert.equal(await readHostModelReadiness(request,'target-host','dsh-model:ready-other:removed'),false);
+ assert.equal(await readHostModelReadiness((async () => { throw new Error('must not ask the host'); }) as HostProtocolRequest,'target-host','cursor:current'),true);
 });

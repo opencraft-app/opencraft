@@ -63,6 +63,7 @@ interface SidebarProps {
   pendingThreadId?: string | null;
   primaryActions?: readonly SidebarActionItem[];
   footerActions?: readonly SidebarActionItem[];
+  footerAccessory?: ReactNode;
   managementNavigation?: ReactNode;
   catalogs?: readonly SidebarCatalogItem[];
   bots?: readonly SidebarEntity[];
@@ -199,7 +200,7 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
 export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const {
     threads, activeHostId, activeThreadId, sidebarLayout, onSelectThread, onNewTask, onOpenSettings,
-    pendingHostId = null, pendingThreadId = null, primaryActions = [], footerActions = [],
+    pendingHostId = null, pendingThreadId = null, primaryActions = [], footerActions = [], footerAccessory,
     managementNavigation = null, catalogs = [], bots = [], botCreation = null,
     showFooter = true, showStart = true, showNewChat = false, searchInDialog = false,
     threadActions, threadBadge = null, threadListGrouping = null, threadCapabilities, pendingTitle,
@@ -500,6 +501,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         </ContextMenu.Content></ContextMenu.Portal>
         </SidebarListContextMenu>
       </div>
+      {footerAccessory}
       {showFooter ? <div className="sidebar-panel__footer">
         {footerActions.map(navigationAction)}
         <SidebarNavigationItem title={text("settings.title", "Settings")} icon={<SettingsGearIcon size={18} />} onInvoke={() => dismissAfter(onOpenSettings)} />

@@ -1236,6 +1236,22 @@ test("continuation rejection is observable and does not silently disappear", asy
   } finally { runtime.dispose(); }
 });
 
+test("confirmed ACP failures offer explicit Continue without entering capacity retries; unknown outcomes stay fenced", async () => {
+  for (const code of ["acpPromptFailed", "acpPromptUnconfirmed"]) {
+    let calls = 0;
+    const replica = new FakeReplica(threadView({ thread: { id: "thread-one", status: { type: "idle" } }, pendingInteractions: [],
+      turns: [{ id: "failed", status: "failed", items: [{ id: "failure", type: "error", code, message: code }], error: { message: code, codexErrorInfo: "other" } }] }));
+    const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica,
+      canAutoContinueCapacity: () => true, commands: commands({ async continueTurn() { calls++; return receipt("explicit", "continued"); } }), history: { async loadOlder() {} } });
+    try {
+      assert.equal(runtime.getSnapshot().continuation.turnId, code === "acpPromptFailed" ? "failed" : null);
+      await new Promise(resolve => setTimeout(resolve, 1100)); assert.equal(calls, 0, "native failures do not auto-replay through the Codex capacity timer");
+      if (code === "acpPromptFailed") { await runtime.continueTurn(asTurnId("failed")); assert.equal(calls, 1); }
+      else await assert.rejects(runtime.continueTurn(asTurnId("failed")));
+    } finally { runtime.dispose(); }
+  }
+});
+
 test("older Codex Hosts automatically continue capacity failures after a delay", async () => {
   let calls = 0;
   const runtime = createReplicaConversationRuntime({

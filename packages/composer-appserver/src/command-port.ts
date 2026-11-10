@@ -140,7 +140,9 @@ export function createAppServerConversationCommandPort(
     } finally {
       clearTimeout(capabilityTimer);
     }
-    if (!resolved?.serviceTiers?.includes(intent.selections.serviceTier ?? "")) {
+    // Null explicitly clears a previously selected tier. It does not require a
+    // selectable tier in the catalog, including when a new model has no Fast.
+    if (intent.selections.serviceTier != null && !resolved?.serviceTiers?.includes(intent.selections.serviceTier)) {
       const { serviceTier: _serviceTier, ...selections } = intent.selections;
       intent = { ...intent, selections };
     }

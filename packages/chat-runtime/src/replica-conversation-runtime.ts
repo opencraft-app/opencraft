@@ -1318,9 +1318,11 @@ export function createReplicaConversationRuntime(
     capacityRetryDispatched = null;
     capacityRetryAttempt = 0;
   };
+  const hasCapacityFailure = (turnId: TurnId) => snapshot.timeline.frames.some(frame =>
+    frame.turnId === turnId && frame.blocks.some(block => block.type === "error" && block.code === "serverOverloaded"));
   const scheduleCapacityRetry = () => {
     const source = snapshot.continuation.turnId;
-    if (disposed || !config.canAutoContinueCapacity?.() || source === null || snapshot.queuedSubmissions.length > 0) {
+    if (disposed || !config.canAutoContinueCapacity?.() || source === null || !hasCapacityFailure(source) || snapshot.queuedSubmissions.length > 0) {
       clearCapacityRetryTimer();
       return;
     }
@@ -1331,7 +1333,7 @@ export function createReplicaConversationRuntime(
     capacityRetryTimer = setTimeout(() => {
       capacityRetryTimer = null;
       capacityRetrySource = null;
-      if (disposed || !config.canAutoContinueCapacity?.() || snapshot.continuation.turnId !== source
+      if (disposed || !config.canAutoContinueCapacity?.() || snapshot.continuation.turnId !== source || !hasCapacityFailure(source)
         || snapshot.queuedSubmissions.length > 0) return;
       capacityRetryDispatched = source;
       capacityRetryAttempt += 1;
@@ -1474,12 +1476,12 @@ export function createReplicaConversationRuntime(
       continuedFromTurnId = null;
       continuationError = null;
     }
-    // Codex offers empty-turn continuation for overload, not arbitrary failures
-    // (e.g. missing credentials). Eligibility is runtime policy, not banner style.
+    // Capacity and confirmed ACP prompt failures support explicit continuation.
+    // Unknown native outcomes and arbitrary failures remain ineligible.
     const recoverableFailure = timeline.frames.some((frame) =>
       frame.turnId === latest?.id && frame.blocks.some((block) =>
         block.type === "error" && block.recovery === "terminal" &&
-        block.code === "serverOverloaded"));
+        (block.code === "serverOverloaded" || block.code === "acpPromptFailed")));
     const threadActive = isRecord(thread.status) && thread.status.type === "active";
     const canContinue = replica.authoritative && replica.phase === "live" &&
       error === null && !threadActive && active === undefined &&
