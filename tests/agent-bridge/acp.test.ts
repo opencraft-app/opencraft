@@ -327,12 +327,12 @@ test("full and accept-edits permission modes do not ask a human for edit tools; 
 test("native steering is admitted and recorded without opening a second turn", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "acp-steer-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const started = await startBridge(root, { mode: "full", fixtureEnv: { ACP_FIXTURE_NATIVE_STEER: "1", ACP_FIXTURE_DELAY_MS: "60" } });
+  const started = await startBridge(root, { mode: "full", fixtureEnv: { ACP_FIXTURE_NATIVE_STEER: "1", ACP_FIXTURE_DELAY_MS: "100" } });
   t.after(() => started.child.kill("SIGTERM"));
   const client = new BridgeClient(started);
   await client.initialize();
   await client.request("session/create", { threadId: "thread-steer", cwd: root, permissionMode: "full" });
-  const turn = await client.request("turn/start", { threadId: "thread-steer", input: { text: "write a report" } });
+  const turn = await client.request("turn/start", { threadId: "thread-steer", input: { text: "write a report with several words to keep the turn open" } });
   await client.waitFor(() => client.deltas("thread-steer"), (deltas) =>
     deltas.some((delta) => delta.op === "item.textDelta"));
   const answer = await client.request("turn/steer", {
@@ -346,6 +346,17 @@ test("native steering is admitted and recorded without opening a second turn", a
   assert.equal(answer.delivery, "native-inject");
   await client.waitFor(() => client.deltas("thread-steer"), (deltas) =>
     deltas.some((delta) => delta.op === "input.delivery" && delta.inputId === "steer-1"));
+  const secondSteer = await client.request("turn/steer", {
+    threadId: "thread-steer",
+    inputId: "steer-2",
+    clientRequestId: "client-steer-2",
+    expectedTurnId: turn.nativeTurnId,
+    delivery: "native-inject",
+    input: { text: "also mention the red door" },
+  });
+  assert.equal(secondSteer.delivery, "native-inject");
+  await client.waitFor(() => client.deltas("thread-steer"), (deltas) =>
+    deltas.some((delta) => delta.op === "input.delivery" && delta.inputId === "steer-2"));
   await client.waitFor(() => client.deltas("thread-steer"), (deltas) =>
     deltas.some((delta) => delta.op === "turn.close"));
   const deltas = client.deltas("thread-steer");
@@ -356,10 +367,12 @@ test("native steering is admitted and recorded without opening a second turn", a
   assert.equal(delivery.admitted, true);
   assert(deltas.some((delta) => delta.op === "input.evidence" && delta.inputId === "steer-1" && delta.evidenceKind === "echo"));
   assert(deltas.some((delta) => delta.op === "input.evidence" && delta.inputId === "steer-1" && delta.evidenceKind === "admission"));
-  const query = await client.request("input/query", { threadId: "thread-steer", inputIds: ["steer-1"] });
+  const query = await client.request("input/query", { threadId: "thread-steer", inputIds: ["steer-1", "steer-2"] });
+  assert.equal(query.inputs.length, 2);
   assert.equal(query.inputs[0].admission.value, "accepted");
   assert.equal(query.inputs[0].delivery.value, "native-inject");
   assert.equal(query.inputs[0].nativeExecutions, 1);
+  assert.equal(query.inputs[1].admission.value, "accepted");
   await client.close();
 });
 
@@ -405,6 +418,7 @@ test("a Copilot-like agent without native declaration only offers explicit next-
   const deltas = client.deltas("thread-copilot");
   assert.equal(deltas.filter((delta) => delta.op === "turn.open").length, 2);
   assert.equal(deltas.find((delta) => delta.op === "input.delivery" && delta.inputId === "next-1").deliveryMethod, "next-turn");
+  assert.equal(deltas.find((delta) => delta.op === "input.accepted" && delta.inputId === "next-1").disposition, "next-turn");
   assert.equal(deltas.some((delta) => delta.deliveryMethod === "native-inject"), false);
   await client.close();
 });
@@ -552,4 +566,25 @@ test("captured ACP native transcript translates deterministically and without un
   assert.equal(first.at(-1)?.status, "completed");
   assert.equal(transcript.initialize.protocolVersion, 1);
   assert.equal(transcript.session.sessionId, "fixture-session-1");
+});
+
+
+test("concurrent turn/start on one ACP session admits exactly one native turn", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-concurrent-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_DELAY_MS: "40" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-concurrent", cwd: root });
+  const first = client.request("turn/start", { threadId: "thread-concurrent", input: { text: "first concurrent" } });
+  const second = client.request("turn/start", { threadId: "thread-concurrent", input: { text: "second concurrent" } });
+  const results = await Promise.allSettled([first, second]);
+  assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+  const rejected = results.find((result) => result.status === "rejected") as PromiseRejectedResult;
+  assert.equal(rejected.reason.kind, "stale-target");
+  await client.waitFor(() => client.deltas("thread-concurrent"), (deltas) =>
+    deltas.some((delta) => delta.op === "turn.close"));
+  assert.equal(client.deltas("thread-concurrent").filter((delta) => delta.op === "turn.open").length, 1);
+  await client.close();
 });

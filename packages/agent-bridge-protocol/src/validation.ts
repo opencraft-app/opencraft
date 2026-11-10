@@ -129,6 +129,8 @@ export function parseDelta(value: unknown): DeltaParseResult {
     case "input.accepted":
       if (!requireString("inputId") || !requireString("clientRequestId")) return fail("input.accepted needs inputId/clientRequestId");
       if (value.allowedPaths !== undefined && !isStringArray(value.allowedPaths)) return fail("bad allowedPaths");
+      if (value.disposition !== undefined
+        && !isOneOf(value.disposition, ["steered", "next-turn", "interrupt-replace"] as const)) return fail("bad input disposition");
       break;
     case "input.delivery":
       if (!requireString("inputId") || !isOneOf(value.deliveryMethod, DELIVERY_METHODS)

@@ -22,7 +22,7 @@ async function until<T>(read: () => Promise<T>, predicate: (value: T) => boolean
   throw new Error(`${label} timed out`);
 }
 
-async function config(root: string): Promise<Generation> {
+async function config(root: string, fixtureEnv: Record<string, string> = {}): Promise<Generation> {
   const env = {
     ...process.env,
     PATH: process.env.PATH ?? "",
@@ -36,6 +36,7 @@ async function config(root: string): Promise<Generation> {
     ACP_FIXTURE_NATIVE_STEER: "1",
     ACP_FIXTURE_PERMISSION: "1",
     ACP_FIXTURE_DELAY_MS: "40",
+    ...fixtureEnv,
   } as Record<string, string>;
   return {
     id: "acp-g1",
@@ -128,4 +129,50 @@ test("P1b Host runs the generic ACP bridge: projection, approval channel and nat
   const all = canonical(await host.events(0));
   assert.equal(all.filter((event: any) => event.kind === "turn.started").length, 2);
   assert.equal(all.filter((event: any) => event.kind === "turn.completed").length, 2);
+});
+
+
+test("a next-turn input settles its Host route and can be released", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-host-next-"));
+  const host = await BridgeHost.open({ path: join(root, "host.db"), policy, backend: localTestBackend() });
+  t.after(async () => { await host.close().catch(() => {}); await rm(root, { recursive: true, force: true }); });
+  await host.add(await config(root, {
+    ACP_FIXTURE_NATIVE_STEER: "0",
+    ACP_FIXTURE_PERMISSION: "0",
+    ACP_FIXTURE_DELAY_MS: "30",
+  }));
+  await host.activate("acp-g1", "");
+
+  await host.accept(command("create", "session/create", { cwd: root, permissionMode: "auto" }));
+  await until(() => host.query("create"), (receipt) => receipt?.state === "accepted", "session create");
+  await host.accept(command("start", "turn/start", { input: { text: "first task" } }));
+  await until(() => host.query("start"), (receipt) => receipt?.state === "accepted", "first turn");
+  await until(() => host.events(0), (events) =>
+    canonical(events).filter((event: any) => event.kind === "turn.completed").length >= 1, "first turn completion");
+
+  await host.accept(command("start-2", "turn/start", { input: { text: "one two three four five six seven eight" } }));
+  await until(() => host.query("start-2"), (receipt) => receipt?.state === "accepted", "second turn");
+  await delay(100);
+  await host.accept(command("next", "turn/steer", {
+    inputId: "next-1",
+    clientRequestId: "client-next-1",
+    delivery: "next-turn",
+    input: { text: "after the active turn" },
+  }));
+  await until(() => host.query("next"), (receipt) => receipt?.state === "accepted", "next-turn steer");
+  await until(() => host.events(0), (events) => {
+    const states = canonical(events).filter((event: any) =>
+      event.kind === "input.state" && event.status.inputId === "next-1");
+    return states.some((event: any) => event.status.delivery.value === "next-turn"
+      && event.status.disposition === "next-turn");
+  }, "next-turn delivery");
+  await until(() => host.events(0), (events) =>
+    canonical(events).filter((event: any) => event.kind === "turn.completed").length >= 3, "next-turn completion");
+
+  await host.accept(command("close", "session/close"));
+  await until(() => host.query("close"), (receipt) => receipt?.state === "accepted", "session close");
+  const events = await host.events(0);
+  const last = events.at(-1);
+  if (last !== undefined) await host.ack(last.seq);
+  await host.releaseThread("server-1", "thread-1");
 });

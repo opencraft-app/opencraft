@@ -100,11 +100,13 @@ The bridge never chooses a destructive fallback on its own:
   context proof.
 - `next-turn` must be requested explicitly. The bridge queued the input, and
   once the active turn settles it opens a new turn, emits `input.accepted` with
-  the new native turn id, then `input.delivery = next-turn` and `admission`.
-  It is never labelled `native-inject`.
+  the new native turn id and `disposition: "next-turn"`, then
+  `input.delivery = next-turn` and `admission`. It is never labelled
+  `native-inject`.
 - `interrupt-replace` must be requested explicitly. The bridge sends ACP
   `session/cancel`, waits for the active prompt to settle, then opens a new turn
-  and records `delivery = interrupt-replace`. If the cancel cannot be written,
+  and records `input.accepted.disposition = "interrupt-replace"` and
+  `delivery = interrupt-replace`. If the cancel cannot be written,
   the input stays unknown and is not sent.
 - Omitting `delivery` on an instance without native steering is an explicit
   rejection that tells the caller to choose `next-turn` or

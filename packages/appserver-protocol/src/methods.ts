@@ -271,8 +271,11 @@ export type TurnSteerResponse = GeneratedTurnSteerResponse & {
    * input MUST set `disposition: "queued"` explicitly; the additive
    * steer-evidence notification carries the same disposition for declaring
    * clients so it is never mistaken for a delivered/steered input.
+   *
+   * `next-turn` and `interrupt-replace` are explicit operator choices; they
+   * are never presented as a native steer.
    */
-  readonly disposition?: "steered" | "queued";
+  readonly disposition?: "steered" | "queued" | "next-turn" | "interrupt-replace";
 };
 export type TurnInterruptParams = GeneratedTurnInterruptParams;
 export type TurnInterruptResponse = GeneratedTurnInterruptResponse;

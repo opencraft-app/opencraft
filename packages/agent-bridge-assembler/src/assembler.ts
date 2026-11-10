@@ -63,6 +63,7 @@ interface MutableState {
   settledKeys: Record<string, true>;
   inputs: Record<string, CanonicalInputState>;
   pendingAccepted: string[];
+  pendingDispositions: Record<string, "steered" | "next-turn" | "interrupt-replace">;
   extensionStates: Record<string, unknown>;
 }
 
@@ -83,6 +84,7 @@ function cloneState(source: AssemblerState): MutableState {
     settledKeys: { ...source.settledKeys },
     inputs: { ...source.inputs },
     pendingAccepted: [...source.pendingAccepted],
+    pendingDispositions: { ...(source.pendingDispositions ?? {}) },
     extensionStates: { ...source.extensionStates },
   };
 }
@@ -162,7 +164,8 @@ export function assemble(
     for (const inputId of state.pendingAccepted) {
       const input = state.inputs[inputId];
       if (input === undefined) continue;
-      emitInput(withDisposition(input, "steered", turnId));
+      emitInput(withDisposition(input, state.pendingDispositions[inputId] ?? "steered", turnId));
+      delete state.pendingDispositions[inputId];
     }
     state.pendingAccepted = [];
   };
@@ -173,6 +176,7 @@ export function assemble(
       const input = state.inputs[inputId];
       if (input === undefined) continue;
       emitInput(withDisposition(input, "queued", null));
+      delete state.pendingDispositions[inputId];
       diag("steer-end-race", "turn.boundary", "accepted input raced turn completion; queued, not lost", input.inputId);
     }
     state.pendingAccepted = [];
@@ -413,13 +417,14 @@ export function assemble(
         const input = registerInput(delta);
         const target = delta.expectedTurnId;
         if (state.activeTurnId !== null && (target === undefined || target === state.activeNativeTurnId)) {
-          emitInput(withDisposition(input, "steered", state.activeTurnId));
+          emitInput(withDisposition(input, delta.disposition ?? "steered", state.activeTurnId));
         } else if (target !== undefined && state.settledNativeTurns[target] !== undefined) {
           emitInput(withDisposition(input, "queued", null));
           diag("steer-end-race", op, "input targeted a settled turn; queued, not lost", input.inputId);
         } else {
           state.inputs[input.inputId] = input;
           state.pendingAccepted.push(input.inputId);
+          state.pendingDispositions[input.inputId] = delta.disposition ?? "steered";
           emit({ kind: "input.state", threadId, status: input });
         }
         break;
@@ -483,6 +488,7 @@ export function assemble(
         state.settledKeys = {};
         state.inputs = {};
         state.pendingAccepted = [];
+        state.pendingDispositions = {};
         state.extensionStates = {};
         break;
       }
@@ -490,6 +496,7 @@ export function assemble(
         settleOpenWork("completed");
         diag("session-ended-settled", op, "all open work settled at session end");
         state.pendingAccepted = [];
+        state.pendingDispositions = {};
         break;
       }
       case "extension.state":

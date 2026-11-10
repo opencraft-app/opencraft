@@ -32,8 +32,11 @@
 4. **无 native 声明时不猜路径**。`turn/steer` 未带 `delivery` 直接
    `explicit-reject` 并提示选择 `next-turn` 或 `interrupt-replace`；Copilot
    真实 initialize 无 `_meta.midTurnSteering`，因此 UI/客户端不会收到 native
-   label。显式 next-turn 在活动 turn 结束后开新 turn，delivery 记
-   `next-turn`；interrupt-replace 先 cancel、等活动 turn 结算后再写 replacement。
+   label。显式 next-turn 在活动 turn 结束后开新 turn，`input.accepted` 带
+   `disposition:"next-turn"`，delivery 记 `next-turn`；interrupt-replace 先
+   cancel、等活动 turn 结算后再写 replacement，disposition/delivery 记
+   `interrupt-replace`。P1a 的 `InputAcceptedDelta.disposition` 与
+   `TurnSteerResponse.disposition` 为此做了加法扩展；旧值仍兼容。
 5. **权限执行者是 bridge（声明 `approvalExecutor:"provider"`）**。bridge 按
    mode 自动裁决或把 ACP `session/request_permission` 转成既有
    `interaction/request`（kind `approval`），payload 同时带现有

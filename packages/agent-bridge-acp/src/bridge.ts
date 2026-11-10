@@ -188,6 +188,7 @@ class AcpSession {
   private closing = false;
   private closed = false;
   private agentExited = false;
+  private startingTurn = false;
   private opened = false;
 
   constructor(
@@ -327,9 +328,19 @@ class AcpSession {
   }
 
   async startTurn(params: Record<string, unknown>): Promise<Record<string, unknown>> {
-    if (!this.opened || this.closed || this.agentExited) throw staleTarget("ACP session is not open");
+    if (!this.opened || this.closed || this.closing || this.agentExited) throw staleTarget("ACP session is not open");
+    if (this.startingTurn) throw staleTarget("a turn is already starting");
     if (this.active !== null) throw staleTarget("a turn is already running; use turn/steer");
     if (this.queue.length > 0) throw staleTarget("a queued next-turn input is still pending");
+    this.startingTurn = true;
+    try {
+      return await this.startTurnLocked(params);
+    } finally {
+      this.startingTurn = false;
+    }
+  }
+
+  private async startTurnLocked(params: Record<string, unknown>): Promise<Record<string, unknown>> {
     const input = this.parseInput(params.input);
     const requestedMode = params.permissionMode === undefined
       ? undefined
@@ -343,6 +354,9 @@ class AcpSession {
       });
       await this.applyPermissionPlan(plan);
       this.permissionPlan = plan;
+    }
+    if (this.closed || this.closing || this.agentExited || this.active !== null) {
+      throw staleTarget("the ACP session changed while the turn was starting");
     }
     const inputId = optionalString(params.inputId) ?? `input:${randomUUID()}`;
     const clientRequestId = optionalString(params.clientRequestId) ?? inputId;
@@ -378,7 +392,7 @@ class AcpSession {
     if (queued !== null) {
       const record = queued.record;
       record.targetNativeTurnId = nativeTurnId;
-      this.emitAccepted(record, nativeTurnId);
+      this.emitAccepted(record, nativeTurnId, queued.delivery);
       void this.emit([
         {
           scope: { threadId: this.threadId }, nativeTurnId,
@@ -411,7 +425,13 @@ class AcpSession {
       prompt,
     }, { timeoutMs: 0 });
     turn.promptSettled = response.then(
-      (value) => this.settleTurn(turn, { stopReason: parsePromptResult(value).stopReason }),
+      (value) => {
+        try {
+          return this.settleTurn(turn, { stopReason: parsePromptResult(value).stopReason });
+        } catch (error) {
+          return this.settleTurn(turn, { error: error instanceof Error ? error : new Error(String(error)) });
+        }
+      },
       (error: unknown) => this.settleTurn(turn, { error: error instanceof Error ? error : new Error(String(error)) }),
     );
     return nativeTurnId;
@@ -464,7 +484,13 @@ class AcpSession {
       const replacement = turn.replacement;
       const record = replacement.record;
       record.queued = false;
-      this.startNativeTurn(replacement.input, record.inputId, record.clientRequestId, replacement);
+      try {
+        this.startNativeTurn(replacement.input, record.inputId, record.clientRequestId, replacement);
+      } catch (error) {
+        record.terminal = true;
+        record.outcome = "unknown";
+        this.host.diagnostic(`replacement turn could not start: ${error instanceof Error ? error.message : String(error)}`);
+      }
       return;
     }
     this.dispatchQueue();
@@ -479,7 +505,14 @@ class AcpSession {
       return;
     }
     next.record.queued = false;
-    this.startNativeTurn(next.input, next.record.inputId, next.record.clientRequestId, next);
+    try {
+      this.startNativeTurn(next.input, next.record.inputId, next.record.clientRequestId, next);
+    } catch (error) {
+      next.record.terminal = true;
+      next.record.outcome = "unknown";
+      this.host.diagnostic(`queued turn could not start: ${error instanceof Error ? error.message : String(error)}`);
+      this.dispatchQueue();
+    }
   }
 
   async steer(params: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -531,7 +564,8 @@ class AcpSession {
     this.inputs.set(inputId, record);
     if (delivery === "native-inject") {
       const pending = [...this.inputs.values()].filter((candidate) =>
-        candidate !== record && candidate.requestedDelivery === "native-inject" && !candidate.terminal);
+        candidate !== record && candidate.requestedDelivery === "native-inject"
+        && candidate.admission.value === "none" && !candidate.terminal);
       if (pending.length > 0) {
         this.inputs.delete(inputId);
         throw explicitReject("an earlier native steer has no stable native input id and is still unsettled");
@@ -556,7 +590,10 @@ class AcpSession {
       return { nativeTurnId: active.nativeTurnId, delivery, admission: "pending" };
     }
     if (delivery === "interrupt-replace") {
-      if (active.replacement !== undefined) throw explicitReject("an interrupt replacement is already pending");
+      if (active.replacement !== undefined) {
+        this.inputs.delete(inputId);
+        throw explicitReject("an interrupt replacement is already pending");
+      }
       active.replacement = { record, input, delivery };
       try {
         this.connection!.notify("session/cancel", { sessionId: this.newSession!.sessionId });
@@ -569,6 +606,10 @@ class AcpSession {
       }
       record.queued = true;
       return { nativeTurnId: active.nativeTurnId, delivery, cancelling: true };
+    }
+    if (this.queue.length >= 16) {
+      this.inputs.delete(inputId);
+      throw explicitReject("the next-turn queue is full");
     }
     this.queue.push({ record, input, delivery });
     record.queued = true;
@@ -638,7 +679,7 @@ class AcpSession {
     ]);
   }
 
-  private emitAccepted(record: InputRecord, nativeTurnId: string): void {
+  private emitAccepted(record: InputRecord, nativeTurnId: string, disposition?: "steered" | "next-turn" | "interrupt-replace"): void {
     if (record.accepted) return;
     record.accepted = true;
     void this.emit([{
@@ -650,6 +691,7 @@ class AcpSession {
       targetNativeSession: this.newSession?.sessionId,
       allowedPaths: record.allowedPaths,
       fallbackPolicy: record.fallbackPolicy,
+      ...(disposition === undefined ? {} : { disposition }),
     }]);
   }
 
@@ -746,7 +788,11 @@ class AcpSession {
         inputId: record.inputId,
         clientRequestId: record.clientRequestId,
         expectedTurnId: record.targetNativeTurnId,
-        disposition: record.accepted || record.dispatched ? "steered" : record.queued ? "queued" : null,
+        disposition: record.accepted
+          ? record.requestedDelivery === "next-turn" || record.requestedDelivery === "interrupt-replace"
+            ? record.requestedDelivery
+            : "steered"
+          : record.queued ? "queued" : null,
         nativeExecutions: record.nativeExecution ? 1 : 0,
         registration: record.accepted ? { value: "registered", version: 0 } : null,
         admission: record.admission,
@@ -803,6 +849,9 @@ class AcpSession {
     if (auto === "allow" || auto === "deny") {
       const decision = chooseOption(request.options, auto);
       if (decision.kind === "option") return { outcome: { outcome: "selected", optionId: decision.optionId } };
+    }
+    if (this.pendingInteractions.size >= 32) {
+      return { outcome: { outcome: "cancelled" } };
     }
     const interactionId = newInteractionId();
     const decisionPromise = new Promise<PermissionDecision>((resolve) => {
@@ -887,6 +936,12 @@ class AcpSession {
     this.agentExited = true;
     const active = this.active;
     if (active !== null) {
+      if (active.replacement !== undefined) {
+        const record = active.replacement.record;
+        record.terminal = true;
+        record.queued = false;
+        record.outcome = "unknown";
+      }
       for (const attempt of active.steerAttempts.values()) {
         if (attempt.settled) continue;
         attempt.settled = true;

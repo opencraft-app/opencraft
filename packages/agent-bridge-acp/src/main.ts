@@ -76,6 +76,7 @@ export async function runBridgeStdio(options: BridgeStdioOptions): Promise<void>
   const trace = typeof tracePath === "string" && tracePath.length > 0
     ? createWriteStream(tracePath, { flags: "a", mode: 0o600 })
     : null;
+  trace?.on("error", (error) => diagnostic(`wire trace unavailable: ${error.message}`));
 
   let bridge: AcpBridge;
   try {
@@ -85,7 +86,11 @@ export async function runBridgeStdio(options: BridgeStdioOptions): Promise<void>
       onDiagnostic: diagnostic,
       ...(trace === null ? {} : {
         onFrame: (direction: "in" | "out", frame: unknown) => {
-          trace.write(JSON.stringify({ direction, frame }) + "\n");
+          try {
+            trace.write(JSON.stringify({ direction, frame }) + "\n");
+          } catch {
+            // A trace is diagnostic; losing it must not stop execution.
+          }
         },
       }),
     });

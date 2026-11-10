@@ -124,7 +124,7 @@ export function declarationFor(profile: AcpProfile): BridgeDeclaration {
         evidenceKinds: ["admission", "echo"],
         withdrawal: "before-dispatch",
         contentLimits: {
-          maxBytes: 512 * 1024,
+          maxBytes: 360 * 1024,
           allowedContentTypes: ["text", "image"],
         },
         maxPendingWithoutNativeId: 1,

@@ -62,6 +62,7 @@ export function parsePromptInput(value: unknown, limits: PromptLimits): AcpPromp
     if (!(IMAGE_TYPES as readonly string[]).includes(mimeType)) {
       throw new Error(`unsupported image type ${mimeType}`);
     }
+    if (data.length === 0) throw new Error("image data must not be empty");
     const bytes = base64Bytes(data);
     total += bytes;
     if (total > limits.maxBytes) throw new Error(`input exceeds ${limits.maxBytes} bytes`);

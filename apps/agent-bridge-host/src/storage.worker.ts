@@ -42,7 +42,8 @@ const checkpoint = (route: string): AssemblerState => {
 const unsettledInput = (input: CanonicalInputState): boolean => {
   if (input.admission.value === 'unknown' || ['withdraw-requested', 'unknown'].includes(input.withdrawal.value)) return true;
   if (input.withdrawal.value === 'withdrawn' || ['rejected', 'failed'].includes(input.admission.value)) return false;
-  return input.disposition !== 'steered' || ['pending', 'registered', 'queued', 'unknown'].includes(input.outcome);
+  if (input.disposition === 'queued' || input.disposition === null) return true;
+  return ['pending', 'registered', 'queued', 'unknown'].includes(input.outcome);
 };
 const busy = (route: string): boolean => {
   const state = checkpoint(route);
