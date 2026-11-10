@@ -979,6 +979,17 @@ Existing engine compositions do not import or select this path. See the
 [Host contract and local acceptance](../apps/agent-bridge-host/README.md) for the
 private attachment, generation draining and conservative Host-crash boundaries.
 
+## Generic ACP provider bridge P3c (resume, history, client services)
+
+The ACP bridge follow-up keeps the same opt-in Host route and adds
+`session/resume` via ACP `session/load`/`session/resume`, bounded native
+history replay, `model/list`, and ACP client-side `fs/*`, `terminal/*` and
+`elicitation/create` with mode-scoped capabilities. History is replayed by the
+bridge, not a second Web history store; the existing Workbench still consumes
+only the existing AppServer path. The Host remains the owner of the command
+ledger, sandbox, assembler and outbox. See
+[P3c follow-up](../design/agent-bridge/p3c-acp-followup.md).
+
 ## Generic ACP provider bridge (P3, opt-in)
 
 `packages/agent-bridge-acp` is a pinned provider bridge for Agent Client

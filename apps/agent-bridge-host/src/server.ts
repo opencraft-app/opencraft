@@ -40,7 +40,13 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
         }
       } else { response.writeHead(405).end(); return; }
       response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(result ?? null));
-    } catch { response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'Host request refused; query the original commandId for custody' })); }
+    } catch (error) {
+      const refusal = error as Error & { code?: number; kind?: string };
+      const typed = typeof refusal.code === 'number' && typeof refusal.kind === 'string';
+      response.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify(typed
+        ? { error: refusal.message, code: refusal.code, kind: refusal.kind }
+        : { error: 'Host request refused; query the original commandId for custody' }));
+    }
   });
   server.requestTimeout = 15_000;
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });

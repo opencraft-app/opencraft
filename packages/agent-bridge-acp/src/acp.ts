@@ -88,11 +88,23 @@ export interface AcpConfigOption {
   readonly options?: readonly AcpConfigOptionValue[];
 }
 
+export interface AcpModel {
+  readonly modelId: string;
+  readonly name: string;
+  readonly description?: string | null;
+  readonly _meta?: Readonly<Record<string, unknown>>;
+}
+
+export interface AcpModelState {
+  readonly currentModelId: string | null;
+  readonly availableModels: readonly AcpModel[];
+}
+
 export interface AcpNewSessionResult {
   readonly sessionId: string;
   readonly modes?: AcpSessionModeState;
   readonly configOptions?: readonly AcpConfigOption[];
-  readonly models?: unknown;
+  readonly models?: AcpModelState;
   readonly _meta?: Readonly<Record<string, unknown>>;
 }
 
@@ -112,6 +124,7 @@ export interface AcpConnectionOptions {
   readonly onExit?: (error: Error) => void;
   /** Optional raw wire trace for acceptance recordings; never persisted by default. */
   readonly onFrame?: (direction: "in" | "out", frame: unknown) => void;
+  readonly clientCapabilities?: Readonly<Record<string, unknown>>;
   readonly requestTimeoutMs?: number;
 }
 
@@ -175,6 +188,25 @@ export function parseInitializeResult(value: unknown): AcpInitializeResult {
   return result;
 }
 
+function parseModelState(value: unknown): AcpModelState | undefined {
+  if (!isRecord(value)) return undefined;
+  const available = Array.isArray(value.availableModels)
+    ? value.availableModels.flatMap((entry: unknown): AcpModel[] => {
+      if (!isRecord(entry) || typeof entry.modelId !== "string" || entry.modelId.length === 0) return [];
+      return [{
+        modelId: entry.modelId,
+        name: typeof entry.name === "string" && entry.name.length > 0 ? entry.name : entry.modelId,
+        ...(typeof entry.description === "string" ? { description: entry.description } : {}),
+        ...(isRecord(entry._meta) ? { _meta: entry._meta } : {}),
+      }];
+    })
+    : [];
+  return {
+    currentModelId: typeof value.currentModelId === "string" ? value.currentModelId : null,
+    availableModels: available,
+  };
+}
+
 export function parseNewSessionResult(value: unknown): AcpNewSessionResult {
   if (!isRecord(value) || typeof value.sessionId !== "string" || value.sessionId.length === 0) {
     throw new Error("ACP session/new result is missing sessionId");
@@ -224,7 +256,7 @@ export function parseNewSessionResult(value: unknown): AcpNewSessionResult {
     sessionId: value.sessionId,
     ...(modeState === undefined ? {} : { modes: modeState }),
     ...(configOptions === undefined ? {} : { configOptions }),
-    ...("models" in value ? { models: value.models } : {}),
+    ...(parseModelState(value.models) === undefined ? {} : { models: parseModelState(value.models)! }),
     ...(isRecord(value._meta) ? { _meta: value._meta } : {}),
   };
 }
@@ -433,9 +465,9 @@ export class AcpConnection {
     const raw = await this.request("initialize", {
       protocolVersion: 1,
       clientInfo: { name: clientName, version: clientVersion },
-      // Do not advertise fs/terminal/elicitation capabilities this bridge does
-      // not implement. An agent that needs them must fail explicitly.
-      clientCapabilities: {},
+      // Only advertise services this bridge actually implements. The probe
+      // connection keeps this empty; a live session advertises its client host.
+      clientCapabilities: this.options.clientCapabilities ?? {},
     });
     return parseInitializeResult(raw);
   }

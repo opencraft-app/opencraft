@@ -1,0 +1,15 @@
+{
+  "viewport": "1280x900",
+  "engine": "chromium",
+  "cases": {
+    "copilot": "You said:\n\nAnswer with the single word STEERED.",
+    "amp": "You said:\n\nAnswer with the single word STEERED.",
+    "pending": "You said:\n\nAnswer with the single word STEERED."
+  },
+  "messageKinds": {
+    "copilot": "user",
+    "amp": "steering"
+  },
+  "assertion": "both shapes visible; no native/inject/fake-steer label; distinct steering and user-message presentation",
+  "limitation": "Component-level presentation only. The current Workbench does not consume opencraft/steerEvidence/updated, and the bridge does not yet emit a durable steeringUserMessage item."
+}

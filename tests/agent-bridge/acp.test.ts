@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -10,6 +10,7 @@ import {
   declarationFor,
   profileFromEnv,
   resolvePermission,
+  AcpClientHost,
   type AcpProfile,
 } from "../../packages/agent-bridge-acp/src/index.js";
 
@@ -223,7 +224,10 @@ test("turn/start translates ACP updates into semantic deltas and applies permiss
 
   const frames = (await readFile(started.logPath, "utf8")).trim().split("\n").map((line) => JSON.parse(line));
   assert(frames.some((frame) => frame.method === "session/set_mode" && frame.params.modeId === "full"));
-  assert(frames.some((frame) => frame.method === "session/set_config_option" && frame.params.configId === "model" && frame.params.value === "cheap"));
+  assert.equal(created.model.configOptionId, "model");
+  assert.equal(created.model.value, "cheap");
+  assert.equal(frames.some((frame) => frame.method === "session/set_config_option"
+    && frame.params.configId === "model" && frame.params.value !== "cheap"), false);
   await client.close();
 });
 
@@ -734,5 +738,283 @@ test("a permission response written after the agent exits does not crash the bri
     deltas.some((delta) => delta.op === "turn.close" && delta.status === "failed"));
   const query = await client.request("input/query", { threadId: "thread-dead" });
   assert.deepEqual(query.inputs, []);
+  await client.close();
+});
+
+test("model/list returns the ACP model catalog without creating a live Thread", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-models-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CLOSE: "1", ACP_FIXTURE_DELAY_MS: "10" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  const init = await client.initialize();
+  assert.equal(init.effectiveCapabilities.model, true);
+  const listed = await client.request("model/list", {});
+  assert.equal(listed.source, "acp-models");
+  assert.deepEqual(listed.models.map((model: any) => model.id), ["cheap", "expensive"]);
+  assert.equal(listed.current, "cheap");
+  assert.equal(listed.models[0].current, true);
+  assert.equal(client.deltas().length, 0);
+  await client.close();
+});
+
+test("session/resume loads native history and pages it without live deltas", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CONFIG: "1", ACP_FIXTURE_CLOSE: "1", ACP_FIXTURE_DELAY_MS: "10" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  const init = await client.initialize();
+  assert.equal(init.effectiveCapabilities.history, true);
+  const resumed = await client.request("session/resume", {
+    threadId: "thread-resume",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  assert.equal(resumed.resumed, true);
+  assert.equal(resumed.history.updates, 3);
+  assert.equal(resumed.capabilities.images, true);
+  assert.equal(client.callbackFor("thread/identity", "thread-resume")[0].params.sessionRestorable, true);
+  assert.equal(client.deltas("thread-resume").length, 0);
+
+  const first = await client.request("history/read", { threadId: "thread-resume", cursor: 0, limit: 2 });
+  assert.equal(first.nativeSessionId, "fixture-session-1");
+  assert.equal(first.total, 3);
+  assert.equal(first.updates.length, 2);
+  assert.equal(first.nextCursor, 2);
+  assert.equal(first.updates[0].update.sessionUpdate, "user_message_chunk");
+  const second = await client.request("history/read", { threadId: "thread-resume", cursor: 2, limit: 2 });
+  assert.equal(second.updates.length, 1);
+  assert.equal(second.nextCursor, null);
+  assert.equal(second.updates[0].update.sessionUpdate, "tool_call");
+
+  await client.request("turn/start", { threadId: "thread-resume", input: { text: "after resume" } });
+  await client.waitFor(() => client.deltas("thread-resume"), (deltas) =>
+    deltas.some((delta) => delta.op === "turn.close"));
+  await client.close();
+});
+
+test("history replay arriving just after the load response is still history", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-late-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_AFTER: "1", ACP_FIXTURE_DELAY_MS: "10" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const resumed = await client.request("session/resume", {
+    threadId: "thread-resume-late",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  assert.equal(resumed.history.updates, 3);
+  assert.equal(client.deltas("thread-resume-late").length, 0);
+  await client.close();
+});
+
+test("late replay after the load response stays history and never becomes live deltas", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-late-window-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_AFTER: "1", ACP_FIXTURE_LOAD_AFTER_MS: "500" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/resume", {
+    threadId: "thread-resume-late-window",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  await client.waitFor(() => client.frames, (frames) => frames.some((frame) =>
+    frame.method === "thread/delta" && frame.params.deltas.some((delta: any) => delta.op === "item.textDelta")), 2_000).catch(() => {});
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  const history = await client.request("history/read", { threadId: "thread-resume-late-window", cursor: 0, limit: 10 });
+  assert.equal(history.total, 3);
+  assert.equal(history.replaying, true);
+  assert.equal(client.deltas("thread-resume-late-window").some((delta) => delta.op === "unhandled"), false);
+  await client.close();
+});
+
+test("session/resume is refused when the agent does not declare load", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-no-resume-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_LOAD: "0" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  const init = await client.initialize();
+  assert.equal(init.effectiveCapabilities.history, false);
+  await assert.rejects(
+    client.request("session/resume", { threadId: "thread-no-resume", providerThreadId: "s", cwd: root }),
+    /does not declare session resume/u,
+  );
+  await client.close();
+});
+
+
+test("ACP client fs, terminal and elicitation are real and stay inside the session cwd", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-client-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    mode: "full",
+    fixtureEnv: { ACP_FIXTURE_CLIENT: "1", ACP_FIXTURE_DELAY_MS: "20" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-client", cwd: root, permissionMode: "full" });
+  await client.request("turn/start", { threadId: "thread-client", input: { text: "exercise client services" } });
+  const interaction = await client.waitFor(() => client.callbackFor("interaction/request", "thread-client"), (callbacks) =>
+    callbacks.some((frame) => frame.params.kind === "elicitation"));
+  const elicitation = interaction.find((frame) => frame.params.kind === "elicitation")!;
+  assert.equal(elicitation.params.payload.method, "item/elicitation/request");
+  await client.request("interaction/resolve", {
+    threadId: "thread-client",
+    interactionId: elicitation.params.interactionId,
+    result: { decision: "accept", content: { answer: "blue" } },
+  });
+  await client.waitFor(() => client.deltas("thread-client"), (deltas) =>
+    deltas.some((delta) => delta.op === "turn.close"));
+  assert.equal(await readFile(join(root, "fixture-client.txt"), "utf8"), "client ok");
+  const message = client.deltas("thread-client").find((delta) =>
+    delta.op === "item.textClose" && delta.text?.includes("client read="));
+  assert.match(message.text, /client read=client ok terminal=terminal ok/u);
+  assert.match(message.text, /"action":"accept"/u);
+  assert.match(message.text, /"answer":"blue"/u);
+  await client.close();
+});
+
+test("read-only ACP client services reject writes, terminals and path escapes", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-client-ro-"));
+  const outside = await mkdtemp(join(tmpdir(), "acp-client-outside-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  t.after(() => rm(outside, { recursive: true, force: true }));
+  const host = new AcpClientHost({ cwd: root, readOnly: true, allowWrite: false, allowTerminal: false, onElicitation: async () => ({ action: "decline" }) });
+  await assert.rejects(host.handle("fs/write_text_file", { path: "x.txt", content: "x" }), /permission mode/u);
+  await assert.rejects(host.handle("terminal/create", { command: process.execPath }), /permission mode/u);
+  await writeFile(join(outside, "x"), "outside", "utf8");
+  await assert.rejects(host.handle("fs/read_text_file", { path: join(outside, "x") }), /escapes/u);
+  await host.close();
+});
+
+test("a turn permission downgrade revokes ACP client writes and terminals", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-client-policy-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const host = new AcpClientHost({ cwd: root, readOnly: false, allowWrite: true, allowTerminal: true, onElicitation: async () => ({ action: "decline" }) });
+  await host.handle("fs/write_text_file", { path: "before.txt", content: "before" });
+  await host.setPolicy({ readOnly: true, allowWrite: false, allowTerminal: false });
+  await assert.rejects(host.handle("fs/write_text_file", { path: "after.txt", content: "after" }), /permission mode/u);
+  await assert.rejects(host.handle("terminal/create", { command: process.execPath }), /permission mode/u);
+  assert.equal(await readFile(join(root, "before.txt"), "utf8"), "before");
+  await host.close();
+});
+
+test("model/list reports the applied model, not session/new's pre-selection current", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-model-current-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { model: "expensive", fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CONFIG: "1" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/create", { threadId: "thread-model-current", cwd: root, permissionMode: "auto" });
+  const listed = await client.request("model/list", { threadId: "thread-model-current" });
+  assert.equal(listed.current, "expensive");
+  assert.deepEqual(listed.models.filter((model: any) => model.current).map((model: any) => model.id), ["expensive"]);
+  await client.close();
+});
+
+test("a terminal spawn failure settles without an uncaught stdin error", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-terminal-error-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const host = new AcpClientHost({ cwd: root, readOnly: false, allowWrite: true, allowTerminal: true, onElicitation: async () => ({ action: "decline" }) });
+  const created = await host.handle("terminal/create", { command: join(root, "missing-executable"), args: [] }) as { terminalId: string };
+  const waited = await host.handle("terminal/wait_for_exit", { terminalId: created.terminalId }) as { exitStatus: unknown };
+  assert.deepEqual(waited.exitStatus, { exitCode: null, signal: null });
+  const output = await host.handle("terminal/output", { terminalId: created.terminalId }) as { output: string };
+  assert.match(output.output, /terminal error/u);
+  await host.close();
+});
+
+test("an oversized replay update is dropped instead of overflowing a history page", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-huge-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_HUGE: "1" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const resumed = await client.request("session/resume", {
+    threadId: "thread-resume-huge",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  assert.equal(resumed.history.truncated, true);
+  const history = await client.request("history/read", { threadId: "thread-resume-huge", cursor: 0, limit: 10 });
+  assert.equal(history.updates.length, 3);
+  assert.equal(history.truncated, true);
+  assert(Buffer.byteLength(JSON.stringify(history), "utf8") < 512 * 1024);
+  assert.equal(JSON.stringify(history).includes("x".repeat(1024)), false);
+  await client.close();
+});
+
+test("model/list does not cold-probe an agent that cannot close its session", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-models-no-close-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_DELAY_MS: "10" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const listed = await client.request("model/list", {});
+  assert.equal(listed.source, "requires-session");
+  assert.deepEqual(listed.models, []);
+  assert.equal(client.deltas().length, 0);
+  await client.close();
+});
+
+test("concurrent model/list commands share one cold probe", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-models-concurrent-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CLOSE: "1", ACP_FIXTURE_DELAY_MS: "10" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const [first, second] = await Promise.all([
+    client.request("model/list", {}),
+    client.request("model/list", {}),
+  ]);
+  assert.deepEqual(first.models, second.models);
+  const all = (await readFile(started.logPath, "utf8")).trim().split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.equal(all.filter((frame) => frame.method === "session/new").length, 1);
+  await client.close();
+});
+
+test("history/read keeps each page at or below 512 KiB even with near-limit updates", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-page-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_PAGE: "1" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  await client.request("session/resume", {
+    threadId: "thread-resume-page",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  const history = await client.request("history/read", { threadId: "thread-resume-page", cursor: 0, limit: 10 });
+  assert.equal(history.updates.length, 5);
+  assert(Buffer.byteLength(JSON.stringify(history), "utf8") <= 512 * 1024);
+  assert.equal(history.nextCursor, 5);
   await client.close();
 });

@@ -14,6 +14,10 @@ function stable(value: unknown): string {
   if (value && typeof value === 'object') return '{' + Object.entries(value).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => JSON.stringify(k) + ':' + stable(v)).join(',') + '}';
   return JSON.stringify(value);
 }
+function hostRefusal(command: Command, message: string): Error & { code: number; kind: string; commandId: string } {
+  return Object.assign(Error(message), { code: -32602, kind: 'invalid', commandId: command.commandId });
+}
+
 export interface HostOptions { path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
 export class BridgeHost {
   private storage: Storage;
@@ -113,6 +117,14 @@ export class BridgeHost {
     if (Buffer.byteLength(serialized) > 512 * 1024) throw Error('Command too large');
     const digest = createHash('sha256').update(serialized).digest('hex');
     const route = routeKey(command.serverId, command.threadId);
+    if (command.method === 'session/resume') {
+      const state = await this.storage.call<{ nativeSession: { native_id: string; restorable: number } | null }>('threadState', { route });
+      const native = state.nativeSession;
+      const requested = command.params?.providerThreadId ?? command.params?.nativeSessionId;
+      if (!native) throw hostRefusal(command, 'Thread has no recorded native session');
+      if (native.restorable !== 1) throw hostRefusal(command, 'Recorded native session is not restorable');
+      if (requested !== undefined && native.native_id !== requested) throw hostRefusal(command, 'Resume id does not match the recorded restorable native session');
+    }
     const result = await this.storage.call<{ receipt: Receipt; fresh: boolean }>('admit', { command, digest, route, maxSpoolBytes: this.options.maxSpoolBytes ?? 64 * 1024 ** 2 });
     if (result.fresh) {
       const task = this.dispatch(command, result.receipt);
