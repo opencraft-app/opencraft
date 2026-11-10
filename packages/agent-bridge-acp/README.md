@@ -69,7 +69,7 @@ All commands receive the Host-added `threadId` (the durable route key) and
 | --- | --- | --- |
 | `initialize` | P1a handshake | effective capabilities |
 | `session/create` | `{cwd?, permissionMode?, modelSelection?}` | `{providerThreadId, permission, model, capabilities}` |
-| `session/resume` | `{providerThreadId, cwd?, permissionMode?, modelSelection?}` | `{providerThreadId, permission, model, capabilities, history?, resumed:true}` |
+| `session/resume` | `{providerThreadId?, nativeSessionId?, cwd?, permissionMode?, modelSelection?}` | `{providerThreadId, permission, model, capabilities, history?, resumed:true}` |
 | `model/list` | `{threadId?}` | `{models, current, source}` from ACP models or a model config option |
 | `history/read` | `{cursor?, limit?}` | paginated native replay updates from the resume/load window |
 | `session/close` | `{}` | `{closed}`; cancels, emits `session.ended`, kills the agent |

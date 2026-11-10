@@ -10,7 +10,9 @@ native history、模型目录和 ACP 客户端侧服务，并把真实验收改�
 ### 1. session resume/load 与 history
 
 - `session/resume` 接收 `providerThreadId`（或 `nativeSessionId`）和可选
-  `cwd`/`permissionMode`/`modelSelection`。
+  `cwd`/`permissionMode`/`modelSelection`。Host 对 P2a Codex runtime 兼容
+  省略 id 的 resume（使用 route 已记录的原生会话）；一旦显式提供 id，必须
+  与记录值一致，否则返回 typed `-32602 / invalid`，不再落到 unknown。
 - 探测到 `agentCapabilities.loadSession` 时调用 ACP `session/load`，否则探测
   `sessionCapabilities.resume` 并调用 ACP `session/resume`；两者都没有则
   `unsupported`，Host 的 `history` gate 也不会放行。
@@ -133,8 +135,17 @@ agent model 冷探测遗留会话且并发不去重、录音 notes/gaps 与生�
 
 第二轮在 rebase 后的 `49075fecbe` 上复核，输出 `findings: []`、
 `patch is correct`；随后又把分页上限收紧为严格 512 KiB（`a6407ed9ae`）。
-最终本地验证：`npm run test:agent-bridge` 125 项通过、
-`npm run typecheck --workspaces --if-present` 通过、`npm run check:boundaries`
-通过、`git diff --check` 通过。剩余观察（单条合法历史被丢弃、close
+最终本地验证：`npm run test:agent-bridge` 140 项通过（含 P2a Codex gateway
+用例）、根目录 `npm run typecheck` 通过、`npm run check:boundaries` 通过、
+`git diff --check` 通过。
+
+P2a 合入后曾暴露一个兼容回归：Codex runtime 的 `thread/resume` 会发送
+`session/resume {}`，native identity 由 runtime/route 持有，不重复携带。
+P3c 最初要求 resume 必须显式带 `providerThreadId`，admission 被拒绝，
+HTTP 409 又被旧 gateway 映射成 `unknown-outcome`。现在 Host 的 resume
+admission 允许省略 id，但显式 id 必须匹配 route 已记录的可恢复原生会话；
+不匹配时在 durable admission 前返回 typed `-32602 / invalid`，server 与
+gateway 保留该类型，不再退化成 Host unavailable。P2a 的 resume 参数和
+断言未放宽。剩余观察（单条合法历史被丢弃、close
 超时吞错、冷探测失败重试、history 窗口内元数据归入 replay）已写入上面的
 缺口/设计取舍，不再作为合入阻塞项。

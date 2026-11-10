@@ -26,7 +26,14 @@ export class BridgeGateway {
   }
   async rpc(path: string, body?: unknown): Promise<any> {
     const response = await fetch(this.options.url + path, { method: body === undefined ? 'GET' : 'POST', headers: { authorization: `Bearer ${this.options.token}`, 'content-type': 'application/json' }, ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) throw Error('Bridge Host unavailable; query original request identity');
+    if (!response.ok) {
+      const bodyValue = await response.json().catch(() => null) as { error?: unknown; code?: unknown; kind?: unknown } | null;
+      const message = typeof bodyValue?.error === 'string' ? bodyValue.error : 'Bridge Host unavailable; query original request identity';
+      throw Object.assign(Error(message), {
+        ...(typeof bodyValue?.code === 'number' ? { code: bodyValue.code } : {}),
+        ...(typeof bodyValue?.kind === 'string' ? { kind: bodyValue.kind } : {}),
+      });
+    }
     return response.json();
   }
   async open(): Promise<void> {

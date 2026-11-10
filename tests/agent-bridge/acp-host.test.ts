@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { BridgeHost, type Generation } from "../../apps/agent-bridge-host/src/index.js";
+import { attachGateway } from "../../apps/agent-bridge-host/src/server.js";
 import { declarationFor, profileFromEnv } from "../../packages/agent-bridge-acp/src/index.js";
 import { localTestBackend } from "./fixtures/local-backend.js";
 
@@ -229,7 +230,29 @@ test("Host routes model/list, session/resume and history/read through the ACP br
     providerThreadId: "other-session",
     cwd: root,
     permissionMode: "auto",
-  })), /recorded restorable native session/u);
+  })), (error: any) => {
+    assert.equal(error.code, -32602);
+    assert.equal(error.kind, "invalid");
+    assert.match(error.message, /recorded restorable native session/u);
+    return true;
+  });
+  const attachment = await attachGateway(host, "private-test-token-00000000000000000000");
+  t.after(() => attachment.close());
+  const refused = await fetch(`${attachment.url}/command`, {
+    method: "POST",
+    headers: { authorization: "Bearer private-test-token-00000000000000000000", "content-type": "application/json" },
+    body: JSON.stringify(command("resume-wrong-http", "session/resume", {
+      providerThreadId: "other-session",
+      cwd: root,
+      permissionMode: "auto",
+    })),
+  });
+  assert.equal(refused.status, 409);
+  assert.deepEqual(await refused.json(), {
+    error: "Resume id does not match the recorded restorable native session",
+    code: -32602,
+    kind: "invalid",
+  });
   await host.accept(command("resume", "session/resume", {
     providerThreadId: "fixture-session-1",
     cwd: root,
