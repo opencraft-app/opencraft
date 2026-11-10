@@ -1389,12 +1389,15 @@ export class AcpBridge {
     });
     try {
       connection.spawn();
-      await connection.initialize();
+      const initialize = await connection.initialize();
       const result = parseNewSessionResult(await connection.request("session/new", {
         cwd: this.options.profile.agent.cwd,
         mcpServers: [],
       }));
       this.catalog = this.catalogFromSession(result);
+      if (initialize.agentCapabilities?.sessionCapabilities?.close !== undefined) {
+        await connection.request("session/close", { sessionId: result.sessionId }, { timeoutMs: 5_000 }).catch(() => {});
+      }
       return this.catalog;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

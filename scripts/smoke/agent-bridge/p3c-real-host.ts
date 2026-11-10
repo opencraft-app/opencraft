@@ -264,7 +264,11 @@ try {
       "Steer evidence is admission only; no context-confirmed claim.",
       "Copilot has no native steering declaration; Amp native-inject is used only for Amp.",
     ],
-    gaps: [],
+    gaps: [
+      "History replay is not yet projected into AppServer/Web history.",
+      "Elicitation and model/list have no Web UI.",
+      "The real agents did not call ACP fs/terminal/elicitation in this task; those paths are covered by the deterministic fixture and unit tests.",
+    ],
   };
   await writeFile(out, JSON.stringify(redact(evidence), null, 2) + "\n", "utf8");
   console.log(JSON.stringify({ out, task: evidence.task, steer: evidence.steer, resume: evidence.resume }, null, 2));

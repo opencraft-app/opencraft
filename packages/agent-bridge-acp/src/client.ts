@@ -63,6 +63,8 @@ class TerminalHandle {
       child.once("error", (error) => {
         this.output += `\n[terminal error: ${error.message}]`;
         this.truncated = true;
+        if (this.exit === null) this.exit = { exitCode: null, signal: null };
+        resolveDone();
       });
       child.once("exit", (code, signal) => {
         this.exit = { exitCode: code, signal };
