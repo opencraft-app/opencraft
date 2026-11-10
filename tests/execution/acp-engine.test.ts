@@ -6,10 +6,25 @@ import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { AcpEngine, dshAcpCommand } from "../../plugins/acp-engine/src/index.js";
 import { AcpGenerationHost } from "../../plugins/acp-engine/src/generations.js";
+import { codexBaseModelId, splitModelVariant } from "../../plugins/acp-engine/src/model-variant.js";
 import type { ExecutionEngineClient } from "../../packages/appserver-client/src/execution-engine.js";
 
 const peer = resolve("tests/fixtures/acp-engine-peer.mjs");
 const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("No browser tool owner"); } };
+test("native model suffix parsing handles long hostile names without backtracking", () => {
+  assert.deepEqual(splitModelVariant("one[reasoning=high,fast=true]"), { base: "one", parameters: "reasoning=high,fast=true" });
+  assert.deepEqual(splitModelVariant("one[]"), { base: "one", parameters: "" });
+  assert.equal(splitModelVariant("one[high]tail"), null);
+  assert.equal(splitModelVariant("one[high]tail]"), null);
+  for (const input of ["[".repeat(100000), "[\\".repeat(100000)]) {
+    assert.equal(splitModelVariant(input), null);
+    assert.equal(codexBaseModelId(input), input);
+  }
+  assert.equal(codexBaseModelId("codex:one[low]"), "codex:one");
+  assert.equal(codexBaseModelId("one[other]tail[high]"), "one[other]tail");
+  assert.equal(codexBaseModelId("one[]"), "one[]");
+  assert.equal(codexBaseModelId("one" + "[".repeat(100000) + "]"), "one");
+});
 async function fixture(t: test.TestContext, options: Record<string, any> = {}) {
   const root = await mkdtemp(join(tmpdir(), "acp-engine-test-")), trace = join(root, "trace.jsonl");
   const engineOptions = { command: process.execPath, args: [peer], cwd: root, dataDirectory: join(root, "data"), permission: "allow-once" as const, ...options, env: { ACP_TEST_TRACE: trace, ...options.env } };

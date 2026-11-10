@@ -11,6 +11,7 @@ import { AppServerRpcError } from "@opencraft/appserver-client";
 import { permissionModeProfileId } from "@opencraft/appserver-protocol";
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
+import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
 
 export interface AcpEngineOptions {
   executionEnvironment?: ExecutionEnvironmentRuntime;
@@ -535,7 +536,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       }
     }
   }
-  private baseModelId(model: string): string { return this.id === "codex" ? model.replace(/\[[^\]]+\]$/u, "") : model; }
+  private baseModelId(model: string): string { return this.id === "codex" ? codexBaseModelId(model) : model; }
   private async setModel(session: Session, model: string): Promise<void> {
     if (!this.ownsModel(model)) return fault("Model belongs to another ACP provider");
     if (session.model === model) return;
@@ -543,13 +544,13 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (this.id === "cursor") {
       // Previous catalogs stored native parameterized variants as model IDs.
       // Restore only parameters the current peer actually declares.
-      const variant = /^(.*)\[([^\]]*)\]$/u.exec(requested);
-      const base = variant?.[1] ?? requested;
+      const variant = splitModelVariant(requested);
+      const base = variant?.base ?? requested;
       if (!session.modelConfigValues?.includes(base)) return fault("This model option is unavailable");
       this.captureModels(session, await this.native(session).request("session/set_config_option", {
         sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: base,
       }));
-      const parameters = variant?.[2] ? variant[2].split(",").map(part => part.split("=")) : [];
+      const parameters = variant?.parameters ? variant.parameters.split(",").map(part => part.split("=")) : [];
       for (const [id, selected, extra] of parameters) {
         if (extra !== undefined || !session.parameterConfigs?.some(config => config.id === id && config.values.includes(selected!))) return fault("This model parameter is unavailable");
       }
@@ -560,15 +561,15 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (session.model !== this.modelPrefix + base) return fault("The requested model was not selected. Choose another model.");
       return;
     }
-    const combined = this.id === "codex" && session.modelConfigValues && !session.modelConfigValues.includes(requested)
-      ? /^(.*)\[([^\]]+)\]$/u.exec(requested) : null;
-    if (combined && (!session.modelConfigValues!.includes(combined[1]!) || !session.modelCatalog?.some(choice => choice.id === model))) return fault("This model option is unavailable");
-    const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: combined?.[1] ?? requested });
+    const variant = this.id === "codex" && session.modelConfigValues && !session.modelConfigValues.includes(requested) ? splitModelVariant(requested) : null;
+    const combined = variant?.parameters ? variant : null;
+    if (combined && (!session.modelConfigValues!.includes(combined.base) || !session.modelCatalog?.some(choice => choice.id === model))) return fault("This model option is unavailable");
+    const result = await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: session.modelConfigId ?? "model", value: combined?.base ?? requested });
     this.captureModels(session, result);
     if (combined) {
       const config = session.reasoningConfig;
-      if (!config?.values.includes(combined[2]!)) return fault("This reasoning level is unavailable for the selected model");
-      this.captureModels(session, await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: config.id, value: combined[2] }));
+      if (!config?.values.includes(combined.parameters)) return fault("This reasoning level is unavailable for the selected model");
+      this.captureModels(session, await this.native(session).request("session/set_config_option", { sessionId: session.nativeId, configId: config.id, value: combined.parameters }));
     }
     if ((!result.models?.currentModelId && !Array.isArray(result.configOptions)) || (Array.isArray(result.configOptions) && result.configOptions.length === 0)) session.model = model;
     await this.save(session);

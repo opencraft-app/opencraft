@@ -26,3 +26,17 @@ test("names alone never create capabilities or merge distinct provider models", 
   assert.equal(families.length, 4); assert.ok(families.every(family => family.variants.length === 0));
   assert.deepEqual(families.map(family => family.label), entries.map(entry => entry.label));
 });
+
+test("long native labels and malformed suffixes remain bounded without inventing effort variants", () => {
+  const whitespace = " ".repeat(100000);
+  const family = modelChoiceFamilies([model("codex:a[high]", "A" + whitespace + "(HiGh)")])[0]!;
+  assert.equal(family.label, "A");
+  const unmatched = "A" + whitespace + "(unsupported)";
+  assert.equal(modelChoiceFamilies([model("codex:a[high]", unmatched)])[0]!.label, unmatched);
+  assert.equal(modelChoiceFamilies([model("codex:a[high]", "A(high)")])[0]!.label, "A(high)");
+  assert.equal(modelChoiceFamilies([model("codex:a[high]", "A\t (high)")])[0]!.label, "A");
+  const bracketed = "[".repeat(100000);
+  const choices = modelChoiceFamilies([model("codex:" + bracketed, "Unreported")]);
+  assert.equal(choices[0]!.variants.length, 0);
+  assert.equal(chooseFamilyModel(family, "codex:" + bracketed).value, "codex:a[high]");
+});

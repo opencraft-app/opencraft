@@ -485,6 +485,11 @@ An installed desktop panel adapter does not imply a composer shortcut. Only an e
 
 ## Composer model/depth hierarchy
 
+Automatic native-Agent setup belongs to the conversation route. Opening Settings,
+website management or an extension view does not show the initial setup gate or
+mark setup as completed. Returning to the conversation retains pending setup;
+an explicitly opened connection sheet may still be presented from model settings.
+
 Standalone Composer opens one model browser: source tabs, search, a bounded
 model list, then the selected model's supported reasoning choices and optional
 Fast action. Source browsing and search are local presentation state; neither

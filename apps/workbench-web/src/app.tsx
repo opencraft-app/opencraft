@@ -1336,7 +1336,8 @@ export function App({
     window.addEventListener("opencraft:replay-agent-onboarding", replay);
     return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
   }, []);
-  const draftSetupNotice = draftSetupKind === null || onboardingOverlay !== null ? undefined : <DraftSetupNotice
+  const visibleOnboardingOverlay = onboardingOverlay === "sheet" || conversationRouteOpen ? onboardingOverlay : null;
+  const draftSetupNotice = draftSetupKind === null || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
     kind={draftSetupKind} hostName={activeHost.label}
     onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
     onConnectionSettings={() => openSettingsFromConversation("machines")}
@@ -2168,10 +2169,10 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
-          {!embedded && onboardingOverlay !== null ? <AgentOnboarding
+          {!embedded && visibleOnboardingOverlay !== null ? <AgentOnboarding
             hostId={snapshot.hostId}
             hostName={activeHost.label}
-            presentation={onboardingOverlay}
+            presentation={visibleOnboardingOverlay}
             request={(method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params)}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}

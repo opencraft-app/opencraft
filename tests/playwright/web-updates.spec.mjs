@@ -87,6 +87,7 @@ test.beforeEach(async ({ page }) => {
     codexServerTarget: `ws://127.0.0.1:${backend.address().port}/rpc/codex` });
   base = `http://127.0.0.1:${(await app.listen({ port: 0 })).port}`;
   await page.goto(`${base}/settings/updates`);
+  await expect(page.locator('.agent-onboard-gate')).toHaveCount(0);
   await expect(button(page, 'check')).toBeVisible();
   // The settings shell starts a one-shot automatic check when the persisted
   // status has no checkedAt. Let that real background check settle before a
@@ -103,6 +104,18 @@ test.afterEach(async () => {
   expect(pageErrors).toEqual([]);
 });
 test.afterAll(async () => { await fixture?.close(); if (directory) await rm(directory, { recursive: true, force: true }); });
+
+test('first-visit setup stays pending without blocking management routes', async ({ page }) => {
+  expect(await page.evaluate(() => localStorage.getItem('opencraft.onboarding.completedAt'))).toBeNull();
+  await page.goto(base);
+  await expect(page.locator('.agent-onboard-gate')).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('first-visit-chat.png') });
+  await page.goto(`${base}/settings/updates`);
+  await expect(page.locator('.agent-onboard-gate')).toHaveCount(0);
+  await expect(button(page, 'check')).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('opencraft.onboarding.completedAt'))).toBeNull();
+  await page.screenshot({ path: test.info().outputPath('first-visit-settings.png') });
+});
 
 test('generic release discovers runtime Codex Host and built-in settings before and after update', async ({ page }) => {
   const assertDeployment = async () => {
