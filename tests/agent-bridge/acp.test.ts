@@ -903,3 +903,15 @@ test("model/list reports the applied model, not session/new's pre-selection curr
   assert.deepEqual(listed.models.filter((model: any) => model.current).map((model: any) => model.id), ["expensive"]);
   await client.close();
 });
+
+test("a terminal spawn failure settles without an uncaught stdin error", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-terminal-error-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const host = new AcpClientHost({ cwd: root, readOnly: false, allowWrite: true, allowTerminal: true, onElicitation: async () => ({ action: "decline" }) });
+  const created = await host.handle("terminal/create", { command: join(root, "missing-executable"), args: [] }) as { terminalId: string };
+  const waited = await host.handle("terminal/wait_for_exit", { terminalId: created.terminalId }) as { exitStatus: unknown };
+  assert.deepEqual(waited.exitStatus, { exitCode: null, signal: null });
+  const output = await host.handle("terminal/output", { terminalId: created.terminalId }) as { output: string };
+  assert.match(output.output, /terminal error/u);
+  await host.close();
+});

@@ -213,9 +213,13 @@ export class AcpClientHost {
       ? Math.min(MAX_TERMINAL_BYTES, requestedLimit)
       : MAX_TERMINAL_BYTES;
     const child = spawn(command, rawArgs as string[], { cwd: realCwd, env, stdio: ["pipe", "pipe", "pipe"] });
-    child.stdin.end();
+    const terminal = new TerminalHandle(child, limit);
+    // A spawn failure can reject the write side before the child error handler
+    // runs; this listener makes that a terminal error, never an uncaught EventEmitter throw.
+    child.stdin.on("error", () => {});
+    try { child.stdin.end(); } catch { /* the child error path settles the terminal */ }
     const id = `acp-terminal:${randomUUID()}`;
-    this.terminals.set(id, new TerminalHandle(child, limit));
+    this.terminals.set(id, terminal);
     return { terminalId: id };
   }
 
