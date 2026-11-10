@@ -15,8 +15,9 @@ native history、模型目录和 ACP 客户端侧服务，并把真实验收改�
   `sessionCapabilities.resume` 并调用 ACP `session/resume`；两者都没有则
   `unsupported`，Host 的 `history` gate 也不会放行。
 - resume/load 窗口内的 `session/update` 只进入 history replay，不转成 live
-  `thread/delta`；load 响应后保留 200ms 安静窗口，容纳 Amp 这类在响应后才
-  吐历史的实现。
+  `thread/delta`；load 响应后保留 200ms 供 resume 结果计数，之后到首个 turn
+  开始前仍归入 history，容纳 Amp 这类在响应后才吐历史的实现，避免 late
+  replay 变成 live unhandled。
 - `history/read` 分页返回 `{nativeSessionId, updates:[{seq,update}], nextCursor,
   total, truncated}`。上限 1,000 条 / 4 MiB，单页 512 KiB，避免超过 Host 的
   1 MiB wire 限制。

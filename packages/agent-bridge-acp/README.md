@@ -172,9 +172,10 @@ existing terminals, an upgrade takes effect without reinitializing the agent.
 - `mcp/*` is still unsupported and not advertised.
 
 Native history is **replay**, not a second client history system. Resume/load
-collects the ACP update stream in a bounded quiet window and `history/read`
-serves that replay. The bridge never turns replay updates into live turn
-deltas, and it does not claim history before a successful load.
+collects the ACP update stream from the load request until the first turn
+starts (a 200 ms quiet window is used for the resume summary) and
+`history/read` serves that replay. Late replay updates never become live turn
+deltas, and the bridge does not claim history before a successful load.
 
 ## Dialect extension point
 
