@@ -114,3 +114,27 @@ durable `steeringUserMessage`；因此这不是 Host→AppServer→Web 的端到
   不是生产 sandbox 后端的隔离验收；Web 端到端呈现仍需后续接线批次。
 - Amp 在首个 prompt 后拒绝 mode 变更；resume 时若请求不同模式会明确失败，
   不会静默改模式。
+
+## 独立审查
+
+审查线程 `thr_zi3gr2p5ga`，只读审查 P3c 功能差异。第一轮在
+`f42cecc805`/`aa308abcf5` 上报出 4 条 P1：history 单页越过 Host wire
+上限、Host 拒绝文档支持的 `nativeSessionId` 别名、无 `session/close` 的
+agent model 冷探测遗留会话且并发不去重、录音 notes/gaps 与生成器/文档
+不一致。四条均已修复并补测试：
+
+- history 单条 256 KiB、单页严格 512 KiB，新增 600 KiB 超大 update 和
+  近上限分页测试；
+- Host resume 归一化 `providerThreadId ?? nativeSessionId`，新增别名测试；
+- 无 `sessionCapabilities.close` 的冷 model/list 返回 `requires-session`，
+  有 close 时共享 in-flight Promise 去重，新增两个测试；
+- 生成器 notes/gaps 与录音一致，新增录音限制测试，文档 current 标注为
+  录制前值。
+
+第二轮在 rebase 后的 `49075fecbe` 上复核，输出 `findings: []`、
+`patch is correct`；随后又把分页上限收紧为严格 512 KiB（`a6407ed9ae`）。
+最终本地验证：`npm run test:agent-bridge` 125 项通过、
+`npm run typecheck --workspaces --if-present` 通过、`npm run check:boundaries`
+通过、`git diff --check` 通过。剩余观察（单条合法历史被丢弃、close
+超时吞错、冷探测失败重试、history 窗口内元数据归入 replay）已写入上面的
+缺口/设计取舍，不再作为合入阻塞项。
