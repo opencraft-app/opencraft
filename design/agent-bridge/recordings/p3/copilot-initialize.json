@@ -1,0 +1,280 @@
+{
+  "schemaVersion": 1,
+  "recording": "p3-real-acp/copilot",
+  "agent": "copilot",
+  "cliVersion": "1.0.102",
+  "recordedAt": "2026-11-10T19:02:35.388Z",
+  "profile": {
+    "command": "copilot",
+    "args": [
+      "--acp"
+    ],
+    "dialect": "copilot",
+    "mode": "auto",
+    "model": "claude-haiku-4.5",
+    "cliVersion": "1.0.102"
+  },
+  "initialize": {
+    "request": {
+      "protocolVersion": 1,
+      "grammarRange": {
+        "min": 1,
+        "max": 1
+      },
+      "hostCapabilities": [
+        "smoke"
+      ]
+    },
+    "response": {
+      "protocolVersion": 1,
+      "grammarVersion": 1,
+      "approvalExecutor": "provider",
+      "effectiveCapabilities": {
+        "model": false,
+        "reasoning": false,
+        "history": false,
+        "usage": false,
+        "approval": true,
+        "inputContentTypes": [
+          "text",
+          "image"
+        ],
+        "cliExecutable": false,
+        "forkCheckpoint": false,
+        "skills": false,
+        "installation": false,
+        "steer": {
+          "deliveryMethods": [
+            "next-turn",
+            "interrupt-replace"
+          ],
+          "evidenceKinds": [
+            "admission",
+            "echo"
+          ],
+          "withdrawal": "before-dispatch",
+          "contentLimits": {
+            "maxBytes": 524288,
+            "allowedContentTypes": [
+              "text",
+              "image"
+            ]
+          },
+          "maxPendingWithoutNativeId": 1,
+          "fallbackPolicy": "reject-unknown"
+        }
+      }
+    },
+    "acpInitialize": {
+      "protocolVersion": 1,
+      "agentInfo": {
+        "name": "Copilot",
+        "title": "Copilot",
+        "version": "1.0.102"
+      },
+      "agentCapabilities": {
+        "loadSession": true,
+        "promptCapabilities": {
+          "image": true,
+          "audio": false,
+          "embeddedContext": true
+        },
+        "sessionCapabilities": {
+          "close": {},
+          "list": {}
+        },
+        "mcpCapabilities": {
+          "http": true,
+          "sse": true
+        }
+      },
+      "authMethods": [
+        {
+          "id": "copilot-login",
+          "name": "Log in with Copilot CLI",
+          "description": "Run `copilot login` in the terminal",
+          "_meta": {
+            "terminal-auth": {
+              "command": "<home>/.nvm/versions/node/v24.15.0/lib/node_modules/@github/copilot/node_modules/@github/copilot-linux-x64/copilot",
+              "args": [
+                "login"
+              ],
+              "label": "Copilot Login"
+            }
+          }
+        }
+      ]
+    },
+    "acpEffectiveCapabilities": {
+      "model": false,
+      "reasoning": false,
+      "history": false,
+      "usage": false,
+      "approval": true,
+      "inputContentTypes": [
+        "text",
+        "image"
+      ],
+      "cliExecutable": false,
+      "forkCheckpoint": false,
+      "skills": false,
+      "installation": false,
+      "steer": {
+        "deliveryMethods": [
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "evidenceKinds": [
+          "admission",
+          "echo"
+        ],
+        "withdrawal": "before-dispatch",
+        "contentLimits": {
+          "maxBytes": 524288,
+          "allowedContentTypes": [
+            "text",
+            "image"
+          ]
+        },
+        "maxPendingWithoutNativeId": 1,
+        "fallbackPolicy": "reject-unknown"
+      }
+    }
+  },
+  "session": {
+    "providerThreadId": "facd00da-4d5f-4f84-b975-e27cbd98a4de",
+    "permission": {
+      "requested": "auto",
+      "approvalPolicy": "route",
+      "configOptions": [
+        {
+          "id": "allow_all",
+          "value": "off"
+        }
+      ],
+      "detail": "auto: Copilot allow_all=off"
+    },
+    "model": {
+      "configOptionId": "model",
+      "value": "claude-haiku-4.5"
+    },
+    "capabilities": {
+      "images": true,
+      "nativeSteering": false,
+      "deliveryMethods": [
+        "next-turn",
+        "interrupt-replace"
+      ]
+    }
+  },
+  "task": {
+    "nativeTurnId": "acp:32f12643-592b-464a-b7b3-ac600297d000",
+    "finalText": "The user wants me to:\n1. Create a file named `p3-accept.txt` containing exactly \"ok\"\n2. Use one non-destructive shell command\n3. Not modify anything else\n4. Reply with exactly DONE\n\nI need to use a single command to create this file with the exact content \"ok\". I can use `echo` with redirection, or `printf`, or other methods. The safest non-destructive approach would be to use `echo \"ok\" > p3-accept.txt` or similar.\n\nLet me use echo to create the file.DONE",
+    "fileContent": "ok",
+    "toolItems": 2
+  },
+  "steer": {
+    "requestedDelivery": "next-turn",
+    "response": {
+      "nativeTurnId": "acp:f6c0da49-21d3-4e3a-a659-56d0b1037d9b",
+      "delivery": "next-turn",
+      "queued": true
+    },
+    "delivery": {
+      "scope": {
+        "threadId": "thread-1"
+      },
+      "nativeTurnId": "acp:f4a0d092-1ae3-49f7-b9d3-278b5491e880",
+      "op": "input.delivery",
+      "inputId": "steer-1",
+      "deliveryMethod": "next-turn",
+      "admitted": true,
+      "version": 1
+    },
+    "evidence": {
+      "scope": {
+        "threadId": "thread-1"
+      },
+      "nativeTurnId": "acp:f4a0d092-1ae3-49f7-b9d3-278b5491e880",
+      "op": "input.evidence",
+      "inputId": "steer-1",
+      "evidenceKind": "admission",
+      "version": 1
+    },
+    "outcome": null,
+    "turnsOpened": 3,
+    "steerTurnText": "The user is asking me to include the word \"STEERED\" in my final answer. They previously asked me to reply with \"WAITED\" after running a sleep command, which I did. Now they want me to add \"STEERED\" to my response.\n\nThis seems like they want me to confirm that I've understood and will include \"STEERED\" in my answer. I should reply with exactly that word as requested.STEERED"
+  },
+  "wire": {
+    "initializeRequest": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": 1,
+        "clientInfo": {
+          "name": "opencraft-agent-bridge",
+          "version": "1"
+        },
+        "clientCapabilities": {}
+      }
+    },
+    "initializeResponse": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": 1,
+        "agentCapabilities": {
+          "auth": {
+            "logout": {}
+          },
+          "loadSession": true,
+          "mcpCapabilities": {
+            "http": true,
+            "sse": true
+          },
+          "promptCapabilities": {
+            "image": true,
+            "audio": false,
+            "embeddedContext": true
+          },
+          "sessionCapabilities": {
+            "close": {},
+            "list": {}
+          }
+        },
+        "agentInfo": {
+          "name": "Copilot",
+          "title": "Copilot",
+          "version": "1.0.102"
+        },
+        "authMethods": [
+          {
+            "id": "copilot-login",
+            "name": "Log in with Copilot CLI",
+            "description": "Run `copilot login` in the terminal",
+            "_meta": {
+              "terminal-auth": {
+                "command": "<home>/.nvm/versions/node/v24.15.0/lib/node_modules/@github/copilot/node_modules/@github/copilot-linux-x64/copilot",
+                "args": [
+                  "login"
+                ],
+                "label": "Copilot Login"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "frameCount": 121
+  },
+  "notes": [
+    "Copilot 1.0.102 initialize has no _meta.midTurnSteering; the bridge exposed only next-turn/interrupt-replace.",
+    "The real task created p3-accept.txt with content \"ok\" via a shell tool in a throwaway directory.",
+    "The steer was explicit next-turn: it ran as a new turn after the active turn and its answer contained STEERED; it is not a native mid-turn injection.",
+    "The bridge per-input query is omitted for this run; the canonical input.delivery and input.evidence deltas are the recorded facts, and the queued-admission facet is covered by deterministic fixtures."
+  ],
+  "gaps": [
+    "No native mid-turn steer path exists in the installed Copilot ACP interface; the native-inject label is never produced."
+  ]
+}

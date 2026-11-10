@@ -1,0 +1,105 @@
+{
+  "initialize": {
+    "protocolVersion": 1,
+    "agentInfo": {
+      "name": "acp-fixture",
+      "title": "Deterministic ACP fixture",
+      "version": "1.0.0"
+    },
+    "agentCapabilities": {
+      "loadSession": false,
+      "promptCapabilities": {
+        "image": true,
+        "embeddedContext": true
+      },
+      "sessionCapabilities": {}
+    }
+  },
+  "session": {
+    "sessionId": "fixture-session-1"
+  },
+  "updates": [
+    {
+      "sessionUpdate": "agent_thought_chunk",
+      "content": {
+        "type": "text",
+        "text": "fixture thinking"
+      }
+    },
+    {
+      "sessionUpdate": "plan",
+      "entries": [
+        {
+          "content": "inspect fixture input",
+          "priority": "medium",
+          "status": "completed"
+        }
+      ]
+    },
+    {
+      "sessionUpdate": "tool_call",
+      "toolCallId": "fixture-tool-1",
+      "title": "fixture tool",
+      "kind": "execute",
+      "status": "in_progress",
+      "rawInput": {
+        "command": "printf fixture",
+        "cwd": "/workspace/project"
+      }
+    },
+    {
+      "sessionUpdate": "tool_call_update",
+      "toolCallId": "fixture-tool-1",
+      "status": "completed",
+      "content": [
+        {
+          "type": "content",
+          "content": {
+            "type": "text",
+            "text": "fixture tool output"
+          }
+        }
+      ]
+    },
+    {
+      "sessionUpdate": "usage_update",
+      "used": 10,
+      "size": 1000
+    },
+    {
+      "sessionUpdate": "agent_message_chunk",
+      "messageId": "message-1",
+      "content": {
+        "type": "text",
+        "text": "fixture"
+      }
+    },
+    {
+      "sessionUpdate": "agent_message_chunk",
+      "messageId": "message-1",
+      "content": {
+        "type": "text",
+        "text": " answer:"
+      }
+    },
+    {
+      "sessionUpdate": "agent_message_chunk",
+      "messageId": "message-1",
+      "content": {
+        "type": "text",
+        "text": " hello"
+      }
+    },
+    {
+      "sessionUpdate": "agent_message_chunk",
+      "messageId": "message-1",
+      "content": {
+        "type": "text",
+        "text": " transcript"
+      }
+    }
+  ],
+  "promptResult": {
+    "stopReason": "end_turn"
+  }
+}

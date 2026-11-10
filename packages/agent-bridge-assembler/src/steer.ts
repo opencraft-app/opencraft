@@ -98,7 +98,7 @@ export function registerInput(delta: InputAcceptedDelta): CanonicalInputState {
  */
 export function withDisposition(
   state: CanonicalInputState,
-  disposition: "steered" | "queued",
+  disposition: "steered" | "queued" | "next-turn" | "interrupt-replace",
   expectedTurnId: string | null,
 ): CanonicalInputState {
   const resolvedExpected = disposition === "queued" ? null : expectedTurnId;

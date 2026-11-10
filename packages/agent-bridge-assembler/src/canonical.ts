@@ -77,8 +77,8 @@ export interface CanonicalInputState {
   readonly expectedTurnId: string | null;
   readonly allowedPaths: readonly DeliveryMethod[];
   readonly fallbackPolicy: "reject-unknown" | "queue-when-explicit";
-  /** "steered" when injected into a live turn, "queued" when it raced the end. */
-  readonly disposition: "steered" | "queued" | null;
+  /** The actual attach path; queued is a race, next-turn/interrupt are explicit. */
+  readonly disposition: "steered" | "queued" | "next-turn" | "interrupt-replace" | null;
   /** How many native executions were attempted; an unknown outcome must not add one. */
   readonly nativeExecutions: number;
   readonly registration: CanonicalFacet<"registered"> | null;
@@ -164,6 +164,8 @@ export interface AssemblerState {
   readonly settledKeys: Readonly<Record<string, true>>;
   readonly inputs: Readonly<Record<string, CanonicalInputState>>;
   readonly pendingAccepted: readonly string[];
+  /** Requested attach path for inputs accepted before a turn was open. */
+  readonly pendingDispositions: Readonly<Record<string, "steered" | "next-turn" | "interrupt-replace">>;
   readonly extensionStates: Readonly<Record<string, unknown>>;
 }
 
@@ -198,6 +200,7 @@ export function createAssemblerState(schemaVersion: number): AssemblerState {
     settledKeys: {},
     inputs: {},
     pendingAccepted: [],
+    pendingDispositions: {},
     extensionStates: {},
   };
 }

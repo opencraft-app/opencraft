@@ -978,3 +978,21 @@ Host events. Native mutations with unknown outcomes are never replayed.
 Existing engine compositions do not import or select this path. See the
 [Host contract and local acceptance](../apps/agent-bridge-host/README.md) for the
 private attachment, generation draining and conservative Host-crash boundaries.
+
+## Generic ACP provider bridge (P3, opt-in)
+
+`packages/agent-bridge-acp` is a pinned provider bridge for Agent Client
+Protocol agents. It runs under the independent P1b Host, one ACP agent process
+per Thread, and translates ACP updates into P1a semantic deltas. The real
+`initialize` probe narrows the registration declaration; an agent that does not
+declare `_meta.midTurnSteering` only gets explicit `next-turn` or
+`interrupt-replace`, never a native-inject label. Permission requests enter the
+existing interaction channel; images are forwarded only when the agent declared
+image prompt support. Existing engine compositions do not select this path.
+
+The bridge contract, command parameters, permission-mode mapping, dialect
+extension point and failure boundaries are documented in the
+[ACP bridge README](../packages/agent-bridge-acp/README.md). Real Copilot/Amp
+initialize recordings and minimal-task evidence live under
+`design/agent-bridge/recordings/p3/`; deterministic fixtures cover the paths a
+single real task cannot trigger.

@@ -42,7 +42,8 @@ const checkpoint = (route: string): AssemblerState => {
 const unsettledInput = (input: CanonicalInputState): boolean => {
   if (input.admission.value === 'unknown' || ['withdraw-requested', 'unknown'].includes(input.withdrawal.value)) return true;
   if (input.withdrawal.value === 'withdrawn' || ['rejected', 'failed'].includes(input.admission.value)) return false;
-  return input.disposition !== 'steered' || ['pending', 'registered', 'queued', 'unknown'].includes(input.outcome);
+  if (input.disposition === 'queued' || input.disposition === null) return true;
+  return ['pending', 'registered', 'queued', 'unknown'].includes(input.outcome);
 };
 const busy = (route: string): boolean => {
   const state = checkpoint(route);
@@ -95,6 +96,9 @@ const operations: Record<string, (args: any) => any> = {
     run('UPDATE commands SET state=?,response=? WHERE id=?', state, response ? JSON.stringify(response) : null, id);
     const row = receipt(id)!;
     if (state === 'accepted' && row.method === 'interaction/resolve' && typeof interactionId === 'string') run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interactionId);
+    // Closing the native session or stopping its turn resolves every pending
+    // human interaction at the source; keeping the rows would block release.
+    if (state === 'accepted' && (row.method === 'session/close' || row.method === 'turn/stop')) run('DELETE FROM interactions WHERE route=?', row.route);
     return row;
   }),
   callback: ({ generation, id, method, params }: any) => tx(() => {

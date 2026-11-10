@@ -92,8 +92,8 @@ export interface SteerInputStatus {
   readonly clientRequestId: string;
   /** Canonical turn the input was injected into; null when queued (never an ended turn). */
   readonly expectedTurnId: string | null;
-  /** "steered" when injected into a live turn, "queued" when it raced the end. */
-  readonly disposition: "steered" | "queued" | null;
+  /** Actual attach path; queued is a race, next-turn/interrupt are explicit. */
+  readonly disposition: "steered" | "queued" | "next-turn" | "interrupt-replace" | null;
   /** Count of native executions actually attempted for this input. */
   readonly nativeExecutions: number;
   /** Platform received (control ledger), before handing to the agent. */

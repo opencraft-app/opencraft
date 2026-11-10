@@ -130,6 +130,12 @@ export interface InputAcceptedDelta extends DeltaBase {
   readonly targetNativeSession?: string;
   readonly allowedPaths?: readonly DeliveryMethod[];
   readonly fallbackPolicy?: "reject-unknown" | "queue-when-explicit";
+  /**
+   * How this input was attached. Native injection is the default; a caller that
+   * explicitly chose next-turn or interrupt-replace records that path so the
+   * assembler never presents it as a native steer.
+   */
+  readonly disposition?: "steered" | "next-turn" | "interrupt-replace";
 }
 
 export interface InputDeliveryDelta extends DeltaBase {
