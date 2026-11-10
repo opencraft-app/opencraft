@@ -9,6 +9,7 @@ import type { MessageSender } from "./message-sender";
 import type { RuntimeMachineReadResponse } from "./machine";
 import type { AppServerProcessMethodMap } from "./process";
 import type { ThreadPinsMethodMap } from "./thread-pins";
+import type { ThreadCatalogMetadata } from "./thread-catalog";
 import type { SkillCatalogMethodMap } from "./skill-catalog";
 import type { TasksMethodMap } from "./tasks";
 import type { AppServerAttachmentMethodMap } from "./attachments";
@@ -254,6 +255,11 @@ export type ThreadForkResponse = GeneratedThreadForkResponse;
 export type ThreadListParams = GeneratedThreadListParams;
 export type ThreadListResponse = Omit<GeneratedThreadListResponse, "data"> & {
   data: Array<GeneratedThreadListResponse["data"][number] & { pinned?: boolean }>;
+  /**
+   * Optional aggregate-directory coverage from OpenCraft Hosts. Native
+   * AppServers omit it; a partial or unknown page must retain cached rows.
+   */
+  readonly catalog?: ThreadCatalogMetadata;
 };
 export type TurnStartParams = GeneratedTurnStartParams;
 export type TurnStartResponse = GeneratedTurnStartResponse;
