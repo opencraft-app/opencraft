@@ -269,6 +269,13 @@ export interface InteractionRequestParams {
   readonly providerNativeIds?: boolean;
 }
 
+/** Terminal ownership of a provider interaction; loss is not tool approval. */
+export interface InteractionResolvedParams {
+  readonly threadId: string;
+  readonly interactionId: string;
+  readonly reason: "resolved" | "connection-lost";
+}
+
 /** `provider/recovery` payload (a notification, not a delta). */
 export interface ProviderRecoveryParams {
   readonly threadId?: string;

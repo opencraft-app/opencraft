@@ -1364,5 +1364,9 @@
   "chat.agentRequestFailed": "Agent ไม่สามารถตอบให้เสร็จได้ คุณสามารถดำเนินการต่อเพื่อลองอีกครั้ง",
   "chat.agentRequestUnconfirmed": "การเชื่อมต่อ Agent ขาดหายและยังไม่ทราบผลการตอบกลับ โปรดตรวจสอบการสนทนาก่อนลองอีกครั้ง",
   "chat.continueResponse": "ดำเนินการต่อ",
-  "agentUsage.teamSpend": "การใช้งานตามจริงของทีม"
+  "agentUsage.teamSpend": "การใช้งานตามจริงของทีม",
+  "chat.steerEvidence.contextConfirmed": "ยืนยันอินพุตในบริบทของงานแล้ว",
+  "chat.steerEvidence.accepted": "รับอินพุตแล้ว แต่ยังไม่ยืนยันในบริบท",
+  "chat.steerEvidence.rejected": "อินพุตถูกปฏิเสธ",
+  "chat.steerEvidence.unconfirmed": "ยังไม่ยืนยันการส่ง"
 }

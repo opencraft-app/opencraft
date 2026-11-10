@@ -9,3 +9,5 @@ await buildTerminalOwnerRuntime(fileURLToPath(new URL('./dist/', import.meta.url
 await build({ entryPoints: ['src/bin.ts'], bundle: true, platform: 'node', format: 'cjs', external: ['node-pty'], outfile: 'dist/main.cjs',
   define: { 'import.meta.url': 'import_meta_url' },
   banner: { js: "const import_meta_url = require('node:url').pathToFileURL(__filename).href;" } });
+
+await build({ entryPoints: ["../agent-bridge-host/src/storage.worker.ts"], outfile: "dist/storage.worker.mjs", bundle: true, platform: "node", format: "esm", banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" } });

@@ -16,9 +16,10 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
       let result: unknown;
       if (request.method === 'GET') {
         switch (url.pathname) {
-          case '/health': result = { pid: process.pid, incarnation: host.incarnation }; break;
+          case '/health': result = { pid: process.pid, incarnation: host.incarnation, generations: host.diagnostics() }; break;
           case '/command': result = await host.query(identifier(url.searchParams.get('id'))); break;
           case '/events': result = await host.events(Number(url.searchParams.get('cursor') ?? 0)); break;
+          case '/thread': result = await host.threadState(identifier(url.searchParams.get('serverId')), identifier(url.searchParams.get('threadId'))); break;
           case '/snapshot': result = await host.snapshot(); break;
           default: response.writeHead(404).end(); return;
         }

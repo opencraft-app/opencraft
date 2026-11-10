@@ -1,0 +1,45 @@
+{
+  "providerId": "codex",
+  "nativeVersion": "0.162.1",
+  "recordingKind": "native-thread-read",
+  "redaction": "Only allowlisted protocol fields retained; all identities, text and paths are synthetic. The source task failed before any tool or steer.",
+  "response": {
+    "thread": {
+      "id": "native-recorded-thread",
+      "modelProvider": "opencraft-account-pool",
+      "model": "fixture-model",
+      "cwd": "/fixture/workspace",
+      "historyMode": "paginated",
+      "turns": [
+        {
+          "id": "native-recorded-turn",
+          "status": "failed",
+          "error": {
+            "message": "exceeded retry limit, last status: 429 Too Many Requests",
+            "codexErrorInfo": {
+              "responseTooManyFailedAttempts": {
+                "httpStatusCode": 429
+              }
+            },
+            "additionalDetails": null,
+            "misalignment": null
+          },
+          "items": [
+            {
+              "type": "userMessage",
+              "id": "native-recorded-input",
+              "clientId": "recorded-client-input",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "synthetic recorded input",
+                  "text_elements": []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -57,7 +57,7 @@ const busy = (route: string): boolean => {
 const operations: Record<string, (args: any) => any> = {
   ready: () => outcome,
   snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
-    generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions') }),
+    generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
   add: (config: Generation) => tx(() => {
     const previous = get('SELECT * FROM generations WHERE id=?', config.id);
     require(!previous || previous.config === JSON.stringify(config), 'Generation configuration is immutable');
@@ -93,6 +93,7 @@ const operations: Record<string, (args: any) => any> = {
     run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', command.commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
     return { receipt: receipt(command.commandId), fresh: true };
   }),
+  threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
   query: ({ id }: any) => receipt(id),
   dispatch: ({ id }: any) => tx(() => {
     require(receipt(id)?.state === 'registered', 'Command is not dispatchable');
@@ -104,10 +105,13 @@ const operations: Record<string, (args: any) => any> = {
     if (receipt(id)?.state !== 'dispatching') return receipt(id);
     run('UPDATE commands SET state=?,response=? WHERE id=?', state, response ? JSON.stringify(response) : null, id);
     const row = receipt(id)!;
-    if (state === 'accepted' && row.method === 'interaction/resolve' && typeof interactionId === 'string') run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interactionId);
-    // Closing the native session or stopping its turn resolves every pending
-    // human interaction at the source; keeping the rows would block release.
-    if (state === 'accepted' && (row.method === 'session/close' || row.method === 'turn/stop')) run('DELETE FROM interactions WHERE route=?', row.route);
+    if (state === 'accepted' && ['interaction/resolve', 'session/close', 'turn/stop'].includes(row.method)) {
+      const retiring = row.method === 'interaction/resolve' ? all('SELECT * FROM interactions WHERE route=? AND id=?', row.route, interactionId) : all('SELECT * FROM interactions WHERE route=?', row.route);
+      for (const interaction of retiring) {
+        run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interaction.id);
+        run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', row.route, row.generation, JSON.stringify({ method: 'interaction/resolved', params: { threadId: row.route, interactionId: interaction.id, reason: 'resolved' } }));
+      }
+    }
     return row;
   }),
   callback: ({ generation, id, method, params }: any) => tx(() => {
@@ -134,10 +138,14 @@ const operations: Record<string, (args: any) => any> = {
       run('INSERT INTO checkpoints VALUES (?,?,?) ON CONFLICT(route) DO UPDATE SET state=excluded.state,at_ms=excluded.at_ms', route, JSON.stringify(result.state), result.events.at(-1)?.atMs ?? now);
       for (const event of result.events) run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ kind: 'canonical', event }));
     } else {
-      require(['thread/identity', 'interaction/request', 'provider/recovery'].includes(method), 'Unsupported callback');
+      require(['thread/identity', 'interaction/request', 'interaction/resolved', 'provider/recovery'].includes(method), 'Unsupported callback');
       if (method === 'interaction/request') {
         require(typeof params.interactionId === 'string', 'Missing interaction identity');
         run('INSERT OR IGNORE INTO interactions VALUES (?,?,?)', route, params.interactionId, generation);
+      }
+      if (method === 'interaction/resolved') {
+        require(typeof params.interactionId === 'string' && ['resolved', 'connection-lost'].includes(params.reason), 'Invalid interaction settlement');
+        run('DELETE FROM interactions WHERE route=? AND id=?', route, params.interactionId);
       }
       run('INSERT INTO outbox(route,generation,payload) VALUES (?,?,?)', route, generation, JSON.stringify({ method, params }));
     }

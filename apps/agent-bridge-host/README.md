@@ -123,3 +123,56 @@ routing/draining, lock-wait heartbeats/timers, active spool retention, v1→v2 d
 preservation/checksum refusal, main-thread runtime IO/SQL guards, backend rejection
 and whole descendant cleanup. Fake resources do not prove kernel constraints;
 the existing opt-in Linux sandbox smoke checks those separately.
+
+## Codex provider (P2a)
+
+Build the pinned provider with `npm run build:codex --workspace
+@opencraft/agent-bridge-host`. Register the resulting self-contained `dist/codex.cjs`
+artifact and SHA-256 with a new Host generation. Its sandbox launch vector is
+`[node, absoluteArtifact, absolutePrivateCoreConfig]`; the Core configuration is
+an owned, mode-0600 JSON file containing `endpoint` (existing Core control socket)
+and `token`. It attaches the Core's existing Unix WebSocket listener. It never
+starts Codex or opens CODEX_HOME. Minimum source-checked native version is
+0.162.1; older or unidentifiable versions refuse attachment.
+
+Core remains the account-pool proxy and account-refresh owner. The bridge reads
+only Core's synthetic broker authentication via the existing private `/launch`
+port and answers native `account/chatgptAuthTokens/refresh` on its own connection;
+it neither acquires upstream OAuth credentials nor starts a login/refresh job.
+The selected Core execution environment and native permission policies remain
+in force. The bridge process separately consumes the Host's selected sandbox.
+
+Daemon composition is explicit: pass `--codex-agent-bridge-config` with an owned
+private JSON file `{url, token, serverId, inboxPath}` and keep the existing
+`--codex-core-endpoint`. `url` must be loopback HTTP; `inboxPath` must be absolute.
+The daemon attaches this independently started Host; it does not launch it.
+Each gateway database has one consumer. No existing route changes without this
+configuration. A new thread opts in with
+`thread/start {agentBridge: {threadId: stableSeed, clientRequestId: stableKey}, ...}`.
+The returned public ID has the `bridge:codex:` namespace. Subsequent mutations
+use that returned ID and stable `clientUserMessageId`. Old threads stay native.
+Direct native IDs for retained bridge sessions and unknown bridge IDs cannot
+fall through to the old writer path. Client engine declarations disable queue,
+fork, rename, archive and other unsupported actions for bridge threads.
+
+The bridge maps native turn, message, shell/tool, usage and approval facts into
+P1a semantic deltas. Host assembly/inbox projection owns the public item and turn
+IDs; native history bodies remain authoritative and receive the same ID mapping.
+Native `turn/steer` always carries `expectedTurnId`; a stale target rejects without
+redirecting to a newer turn. Its reply is admission only. A separate native
+`userMessage.clientId` event can join that input and upgrade its evidence. Text
+matching, an RPC success, or a model's answer never establishes context evidence.
+An input without such evidence remains unconfirmed; withdrawal is unsupported.
+
+The shared Workbench runtime opts into the typed evidence extension, queries it
+on attachment, and merges facets by version. Its existing message status row
+separately presents admission and native context confirmation. An older client
+that cannot represent these facets cannot invoke native steer on bridge threads.
+Unknown outcomes never queue, interrupt or resend automatically. Gateway reconnect
+rebuilds ID joins from its durable inbox before consuming new outbox events;
+closing the gateway does not close the bridge or Core. Host/bridge replacement
+with retained sessions still requires explicit reconciliation, as in P1b.
+
+Local verification is recorded in [P2a validation](VALIDATION-P2a.md). The built
+Workbench smoke uses a synthetic native boundary; it is not real-account steer
+proof. No service, default engine or published artifact is switched by this code.

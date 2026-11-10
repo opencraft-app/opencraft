@@ -132,3 +132,31 @@ export interface OpenCraftSteerStatusResult {
   readonly schemaVersion: number;
   readonly inputs: readonly SteerInputStatus[];
 }
+
+/** Parse the additive extension at the transport boundary. */
+export function parseSteerStatusResult(value: unknown): OpenCraftSteerStatusResult | null {
+  const object = (v: unknown): Record<string, unknown> | null => v !== null && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : null;
+  const data = object(value);
+  if (!data || data.schemaVersion !== 1 || !Array.isArray(data.inputs) || data.inputs.length > 4096) return null;
+  const inputs: SteerInputStatus[] = [];
+  const facet = (v: unknown, allowed: readonly string[]): boolean => {
+    const f = object(v); return !!f && Number.isSafeInteger(f.version) && Number(f.version) >= 0 && typeof f.value === 'string' && allowed.includes(f.value);
+  };
+  for (const raw of data.inputs) {
+    const row = object(raw);
+    if (!row || !['inputId', 'clientRequestId'].every(k => typeof row[k] === 'string' && (row[k] as string).length > 0)
+      || !(row.expectedTurnId === null || typeof row.expectedTurnId === 'string')
+      || ![null, 'steered', 'queued'].includes(row.disposition as any)
+      || !Number.isSafeInteger(row.nativeExecutions) || Number(row.nativeExecutions) < 0
+      || !(row.registration === null || facet(row.registration, ['registered']))
+      || !facet(row.admission, ['none', 'accepted', 'rejected', 'failed', 'unknown'])
+      || !facet(row.delivery, ['none', 'native-inject', 'next-turn', 'interrupt-replace'])
+      || !facet(row.evidence, ['none', 'context-confirmed', 'evidence-observed'])
+      || !facet(row.withdrawal, ['none', 'withdraw-requested', 'withdrawn', 'too-late', 'unsupported', 'unknown'])
+      || !['pending','registered','queued','delivered','context-confirmed','evidence-observed','withdrawn','too-late','rejected','failed','unknown'].includes(String(row.outcome))) return null;
+    const evidence = object(row.evidence)!;
+    if (['evidenceKind','evidenceRef','nativeInputId','runId'].some(k => evidence[k] !== undefined && typeof evidence[k] !== 'string')) return null;
+    inputs.push(structuredClone(row) as unknown as SteerInputStatus);
+  }
+  return { schemaVersion: 1, inputs };
+}

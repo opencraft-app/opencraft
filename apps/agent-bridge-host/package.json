@@ -1,6 +1,24 @@
 {
-  "name": "@opencraft/agent-bridge-host", "version": "0.1.0", "private": true, "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "scripts": { "typecheck": "tsc --noEmit", "start": "node --import tsx src/main.ts" },
-  "dependencies": { "@opencraft/agent-bridge-protocol": "0.1.0", "@opencraft/agent-bridge-assembler": "0.1.0", "@opencraft/sandbox": "0.1.0", "@opencraft/sandbox-node": "0.1.0", "@opencraft/sqlite-node": "0.1.0" }
+  "name": "@opencraft/agent-bridge-host",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./gateway": "./src/gateway.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "node --import tsx src/main.ts",
+    "build:codex": "node build.mjs"
+  },
+  "dependencies": {
+    "@opencraft/agent-bridge-protocol": "0.1.0",
+    "@opencraft/agent-bridge-assembler": "0.1.0",
+    "@opencraft/sandbox": "0.1.0",
+    "@opencraft/sandbox-node": "0.1.0",
+    "@opencraft/sqlite-node": "0.1.0",
+    "@opencraft/account-pool-host": "0.1.0",
+    "ws": "^8.22.1"
+  }
 }

@@ -18,6 +18,7 @@ export interface HostOptions { path: string; policy: SandboxPoolPolicy; backend:
 export class BridgeHost {
   private storage: Storage;
   private pool!: SandboxPool;
+  private diagnosticPeers = new Map<string, Peer>();
   private peers = new Map<string, Promise<Peer>>();
   private capabilities = new Map<string, BridgeInitializeResult['effectiveCapabilities']>();
   private admissions = new Set<Promise<Receipt>>();
@@ -68,6 +69,7 @@ export class BridgeHost {
       const peer = new Peer(config, async (callbackId, method, params) => {
         await this.storage.call('callback', { generation: id, id: callbackId, method, params: object(params) });
       }, this.options.requestTimeoutMs);
+      this.diagnosticPeers.set(id, peer);
       try {
         await peer.start(this.pool);
         const reply = await peer.request(`host-init:${randomUUID()}`, 'initialize', { protocolVersion: BRIDGE_PROTOCOL_VERSION, grammarRange: BRIDGE_GRAMMAR_RANGE });
@@ -137,6 +139,8 @@ export class BridgeHost {
       await this.storage.call('settle', { id: command.commandId, state: 'unknown' });
     }
   }
+  threadState(serverId: string, threadId: string): Promise<any> { return this.storage.call('threadState', { route: routeKey(serverId, threadId) }); }
+  diagnostics(): unknown { return [...this.diagnosticPeers].map(([generation, peer]) => ({ generation, ...peer.diagnostic() })); }
   query(id: string): Promise<Receipt | null> { return this.storage.call('query', { id }); }
   async snapshot(): Promise<any> { return { ...await this.storage.call('snapshot'), databaseOutcome: await this.storage.ready }; }
   events(cursor: number, limit = 256): Promise<any> { return this.storage.call('events', { cursor, limit }); }
