@@ -224,6 +224,11 @@ test("Host routes model/list, session/resume and history/read through the ACP br
   assert.equal(listed.source, "acp-models");
   assert.equal(listed.models[0].id, "cheap");
 
+  await assert.rejects(host.accept(command("resume-wrong", "session/resume", {
+    providerThreadId: "other-session",
+    cwd: root,
+    permissionMode: "auto",
+  })), /recorded restorable native session/u);
   await host.accept(command("resume", "session/resume", {
     providerThreadId: "fixture-session-1",
     cwd: root,

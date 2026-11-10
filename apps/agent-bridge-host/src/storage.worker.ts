@@ -90,6 +90,11 @@ const operations: Record<string, (args: any) => any> = {
       require(get('SELECT 1 FROM generations WHERE id=? AND retired=0', generation), 'No active generation');
       run('INSERT INTO routes VALUES (?,?)', route, generation); binding = { generation };
     }
+    if (command.method === 'session/resume') {
+      const native = get('SELECT native_id,restorable FROM native_sessions WHERE route=?', route);
+      require(native && native.native_id === command.params.providerThreadId && native.restorable === 1,
+        'Resume id does not match the recorded restorable native session');
+    }
     run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', command.commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
     return { receipt: receipt(command.commandId), fresh: true };
   }),
