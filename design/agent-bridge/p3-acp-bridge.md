@@ -65,6 +65,14 @@
    unknown。
 11. **真实任务只跑最小闭环**：临时目录、一个文件工具操作、一次 steer。模型
     选当前可用最低档（Copilot `claude-haiku-4.5` 0.33x；Amp `amp-mode=low`）。
+12. **拒绝策略不因缺少 reject 选项而升级为人审**：read-only（以及
+    accept-edits 对非编辑工具）在 agent 只给 allow 选项时直接回 ACP
+    `cancelled`，不能让人通过 interaction 批准写操作。
+13. **写入失败与撤回边界**：next-turn/interrupt replacement 在 native prompt
+    成功前只算 accepted，成功后才记 delivery/admission；prompt 失败记
+    `input.outcome unknown`。interrupt replacement 写入前可 withdraw/stop/
+    close 撤回，写入后不可。ACP 响应写入死管道只收尾连接，不抛未处理
+    rejection。
 
 ## 实机验收（2026-11-11）
 

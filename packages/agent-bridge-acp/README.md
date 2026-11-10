@@ -72,7 +72,7 @@ All commands receive the Host-added `threadId` (the durable route key) and
 | `session/close` | `{}` | `{closed}`; cancels, emits `session.ended`, kills the agent |
 | `turn/start` | `{input:{text, images?}, inputId?, clientRequestId?, permissionMode?}` | `{nativeTurnId, inputId}` |
 | `turn/steer` | `{inputId, clientRequestId, input:{…}, expectedTurnId?, delivery?}` | `{nativeTurnId, delivery, …}` |
-| `turn/stop` | `{}` | `{cancelled}`; cancels the active turn and withdraws queued inputs |
+| `turn/stop` | `{}` | `{cancelled}`; cancels the active turn, withdraws queued inputs and a pending replacement; a written prompt becomes unknown |
 | `input/query` | `{inputIds?}` | per-input facts |
 | `input/withdraw` | `{inputId}` | `{state, outcome}` |
 | `interaction/resolve` | `{interactionId, result}` | `{resolved, duplicate?}` |
@@ -137,7 +137,7 @@ or an explicit `{optionId}`; unknown option ids cancel, never guess.
 
 | Mode | Applied behavior |
 | --- | --- |
-| `read-only` | Auto-allows read/search/fetch/think tool permissions, denies edit/delete/move/execute; uses a native read-only mode when advertised. |
+| `read-only` | Auto-allows read/search/fetch/think tool permissions, denies edit/delete/move/execute; uses a native read-only mode when advertised. A denied request with no reject option is cancelled, never routed to a human as an approvable write. |
 | `accept-edits` | Auto-allows edit/delete/move permissions, asks for other tools; uses a native accept-edits mode when advertised. |
 | `auto` | Routes every permission request to the human interaction channel; uses a native auto mode when advertised. |
 | `full` | Auto-allows every permission request; applies the dialect's full/bypass mode/config option when available. The underlying agent's own sandbox is never widened by this bridge. |
@@ -185,6 +185,8 @@ Current dialects:
 - ACP frames are bounded (16 MiB inbound); an invalid or oversized frame closes
   the agent instead of desynchronizing the session.
 - Agent stderr is diagnostic only and never enters protocol or durable events.
+- A write to a dead agent closes the connection and is diagnostic only; it is
+  never retried as a new prompt and never becomes an unhandled rejection.
 - `session/resume`, native history and `model/list` are not implemented. A
   deployment that needs them must add the capability with a real probe and
   read port; declaring them without implementation is refused by review.
