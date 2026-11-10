@@ -37,7 +37,7 @@ const RECOVERY_KINDS = ["sessionArchived", "authRequired", "restartRecommended",
 const DELTA_OPS: readonly BridgeDeltaOp[] = [
   "turn.open", "turn.boundary", "turn.mainRun", "turn.close",
   "item.open", "item.progress", "item.textDelta", "item.textClose", "item.close",
-  "input.accepted", "input.delivery", "input.evidence", "input.withdrawal",
+  "input.accepted", "input.delivery", "input.evidence", "input.withdrawal", "input.outcome",
   "usage", "contextWindow", "session.reset", "session.ended",
   "extension.state", "provider.recovery", "unhandled",
 ];
@@ -64,6 +64,9 @@ function isItemShape(value: unknown): boolean {
       return isString(value.text);
     case "tool":
       return isString(value.name) && isOneOf(value.status, ITEM_TOOL_STATUSES)
+        && (value.output === undefined || value.output === null || isString(value.output));
+    case "command":
+      return isString(value.command) && isString(value.cwd) && isOneOf(value.status, ITEM_TOOL_STATUSES)
         && (value.output === undefined || value.output === null || isString(value.output));
     default:
       return false;
@@ -138,6 +141,10 @@ export function parseDelta(value: unknown): DeltaParseResult {
     case "input.withdrawal":
       if (!requireString("inputId") || !isOneOf(value.state, WITHDRAWAL_STATES)
         || !isNumber(value.version)) return fail("input.withdrawal needs inputId/state/version");
+      break;
+    case "input.outcome":
+      if (!requireString("inputId") || !isOneOf(value.state, ["unknown", "rejected", "failed"] as const)
+        || !requireString("reason") || !isNumber(value.version)) return fail("input.outcome needs inputId/state/reason/version");
       break;
     case "usage":
       if (!isTokenUsage(value.total) || !isTokenUsage(value.last)

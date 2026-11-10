@@ -47,8 +47,17 @@ export type ItemShape =
   | { readonly kind: "reasoning"; readonly text: string }
   | { readonly kind: "plan"; readonly text: string }
   | {
+      /** A generic provider tool: projects to an existing dynamicToolCall. */
       readonly kind: "tool";
       readonly name: string;
+      readonly status: "inProgress" | "completed" | "failed";
+      readonly output?: string | null;
+    }
+  | {
+      /** A real shell command: the only shape that projects to commandExecution. */
+      readonly kind: "command";
+      readonly command: string;
+      readonly cwd: string;
       readonly status: "inProgress" | "completed" | "failed";
       readonly output?: string | null;
     };
@@ -150,6 +159,19 @@ export interface InputWithdrawalDelta extends DeltaBase {
   readonly version: number;
 }
 
+/**
+ * A terminal command-outcome fact. `unknown` is what a bridge reports after a
+ * write-then-EOF window with no native admission proof; it settles the input
+ * without re-executing the native request.
+ */
+export interface InputOutcomeDelta extends DeltaBase {
+  readonly op: "input.outcome";
+  readonly inputId: string;
+  readonly state: "unknown" | "rejected" | "failed";
+  readonly reason: string;
+  readonly version: number;
+}
+
 export interface UsageDelta extends DeltaBase {
   readonly op: "usage";
   readonly total: TokenUsage;
@@ -207,6 +229,7 @@ export type BridgeDelta =
   | InputDeliveryDelta
   | InputEvidenceDelta
   | InputWithdrawalDelta
+  | InputOutcomeDelta
   | UsageDelta
   | ContextWindowDelta
   | SessionResetDelta

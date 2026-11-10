@@ -1,6 +1,7 @@
 {
   "translator": [],
   "assembler": [
+    "reconcile-required",
     "recovery-hint"
   ]
 }

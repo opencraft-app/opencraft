@@ -24,6 +24,14 @@ const recordingsRoot = fileURLToPath(
   new URL("../../packages/agent-bridge-assembler/recordings/", import.meta.url),
 );
 
+const REQUIRED_CELL_IDS = [
+  "duplicate", "out-of-order", "delta-first", "close-without-open",
+  "tool-cross-turn", "session-reset", "orphan-events", "overlong-frame",
+  "steer-end-race", "withdrawal-claimed-race", "write-then-eof",
+  "duplicate-accepted", "text-item-lifecycle", "multi-turn-ended",
+  "no-turn-close", "channel-projection",
+];
+
 function replay(id: string): ReplayResult {
   const cell = FIXTURE_CELL_BY_ID.get(id);
   assert.ok(cell, `missing fixture cell ${id}`);
@@ -48,7 +56,8 @@ test("committed two-layer recordings match the generated recording (drift pin)",
 });
 
 test("every recording manifest pins the schema version and parses", () => {
-  assert.equal(FIXTURE_CELLS.length, 11, "the full P1a fixture matrix must be present");
+  const ids = new Set(FIXTURE_CELLS.map((cell) => cell.id));
+  for (const id of REQUIRED_CELL_IDS) assert.ok(ids.has(id), `fixture matrix is missing ${id}`);
   for (const cell of FIXTURE_CELLS) {
     const raw = JSON.parse(readFileSync(join(recordingsRoot, cell.id, "manifest.json"), "utf8")) as unknown;
     const parsed = parseRecordingManifest(raw);
@@ -65,8 +74,8 @@ test("conformance gate passes over the full fixture matrix", () => {
   }
 });
 
-test("write-then-EOF settles unknown, requires reconciliation, never replays", () => {
-  const result = checkWriteThenEof();
+test("write-then-EOF: assembler settles unknown, derived command record agrees, no replay", () => {
+  const result = checkWriteThenEof(FIXTURE_CELL_BY_ID.get("write-then-eof")!);
   assert.equal(result.ok, true, result.failures.join("; "));
 });
 
@@ -97,7 +106,7 @@ test("delta-first: a stream with no item.open synthesizes item.started and accum
   assert.ok(result.diagnostics.some((d) => d.code === "delta-first-synthesized"));
 });
 
-test("close-without-open: a bare close keeps its whole item", () => {
+test("close-without-open: a bare close (with an open turn) keeps its whole item", () => {
   const result = replay("close-without-open");
   assert.equal(kinds(result).filter((kind) => kind === "item.started").length, 1);
   assert.equal(kinds(result).filter((kind) => kind === "item.completed").length, 1);
@@ -127,7 +136,6 @@ test("session-reset: open work is settled and a fresh epoch mints new ids", () =
   );
   assert.equal(interrupted.length, 1, "open work is settled at reset");
   assert.ok(result.diagnostics.some((d) => d.code === "session-reset-settled"));
-  // Historical events remain unchanged at the head of the timeline.
   assert.deepEqual(kinds(result).slice(0, 3), ["turn.started", "item.started", "agentMessage.delta"]);
 });
 
@@ -147,16 +155,20 @@ test("overlong-frame: one greedy line is isolated and the stream keeps reading",
   assert.deepEqual(result.events, second.events, "replay stays deterministic after isolation");
 });
 
-test("steer-end-race: an input targeting a settled turn is queued, never lost", () => {
+test("steer-end-race: queued input is not lost, not delivered, and points at no ended turn", () => {
   const result = replay("steer-end-race");
   const states = result.events.filter((event) => event.kind === "input.state");
   assert.ok(states.length >= 1, "the input is not dropped");
-  const last = states[states.length - 1] as { status: { disposition: string | null } };
+  const last = states[states.length - 1] as {
+    status: { disposition: string | null; outcome: string; expectedTurnId: string | null };
+  };
   assert.equal(last.status.disposition, "queued", "must not be falsely labelled steered");
+  assert.equal(last.status.outcome, "queued", "a queued input must not be summarised as delivered");
+  assert.equal(last.status.expectedTurnId, null, "queued input must not point at an ended turn");
   assert.ok(result.diagnostics.some((d) => d.code === "steer-end-race"));
 });
 
-test("withdrawal-claimed-race: withdrawal cannot erase context-confirmed evidence", () => {
+test("withdrawal-claimed-race: only context-confirmed evidence makes a withdrawal too late", () => {
   const result = replay("withdrawal-claimed-race");
   const states = result.events.filter((event) => event.kind === "input.state") as Array<{
     status: { inputId: string; outcome: string; evidence: { value: string }; withdrawal: { value: string } };
@@ -167,12 +179,56 @@ test("withdrawal-claimed-race: withdrawal cannot erase context-confirmed evidenc
   assert.equal(in1.status.withdrawal.value, "too-late");
   const in2 = states.filter((event) => event.status.inputId === "in2").at(-1)!;
   assert.equal(in2.status.outcome, "withdrawn", "an undelivered withdrawal succeeds");
+  const in3 = states.filter((event) => event.status.inputId === "in3").at(-1)!;
+  assert.equal(in3.status.outcome, "withdrawn", "an admitted-but-unconfirmed withdrawal is still withdrawn");
+  assert.equal(in3.status.evidence.value, "none");
 });
 
-test("write-then-eof: the input stays registered and no replay/fabricated turn occurs", () => {
+test("write-then-eof: input settles unknown with no second native execution", () => {
   const result = replay("write-then-eof");
+  const states = result.events.filter((event) => event.kind === "input.state") as Array<{
+    status: { outcome: string; nativeExecutions: number };
+  }>;
+  const last = states.at(-1)!;
+  assert.equal(last.status.outcome, "unknown");
+  assert.equal(last.status.nativeExecutions, 0, "no native (re)execution is recorded");
+  assert.equal(states.length, 2, "exactly one registration + one unknown settlement");
+  assert.ok(result.diagnostics.some((d) => d.code === "reconcile-required"));
   assert.ok(result.diagnostics.some((d) => d.code === "recovery-hint"));
-  const states = result.events.filter((event) => event.kind === "input.state");
-  assert.equal(states.length, 1, "no duplicate or replayed input");
-  assert.equal(kinds(result).filter((kind) => kind === "turn.started").length, 1);
+});
+
+test("duplicate-accepted: re-registration never resets confirmed evidence", () => {
+  const result = replay("duplicate-accepted");
+  const states = result.events.filter((event) => event.kind === "input.state") as Array<{
+    status: { outcome: string; evidence: { value: string } };
+  }>;
+  const last = states.at(-1)!;
+  assert.equal(last.status.outcome, "context-confirmed");
+  assert.equal(last.status.evidence.value, "context-confirmed");
+});
+
+test("text-item-lifecycle: item.open accumulates textDelta and textClose settles it", () => {
+  const result = replay("text-item-lifecycle");
+  assert.equal(kinds(result).filter((kind) => kind === "item.started").length, 1);
+  const completed = result.events.filter((event) => event.kind === "item.completed") as Array<{
+    item: { shape: { text?: string } };
+  }>;
+  assert.equal(completed.length, 1);
+  const text = completed[0].item.shape.text ?? "";
+  assert.equal((text.match(/\[content:/g) ?? []).length, 2, "both deltas accumulate into the opened item");
+  assert.ok(!result.diagnostics.some((d) => d.code === "out-of-order"), "textClose must not be dropped");
+});
+
+test("multi-turn-ended: session.ended settles every unsettled turn", () => {
+  const result = replay("multi-turn-ended");
+  const completed = result.events.filter((event) => event.kind === "turn.completed");
+  assert.equal(completed.length, 2, "both turns get a terminal event");
+  assert.ok(result.diagnostics.some((d) => d.code === "session-ended-settled"));
+});
+
+test("no-turn-close: a close with no turn is diagnosed only, never minted into an item", () => {
+  const result = replay("no-turn-close");
+  assert.equal(result.events.length, 0);
+  assert.equal(result.projected.length, 0);
+  assert.ok(result.diagnostics.some((d) => d.code === "orphan-no-turn"));
 });

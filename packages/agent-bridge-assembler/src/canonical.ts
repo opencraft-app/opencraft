@@ -5,7 +5,7 @@
  * them into existing AppServer notifications.
  */
 
-import type { DeliveryMethod, ItemShape, TokenUsage, TurnStatus } from "@opencraft/agent-bridge-protocol";
+import type { DeliveryMethod, ItemShape, TextChannel, TokenUsage, TurnStatus } from "@opencraft/agent-bridge-protocol";
 
 export interface EventMeta {
   /** Monotonic sequence within one assembly run. */
@@ -56,6 +56,7 @@ export interface CanonicalEvidenceFacet extends CanonicalFacet<EvidenceState> {
 export type InputOutcome =
   | "pending"
   | "registered"
+  | "queued"
   | "delivered"
   | "context-confirmed"
   | "evidence-observed"
@@ -78,6 +79,8 @@ export interface CanonicalInputState {
   readonly fallbackPolicy: "reject-unknown" | "queue-when-explicit";
   /** "steered" when injected into a live turn, "queued" when it raced the end. */
   readonly disposition: "steered" | "queued" | null;
+  /** How many native executions were attempted; an unknown outcome must not add one. */
+  readonly nativeExecutions: number;
   readonly registration: CanonicalFacet<"registered"> | null;
   readonly admission: CanonicalFacet<AdmissionState>;
   readonly delivery: CanonicalFacet<DeliveryState>;
@@ -89,10 +92,10 @@ export interface CanonicalInputState {
 export type CanonicalEventBody =
   | { readonly kind: "turn.started"; readonly threadId: string; readonly turnId: string; readonly nativeTurnId: string }
   | { readonly kind: "turn.mainRun"; readonly threadId: string; readonly turnId: string; readonly state: "idle" | "running" }
-  | { readonly kind: "turn.completed"; readonly threadId: string; readonly turnId: string; readonly status: TurnStatus }
+  | { readonly kind: "turn.completed"; readonly threadId: string; readonly turnId: string; readonly status: TurnStatus; readonly startedAtMs: number }
   | { readonly kind: "item.started"; readonly threadId: string; readonly turnId: string | null; readonly item: CanonicalItem }
   | { readonly kind: "item.completed"; readonly threadId: string; readonly turnId: string | null; readonly item: CanonicalItem }
-  | { readonly kind: "agentMessage.delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly delta: string }
+  | { readonly kind: "agentMessage.delta"; readonly threadId: string; readonly turnId: string; readonly itemId: string; readonly channel: TextChannel; readonly delta: string }
   | { readonly kind: "tokenUsage.updated"; readonly threadId: string; readonly turnId: string; readonly usage: CanonicalUsage }
   | { readonly kind: "input.state"; readonly threadId: string; readonly status: CanonicalInputState }
   | { readonly kind: "extension.state"; readonly threadId: string; readonly extensionKind: string; readonly state: unknown }
@@ -118,6 +121,7 @@ export type DiagnosticCode =
   | "ambiguous-input-source"
   | "empty-stream"
   | "recovery-hint"
+  | "reconcile-required"
   | "unhandled-diagnostic";
 
 export interface AssembleDiagnostic {
@@ -131,6 +135,8 @@ interface OpenTurn {
   readonly turnId: string;
   readonly nativeTurnId: string;
   readonly threadId: string;
+  /** Deterministic timestamp of this turn's `turn.started` event. */
+  readonly startedAtMs: number;
 }
 
 interface StreamState {

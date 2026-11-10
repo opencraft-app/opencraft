@@ -98,12 +98,40 @@ test("decodeFrame discriminates by method and isolates bad/over-long lines", () 
 });
 
 test("splitLines keeps an incomplete trailing line for the next chunk", () => {
-  const first = splitLines("one\ntwo\nthr", "");
+  const first = splitLines("one\ntwo\nthr");
   assert.deepEqual(first.lines, ["one", "two"]);
   assert.equal(first.carry, "thr");
-  const second = splitLines("ee\nfour\n", first.carry);
+  assert.equal(first.discarding, false);
+  const second = splitLines("ee\nfour\n", { carry: first.carry, discarding: first.discarding });
   assert.deepEqual(second.lines, ["three", "four"]);
   assert.equal(second.carry, "");
+});
+
+test("splitLines drops an over-long incomplete carry as a recoverable frame-too-large", () => {
+  const limits = { maxFrameBytes: 64 };
+  // A chunk with no newline that grows beyond the limit must be dropped, not
+  // buffered without bound, and reported as a recoverable frame-too-large.
+  const first = splitLines("x".repeat(40), undefined, limits);
+  assert.equal(first.carry.length, 40);
+  assert.equal(first.oversized.length, 0);
+  const second = splitLines("x".repeat(40), { carry: first.carry, discarding: first.discarding }, limits);
+  assert.equal(second.oversized.length, 1);
+  assert.equal(second.oversized[0].kind, "frame-too-large");
+  assert.equal(second.carry, "", "the over-long line is discarded");
+  assert.equal(second.discarding, true, "remainder is dropped until the next newline");
+  // The discard state ends at the next newline and the stream resumes.
+  const third = splitLines("tail\nclean\n", { carry: second.carry, discarding: second.discarding }, limits);
+  assert.deepEqual(third.lines, ["clean"]);
+  assert.equal(third.discarding, false);
+  assert.equal(third.carry, "");
+});
+
+test("splitLines drops a complete over-long line too", () => {
+  const limits = { maxFrameBytes: 8 };
+  const result = splitLines("ok\n" + "y".repeat(20) + "\nnext\n", undefined, limits);
+  assert.deepEqual(result.lines, ["ok", "next"]);
+  assert.equal(result.oversized.length, 1);
+  assert.equal(result.oversized[0].kind, "frame-too-large");
 });
 
 test("parseDelta is strict at the core (unknown op / missing scope / malformed shape)", () => {
@@ -112,6 +140,9 @@ test("parseDelta is strict at the core (unknown op / missing scope / malformed s
   assert.equal(parseDelta({ op: "nope", scope: { threadId: "t" } }).ok, false);
   assert.equal(parseDelta({ op: "turn.open", nativeTurnId: "n1" }).ok, false);
   assert.equal(parseDelta({ op: "item.close", nativeKey: "k", scope: { threadId: "t" } }).ok, false);
+  assert.equal(parseDelta({ op: "input.outcome", inputId: "i", state: "unknown", reason: "eof", version: 1, scope: { threadId: "t" } }).ok, true);
+  assert.equal(parseDelta({ op: "item.open", nativeKey: "k", shape: { kind: "command", command: "ls", cwd: "[path:x]", status: "inProgress" }, scope: { threadId: "t" } }).ok, true);
+  assert.equal(parseDelta({ op: "item.open", nativeKey: "k", shape: { kind: "command", command: "ls" }, scope: { threadId: "t" } }).ok, false);
 });
 
 test("instance probing can only narrow the declared capabilities", () => {
@@ -154,6 +185,31 @@ test("capability-gated methods: declared allowed, undeclared refused, core alway
   // Declared-but-disabled: history probe narrows it away, so history/read is refused.
   const probeNarrowed = effectiveCapabilities(declaration, { disabledCapabilities: ["history"] });
   assert.equal(assertMethodAllowed(probeNarrowed, "history/read").ok, false);
+});
+
+test("steer stays declared when any delivery path survives narrowing", () => {
+  // A bridge that only offers next-turn (or interrupt-replace) is still steer-capable.
+  const onlyNextTurn: DeclaredCapabilities = {
+    ...capabilities,
+    steer: { ...capabilities.steer, deliveryMethods: ["next-turn"] },
+  };
+  assert.equal(assertMethodAllowed(onlyNextTurn, "turn/steer").ok, true);
+  const onlyInterrupt: DeclaredCapabilities = {
+    ...capabilities,
+    steer: { ...capabilities.steer, deliveryMethods: ["interrupt-replace"] },
+  };
+  assert.equal(assertMethodAllowed(onlyInterrupt, "turn/steer").ok, true);
+
+  // Probing away native-inject while a queue path remains must not disable steer.
+  const both: BridgeDeclaration = {
+    ...declaration,
+    capabilities: { ...capabilities, steer: { ...capabilities.steer, deliveryMethods: ["native-inject", "next-turn"] } },
+  };
+  const narrowed = effectiveCapabilities(both, { steerDisabledMethods: ["native-inject"] });
+  assert.deepEqual(narrowed.steer.deliveryMethods, ["next-turn"]);
+  assert.equal(assertMethodAllowed(narrowed, "turn/steer").ok, true);
+  const allDisabled = effectiveCapabilities(both, { steerDisabledMethods: ["native-inject", "next-turn"] });
+  assert.equal(assertMethodAllowed(allDisabled, "turn/steer").ok, false);
 });
 
 test("recording manifest refuses a schema version it cannot reproduce", () => {

@@ -2,17 +2,22 @@
  * Per-input steer state machine. Admission, delivery, evidence and withdrawal
  * are independent versioned facets, so evidence that arrives before an RPC
  * reply is preserved and a late admission never regresses a context-confirmed
- * input. Withdrawal can only stop a *future* delivery; it never erases content
- * that already entered a native context path.
+ * input. Withdrawal can only stop a *future* delivery; only content that
+ * already entered a native context path makes a withdrawal too late. An
+ * admitted (but not yet context-confirmed) input still honours a native
+ * `withdrawn`, which is what "unclaimed + deletion confirmed" means.
  */
 
-import type {
-  DeliveryMethod,
-  EvidenceKind,
-  InputAcceptedDelta,
-  InputDeliveryDelta,
-  InputEvidenceDelta,
-  InputWithdrawalDelta,
+import {
+  settleCommandOutcome,
+  type DeliveryMethod,
+  type EvidenceKind,
+  type InputAcceptedDelta,
+  type InputDeliveryDelta,
+  type InputEvidenceDelta,
+  type InputOutcomeDelta,
+  type InputWithdrawalDelta,
+  type OutcomeSettlement,
 } from "@opencraft/agent-bridge-protocol";
 import type {
   AdmissionState,
@@ -57,6 +62,7 @@ export function blankInput(inputId: string): CanonicalInputState {
     allowedPaths: ["native-inject"],
     fallbackPolicy: "reject-unknown",
     disposition: null,
+    nativeExecutions: 0,
     registration: null,
     admission: { value: "none", version: 0 },
     delivery: { value: "none", version: 0 },
@@ -76,6 +82,7 @@ export function registerInput(delta: InputAcceptedDelta): CanonicalInputState {
     allowedPaths: delta.allowedPaths ?? ["native-inject"],
     fallbackPolicy: delta.fallbackPolicy ?? "reject-unknown",
     disposition: null,
+    nativeExecutions: 0,
     registration: { value: "registered", version: 0 },
     admission: { value: "none", version: 0 },
     delivery: { value: "none", version: 0 },
@@ -85,12 +92,17 @@ export function registerInput(delta: InputAcceptedDelta): CanonicalInputState {
   };
 }
 
+/**
+ * Attach an input to a turn. A queued input never points at an already-ended
+ * turn: it waits for a future turn, so its canonical expectedTurnId stays null.
+ */
 export function withDisposition(
   state: CanonicalInputState,
   disposition: "steered" | "queued",
   expectedTurnId: string | null,
 ): CanonicalInputState {
-  return { ...state, disposition, expectedTurnId, outcome: deriveOutcome({ ...state, expectedTurnId }) };
+  const resolvedExpected = disposition === "queued" ? null : expectedTurnId;
+  return { ...state, disposition, expectedTurnId: resolvedExpected, outcome: deriveOutcome({ ...state, disposition }) };
 }
 
 export function deriveOutcome(state: CanonicalInputState): InputOutcome {
@@ -101,6 +113,8 @@ export function deriveOutcome(state: CanonicalInputState): InputOutcome {
   if (state.admission.value === "rejected") return "rejected";
   if (state.admission.value === "failed") return "failed";
   if (state.admission.value === "unknown") return "unknown";
+  // A queued input must never be summarised as "delivered".
+  if (state.disposition === "queued") return "queued";
   if (state.delivery.value !== "none" || state.admission.value === "accepted") return "delivered";
   if (state.registration !== null) return "registered";
   return "pending";
@@ -121,7 +135,9 @@ export function applyDelivery(state: CanonicalInputState, delta: InputDeliveryDe
     delta.admitted ? (delta.deliveryMethod as DeliveryMethod) : "none",
     delta.version,
   );
-  return settle({ ...state, admission, delivery });
+  // One native execution is attempted only on an admitted delivery.
+  const nativeExecutions = state.nativeExecutions + (delta.admitted ? 1 : 0);
+  return settle({ ...state, admission, delivery, nativeExecutions });
 }
 
 export function applyEvidence(state: CanonicalInputState, delta: InputEvidenceDelta): CanonicalInputState {
@@ -153,12 +169,35 @@ export function applyEvidence(state: CanonicalInputState, delta: InputEvidenceDe
 }
 
 export function applyWithdrawal(state: CanonicalInputState, delta: InputWithdrawalDelta): CanonicalInputState {
-  const alreadyDelivered = state.delivery.value !== "none" || state.admission.value === "accepted";
-  const alreadyInContext = state.evidence.value === "context-confirmed";
-  if (alreadyDelivered || alreadyInContext) {
+  // Only a context-confirmed input is past the point of withdrawal. Mere
+  // admission or a delivery attempt does not prevent a native `withdrawn`.
+  if (state.evidence.value === "context-confirmed") {
     const withdrawal = { value: "too-late" as WithdrawalState, version: Math.max(state.withdrawal.version, delta.version) };
     return settle({ ...state, withdrawal });
   }
   const withdrawal = applyFacet(state.withdrawal, delta.state, delta.version);
   return settle({ ...state, withdrawal });
+}
+
+/**
+ * Apply a terminal command-outcome fact. The assembler consults the pure
+ * command settlement so a write-then-EOF `unknown` is explicit and never
+ * re-executes the native request (nativeExecutions is left untouched).
+ */
+export function applyOutcome(
+  state: CanonicalInputState,
+  delta: InputOutcomeDelta,
+): { readonly state: CanonicalInputState; readonly settlement: OutcomeSettlement } {
+  const settlement = settleCommandOutcome({
+    commandId: delta.inputId,
+    state: "dispatching",
+    writeAcked: true,
+    replyReceived: false,
+    reconnectAfterWrite: delta.state === "unknown",
+  });
+  const admissionValue: AdmissionState = delta.state === "rejected"
+    ? "rejected"
+    : delta.state === "failed" ? "failed" : "unknown";
+  const admission = applyFacet(state.admission, admissionValue, delta.version);
+  return { state: settle({ ...state, admission }), settlement };
 }

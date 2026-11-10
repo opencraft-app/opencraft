@@ -5,4 +5,7 @@
 {"seq":5,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"input.withdrawal\",\"inputId\":\"in1\",\"state\":\"withdrawn\",\"version\":3,\"scope\":{\"threadId\":\"thr-fixture\"}}"}
 {"seq":6,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"input.accepted\",\"inputId\":\"in2\",\"clientRequestId\":\"cr2\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
 {"seq":7,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"input.withdrawal\",\"inputId\":\"in2\",\"state\":\"withdrawn\",\"version\":1,\"scope\":{\"threadId\":\"thr-fixture\"}}"}
-{"seq":8,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":8,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"input.accepted\",\"inputId\":\"in3\",\"clientRequestId\":\"cr3\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":9,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"input.delivery\",\"inputId\":\"in3\",\"deliveryMethod\":\"native-inject\",\"admitted\":true,\"version\":1,\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":10,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"input.withdrawal\",\"inputId\":\"in3\",\"state\":\"withdrawn\",\"version\":2,\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":11,"run":"withdrawal-claimed-race","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}

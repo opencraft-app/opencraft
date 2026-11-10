@@ -1,0 +1,5 @@
+{"seq":1,"run":"duplicate-accepted","lane":"deltaToEvent","line":"{\"op\":\"turn.open\",\"nativeTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":2,"run":"duplicate-accepted","lane":"deltaToEvent","line":"{\"op\":\"input.accepted\",\"inputId\":\"in1\",\"clientRequestId\":\"cr1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":3,"run":"duplicate-accepted","lane":"deltaToEvent","line":"{\"op\":\"input.evidence\",\"inputId\":\"in1\",\"evidenceKind\":\"context-confirmed\",\"evidenceRef\":\"ref1\",\"version\":1,\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":4,"run":"duplicate-accepted","lane":"deltaToEvent","line":"{\"op\":\"input.accepted\",\"inputId\":\"in1\",\"clientRequestId\":\"cr1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":5,"run":"duplicate-accepted","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}

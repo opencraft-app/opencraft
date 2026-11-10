@@ -19,6 +19,7 @@ import {
   BRIDGE_SCHEMA_VERSION,
   encodeFrame,
   redactContent,
+  redactPath,
   stableToken,
   type BridgeDelta,
   type BridgeRecordingManifest,
@@ -36,8 +37,11 @@ const WORLD = redactContent("world");
 const DONE = redactContent("done");
 const LATE = redactContent("late");
 const ORPHAN = redactContent("orphan");
+const THINK = redactContent("thinking token");
+const PLAN = redactContent("plan token");
 const X = redactContent("x");
 const Y = redactContent("y");
+const FIXTURE_CWD = redactPath("/workspace/fixture");
 
 function manifest(cell: string): BridgeRecordingManifest {
   return {
@@ -118,8 +122,11 @@ function cell(
 
 const toolPending = { kind: "tool", name: "fake.tool", status: "inProgress" } as const;
 const toolDone = { kind: "tool", name: "fake.tool", status: "completed", output: DONE } as const;
+const commandPending = { kind: "command", command: "fixture --check", cwd: FIXTURE_CWD, status: "inProgress" } as const;
+const commandDone = { kind: "command", command: "fixture --check", cwd: FIXTURE_CWD, status: "completed", output: DONE } as const;
+const agentEmpty = { kind: "agentMessage", text: "" } as const;
 
-/** The full P1a matrix. Each entry's settlement is asserted in the test suite. */
+/** The full P1a matrix (plus review-follow-up cells). Settlement is asserted in the test suite. */
 export const FIXTURE_CELLS: readonly BridgeFixtureCell[] = Object.freeze([
   // 1. duplicate: repeated close is deduped, one started + one completed.
   cell("duplicate", [
@@ -149,7 +156,7 @@ export const FIXTURE_CELLS: readonly BridgeFixtureCell[] = Object.freeze([
     { op: "turn.boundary", nativeTurnId: "n1", status: "completed", scope: S },
   ] satisfies BridgeDelta[], ["delta-first-synthesized"]),
 
-  // 4. close-without-open: a bare close carries its whole item and is kept.
+  // 4. close-without-open: a bare close (with an open turn) keeps its whole item.
   cell("close-without-open", [
     { op: "turn.open", nativeTurnId: "n1", scope: S },
     { op: "item.close", nativeKey: "k1", shape: { kind: "agentMessage", text: DONE }, scope: S },
@@ -198,7 +205,7 @@ export const FIXTURE_CELLS: readonly BridgeFixtureCell[] = Object.freeze([
   ] satisfies BridgeDelta[], [], 2),
 
   // 9. steer-end-race: an input addressed to an already-settled turn is queued,
-  //    never dropped and never falsely labelled "steered".
+  //    never dropped and never falsely labelled "steered"/"delivered".
   cell("steer-end-race", [
     { op: "turn.open", nativeTurnId: "n1", scope: S },
     { op: "turn.boundary", nativeTurnId: "n1", status: "completed", scope: S },
@@ -207,7 +214,8 @@ export const FIXTURE_CELLS: readonly BridgeFixtureCell[] = Object.freeze([
   ] satisfies BridgeDelta[], ["steer-end-race"]),
 
   // 10. withdrawal-claimed-race: a withdrawal cannot erase content that already
-  //     reached a native context path; an undelivered withdrawal succeeds.
+  //     reached a native context path; an undelivered or merely admitted input
+  //     still honours a native withdrawn.
   cell("withdrawal-claimed-race", [
     { op: "turn.open", nativeTurnId: "n1", scope: S },
     { op: "input.accepted", inputId: "in1", clientRequestId: "cr1", scope: S },
@@ -216,17 +224,70 @@ export const FIXTURE_CELLS: readonly BridgeFixtureCell[] = Object.freeze([
     { op: "input.withdrawal", inputId: "in1", state: "withdrawn", version: 3, scope: S },
     { op: "input.accepted", inputId: "in2", clientRequestId: "cr2", scope: S },
     { op: "input.withdrawal", inputId: "in2", state: "withdrawn", version: 1, scope: S },
+    // admitted delivery, then a native withdrawn: still withdrawn (not too-late).
+    { op: "input.accepted", inputId: "in3", clientRequestId: "cr3", scope: S },
+    { op: "input.delivery", inputId: "in3", deliveryMethod: "native-inject", admitted: true, version: 1, scope: S },
+    { op: "input.withdrawal", inputId: "in3", state: "withdrawn", version: 2, scope: S },
     { op: "turn.boundary", nativeTurnId: "n1", status: "completed", scope: S },
   ] satisfies BridgeDelta[], []),
 
-  // 11. write-then-eof: a command written before EOF stays registered/unknown,
-  //     no turn is fabricated and the input is not replayed. The explicit
-  //     `settleCommandOutcome` assertion lives in the conformance test.
+  // 11. write-then-eof: the assembler settles the input as unknown through the
+  //     pure command settlement; no second native execution is recorded.
   cell("write-then-eof", [
     { op: "turn.open", nativeTurnId: "n1", scope: S },
     { op: "input.accepted", inputId: "in1", clientRequestId: "cr1", fallbackPolicy: "reject-unknown", scope: S },
+    { op: "input.outcome", inputId: "in1", state: "unknown", reason: redactContent("connection EOF after write, no native proof"), version: 1, scope: S },
     { op: "provider.recovery", kind: "restartRecommended", message: redactContent("connection EOF after write"), retryable: false, scope: S },
-  ] satisfies BridgeDelta[], ["recovery-hint"]),
+  ] satisfies BridgeDelta[], ["reconcile-required", "recovery-hint"]),
+
+  // 12. duplicate-accepted: re-registration is idempotent and never resets
+  //     already-confirmed evidence.
+  cell("duplicate-accepted", [
+    { op: "turn.open", nativeTurnId: "n1", scope: S },
+    { op: "input.accepted", inputId: "in1", clientRequestId: "cr1", scope: S },
+    { op: "input.evidence", inputId: "in1", evidenceKind: "context-confirmed", evidenceRef: "ref1", version: 1, scope: S },
+    { op: "input.accepted", inputId: "in1", clientRequestId: "cr1", scope: S },
+    { op: "turn.boundary", nativeTurnId: "n1", status: "completed", scope: S },
+  ] satisfies BridgeDelta[], []),
+
+  // 13. text-item-lifecycle: an explicitly opened text item accumulates
+  //     deltas and is settled by textClose.
+  cell("text-item-lifecycle", [
+    { op: "turn.open", nativeTurnId: "n1", scope: S },
+    { op: "item.open", nativeKey: "k1", shape: agentEmpty, scope: S },
+    { op: "item.textDelta", nativeKey: "k1", channel: "agentMessage", text: HELLO, scope: S },
+    { op: "item.textDelta", nativeKey: "k1", channel: "agentMessage", text: WORLD, scope: S },
+    { op: "item.textClose", nativeKey: "k1", channel: "agentMessage", scope: S },
+    { op: "turn.boundary", nativeTurnId: "n1", status: "completed", scope: S },
+  ] satisfies BridgeDelta[], []),
+
+  // 14. multi-turn-ended: session.ended settles every unsettled turn.
+  cell("multi-turn-ended", [
+    { op: "turn.open", nativeTurnId: "n1", scope: S },
+    { op: "turn.open", nativeTurnId: "n2", scope: S },
+    { op: "session.ended", scope: S },
+  ] satisfies BridgeDelta[], ["session-ended-settled"]),
+
+  // 15. no-turn-close: a close with no open turn is diagnosed only; no item
+  //     with an empty turnId is created.
+  cell("no-turn-close", [
+    { op: "item.close", nativeKey: "k1", shape: { kind: "agentMessage", text: DONE }, scope: S },
+  ] satisfies BridgeDelta[], ["orphan-no-turn"]),
+
+  // 16. channel-projection: reasoning/plan deltas and tool/command items take
+  //     their correct existing AppServer notification types.
+  cell("channel-projection", [
+    { op: "turn.open", nativeTurnId: "n1", scope: S },
+    { op: "item.textDelta", nativeKey: "r1", channel: "reasoning", text: THINK, scope: S },
+    { op: "item.textClose", nativeKey: "r1", channel: "reasoning", scope: S },
+    { op: "item.textDelta", nativeKey: "p1", channel: "plan", text: PLAN, scope: S },
+    { op: "item.textClose", nativeKey: "p1", channel: "plan", scope: S },
+    { op: "item.open", nativeKey: "t1", shape: toolPending, scope: S },
+    { op: "item.close", nativeKey: "t1", shape: toolDone, scope: S },
+    { op: "item.open", nativeKey: "c1", shape: commandPending, scope: S },
+    { op: "item.close", nativeKey: "c1", shape: commandDone, scope: S },
+    { op: "turn.boundary", nativeTurnId: "n1", status: "completed", scope: S },
+  ] satisfies BridgeDelta[], ["delta-first-synthesized"]),
 ]);
 
 export const FIXTURE_CELL_BY_ID: ReadonlyMap<string, BridgeFixtureCell> =

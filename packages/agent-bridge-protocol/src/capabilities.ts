@@ -177,8 +177,10 @@ function capabilityEnabled(capabilities: DeclaredCapabilities, key: CapabilityKe
     case "forkCheckpoint": return capabilities.forkCheckpoint;
     case "skills": return capabilities.skills;
     case "installation": return capabilities.installation;
-    // A steer-capable bridge must at least expose the default native-inject path.
-    case "steer": return capabilities.steer.deliveryMethods.includes("native-inject");
+    // Any still-declared delivery path (native-inject, next-turn, or
+    // interrupt-replace) is enough. Probing away native-inject while a queue
+    // or interrupt path remains must not disable turn/steer.
+    case "steer": return capabilities.steer.deliveryMethods.length > 0;
   }
 }
 

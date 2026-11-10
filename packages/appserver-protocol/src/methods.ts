@@ -261,7 +261,10 @@ export type TurnSteerParams = GeneratedTurnSteerParams;
 export type TurnSteerResponse = GeneratedTurnSteerResponse & {
   /**
    * Extension used by Hosts that preserve a steer racing Turn completion.
-   * When omitted, the accepted input is treated as `steered`.
+   * When omitted, the accepted input is treated as `steered`, so a queued
+   * input MUST set `disposition: "queued"` explicitly; the additive
+   * steer-evidence notification carries the same disposition for declaring
+   * clients so it is never mistaken for a delivered/steered input.
    */
   readonly disposition?: "steered" | "queued";
 };

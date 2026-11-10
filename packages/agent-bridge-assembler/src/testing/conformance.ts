@@ -77,21 +77,55 @@ export function checkCell(cell: BridgeFixtureCell): ConformanceResult {
   return { ok: failures.length === 0, failures };
 }
 
-/** Write-then-EOF settlement: unknown, reconcile, never replay the native mutation. */
-export function checkWriteThenEof(): ConformanceResult {
-  const failures: string[] = [];
-  const record: CommandRecord = {
-    commandId: "cmd-1",
+/** Rebuild the command ledger facts from a recorded cell (never a fresh literal). */
+function deriveCommandRecord(cell: BridgeFixtureCell): CommandRecord {
+  const accepted = cell.deltas.find((delta) => delta.op === "input.accepted");
+  const outcome = cell.deltas.find((delta) => delta.op === "input.outcome");
+  const hasDelivery = cell.deltas.some((delta) => delta.op === "input.delivery");
+  return {
+    commandId: accepted === undefined ? "unknown" : (accepted as { inputId: string }).inputId,
     state: "dispatching",
     writeAcked: true,
-    replyReceived: false,
-    reconnectAfterWrite: true,
+    replyReceived: hasDelivery,
+    reconnectAfterWrite: outcome !== undefined && (outcome as { state: string }).state === "unknown",
   };
+}
+
+/**
+ * Write-then-EOF settlement is driven by the recording: the assembler settles
+ * the input to `unknown`, the derived command record agrees, and no second
+ * native execution is present. The assembler consults `settleCommandOutcome`
+ * while applying `input.outcome`, so the check is not a detached unit test.
+ */
+export function checkWriteThenEof(cell: BridgeFixtureCell): ConformanceResult {
+  const failures: string[] = [];
+  const result = replayCell(cell);
+  const states = result.events.filter((event) => event.kind === "input.state");
+  const last = states[states.length - 1] as
+    | { status: { outcome: string; nativeExecutions: number } }
+    | undefined;
+  if (last === undefined || last.status.outcome !== "unknown") {
+    failures.push("write-then-EOF input must settle as unknown through the assembler");
+  }
+  if (last !== undefined && last.status.nativeExecutions !== 0) {
+    failures.push("an unknown outcome must not add a native execution");
+  }
+  if (!result.diagnostics.some((diagnostic) => diagnostic.code === "reconcile-required")) {
+    failures.push("the assembler must surface the command settlement's reconciliation");
+  }
+
+  const accepted = cell.deltas.filter((delta) => delta.op === "input.accepted");
+  const deliveries = cell.deltas.filter((delta) => delta.op === "input.delivery");
+  if (accepted.length !== 1 || deliveries.length !== 0) {
+    failures.push("recorded input was replayed / re-executed");
+  }
+
+  const record = deriveCommandRecord(cell);
   const unknown = settleCommandOutcome(record);
-  if (unknown.outcome !== "unknown") failures.push("write-then-EOF must settle as unknown");
-  if (!unknown.reconcileRequired) failures.push("write-then-EOF must require reconciliation");
-  if (unknown.replayAllowed !== false) failures.push("write-then-EOF must never replay the native request");
-  if (!unknown.queryAllowed) failures.push("write-then-EOF must allow querying the same commandId");
+  if (unknown.outcome !== "unknown") failures.push("derived command settlement must be unknown");
+  if (!unknown.reconcileRequired) failures.push("derived command settlement must require reconciliation");
+  if (unknown.replayAllowed !== false) failures.push("derived command settlement must never replay");
+  if (!unknown.queryAllowed) failures.push("derived command settlement must allow querying");
 
   const provenAccepted = settleCommandOutcome({ ...record, nativeProof: "accepted" });
   if (provenAccepted.outcome !== "accepted" || provenAccepted.reconcileRequired) {

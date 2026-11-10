@@ -4,8 +4,10 @@
  * shapes; keeping it separate preserves the boundary for a future client
  * protocol swap. Nothing here invents a new client API or event envelope.
  *
- * Core timeline events map onto notifications clients already consume. Per-
- * input steer evidence is additive: it rides one capability-gated
+ * Core timeline events map onto notifications clients already consume. Turn
+ * lifecycle notifications are summaries (never an empty `full` snapshot), so
+ * `appserver-session`'s `turn/completed` merge keeps the items a turn streamed.
+ * Per-input steer evidence is additive: it rides one capability-gated
  * `opencraft/steerEvidence/updated` notification that old consumers ignore,
  * so an unknown/admission-only input is never flattened into a legacy
  * "injected" success label. Anomalies the assembler detects stay in its
@@ -16,12 +18,16 @@ import type { AppServerNotification } from "@opencraft/appserver-protocol";
 import {
   OPENCRAFT_STEER_EVIDENCE_NOTIFICATION,
   type OpenCraftSteerEvidenceNotification,
+  type OpenCraftSteerStatusParams,
+  type OpenCraftSteerStatusResult,
   type SteerInputStatus,
 } from "@opencraft/appserver-protocol";
 import type {
   AgentMessageDeltaNotification,
   ItemCompletedNotification,
   ItemStartedNotification,
+  PlanDeltaNotification,
+  ReasoningTextDeltaNotification,
   ThreadItem,
   ThreadTokenUsage,
   ThreadTokenUsageUpdatedNotification,
@@ -33,6 +39,7 @@ import type {
 } from "@opencraft/appserver-protocol/generated/v2";
 import type { TokenUsage } from "@opencraft/agent-bridge-protocol";
 import type {
+  AssemblerState,
   CanonicalEvent,
   CanonicalInputState,
   CanonicalItem,
@@ -46,6 +53,8 @@ export const EXISTING_APPSERVER_NOTIFICATION_METHODS = Object.freeze([
   "item/started",
   "item/completed",
   "item/agentMessage/delta",
+  "item/reasoning/textDelta",
+  "item/plan/delta",
   "thread/tokenUsage/updated",
   "warning",
 ] as const);
@@ -84,13 +93,27 @@ function toThreadItem(item: CanonicalItem): ThreadItem {
     case "plan":
       return { type: "plan", id: item.itemId, text: shape.text };
     case "tool":
+      // A generic provider tool is an existing dynamicToolCall, not a command.
+      return {
+        type: "dynamicToolCall",
+        id: item.itemId,
+        namespace: null,
+        tool: shape.name,
+        arguments: {},
+        status: shape.status,
+        contentItems: null,
+        success: shape.status === "completed" ? true : shape.status === "failed" ? false : null,
+        durationMs: null,
+      };
+    case "command":
+      // Only a real command uses the commandExecution shape.
       return {
         type: "commandExecution",
         id: item.itemId,
         pluginId: null,
         scriptPath: null,
-        command: shape.name,
-        cwd: "",
+        command: shape.command,
+        cwd: shape.cwd,
         processId: null,
         source: "agent",
         status: shape.status,
@@ -130,7 +153,9 @@ function makeTurn(
   return {
     id,
     items: [],
-    itemsView: "full",
+    // A lifecycle notification is a summary: an empty "full" snapshot would
+    // make appserver-session replace (and erase) the turn's streamed items.
+    itemsView: "summary",
     status,
     error: null,
     startedAt: Math.floor(startedAtMs / 1000),
@@ -144,6 +169,8 @@ function toSteerStatus(status: CanonicalInputState): SteerInputStatus {
     inputId: status.inputId,
     clientRequestId: status.clientRequestId,
     expectedTurnId: status.expectedTurnId,
+    disposition: status.disposition,
+    nativeExecutions: status.nativeExecutions,
     registration: status.registration,
     admission: status.admission,
     delivery: status.delivery,
@@ -160,13 +187,30 @@ function toSteerStatus(status: CanonicalInputState): SteerInputStatus {
   };
 }
 
+/** Answer `opencraft/steer/status` from the assembler's own per-input state. */
+export function querySteerStatus(
+  state: AssemblerState,
+  params: OpenCraftSteerStatusParams,
+  schemaVersion: number,
+): OpenCraftSteerStatusResult {
+  const ids = params.inputIds === undefined
+    ? Object.keys(state.inputs)
+    : params.inputIds.filter((id) => state.inputs[id] !== undefined);
+  return {
+    schemaVersion,
+    inputs: ids.map((id) => toSteerStatus(state.inputs[id]!)),
+  };
+}
+
 /** Map one canonical event to zero or more existing AppServer notifications. */
 export function projectToAppServer(
   events: readonly CanonicalEvent[],
   options: ProjectionOptions,
 ): readonly AppServerNotification[] {
   const out: AppServerNotification[] = [];
-  const pendingSteer: SteerInputStatus[] = [];
+  // One full snapshot per input: the latest state wins, so intermediate facet
+  // updates never flicker into a "delivered" summary for a queued input.
+  const pendingSteer = new Map<string, SteerInputStatus>();
 
   for (const event of events) {
     switch (event.kind) {
@@ -181,7 +225,7 @@ export function projectToAppServer(
       case "turn.completed": {
         const params: TurnCompletedNotification = {
           threadId: event.threadId,
-          turn: makeTurn(event.turnId, event.status, event.atMs, event.atMs),
+          turn: makeTurn(event.turnId, event.status, event.startedAtMs, event.atMs),
         };
         out.push({ method: "turn/completed", params });
         break;
@@ -207,13 +251,17 @@ export function projectToAppServer(
         break;
       }
       case "agentMessage.delta": {
-        const params: AgentMessageDeltaNotification = {
-          threadId: event.threadId,
-          turnId: event.turnId,
-          itemId: event.itemId,
-          delta: event.delta,
-        };
-        out.push({ method: "item/agentMessage/delta", params });
+        const common = { threadId: event.threadId, turnId: event.turnId, itemId: event.itemId, delta: event.delta };
+        if (event.channel === "reasoning") {
+          const params: ReasoningTextDeltaNotification = { ...common, contentIndex: 0 };
+          out.push({ method: "item/reasoning/textDelta", params });
+        } else if (event.channel === "plan") {
+          const params: PlanDeltaNotification = common;
+          out.push({ method: "item/plan/delta", params });
+        } else {
+          const params: AgentMessageDeltaNotification = common;
+          out.push({ method: "item/agentMessage/delta", params });
+        }
         break;
       }
       case "tokenUsage.updated": {
@@ -226,9 +274,7 @@ export function projectToAppServer(
         break;
       }
       case "input.state":
-        // Collected and emitted once below, so one notification carries the
-        // full snapshot rather than a flicker per facet.
-        pendingSteer.push(toSteerStatus(event.status));
+        pendingSteer.set(event.status.inputId, toSteerStatus(event.status));
         break;
       case "provider.recovery":
       case "unhandled": {
@@ -247,11 +293,11 @@ export function projectToAppServer(
     }
   }
 
-  if (options.steerEvidenceDeclared && pendingSteer.length > 0) {
+  if (options.steerEvidenceDeclared && pendingSteer.size > 0) {
     const params: OpenCraftSteerEvidenceNotification = {
       threadId: events[0]?.threadId ?? "",
       schemaVersion: options.schemaVersion,
-      inputs: pendingSteer,
+      inputs: [...pendingSteer.values()],
     };
     out.push({ method: OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, params });
   }

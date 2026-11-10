@@ -26,7 +26,8 @@ export interface OpenCraftSteerEvidenceCapability {
   readonly deliveryMethods: readonly ("native-inject" | "next-turn" | "interrupt-replace")[];
   readonly evidenceKinds: readonly string[];
   readonly withdrawal: "before-dispatch" | "native" | "none";
-  readonly query: true;
+  /** Optional opt-in to `opencraft/steer/status`; absent means no status query. */
+  readonly query?: true;
 }
 
 const DELIVERY_METHODS = ["native-inject", "next-turn", "interrupt-replace"] as const;
@@ -45,7 +46,8 @@ function parseDeliveryMethods(value: unknown): readonly DeliveryMethod[] | null 
 export function parseSteerEvidenceCapability(value: unknown): OpenCraftSteerEvidenceCapability | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
-  if (candidate.version !== 1 || candidate.perInputEvidence !== true || candidate.query !== true) return null;
+  if (candidate.version !== 1 || candidate.perInputEvidence !== true) return null;
+  if (candidate.query !== undefined && candidate.query !== true) return null;
   const deliveryMethods = parseDeliveryMethods(candidate.deliveryMethods);
   if (deliveryMethods === null) return null;
   if (!Array.isArray(candidate.evidenceKinds) || !candidate.evidenceKinds.every((entry) => typeof entry === "string")) return null;
@@ -56,7 +58,7 @@ export function parseSteerEvidenceCapability(value: unknown): OpenCraftSteerEvid
     deliveryMethods,
     evidenceKinds: candidate.evidenceKinds as string[],
     withdrawal: candidate.withdrawal,
-    query: true,
+    ...(candidate.query === true ? { query: true as const } : {}),
   };
 }
 
@@ -88,7 +90,12 @@ export interface SteerEvidenceFacet extends SteerFacet<SteerEvidenceState> {
 export interface SteerInputStatus {
   readonly inputId: string;
   readonly clientRequestId: string;
+  /** Canonical turn the input was injected into; null when queued (never an ended turn). */
   readonly expectedTurnId: string | null;
+  /** "steered" when injected into a live turn, "queued" when it raced the end. */
+  readonly disposition: "steered" | "queued" | null;
+  /** Count of native executions actually attempted for this input. */
+  readonly nativeExecutions: number;
   /** Platform received (control ledger), before handing to the agent. */
   readonly registration: SteerFacet<"registered"> | null;
   readonly admission: SteerFacet<SteerAdmissionState>;
@@ -98,6 +105,7 @@ export interface SteerInputStatus {
   readonly outcome:
     | "pending"
     | "registered"
+    | "queued"
     | "delivered"
     | "context-confirmed"
     | "evidence-observed"

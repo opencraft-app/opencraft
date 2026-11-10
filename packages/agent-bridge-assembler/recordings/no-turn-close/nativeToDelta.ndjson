@@ -1,0 +1,1 @@
+{"seq":1,"run":"no-turn-close","lane":"nativeToDelta","line":"{\"jsonrpc\":\"2.0\",\"method\":\"provider/native\",\"params\":{\"seq\":1,\"correlationId\":\"fe5f106d\",\"payload\":{\"op\":\"item.close\",\"nativeKey\":\"k1\",\"shape\":{\"kind\":\"agentMessage\",\"text\":\"[content:f607d804]\"},\"scope\":{\"threadId\":\"thr-fixture\"}}}}"}

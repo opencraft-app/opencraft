@@ -259,14 +259,68 @@ export function encodeFrame(message: BridgeWireMessage): string {
   return JSON.stringify(message);
 }
 
+export interface LineSplitState {
+  /** Incomplete trailing line carried into the next chunk. */
+  readonly carry: string;
+  /** True while dropping the remainder of an over-long line up to its newline. */
+  readonly discarding: boolean;
+}
+
+export interface LineSplitResult extends LineSplitState {
+  readonly lines: readonly string[];
+  /** One recoverable frame-too-large error per dropped over-long line. */
+  readonly oversized: readonly BridgeErrorObject[];
+}
+
+function frameTooLarge(limits: BridgeFrameLimits): BridgeErrorObject {
+  return makeBridgeError(
+    "frame-too-large",
+    BRIDGE_ERROR_CODES.frameTooLarge,
+    `bridge frame exceeds ${limits.maxFrameBytes} bytes`,
+  );
+}
+
 /**
  * A bounded line splitter over an already-buffered chunk. It keeps an
- * incomplete trailing line for the next chunk and isolates over-long lines the
- * same way `decodeFrame` does; it performs no IO.
+ * incomplete trailing line for the next chunk, but an over-long *incomplete*
+ * line (no newline yet) is dropped immediately with a recoverable
+ * frame-too-large error instead of being buffered without bound. While in that
+ * dropping state, bytes up to the next newline are discarded; afterwards the
+ * stream resumes normally. Performs no IO.
  */
-export function splitLines(chunk: string, carry = ""): { lines: string[]; carry: string } {
-  const text = carry + chunk;
-  const parts = text.split("\n");
-  const carryOut = parts.pop() ?? "";
-  return { lines: parts, carry: carryOut };
+export function splitLines(
+  chunk: string,
+  state: LineSplitState = { carry: "", discarding: false },
+  limits: BridgeFrameLimits = DEFAULT_BRIDGE_FRAME_LIMITS,
+): LineSplitResult {
+  // An oversized carry was already dropped; do not prepend it again.
+  let remaining = state.discarding ? chunk : state.carry + chunk;
+  let discarding = state.discarding;
+  const lines: string[] = [];
+  const oversized: BridgeErrorObject[] = [];
+
+  let newline = remaining.indexOf("\n");
+  while (newline >= 0) {
+    const part = remaining.slice(0, newline);
+    remaining = remaining.slice(newline + 1);
+    if (discarding) {
+      // This newline ends the oversized line; resume from the next line.
+      discarding = false;
+    } else if (byteLength(part) > limits.maxFrameBytes) {
+      oversized.push(frameTooLarge(limits));
+    } else {
+      lines.push(part);
+    }
+    newline = remaining.indexOf("\n");
+  }
+
+  if (discarding) {
+    // Still inside an oversized line with no newline yet: keep dropping.
+    return { lines, carry: "", discarding: true, oversized };
+  }
+  if (byteLength(remaining) > limits.maxFrameBytes) {
+    oversized.push(frameTooLarge(limits));
+    return { lines, carry: "", discarding: true, oversized };
+  }
+  return { lines, carry: remaining, discarding: false, oversized };
 }

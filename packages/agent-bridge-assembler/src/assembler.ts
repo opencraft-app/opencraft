@@ -26,6 +26,7 @@ import type {
 import {
   applyDelivery,
   applyEvidence,
+  applyOutcome,
   applyWithdrawal,
   blankInput,
   registerInput,
@@ -36,6 +37,7 @@ interface OpenTurn {
   readonly turnId: string;
   readonly nativeTurnId: string;
   readonly threadId: string;
+  readonly startedAtMs: number;
 }
 
 interface StreamState {
@@ -91,6 +93,20 @@ function textShape(channel: TextChannel, text: string): ItemShape {
   return { kind: "agentMessage", text };
 }
 
+function channelForShape(shape: ItemShape): TextChannel | null {
+  if (shape.kind === "reasoning") return "reasoning";
+  if (shape.kind === "plan") return "plan";
+  if (shape.kind === "agentMessage") return "agentMessage";
+  return null;
+}
+
+function textOfShape(shape: ItemShape): string {
+  if (shape.kind === "agentMessage" || shape.kind === "reasoning" || shape.kind === "plan") {
+    return shape.text;
+  }
+  return "";
+}
+
 /**
  * Consume an ordered batch of deltas. `state` is never mutated; the returned
  * state is the input for the next batch. `clockSeed` makes timestamps
@@ -106,9 +122,11 @@ export function assemble(
   const diagnostics: AssembleDiagnostic[] = [];
   const step = context.atMsStep ?? 1;
 
-  const emit = (body: CanonicalEventBody): void => {
+  const emit = (body: CanonicalEventBody): number => {
     state.seq += 1;
-    events.push({ ...body, seq: state.seq, atMs: context.clockSeed + step * state.seq } as CanonicalEvent);
+    const atMs = context.clockSeed + step * state.seq;
+    events.push({ ...body, seq: state.seq, atMs } as CanonicalEvent);
+    return atMs;
   };
   const diag = (code: DiagnosticCode, op: string, detail: string, nativeKey?: string): void => {
     diagnostics.push(nativeKey === undefined ? { code, op, detail } : { code, op, detail, nativeKey });
@@ -131,11 +149,11 @@ export function assemble(
 
   const openTurn = (nativeTurnId: string): string => {
     const turnId = mintTurnId();
-    state.openTurns[nativeTurnId] = { turnId, nativeTurnId, threadId };
+    const startedAtMs = emit({ kind: "turn.started", threadId, turnId, nativeTurnId });
+    state.openTurns[nativeTurnId] = { turnId, nativeTurnId, threadId, startedAtMs };
     state.activeTurnId = turnId;
     state.activeNativeTurnId = nativeTurnId;
     state.lastTurnId = turnId;
-    emit({ kind: "turn.started", threadId, turnId, nativeTurnId });
     return turnId;
   };
 
@@ -154,21 +172,21 @@ export function assemble(
     for (const inputId of state.pendingAccepted) {
       const input = state.inputs[inputId];
       if (input === undefined) continue;
-      const queued = withDisposition(input, "queued", input.expectedTurnId);
-      emitInput(queued);
+      emitInput(withDisposition(input, "queued", null));
       diag("steer-end-race", "turn.boundary", "accepted input raced turn completion; queued, not lost", input.inputId);
     }
     state.pendingAccepted = [];
   };
 
   const settleTurn = (nativeTurnId: string, status: TurnStatus, claimIfIdle: boolean, op: string): void => {
-    let turn = state.openTurns[nativeTurnId];
+    let turnKey = nativeTurnId;
+    let turn = state.openTurns[turnKey];
     if (turn === undefined) {
       if (claimIfIdle && state.pendingAccepted.length > 0) {
-        const claimId = nativeTurnId || `claim.${state.seq}`;
-        const turnId = openTurn(claimId);
-        drainPending(turnId);
-        turn = state.openTurns[claimId];
+        turnKey = nativeTurnId || `claim.${state.seq}`;
+        const claimTurnId = openTurn(turnKey);
+        drainPending(claimTurnId);
+        turn = state.openTurns[turnKey];
       } else {
         diag("out-of-order", op, `settlement for unknown turn ${nativeTurnId}`, nativeTurnId);
         return;
@@ -176,9 +194,9 @@ export function assemble(
     }
     const settledId = turn.turnId;
     queuePending();
-    emit({ kind: "turn.completed", threadId, turnId: settledId, status });
-    state.settledNativeTurns[nativeTurnId] = settledId;
-    delete state.openTurns[nativeTurnId];
+    emit({ kind: "turn.completed", threadId, turnId: settledId, status, startedAtMs: turn.startedAtMs });
+    state.settledNativeTurns[turnKey] = settledId;
+    delete state.openTurns[turnKey];
     if (state.activeTurnId === settledId) {
       state.activeTurnId = null;
       state.activeNativeTurnId = null;
@@ -204,11 +222,12 @@ export function assemble(
       state.settledKeys[key] = true;
     }
     state.openItems = {};
-    if (state.activeTurnId !== null && state.activeNativeTurnId !== null) {
-      emit({ kind: "turn.completed", threadId, turnId: state.activeTurnId, status });
-      state.settledNativeTurns[state.activeNativeTurnId] = state.activeTurnId;
-      delete state.openTurns[state.activeNativeTurnId];
+    // Every unsettled turn gets a terminal event, not only the active one.
+    for (const [native, turn] of Object.entries(state.openTurns)) {
+      emit({ kind: "turn.completed", threadId, turnId: turn.turnId, status, startedAtMs: turn.startedAtMs });
+      state.settledNativeTurns[native] = turn.turnId;
     }
+    state.openTurns = {};
     state.activeTurnId = null;
     state.activeNativeTurnId = null;
   };
@@ -242,7 +261,7 @@ export function assemble(
         break;
       }
       case "item.open": {
-        if (state.openItems[key] !== undefined) {
+        if (state.openItems[key] !== undefined || state.streams[key] !== undefined) {
           diag("out-of-order", op, `item ${key} opened twice`, key);
           break;
         }
@@ -250,15 +269,29 @@ export function assemble(
           diag("orphan-no-turn", op, `item ${key} opened with no open turn`, key);
           break;
         }
+        const shape = delta.shape;
+        const itemId = mintItemId();
         const item: CanonicalItem = {
-          itemId: mintItemId(),
+          itemId,
           nativeKey: key,
           threadId,
           turnId: state.activeTurnId,
-          shape: delta.shape,
+          shape,
         };
-        state.openItems[key] = item;
         emit({ kind: "item.started", threadId, turnId: item.turnId, item });
+        const channel = channelForShape(shape);
+        if (channel !== null) {
+          // A text item accumulates through the same stream path as delta-first
+          // streams, so textDelta/textClose can settle an explicitly opened item.
+          state.streams[key] = {
+            itemId,
+            channel,
+            text: textOfShape(shape),
+            turnId: item.turnId,
+          };
+        } else {
+          state.openItems[key] = item;
+        }
         break;
       }
       case "item.progress":
@@ -269,55 +302,69 @@ export function assemble(
           diag("out-of-order", op, `text delta after ${key} settled`, key);
           break;
         }
-        const opened = state.openItems[key];
-        if (opened !== undefined) {
-          emit({ kind: "agentMessage.delta", threadId, turnId: opened.turnId ?? "", itemId: opened.itemId, delta: delta.text });
+        const stream = state.streams[key];
+        if (stream !== undefined) {
+          state.streams[key] = { ...stream, text: stream.text + delta.text };
+          emit({ kind: "agentMessage.delta", threadId, turnId: stream.turnId ?? "", itemId: stream.itemId, channel: stream.channel, delta: delta.text });
           break;
         }
-        let stream = state.streams[key];
-        if (stream === undefined) {
-          if (state.activeTurnId === null) {
-            diag("orphan-no-turn", op, `text stream ${key} with no open turn`, key);
-            break;
-          }
-          const itemId = mintItemId();
-          stream = { itemId, channel: delta.channel, text: "", turnId: state.activeTurnId };
-          const item: CanonicalItem = {
-            itemId,
-            nativeKey: key,
-            threadId,
-            turnId: stream.turnId,
-            shape: textShape(delta.channel, ""),
-          };
-          diag("delta-first-synthesized", op, `synthesized item.started for delta-first stream ${key}`, key);
-          emit({ kind: "item.started", threadId, turnId: stream.turnId, item });
+        const opened = state.openItems[key];
+        if (opened !== undefined) {
+          // A non-text item (tool/command) cannot accumulate a text stream; keep
+          // the delta observable without minting a second item for the same key.
+          emit({ kind: "agentMessage.delta", threadId, turnId: opened.turnId ?? "", itemId: opened.itemId, channel: delta.channel, delta: delta.text });
+          break;
         }
-        state.streams[key] = { ...stream, text: stream.text + delta.text };
-        emit({ kind: "agentMessage.delta", threadId, turnId: stream.turnId ?? "", itemId: stream.itemId, delta: delta.text });
+        if (state.activeTurnId === null) {
+          diag("orphan-no-turn", op, `text stream ${key} with no open turn`, key);
+          break;
+        }
+        const itemId = mintItemId();
+        const item: CanonicalItem = {
+          itemId,
+          nativeKey: key,
+          threadId,
+          turnId: state.activeTurnId,
+          shape: textShape(delta.channel, ""),
+        };
+        diag("delta-first-synthesized", op, `synthesized item.started for delta-first stream ${key}`, key);
+        emit({ kind: "item.started", threadId, turnId: item.turnId, item });
+        state.streams[key] = { itemId, channel: delta.channel, text: delta.text, turnId: item.turnId };
+        emit({ kind: "agentMessage.delta", threadId, turnId: item.turnId ?? "", itemId, channel: delta.channel, delta: delta.text });
         break;
       }
       case "item.textClose": {
         const stream = state.streams[key];
-        if (stream === undefined) {
+        const opened = state.openItems[key];
+        if (stream === undefined && opened === undefined) {
           diag("out-of-order", op, `textClose for unknown stream ${key}`, key);
           break;
         }
-        const finalText = delta.text ?? stream.text;
+        const channel = stream?.channel ?? channelForShape(opened!.shape);
+        if (channel === null) {
+          diag("out-of-order", op, `textClose on non-text item ${key}`, key);
+          break;
+        }
+        const accumulated = stream?.text ?? textOfShape(opened!.shape);
+        const finalText = delta.text ?? accumulated;
         if (delta.text === undefined && finalText.trim().length === 0) {
           diag("empty-stream", op, `whitespace-only stream ${key} completes nothing`, key);
           delete state.streams[key];
           break;
         }
+        const itemId = stream?.itemId ?? opened!.itemId;
+        const turnId = stream?.turnId ?? opened!.turnId;
         const item: CanonicalItem = {
-          itemId: stream.itemId,
+          itemId,
           nativeKey: key,
           threadId,
-          turnId: stream.turnId,
-          shape: textShape(stream.channel, finalText),
+          turnId,
+          shape: textShape(channel, finalText),
         };
-        emit({ kind: "item.completed", threadId, turnId: stream.turnId, item });
+        emit({ kind: "item.completed", threadId, turnId, item });
         state.settledKeys[key] = true;
         delete state.streams[key];
+        delete state.openItems[key];
         break;
       }
       case "item.close": {
@@ -331,10 +378,17 @@ export function assemble(
         if (opened !== undefined) {
           item = { ...opened, shape: delta.shape };
           delete state.openItems[key];
+          delete state.streams[key];
         } else if (stream !== undefined) {
           item = { itemId: stream.itemId, nativeKey: key, threadId, turnId: stream.turnId, shape: delta.shape };
           delete state.streams[key];
         } else {
+          // A close with no open turn is an orphan: diagnose only, never mint
+          // an item that would project with an empty turnId.
+          if (state.activeTurnId === null) {
+            diag("orphan-no-turn", op, `close for ${key} with no open turn`, key);
+            break;
+          }
           diag("close-without-open", op, `bare completed item for ${key}`, key);
           item = {
             itemId: mintItemId(),
@@ -350,12 +404,18 @@ export function assemble(
         break;
       }
       case "input.accepted": {
+        const existing = state.inputs[delta.inputId];
+        if (existing !== undefined) {
+          // Idempotent re-registration: never reset admission/evidence/withdrawal.
+          emitInput(existing);
+          break;
+        }
         const input = registerInput(delta);
         const target = delta.expectedTurnId;
         if (state.activeTurnId !== null && (target === undefined || target === state.activeNativeTurnId)) {
           emitInput(withDisposition(input, "steered", state.activeTurnId));
         } else if (target !== undefined && state.settledNativeTurns[target] !== undefined) {
-          emitInput(withDisposition(input, "queued", state.settledNativeTurns[target]));
+          emitInput(withDisposition(input, "queued", null));
           diag("steer-end-race", op, "input targeted a settled turn; queued, not lost", input.inputId);
         } else {
           state.inputs[input.inputId] = input;
@@ -382,6 +442,15 @@ export function assemble(
         emitInput(applyWithdrawal(current ?? blankInput(delta.inputId), delta));
         break;
       }
+      case "input.outcome": {
+        const current = state.inputs[delta.inputId];
+        const { state: next, settlement } = applyOutcome(current ?? blankInput(delta.inputId), delta);
+        emitInput(next);
+        if (settlement.reconcileRequired) {
+          diag("reconcile-required", op, delta.reason, delta.inputId);
+        }
+        break;
+      }
       case "usage": {
         const turnId = state.activeTurnId ?? state.lastTurnId;
         if (turnId === null) {
@@ -406,25 +475,20 @@ export function assemble(
         break;
       case "session.reset": {
         settleOpenWork("interrupted");
-        diag("session-reset-settled", op, "open work settled before fresh id space");
+        diag("session-reset-settled", op, "all open work settled before fresh id space");
         state.sessionEpoch += 1;
         state.turnSeq = 0;
         state.itemSeq = 0;
-        state.openTurns = {};
         state.settledNativeTurns = {};
-        state.openItems = {};
-        state.streams = {};
         state.settledKeys = {};
         state.inputs = {};
         state.pendingAccepted = [];
         state.extensionStates = {};
-        state.activeTurnId = null;
-        state.activeNativeTurnId = null;
         break;
       }
       case "session.ended": {
         settleOpenWork("completed");
-        diag("session-ended-settled", op, "open work settled at session end");
+        diag("session-ended-settled", op, "all open work settled at session end");
         state.pendingAccepted = [];
         break;
       }

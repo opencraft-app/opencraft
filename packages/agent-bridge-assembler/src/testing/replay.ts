@@ -15,7 +15,7 @@ import {
   type BridgeFrameLimits,
 } from "@opencraft/agent-bridge-protocol";
 import { assemble } from "../assembler";
-import { createAssemblerState, type AssembleDiagnostic, type CanonicalEvent } from "../canonical";
+import { createAssemblerState, type AssembleDiagnostic, type AssemblerState, type CanonicalEvent } from "../canonical";
 import { projectToAppServer } from "../projection";
 import { FIXTURE_THREAD_ID, type BridgeFixtureCell } from "./fixture-cells";
 
@@ -66,6 +66,8 @@ export interface ReplayResult {
   readonly events: readonly CanonicalEvent[];
   readonly diagnostics: readonly AssembleDiagnostic[];
   readonly projected: readonly AppServerNotification[];
+  /** The assembler state after replay, for the steer status query. */
+  readonly state: AssemblerState;
 }
 
 /** Layer 1 + layer 2 over one recorded cell. Deterministic by construction. */
@@ -89,5 +91,6 @@ export function replayCell(cell: BridgeFixtureCell, options: ReplayOptions = {})
     events: assembled.events,
     diagnostics: assembled.diagnostics,
     projected,
+    state: assembled.state,
   };
 }
