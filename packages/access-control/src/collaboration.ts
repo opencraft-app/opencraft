@@ -84,7 +84,7 @@ export class Collaboration {
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution">, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
     if (typeof execution.hostId !== 'string' || !execution.hostId.trim() || execution.hostId.length > 256 || /[\x00-\x1f]/u.test(execution.hostId)) throw new CollaborationError(500, 'execution_host_required');
     const managed = openServerRepository(path, "actor-collaboration");
     this.#closeDatabase = managed.close;
@@ -308,6 +308,15 @@ export class Collaboration {
     return {id:String(row.id),context:{actorId:String(row.actor_id),generation:Number(row.generation),credentialId:row.credential_id as string|null,expiresAt:Number(row.expires_at)},
       sourceThreadId:threadId,expiresAtMs:Number(row.expires_at)};
   }
+  /** Server admission proof before a native Turn exists; never authorizes a CLI write. */
+  async admittedExecution(threadId:string,inputId:string):Promise<{turnId:string|null}> {
+    const storage=await this.#runtimeStorage();
+    if(!storage.admission)throw new CollaborationError(503,'execution_admission_unavailable');
+    const row=await storage.admission(threadId,inputId);
+    if(!row || !this.#validDelegation(row))throw new CollaborationError(403,'execution_delegation_revoked');
+    return {turnId:typeof row.turn_id==='string'?row.turn_id:null};
+  }
+
   executionSource(threadId: string, execution: {inputId?: string; turnId?: string}) {
     const row = execution.inputId
       ? this.database.prepare(`SELECT a.* FROM conversation_authorities a WHERE a.thread_id=? AND a.input_id=?
