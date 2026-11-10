@@ -125,6 +125,7 @@ interface MutableServerRequestResponseContext extends ServerRequestResponseConte
 }
 
 interface ActiveServerRequest {
+  readonly signature: string;
   readonly request: JsonRpcRequest;
   readonly revision: number;
   readonly controller: AbortController;
@@ -649,10 +650,18 @@ export class JsonRpcAppServerClient implements AppServerClient {
   }
 
   private async answerServerRequest(request: JsonRpcRequest): Promise<void> {
+    // Reattachment may offer an outstanding request again on the same client
+    // connection. Keep its original handler/receipt instead of answering twice.
+    const signature = JSON.stringify([request.method, request.params]);
+    const previous = [...this.activeServerRequests].find(active => active.revision === this.transportRevision && active.request.id === request.id);
+    if (previous) {
+      if (previous.signature !== signature) this.emitProtocolError(new AppServerClientError("PROTOCOL_ERROR", "Outstanding AppServer request id was reused with different parameters"));
+      return;
+    }
     const controller = new AbortController();
     const responseContext = createServerRequestResponseContext(controller.signal);
     const active: ActiveServerRequest = {
-      request, revision: this.transportRevision, controller,
+      request, signature, revision: this.transportRevision, controller,
       context: responseContext, phase: "handling",
     };
     this.activeServerRequests.add(active);

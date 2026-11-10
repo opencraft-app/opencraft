@@ -124,6 +124,7 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   assert.deepEqual(approvalAnswer, { decision: 'decline' });
   await assert.rejects(answerApproval(), /Interaction subscription required/);
   assert.equal(approvalAnswers, 1);
+  assert.equal((transport as any).gateway.interactions.size, 0, 'accepted settlement releases cached request body');
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   assert.equal(starts, 1); assert.equal(steers, 1);
@@ -134,10 +135,18 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   assert.equal(frames.find(f => f.id === staleId)?.error?.code, -32002);
   assert.equal(frames.find(f => f.id === staleId)?.error?.data?.submissionOutcome, 'rejected');
   assert.equal(steers, 1);
+  nativePeer!.send(JSON.stringify({ id: 'external-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool', command: 'cat input.txt' } }));
+  const external = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval' && f.id !== approval.id), Boolean);
+  nativePeer!.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: 'native-new', requestId: 'external-approval' } }));
+  await until(() => frames.some(f => f.method === 'serverRequest/resolved' && f.params.requestId === external.id), Boolean);
+  await assert.rejects(transport.send(JSON.stringify({ id: external.id, result: { decision: 'accept' }, [LOGICAL_CLIENT_FIELD]: 'client' })), /Interaction subscription required/);
+  assert.equal((transport as any).gateway.interactions.size, 0, 'native resolution releases cached request body');
   const beforeRestart = frames.filter(f => f.method === 'turn/started').length;
   await transport.close(); transport = await createTransport();
   await request('initialize'); await request('thread/resume', { threadId: 'bridge:codex:public-new' });
   assert.equal(frames.filter(f => f.id === approval.id && f.method === approval.method).length, 3, 'settled approval must not reappear from inbox replay');
+  assert.equal(frames.filter(f => f.id === external.id && f.method === external.method).length, 1, 'external settlement must not reappear after replacement');
+  assert.equal((transport as any).gateway.interactions.size, 0, 'historical settled bodies are not retained during replay');
   nativePeer!.send(JSON.stringify({ method: 'item/completed', params: { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'completed', aggregatedOutput: 'fixture' } } }));
   nativePeer!.send(JSON.stringify({ method: 'turn/completed', params: { threadId: 'native-new', turn: { id: 'native-turn', status: 'completed' } } }));
   await until(() => frames.some(f => f.method === 'turn/completed'), Boolean);
@@ -152,4 +161,10 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   assert.equal(frames.find(f => f.id === unknownId)?.error?.data?.retryable, false);
   assert.match(frames.find(f => f.id === unknownId)?.error?.data?.bridgeCommandId, /^bridge-mutation:[a-f0-9]{64}$/);
   assert(!forwarded.some(f => f.method === 'turn/start' || f.method === 'turn/steer'));
+  nativePeer!.send(JSON.stringify({ id: 'lost-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool' } }));
+  const lost = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval' && f.id !== approval.id && f.id !== external.id), Boolean);
+  nativePeer!.terminate();
+  await until(() => frames.some(f => f.method === 'serverRequest/resolved' && f.params.requestId === lost.id), Boolean);
+  assert.deepEqual((await host.snapshot()).interactions, []);
+  assert.equal((transport as any).gateway.interactions.size, 0);
 });

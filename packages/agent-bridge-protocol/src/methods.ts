@@ -27,6 +27,7 @@ export const BRIDGE_CALLBACKS = Object.freeze({
   threadDelta: "thread/delta",
   threadIdentity: "thread/identity",
   interactionRequest: "interaction/request",
+  interactionResolved: "interaction/resolved",
   providerRecovery: "provider/recovery",
 } as const);
 

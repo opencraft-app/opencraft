@@ -80,3 +80,24 @@ test('sanitized native 0.162.1 history recording preserves failed outcome withou
   assert.equal(reply.result.thread.turns[0].error.codexErrorInfo.responseTooManyFailedAttempts.httpStatusCode, 429);
   assert.deepEqual(calls, ['thread/read']);
 });
+
+
+test('native external resolution and owner loss retire the exact interaction without answering it', async () => {
+  const frames: any[] = [], answers: unknown[] = [];
+  const runtime = new CodexBridgeRuntime({ async request() { return {}; }, resolve(...answer) { answers.push(answer); } }, frame => frames.push(frame));
+  runtime.adapter.bind('public', 'native');
+  runtime.interaction(7, 'item/commandExecution/requestApproval', { threadId: 'native', turnId: 'turn' });
+  const first = frames.at(-1).params.interactionId;
+  runtime.notification('serverRequest/resolved', { threadId: 'another', requestId: 7 });
+  assert.equal(frames.at(-1).method, 'interaction/request');
+  runtime.notification('serverRequest/resolved', { threadId: 'native', requestId: 7 });
+  assert.deepEqual(frames.at(-1).params, { threadId: 'public', interactionId: first, reason: 'resolved' });
+  const count = frames.length;
+  runtime.notification('serverRequest/resolved', { threadId: 'native', requestId: 7 });
+  assert.equal(frames.length, count);
+  runtime.interaction('7', 'item/commandExecution/requestApproval', { threadId: 'native', turnId: 'turn' });
+  const second = frames.at(-1).params.interactionId;
+  runtime.lost();
+  assert(frames.some(frame => frame.method === 'interaction/resolved' && frame.params.interactionId === second && frame.params.reason === 'connection-lost'));
+  assert.deepEqual(answers, []);
+});

@@ -26,7 +26,8 @@ native auth requests; upstream account credentials remain with Core.
 
 Commands run locally:
 
-- `npm run test:agent-bridge`: 120 passed after rebase (69 before the other
+- `npm run test:agent-bridge`: 121 passed after review repairs (120 after rebase,
+  69 before the other
   provider batches merged), including native Unix WebSocket fixtures,
   durable Host/inbox, stale refusal, unknown outcomes, auth callback handling,
   native/public ID joins and sanitized native 0.162.1 history replay.
@@ -120,3 +121,29 @@ legacy owner. The gateway integration test covers late responses after each
 revocation, a pending approval across gateway replacement, exactly one native
 response, no duplicate offer on repeated reads, and no settled offer after a
 second replacement. Real-account acceptance limitations remain unchanged.
+
+The second and final independent review found three additional P1 paths, also
+accepted and repaired locally: native external request resolution/connection
+loss was missing from the ledger; re-offering an outstanding request could
+conflict with the real client broker; and settled request bodies remained cached.
+An additive typed `interaction/resolved` callback now retires exact provider
+request ownership. Native connection loss records `connection-lost` without
+approving a tool or asserting its outcome. Host command settlement also publishes
+retirement in the same Worker transaction. Gateway and client pending requests
+retire from these committed events; startup retains bodies only for pending IDs.
+
+The shared AppServer client admits one outstanding handler per request ID and
+connection revision: an identical restored request retains that handler and its
+receipt, while changed parameters emit a protocol error without replacing it.
+A real AppServer client plus `AppServerInteractionBroker` regression verifies
+one card, one native answer, and no duplicate-request failure. Native resolution,
+owner loss, settled-body cleanup and replacement replay are covered through the
+bundled bridge/Host/gateway test. Review rounds are closed at two; these targeted
+repairs were verified by the implementing agent without a third review dispatch.
+
+Final targeted validation after these repairs: bridge suite 121 passed; AppServer
+connection lifecycle, execution channels, session and shared interaction broker
+suites 113 passed together. Typechecks passed for bridge-protocol, Host, daemon
+and appserver-client. Codex/daemon builds and the rebuilt Web smoke were repeated
+for this changed client and callback path. The initial broader-check limitations
+and real-account acceptance gap above are unchanged.

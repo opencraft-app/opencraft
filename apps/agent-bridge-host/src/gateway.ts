@@ -13,6 +13,7 @@ export class BridgeGateway {
   private routes = new Map<string, string>();
   private turns = new Map<string, Map<string, string>>();
   private items = new Map<string, Map<string, string>>();
+  private replayInteractions?: Set<string>;
   private interactions = new Map<string, { threadId: string; frame: unknown }>();
   private cursor = 0;
   private pulling?: Promise<void>;
@@ -35,6 +36,7 @@ export class BridgeGateway {
       const route = JSON.parse(row.route);
       if (route[0] === this.options.serverId) this.routes.set(route[1], row.native_id);
     }
+    this.replayInteractions = new Set(snapshot.interactions.filter((row: any) => JSON.parse(row.route)[0] === this.options.serverId).map((row: any) => row.id));
     // Replay identities and pending request bodies; subscription recovery consults
     // the Host settlement ledger before offering an interaction again.
     for (;;) {
@@ -42,6 +44,7 @@ export class BridgeGateway {
       if (!page.length) break;
       for (const row of page) { this.consume(row, false); this.cursor = row.seq; }
     }
+    this.replayInteractions = undefined;
     await this.pull();
   }
   reserve(threadId: string): void { this.pinned.add(threadId); }
@@ -52,7 +55,8 @@ export class BridgeGateway {
     if (serverId !== this.options.serverId) return;
     const payload = row.payload as { kind?: string; event?: CanonicalEvent; method?: string; params?: any };
     if (payload.method === 'thread/identity') { this.pinned.add(threadId); this.routes.set(threadId, payload.params.providerThreadId); }
-    if (payload.method === 'interaction/request' && typeof payload.params?.interactionId === 'string') this.interactions.set(payload.params.interactionId, { threadId, frame: { ...payload, params: { ...payload.params, threadId } } });
+    if (payload.method === 'interaction/resolved') this.interactions.delete(payload.params?.interactionId);
+    if (payload.method === 'interaction/request' && typeof payload.params?.interactionId === 'string' && (!this.replayInteractions || this.replayInteractions.has(payload.params.interactionId))) this.interactions.set(payload.params.interactionId, { threadId, frame: { ...payload, params: { ...payload.params, threadId } } });
     if (payload.kind === 'canonical' && payload.event) {
       const event = payload.event;
       if (event.kind === 'turn.started') {
@@ -81,11 +85,12 @@ export class BridgeGateway {
     // Request bodies survive in the inbox; the Host ledger is the authority for
     // whether they remain pending after an accepted resolve/stop/close.
     const snapshot = await this.rpc('/snapshot');
-    const pending = new Set<string>();
+    const pending = new Set<string>(), allPending = new Set<string>();
     for (const row of snapshot.interactions) {
       const route = JSON.parse(row.route);
-      if (route[0] === this.options.serverId && route[1] === threadId) pending.add(row.id);
+      if (route[0] === this.options.serverId) { allPending.add(row.id); if (route[1] === threadId) pending.add(row.id); }
     }
+    for (const id of this.interactions.keys()) if (!allPending.has(id)) this.interactions.delete(id);
     return [...this.interactions].filter(([id, entry]) => entry.threadId === threadId && pending.has(id)).map(([, entry]) => entry.frame);
   }
   async status(threadId: string, inputIds?: readonly string[]): Promise<unknown> {

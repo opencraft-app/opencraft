@@ -25,9 +25,23 @@ export class CodexBridgeRuntime {
     this.send({ jsonrpc: '2.0', id: `codex-event:${randomUUID()}`, method, params });
   }
   lost(): void {
+    for (const [id, interaction] of this.interactions) this.retireInteraction(id, interaction.threadId, 'connection-lost');
     for (const threadId of this.adapter.boundThreads()) this.callback('provider/recovery', { threadId, kind: 'restartRecommended', message: 'Codex connection lost; native outcome requires reconciliation', retryable: false });
   }
-  notification(method: string, params: unknown): void { this.adapter.notification(method, params); }
+  private retireInteraction(interactionId: string, threadId: string, reason: 'resolved' | 'connection-lost'): void {
+    this.interactions.delete(interactionId);
+    this.callback('interaction/resolved', { threadId, interactionId, reason });
+  }
+  notification(method: string, params: unknown): void {
+    if (method === 'serverRequest/resolved') {
+      const p = object(params);
+      for (const [id, interaction] of this.interactions) {
+        if (interaction.nativeId === p.requestId && (p.threadId === undefined || this.adapter.route(String(p.threadId)) === interaction.threadId)) this.retireInteraction(id, interaction.threadId, 'resolved');
+      }
+      return;
+    }
+    this.adapter.notification(method, params);
+  }
   interaction(nativeId: string | number, method: string, raw: unknown): void {
     if (!['item/commandExecution/requestApproval', 'item/fileChange/requestApproval', 'item/tool/requestUserInput', 'mcpServer/elicitation/request'].includes(method)) { this.owner.reject?.(nativeId); return; }
     const params = object(raw);

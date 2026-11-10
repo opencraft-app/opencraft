@@ -21,6 +21,12 @@ export class CodexProviderBridge implements DuplexTransport {
   constructor(private legacy: DuplexTransport, options: BridgeGatewayOptions) {
     this.gateway = new BridgeGateway(options, (threadId, value) => {
       const frame = object(value);
+      if (frame.method === 'interaction/resolved') {
+        const id = object(frame.params).interactionId;
+        this.interactions.delete(id);
+        for (const client of this.subscriptions.get(threadId) ?? []) this.emit({ method: 'serverRequest/resolved', params: { threadId, requestId: id } }, client);
+        return;
+      }
       if (frame.method === 'interaction/request') {
         this.offerInteraction(threadId, frame);
         return;
