@@ -105,14 +105,31 @@ export function withDisposition(
   return { ...state, disposition, expectedTurnId: resolvedExpected, outcome: deriveOutcome({ ...state, disposition }) };
 }
 
+function placementEvidence(state: CanonicalInputState): boolean {
+  return state.evidence.value === "context-confirmed"
+    || (state.evidence.value === "evidence-observed"
+      && (state.evidence.evidenceKind === "queue-change" || state.evidence.evidenceKind === "native-input-id"));
+}
+
 export function deriveOutcome(state: CanonicalInputState): InputOutcome {
   if (state.withdrawal.value === "too-late") return "too-late";
   if (state.withdrawal.value === "withdrawn") return "withdrawn";
   if (state.evidence.value === "context-confirmed") return "context-confirmed";
+  // Admission-only evidence proves the native owner took the input, not that
+  // it reached a run. A terminal failure/unknown must stay visible in that
+  // case; only a queue/entry transition (or context proof) resolves it, and
+  // only when that observation is not older than the admission fact.
+  if (state.admission.value === "rejected" || state.admission.value === "failed") {
+    return placementEvidence(state) && state.evidence.version >= state.admission.version
+      ? "evidence-observed"
+      : state.admission.value;
+  }
+  if (state.admission.value === "unknown") {
+    return placementEvidence(state) && state.evidence.version >= state.admission.version
+      ? "evidence-observed"
+      : "unknown";
+  }
   if (state.evidence.value === "evidence-observed") return "evidence-observed";
-  if (state.admission.value === "rejected") return "rejected";
-  if (state.admission.value === "failed") return "failed";
-  if (state.admission.value === "unknown") return "unknown";
   // A queued input must never be summarised as "delivered".
   if (state.disposition === "queued") return "queued";
   if (state.delivery.value !== "none" || state.admission.value === "accepted") return "delivered";
@@ -159,13 +176,22 @@ export function applyEvidence(state: CanonicalInputState, delta: InputEvidenceDe
       ...(delta.runId !== undefined ? { runId: delta.runId } : {}),
     } : {}),
   };
+  // A queue/entry transition proves the native owner placed the input. If the
+  // admission facet was still unknown after an ambiguous write, this native
+  // evidence reconciles it; admission-only/echo observations do not.
+  let admission = state.admission;
+  if (admission.value === "unknown"
+    && delta.version >= admission.version
+    && (delta.evidenceKind === "queue-change" || delta.evidenceKind === "native-input-id" || delta.evidenceKind === "context-confirmed")) {
+    admission = { value: "accepted", version: Math.max(admission.version, delta.version) };
+  }
   let withdrawal = state.withdrawal;
   // Content already reached a native context path: a pending withdrawal is too late.
   if (value === "context-confirmed"
     && (withdrawal.value === "withdraw-requested" || withdrawal.value === "withdrawn")) {
     withdrawal = { value: "too-late", version: Math.max(withdrawal.version, delta.version) };
   }
-  return settle({ ...state, evidence, withdrawal });
+  return settle({ ...state, admission, evidence, withdrawal });
 }
 
 export function applyWithdrawal(state: CanonicalInputState, delta: InputWithdrawalDelta): CanonicalInputState {
@@ -195,6 +221,16 @@ export function applyOutcome(
     replyReceived: false,
     reconnectAfterWrite: delta.state === "unknown",
   });
+  // Evidence can legitimately arrive before the ambiguous outcome (the
+  // snapshot chain runs concurrently with command emission). A placement
+  // observation that is at least as new as the unknown outcome keeps the
+  // admission accepted, so Host release is not blocked by ordering.
+  if (delta.state === "unknown" && placementEvidence(state) && state.evidence.version >= state.admission.version) {
+    const admission: CanonicalFacet<AdmissionState> = state.admission.value === "accepted"
+      ? state.admission
+      : { value: "accepted", version: Math.max(state.admission.version, delta.version) };
+    return { state: settle({ ...state, admission }), settlement };
+  }
   const admissionValue: AdmissionState = delta.state === "rejected"
     ? "rejected"
     : delta.state === "failed" ? "failed" : "unknown";

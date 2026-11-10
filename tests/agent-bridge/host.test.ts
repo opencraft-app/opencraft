@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { openManagedDatabase } from '@opencraft/sqlite-node';
-import { BridgeHost, GatewayInbox, attachGateway, type Generation } from '../../apps/agent-bridge-host/src/index.js';
+import { BridgeHost, GatewayInbox, attachGateway, dispatchSettlement, type Generation } from '../../apps/agent-bridge-host/src/index.js';
 import { Storage } from '../../apps/agent-bridge-host/src/storage.js';
 import { migrations } from '../../apps/agent-bridge-host/src/migrations.js';
 import { localTestBackend } from './fixtures/local-backend.js';
@@ -265,4 +265,15 @@ test('storage close seals new calls immediately and drains earlier requests befo
   await closing;
   const reopened = new Storage(join(root, 'host.db')); await reopened.ready;
   assert.equal((await reopened.call('snapshot')).epoch, 2); await reopened.close();
+});
+
+
+test('deterministic provider refusals settle rejected; only ambiguous outcomes stay unknown', () => {
+  assert.equal(dispatchSettlement({ jsonrpc: '2.0', id: '1', result: {} }), 'accepted');
+  for (const kind of ['explicit-reject', 'invalid', 'unsupported', 'stale-target', 'auth', 'quota', 'frame-too-large'] as const) {
+    assert.equal(dispatchSettlement({ jsonrpc: '2.0', id: '1', error: { kind, code: -32000, message: kind } }), 'rejected', kind);
+  }
+  for (const kind of ['unknown-outcome', 'internal'] as const) {
+    assert.equal(dispatchSettlement({ jsonrpc: '2.0', id: '1', error: { kind, code: -32000, message: kind } }), 'unknown', kind);
+  }
 });

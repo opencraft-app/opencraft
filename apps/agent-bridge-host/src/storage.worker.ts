@@ -169,6 +169,16 @@ const operations: Record<string, (args: any) => any> = {
     require(Number.isSafeInteger(cursor) && cursor >= Number(meta('ack')) && cursor <= high, 'Invalid acknowledgement');
     setMeta('ack', cursor); run('DELETE FROM outbox WHERE seq<=?', cursor);
   }),
+  abandon: ({ route, id }: any) => tx(() => {
+    const row = get('SELECT method,state,route FROM commands WHERE id=?', id);
+    require(row && row.state === 'rejected' && row.method === 'session/create' && row.route === route,
+      'Only a rejected create can abandon its route');
+    require(!get('SELECT 1 FROM native_sessions WHERE route=?', route), 'Native session retains the route');
+    require(!get('SELECT 1 FROM commands WHERE route=? AND id<>?', route), 'Other command custody retains the route');
+    require(!get('SELECT 1 FROM outbox WHERE route=?', route), 'Unacknowledged events retain the route');
+    run('DELETE FROM routes WHERE route=?', route);
+    return { abandoned: true };
+  }),
   releaseRoute: ({ route }: any) => tx(() => {
     require(!busy(route), 'Thread still has work or unknown custody');
     require(get("SELECT 1 FROM commands WHERE route=? AND method='session/close' AND state='accepted'", route), 'Native close required');

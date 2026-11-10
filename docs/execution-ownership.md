@@ -1007,3 +1007,31 @@ extension point and failure boundaries are documented in the
 initialize recordings and minimal-task evidence live under
 `design/agent-bridge/recordings/p3/`; deterministic fixtures cover the paths a
 single real task cannot trigger.
+
+## Pi bridge owner (P2d, opt-in)
+
+`plugins/pi-bridge` is a pinned provider artifact launched by the P1b Host. It
+wraps the existing `PiDurableSession`, not a Pi RPC child and not a second
+transcript writer. A bridge-owned Thread has one native SQLite session and one
+owner lock; `session/create` reserves a pending record before opening the
+native database, refuses an existing or orphaned session, and removes a
+half-created session on failure; `session/resume` refuses a live writer, seeds
+the current native snapshot without replaying settled history, and reports an
+active native turn as a recovery hint. The bridge keeps its sessions in a
+separate private data root, so the AppServer Pi engine's catalog cannot adopt
+them. Existing Pi Threads stay on the existing engine; only new Threads routed
+to this bridge use the new path. `session/close` fences new turn commands and
+diffs one final native snapshot before `session.ended`. Deterministic provider
+refusals settle as rejected in the Host; only ambiguous native outcomes consume
+unknown custody. A rejected create that leaves no resumable session releases
+its fresh route binding; pending/exists/locked bindings remain for resume.
+
+The bridge declares native same-turn steer only. Admission and the durable
+inbox/entry transition are evidence-observed; queue removal never becomes
+model-context evidence. An input still queued at a turn boundary is reported as
+`Pi turn ended before steer was consumed`, not as delivered. The bridge disables
+the AppServer PTY worker for its own sessions and uses the ordinary coding
+tools; the existing engine's PTY path is unchanged. Real local acceptance and
+the explicit gaps (no real unconsumed-race reproduction; no real-model Host
+round trip) are recorded in
+[`plugins/pi-bridge/VALIDATION.md`](../plugins/pi-bridge/VALIDATION.md).
