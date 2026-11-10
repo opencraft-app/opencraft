@@ -1,0 +1,26 @@
+{
+  "name": "claude-2.1.321-steer-held-turn",
+  "nativeVersion": "2.1.321",
+  "note": "The two result UUIDs are substituted with the bridge-minted client UUIDs at replay time.",
+  "messages": [
+    {
+      "type": "assistant",
+      "uuid": "assistant-1",
+      "message": { "content": [{ "type": "text", "text": "Reading the note." }] }
+    },
+    {
+      "type": "result",
+      "subtype": "success",
+      "uuid": "result-1",
+      "user_message_uuids": ["$initial"],
+      "queued_turn_count": 0
+    },
+    {
+      "type": "result",
+      "subtype": "success",
+      "uuid": "result-2",
+      "user_message_uuids": ["$steer"],
+      "queued_turn_count": 0
+    }
+  ]
+}
