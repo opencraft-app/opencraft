@@ -349,6 +349,11 @@ import type {
 export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
+  /** Additive per-input steer evidence status; only served to declaring clients. */
+  "opencraft/steer/status": {
+    params: import("./steer-evidence").OpenCraftSteerStatusParams;
+    result: import("./steer-evidence").OpenCraftSteerStatusResult;
+  };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };
   "mcpServer/resource/read": { params: McpResourceReadParams; result: McpResourceReadResponse };
   "mcpServer/tool/call": { params: McpServerToolCallParams; result: McpServerToolCallResponse };

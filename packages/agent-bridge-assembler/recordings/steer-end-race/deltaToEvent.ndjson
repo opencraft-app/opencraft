@@ -1,0 +1,4 @@
+{"seq":1,"run":"steer-end-race","lane":"deltaToEvent","line":"{\"op\":\"turn.open\",\"nativeTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":2,"run":"steer-end-race","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":3,"run":"steer-end-race","lane":"deltaToEvent","line":"{\"op\":\"input.accepted\",\"inputId\":\"in1\",\"clientRequestId\":\"cr1\",\"expectedTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":4,"run":"steer-end-race","lane":"deltaToEvent","line":"{\"op\":\"input.delivery\",\"inputId\":\"in1\",\"deliveryMethod\":\"next-turn\",\"admitted\":true,\"version\":1,\"scope\":{\"threadId\":\"thr-fixture\"}}"}

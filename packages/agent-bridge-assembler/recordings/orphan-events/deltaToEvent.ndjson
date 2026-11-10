@@ -1,0 +1,5 @@
+{"seq":1,"run":"orphan-events","lane":"deltaToEvent","line":"{\"op\":\"item.textDelta\",\"nativeKey\":\"orph1\",\"channel\":\"agentMessage\",\"text\":\"[content:1fd40452]\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":2,"run":"orphan-events","lane":"deltaToEvent","line":"{\"op\":\"item.open\",\"nativeKey\":\"orph2\",\"shape\":{\"kind\":\"tool\",\"name\":\"fake.tool\",\"status\":\"inProgress\"},\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":3,"run":"orphan-events","lane":"deltaToEvent","line":"{\"op\":\"turn.open\",\"nativeTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":4,"run":"orphan-events","lane":"deltaToEvent","line":"{\"op\":\"item.open\",\"nativeKey\":\"k1\",\"shape\":{\"kind\":\"tool\",\"name\":\"fake.tool\",\"status\":\"inProgress\"},\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":5,"run":"orphan-events","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}

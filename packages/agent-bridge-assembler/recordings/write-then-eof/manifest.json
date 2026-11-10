@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "schemaId": "opencraft.agent-bridge/1",
+  "protocolVersion": 1,
+  "grammarVersion": 1,
+  "providerId": "fake-provider",
+  "providerVersion": "0.0.0-p1a-fixture",
+  "pluginDigest": "fixture-digest-p1a",
+  "permissionMode": "read-only",
+  "mapperVersion": 1,
+  "clockSeed": 1700000000000,
+  "sequenceSeed": 0,
+  "cell": "write-then-eof",
+  "redaction": {
+    "secretsRemoved": true,
+    "contentRedacted": true,
+    "pathsRedacted": true,
+    "correlationIdsKept": true
+  }
+}

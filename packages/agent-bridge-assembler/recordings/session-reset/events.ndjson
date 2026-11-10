@@ -1,0 +1,9 @@
+{"kind":"turn.started","threadId":"thr-fixture","turnId":"t1.1","nativeTurnId":"n1","seq":1,"atMs":1700000000001}
+{"kind":"item.started","threadId":"thr-fixture","turnId":"t1.1","item":{"itemId":"i1.1","nativeKey":"s1","threadId":"thr-fixture","turnId":"t1.1","shape":{"kind":"agentMessage","text":""}},"seq":2,"atMs":1700000000002}
+{"kind":"agentMessage.delta","threadId":"thr-fixture","turnId":"t1.1","itemId":"i1.1","delta":"[content:fc0c4ef4]","seq":3,"atMs":1700000000003}
+{"kind":"item.completed","threadId":"thr-fixture","turnId":"t1.1","item":{"itemId":"i1.1","nativeKey":"s1","threadId":"thr-fixture","turnId":"t1.1","shape":{"kind":"agentMessage","text":"[content:fc0c4ef4]"}},"seq":4,"atMs":1700000000004}
+{"kind":"turn.completed","threadId":"thr-fixture","turnId":"t1.1","status":"interrupted","seq":5,"atMs":1700000000005}
+{"kind":"turn.started","threadId":"thr-fixture","turnId":"t2.1","nativeTurnId":"n2","seq":6,"atMs":1700000000006}
+{"kind":"item.started","threadId":"thr-fixture","turnId":"t2.1","item":{"itemId":"i2.1","nativeKey":"s2","threadId":"thr-fixture","turnId":"t2.1","shape":{"kind":"agentMessage","text":""}},"seq":7,"atMs":1700000000007}
+{"kind":"agentMessage.delta","threadId":"thr-fixture","turnId":"t2.1","itemId":"i2.1","delta":"[content:fd0c5087]","seq":8,"atMs":1700000000008}
+{"kind":"turn.completed","threadId":"thr-fixture","turnId":"t2.1","status":"completed","seq":9,"atMs":1700000000009}
