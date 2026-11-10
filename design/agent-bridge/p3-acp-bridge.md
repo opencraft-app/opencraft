@@ -26,8 +26,9 @@
    `native-inject`/`next-turn`/`interrupt-replace`、text/image 的上限；探测只
    会移除 native-inject、image 或收窄 content types。没有 `steerMode`。
 3. **ACP 无逐条 native input id**。native steer 回执只到
-   `input.delivery{native-inject,admitted}` + `input.evidence{admission}`；
-   `user_message_chunk` 只做 echo 迹象，同文本多待决输入不匹配身份。绝不发
+   `input.delivery{native-inject,admitted}` + `input.evidence{admission}`。
+   ACP 没有稳定逐条 ID，`user_message_chunk` 的文本不能唯一归因到某条 steer，
+   因此本 bridge 不发 echo evidence；同文本多输入时更不做猜测。绝不发
    `context-confirmed`。
 4. **无 native 声明时不猜路径**。`turn/steer` 未带 `delivery` 直接
    `explicit-reject` 并提示选择 `next-turn` 或 `interrupt-replace`；Copilot
@@ -69,7 +70,7 @@
 | Agent | initialize | 最小任务 | steer | 证据档位 |
 | --- | --- | --- | --- | --- |
 | GitHub Copilot CLI 1.0.102 | 无 `_meta.midTurnSteering`；image=true；loadSession=true | 临时目录创建 `p3-accept.txt`，内容 `ok`；shell 工具 2 项 | 显式 `next-turn`；第二 turn 结束后开新 turn，回答含 `STEERED`；delivery=next-turn，admission | 队列/admission；无 native 标签 |
-| Amp ACP 0.10.0（本机 8ef5b5ab 快照） | `_meta.midTurnSteering=true`；image=true | 临时目录创建 `p3-accept.txt`，内容 `ok`；shell 工具 2 项 | `native-inject` 并发注入；`turnsOpened=2`（未开第二 turn），最终 `WAITED STEERED`；delivery=native-inject，admission | native admission；echo 未观察到，不升级 context-confirmed |
+| Amp ACP 0.10.0（本机 8ef5b5ab 快照） | `_meta.midTurnSteering=true`；image=true | 临时目录创建 `p3-accept.txt`，内容 `ok`；shell 工具 2 项 | `native-inject` 并发注入；`turnsOpened=2`（未开第二 turn），最终 `WAITED STEERED`；delivery=native-inject，admission | native admission；不升级 context-confirmed |
 
 录制文件保留实际 ACP `initialize` 请求/响应、bridge 握手、session plan、
 任务文件内容与 steer deltas；已脱敏 home/workspace/repo 路径。Copilot 的
@@ -86,7 +87,7 @@ fixture 测试覆盖。
 - 审批 payload 已进入桥的既有 interaction 通道，但 P3 未把该 payload 接到
   Web/Electron/Expo 的 UI；实际客户端投影属于后续接线批次，当前由 Host
   outbox/测试与 smoke client 消费。
-- native steer 证据只到 admission；Amp 未观察到 `user_message_chunk` echo，
-  不能声称模型上下文消费。
+- native steer 证据只到 admission；本 bridge 不使用 `user_message_chunk` echo
+  作为逐条身份，Amp 也未观察到可归因 echo，不能声称模型上下文消费。
 - 未覆盖多 Thread 同桥的性能、ACP agent 版本升级后的方言漂移和
   `session/close` 后真实 agent 资源释放；这些需要后续 provider 批次实测。

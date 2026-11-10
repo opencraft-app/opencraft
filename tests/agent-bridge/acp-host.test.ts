@@ -176,3 +176,27 @@ test("a next-turn input settles its Host route and can be released", async (t) =
   if (last !== undefined) await host.ack(last.seq);
   await host.releaseThread("server-1", "thread-1");
 });
+
+
+test("session close clears a pending approval so the route can be released", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-host-close-"));
+  const host = await BridgeHost.open({ path: join(root, "host.db"), policy, backend: localTestBackend() });
+  t.after(async () => { await host.close().catch(() => {}); await rm(root, { recursive: true, force: true }); });
+  await host.add(await config(root, {
+    ACP_FIXTURE_NATIVE_STEER: "0",
+    ACP_FIXTURE_PERMISSION: "1",
+    ACP_FIXTURE_DELAY_MS: "20",
+  }));
+  await host.activate("acp-g1", "");
+  await host.accept(command("create", "session/create", { cwd: root, permissionMode: "auto" }));
+  await until(() => host.query("create"), (receipt) => receipt?.state === "accepted", "session create");
+  await host.accept(command("start", "turn/start", { input: { text: "needs approval" } }));
+  await until(() => host.events(0), (events) =>
+    events.some((event: any) => event.payload.method === "interaction/request"), "pending approval");
+  await host.accept(command("close", "session/close"));
+  await until(() => host.query("close"), (receipt) => receipt?.state === "accepted", "session close");
+  const events = await host.events(0);
+  const last = events.at(-1);
+  if (last !== undefined) await host.ack(last.seq);
+  await host.releaseThread("server-1", "thread-1");
+});

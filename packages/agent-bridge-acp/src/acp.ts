@@ -267,6 +267,10 @@ export class AcpConnection {
     return this.exited;
   }
 
+  get writable(): boolean {
+    return this.child !== null && !this.closing && this.exited === null && this.child.stdin.writable;
+  }
+
   spawn(): void {
     if (this.child !== null) throw new Error("ACP connection already started");
     const child = spawn(this.options.command, [...this.options.args], {

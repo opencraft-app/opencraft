@@ -183,8 +183,12 @@ export interface TranslatorOptions {
 export class AcpDeltaTranslator {
   private readonly textStreams = new Map<string, TextStream>();
   private readonly tools = new Map<string, ToolStream>();
-  private planOpen = false;
-  private planText = "";
+  private planSeq = 0;
+
+  /** The assembler settles keys per Thread, not per native turn. */
+  private key(kind: "message" | "reasoning" | "tool" | "plan", id: string): string {
+    return `${this.options.nativeTurnId}:${kind}:${id}`;
+  }
 
   constructor(private readonly options: TranslatorOptions) {}
 
@@ -239,7 +243,9 @@ export class AcpDeltaTranslator {
         source: "session/update",
       }];
     }
-    const key = channel === "agentMessage" ? messageKey : channel;
+    const key = channel === "agentMessage"
+      ? this.key("message", messageKey)
+      : this.key("reasoning", "");
     const out = this.openText(key, channel);
     const stream = this.textStreams.get(key)!;
     stream.text += text;
@@ -252,10 +258,10 @@ export class AcpDeltaTranslator {
     switch (kind) {
       case "agent_message_chunk": {
         const messageId = stringValue(raw.messageId) ?? "assistant";
-        return this.onChunk(raw, "agentMessage", `message:${messageId}`);
+        return this.onChunk(raw, "agentMessage", messageId);
       }
       case "agent_thought_chunk":
-        return this.onChunk(raw, "reasoning", "reasoning");
+        return this.onChunk(raw, "reasoning", "");
       case "user_message_chunk": {
         const content = isRecord(raw.content) ? raw.content : undefined;
         if (content?.type === "text" && typeof content.text === "string") this.options.onUserText?.(content.text);
@@ -263,10 +269,11 @@ export class AcpDeltaTranslator {
       }
       case "tool_call":
       case "tool_call_update": {
-        const key = stringValue(raw.toolCallId);
-        if (key === undefined) {
+        const nativeKey = stringValue(raw.toolCallId);
+        if (nativeKey === undefined) {
           return [{ ...this.base(), op: "unhandled", reason: "ACP tool update has no toolCallId", source: "session/update" }];
         }
+        const key = this.key("tool", nativeKey);
         const out: BridgeDelta[] = [];
         const previous = this.tools.get(key);
         if (previous === undefined) {
@@ -285,16 +292,13 @@ export class AcpDeltaTranslator {
         return out;
       }
       case "plan": {
-        const text = planText(raw.entries);
-        this.planText = text;
-        const out: BridgeDelta[] = [];
-        if (!this.planOpen) {
-          this.planOpen = true;
-          out.push({ ...this.base(), op: "item.open", nativeKey: "plan", shape: { kind: "plan", text: "" } });
-        }
-        out.push({ ...this.base(), op: "item.close", nativeKey: "plan", shape: { kind: "plan", text } });
-        this.planOpen = false;
-        return out;
+        // Each ACP plan update is a complete snapshot. A fresh key avoids
+        // re-opening a native key the assembler has already settled.
+        const key = this.key("plan", String(++this.planSeq));
+        return [
+          { ...this.base(), op: "item.open", nativeKey: key, shape: { kind: "plan", text: "" } },
+          { ...this.base(), op: "item.close", nativeKey: key, shape: { kind: "plan", text: planText(raw.entries) } },
+        ];
       }
       case "usage_update": {
         const used = typeof raw.used === "number" ? raw.used : undefined;
@@ -381,10 +385,6 @@ export class AcpDeltaTranslator {
       }
     }
     this.tools.clear();
-    if (this.planOpen) {
-      out.push({ ...this.base(), op: "item.close", nativeKey: "plan", shape: { kind: "plan", text: this.planText } });
-      this.planOpen = false;
-    }
     return out;
   }
 

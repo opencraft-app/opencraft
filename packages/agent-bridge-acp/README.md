@@ -47,8 +47,9 @@ and narrows the registered declaration:
   `next-turn` and `interrupt-replace`.
 - `inputContentTypes` / steer content types include `image` only when the agent
   declares `promptCapabilities.image`.
-- No `context-confirmed` evidence kind is declared: ACP gives a prompt
-  admission, not proof that the next model request contained the text.
+- Only `admission` is declared: ACP gives a prompt admission, not proof that
+  the next model request contained the text, and text echo is not a stable
+  per-input identity.
 - `history`, `model/list`, `usage`, skills/installation/fork are not declared in
   P3; a call to an undeclared method is refused by the Host gate and by the
   bridge.
@@ -94,10 +95,9 @@ The bridge never chooses a destructive fallback on its own:
 - `native-inject` is the default **only** when the instance declared it. The
   bridge sends a concurrent ACP `session/prompt` to the active session. A
   successful ACP reply records `input.delivery = native-inject`, admitted, and
-  `input.evidence = admission`. A same-text `user_message_chunk` may add
-  `echo` evidence; identical text with more than one pending input is treated
-  as ambiguous and never assigned an identity. This is admission, not
-  context proof.
+  `input.evidence = admission`. ACP has no stable per-input id and text echo
+  cannot identify which prompt produced it, so this bridge deliberately does
+  not emit echo evidence. This is admission, not context proof.
 - `next-turn` must be requested explicitly. The bridge queued the input, and
   once the active turn settles it opens a new turn, emits `input.accepted` with
   the new native turn id and `disposition: "next-turn"`, then

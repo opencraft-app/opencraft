@@ -96,6 +96,9 @@ const operations: Record<string, (args: any) => any> = {
     run('UPDATE commands SET state=?,response=? WHERE id=?', state, response ? JSON.stringify(response) : null, id);
     const row = receipt(id)!;
     if (state === 'accepted' && row.method === 'interaction/resolve' && typeof interactionId === 'string') run('DELETE FROM interactions WHERE route=? AND id=?', row.route, interactionId);
+    // Closing the native session or stopping its turn resolves every pending
+    // human interaction at the source; keeping the rows would block release.
+    if (state === 'accepted' && (row.method === 'session/close' || row.method === 'turn/stop')) run('DELETE FROM interactions WHERE route=?', row.route);
     return row;
   }),
   callback: ({ generation, id, method, params }: any) => tx(() => {

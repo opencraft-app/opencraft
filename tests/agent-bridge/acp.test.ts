@@ -365,7 +365,6 @@ test("native steering is admitted and recorded without opening a second turn", a
   const delivery = deltas.find((delta) => delta.op === "input.delivery" && delta.inputId === "steer-1");
   assert.equal(delivery.deliveryMethod, "native-inject");
   assert.equal(delivery.admitted, true);
-  assert(deltas.some((delta) => delta.op === "input.evidence" && delta.inputId === "steer-1" && delta.evidenceKind === "echo"));
   assert(deltas.some((delta) => delta.op === "input.evidence" && delta.inputId === "steer-1" && delta.evidenceKind === "admission"));
   const query = await client.request("input/query", { threadId: "thread-steer", inputIds: ["steer-1", "steer-2"] });
   assert.equal(query.inputs.length, 2);
@@ -532,6 +531,7 @@ test("permission responses accept only advertised options and map session grants
   assert.deepEqual(resolvePermission(options, { optionId: "not-advertised" }), { kind: "cancel" });
   assert.deepEqual(resolvePermission(options, { decision: "acceptForSession" }), { kind: "option", optionId: "always" });
   assert.deepEqual(resolvePermission(options, { decision: "decline" }), { kind: "option", optionId: "deny" });
+  assert.deepEqual(resolvePermission(options, { decision: "cancel" }), { kind: "cancel" });
 });
 
 
@@ -587,4 +587,16 @@ test("concurrent turn/start on one ACP session admits exactly one native turn", 
     deltas.some((delta) => delta.op === "turn.close"));
   assert.equal(client.deltas("thread-concurrent").filter((delta) => delta.op === "turn.open").length, 1);
   await client.close();
+});
+
+
+test("repeated ACP plan snapshots use distinct native keys and never reopen a settled item", () => {
+  const translator = new AcpDeltaTranslator({ threadId: "thread-plan", nativeTurnId: "native-plan", cwd: "/tmp" });
+  const first = translator.update({ sessionUpdate: "plan", entries: [{ content: "one", status: "pending" }] });
+  const second = translator.update({ sessionUpdate: "plan", entries: [{ content: "two", status: "completed" }] });
+  assert.deepEqual(first.map((delta) => delta.op), ["item.open", "item.close"]);
+  assert.deepEqual(second.map((delta) => delta.op), ["item.open", "item.close"]);
+  assert.notEqual(first[0]!.nativeKey, second[0]!.nativeKey);
+  assert.equal(second[1]!.shape.kind, "plan");
+  assert.match(second[1]!.shape.text, /two/u);
 });

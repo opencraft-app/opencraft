@@ -371,12 +371,13 @@ class AcpSession {
     queued: QueuedInput | null,
   ): string {
     if (this.connection === null || this.newSession === null) throw staleTarget("ACP session is not open");
+    if (this.closing || this.closed || this.agentExited) throw staleTarget("ACP session is closing");
+    if (!this.connection.writable) throw staleTarget("ACP agent is not writable");
     const nativeTurnId = `acp:${randomUUID()}`;
     const translator = new AcpDeltaTranslator({
       threadId: this.threadId,
       nativeTurnId,
       cwd: this.cwd,
-      onUserText: (text) => this.onUserEcho(text),
     });
     const turn: ActiveTurn = {
       nativeTurnId,
@@ -389,41 +390,47 @@ class AcpSession {
       { scope: { threadId: this.threadId }, op: "turn.open", nativeTurnId },
       { scope: { threadId: this.threadId }, op: "turn.mainRun", state: "running" },
     ]);
-    if (queued !== null) {
-      const record = queued.record;
-      record.targetNativeTurnId = nativeTurnId;
-      this.emitAccepted(record, nativeTurnId, queued.delivery);
-      void this.emit([
-        {
-          scope: { threadId: this.threadId }, nativeTurnId,
-          op: "input.delivery",
-          inputId: record.inputId,
-          deliveryMethod: queued.delivery,
-          admitted: true,
-          version: ++record.delivery.version,
-        },
-        {
-          scope: { threadId: this.threadId }, nativeTurnId,
-          op: "input.evidence",
-          inputId: record.inputId,
-          evidenceKind: "admission",
-          version: ++record.evidence.version,
-        },
-      ]).then(() => {
-        record.admission = { value: "accepted", version: record.admission.version + 1 };
-        record.delivery.value = queued.delivery;
-        record.evidence = { value: "evidence-observed", version: record.evidence.version, kind: "admission" };
-        record.outcome = "delivered";
-      });
-      record.dispatched = true;
-      record.queued = false;
-      record.nativeExecution = true;
-    }
     const prompt = toAcpPrompt(input, this.imagesAllowed);
     const response = this.connection.request("session/prompt", {
       sessionId: this.newSession.sessionId,
       prompt,
     }, { timeoutMs: 0 });
+    if (queued !== null) {
+      const record = queued.record;
+      record.targetNativeTurnId = nativeTurnId;
+      if (!this.connection.writable) {
+        record.terminal = true;
+        record.queued = false;
+        record.outcome = "unknown";
+      } else {
+        this.emitAccepted(record, nativeTurnId, queued.delivery);
+        void this.emit([
+          {
+            scope: { threadId: this.threadId }, nativeTurnId,
+            op: "input.delivery",
+            inputId: record.inputId,
+            deliveryMethod: queued.delivery,
+            admitted: true,
+            version: ++record.delivery.version,
+          },
+          {
+            scope: { threadId: this.threadId }, nativeTurnId,
+            op: "input.evidence",
+            inputId: record.inputId,
+            evidenceKind: "admission",
+            version: ++record.evidence.version,
+          },
+        ]).then(() => {
+          record.admission = { value: "accepted", version: record.admission.version + 1 };
+          record.delivery.value = queued.delivery;
+          record.evidence = { value: "evidence-observed", version: record.evidence.version, kind: "admission" };
+          record.outcome = "delivered";
+        });
+        record.dispatched = true;
+        record.queued = false;
+        record.nativeExecution = true;
+      }
+    }
     turn.promptSettled = response.then(
       (value) => {
         try {
@@ -695,25 +702,6 @@ class AcpSession {
     }]);
   }
 
-  private onUserEcho(text: string): void {
-    const active = this.active;
-    if (active === null || text.length === 0) return;
-    const matches = [...active.steerAttempts.values()].filter((attempt) =>
-      !attempt.settled && attempt.text === text);
-    if (matches.length !== 1) return; // identical text is ambiguous: never guess identity.
-    const record = this.inputs.get(matches[0]!.inputId);
-    if (record === undefined || record.evidence.value === "context-confirmed") return;
-    record.evidence = { value: "evidence-observed", version: ++record.evidence.version, kind: "echo" };
-    record.outcome = "evidence-observed";
-    void this.emit([{
-      scope: { threadId: this.threadId }, nativeTurnId: active.nativeTurnId,
-      op: "input.evidence",
-      inputId: record.inputId,
-      evidenceKind: "echo",
-      version: record.evidence.version,
-    }]);
-  }
-
   private parseInput(value: unknown): AcpPromptInput {
     try {
       return parsePromptInput(value, this.promptLimits());
@@ -726,6 +714,7 @@ class AcpSession {
     if (!this.opened || this.closed || this.agentExited) throw staleTarget("ACP session is not open");
     const active = this.active;
     if (active === null) {
+      this.cancelPendingInteractions();
       this.clearQueue();
       return { cancelled: false };
     }
@@ -734,8 +723,14 @@ class AcpSession {
     } catch (error) {
       throw unknownOutcome(`ACP cancel could not be written: ${error instanceof Error ? error.message : String(error)}`);
     }
+    this.cancelPendingInteractions();
     this.clearQueue();
     return { cancelled: true };
+  }
+
+  private cancelPendingInteractions(): void {
+    for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
+    this.pendingInteractions.clear();
   }
 
   private clearQueue(): number {
@@ -983,8 +978,7 @@ class AcpSession {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closing = true;
-    for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
-    this.pendingInteractions.clear();
+    this.cancelPendingInteractions();
     this.clearQueue();
     const active = this.active;
     if (active !== null) {

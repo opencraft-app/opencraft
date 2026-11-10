@@ -15,11 +15,15 @@ These are acceptance evidence, not replay fixtures. Each file contains:
 
 Paths are redacted to `<workspace>`, `<repo>` and `<home>`. Credentials and
 tokens are not recorded. Native session/turn ids are opaque correlation ids.
+The bridge handshake embedded in these files was captured before the final
+tightening of the declaration (`echo` evidence removed; content limit lowered
+from 512 KiB to 360 KiB). The raw ACP `initialize` request/response and the
+task/steer facts are unchanged and actual.
 
 | File | Agent | initialize | Steer evidence |
 | --- | --- | --- | --- |
 | `copilot-initialize.json` | GitHub Copilot CLI 1.0.102 | no `_meta.midTurnSteering`; image/loadSession declared | explicit `next-turn`; queued turn answered `STEERED`; admission, not native |
-| `amp-initialize.json` | Amp ACP 0.10.0 (installed `8ef5b5ab` snapshot) | `_meta.midTurnSteering=true`; image declared | `native-inject` admitted during the active turn; final answer `WAITED STEERED`; admission, echo not observed |
+| `amp-initialize.json` | Amp ACP 0.10.0 (installed `8ef5b5ab` snapshot) | `_meta.midTurnSteering=true`; image declared | `native-inject` admitted during the active turn; final answer `WAITED STEERED`; admission only (the bridge does not use text echo as identity) |
 
 The deterministic ACP fixture
 (`tests/agent-bridge/fixtures/acp-agent.mjs`) and its captured transcript

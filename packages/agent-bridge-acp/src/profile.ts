@@ -119,9 +119,9 @@ export function declarationFor(profile: AcpProfile): BridgeDeclaration {
       installation: false,
       steer: {
         deliveryMethods: staticDeliveryMethods(profile),
-        // ACP has no stable per-input native id. Admission is what the agent
-        // returns; echo is only an observed hint and never context proof.
-        evidenceKinds: ["admission", "echo"],
+        // ACP has no stable per-input native id, so text echo cannot identify
+        // which prompt produced it. Only the native admission is recorded.
+        evidenceKinds: ["admission"],
         withdrawal: "before-dispatch",
         contentLimits: {
           maxBytes: 360 * 1024,

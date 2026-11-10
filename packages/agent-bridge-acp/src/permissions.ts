@@ -168,7 +168,8 @@ export function resolvePermission(
       ?? options.find((option) => option.kind === "allow_once");
     return always === undefined ? { kind: "cancel" } : { kind: "option", optionId: always.optionId };
   }
-  if (decision === "decline" || decision === "cancel" || decision === "deny") {
+  if (decision === "cancel") return { kind: "cancel" };
+  if (decision === "decline" || decision === "deny") {
     return chooseOption(options, "deny");
   }
   return { kind: "cancel" };
