@@ -16,6 +16,7 @@ import type { BridgeDeclaration, DeliveryMethod } from "@opencraft/agent-bridge-
 import { BRIDGE_PROTOCOL_VERSION, BRIDGE_GRAMMAR_RANGE } from "@opencraft/agent-bridge-protocol";
 
 export type AcpDialectId = "generic" | "amp" | "copilot";
+/** Mirrors the four product modes; the provider bridge has no client-protocol dependency. */
 export type OpenCraftPermissionMode = "read-only" | "accept-edits" | "auto" | "full";
 
 export interface AcpAgentLaunch {
