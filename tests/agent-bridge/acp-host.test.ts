@@ -209,6 +209,7 @@ test("Host routes model/list, session/resume and history/read through the ACP br
     ACP_FIXTURE_LOAD: "1",
     ACP_FIXTURE_MODELS: "1",
     ACP_FIXTURE_CONFIG: "1",
+    ACP_FIXTURE_CLOSE: "1",
     ACP_FIXTURE_PERMISSION: "0",
     ACP_FIXTURE_NATIVE_STEER: "0",
   }));
@@ -243,6 +244,16 @@ test("Host routes model/list, session/resume and history/read through the ACP br
   const page = (history?.response as any)?.result;
   assert.equal(page.updates.length, 2);
   assert.equal(page.nextCursor, 2);
+
+  await host.accept(command("close-resumed", "session/close"));
+  await until(() => host.query("close-resumed"), (receipt) => receipt?.state === "accepted", "resumed close");
+  await host.accept(command("resume-alias", "session/resume", {
+    nativeSessionId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  }));
+  const alias = await until(() => host.query("resume-alias"), (receipt) => receipt?.state === "accepted", "session resume alias");
+  assert.equal((alias?.response as any)?.result.resumed, true);
 
   await host.accept(command("close", "session/close"));
   await until(() => host.query("close"), (receipt) => receipt?.state === "accepted", "session close");

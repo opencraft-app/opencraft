@@ -263,11 +263,13 @@ try {
       "Real account run through apps/agent-bridge-host; one temporary file write and one explicit steer.",
       "Steer evidence is admission only; no context-confirmed claim.",
       "Copilot has no native steering declaration; Amp native-inject is used only for Amp.",
+      "modelList.current was captured before the per-session applied-model override; profile.modelSelection/session.model show the model actually applied.",
     ],
     gaps: [
       "History replay is not yet projected into AppServer/Web history.",
       "Elicitation and model/list have no Web UI.",
       "The real agents did not call ACP fs/terminal/elicitation in this task; those paths are covered by the deterministic fixture and unit tests.",
+      "The Host smoke used the local test process backend; production sandbox isolation is not claimed by this recording.",
     ],
   };
   await writeFile(out, JSON.stringify(redact(evidence), null, 2) + "\n", "utf8");

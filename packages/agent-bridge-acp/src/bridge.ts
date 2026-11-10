@@ -904,6 +904,7 @@ class AcpSession {
   private cancelPendingInteractions(): void {
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
+    for (const id of this.pendingElicitations.keys()) this.resolvedInteractions.add(id);
     for (const resolve of this.pendingElicitations.values()) resolve({ action: "cancel" });
     this.pendingElicitations.clear();
   }
@@ -1136,7 +1137,9 @@ class AcpSession {
     }
     if (this.replayingHistory || this.historyReplayOpen) {
       const size = Buffer.byteLength(JSON.stringify(update), "utf8");
-      if (this.historyUpdates.length >= 1_000 || this.historyBytes + size > 4 * 1024 * 1024) {
+      if (size > 256 * 1024 || this.historyUpdates.length >= 1_000
+        || this.historyBytes + size > 4 * 1024 * 1024) {
+        // A single oversized replay update cannot fit a Host-safe page.
         this.historyTruncated = true;
       } else {
         this.historyUpdates.push(update);
@@ -1230,6 +1233,7 @@ class AcpSession {
     }
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
+    for (const id of this.pendingElicitations.keys()) this.resolvedInteractions.add(id);
     for (const resolve of this.pendingElicitations.values()) resolve({ action: "cancel" });
     this.pendingElicitations.clear();
     void this.clientHost?.close().catch(() => {});
@@ -1271,6 +1275,7 @@ class AcpSession {
     this.closed = true;
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
+    for (const id of this.pendingElicitations.keys()) this.resolvedInteractions.add(id);
     for (const resolve of this.pendingElicitations.values()) resolve({ action: "cancel" });
     this.pendingElicitations.clear();
     await this.clientHost?.close().catch(() => {});
@@ -1285,6 +1290,7 @@ export class AcpBridge {
   private effective: DeclaredCapabilities | null = null;
   private probe: AcpInitializeResult | null = null;
   private catalog: { readonly models: readonly Record<string, unknown>[]; readonly current: string | null; readonly source: string } | null = null;
+  private catalogProbe: Promise<{ readonly models: readonly Record<string, unknown>[]; readonly current: string | null; readonly source: string }> | null = null;
   private closed = false;
 
   constructor(private readonly options: AcpBridgeOptions) {
@@ -1404,6 +1410,21 @@ export class AcpBridge {
     }
     if (this.catalog !== null) return this.catalog;
     if (this.probe === null) throw unsupported("initialize must succeed before model/list");
+    if (this.catalogProbe !== null) return this.catalogProbe;
+    if (this.probe.agentCapabilities?.sessionCapabilities?.close === undefined) {
+      // Amp does not advertise session/close. A cold probe would orphan a
+      // provider-side session, so require an active session for its catalog.
+      return { models: [], current: null, source: "requires-session" };
+    }
+    this.catalogProbe = this.probeModelCatalog().finally(() => { this.catalogProbe = null; });
+    return this.catalogProbe;
+  }
+
+  private async probeModelCatalog(): Promise<{
+    readonly models: readonly Record<string, unknown>[];
+    readonly current: string | null;
+    readonly source: string;
+  }> {
     const connection = new AcpConnection({
       command: this.options.profile.agent.command,
       args: this.options.profile.agent.args,

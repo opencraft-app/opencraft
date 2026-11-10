@@ -168,7 +168,7 @@ existing terminals, an upgrade takes effect without reinitializing the agent.
 - `elicitation/create` is routed through the existing
   `interaction/request` channel as kind `elicitation` with an
   `item/elicitation/request` payload. Unknown or undeliverable elicitations
-  decline; they never fabricate an answer.
+  cancel or decline; they never fabricate an answer.
 - `mcp/*` is still unsupported and not advertised.
 
 Native history is **replay**, not a second client history system. Resume/load
@@ -217,8 +217,11 @@ Current dialects:
   `session/resume` otherwise. A mode/config change that the agent forbids after
   the first prompt fails explicitly; the bridge does not pretend the mode was
   changed.
-- `model/list` starts a short ACP `session/new` probe only when no live session
-  exists. It never sends a prompt or consumes model tokens.
+- `model/list` uses the live session catalog when one exists. A cold probe
+  starts a short ACP `session/new` only for agents that declare
+  `sessionCapabilities.close`; otherwise it returns `source:"requires-session"`
+  rather than orphan a provider session. It never sends a prompt or consumes
+  model tokens.
 - History replay is bounded to 1,000 updates / 4 MiB and pages are capped at
   512 KiB so it fits the Host wire. The Web client does not consume the P3
   steer-evidence extension yet; the projection check is component-level.

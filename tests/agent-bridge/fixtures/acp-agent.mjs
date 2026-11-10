@@ -24,6 +24,7 @@ const config = process.env.ACP_FIXTURE_CONFIG === "1";
 const load = process.env.ACP_FIXTURE_LOAD === "1";
 const fixtureModels = process.env.ACP_FIXTURE_MODELS === "1";
 const clientCalls = process.env.ACP_FIXTURE_CLIENT === "1";
+const closeCapability = process.env.ACP_FIXTURE_CLOSE === "1";
 const delay = Number(process.env.ACP_FIXTURE_DELAY_MS ?? 60);
 const sessionId = process.env.ACP_FIXTURE_SESSION_ID ?? "fixture-session-1";
 const log = process.env.ACP_FIXTURE_LOG;
@@ -281,7 +282,10 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line)
         agentCapabilities: {
           loadSession: load,
           promptCapabilities: { image: images, embeddedContext: true },
-          sessionCapabilities: load ? { resume: {} } : {},
+          sessionCapabilities: {
+            ...(load ? { resume: {} } : {}),
+            ...(closeCapability ? { close: {} } : {}),
+          },
         },
       });
       return;
@@ -305,6 +309,9 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line)
           rawInput: { path: "history.txt" },
           content: [{ type: "content", content: { type: "text", text: "history output" } }],
         });
+        if (process.env.ACP_FIXTURE_LOAD_HUGE === "1") {
+          update({ sessionUpdate: "agent_message_chunk", messageId: "huge-history", content: { type: "text", text: "x".repeat(600 * 1024) } });
+        }
       };
       if (process.env.ACP_FIXTURE_LOAD_AFTER === "1") {
         response(frame.id, sessionState());

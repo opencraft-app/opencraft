@@ -744,7 +744,7 @@ test("a permission response written after the agent exits does not crash the bri
 test("model/list returns the ACP model catalog without creating a live Thread", async (t) => {
   const root = await mkdtemp(join(tmpdir(), "acp-models-"));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_DELAY_MS: "10" } });
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CLOSE: "1", ACP_FIXTURE_DELAY_MS: "10" } });
   t.after(() => started.child.kill("SIGTERM"));
   const client = new BridgeClient(started);
   const init = await client.initialize();
@@ -762,7 +762,7 @@ test("session/resume loads native history and pages it without live deltas", asy
   const root = await mkdtemp(join(tmpdir(), "acp-resume-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const started = await startBridge(root, {
-    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CONFIG: "1", ACP_FIXTURE_DELAY_MS: "10" },
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CONFIG: "1", ACP_FIXTURE_CLOSE: "1", ACP_FIXTURE_DELAY_MS: "10" },
   });
   t.after(() => started.child.kill("SIGTERM"));
   const client = new BridgeClient(started);
@@ -939,4 +939,60 @@ test("a terminal spawn failure settles without an uncaught stdin error", async (
   const output = await host.handle("terminal/output", { terminalId: created.terminalId }) as { output: string };
   assert.match(output.output, /terminal error/u);
   await host.close();
+});
+
+test("an oversized replay update is dropped instead of overflowing a history page", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-resume-huge-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, {
+    fixtureEnv: { ACP_FIXTURE_LOAD: "1", ACP_FIXTURE_LOAD_HUGE: "1" },
+  });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const resumed = await client.request("session/resume", {
+    threadId: "thread-resume-huge",
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  });
+  assert.equal(resumed.history.truncated, true);
+  const history = await client.request("history/read", { threadId: "thread-resume-huge", cursor: 0, limit: 10 });
+  assert.equal(history.updates.length, 3);
+  assert.equal(history.truncated, true);
+  assert(Buffer.byteLength(JSON.stringify(history), "utf8") < 512 * 1024);
+  assert.equal(JSON.stringify(history).includes("x".repeat(1024)), false);
+  await client.close();
+});
+
+test("model/list does not cold-probe an agent that cannot close its session", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-models-no-close-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_DELAY_MS: "10" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const listed = await client.request("model/list", {});
+  assert.equal(listed.source, "requires-session");
+  assert.deepEqual(listed.models, []);
+  assert.equal(client.deltas().length, 0);
+  await client.close();
+});
+
+test("concurrent model/list commands share one cold probe", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-models-concurrent-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const started = await startBridge(root, { fixtureEnv: { ACP_FIXTURE_MODELS: "1", ACP_FIXTURE_CLOSE: "1", ACP_FIXTURE_DELAY_MS: "10" } });
+  t.after(() => started.child.kill("SIGTERM"));
+  const client = new BridgeClient(started);
+  await client.initialize();
+  const [first, second] = await Promise.all([
+    client.request("model/list", {}),
+    client.request("model/list", {}),
+  ]);
+  assert.deepEqual(first.models, second.models);
+  const all = (await readFile(started.logPath, "utf8")).trim().split("\n").filter(Boolean)
+    .map((line) => JSON.parse(line));
+  assert.equal(all.filter((frame) => frame.method === "session/new").length, 1);
+  await client.close();
 });

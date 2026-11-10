@@ -73,12 +73,15 @@ canonical assembler，再执行一次临时文件写入、一次 steer、close/r
 
 | Agent | initialize | model/list | 任务 | steer | resume/history |
 | --- | --- | --- | --- | --- | --- |
-| GitHub Copilot CLI 1.0.109 | loadSession=true；无 `_meta.midTurnSteering`；image=true | 15 个 `acp-models`，当前 `claude-haiku-4.5` | 临时目录写 `p3c-accept.txt`=`ok`；1 次审批；3 turns | 显式 next-turn；`disposition=next-turn`；最终 `STEERED` | close 后 load 成功；replay 12 条 |
-| Amp ACP 0.10.0 | loadSession=true；`sessionCapabilities.resume`；`_meta.midTurnSteering=true`；image=true | 4 个 `config:amp-mode`，当前 `low` | 临时目录写 `p3c-accept.txt`=`ok`；0 次审批；2 turns | native-inject；`disposition=steered`；最终 `STEERED` | close 后 load 成功；replay 7 条 |
+| GitHub Copilot CLI 1.0.109 | loadSession=true；无 `_meta.midTurnSteering`；image=true | 15 个 `acp-models`；录制 current=`claude-sonnet-5.5`，实际应用=`claude-haiku-4.5` | 临时目录写 `p3c-accept.txt`=`ok`；1 次审批；3 turns | 显式 next-turn；`disposition=next-turn`；最终 `STEERED` | close 后 load 成功；replay 12 条 |
+| Amp ACP 0.10.0 | loadSession=true；`sessionCapabilities.resume`；`_meta.midTurnSteering=true`；image=true | 4 个 `config:amp-mode`；录制 current=`medium`，实际应用=`low` | 临时目录写 `p3c-accept.txt`=`ok`；0 次审批；2 turns | native-inject；`disposition=steered`；最终 `STEERED` | close 后 load 成功；replay 7 条 |
 
 证据：`design/agent-bridge/recordings/p3c/copilot-host.json`、
 `amp-host.json`。原始 ACP initialize、session/new、任务文件、steer states、
 resume/history 都在文件中；路径已脱敏为 `<workspace>/<host>/<home>`。
+录制发生在 `52698b157d` 修正 applied-model current 之前，因此录音里的
+`modelList.current` 是 session/new 的旧值；`profile.modelSelection` 和
+`session.model` 才是实际应用值。当前代码会用应用值覆盖 current。
 证据档位仍是 admission，不能声称 context-confirmed。
 
 ## Web 呈现核对
@@ -103,7 +106,9 @@ durable `steeringUserMessage`；因此这不是 Host→AppServer→Web 的端到
   Host 尚未把 replay 注入现有 `thread/read`/Web 历史。
 - `elicitation` 只进 Host outbox/interaction，Web/Electron/Expo 尚无表单 UI。
 - `model/list` 只提供目录，不包含 UI 选择器或账号价目校验；Amp 的
-  `config:amp-mode` 是模式路由，不是精确模型 id。
+  `config:amp-mode` 是模式路由，不是精确模型 id。Amp 不声明
+  `sessionCapabilities.close`，因此无活动会话的冷查询返回
+  `source:"requires-session"`，不会为目录遗留 provider 会话。
 - ACP `mcp/*`、fork/checkpoint 未实现；`fs/terminal` 的权限模式按上表收窄，
   但没有为它们增加独立的用户审批卡。
 - 真实任务通过 Host 的 bridge 进程执行，但 smoke 使用 local test backend，
