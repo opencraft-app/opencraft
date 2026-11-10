@@ -9,7 +9,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { lstat, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { lstat, open, readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { AcpRpcError } from "./acp";
@@ -161,10 +162,17 @@ export class AcpClientHost {
 
   private async writeTextFile(params: Record<string, unknown>): Promise<null> {
     if (!this.options.allowWrite) throw new AcpRpcError(-32603, "file writes are disabled in this permission mode");
-    const content = stringValue(params.content, "content");
+    if (typeof params.content !== "string") throw new AcpRpcError(-32602, "content must be a string");
+    const content = params.content;
     if (Buffer.byteLength(content, "utf8") > MAX_FILE_BYTES) throw new AcpRpcError(-32602, "content exceeds the bridge write limit");
     const path = await this.writePath(params.path);
-    await writeFile(path, content, { encoding: "utf8", flag: "w" });
+    const handle = await open(path, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_TRUNC
+      | ((fsConstants as { O_NOFOLLOW?: number }).O_NOFOLLOW ?? 0), 0o600);
+    try {
+      await handle.writeFile(content, "utf8");
+    } finally {
+      await handle.close();
+    }
     return null;
   }
 

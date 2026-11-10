@@ -63,7 +63,10 @@ npx tsx scripts/smoke/agent-bridge/p3c-real-host.ts --agent amp
 
 脚本注册 pinned generation，经 `BridgeHost` 走命令账本/outbox、审批回调、
 canonical assembler，再执行一次临时文件写入、一次 steer、close/resume、
-`model/list` 和 `history/read`。真实额度只在明确手动运行时消耗。
+`model/list` 和 `history/read`。真实额度只在明确手动运行时消耗。本机脚本
+使用 `tests/agent-bridge/fixtures/local-backend` 作为本地进程后端；Host 的
+账本、outbox、assembler 和 bridge 是真实路径，但这不等于生产 sandbox 后端
+已验收。
 
 ## 实机验收（2026-11-11，经 Host）
 
@@ -102,6 +105,7 @@ durable `steeringUserMessage`；因此这不是 Host→AppServer→Web 的端到
   `config:amp-mode` 是模式路由，不是精确模型 id。
 - ACP `mcp/*`、fork/checkpoint 未实现；`fs/terminal` 的权限模式按上表收窄，
   但没有为它们增加独立的用户审批卡。
-- 真实任务通过 Host 的 bridge 进程执行；Web 端到端呈现仍需后续接线批次。
+- 真实任务通过 Host 的 bridge 进程执行，但 smoke 使用 local test backend，
+  不是生产 sandbox 后端的隔离验收；Web 端到端呈现仍需后续接线批次。
 - Amp 在首个 prompt 后拒绝 mode 变更；resume 时若请求不同模式会明确失败，
   不会静默改模式。

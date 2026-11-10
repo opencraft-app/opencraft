@@ -15,5 +15,8 @@ npx tsx scripts/smoke/agent-bridge/p3c-web-presentation.ts
 | `web-steer-presentation.png` / `.json` | Existing Web `UserMessageBlock` renders Copilot's normal user message and Amp's steering message without a native/inject/fake-steer label. Component-level only, not a Host→AppServer→Web path. |
 
 The script answers real approval interactions automatically, redacts the
-workspace/host/home paths, and never falls back to a more expensive model. A
-failed task is recorded as a gap; it is not retried with a different model.
+workspace/host/home paths, and never falls back to a more expensive model. It
+uses the local test process backend for this workstation; the Host ledger,
+outbox, assembler and bridge are real, but this is not a production sandbox
+backend acceptance. A failed task is recorded as a gap; it is not retried with
+a different model.
