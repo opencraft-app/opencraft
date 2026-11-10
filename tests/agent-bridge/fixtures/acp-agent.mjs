@@ -21,6 +21,9 @@ const images = process.env.ACP_FIXTURE_IMAGE !== "0";
 const permission = process.env.ACP_FIXTURE_PERMISSION === "1";
 const modes = process.env.ACP_FIXTURE_MODES === "1";
 const config = process.env.ACP_FIXTURE_CONFIG === "1";
+const load = process.env.ACP_FIXTURE_LOAD === "1";
+const fixtureModels = process.env.ACP_FIXTURE_MODELS === "1";
+const clientCalls = process.env.ACP_FIXTURE_CLIENT === "1";
 const delay = Number(process.env.ACP_FIXTURE_DELAY_MS ?? 60);
 const sessionId = process.env.ACP_FIXTURE_SESSION_ID ?? "fixture-session-1";
 const log = process.env.ACP_FIXTURE_LOG;
@@ -108,6 +111,30 @@ async function runMainPrompt(requestId, params) {
   if (imageTotal > 0) update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `fixture received ${imageTotal} image(s)` } });
   update({ sessionUpdate: "agent_thought_chunk", content: { type: "text", text: "fixture thinking" } });
   update({ sessionUpdate: "plan", entries: [{ content: "inspect fixture input", priority: "medium", status: "completed" }] });
+  if (clientCalls) {
+    const path = `${process.cwd()}/fixture-client.txt`;
+    await serverRequest("fs/write_text_file", { sessionId, path, content: "client ok" });
+    const read = await serverRequest("fs/read_text_file", { sessionId, path });
+    const terminal = await serverRequest("terminal/create", {
+      sessionId,
+      command: process.execPath,
+      args: ["-e", "process.stdout.write('terminal ok')"],
+      cwd: process.cwd(),
+    });
+    await serverRequest("terminal/wait_for_exit", { sessionId, terminalId: terminal?.terminalId });
+    const output = await serverRequest("terminal/output", { sessionId, terminalId: terminal?.terminalId });
+    await serverRequest("terminal/release", { sessionId, terminalId: terminal?.terminalId });
+    const elicited = await serverRequest("elicitation/create", {
+      sessionId,
+      message: "Choose the fixture answer",
+      requestedSchema: { type: "object", properties: { answer: { type: "string" } } },
+    });
+    update({
+      sessionUpdate: "agent_message_chunk",
+      messageId: "client-message",
+      content: { type: "text", text: `client read=${read?.content} terminal=${output?.output} elicited=${JSON.stringify(elicited)}` },
+    });
+  }
   if (permission) {
     const answer = await serverRequest("session/request_permission", {
       sessionId,
@@ -179,6 +206,50 @@ async function runSteer(requestId, params) {
   response(requestId, { stopReason: "end_turn" });
 }
 
+function sessionState() {
+  return {
+    ...(modes ? {
+      modes: {
+        currentModeId: "accept-edits",
+        availableModes: [
+          { id: "read-only", name: "Read only" },
+          { id: "accept-edits", name: "Accept edits" },
+          { id: "full", name: "Full access" },
+        ],
+      },
+    } : {}),
+    ...(config ? {
+      configOptions: [
+        {
+          type: "select",
+          id: "model",
+          name: "Model",
+          category: "model",
+          currentValue: "cheap",
+          options: [{ value: "cheap", name: "Cheap" }, { value: "expensive", name: "Expensive" }],
+        },
+        {
+          type: "select",
+          id: "permissions",
+          name: "Permissions",
+          category: "permissions",
+          currentValue: "off",
+          options: [{ value: "on", name: "On" }, { value: "off", name: "Off" }],
+        },
+      ],
+    } : {}),
+    ...(fixtureModels ? {
+      models: {
+        currentModelId: "cheap",
+        availableModels: [
+          { modelId: "cheap", name: "Cheap", description: "Low cost" },
+          { modelId: "expensive", name: "Expensive", description: "High capability" },
+        ],
+      },
+    } : {}),
+  };
+}
+
 createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {
   if (line.trim().length === 0) return;
   let frame;
@@ -208,47 +279,42 @@ createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line)
         agentInfo: { name: "acp-fixture", title: "Deterministic ACP fixture", version: "1.0.0" },
         ...(nativeSteer ? { _meta: { midTurnSteering: true } } : {}),
         agentCapabilities: {
-          loadSession: false,
+          loadSession: load,
           promptCapabilities: { image: images, embeddedContext: true },
-          sessionCapabilities: {},
+          sessionCapabilities: load ? { resume: {} } : {},
         },
       });
       return;
     case "session/new":
-      response(frame.id, {
-        sessionId,
-        ...(modes ? {
-          modes: {
-            currentModeId: "accept-edits",
-            availableModes: [
-              { id: "read-only", name: "Read only" },
-              { id: "accept-edits", name: "Accept edits" },
-              { id: "full", name: "Full access" },
-            ],
-          },
-        } : {}),
-        ...(config ? {
-          configOptions: [
-            {
-              type: "select",
-              id: "model",
-              name: "Model",
-              category: "model",
-              currentValue: "cheap",
-              options: [{ value: "cheap", name: "Cheap" }, { value: "expensive", name: "Expensive" }],
-            },
-            {
-              type: "select",
-              id: "permissions",
-              name: "Permissions",
-              category: "permissions",
-              currentValue: "off",
-              options: [{ value: "on", name: "On" }, { value: "off", name: "Off" }],
-            },
-          ],
-        } : {}),
-      });
+      response(frame.id, { sessionId, ...sessionState() });
       return;
+    case "session/load": {
+      if (!load) {
+        failure(frame.id, -32601, "session/load is not declared by this fixture");
+        return;
+      }
+      const replayHistory = () => {
+        update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: "history question" } });
+        update({ sessionUpdate: "agent_message_chunk", messageId: "history-message", content: { type: "text", text: "history answer" } });
+        update({
+          sessionUpdate: "tool_call",
+          toolCallId: "history-tool",
+          title: "history tool",
+          kind: "read",
+          status: "completed",
+          rawInput: { path: "history.txt" },
+          content: [{ type: "content", content: { type: "text", text: "history output" } }],
+        });
+      };
+      if (process.env.ACP_FIXTURE_LOAD_AFTER === "1") {
+        response(frame.id, sessionState());
+        setTimeout(replayHistory, 10);
+      } else {
+        replayHistory();
+        response(frame.id, sessionState());
+      }
+      return;
+    }
     case "session/set_mode":
       response(frame.id, {});
       return;

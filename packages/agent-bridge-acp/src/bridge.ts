@@ -23,6 +23,7 @@ import {
   type DeliveryMethod,
   type EvidenceKind,
 } from "@opencraft/agent-bridge-protocol";
+import { AcpClientHost } from "./client";
 import {
   AcpConnection,
   AcpConnectionClosedError,
@@ -195,6 +196,13 @@ class AcpSession {
   private agentExited = false;
   private startingTurn = false;
   private opened = false;
+  private replayingHistory = false;
+  private replaySessionId: string | null = null;
+  private readonly historyUpdates: Record<string, unknown>[] = [];
+  private historyTruncated = false;
+  private historyBytes = 0;
+  private clientHost: AcpClientHost | null = null;
+  private readonly pendingElicitations = new Map<string, (result: Record<string, unknown>) => void>();
 
   constructor(
     private readonly host: AcpBridge,
@@ -222,6 +230,13 @@ class AcpSession {
         ? params.permissionMode
         : (() => { throw invalid("unknown permissionMode"); })();
     const requestedModel = optionalString(params.modelSelection) ?? this.profile.modelSelection;
+    this.clientHost = new AcpClientHost({
+      cwd,
+      readOnly: requestedMode === "read-only",
+      allowWrite: requestedMode === "accept-edits" || requestedMode === "full",
+      allowTerminal: requestedMode === "full",
+      onElicitation: (elicitationParams) => this.onElicitation(elicitationParams),
+    });
 
     const connection = new AcpConnection({
       command: this.profile.agent.command,
@@ -233,6 +248,11 @@ class AcpSession {
       onDiagnostic: (line) => this.host.diagnostic(`acp(${this.profile.providerId}) ${line}`),
       onFrame: (direction, frame) => this.host.traceFrame(direction, frame),
       onExit: (error) => this.onAgentExit(error),
+      clientCapabilities: {
+        fs: { readTextFile: true, writeTextFile: requestedMode === "accept-edits" || requestedMode === "full" },
+        ...(requestedMode === "full" ? { terminal: true } : {}),
+        ...(requestedMode === "read-only" ? {} : { elicitation: {} }),
+      },
       requestTimeoutMs: 30_000,
     });
     this.connection = connection;
@@ -242,8 +262,31 @@ class AcpSession {
       if (initialize.protocolVersion !== 1) throw unsupported(`ACP protocol ${initialize.protocolVersion} is not supported`);
       this.initializeResult = initialize;
       this.imagesAllowed = initialize.agentCapabilities?.promptCapabilities?.image === true;
-      const rawSession = await connection.request("session/new", { cwd, mcpServers: [] });
-      const newSession = parseNewSessionResult(rawSession);
+      const resumeId = optionalString(params.providerThreadId) ?? optionalString(params.nativeSessionId);
+      let newSession: AcpNewSessionResult;
+      if (resumeId !== undefined) {
+        const canLoad = initialize.agentCapabilities?.loadSession === true;
+        const canResume = initialize.agentCapabilities?.sessionCapabilities?.resume !== undefined;
+        if (!canLoad && !canResume) throw unsupported("the installed ACP agent does not declare session resume/load");
+        this.replayingHistory = true;
+        this.replaySessionId = resumeId;
+        const method = canLoad ? "session/load" : "session/resume";
+        try {
+          const raw = await connection.request(method, { sessionId: resumeId, cwd, mcpServers: [] });
+          const parsed = parseNewSessionResult(isRecord(raw) && typeof raw.sessionId === "string"
+            ? raw
+            : { ...isRecord(raw) ? raw : {}, sessionId: resumeId });
+          newSession = parsed;
+          // Amp replays history as notifications around the load response. No
+          // prompt is active during resume, so a short quiet window is history,
+          // never live turn output.
+          await new Promise<void>((resolveQuiet) => setTimeout(resolveQuiet, 200));
+        } finally {
+          this.replayingHistory = false;
+        }
+      } else {
+        newSession = parseNewSessionResult(await connection.request("session/new", { cwd, mcpServers: [] }));
+      }
       this.newSession = newSession;
       const context = { initialize, session: newSession };
       const native = this.dialect.nativeSteering(context) && this.effective.steer.deliveryMethods.includes("native-inject");
@@ -257,14 +300,16 @@ class AcpSession {
         }
       }
       await this.applyPermissionPlan(this.permissionPlan);
-      if (this.modelSelection !== null) {
+      if (this.modelSelection !== null
+        && this.currentConfigValue(this.modelSelection.configOptionId) !== this.modelSelection.value) {
         await this.setConfigOption(this.modelSelection.configOptionId, this.modelSelection.value);
       }
       this.opened = true;
       await this.host.callback("thread/identity", {
         threadId: this.threadId,
         providerThreadId: newSession.sessionId,
-        sessionRestorable: false,
+        sessionRestorable: initialize.agentCapabilities?.loadSession === true
+          || initialize.agentCapabilities?.sessionCapabilities?.resume !== undefined,
       });
       return {
         providerThreadId: newSession.sessionId,
@@ -275,9 +320,16 @@ class AcpSession {
           nativeSteering: this.nativeSteering,
           deliveryMethods: this.deliveryMethods,
         },
+        ...(this.historyUpdates.length === 0 ? {} : {
+          history: {
+            updates: this.historyUpdates.length,
+            truncated: this.historyTruncated,
+          },
+        }),
       };
     } catch (error) {
       this.closed = true;
+      await this.clientHost?.close().catch(() => {});
       await connection.close().catch(() => {});
       throw error instanceof BridgeCommandError ? error : invalid(
         `ACP session could not be created: ${error instanceof Error ? error.message : String(error)}`,
@@ -285,16 +337,51 @@ class AcpSession {
     }
   }
 
+  modelCatalog(): Record<string, unknown> | null {
+    if (this.newSession === null) return null;
+    return this.host.catalogForSession(this.newSession);
+  }
+
+  readHistory(params: Record<string, unknown>): Record<string, unknown> {
+    const cursor = params.cursor === undefined ? 0 : Number(params.cursor);
+    if (!Number.isSafeInteger(cursor) || cursor < 0) throw invalid("history cursor must be a non-negative integer");
+    const limit = params.limit === undefined ? 50 : Number(params.limit);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw invalid("history limit must be between 1 and 100");
+    const updates: { seq: number; update: Record<string, unknown> }[] = [];
+    let bytes = 0;
+    for (let index = cursor; index < this.historyUpdates.length && updates.length < limit; index += 1) {
+      const update = this.historyUpdates[index]!;
+      const size = Buffer.byteLength(JSON.stringify(update), "utf8");
+      if (updates.length > 0 && bytes + size > 512 * 1024) break;
+      updates.push({ seq: index + 1, update });
+      bytes += size;
+    }
+    const nextCursor = cursor + updates.length < this.historyUpdates.length ? cursor + updates.length : null;
+    return {
+      nativeSessionId: this.newSession?.sessionId ?? null,
+      updates,
+      nextCursor,
+      total: this.historyUpdates.length,
+      truncated: this.historyTruncated,
+    };
+  }
+
+  private currentConfigValue(id: string): unknown {
+    return this.newSession?.configOptions?.find((option) => option.id === id)?.currentValue;
+  }
+
   private async applyPermissionPlan(plan: AcpPermissionPlan): Promise<void> {
     if (this.connection === null || this.newSession === null) throw invalid("session is not open");
-    if (plan.nativeModeId !== undefined) {
+    if (plan.nativeModeId !== undefined && this.newSession.modes?.currentModeId !== plan.nativeModeId) {
       await this.connection.request("session/set_mode", {
         sessionId: this.newSession.sessionId,
         modeId: plan.nativeModeId,
       });
     }
     for (const option of plan.configOptions) {
-      await this.setConfigOption(option.id, option.value);
+      if (this.currentConfigValue(option.id) !== option.value) {
+        await this.setConfigOption(option.id, option.value);
+      }
     }
   }
 
@@ -790,6 +877,8 @@ class AcpSession {
   private cancelPendingInteractions(): void {
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
+    for (const resolve of this.pendingElicitations.values()) resolve({ action: "cancel" });
+    this.pendingElicitations.clear();
   }
 
   private clearQueue(): number {
@@ -866,6 +955,19 @@ class AcpSession {
     const interactionId = identifier(params.interactionId, "interactionId");
     const result = object(params.result);
     if (this.resolvedInteractions.has(interactionId)) return { resolved: true, duplicate: true };
+    const elicitation = this.pendingElicitations.get(interactionId);
+    if (elicitation !== undefined) {
+      this.pendingElicitations.delete(interactionId);
+      this.resolvedInteractions.add(interactionId);
+      const action = result.action === "accept" || result.decision === "accept"
+        ? "accept"
+        : result.action === "cancel" || result.decision === "cancel" ? "cancel" : "decline";
+      elicitation({
+        action,
+        ...(result.content === undefined ? {} : { content: result.content }),
+      });
+      return { resolved: true };
+    }
     const pending = this.pendingInteractions.get(interactionId);
     if (pending === undefined) throw staleTarget("unknown or already-resolved interaction");
     this.pendingInteractions.delete(interactionId);
@@ -878,16 +980,57 @@ class AcpSession {
     if (method === "session/request_permission") {
       return this.onPermissionRequest(params);
     }
-    if (method === "elicitation/create") {
-      return { action: "decline" };
+    if (this.clientHost !== null) {
+      const handled = await this.clientHost.handle(method, params);
+      if (handled !== undefined) return handled;
     }
     if (method === "fs/read_text_file" || method === "fs/write_text_file"
-      || method.startsWith("terminal/") || method === "mcp/connect" || method === "mcp/message") {
+      || method.startsWith("terminal/") || method === "elicitation/create"
+      || method === "mcp/connect" || method === "mcp/message") {
       throw new AcpRpcError(-32601, `the OpenCraft ACP bridge does not implement ${method}`);
     }
     const dialectResult = this.dialect.handleClientRequest?.(method, params);
     if (dialectResult !== undefined) return dialectResult;
     throw new AcpRpcError(-32601, `unsupported ACP client method ${method}`);
+  }
+
+  private async onElicitation(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (this.closing || this.closed || this.newSession === null) return { action: "cancel" };
+    if (typeof params.sessionId === "string" && params.sessionId !== this.newSession.sessionId) {
+      throw new AcpRpcError(-32602, "elicitation for another session");
+    }
+    const message = optionalString(params.message) ?? "The agent needs input";
+    const requestedSchema = isRecord(params.requestedSchema) ? params.requestedSchema : {};
+    if (this.pendingElicitations.size >= 16) return { action: "cancel" };
+    const interactionId = `acp-elicitation:${randomUUID()}`;
+    const decision = new Promise<Record<string, unknown>>((resolve) => {
+      this.pendingElicitations.set(interactionId, resolve);
+    });
+    const payload = {
+      method: "item/elicitation/request",
+      params: {
+        kind: "elicitation",
+        threadId: this.threadId,
+        interactionId,
+        message,
+        requestedSchema,
+        nativeTurnId: this.active?.nativeTurnId ?? null,
+      },
+    };
+    try {
+      await this.host.callback("interaction/request", {
+        threadId: this.threadId,
+        interactionId,
+        kind: "elicitation",
+        payload,
+        providerNativeIds: false,
+      });
+    } catch (error) {
+      this.pendingElicitations.delete(interactionId);
+      this.host.diagnostic(`elicitation could not be delivered: ${String(error)}`);
+      return { action: "decline" };
+    }
+    return await decision;
   }
 
   private async onPermissionRequest(params: Record<string, unknown>): Promise<unknown> {
@@ -957,10 +1100,21 @@ class AcpSession {
       this.host.diagnostic(`ignored ACP notification ${method}`);
       return;
     }
-    if (params.sessionId !== this.newSession?.sessionId) return;
+    const expectedSession = this.newSession?.sessionId ?? this.replaySessionId;
+    if (expectedSession !== null && params.sessionId !== expectedSession) return;
     const update = isRecord(params.update) ? params.update : undefined;
     if (update === undefined) {
       this.host.diagnostic("ACP session/update without an update object");
+      return;
+    }
+    if (this.replayingHistory) {
+      const size = Buffer.byteLength(JSON.stringify(update), "utf8");
+      if (this.historyUpdates.length >= 1_000 || this.historyBytes + size > 4 * 1024 * 1024) {
+        this.historyTruncated = true;
+      } else {
+        this.historyUpdates.push(update);
+        this.historyBytes += size;
+      }
       return;
     }
     if (this.active === null) {
@@ -1049,6 +1203,9 @@ class AcpSession {
     }
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
+    for (const resolve of this.pendingElicitations.values()) resolve({ action: "cancel" });
+    this.pendingElicitations.clear();
+    void this.clientHost?.close().catch(() => {});
   }
 
   async close(): Promise<void> {
@@ -1073,6 +1230,7 @@ class AcpSession {
       ]);
     }
     this.closed = true;
+    await this.clientHost?.close().catch(() => {});
     await this.emit([{
       scope: { threadId: this.threadId },
       op: "session.ended",
@@ -1085,6 +1243,9 @@ class AcpSession {
     this.closed = true;
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
+    for (const resolve of this.pendingElicitations.values()) resolve({ action: "cancel" });
+    this.pendingElicitations.clear();
+    await this.clientHost?.close().catch(() => {});
     await this.connection?.close().catch(() => {});
   }
 }
@@ -1095,6 +1256,7 @@ export class AcpBridge {
   private readonly sessions = new Map<string, AcpSession>();
   private effective: DeclaredCapabilities | null = null;
   private probe: AcpInitializeResult | null = null;
+  private catalog: { readonly models: readonly Record<string, unknown>[]; readonly current: string | null; readonly source: string } | null = null;
   private closed = false;
 
   constructor(private readonly options: AcpBridgeOptions) {
@@ -1153,6 +1315,8 @@ export class AcpBridge {
       : declared.inputContentTypes.filter((type) => type !== "image");
     return {
       ...declared,
+      history: declared.history && (initialize.agentCapabilities?.loadSession === true
+        || initialize.agentCapabilities?.sessionCapabilities?.resume !== undefined),
       inputContentTypes: contentTypes,
       steer: {
         ...declared.steer,
@@ -1203,6 +1367,87 @@ export class AcpBridge {
     await this.options.requestCallback("thread/delta", { threadId, deltas: [...deltas] });
   }
 
+  async modelList(params: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const threadId = optionalString(params.threadId);
+    const session = threadId === undefined ? undefined : this.sessions.get(threadId);
+    if (session !== undefined) {
+      const listed = session.modelCatalog();
+      if (listed !== null) return listed;
+    }
+    if (this.catalog !== null) return this.catalog;
+    if (this.probe === null) throw unsupported("initialize must succeed before model/list");
+    const connection = new AcpConnection({
+      command: this.options.profile.agent.command,
+      args: this.options.profile.agent.args,
+      cwd: this.options.profile.agent.cwd,
+      ...(this.options.profile.agent.env === undefined ? {} : { env: this.options.profile.agent.env }),
+      onRequest: (method) => { throw new AcpRpcError(-32601, `bridge model probe does not answer ${method}`); },
+      onNotification: () => {},
+      onDiagnostic: (line) => this.diagnostic(`acp-model(${this.options.profile.providerId}) ${line}`),
+      onFrame: (direction, frame) => this.traceFrame(direction, frame),
+      requestTimeoutMs: 20_000,
+    });
+    try {
+      connection.spawn();
+      await connection.initialize();
+      const result = parseNewSessionResult(await connection.request("session/new", {
+        cwd: this.options.profile.agent.cwd,
+        mcpServers: [],
+      }));
+      this.catalog = this.catalogFromSession(result);
+      return this.catalog;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new BridgeCommandError(/auth|login|credential/i.test(message) ? "auth" : "internal",
+        /auth|login|credential/i.test(message) ? BRIDGE_ERROR_CODES.auth : BRIDGE_ERROR_CODES.internal,
+        `ACP model catalog probe failed: ${message}`);
+    } finally {
+      await connection.close().catch(() => {});
+    }
+  }
+
+  catalogForSession(session: AcpNewSessionResult): Record<string, unknown> & {
+    models: readonly Record<string, unknown>[];
+    current: string | null;
+    source: string;
+  } {
+    return this.catalogFromSession(session);
+  }
+
+  private catalogFromSession(session: AcpNewSessionResult): {
+    readonly models: readonly Record<string, unknown>[];
+    readonly current: string | null;
+    readonly source: string;
+  } {
+    if (session.models !== undefined && session.models.availableModels.length > 0) {
+      const seen = new Set<string>();
+      const models = session.models.availableModels.flatMap((model) => {
+        if (seen.has(model.modelId)) return [];
+        seen.add(model.modelId);
+        return [{
+          id: model.modelId,
+          name: model.name,
+          ...(model.description === undefined ? {} : { description: model.description }),
+          ...(model._meta === undefined ? {} : { meta: model._meta }),
+          current: model.modelId === session.models!.currentModelId,
+        }];
+      });
+      return { models, current: session.models.currentModelId, source: "acp-models" };
+    }
+    const option = session.configOptions?.find((candidate) =>
+      candidate.type === "select" && (candidate.category === "model" || candidate.id === "model"));
+    if (option !== undefined && option.options !== undefined) {
+      const models = option.options.map((choice) => ({
+        id: choice.value,
+        name: choice.name,
+        ...(choice.description === undefined ? {} : { description: choice.description }),
+        current: choice.value === option.currentValue,
+      }));
+      return { models, current: typeof option.currentValue === "string" ? option.currentValue : null, source: `config:${option.id}` };
+    }
+    return { models: [], current: null, source: "none" };
+  }
+
   async handle(method: string, rawParams: unknown): Promise<unknown> {
     if (this.closed) throw unsupported("bridge is closing");
     const params = object(rawParams);
@@ -1222,8 +1467,23 @@ export class AcpBridge {
           throw error;
         }
       }
-      case "session/resume":
-        throw unsupported("ACP session resume is not implemented in P3");
+      case "session/resume": {
+        const threadId = identifier(params.threadId, "threadId");
+        if (optionalString(params.providerThreadId) === undefined && optionalString(params.nativeSessionId) === undefined) {
+          throw invalid("session/resume needs providerThreadId or nativeSessionId");
+        }
+        if (this.sessions.has(threadId)) throw invalid("thread already has an ACP session");
+        const session = new AcpSession(this, threadId, this.options.profile, this.dialect, this.effective);
+        this.sessions.set(threadId, session);
+        try {
+          const result = await session.open(params);
+          return { ...result, resumed: true };
+        } catch (error) {
+          this.sessions.delete(threadId);
+          await session.abort().catch(() => {});
+          throw error;
+        }
+      }
       case "session/close": {
         const threadId = identifier(params.threadId, "threadId");
         const session = this.sessions.get(threadId);
@@ -1265,7 +1525,9 @@ export class AcpBridge {
           effectiveCapabilities: this.effective,
         };
       case "model/list":
+        return this.modelList(params);
       case "history/read":
+        return this.requireSession(params).readHistory(params);
       case "skills/configure":
       case "installation/status":
       case "installation/run":

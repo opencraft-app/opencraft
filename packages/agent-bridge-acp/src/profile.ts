@@ -108,9 +108,9 @@ export function declarationFor(profile: AcpProfile): BridgeDeclaration {
     // requests to the existing interaction channel; the Host never grants.
     approvalExecutor: "provider",
     capabilities: {
-      model: false,
+      model: true,
       reasoning: false,
-      history: false,
+      history: true,
       usage: false,
       approval: true,
       inputContentTypes: ["text", "image"],

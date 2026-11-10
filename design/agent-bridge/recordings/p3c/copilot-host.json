@@ -1,0 +1,823 @@
+{
+  "schemaVersion": 1,
+  "agent": "copilot",
+  "recordedAt": "2026-11-10T20:00:50.282Z",
+  "workspace": "<workspace>",
+  "profile": {
+    "providerId": "copilot",
+    "dialect": "copilot",
+    "command": "copilot",
+    "args": [
+      "--acp"
+    ],
+    "permissionMode": "auto",
+    "modelSelection": "claude-haiku-4.5"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "auth": {
+        "logout": {}
+      },
+      "loadSession": true,
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      },
+      "promptCapabilities": {
+        "image": true,
+        "audio": false,
+        "embeddedContext": true
+      },
+      "sessionCapabilities": {
+        "close": {},
+        "list": {}
+      }
+    },
+    "agentInfo": {
+      "name": "Copilot",
+      "title": "Copilot",
+      "version": "1.0.109"
+    },
+    "authMethods": [
+      {
+        "id": "copilot-login",
+        "name": "Log in with Copilot CLI",
+        "description": "Run `copilot login` in the terminal",
+        "_meta": {
+          "terminal-auth": {
+            "command": "<home>/.nvm/versions/node/v24.15.0/lib/node_modules/@github/copilot/node_modules/@github/copilot-linux-x64/copilot",
+            "args": [
+              "login"
+            ],
+            "label": "Copilot Login"
+          }
+        }
+      }
+    ]
+  },
+  "session": {
+    "models": {
+      "availableModels": [
+        {
+          "modelId": "auto",
+          "name": "Auto",
+          "description": "Let Copilot pick the best model"
+        },
+        {
+          "modelId": "auto",
+          "name": "Auto",
+          "description": "Auto",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled"
+          }
+        },
+        {
+          "modelId": "claude-sonnet-5.5",
+          "name": "Claude Sonnet 5.5",
+          "description": "Versatile · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        },
+        {
+          "modelId": "claude-sonnet-5",
+          "name": "Claude Sonnet 5",
+          "description": "Versatile · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        },
+        {
+          "modelId": "claude-haiku-5.5",
+          "name": "Claude Haiku 5.5",
+          "description": "Lightweight · Low cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "claude-haiku-4.5",
+          "name": "Claude Haiku 4.5",
+          "description": "Lightweight · Low cost",
+          "_meta": {
+            "copilotUsage": "0.33x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "gpt-6.1-terra",
+          "name": "GPT-6.1 Terra",
+          "description": "Versatile · Low cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "gpt-6-luna",
+          "name": "GPT-6 Luna",
+          "description": "Lightweight · Low cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "gpt-5.6-terra",
+          "name": "GPT-5.6 Terra",
+          "description": "Versatile · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        },
+        {
+          "modelId": "gpt-5.6-luna",
+          "name": "GPT-5.6 Luna",
+          "description": "Lightweight · Low cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "gpt-5.3-codex",
+          "name": "GPT-5.3-Codex",
+          "description": "Powerful · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        },
+        {
+          "modelId": "mai-code-1.1-flash",
+          "name": "MAI-Code-1.1-Flash",
+          "description": "Lightweight · Low cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "gemini-3.8-flash",
+          "name": "Gemini 3.8 Flash",
+          "description": "Versatile · Low cost",
+          "_meta": {
+            "copilotUsage": "14x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "low"
+          }
+        },
+        {
+          "modelId": "grok-4.7",
+          "name": "Grok 4.7",
+          "description": "Versatile · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        },
+        {
+          "modelId": "grok-4.6",
+          "name": "Grok 4.6",
+          "description": "Versatile · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        },
+        {
+          "modelId": "kimi-k3",
+          "name": "Kimi K3",
+          "description": "Powerful · Medium cost",
+          "_meta": {
+            "copilotUsage": "1x",
+            "copilotEnablement": "enabled",
+            "copilotPriceCategory": "medium"
+          }
+        }
+      ],
+      "currentModelId": "claude-sonnet-5.5"
+    },
+    "configOptions": [
+      {
+        "type": "select",
+        "id": "mode",
+        "name": "Mode",
+        "category": "mode",
+        "description": "Controls how Copilot responds: a conversational agent, planning multi-step work, or autonomous autopilot.",
+        "currentValue": "https://agentclientprotocol.com/protocol/session-modes#agent",
+        "options": [
+          {
+            "value": "https://agentclientprotocol.com/protocol/session-modes#agent",
+            "name": "Agent",
+            "description": "Default agent mode for conversational interactions"
+          },
+          {
+            "value": "https://agentclientprotocol.com/protocol/session-modes#plan",
+            "name": "Plan",
+            "description": "Plan mode for creating and executing multi-step plans"
+          },
+          {
+            "value": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+            "name": "Autopilot",
+            "description": "Autonomous mode that enables allow-all and runs until task completion without user interaction (experimental)"
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "id": "model",
+        "name": "Model",
+        "category": "model",
+        "description": "The AI model Copilot uses to generate responses.",
+        "currentValue": "claude-sonnet-5.5",
+        "options": [
+          {
+            "value": "auto",
+            "name": "Auto",
+            "description": "Let Copilot pick the best model",
+            "_meta": null
+          },
+          {
+            "value": "auto",
+            "name": "Auto",
+            "description": "Auto",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled"
+            }
+          },
+          {
+            "value": "claude-sonnet-5.5",
+            "name": "Claude Sonnet 5.5",
+            "description": "Versatile · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          },
+          {
+            "value": "claude-sonnet-5",
+            "name": "Claude Sonnet 5",
+            "description": "Versatile · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          },
+          {
+            "value": "claude-haiku-5.5",
+            "name": "Claude Haiku 5.5",
+            "description": "Lightweight · Low cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "claude-haiku-4.5",
+            "name": "Claude Haiku 4.5",
+            "description": "Lightweight · Low cost",
+            "_meta": {
+              "copilotUsage": "0.33x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "gpt-6.1-terra",
+            "name": "GPT-6.1 Terra",
+            "description": "Versatile · Low cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "gpt-6-luna",
+            "name": "GPT-6 Luna",
+            "description": "Lightweight · Low cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "gpt-5.6-terra",
+            "name": "GPT-5.6 Terra",
+            "description": "Versatile · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          },
+          {
+            "value": "gpt-5.6-luna",
+            "name": "GPT-5.6 Luna",
+            "description": "Lightweight · Low cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "gpt-5.3-codex",
+            "name": "GPT-5.3-Codex",
+            "description": "Powerful · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          },
+          {
+            "value": "mai-code-1.1-flash",
+            "name": "MAI-Code-1.1-Flash",
+            "description": "Lightweight · Low cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "gemini-3.8-flash",
+            "name": "Gemini 3.8 Flash",
+            "description": "Versatile · Low cost",
+            "_meta": {
+              "copilotUsage": "14x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "low"
+            }
+          },
+          {
+            "value": "grok-4.7",
+            "name": "Grok 4.7",
+            "description": "Versatile · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          },
+          {
+            "value": "grok-4.6",
+            "name": "Grok 4.6",
+            "description": "Versatile · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          },
+          {
+            "value": "kimi-k3",
+            "name": "Kimi K3",
+            "description": "Powerful · Medium cost",
+            "_meta": {
+              "copilotUsage": "1x",
+              "copilotEnablement": "enabled",
+              "copilotPriceCategory": "medium"
+            }
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "id": "reasoning_effort",
+        "name": "Reasoning Effort",
+        "category": "thought_level",
+        "description": "How much reasoning the model performs before responding. Higher effort can improve quality at the cost of speed.",
+        "currentValue": "xhigh",
+        "options": [
+          {
+            "value": "low",
+            "name": "low",
+            "description": "Minimal reasoning before responding."
+          },
+          {
+            "value": "medium",
+            "name": "medium",
+            "description": "Balanced reasoning and speed."
+          },
+          {
+            "value": "high",
+            "name": "high",
+            "description": "More thorough reasoning; slower responses."
+          },
+          {
+            "value": "xhigh",
+            "name": "xhigh",
+            "description": "Extensive reasoning for the hardest problems."
+          },
+          {
+            "value": "max",
+            "name": "max",
+            "description": "Maximum reasoning; slowest but most thorough."
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "id": "allow_all",
+        "name": "Allow All",
+        "category": "permissions",
+        "description": "Controls whether Copilot prompts for approval before using tools, accessing paths, or fetching URLs.",
+        "currentValue": "off",
+        "options": [
+          {
+            "value": "on",
+            "name": "On",
+            "description": "Automatically approve all tool, path, and URL requests"
+          },
+          {
+            "value": "off",
+            "name": "Off",
+            "description": "Require approval for tool, path, and URL requests"
+          }
+        ]
+      }
+    ],
+    "modes": {
+      "availableModes": [
+        {
+          "id": "https://agentclientprotocol.com/protocol/session-modes#agent",
+          "name": "Agent",
+          "description": "Default agent mode for conversational interactions"
+        },
+        {
+          "id": "https://agentclientprotocol.com/protocol/session-modes#plan",
+          "name": "Plan",
+          "description": "Plan mode for creating and executing multi-step plans"
+        },
+        {
+          "id": "https://agentclientprotocol.com/protocol/session-modes#autopilot",
+          "name": "Autopilot",
+          "description": "Autonomous mode that enables allow-all and runs until task completion without user interaction (experimental)"
+        }
+      ],
+      "currentModeId": "https://agentclientprotocol.com/protocol/session-modes#agent"
+    },
+    "sessionId": "918e9b71-93e1-4c9f-b15c-2196b02114a2"
+  },
+  "modelList": {
+    "models": [
+      {
+        "id": "auto",
+        "name": "Auto",
+        "description": "Let Copilot pick the best model",
+        "current": false
+      },
+      {
+        "id": "claude-sonnet-5.5",
+        "name": "Claude Sonnet 5.5",
+        "description": "Versatile · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": true
+      },
+      {
+        "id": "claude-sonnet-5",
+        "name": "Claude Sonnet 5",
+        "description": "Versatile · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": false
+      },
+      {
+        "id": "claude-haiku-5.5",
+        "name": "Claude Haiku 5.5",
+        "description": "Lightweight · Low cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "claude-haiku-4.5",
+        "name": "Claude Haiku 4.5",
+        "description": "Lightweight · Low cost",
+        "meta": {
+          "copilotUsage": "0.33x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "gpt-6.1-terra",
+        "name": "GPT-6.1 Terra",
+        "description": "Versatile · Low cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "gpt-6-luna",
+        "name": "GPT-6 Luna",
+        "description": "Lightweight · Low cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "gpt-5.6-terra",
+        "name": "GPT-5.6 Terra",
+        "description": "Versatile · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": false
+      },
+      {
+        "id": "gpt-5.6-luna",
+        "name": "GPT-5.6 Luna",
+        "description": "Lightweight · Low cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "gpt-5.3-codex",
+        "name": "GPT-5.3-Codex",
+        "description": "Powerful · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": false
+      },
+      {
+        "id": "mai-code-1.1-flash",
+        "name": "MAI-Code-1.1-Flash",
+        "description": "Lightweight · Low cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "gemini-3.8-flash",
+        "name": "Gemini 3.8 Flash",
+        "description": "Versatile · Low cost",
+        "meta": {
+          "copilotUsage": "14x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "low"
+        },
+        "current": false
+      },
+      {
+        "id": "grok-4.7",
+        "name": "Grok 4.7",
+        "description": "Versatile · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": false
+      },
+      {
+        "id": "grok-4.6",
+        "name": "Grok 4.6",
+        "description": "Versatile · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": false
+      },
+      {
+        "id": "kimi-k3",
+        "name": "Kimi K3",
+        "description": "Powerful · Medium cost",
+        "meta": {
+          "copilotUsage": "1x",
+          "copilotEnablement": "enabled",
+          "copilotPriceCategory": "medium"
+        },
+        "current": false
+      }
+    ],
+    "current": "claude-sonnet-5.5",
+    "source": "acp-models"
+  },
+  "task": {
+    "file": "ok\n",
+    "turns": 3,
+    "interactionCount": 1,
+    "text": "STEERED"
+  },
+  "steer": {
+    "request": {
+      "nativeTurnId": "acp:8ebfb41c-811a-4511-87b2-66d560b99fd7",
+      "delivery": "next-turn",
+      "queued": true
+    },
+    "delivery": {
+      "value": "next-turn",
+      "version": 1
+    },
+    "disposition": "next-turn",
+    "states": [
+      {
+        "inputId": "steer-copilot",
+        "clientRequestId": "client-steer-copilot",
+        "nativeSession": "918e9b71-93e1-4c9f-b15c-2196b02114a2",
+        "targetNativeTurnId": "acp:09792cf2-836b-45c0-8e72-3fc7c20a9fb1",
+        "expectedTurnId": "t1.3",
+        "allowedPaths": [
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "next-turn",
+        "nativeExecutions": 0,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "none",
+          "version": 0
+        },
+        "delivery": {
+          "value": "none",
+          "version": 0
+        },
+        "evidence": {
+          "value": "none",
+          "version": 0
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "registered"
+      },
+      {
+        "inputId": "steer-copilot",
+        "clientRequestId": "client-steer-copilot",
+        "nativeSession": "918e9b71-93e1-4c9f-b15c-2196b02114a2",
+        "targetNativeTurnId": "acp:09792cf2-836b-45c0-8e72-3fc7c20a9fb1",
+        "expectedTurnId": "t1.3",
+        "allowedPaths": [
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "next-turn",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "next-turn",
+          "version": 1
+        },
+        "evidence": {
+          "value": "none",
+          "version": 0
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "delivered"
+      },
+      {
+        "inputId": "steer-copilot",
+        "clientRequestId": "client-steer-copilot",
+        "nativeSession": "918e9b71-93e1-4c9f-b15c-2196b02114a2",
+        "targetNativeTurnId": "acp:09792cf2-836b-45c0-8e72-3fc7c20a9fb1",
+        "expectedTurnId": "t1.3",
+        "allowedPaths": [
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "next-turn",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "next-turn",
+          "version": 1
+        },
+        "evidence": {
+          "value": "evidence-observed",
+          "version": 1,
+          "evidenceKind": "admission"
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "evidence-observed"
+      }
+    ],
+    "finalText": "STEERED",
+    "turnsOpened": 3
+  },
+  "resume": {
+    "result": {
+      "providerThreadId": "918e9b71-93e1-4c9f-b15c-2196b02114a2",
+      "permission": {
+        "requested": "auto",
+        "approvalPolicy": "route",
+        "configOptions": [
+          {
+            "id": "allow_all",
+            "value": "off"
+          }
+        ],
+        "detail": "auto: Copilot allow_all=off"
+      },
+      "model": {
+        "configOptionId": "model",
+        "value": "claude-haiku-4.5"
+      },
+      "capabilities": {
+        "images": true,
+        "nativeSteering": false,
+        "deliveryMethods": [
+          "next-turn",
+          "interrupt-replace"
+        ]
+      },
+      "history": {
+        "updates": 12,
+        "truncated": false
+      },
+      "resumed": true
+    },
+    "historyUpdates": 12,
+    "historyTotal": 12
+  },
+  "notes": [
+    "Real account run through apps/agent-bridge-host; one temporary file write and one explicit steer.",
+    "Steer evidence is admission only; no context-confirmed claim.",
+    "Copilot has no native steering declaration; Amp native-inject is used only for Amp."
+  ],
+  "gaps": []
+}

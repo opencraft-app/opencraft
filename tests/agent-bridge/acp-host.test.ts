@@ -200,3 +200,49 @@ test("session close clears a pending approval so the route can be released", asy
   if (last !== undefined) await host.ack(last.seq);
   await host.releaseThread("server-1", "thread-1");
 });
+
+test("Host routes model/list, session/resume and history/read through the ACP bridge", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "acp-host-history-"));
+  const host = await BridgeHost.open({ path: join(root, "host.db"), policy, backend: localTestBackend() });
+  t.after(async () => { await host.close().catch(() => {}); await rm(root, { recursive: true, force: true }); });
+  await host.add(await config(root, {
+    ACP_FIXTURE_LOAD: "1",
+    ACP_FIXTURE_MODELS: "1",
+    ACP_FIXTURE_CONFIG: "1",
+    ACP_FIXTURE_PERMISSION: "0",
+    ACP_FIXTURE_NATIVE_STEER: "0",
+  }));
+  await host.activate("acp-g1", "");
+  await host.accept(command("create", "session/create", { cwd: root, permissionMode: "auto" }));
+  await until(() => host.query("create"), (receipt) => receipt?.state === "accepted", "session create");
+  await host.accept(command("close-initial", "session/close"));
+  await until(() => host.query("close-initial"), (receipt) => receipt?.state === "accepted", "initial close");
+
+  await host.accept(command("models", "model/list"));
+  const models = await until(() => host.query("models"), (receipt) => receipt?.state === "accepted", "model list");
+  const listed = (models?.response as any)?.result;
+  assert.equal(listed.source, "acp-models");
+  assert.equal(listed.models[0].id, "cheap");
+
+  await host.accept(command("resume", "session/resume", {
+    providerThreadId: "fixture-session-1",
+    cwd: root,
+    permissionMode: "auto",
+  }));
+  const resumed = await until(() => host.query("resume"), (receipt) => receipt?.state === "accepted", "session resume");
+  assert.equal((resumed?.response as any)?.result.resumed, true);
+  assert.equal((resumed?.response as any)?.result.history.updates, 3);
+
+  await host.accept(command("history", "history/read", { cursor: 0, limit: 2 }));
+  const history = await until(() => host.query("history"), (receipt) => receipt?.state === "accepted", "history read");
+  const page = (history?.response as any)?.result;
+  assert.equal(page.updates.length, 2);
+  assert.equal(page.nextCursor, 2);
+
+  await host.accept(command("close", "session/close"));
+  await until(() => host.query("close"), (receipt) => receipt?.state === "accepted", "session close");
+  const events = await host.events(0);
+  const last = events.at(-1);
+  if (last !== undefined) await host.ack(last.seq);
+  await host.releaseThread("server-1", "thread-1");
+});

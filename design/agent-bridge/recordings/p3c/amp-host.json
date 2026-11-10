@@ -1,0 +1,343 @@
+{
+  "schemaVersion": 1,
+  "agent": "amp",
+  "recordedAt": "2026-11-10T20:04:39.437Z",
+  "workspace": "<workspace>",
+  "profile": {
+    "providerId": "amp",
+    "dialect": "amp",
+    "command": "amp-acp",
+    "args": [],
+    "permissionMode": "accept-edits",
+    "modelSelection": "low"
+  },
+  "initialize": {
+    "protocolVersion": 1,
+    "agentInfo": {
+      "name": "amp-acp",
+      "title": "Amp ACP Agent",
+      "version": "0.10.0"
+    },
+    "_meta": {
+      "midTurnSteering": true
+    },
+    "agentCapabilities": {
+      "loadSession": true,
+      "promptCapabilities": {
+        "image": true,
+        "embeddedContext": true
+      },
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      },
+      "sessionCapabilities": {
+        "resume": {},
+        "fork": {}
+      },
+      "_meta": {
+        "amp-acp/thread-lifecycle": {
+          "version": 1,
+          "methods": {
+            "nativeMetadata": "amp-acp/session/native-metadata",
+            "setArchived": "amp-acp/thread/set-archived"
+          }
+        }
+      }
+    },
+    "authMethods": [
+      {
+        "id": "setup",
+        "name": "Amp API Key Setup",
+        "description": "Run interactive setup to configure your Amp API key",
+        "_meta": {
+          "terminal-auth": {
+            "command": "<home>/.local/bin/amp-acp",
+            "args": [
+              "--setup"
+            ],
+            "label": "Amp API Key Setup"
+          }
+        }
+      }
+    ]
+  },
+  "session": {
+    "sessionId": "S-mwb4c36q-2g9yud",
+    "configOptions": [
+      {
+        "type": "select",
+        "id": "execution-environment",
+        "name": "Execution Environment",
+        "description": "Choose whether Amp runs in the local project or a remote Amp Orb.",
+        "category": "mode",
+        "currentValue": "local",
+        "options": [
+          {
+            "value": "local",
+            "name": "Local",
+            "description": "Run Amp on this machine in the directory supplied by the ACP client."
+          },
+          {
+            "value": "orb",
+            "name": "Orb",
+            "description": "Run Amp remotely. Project settings control permissions and MCP servers."
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "id": "permission",
+        "name": "Permissions",
+        "description": "Controls whether Amp uses configured permissions or force-allows tool calls.",
+        "category": "mode",
+        "currentValue": "default",
+        "options": [
+          {
+            "value": "default",
+            "name": "Default",
+            "description": "Use Amp's configured behavior. As of Amp Neo, tools run without prompts unless you've opted into permissions."
+          },
+          {
+            "value": "bypass",
+            "name": "Bypass",
+            "description": "Force-allow every tool call, overriding any configured permissions plugin."
+          }
+        ]
+      },
+      {
+        "type": "select",
+        "id": "amp-mode",
+        "name": "Amp Mode",
+        "description": "Select the Amp agent mode. Amp owns model routing for the selected mode.",
+        "category": "model",
+        "currentValue": "medium",
+        "options": [
+          {
+            "value": "low",
+            "name": "Low",
+            "description": "Fast and economical for simple, well-defined tasks."
+          },
+          {
+            "value": "medium",
+            "name": "Medium",
+            "description": "Balanced capability and cost for everyday coding tasks."
+          },
+          {
+            "value": "high",
+            "name": "High",
+            "description": "Greater capability and reasoning for difficult tasks."
+          },
+          {
+            "value": "ultra",
+            "name": "Ultra",
+            "description": "Maximum capability for the most demanding tasks."
+          }
+        ]
+      }
+    ]
+  },
+  "modelList": {
+    "models": [
+      {
+        "id": "low",
+        "name": "Low",
+        "description": "Fast and economical for simple, well-defined tasks.",
+        "current": false
+      },
+      {
+        "id": "medium",
+        "name": "Medium",
+        "description": "Balanced capability and cost for everyday coding tasks.",
+        "current": true
+      },
+      {
+        "id": "high",
+        "name": "High",
+        "description": "Greater capability and reasoning for difficult tasks.",
+        "current": false
+      },
+      {
+        "id": "ultra",
+        "name": "Ultra",
+        "description": "Maximum capability for the most demanding tasks.",
+        "current": false
+      }
+    ],
+    "current": "medium",
+    "source": "config:amp-mode"
+  },
+  "task": {
+    "file": "ok",
+    "turns": 2,
+    "interactionCount": 0,
+    "text": "STEERED"
+  },
+  "steer": {
+    "request": {
+      "nativeTurnId": "acp:e6c8a938-fa2a-4194-98ed-1f41338dd1ec",
+      "delivery": "native-inject",
+      "admission": "pending"
+    },
+    "delivery": {
+      "value": "native-inject",
+      "version": 1
+    },
+    "disposition": "steered",
+    "states": [
+      {
+        "inputId": "steer-amp",
+        "clientRequestId": "client-steer-amp",
+        "nativeSession": "S-mwb4c36q-2g9yud",
+        "targetNativeTurnId": "acp:e6c8a938-fa2a-4194-98ed-1f41338dd1ec",
+        "expectedTurnId": "t1.2",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 0,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "none",
+          "version": 0
+        },
+        "delivery": {
+          "value": "none",
+          "version": 0
+        },
+        "evidence": {
+          "value": "none",
+          "version": 0
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "registered"
+      },
+      {
+        "inputId": "steer-amp",
+        "clientRequestId": "client-steer-amp",
+        "nativeSession": "S-mwb4c36q-2g9yud",
+        "targetNativeTurnId": "acp:e6c8a938-fa2a-4194-98ed-1f41338dd1ec",
+        "expectedTurnId": "t1.2",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "native-inject",
+          "version": 1
+        },
+        "evidence": {
+          "value": "none",
+          "version": 0
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "delivered"
+      },
+      {
+        "inputId": "steer-amp",
+        "clientRequestId": "client-steer-amp",
+        "nativeSession": "S-mwb4c36q-2g9yud",
+        "targetNativeTurnId": "acp:e6c8a938-fa2a-4194-98ed-1f41338dd1ec",
+        "expectedTurnId": "t1.2",
+        "allowedPaths": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "fallbackPolicy": "reject-unknown",
+        "disposition": "steered",
+        "nativeExecutions": 1,
+        "registration": {
+          "value": "registered",
+          "version": 0
+        },
+        "admission": {
+          "value": "accepted",
+          "version": 1
+        },
+        "delivery": {
+          "value": "native-inject",
+          "version": 1
+        },
+        "evidence": {
+          "value": "evidence-observed",
+          "version": 1,
+          "evidenceKind": "admission"
+        },
+        "withdrawal": {
+          "value": "none",
+          "version": 0
+        },
+        "outcome": "evidence-observed"
+      }
+    ],
+    "finalText": "STEERED",
+    "turnsOpened": 2
+  },
+  "resume": {
+    "result": {
+      "providerThreadId": "S-mwb4c36q-2g9yud",
+      "permission": {
+        "requested": "accept-edits",
+        "approvalPolicy": "accept-edits",
+        "configOptions": [
+          {
+            "id": "permission",
+            "value": "default"
+          }
+        ],
+        "detail": "Amp permission=default; accept-edits is enforced at the approval boundary when Amp asks"
+      },
+      "model": {
+        "configOptionId": "amp-mode",
+        "value": "low"
+      },
+      "capabilities": {
+        "images": true,
+        "nativeSteering": true,
+        "deliveryMethods": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ]
+      },
+      "history": {
+        "updates": 7,
+        "truncated": false
+      },
+      "resumed": true
+    },
+    "historyUpdates": 7,
+    "historyTotal": 7
+  },
+  "notes": [
+    "Real account run through apps/agent-bridge-host; one temporary file write and one explicit steer.",
+    "Steer evidence is admission only; no context-confirmed claim.",
+    "Copilot has no native steering declaration; Amp native-inject is used only for Amp."
+  ],
+  "gaps": []
+}

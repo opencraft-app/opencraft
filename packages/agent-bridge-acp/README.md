@@ -50,9 +50,10 @@ and narrows the registered declaration:
 - Only `admission` is declared: ACP gives a prompt admission, not proof that
   the next model request contained the text, and text echo is not a stable
   per-input identity.
-- `history`, `model/list`, `usage`, skills/installation/fork are not declared in
-  P3; a call to an undeclared method is refused by the Host gate and by the
-  bridge.
+- `history` survives only when ACP `loadSession` or
+  `sessionCapabilities.resume` is declared. `model/list` is declared; it reads
+  the ACP model catalog or a model-category config option. A call to an
+  undeclared method is refused by the Host gate and by the bridge.
 
 Each `session/create` starts a new agent process, runs ACP `initialize` and
 `session/new`, applies the permission/model plan, then emits `thread/identity`.
@@ -68,7 +69,9 @@ All commands receive the Host-added `threadId` (the durable route key) and
 | --- | --- | --- |
 | `initialize` | P1a handshake | effective capabilities |
 | `session/create` | `{cwd?, permissionMode?, modelSelection?}` | `{providerThreadId, permission, model, capabilities}` |
-| `session/resume` | — | `unsupported` (P3 does not claim native history) |
+| `session/resume` | `{providerThreadId, cwd?, permissionMode?, modelSelection?}` | `{providerThreadId, permission, model, capabilities, history?, resumed:true}` |
+| `model/list` | `{threadId?}` | `{models, current, source}` from ACP models or a model config option |
+| `history/read` | `{cursor?, limit?}` | paginated native replay updates from the resume/load window |
 | `session/close` | `{}` | `{closed}`; cancels, emits `session.ended`, kills the agent |
 | `turn/start` | `{input:{text, images?}, inputId?, clientRequestId?, permissionMode?}` | `{nativeTurnId, inputId}` |
 | `turn/steer` | `{inputId, clientRequestId, input:{…}, expectedTurnId?, delivery?}` | `{nativeTurnId, delivery, …}` |
@@ -147,9 +150,30 @@ The session/create result carries the plan (`requested`, `approvalPolicy`,
 applied. For example, Copilot uses `allow_all=on|off`, Amp uses
 `permission=bypass|default`, and generic agents use advertised session modes.
 
-`elicitation/create` is declined explicitly in P3; `fs/*`, `terminal/*` and
-`mcp/*` client methods are answered with `-32601` because this bridge does not
-advertise those client capabilities.
+## ACP client-side services
+
+The bridge advertises `clientCapabilities.fs`, `terminal` and `elicitation`
+only for the parts it can actually execute and the current permission mode
+allows:
+
+- `fs/read_text_file` and `fs/write_text_file` stay inside the session cwd;
+  symlinks and path escapes are rejected. Read-only sessions can read but not
+  write. `accept-edits` and `full` can write; `auto` cannot, because its edits
+  are still human-approved.
+- `terminal/*` is advertised only in `full` mode and runs a bounded child in
+  the session cwd with a 512 KiB output cap and at most eight terminals.
+  `terminal/create/output/wait_for_exit/kill/release` are implemented; closing
+  the session kills every terminal.
+- `elicitation/create` is routed through the existing
+  `interaction/request` channel as kind `elicitation` with an
+  `item/elicitation/request` payload. Unknown or undeliverable elicitations
+  decline; they never fabricate an answer.
+- `mcp/*` is still unsupported and not advertised.
+
+Native history is **replay**, not a second client history system. Resume/load
+collects the ACP update stream in a bounded quiet window and `history/read`
+serves that replay. The bridge never turns replay updates into live turn
+deltas, and it does not claim history before a successful load.
 
 ## Dialect extension point
 
@@ -187,9 +211,15 @@ Current dialects:
 - Agent stderr is diagnostic only and never enters protocol or durable events.
 - A write to a dead agent closes the connection and is diagnostic only; it is
   never retried as a new prompt and never becomes an unhandled rejection.
-- `session/resume`, native history and `model/list` are not implemented. A
-  deployment that needs them must add the capability with a real probe and
-  read port; declaring them without implementation is refused by review.
+- `session/resume` uses ACP `session/load` when `loadSession` is declared and
+  `session/resume` otherwise. A mode/config change that the agent forbids after
+  the first prompt fails explicitly; the bridge does not pretend the mode was
+  changed.
+- `model/list` starts a short ACP `session/new` probe only when no live session
+  exists. It never sends a prompt or consumes model tokens.
+- History replay is bounded to 1,000 updates / 4 MiB and pages are capped at
+  512 KiB so it fits the Host wire. The Web client does not consume the P3
+  steer-evidence extension yet; the projection check is component-level.
 
 ## Local validation
 
@@ -206,8 +236,16 @@ next-turn, explicit interrupt-replace, withdrawal, duplicate resolve and agent
 exit→unknown. `tests/agent-bridge/acp-host.test.ts` composes the bridge with the
 P1b Host, command ledger/outbox and assembler.
 
-Real-account acceptance (recorded under
-`design/agent-bridge/recordings/p3/`) uses
-`scripts/smoke/agent-bridge/p3-real-acp.ts --agent copilot|amp --out …`. It
-consumes real quota, runs one minimal task and one steer, and records the actual
-ACP `initialize` request/response. It is not part of CI.
+Real-account acceptance through `apps/agent-bridge-host` uses
+`scripts/smoke/agent-bridge/p3c-real-host.ts --agent copilot|amp` (recorded
+under `design/agent-bridge/recordings/p3c/`). It consumes real quota, runs one
+temporary file write, one steer, then closes/resumes the native session and
+reads native history. The earlier direct-bridge acceptance remains under
+`design/agent-bridge/recordings/p3/`. Neither script is part of CI.
+
+The Web presentation check is
+`scripts/smoke/agent-bridge/p3c-web-presentation.ts`; it renders the existing
+`UserMessageBlock` for the Copilot normal-user-message shape and the Amp
+steering shape, asserts no native/inject/fake-steer label, and writes a
+screenshot. It does not claim a Host→AppServer→Web end-to-end path because the
+existing Workbench does not consume `opencraft/steerEvidence/updated` yet.

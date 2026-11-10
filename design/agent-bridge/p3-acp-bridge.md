@@ -87,7 +87,11 @@ per-input `query` 未纳入录制（该字段在首次运行后才修正），�
 `input.delivery`/`input.evidence` 为记录事实；排队 admission facet 由确定性
 fixture 测试覆盖。
 
-## 未实现/缺口
+> P3c 后续批次已补上 session resume/load、history、model/list 与 ACP
+> fs/terminal/elicitation，并把真实验收改走 Host；见
+> [p3c-acp-followup.md](p3c-acp-followup.md)。本 P3 文档保留当时的范围记录。
+
+## 未实现/缺口（P3 当时）
 
 - `session/resume`、`history/read`、`model/list`、usage 仍为未声明：没有真实
   native history reader，不宣称可恢复；模型选择通过方言 config option 完成。
