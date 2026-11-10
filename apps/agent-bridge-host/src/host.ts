@@ -6,6 +6,8 @@ import { BRIDGE_GRAMMAR_RANGE, BRIDGE_PROTOCOL_VERSION, isBridgeCommand, assertM
 import { Storage } from './storage.js';
 import { Peer, successful } from './peer.js';
 import { object, identifier, routeKey, type Command, type Generation, type Receipt } from './types.js';
+/** Error kinds that are definitive refusals before any native write. */
+const REFUSED_BRIDGE_ERRORS = new Set(['auth', 'explicit-reject', 'frame-too-large', 'invalid', 'quota', 'stale-target', 'unsupported']);
 /** Deterministic object encoding makes the digest independent of JSON key order. */
 function stable(value: unknown): string {
   if (Array.isArray(value)) return '[' + value.map(stable).join(',') + ']';
@@ -126,7 +128,10 @@ export class BridgeHost {
         await this.storage.call('settle', { id: command.commandId, state: 'rejected' }); return;
       }
       const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...command.params, threadId: receipt.route, executionEpoch: receipt.epoch });
-      const state = successful(response) ? 'accepted' : 'error' in response && response.error.kind === 'explicit-reject' ? 'rejected' : 'unknown';
+      // These kinds are definitive provider refusals before any native write
+      // (validation, capability gating, auth/quota, stale target). A timeout,
+      // transport loss or internal/unknown-outcome stays `unknown`.
+      const state = successful(response) ? 'accepted' : 'error' in response && REFUSED_BRIDGE_ERRORS.has(response.error.kind) ? 'rejected' : 'unknown';
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
     } catch {
       await this.storage.call('settle', { id: command.commandId, state: 'unknown' });

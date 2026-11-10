@@ -73,7 +73,16 @@ const operations: Record<string, (args: any) => any> = {
     if (old) { require(old.digest === digest, 'commandId reused with different input'); return { receipt: old, fresh: false }; }
     require(!['session/create','turn/start','turn/steer'].includes(command.method) || Number(get('SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) AS bytes FROM outbox').bytes) < maxSpoolBytes, 'Spool full; new admissions stopped');
     let binding = get('SELECT generation FROM routes WHERE route=?', route);
-    if (binding) require(command.method !== 'session/create', 'Thread already exists');
+    if (binding && command.method === 'session/create') {
+      // A rejected first create left only a route binding, no native session,
+      // outbox or accepted command. Allow that Thread identity to retry rather
+      // than bricking it; any accepted/unsettled command or native fact still
+      // means "already exists".
+      require(!get('SELECT 1 FROM native_sessions WHERE route=?', route)
+        && !get('SELECT 1 FROM outbox WHERE route=?', route)
+        && !get("SELECT 1 FROM commands WHERE route=? AND state<>'rejected'", route),
+        'Thread already exists');
+    }
     if (!binding) {
       require(!get('SELECT 1 FROM released_routes WHERE route=?', route), 'Thread is permanently closed');
       require(command.method === 'session/create', 'Thread must be explicitly created');
