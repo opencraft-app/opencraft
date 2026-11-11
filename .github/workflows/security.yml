@@ -103,7 +103,7 @@ jobs:
       - run: npm run typecheck --workspace @opencraft/workbench-web
       - run: npm run test:web-release
       - run: npm run test:web-updates
-      - run: npx playwright install --with-deps chromium
+      - run: bash scripts/ci/install-playwright-chromium.sh
       - run: npm run test:web-updates:e2e
 
   security-checks:
