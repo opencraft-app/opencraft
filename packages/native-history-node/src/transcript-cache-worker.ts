@@ -25,7 +25,7 @@ export class TranscriptCacheWorker {
     if(!this.worker) {
       try {
         this.worker=new Worker(new URL('./transcript-cache-storage-worker.mjs',import.meta.url),{workerData:{directory:this.dataDirectory,schema:this.schema},execArgv:[]});
-        this.worker.on('error',error=>this.fail(error));
+        this.worker.on('error',error => this.fail(error instanceof Error ? error : new Error(String(error))));
         this.worker.on('exit',code=>{if(!this.stopping||code!==0||this.pending.size)this.fail(new Error('Transcript cache storage worker exited'));});
         this.worker.on('message',packet=>{
           const request=this.pending.get(packet.id);if(!request)return;
