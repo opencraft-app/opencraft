@@ -1,3 +1,4 @@
+import { structuredFailure } from './failure.mjs';
 import { constants } from 'node:fs';
 import { open, mkdir, rename, unlink, lstat, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
@@ -41,13 +42,14 @@ export async function readPrivateJson(path) {
 }
 export async function command(binary, args, { fd, timeout = 15000 } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'ignore', ...(fd === undefined ? [] : [fd])],
+    const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe', ...(fd === undefined ? [] : [fd])],
       env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LANG: 'C' } });
-    let output = '', exceeded = false;
+    let output = '', diagnostic = '', exceeded = false;
+    child.stderr.on('data', data => { diagnostic = (diagnostic + data).slice(-8192); });
     const timer = setTimeout(() => { exceeded = true; child.kill('SIGKILL'); }, timeout);
     child.stdout.on('data', data => { output += data; if (output.length > 65536) { exceeded = true; child.kill('SIGKILL'); } });
     child.once('error', e => { clearTimeout(timer); reject(e); });
-    child.once('exit', code => { clearTimeout(timer); code === 0 && !exceeded ? resolve(output) : reject(new Error('command-failed')); });
+    child.once('close', code => { clearTimeout(timer); code === 0 && !exceeded ? resolve(output) : reject(Object.assign(new Error('command-failed'), { failure: structuredFailure(diagnostic) })); });
   });
 }
 // flock(1) locks inherited fd 3's open-file-description. The parent retains the

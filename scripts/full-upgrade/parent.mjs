@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { failureSummary, structuredFailure } from './failure.mjs';
 import { readFile, realpath, mkdir, rename, readdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve, isAbsolute } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -105,15 +106,16 @@ export async function controllerCall(config, step, input, lockFd) {
   invariant(sha256(await readFile(step.controller)) === step.sha256, 'parent-controller-drift');
   return new Promise((resolve, reject) => {
     const child = spawn(step.interpreter === 'node' ? config.node : '/usr/bin/python3', [step.controller], {
-      stdio: ['pipe', 'pipe', 'ignore', lockFd], env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LANG: 'C.UTF-8' },
+      stdio: ['pipe', 'pipe', 'pipe', lockFd], env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LANG: 'C.UTF-8' },
     });
-    let output = '';
+    let output = '', diagnostic = '';
+    child.stderr.on('data', b => { diagnostic = (diagnostic + b).slice(-8192); });
     child.stdin.end(JSON.stringify({ ...input, policyPath: step.policyPath, stepId: step.id, ownerId: step.ownerId, lockFd: 3, deployLock: config.deployLock }));
     child.stdout.on('data', b => { output += b; if (output.length > 1024 * 1024) child.stdout.destroy(); });
     child.once('error', reject);
     // No timeout kills a controller holding a live maintenance transaction.
     // Its bounded forward/recovery policy is part of the installed recipe.
-    child.once('exit', code => {
+    child.once('close', code => {
       try {
         invariant(output.length <= 1024 * 1024, 'controller-output-limit');
         const value = JSON.parse(output);
@@ -122,7 +124,10 @@ export async function controllerCall(config, step, input, lockFd) {
           && ['applied', 'not-applied', 'draining', 'recovered', 'blocked'].includes(value.outcome), 'parent-controller-unconfirmed');
         invariant(value.identity === undefined || /^[a-f0-9]{64}$/.test(value.identity), 'invalid-parent-identity');
         resolve(value);
-      } catch (e) { reject(e); }
+      } catch (e) {
+        e.failure = failureSummary(structuredFailure(diagnostic) ?? e, 'owner-' + input.action, step.ownerId);
+        reject(e);
+      }
     });
   });
 }
@@ -161,7 +166,11 @@ export async function runParent(config, options = {}, dependencies = {}) {
   await privateDirectory(stateDirectory);
   const journal = await new Journal(join(stateDirectory, 'journal')).open();
   try { return await runParentJournal(config, options, dependencies, journal, stateDirectory); }
-  finally { await journal.close(); }
+  catch (error) {
+    const failure = failureSummary(error);
+    try { await atomicJson(join(stateDirectory, 'failure.json'), failure); } catch { /* Preserve the original failed operation even if diagnostic storage fails. */ }
+    throw Object.assign(error, { failure });
+  } finally { await journal.close(); }
 }
 async function runParentJournal(config, { operationId, inspect = false, recover = false, planDigest } = {}, dependencies, journal, stateDirectory) {
   let existing, retained;
@@ -246,7 +255,7 @@ async function runParentJournal(config, { operationId, inspect = false, recover 
     job.finishedAt = new Date().toISOString(); job.revision++; await journal.save(job);
     return { job, fullStackExecutable: true };
   } catch (e) {
-    if (job) { job.state = 'recovery-required'; job.revision++; try { await journal.save(job); } catch {} }
+    if (job) { job.state = !safe || job.steps.some(s => s.intent && !s.receipt) ? 'recovery-required' : 'failed'; job.failure = failureSummary(e); job.revision++; try { await journal.save(job); } catch {} }
     if (!safe) {
       // Both automatic and explicit recovery use this parent with its original
       // kernel lock. An operator can request another recovery attempt by IPC.
@@ -287,5 +296,5 @@ if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pat
   const [flag, configPath, action, operationId, digest] = process.argv.slice(2);
   invariant(flag === '--config' && ['inspect', 'apply', 'recover'].includes(action), 'expected-fixed-parent-config');
   runParent(await readConfig(configPath), { operationId, inspect: action === 'inspect', recover: action === 'recover', planDigest: digest })
-    .then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(() => { process.stderr.write('Full parent requires recovery or a fresh plan\n'); process.exitCode = 1; });
+    .then(value => process.stdout.write(JSON.stringify(value) + '\n')).catch(error => { process.stderr.write(JSON.stringify({ opencraftFailure: failureSummary(error) }) + '\n'); process.exitCode = 1; });
 }
