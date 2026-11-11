@@ -1,3 +1,4 @@
+import { localOwnerClose } from "./lifecycle.js";
 import { CursorError } from "./cursor.js";
 import { CURSOR_KEY_GUIDANCE } from "./credentials.js";
 import { readFile } from "node:fs/promises";
@@ -105,9 +106,9 @@ export const cursorFactory: CursorFactory = {
     const client = await Client.create();
     try {
       const result = await client.call("create", { cwd, model, stateDirectory }) as { agentId: string };
-      let closing: Promise<void> | undefined;
+      const close = localOwnerClose(() => client.call("close"), () => client.close());
       return { agentId: result.agentId, send: async (text) => await client.call("send", { text }) as CursorRun,
-        close: () => closing ??= (async () => { try { await client.call("close"); } finally { await client.close(); } })() };
+        close };
     } catch (error) { await client.close(); throw error; }
   },
 };

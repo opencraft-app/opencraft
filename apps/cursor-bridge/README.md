@@ -53,7 +53,10 @@ is declared. Queue, interrupt and queue fallback policies are refused.
   waiting for SDK send/cancel acknowledgement, and retries cleanup without
   skipping native cancellation on a removal error. Confirmed Stop permits a new
   explicit turn; uncertain cancellation retains a write fence. A failed close
-  keeps the session owned and reports that it remains open for cleanup.
+  keeps the session owned and reports that it remains open for cleanup. A local
+  removal error after confirmed native completion is explicitly rejected; files
+  remain owned for retry. After confirmed Stop, Worker termination is the local
+  close boundary; SDK disposal is best effort, and failed termination can retry.
 
 Input is `{text, attachments?: [{data: "<base64>"}]}` (64 KiB encoded total,
 16 attachments). Generated private local paths are passed as text; this is not

@@ -10,6 +10,7 @@ import { CURSOR_KEY_GUIDANCE, hasCursorCredentials } from "../../apps/cursor-bri
 import { CURSOR_DECLARATION } from "../../apps/cursor-bridge/src/declaration.js";
 import { CursorBridge, CursorError } from "../../apps/cursor-bridge/src/cursor.js";
 import type { CursorRun } from "../../apps/cursor-bridge/src/types.js";
+import { localOwnerClose } from "../../apps/cursor-bridge/src/lifecycle.js";
 import { InputFiles, parseInput } from "../../apps/cursor-bridge/src/input.js";
 import { assemble, createAssemblerState } from "../../packages/agent-bridge-assembler/src/index.js";
 
@@ -30,11 +31,11 @@ class Run implements CursorRun {
 }
 async function setup(t: any, timeout = 80, messages: SDKMessage[] = [], badAttachmentRoot = false) {
   const root = await mkdtemp(join(tmpdir(), "cursor-test-"));
-  const control: { rejectCallbacks: boolean; closing?: Promise<void>; sending?: Promise<void>; closes?: number } = { rejectCallbacks: false };
+  const control: { rejectCallbacks: boolean; closing?: Promise<void>; sending?: Promise<void>; closes?: number; onSend?: () => void } = { rejectCallbacks: false };
   const runs: Run[] = [], sends: string[] = [], deltas: any[] = [];
   const bridge = new CursorBridge({ attachmentRoot: badAttachmentRoot ? join(root, "missing-parent") : root, steerTimeoutMs: timeout,
     factory: { hasCredentials: async () => true, models: async () => [{ id: "cheap", name: "Cheap" }], create: async () => ({ agentId: "agent-1",
-      send: async (text) => { sends.push(text); await control.sending; const run = new Run(); run.id = `run-${runs.length + 1}`; run.messages = messages; runs.push(run); return run; }, close: async () => { control.closes = (control.closes ?? 0) + 1; } }) },
+      send: async (text) => { sends.push(text); control.onSend?.(); await control.sending; const run = new Run(); run.id = `run-${runs.length + 1}`; run.messages = messages; runs.push(run); return run; }, close: async () => { control.closes = (control.closes ?? 0) + 1; } }) },
     notify: async (method, p) => { if (control.rejectCallbacks) throw Error("Host disconnected"); if (method === "thread/delta") { deltas.push(...p.deltas as any[]); if ((p.deltas as any[]).some((d) => d.op === "turn.close")) await control.closing; } return {}; } });
   t.after(async () => { for (const run of runs) { run.ack.resolve("revert_to_followup"); run.finish(); } await bridge.close().catch(() => {}); await rm(root, { recursive: true, force: true }); });
   await bridge.handle("initialize", { protocolVersion: 1, grammarRange: { min: 1, max: 1 } });
@@ -219,13 +220,14 @@ test("Cursor refuses steer after run end while close callback is pending", async
 
 
 
-test("Cursor Stop cleans attachments even while initial SDK send remains pending", async (t) => {
+test("Cursor Stop cleans attachments even while initial SDK send remains pending", { timeout: 5000 }, async (t) => {
   const x = await setup(t); x.runs[0].finish();
   await until(() => x.deltas.some((d) => d.op === "turn.close"));
   await tick(); await tick();
   const gate = deferred<void>(); x.control.sending = gate.promise;
+  const entered = deferred<void>(); x.control.onSend = () => entered.resolve();
   const starting = x.bridge.handle("turn/start", { threadId: "thread", input: { text: "new task", attachments: [{ data: "YQ==" }] } });
-  await until(() => x.sends.length === 2);
+  await entered.promise;
   const stopping = x.bridge.handle("turn/stop", { threadId: "thread" });
   try {
     for (let n=0;n<100;n++) { if (!(await readdir(x.root)).length) break; await tick(); }
@@ -354,4 +356,63 @@ test("Cursor cancelled tool is terminal in the canonical projection", async (t) 
   const events = assemble(createAssemblerState(1), x.deltas, { threadId: "thread", clockSeed: 1 }).events;
   const completed = events.filter((e) => e.kind === "item.completed").at(-1)?.item.shape;
   assert.deepEqual(completed, { kind: "tool", name: "shell", status: "failed" });
+});
+
+test("Cursor preparing withdrawal settles before a persistent cleanup failure and close can retry", async (t) => {
+  const x = await setup(t);
+  const dispose = InputFiles.prototype.dispose;
+  InputFiles.prototype.dispose = async () => { throw Error("disk removal blocked"); };
+  try {
+    const pending = x.bridge.handle("turn/steer", { ...x.params, input: { text: "file", attachments: [{ data: "YQ==" }] } });
+    await assert.rejects(x.bridge.handle("turn/stop", { threadId: "thread" }), (e: unknown) => e instanceof CursorError && e.kind === "explicit-reject");
+    await pending;
+    assert.equal(x.deltas.some((d) => d.op === "input.withdrawal" && d.state === "withdrawn"), true);
+    assert.equal(x.runs[0].cancels, 1);
+    const states = assemble(createAssemblerState(1), x.deltas, { threadId: "thread", clockSeed: 1 }).events.filter((e) => e.kind === "input.state");
+    assert.equal(states.at(-1)?.status.outcome, "withdrawn");
+  } finally { InputFiles.prototype.dispose = dispose; }
+  await x.bridge.handle("session/close", { threadId: "thread" });
+  assert.deepEqual(await readdir(x.root), []);
+});
+test("Cursor consume cleanup failure retains files for close without rejecting the finished run", async (t) => {
+  const x = await setup(t); x.runs[0].ack.resolve("complete_delivered");
+  await x.bridge.handle("turn/steer", { ...x.params, input: { text: "file", attachments: [{ data: "YQ==" }] } });
+  const dispose = InputFiles.prototype.dispose; let attempts = 0;
+  InputFiles.prototype.dispose = async () => { attempts++; throw Error("disk removal blocked"); };
+  try {
+    x.runs[0].finish(); await until(() => attempts > 0); await tick(); await tick();
+    await assert.rejects(x.bridge.handle("session/close", { threadId: "thread" }), (e: unknown) => e instanceof CursorError && e.kind === "explicit-reject");
+    assert.equal(x.control.closes ?? 0, 0);
+  } finally { InputFiles.prototype.dispose = dispose; }
+  await x.bridge.handle("session/close", { threadId: "thread" });
+  assert.deepEqual(await readdir(x.root), []);
+});
+test("Cursor factory close refusal is retryable and preserves the session", async () => {
+  let calls = 0;
+  const bridge = new CursorBridge({ factory: { hasCredentials: async () => true, models: async () => [], create: async () => ({ agentId: "agent", send: async () => { throw Error("unused"); }, close: async () => { if (++calls === 1) throw Error("termination failed"); } }) }, notify: async () => ({}) });
+  await bridge.handle("initialize", { protocolVersion: 1, grammarRange: { min: 1, max: 1 } });
+  await bridge.handle("session/create", { threadId: "t", cwd: "/", stateDirectory: "/", model: "cheap", permissionMode: "full" });
+  await assert.rejects(bridge.handle("session/close", { threadId: "t" }), (e: unknown) => e instanceof CursorError && e.kind === "explicit-reject");
+  assert.deepEqual(await bridge.handle("session/close", { threadId: "t" }), { closed: true });
+  assert.equal(calls, 2); await bridge.close();
+});
+test("Cursor local close terminates after SDK disposal failure and retries only failed termination", async () => {
+  let disposals = 0, terminations = 0;
+  const close = localOwnerClose(async () => { disposals++; throw Error("SDK dispose failed"); }, async () => { if (++terminations === 1) throw Error("worker termination failed"); });
+  await assert.rejects(close(), /termination failed/);
+  await close(); await close();
+  assert.equal(disposals, 1); assert.equal(terminations, 2);
+});
+
+test("Cursor local withdrawal cleanup failure stays definitive and close retries its files", async (t) => {
+  const x = await setup(t); const dispose = InputFiles.prototype.dispose;
+  InputFiles.prototype.dispose = async () => { throw Error("removal blocked"); };
+  try {
+    const pending = x.bridge.handle("turn/steer", x.params);
+    await assert.rejects(x.bridge.handle("input/withdraw", { threadId: "thread", inputId: "input-1" }), (e: unknown) => e instanceof CursorError && e.kind === "explicit-reject");
+    await pending;
+    assert.equal(x.runs[0].texts.length, 0);
+    assert.equal(x.deltas.some((d) => d.op === "input.withdrawal" && d.state === "withdrawn"), true);
+  } finally { InputFiles.prototype.dispose = dispose; }
+  await x.bridge.handle("session/close", { threadId: "thread" });
 });

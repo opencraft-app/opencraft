@@ -36,7 +36,7 @@ interface Active {
 }
 interface Session {
   threadId: string; agent: CursorAgent; active?: Active; inputs: Map<string, Input>;
-  stopped: boolean; fenced: boolean;
+  stopped: boolean; fenced: boolean; files: Set<InputFiles>;
 }
 export interface CursorOptions {
   factory: CursorFactory;
@@ -104,7 +104,7 @@ export class CursorBridge {
         if (this.closed) return fail("stale-target", "bridge closed during credential check");
         const agent = await this.options.factory.create(p.cwd, model, p.stateDirectory);
         if (this.closed) { await agent.close(); return fail("stale-target", "bridge closed during create"); }
-        const s: Session = { threadId, agent, inputs: new Map(), stopped: false, fenced: false };
+        const s: Session = { threadId, agent, inputs: new Map(), stopped: false, fenced: false, files: new Set() };
         this.sessions.set(threadId, s);
         try { await this.options.notify("thread/identity", { threadId, providerThreadId: agent.agentId, sessionRestorable: false }); }
         catch (error) { s.fenced = true; await agent.close(); this.sessions.delete(threadId); throw error; }
@@ -121,21 +121,23 @@ export class CursorBridge {
       if (!i) return fail("stale-target", "input unavailable");
       const state = i.state === "unknown" ? "unknown" : i.state === "withdrawn" || i.state === "preparing" ? "withdrawn"
         : i.state === "delivered" ? "too-late" : "unsupported";
-      if (state === "withdrawn") { i.state = "withdrawn"; await i.files.dispose(); }
+      if (state === "withdrawn") i.state = "withdrawn";
       await this.emit(s, { op: "input.withdrawal", scope: { threadId }, inputId: i.inputId, state, version: 1 });
+      if (state === "withdrawn" && !await this.clean(s, [i.files])) return fail("explicit-reject", "The input was withdrawn, but attachment cleanup did not finish. Close the session to retry cleanup.");
       return { state };
     }
     if (method === "turn/stop") {
       const target = p.expectedTurnId ?? p.turnId;
       if (target !== undefined && (!s.active || id(target) !== s.active.turnId)) return fail("stale-target", "Stop target does not match the active turn");
-      if (!s.active) return { stopped: false };
+      if (!s.active && !s.files.size) return { stopped: false };
       await this.stop(s);
       return { stopped: true };
     }
     if (method === "session/close") {
       try { await this.stop(s); }
       catch { return fail("explicit-reject", "The session is still open because stopping did not finish. Check the current run before closing again."); }
-      await s.agent.close();
+      try { await s.agent.close(); }
+      catch { return fail("explicit-reject", "The session is still open because local cleanup did not finish. Close it again to retry cleanup."); }
       await this.emit(s, { op: "session.ended", scope: { threadId } });
       this.sessions.delete(threadId);
       return { closed: true };
@@ -155,7 +157,7 @@ export class CursorBridge {
   private launch(s: Session, files: InputFiles): Active {
     const a: Active = { turnId: `cursor:${randomUUID()}`, startup: Promise.resolve(), done: Promise.resolve(),
       cancelled: false, opened: false, accepting: true, tools: new Map(), text: "", steers: new Set(), files: new Set([files]) };
-    s.active = a;
+    s.active = a; s.files.add(files);
     a.startup = (async () => {
       const text = await files.prepare();
       if (a.cancelled) return;
@@ -209,8 +211,10 @@ export class CursorBridge {
         a.tools.clear();
         if (a.opened) await this.emit(s, { op: "turn.close", scope: { threadId: s.threadId }, nativeTurnId: a.turnId, status });
       } finally {
-        await Promise.all([...a.files].map((f) => f.dispose()));
-        if (s.active === a) s.active = undefined;
+        try {
+          const cleaned = await this.clean(s, [...a.files]);
+          if (!cleaned) s.stopped = true;
+        } finally { if (s.active === a) s.active = undefined; }
       }
     }
   }
@@ -236,7 +240,7 @@ export class CursorBridge {
     if (delivery === "native-inject" && typeof a.run.steer !== "function") return fail("unsupported", "SDK run has no steer method");
     const i: Input = { inputId, clientRequestId, target: a.turnId, state: "preparing", allowedPaths, fallbackPolicy,
       files: new InputFiles(validInput(p.input), this.options.attachmentRoot) };
-    s.inputs.set(inputId, i); a.files.add(i.files);
+    s.inputs.set(inputId, i); a.files.add(i.files); s.files.add(i.files);
     const operation = (async () => {
       let dispatched = false;
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -278,6 +282,10 @@ export class CursorBridge {
     i.operation = operation; a.steers.add(operation);
     try { return await operation; } finally { a.steers.delete(operation); }
   }
+  private async clean(s: Session, files: InputFiles[]): Promise<boolean> {
+    const results = await Promise.allSettled(files.map(async (f) => { await f.dispose(); s.files.delete(f); }));
+    return results.every((result) => result.status === "fulfilled");
+  }
   private async stop(s: Session): Promise<void> {
     s.stopped = true;
     const a = s.active;
@@ -287,8 +295,8 @@ export class CursorBridge {
       if (i.state !== "preparing") continue;
       i.state = "withdrawn"; withdrawn.push(i);
     }
-    const files = [...new Set([...(a?.files ?? []), ...[...s.inputs.values()].map((i) => i.files)])];
-    const clean = () => Promise.allSettled(files.map((f) => f.dispose()));
+    const files = [...s.files];
+    const clean = () => this.clean(s, files);
     // A cleanup error must not prevent native cancellation, nor wait for its ack.
     await clean();
     let nativeFailure: unknown;
@@ -300,12 +308,9 @@ export class CursorBridge {
       }
     } catch (error) { nativeFailure = error; s.fenced = true; }
     const cleaned = await clean();
-    if (cleaned.some((result) => result.status === "rejected")) {
-      s.fenced = true;
-      return fail("unknown-outcome", "Cursor attachment cleanup could not be completed. The session remains open for cleanup.");
-    }
     for (const i of withdrawn) await this.emit(s, { op: "input.withdrawal", scope: { threadId: s.threadId }, inputId: i.inputId, state: "withdrawn", version: 1 });
     if (nativeFailure) throw nativeFailure;
+    if (!cleaned) return fail("explicit-reject", "Cursor stopped, but attachment cleanup did not finish. Close the session again to retry cleanup.");
     if (!s.fenced) s.stopped = false;
   }
   async close(): Promise<void> {
