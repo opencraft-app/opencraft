@@ -710,9 +710,20 @@ export async function startLocalAgentHost(options: {
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
         }
         if (request.method === "model/list") {
-          const listed = await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[] };
-          const extras = await connectedAgents.models();
-          send(socket, { jsonrpc: "2.0", id: request.id, result: { ...listed, data: [...(listed.data ?? []), ...extras] } }, request.method);
+          const paging = (request.params ?? {}) as { cursor?: unknown; limit?: unknown };
+          const size = typeof paging.limit === "number" ? Math.min(200, Math.max(1, Math.floor(paging.limit))) : 50;
+          const connectedCursor = typeof paging.cursor === "string" ? /^opencraft-connected-models:(\d+)$/u.exec(paging.cursor) : null;
+          const listed = connectedCursor ? { data: [], nextCursor: null } : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[]; nextCursor?: string | null };
+          const data = [...(listed.data ?? [])];
+          let nextCursor = listed.nextCursor ?? null;
+          if (nextCursor === null) {
+            const extras = await connectedAgents.models();
+            const offset = connectedCursor ? Number(connectedCursor[1]) : 0;
+            const remaining = Math.max(0, size - data.length);
+            data.push(...extras.slice(offset, offset + remaining));
+            nextCursor = offset + remaining < extras.length ? `opencraft-connected-models:${offset + remaining}` : null;
+          }
+          send(socket, { jsonrpc: "2.0", id: request.id, result: { ...listed, data, nextCursor } }, request.method);
           return;
         }
         if (request.method === "runtime/machine/read" && options.machineIdentity) {
