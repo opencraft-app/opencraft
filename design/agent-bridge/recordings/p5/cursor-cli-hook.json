@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "cliVersion": "2026.11.05-86047df",
+  "model": "glm-5p3-flash[reasoning=high]",
+  "hook": "postToolUse.additional_context",
+  "observations": [
+    {
+      "event": "available_commands_update"
+    },
+    {
+      "event": "session_info_update"
+    },
+    {
+      "event": "tool_call",
+      "status": "pending",
+      "toolCallId": "opaque-1"
+    },
+    {
+      "event": "tool_call_update",
+      "status": "in_progress",
+      "toolCallId": "opaque-1"
+    },
+    {
+      "operation": "inbox-write-requested-during-tool"
+    },
+    {
+      "event": "tool_call_update",
+      "status": "completed",
+      "toolCallId": "opaque-1"
+    },
+    {
+      "event": "agent_message_chunk",
+      "text": "BASE_HOOK"
+    }
+  ],
+  "hookCalls": [],
+  "transcriptEvidence": [],
+  "result": "hook-injection-not-observed",
+  "promptResult": {
+    "stopReason": "end_turn"
+  },
+  "markerReturned": false,
+  "hookOutputMarker": false,
+  "inboxWrittenDuringTool": true,
+  "workspaceKind": "temporary workspace",
+  "evidenceTier": "hook-not-invoked",
+  "configuredHooks": [
+    "sessionStart",
+    "beforeSubmitPrompt",
+    "preToolUse",
+    "postToolUse",
+    "beforeShellExecution",
+    "afterShellExecution",
+    "afterAgentResponse",
+    "stop"
+  ]
+}

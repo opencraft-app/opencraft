@@ -1,0 +1,9 @@
+{
+  "name": "@opencraft/cursor-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/cursor.ts" },
+  "scripts": { "typecheck": "tsc --noEmit", "build": "node build.mjs" },
+  "dependencies": { "@cursor/sdk": "1.0.32", "@opencraft/agent-bridge-protocol": "0.1.0" }
+}
