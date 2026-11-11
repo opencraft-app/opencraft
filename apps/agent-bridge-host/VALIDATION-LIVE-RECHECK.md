@@ -1,5 +1,8 @@
 # 本机真实验收复查 — 2026-11-11
 
+最新状态见[重新登录后的续验](VALIDATION-LIVE-RESUME.md)：旧路径对照与指定 P2a、
+once/cron 已通过，P7a/P4 仍未验。以下保留首次复查时的状态与 429 证据。
+
 旧 Codex 路径也在工具调用前失败，终态为 HTTP 429
 `responseTooManyFailedAttempts`。当前阻塞是 Core 账号认证不可用：池内
 access token 已过期，认证恢复后仍无可选账号，本地账号池代理返回 429。

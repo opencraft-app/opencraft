@@ -179,3 +179,10 @@ before that sequence. These earlier failures remain part of the validation recor
 账号池记录 `authorization-rejected`，后续代理返回 `No eligible Codex account`。
 按修不了即停的边界，本轮未继续真实任务。证据、范围限制与自行决定见
 [本机复查](VALIDATION-LIVE-RECHECK.md)及其脱敏录制。原有 fixture 与真实验收结论分别保留。
+
+## 2026-11-11 resumed after owner re-login
+
+**once/cron 组件真实执行通过**：各一次真实 scheduler occurrence、一个 completed
+run 和 native Turn，分别回答 P7B_ONCE_OK、P7B_CRON_OK；生产装配与 CLI 注入未验。
+用户重新登录后旧路径同模型回答 OK，原 429 已解除。
+[续验范围、脱敏证据与自行决定](VALIDATION-LIVE-RESUME.md)。

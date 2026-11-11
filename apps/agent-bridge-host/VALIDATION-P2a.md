@@ -189,3 +189,10 @@ not rewritten.
 账号池记录 `authorization-rejected`，后续代理返回 `No eligible Codex account`。
 按修不了即停的边界，本轮未继续真实任务。证据、范围限制与自行决定见
 [本机复查](VALIDATION-LIVE-RECHECK.md)及其脱敏录制。原有 fixture 与真实验收结论分别保留。
+
+## 2026-11-11 resumed after owner re-login
+
+**本轮指定真实任务通过**：真实读文件、工具中一次 steer、SIGKILL 网关后恢复，
+原 Turn 完成、临时副作用一行。客户端连续性仍未验。
+用户重新登录后旧路径同模型回答 OK，原 429 已解除。
+[续验范围、脱敏证据与自行决定](VALIDATION-LIVE-RESUME.md)。
