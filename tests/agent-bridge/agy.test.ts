@@ -64,6 +64,10 @@ test('AGY locked native database leaves the main event loop responsive',async t=
  let ticks=0;const timer=setInterval(()=>ticks++,5);t.after(()=>clearInterval(timer));
  await assert.rejects(reader.read('sample'));
  assert(ticks>=3,'worker lock wait must not stall main-thread timers');
+ // Release only after the read settled; the lock holder owns the lock window.
+ const exited=new Promise<void>(r=>locker.once('exit',()=>r()));
+ locker.stdin.end();
+ await exited;
 });
 
 test('AGY stop fences pending hook work; no native replay',async t=>{

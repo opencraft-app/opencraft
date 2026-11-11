@@ -17,7 +17,17 @@ function open(id) {
  return db;
 }
 if (process.argv[2] === '--seed') { const db=open('sample');db.prepare('INSERT INTO steps VALUES (0,14,?)').run(payload('seed'));db.close();process.exit(0); }
-if (process.argv[2] === '--lock') { const db=open('sample'); db.exec('BEGIN EXCLUSIVE'); console.log('locked'); setTimeout(()=>{db.exec('ROLLBACK');db.close();},400); }
+if (process.argv[2] === '--lock') {
+ const db=open('sample'); db.exec('BEGIN EXCLUSIVE');
+ console.log('locked');
+ // Hold the exclusive lock until the test ends this process's stdin. The lock
+ // window must not race Worker startup and the read timeout.
+ process.stdin.resume();
+ await new Promise(resolve => {
+  process.stdin.once('end',resolve); process.stdin.once('close',resolve); process.once('SIGTERM',resolve);
+ });
+ db.exec('ROLLBACK');db.close();process.exit(0);
+}
 const send = v => process.stdout.write(JSON.stringify({jsonrpc:'2.0',...v})+'\n');
 let promptCount=0, db, timer;
 function update(update) { send({method:'session/update',params:{sessionId:'native-session',update}}); }
