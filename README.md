@@ -4,7 +4,7 @@
 
 # OpenCraft
 
-### Everyone Agent Everywhere
+### Anyone Agents Anywhere
 
 **每个人的 Agent，连接每一个地方。**
 
@@ -22,13 +22,13 @@
 
 ## 我们的理念
 
-OpenCraft 是一个开源 Agent 工作台，围绕 **Everyone Agent Everywhere** 构建。
+OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** 构建。
 你的 Agent 可以运行在自己的电脑、远程开发机，或自主部署的服务器上。
 我们希望让这些 Agent 在一个共同的工作台中发挥作用，也让你能把它们开放给别人使用。
 
-- **Everyone · 每个人**：每个人都应该能够拥有、使用和分享 Agent。
-- **Agent · 你的智能伙伴**：接入已经在用的 Agent，配置自己的模型服务，或为自定义运行时开发适配。
-- **Everywhere · 无处不在**：连接不同机器上的 Agent，通过浏览器、桌面或手机使用同一个工作台。
+- **Anyone · 任何人**：每个人都应该能够拥有、使用和分享 Agent。
+- **Agents · 你的智能伙伴**：接入已经在用的 Agent，配置自己的模型服务，或为自定义运行时开发适配。
+- **Anywhere · 任何地方**：连接不同机器上的 Agent，通过浏览器、桌面或手机使用同一个工作台。
 
 ### 接入你的 Agent，把它的能力分享出去
 
@@ -110,7 +110,7 @@ OpenCraft 原创贡献采用 [Apache-2.0](LICENSE) 许可。
 
 <div align="center">
 
-**Everyone Agent Everywhere**<br />
+**Anyone Agents Anywhere**<br />
 接入你拥有的 Agent，分享它能做到的事。
 
 </div>
