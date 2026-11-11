@@ -39,7 +39,7 @@ export class ConnectorDatabase {
   private readonly db: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "connector-host",
       path,
       migrations: [{ version: 1, name: "managed-connectors", sql: BASELINE }],
       legacyMigration: createMissingLegacyObjects(BASELINE),

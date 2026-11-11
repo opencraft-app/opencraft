@@ -1,0 +1,69 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "f5f88156-b0ec-4b1f-84bc-fd759f1d0824",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "employee_git_credentials": {
+      "name": "employee_git_credentials",
+      "columns": {
+        "account": {
+          "name": "account",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "host": {
+          "name": "host",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "credential": {
+          "name": "credential",
+          "type": "blob",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "employee_git_credentials_account_host_pk": {
+          "columns": [
+            "account",
+            "host"
+          ],
+          "name": "employee_git_credentials_account_host_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "employee_git_credentials_check_0": {
+          "name": "employee_git_credentials_check_0",
+          "value": "revision>0"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

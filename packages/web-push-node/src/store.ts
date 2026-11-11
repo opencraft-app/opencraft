@@ -30,7 +30,7 @@ export class PushStore {
   readonly outcome: DatabaseOutcome;
   private readonly db: DatabaseSync;
   constructor(path: string, private readonly now = Date.now) {
-    const managed = openManagedDatabase({path, migrations:[{version:1,name:'web-push-subscriptions-and-outbox',sql:SCHEMA}]});
+    const managed = openManagedDatabase({ schemaId: "web-push-node",path, migrations:[{version:1,name:'web-push-subscriptions-and-outbox',sql:SCHEMA}]});
     this.db = managed.database; this.outcome = managed.outcome;
   }
   private transaction<T>(work: () => T): T {

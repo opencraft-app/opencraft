@@ -63,7 +63,7 @@ export class CodexGenerationRegistry {
     this.lock = new DatabaseSync(join(realpathSync(directory), ".codex-routing-owner.sqlite"));
     try {
       this.lock.exec("PRAGMA busy_timeout=0; BEGIN EXCLUSIVE");
-      const managed = openManagedDatabase({ path: join(directory, "codex-generations.sqlite"),
+      const managed = openManagedDatabase({ schemaId: "generation-registry", path: join(directory, "codex-generations.sqlite"),
         legacyPolicy: "reject", migrations: CODEX_GENERATION_MIGRATIONS });
       this.database = managed.database; this.outcome = managed.outcome;
       this.database.exec("PRAGMA foreign_keys=ON");

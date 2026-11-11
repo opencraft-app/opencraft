@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "session-routing",
+      "checksum": "63c7a324dedc79c9cbbfd2cd52b3d7f35f14d9fbe87da240fc7f2c7f6da5beef"
+    }
+  ],
+  "tableOptions": {
+    "dsh_pending_generations": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "dsh_session_generations": {
+      "strict": false,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "100d401b1f0368195dbc7714197d28dd8d0d7039e41401800e469ba31bd06bf1",
+  "baselineSnapshotChecksum": "0a39556cbf0e23814bf230ae6bd32d352c96e6840619321c45aca7dd25757939"
+}

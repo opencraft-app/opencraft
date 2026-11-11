@@ -1,0 +1,49 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "tasks-rows",
+      "checksum": "7d8482bf7e3d970a728a0a02ecfed3b1c88fa08023372e88ea0fa3503269ee4e"
+    },
+    {
+      "version": 2,
+      "name": "task-properties-and-members",
+      "checksum": "dabc9006c4614801309bf088cf2c9c798f65e0fff3b92114aee0336698d0811c"
+    },
+    {
+      "version": 3,
+      "name": "member-profile-identity",
+      "checksum": "62096bd6e1c827925d924f0589f9a7b28660ff20c68c15f5efa062676086fce9"
+    },
+    {
+      "version": 4,
+      "name": "task-kinds-acceptance-and-events",
+      "checksum": "2f74ed692f76afec796997ce98a36eabac33411cef0e15f4730795de6e22573a"
+    },
+    {
+      "version": 5,
+      "name": "task-archive",
+      "checksum": "fb85f0458a2cdbc061ef71c0e91d03c0c0071a8c272995b5ea5b90d995577301"
+    }
+  ],
+  "tableOptions": {
+    "task_conversations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "task_events": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "task_members": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "tasks": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "6541966eb6c22c120a8fc92c46e7e9fa55f52c85d37958c0d3235d56528b290e",
+  "baselineSnapshotChecksum": "f1e2c98c406919789980174f56951eff0ef9175ca0ab33ed89efd9d2729fd26f"
+}

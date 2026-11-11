@@ -1,0 +1,71 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "bridge-command-custody",
+      "checksum": "7e3d5aaaa730afee3c884d2f5297f80726a1a16d7a00729f89e69eaa64cdf392"
+    },
+    {
+      "version": 2,
+      "name": "bridge-outbox-checkpoints",
+      "checksum": "2c6ba52e494d35da9f57903d9bddeb4eaf1a567250553526f034ebca67e443db"
+    },
+    {
+      "version": 3,
+      "name": "automation-script-custody",
+      "checksum": "c062b2629d1059fb1cfd3fdcb04881781c401001f58c0355beba52d541ef2bb7"
+    }
+  ],
+  "tableOptions": {
+    "automation_scripts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "callbacks": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "checkpoints": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "commands": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "generations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "inbox": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "interactions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "meta": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "native_sessions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "outbox": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "released_routes": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "routes": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "7e19f7cf155d3c37c77865bd0d520b3a08aa7e3a9c320ceec37b95ada33c3e53",
+  "baselineSnapshotChecksum": "83bf50cf9163e6dd989fc0ca7f38082fb94bbed03acd764acc04fe76ceb7acdb"
+}

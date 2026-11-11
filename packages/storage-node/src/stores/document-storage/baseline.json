@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "extension-records",
+      "checksum": "31e65ecf5383ca13381fd1a7cc766cc257893fc5e5a063ccf104c1f7d0bb3fb1"
+    }
+  ],
+  "tableOptions": {
+    "extension_records": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "338112eec89e61c08c3cf6a32780b3969e8b6a7f5ac643d08e6b2fc3674483e2",
+  "baselineSnapshotChecksum": "3b2352232385ebade641687e59383e82b457810a0d747a6efb265f3e35ddcee8"
+}

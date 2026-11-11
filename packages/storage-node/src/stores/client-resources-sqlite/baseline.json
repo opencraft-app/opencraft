@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "client-resources",
+      "checksum": "9ffafd05e09bd83f32aeb273640c4dc231cf8fb27aa7a361f2778845e0fe2f61"
+    }
+  ],
+  "tableOptions": {
+    "client_resources": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "29f1f783dc8284de91da7ae986006e1864b06db2f4c59aa80a2c48465f424ddf",
+  "baselineSnapshotChecksum": "952553c6596b8027c9dd800b3a54b513c47b7e7c9f2526fce3e4eb7313097b35"
+}

@@ -14,7 +14,7 @@ const environmentOwnerMigration = 'ALTER TABLE thread_creations ADD COLUMN envir
 export class ProvisionalThreads {
   private readonly managed;
   constructor(directory: string) {
-    this.managed = openManagedDatabase({ path: join(directory, "thread-creations.sqlite"), legacyPolicy: "reject",
+    this.managed = openManagedDatabase({ schemaId: "provisional-threads", path: join(directory, "thread-creations.sqlite"), legacyPolicy: "reject",
       migrations: [{ version: 1, name: "thread-creation-lifecycle", sql: schemaV1 },
         { version: 2, name: "creation-environment-owner", sql: environmentOwnerMigration }], validateSchema: createSchemaValidator(schemaV1 + environmentOwnerMigration) });
   }

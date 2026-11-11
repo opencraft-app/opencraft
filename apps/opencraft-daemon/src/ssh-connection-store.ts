@@ -118,7 +118,7 @@ export class SshConnectionStore {
           }
         } finally { reader.close(); }
       }
-      const managed = openManagedDatabase({ path, legacyPolicy: "reject", validateSchema: createSchemaValidator(SCHEMA), migrations: SSH_CONNECTION_MIGRATIONS });
+      const managed = openManagedDatabase({ schemaId: "ssh-connection-store", path, legacyPolicy: "reject", validateSchema: createSchemaValidator(SCHEMA), migrations: SSH_CONNECTION_MIGRATIONS });
       this.db = managed.database;
       this.outcome = managed.outcome;
     } catch (error) { this.key.fill(0); throw error; }

@@ -192,7 +192,7 @@ export class OpenCraftHostStateDatabase {
     this.releaseLease = acquireOwnedStorageLease(directory);
     try {
       const path = this.path = ownedDatabasePath(directory, "opencraft-host-state.sqlite", "codex-host-queue.sqlite");
-      const managed = openManagedDatabase({ path, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(FULL_SCHEMA),
+      const managed = openManagedDatabase({ schemaId: "opencraft-host-state-database", path, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(FULL_SCHEMA),
         migrations: OPENCRAFT_HOST_STATE_MIGRATIONS, legacyMigration });
       this.database = managed.database;
       this.outcome = managed.outcome;

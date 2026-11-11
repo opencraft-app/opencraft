@@ -49,7 +49,7 @@ export class DesktopUiPreferenceStore {
 
   constructor(path: string) {
     const resolvedPath = path === ":memory:" ? ":memory:" : resolve(path);
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "ui-preferences-store",
       path: resolvedPath,
       migrations: [{ version: 1, name: "ui-preferences", sql: BASELINE }],
     });

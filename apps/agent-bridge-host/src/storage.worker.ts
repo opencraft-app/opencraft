@@ -11,7 +11,7 @@ if (isMainThread) throw Error('Bridge SQL must run in a Worker');
 mkdirSync(dirname(workerData.path), { recursive: true, mode: 0o700 });
 const release = acquireProcessWriter(`${workerData.path}.writer`);
 const { database: db, outcome } = (() => {
-  try { return openManagedDatabase({ path: workerData.path, migrations, legacyPolicy: 'reject' }); }
+  try { return openManagedDatabase({ schemaId: "agent-bridge-host", path: workerData.path, migrations, legacyPolicy: 'reject' }); }
   catch (error) { release(); throw error; }
 })();
 db.exec('PRAGMA synchronous=FULL');

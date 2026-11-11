@@ -1,0 +1,159 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "isolated-token-usage",
+      "checksum": "224bd7af38e011b293519749a61f185ce93d2a03fe77691c841944318234f70d"
+    },
+    {
+      "version": 2,
+      "name": "token-usage-thread-query-index",
+      "checksum": "51ce0b2f051cafdd1a70034d7e6048aaa02d837756b3361b3268cd41ebba34b0"
+    },
+    {
+      "version": 3,
+      "name": "rollout-derived-cache-v1",
+      "checksum": "e95484d3c3ff8dd63c94759ab656f9253664f8c13bc02073bc470a9302a123a8"
+    },
+    {
+      "version": 4,
+      "name": "rollout-derived-gap-index",
+      "checksum": "cf16a6991026643fb926349c21f06cfc0a8f7acfa38615544944a4a1500c1f59"
+    },
+    {
+      "version": 5,
+      "name": "rollout-retained-gap-incidents",
+      "checksum": "629cfc713dbf4d36e8f140a84e8c2ab3234210b24acbd36a5fa6c21184bd9598"
+    },
+    {
+      "version": 6,
+      "name": "rollout-retained-settlement-evidence",
+      "checksum": "3dab58b53fd95287384b4f1aed2691b7a5096f04b2cfa0c723746c6d64a1d30a"
+    },
+    {
+      "version": 7,
+      "name": "rollout-source-recency-index",
+      "checksum": "ea28856874066a436c2a486d7711847aedf7b84f5a04e1a69965ddd35f8d1bf1"
+    }
+  ],
+  "tableOptions": {
+    "token_usage_actor_daily": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_admissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_allocations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_attempts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_buckets": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_checkpoints": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_coverage": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_daily": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_gaps": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_input_conflicts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_inputs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_legacy_import": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_metadata_scans": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_native_counters": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_native_terminals": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_projection_state": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_rollouts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_scopes": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_sources": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_submissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turn_actor_projections": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turn_projections": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turns": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_cache_version": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_parser": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_position": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_receipts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_reproject": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_totals": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "7baff76269e1b178aabf92c4fd527bb8aefa264d6769d0d5c89b33d5ad3b6921",
+  "baselineSnapshotChecksum": "e3afd379e3ee971ae4117149620d06ece13b8bd019d42e23e0efff9129568941"
+}
