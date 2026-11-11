@@ -3,6 +3,7 @@ import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
+import { AgyChannel, AGY_PROBE } from "./agy";
 import { DshChannel } from "./dsh";
 /**
  * Minimal, bounded ACP (Agent Client Protocol) client over stdio.
@@ -120,6 +121,7 @@ export interface AcpPromptResult {
 
 export interface AcpConnectionOptions {
   readonly dsh?: boolean;
+  readonly agy?: boolean;
   readonly command: string;
   readonly args: readonly string[];
   readonly cwd: string;
@@ -284,6 +286,7 @@ export interface AcpRequestOptions {
 export class AcpConnection {
   private child: ChildProcessWithoutNullStreams | null = null;
   dsh: DshChannel | undefined;
+  agy: AgyChannel | undefined;
   private overlay: string | undefined;
   private nextId = 0;
   private readonly pending = new Map<number, {
@@ -315,6 +318,7 @@ export class AcpConnection {
   async spawn(): Promise<void> {
     if (this.child !== null) throw new Error("ACP connection already started");
     const args = [...this.options.args];
+    if (this.options.agy) this.agy = await AgyChannel.create(this.options.command, { ...process.env, ...this.options.env }, (method,params) => this.options.onFrame?.("in", { private: true, method, params }));
     const dsh = this.options.dsh && (process.platform === "linux" || process.platform === "darwin");
     if (dsh) {
       this.overlay = await mkdtemp(join(tmpdir(), "opencraft-dsh-"));
@@ -324,7 +328,7 @@ export class AcpConnection {
     }
     const child = spawn(this.options.command, args, {
       cwd: this.options.cwd,
-      env: { ...process.env, ...(this.options.env ?? {}), ...(dsh ? { DSH_ACP_STEERING_FD: "3" } : {}) },
+      env: { ...process.env, ...(this.options.env ?? {}), ...this.agy?.env, ...(dsh ? { DSH_ACP_STEERING_FD: "3" } : {}) },
       stdio: dsh ? ["pipe", "pipe", "pipe", "pipe"] : ["pipe", "pipe", "pipe"],
     });
     this.child = child as ChildProcessWithoutNullStreams;
@@ -352,6 +356,7 @@ export class AcpConnection {
   private finish(error: Error): void {
     if (this.exited !== null) return;
     this.exited = error;
+    void this.agy?.close().catch(() => {});
     const pendingMethods = [...this.pending.values()].map((entry) => entry.method);
     for (const entry of this.pending.values()) {
       if (entry.timer !== undefined) clearTimeout(entry.timer);
@@ -396,6 +401,7 @@ export class AcpConnection {
 
   private async dispatch(frame: unknown): Promise<void> {
     this.options.onFrame?.("in", frame);
+    if (isRecord(frame) && typeof frame.method !== "string" && typeof frame.id === "number" && this.pending.get(frame.id)?.method === "session/prompt") this.agy?.finish();
     if (!isRecord(frame)) {
       this.options.onDiagnostic?.("ACP agent wrote a non-object frame");
       return;
@@ -493,6 +499,7 @@ export class AcpConnection {
       clientCapabilities: this.options.clientCapabilities ?? {},
     });
     const parsed = parseInitializeResult(raw);
+    if (this.options.agy) return { ...parsed, _meta: { ...parsed._meta, [AGY_PROBE]: this.agy?.ready === true } };
     if (!this.options.dsh) return parsed;
     const deadline = Date.now() + 1500;
     while (this.dsh && !this.dsh.ready && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
@@ -503,6 +510,7 @@ export class AcpConnection {
     if (this.closing) return;
     this.closing = true;
     this.dsh?.close();
+    await this.agy?.close();
     if (this.overlay) await rm(this.overlay, { recursive: true, force: true });
     const child = this.child;
     if (child === null) return;

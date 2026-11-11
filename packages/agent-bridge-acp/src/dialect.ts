@@ -9,6 +9,7 @@
  * not establish.
  */
 
+import { agyDialect } from "./agy";
 import { codeBuddyDialect } from "./codebuddy";
 import type { AcpInitializeResult, AcpNewSessionResult } from "./acp";
 import type { AcpDialectId, OpenCraftPermissionMode } from "./profile";
@@ -234,6 +235,7 @@ const registry = new Map<string, AcpDialect>([
   [AMP.id, AMP],
   [COPILOT.id, COPILOT],
   ["codebuddy", codeBuddyDialect(GENERIC)],
+  ["agy", agyDialect(GENERIC)],
 ]);
 
 /**

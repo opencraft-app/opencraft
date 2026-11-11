@@ -157,7 +157,7 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | P3b | DSH ACP 伴生插件；依赖 P3 | 最便宜模型真实任务中 messageId admission→claimed；插件 absent/未 ready、撤回与 claimed 竞态、未消费清理；旧原生 DSH 保留 |
 | P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收 |
 | P5 | Cursor SDK 用户 steer 移植；依赖 P3 | 最便宜可用模型一次真实任务；complete_delivered 与 followup 分别验证，不能只看本地历史；取消无附件残留 |
-| P6 | AGY hook/IPC/轨迹读取；依赖 P3 | 最便宜模型一次真实任务，hook→新原始 user 行；相同文本歧义、schema 不符、插件缺失拒绝；主线程无 SQLite |
+| P6 | AGY hook/IPC/轨迹读取；依赖 P3；[实现与验收](p6-agy.md) | AGY 1.5.5 Flash Low 经 Host 工具中 steer，hook→新原始 user 行（idx 3 ≥ floor 1 且 > baseline 2）；同文本 unknown、schema/插件缺失拒绝、SQLite Worker 已验证；无模型理解或生产隔离声明 |
 | P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a | 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
 | P7b | 项目 automation + CLI；依赖 P7a | once 新建子线程、cron reprompt、script 三类本机最小任务；timezone/DST 用假时钟，重启单次执行、连续失败暂停、unknown 不派后续、旧 schedule 不双投 |
 | P9 | Hermes 现有桥兼容回归；依赖 P2a | 旧桥契约录制/替身与现有客户端读取和发送回执一致；旧桥与下游不变。缺真实本机环境则如实登记，不声称真实产品验收 |

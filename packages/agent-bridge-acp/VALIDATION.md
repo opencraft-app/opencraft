@@ -136,3 +136,7 @@ or real model acceptance was substituted for that review.
 All six were accepted and fixed locally with targeted regressions. The review
 thread was archived with an accepted decision. Final deterministic checks are
 listed above; there is no claim of a second independent review of the fixes.
+
+## P6 AGY
+
+AGY validation is isolated in [P6 implementation and acceptance](../../design/agent-bridge/p6-agy.md), with its own sanitized recordings and decisions. P4 evidence and remaining gaps above are unchanged.
