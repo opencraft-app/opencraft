@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync,existsSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 const output = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n');
 let sequence = 0;
@@ -30,8 +30,10 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (p.crashWindow) { process.kill(Number(process.env.HOST_PID), 'SIGKILL'); return; }
     const scope = { threadId: p.threadId };
     callback(p.threadId, [{ op: 'turn.open', nativeTurnId: 'native-turn-1', scope }, { op: 'item.open', nativeKey: 'message-1', shape: { kind: 'agentMessage', text: '' }, scope }]);
+    if(p.closeBeforeRefusal){callback(p.threadId,[{op:'turn.close',nativeTurnId:'native-turn-1',status:'completed',scope}]);}
     let tick = 0;
-    const timer = setInterval(() => {
+    const timer = p.closeBeforeRefusal?undefined:setInterval(() => {
+      if(p.hold&&!existsSync(process.env.EXECUTIONS+'.release'))return;
       callback(p.threadId, [{ op: 'item.textDelta', nativeKey: 'message-1', channel: 'agentMessage', text: `${++tick},`, scope }]);
       if (tick === 15) {
         clearInterval(timer);
@@ -39,6 +41,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       }
     }, 100);
   }
+  if(p?.refuseAfterStart){output({id:request.id,error:{kind:'explicit-reject',code:-32600,message:'Contradictory refusal after native start'}});return;}
   if (p?.spawnDescendant) {
     const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
     output({ id: request.id, result: { pid: process.pid, descendant: child.pid } }); return;

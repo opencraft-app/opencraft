@@ -1,5 +1,6 @@
 import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
+import { isDeepStrictEqual } from 'node:util';
 import { CodexCoreControlClient } from '@opencraft/account-pool-host';
 import { codexDeclaration } from './codex-declaration.js';
 import { CodexBridgeError, type CodexOwnerPort } from './codex.js';
@@ -10,7 +11,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   private brokerAuth?: { accessToken: string; chatgptAccountId: string };
   private socket?: WebSocket;
   private sequence = 0;
-  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; method: string }>();
+  private pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; method: string; threadId?:unknown; includeTurns?:unknown; initial?:Record<string,unknown>; observedTurn?:boolean }>();
   private failed = false;
   serverInfo: unknown;
   constructor(private endpoint: string, private token: string,
@@ -50,12 +51,37 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     }
     this.write({ method: 'initialized', params: {} });
   }
+  private readonly initialConfigurations = new Map<string,Record<string,unknown>>();
   private readonly uncertainConfigurations=new Set<string>();
   private readonly retirements = new Map<string,Record<string,any>>();
   async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+10000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
     if(!Number.isSafeInteger(preparationDeadlineMs)||preparationDeadlineMs<=Date.now()||this.uncertainConfigurations.has(threadId))throw new CodexBridgeError('unsupported','cliUnavailable');
     const deadline=performance.now()+Math.min(10000,preparationDeadlineMs-Date.now());
     const current=()=>{if(this.failed||performance.now()>=deadline)throw new CodexBridgeError('unsupported','cliUnavailable');};
+    const initial=this.initialConfigurations.get(threadId);
+    if(initial) {
+      current();
+      const read=await this.request('thread/read',{threadId,includeTurns:false},Math.max(1,deadline-performance.now())) as any;
+      current();
+      if(read?.thread?.status?.type!=='idle'||read.thread.ephemeral===true)throw new CodexBridgeError('unsupported','cliUnavailable');
+      try {
+        await this.request('thread/read',{threadId,includeTurns:true},Math.max(1,deadline-performance.now()));
+        // A materialized history defeats creation evidence, even if no event was observed.
+        this.initialConfigurations.delete(threadId);
+      } catch(error) {
+        current();
+        if(!(error instanceof CodexBridgeError)||error.nativeReason!=='unmaterialized')throw error;
+        if(this.initialConfigurations.get(threadId)===initial) {
+          const mcp=sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'};
+          const installed=initial['shell_environment_policy.set']??{};
+          if(!isDeepStrictEqual(installed,{...(installed as Record<string,unknown>),...environment})
+            ||sessionMcp!==undefined&&!isDeepStrictEqual(initial['mcp_servers.opencraft_session']??{enabled:false,url:'http://127.0.0.1:1/mcp'},mcp))throw new CodexBridgeError('unsupported','cliUnavailable');
+          // The admitted one-shot namespace was installed by native creation.
+          // No native mutation, permission rewrite, retirement or identity change.
+          return;
+        }
+      }
+    }
     await refreshCodexExecutionConfiguration(threadId,{
       ...(Object.keys(environment).length?{'shell_environment_policy.set':environment}:{}),
       ...(sessionMcp!==undefined?{'mcp_servers.opencraft_session':sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'}}:{}),
@@ -79,6 +105,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
       this.resolve(p.id, this.brokerAuth); return;
     }
     if (typeof p.method === 'string') {
+      if(p.method==='turn/started'){const threadId=(p.params as any)?.threadId;if(typeof threadId==='string'){this.initialConfigurations.delete(threadId);for(const request of this.pending.values())if(request.method==='turn/start'&&request.threadId===threadId)request.observedTurn=true;}}
       if (typeof p.id === 'number' || typeof p.id === 'string') this.interaction(p.id, p.method, p.params);
       else this.notify(p.method, p.params);
       return;
@@ -93,7 +120,11 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     // Fixed native stale diagnostics; no substring inference for auth/quota or
     // transport failures. A native stale reply is a definitive rejection.
     const stale = pending.method === 'turn/steer' && (/^no active turn to steer[.!]?$/i.test(message) || /^expected active turn id\b/i.test(message));
-    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome'));
+    const unmaterialized=pending.method==='thread/read'&&pending.includeTurns===true&&typeof pending.threadId==='string'&&error?.code===-32600
+      &&message===`thread ${pending.threadId} is not materialized yet; includeTurns is unavailable before first user message`;
+    const kind=stale?'stale-target':[-32600,-32601,-32602].includes(error?.code??0)?'explicit-reject':'unknown-outcome';
+    if(kind==='explicit-reject'&&pending.initial&&!pending.observedTurn&&typeof pending.threadId==='string')this.initialConfigurations.set(pending.threadId,pending.initial);
+    pending.reject(new CodexBridgeError(stale ? 'stale-target' : [-32600, -32601, -32602].includes(error?.code ?? 0) ? 'explicit-reject' : 'unknown-outcome', stale ? 'Target turn is no longer active' : 'Native request refused; query its outcome',unmaterialized?'unmaterialized':undefined));
   }
   private write(value: unknown): void {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');
@@ -101,10 +132,18 @@ export class CodexOwnerConnection implements CodexOwnerPort {
   }
   request(method: string, params: Record<string, unknown>,timeoutMs=30_000): Promise<unknown> {
     if (this.pending.size >= 256) return Promise.reject(new CodexBridgeError('explicit-reject', 'Native request capacity reached'));
+    const initial=method==='turn/start'&&typeof params.threadId==='string'?this.initialConfigurations.get(params.threadId):undefined;
+    if(method==='turn/start'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
+    const initialConfig=method==='thread/start'&&params.config&&typeof params.config==='object'?structuredClone(params.config) as Record<string,unknown>:undefined;
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new CodexBridgeError('unknown-outcome', 'Native request outcome unknown')); }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, method });
+      this.pending.set(id, { resolve:value=>{
+        if(method==='thread/unsubscribe'&&typeof params.threadId==='string')this.initialConfigurations.delete(params.threadId);
+        const nativeId=(value as any)?.thread?.id;
+        if(initialConfig&&typeof nativeId==='string')this.initialConfigurations.set(nativeId,initialConfig);
+        resolve(value);
+      }, reject, timer, method,threadId:params.threadId,includeTurns:params.includeTurns,initial });
       try { this.write({ id, method, params }); }
       catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }
     });
@@ -115,7 +154,7 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     if (this.failed) return;
     this.failed = true;
     for (const request of this.pending.values()) { clearTimeout(request.timer); request.reject(new CodexBridgeError('unknown-outcome', 'Native connection lost')); }
-    this.pending.clear(); this.socket?.terminate(); this.lost(fault ?? { method: 'unknown', reason: 'connection' });
+    this.pending.clear(); this.initialConfigurations.clear(); this.socket?.terminate(); this.lost(fault ?? { method: 'unknown', reason: 'connection' });
   }
   close(): void { this.fail(); }
 }

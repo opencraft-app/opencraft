@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile,writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -74,13 +74,15 @@ test('real gateway process restart leaves independent Host/bridge PID and Turn r
   await rpc(descriptor.url, '/command', command('create'));
   const created = await until(() => rpc(descriptor.url, '/command?id=create'), r => r.state === 'accepted');
   const bridgePid = created.response.result.pid;
-  await rpc(descriptor.url, '/command', command('start', 'turn/start'));
-  await delay(250);
+  await rpc(descriptor.url, '/command', command('start', 'turn/start',{hold:true}));
+  await until(()=>rpc(descriptor.url,'/command?id=start'),r=>r.state==='accepted');
   const env = { INBOX_DB: join(root, 'gateway.db'), HOST_URL: descriptor.url, TEST_TOKEN: token };
   gateway = child('gateway-process.ts', env); await once(gateway, 'message');
   let answer = once(gateway, 'message'); gateway.send('pull'); const [first] = await answer; assert(first.events.length > 0);
   gateway.kill('SIGKILL'); await once(gateway, 'exit');
-  await delay(1700);
+  assert(!first.events.some((e:any)=>e.payload.event?.kind==='turn.completed'));
+  await writeFile(join(root,'executions.release'),'release');
+  await until(()=>rpc(descriptor.url,'/events?cursor='+first.events.at(-1).seq),events=>events.some((e:any)=>e.payload.event?.kind==='turn.completed'));
   gateway = child('gateway-process.ts', env); await once(gateway, 'message');
   answer = once(gateway, 'message'); gateway.send('pull'); const [second] = await answer;
   assert(second.events.some((e: any) => e.payload.event?.kind === 'turn.completed'));
@@ -351,4 +353,46 @@ test('a Host CLI port does not block generations that do not declare CLI support
   await host.accept(command('create'));await accepted(host,'create');
   await host.accept(command('start','turn/start'));await accepted(host,'start');
   assert.equal((await readFile(join(root,'executions'),'utf8')).trim().split('\n').length,1);
+});
+
+
+for(const closeBeforeRefusal of [false,true])test(`a native start before refusal stays unknown even with terminal=${closeBeforeRefusal}`,async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-started-refusal-'));let revoked=0,rearmed=0;
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async issue(){return {environment:{OPENCRAFT_THREAD_CLI:'fixture'},async revoke(){revoked++;},async rejectBeforeStart(){rearmed++;return {environment:{},async revoke(){}};}};},
+  }});
+  t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});
+  await host.add(await config(root,'g1',process.pid,true));await host.activate('g1','');
+  await host.accept(command('create'));await accepted(host,'create');
+  await host.accept(command('contradiction','turn/start',{executionSource:'signed',refuseAfterStart:true,closeBeforeRefusal}));
+  await until(()=>host.query('contradiction'),r=>r?.state==='unknown');
+  assert.equal(rearmed,0);assert.equal(revoked,closeBeforeRefusal?1:0);
+  await until(async()=>revoked,n=>n===1);assert.equal(rearmed,0);
+  assert.equal((await readFile(join(root,'executions'),'utf8')).trim().split('\n').length,1);
+});
+
+test('a failed unbound CLI reservation rejects session creation before native dispatch',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-initial-refusal-'));
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async reserve(){throw Error('unavailable');},async issue(){throw Error('must not issue');},
+  }});
+  t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});
+  await host.add(await config(root,'g1',process.pid,true));await host.activate('g1','');
+  await host.accept(command('create'));
+  const receipt=await until(()=>host.query('create'),r=>r?.state==='rejected');
+  assert.equal((receipt!.response as any).error.message,'cliUnavailable');
+  assert.equal((await host.snapshot()).nativeSessions.length,0);
+});
+
+test('closing an empty native allocation revokes its unbound CLI namespace',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-empty-close-'));let revoked=0;
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async reserve(){return {environment:{OPENCRAFT_THREAD_CLI:'reserved'},async revoke(){revoked++;}};},
+    async issue(){throw Error('No Turn should be issued');},
+  }});
+  t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});
+  await host.add(await config(root,'g1',process.pid,true));await host.activate('g1','');
+  await host.accept(command('create'));await accepted(host,'create');assert.equal(revoked,0);
+  await host.accept(command('close','session/close'));await accepted(host,'close');
+  await until(async()=>revoked,n=>n===1);await assert.rejects(readFile(join(root,'executions')));
 });

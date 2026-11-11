@@ -121,6 +121,8 @@ Hermes 保留现有 AppServer 桥及下游链路，外围只做兼容验证；�
 
 Host 是发行与撤销 owner：创建 reservation → 原生 execution 与领域准入绑定 → 原子发布 descriptor → 才允许写。每个执行 scope 使用单独文件，不能在持久 agent 进程全局覆盖一个 env 给并发 Turn 共享；通过引擎工具执行上下文注入或隔离 launcher namespace，旧 scope 到期即失效。压缩后 `opencraft context` 重新发现，重连用同 binding，退出/Stop/授权撤销/账号切换注销；启动失败回收。签名验证/发行从 SessionCapabilityMcp 类提取为 transport-neutral 服务，旧 MCP transport 并存消费；仅编排相关的 thread_* 注入及 thread_cli 发现工具在替代验收后下线，其它平台 MCP transport 和工具保持原样；不能只改 env 但仍依赖 MCP 初始化发凭据。
 
+Codex 首轮在 native 创建前仅预留一个无 descriptor、无权限的执行 CLI namespace，并安装对应环境；Server 执行准入后 Host 才原子发布凭据、一次性绑定该 namespace。已知未 materialize 的首轮消费创建时设置，不通过 resume 捕获，不替换 native ID，也不退休原生会话；已有 rollout 继续走共享 resume/retirement。平台 MCP 使用未绑定的内存 reservation，准入后绑定，不能恢复编排 MCP 注入或增加网络主线程 SQLite 路径。实际证据和 history contract 选择见 [P7a 首轮记录](../../apps/agent-bridge-host/VALIDATION-P7a.md#first-turn-lifecycle-repair--2026-11-11)。
+
 命令仅覆盖这三项工作所需通信和 automation，全部有 --help、--json、分页和有界输出：
 
 - `opencraft context`；`thread list/show/output/spawn/tell/wait`。context 返回已授权执行与编排上下文；list 按现有 Broker parentage 发现线程，不扩建 project/environment/provider 目录。
@@ -158,7 +160,7 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收；2026-11-11 续验：未验，session/new 重试一次仍为 HTTP 500（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)） |
 | P5 | Cursor SDK 用户 steer 移植；依赖 P3；[实现与验收记录](../../apps/cursor-bridge/VALIDATION.md) | complete_delivered 只记 SDK 交付；revert 明确未插入、不自动 followup；缺 key 指引、取消清理、unknown 不重放；CLI/hook 结论与真实任务证据单列 |
 | P6 | AGY hook/IPC/轨迹读取；依赖 P3；[实现与验收](p6-agy.md) | AGY 1.5.5 Flash Low 经 Host 工具中 steer，hook→新原始 user 行（idx 3 ≥ floor 1 且 > baseline 2）；同文本 unknown、schema/插件缺失拒绝、SQLite Worker 已验证；无模型理解或生产隔离声明 |
-| P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a | 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过；2026-11-11 续验：未验，首轮 CLI 配置 thread/resume 被 no rollout found 拒绝，未运行通信链（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)） |
+| P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a；[首轮修复与验证](../../apps/agent-bridge-host/VALIDATION-P7a.md#first-turn-lifecycle-repair--2026-11-11) | 修复前 PR #233 曾因 no rollout found 未验；修复后 Codex 首轮真实 spawn/native tell/wait/output 已通过；确定性权限/撤销/旧路径回归通过。其它 provider、queue follow-up 及生产装配仍待验。原退出条件： 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
 | P7b | 项目 automation + CLI；依赖 P7a；[实现与验收记录](../../apps/agent-bridge-host/VALIDATION-P7b.md) | 确定性 timezone/DST、重启单次、失败暂停、unknown 与对账、旧 schedule 冲突拒绝已覆盖；真实 script 完成，once/cron 原生接纳后因 429 失败；跨 owner 导入未实现，完整退出条件待补；2026-11-11 续验：once/cron 各一次真实调度和模型输出通过；生产装配/CLI 注入仍未验（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)） |
 | P9 | Hermes 现有桥兼容回归；依赖 P2a | 旧桥契约录制/替身与现有客户端读取和发送回执一致；旧桥与下游不变。缺真实本机环境则如实登记，不声称真实产品验收 |
 | P8 | 切新默认和有条件移除旧 DSH owner/编排 MCP 注入；依赖 P2a/P2c/P2d、P3/P3b、P4–P7/P9 全验收 | 对本机 agent 配置逐条映射和冒烟，子线程/automation 真实闭环；旧活动代排空且可读历史；Hermes 和其它平台 MCP 保留；下线清单用户确认 |

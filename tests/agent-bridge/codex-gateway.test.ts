@@ -21,7 +21,9 @@ async function until<T>(read: () => T | Promise<T>, predicate: (v: T) => boolean
   throw Error('Expected condition not observed');
 }
 
-for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durable Host: CLI ${cli}, opt-in, steer, reattach and ID continuity`, async t => {
+for(const cli of [false,true,'timeout','initial','contradiction','closed-contradiction'])test(`bundled Codex bridge through durable Host: CLI ${cli}, opt-in, steer, reattach and ID continuity`, async t => {
+  const initial=cli==='initial'||String(cli).includes('contradiction');
+  let serverStarted=0,serverReset=0;
   const root = await mkdtemp(join(tmpdir(), 'codex-p2a-'));
   const native = createServer(), control = createServer((req, res) => {
     assert.equal(req.headers.authorization, `Bearer ${token}`);
@@ -30,6 +32,7 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
   const ws = new WebSocketServer({ server: native });
   let nativePeer: WebSocket | undefined, starts = 0, steers = 0;
   let approvalAnswer: unknown, approvalAnswers = 0;
+  let hasRollout=!initial,initialConfig:any;
   let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
   ws.on('connection', socket => {
     nativePeer = socket;
@@ -39,12 +42,17 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
       const reply = (result: unknown) => socket.send(JSON.stringify({ id: f.id, result }));
       const event = (method: string, params: unknown) => socket.send(JSON.stringify({ method, params }));
       if (f.method === 'initialize') reply({ userAgent: 'codex/0.167.0' });
-      if (f.method === 'thread/start') reply({ thread: { id: 'native-new', cwd: root, turns: [] } });
+      if (f.method === 'thread/start') {initialConfig=f.params.config;reply({sandbox:{type:'readOnly'},approvalPolicy:'never',approvalsReviewer:'user',thread: { id: 'native-new', cwd: root, turns: [] }});}
+      if(f.method==='turn/start'&&f.params.clientUserMessageId==='initial-invalid'){socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'invalid input'}}));return;}
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
       if (f.method === 'turn/start') {
         assert.equal(f.params.opencraftExecutionAdmission,undefined);assert.equal(f.params.executionSource,undefined);assert.equal(f.params.opencraftSessionMcp,undefined);
-        nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: 'native-turn' } });
+        hasRollout=true;nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: 'native-turn' } });
         event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress' } });
+        if(String(cli).includes('contradiction')){
+          if(cli==='closed-contradiction'){nativeActive=false;event('turn/completed',{threadId:'native-new',turn:{id:'native-turn',status:'completed'}});}
+          socket.send(JSON.stringify({id:f.id,error:{code:-32602,message:'refused after start'}}));return;
+        }
         reply({ turn: { id: 'native-turn', status: 'inProgress', items: [] } });
       }
       if (f.method === 'turn/steer') {
@@ -52,9 +60,11 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
         event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'userMessage', id: 'steer-item', clientId: f.params.clientUserMessageId, content: f.params.input } });
         reply({ turnId: 'native-turn' });
       }
+      if (f.method === 'thread/read'&&f.params.includeTurns&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'thread native-new is not materialized yet; includeTurns is unavailable before first user message'}}));return;}
       if (f.method === 'thread/read') reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
       if(f.method==='thread/unsubscribe'){if(!blockRetirement)loaded=false;reply({});}
       if(f.method==='thread/settings/update')reply({});
+      if(f.method==='thread/resume'&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'no rollout found'}}));return;}
       if (f.method === 'thread/resume') {loaded=true;if(f.params.config)nativeConfigurations.push(f.params);reply({sandbox:{type:'readOnly'},approvalPolicy:'never',thread: { id: 'native-new', turns: [] }});}
     });
   });
@@ -64,7 +74,7 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
   await writeFile(config, JSON.stringify({ endpoint: join(root, 'control.sock'), token }), { mode: 0o600 });
   const artifact = join(root, 'codex.cjs');
   await build({ entryPoints: [resolve('apps/agent-bridge-host/src/codex-main.ts')], outfile: artifact, bundle: true, platform: 'node', format: 'cjs' });
-  const host = await BridgeHost.open({ path: join(root, 'host.db'), policy: { id: 'p2a-test', capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } }, backend: localTestBackend(),...(cli==='timeout'?{requestTimeoutMs:1000}:{}),...(cli?{executionCli:{async issue(source:any){assert.ok(source.credential.startsWith('signed:'));issued++;return {environment:{OPENCRAFT_THREAD_CLI:'fixture',PATH:'fixture'},async revoke(){revoked++;}};}}}:{}) });
+  const host = await BridgeHost.open({ path: join(root, 'host.db'), policy: { id: 'p2a-test', capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } }, backend: localTestBackend(),...(cli==='timeout'?{requestTimeoutMs:1000}:{}),...(cli?{executionCli:{...(initial?{async reserve(){return {environment:{OPENCRAFT_THREAD_CLI:'fixture',PATH:'fixture'},async revoke(){}};}}:{}),async issue(source:any){assert.ok(source.credential.startsWith('signed:'));issued++;return {environment:{OPENCRAFT_THREAD_CLI:'fixture',PATH:'fixture'},...(initial?{async rejectBeforeStart(){return {environment:{OPENCRAFT_THREAD_CLI:'fixture',PATH:'fixture'},async revoke(){}};}}:{}),async revoke(){revoked++;}};}}}:{}) });
   const attachment = await attachGateway(host, token);
   let transport: any;
   const currentGateway=()=> (cli?transport.inner:transport).gateway;
@@ -85,7 +95,7 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
     const options={url:attachment.url,token,serverId:'server',inboxPath:join(root,'gateway.db')};
     const next=cli?createServerCodexBridge(legacy,options,{
       async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
-      sign:scope=>'signed:'+scope.execution!.inputId,sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{},
+      sign:scope=>'signed:'+scope.execution!.inputId,...(initial?{async prepareSessionMcp(){return {configuration:{url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}};}}:{}),sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{serverStarted++;},rejectedBeforeStart:()=>{serverReset++;},
     }):new CodexProviderBridge(legacy,options);
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
@@ -100,6 +110,18 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
   await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
   const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' } });
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  if(String(cli).includes('contradiction')){
+    const id=++sequence;
+    await transport.send(JSON.stringify({id,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'contradictory-input',input:[{type:'text',text:'one attempt'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
+    const response=await until(()=>frames.find(f=>f.id===id),Boolean);
+    assert.equal(response.error.data.submissionOutcome,'unknown');
+    assert.equal(response.error.data.bridgeErrorKind,'unknown-outcome');
+    assert.equal((await host.query(response.error.data.bridgeCommandId))?.state,'unknown');
+    assert.equal(serverStarted,1);assert.equal(serverReset,0);assert.equal(starts,1);
+    assert.ok(frames.findIndex(f=>f.method==='turn/started')<frames.findIndex(f=>f.id===id));
+    if(cli==='closed-contradiction')assert.equal(revoked,1);else assert.equal(revoked,0);
+    return;
+  }
   if(cli==='timeout') {
     const failedId=++sequence;
     await transport.send(JSON.stringify({id:failedId,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'prepare-timeout',input:[{type:'text',text:'not sent'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
@@ -109,8 +131,15 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
     assert.equal(starts,0);assert.equal(revoked,1);
     blockRetirement=false;loaded=false;
   }
+  if(cli==='initial') {
+    const invalid=++sequence;
+    await transport.send(JSON.stringify({id:invalid,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'initial-invalid',input:[{type:'text',text:'invalid'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
+    const refusal=await until(()=>frames.find(f=>f.id===invalid),Boolean);
+    assert.equal(refusal.error.data.submissionOutcome,'rejected');assert.equal(starts,0);
+  }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' }] });
-  if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
+  if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
+  else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
   nativePeer!.send(JSON.stringify({ id: 'native-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool', command: 'cat input.txt' } }));
   const approval = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval'), Boolean);
@@ -145,6 +174,7 @@ for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durab
   assert.deepEqual(approvalAnswer, { decision: approvalDecision });
   await assert.rejects(answerApproval(), /Interaction subscription required/);
   assert.equal(approvalAnswers, 1);
+  await until(() => currentGateway().interactions.size, size => size === 0);
   assert.equal(currentGateway().interactions.size, 0, 'accepted settlement releases cached request body');
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });

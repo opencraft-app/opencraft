@@ -49,7 +49,7 @@ async function fixture(t:any) {
   const leases:{revoke():Promise<void>}[]=[];
   t.after(async()=>{await Promise.all(leases.map(lease=>lease.revoke()));await gateway.close();await host.close();await mcp.close();await broker.close();await runtimeStorage.close();await service.close();actors.close();await rm(root,{recursive:true,force:true});});
   const child=(threadId:string,ownerActorId=owner.actorId,driverKind='pi'):ThreadRelation=>({threadId,ownerActorId,driverKind,serverId:'server',parentThreadId:'parent',lifecycleOwnerThreadId:'parent',forkedFromId:null,visibility:'hidden',engineHostGeneration:null,nativeSessionId:threadId,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:1,hasDirectUserInput:false,userInputExcerpt:null});
-  return {root,actors,owner,other,created,session,capabilities,child,key,execution,revokeResources(){resourceAllowed=false;},get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
+  return {root,actors,owner,other,created,session,capabilities,child,key,execution,port,revokeResources(){resourceAllowed=false;},get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
     async open(scope:CapabilitySession=session){
       const issued=await port.issue({serverId:scope.serverId,threadId:scope.threadId,credential:executionCliSourceToken(key,scope)});
       leases.push(issued);
@@ -242,4 +242,37 @@ test('Host issuance rechecks resource grants for an otherwise current Actor',asy
   await assert.rejects(f.open());
   await assert.rejects(f.run(opened.launcher,'context'));
   assert.equal(f.created.size,0);
+});
+
+
+test('initial CLI namespace has no authority until signed admission and binds only one execution',async t=>{
+  const f=await fixture(t);
+  const reservation=await f.port.reserve({serverId:'server',threadId:'parent'});
+  t.after(()=>reservation.revoke());
+  const launcher=reservation.environment.OPENCRAFT_THREAD_CLI;
+  await assert.rejects(exec(launcher,['context']));
+  await assert.rejects(readFile(join(launcher,'../connection.json'),'utf8'),{code:'ENOENT'});
+  await assert.rejects(f.port.issue({serverId:'server',threadId:'parent',credential:'forged'}));
+  await assert.rejects(readFile(join(launcher,'../connection.json'),'utf8'),{code:'ENOENT'});
+  const issued=await f.open();assert.equal(issued.launcher,launcher);
+  assert.equal(issued.context.reference,ref('parent'));
+  f.revokeResources();await assert.rejects(exec(launcher,['context']));
+  await issued.revoke();await assert.rejects(exec(launcher,['context']));
+});
+
+test('a confirmed pre-start refusal can rearm the initial namespace without retaining old credentials',async t=>{
+  const f=await fixture(t),threadId='unstarted';
+  f.service.authorizeExecution(f.owner,threadId,'first');
+  const reservation=await f.port.reserve({serverId:'server',threadId});t.after(()=>reservation.revoke());
+  const first=await f.port.issue({serverId:'server',threadId,credential:executionCliSourceToken(f.key,{serverId:'server',threadId,execution:{inputId:'first',executionId:'first'}})});
+  const old=JSON.parse(await readFile(first.connectionFile,'utf8'));
+  assert.ok(first.rejectBeforeStart);const rearmed=await first.rejectBeforeStart();t.after(()=>rearmed.revoke());
+  await assert.rejects(f.port.forward(old.token,{command:'context'}));
+  await assert.rejects(readFile(first.connectionFile,'utf8'),{code:'ENOENT'});
+  f.service.authorizeExecution(f.owner,threadId,'second');
+  const second=await f.port.issue({serverId:'server',threadId,credential:executionCliSourceToken(f.key,{serverId:'server',threadId,execution:{inputId:'second',executionId:'second'}})});t.after(()=>second.revoke());
+  assert.equal(second.launcher,first.launcher);
+  f.service.executionStarted(threadId,'second','second-turn');
+  assert.equal(JSON.parse((await exec(second.launcher,['context'])).stdout).reference,ref(threadId));
+  assert.notEqual(JSON.parse(await readFile(second.connectionFile,'utf8')).token,old.token);
 });
