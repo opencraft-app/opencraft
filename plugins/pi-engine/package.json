@@ -9,11 +9,11 @@
     "./projection": "./src/projection.ts"
   },
   "dependencies": {
-    "@earendil-works/chord": "1.3.0",
-    "@earendil-works/pi-ai": "1.3.0",
-    "@earendil-works/pi-coding-agent": "1.3.0",
-    "@earendil-works/pi-durable": "1.3.0",
-    "@earendil-works/pi-tui": "1.3.0",
+    "@earendil-works/chord": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-coding-agent": "1.5.0",
+    "@earendil-works/pi-durable": "1.5.0",
+    "@earendil-works/pi-tui": "1.5.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/host-recovery": "0.1.0",
