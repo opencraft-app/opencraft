@@ -37,7 +37,10 @@ export class CliSshTransport implements DuplexTransport {
       '-o', 'ClearAllForwardings=yes', '-o', 'ConnectTimeout=10', '--', this.alias, 'codex app-server proxy'],
       { stdio: ['pipe', 'pipe', 'pipe'] });
     child.stderr.on('data', (chunk: Buffer) => { if (this.stderr.length < 16384) this.stderr += chunk.toString('utf8').slice(0,16384-this.stderr.length); });
-    const stream = this.stream = Duplex.from({ readable: child.stdout, writable: child.stdin });
+    // Node accepts a { readable, writable } pair of Node streams; @types/node 26 only
+    // declares the Web-stream form of this overload. Runtime behaviour is unchanged.
+    const pair = { readable: child.stdout, writable: child.stdin } as unknown as Parameters<typeof Duplex.from>[0];
+    const stream = this.stream = Duplex.from(pair);
     stream.on('error', () => {});
     child.on('error', () => this.failed());
     child.once('exit', () => this.failed());

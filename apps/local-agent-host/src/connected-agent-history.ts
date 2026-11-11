@@ -21,7 +21,7 @@ export class ConnectedAgentHistory {
       this.worker = new Worker(new URL("./connected-agent-history-worker.mjs", import.meta.url), {
         execArgv: [], workerData: { provider: this.provider, home: this.home },
       });
-      this.worker.on("error", error => this.fail(error));
+      this.worker.on("error", error => this.fail(error instanceof Error ? error : new Error(String(error))));
       this.worker.on("exit", () => { if (!this.closed) this.fail(new Error("Native history reader exited")); });
       this.worker.on("message", packet => {
         const request = this.pending.get(packet.id); if (!request) return;

@@ -16,7 +16,8 @@ async function fixture(t:any, execution?:Partial<AutomationExecution>) {
   const root=await mkdtemp(join(tmpdir(),'oc-project-automation-'));
   const owner=await openServerDatabase(root),actors=new ActorStore(owner);
   let now=instant;
-  const context=actors.resolveHuman({provider:'local',subject:'automation-owner',displayName:'Owner',expiresAt:instant+86_400_000})!;
+  // ActorStore checks expiry against the wall clock; keep the fixture valid after the fake instant.
+  const context=actors.resolveHuman({provider:'local',subject:'automation-owner',displayName:'Owner',expiresAt:Math.max(Date.now(),instant)+86_400_000})!;
   let worker=new OrchestrationRuntimeWorker(join(root,'opencraft-server.sqlite'));await worker.start();
   let calls=0;
   const port:AutomationExecution={async validate(){return 'permission-snapshot';},async dispatch(){calls++;return {state:'completed'};},async inspect(){return {state:'running'};},...execution};
