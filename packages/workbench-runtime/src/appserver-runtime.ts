@@ -1,3 +1,4 @@
+import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
 import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
@@ -1355,9 +1356,23 @@ export function createAppServerWorkbenchRuntime(
         binding.queueRefreshOperation = operation;
         return operation;
       };
-      binding.refreshQueue = refreshQueue;
+      const refreshEvidence = async () => {
+        const capability = parseSteerEvidenceCapability(currentClient.initializeResult?.capabilities?.extensions?.[OPENCRAFT_STEER_EVIDENCE_EXTENSION]);
+        if (!capability?.query) return;
+        const generation = currentClient.connectionGeneration;
+        const data = parseSteerStatusResult(await currentClient.request('opencraft/steer/status', { threadId }, { priority: 'background' }));
+        if (data && !binding.disposed && currentClient === client && generation === currentClient.connectionGeneration) conversation!.updateSteerEvidence(data.inputs);
+      };
+      binding.refreshQueue = async () => { await Promise.allSettled([refreshQueue(), refreshEvidence()]); };
       binding.removeQueueListener = currentClient.subscribeNotification(
         (notification) => {
+          if (notification.method === OPENCRAFT_STEER_EVIDENCE_NOTIFICATION) {
+            const params = notification.params;
+            if (params === null || typeof params !== 'object' || !('threadId' in params) || params.threadId !== threadId) return;
+            const data = parseSteerStatusResult(notification.params);
+            if (data && !binding.disposed) conversation!.updateSteerEvidence(data.inputs);
+            return;
+          }
           if (
             notification.method !== "thread/queue/changed" ||
             (notification.params as ThreadQueueChangedNotification).threadId !==
@@ -1372,7 +1387,7 @@ export function createAppServerWorkbenchRuntime(
       // Queue hydration is deliberately not on the visible Thread critical
       // path. The Composer paints from its optimistic projection and is
       // reconciled when this background read completes.
-      if (!ephemeralThreadIds.has(threadId)) void refreshQueue().catch(() => undefined);
+      if (!ephemeralThreadIds.has(threadId)) void binding.refreshQueue().catch(() => undefined);
       return binding;
     } catch (cause) {
       navigation?.dispose();
@@ -1598,7 +1613,7 @@ export function createAppServerWorkbenchRuntime(
     if (currentClient.initializeResult === null) recovery.connectionStage(currentTransport?.status.state === "open" ? "initializing" : "connecting");
     const initialize = config.initialize ?? defaultInitialize;
     await currentClient.connect({ ...initialize, capabilities: { ...initialize.capabilities,
-      extensions: { ...initialize.capabilities?.extensions, [SHARED_INTERACTIONS_EXTENSION]: { version: 1 } },
+      extensions: { ...initialize.capabilities?.extensions, [SHARED_INTERACTIONS_EXTENSION]: { version: 1 }, [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: { version: 1 } },
     } }, attempt?.signal, attempt?.assertCurrent);
     ensureLifecycle(generation);
     attempt?.assertCurrent();

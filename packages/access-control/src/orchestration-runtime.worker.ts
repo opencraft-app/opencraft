@@ -25,6 +25,9 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
         const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
         switch(method){
           case 'observe':ledger.observeSnapshot(payload.snapshot);break;
+          case 'admission':result=db.prepare(`SELECT a.* FROM conversation_authorities a WHERE a.thread_id=? AND a.input_id=?
+            UNION ALL SELECT a.* FROM conversation_authorities a JOIN opencraft_input_authorities i ON i.authority_id=a.id
+            WHERE i.thread_id=? AND i.input_id=? LIMIT 1`).get(payload.threadId,payload.inputId,payload.threadId,payload.inputId)??null;break;
           case 'updateExecution':updateExecutionRequest(db,payload);break;
           case 'targets':result=[...new Set([...ledger.observedRuntimeThreads(payload.includeTerminal),
             ...ledger.threads().filter(thread=>payload.includeTerminal||!['idle','error'].includes(thread.runtimeStatus)).map(thread=>thread.threadId),

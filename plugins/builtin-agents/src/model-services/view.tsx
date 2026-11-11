@@ -297,6 +297,10 @@ export function createModelServicesView(controller: ModelServicesController) {
     const providerRow = (provider: RuntimeProviderView) => <ProviderRow key={provider.provider} provider={provider} controller={controller} />;
     return <div className="model-services">
       <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model services" })} />
+      <div className="model-services__agent-entry">
+        <p><FormattedMessage id="onboard.agent.reopen" defaultMessage="Set up Codex, Cursor, Claude, or CodeBuddy on this computer." /></p>
+        <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet" } }))}><FormattedMessage id="onboard.agent.reopenAction" defaultMessage="Open agent setup" /></SettingsButton>
+      </div>
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />
           <CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} allowImage={!!snapshot.providers?.creation?.image} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} />

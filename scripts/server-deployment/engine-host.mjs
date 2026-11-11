@@ -20,7 +20,6 @@ import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
-import { THREAD_ORCHESTRATION_TOOLS } from '../../packages/appserver-protocol/src/collaboration.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 
@@ -70,7 +69,7 @@ export async function startIndependentEngineHost(options) {
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
     });
-    pi.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS,
+    pi.setOrchestration({ tools: [],
       call: (threadId, turnId, callId, name, args, signal, inputId) => capabilities.orchestration(threadId, {
         turnId, callId, name, arguments: args, incarnation: pi.orchestrationIncarnation, ...(inputId ? { inputId } : {}),
       }, signal),

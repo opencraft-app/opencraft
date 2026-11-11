@@ -3,10 +3,12 @@ import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { useConversationReferences } from "./conversation-references";
 import { ComposerModelPicker } from "./composer-model-picker";
-import { ModelCatalogStatus } from "./model-catalog-status";
+import { ComposerModelMenu } from "./composer-model-menu";
+import { modelChoiceFamilies } from "./model-choice-families";
+import { modelEffortLabel } from "./model-choice-labels";
 import { ModelIcon as BrainCircuit, CheckIcon as Check, ChevronDownIcon as ChevronDown, AttachmentIcon as Paperclip, AddIcon as Plus, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import { LoadingRingIcon, ResetIcon, LightningIcon, PermissionDocumentIcon, PermissionShieldIcon, StopCircleIcon } from "@opencraft/design-system-web/action-icons";
-import { SessionModelPicker, groupComposerModels } from "./session-model-picker";
+import { SessionModelPicker } from "./session-model-picker";
 import { useInputAuxiliaryMenuFocus } from "./use-input-auxiliary-menu-focus";
 import { recoveryPlaceholderShimmerMotion } from "@opencraft/design-system/tokens";
 import { ComposerRecoveryScan } from "./recovery-scan";
@@ -209,17 +211,6 @@ function modelIdentifierLabel(value: string): string {
 
 function compactModelLabel(label: string): string {
   return label.replace(/^GPT[-\s]+/iu, "").replace(/-(?=[\p{L}])/gu, " ");
-}
-
-function displayReasoningEffort(effort: ComposerReasoningEffortOption): string {
-  switch (effort.value.toLowerCase()) {
-    case "low":
-      return "Light";
-    case "xhigh":
-      return "Extra High";
-    default:
-      return effort.label;
-  }
 }
 
 interface SelectionMenuItemContentProps {
@@ -2103,15 +2094,17 @@ export const OpenCraftComposer = forwardRef<
     setOpenPicker(null);
   };
 
+  const displayFamily = modelSelectionPolicy === "user" && displayModel ? modelChoiceFamilies([displayModel])[0] : undefined;
+  const encodedEffort = displayFamily?.variants[0]?.effort;
   const modelLabel =
-    displayModel?.label ??
+    displayFamily?.label ?? displayModel?.label ??
     (selectedModelValue === null
       ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
       : modelIdentifierLabel(selectedModelValue));
   const compactSelectedModelLabel = compactModelLabel(modelLabel);
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
-  const visibleEffortValue = modelDisplayOnly ? effectiveSelections?.effort ?? null
-    : existingConversation ? displayEffortValue : selectedEffortValue;
+  const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
+    : existingConversation ? displayEffortValue : selectedEffortValue);
   const selectedEffort = displayModel?.efforts.find(effort => effort.value === visibleEffortValue)
     ?? (visibleEffortValue == null ? null : { value: visibleEffortValue, label: formatSelectionLabel(visibleEffortValue), description: null });
   const effortLabel =
@@ -2122,7 +2115,7 @@ export const OpenCraftComposer = forwardRef<
             defaultMessage: "Reasoning",
           })
         : formatSelectionLabel(visibleEffortValue)
-      : displayReasoningEffort(selectedEffort);
+      : modelEffortLabel(intl, selectedEffort.value, selectedEffort.label);
   const reasoningLabel = intl.formatMessage({
     id: "chat.reasoning",
     defaultMessage: "Reasoning",
@@ -2563,67 +2556,20 @@ export const OpenCraftComposer = forwardRef<
                 onOpenChange={changePicker("intelligence")} onSelect={selectModel} portalContainer={portalContainer}
                 focus={intelligenceFocus} /> : null}
               {!modelDisplayOnly && modelSelectionPolicy === "user" ? <ComposerModelPicker
-                policyRestricted={selectionCatalog?.policyRestricted || catalogModels.some(m=>m.policyRestricted)}
-                hasSelectedModel={selectedModel !== null}
-                label={compactSelectedModelLabel} modelLabel={modelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
+                policyRestricted={selectionCatalog?.policyRestricted}
+                label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
-                portalContainer={portalContainer} focus={intelligenceFocus}
-                efforts={selectedModel?.efforts.map(effort => ({ value: effort.value, label: displayReasoningEffort(effort) })) ?? []}
-                serviceTiers={selectedModel?.serviceTiers ?? []} serviceTier={selectedServiceTier} displayFast={displayFast}
-                onServiceTierChange={selectServiceTier}
-                effort={existingConversation ? displayEffortValue ?? null : selectedEffortValue} defaultEffort={selectedModel?.defaultEffort ?? null} onEffortChange={value => {
-                  const effort = selectedModel?.efforts.find(candidate => candidate.value === value);
-                  if (effort) selectEffort(effort);
-                }}>
-                      <div className="opencraft-composer-intelligence-view">
-                        <div className="opencraft-composer-intelligence-models">
-                          <DropdownMenu.Label className="opencraft-composer-selection-menu__heading">
-                            <FormattedMessage id="chat.model" defaultMessage="Model" />
-                          </DropdownMenu.Label>
-                          {(selectionCatalog?.agentGroups?.length ? selectionCatalog.agentGroups : [{ id: "active", label: "", active: true, models: catalogModels, select: selectModel }]).map(group => (
-                            <DropdownMenu.Group key={group.id}>
-                              {group.label ? <DropdownMenu.Label className="opencraft-composer-selection-menu__heading">{group.label}</DropdownMenu.Label> : null}
-                              {groupComposerModels(group.models, true).map(modelGroup => <Fragment key={modelGroup.key}>
-                                {modelGroup.label ? <DropdownMenu.Label className="opencraft-composer-model-group__label">{modelGroup.label}</DropdownMenu.Label> : null}
-                                {modelGroup.models.map(model => (
-                                <DropdownMenu.Item key={model.id} className="opencraft-composer-selection-menu__item"
-                                  data-selected={group.active && (model.value === selectedModelValue || model.id === selectedModelValue) ? "true" : undefined}
-                                  onSelect={event => { event.preventDefault(); if (group.active) { if (selectionCatalog?.agentGroups) void selectAgentModel(group, model); selectModel(model); } else void selectAgentModel(group, model); }}>
-                                  <SelectionMenuItemContent description={null} label={model.label}
-                                    selected={group.active && (model.value === selectedModelValue || model.id === selectedModelValue)} />
-                                </DropdownMenu.Item>
-                                ))}
-                              </Fragment>)}
-                              {switchingAgentId === group.id ? <div className="opencraft-composer-selection-menu__status"><FormattedMessage id="workIn.switchingAgent" defaultMessage="Switching Agent…" /></div> : null}
-                              {agentSelectionError?.id === group.id ? <div className="opencraft-composer-selection-menu__status is-error" role="alert">{agentSelectionError.message}</div> : null}
-                              {selectionCatalog?.agentGroups?.length && (group.loading || group.error || group.models.length === 0) ? <ModelCatalogStatus
-                                error={!!group.error} loading={group.loading} retry={group.retry} /> : null}
-                            </DropdownMenu.Group>
-                          ))}
-                          {!selectionCatalog?.agentGroups?.length && selectionCatalog?.isFetching &&
-                          catalogModels.length === 0 ? (
-                            <ModelCatalogStatus loading retry={selectionCatalog.retryModels} />
-                          ) : null}
-                          {!selectionCatalog?.agentGroups?.length && selectionCatalog?.modelError && !selectionCatalog.isFetching ? (
-                            <ModelCatalogStatus error retry={selectionCatalog.retryModels} />
-                          ) : null}
-                          {!selectionCatalog?.agentGroups?.length && !selectionCatalog?.isFetching && !selectionCatalog?.modelError && catalogModels.length === 0 ? <ModelCatalogStatus /> : null}
-                          {manageModels ? <>
-                            <DropdownMenu.Separator className="opencraft-composer-selection-menu__separator" />
-                            <DropdownMenu.Item className="opencraft-composer-selection-menu__item" onSelect={manageModels}>
-                              <Plus size={16} aria-hidden="true" />
-                              {catalogModels.length === 0 ? <FormattedMessage id="composer.model.add" defaultMessage="Add a model…" /> : <FormattedMessage id="workIn.manageModels" defaultMessage="Manage models…" />}
-                            </DropdownMenu.Item>
-                          </> : null}
-                          {!selectionCatalog?.isFetching &&
-                          selectedModelValue !== null &&
-                          selectedModel === null ? (
-                            <div className="opencraft-composer-selection-menu__status is-error">
-                              <FormattedMessage id="composer.model.unavailable" defaultMessage="The selected model is unavailable. Choose another model." />
-                            </div>
-                          ) : null}
-                        </div>
-                      </div>
+                portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
+                <ComposerModelMenu catalog={selectionCatalog} selected={selectedModelValue}
+                  switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
+                  onSelect={(model, group) => {
+                    if (group) { void selectAgentModel(group, model); if (group.active) selectModel(model); }
+                    else selectModel(model);
+                  }}
+                  effort={existingConversation ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
+                    const effort = selectedModel?.efforts.find(candidate => candidate.value === value);
+                    if (effort) selectEffort(effort);
+                  }} serviceTier={selectedServiceTier} onServiceTierChange={selectServiceTier} />
               </ComposerModelPicker> : null}
 
               {showPermissionPicker ? <DropdownMenu.Root

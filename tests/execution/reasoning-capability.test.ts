@@ -61,3 +61,18 @@ for (const scenario of ['catalog timeout', 'stalled catalog', 'unsupported Fast'
   }
  });
 }
+
+test('explicit standard speed survives the command port with absent, empty or supported tier catalogs', async () => {
+ for (const tiers of [undefined, [], ['fast']]) {
+  const writes: any[] = [];
+  const port = createAppServerConversationCommandPort({ hostId: 'local',
+   client: { hostId: 'local', request: async (method, params) => { writes.push({ method, params }); return { turn: { id: 'turn' } } as any; } },
+   interactions: { respond: async () => {} }, resolveCompilerOptions: async () => ({ serviceTiers: tiers }),
+  });
+  const submission = intent();
+  await port.submit({ ...submission, selections: { ...submission.selections, serviceTier: null } });
+  assert.equal(writes.length, 1); assert.equal(writes[0].method, 'turn/start');
+  assert.equal(Object.hasOwn(writes[0].params, 'serviceTier'), true, 'clearing Fast must reach the Host');
+  assert.equal(writes[0].params.serviceTier, null);
+ }
+});

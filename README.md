@@ -1,193 +1,116 @@
+<div align="center">
+
+<img src="apps/workbench-web/public/opencraft-icon.svg" width="80" height="80" alt="OpenCraft 标志" />
+
 # OpenCraft
 
-Contribute through [CONTRIBUTING](CONTRIBUTING.md). To build a client extension, start with the [current boundary guide](docs/extension-development.md) and [runnable example](examples/extensions/README.md).
+### Everyone Agent Everywhere
 
-OpenCraft core is developed in this GitHub upstream. Product providers and
-branding are composed downstream; see [transition status](docs/upstream-transition.md).
-Original contributions use Apache-2.0; existing third-party notices and source
-records are retained. npm publication is deferred.
+**每个人的 Agent，连接每一个地方。**
 
-OpenCraft is a maintainable TypeScript agent workbench. It has two renderer hosts over one
-semantic application model and an explicit supervisor for lifecycle-scoped
-runtimes: Vite/React DOM for desktop Web and Electron, and Expo Router for iOS,
-Android, and Expo Web.
+接入运行在不同地方的 Agent，让你选择的人也能使用它们。
 
-Branding, installed application identity, storage, and protocol namespaces are
-separate concerns. See [product identity](docs/architecture/product-identity.md)
-for the OpenCraft naming policy and the identifiers intentionally kept stable.
+[简体中文](README.md) · [English](README.en.md)
 
-## Run
+[![构建](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![安全检查](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![许可证：Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
-Use Node **26.7.0** (`nvm install && nvm use`) and npm 11. Public npm access is
-required; desktop packaging also downloads Electron and builder tools from
-their upstream release servers. No private package registry or reference
-source tree is required. Do not copy `node_modules` from another computer.
+[![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![自主部署](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![协作](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
+
+[快速开始](#快速开始) · [可以用来做什么](#可以用来做什么) · [文档导航](#文档导航) · [参与贡献](CONTRIBUTING.md)
+
+</div>
+
+## 我们的理念
+
+OpenCraft 是一个开源 Agent 工作台，围绕 **Everyone Agent Everywhere** 构建。
+你的 Agent 可以运行在自己的电脑、远程开发机，或自主部署的服务器上。
+我们希望让这些 Agent 在一个共同的工作台中发挥作用，也让你能把它们开放给别人使用。
+
+- **Everyone · 每个人**：每个人都应该能够拥有、使用和分享 Agent。
+- **Agent · 你的智能伙伴**：接入已经在用的 Agent，配置自己的模型服务，或为自定义运行时开发适配。
+- **Everywhere · 无处不在**：连接不同机器上的 Agent，通过浏览器、桌面或手机使用同一个工作台。
+
+### 接入你的 Agent，把它的能力分享出去
+
+1. **接入**：让 Agent 继续在原来的地方运行，由执行 Host 保管环境与凭据。
+2. **授权**：选择可以协作的人或 Agent，明确开放哪些访问权限。
+3. **协作**：通过对话和执行请求开展工作，保留清晰的归属与权限边界。
+
+我们的愿景是：你接入的 Agent，都可以成为能分享给他人使用的能力。
+它可以是你的个人编程助手、团队的专项 Agent，也可以是你运营的一项服务。
+分享的是使用能力，接收者无需取得 Agent 的底层凭据。
+
+## 可以用来做什么
+
+| 能力 | OpenCraft 中的体验 |
+| --- | --- |
+| **接入已有 Agent** | 连接已安装的 Codex、Cursor，检查登录状态、发现原生模型，选择实际支持的推理档位与 Fast 设置；其他运行时通过对应适配器接入。 |
+| **使用自己的模型服务** | 在模型设置中配置 API 端点与凭据，由执行 Host 持有凭据。 |
+| **跨机器工作** | 连接本地与远程执行 Host，按所选 Host 管理工作目录、会话及保存的状态。 |
+| **保持对话连续** | 恢复已支持的原生历史、保留草稿、查看工具活动与已上报的 Token 用量，在一个工作台里发送任务或停止执行。 |
+| **构建协作流程** | 使用经过认证的主体消息、接收／已读回执与显式授权；当前单 Hub 执行桥接支持绑定的本地 Codex 会话。 |
+| **扩展工作台** | 通过现有扩展边界接入客户端插件、MCP 工具与 Host 侧能力。 |
+| **选择使用方式** | 使用浏览器或 Electron 桌面端；公开 Expo 应用在手机端打包复用同一套 Web 工作台。 |
+
+**当前范围。** 每种适配器只提供实际接通的能力。首期主体协作闭环位于单个 Hub；
+跨 Hub 分享 Agent、任意 Agent 的通用即插即用接入，是我们推进的方向。
+已实现能力及具体范围见[主体协作接口](docs/actor-collaboration-api.md)、
+[主体与 Hub 设计](docs/architecture/actor-collaboration.md)和[执行契约](docs/execution-ownership.md)。
+
+## 快速开始
+
+使用 **Node.js 26.7.0** 和 **npm 11**，仓库通过 [`.nvmrc`](.nvmrc) 固定 Node 版本。
 
 ```bash
 git clone https://github.com/opencraft-app/opencraft.git
 cd opencraft
+nvm install && nvm use
 npm ci
 npm run dev
 ```
 
-Private product assembly belongs to downstream workspaces. Trusted local build
-entries can compose the same complete client without making public installation
-depend on a private account provider. See [plugin architecture](docs/plugin-architecture.md).
+打开终端打印的网址，连接已安装的 **Codex** 或 **Cursor**，
+也可以在设置中配置自己的模型服务。本地开发无需 OpenCraft 账号。
 
-`npm run dev` (also `npm run dev:local`) prepares the pinned DSH engine and
-starts local execution and Web together on a loopback address. Open the printed
-URL, choose **Configure models**, save your provider credentials/endpoint, then
-return to Chat. No OpenCraft account is required. Model credentials remain with
-the execution Host; they are never build inputs. Local development data persists
-in `~/.opencraft/dev-local`, independently of desktop/server installations.
-`OPENCRAFT_DEV_DATA_DIRECTORY` selects another isolated data directory and
-`OPENCRAFT_DEV_PORT` changes the Web port (default 5173). Stop with Ctrl+C.
+`npm run dev` 会同时启动本地执行服务和 Web。开发数据保存在
+`~/.opencraft/dev-local`，模型凭据由执行 Host 保管。
 
-`npm run dev:web` starts only the frontend. Without an explicit endpoint or saved
-connection, it offers local-start instructions and an existing server address.
-Opening a server takes you to that server's own website and sign-in flow.
-Explicit `VITE_APPSERVER_HOSTS_JSON`, `VITE_APPSERVER_WS_URL`, and website deployment
-configuration remain supported; a temporary connection failure never clears them.
+| 接下来想做什么 | 从这里开始 |
+| --- | --- |
+| 使用 Docker Compose 部署 | [Docker 部署指南](docker/README.md) |
+| 安装或管理自主部署的网站 | [Web 部署与更新](docs/web-deployment.md) |
+| 开发或打包桌面应用 | [开发指南](docs/development.md#desktop-with-the-bundled-local-agent) |
+| 运行 Expo 或构建手机端 | [手机端指南](apps/mobile/README.md) |
+| 配置 Host 或自定义构建 | [开发与构建指南](docs/development.md) |
 
-### Managed Web installation and public npm releases
+## 文档导航
 
-The self-hosted Web package is `@opencraft-app/opencraft` on the public npm registry
-`https://registry.npmjs.org/`. It includes the website and managed updater.
-The public execution package also includes the managed gateway and daemon; Codex core, CLI and DSH engine remain independently deployed. The first public release supports Linux x64 and Node.js 24. See the
-[Web deployment and public npm release runbook](docs/web-deployment.md) for
-installation, credential selection, publishing, rollback and Playwright checks.
-Source development above uses public dependencies; distributing this Web package
-uses the public npm registry.
+| 想了解 | 相关文档 |
+| --- | --- |
+| 项目全貌 | [文档索引](docs/README.md) · [仓库布局](docs/repository-layout.md) |
+| Agent 身份、权限与协作 | [主体与 Hub 设计](docs/architecture/actor-collaboration.md) · [主体协作接口](docs/actor-collaboration-api.md) · [服务器登录](docs/server-authentication.md) |
+| 执行与能力接入 | [执行所有权](docs/execution-ownership.md) · [会话能力](docs/session-capabilities.md) · [插件架构](docs/plugin-architecture.md) |
+| 开发扩展 | [扩展开发指南](docs/extension-development.md) · [可运行示例](examples/extensions/README.md) |
+| 架构与设计 | [平台架构](docs/platform-architecture.md) · [界面设计](design.md) · [构建矩阵](docs/build-matrix.md) |
 
-To build from source and replace an existing server installation directly, follow
-the [local server replacement guide](docs/web-local-deployment.md).
+## 一起建设
 
-### Docker Compose
+让更多 Agent 被连接，让更多人用上它们。
+欢迎贡献 Agent 适配、协作能力、客户端体验、文档与示例。
 
-For a Linux amd64 or ARM64 Docker installation with independent data storage and
-execution on the host, use the [Docker Compose deployment guide](docker/README.md).
+- [反馈问题或提出想法](https://github.com/opencraft-app/opencraft/issues)。
+- 修改共享核心前，阅读[贡献指南](CONTRIBUTING.md)。
+- 产品专用身份、品牌和服务通过[下游装配](docs/upstream-transition.md)接入。
+- 安全漏洞请按 [SECURITY.md](SECURITY.md) 中的流程私密报告。
 
-### Desktop with the bundled Local Agent
+## 开源许可
 
-On the target machine (macOS or Linux with a desktop session):
+OpenCraft 原创贡献采用 [Apache-2.0](LICENSE) 许可。
+第三方组件保留各自的许可证与必要声明。
 
-```bash
-npm ci
-npm run dev:electron
-```
+<div align="center">
 
-This builds the renderer and main process and prepares DSH from the committed
-`runtime/dsh/package.json` and `package-lock.json`. The runtime uses an isolated
-`npm ci`; it never installs into the root workspace. Use Settings to configure
-your provider/model credentials. Building and the startup smoke test do not
-require an API key.
+**Everyone Agent Everywhere**<br />
+接入你拥有的 Agent，分享它能做到的事。
 
-For a macOS QA preview that cannot overwrite an existing window or profile,
-use the isolated profile and ad-hoc package procedure in the
-[build matrix](docs/build-matrix.md). `dev:electron` is a developer loop,
-not proof of a packaged desktop release.
-
-For distribution, build on the **same OS and CPU architecture** as the target:
-
-```bash
-# Apple Silicon Mac; use :x64: instead on an Intel Mac
-npm run package:electron:mac:arm64:zip
-npm run package:electron:mac:arm64:dmg
-# Linux x64
-npm run package:electron:linux:x64:appimage
-```
-
-Native dependencies may need Python 3 and a C/C++ toolchain (Xcode Command Line
-Tools on macOS; make/g++ on Linux). DMG and native iOS builds require macOS;
-iOS also needs Xcode and CocoaPods. macOS signing/notarization credentials are
-optional for local unsigned builds, and required for trusted public distribution.
-Cross-OS/CPU desktop packaging is rejected because DSH contains native modules.
-
-### Expo
-
-```bash
-npm run dev:expo:web
-# On macOS with Xcode/CocoaPods; use an endpoint reachable from the device
-EXPO_PUBLIC_APPSERVER_WS_URL=ws://YOUR_SERVER:9988/rpc npm run dev:expo:ios
-```
-
-Native Expo defaults to loopback, not a developer's server. Set the URL on a
-physical device; loopback there refers to the device itself. Workspace paths
-come from the connected host, not from this checkout.
-
-### Clean-checkout verification
-
-```bash
-npm ci
-npm run prepare:dsh-runtime
-npm test
-npm run matrix:build -- web-browser electron-renderer electron-host expo-web expo-ios-bundle
-npm run smoke:local-agent
-```
-
-See [fresh-machine builds](docs/fresh-machine-builds.md) for platform boundaries,
-optional remote-Mac setup, and what is intentionally not committed.
-
-The Web workbench treats every execution node as a complete Host runtime. A
-managed website injects deployment configuration into HTML before startup:
-`OPENCRAFT_APPSERVER_URL` supplies `local` (managed site), and
-`OPENCRAFT_CODEX_APPSERVER_URL` supplies `local-codex` (managed site). Generic npm
-packages retain both Hosts and built-in Agent settings without deployment build
-variables. `OPENCRAFT_HYPERNODE_USER` remains a private proxy header; managed websites
-disable the HyperNode plugin to avoid a duplicate primary Host.
-
-For development/tests, an explicit build-time Host list takes precedence over
-the website configuration, without merging the lists:
-
-```bash
-VITE_APPSERVER_HOSTS_JSON='[
-  {"hostId":"dev","label":"Development","kind":"remote-ssh","url":"wss://dev.example/rpc"},
-  {"hostId":"durable","label":"Durable","kind":"durable","url":"wss://durable.example/rpc"}
-]' npm run dev:web
-```
-
-Host selection precedes project/folder selection. Threads, Draft workspace,
-Replica state, query keys, panels, and persisted selection are all scoped by
-`hostId`. Host URLs containing credentials are rejected; authentication belongs
-to the Web/Electron transport gateway.
-
-The renderer is semantic React/TypeScript and SCSS. It shares the same renderer across Web and Electron.
-
-## Workspace
-
-See the [repository layout](docs/repository-layout.md) for documentation, tooling,
-build inputs and task records.
-
-- `apps/workbench-web`: React DOM + Vite renderer for browser and Electron.
-- `apps/workbench-electron`: Electron main/preload host without a second UI.
-- `apps/mobile`: Expo Router host for native and Expo Web.
-- `apps/bridges/hermes`: independently installed Bun bridge from Hermes to the AppServer protocol.
-- `packages/appserver-protocol`: Host-aware AppServer contracts and generated native Codex types.
-- `packages/chat-core`: typed `Turn -> DisplayItem` projection.
-- `packages/composer-core`: serializable cross-platform composer blocks.
-- `packages/composer-editor`: ProseMirror composer with IME-safe input,
-  attachments, mentions, skills, commands, history, and send/stop semantics.
-- `packages/design-system`: typed OpenCraft theme compiler plus Web and Native tokens.
-- `packages/workbench-runtime`: renderer-free session store, commands and
-  streaming lifecycle consumed by both renderer hosts.
-
-The Expo host uses React Native, HeroUI Native and Uniwind over one canonical
-React 19 instance. The public entry runs the shared native Workbench; downstream
-products select their own entry and configuration explicitly. See the
-[Expo guide](apps/mobile/README.md) for Expo Go previews, native builds
-and their platform requirements. `npm run build:expo:ios` runs the
-Linux-compatible Metro iOS bundle gate; launching an Apple Simulator and
-compiling the native pods still require macOS and Xcode.
-
-The frame layout contract is documented in
-`docs/workbench-frame-spec.md`. Platform boundaries and reuse rules are documented
-in `docs/platform-architecture.md`. The Cordis-backed extension kernel,
-capability boundary and future marketplace model are documented in
-`docs/plugin-architecture.md`; the AI-native discovery, task lease, execution
-journal and generated-capability model are documented in
-`docs/agent-capability-fabric.md`. The package ownership and proof ladder for
-automated changes are documented in `docs/agent-iteration-guide.md`.
-
-See [SECURITY.md](SECURITY.md) for private vulnerability reporting and the
-repository's security checks. A passing build does not establish that dependencies,
-Git history or third-party licensing are ready for a public release.
+</div>

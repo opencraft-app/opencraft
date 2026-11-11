@@ -83,6 +83,7 @@ import { useStableEvent } from "@opencraft/react-runtime";
 import { nativeProjectPicker } from "./runtime/project-folder-picker";
 import { groupWorkInMachines as groupNewConversationMachines, workInAgentHosts, chooseWorkInHost, ThreadTitleWriter, legacyDirectServerProjectionFromHost } from "@opencraft/workbench-runtime";
 import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-title-cache";
+import { AgentUsage } from "./components/agent-usage";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
 import { formatDocumentTitle } from "./runtime/document-title";
@@ -157,6 +158,7 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
+import { AgentOnboarding } from "./components/agent-onboarding";
 import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
@@ -1316,10 +1318,30 @@ export function App({
       : activeHostConnectionPhase === "ready" && ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error) ? "catalog-error" as const
         : activeHostConnectionPhase === "ready" && noUsableModels && !composerCatalog.modelError && !modelReadiness.error ? "models" as const : null
     : null;
-  const draftSetupNotice = draftSetupKind === null ? undefined : <DraftSetupNotice
+  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | null>(() => {
+    try { return localStorage.getItem("opencraft.onboarding.completedAt") === null ? "gate" : null; }
+    catch { return null; }
+  });
+  const finishOnboarding = (modelId?: string) => {
+    try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
+    catch { /* The gate can still close when storage is unavailable. */ }
+    if (modelId) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
+    setOnboardingOverlay(null);
+  };
+  useEffect(() => {
+    const replay = (event: Event) => {
+      const presentation = event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
+      setOnboardingOverlay(presentation);
+    };
+    window.addEventListener("opencraft:replay-agent-onboarding", replay);
+    return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
+  }, []);
+  const visibleOnboardingOverlay = onboardingOverlay === "sheet" || conversationRouteOpen ? onboardingOverlay : null;
+  const draftSetupNotice = draftSetupKind === null || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
     kind={draftSetupKind} hostName={activeHost.label}
     onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
     onConnectionSettings={() => openSettingsFromConversation("machines")}
+    onConnectAgents={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "gate" } }))}
     onRetry={() => {
       if (draftSetupKind === "connection") void runtime.reconnect().catch(() => undefined);
       else { composerCatalog.retryModels(); void modelReadiness.refetch(); }
@@ -2116,6 +2138,7 @@ export function App({
               {...sidebarCommands}
               managementNavigation={sidebarManagementNavigation}
               showFooter={false}
+              footerAccessory={<AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} />}
               showNewChat={presentation.shellNavigation}
               showStart={!presentation.shellNavigation}
               threadCapabilities={sidebarThreadCapabilities}
@@ -2146,6 +2169,15 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
+          {!embedded && visibleOnboardingOverlay !== null ? <AgentOnboarding
+            hostId={snapshot.hostId}
+            hostName={activeHost.label}
+            presentation={visibleOnboardingOverlay}
+            request={(method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params)}
+            onFinish={finishOnboarding}
+            onUseModels={() => finishOnboarding()}
+            onClose={() => setOnboardingOverlay(null)}
+          /> : null}
           <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
           <div
             aria-hidden={!conversationRouteOpen || undefined}

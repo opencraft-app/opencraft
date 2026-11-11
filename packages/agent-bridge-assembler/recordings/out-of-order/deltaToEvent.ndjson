@@ -1,0 +1,6 @@
+{"seq":1,"run":"out-of-order","lane":"deltaToEvent","line":"{\"op\":\"turn.open\",\"nativeTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":2,"run":"out-of-order","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"ghost\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":3,"run":"out-of-order","lane":"deltaToEvent","line":"{\"op\":\"item.textDelta\",\"nativeKey\":\"s1\",\"channel\":\"agentMessage\",\"text\":\"[content:3efe16b4]\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":4,"run":"out-of-order","lane":"deltaToEvent","line":"{\"op\":\"item.textClose\",\"nativeKey\":\"s1\",\"channel\":\"agentMessage\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":5,"run":"out-of-order","lane":"deltaToEvent","line":"{\"op\":\"item.textDelta\",\"nativeKey\":\"s1\",\"channel\":\"agentMessage\",\"text\":\"[content:f1889e48]\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":6,"run":"out-of-order","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}

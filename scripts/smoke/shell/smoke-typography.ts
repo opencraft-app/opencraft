@@ -72,7 +72,6 @@ try {
     assert.equal(await page.locator('#reading .chat-inline-code').evaluate(e=>getComputedStyle(e).fontSize),'18px');
     await page.locator('#reading').evaluate(e=>(e as HTMLElement).style.removeProperty('--opencraft-chat-font-size'));
     await page.locator('.opencraft-composer-mode--intelligence').click();
-    await page.locator('.opencraft-composer-model-quick__title').click();
     const menu=await page.locator('.opencraft-composer-selection-menu__item').first().evaluate(e=>{let s=getComputedStyle(e);return{size:s.fontSize,weight:s.fontWeight,line:s.lineHeight}});
     assert.deepEqual(menu,{size:'13px',weight:'400',line:'18px'});
     await page.keyboard.press('Escape');

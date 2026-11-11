@@ -80,6 +80,10 @@ export class PiDurableSession {
     policyCatalog?():Promise<Value[]>;
     onPolicyDenied?(error:ModelPolicyError):void;
     ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; projectId?: string | null;
+    /** Bridge-owned sessions use the ordinary coding bash tool, not the PTY worker. */
+    shell?: boolean;
+    /** Lock acquisition attempts against another writer; the native default is 12. */
+    lockRetries?: number;
     admissionOpen?(): boolean;
     admitBackground?<T>(operation: () => Promise<T>): Promise<T>;
     prepareRecovery?(snapshot: PiSnapshot): Promise<Value[] | undefined>;
@@ -91,12 +95,14 @@ export class PiDurableSession {
   }
   private async open() {
     if (!this.options.ephemeral) this.release = await lockfile.lock(this.options.file, { realpath: false, stale: 10_000,
-      retries: { retries: 12, minTimeout: 1000, maxTimeout: 1000 } });
-    this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
-      onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
-      onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
-    });
-    this.shellSchema = (await this.shell.start()).parameters;
+      retries: { retries: this.options.lockRetries ?? 12, minTimeout: 1000, maxTimeout: 1000 } });
+    if (this.options.shell !== false) {
+      this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
+        onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
+        onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
+      });
+      this.shellSchema = (await this.shell.start()).parameters;
+    }
     const registry = createRegistry();
     const admittedGenerations=new Set<string>();
     registry.install(defineExtension({name:"opencraft.model-policy",hooks:[hook(GenerationTask,{
@@ -113,8 +119,10 @@ export class PiDurableSession {
       },
     })]}));
     // Keep native file tools. Shell commands use the conversation-owned yielding PTY.
-    registry.install(defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
-    registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
+    // Bridge-owned sessions omit the PTY entirely and keep the ordinary coding bash.
+    registry.install(this.options.shell === false ? CodingTools
+      : defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
+    if (this.options.shell !== false) registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
       defineTool({ name: "interactive_shell", description: shellDescription, parameters: this.shellSchema as any,
         execute: (args: any, api: any, ctx: Context) => this.executeShell(args, api, ctx) }),
       defineTool({ name: "bash", description: "Run a bash command in a managed PTY. Returns a sessionId immediately while the command continues; completion arrives automatically. Query, send input, or stop with interactive_shell. timeout is in seconds. Long commands do not block user steering.",
@@ -227,6 +235,7 @@ export class PiDurableSession {
     return runtime?.snapshot(runtime.execution('opencraft-server', this.options.threadId, inputId, this.options.projectId));
   }
   private async environmentWorker(snapshot?: ExecutionEnvironmentSnapshot): Promise<PiShellWorker> {
+    if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (!snapshot) return this.shell;
     let worker = this.environmentWorkers.get(snapshot.key);
     if (!worker) {
@@ -246,6 +255,7 @@ export class PiDurableSession {
     await worker.start(); return worker;
   }
   private async executeShell(args: Value, api: Value, ctx: Context, waitMs: number | undefined = undefined) {
+    if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (this.closed || ctx.abortSignal?.aborted) throw new Error("Pi shell call cancelled");
     const inputId = this.options.executionEnvironment ? await this.root.commit(async tx => {
       const live = await tx.doc(LiveDoc, this.root.id);
@@ -375,7 +385,7 @@ export class PiDurableSession {
     await this.deliverShellNotifications();
   }
   private async interruptShells(reason: string, notify: boolean, generation?: string) {
-    if (!this.root || this.closed) return;
+    if (this.options.shell === false || !this.root || this.closed) return;
     await this.root.commit(async tx => {
       const doc = await tx.doc(PiShellDoc, this.root.id);
       for (const record of doc.records) if (record.state === "running" && (generation === undefined || record.generation === generation)) {
@@ -386,7 +396,7 @@ export class PiDurableSession {
     if (notify) await this.deliverShellNotifications();
   }
   private async deliverShellNotifications() {
-    if (this.closed || this.options.admissionOpen?.() === false) return;
+    if (this.options.shell === false || this.closed || this.options.admissionOpen?.() === false) return;
     // Import before entering the admission boundary. The entire commit stays
     // counted, and its final native mutation checks the fence again.
     const { admitSubmission } = await nativeAdmissions();
@@ -674,7 +684,7 @@ export class PiDurableSession {
       else queue.items.splice(index, 1);
     }, context);
   }
-  get backgroundWork() { return this.shellLaunches + this.shellNotifications + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
+  get backgroundWork() { return (this.options.shell === false ? 0 : this.shellLaunches + this.shellNotifications) + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
   get idleWorkerPid() { return this.shell?.pid; }
   get workerProcessIds() { return [this.shell, ...this.environmentWorkers.values()].flatMap(worker => worker?.pid ? [worker.pid] : []); }
   resumeBackground() { return this.deliverShellNotifications(); }

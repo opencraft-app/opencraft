@@ -1,0 +1,1 @@
+{"seq":1,"run":"no-turn-close","lane":"deltaToEvent","line":"{\"op\":\"item.close\",\"nativeKey\":\"k1\",\"shape\":{\"kind\":\"agentMessage\",\"text\":\"[content:f607d804]\"},\"scope\":{\"threadId\":\"thr-fixture\"}}"}

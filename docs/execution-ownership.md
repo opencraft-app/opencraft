@@ -967,3 +967,71 @@ Headless, managed Web and desktop Daemon bundles carry the Worker beside the hos
 This boundary covers session routing. Thread catalog, execution authority,
 documents, connectors and task stores retain their existing storage ownership;
 this change is not a claim that all DSH Host storage has left the network thread.
+
+## Agent Bridge foundation (P1b, opt-in)
+
+`apps/agent-bridge-host` is a separate, explicitly launched execution owner.
+Its sandbox generations, command custody, Worker-owned SQLite checkpoints and
+ordered outbox survive gateway attachment loss. The separate gateway inbox
+commits the existing P1a AppServer projection and cursor before acknowledging
+Host events. Native mutations with unknown outcomes are never replayed.
+Existing engine compositions do not import or select this path. See the
+[Host contract and local acceptance](../apps/agent-bridge-host/README.md) for the
+private attachment, generation draining and conservative Host-crash boundaries.
+
+## Generic ACP provider bridge P3c (resume, history, client services)
+
+The ACP bridge follow-up keeps the same opt-in Host route and adds
+`session/resume` via ACP `session/load`/`session/resume`, bounded native
+history replay, `model/list`, and ACP client-side `fs/*`, `terminal/*` and
+`elicitation/create` with mode-scoped capabilities. History is replayed by the
+bridge, not a second Web history store; the existing Workbench still consumes
+only the existing AppServer path. The Host remains the owner of the command
+ledger, sandbox, assembler and outbox. See
+[P3c follow-up](../design/agent-bridge/p3c-acp-followup.md).
+
+## Generic ACP provider bridge (P3, opt-in)
+
+`packages/agent-bridge-acp` is a pinned provider bridge for Agent Client
+Protocol agents. It runs under the independent P1b Host, one ACP agent process
+per Thread, and translates ACP updates into P1a semantic deltas. The real
+`initialize` probe narrows the registration declaration; an agent that does not
+declare `_meta.midTurnSteering` only gets explicit `next-turn` or
+`interrupt-replace`, never a native-inject label. Permission requests enter the
+existing interaction channel; images are forwarded only when the agent declared
+image prompt support. Existing engine compositions do not select this path.
+
+The bridge contract, command parameters, permission-mode mapping, dialect
+extension point and failure boundaries are documented in the
+[ACP bridge README](../packages/agent-bridge-acp/README.md). Real Copilot/Amp
+initialize recordings and minimal-task evidence live under
+`design/agent-bridge/recordings/p3/`; deterministic fixtures cover the paths a
+single real task cannot trigger.
+
+## Pi bridge owner (P2d, opt-in)
+
+`plugins/pi-bridge` is a pinned provider artifact launched by the P1b Host. It
+wraps the existing `PiDurableSession`, not a Pi RPC child and not a second
+transcript writer. A bridge-owned Thread has one native SQLite session and one
+owner lock; `session/create` reserves a pending record before opening the
+native database, refuses an existing or orphaned session, and removes a
+half-created session on failure; `session/resume` refuses a live writer, seeds
+the current native snapshot without replaying settled history, and reports an
+active native turn as a recovery hint. The bridge keeps its sessions in a
+separate private data root, so the AppServer Pi engine's catalog cannot adopt
+them. Existing Pi Threads stay on the existing engine; only new Threads routed
+to this bridge use the new path. `session/close` fences new turn commands and
+diffs one final native snapshot before `session.ended`. Deterministic provider
+refusals settle as rejected in the Host; only ambiguous native outcomes consume
+unknown custody. A rejected create that leaves no resumable session releases
+its fresh route binding; pending/exists/locked bindings remain for resume.
+
+The bridge declares native same-turn steer only. Admission and the durable
+inbox/entry transition are evidence-observed; queue removal never becomes
+model-context evidence. An input still queued at a turn boundary is reported as
+`Pi turn ended before steer was consumed`, not as delivered. The bridge disables
+the AppServer PTY worker for its own sessions and uses the ordinary coding
+tools; the existing engine's PTY path is unchanged. Real local acceptance and
+the explicit gaps (no real unconsumed-race reproduction; no real-model Host
+round trip) are recorded in
+[`plugins/pi-bridge/VALIDATION.md`](../plugins/pi-bridge/VALIDATION.md).

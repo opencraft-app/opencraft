@@ -303,7 +303,8 @@
     "check:storage": "node scripts/compile-storage-migrations.mjs --check",
     "test:sandbox": "node --import tsx --test tests/execution/sandbox-primitive.test.ts tests/execution/sandbox-engine-runtime.test.ts",
     "smoke:sandbox": "node --import tsx scripts/smoke/execution/smoke-sandbox.ts",
-    "test:appserver-client": "tsx --test tests/protocol/appserver-client.test.ts tests/protocol/appserver-connection-lifecycle.test.ts"
+    "test:appserver-client": "tsx --test tests/protocol/appserver-client.test.ts tests/protocol/appserver-connection-lifecycle.test.ts",
+    "test:agent-bridge": "node --import tsx --test tests/agent-bridge/*.test.ts"
   },
   "dependencies": {
     "deepmerge": "file:vendor/deepmerge",
