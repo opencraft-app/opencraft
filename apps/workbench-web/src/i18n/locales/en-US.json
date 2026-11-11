@@ -1366,5 +1366,15 @@
   "chat.steerEvidence.contextConfirmed": "Input confirmed in task context",
   "chat.steerEvidence.accepted": "Accepted; context not yet confirmed",
   "chat.steerEvidence.rejected": "Input rejected",
-  "chat.steerEvidence.unconfirmed": "Delivery unconfirmed"
+  "chat.steerEvidence.unconfirmed": "Delivery unconfirmed",
+  "codexAccounts.source.external": "Local Codex login (read-only)",
+  "codexAccounts.source.managed": "Pool credentials (device login or earlier copy)",
+  "codexAccounts.source.unknown": "Credential source unknown",
+  "codexAccounts.external.renew": "Run codex login on the host, or remove this account and sign in with a device code.",
+  "codexAccounts.external.remove": "Remove this account's reference from the pool. The local Codex login and conversation history will be kept.",
+  "codexAccounts.external.adding": "Connecting…",
+  "codexAccounts.external.add": "Use local Codex login",
+  "codexAccounts.external.description": "Read the host's login; local Codex manages renewal. No credentials are copied.",
+  "codexAccounts.external.actionFailed": "The action failed. For sign-in problems, run codex login on the host or remove this account and use device-code login.",
+  "codexAccounts.external.failed": "Could not use the local Codex login. If this account is already listed, remove it first. Otherwise, run codex login on the host or sign in with a device code."
 }

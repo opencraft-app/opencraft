@@ -3413,24 +3413,6 @@
     },
     {
       "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
-      "kind": "jsx-expression",
-      "text": "正在导入…",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
-      "kind": "jsx-expression",
-      "text": "导入本机 Codex 登录",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
-      "kind": "jsx-text",
-      "text": "复制此设备已有的 Codex 登录",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
       "kind": "jsx-text",
       "text": "登录 ChatGPT",
       "count": 1

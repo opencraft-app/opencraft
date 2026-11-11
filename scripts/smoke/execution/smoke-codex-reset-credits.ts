@@ -9,6 +9,8 @@ await mkdir(output, { recursive: true });
 const source = `
 import React from 'react';
 import {createRoot} from 'react-dom/client';
+import {LocaleRuntime} from '/packages/i18n/src/index.ts';
+import {IntlRuntimeProvider} from '/packages/i18n/src/react.tsx';
 import {createCodexAccountsView} from '/plugins/builtin-agents/src/codex-accounts/view.tsx';
 import {CodexAccountsService} from '/plugins/builtin-agents/src/codex-accounts/service.ts';
 import {buildOpenCraftThemeCssProperties,opencraftNeutralThemePalette} from '/packages/design-system/src/theme-engine.ts';
@@ -30,7 +32,7 @@ const service=new CodexAccountsService(async (_host,method,params)=>{
   return {accounts};
 },'fixture');
 const View=createCodexAccountsView(service,{allowImport:false});
-createRoot(document.getElementById('root')).render(<View/>);
+createRoot(document.getElementById('root')).render(<IntlRuntimeProvider runtime={new LocaleRuntime([])}><View/></IntlRuntimeProvider>);
 `;
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error",
   resolve: { dedupe: ["react", "react-dom"] }, esbuild: { jsx: "automatic" },

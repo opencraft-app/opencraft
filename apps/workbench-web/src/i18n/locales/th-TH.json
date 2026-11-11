@@ -1368,5 +1368,15 @@
   "chat.steerEvidence.contextConfirmed": "ยืนยันอินพุตในบริบทของงานแล้ว",
   "chat.steerEvidence.accepted": "รับอินพุตแล้ว แต่ยังไม่ยืนยันในบริบท",
   "chat.steerEvidence.rejected": "อินพุตถูกปฏิเสธ",
-  "chat.steerEvidence.unconfirmed": "ยังไม่ยืนยันการส่ง"
+  "chat.steerEvidence.unconfirmed": "ยังไม่ยืนยันการส่ง",
+  "codexAccounts.source.external": "การเข้าสู่ระบบ Codex ในเครื่อง (อ่านอย่างเดียว)",
+  "codexAccounts.source.managed": "ข้อมูลรับรองในพูล (รหัสอุปกรณ์หรือสำเนาเก่า)",
+  "codexAccounts.source.unknown": "ไม่ทราบแหล่งข้อมูลรับรอง",
+  "codexAccounts.external.renew": "เรียกใช้ codex login บนโฮสต์ หรือลบบัญชีนี้แล้วเข้าสู่ระบบด้วยรหัสอุปกรณ์",
+  "codexAccounts.external.remove": "ลบเฉพาะการอ้างอิงบัญชีนี้ออกจากพูล โดยเก็บการเข้าสู่ระบบ Codex ในเครื่องและประวัติการสนทนาไว้",
+  "codexAccounts.external.adding": "กำลังเชื่อมต่อ…",
+  "codexAccounts.external.add": "ใช้การเข้าสู่ระบบ Codex ในเครื่อง",
+  "codexAccounts.external.description": "อ่านข้อมูลเข้าสู่ระบบของโฮสต์ โดย Codex ในเครื่องดูแลการต่ออายุ ไม่มีการคัดลอกข้อมูลรับรอง",
+  "codexAccounts.external.actionFailed": "ดำเนินการไม่สำเร็จ หากมีปัญหาการเข้าสู่ระบบ ให้เรียกใช้ codex login บนโฮสต์ หรือลบบัญชีนี้แล้วใช้รหัสอุปกรณ์",
+  "codexAccounts.external.failed": "ใช้การเข้าสู่ระบบ Codex ในเครื่องไม่ได้ หากมีบัญชีนี้ในรายการแล้ว ให้ลบออกก่อน มิฉะนั้นให้เรียกใช้ codex login บนโฮสต์หรือใช้รหัสอุปกรณ์"
 }

@@ -1,3 +1,5 @@
+import { ExternalCodexCredentialError } from "./store.js";
+import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file.js";
 import type {
   AccountPoolAccount,
   AccountPoolLimitWindow,
@@ -288,7 +290,20 @@ export class CodexAccountPoolProxy {
       try {
         selection = this.store.select({ provider: "codex", hostId, ...identity, excludeAccountIds: attempted,
           purpose: request.method === "GET" || (mcpRequest && identity.affinityId === "catalog") ? "metadata" : "conversation" });
-      } catch {
+      } catch (error) {
+        if (error instanceof ExternalCodexCredentialError) {
+          this.store.markAccountError(error.accountId, "authorization-rejected");
+          attempted.add(error.accountId);
+          lastFailure = { status: 401, message: error.message };
+          continue;
+        }
+        if (lastFailure === null && error instanceof Error && error.message === "No eligible account") {
+          const externalIds = new Set(this.store.listAccounts()
+            .filter(account => account.enabled && account.credentialSource === "external-file").map(account => account.id));
+          if (this.store.listAccountStates().some(state => externalIds.has(state.accountId) && state.error === "authorization-rejected")) {
+            lastFailure = { status: 401, message: EXTERNAL_CODEX_REAUTH_MESSAGE };
+          }
+        }
         return lastFailure === null
           ? Response.json({ error: { message: "No eligible Codex account" } }, { status: 429 })
           : Response.json({ error: { message: lastFailure.message } }, { status: lastFailure.status });
@@ -305,7 +320,7 @@ export class CodexAccountPoolProxy {
           secret = await this.resolveCredential(selection.account, secret, "expired");
           if (!secret.external) this.store.replaceCredential(selection.account.id, secret);
         } catch {
-          lastFailure = { status: 401, message: "Codex account authentication failed" };
+          lastFailure = { status: 401, message: secret.external ? EXTERNAL_CODEX_REAUTH_MESSAGE : "Codex account authentication failed" };
           this.store.markAccountError(selection.account.id, "authorization-rejected");
           attempted.add(selection.account.id);
           continue;
@@ -372,7 +387,7 @@ export class CodexAccountPoolProxy {
             // The allow-listed terminal classification below owns failure state.
           }
         }
-        lastFailure = { status: upstream.status, message: "Codex account authentication failed" };
+        lastFailure = { status: upstream.status, message: secret.external ? EXTERNAL_CODEX_REAUTH_MESSAGE : "Codex account authentication failed" };
         this.store.markAccountError(selection.account.id, "authorization-rejected");
         attempted.add(selection.account.id);
         await upstream.body?.cancel().catch(() => undefined);

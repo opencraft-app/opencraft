@@ -55,6 +55,107 @@ test("shared auth references follow atomic owner rotation without copying or ref
   } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+test("credential source projection survives reopen without needing the external owner", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-source-projection-"));
+  const path = join(root, "auth.json");
+  const options = { databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") };
+  let pool = new AccountPoolStore(options);
+  try {
+    await writeFile(path, JSON.stringify({ tokens: { access_token: "owner-access", account_id: "shared" } }));
+    pool.addAccount({ id: "shared", provider: "codex", label: "Shared", upstreamAccountId: "shared", priority: 1, enabled: true },
+      { kind: "codex-auth-file", path });
+    pool.addAccount({ id: "legacy", provider: "codex", label: "Legacy", upstreamAccountId: "legacy", priority: 2, enabled: true },
+      { accessToken: "old-copy", refreshToken: "old-refresh", expiresAt: null });
+    await rm(path); // Listing source is independent of external availability.
+    pool.close(); pool = new AccountPoolStore(options);
+    assert.deepEqual(pool.listAccounts().map(account => account.credentialSource), ["external-file", "managed"]);
+    assert.equal(pool.readCredential("legacy").refreshToken, "old-refresh");
+    pool.removeAccount("shared"); pool.removeAccount("legacy");
+    assert.deepEqual(pool.listAccounts(), []);
+  } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const failure of ["missing", "malformed", "identity-changed", "expired"] as const) {
+  for (const bound of [false, true]) test(`external ${failure} uses existing auth failover and recovers (bound=${bound})`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "opencraft-external-failover-"));
+    const path = join(root, "auth.json");
+    const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+    const save = (token = "external-token", account = "shared") => writeFile(path, JSON.stringify({
+      tokens: { account_id: account, access_token: token, refresh_token: "external-owner-only" },
+    }));
+    const seen: Array<string | null> = [];
+    const refresh = new AccountCredentialRefreshManager({ store: pool, refresh: async () => { assert.fail("must not refresh external credentials"); } });
+    const usage = new CodexSubscriptionService({ store: pool,
+      resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
+      fetch: async () => Response.json(bound ? { plan_type: "pro" } : { rate_limit: { primary_window: { used_percent: 5, limit_window_seconds: 18_000 } } }),
+    });
+    try {
+      await save();
+      pool.addAccount({ id: "shared", provider: "codex", label: "Shared", upstreamAccountId: "shared", priority: 1, enabled: true }, { kind: "codex-auth-file", path });
+      pool.addAccount({ id: "fallback", provider: "codex", label: "Fallback", upstreamAccountId: "fallback", priority: 2, enabled: true },
+        { accessToken: "fallback-token", refreshToken: "managed-refresh", expiresAt: null });
+      const reference = await readFile(join(root, "secrets/account-shared.json"), "utf8");
+      const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://example.test",
+        resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason),
+        fetch: async (_url, init) => { seen.push(new Headers(init?.headers).get("authorization")); return Response.json({ ok: true }); },
+      });
+      const hostToken = pool.issueHostToken("host");
+      const request = () => new Request("http://localhost/v1/responses", { method: "POST",
+        headers: { "content-type": "application/json", "session-id": "same-thread", "x-opencraft-account-pool-token": hostToken },
+        body: '{"model":"test","input":[]}',
+      });
+      if (bound) {
+        assert.equal((await proxy.handle(request())).status, 200);
+        assert.equal(seen.at(-1), "Bearer external-token");
+      }
+      if (failure === "missing") await rm(path);
+      else if (failure === "malformed") await writeFile(path, "invalid private payload");
+      else if (failure === "identity-changed") await save("wrong-identity-token", "different-account");
+      else await save(`header.${Buffer.from(JSON.stringify({ exp: 1 })).toString("base64url")}.signature`);
+      assert.equal((await proxy.handle(request())).status, 200);
+      assert.equal(seen.at(-1), "Bearer fallback-token");
+      assert.equal(pool.listAccountStates().find(state => state.accountId === "shared")?.error, "authorization-rejected");
+      assert.equal(pool.listAccountStates().find(state => state.accountId === "shared")?.status, "error");
+      pool.setEnabled("fallback", false);
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const failed = await proxy.handle(request());
+        assert.equal(failed.status, 401);
+        assert.match(await failed.text(), /codex login.*device-code/);
+      }
+      await save("owner-renewed");
+      const renewed = await readFile(path, "utf8");
+      await usage.refreshAccount("shared");
+      assert.equal(pool.listAccountStates().find(state => state.accountId === "shared")?.status, "ready");
+      assert.equal((await proxy.handle(request())).status, 200);
+      assert.equal(seen.at(-1), "Bearer owner-renewed");
+      assert.equal(await readFile(path, "utf8"), renewed);
+      assert.equal(await readFile(join(root, "secrets/account-shared.json"), "utf8"), reference);
+    } finally { await usage.dispose(); pool.close(); await rm(root, { recursive: true, force: true }); }
+  });
+}
+
+test("windowless successful external recheck clears only auth error and preserves quota", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-windowless-recovery-"));
+  const path = join(root, "auth.json");
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets"), now: () => 1_000 });
+  const usage = new CodexSubscriptionService({ store: pool, now: () => 2_000,
+    resolveCredential: async (_account, secret) => secret, fetch: async () => Response.json({}),
+  });
+  try {
+    await writeFile(path, JSON.stringify({ tokens: { account_id: "shared", access_token: "owner-token" } }));
+    pool.addAccount({ id: "shared", provider: "codex", label: "Shared", upstreamAccountId: "shared", priority: 1, enabled: true }, { kind: "codex-auth-file", path });
+    pool.addAccount({ id: "managed", provider: "codex", label: "Managed", upstreamAccountId: "managed", priority: 2, enabled: true },
+      { accessToken: "managed-token", refreshToken: "managed-refresh", expiresAt: null });
+    for (const id of ["shared", "managed"]) pool.observeQuota(id, {
+      utilization: 0.5, resetAt: 9_000, heldUntil: 5_000, error: "authorization-rejected",
+      limitWindows: [{ slot: "primary", windowMinutes: 300, utilization: 0.5, resetAt: 9_000, status: "allowed", observedAt: 1_000, source: "usage" }],
+    });
+    const before = pool.listAccountStates();
+    await usage.refreshAccount("shared"); await usage.refreshAccount("managed");
+    assert.deepEqual(pool.listAccountStates(), [{ ...before[0]!, error: null, status: "held" }, before[1]!]);
+  } finally { await usage.dispose(); pool.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("expired or malformed shared credentials fail closed without invoking managed refresh", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-shared-expiry-"));
   const path = join(root, "auth.json"), reference = { kind: "codex-auth-file" as const, path };
@@ -732,6 +833,7 @@ test("account management projections never expose credentials and secret files s
       enabled: true,
       allowCredits: false,
       credentialConfigured: true,
+      credentialSource: "managed",
     }]);
     assert.doesNotMatch(JSON.stringify(projection), /access-private|refresh-private/);
     assert.equal((await stat(secretsDirectory)).mode & 0o777, 0o700);
