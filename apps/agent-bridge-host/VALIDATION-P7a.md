@@ -99,3 +99,17 @@ The additional permission run used the same runner with
 `tests/identity/actor-collaboration.test.ts`, and
 `tests/identity/actor-collaboration-codex.test.ts`.
 The Host workspace typecheck also passed after the final lease cleanup fix.
+
+## 2026-11-11 live recheck
+
+**未验**。同模型旧 Codex 路径也在工具前先 401 后 429；Core 账号凭据已过期，
+账号池记录 `authorization-rejected`，后续代理返回 `No eligible Codex account`。
+按修不了即停的边界，本轮未继续真实任务。证据、范围限制与自行决定见
+[本机复查](VALIDATION-LIVE-RECHECK.md)及其脱敏录制。原有 fixture 与真实验收结论分别保留。
+
+## 2026-11-11 resumed after owner re-login
+
+**未验**：Host 执行 CLI 发行成功，但首轮配置的 thread/resume 返回
+`no rollout found`，未发送模型任务，未跑完整通信链。
+用户重新登录后旧路径同模型回答 OK，原 429 已解除。
+[续验范围、脱敏证据与自行决定](VALIDATION-LIVE-RESUME.md)。

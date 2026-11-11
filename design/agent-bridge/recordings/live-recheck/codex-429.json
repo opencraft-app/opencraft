@@ -1,0 +1,156 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-11T03:11:21.021Z",
+  "sourceRevision": "2549ea71da",
+  "scope": "one existing legacy gateway task; no new bridge selected",
+  "model": {
+    "id": "gpt-5.6-luna",
+    "effort": "low",
+    "catalogContainsModel": true,
+    "priceMetadataAvailable": false,
+    "selection": "same low-cost model as blocked attempts; absolute cheapest not verified"
+  },
+  "prompt": "Reply exactly OK. Do not call tools.",
+  "legacyControl": {
+    "endpoint": "/rpc/codex",
+    "threadHash": "190f66bdd8c0f096",
+    "status": "failed",
+    "error": {
+      "message": "exceeded retry limit, last status: 429 Too Many Requests",
+      "codexErrorInfo": {
+        "responseTooManyFailedAttempts": {
+          "httpStatusCode": 429
+        }
+      },
+      "additionalDetails": null,
+      "misalignment": null
+    },
+    "items": []
+  },
+  "accountBeforeControl": {
+    "count": 1,
+    "enabled": true,
+    "credentialConfigured": true,
+    "status": "ready",
+    "heldUntil": null,
+    "weeklyUtilization": 0.65,
+    "weeklyObservedAt": 1794080335048
+  },
+  "accountAfterControl": [
+    {
+      "enabled": true,
+      "status": "error",
+      "heldUntil": null,
+      "limitWindows": [
+        {
+          "slot": "primary",
+          "windowMinutes": 10080,
+          "utilization": 0.65,
+          "resetAt": 1794467028000,
+          "observedAt": 1794080335048
+        },
+        {
+          "slot": "secondary",
+          "windowMinutes": null,
+          "utilization": 0,
+          "resetAt": null,
+          "observedAt": 1793612745309
+        }
+      ]
+    }
+  ],
+  "credentialMetadata": {
+    "kind": "pool-owned",
+    "expiresAt": 1794080367000,
+    "expiresAtUtc": "2026-11-07T19:39:27+00:00"
+  },
+  "nativeHttpObservations": [
+    {
+      "role": "legacy-control",
+      "threadHash": "190f66bdd8c0f096",
+      "at": "2026-11-11T03:11:20+00:00",
+      "method": "POST",
+      "status": 401,
+      "transport": "local-account-pool-proxy"
+    },
+    {
+      "role": "legacy-control",
+      "threadHash": "190f66bdd8c0f096",
+      "at": "2026-11-11T03:11:21+00:00",
+      "method": "POST",
+      "status": 429,
+      "transport": "local-account-pool-proxy"
+    },
+    {
+      "role": "P2a-previous",
+      "threadHash": "c9f57d9061706f41",
+      "at": "2026-11-10T19:30:22+00:00",
+      "method": "POST",
+      "status": 401,
+      "transport": "local-account-pool-proxy"
+    },
+    {
+      "role": "P2a-previous",
+      "threadHash": "c9f57d9061706f41",
+      "at": "2026-11-10T19:30:22+00:00",
+      "method": "POST",
+      "status": 429,
+      "transport": "local-account-pool-proxy"
+    },
+    {
+      "role": "P7b-once-previous",
+      "threadHash": "06e65aa9fe85b76c",
+      "at": "2026-11-11T01:36:31+00:00",
+      "method": "POST",
+      "status": 429,
+      "transport": "local-account-pool-proxy"
+    },
+    {
+      "role": "P7b-cron-previous",
+      "threadHash": "0fab274f6b207fd5",
+      "at": "2026-11-11T01:36:30+00:00",
+      "method": "POST",
+      "status": 429,
+      "transport": "local-account-pool-proxy"
+    }
+  ],
+  "nativeAuthObservations": [
+    {
+      "at": "2026-11-11T01:36:25+00:00",
+      "source": "native codex_apps MCP error",
+      "status": 401,
+      "code": "token_expired",
+      "message": "Provided authentication token is expired. Please try signing in again."
+    }
+  ],
+  "persistedPoolError": {
+    "immediateAfterControl": {
+      "error": "authorization-rejected",
+      "observedAt": 1794366680934
+    },
+    "laterReadOnlySnapshot": {
+      "error": null,
+      "observedAt": 1794366680934,
+      "accountStatus": "ready",
+      "credentialExpiresAt": 1794080367000
+    },
+    "note": "Error later cleared without an operator mutation in this task; expired token remained unchanged. The writer/cause of this concurrent transition was not traced."
+  },
+  "readOnlyProxyProbe": {
+    "at": "2026-11-11T03:13:06.228Z",
+    "operation": "GET /v1/models",
+    "status": 429,
+    "body": {
+      "error": {
+        "message": "No eligible Codex account"
+      }
+    }
+  },
+  "limits": [
+    "No account login or refresh command invoked. Existing Core automatic auth recovery was observed, not manually retried.",
+    "Response POST 401 may be synthesized by failed Core credential renewal; upstream inference 401 was not captured.",
+    "Exact renewal failure and original P2a token identity are not recoverable from retained evidence.",
+    "P2a/P7a/P7b/P4 real tasks were not retried after the stop condition."
+  ],
+  "observationCompletedAt": "2026-11-11T03:15:47.313061+00:00"
+}

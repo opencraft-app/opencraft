@@ -140,3 +140,16 @@ listed above; there is no claim of a second independent review of the fixes.
 ## P6 AGY
 
 AGY validation is isolated in [P6 implementation and acceptance](../../design/agent-bridge/p6-agy.md), with its own sanitized recordings and decisions. P4 evidence and remaining gaps above are unchanged.
+
+## 2026-11-11 P4 retry status
+
+**未验**。本轮 CodeBuddy `session/new` 没有重试：前置旧 Codex 对照仍报 429，
+触发任务步骤 1 的停止条件；步骤 2 要求先解决 429。此前 HTTP 500 仍未排除。
+见[本机复查](../../apps/agent-bridge-host/VALIDATION-LIVE-RECHECK.md)。
+
+## 2026-11-11 resumed P4 retry
+
+**未验**。Codex 对照恢复后，`hy3-ioa` 经 Host 重试一次 session/new，仍返回
+HTTP 500，未进入 prompt/steer；按要求没有继续深挖。
+[重试证据](../../design/agent-bridge/recordings/live-recheck/codebuddy-retry.json)，
+[续验范围](../../apps/agent-bridge-host/VALIDATION-LIVE-RESUME.md)。
