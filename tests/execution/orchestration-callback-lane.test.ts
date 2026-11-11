@@ -8,6 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import WebSocket,{WebSocketServer} from 'ws';
 import {CodexNativeCoreTransport} from '../../apps/opencraft-daemon/src/codex-native-core-transport';
 import { startOrchestrationCallbackRelay } from '../../apps/codex-core/src/orchestration-callback-lane';
+import { codexSandboxRequestPolicy } from '../../apps/codex-core/src/execution-sandbox';
 async function until(condition:()=>boolean) {const deadline=Date.now()+3000;while(!condition()){if(Date.now()>deadline)throw Error('Timed out');await delay(5);}}
 async function fixture(t:any,windowMs=1000,requestPolicy?: (method:unknown,params:Record<string,unknown>)=>Promise<Record<string,unknown>>) {
  const root=await mkdtemp(join(tmpdir(),'oc-callback-')),nativePath=join(root,'native.sock'),proxy=join(root,'gateway.sock');
@@ -29,6 +30,35 @@ async function fixture(t:any,windowMs=1000,requestPolicy?: (method:unknown,param
  return {relay,nativeSockets,requests,connect,proxy};
 }
 const callback={id:'native-call',method:'item/tool/call',params:{threadId:'child',turnId:'turn',callId:'call',tool:'thread_tell',arguments:{threadId:'parent',message:'Done'}}};
+test('sandbox preparation failures log their distinct causes without exposing input or changing the wire error', async t => {
+ const warnings = t.mock.method(console, 'warn', () => {});
+ const f = await fixture(t, 1000, codexSandboxRequestPolicy(async id => {
+  if (id === 'unreadable') throw new Error('private native error /private/workspace');
+  return {thread: {}};
+ }));
+ const gateway = await f.connect();
+ const cases = [
+  {threadId:'unreadable', reason:'thread-read-failed'},
+  {threadId:'old', reason:'missing-workspace'},
+  {threadId:'old', cwd:'relative/private-workspace', reason:'invalid-workspace'},
+ ];
+ for (const [index, {reason, ...params}] of cases.entries()) {
+  const id = `start-${index}`, clientUserMessageId = `message-${index}`;
+  gateway.send({id, method:'turn/start', params:{...params, clientUserMessageId, input:[{text:'private message'}]}});
+  await until(() => gateway.messages.some(message => message.id === id));
+  assert.deepEqual(gateway.messages.find(message => message.id === id).error,
+    {code:-32084, message:'Execution environment unavailable'});
+  const [label, payload] = warnings.mock.calls[index]!.arguments as unknown as [string, string];
+  assert.equal(label, '[opencraft-execution-preparation]');
+  const event = JSON.parse(payload);
+  assert.equal(event.reason, reason);
+  assert.equal(event.threadId, params.threadId);
+  assert.equal(event.clientMessageId, clientUserMessageId);
+  assert.equal(event.forwarded, false);
+  assert.doesNotMatch(payload, /private/);
+ }
+ assert.equal(f.requests.some(message => message.method === 'turn/start'), false);
+});
 test('gateway disconnect retains the real native connection and replays a tool once with its stable identity',async t=>{
  const f=await fixture(t),first=await f.connect();await until(()=>f.requests.some(m=>m.method==='initialized'));
  f.nativeSockets[0]!.send(JSON.stringify(callback));await until(()=>first.messages.some(m=>m.id===callback.id));

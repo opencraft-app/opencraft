@@ -8,6 +8,7 @@ import {
   connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
+  ConversationUnavailableState,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
 } from "../../apps/workbench-web/src/components/conversation-recovery";
@@ -33,6 +34,19 @@ test("routine recovery has no error, retry button or diagnostic UI in cold and r
       assert.match(markup, /Update or reload to reconnect/);
       assert.doesNotMatch(markup, /<button|<details|<pre|Try again|Technical details/);
     }
+  } finally { runtime.dispose(); }
+});
+
+test("archived conversations render one read-only restore state instead of a retry transcript", () => {
+  const runtime = new LocaleRuntime([]);
+  try {
+    const markup = renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime,
+      children: createElement(ConversationUnavailableState, { reason: "archived", onRestore: () => undefined }) }));
+    assert.match(markup, /Conversation archived/);
+    assert.match(markup, /read-only until you restore it/);
+    assert.match(markup, /Restore conversation/);
+    assert.doesNotMatch(markup, /Continue/);
+    assert.match(markup, /data-reason="archived"/);
   } finally { runtime.dispose(); }
 });
 

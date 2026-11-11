@@ -67,19 +67,20 @@ filter synchronization, recycle round trips and refresh with held requests.
 
 ## Demand pool columns
 
-Board splits backlog into Product backlog and Technical backlog, followed by the
+Board splits backlog into Product backlog, Growth backlog and Technical backlog in that order, followed by the
 existing workflow columns. This is one projection of the task status and kind:
 engineering, harness, research, documentation and operations backlog tasks use
-the technical pool; all other or missing kinds use the product pool. Filtering,
+the technical pool; growth uses the growth pool (运营需求池); all other or missing
+kinds use the product pool. Filtering,
 counts, compact selection, loading geometry and scroll/draft keys use the same
 column identity. Existing statuses, ordering and task data are preserved.
 Inline creation defaults to feature in the product pool and engineering in the
-technical pool; compatible kind filters are inherited, incompatible filters do
+technical pool, and growth in the growth pool; compatible kind filters are inherited, incompatible filters do
 not override the chosen pool and a hidden-result notice explains the filter.
 
 ## Tasks board card width
 
-The seven-column board uses one Tasks-owned minimum column width token of 340px,
+The eight-column board uses one Tasks-owned minimum column width token of 340px,
 with equal flexible tracks above that minimum. Cards fill the column content
 width. The board scrollport owns horizontal overflow; the page does not expand.
 At task-container widths of 600px or less, the existing selected single-column
@@ -202,8 +203,13 @@ views within the same application; task actions keep their task terminology.
 
 ### Conversation task summary
 
-The optional `thread-summary` trusted plugin owns a read-only projection of structured plans,
-file changes and agent/command activity. `ConversationSummaryService` owns one revocable
+The optional `thread-summary` trusted plugin places a shared Markdown note first, followed
+by read-only projections of structured plans, file changes and agent/command activity.
+The note uses an independent gateway-owned CRDT store and the existing conversation access
+policy; it never writes timeline projections, engine data, UI preferences or browser records.
+An authenticated note capability is required. Unsynced edits belong to the conversation
+session, survive closing the panel, and are not claimed durable across a page reload.
+Remote edits preserve selection and wait until active IME composition commits. `ConversationSummaryService` owns one revocable
 contribution, while the Workbench owns placement, focus, modality and semantic navigation.
 Unloading the plugin never ends execution, releases a conversation lease or changes history.
 The existing project/working-directory information dialog remains a separate action.

@@ -63,6 +63,7 @@ const ConversationOverview = lazy(() => import("./conversation-overview").then(m
 const words = {
   product_backlog: ["产品需求池", "Product backlog"],
   technical_backlog: ["技术需求池", "Technical backlog"],
+  growth_backlog: ["运营需求池", "Growth backlog"],
   morningOverview: ["晨会总览", "Morning overview"],
   aiFollowUp: ["AI 跟进", "AI follow-up"],
   morningShort: ["晨会", "Morning"],
@@ -247,8 +248,9 @@ const words = {
 } as const;
 function useText() {
   const intl = useIntl();
-  return (key: keyof typeof words) =>
-    words[key][intl.locale.startsWith("zh") ? 0 : 1];
+  return (key: keyof typeof words) => key === "growth_backlog"
+    ? intl.formatMessage({ id: "tasks.column.growthBacklog", defaultMessage: "Growth backlog" })
+    : words[key][intl.locale.startsWith("zh") ? 0 : 1];
 }
 function starterTemplate(kind: string, chinese: boolean) {
   if (chinese) {

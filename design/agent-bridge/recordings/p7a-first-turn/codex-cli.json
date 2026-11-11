@@ -1,0 +1,601 @@
+{
+  "schemaVersion": 2,
+  "model": "gpt-5.6-luna",
+  "reasoning": "low",
+  "commands": [
+    {
+      "command": "spawn",
+      "result": {
+        "operationId": "935eee36-7c17-4bed-bd13-4982f2ee84c4",
+        "threadId": "bridge:codex:child-0",
+        "status": "starting",
+        "durability": "pending_first_turn",
+        "delivery": "sent"
+      }
+    },
+    {
+      "command": "wait",
+      "result": {
+        "settled": false,
+        "waitTicketId": "32e9958b-7d54-483e-b792-8dc982d2f229",
+        "threads": [
+          {
+            "threadId": "bridge:codex:child-0",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show",
+      "result": {
+        "threadId": "bridge:codex:child-0",
+        "entries": [],
+        "nextCursor": null,
+        "externalContext": true
+      }
+    },
+    {
+      "command": "wait",
+      "result": {
+        "settled": false,
+        "waitTicketId": "670a79a4-56ca-4554-b836-fc15514f2de0",
+        "threads": [
+          {
+            "threadId": "bridge:codex:child-0",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "command": "show",
+      "result": {
+        "threadId": "bridge:codex:child-0",
+        "entries": [
+          {
+            "turnId": "t1.1",
+            "role": "user",
+            "text": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nRun python3 -c &quot;import time;time.sleep(10);print(123)&quot; once. Then reply P7A_CHILD_OK unless a steering message changes the final reply.\n</opencraft_thread_message>"
+          }
+        ],
+        "nextCursor": null,
+        "externalContext": true
+      }
+    },
+    {
+      "command": "tell",
+      "result": {
+        "operationId": "a32d489a-4f95-4dff-9f80-7dfa380bc91a",
+        "threadId": "bridge:codex:child-0",
+        "delivery": "queued",
+        "waitingOn": "turn_starting",
+        "delegationRevision": 1
+      }
+    },
+    {
+      "command": "wait",
+      "result": {
+        "settled": false,
+        "waitTicketId": "b3636f46-a9bf-43cd-a945-1d215510b0f5",
+        "threads": [
+          {
+            "threadId": "bridge:codex:child-0",
+            "state": "active",
+            "turnId": "t1.1",
+            "rootTurnId": "t1.1"
+          }
+        ]
+      }
+    },
+    {
+      "command": "wait",
+      "result": {
+        "settled": false,
+        "waitTicketId": "e0c42709-8a86-49ad-9485-2efa41bc82e2",
+        "threads": [
+          {
+            "threadId": "bridge:codex:child-0",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "command": "wait",
+      "result": {
+        "settled": false,
+        "waitTicketId": "7d36cbcb-e9ac-42c5-bfdf-cac00512b68c",
+        "threads": [
+          {
+            "threadId": "bridge:codex:child-0",
+            "status": "active"
+          }
+        ]
+      }
+    },
+    {
+      "command": "wait",
+      "result": {
+        "settled": true,
+        "waitTicketId": "f0367fc3-7f31-4e8f-8e47-96b84d5911da",
+        "threads": [
+          {
+            "threadId": "bridge:codex:child-0",
+            "state": "completed",
+            "turnId": "t1.1",
+            "rootTurnId": "t1.1"
+          }
+        ]
+      }
+    },
+    {
+      "command": "output",
+      "result": {
+        "ref": {
+          "serverId": "p7a-local",
+          "threadId": "bridge:codex:child-0"
+        },
+        "externalContext": true,
+        "history": {
+          "entries": [
+            {
+              "turnId": "t1.1",
+              "role": "user",
+              "text": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nRun python3 -c &quot;import time;time.sleep(10);print(123)&quot; once. Then reply P7A_CHILD_OK unless a steering message changes the final reply.\n</opencraft_thread_message>"
+            },
+            {
+              "turnId": "t1.1",
+              "role": "user",
+              "text": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nAfter the command finishes reply exactly P7A_TELL_OK.\n</opencraft_thread_message>"
+            },
+            {
+              "turnId": "t1.1",
+              "role": "assistant",
+              "text": "P7A_TELL_OK"
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "method": "turn/started",
+      "threadId": "bridge:codex:parent",
+      "turn": {
+        "id": "t1.1",
+        "items": [],
+        "itemsView": "summary",
+        "status": "inProgress",
+        "error": null,
+        "startedAt": 1794377051,
+        "completedAt": null,
+        "durationMs": null
+      }
+    },
+    {
+      "method": "turn/started",
+      "threadId": "bridge:codex:child-0",
+      "turn": {
+        "id": "t1.1",
+        "items": [],
+        "itemsView": "summary",
+        "status": "inProgress",
+        "error": null,
+        "startedAt": 1794377057,
+        "completedAt": null,
+        "durationMs": null
+      }
+    },
+    {
+      "method": "turn/completed",
+      "threadId": "bridge:codex:child-0",
+      "turn": {
+        "id": "t1.1",
+        "items": [],
+        "itemsView": "summary",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1794377057,
+        "completedAt": 1794377076,
+        "durationMs": null
+      }
+    },
+    {
+      "method": "turn/completed",
+      "threadId": "bridge:codex:parent",
+      "turn": {
+        "id": "t1.1",
+        "items": [],
+        "itemsView": "summary",
+        "status": "completed",
+        "error": null,
+        "startedAt": 1794377051,
+        "completedAt": 1794377079,
+        "durationMs": null
+      }
+    }
+  ],
+  "reservations": [
+    {
+      "threadId": "bridge:codex:parent",
+      "phase": "unbound"
+    },
+    {
+      "threadId": "bridge:codex:parent",
+      "phase": "admitted"
+    },
+    {
+      "threadId": "bridge:codex:child-0",
+      "phase": "unbound"
+    },
+    {
+      "threadId": "bridge:codex:child-0",
+      "phase": "admitted"
+    }
+  ],
+  "nativeEvidence": [
+    {
+      "publicThreadId": "bridge:codex:parent",
+      "nativeThreadId": "01a1c934-eb4e-7e00-b140-6b02540fe606",
+      "selected": [
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "task_started",
+            "turn_id": "01a1c934-ecb4-7950-bfe0-e573fe1582f9",
+            "root_turn_id": "01a1c934-ecb4-7950-bfe0-e573fe1582f9"
+          }
+        },
+        {
+          "type": "turn_context",
+          "payload": {
+            "approval_policy": "never",
+            "sandbox_policy": {
+              "type": "workspace-write",
+              "network_access": true,
+              "exclude_tmpdir_env_var": false,
+              "exclude_slash_tmp": false
+            },
+            "model": "gpt-5.6-luna",
+            "effort": "low"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "user_message",
+            "client_id": "first-input",
+            "message": "Run python3 chain.py once in the current directory. Do not retry on failure. After successful spawn/tell/wait/output reply exactly P7A_PARENT_OK."
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "agent_message",
+            "message": "Running `python3 chain.py` once in the current directory."
+          }
+        },
+        {
+          "type": "response_item",
+          "payload": {
+            "type": "custom_tool_call",
+            "id": "ctc_0fea3b2d304fd081016af4055ee30c87d099ae219e9c3f838a",
+            "status": "completed",
+            "call_id": "call_2b52113c69c845b7a87a89ca83065004",
+            "name": "exec",
+            "input": "const r = await tools.exec_command({cmd:\"python3 chain.py\",workdir:\"<validation-root>/task\",yield_time_ms:30000,max_output_tokens:2000}); text(r.output); if (r.session_id) text(await tools.write_stdin({session_id:r.session_id,chars:\"\",yield_time_ms:30000,max_output_tokens:2000}));\n",
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a1c934-ecb4-7950-bfe0-e573fe1582f9",
+              "create_time": 1794377054.8894615
+            }
+          }
+        },
+        {
+          "type": "response_item",
+          "payload": {
+            "type": "custom_tool_call_output",
+            "id": "ctco_01a1c935-51dd-73f1-ac08-87d27b661dcf",
+            "call_id": "call_2b52113c69c845b7a87a89ca83065004",
+            "output": [
+              {
+                "type": "input_text",
+                "text": "Script completed\nWall time 20.5 seconds\nOutput:\n"
+              },
+              {
+                "type": "input_text",
+                "text": "{\"spawn\": {\"operationId\": \"935eee36-7c17-4bed-bd13-4982f2ee84c4\", \"threadId\": \"bridge:codex:child-0\", \"status\": \"starting\", \"durability\": \"pending_first_turn\", \"delivery\": \"sent\"}, \"tell\": {\"operationId\": \"a32d489a-4f95-4dff-9f80-7dfa380bc91a\", \"threadId\": \"bridge:codex:child-0\", \"delivery\": \"queued\", \"waitingOn\": \"turn_starting\", \"delegationRevision\": 1}, \"wait\": {\"settled\": true, \"waitTicketId\": \"f0367fc3-7f31-4e8f-8e47-96b84d5911da\", \"threads\": [{\"threadId\": \"bridge:codex:child-0\", \"state\": \"completed\", \"turnId\": \"t1.1\", \"rootTurnId\": \"t1.1\"}]}, \"output\": {\"ref\": {\"serverId\": \"p7a-local\", \"threadId\": \"bridge:codex:child-0\"}, \"externalContext\": true, \"history\": {\"entries\": [{\"turnId\": \"t1.1\", \"role\": \"user\", \"text\": \"<opencraft_thread_message from=\\\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\\\" reply_expectation=\\\"required\\\">\\nRun python3 -c &quot;import time;time.sleep(10);print(123)&quot; once. Then reply P7A_CHILD_OK unless a steering message changes the final reply.\\n</opencraft_thread_message>\"}, {\"turnId\": \"t1.1\", \"role\": \"user\", \"text\": \"<opencraft_thread_message from=\\\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\\\" reply_expectation=\\\"required\\\">\\nAfter the command finishes reply exactly P7A_TELL_OK.\\n</opencraft_thread_message>\"}, {\"turnId\": \"t1.1\", \"role\": \"assistant\", \"text\": \"P7A_TELL_OK\"}], \"nextCursor\": null}}}\n"
+              }
+            ],
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a1c934-ecb4-7950-bfe0-e573fe1582f9",
+              "create_time": 1794377077.2132201
+            }
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "agent_message",
+            "message": "P7A_PARENT_OK"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "task_complete",
+            "root_turn_id": "01a1c934-ecb4-7950-bfe0-e573fe1582f9",
+            "turn_id": "01a1c934-ecb4-7950-bfe0-e573fe1582f9",
+            "last_agent_message": "P7A_PARENT_OK"
+          }
+        }
+      ]
+    },
+    {
+      "publicThreadId": "bridge:codex:child-0",
+      "nativeThreadId": "01a1c935-0437-7b00-9614-ab3ff1d63e4f",
+      "selected": [
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "task_started",
+            "turn_id": "01a1c935-053a-7072-9b12-c44a03bfd7e1",
+            "root_turn_id": "01a1c935-053a-7072-9b12-c44a03bfd7e1"
+          }
+        },
+        {
+          "type": "turn_context",
+          "payload": {
+            "approval_policy": "never",
+            "sandbox_policy": {
+              "type": "workspace-write",
+              "network_access": true,
+              "exclude_tmpdir_env_var": false,
+              "exclude_slash_tmp": false
+            },
+            "model": "gpt-5.6-luna",
+            "effort": "low"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "user_message",
+            "client_id": "actor-input:bab554c1-ffbb-4d48-84c9-92ef965c67f5",
+            "message": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nRun python3 -c &quot;import time;time.sleep(10);print(123)&quot; once. Then reply P7A_CHILD_OK unless a steering message changes the final reply.\n</opencraft_thread_message>"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "user_message",
+            "client_id": "actor-input:c527edb8-cf04-42cd-b19e-81781f8b0c93",
+            "message": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nAfter the command finishes reply exactly P7A_TELL_OK.\n</opencraft_thread_message>"
+          }
+        },
+        {
+          "type": "response_item",
+          "payload": {
+            "type": "custom_tool_call",
+            "id": "ctc_068f2e3bed6d2d4d016af40567411887d0984dc030bd30c951",
+            "status": "completed",
+            "call_id": "call_0d694af663d8485aa4dd1b9c5e8b1f82",
+            "name": "exec",
+            "input": "const r = await tools.exec_command({cmd:\"python3 -c \\\"import time;time.sleep(10);print(123)\\\"\",workdir:\"<validation-root>/task\",yield_time_ms:30000,max_output_tokens:1000}); text(r.output);\n",
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a1c935-053a-7072-9b12-c44a03bfd7e1",
+              "create_time": 1794377063.2571034
+            }
+          }
+        },
+        {
+          "type": "response_item",
+          "payload": {
+            "type": "custom_tool_call_output",
+            "id": "ctco_01a1c935-49c9-7140-b69b-44b0567c82ba",
+            "call_id": "call_0d694af663d8485aa4dd1b9c5e8b1f82",
+            "output": [
+              {
+                "type": "input_text",
+                "text": "Script completed\nWall time 10.4 seconds\nOutput:\n"
+              },
+              {
+                "type": "input_text",
+                "text": "123\n"
+              }
+            ],
+            "internal_chat_message_metadata_passthrough": {
+              "turn_id": "01a1c935-053a-7072-9b12-c44a03bfd7e1",
+              "create_time": 1794377075.1454191
+            }
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "agent_message",
+            "message": "P7A_TELL_OK"
+          }
+        },
+        {
+          "type": "event_msg",
+          "payload": {
+            "type": "task_complete",
+            "root_turn_id": "01a1c935-053a-7072-9b12-c44a03bfd7e1",
+            "turn_id": "01a1c935-053a-7072-9b12-c44a03bfd7e1",
+            "last_agent_message": "P7A_TELL_OK"
+          }
+        }
+      ]
+    }
+  ],
+  "artifactSha256": "9ed58f64ff50bfe4d735c0bfcbc34651c000d13b012b15ebf3fe1328564450bb",
+  "platformApproval": {
+    "validation_read": {
+      "approval_mode": "approve"
+    }
+  },
+  "parentHistory": [
+    {
+      "id": "t1.1",
+      "rootTurnId": "t1.1",
+      "items": [
+        {
+          "type": "userMessage",
+          "id": "item-1",
+          "clientId": "first-input",
+          "content": [
+            {
+              "type": "text",
+              "text": "Run python3 chain.py once in the current directory. Do not retry on failure. After successful spawn/tell/wait/output reply exactly P7A_PARENT_OK.",
+              "text_elements": []
+            }
+          ]
+        },
+        {
+          "type": "agentMessage",
+          "id": "item-2",
+          "text": "Running `python3 chain.py` once in the current directory.",
+          "phase": "commentary",
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null
+        },
+        {
+          "type": "agentMessage",
+          "id": "item-3",
+          "text": "P7A_PARENT_OK",
+          "phase": "final_answer",
+          "memoryCitation": null,
+          "delivery": null,
+          "questions": null
+        }
+      ],
+      "itemsView": "full",
+      "status": "completed",
+      "error": null,
+      "startedAt": 1794377051,
+      "completedAt": 1794377079,
+      "durationMs": 27890
+    }
+  ],
+  "childHistories": [
+    {
+      "threadId": "bridge:codex:child-0",
+      "turns": [
+        {
+          "id": "t1.1",
+          "rootTurnId": "t1.1",
+          "items": [
+            {
+              "type": "userMessage",
+              "id": "item-1",
+              "clientId": "actor-input:bab554c1-ffbb-4d48-84c9-92ef965c67f5",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nRun python3 -c &quot;import time;time.sleep(10);print(123)&quot; once. Then reply P7A_CHILD_OK unless a steering message changes the final reply.\n</opencraft_thread_message>",
+                  "text_elements": []
+                }
+              ]
+            },
+            {
+              "type": "userMessage",
+              "id": "item-2",
+              "clientId": "actor-input:c527edb8-cf04-42cd-b19e-81781f8b0c93",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "<opencraft_thread_message from=\"opencraft://conversation/v1/p7a-local/bridge%3Acodex%3Aparent\" reply_expectation=\"required\">\nAfter the command finishes reply exactly P7A_TELL_OK.\n</opencraft_thread_message>",
+                  "text_elements": []
+                }
+              ]
+            },
+            {
+              "type": "agentMessage",
+              "id": "item-3",
+              "text": "P7A_TELL_OK",
+              "phase": "final_answer",
+              "memoryCitation": null,
+              "delivery": null,
+              "questions": null
+            }
+          ],
+          "itemsView": "full",
+          "status": "completed",
+          "error": null,
+          "startedAt": 1794377057,
+          "completedAt": 1794377076,
+          "durationMs": 19271
+        }
+      ]
+    }
+  ],
+  "nativeUserAgent": "opencraft-core-health/0.162.1 (Linux Unknown; x86_64) unknown (opencraft-codex-bridge; 0.1.0)",
+  "result": "passed",
+  "cleanup": "completed",
+  "assertions": {
+    "modelTurns": 2,
+    "nativeIdsUnchanged": true,
+    "oneChild": true,
+    "sameChildTurnContainsInitialAndSteer": true,
+    "parentCompleted": true,
+    "childCompleted": true,
+    "finalAssistantRepliesExact": true,
+    "firstTurnPlatformApprovalPreserved": true
+  },
+  "baseHead": "2549ea71dab11bdd641fe82da4ba9ddab6b2a327",
+  "limits": [
+    "Local source-component integration with temporary ConversationExecutionPort and prepare adapter; not deployed headless composition.",
+    "Host transport uses the existing test process backend; model tools execute through the existing Core. This does not prove production sandbox isolation.",
+    "Success uses OPENCRAFT_THREAD_CLI and native tell with negotiated per-input evidence. Queue follow-up live acceptance remains unverified.",
+    "No Web/Electron/Expo, other provider, owner-restart recovery or production acceptance is claimed. No default-engine change, deployment or orchestration MCP reinjection."
+  ],
+  "sourceSha256": {
+    "apps/agent-bridge-host/src/codex-owner.ts": "1f0ff12716c87450e336f9904750a605a5cab5e904d4940fe1778c9c5498e475",
+    "apps/agent-bridge-host/src/codex-runtime.ts": "bc961e18b3fcf90d05a73bf0221c69c6f171e3baf3a7bb444b6ddd66daab6109",
+    "apps/agent-bridge-host/src/codex.ts": "1a5e2a1be34e8d40a4758e8b2b48d4deb6506e621044d2ec69714156d7bdcb2b",
+    "apps/agent-bridge-host/src/gateway.ts": "c8f3e9d73dbaba8117da9a6b59226ad1549742fd1148687e8691a5271534864b",
+    "apps/agent-bridge-host/src/host.ts": "eec2848a2cdb231c321249aaec4798d3749e64529e99febec557e109e9449a84",
+    "apps/opencraft-daemon/src/bridge-execution-admission.ts": "0a1ccd7b00ee25910023cecdfa86b57c49ef8903d982c34c121b6902582912b8",
+    "packages/session-capabilities/src/execution-cli.ts": "76660f364fc3f44991d74d2e74d25fa70f265f700db7af8a538b9f1123382c52",
+    "packages/session-capabilities/src/mcp.ts": "a92934836b71ff185f2020a1fb20f53beab6d245d8976304efcf6ee12a89b4f3",
+    "packages/session-capabilities/src/thread-cli-provider.ts": "201c36cc02f342e3e34705ac123288da6be99f501cc44b69c1b3f4594258ccac",
+    "scripts/headless-application.mjs": "31c59b58380c3caf12a5b9807b0c8da9112415d2b2780b92103a5a52565bd796",
+    "scripts/smoke/execution/smoke-codex-first-turn-cli.ts": "35c36903ba845f6cf1b66823627f9235f244aa8f8f7e4cddfcbcd373114a5a3c",
+    "tests/agent-bridge/codex-first-turn.test.ts": "5633be45f5e7b05ad6f9bbeee0a4f8e655716da1c03ca461d42d44ebe536038d",
+    "tests/agent-bridge/codex-gateway.test.ts": "d1c5bc557352b1adc34c39d8a22a4ff05c275d84d77fa7205a4cd0f97048fa89",
+    "tests/agent-bridge/execution-admission.test.ts": "48ef3faf8a281fe997173d48b659c3299ce16b8d68cda77ef45335b56073cb6a",
+    "tests/agent-bridge/fixtures/fake-bridge.mjs": "a7630da9f9d8316868bf8ba5a457c8fce778f65df0cc95b4c4eb9043ec656721",
+    "tests/agent-bridge/host.test.ts": "38684784c31cde53216bd370c21e1e15718a9f7fc6140ed6496d6d167311dc2b",
+    "tests/execution/session-capabilities.test.ts": "2890c695cb5a6fb1def35e1d712a421087f85e73f47f5b5fd398589fc9452c84",
+    "tests/identity/thread-cli.test.ts": "bb3d0cb04dfe44875eb9129f5e6c28c6d8df4558412771215fdd8bbe185cf3f3"
+  },
+  "checks": {
+    "bridge": {
+      "command": "npm run test:agent-bridge -- --test-concurrency=4",
+      "runs": 10,
+      "tests": 313,
+      "passesPerRun": 312,
+      "existingOptInSkipsPerRun": 1
+    },
+    "focusedLegacyRegressions": 137,
+    "reviewFixFocused": 63,
+    "typecheck": "passed",
+    "boundaries": "passed"
+  },
+  "reviews": [
+    {
+      "threadId": "thr_j67tsdet3p",
+      "P1": 6,
+      "disposition": "accepted and fixed by removing replacement design"
+    },
+    {
+      "threadId": "thr_tc9b62aqus",
+      "P1": 6,
+      "disposition": "accepted and fixed; deterministic regressions added"
+    }
+  ]
+}

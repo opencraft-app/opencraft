@@ -1,6 +1,5 @@
-import { createHmac, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
-import { mkdirSync, openSync, readFileSync, closeSync, writeFileSync, statSync, lstatSync } from "node:fs";
-import { dirname } from "node:path";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { readFileSync, lstatSync } from "node:fs";
 import { readFile, writeFile, rename, rm } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -8,50 +7,33 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CapabilityBindings } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
-import { threadCliProvider } from './thread-cli-provider.js';
 
-/** A stable signing key, never a model-visible global credential. Tokens bind a
- * single server/thread. Domain providers reauthorize independently on each call.
- */
-export function capabilitySigningKey(path: string): Buffer {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  let fd: number | undefined;
-  try { fd = openSync(path, "wx", 0o600); writeFileSync(fd, randomBytes(32)); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error; }
-  finally { if (fd !== undefined) closeSync(fd); }
-  const key = readFileSync(path), info = statSync(path);
-  if (!info.isFile() || (info.mode & 0o077) || key.length !== 32) throw new Error("Invalid capability signing key");
-  return key;
-}
-export function sessionCapabilityToken(key: Buffer, session: CapabilitySession): string {
-  const payload = Buffer.from(JSON.stringify(session.execution ? ["execution", session.serverId, session.threadId, session.execution] : ["session", session.serverId, session.threadId])).toString("base64url");
-  return payload + "." + createHmac("sha256", key).update(payload).digest("base64url");
-}
+export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
+import { sessionCapabilityToken,executionCliSourceSession } from "./credentials.js";
 export class SessionCapabilityMcp {
   private url: string | undefined;
   private readonly server;
   private readonly calls = new Set<Server>();
   private readonly pending = new Map<string, { tools: readonly CapabilityTool[]; expiresAt: number }>();
   private readonly memoryBindings = new Map<string, CapabilitySession>();
-  private readonly releaseCli?: () => void;
   private readonly executionReservations = new Map<string, {
     bound: Promise<CapabilitySession>; resolve(session: CapabilitySession): void;
-    session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number;
+    session?: CapabilitySession; scope?: CapabilitySession; expiresAt: number; memoryOnly?: boolean;
   }>();
   constructor(readonly capabilities: SessionCapabilities, private readonly key: Buffer, private readonly bindings?: CapabilityBindings,
     private readonly options: { descriptorPath?: string; retainEndpoint?: boolean; authorizeInput?: (session: CapabilitySession, inputId: string) => boolean;
+      authorizeExecution?: (session:CapabilitySession)=>Promise<void>;
       orchestration?: (session: CapabilitySession, request: Record<string, unknown>) => Promise<unknown>;
-      cliDirectory?: string; threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown> } = {}) {
-    if(options.threadCli && options.cliDirectory)this.releaseCli=capabilities.register(threadCliProvider({directory:options.cliDirectory,
-      config:session=>{
-        if(!this.url||!session.execution)throw Error('Execution CLI unavailable');
-        return {url:new URL('/thread-cli',this.url).href,token:this.token(session)};
-      },context:session=>options.threadCli!(session,{command:'context'})}));
+      threadCli?: (session: CapabilitySession, request: Record<string,unknown>) => Promise<unknown> } = {}) {
     this.server = createServer((request, response) => { void this.handle(request, response).catch(() => {
       if (!response.headersSent) response.writeHead(500); response.end();
     }); });
     this.server.requestTimeout = 30_000;
     this.server.headersTimeout = 10_000;
+  }
+  get cliEndpoint():string {
+    if(!this.url)throw Error('Capability listener unavailable');
+    return new URL('/thread-cli',this.url).href;
   }
   private signature(payload: string) { return createHmac("sha256", this.key).update(payload).digest(); }
   private sign(claims: readonly string[]): string {
@@ -70,6 +52,9 @@ export class SessionCapabilityMcp {
     try {
       const pair = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
       if (!Array.isArray(pair)) return null;
+      const cliRoute=request.url==='/thread-cli'||request.url==='/execution-admission';
+      if(pair[0]==='execution-cli')return cliRoute?{session:executionCliSourceSession(this.key,auth.slice(7))}:null;
+      if(cliRoute)return null;
       if (pair[0] === "execution" && pair.length === 4) {
         const [_, serverId, threadId, execution] = pair;
         if (![serverId, threadId].every(v => typeof v === "string" && v && v.length <= 512)
@@ -80,8 +65,8 @@ export class SessionCapabilityMcp {
         return { session: Object.freeze({ serverId, threadId, execution: Object.freeze(execution) }) };
       }
       if (pair.some(v => typeof v !== "string" || !v || v.length > 512)) return null;
-      if (pair[0] === "execution-binding" && pair.length === 2) {
-        const reservation = this.executionReservation(pair[1]);
+      if ((pair[0] === "execution-binding"||pair[0] === "execution-memory-binding") && pair.length === 2) {
+        const reservation = pair[0] === "execution-memory-binding" ? this.executionReservations.get(pair[1]) : this.executionReservation(pair[1]);
         if (!reservation || (!reservation.scope && !reservation.session && reservation.expiresAt <= Date.now())) return null;
         return { session: reservation.session ?? null, executionReservation: reservation.bound };
       }
@@ -126,7 +111,7 @@ export class SessionCapabilityMcp {
   config(session: CapabilitySession): Record<string, unknown> | null {
     const tools = this.capabilities.tools(session);
     if (!this.url || !tools.length) return null;
-    const id = this.bindings?.id(session) ?? [...this.memoryBindings].find(([, s]) => s.serverId === session.serverId && s.threadId === session.threadId)?.[0];
+    const id = session.execution ? undefined : this.bindings?.id(session) ?? [...this.memoryBindings].find(([, s]) => s.serverId === session.serverId && s.threadId === session.threadId)?.[0];
     return this.configuration(id && !session.execution ? this.bindingToken(id) : this.token(session), tools);
   }
   /** Host-only creation reservation. Listing a declaration never authorizes a
@@ -158,17 +143,17 @@ export class SessionCapabilityMcp {
     if (!saved) return undefined;
     let resolve!: (session: CapabilitySession) => void;
     const bound = new Promise<CapabilitySession>(done => { resolve = done; });
-    const reservation = { bound, resolve, scope: saved.scope, session: saved.session ?? undefined, expiresAt: Infinity };
+    const reservation = { bound, resolve, memoryOnly:false, scope: saved.scope, session: saved.session ?? undefined, expiresAt: Infinity };
     if (saved.session) resolve(saved.session);
     this.executionReservations.set(id, reservation);
     return reservation;
   }
-  private executionHandle(id: string, reservation: NonNullable<ReturnType<SessionCapabilityMcp["executionReservation"]>>) {
-    return { configuration: this.configuration(this.sign(["execution-binding", id]), []),
+  private executionHandle(id: string, reservation: NonNullable<ReturnType<SessionCapabilityMcp["executionReservation"]>>, tools:readonly CapabilityTool[] = []) {
+    return { configuration: this.configuration(this.sign([reservation.memoryOnly?"execution-memory-binding":"execution-binding", id]), tools),
       bindThread: (scope: CapabilitySession) => {
         if (this.executionReservations.get(id) !== reservation || reservation.scope
           || reservation.expiresAt <= Date.now()) throw new Error("Execution capability reservation is unavailable");
-        this.bindings?.prepareExecution(id, scope);
+        if(!reservation.memoryOnly)this.bindings?.prepareExecution(id, scope);
         reservation.scope = { serverId: scope.serverId, threadId: scope.threadId };
       },
       bind: (session: CapabilitySession) => {
@@ -180,23 +165,30 @@ export class SessionCapabilityMcp {
           if (JSON.stringify(reservation.session) !== JSON.stringify(session)) throw new Error("Execution capability reservation is already bound");
           return;
         }
-        if (reservation.scope) this.bindings?.bindExecution(id, session);
+        if (reservation.scope&&!reservation.memoryOnly) this.bindings?.bindExecution(id, session);
         reservation.session = structuredClone(session); reservation.resolve(reservation.session);
       },
-      cancel: () => { this.bindings?.removeExecution(id); this.executionReservations.delete(id); },
+      resetBeforeStart: () => {
+        if(!reservation.memoryOnly)throw new Error('Only an unstarted bridge binding can reset');
+        reservation.session=undefined;
+        reservation.bound=new Promise<CapabilitySession>(resolve=>{reservation.resolve=resolve;});
+      },
+      cancel: () => { if(!reservation.memoryOnly)this.bindings?.removeExecution(id); this.executionReservations.delete(id); },
     };
   }
-  prepareExecution() {
+  prepareExecution(options:{memoryOnly?:boolean;scope?:CapabilitySession}={}) {
     for (const [id, value] of this.executionReservations)
       if (!value.scope && !value.session && value.expiresAt <= Date.now()) this.executionReservations.delete(id);
-    if (this.executionReservations.size >= 256) throw new Error("Too many pending execution capability reservations");
+    // Installed bridge scopes belong to live native sessions, not the pending
+    // preparation budget. Idle sessions must not exhaust all future creations.
+    if ([...this.executionReservations.values()].filter(v=>!v.memoryOnly||!v.scope).length >= 256) throw new Error("Too many pending execution capability reservations");
     const id = randomUUID();
     let resolve!: (session: CapabilitySession) => void;
     const bound = new Promise<CapabilitySession>(done => { resolve = done; });
-    const reservation = { bound, resolve, expiresAt: Date.now() + 60_000, session: undefined as CapabilitySession | undefined,
+    const reservation = { bound, resolve, memoryOnly:options.memoryOnly===true, expiresAt: Date.now() + 60_000, session: undefined as CapabilitySession | undefined,
       scope: undefined as CapabilitySession | undefined };
     this.executionReservations.set(id, reservation);
-    return this.executionHandle(id, reservation);
+    return this.executionHandle(id, reservation, options.scope ? this.capabilities.tools(options.scope) : []);
   }
   restoreExecution(scope: CapabilitySession) {
     const id = this.bindings?.executionId(scope);
@@ -207,7 +199,7 @@ export class SessionCapabilityMcp {
     response.setHeader("cache-control", "no-store");
     // This dedicated loopback listener uses session bearer auth, never ambient
     // browser cookies or an untrusted callerSessionId in tool arguments.
-    if (!["/mcp", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
+    if (!["/mcp", "/execution-admission", "/admission", "/orchestration", "/thread-cli"].includes(request.url ?? "")) { response.writeHead(404); response.end(); return; }
     if (request.headers.origin !== undefined) { response.writeHead(403); response.end(); return; }
     const authenticated = this.authenticate(request);
     if (!authenticated) { response.writeHead(401); response.end(); return; }
@@ -239,6 +231,11 @@ export class SessionCapabilityMcp {
         response.end(JSON.stringify({ error: typeof error.code === "string" ? error.code : error.status===undefined ? "orchestration_outcome_unknown" : "orchestration_rejected" }));
       }
       return;
+    }
+    if(request.url==='/execution-admission') {
+      if(!authenticated.session?.execution || !this.options.authorizeExecution){response.writeHead(403);response.end();return;}
+      try {await this.options.authorizeExecution(authenticated.session);response.writeHead(200);response.end('{}');}
+      catch {response.writeHead(403);response.end();}return;
     }
     if (request.url === "/admission") {
       const inputId = (body as { inputId?: unknown } | null)?.inputId;
@@ -281,7 +278,6 @@ export class SessionCapabilityMcp {
     await transport.handleRequest(request, response, body);
   }
   async close(): Promise<void> {
-    this.releaseCli?.();
     if (this.options.descriptorPath && !this.options.retainEndpoint) {
       try { const value = JSON.parse(await readFile(this.options.descriptorPath, "utf8")); if (value.url === this.url) await rm(this.options.descriptorPath); }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }

@@ -1,3 +1,4 @@
+import { AutomationError } from './automation.js';
 import { Worker } from 'node:worker_threads';
 import type { ThreadOrchestrationSnapshot } from '@opencraft/appserver-protocol/collaboration';
 import type { ParentNotification, WaitTicket } from './orchestration-ledger.js';
@@ -29,7 +30,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
       this.worker.on('message',packet=>{
         if(packet.type==='ready'){resolve();return;}
         const request=this.pending.get(packet.id);if(!request)return;this.pending.delete(packet.id);
-        if(packet.error)request.reject(Object.assign(new Error(packet.error.message),{code:packet.error.code}));
+        if(packet.error)request.reject(typeof packet.error.status==='number'&&typeof packet.error.code==='string'?new AutomationError(packet.error.code,packet.error.status):Object.assign(new Error(packet.error.message),{code:packet.error.code}));
         else request.resolve(packet.result);
       });
     });
@@ -46,11 +47,13 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
       try{this.worker.postMessage({id,method,payload});}catch(error){this.pending.delete(id);reject(error);}
     });
   }
+  automation<T = any>(operation: string, input: unknown, now: number): Promise<T> {return this.request('automation',{operation,input,now});}
   observe(snapshot:ThreadOrchestrationSnapshot,now:number):Promise<void>{return this.request('observe',{snapshot,now});}
   targets(includeTerminal:boolean,now:number):Promise<string[]>{return this.request('targets',{includeTerminal,now});}
   work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[]}>{return this.request('work',{now});}
   pendingAcks():Promise<string[]>{return this.request('pendingAcks');}
   acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
+  admission(threadId:string,inputId:string):Promise<Record<string,unknown>|null>{return this.request('admission',{threadId,inputId});}
   updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
   close():Promise<void>{
     return this.closing??=(async()=>{

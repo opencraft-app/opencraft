@@ -44,6 +44,7 @@ export interface ConversationTerminalReadSnapshot extends ConversationTerminalSe
 }
 
 interface OwnedTerminalSession {
+  readonly openOptions: ConversationTerminalOpenOptions;
   readonly ownerId: string | null;
   readonly hostId: string;
   readonly cwd: string;
@@ -127,6 +128,7 @@ export class ConversationTerminalSessionRegistry {
     });
     const sessionId = JSON.stringify([options.hostId, session.processId]);
     this.register(sessionId, {
+      openOptions: { ...options },
       ownerId: options.resourceOwnerId ?? null,
       hostId: options.hostId,
       cwd: options.cwd ?? "",
@@ -139,6 +141,21 @@ export class ConversationTerminalSessionRegistry {
 
   get(sessionId: string): AppServerTerminalSession | null {
     return this.sessions.get(sessionId)?.session ?? null;
+  }
+
+  canOpen(hostId: string): boolean {
+    try {
+      const runtime = this.resolveRuntime(hostId);
+      return runtime.getSnapshot().phase === "ready" && runtime.resources.host.canRequest?.("process/spawn") !== false;
+    } catch { return false; }
+  }
+
+  /** Explicit user action: the previous terminal and its output remain intact. */
+  openAnother(sessionId: string): string {
+    this.ensureOpen();
+    const entry = this.sessions.get(sessionId);
+    if (!entry) throw new Error("Terminal session is unavailable");
+    return this.open(entry.openOptions);
   }
 
   listForOwner(ownerId: string): readonly string[] {
@@ -223,6 +240,8 @@ export class ConversationTerminalSessionRegistry {
       const sessionId = JSON.stringify([hostId, process.processHandle]);
       if (!this.sessions.has(sessionId)) {
         this.register(sessionId, {
+          openOptions: { hostId, resourceOwnerId: process.context?.resourceOwnerId ?? undefined,
+            threadId: process.context?.threadId, projectId: process.context?.projectId, cwd: process.context?.cwd ?? null },
           ownerId: process.context?.resourceOwnerId ?? null,
           hostId,
           cwd: process.context?.cwd ?? "",

@@ -153,7 +153,10 @@ export class CodexSubscriptionService {
       subscriptionType: usage.subscriptionType,
       resetCredits: usage.resetCreditCount === null ? null : { availableCount: usage.resetCreditCount, observedAt: now },
     });
-    if (usage.limitWindows.length === 0) return;
+    if (usage.limitWindows.length === 0) {
+      if (secret.external) this.options.store.clearExternalAuthorizationError(account.id);
+      return;
+    }
     const utilization = usage.limitWindows.reduce<number | null>(
       (maximum, window) => window.utilization === null ? maximum : Math.max(maximum ?? 0, window.utilization),
       null,

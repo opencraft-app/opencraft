@@ -1236,6 +1236,22 @@ test("continuation rejection is observable and does not silently disappear", asy
   } finally { runtime.dispose(); }
 });
 
+test("confirmed ACP failures offer explicit Continue without entering capacity retries; unknown outcomes stay fenced", async () => {
+  for (const code of ["acpPromptFailed", "acpPromptUnconfirmed"]) {
+    let calls = 0;
+    const replica = new FakeReplica(threadView({ thread: { id: "thread-one", status: { type: "idle" } }, pendingInteractions: [],
+      turns: [{ id: "failed", status: "failed", items: [{ id: "failure", type: "error", code, message: code }], error: { message: code, codexErrorInfo: "other" } }] }));
+    const runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica,
+      canAutoContinueCapacity: () => true, commands: commands({ async continueTurn() { calls++; return receipt("explicit", "continued"); } }), history: { async loadOlder() {} } });
+    try {
+      assert.equal(runtime.getSnapshot().continuation.turnId, code === "acpPromptFailed" ? "failed" : null);
+      await new Promise(resolve => setTimeout(resolve, 1100)); assert.equal(calls, 0, "native failures do not auto-replay through the Codex capacity timer");
+      if (code === "acpPromptFailed") { await runtime.continueTurn(asTurnId("failed")); assert.equal(calls, 1); }
+      else await assert.rejects(runtime.continueTurn(asTurnId("failed")));
+    } finally { runtime.dispose(); }
+  }
+});
+
 test("older Codex Hosts automatically continue capacity failures after a delay", async () => {
   let calls = 0;
   const runtime = createReplicaConversationRuntime({
@@ -2911,5 +2927,27 @@ for (const unknown of [true, false]) test(`an uncertain or permanent online fail
     composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "keep this input" }] }] } });
     await assert.rejects(runtime.submit(composer.createSubmitIntent()), error => error === failure);
     assert.equal(rows.length, 0); assert.equal(sends, 1);
+  } finally { runtime.dispose(); }
+});
+
+test('input evidence stays separate from admission and late query cannot regress its facet or timeline identity', () => {
+  const replica = new FakeReplica(threadView());
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey('local', 'thread-one'), replica, commands: commands(), history: { async loadOlder() {} } });
+  const before = runtime.getSnapshot().timeline.frames.map(frame => frame.id);
+  const status: import('@opencraft/appserver-protocol').SteerInputStatus = {
+    inputId: 'input-one', clientRequestId: 'client-user-one', expectedTurnId: 'turn-one', disposition: 'steered', nativeExecutions: 1,
+    registration: { value: 'registered', version: 1 }, admission: { value: 'none', version: 0 },
+    delivery: { value: 'none', version: 0 }, evidence: { value: 'context-confirmed', version: 3, evidenceKind: 'native-input-id', nativeInputId: 'native-user' },
+    withdrawal: { value: 'none', version: 0 }, outcome: 'context-confirmed',
+  };
+  const message = () => runtime.getSnapshot().timeline.frames.flatMap(frame => frame.blocks).find(block => block.type === 'user-message' && block.clientId === 'client-user-one');
+  try {
+    runtime.updateSteerEvidence([status]);
+    runtime.updateSteerEvidence([{ ...status, admission: { value: 'accepted', version: 1 }, evidence: { value: 'none', version: 0 }, outcome: 'registered' }]);
+    const block = message(); assert.equal(block?.type, 'user-message');
+    if (block?.type !== 'user-message') throw Error('Expected user message');
+    assert.equal(block.steerEvidence?.admission.value, 'accepted');
+    assert.equal(block.steerEvidence?.evidence.value, 'context-confirmed');
+    assert.deepEqual(runtime.getSnapshot().timeline.frames.map(frame => frame.id), before);
   } finally { runtime.dispose(); }
 });

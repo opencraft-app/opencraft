@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { failureSummary, structuredFailure } from './failure.mjs';
-import { readFile, realpath, mkdir, rename, readdir } from 'node:fs/promises';
+import { readFile, realpath, mkdir, rename, readdir, mkdtemp, rm } from 'node:fs/promises';
 import { join, resolve, isAbsolute } from 'node:path';
 import { spawn } from 'node:child_process';
 import { Journal } from './journal.mjs';
-import { rootOwned, readConfig, readAuthority } from './service-config.mjs';
-import { atomicBytes, atomicJson, privateDirectory, readPrivateJson, bootIdentity, identifier, invariant, sha256 } from './durable.mjs';
+import { rootOwned, readConfig, readAuthority, fullTargetDirectory } from './service-config.mjs';
+import { atomicBytes, atomicJson, privateDirectory, readPrivateJson, bootIdentity, identifier, invariant, sha256, command } from './durable.mjs';
 import { acceptManifest, parseStrictJson } from '../full-release/contract.mjs';
 import { verifyRetainedRelease } from '../full-release/retained.mjs';
 
@@ -39,6 +39,27 @@ export async function parentRecipe(config) {
   return { recipe, recipeBytes: bytes, recipeSha256: sha256(bytes) };
 }
 
+/** Copy only into this invocation's private stage. A failed accepted/renamed
+ * target is never removed here; SIGKILL requires separate ownership diagnosis. */
+export async function copyParentTarget(root, pin, dependencies = {}) {
+  let temporary;
+  try {
+    temporary = await mkdtemp(pin + '.preparing-');
+    await (dependencies.command ?? command)('/usr/bin/cp', ['-a', '--reflink=auto', root + '/.', temporary], { timeout: 180000 });
+    await (dependencies.rename ?? rename)(temporary, pin);
+  } catch (original) {
+    if (temporary) {
+      try { await (dependencies.rm ?? rm)(temporary, { recursive: true, force: true }); }
+      catch (cleanup) {
+        throw Object.assign(new AggregateError([original, cleanup], 'target-copy-cleanup-failed'),
+          { failure: { stage: 'verify-target', code: 'target-copy-cleanup-failed' } });
+      }
+    }
+    throw Object.assign(new Error('target-copy-failed', { cause: original }),
+      { failure: { stage: 'verify-target', code: 'target-copy-failed' } });
+  }
+}
+
 export async function parentTarget(config, retainedRoot = null) {
   const deployment = parseStrictJson(await readFile(join(config.webState, 'deployment.json')));
   let root = await realpath(retainedRoot ?? deployment.current.releaseRoot); await rootOwned(root);
@@ -49,15 +70,11 @@ export async function parentTarget(config, retainedRoot = null) {
   invariant(retainedRoot || deployment.current.fullRelease?.manifestSha256 === manifestSha256, 'unaccepted-parent-target');
   await verifyRetainedRelease(root, trust, state);
   if (!retainedRoot) {
-    const directory = '/opt/opencraft-full-targets', pin = join(directory, manifestSha256);
-    await mkdir(directory, { recursive: true, mode: 0o755 }); await rootOwned(directory);
+    const directory = await fullTargetDirectory(config), pin = join(directory, manifestSha256);
     try { await rootOwned(pin); }
     catch (e) {
       if (e.code !== 'ENOENT') throw e;
-      const { command } = await import('./durable.mjs');
-      const temporary = pin + '.preparing-' + process.pid;
-      await command('/usr/bin/cp', ['-a', '--reflink=auto', root, temporary], { timeout: 180000 });
-      await rename(temporary, pin);
+      await copyParentTarget(root, pin);
     }
     invariant(sha256(await readFile(join(pin, 'release/full-release.json'))) === manifestSha256, 'retained-target-conflict');
     root = pin;

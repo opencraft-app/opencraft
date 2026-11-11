@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "provider": "cursor-sdk",
+  "sdk": "1.0.32",
+  "model": "claude-haiku-5-5",
+  "recordedAt": "2026-11-11T01:39:19.144Z",
+  "protocolVersion": 1,
+  "grammarVersion": 1,
+  "mapperVersion": 1,
+  "permissionMode": "full",
+  "backend": "Host test process backend; no production isolation claim",
+  "evidenceTier": "sdk-delivered-only",
+  "receipts": {
+    "create": {
+      "state": "accepted"
+    },
+    "task": {
+      "state": "accepted"
+    },
+    "steer": {
+      "state": "accepted"
+    },
+    "close": {
+      "state": "accepted"
+    }
+  },
+  "nativeToDelta": [
+    {
+      "operation": "create",
+      "agentId": "opaque-1"
+    },
+    {
+      "operation": "send",
+      "runId": "opaque-2"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "status"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "callId": "opaque-3",
+      "type": "tool_call",
+      "status": "running"
+    },
+    {
+      "operation": "steer-dispatch",
+      "runId": "opaque-2"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "callId": "opaque-3",
+      "type": "tool_call",
+      "status": "completed"
+    },
+    {
+      "operation": "steer",
+      "runId": "opaque-2",
+      "outcome": "complete_delivered"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "user"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "thinking"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "assistant"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "assistant"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "usage"
+    },
+    {
+      "operation": "stream",
+      "runId": "opaque-2",
+      "type": "status"
+    },
+    {
+      "operation": "terminal",
+      "runId": "opaque-2",
+      "status": "finished"
+    }
+  ],
+  "deltaToEvent": [
+    {
+      "kind": "turn.started"
+    },
+    {
+      "kind": "input.state",
+      "inputId": "p5-steer",
+      "admission": "none",
+      "deliveryMethod": "none",
+      "evidence": "none",
+      "disposition": "steered"
+    },
+    {
+      "kind": "item.started"
+    },
+    {
+      "kind": "item.completed"
+    },
+    {
+      "kind": "input.state",
+      "inputId": "p5-steer",
+      "admission": "accepted",
+      "deliveryMethod": "native-inject",
+      "evidence": "none",
+      "disposition": "steered"
+    },
+    {
+      "kind": "input.state",
+      "inputId": "p5-steer",
+      "admission": "accepted",
+      "deliveryMethod": "native-inject",
+      "evidence": "evidence-observed",
+      "disposition": "steered"
+    },
+    {
+      "kind": "item.started"
+    },
+    {
+      "kind": "agentMessage.delta"
+    },
+    {
+      "kind": "agentMessage.delta"
+    },
+    {
+      "kind": "item.completed"
+    },
+    {
+      "kind": "turn.completed"
+    }
+  ],
+  "artifactSha256": "f024577b96cd8a1a7d795a29e3e05a2935546e25ae20cab3a0ec671e4d6737cc",
+  "workerSha256": "89a9a3e31068ae7e8b62b839655cce2d960f3a4ef92c2be31a0190e17b6d0c0c",
+  "steerDispatchedDuringTool": true,
+  "result": "passed-at-recorded-tier",
+  "nativeSendCount": 1,
+  "nativeSteerCount": 1
+}

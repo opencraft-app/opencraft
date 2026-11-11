@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-11T00:01:32.644Z",
+  "provider": "agy",
+  "model": "gemini-3.8-flash-low",
+  "host": "apps/agent-bridge-host",
+  "backend": "local test process backend; no production sandbox claim",
+  "evidenceTier": "unverified-external-blocker",
+  "receipts": {
+    "create": {
+      "state": "accepted"
+    },
+    "task": {
+      "state": "accepted"
+    },
+    "steer": {
+      "state": "accepted"
+    },
+    "status": {
+      "state": "accepted"
+    }
+  },
+  "artifactSha256": "82994d9af8fbcff6cb62ce0bac4016838101ebcae14f142a5f72c21579bcf453",
+  "stage": "raw-user-proof",
+  "error": "P6 acceptance failed; see stage and native error categories",
+  "native": {
+    "version": "1.5.5",
+    "acpInitializeObserved": true,
+    "hookCalls": 4,
+    "steerWrites": 1,
+    "rawUserProofs": 0,
+    "promptWrites": 1,
+    "nativeErrorCodes": []
+  },
+  "provenance": {
+    "bridgeProtocolVersion": 1,
+    "grammarVersion": 1,
+    "nativePlugin": {
+      "name": "agy-acp-steer",
+      "hookSha256": "cf13c3ccea05a31c61381bf867dd2b759483db1c1f1a72509ffa7817f2a11124",
+      "hooksManifestSha256": "992a242997763c3e82dc53f2b5ec6c4b90f4af723020bcb1b2135604c7ad0f25"
+    },
+    "traceSchema": "steps: idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB; raw user protobuf field 19"
+  }
+}

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-11T03:43:38.608Z",
+  "provider": "codebuddy",
+  "model": "hy3-ioa",
+  "host": "apps/agent-bridge-host",
+  "backend": "local test process backend; no production sandbox claim",
+  "evidenceTier": "unverified-external-blocker",
+  "receipts": {
+    "create": {
+      "state": "rejected"
+    }
+  },
+  "artifactSha256": "5ee083c6d5b199ac8e6c5f691d143b57a11902a96d5e7fb0dc13a169081fb83d",
+  "stage": "session-create",
+  "error": "P4 acceptance failed; see stage and native error categories",
+  "probes": [
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/steer",
+        "params": {}
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+          "code": -32602,
+          "category": "codebuddy-steer-session-required"
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/steer",
+        "params": {}
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+          "code": -32602,
+          "category": "codebuddy-steer-session-required"
+        }
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "error": {
+          "code": -32603,
+          "category": "native-http-500"
+        }
+      }
+    }
+  ]
+}

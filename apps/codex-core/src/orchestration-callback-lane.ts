@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { chmod, unlink } from 'node:fs/promises';
 import WebSocket, { WebSocketServer } from 'ws';
 import { removeStaleSocket } from './native-process.js';
+import { ExecutionPreparationError, reportExecutionPreparationFailure } from './execution-preparation.js';
 
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const tools = new Set(['thread_spawn','thread_tell','thread_inspect','thread_wait','read_thread','send_message_to_thread','get_thread_delivery']);
@@ -163,14 +164,17 @@ class CallbackLane {
       this.mutations.set(operation,{fingerprint,clients:[{socket,id:message.id}]});
     }
     let executionParams = nativeParams;
+    const preparationStarted = this.requestPolicy && (method === 'thread/start' || method === 'turn/start') ? performance.now() : undefined;
     const preparation = this.requestPolicy && method === 'turn/start' ? {cancelled: false} : undefined;
     if (preparation) {
       if (!this.preparations.has(executionThread)) this.preparations.set(executionThread, new Set());
       this.preparations.get(executionThread)!.add(preparation);
     }
     try { executionParams = await this.requestPolicy?.(method, nativeParams) ?? nativeParams; }
-    catch {
+    catch (cause) {
       if (operation) this.mutations.delete(operation);
+      if (preparationStarted !== undefined) reportExecutionPreparationFailure(method, nativeParams, this.incarnation,
+        cause instanceof ExecutionPreparationError ? cause.reason : 'policy-failed', performance.now() - preparationStarted);
       send(socket, {id: message.id, error: {code: -32084, message: 'Execution environment unavailable'}}); return;
     }
     finally {
@@ -183,7 +187,12 @@ class CallbackLane {
       if (operation) this.mutations.delete(operation);
       send(socket, {id: message.id, error: {code: -32800, message: 'Execution interrupted'}}); return;
     }
-    if (this.closed || this.client !== socket) { if (operation) this.mutations.delete(operation); return; }
+    if (this.closed || this.client !== socket || socket.readyState !== WebSocket.OPEN) {
+      if (operation) this.mutations.delete(operation);
+      if (preparationStarted !== undefined) reportExecutionPreparationFailure(method, nativeParams, this.incarnation,
+        'connection-replaced', performance.now() - preparationStarted);
+      return;
+    }
     const id=`callback-lane:${this.incarnation}:${++this.sequence}`;
     this.pending.set(id,{socket,id:message.id,initialize:method==='initialize',operation,method:typeof method==='string'?method:undefined,threadId:typeof params.threadId==='string'?params.threadId:undefined,delegationId:typeof delegationId==='string'?delegationId:null});
     send(this.upstream,{...message,id,params:executionParams});

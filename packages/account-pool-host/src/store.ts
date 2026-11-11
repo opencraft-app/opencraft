@@ -12,7 +12,7 @@ import {
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, schemaFingerprint, type DatabaseOutcome } from "@opencraft/sqlite-node";
-import { parseCodexAuthFileReference, readCodexAuthFile, type CodexAuthFileReference } from "./codex-auth-file.js";
+import { EXTERNAL_CODEX_REAUTH_MESSAGE, parseCodexAuthFileReference, readCodexAuthFile, type CodexAuthFileReference } from "./codex-auth-file.js";
 import { createCodexAccountPoolLaunch } from "./codex-launch.js";
 
 const BASELINE = `
@@ -113,6 +113,7 @@ export interface AccountPoolAccount extends AccountPoolAccountInput {
 
 export type AccountPoolAccountSummary = Omit<AccountPoolAccount, "createdAt"> & {
   readonly credentialConfigured: boolean;
+  readonly credentialSource: "external-file" | "managed" | null;
 };
 
 export interface AccountPoolSecret {
@@ -122,6 +123,11 @@ export interface AccountPoolSecret {
   readonly expiresAt: number | null;
   /** Resolved in memory only; this owner must never refresh or persist it. */
   readonly external?: true;
+}
+
+/** Only an external credential read failure may enter the proxy's auth-failure path. */
+export class ExternalCodexCredentialError extends Error {
+  constructor(readonly accountId: string) { super(EXTERNAL_CODEX_REAUTH_MESSAGE); }
 }
 
 export interface AccountPoolSelectionInput {
@@ -262,6 +268,9 @@ export class AccountPoolStore {
   private readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   private readonly secretsDirectory: string;
+  // Local record ownership changes only through this exclusive store. Listing
+  // consumes this projection without rereading credential files on every poll.
+  private readonly credentialSources = new Map<string, AccountPoolAccountSummary["credentialSource"]>();
   private readonly now: () => number;
   private readonly switchThreshold: number;
   private readonly affinityIdleTtlMs: number;
@@ -300,6 +309,9 @@ export class AccountPoolStore {
     this.outcome = managed.outcome;
     this.database.exec("PRAGMA foreign_keys=ON;");
     if (!options.preserveAffinity) this.pruneAffinity(this.now());
+    for (const row of this.database.prepare("SELECT id FROM pool_accounts").all()) {
+      this.credentialSources.set(String(row.id), this.readCredentialSource(String(row.id)));
+    }
   }
 
   addAccount(input: AccountPoolAccountInput, rawSecret: AccountPoolSecret | CodexAuthFileReference): AccountPoolAccount {
@@ -343,6 +355,7 @@ export class AccountPoolStore {
       rmSync(secretPath, { force: true });
       throw error;
     }
+    this.credentialSources.set(account.id, reference ? "external-file" : "managed");
     return account;
   }
 
@@ -358,8 +371,18 @@ export class AccountPoolStore {
         enabled: account.enabled,
         allowCredits: account.allowCredits,
         credentialConfigured: existsSync(this.secretPath(account.id)),
+        credentialSource: this.credentialSources.get(account.id) ?? null,
       };
     });
+  }
+
+  private readCredentialSource(id: string): AccountPoolAccountSummary["credentialSource"] {
+    try {
+      const value = JSON.parse(readFileSync(this.secretPath(id), "utf8"));
+      if (parseCodexAuthFileReference(value)) return "external-file";
+      parseSecret(value);
+      return "managed";
+    } catch { return null; }
   }
 
   listAccountStates(): AccountPoolAccountState[] {
@@ -413,6 +436,7 @@ export class AccountPoolStore {
       throw new Error("Shared Codex credentials must be updated by their external owner");
     }
     this.writeSecret(normalizedId, parseSecret(rawSecret));
+    this.credentialSources.set(normalizedId, "managed");
     this.database.prepare("UPDATE pool_quota SET error=NULL,held_until=NULL WHERE account_id=?").run(normalizedId);
   }
 
@@ -457,6 +481,7 @@ export class AccountPoolStore {
       if (existsSync(tombstone)) renameSync(tombstone, source);
       throw error;
     }
+    this.credentialSources.delete(normalizedId);
     rmSync(tombstone, { force: true });
   }
 
@@ -534,7 +559,12 @@ export class AccountPoolStore {
     const keepsAffinity = selected.account.id === pinnedAccountId;
     // Admission, not response completion, owns routing. A durable reservation
     // keeps simultaneous first requests for one Thread on the same account.
-    const secret = this.readSecret(selected.account.id);
+    let secret: AccountPoolSecret;
+    try { secret = this.readSecret(selected.account.id); }
+    catch (error) {
+      if (this.credentialSources.get(selected.account.id) === "external-file") throw new ExternalCodexCredentialError(selected.account.id);
+      throw error;
+    }
     if (!metadata) {
       this.database.prepare(
         "INSERT INTO pool_affinity VALUES(?,?,?) ON CONFLICT(affinity_key) DO UPDATE SET account_id=excluded.account_id,last_used_at=excluded.last_used_at",
@@ -608,6 +638,13 @@ export class AccountPoolStore {
 
   markAccountError(id: string, code: "authorization-rejected"): void {
     this.observeQuota(id, { utilization: null, resetAt: null, error: code });
+  }
+
+  /** A successful external-auth check need not report or replace quota windows. */
+  clearExternalAuthorizationError(id: string): void {
+    const normalizedId = accountId(id);
+    if (this.credentialSources.get(normalizedId) !== "external-file") return;
+    this.database.prepare("UPDATE pool_quota SET error=NULL WHERE account_id=? AND error='authorization-rejected'").run(normalizedId);
   }
 
   issueHostToken(hostId: string): string {

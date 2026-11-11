@@ -1,6 +1,6 @@
 # 跨端存储生命周期：SQLite 与 IndexedDB
 
-状态：2026-10-30 Server 六类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 Host、Electron、引擎与插件库的物理合并尚未实施。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
+状态：2026-10-30 Server 八类核心数据收敛到 `opencraft-server.sqlite`，由 `@opencraft/storage-node` 在 Headless 启动和离线管理命令前统一导入、迁移和校验。Server 使用 Drizzle 声明 schema 并生成明文 SQL；运行时继续使用 node:sqlite 和唯一受管执行器。其余 Host、Electron、引擎与插件库的物理合并尚未实施。共享生命周期已取消未知旧库自动移开重建，保留跨重试的原始恢复点。客户端文档与插件内容迁移见 [插件持久化契约](plugin-persistence.md)。
 
 Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管理命令与服务器互斥；正常退出先关闭全部消费者和数据库，再释放锁。新增执行凭据绑定表通过核心迁移 v2 接入，导入同时识别旧 `session-capabilities.sqlite` 的 v1/v2 并保留执行绑定，历史 SQL/checksum 不变。
 
@@ -20,7 +20,7 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 
 | 文件名 | Owner 进程与源码 | 数据目录 | 数据职责 |
 |---|---|---|---|
-| `opencraft-server.sqlite` | [Server storage owner](../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings |
+| `opencraft-server.sqlite` | [Server storage owner](../packages/storage-node/src/server/index.ts)；Headless 与离线管理工具独占同一 fence | Headless installation data directory | Actors、human logins/local accounts、memberships、account onboarding、collaboration/orchestration、session capability bindings、conversation access、shared notes |
 | `im-posts.sqlite` | Headless IM composition：[ImPostReceipts](../plugins/im/src/post-receipts.ts) | IM data directory | Standalone native channel post claims/receipts; schema v1, hashes and official IDs only, interrupted claims become unknown without resend |
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
@@ -91,7 +91,7 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 ## 4. 版本与兼容模型
 
-每个物理库有唯一 `schema_migrations(version, name, checksum, applied_at)` 账本；连续 version/name/SQL SHA-256 必须匹配，未知新版本及历史漂移拒绝打开。Server 的六类历史账本冻结在 `storage-node/src/server/legacy.ts`，只用于旧库兼容读取与副本转换；新核心库使用一条统一迁移链。`SERVER_DATA_CONTRACT` 将根 package 的 OpenCraft 版本、核心迁移目标和清单 hash 绑定到安装完成回执；实际账本和结构仍须验证，修改产品版本字符串不能跳过迁移。此回执只证明 Server 核心，未代替其他 Host、客户端与原生引擎的版本。
+每个物理库有唯一 `schema_migrations(version, name, checksum, applied_at)` 账本；连续 version/name/SQL SHA-256 必须匹配，未知新版本及历史漂移拒绝打开。Server 的八类历史账本冻结在 `storage-node/src/server/legacy.ts`，只用于旧库兼容读取与副本转换；新核心库使用一条统一迁移链。`SERVER_DATA_CONTRACT` 将根 package 的 OpenCraft 版本、核心迁移目标和清单 hash 绑定到安装完成回执；实际账本和结构仍须验证，修改产品版本字符串不能跳过迁移。此回执只证明 Server 核心，未代替其他 Host、客户端与原生引擎的版本。
 
 
 文档 payload 另有版本：[threads document](../apps/local-agent-host/src/thread-catalog.ts) 无 version 的旧记录按 v1 读取，写入显式 v1，拒绝未知新版；[extension records](../packages/document-storage/src/contract.ts) 的 `data_version` 对应文档 `version`，CAS 事务拒绝格式倒退。插件纯内容转换由 [document-migrations](../packages/extension-runtime/src/document-migrations.ts) 管理，不让插件改物理表。
@@ -139,13 +139,13 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 ### Server 核心合库与存量导入
 
-`openServerDatabase(dataDirectory)` 取得原 Headless `server` 目录 fence，在业务服务启动前打开唯一核心连接。Headless、`human-account` 和 `access-admin` 都走此入口；离线命令要求先停止同目录的 Server，不再并发修改六个旧库。`access-admin` 接受新库文件名，也将旧 `memberships.sqlite` 参数当作同目录兼容入口，实际只写新核心库。
+`openServerDatabase(dataDirectory)` 取得原 Headless `server` 目录 fence，在业务服务启动前打开唯一核心连接。Headless、`human-account` 和 `access-admin` 都走此入口；离线命令要求先停止同目录的 Server，不再并发修改八个旧库。`access-admin` 接受新库文件名，也将旧 `memberships.sqlite` 参数当作同目录兼容入口，实际只写新核心库。
 
-首次导入识别六个固定来源：`actors.sqlite`、`human-logins.sqlite`、`memberships.sqlite`、`account-onboarding.sqlite`、`actor-collaboration.sqlite`、`session-capabilities.sqlite`。包含已有数据的停用功能也参与导入，缺失来源有明确 absence 回执。缺失原库却残留 sidecar 或旧恢复文件时不视为 absence。
+首次导入识别八个固定来源：`actors.sqlite`、`human-logins.sqlite`、`memberships.sqlite`、`account-onboarding.sqlite`、`actor-collaboration.sqlite`、`session-capabilities.sqlite`、`thread-access.sqlite`、`thread-notes.sqlite`。包含已有数据的停用功能也参与导入，缺失来源有明确 absence 回执。缺失原库却残留 sidecar 或旧恢复文件时不视为 absence。
 
-恢复材料在 `.server-import/<operationId>/`：`*.original.sqlite` 是 `VACUUM INTO` 一致快照，`*.working.sqlite` 是执行已发布升级链的副本，`sources.json` 保存来源摘要与历史。文件私有；原库不建表、不记新账本、不删除。六份数据及导入回执在新库的一个事务中提交，并验证逐表行数、内容等价、外键和账号/成员的 Actor 引用。Actor authority、ID、凭据摘要、会话及权限不重新生成。
+恢复材料在 `.server-import/<operationId>/`：`*.original.sqlite` 是 `VACUUM INTO` 一致快照，`*.working.sqlite` 是执行已发布升级链的副本，`sources.json` 保存来源摘要与历史。文件私有；原库不建表、不记新账本、不删除。各来源数据及导入回执在新库的一个事务中提交，并验证逐表行数、内容等价、外键和账号/成员的 Actor 引用。Actor authority、ID、凭据摘要、会话及权限不重新生成。
 
-`opencraft_server_imports` 和 `opencraft_server_installation` 是迁移创建的内部表。提交前崩溃回滚，提交后崩溃以完成回执为准，不重复导入。重启对仍存在的退休来源校验逻辑摘要，不以旧库作为业务读取 fallback；发现旧程序修改原库则拒绝启动，避免数据分叉。完成迁入后，当前核心库的一致备份可独立恢复，缺失的退休源不要求重新找回；退休源存在孤立 sidecar 时仍拒绝。存储 owner 保留 `.server-import` 目录作为安装身份，已有该目录而核心库或账本缺失时拒绝重建。核心库备份只覆盖这六类数据，整个部署仍需保全其他 owner、密钥和附件。
+`opencraft_server_imports` 和 `opencraft_server_installation` 是迁移创建的内部表。提交前崩溃回滚，提交后崩溃以完成回执为准，不重复导入。重启对仍存在的退休来源校验逻辑摘要，不以旧库作为业务读取 fallback；发现旧程序修改原库则拒绝启动，避免数据分叉。完成迁入后，当前核心库的一致备份可独立恢复，缺失的退休源不要求重新找回；退休源存在孤立 sidecar 时仍拒绝。存储 owner 保留 `.server-import` 目录作为安装身份，已有该目录而核心库或账本缺失时拒绝重建。核心库备份只覆盖这八类数据，整个部署仍需保全其他 owner、密钥和附件。
 
 Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle snapshots 在同目录 `migrations/`。`npm run generate:storage` 生成 SQL、保留所有核心表的 SQLite STRICT 约束并编译随包 TS；`npm run check:storage` 检查源码 SQL 与随包内容一致。迁移测试还检查 schema 与 snapshot 无差异。运行时不读取仓库相对路径、不需要 Drizzle Kit、libsql 或另一个迁移账本。
 
@@ -838,3 +838,5 @@ Turns through the existing reader; transient failures are propagated unchanged.
 When full native Turn pages exceed the transport byte budget and Item paging is
 unsupported, preserve the original size error so the existing reader can reduce
 the Turn page size. An unsupported Item RPC must not erase that size boundary.
+
+Conversation access and shared notes use the same Server owner. An installation with the original six import receipts imports only the two newly introduced sources, then commits their rows and receipts atomically. Existing receipts and retired-source digests remain mandatory and unchanged. Missing new sources receive explicit absence receipts. Production repositories borrow the core connection; isolated legacy paths are supported only before consolidation.

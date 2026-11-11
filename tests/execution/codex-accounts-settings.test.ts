@@ -3,7 +3,11 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import * as React from "react";
-import { renderToStaticMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import { LocaleRuntime } from "../../packages/i18n/src/index.js";
+import { IntlRuntimeProvider } from "../../packages/i18n/src/react.js";
+const locale = new LocaleRuntime([]);
+const renderToStaticMarkup = (node: React.ReactNode) => renderMarkup(createElement(IntlRuntimeProvider, { runtime: locale }, node));
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -262,6 +266,32 @@ test("a maintenance-interrupted login shows a retry message without starting ano
       if (maintenance) assert.match(html, /登录被维护中断，请重新登录/);
       else { assert.match(html, /Login cancelled\./); assert.doesNotMatch(html, /登录被维护中断/); }
       assert.equal(calls.filter(method => method.endsWith("/start")).length, 1);
+    } finally { service.dispose(); }
+  }
+});
+
+
+test("account list distinguishes credential owners and gives external renewal instructions", async () => {
+  Object.assign(globalThis, { React });
+  for (const source of ["external-file", "managed", undefined] as const) {
+    const account: CodexAccountView = {
+      id: "source", label: "Account", priority: 1, enabled: true, credentialConfigured: true,
+      credentialSource: source, email: null, subscriptionType: null, rateLimitTier: null,
+      status: "error", observedAt: null, heldUntil: null, lastUsedAt: null, lastUsedHostId: null, limitWindows: [],
+    };
+    const service = new CodexAccountsService((async () => ({ accounts: [account] })) as HostProtocolRequest, "local-codex");
+    try {
+      await service.refresh();
+      const View = createCodexAccountsView(service);
+      const markup = renderToStaticMarkup(createElement(View, {} as any));
+      if (source === "external-file") {
+        assert.match(markup, /Local Codex login \(read-only\)/);
+        assert.match(markup, /codex login.*device code/);
+      } else {
+        assert.match(markup, source === "managed" ? /Pool credentials/ : /Credential source unknown/);
+        assert.doesNotMatch(markup, /Run codex login/);
+      }
+      assert.doesNotMatch(markup, /auth.json|accessToken|refreshToken/);
     } finally { service.dispose(); }
   }
 });

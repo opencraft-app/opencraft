@@ -103,3 +103,24 @@ coordinates across both destinations, plus changing the shared inset once.
 Sidebar rows reserve `--size-sidebar-navigation-leading-slot` for artwork of
 different semantic sizes; a shared grid keeps label starts independent of SVG
 width. Leading glyphs are start-aligned without a consumer-specific margin.
+
+
+## Model capability review
+
+A model action opens an inline capability section in the existing Model Services
+Detail; it does not create another Settings destination or scroll owner. The
+section uses shared Settings inputs/buttons for context/output limits, a primary
+metadata lookup and a separate optional inference verification action. Verification
+states its possible cost before activation. Source, suggested value, and whether an
+existing declaration will be retained are readable together. Unknown stays unknown;
+parameter acceptance is distinguished from actual image/text verification.
+
+Lookup results are a preview. Filling only compatible blank fields is explicit;
+manual values and negative declarations are retained. Length edits have their own
+save action. Responses arriving after a connection edit cannot replace that draft.
+On narrow/touch layouts, inputs and actions wrap within the Detail's existing
+insets; the metadata value and source wrap independently without horizontal scroll.
+
+## Image model services
+
+The existing provider creation form offers image generation when the Host declares it. An image provider uses the same Detail, credential form, model rows and menus, with an explicit full-endpoint label. A quiet notice explains that this default applies to non-subscription Codex image tools. Image defaults are separate from chat defaults; image rows do not show chat context/reasoning controls or issue implicit discovery/inference checks. Existing Settings page insets, scrolling and touch controls remain the owners.

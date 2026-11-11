@@ -1,5 +1,6 @@
 import { CompactionEntry, UserEntry } from "@earendil-works/pi-durable";
 import type { PiSnapshot } from "./session.js";
+import { expiredPiSteers } from "./steering.js";
 
 type Value = Record<string, any>;
 export type PiTurn = Value & { id: string };
@@ -42,9 +43,11 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
   const states = new Map<PiTurn, Value[]>();
   const counts = new Map<number | string, number>();
   const callItems = new Map<string, Value>();
+  const expiredSteers = expiredPiSteers(snapshot);
   let turn: Value | undefined;
-  const makeTurn = (submission: Value | undefined, entryId: number | string, message: Value, metadata: Value = {}) => {
-    const id = metadata.steerTurnId ?? submission?.requestId ?? metadata.turnId ?? `${session.id}:input:${entryId}`;
+  const inputBatchOwners = new Map<string, string>();
+  const makeTurn = (submission: Value | undefined, entryId: number | string, message: Value, metadata: Value = {}, batchOwner?: string) => {
+    const id = batchOwner ?? metadata.steerTurnId ?? submission?.requestId ?? metadata.turnId ?? `${session.id}:input:${entryId}`;
     const state = submission?.status;
     const status = state === "queued" || state === "placed" ? "inProgress" : state === "unanswered"
       ? submission?.reason === "aborted" ? "interrupted" : "failed" : "completed";
@@ -58,8 +61,7 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     const existing = grouped.get(id);
     if (existing) {
       const item = result.items[0];
-      item.id = `${submission?.requestId ?? metadata.turnId ?? entryId}:user`;
-      existing.items.push(item);
+      if (item) { item.id = `${submission?.requestId ?? metadata.turnId ?? entryId}:user`; existing.items.push(item); }
       if (submission) states.get(existing)!.push(submission);
       return existing;
     }
@@ -75,7 +77,17 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     }
     let messageIndex = 0;
     for (const message of entry.model ?? []) {
-      if (message.role === "user" && (submissions.has(entry.id) || UserEntry.is(entry) || entry.kind === "opencraft.input")) turn = makeTurn(submissions.get(entry.id), entry.id, message, entry.kind === "opencraft.input" || entry.kind === "opencraft.shellNotification" ? entry.data as Value : {});
+      if (message.role === "user" && (submissions.has(entry.id) || UserEntry.is(entry) || entry.kind === "opencraft.input")) {
+        const receipt = submissions.get(entry.id);
+        // Native run membership, shared answer, or the task that placed a
+        // boundary identifies a batch. Transcript adjacency alone does not:
+        // an aborted run may end without an assistant entry before the retry.
+        const batch = receipt && snapshot.live.run?.inputs.includes(receipt.id) ? "live"
+          : receipt?.status === "done" && receipt.answer !== undefined ? `answer:${receipt.answer}`
+          : receipt && entry.byTaskId !== undefined ? `boundary:${entry.byTaskId}` : undefined;
+        turn = makeTurn(receipt, entry.id, message, entry.kind === "opencraft.input" || entry.kind === "opencraft.shellNotification" ? entry.data as Value : {}, batch ? inputBatchOwners.get(batch) : undefined);
+        if (batch) inputBatchOwners.set(batch, turn.id);
+      }
       else if (turn && message.role === "assistant") {
         const key = entry.byTaskId ?? `entry-${entry.id}`;
         const ordinal = counts.get(key) ?? 0; counts.set(key, ordinal + 1);
@@ -104,7 +116,8 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
     const queued = snapshot.inbox.find(item => item.id === submission.id);
     const metadata = queued?.entry?.data ?? steerMetadata.get(submission.requestId);
     if (!metadata?.steerTurnId) continue;
-    makeTurn(submission, submission.id, { content: queued?.content }, metadata);
+    makeTurn(expiredSteers.has(submission.id) ? { ...submission, status: "unanswered", reason: "aborted" } : submission,
+      submission.id, { content: queued?.content }, metadata);
   }
   for (const candidate of turns) {
     const records = states.get(candidate)!;

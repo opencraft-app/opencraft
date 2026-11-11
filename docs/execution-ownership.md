@@ -454,6 +454,13 @@ Completed commands and monitor events enter the native submission kernel using
 stable identities and system provenance. Admission, stop gating and notification
 receipts share a transaction. A completion starts an idle native run or joins the
 follow-up inbox of a busy run; it never invents a human message in the timeline.
+All shell results already queued at a final boundary are consumed together in one
+continuation, with a separate durable receipt for each completion or monitor event.
+Inputs placed together before one native generation share its execution Turn,
+including Host tool calls and restored history. Each notification is admitted in
+its own transaction so native table reads precede table writes.
+Human steering retains its one-at-a-time policy; commands completing after that
+boundary can still wake a later continuation.
 Short commands already returned inline do not trigger a second model continuation.
 Stop pauses delivery before killing shell processes and aborting the native run;
 this also works after the original agent response has already settled. Closing a
@@ -469,6 +476,13 @@ retries, including after restart and completion, and rejects conflicting content
 Original input blocks, context and the target Turn are preserved in native records;
 a display-only admission entry retains them when stop withdraws an unplaced input.
 All corresponding native submissions project into the same OpenCraft Turn.
+An unplaced steer cannot outlive its settled target run. If the native run has
+ended and its target receipt is terminal, the owner withdraws the remaining
+steer from the native inbox and retains its cancelled receipt and display text.
+Later direct-input and background admissions perform that withdrawal in their
+own transaction, before the native boundary can consume obsolete steering.
+Read-only history applies the same interpretation to older ledgers, so a model
+failure cannot remain active solely because an unconsumed steer is still queued.
 
 Native steering projection distinguishes inbox admission (`pending`), actual
 context placement (`accepted`) and withdrawal before placement (`cancelled`). The
@@ -924,3 +938,100 @@ until all directory sources are covered. Advanced native query consumers must
 continue to inspect coverage.
 It neither replays mutations nor stops retained execution owners. The registry's
 existing synchronous SQLite implementation remains a separate concern.
+
+### DSH generation routing storage owner
+
+Live Local Agent Hosts open session-routing storage through an owned Worker,
+including schema adoption, migrations and recovery. The Worker alone mutates the
+existing generation and unpublished-intent tables. The network thread consumes a
+committed in-memory projection; stream translation and session-list filtering do
+not prepare or execute SQL. The same projection implementation owns logical/native
+identity, hidden candidates, retired producers and seq/turn offsets on both sides.
+
+`stage` is acknowledged only after its intent commits, before creating the native
+successor. `publish` and restart reconciliation install a new projection only after
+the Worker commits and acknowledges it. Deterministic argument, evidence and stale-authority rejections return the
+confirmed old projection after rollback and leave the owner available. SQL,
+Worker and unknown-effect failures fence the port; no stale projection or
+synchronous storage fallback may authorize a native operation.
+Closing prevents new mutations, drains accepted messages and closes the Worker.
+A new owner rebuilds its projection and pending intents from the unchanged tables.
+A confirmed close receipt precedes expected Worker termination; its exit code does
+not turn an already closed port into an unexpected storage failure. Exit without
+that receipt or a prior SQL failure still fences the owner.
+Operation failures close the SQLite handle before reporting failure. An unexpected
+Worker crash retains the existing Daemon storage-owner and recovery rules; losing
+the routing port alone does not authorize another storage owner.
+Headless, managed Web and desktop Daemon bundles carry the Worker beside the host.
+
+This boundary covers session routing. Thread catalog, execution authority,
+documents, connectors and task stores retain their existing storage ownership;
+this change is not a claim that all DSH Host storage has left the network thread.
+
+## Agent Bridge foundation (P1b, opt-in)
+
+`apps/agent-bridge-host` is a separate, explicitly launched execution owner.
+Its sandbox generations, command custody, Worker-owned SQLite checkpoints and
+ordered outbox survive gateway attachment loss. The separate gateway inbox
+commits the existing P1a AppServer projection and cursor before acknowledging
+Host events. Native mutations with unknown outcomes are never replayed.
+Existing engine compositions do not import or select this path. See the
+[Host contract and local acceptance](../apps/agent-bridge-host/README.md) for the
+private attachment, generation draining and conservative Host-crash boundaries.
+
+## Generic ACP provider bridge P3c (resume, history, client services)
+
+The ACP bridge follow-up keeps the same opt-in Host route and adds
+`session/resume` via ACP `session/load`/`session/resume`, bounded native
+history replay, `model/list`, and ACP client-side `fs/*`, `terminal/*` and
+`elicitation/create` with mode-scoped capabilities. History is replayed by the
+bridge, not a second Web history store; the existing Workbench still consumes
+only the existing AppServer path. The Host remains the owner of the command
+ledger, sandbox, assembler and outbox. See
+[P3c follow-up](../design/agent-bridge/p3c-acp-followup.md).
+
+## Generic ACP provider bridge (P3, opt-in)
+
+`packages/agent-bridge-acp` is a pinned provider bridge for Agent Client
+Protocol agents. It runs under the independent P1b Host, one ACP agent process
+per Thread, and translates ACP updates into P1a semantic deltas. The real
+`initialize` probe narrows the registration declaration; an agent that does not
+declare `_meta.midTurnSteering` only gets explicit `next-turn` or
+`interrupt-replace`, never a native-inject label. Permission requests enter the
+existing interaction channel; images are forwarded only when the agent declared
+image prompt support. Existing engine compositions do not select this path.
+
+The bridge contract, command parameters, permission-mode mapping, dialect
+extension point and failure boundaries are documented in the
+[ACP bridge README](../packages/agent-bridge-acp/README.md). Real Copilot/Amp
+initialize recordings and minimal-task evidence live under
+`design/agent-bridge/recordings/p3/`; deterministic fixtures cover the paths a
+single real task cannot trigger.
+
+## Pi bridge owner (P2d, opt-in)
+
+`plugins/pi-bridge` is a pinned provider artifact launched by the P1b Host. It
+wraps the existing `PiDurableSession`, not a Pi RPC child and not a second
+transcript writer. A bridge-owned Thread has one native SQLite session and one
+owner lock; `session/create` reserves a pending record before opening the
+native database, refuses an existing or orphaned session, and removes a
+half-created session on failure; `session/resume` refuses a live writer, seeds
+the current native snapshot without replaying settled history, and reports an
+active native turn as a recovery hint. The bridge keeps its sessions in a
+separate private data root, so the AppServer Pi engine's catalog cannot adopt
+them. Existing Pi Threads stay on the existing engine; only new Threads routed
+to this bridge use the new path. `session/close` fences new turn commands and
+diffs one final native snapshot before `session.ended`. Deterministic provider
+refusals settle as rejected in the Host; only ambiguous native outcomes consume
+unknown custody. A rejected create that leaves no resumable session releases
+its fresh route binding; pending/exists/locked bindings remain for resume.
+
+The bridge declares native same-turn steer only. Admission and the durable
+inbox/entry transition are evidence-observed; queue removal never becomes
+model-context evidence. An input still queued at a turn boundary is reported as
+`Pi turn ended before steer was consumed`, not as delivered. The bridge disables
+the AppServer PTY worker for its own sessions and uses the ordinary coding
+tools; the existing engine's PTY path is unchanged. Real local acceptance and
+the explicit gaps (no real unconsumed-race reproduction; no real-model Host
+round trip) are recorded in
+[`plugins/pi-bridge/VALIDATION.md`](../plugins/pi-bridge/VALIDATION.md).

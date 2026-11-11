@@ -1560,12 +1560,6 @@
     {
       "file": "apps/workbench-web/src/components/conversation.tsx",
       "kind": "jsx-text",
-      "text": "Continue",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/conversation.tsx",
-      "kind": "jsx-text",
       "text": "Unsupported AppServer item:",
       "count": 1
     },
@@ -2920,12 +2914,6 @@
       "count": 2
     },
     {
-      "file": "packages/composer-editor/src/composer-model-picker.tsx",
-      "kind": "aria-label",
-      "text": "Fast",
-      "count": 1
-    },
-    {
       "file": "packages/extension-react/src/adaptive-panel.tsx",
       "kind": "aria-label",
       "text": "Panel navigation",
@@ -3421,24 +3409,6 @@
       "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
       "kind": "jsx-text",
       "text": "使用 ChatGPT 设备码添加账户",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
-      "kind": "jsx-expression",
-      "text": "正在导入…",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
-      "kind": "jsx-expression",
-      "text": "导入本机 Codex 登录",
-      "count": 1
-    },
-    {
-      "file": "plugins/builtin-agents/src/codex-accounts/view.tsx",
-      "kind": "jsx-text",
-      "text": "复制此设备已有的 Codex 登录",
       "count": 1
     },
     {

@@ -14,6 +14,8 @@ export interface CodexAccountView {
   /** Absent on older Hosts which cannot configure this policy. */
   readonly allowCredits?: boolean;
   readonly credentialConfigured: boolean;
+  /** Absent on older Hosts; managed includes legacy copied credentials. No paths or tokens. */
+  readonly credentialSource?: "external-file" | "managed" | null;
   readonly email: string | null;
   readonly subscriptionType: string | null;
   readonly rateLimitTier: string | null;

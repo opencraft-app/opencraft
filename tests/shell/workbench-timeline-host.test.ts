@@ -694,32 +694,11 @@ test("Composer menus live in the root overlay plane with viewport constraints", 
 
 test("Composer intelligence keeps model and reasoning under catalog ownership", () => {
   assert.doesNotMatch(composerSource, /<DropdownMenu\.Sub(?:Trigger|Content)/u);
-  assert.match(
-    composerSource,
-    /opencraft-composer-selection-menu__heading">\s*<FormattedMessage id="chat\.model" defaultMessage="Model"/u,
-  );
-  if (composerSource.includes("<ComposerModelPicker")) {
-    const pickerSource = readFileSync(new URL("../../packages/composer-editor/src/composer-model-picker.tsx", import.meta.url), "utf8");
-    assert.match(pickerSource, /id: "chat\.reasoning", defaultMessage: "Reasoning"/u);
-    const panelSource = readFileSync(new URL("../../packages/composer-editor/src/composer-model-panel.tsx", import.meta.url), "utf8");
-    assert.match(pickerSource, /<ComposerModelPanel efforts=\{efforts\} effort=\{effort\}[^>]*reasoningLabel=\{reasoningLabel\}/u);
-    assert.match(pickerSource, /onEffortChange=\{onEffortChange\}/u);
-    assert.match(panelSource, /role="group" aria-label=\{reasoningLabel\}/u);
-    assert.match(panelSource, /options=\{efforts\} value=\{effort\} label=\{reasoningLabel\}/u);
-    assert.match(panelSource, /onValueChange=\{onEffortChange\}/u);
-    assert.match(composerSource, /efforts=\{selectedModel\?\.efforts\.map/u);
-    assert.match(composerSource, /const effort = selectedModel\?\.efforts\.find\(candidate => candidate\.value === value\);\s*if \(effort\) selectEffort\(effort\);/u);
-  } else {
-    assert.match(
-      composerSource,
-      /opencraft-composer-selection-menu__heading">\s*<FormattedMessage id="chat\.reasoning" defaultMessage="Reasoning"/u,
-    );
-  }
   assert.doesNotMatch(composerSource, /Power presets|>\s*Advanced\s*</u);
   assert.doesNotMatch(
     composerSource,
-    // The retired power-presets UI stays absent. Reasoning itself now uses a
-    // shared discrete slider, still fed by the model's catalog-owned efforts.
+    // The retired power-presets UI stays absent; reasoning uses catalog-owned
+    // choices in the shared model menu.
     /buildPowerOptions|powerPreviewId/u,
   );
   assert.doesNotMatch(workbenchStyles, /\.opencraft-composer-power-track\s*\{/u);

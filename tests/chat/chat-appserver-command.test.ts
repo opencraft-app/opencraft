@@ -1626,7 +1626,9 @@ for (const target of ["existing-thread", "enqueue-follow-up"] as const)
       h.client.request = (async () => { throw cause; }) as typeof h.client.request;
       try {
         await assert.rejects(commandPort(h).submit(intent({ type: target, key: existingKey })),
-          error => error instanceof SubmissionNotDispatchedError);
+          error => error instanceof SubmissionNotDispatchedError
+            && error.message === cause.message && error.cause === cause
+            && error.retryAfterMs === 1_000);
         assert.equal(h.requests.length, 0);
       } finally { await h.close(); }
     });

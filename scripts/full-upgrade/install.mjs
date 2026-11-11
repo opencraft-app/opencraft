@@ -6,7 +6,7 @@ import { readFile, mkdir, chmod, chown, cp, lstat, realpath, symlink, rename } f
 import { join, resolve, dirname } from 'node:path';
 import { acceptManifest, parseStrictJson, sha256 } from '../full-release/contract.mjs';
 import { verifyRetainedRelease } from '../full-release/retained.mjs';
-import { rootOwned } from './service-config.mjs';
+import { rootOwned, fullTargetDirectory } from './service-config.mjs';
 import { invariant, atomicJson, atomicBytes, command, acquireLock } from './durable.mjs';
 import { request } from './ipc.mjs';
 
@@ -25,6 +25,9 @@ export async function provisionProductParent({ profile, previousConfig, root, re
   invariant(Number.isSafeInteger(fd) && fd >= 3, 'parent-lock-required');
   await run('/usr/bin/env', ['OPENCRAFT_HELD_LOCK_FD=3', '/usr/bin/python3', script, record.release.source.revision], { fd, timeout: 180000 });
   return true;
+}
+export async function preserveFullTargetRoot(config, previousConfig) {
+  if (previousConfig?.fullTargetRoot !== undefined) config.fullTargetRoot = await fullTargetDirectory(previousConfig);
 }
 export async function install(options) {
   invariant(process.getuid() === 0, 'root-installation-required');
@@ -113,6 +116,7 @@ export async function install(options) {
       await rootOwned(previousConfig.fullRecipePath); config.fullRecipePath = previousConfig.fullRecipePath; config.fullCiBeforeParent = previousConfig.fullCiBeforeParent === true;
     }
     for (const key of ['fullLocalBeforeParent','localRequest','localObserve','fullTopology']) if (previousConfig?.[key] !== undefined) config[key] = previousConfig[key];
+    await preserveFullTargetRoot(config, previousConfig);
     if (previousConfig?.generationRecipePath) {
       invariant(safePath(previousConfig.generationRecipePath), 'invalid-generation-recipe-path');
       await rootOwned(previousConfig.generationRecipePath);

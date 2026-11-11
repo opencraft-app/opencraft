@@ -197,3 +197,17 @@ test("disconnect retries an active temporary thread after release is deferred", 
     assert.equal(attempts, 2); assert.equal(catalog.get("child"), null);
   } finally { await service.close(); }
 });
+test("catalog notifications read manual title precedence from memory and native refresh preserves it", () => {
+  const catalog = new ThreadCatalog();
+  try {
+    assert.equal(catalog.manualTitle("a"), undefined);
+    catalog.upsert({ id: "a", name: "Native title", preview: "First message" });
+    assert.equal(catalog.manualTitle("a"), null);
+    catalog.rename("a", "User title");
+    assert.equal(catalog.manualTitle("a"), "User title");
+    assert.equal(catalog.upsert({ id: "a", name: "Later native title" }).name, "User title");
+    const database = (catalog as any).database, prepare = database.prepare;
+    database.prepare = () => { throw new Error("notification read must not perform SQL"); };
+    try { assert.equal(catalog.manualTitle("a"), "User title"); } finally { database.prepare = prepare; }
+  } finally { catalog.close(); }
+});

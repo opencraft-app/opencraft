@@ -1,9 +1,11 @@
 import React from "react";
 import type { ConversationRecoveryDiagnostic } from "../runtime/conversation-recovery-diagnostic";
-import { FormattedMessage } from "@opencraft/i18n/react";
+import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
+import { ArchiveIcon, RestoreArchiveIcon } from "@opencraft/design-system-web/action-icons";
 
 
 export type ConversationRecoveryPresentation = "none" | "cold-loading" | "cold-error" | "warm-loading" | "warm-error";
+export type ConversationUnavailableReason = "archived" | "not-found";
 
 /** Presentation only: a retained timeline is useful even before it is authoritative. */
 export function conversationRecoveryPresentation(input: {
@@ -72,4 +74,61 @@ export function ConversationRecoveryNotice({ failed, requiresUpdate = false }: {
   return failed && requiresUpdate
     ? <div className="conversation-recovery-notice" role="alert"><ClientUpdateRequired /></div>
     : null;
+}
+
+/**
+ * A terminal lifecycle result is a conversation state, not a failed Turn.
+ * Keep the transcript and composer out of the error path so an archived route
+ * cannot grow duplicate "Continue" messages while it is being restored.
+ */
+export function ConversationUnavailableState({
+  reason,
+  onRestore,
+  restoring = false,
+}: {
+  readonly reason: ConversationUnavailableReason;
+  readonly onRestore?: () => void | Promise<void>;
+  readonly restoring?: boolean;
+}) {
+  const intl = useIntl();
+  const archived = reason === "archived";
+  return (
+    <section
+      aria-live="polite"
+      className="conversation-unavailable-state"
+      data-reason={reason}
+      role="status"
+    >
+      <span aria-hidden="true" className="conversation-unavailable-state__icon">
+        <ArchiveIcon size={18} />
+      </span>
+      <div className="conversation-unavailable-state__copy">
+        <strong>
+          {archived
+            ? <FormattedMessage id="chat.archived.title" defaultMessage="Conversation archived" />
+            : <FormattedMessage id="chat.unavailable.title" defaultMessage="Conversation unavailable" />}
+        </strong>
+        <p>
+          {archived
+            ? <FormattedMessage id="chat.archived.description" defaultMessage="This conversation is archived and read-only until you restore it." />
+            : <FormattedMessage id="chat.unavailable.description" defaultMessage="This conversation is no longer available." />}
+        </p>
+      </div>
+      {archived && onRestore ? (
+        <button
+          aria-busy={restoring || undefined}
+          aria-label={intl.formatMessage({ id: "chat.archived.restore", defaultMessage: "Restore conversation" })}
+          className="conversation-unavailable-state__restore"
+          disabled={restoring}
+          onClick={() => { void onRestore(); }}
+          type="button"
+        >
+          <RestoreArchiveIcon aria-hidden="true" size={14} />
+          <span>{restoring
+            ? <FormattedMessage id="chat.archived.restoring" defaultMessage="Restoring…" />
+            : <FormattedMessage id="chat.archived.restore" defaultMessage="Restore conversation" />}</span>
+        </button>
+      ) : null}
+    </section>
+  );
 }

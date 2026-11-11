@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-11-11T03:40:58.484Z",
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "account": {
+    "at": "2026-11-11T03:40:39.593Z",
+    "accounts": [
+      {
+        "enabled": true,
+        "status": "ready",
+        "heldUntil": null,
+        "credentialConfigured": true,
+        "limitWindows": [
+          {
+            "slot": "primary",
+            "windowMinutes": 10080,
+            "utilization": 0.44,
+            "resetAt": 1794827497000,
+            "observedAt": 1794368352181
+          },
+          {
+            "slot": "secondary",
+            "windowMinutes": null,
+            "utilization": 0,
+            "resetAt": null,
+            "observedAt": 1794368352181
+          }
+        ]
+      }
+    ]
+  },
+  "credentialMetadata": {
+    "expiresAtUtc": "2026-11-21T03:38:58Z",
+    "expired": false
+  },
+  "legacyControl": {
+    "endpoint": "/rpc/codex",
+    "threadHash": "fd23c7eaacf32b0c",
+    "status": "completed",
+    "error": null,
+    "assistantText": [
+      "OK"
+    ],
+    "toolCount": 0
+  },
+  "P2a": {
+    "componentAssembly": "independent source BridgeHost and bundled Codex bridge attached to existing Core; gateway subprocess CodexProviderBridge; test process backend only for bridge transport; native tools use existing Core execution",
+    "passed": true,
+    "at": "2026-11-11T03:42:55.697Z",
+    "turnStatus": "completed",
+    "historyItemTypes": [
+      "userMessage",
+      "reasoning",
+      "agentMessage",
+      "userMessage",
+      "reasoning",
+      "commandExecution",
+      "reasoning",
+      "agentMessage"
+    ],
+    "userMessageClientIds": [
+      "live-start",
+      "live-steer"
+    ],
+    "tools": [
+      {
+        "status": "completed",
+        "aggregatedOutput": "P2A_READ_OK\nP2A_TOOL_DONE\n",
+        "exitCode": 0
+      }
+    ],
+    "assistantFinal": "P2A_STEER_OK",
+    "effectContents": "P2A_SIDE_EFFECT\n",
+    "sideEffectLineCount": 1,
+    "steer": {
+      "inputCount": 1,
+      "admission": "accepted",
+      "evidence": "context-confirmed",
+      "evidenceKind": "native-input-id",
+      "nativeExecutions": 1
+    },
+    "gatewayLifecycle": [
+      {
+        "phase": "gateway-open",
+        "at": "2026-11-11T03:42:26.579Z"
+      },
+      {
+        "phase": "active-tool-observed",
+        "at": "2026-11-11T03:42:33.203Z"
+      },
+      {
+        "phase": "steer-admitted",
+        "at": "2026-11-11T03:42:33.283Z"
+      },
+      {
+        "phase": "gateway-killed",
+        "at": "2026-11-11T03:42:33.302Z"
+      },
+      {
+        "phase": "gateway-open",
+        "at": "2026-11-11T03:42:33.587Z"
+      }
+    ],
+    "gatewayProcessReplaced": true,
+    "hostAndCoreRestarted": false,
+    "nativeInputOccurrenceInHistory": 1
+  },
+  "sourceRevision": "1243a933ee",
+  "artifactSha256": "2d822b5d1c175026b5c6f45fd27929c57b1f365a1642a4c8dde5870af7567d1c"
+}

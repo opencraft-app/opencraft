@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { ThreadOrchestrationLedger } from './orchestration-ledger.js';
+import { AutomationLedger } from './automation-ledger.js';
 import { updateExecutionRequest } from './execution-request-state.js';
 
 // This handle is lent by the installation owner after migration. No create,
@@ -24,7 +25,32 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
       try{
         const ledger=new ThreadOrchestrationLedger(db,()=>payload.now??Date.now());
         switch(method){
+          case 'automation': {
+            const automation=new AutomationLedger(db,payload.now);
+            const input=payload.input;
+            switch(payload.operation){
+              case 'command': result=automation.command(input.caller,input.command,input.body,input.key);break;
+              case 'grantReplay': result=automation.grantReplay(input.caller,input.command,input.body,input.key);break;
+              case 'grant': result=automation.grantCommand(input.caller,input.command,input.body,input.key);break;
+              case 'eligible': result=automation.eligible();break;
+              case 'recover': automation.recover();break;
+              case 'claim': result=automation.claim(input.id,input.revision,input.occurrenceId);break;
+              case 'settle': result=automation.settle(input.key,input.state,input.result,input.proof);break;
+              case 'delegation': result=automation.delegation(input.key,input.sourceThreadId);break;
+              case 'enqueue': result=automation.enqueue(input.key,input.id,input.threadId);break;
+              case 'projection': result=automation.projection();break;
+              case 'unknownRuns': result=automation.unknownRuns();break;
+              case 'runGrant': result=automation.runGrant(input.key);break;
+              case 'checkRunGrant': result=automation.checkRunGrant(input.key);break;
+              case 'checkDelegation': result=automation.checkDelegation(input.id);break;
+              default: throw Error('Unknown automation operation');
+            }
+            break;
+          }
           case 'observe':ledger.observeSnapshot(payload.snapshot);break;
+          case 'admission':result=db.prepare(`SELECT a.* FROM conversation_authorities a WHERE a.thread_id=? AND a.input_id=?
+            UNION ALL SELECT a.* FROM conversation_authorities a JOIN opencraft_input_authorities i ON i.authority_id=a.id
+            WHERE i.thread_id=? AND i.input_id=? LIMIT 1`).get(payload.threadId,payload.inputId,payload.threadId,payload.inputId)??null;break;
           case 'updateExecution':updateExecutionRequest(db,payload);break;
           case 'targets':result=[...new Set([...ledger.observedRuntimeThreads(payload.includeTerminal),
             ...ledger.threads().filter(thread=>payload.includeTerminal||!['idle','error'].includes(thread.runtimeStatus)).map(thread=>thread.threadId),
@@ -44,7 +70,7 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
       }
     }
     port.postMessage({id,result});if(closed)port.close();
-  }catch(error){const e=error as Error&{code?:unknown};port.postMessage({id,error:{message:e.message,code:e.code}});}
+  }catch(error){const e=error as Error&{code?:unknown;status?:number};port.postMessage({id,error:{message:e.message,code:e.code,status:e.status}});}
 }
 port.on('message',request=>{tail=tail.then(()=>execute(request));});
 port.postMessage({type:'ready'});

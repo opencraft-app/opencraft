@@ -13,12 +13,13 @@ import { ModelRuntime, loadProjectContextFiles } from "@earendil-works/pi-coding
 import { BACKGROUND_CONTEXT as context, type Context } from "@earendil-works/chord/context";
 import { AgentDoc, InboxDoc, LiveDoc, UsageDoc, createRegistry, defineDoc, defineExtension, defineTool,
   Harness, MemoryStorage, section, watchEvents, hook, GenerationTask, type AgentEventStream, type Conversation, type Storage, type ContextView,
-  type EntryRecord, type SubmissionRecord, type TaskRecord, type AgentState, type LiveState, type UsageState } from "@earendil-works/pi-durable";
+  type EntryRecord, type SubmissionRecord, type TaskRecord, type AgentState, type LiveState, type UsageState, type Tx } from "@earendil-works/pi-durable";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 import lockfile from "proper-lockfile";
 import { decodeImage } from "./input.js";
+import { expiredPiSteers } from "./steering.js";
 
 type Value = Record<string, any>;
 export interface PiSnapshot {
@@ -46,6 +47,9 @@ const InstructionDoc = defineDoc<{ base: string | null; developer: string | null
 // Pi 1.3.0's admission kernel is used inside the same transaction as the shell
 // receipt: it starts idle runs and preserves inbox ordering, with stop checked atomically.
 const nativeAdmissions = () => import(new URL("./harness/submissions.js", import.meta.resolve("@earendil-works/pi-durable")).href);
+// Shell completions are independent receipts, but all results already waiting at
+// a final boundary belong in one continuation, rather than one reply per result.
+const shellQueueModes = { steeringMode: "one-at-a-time", followUpMode: "all" } as const;
 const defaultPreamble = "You are a coding assistant. Complete the user task using the available tools. Preserve existing work.";
 
 /** One native durable owner. It publishes committed snapshots, never a second execution ledger. */
@@ -76,6 +80,10 @@ export class PiDurableSession {
     policyCatalog?():Promise<Value[]>;
     onPolicyDenied?(error:ModelPolicyError):void;
     ephemeral?: boolean; inherited?: PiForkContext; executionEnvironment?: ExecutionEnvironmentRuntime; projectId?: string | null;
+    /** Bridge-owned sessions use the ordinary coding bash tool, not the PTY worker. */
+    shell?: boolean;
+    /** Lock acquisition attempts against another writer; the native default is 12. */
+    lockRetries?: number;
     admissionOpen?(): boolean;
     admitBackground?<T>(operation: () => Promise<T>): Promise<T>;
     prepareRecovery?(snapshot: PiSnapshot): Promise<Value[] | undefined>;
@@ -87,12 +95,14 @@ export class PiDurableSession {
   }
   private async open() {
     if (!this.options.ephemeral) this.release = await lockfile.lock(this.options.file, { realpath: false, stale: 10_000,
-      retries: { retries: 12, minTimeout: 1000, maxTimeout: 1000 } });
-    this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
-      onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
-      onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
-    });
-    this.shellSchema = (await this.shell.start()).parameters;
+      retries: { retries: this.options.lockRetries ?? 12, minTimeout: 1000, maxTimeout: 1000 } });
+    if (this.options.shell !== false) {
+      this.shell = new PiShellWorker({ cwd: this.options.cwd, directory: join(this.options.agentDirectory, "shell", this.options.threadId), threadId: this.options.threadId,
+        onNotification: event => { this.shellNotifications++; this.shellEvents = this.shellEvents.then(() => this.shellNotification(event)).catch(error => { if (!this.closed) this.options.onExit(new Error("Pi shell notification could not be committed")); }).finally(() => { this.shellNotifications--; }); },
+        onLost: generation => { this.shellEvents = this.shellEvents.then(() => this.interruptShells("Shell owner exited; the command was not replayed.", true, generation)).catch(() => { if (!this.closed) this.options.onExit(new Error("Pi shell owner failed")); }); },
+      });
+      this.shellSchema = (await this.shell.start()).parameters;
+    }
     const registry = createRegistry();
     const admittedGenerations=new Set<string>();
     registry.install(defineExtension({name:"opencraft.model-policy",hooks:[hook(GenerationTask,{
@@ -109,8 +119,10 @@ export class PiDurableSession {
       },
     })]}));
     // Keep native file tools. Shell commands use the conversation-owned yielding PTY.
-    registry.install(defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
-    registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
+    // Bridge-owned sessions omit the PTY entirely and keep the ordinary coding bash.
+    registry.install(this.options.shell === false ? CodingTools
+      : defineExtension({ ...CodingTools, tools: CodingTools.tools!.filter(tool => tool.name !== "bash") }));
+    if (this.options.shell !== false) registry.install(defineExtension({ name: "opencraft.pi-shell", tools: [
       defineTool({ name: "interactive_shell", description: shellDescription, parameters: this.shellSchema as any,
         execute: (args: any, api: any, ctx: Context) => this.executeShell(args, api, ctx) }),
       defineTool({ name: "bash", description: "Run a bash command in a managed PTY. Returns a sessionId immediately while the command continues; completion arrives automatically. Query, send input, or stop with interactive_shell. timeout is in seconds. Long commands do not block user steering.",
@@ -152,7 +164,8 @@ export class PiDurableSession {
           const calls = await tx.doc(PiPrivateCallsDoc, this.root.id);
           if (calls.calls[callKey]) throw new Error("Private tool outcome requires reconciliation");
           calls.calls[callKey] = { state: "pending" };
-          return input.requestId;
+          const entry = input.entry === undefined ? undefined : await tx.entry(input.entry);
+          return (entry?.data as Value)?.steerTurnId ?? input.requestId;
         }, ctx);
         let cancel: (() => void) | undefined;
         const cancelled = new Promise<never>((_resolve, reject) => {
@@ -181,7 +194,7 @@ export class PiDurableSession {
     })) }));
     this.replaceTools(this.options.tools);
     this.storage = this.options.ephemeral ? new MemoryStorage() : await openNodeSqliteStorage(this.options.file);
-    this.harness = await Harness.open(this.storage, { models: this.options.models, registry, env: target => {
+    this.harness = await Harness.open(this.storage, { models: this.options.models, registry, settings: shellQueueModes, env: target => {
       const cwd = target.cwd ?? this.options.cwd;
       const snapshot = this.environmentSnapshot();
       const key = JSON.stringify([cwd, snapshot?.key]);
@@ -222,6 +235,7 @@ export class PiDurableSession {
     return runtime?.snapshot(runtime.execution('opencraft-server', this.options.threadId, inputId, this.options.projectId));
   }
   private async environmentWorker(snapshot?: ExecutionEnvironmentSnapshot): Promise<PiShellWorker> {
+    if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (!snapshot) return this.shell;
     let worker = this.environmentWorkers.get(snapshot.key);
     if (!worker) {
@@ -241,6 +255,7 @@ export class PiDurableSession {
     await worker.start(); return worker;
   }
   private async executeShell(args: Value, api: Value, ctx: Context, waitMs: number | undefined = undefined) {
+    if (this.options.shell === false) throw new Error("Pi shell worker is disabled for this bridge session");
     if (this.closed || ctx.abortSignal?.aborted) throw new Error("Pi shell call cancelled");
     const inputId = this.options.executionEnvironment ? await this.root.commit(async tx => {
       const live = await tx.doc(LiveDoc, this.root.id);
@@ -370,7 +385,7 @@ export class PiDurableSession {
     await this.deliverShellNotifications();
   }
   private async interruptShells(reason: string, notify: boolean, generation?: string) {
-    if (!this.root || this.closed) return;
+    if (this.options.shell === false || !this.root || this.closed) return;
     await this.root.commit(async tx => {
       const doc = await tx.doc(PiShellDoc, this.root.id);
       for (const record of doc.records) if (record.state === "running" && (generation === undefined || record.generation === generation)) {
@@ -381,35 +396,42 @@ export class PiDurableSession {
     if (notify) await this.deliverShellNotifications();
   }
   private async deliverShellNotifications() {
-    if (this.closed || this.options.admissionOpen?.() === false) return;
+    if (this.options.shell === false || this.closed || this.options.admissionOpen?.() === false) return;
     // Import before entering the admission boundary. The entire commit stays
     // counted, and its final native mutation checks the fence again.
     const { admitSubmission } = await nativeAdmissions();
     let entered = false, admitted = false;
     const deliver = async () => {
       entered = true;
-      await this.root.commit(async tx => {
-        const doc = await tx.doc(PiShellDoc, this.root.id);
-        if (doc.paused) return;
-        for (const record of doc.records) {
-          while (record.monitorEvents?.length) {
-            const event = record.monitorEvents[0]!;
-            if (this.closed || this.options.admissionOpen?.() === false) return;
-            const requestId = `pi-shell:${record.generation}:${record.id}:event:${event.id}`;
-            await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: event.content,
-              entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: event.createdAtMs } } }, Date.now(),
-              { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
-            record.monitorEvents.shift(); admitted = true;
-          }
-          if (record.state === "running" || record.notified || !record.detached) continue;
-          if (this.closed || this.options.admissionOpen?.() === false) return;
-          const requestId = `pi-shell:${record.generation}:${record.id}`;
-          await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
-            entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
-            { steeringMode: "one-at-a-time", followUpMode: "one-at-a-time" });
-          record.notified = true; admitted = true;
-        }
-      }, context);
+      let more = true;
+      while (more) {
+        more = false;
+        await this.root.commit(async tx => {
+          const doc = await tx.doc(PiShellDoc, this.root.id);
+          if (doc.paused) return;
+          const settleExpired = await this.detachExpiredSteers(tx);
+          try {
+            for (const record of doc.records) {
+              if (record.monitorEvents?.length) {
+                const event = record.monitorEvents[0]!;
+                if (this.closed || this.options.admissionOpen?.() === false) return;
+                const requestId = `pi-shell:${record.generation}:${record.id}:event:${event.id}`;
+                await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: event.content,
+                  entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: event.createdAtMs } } }, Date.now(),
+                  shellQueueModes);
+                record.monitorEvents.shift(); admitted = true; more = true; return;
+              }
+              if (record.state === "running" || record.notified || !record.detached) continue;
+              if (this.closed || this.options.admissionOpen?.() === false) return;
+              const requestId = `pi-shell:${record.generation}:${record.id}`;
+              await admitSubmission(tx, this.root.id, { type: "input", requestId, whenBusy: "followUp", content: `Background shell result (${record.id}):\n${record.output}`,
+                entry: { kind: "opencraft.shellNotification", data: { sourceKind: "system", turnId: requestId, createdAtMs: Date.now() } } }, Date.now(),
+                shellQueueModes);
+              record.notified = true; admitted = true; more = true; return;
+            }
+          } finally { settleExpired(); }
+        }, context);
+      }
     };
     try { await (this.options.admitBackground ? this.options.admitBackground(deliver) : deliver()); }
     catch (error) { if (error instanceof ModelPolicyError) { this.options.onPolicyDenied?.(error); return; } if (entered || this.options.admissionOpen?.() !== false) throw error; }
@@ -428,7 +450,8 @@ export class PiDurableSession {
         ...(tail === undefined ? {} : { minEntryId: tail }) }, 100, cursor))).filter(entry => tail === undefined || entry.id > tail);
       const entries = [...this.entries, ...added];
       const live = JSON.parse(JSON.stringify(await tx.doc(LiveDoc, this.root.id))) as LiveState;
-      const inbox = JSON.parse(JSON.stringify(await tx.doc(InboxDoc, this.root.id))).items as Value[];
+      const inboxDoc = await tx.doc(InboxDoc, this.root.id);
+      const inbox = JSON.parse(JSON.stringify(inboxDoc)).items as Value[];
       const queueDoc = await tx.doc(PiQueueDoc, this.root.id);
       // Reconcile a crash between native admission and retiring draft custody.
       // The stable submission identity is authoritative even when its ACK was lost.
@@ -457,7 +480,17 @@ export class PiDurableSession {
       }
       const shell = JSON.parse(JSON.stringify(await tx.doc(PiShellDoc, this.root.id))) as PiSnapshot["shell"];
       const privateCalls = JSON.parse(JSON.stringify(await tx.doc(PiPrivateCallsDoc, this.root.id))) as PiPrivateCalls;
-      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox, queue, shell, privateCalls };
+      const expired = expiredPiSteers({ submissions: [...submissions.values()], inbox, live });
+      // Read the snapshot before settling receipts: native table reads must
+      // precede writes. This also repairs older ledgers when they are reopened.
+      for (const id of expired) {
+        const record = submissions.get(id)!;
+        if (record.status !== "queued") continue;
+        tx.settleSubmission(id, { status: "unanswered", reason: "aborted" });
+        submissions.set(id, { ...record, status: "unanswered", reason: "aborted" });
+      }
+      if (expired.size) inboxDoc.items = inboxDoc.items.filter(item => !expired.has(item.id));
+      return { entries, submissions: [...submissions.values()], tasks, agent, live, usage, inbox: inbox.filter(item => !expired.has(item.id)), queue, shell, privateCalls };
     }, context)).then(snapshot => {
       this.entries = [...snapshot.entries]; this.tasks = new Map(snapshot.tasks);
       for (const record of snapshot.submissions) this.submissions.set(record.id, record);
@@ -499,10 +532,39 @@ export class PiDurableSession {
     return record.status === "done" ? "completed" : record.status === "unanswered" ? "failed" : "running";
   }
   async submit(content: any, data: Value, requestId: string) {
-    const admitted = await this.root.submit({ type: "input", content, whenBusy: "reject", requestId,
-      entry: { kind: "opencraft.input", data } }, context);
+    const { admitSubmission } = await nativeAdmissions();
+    const id = await this.root.commit(async tx => {
+      const settleExpired = await this.detachExpiredSteers(tx);
+      const id = await admitSubmission(tx, this.root.id, { type: "input", content, whenBusy: "reject", requestId,
+        entry: { kind: "opencraft.input", data } }, Date.now(), shellQueueModes);
+      settleExpired();
+      return id;
+    }, context);
+    this.harness.resume();
+    const admitted = await this.harness.submission(id, context);
+    if (!admitted) throw new Error("Pi input receipt is unavailable");
     this.submissions.set(admitted.id, await admitted.status(context));
     return admitted;
+  }
+  private async detachExpiredSteers(tx: Tx): Promise<() => void> {
+    const live = await tx.doc(LiveDoc, this.root.id);
+    if (live.run) return () => {};
+    const inbox = await tx.doc(InboxDoc, this.root.id);
+    const records = new Map<SubmissionRecord["id"], SubmissionRecord>();
+    for (const item of inbox.items) {
+      if (item.mode !== "steer") continue;
+      const data = item.entry?.data as Value | undefined;
+      for (const request of [data?.turnId, data?.steerTurnId]) {
+        if (typeof request !== "string") continue;
+        const record = await tx.submissionByRequest(this.root.id, request);
+        if (record) records.set(record.id, record);
+      }
+    }
+    const expired = expiredPiSteers({ submissions: [...records.values()], inbox: inbox.items, live });
+    if (expired.size) inbox.items = inbox.items.filter(item => !expired.has(item.id));
+    // Admission must read committed tables before any settlement table write.
+    // Remove obsolete inputs first, then settle their receipts in the same commit.
+    return () => { for (const id of expired) tx.settleSubmission(id, { status: "unanswered", reason: "aborted" }); };
   }
   /** Guard and enqueue on the native commit line: a late steer must never start an idle run. */
   async steer(content: any, data: Value, requestId: string, expectedTurnId: string, queuedId?: string) {
@@ -622,7 +684,7 @@ export class PiDurableSession {
       else queue.items.splice(index, 1);
     }, context);
   }
-  get backgroundWork() { return this.shellLaunches + this.shellNotifications + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
+  get backgroundWork() { return (this.options.shell === false ? 0 : this.shellLaunches + this.shellNotifications) + [...this.earlyShellNotifications.values()].reduce((n, rows) => n + rows.length, 0); }
   get idleWorkerPid() { return this.shell?.pid; }
   get workerProcessIds() { return [this.shell, ...this.environmentWorkers.values()].flatMap(worker => worker?.pid ? [worker.pid] : []); }
   resumeBackground() { return this.deliverShellNotifications(); }

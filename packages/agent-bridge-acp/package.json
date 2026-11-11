@@ -1,0 +1,17 @@
+{
+  "name": "@opencraft/agent-bridge-acp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@opencraft/agent-bridge-protocol": "0.1.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "start": "node --import tsx src/main.ts",
+    "build": "node build.mjs"
+  }
+}

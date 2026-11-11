@@ -23,6 +23,9 @@ export class ThreadCatalog {
   private readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   private readonly temporary = new Map<string, RecordValue>();
+  private readonly manualTitles = new Map<string, string | null>();
+  /** In-memory projection for notifications; never performs database IO. */
+  manualTitle(id: string): string | null | undefined { return this.manualTitles.get(id); }
 
   constructor(path = ":memory:") {
     const managed = openManagedDatabase({
@@ -39,7 +42,9 @@ export class ThreadCatalog {
     if (typeof version !== "number" || version > 1 || !Number.isSafeInteger(version) || version < 1) {
       throw new Error(`Unsupported thread document version: ${version}`);
     }
-    return parsed as RecordValue;
+    const record = parsed as RecordValue;
+    this.manualTitles.set(record.snapshot.id, record.manualTitle ?? null);
+    return record;
   }
 
   private read(id: string): RecordValue | null {
@@ -54,6 +59,7 @@ export class ThreadCatalog {
     if (record.snapshot.ephemeral === true) this.temporary.set(record.snapshot.id, structuredClone(payload));
     else this.database.prepare("INSERT INTO opencraft_threads(id,document) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document")
       .run(record.snapshot.id, JSON.stringify(payload));
+    this.manualTitles.set(record.snapshot.id, record.manualTitle);
   }
 
   upsert(snapshot: Snapshot, options: ThreadCatalogOptions = {}): Snapshot {
@@ -91,7 +97,7 @@ export class ThreadCatalog {
       .map(row => this.decodeDocument(row.document)).filter(record => record.archived === archived).map(record => record.snapshot);
   }
 
-  forgetTemporary(id: string): void { this.temporary.delete(id); }
+  forgetTemporary(id: string): void { this.temporary.delete(id); this.manualTitles.delete(id); }
   temporaryIds(): string[] { return [...this.temporary.keys()]; }
-  close(): void { this.temporary.clear(); this.database.close(); }
+  close(): void { this.temporary.clear(); this.manualTitles.clear(); this.database.close(); }
 }

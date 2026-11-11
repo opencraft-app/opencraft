@@ -4,6 +4,7 @@ import { JsonRpcAppServerClient, type DuplexTransport, type ServerRequestRespons
 import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserver-transport-memory";
 import { encodeJsonRpcMessage, isJsonRpcRequest, parseJsonRpcMessage } from "@opencraft/appserver-protocol";
 import { WebSocketTransport } from "@opencraft/appserver-transport-websocket";
+import { AppServerInteractionBroker, encodeServerRequestId } from "@opencraft/composer-appserver";
 import { installBrowserDynamicToolHandler } from "@opencraft/browser-appserver";
 import { WebSocket, WebSocketServer } from "ws";
 
@@ -303,4 +304,31 @@ test("ordinary completed connect cancellation keeps its established initializati
     assert.notEqual(f.client.initializeResult, null);
     assert.equal(f.client.status.state, "open");
   } finally { await f.client.close(); }
+});
+
+
+test("reattached pending approval is idempotent through the real client and interaction broker", async () => {
+  const f = fixture(), stored = new Map<string, any>(), errors: Error[] = [];
+  const broker = new AppServerInteractionBroker({ hostId: "lifecycle-fixture", client: f.client, store: {
+    upsertPendingInteraction: interaction => { stored.set(interaction.requestId, interaction); },
+    removePendingInteraction: (_threadId, requestId) => { stored.delete(requestId); },
+  } });
+  f.client.subscribeProtocolError(error => errors.push(error));
+  const request = { id: "restored-approval", method: "item/commandExecution/requestApproval", params: { threadId: "thread", turnId: "turn", itemId: "tool", command: "cat fixture.txt" } };
+  try {
+    await f.client.connect(params);
+    f.send(request); await turn();
+    const original = stored.get(encodeServerRequestId(request.id));
+    assert(original);
+    f.send(request); await turn();
+    assert.equal(stored.size, 1); assert.equal(stored.get(original.requestId), original);
+    assert.deepEqual(errors, []); assert.deepEqual(f.frames, []);
+    // Reusing the ID for a different request cannot replace the pending owner.
+    f.send({ ...request, params: { ...request.params, command: "different" } }); await turn();
+    assert.equal(errors.length, 1); assert.equal(stored.get(original.requestId), original);
+    await broker.respond({ hostId: "lifecycle-fixture", threadId: "thread" }, { type: "command-approval", requestId: original.requestId, decision: "decline" });
+    await turn();
+    assert.equal(f.frames.length, 1); assert.deepEqual(f.frames[0]?.message, { id: request.id, result: { decision: "decline" } });
+    assert.equal(stored.size, 0);
+  } finally { broker.dispose(); await f.client.close(); }
 });

@@ -1,6 +1,8 @@
 import { ConversationSearchTargetContext, blockItemIds, useRevealSearchItem } from "./conversation/search-target";
+import { observeChatMediaDiagnostic } from "../runtime/media-diagnostics";
 import { LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { ForkTurnButton } from "./conversation/fork-turn-button";
+import { Button } from "@opencraft/design-system-web/button";
 import { MessageTimestamp } from "./conversation/message-timestamp";
 import { PatchActivityIcon } from "./activity-glyphs";
 import { ConversationContentWindowContext } from "./conversation/content-window";
@@ -48,6 +50,7 @@ import {
   type TurnFollowRestoreState,
   type VirtualizedTurnRestoreState,
   type VirtualizedTurnListApi,
+  type TurnHistoryBackfillDiagnostic,
 } from "@opencraft/timeline-virtualizer";
 import {
   createWebConversationViewportOwner,
@@ -281,6 +284,7 @@ function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
         documentId={block.id}
         hostId={documentContext.hostId}
         loadMediaSource={documentContext.loadMediaSource}
+        onMediaDiagnostic={observeChatMediaDiagnostic}
         onMeasurementRequest={documentContext.onMeasurementRequest}
         onOpenResource={documentContext.onOpenResource}
         source={block.text}
@@ -337,7 +341,12 @@ function TodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
 }
 
 function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
+  const intl = useIntl();
   if (block.type !== "error") return null;
+  const message = block.code === "acpPromptFailed"
+    ? intl.formatMessage({ id: "chat.agentRequestFailed", defaultMessage: "The Agent could not complete this response. You can continue to try again." })
+    : block.code === "acpPromptUnconfirmed"
+      ? intl.formatMessage({ id: "chat.agentRequestUnconfirmed", defaultMessage: "The Agent connection was interrupted and the response outcome is unknown. Check the conversation before trying again." }) : block.message;
   if (block.recovery === "automatic") {
     return <div className="thread-stream-error" role="status"><CadencedShimmer active>{block.message}</CadencedShimmer></div>;
   }
@@ -348,12 +357,12 @@ function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
       role="alert"
     >
       <AlertCircle aria-hidden="true" className="thread-system-error__icon" size={16} />
-      <p className="thread-system-error__message">{block.message}</p>
-      {onRetry ? (
-        <button className="thread-system-error__retry" type="button" onClick={onRetry}>
+      <p className="thread-system-error__message">{message}</p>
+      {onRetry && block.code !== "acpPromptUnconfirmed" ? (
+        <Button variant="secondary" size="sm" className="thread-system-error__retry" type="button" onClick={onRetry}>
           <RotateCcw aria-hidden="true" size={14} />
-          Continue
-        </button>
+          {intl.formatMessage({ id: "chat.continueResponse", defaultMessage: "Continue" })}
+        </Button>
       ) : null}
     </aside>
   );
@@ -670,6 +679,8 @@ export interface ConversationProps {
   readonly onRestoreSnapshotChange?: (snapshot: ConversationRestoreSnapshot) => void;
   readonly onLoadItemDetails?: (ids: readonly string[], signal: AbortSignal) => Promise<void>;
   readonly onLoadOlder?: () => void | "stop" | Promise<void | "stop">;
+  /** Internal, sampled history/viewport diagnostics; never contains message text. */
+  readonly onHistoryViewportDiagnostic?: (event: ConversationHistoryViewportDiagnostic) => void;
   readonly loadingOlder?: boolean;
   readonly onContinueTurn?: (turnId: TurnId) => void;
   readonly continuableTurnId?: TurnId | null;
@@ -695,6 +706,13 @@ export interface ConversationProps {
   readonly surfaceCapabilities?: TimelineSurfaceCapabilities;
   readonly threadDetailLevel?: ConversationDetailLevel;
 }
+
+export type ConversationHistoryViewportDiagnostic = TurnHistoryBackfillDiagnostic & Readonly<{
+  timelineRevision: number | null;
+  renderedTurnCount: number;
+  historyTurnCount: number | null;
+  loadingOlder: boolean;
+}>;
 
 export type ConversationScrollApi = TurnConversationScrollApi;
 
@@ -746,6 +764,7 @@ export function Conversation({
   initialRestoreSnapshot = null,
   onRestoreSnapshotChange,
   onLoadOlder,
+  onHistoryViewportDiagnostic,
   onLoadItemDetails,
   loadingOlder = false,
   onOpenSubagent,
@@ -879,6 +898,15 @@ export function Conversation({
   const cancelPendingTargetPosition = useCallback(() => {
     virtualizerApiRef.current?.cancelPositioning();
   }, []);
+  const reportHistoryViewportDiagnostic = useStableEvent((event: TurnHistoryBackfillDiagnostic) => {
+    onHistoryViewportDiagnostic?.({
+      ...event,
+      timelineRevision: timeline?.revision ?? null,
+      renderedTurnCount: entries.length,
+      historyTurnCount: timeline?.historyTurnCount ?? null,
+      loadingOlder,
+    });
+  });
   const historyBackfill = useTurnHistoryBackfill({
     historyKey: timeline === null
       ? null
@@ -897,6 +925,7 @@ export function Conversation({
     afterLayout: () => new Promise<void>((resolve) => window.requestAnimationFrame(() => {
       window.requestAnimationFrame(() => resolve());
     })),
+    onDiagnostic: reportHistoryViewportDiagnostic,
   });
   const loadOlderUntilScrollable = historyBackfill.request;
 

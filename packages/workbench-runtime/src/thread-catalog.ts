@@ -25,7 +25,7 @@ function relativeTime(timestampSeconds: number, nowMs: number): string {
 
 /** Pure Thread catalog projection shared by Vite, Expo Web and iPad. */
 export function projectAppServerThread(
-  thread: Thread & { pinned?: boolean; visibility?: "visible" | "hidden" },
+  thread: Thread & { pinned?: boolean; visibility?: "visible" | "hidden"; accessMode?: "shared" | "private" },
   nowMs = Date.now(),
 ): WorkbenchThread {
   const parts = thread.cwd.split("/").filter(Boolean);
@@ -37,6 +37,7 @@ export function projectAppServerThread(
     lineage: thread.parentThreadId != null ? "subagent" : thread.forkedFromId != null ? "fork" : "root",
     parentThreadId: thread.parentThreadId ?? null,
     ...(thread.visibility === undefined ? {} : { visibility: thread.visibility }),
+    ...(thread.accessMode === "private" || thread.accessMode === "shared" ? {accessMode:thread.accessMode} : {}),
     time: relativeTime(thread.updatedAt, nowMs),
     updatedAt: thread.recencyAt ?? thread.updatedAt,
     createdAt: thread.createdAt,

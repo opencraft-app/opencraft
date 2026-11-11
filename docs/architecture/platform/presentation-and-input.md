@@ -418,6 +418,21 @@ session directory, most recently activated terminal, Host identity, cwd, shell,
 phase and bounded readable buffer are application semantics; xterm and panel
 tabs are presentations, not a second process or session authority.
 
+Terminal recovery requires positive support: `opencraft/terminal-restore`
+version 1, or an explicit method-access manifest admitting `process/attach`
+and `process/list` individually. Method admission still takes precedence over
+the capability. A legacy server without either declaration is not assumed to
+implement these OpenCraft extensions. The DSH Host advertises its persistent
+PTY owner; shared native Codex projections remove this Host-owned capability.
+Native connection-scoped processes cannot be reattached through the native
+protocol. Reconnection must not issue unsupported recovery requests or silently
+spawn a replacement shell. Keep the prior output, mark that terminal unavailable,
+and offer an explicit new terminal in the same Host/Conversation/project/cwd.
+Permanent method rejection stops recovery for that terminal; transport failures
+remain eligible for recovery. Terminal listing on a server without support
+returns an empty directory without sending a request. Error copy is localized,
+wraps in narrow panels and does not expose native protocol diagnostics.
+
 The Terminal panel adapter writes active-terminal changes when a terminal tab
 is selected. Selecting Browser or another panel type does not erase the most
 recent terminal selection. Closing the selected terminal falls back within the

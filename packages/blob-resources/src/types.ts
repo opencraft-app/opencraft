@@ -25,6 +25,8 @@ export type BlobResourceLoader = (resource: BlobResource, signal: AbortSignal,
   progress: (receivedBytes: number, totalBytes?: number) => void) => Promise<Blob>;
 export interface BlobLease {
   readonly promise: Promise<Blob>;
+  /** Original cache expiry, preserved when bytes are reused. */
+  readonly expiresAt?: number;
   getProgress(): BlobProgress;
   subscribe(listener: () => void): () => void;
   /** Idempotent; the last waiting consumer cancels a shared request. */

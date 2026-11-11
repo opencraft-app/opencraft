@@ -151,6 +151,10 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   &, body { position: static; inset: auto; height: 100vh; }
   body { position: relative; }
   .app-shell-root { position: relative; }
+  // Keep the immersive paint canvas while bounding interactive content by the
+  // CSS dynamic viewport. A larger vh canvas must not carry the Composer below
+  // the exposed window; keyboard contraction still belongs to the viewport port.
+  :is(.app-shell-row, .app-shell-floating-overlay-root, .app-shell-page-presentation) { max-height: 100dvh; }
   .app-shell-floating-overlay-root { position: absolute; }
   :is(.app-shell-root, .app-shell-floating-overlay-root, .app-shell-page-presentation) {
     right: auto;
@@ -10948,6 +10952,17 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   letter-spacing: var(--typography-metadata-tracking);
 }
 
+.terminal-panel__recovery {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap-control-group);
+  white-space: normal;
+  overflow-wrap: anywhere;
+
+  > span { flex: 1 1 16em; }
+}
+
 .web-browser-presentation-root {
   position: fixed;
   z-index: var(--layer-workspace-browser);
@@ -12891,6 +12906,88 @@ html[data-window-host="browser"] body {
 }
 
 .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: none; }
+.opencraft-composer-model-browser-surface {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(600px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
+  padding: 0;
+  overflow: hidden;
+}
+.opencraft-composer-model-browser {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  &__sources {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--spacing);
+    padding: calc(var(--spacing) * 2);
+    overflow-x: auto;
+    border-bottom: .5px solid var(--color-border-subtle);
+  }
+  &__source-name {
+    @include typography.role(metadata, secondary);
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  &__search {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+    border-bottom: .5px solid var(--color-border-subtle);
+    color: var(--color-text-secondary);
+    input {
+      @include typography.role(control, primary);
+      width: 100%;
+      min-width: 0;
+      min-height: var(--size-control-hit-min);
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }
+  }
+  &__models {
+    min-height: 0;
+    max-height: 320px;
+    padding: calc(var(--spacing) * 2);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  &__reasoning {
+    flex: none;
+    padding: calc(var(--spacing) * 2);
+    border-top: .5px solid var(--color-border-subtle);
+  }
+  &__section-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    @include typography.role(metadata, secondary);
+    padding: var(--spacing) calc(var(--spacing) * 2);
+  }
+  &__efforts { display: flex; flex-wrap: wrap; gap: var(--spacing); }
+  &__fast,
+  &__configure { flex: none; margin: calc(var(--spacing) * 2); }
+  &__fast {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    padding: calc(var(--spacing) * 2);
+    border-top: .5px solid var(--color-border-subtle);
+    @include typography.role(control, primary);
+    > span { flex: 1; }
+  }
+}
 .opencraft-composer-footer[data-footer-density="minimal"] .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: block; }
 
 // Empty idle touch drafts use a single row without a model entrance. Editor
@@ -12948,3 +13045,5 @@ html[data-window-host="browser"] body {
   flex-direction: column;
   p { margin: 0; }
 }
+
+.sidebar-access-description { padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 2); @include typography.role(metadata, secondary); }

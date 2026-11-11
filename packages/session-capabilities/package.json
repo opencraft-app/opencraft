@@ -9,7 +9,9 @@
     "./bindings": "./src/bindings.ts",
     "./remote": "./src/remote.ts",
     "./authenticated-mcp": "./src/authenticated-mcp.ts",
-    "./thread-cli": "./src/thread-cli.ts"
+    "./thread-cli": "./src/thread-cli.ts",
+    "./execution-cli": "./src/execution-cli.ts",
+    "./credentials": "./src/credentials.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

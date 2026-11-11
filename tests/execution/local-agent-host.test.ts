@@ -10,6 +10,7 @@ import { WebSocketServer } from "ws";
 
 import { openLocalAgentStorage, startLocalAgentHost } from "../../apps/local-agent-host/src/main.js";
 import { seedNewerHostStorage } from "../support/local-agent-storage-fixture.js";
+import { ConnectedAgentHost, connectedAgentCatalogEntry } from "../../apps/local-agent-host/src/connected-agents.js";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
 import { DshExecutionAuthority } from "../../apps/local-agent-host/src/dsh-execution-authority.js";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
@@ -402,6 +403,7 @@ test("Local Agent Host advertises and owns attachment staging", async () => {
     const initialized = await request(socket, 901, "initialize", {
       clientInfo: { name: "attachment-test", version: "1" },
     });
+    assert.deepEqual(initialized.capabilities.extensions["opencraft/terminal-restore"], { version: 1 });
     assert.deepEqual(
       initialized.capabilities.extensions["opencraft/attachment-staging"],
       {
@@ -942,4 +944,44 @@ test("DSH catalog creation reaches a directory reader with no Thread attachment"
     assert.ok(event, "directory readers receive creation independently of Thread attachments");
     assert.deepEqual(event.params.change.thread.turns, []);
   } finally { a.close(); b.close(); await host.close(); await dsh.close(); await rm(workspace, { recursive: true, force: true }); }
+});
+
+
+test("model/list paginates native and connected models without duplicates", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "host-model-pagination-"));
+  let connected: ReturnType<typeof connectedAgentCatalogEntry>[] = [];
+  t.mock.method(ConnectedAgentHost.prototype, "models", async () => connected);
+  const dsh = await fakeDsh();
+  const host = await startLocalAgentHost({ dshUrl: dsh.url, dataDirectory: directory,
+    projectlessWorkspaceDirectory: join(directory, "workspaces"), skillsDirectory: join(directory, "skills") });
+  const socket = await connect(host.websocketUrl);
+  try {
+    await request(socket, 1, "initialize", {});
+    const native = (await request(socket, 2, "model/list", { limit: 100 })).data;
+    assert.equal(native.length, 2);
+    let sequence = 10;
+    for (const count of [0, 1, 3]) {
+      connected = ["codex", "cursor", "claude-code"].slice(0, count)
+        .map(id => connectedAgentCatalogEntry(id as "codex" | "cursor" | "claude-code"));
+      for (const limit of [1, 2, 3]) {
+        const seen = new Set<string>(), rows: { id: string }[] = [];
+        let cursor: string | null = null;
+        do {
+          const page = await request(socket, sequence++, "model/list", { limit, cursor });
+          assert.ok(page.data.length <= limit, `page size exceeds ${limit}`);
+          rows.push(...page.data);
+          cursor = page.nextCursor;
+          if (cursor !== null) {
+            assert.ok(!seen.has(cursor), "cursor must advance");
+            seen.add(cursor);
+          }
+        } while (cursor !== null);
+        assert.deepEqual(rows.map(row => row.id), [...native, ...connected].map(row => row.id));
+        assert.equal(new Set(rows.map(row => row.id)).size, rows.length);
+      }
+    }
+  } finally {
+    socket.close(); await host.close(); await dsh.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });

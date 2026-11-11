@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "cliVersion": "2026.11.05-86047df",
+  "model": "glm-5p3-flash[reasoning=high]",
+  "evidenceTier": "native-interrupt-replace",
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "promptCapabilities": {
+        "image": true,
+        "audio": false,
+        "embeddedContext": false
+      },
+      "sessionCapabilities": {
+        "list": {}
+      },
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      }
+    },
+    "authMethods": [
+      {
+        "id": "cursor_login",
+        "name": "Cursor Login",
+        "description": "Authenticate using existing Cursor login credentials. Run 'agent login' first if not logged in."
+      }
+    ]
+  },
+  "session": {
+    "sessionId": "opaque-1",
+    "currentModelId": "auto-smart[optimize_for=balanced]",
+    "modes": [
+      "agent",
+      "plan",
+      "ask"
+    ]
+  },
+  "observations": [
+    {
+      "operation": "session/steer-probe",
+      "code": -32601,
+      "message": "Method not found"
+    },
+    {
+      "operation": "model-set",
+      "result": "accepted"
+    },
+    {
+      "event": "available_commands_update"
+    },
+    {
+      "event": "session_info_update"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "tool_call",
+      "toolCallId": "opaque-2",
+      "status": "pending"
+    },
+    {
+      "event": "tool_call_update",
+      "toolCallId": "opaque-2",
+      "status": "in_progress"
+    },
+    {
+      "operation": "concurrent-session/prompt",
+      "stage": "tool-in-progress"
+    },
+    {
+      "operation": "first-result",
+      "result": {
+        "stopReason": "cancelled"
+      }
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_thought_chunk"
+    },
+    {
+      "event": "agent_message_chunk",
+      "text": "CLI_STEER"
+    },
+    {
+      "operation": "second-result",
+      "result": {
+        "stopReason": "end_turn"
+      }
+    }
+  ],
+  "result": "concurrent-input-attempted",
+  "conclusion": "Concurrent ACP prompt cancels the active native prompt before completing the replacement. Not native-inject or passive next-turn.",
+  "recordedAt": "2026-11-11T00:25:13.239316+00:00",
+  "priceBasis": {
+    "source": "https://cursor.com/docs/models/glm-5-3-flash",
+    "inputUsdPerMillion": 0.15,
+    "outputUsdPerMillion": 0.5,
+    "selectedFrom": "actual ACP session model catalog; lower-price Haiku rejected before any model send"
+  }
+}

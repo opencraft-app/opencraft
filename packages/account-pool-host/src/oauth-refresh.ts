@@ -37,12 +37,14 @@ export class AccountCredentialRefreshManager {
     reason: AccountCredentialRefreshReason,
   ): Promise<AccountPoolSecret> {
     const current = this.store.readCredential(account.id);
+    if (current.external) {
+      const usable = current.expiresAt === null || current.expiresAt > this.now() + this.refreshSkewMs;
+      if (usable && (reason === "expired" || current.accessToken !== secret.accessToken)) return Promise.resolve(current);
+      return Promise.reject(new Error("Shared credentials need renewal by their external owner. Run codex login on the host, or remove this account and use device-code login."));
+    }
     if (current.accessToken !== secret.accessToken) return Promise.resolve(current);
     if (reason === "expired" && (current.expiresAt === null || current.expiresAt > this.now() + this.refreshSkewMs)) {
       return Promise.resolve(current);
-    }
-    if (current.external) {
-      return Promise.reject(new Error("Shared credentials need renewal by their external owner"));
     }
     const existing = this.flights.get(account.id);
     if (existing !== undefined) return existing;

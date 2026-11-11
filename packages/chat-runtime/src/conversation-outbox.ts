@@ -41,6 +41,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   let generation = 0;
   let disposed = false;
   let draining = false;
+  let pendingWake = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
   let hydrated = false;
   const read = (): Promise<void> => {
@@ -78,7 +79,8 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   };
   const notify = () => { if (!disposed) { revision++; dispatch?.publish(); for (const listener of listeners) listener(); } };
   const drain = async () => {
-    if (disposed || draining || !dispatch?.ready() || (dispatch?.blocked() ?? true)) return;
+    if (disposed || !dispatch?.ready() || (dispatch?.blocked() ?? true)) return;
+    if (draining) { pendingWake = true; return; }
     if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
     draining = true;
     const owner = generation;
@@ -139,7 +141,12 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       notify();
     } finally {
       draining = false;
-      if (owner !== generation) wake();
+      const wakeAfterDrain = pendingWake;
+      pendingWake = false;
+      // Readiness can recover while the undispatched head is being persisted
+      // as waiting. Recheck once without bypassing a requested retry delay.
+      if (owner !== generation || (wakeAfterDrain && retryTimer === null
+        && !storageError && entries[0]?.state === "waiting")) wake();
     }
   };
   const wake = () => { void drain(); };

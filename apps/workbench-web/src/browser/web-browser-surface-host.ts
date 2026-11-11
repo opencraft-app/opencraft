@@ -13,9 +13,13 @@ import {
 import type { PresentationHostPort } from "./opencraft-presentation-host";
 import type { BrowserLocalMenuController } from './browser-local-menu';
 
+export type BrowserInputFailureKind = 'focus' | 'edit' | 'copy' | 'control';
+
 export interface BrowserSurfaceEvents {
   /** Authoritative logical retirement; transport/admission failures are not closure. */
   onSessionClosed?(): void;
+  /** Nonfatal input feedback must not replace page navigation state. */
+  onInputError?(kind: BrowserInputFailureKind): void;
   onNewWindow?(url: string, background: boolean): void;
   onNavigation?(state: { url: string; title: string; canGoBack: boolean; canGoForward: boolean; isLoading: boolean }): void;
   onLoaded(title: string | null): void;

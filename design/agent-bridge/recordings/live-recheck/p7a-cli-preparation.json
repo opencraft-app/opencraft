@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "provider": "codex",
+  "model": "gpt-5.6-luna",
+  "P7a": "unverified",
+  "stage": "execution CLI configuration before native turn/start",
+  "credentialIssue": "succeeded",
+  "configurationStages": [
+    "read-thread",
+    "check-idle",
+    "capture-settings"
+  ],
+  "nativeThreadStatus": "idle",
+  "nativeFailure": {
+    "method": "thread/resume",
+    "code": -32600,
+    "message": "no rollout found for thread id <thread-hash>"
+  },
+  "gatewayFailure": {
+    "code": -32001,
+    "message": "cliUnavailable",
+    "submissionOutcome": "rejected",
+    "retryable": false
+  },
+  "nativeModelTurnsStarted": 0,
+  "preparationAttempts": 4,
+  "limits": [
+    "Initial failure plus three preparation-only diagnostic repetitions; no input replay after uncertain outcome.",
+    "Final diagnostic bundle only added stderr stage/native-error logging; no native behavior changed.",
+    "No CLI chain, child spawn/tell/wait/output, or task completion claimed.",
+    "No production configuration bypass or fix applied."
+  ]
+}

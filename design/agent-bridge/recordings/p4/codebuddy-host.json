@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-11-10T22:55:26.646Z",
+  "provider": "codebuddy",
+  "model": "hy3-ioa",
+  "host": "apps/agent-bridge-host",
+  "backend": "local test process backend; no production sandbox claim",
+  "evidenceTier": "unverified-external-blocker",
+  "receipts": {
+    "create": {
+      "state": "rejected",
+      "response": {
+        "jsonrpc": "2.0",
+        "id": "host-command:create",
+        "error": {
+          "kind": "invalid",
+          "code": -32602,
+          "message": "ACP session could not be created: Internal error"
+        }
+      }
+    }
+  },
+  "artifactSha256": "faf99e81ca4804c5fd1b1872ae89fe492d1220689ee836e90a5f5d8a1abf0bcb",
+  "error": "session/create rejected with native HTTP 500; no model task started",
+  "probes": [
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "opencraft-agent-bridge",
+            "version": "1"
+          },
+          "clientCapabilities": {}
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/steer",
+        "params": {}
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "Steer operation requires \"sessionId\""
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+          "protocolVersion": 1,
+          "clientInfo": {
+            "name": "opencraft-agent-bridge",
+            "version": "1"
+          },
+          "clientCapabilities": {
+            "fs": {
+              "readTextFile": true,
+              "writeTextFile": true
+            },
+            "terminal": true,
+            "elicitation": {}
+          }
+        }
+      }
+    },
+    {
+      "direction": "out",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "session/steer",
+        "params": {}
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "error": {
+          "code": -32602,
+          "message": "Invalid params",
+          "data": "Steer operation requires \"sessionId\""
+        }
+      }
+    },
+    {
+      "direction": "in",
+      "frame": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "error": {
+          "code": -32603,
+          "message": "Internal error",
+          "data": {
+            "details": "Request failed with status code 500"
+          }
+        }
+      }
+    }
+  ],
+  "nativeVersion": "2.182.0",
+  "modelSelectionBasis": {
+    "source": "installed account help and product metadata",
+    "id": "hy3-ioa",
+    "credits": "x0.00 credits",
+    "syntheticEchoExcluded": true
+  }
+}

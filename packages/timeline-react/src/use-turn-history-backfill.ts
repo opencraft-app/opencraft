@@ -2,6 +2,7 @@ import { useInsertionEffect, useRef } from "react";
 import { useStableEvent } from "@opencraft/react-runtime";
 import {
   TurnHistoryBackfillCoordinator,
+  type TurnHistoryBackfillDiagnostic,
   type TurnHistoryPageResult,
   type TurnViewportMetrics,
 } from "@opencraft/timeline-virtualizer";
@@ -13,6 +14,7 @@ export interface UseTurnHistoryBackfillOptions {
   readonly readMetrics: () => TurnViewportMetrics | null;
   readonly afterLayout: () => Promise<void>;
   readonly onError?: (error: unknown) => void;
+  readonly onDiagnostic?: (event: TurnHistoryBackfillDiagnostic) => void;
 }
 
 export interface TurnHistoryBackfillHandle {
@@ -28,12 +30,14 @@ export function useTurnHistoryBackfill({
   readMetrics,
   afterLayout,
   onError,
+  onDiagnostic,
 }: UseTurnHistoryBackfillOptions): TurnHistoryBackfillHandle {
   const readMetricsEvent = useStableEvent(readMetrics);
   const afterLayoutEvent = useStableEvent(afterLayout);
   const loadPageEvent = useStableEvent(() => loadPage?.() ?? "stop");
   const isEnabledEvent = useStableEvent(() => loadPage !== undefined);
   const onErrorEvent = useStableEvent((error: unknown) => onError?.(error));
+  const onDiagnosticEvent = useStableEvent((event: TurnHistoryBackfillDiagnostic) => onDiagnostic?.(event));
   const coordinatorRef = useRef<TurnHistoryBackfillCoordinator | null>(null);
 
   if (coordinatorRef.current === null) {
@@ -43,6 +47,7 @@ export function useTurnHistoryBackfill({
       loadPage: loadPageEvent,
       onError: onErrorEvent,
       readMetrics: readMetricsEvent,
+      onDiagnostic: onDiagnosticEvent,
     });
   }
   const coordinator = coordinatorRef.current;

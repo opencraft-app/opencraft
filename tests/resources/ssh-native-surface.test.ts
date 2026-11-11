@@ -101,6 +101,7 @@ test("native projection preserves upstream metadata and history but not local st
     "opencraft/thread-queue": { version: 2, atomicSteer: true },
     "opencraft/attachment-staging": { version: 1 },
     "opencraft/host-capabilities": { version: 1 },
+    "opencraft/terminal-restore": { version: 1 },
     "upstream/metadata": { version: 1 },
   } } };
   const projected = projectSharedNativeCodexInitialize(upstream) as any;
@@ -109,6 +110,7 @@ test("native projection preserves upstream metadata and history but not local st
   assert.deepEqual(projected.capabilities.extensions["upstream/metadata"], { version: 1 });
   assert.equal(projected.capabilities.extensions["opencraft/thread-queue"], undefined);
   assert.equal(projected.capabilities.extensions["opencraft/host-capabilities"], undefined);
+  assert.equal(projected.capabilities.extensions["opencraft/terminal-restore"], undefined);
   assert.equal(projected.capabilities.extensions["opencraft/attachment-staging"], undefined);
   assert.ok(upstream.capabilities.extensions["opencraft/thread-queue"], "projection must not mutate upstream data");
   for (const method of CODEX_NATIVE_SHARED_METHODS) assert.equal(allowsAppServerMethod(projected.capabilities.extensions, method), true);
@@ -145,6 +147,8 @@ test("actual SSH transport + shared broker + Runtime restores paginated items, o
   try {
     await runtime.connect();
     assert.equal(runtime.resources.host.canRequest?.("thread/search"), true);
+    assert.deepEqual(await runtime.resources.terminal.list(), { processes: [] });
+    assert.ok(!calls.includes("process/list"), "terminal hydration must not send OpenCraft extensions to native Codex");
     const body = await runtime.resources.protocol.request("thread/search", { searchTerm: "Historical", limit: 1 });
     assert.equal(body.data[0]?.snippet, "Historical remote answer");
     const occurrence = await runtime.resources.protocol.request("thread/searchOccurrences", { threadId: body.data[0]!.thread.id, searchTerm: "Historical", limit: 1 });

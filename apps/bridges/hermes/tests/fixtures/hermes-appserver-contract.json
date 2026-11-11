@@ -1,0 +1,1441 @@
+{
+  "schemaVersion": 1,
+  "bridge": "hemesclient/0.2.0 AppServer wire",
+  "scenario": "Hermes AppServer read, send receipt, history, steer and interrupt paths",
+  "cases": [
+    {
+      "id": "initialize",
+      "method": "initialize",
+      "request": {
+        "clientInfo": {
+          "name": "p9-hermes-contract",
+          "version": "1"
+        },
+        "capabilities": {
+          "experimentalApi": true
+        }
+      },
+      "response": {
+        "result": {
+          "codexHome": "/hermes",
+          "platformFamily": "unix",
+          "platformOs": "linux",
+          "userAgent": "hemesclient/0.1.0"
+        }
+      }
+    },
+    {
+      "id": "thread-list",
+      "method": "thread/list",
+      "request": {
+        "limit": 20
+      },
+      "response": {
+        "result": {
+          "data": [
+            {
+              "id": "session-alpha",
+              "sessionId": "session-alpha",
+              "extra": {
+                "hermes": {
+                  "source": "desktop",
+                  "messageCount": 3
+                }
+              },
+              "forkedFromId": null,
+              "parentThreadId": null,
+              "preview": "Alpha session",
+              "ephemeral": false,
+              "section": null,
+              "sectionEnteredAt": null,
+              "projectId": null,
+              "historyMode": "paginated",
+              "modelProvider": "hermes",
+              "createdAt": 1600000000,
+              "updatedAt": 1600000000,
+              "recencyAt": 1600000000,
+              "status": {
+                "type": "idle"
+              },
+              "path": null,
+              "cwd": "/workspace",
+              "cliVersion": "hemesclient/0.2.0",
+              "source": {
+                "custom": "hermes"
+              },
+              "canAcceptDirectInput": true,
+              "threadSource": null,
+              "agentNickname": null,
+              "agentRole": null,
+              "gitInfo": null,
+              "name": "Alpha session",
+              "turns": []
+            },
+            {
+              "id": "session-new",
+              "sessionId": "session-new",
+              "extra": {
+                "hermes": {
+                  "source": "desktop",
+                  "messageCount": 0
+                }
+              },
+              "forkedFromId": null,
+              "parentThreadId": null,
+              "preview": "New chat",
+              "ephemeral": false,
+              "section": null,
+              "sectionEnteredAt": null,
+              "projectId": null,
+              "historyMode": "paginated",
+              "modelProvider": "hermes",
+              "createdAt": 1600000100,
+              "updatedAt": 1600000100,
+              "recencyAt": 1600000100,
+              "status": {
+                "type": "idle"
+              },
+              "path": null,
+              "cwd": "/workspace",
+              "cliVersion": "hemesclient/0.2.0",
+              "source": {
+                "custom": "hermes"
+              },
+              "canAcceptDirectInput": true,
+              "threadSource": null,
+              "agentNickname": null,
+              "agentRole": null,
+              "gitInfo": null,
+              "name": "New chat",
+              "turns": []
+            },
+            {
+              "id": "session-steer",
+              "sessionId": "session-steer",
+              "extra": {
+                "hermes": {
+                  "source": "desktop",
+                  "messageCount": 0
+                }
+              },
+              "forkedFromId": null,
+              "parentThreadId": null,
+              "preview": "Steer session",
+              "ephemeral": false,
+              "section": null,
+              "sectionEnteredAt": null,
+              "projectId": null,
+              "historyMode": "paginated",
+              "modelProvider": "hermes",
+              "createdAt": 1600000200,
+              "updatedAt": 1600000200,
+              "recencyAt": 1600000200,
+              "status": {
+                "type": "idle"
+              },
+              "path": null,
+              "cwd": "/workspace",
+              "cliVersion": "hemesclient/0.2.0",
+              "source": {
+                "custom": "hermes"
+              },
+              "canAcceptDirectInput": true,
+              "threadSource": null,
+              "agentNickname": null,
+              "agentRole": null,
+              "gitInfo": null,
+              "name": "Steer session",
+              "turns": []
+            },
+            {
+              "id": "session-queue",
+              "sessionId": "session-queue",
+              "extra": {
+                "hermes": {
+                  "source": "desktop",
+                  "messageCount": 0
+                }
+              },
+              "forkedFromId": null,
+              "parentThreadId": null,
+              "preview": "Queue session",
+              "ephemeral": false,
+              "section": null,
+              "sectionEnteredAt": null,
+              "projectId": null,
+              "historyMode": "paginated",
+              "modelProvider": "hermes",
+              "createdAt": 1600000300,
+              "updatedAt": 1600000300,
+              "recencyAt": 1600000300,
+              "status": {
+                "type": "idle"
+              },
+              "path": null,
+              "cwd": "/workspace",
+              "cliVersion": "hemesclient/0.2.0",
+              "source": {
+                "custom": "hermes"
+              },
+              "canAcceptDirectInput": true,
+              "threadSource": null,
+              "agentNickname": null,
+              "agentRole": null,
+              "gitInfo": null,
+              "name": "Queue session",
+              "turns": []
+            },
+            {
+              "id": "session-error",
+              "sessionId": "session-error",
+              "extra": {
+                "hermes": {
+                  "source": "desktop",
+                  "messageCount": 0
+                }
+              },
+              "forkedFromId": null,
+              "parentThreadId": null,
+              "preview": "Error session",
+              "ephemeral": false,
+              "section": null,
+              "sectionEnteredAt": null,
+              "projectId": null,
+              "historyMode": "paginated",
+              "modelProvider": "hermes",
+              "createdAt": 1600000400,
+              "updatedAt": 1600000400,
+              "recencyAt": 1600000400,
+              "status": {
+                "type": "idle"
+              },
+              "path": null,
+              "cwd": "/workspace",
+              "cliVersion": "hemesclient/0.2.0",
+              "source": {
+                "custom": "hermes"
+              },
+              "canAcceptDirectInput": true,
+              "threadSource": null,
+              "agentNickname": null,
+              "agentRole": null,
+              "gitInfo": null,
+              "name": "Error session",
+              "turns": []
+            }
+          ],
+          "nextCursor": null,
+          "backwardsCursor": null
+        }
+      }
+    },
+    {
+      "id": "thread-read-metadata",
+      "method": "thread/read",
+      "request": {
+        "threadId": "session-alpha",
+        "includeTurns": false
+      },
+      "response": {
+        "result": {
+          "thread": {
+            "id": "session-alpha",
+            "sessionId": "session-alpha",
+            "extra": {
+              "hermes": {
+                "source": "desktop",
+                "messageCount": 3
+              }
+            },
+            "forkedFromId": null,
+            "parentThreadId": null,
+            "preview": "Alpha session",
+            "ephemeral": false,
+            "section": null,
+            "sectionEnteredAt": null,
+            "projectId": null,
+            "historyMode": "paginated",
+            "modelProvider": "hermes",
+            "createdAt": 1600000000,
+            "updatedAt": 1600000000,
+            "recencyAt": 1600000000,
+            "status": {
+              "type": "idle"
+            },
+            "path": null,
+            "cwd": "/workspace/project",
+            "cliVersion": "hemesclient/0.2.0",
+            "source": {
+              "custom": "hermes"
+            },
+            "canAcceptDirectInput": true,
+            "threadSource": null,
+            "agentNickname": null,
+            "agentRole": null,
+            "gitInfo": null,
+            "name": "Alpha session",
+            "turns": []
+          }
+        }
+      }
+    },
+    {
+      "id": "thread-turns-list",
+      "method": "thread/turns/list",
+      "request": {
+        "threadId": "session-alpha",
+        "limit": 10,
+        "itemsView": "full",
+        "sortDirection": "desc"
+      },
+      "response": {
+        "result": {
+          "data": [
+            {
+              "id": "hermes-turn-session-alpha-1",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "hermes-session-alpha-1",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "hello",
+                      "text_elements": []
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "id": "hermes-session-alpha-2",
+                  "text": "world",
+                  "phase": null,
+                  "memoryCitation": null
+                },
+                {
+                  "type": "dynamicToolCall",
+                  "id": "hermes-session-alpha-3",
+                  "namespace": "hermes",
+                  "tool": "terminal",
+                  "arguments": {
+                    "command": "pwd"
+                  },
+                  "status": "completed",
+                  "contentItems": [
+                    {
+                      "type": "inputText",
+                      "text": "/workspace/project"
+                    }
+                  ],
+                  "success": true,
+                  "durationMs": null
+                }
+              ],
+              "itemsView": "full",
+              "status": "completed",
+              "error": null,
+              "startedAt": null,
+              "completedAt": null,
+              "durationMs": null
+            }
+          ],
+          "nextCursor": null,
+          "backwardsCursor": null,
+          "itemsPaginationByTurnId": {}
+        }
+      }
+    },
+    {
+      "id": "thread-read-full",
+      "method": "thread/read",
+      "request": {
+        "threadId": "session-alpha",
+        "includeTurns": true
+      },
+      "response": {
+        "result": {
+          "thread": {
+            "id": "session-alpha",
+            "sessionId": "session-alpha",
+            "extra": {
+              "hermes": {
+                "source": "desktop",
+                "messageCount": 3
+              }
+            },
+            "forkedFromId": null,
+            "parentThreadId": null,
+            "preview": "Alpha session",
+            "ephemeral": false,
+            "section": null,
+            "sectionEnteredAt": null,
+            "projectId": null,
+            "historyMode": "paginated",
+            "modelProvider": "hermes",
+            "createdAt": 1600000000,
+            "updatedAt": 1600000000,
+            "recencyAt": 1600000000,
+            "status": {
+              "type": "idle"
+            },
+            "path": null,
+            "cwd": "/workspace/project",
+            "cliVersion": "hemesclient/0.2.0",
+            "source": {
+              "custom": "hermes"
+            },
+            "canAcceptDirectInput": true,
+            "threadSource": null,
+            "agentNickname": null,
+            "agentRole": null,
+            "gitInfo": null,
+            "name": "Alpha session",
+            "turns": [
+              {
+                "id": "hermes-turn-session-alpha-1",
+                "items": [
+                  {
+                    "type": "userMessage",
+                    "id": "hermes-session-alpha-1",
+                    "clientId": null,
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "hello",
+                        "text_elements": []
+                      }
+                    ]
+                  },
+                  {
+                    "type": "agentMessage",
+                    "id": "hermes-session-alpha-2",
+                    "text": "world",
+                    "phase": null,
+                    "memoryCitation": null
+                  },
+                  {
+                    "type": "dynamicToolCall",
+                    "id": "hermes-session-alpha-3",
+                    "namespace": "hermes",
+                    "tool": "terminal",
+                    "arguments": {
+                      "command": "pwd"
+                    },
+                    "status": "completed",
+                    "contentItems": [
+                      {
+                        "type": "inputText",
+                        "text": "/workspace/project"
+                      }
+                    ],
+                    "success": true,
+                    "durationMs": null
+                  }
+                ],
+                "itemsView": "full",
+                "status": "completed",
+                "error": null,
+                "startedAt": null,
+                "completedAt": null,
+                "durationMs": null
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "thread-resume",
+      "method": "thread/resume",
+      "request": {
+        "threadId": "session-alpha",
+        "excludeTurns": true
+      },
+      "response": {
+        "result": {
+          "thread": {
+            "id": "session-alpha",
+            "sessionId": "session-alpha",
+            "extra": {
+              "hermes": {
+                "source": "desktop",
+                "messageCount": 3
+              }
+            },
+            "forkedFromId": null,
+            "parentThreadId": null,
+            "preview": "Alpha session",
+            "ephemeral": false,
+            "section": null,
+            "sectionEnteredAt": null,
+            "projectId": null,
+            "historyMode": "paginated",
+            "modelProvider": "hermes",
+            "createdAt": 1600000000,
+            "updatedAt": 1600000000,
+            "recencyAt": 1600000000,
+            "status": {
+              "type": "idle"
+            },
+            "path": null,
+            "cwd": "/workspace/project",
+            "cliVersion": "hemesclient/0.2.0",
+            "source": {
+              "custom": "hermes"
+            },
+            "canAcceptDirectInput": true,
+            "threadSource": null,
+            "agentNickname": null,
+            "agentRole": null,
+            "gitInfo": null,
+            "name": "Alpha session",
+            "turns": []
+          },
+          "cwd": "/workspace/project",
+          "model": "hermes",
+          "modelProvider": "hermes",
+          "serviceTier": null,
+          "reasoningEffort": null,
+          "approvalPolicy": "on-request",
+          "approvalsReviewer": "user",
+          "sandbox": {
+            "type": "workspaceWrite",
+            "writableRoots": [
+              "/workspace/project"
+            ],
+            "networkAccess": true,
+            "excludeTmpdirEnvVar": false,
+            "excludeSlashTmp": false
+          },
+          "instructionSources": [],
+          "runtimeWorkspaceRoots": [
+            "/workspace/project"
+          ],
+          "turnsBackwardsCursor": null,
+          "itemsBackwardsCursor": null
+        }
+      }
+    },
+    {
+      "id": "thread-items-list",
+      "method": "thread/items/list",
+      "request": {
+        "threadId": "session-alpha",
+        "turnId": "hermes-turn-session-alpha-1",
+        "limit": 10
+      },
+      "response": {
+        "result": {
+          "data": [
+            {
+              "type": "userMessage",
+              "id": "hermes-session-alpha-1",
+              "clientId": null,
+              "content": [
+                {
+                  "type": "text",
+                  "text": "hello",
+                  "text_elements": []
+                }
+              ]
+            },
+            {
+              "type": "agentMessage",
+              "id": "hermes-session-alpha-2",
+              "text": "world",
+              "phase": null,
+              "memoryCitation": null
+            },
+            {
+              "type": "dynamicToolCall",
+              "id": "hermes-session-alpha-3",
+              "namespace": "hermes",
+              "tool": "terminal",
+              "arguments": {
+                "command": "pwd"
+              },
+              "status": "completed",
+              "contentItems": [
+                {
+                  "type": "inputText",
+                  "text": "/workspace/project"
+                }
+              ],
+              "success": true,
+              "durationMs": null
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "id": "thread-start",
+      "method": "thread/start",
+      "request": {
+        "cwd": "/workspace/project"
+      },
+      "response": {
+        "result": {
+          "thread": {
+            "id": "session-new",
+            "sessionId": "session-new",
+            "extra": {
+              "hermes": {
+                "source": "desktop",
+                "messageCount": 0
+              }
+            },
+            "forkedFromId": null,
+            "parentThreadId": null,
+            "preview": "New chat",
+            "ephemeral": false,
+            "section": null,
+            "sectionEnteredAt": null,
+            "projectId": null,
+            "historyMode": "paginated",
+            "modelProvider": "hermes",
+            "createdAt": "<time-s>",
+            "updatedAt": "<time-s>",
+            "recencyAt": "<time-s>",
+            "status": {
+              "type": "idle"
+            },
+            "path": null,
+            "cwd": "/workspace/project",
+            "cliVersion": "hemesclient/0.2.0",
+            "source": {
+              "custom": "hermes"
+            },
+            "canAcceptDirectInput": true,
+            "threadSource": null,
+            "agentNickname": null,
+            "agentRole": null,
+            "gitInfo": null,
+            "name": "New chat",
+            "turns": []
+          },
+          "model": "hermes",
+          "modelProvider": "hermes",
+          "serviceTier": null,
+          "cwd": "/workspace/project",
+          "runtimeWorkspaceRoots": [
+            "/workspace/project"
+          ],
+          "instructionSources": [],
+          "approvalPolicy": "on-request",
+          "approvalsReviewer": "user",
+          "sandbox": {
+            "type": "workspaceWrite",
+            "writableRoots": [
+              "/workspace/project"
+            ],
+            "networkAccess": true,
+            "excludeTmpdirEnvVar": false,
+            "excludeSlashTmp": false
+          },
+          "activePermissionProfile": null,
+          "reasoningEffort": null,
+          "multiAgentMode": "explicitRequestOnly"
+        }
+      }
+    },
+    {
+      "id": "turn-start-existing",
+      "method": "turn/start",
+      "request": {
+        "threadId": "session-alpha",
+        "input": [
+          {
+            "type": "text",
+            "text": "ping"
+          }
+        ]
+      },
+      "response": {
+        "result": {
+          "turn": {
+            "id": "<turn-1>",
+            "items": [
+              {
+                "type": "userMessage",
+                "id": "<user-1>",
+                "clientId": null,
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "ping",
+                    "text_elements": []
+                  }
+                ]
+              }
+            ],
+            "itemsView": "full",
+            "status": "inProgress",
+            "error": null,
+            "startedAt": "<time-s>",
+            "completedAt": null,
+            "durationMs": null
+          }
+        }
+      },
+      "notifications": [
+        {
+          "method": "turn/started",
+          "params": {
+            "threadId": "session-alpha",
+            "turn": {
+              "id": "<turn-1>",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "<user-1>",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "ping",
+                      "text_elements": []
+                    }
+                  ]
+                }
+              ],
+              "itemsView": "full",
+              "status": "inProgress",
+              "error": null,
+              "startedAt": "<time-s>",
+              "completedAt": null,
+              "durationMs": null
+            }
+          }
+        },
+        {
+          "method": "item/started",
+          "params": {
+            "threadId": "session-alpha",
+            "turnId": "<turn-1>",
+            "item": {
+              "type": "agentMessage",
+              "id": "<agent-1>",
+              "text": "",
+              "phase": null,
+              "memoryCitation": null
+            },
+            "startedAtMs": "<time-ms>"
+          }
+        },
+        {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "session-alpha",
+            "turnId": "<turn-1>",
+            "itemId": "<agent-1>",
+            "delta": "pong"
+          }
+        },
+        {
+          "method": "item/started",
+          "params": {
+            "threadId": "session-alpha",
+            "turnId": "<turn-1>",
+            "item": {
+              "type": "dynamicToolCall",
+              "id": "tool-1",
+              "namespace": "hermes",
+              "tool": "terminal",
+              "arguments": {
+                "command": "pwd"
+              },
+              "status": "inProgress",
+              "contentItems": null,
+              "success": null,
+              "durationMs": null
+            },
+            "startedAtMs": "<time-ms>"
+          }
+        },
+        {
+          "method": "item/completed",
+          "params": {
+            "threadId": "session-alpha",
+            "turnId": "<turn-1>",
+            "item": {
+              "type": "dynamicToolCall",
+              "id": "tool-1",
+              "namespace": "hermes",
+              "tool": "terminal",
+              "arguments": {
+                "command": "pwd"
+              },
+              "status": "completed",
+              "contentItems": [
+                {
+                  "type": "inputText",
+                  "text": "/workspace/project"
+                }
+              ],
+              "success": true,
+              "durationMs": "<duration-ms>"
+            }
+          }
+        },
+        {
+          "method": "item/completed",
+          "params": {
+            "threadId": "session-alpha",
+            "turnId": "<turn-1>",
+            "item": {
+              "type": "agentMessage",
+              "id": "<agent-1>",
+              "text": "pong",
+              "phase": null,
+              "memoryCitation": null
+            }
+          }
+        },
+        {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "session-alpha",
+            "turn": {
+              "id": "<turn-1>",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "<user-1>",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "ping",
+                      "text_elements": []
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "id": "<agent-1>",
+                  "text": "pong",
+                  "phase": null,
+                  "memoryCitation": null
+                }
+              ],
+              "itemsView": "full",
+              "status": "completed",
+              "error": null,
+              "startedAt": "<time-s>",
+              "completedAt": "<time-s>",
+              "durationMs": "<duration-ms>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "turn-start-new",
+      "method": "turn/start",
+      "request": {
+        "threadId": "session-new",
+        "input": [
+          {
+            "type": "text",
+            "text": "ping"
+          }
+        ]
+      },
+      "response": {
+        "result": {
+          "turn": {
+            "id": "<turn-2>",
+            "items": [
+              {
+                "type": "userMessage",
+                "id": "<user-2>",
+                "clientId": null,
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "ping",
+                    "text_elements": []
+                  }
+                ]
+              }
+            ],
+            "itemsView": "full",
+            "status": "inProgress",
+            "error": null,
+            "startedAt": "<time-s>",
+            "completedAt": null,
+            "durationMs": null
+          }
+        }
+      },
+      "notifications": [
+        {
+          "method": "turn/started",
+          "params": {
+            "threadId": "session-new",
+            "turn": {
+              "id": "<turn-2>",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "<user-2>",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "ping",
+                      "text_elements": []
+                    }
+                  ]
+                }
+              ],
+              "itemsView": "full",
+              "status": "inProgress",
+              "error": null,
+              "startedAt": "<time-s>",
+              "completedAt": null,
+              "durationMs": null
+            }
+          }
+        },
+        {
+          "method": "item/started",
+          "params": {
+            "threadId": "session-new",
+            "turnId": "<turn-2>",
+            "item": {
+              "type": "agentMessage",
+              "id": "<agent-2>",
+              "text": "",
+              "phase": null,
+              "memoryCitation": null
+            },
+            "startedAtMs": "<time-ms>"
+          }
+        },
+        {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "session-new",
+            "turnId": "<turn-2>",
+            "itemId": "<agent-2>",
+            "delta": "pong"
+          }
+        },
+        {
+          "method": "item/started",
+          "params": {
+            "threadId": "session-new",
+            "turnId": "<turn-2>",
+            "item": {
+              "type": "dynamicToolCall",
+              "id": "tool-1",
+              "namespace": "hermes",
+              "tool": "terminal",
+              "arguments": {
+                "command": "pwd"
+              },
+              "status": "inProgress",
+              "contentItems": null,
+              "success": null,
+              "durationMs": null
+            },
+            "startedAtMs": "<time-ms>"
+          }
+        },
+        {
+          "method": "item/completed",
+          "params": {
+            "threadId": "session-new",
+            "turnId": "<turn-2>",
+            "item": {
+              "type": "dynamicToolCall",
+              "id": "tool-1",
+              "namespace": "hermes",
+              "tool": "terminal",
+              "arguments": {
+                "command": "pwd"
+              },
+              "status": "completed",
+              "contentItems": [
+                {
+                  "type": "inputText",
+                  "text": "/workspace/project"
+                }
+              ],
+              "success": true,
+              "durationMs": "<duration-ms>"
+            }
+          }
+        },
+        {
+          "method": "item/completed",
+          "params": {
+            "threadId": "session-new",
+            "turnId": "<turn-2>",
+            "item": {
+              "type": "agentMessage",
+              "id": "<agent-2>",
+              "text": "pong",
+              "phase": null,
+              "memoryCitation": null
+            }
+          }
+        },
+        {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "session-new",
+            "turn": {
+              "id": "<turn-2>",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "<user-2>",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "ping",
+                      "text_elements": []
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "id": "<agent-2>",
+                  "text": "pong",
+                  "phase": null,
+                  "memoryCitation": null
+                }
+              ],
+              "itemsView": "full",
+              "status": "completed",
+              "error": null,
+              "startedAt": "<time-s>",
+              "completedAt": "<time-s>",
+              "durationMs": "<duration-ms>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "turn-start-steer",
+      "method": "turn/start",
+      "request": {
+        "threadId": "session-steer",
+        "input": [
+          {
+            "type": "text",
+            "text": "hold"
+          }
+        ]
+      },
+      "response": {
+        "result": {
+          "turn": {
+            "id": "<turn-3>",
+            "items": [
+              {
+                "type": "userMessage",
+                "id": "<user-3>",
+                "clientId": null,
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "hold",
+                    "text_elements": []
+                  }
+                ]
+              }
+            ],
+            "itemsView": "full",
+            "status": "inProgress",
+            "error": null,
+            "startedAt": "<time-s>",
+            "completedAt": null,
+            "durationMs": null
+          }
+        }
+      },
+      "notifications": [
+        {
+          "method": "turn/started",
+          "params": {
+            "threadId": "session-steer",
+            "turn": {
+              "id": "<turn-3>",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "<user-3>",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "hold",
+                      "text_elements": []
+                    }
+                  ]
+                }
+              ],
+              "itemsView": "full",
+              "status": "inProgress",
+              "error": null,
+              "startedAt": "<time-s>",
+              "completedAt": null,
+              "durationMs": null
+            }
+          }
+        },
+        {
+          "method": "item/started",
+          "params": {
+            "threadId": "session-steer",
+            "turnId": "<turn-3>",
+            "item": {
+              "type": "agentMessage",
+              "id": "<agent-3>",
+              "text": "",
+              "phase": null,
+              "memoryCitation": null
+            },
+            "startedAtMs": "<time-ms>"
+          }
+        }
+      ]
+    },
+    {
+      "id": "turn-steer",
+      "method": "turn/steer",
+      "request": {
+        "threadId": "session-steer",
+        "expectedTurnId": "<turn-3>",
+        "input": [
+          {
+            "type": "text",
+            "text": "steer text"
+          }
+        ]
+      },
+      "response": {
+        "result": {
+          "turnId": "<turn-3>"
+        }
+      }
+    },
+    {
+      "id": "turn-steer-stale",
+      "method": "turn/steer",
+      "request": {
+        "threadId": "session-steer",
+        "expectedTurnId": "hermes-turn-stale",
+        "input": [
+          {
+            "type": "text",
+            "text": "stale"
+          }
+        ]
+      },
+      "response": {
+        "error": {
+          "code": -32000,
+          "message": "Hermes active turn changed: expected hermes-turn-stale, got <turn-3>"
+        }
+      }
+    },
+    {
+      "id": "turn-interrupt",
+      "method": "turn/interrupt",
+      "request": {
+        "threadId": "session-steer"
+      },
+      "response": {
+        "result": {}
+      }
+    },
+    {
+      "id": "turn-start-gateway-error",
+      "method": "turn/start",
+      "request": {
+        "threadId": "session-error",
+        "input": [
+          {
+            "type": "text",
+            "text": "fail"
+          }
+        ]
+      },
+      "response": {
+        "error": {
+          "code": -32000,
+          "message": "Hermes WebSocket disconnected",
+          "data": {
+            "hermesCode": "disconnected"
+          }
+        }
+      }
+    },
+    {
+      "id": "turn-interrupted-completion",
+      "method": "event",
+      "request": null,
+      "response": {},
+      "notifications": [
+        {
+          "method": "item/completed",
+          "params": {
+            "threadId": "session-steer",
+            "turnId": "<turn-3>",
+            "item": {
+              "type": "agentMessage",
+              "id": "<agent-3>",
+              "text": "held",
+              "phase": null,
+              "memoryCitation": null
+            }
+          }
+        },
+        {
+          "method": "turn/completed",
+          "params": {
+            "threadId": "session-steer",
+            "turn": {
+              "id": "<turn-3>",
+              "items": [
+                {
+                  "type": "userMessage",
+                  "id": "<user-3>",
+                  "clientId": null,
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "hold",
+                      "text_elements": []
+                    }
+                  ]
+                },
+                {
+                  "type": "agentMessage",
+                  "id": "<agent-3>",
+                  "text": "held",
+                  "phase": null,
+                  "memoryCitation": null
+                }
+              ],
+              "itemsView": "full",
+              "status": "interrupted",
+              "error": null,
+              "startedAt": "<time-s>",
+              "completedAt": "<time-s>",
+              "durationMs": "<duration-ms>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread-queue-add",
+      "method": "thread/queue/add",
+      "request": {
+        "threadId": "session-queue",
+        "input": [
+          {
+            "type": "text",
+            "text": "first"
+          }
+        ],
+        "clientUserMessageId": "client-first"
+      },
+      "response": {
+        "result": {
+          "queuedSubmission": {
+            "id": "<queue-1>",
+            "input": [
+              {
+                "type": "text",
+                "text": "first"
+              }
+            ],
+            "clientUserMessageId": "client-first"
+          }
+        }
+      },
+      "notifications": [
+        {
+          "method": "thread/queue/changed",
+          "params": {
+            "threadId": "session-queue"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread-queue-add-second",
+      "method": "thread/queue/add",
+      "request": {
+        "threadId": "session-queue",
+        "input": [
+          {
+            "type": "text",
+            "text": "second"
+          }
+        ],
+        "clientUserMessageId": "client-second"
+      },
+      "response": {
+        "result": {
+          "queuedSubmission": {
+            "id": "<queue-2>",
+            "input": [
+              {
+                "type": "text",
+                "text": "second"
+              }
+            ],
+            "clientUserMessageId": "client-second"
+          }
+        }
+      },
+      "notifications": [
+        {
+          "method": "thread/queue/changed",
+          "params": {
+            "threadId": "session-queue"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread-queue-list",
+      "method": "thread/queue/list",
+      "request": {
+        "threadId": "session-queue"
+      },
+      "response": {
+        "result": {
+          "data": [
+            {
+              "id": "<queue-1>",
+              "input": [
+                {
+                  "type": "text",
+                  "text": "first"
+                }
+              ],
+              "clientUserMessageId": "client-first"
+            },
+            {
+              "id": "<queue-2>",
+              "input": [
+                {
+                  "type": "text",
+                  "text": "second"
+                }
+              ],
+              "clientUserMessageId": "client-second"
+            }
+          ],
+          "nextCursor": null
+        }
+      }
+    },
+    {
+      "id": "thread-queue-update",
+      "method": "thread/queue/update",
+      "request": {
+        "threadId": "session-queue",
+        "queuedSubmissionId": "<queue-1>",
+        "input": [
+          {
+            "type": "text",
+            "text": "updated"
+          }
+        ]
+      },
+      "response": {
+        "result": {
+          "queuedSubmission": {
+            "id": "<queue-1>",
+            "input": [
+              {
+                "type": "text",
+                "text": "updated"
+              }
+            ],
+            "clientUserMessageId": "client-first"
+          }
+        }
+      },
+      "notifications": [
+        {
+          "method": "thread/queue/changed",
+          "params": {
+            "threadId": "session-queue"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread-queue-reorder",
+      "method": "thread/queue/reorder",
+      "request": {
+        "threadId": "session-queue",
+        "queuedSubmissionIds": [
+          "<queue-2>",
+          "<queue-1>"
+        ]
+      },
+      "response": {
+        "result": {}
+      },
+      "notifications": [
+        {
+          "method": "thread/queue/changed",
+          "params": {
+            "threadId": "session-queue"
+          }
+        }
+      ]
+    },
+    {
+      "id": "thread-queue-delete",
+      "method": "thread/queue/delete",
+      "request": {
+        "threadId": "session-queue",
+        "queuedSubmissionId": "<queue-2>"
+      },
+      "response": {
+        "result": {
+          "deleted": true
+        }
+      },
+      "notifications": [
+        {
+          "method": "thread/queue/changed",
+          "params": {
+            "threadId": "session-queue"
+          }
+        }
+      ]
+    },
+    {
+      "id": "unsupported-method",
+      "method": "thread/fork",
+      "request": {
+        "threadId": "session-alpha",
+        "lastTurnId": "turn-1"
+      },
+      "response": {
+        "error": {
+          "code": -32601,
+          "message": "Method not supported by Hermes bridge: thread/fork"
+        }
+      }
+    }
+  ]
+}

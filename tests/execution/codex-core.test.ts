@@ -504,7 +504,8 @@ test("core owns accounts and PID across independent daemon clients and zero conn
     })).toString("base64url")}.synthetic`;
     await writeFile(join(f.options.nativeCodexHomeDirectory, "auth.json"), JSON.stringify({ auth_mode: "chatgpt",
       tokens: { access_token: access, refresh_token: "fixture-refresh", account_id: "fixture" } }));
-    const { account } = await a.rpc("a", "opencraft/codex/accounts/import");
+    const { account } = await a.rpc("a", "opencraft/codex/accounts/import", { path: "/not-accepted/auth.json" });
+    assert.equal(account.credentialSource, "external-file");
     await b.rpc("b", "opencraft/codex/accounts/setEnabled", { accountId: account.id, enabled: false });
     assert.equal((await a.rpc("a", "opencraft/codex/accounts/list")).accounts[0].enabled, false);
     await a.engine.close(); await b.engine.close();

@@ -1,0 +1,149 @@
+@use '@opencraft/design-system/typography-mixins.web' as typography;
+
+.agent-onboard-gate {
+  position: fixed;
+  z-index: calc(var(--layer-workspace-composer) + 1);
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  overflow: auto;
+  background: var(--color-background, #fff);
+  &--sheet { place-items: start center; padding-top: 72px; }
+}
+.agent-onboard {
+  box-sizing: border-box;
+  padding: calc(var(--spacing) * 4);
+  border: .5px solid var(--color-border-default);
+  border-radius: var(--radius-token-settings-card);
+  color: var(--color-text);
+  background: var(--color-background-surface, transparent);
+
+  width: min(720px, 100%);
+  h2 { @include typography.role(panel-title, primary); margin: 0; }
+  &__back {
+    margin: 0 0 calc(var(--spacing) * 3);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    @include typography.role(caption, secondary);
+  }
+  &__models {
+    padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 3);
+    ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing);
+      max-height: min(40vh, 20rem);
+      overflow-y: auto;
+    }
+    .ui-button {
+      width: 100%;
+      justify-content: flex-start;
+    }
+    p { margin: 0; @include typography.role(caption, secondary); }
+  }
+  &__model-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: calc(var(--spacing) * 2);
+    margin-top: calc(var(--spacing) * 2);
+    .ui-button { width: auto; }
+  }
+  &__steps {
+    display: flex;
+    gap: calc(var(--spacing) * 3);
+    margin: 0 0 calc(var(--spacing) * 4);
+    padding: 0;
+    list-style: none;
+    @include typography.role(caption, secondary);
+    li[data-current="true"] { color: var(--color-text); }
+  }
+  &__intro p,
+  &__note { @include typography.role(body, secondary); margin: calc(var(--spacing) * 2) 0 0; }
+  &__meta {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    margin-top: calc(var(--spacing) * 3);
+    @include typography.role(caption, secondary);
+    button {
+      margin-left: auto;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+      &:hover { color: var(--color-text); }
+      &:disabled { cursor: default; }
+    }
+  }
+  &__list {
+    list-style: none;
+    margin: calc(var(--spacing) * 3) 0 0;
+    padding: 0;
+    border: .5px solid var(--color-border-default);
+    border-radius: calc(var(--radius-token-settings-card) - 2px);
+    > li + li { border-top: .5px solid var(--color-border-default); }
+  }
+  &__skeleton { height: 58px; background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+  li[data-selected="true"] { background: color-mix(in srgb, var(--color-text) 4%, transparent); }
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 3);
+    padding: calc(var(--spacing) * 3);
+    flex-wrap: wrap;
+  }
+  &__mark {
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--color-text) 6%, transparent);
+    &[data-agent="claude"] { color: #d97757; }
+    &[data-agent="codebuddy"] { color: #0052d9; }
+  }
+  &__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  &__name { @include typography.role(control, primary); }
+  &__detail { @include typography.role(caption, secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__detail--failed { color: var(--color-status-danger, #b42318); }
+  &__actions { display: flex; flex: 0 0 auto; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__ready { @include typography.role(caption, primary); color: var(--color-status-success, #168343); }
+  &__guide {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: calc(var(--spacing) * 2) calc(var(--spacing) * 3);
+    margin: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 3);
+    padding: calc(var(--spacing) * 3);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--color-text) 4%, transparent);
+    @include typography.role(caption, secondary);
+    a { color: var(--color-text); }
+    pre {
+      overflow: auto;
+      width: 100%;
+      max-height: 9rem;
+      margin: calc(var(--spacing) * 2) 0 0;
+      white-space: pre-wrap;
+    }
+    details { width: 100%; }
+  }
+  &__code {
+    display: inline-flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+    code { @include typography.role(control, primary); }
+    button { padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+  }
+  &__footer { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 2); margin-top: calc(var(--spacing) * 3); }
+}

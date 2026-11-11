@@ -17,8 +17,11 @@ Visual regression checks measure fill end versus rendered thumb center at every
 stop and during held preview, with a subpixel tolerance. A CSS-property assertion
 or screenshots of one favorable stop cannot establish this invariant. Preserve
 a failing pre-fix case; inspect near-start, middle and near-end output in addition
-to theme/density/DPR coverage. `scripts/smoke/conversation/smoke-reasoning-slider.ts` verifies the real
-Composer consumer and keeps per-stop screenshots and geometric samples.
+to theme/density/DPR coverage. Standalone Composer now uses the unified model
+browser rather than this slider presentation. Its model/variant/reasoning/Fast,
+focus and draft contracts are exercised by
+`scripts/smoke/composer/smoke-model-browser.ts`; the old reasoning-slider smoke
+entry delegates to that workflow.
 
 
 ## UI 图标：共享视觉语言
@@ -242,3 +245,16 @@ consumer layout rules retain absolute or fixed placement regardless of styleshee
 loading order. A visible scroll-to-bottom action must stay centered on its
 existing footer anchor, inside the viewport and reachable by hit testing. Its
 arrow and working dots share that same position and existing scroll command.
+
+## Native Agent usage in the context sidebar
+
+The context sidebar owns one optional footer accessory above Shell navigation.
+Native Agent usage expands within that track with bounded scrolling; its contents
+cannot claim the account/navigation footer or hide the conversation list by
+overflowing the viewport. Shared disclosure/refresh buttons and provider tabs
+retain keyboard, touch and reduced-motion behavior. Provider browsing never
+changes model selection, conversation identity, Composer node or draft.
+
+Quota windows and conversation token/context observations are separate groups.
+Team spend is labeled as team spend. Missing counts remain unreported, and a
+refresh retains existing same-scope content and the observation time on failure.

@@ -1,3 +1,6 @@
+import { useThreadAccessAction } from "./thread-access-action";
+import type { ThreadAccessSnapshot } from "@opencraft/appserver-protocol";
+import { PermissionShieldIcon } from "@opencraft/design-system-web/action-icons";
 import type { PointerEventHandler } from "react";
 import { LoadingRingIcon as LoaderCircle, MoreIcon as MoreHorizontal, EditIcon as Pencil, DeleteIcon as Trash2 } from "@opencraft/design-system-web/action-icons";
 import { useAsyncNotices } from "./async-notices";
@@ -25,6 +28,8 @@ import "../styles/context-menu.scss";
 export interface ThreadActionTarget { readonly hostId: string; readonly threadId: string; readonly title: string; readonly pinned?: boolean }
 export interface ThreadActionCapabilities { readonly rename: boolean; readonly archive: boolean; readonly fork: boolean; readonly delete: boolean; readonly pin?: boolean; readonly reference?: boolean }
 export interface ThreadActionCallbacks {
+  readonly onReadAccess?: (target: ThreadActionTarget) => Promise<ThreadAccessSnapshot>;
+  readonly onSetAccess?: (target: ThreadActionTarget, mode: "shared" | "private", revision: number) => Promise<ThreadAccessSnapshot>;
   readonly onCopyReference?: (target: ThreadActionTarget) => Promise<void>;
   readonly onRename: (target: ThreadActionTarget, title: string) => Promise<void>;
   readonly onFork: (target: ThreadActionTarget) => Promise<void>;
@@ -123,7 +128,7 @@ export function ThreadActionModals({ owner }: { owner: ThreadActionOwner }) {
   ><section className="thread-delete-confirmation"><h2>{intl.formatMessage({ id: "sidebar.thread.deleteQuestion", defaultMessage: "Delete “{title}”?" }, { title: modal.target.title })}</h2><p>{intl.formatMessage({ id: "sidebar.thread.deleteDescription", defaultMessage: "This conversation will be permanently removed and cannot be recovered." })}</p></section></ConfirmationModalSurface>;
 }
 
-export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled = false, children, contextMenuExtra, openMenuKind, onOpenMenuChange, onCloseAutoFocus, onPointerDown, owner }: {
+type ThreadRowMenuProps = {
   activityLabelId?: string;
   target: ThreadActionTarget; capabilities: ThreadActionCapabilities; children: ReactNode;
   disabled?: boolean;
@@ -133,7 +138,21 @@ export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled 
   onCloseAutoFocus?: (event: Event) => void;
   onPointerDown?: PointerEventHandler<HTMLElement>;
   owner: ThreadActionOwner;
-}) {
+};
+
+export function ThreadRowMenu(props: ThreadRowMenuProps) {
+  return props.owner.callbacks.onReadAccess && props.owner.callbacks.onSetAccess
+    ? <ThreadRowMenuWithAccess {...props} /> : <ThreadRowMenuBase {...props} />;
+}
+function ThreadRowMenuWithAccess(props: ThreadRowMenuProps) {
+  const {target,owner,openMenuKind} = props;
+  const access = useThreadAccessAction(target.hostId,target.threadId,{
+    read:() => owner.callbacks.onReadAccess!(target),
+    set:(mode,revision) => owner.callbacks.onSetAccess!(target,mode,revision),
+  },openMenuKind !== null);
+  return <ThreadRowMenuBase {...props} access={access} />;
+}
+function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = false, children, contextMenuExtra, openMenuKind, onOpenMenuChange, onCloseAutoFocus, onPointerDown, owner, access }: ThreadRowMenuProps & {access?:ReturnType<typeof useThreadAccessAction>}) {
   const portalContainer = useWorkbenchPresentationRoot();
   const intl = useIntl();
   const { onFork, onArchive, onSetPinned } = owner.callbacks;
@@ -143,6 +162,7 @@ export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled 
   // Shared item model for both the right-click context menu and the row
   // "..." dropdown, mirroring the actions(entry).map pattern in bot-management.
   const menuItems = [
+    access ? {key:"access",icon:PermissionShieldIcon,label:access.label,onSelect:access.invoke} : null,
     capabilities.reference && owner.callbacks.onCopyReference ? {key:"reference",icon:Link2,label:intl.formatMessage({id:"conversation.reference.copy",defaultMessage:"Copy conversation reference"}),onSelect:()=>{run(()=>owner.callbacks.onCopyReference!(target), "copy");}} : null,
     capabilities.pin && onSetPinned ? { key: "pin", icon: target.pinned ? PinOff : Pin, label: intl.formatMessage(target.pinned ? { id: "sidebar.thread.unpin", defaultMessage: "Unpin" } : { id: "sidebar.thread.pin", defaultMessage: "Pin" }), onSelect: () => { run(() => onSetPinned(target, target.pinned !== true), "pin"); } } : null,
     capabilities.rename ? { key: "rename", icon: Pencil, label: intl.formatMessage({ id: "sidebar.thread.rename", defaultMessage: "Rename" }), onSelect: () => { modalHandoff.current = true; owner.beginRename(target); } } : null,
@@ -166,19 +186,19 @@ export function ThreadRowMenu({ activityLabelId, target, capabilities, disabled 
           <div className="sidebar-activity-row__target">{children}</div>
         </ContextMenu.Trigger>
         <ContextMenu.Portal container={portalContainer}><ContextMenu.Content className="workbench-context-menu" onCloseAutoFocus={onMenuCloseAutoFocus}>
-          {menuItems.map(({ key, icon: Icon, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy || disabled} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</ContextMenu.Item>)}
+          {menuItems.map(({ key, icon: Icon, label, onSelect }) => <ContextMenu.Item key={key} disabled={busy || disabled || access?.pending} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</ContextMenu.Item>)}
           {contextMenuExtra ? <><ContextMenu.Separator />{contextMenuExtra}</> : null}
         </ContextMenu.Content></ContextMenu.Portal>
       </ContextMenu.Root>
       <DropdownMenu.Root open={!disabled && hasMenu && openMenuKind === "dropdown"} onOpenChange={open => onOpenMenuChange("dropdown", open)}>
         {hasMenu ? <DropdownMenu.Trigger asChild>
-          <button type="button" className="sidebar-activity-item__menu-trigger" aria-describedby={activityLabelId} aria-label={intl.formatMessage(forking ? { id: "sidebar.thread.forking", defaultMessage: "Creating branch for {title}" } : { id: "sidebar.thread.actions", defaultMessage: "Actions for {title}" }, { title: target.title })} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={busy || disabled}>
+          <button type="button" className="sidebar-activity-item__menu-trigger" aria-describedby={activityLabelId} aria-label={intl.formatMessage(forking ? { id: "sidebar.thread.forking", defaultMessage: "Creating branch for {title}" } : { id: "sidebar.thread.actions", defaultMessage: "Actions for {title}" }, { title: target.title })} aria-busy={forking || undefined} data-forking={forking || undefined} disabled={busy || disabled || access?.pending}>
             {forking ? <LoaderCircle size={14} aria-hidden="true" /> : <MoreHorizontal className="sidebar-activity-item__menu-dots" size={14} aria-hidden="true" />}
           </button>
         </DropdownMenu.Trigger> : null}
         <DropdownMenu.Portal container={portalContainer}>
           <DropdownMenu.Content className="workbench-context-menu" align="end" sideOffset={4} onCloseAutoFocus={onMenuCloseAutoFocus}>
-            {menuItems.map(({ key, icon: Icon, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy || disabled} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</DropdownMenu.Item>)}
+            {menuItems.map(({ key, icon: Icon, label, onSelect }) => <DropdownMenu.Item key={key} disabled={busy || disabled || access?.pending} onSelect={onSelect}><Icon size={16} aria-hidden="true" />{label}</DropdownMenu.Item>)}
           </DropdownMenu.Content>
         </DropdownMenu.Portal>
       </DropdownMenu.Root>

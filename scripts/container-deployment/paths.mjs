@@ -1,6 +1,8 @@
 import { isAbsolute, join, resolve } from 'node:path';
 import { readFile, stat } from 'node:fs/promises';
 
+export const codexProjectlessDirectory = handsDirectory => join(handsDirectory, 'projectless-workspaces');
+
 export function deploymentPaths(env = process.env) {
   const data = env.OPENCRAFT_DATA_DIR;
   const workspace = env.OPENCRAFT_WORKSPACE_DIR;
@@ -22,6 +24,7 @@ export function deploymentPaths(env = process.env) {
     sandboxConfig: join(dataDirectory, 'run', 'codex-hands-sandbox.json'),
     handsExecutionEndpoint: join(dataDirectory, 'hands', 'exec-owner.sock'),
     handsExecutionToken: join(dataDirectory, 'hands', 'exec-owner.token'),
+    codexProjectlessDirectory: codexProjectlessDirectory(join(dataDirectory, 'hands')),
   };
 }
 

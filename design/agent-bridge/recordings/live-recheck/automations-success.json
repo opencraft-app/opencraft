@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "at": "2026-11-11T03:49:37.145Z",
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "assembly": "temporary Server Worker + ProjectAutomations + Broker + independent BridgeHost/CodexProviderBridge attached to existing Core",
+  "limits": [
+    "Component integration: no deployed headless composition or clients changed.",
+    "Execution port adapts real bridge native create/read/start to Broker; production thread-prepare RPC was not exercised.",
+    "Execution CLI was disabled in this independent automation Host after P7a refusal; automation prompts call no tools and do not claim CLI injection.",
+    "Bridge transport uses the test process backend; native model/tool execution stays with existing Core.",
+    "One preparatory harness read initially requested full history of an empty thread and was refused; no model prompt had been sent. The corrected harness requests metadata only until a real turn exists."
+  ],
+  "nativeTurnStartCount": 2,
+  "brokerChildCreationCount": 1,
+  "runs": {
+    "once": {
+      "schedule": {
+        "kind": "once",
+        "at": 1794368978778
+      },
+      "runCount": 1,
+      "states": [
+        "completed"
+      ],
+      "occurrenceIds": [
+        "utc-1794368978778"
+      ],
+      "threadHash": "32bf88f071958256",
+      "nativeTurnCount": 1,
+      "nativeTurnStatus": "completed",
+      "nativeError": null,
+      "assistantText": [
+        "P7B_ONCE_OK"
+      ],
+      "toolCount": 0,
+      "pausedAfterCompletion": true
+    },
+    "cron": {
+      "schedule": {
+        "kind": "cron",
+        "expression": "49 3 11 11 *",
+        "timezone": "UTC"
+      },
+      "runCount": 1,
+      "states": [
+        "completed"
+      ],
+      "occurrenceIds": [
+        "utc-1794368940000"
+      ],
+      "threadHash": "873dc826eed2908e",
+      "nativeTurnCount": 1,
+      "nativeTurnStatus": "completed",
+      "nativeError": null,
+      "assistantText": [
+        "P7B_CRON_OK"
+      ],
+      "toolCount": 0,
+      "pausedAfterCompletion": true
+    }
+  },
+  "sourceRevision": "1243a933ee",
+  "artifactSha256": "2d822b5d1c175026b5c6f45fd27929c57b1f365a1642a4c8dde5870af7567d1c"
+}

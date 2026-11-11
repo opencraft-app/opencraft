@@ -461,3 +461,46 @@ export const executionCapabilityBindings = sqliteTable("execution_capability_bin
   threadId: text("thread_id").notNull(),
   sessionJson: text("session_json"),
 }, table => [uniqueIndex("execution_capability_bindings_server_id_thread_id_unique").on(table.serverId, table.threadId)]);
+
+export const threadAccess = sqliteTable("thread_access", {
+  serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
+  creatorActorId: text("creator_actor_id"), accessMode: text("access_mode").notNull(),
+  revision: integer("revision").notNull(), updatedAt: integer("updated_at").notNull(),
+}, table => [
+  primaryKey({ columns: [table.serverId, table.threadId] }),
+  check("thread_access_mode", sql.raw("access_mode IN ('shared','private')")),
+  check("thread_access_revision", sql.raw("revision>=1")),
+  check("thread_access_creator", sql.raw("access_mode!='private' OR creator_actor_id IS NOT NULL")),
+]);
+export const threadAccessAudit = sqliteTable("thread_access_audit", {
+  id: integer("id").primaryKey(), serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
+  actorId: text("actor_id").notNull(), accessMode: text("access_mode").notNull(),
+  revision: integer("revision").notNull(), at: integer("at").notNull(),
+});
+export const threadNotes = sqliteTable("thread_notes", {
+  serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
+  state: blob("state", { mode: "buffer" }).notNull(), updatedAt: integer("updated_at").notNull(),
+}, table => [primaryKey({ columns: [table.serverId, table.threadId] })]);
+
+export const automationGrants = sqliteTable("automation_grants", {
+  id: text("id").primaryKey(), serverId: text("server_id").notNull(), projectId: text("project_id").notNull(),
+  actorId: text("actor_id").notNull(), generation: integer("generation").notNull(),
+  scopeJson: text("scope_json").notNull(), revokedAt: integer("revoked_at"), createdAt: integer("created_at").notNull(),
+});
+export const projectAutomations = sqliteTable("project_automations", {
+  id: text("id").primaryKey(), grantId: text("grant_id").notNull(), projectId: text("project_id").notNull(),
+  actorId: text("actor_id").notNull(), revision: integer("revision").notNull(), enabled: integer("enabled").notNull(),
+  deleted: integer("deleted").notNull().default(0), failures: integer("failures").notNull().default(0), value: text("value").notNull(),
+}, table=>[index("project_automations_project").on(table.projectId,table.id)]);
+export const automationRuns = sqliteTable("automation_runs", {
+  key: text("key").primaryKey(), automationId: text("automation_id").notNull(), revision: integer("revision").notNull(),
+  occurrenceId: text("occurrence_id").notNull(), state: text("state").notNull(), at: integer("at").notNull(),
+  value: text("value").notNull(),
+}, table=>[index("automation_runs_owner").on(table.automationId,table.at),index("automation_runs_state").on(table.state),
+  check("automation_run_state",sql.raw("state IN ('planned','admitted','running','completed','failed','unknown','skipped')"))]);
+export const automationMutations = sqliteTable("automation_mutations", {
+  actorId: text("actor_id").notNull(), key: text("key").notNull(), digest: text("digest").notNull(), result: text("result").notNull(),
+},table=>[primaryKey({columns:[table.actorId,table.key]})]);
+export const automationDelegations = sqliteTable("automation_delegations", {
+  authorityId: text("authority_id").primaryKey(), runKey: text("run_key").notNull(), grantId: text("grant_id").notNull(),
+},table=>[index("automation_delegations_run").on(table.runKey)]);

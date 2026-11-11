@@ -81,3 +81,7 @@ Expo/RN 不再把这些事实重新压成通用 JSON 卡片。它和 Web 共同�
 -
 
 - Generic dynamic tool disclosure consumes the shared live/settled activity memory: live details start open, user collapse survives progress, and completion/failure selects the settled choice (initially collapsed). MCP keeps independent default-collapsed state; history restoration does not borrow the running choice. Core presentation still decides whether there is an expandable body. See [live tool disclosure](architecture/chat-ui/activities-and-tools.md#live-tool-disclosure-state).
+
+## Generated image history and recovery
+
+Generated-image bytes are never text previews. Presentation pages and live history updates retain the saved file identity without copying inline bytes; images without a saved file retain their complete inline result. Previously stored truncated previews are repaired from retained full facts at read time, without changing history versions. Image search indexes revisedPrompt only. Web loads file sources through the existing Host media boundary; a failed inline image can fall back once to its saved file, then exposes an explicit retry rather than a broken image. Ordinary tool-output detail remains deferred.

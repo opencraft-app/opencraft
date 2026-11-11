@@ -138,3 +138,28 @@ test("upgrading a v1 binding database preserves its existing session identity", 
     assert.equal(upgraded.executionId({ serverId: "server", threadId: "created" }), "new");
   } finally { upgraded.close(); }
 });
+
+test('bridge memory reservations never touch persistent bindings, including calls after revoke',async t=>{
+  const service=new SessionCapabilities();let calls=0;
+  service.register({id:'first-execution',tools:session=>session.execution?[tool]:[],async call(){calls++;return {};}});
+  const bindings=new Proxy({},{get(){return ()=>{throw Error('Synchronous binding I/O forbidden');};}}) as any;
+  const mcp=new SessionCapabilityMcp(service,randomBytes(32),bindings);
+  await mcp.listen();t.after(()=>mcp.close());
+  const reservation=mcp.prepareExecution({memoryOnly:true}),config=reservation.configuration as any;
+  reservation.bindThread({serverId:'server',threadId:'first'});
+  const client=new Client({name:'bridge-memory',version:'1'});
+  await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));
+  t.after(()=>client.close());
+  assert.equal((await client.callTool({name:'reply',arguments:{}})).isError,true);
+  assert.equal(calls,0);
+  const scope={serverId:'server',threadId:'first',execution:{inputId:'first',executionId:'first'}};
+  reservation.bind(scope);
+  assert.deepEqual((await client.listTools()).tools.map(t=>t.name),['reply']);
+  assert.equal((await client.callTool({name:'reply',arguments:{}})).isError,false);
+  assert.equal(calls,1);assert.ok(mcp.config(scope));
+  reservation.resetBeforeStart();
+  assert.equal((await client.callTool({name:'reply',arguments:{}})).isError,true);assert.equal(calls,1);
+  reservation.bind({...scope,execution:{inputId:'replacement-before-start',executionId:'replacement-before-start'}});
+  assert.equal((await client.callTool({name:'reply',arguments:{}})).isError,false);assert.equal(calls,2);
+  reservation.cancel();await assert.rejects(client.listTools());assert.equal(calls,2);
+});

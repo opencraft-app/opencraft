@@ -5,7 +5,7 @@ import { browserPresentationClipPath } from "./browser-presentation-geometry";
 import type { BrowserMetadataStorage } from './desktop-browser-storage';
 import { H264MediaSource, onFirstVideoFrame } from './h264-media-source';
 import { BrowserAutomationError, type BrowserAutomation, type BrowserDeviceProfile, type BrowserPageId, type BrowserUrl, type BrowserViewportLayout } from '@opencraft/browser-core';
-import type { BrowserSurfaceEvents, BrowserSurfaceHost } from './web-browser-surface-host';
+import type { BrowserInputFailureKind, BrowserSurfaceEvents, BrowserSurfaceHost } from './web-browser-surface-host';
 import type { PresentationHostPort } from './opencraft-presentation-host';
 import { serverStorageKey, serverUrl } from '../runtime/server-context';
 import { RemoteBrowserIme } from './remote-browser-ime';
@@ -43,8 +43,18 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
   controlState(id: BrowserPageId): 'unavailable' | 'viewing' | 'human' | 'agent' | 'elsewhere' {
     const p = this.pages.get(id); return !p?.opened ? 'unavailable' : p.control.controller ? p.control.kind ?? 'viewing' : p.control.active ? 'elsewhere' : 'viewing';
   }
-  takeControl(id: BrowserPageId) { const p = this.require(id); void this.acquireControl(p, 'human').catch(error => p.events.onError(error.message)); }
-  releaseControl(id: BrowserPageId) { const p = this.require(id); void this.releaseControlToken(p).catch(error => p.events.onError(error.message)); }
+  takeControl(id: BrowserPageId) { const p = this.require(id); void this.acquireControl(p, 'human').catch(error => this.inputError(p, 'control', error.message)); }
+  releaseControl(id: BrowserPageId) { const p = this.require(id); void this.releaseControlToken(p).catch(error => this.inputError(p, 'control', error.message)); }
+  private inputError(p: Page, kind: BrowserInputFailureKind, message: string) {
+    if (p.closed) return;
+    if (p.events.onInputError) p.events.onInputError(kind);
+    else p.events.onError(message); // Standalone surface consumer compatibility.
+  }
+  private operationError(p: Page, error: Error) {
+    if (p.closed) return;
+    if (['CONTROL_LOST', 'CONTROL_BUSY'].includes((error as BrowserAutomationError).code)) this.inputError(p, 'control', error.message);
+    else p.events.onError(error.message);
+  }
   private setControl(p: Page, control: Control) {
     if (!control || !Number.isSafeInteger(control.epoch) || control.epoch < p.control.epoch) return;
     const humanIntent = p.control.controller && p.control.token === control.token
@@ -170,7 +180,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     // Capture the requested URL; replacement before connection must not issue
     // an obsolete navigation after the latest one.
     void p.ready.then(() => { if (!p.closed && p.navigation === navigation && !(absent && p.restored && !force) && !(force && reconnecting && !p.resumed)) return absent && p.serverInitialNavigation && !force ? undefined : this.humanCall(p, force ? 'reload' : 'navigate', { url }); })
-      .catch(error => { if (!p.closed && p.navigation === navigation) p.events.onError(error.message); });
+      .catch(error => { if (!p.closed && p.navigation === navigation) this.operationError(p, error); });
     return true;
   }
   stop(id: BrowserPageId) { this.run(this.require(id), 'stop'); }
@@ -490,7 +500,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     this.menuOwner = p;
     const connection = p.connection, interaction = p.interaction;
     const current = () => this.acceptsInput(p) && p.connection === connection && p.interaction === interaction;
-    this.localMenu.copy(() => this.call(p, 'copy'), current, message => p.events.onError(message));
+    this.localMenu.copy(() => this.call(p, 'copy'), current, message => this.inputError(p, 'copy', message));
   }
   private showMenu(p: Page, menu: { intent?: unknown; context?: unknown; x?: unknown; y?: unknown; copy?: unknown; link?: unknown }) {
     if (!this.acceptsInput(p) || typeof menu.x !== 'number' || !Number.isFinite(menu.x)
@@ -508,7 +518,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       x: r.left + menu.x * scale,
       y: r.top + menu.y * scale,
       current, run: action => action === 'copy' ? this.call(p, 'copy', { context }) : Promise.resolve({ text: link! }),
-      focus: () => { if (current()) p.receiver.focus({ preventScroll: true }); }, error: message => p.events.onError(message) });
+      focus: () => { if (current()) p.receiver.focus({ preventScroll: true }); }, error: message => this.inputError(p, 'copy', message) });
   }
   private queueViewport(p: Page) {
     const target = JSON.stringify(p.viewport), failures = p.resizeRetry?.target === target ? p.resizeRetry.failures : 0;
@@ -574,7 +584,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       }
     });
   }
-  private run(p: Page, method: string, input?: unknown) { void p.ready.then(() => ['zoom', 'stop', 'back', 'forward'].includes(method) ? this.humanCall(p, method, input) : this.call(p, method, input)).catch(error => { if (!p.closed) p.events.onError(error.message); }); }
+  private run(p: Page, method: string, input?: unknown) { void p.ready.then(() => ['zoom', 'stop', 'back', 'forward'].includes(method) ? this.humanCall(p, method, input) : this.call(p, method, input)).catch(error => this.operationError(p, error)); }
   private paintFrame(p: Page, frame: CanvasImageSource, width: number, height: number, frameId?: string) {
     // Resizing a canvas clears it. Resize and draw in this same rendering task,
     // never in the earlier viewport-notification task.
@@ -667,7 +677,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       if (p.control.controller && p.control.kind === 'human' && this.acceptsInput(p))
         void this.call(p, 'input', { type: 'touchCancel' }).catch(() => {});
       if (!['DOCUMENT_CHANGED', 'CONTROL_LOST', 'PAGE_CLOSED'].includes((error as BrowserAutomationError).code))
-        p.events.onError('Browser input failed; try the interaction again');
+        this.inputError(p, 'edit', 'Browser input failed; try the interaction again');
     }, () => p.adaptiveInput ? p.inputPolicy.limit : 2);
     const send = (input: any) => {
       if (this.acceptsInput(p) && (p.control.controller && p.control.kind === 'human' || p.acquiring?.kind === 'human')) inputQueue.push({ ...input, document: p.document });
@@ -717,7 +727,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       if (event.pointerType === 'touch' && !p.multiTouch && !event.isPrimary) return;
       event.preventDefault(); flushMove();
       if (event.pointerType === 'touch' && p.multiTouch && (contacts.has(event.pointerId) || contacts.size >= 10)) return;
-      void this.acquireControl(p, 'human').catch(error => p.events.onError(error.message)); p.gestureActive = true;
+      void this.acquireControl(p, 'human').catch(error => this.inputError(p, 'control', error.message)); p.gestureActive = true;
       p.ime?.retire(); p.keyboardIntent = event.pointerType === 'touch' && event.isPrimary && captured.size === 0 ? { pointer:event.pointerId, x:event.clientX, y:event.clientY, editor:p.editor, until:0, completed:false } : null; receiver.focus({ preventScroll: true }); captured.add(event.pointerId); canvas.setPointerCapture(event.pointerId);
       this.retireMenu(p); p.menuIntent = crypto.randomUUID();
       if (event.pointerType === 'touch' && p.multiTouch) {
@@ -758,9 +768,12 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     const visibility = () => { this.syncVisibility(p); };
     document.addEventListener('visibilitychange', visibility); cleanup.push(() => document.removeEventListener('visibilitychange', visibility));
     listen('contextmenu', event => event.preventDefault());
-    listen('wheel', (event: WheelEvent) => { event.preventDefault(); if (!this.acceptsPointer(p)) return; void this.acquireControl(p, 'human').catch(error => p.events.onError(error.message)); this.retireMenu(p); send({ type: 'mouseWheel', ...point(event), deltaX: -event.deltaX * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1), deltaY: -event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1), modifiers: modifiers(event) }); }, { passive: false });
+    listen('wheel', (event: WheelEvent) => { event.preventDefault(); if (!this.acceptsPointer(p)) return; void this.acquireControl(p, 'human').catch(error => this.inputError(p, 'control', error.message)); this.retireMenu(p); send({ type: 'mouseWheel', ...point(event), deltaX: -event.deltaX * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1), deltaY: -event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? canvas.clientHeight : 1), modifiers: modifiers(event) }); }, { passive: false });
     const ime = p.ime = new RemoteBrowserIme(receiver, input => this.call(p, 'ime', input),
-      () => this.acceptsInput(p) && p.control.controller && p.control.kind === 'human', message => p.events.onError(message), () => p.editor);
+      () => this.acceptsInput(p) && p.control.controller && p.control.kind === 'human', (message, error) => {
+      const code = (error as BrowserAutomationError | undefined)?.code;
+      this.inputError(p, code === 'INPUT_TARGET_CHANGED' ? 'focus' : code === 'CONTROL_LOST' ? 'control' : 'edit', message);
+    }, () => p.editor);
     const textListen = (name: string, handler: (event: any) => void) => { receiver.addEventListener(name, handler); cleanup.push(() => receiver.removeEventListener(name, handler)); };
     const editing = new RemoteBrowserEditInput(receiver,
       () => this.acceptsInput(p) && p.control.controller && p.control.kind === 'human', () => ime.composing,
@@ -780,7 +793,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
         event.preventDefault();
         if (!event.repeat && this.acceptsInput(p)) {
-          if (p.nativeCopy) this.copyCurrent(p); else p.events.onError('This browser runtime does not support copying yet');
+          if (p.nativeCopy) this.copyCurrent(p); else this.inputError(p, 'copy', 'This browser runtime does not support copying yet');
         }
         return;
       }

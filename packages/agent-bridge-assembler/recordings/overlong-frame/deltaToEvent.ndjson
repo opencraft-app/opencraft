@@ -1,0 +1,4 @@
+{"seq":1,"run":"overlong-frame","lane":"deltaToEvent","line":"{\"op\":\"turn.open\",\"nativeTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":2,"run":"overlong-frame","lane":"deltaToEvent","line":"{\"op\":\"item.textDelta\",\"nativeKey\":\"s1\",\"channel\":\"agentMessage\",\"text\":\"[content:3efe16b4][content:fe615880]\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":3,"run":"overlong-frame","lane":"deltaToEvent","line":"{\"op\":\"item.textClose\",\"nativeKey\":\"s1\",\"channel\":\"agentMessage\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":4,"run":"overlong-frame","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}

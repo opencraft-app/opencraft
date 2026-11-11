@@ -12,6 +12,19 @@ export interface ThreadCatalogChange {
   readonly revision: number;
   readonly change: ThreadCatalogMutation;
 }
+/**
+ * Whether every directory source contributed to a page. Partial and unknown
+ * pages retain cached rows; their absence never certifies deletion.
+ */
+export type ThreadCatalogCoverage = "complete" | "partial" | "unknown";
+/** Optional aggregate-directory metadata; native AppServers omit it. */
+export interface ThreadCatalogMetadata {
+  /** Last complete directory synchronization, if one has succeeded. */
+  readonly lastSuccessAt?: number | null;
+  /** Reader synchronization state. `error` and `warming` pages are incomplete. */
+  readonly state: string;
+  readonly coverage: ThreadCatalogCoverage;
+}
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const id = (value: unknown): value is string => typeof value === "string" && value.length > 0 && value.length <= 4096;
 const time = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -22,6 +35,7 @@ export function threadCatalogEntry(value: unknown): Thread | null {
   const row = object(value);
   if (!id(row.id) || typeof row.cwd !== "string" || !time(row.createdAt) || !time(row.updatedAt) || row.ephemeral === true) return null;
   return { ...Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])),
+    ...(row.accessMode === 'private' || row.accessMode === 'shared' ? {accessMode:row.accessMode} : {}),
     name: typeof row.name === "string" ? row.name.slice(0, 1024) : null,
     preview: typeof row.preview === "string" ? row.preview.slice(0, 512) : "",
     status: threadCatalogStatus(row.status) ?? { type: "notLoaded" }, ephemeral: false, extra: null, turns: [],

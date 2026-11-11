@@ -1,10 +1,6 @@
-import { openManagedDatabase, createSchemaValidator } from "@opencraft/sqlite-node";
+import { openServerRepository, type ServerDatabaseSource } from "@opencraft/storage-node/server-repository";
 import * as Y from "yjs";
 
-const schema = `CREATE TABLE thread_notes (
-  server_id TEXT NOT NULL, thread_id TEXT NOT NULL, state BLOB NOT NULL,
-  updated_at INTEGER NOT NULL, PRIMARY KEY(server_id,thread_id)
-) STRICT;`;
 const limit = 512 * 1024;
 function decode(value: string): Uint8Array {
   if (typeof value !== "string" || value.length > limit * 4 / 3 + 8 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/u.test(value)) throw new Error("Invalid note update");
@@ -14,9 +10,11 @@ function decode(value: string): Uint8Array {
 /** Gateway-owned collaboration data. Never opens engine, identity or browser databases. */
 export class ThreadNoteStore {
   private readonly db;
+  private readonly closeRepository: () => void;
   readonly outcome;
-  constructor(path: string) {
-    const opened = openManagedDatabase({ path, legacyPolicy: "reject", migrations: [{ version: 1, name: "thread-notes", sql: schema }], validateSchema: createSchemaValidator(schema) });
+  constructor(path: ServerDatabaseSource) {
+    const opened = openServerRepository(path, "thread-notes");
+    this.closeRepository = opened.close;
     this.db = opened.database;
     this.outcome = opened.outcome;
   }
@@ -40,5 +38,5 @@ export class ThreadNoteStore {
       throw error;
     } finally { doc.destroy(); }
   }
-  close() { this.db.close(); }
+  close() { this.closeRepository(); }
 }

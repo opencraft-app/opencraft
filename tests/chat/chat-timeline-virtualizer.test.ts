@@ -126,6 +126,35 @@ test("history backfill stops when a page produces no new layout", async () => {
   assert.equal(pageCount, 1);
 });
 
+test("history backfill reports bounded viewport diagnostics without content", async () => {
+  let scrollHeightPx = 300;
+  const diagnostics: Array<{ phase: string; before: number; after?: number | null; reason?: string }> = [];
+  const coordinator = new TurnHistoryBackfillCoordinator({
+    isEnabled: () => true,
+    readMetrics: () => ({
+      distanceFromBottomPx: 0,
+      viewportHeightPx: 600,
+      scrollHeightPx,
+    }),
+    loadPage: () => { scrollHeightPx += 250; },
+    afterLayout: async () => undefined,
+    onDiagnostic: event => diagnostics.push({
+      phase: event.phase,
+      before: event.before.scrollHeightPx,
+      after: event.after?.scrollHeightPx,
+      reason: event.reason,
+    }),
+  });
+
+  await coordinator.request();
+  assert.deepEqual(diagnostics, [
+    { phase: "load-start", before: 300, after: undefined, reason: undefined },
+    { phase: "load-settled", before: 300, after: 550, reason: undefined },
+    { phase: "load-start", before: 550, after: undefined, reason: undefined },
+    { phase: "load-settled", before: 550, after: 800, reason: undefined },
+  ]);
+});
+
 test("a new history generation waits for the stale load instead of overlapping it", async () => {
   let releaseFirst!: () => void;
   let loadCount = 0;

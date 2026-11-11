@@ -2,6 +2,7 @@ import {
   ChatDocumentSessionView,
   type ChatExternalResourcePolicy,
   type ChatMeasurementEvent,
+  type ChatMediaDiagnostic,
   type ChatRenderContext,
   type ChatRenderTheme,
 } from "@opencraft/chat-render-react";
@@ -25,6 +26,7 @@ export interface WebChatDocumentProps {
   readonly stickyCodeHeaders?: boolean;
   readonly onOpenResource?: ChatRenderContext["openResource"];
   readonly loadMediaSource?: ChatRenderContext["loadMediaSource"];
+  readonly onMediaDiagnostic?: (event: ChatMediaDiagnostic) => void;
   readonly onMeasurementRequest?: (event: ChatMeasurementEvent) => void;
   readonly dialect?: ChatDocumentDialect;
 }
@@ -62,6 +64,7 @@ function ResolvedWebChatDocument(props: WebChatDocumentProps) {
     allowWideBlocks: props.allowWideBlocks ?? true,
     stickyCodeHeaders: props.stickyCodeHeaders ?? false,
     loadMediaSource: props.loadMediaSource,
+    onMediaDiagnostic: props.onMediaDiagnostic,
     openResource: props.onOpenResource ?? ((target, decision) => {
       if (decision.kind === "anchor") {
         const id = decodeURIComponent(target.slice(1));
@@ -84,6 +87,7 @@ function ResolvedWebChatDocument(props: WebChatDocumentProps) {
     props.externalResourcePolicy,
     props.hostId,
     props.loadMediaSource,
+    props.onMediaDiagnostic,
     props.onMeasurementRequest,
     props.onOpenResource,
     props.stickyCodeHeaders,

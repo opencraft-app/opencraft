@@ -1,5 +1,18 @@
-import type { RuntimeProviderView, RuntimeModelProbeResponse, RuntimeDiscoveredModelView } from "@opencraft/appserver-protocol";
+import type { RuntimeProviderView, RuntimeModelProbeResponse, RuntimeDiscoveredModelView, RuntimeModelInspectionResponse } from "@opencraft/appserver-protocol";
 import type { LocalAgentSettingsService, RuntimeProviderConfiguration, SaveRuntimeProviderInput } from "../local-agent-settings-service";
+
+/** Fill only missing declarations and keep the resulting length pair valid. */
+export function fillMissingModelCapabilities(current: RuntimeDiscoveredModelView, found: RuntimeModelInspectionResponse["capabilities"]): RuntimeDiscoveredModelView {
+  const next = { ...current };
+  for (const field of ["contextWindow", "maxTokens", "input", "reasoningEfforts"] as const) {
+    if (current[field] === undefined && found[field] !== undefined) Object.assign(next, { [field]: found[field] });
+  }
+  if (next.contextWindow !== undefined && next.maxTokens !== undefined && next.maxTokens > next.contextWindow) {
+    if (current.contextWindow === undefined && current.maxTokens !== undefined) delete next.contextWindow;
+    else if (current.maxTokens === undefined) delete next.maxTokens;
+  }
+  return next;
+}
 
 export interface ServiceDraft {
   config: RuntimeProviderConfiguration; revision: number; dirty: boolean; key: string;
@@ -15,6 +28,7 @@ export class ModelServicesController {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private creationIds = new Map<string, string>();
   private pendingModelCapabilities = new Set<string>();
+  private inspections = new Map<string, RuntimeModelInspectionResponse>();
   selected: string | null = null;
   initialized = false;
   private disposed = false;
@@ -101,6 +115,32 @@ export class ModelServicesController {
     const result = await this.service.checkSavedModel(provider.provider, model, revision);
     if (this.drafts.get(provider.provider) === draft && !draft.dirty && draft.revision===revision) draft.probe = result;
   }); }
+  inspection(provider: RuntimeProviderView, model: string) {
+    const result = this.inspections.get(this.modelCapabilityKey(provider.provider, model));
+    return result?.revision === this.revision(provider) ? result : undefined;
+  }
+  inspectModel(provider: RuntimeProviderView, model: string, mode: "metadata" | "verify") { return this.run(async () => {
+    const draft = this.draft(provider), revision = draft.revision;
+    if (draft.dirty) throw new Error("请先保存或取消连接配置的修改");
+    const result = await this.service.inspectModel(provider.provider, model, revision, mode);
+    if (this.disposed || this.drafts.get(provider.provider) !== draft || draft.dirty || this.revision(provider) !== revision) return;
+    this.inspections.set(this.modelCapabilityKey(provider.provider, model), result);
+    this.message = "能力结果已获取，尚未保存；已有值会保留";
+  }); }
+  fillModelCapabilities(provider: RuntimeProviderView, model: string) {
+    const found = this.inspection(provider, model);
+    if (!found) { this.error = "结果已过期，请重新获取能力"; this.notify(); return Promise.resolve(); }
+    return this.updateModelCapabilities(provider, model, current => fillMissingModelCapabilities(current, found.capabilities), "已补全兼容的空值；已有模型配置保持");
+  }
+  setModelLimits(provider: RuntimeProviderView, model: string, contextWindow?: number, maxTokens?: number) {
+    if ([contextWindow, maxTokens].some(n => n !== undefined && (!Number.isSafeInteger(n) || n <= 0)) || (contextWindow !== undefined && maxTokens !== undefined && maxTokens > contextWindow)) {
+      this.error = "请输入正整数 token 数，输出上限不得超过上下文"; this.notify(); return Promise.resolve();
+    }
+    return this.updateModelCapabilities(provider, model, current => {
+      const { contextWindow: _context, maxTokens: _output, ...rest } = current;
+      return { ...rest, ...(contextWindow !== undefined ? { contextWindow } : {}), ...(maxTokens !== undefined ? { maxTokens } : {}) };
+    }, "模型长度限制已保存；新会话使用新预算");
+  }
   fetchModels(provider: RuntimeProviderView) { return this.run(async () => {
     const draft = this.draft(provider);
     const source = draft.config.baseURL && draft.config.api ? "endpoint" : "catalog";
@@ -125,7 +165,7 @@ export class ModelServicesController {
   addModel(provider: RuntimeProviderView, model: RuntimeDiscoveredModelView) { return this.run(async () => {
     const draft = this.draft(provider);
     if (draft.config.models.some(m => m.id === model.id)) throw new Error("此模型已存在");
-    this.edit(provider, { models: [...draft.config.models, provider.configuration?.modelType === "asr" ? { ...model, type: "asr" } : model] });
+    this.edit(provider, { models: [...draft.config.models, provider.configuration?.modelType && provider.configuration.modelType !== "chat" ? { ...model, type: provider.configuration.modelType } : model] });
     await this.commit(provider);
   }); }
   private async updateModelCapabilities(provider: RuntimeProviderView, modelId: string,
@@ -134,11 +174,12 @@ export class ModelServicesController {
     if (this.disposed || this.pendingModelCapabilities.has(pendingKey)) return;
     this.pendingModelCapabilities.add(pendingKey); this.error = null; this.message = null; this.notify();
     try {
-      if (provider.configuration?.modelDeclarations !== true || provider.configuration.modelType === "asr") throw new Error("此模型不支持设置聊天输入能力");
+      if (provider.configuration?.modelDeclarations !== true || ["asr", "image"].includes(provider.configuration.modelType ?? "")) throw new Error("此模型不支持设置聊天输入能力");
       const draft = this.draft(provider);
       if (draft.dirty) throw new Error("请先保存或取消连接配置的修改");
       const model = draft.config.models.find(entry => entry.id === modelId);
       if (!model) throw new Error("模型声明已变化，请刷新后重试");
+      const revision = draft.revision;
       const models = draft.config.models.map(entry => entry.id === modelId ? update(entry) : entry);
       await this.service.saveProvider(provider, {
         baseURL: draft.config.baseURL,
@@ -147,7 +188,7 @@ export class ModelServicesController {
         ...(draft.config.api ? { api: draft.config.api } : {}),
         models,
       }, draft.revision);
-      this.drafts.delete(provider.provider);
+      if (this.drafts.get(provider.provider) === draft && !draft.dirty && draft.revision === revision) this.drafts.delete(provider.provider);
       this.message = message;
     } catch (error) {
       this.error = error instanceof Error ? error.message : String(error);
@@ -171,19 +212,21 @@ export class ModelServicesController {
       return { ...model, reasoningEfforts: Object.keys(next).length ? next : false };
     }, enabled ? "已添加思考档位" : "已移除思考档位");
   }
-  create(name: string, type: "chat" | "asr" = "chat") { return this.run(async () => {
+  create(name: string, type: "chat" | "asr" | "image" = "chat") { return this.run(async () => {
     const creationKey = JSON.stringify([type, name]);
     const speech = this.service.getSnapshot().providers?.creation?.speech;
+    const image = this.service.getSnapshot().providers?.creation?.image;
+    if (type === "image" && !image) throw new Error("此服务器暂不支持图像模型管理");
     if (type === "asr" && !speech) throw new Error("此服务器暂不支持语音模型管理");
     const previous = this.creationIds.get(creationKey);
-    const id = previous ?? `custom-${crypto.randomUUID()}`;
+    const id = previous ?? `${type === "image" ? "image" : "custom"}-${crypto.randomUUID()}`;
     this.creationIds.set(creationKey, id);
     if (previous) {
       await this.service.refresh();
       if (this.service.getSnapshot().providers?.providers.some(provider => provider.provider === id)) { this.select(id); this.creationIds.delete(creationKey); return; }
     }
-    await this.service.createProvider(id, { displayName: name, baseURL: type === "asr" ? speech!.baseURL : "",
-      api: type === "asr" ? speech!.api : "openai-completions", models: type === "asr" ? [{ id: speech!.model, type: "asr" }] : [], credential: { kind: "keep" }, enabled: false });
+    await this.service.createProvider(id, { displayName: name, baseURL: type === "image" ? image!.baseURL : type === "asr" ? speech!.baseURL : "",
+      api: type === "image" ? image!.api : type === "asr" ? speech!.api : "openai-completions", models: type === "image" ? (image!.model ? [{ id: image!.model, type: "image" }] : []) : type === "asr" ? [{ id: speech!.model, type: "asr" }] : [], credential: { kind: "keep" }, enabled: false }, type === "image" ? image!.revision : undefined);
     this.select(id); this.creationIds.delete(creationKey);
   }); }
   changeModel(provider: RuntimeProviderView, model: string, enabled: boolean) { return this.run(async () => {
@@ -191,7 +234,7 @@ export class ModelServicesController {
     await this.service.changeModel(provider.provider, model, enabled);
   }); }
   renameProvider(provider: RuntimeProviderView, name: string, revision: number) { return this.run(async () => {
-    if (!provider.declared || provider.settingsNs !== "llm-pi-ai") throw new Error("仅支持重命名自定义提供商");
+    if (!provider.declared || !["llm-pi-ai", "image-generation"].includes(provider.settingsNs)) throw new Error("仅支持重命名自定义提供商");
     if (!name.trim()) throw new Error("请输入提供商名称");
     const draft = this.draft(provider);
     if (draft.dirty) throw new Error("请先保存或取消连接配置的修改");
@@ -199,7 +242,7 @@ export class ModelServicesController {
     this.message = "提供商已重命名";
   }); }
   deleteProvider(provider: RuntimeProviderView, revision: number) { return this.run(async () => {
-    if (!provider.declared || provider.settingsNs !== "llm-pi-ai") throw new Error("仅支持删除自定义提供商");
+    if (!provider.declared || !["llm-pi-ai", "image-generation"].includes(provider.settingsNs)) throw new Error("仅支持删除自定义提供商");
     if (this.draft(provider).dirty) throw new Error("请先保存或取消连接配置的修改");
     await this.service.deleteProvider(provider, revision);
     this.cancelSave(provider); this.drafts.delete(provider.provider);
@@ -210,10 +253,14 @@ export class ModelServicesController {
     await this.commit(provider);
     const snapshot = this.service.getSnapshot();
     if (!snapshot.providers?.providers.some(entry => entry.provider === provider.provider && entry.active)) throw new Error("请先启用提供商");
+    if (provider.configuration?.modelType === "image") {
+      await this.service.requestImageDefault(provider.provider, model, this.revision(provider));
+      this.message = "已设为非订阅 Codex 的生图模型"; return;
+    }
     const revision = snapshot.settings?.namespaces.find(entry => entry.ns === "agent-default-model")?.revision;
     if (revision === undefined) throw new Error("默认模型配置不可用");
     await this.service.saveDefaultModel(provider.provider, model, undefined, revision);
     this.message = "默认模型已更新，已有会话保持原选择";
   }); }
-  dispose() { this.disposed = true; for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear(); this.creationIds.clear(); this.pendingModelCapabilities.clear(); this.drafts.clear(); this.listeners.clear(); }
+  dispose() { this.disposed = true; for (const timer of this.timers.values()) clearTimeout(timer); this.timers.clear(); this.creationIds.clear(); this.pendingModelCapabilities.clear(); this.inspections.clear(); this.drafts.clear(); this.listeners.clear(); }
 }
