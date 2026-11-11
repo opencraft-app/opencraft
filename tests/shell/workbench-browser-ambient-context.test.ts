@@ -44,6 +44,7 @@ test("dynamic browser tools authorize logical Tab IDs, then operate their Pages"
   const pageSnapshots = new Map<string, BrowserPageSnapshot>();
   let nextPage = 0;
   const pages = {
+    setSessionClosedHandler() {},
     setNewWindowHandler() {},
     openExternalIfRequired() { return false; },
     create(input: { ownerId: string }) {
