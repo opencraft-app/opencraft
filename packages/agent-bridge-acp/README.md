@@ -20,7 +20,7 @@ deployment bundles the same entry) with this environment:
 | Variable | Meaning |
 | --- | --- |
 | `AGENT_BRIDGE_ACP_PROVIDER` | Provider id in the registration declaration (default: dialect id). |
-| `AGENT_BRIDGE_ACP_DIALECT` | `generic`, `amp`, `copilot`, `dsh` or `codebuddy`. |
+| `AGENT_BRIDGE_ACP_DIALECT` | `generic`, `amp`, `copilot`, `dsh`, `codebuddy` or `agy`. |
 | `AGENT_BRIDGE_ACP_COMMAND` | Installed ACP executable (`copilot`, `amp-acp`, …). |
 | `AGENT_BRIDGE_ACP_ARGS` | JSON array of arguments (for example `["--acp"]`). |
 | `AGENT_BRIDGE_ACP_CWD` | Default agent working directory; `session/create.cwd` overrides it. |
@@ -306,3 +306,22 @@ native RPC refusals retain generic rejection/failure classification; a refusal
 contradicting an observed insertion remains unknown. Slash,
 images and unknown content fields are refused before a native write; callers
 may explicitly select the existing next-turn or interrupt-replace path.
+
+## AGY hook and native trace (P6)
+
+Use `AGENT_BRIDGE_ACP_DIALECT=agy`, command `agy`, args `["acp"]`; select a
+model from the live AGY catalog. The enabled user's `agy-acp-steer` lifecycle
+plugin is required. The compatible plugin is included in `plugin/agy`; this
+adapter does not install or change plugins automatically. Probe checks both
+hook commands and an existing readonly native schema/payload sample. Missing
+plugin/schema or Windows removes native steering, regardless of generic ACP
+metadata. Override the native trace directory with
+`AGENT_BRIDGE_AGY_CONVERSATIONS` in `AGENT_BRIDGE_ACP_ENV` if needed.
+
+Only plain, non-slash text can be injected. Hook `injectSteps` and ACP echoes
+are never receipts. A new unique raw user row, matching text, hook floor and
+pre-claim baseline is required for `native-input-id`; identical text or missing
+proof is unknown and never replayed. SQLite lives only in the lifecycle-owned
+`src/agy-trace.worker.mjs` Worker; ship that asset alongside a bundled bridge.
+See [P6 evidence and decisions](../../design/agent-bridge/p6-agy.md) and the
+opt-in `scripts/smoke/agent-bridge/p6-agy-host.ts` real Host acceptance.

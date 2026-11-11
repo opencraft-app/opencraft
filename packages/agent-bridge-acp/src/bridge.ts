@@ -246,6 +246,7 @@ class AcpSession {
 
     const connection = new AcpConnection({
       dsh: this.profile.dialect === "dsh",
+      agy: this.profile.dialect === "agy",
       command: this.profile.agent.command,
       args: this.profile.agent.args,
       cwd,
@@ -522,6 +523,7 @@ class AcpSession {
       { scope: { threadId: this.threadId }, op: "turn.mainRun", state: "running" },
     ]);
     this.dshTextTurn = input.images.length === 0;
+    this.connection?.agy?.begin(this.newSession!.sessionId, input.text);
     const prompt = toAcpPrompt(input, this.imagesAllowed);
     const response = this.connection.request("session/prompt", {
       sessionId: this.newSession.sessionId,
@@ -591,6 +593,7 @@ class AcpSession {
       else await this.admitDispatched(dispatched);
     }
     turn.codebuddy?.finish();
+    this.connection?.agy?.finish();
     this.active = null;
     const status = outcome.error !== undefined
       ? "failed"
@@ -753,6 +756,9 @@ class AcpSession {
     if (!this.deliveryMethods.includes(delivery)) {
       throw explicitReject(`delivery ${delivery} is not declared by this ACP instance`);
     }
+    if (delivery === "native-inject" && this.profile.dialect === "agy" && (!isCodeBuddySteerInput(params.input) || !this.dshTextTurn || !this.connection?.agy?.ready)) {
+      throw explicitReject("AGY native steering requires a verified hook/trace and plain text without slash commands");
+    }
     if (delivery === "native-inject" && active.codebuddy !== undefined) {
       if (!isCodeBuddySteerInput(params.input)) {
         throw explicitReject("CodeBuddy native steer requires plain text without slash commands; choose next-turn or interrupt-replace explicitly");
@@ -821,7 +827,11 @@ class AcpSession {
         terminal: false,
       };
       active.steerAttempts.set(inputId, attempt);
-      if (active.codebuddy !== undefined) {
+      if (this.profile.dialect === "agy") {
+        void this.connection!.agy!.inject(input.text).then((proof) => {
+          attempt.proof = proof; this.admitNativeSteer(record, attempt);
+        }, (error: unknown) => this.rejectNativeSteer(record, attempt, error));
+      } else if (active.codebuddy !== undefined) {
         void active.codebuddy.inject(this.connection!, this.newSession!.sessionId, input.text, (proof) => {
           attempt.proof = proof;
           this.admitNativeSteer(record, attempt);
@@ -947,8 +957,8 @@ class AcpSession {
   }
 
   private parseInput(value: unknown): AcpPromptInput {
-    if (this.profile.dialect === "codebuddy" && !hasCodeBuddyInputFields(value)) {
-      throw invalid("CodeBuddy inputs support only text and images; unknown content cannot be discarded");
+    if ((this.profile.dialect === "codebuddy" || this.profile.dialect === "agy") && !hasCodeBuddyInputFields(value)) {
+      throw invalid(`${this.profile.dialect} inputs support only text and images; unknown content cannot be discarded`);
     }
     try {
       return parsePromptInput(value, this.promptLimits());
@@ -966,6 +976,7 @@ class AcpSession {
       return { cancelled: false };
     }
     active.codebuddy?.finish();
+    this.connection?.agy?.finish();
     try {
       this.connection!.notify("session/cancel", { sessionId: this.newSession!.sessionId });
     } catch (error) {
@@ -1318,6 +1329,7 @@ class AcpSession {
         record.outcome = "unknown";
       }
       active.codebuddy?.finish();
+      this.connection?.agy?.finish();
       for (const attempt of active.steerAttempts.values()) {
         if (attempt.settled && (this.profile.dialect !== "dsh" || this.inputs.get(attempt.inputId)?.terminal)) continue;
         attempt.settled = true;
@@ -1368,6 +1380,7 @@ class AcpSession {
     const active = this.active;
     if (active !== null) {
       active.codebuddy?.finish();
+      this.connection?.agy?.finish();
       this.withdrawReplacement(active);
       if (active.dispatched !== undefined) {
         const dispatched = active.dispatched;
@@ -1395,6 +1408,7 @@ class AcpSession {
 
   async abort(): Promise<void> {
     this.active?.codebuddy?.finish();
+    this.connection?.agy?.finish();
     this.closed = true;
     for (const pending of this.pendingInteractions.values()) pending.resolve({ kind: "cancel" });
     this.pendingInteractions.clear();
@@ -1478,7 +1492,7 @@ export class AcpBridge {
       steer: {
         ...declared.steer,
         deliveryMethods,
-        evidenceKinds: declared.steer.evidenceKinds.filter((kind) => kind !== "native-input-id" || native || this.options.profile.dialect !== "codebuddy"),
+        evidenceKinds: declared.steer.evidenceKinds.filter((kind) => kind !== "native-input-id" || native || (this.options.profile.dialect !== "codebuddy" && this.options.profile.dialect !== "agy")),
         contentLimits: {
           maxBytes: declared.steer.contentLimits.maxBytes,
           allowedContentTypes: images
@@ -1492,6 +1506,7 @@ export class AcpBridge {
   private async probeAgent(): Promise<AcpInitializeResult> {
     const connection = new AcpConnection({
       dsh: this.options.profile.dialect === "dsh",
+      agy: this.options.profile.dialect === "agy",
       command: this.options.profile.agent.command,
       args: this.options.profile.agent.args,
       cwd: this.options.profile.agent.cwd,
@@ -1554,6 +1569,7 @@ export class AcpBridge {
   }> {
     const connection = new AcpConnection({
       dsh: this.options.profile.dialect === "dsh",
+      agy: this.options.profile.dialect === "agy",
       command: this.options.profile.agent.command,
       args: this.options.profile.agent.args,
       cwd: this.options.profile.agent.cwd,
