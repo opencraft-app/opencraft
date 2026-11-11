@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/main.cjs && esbuild src/app-server-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/app-server.cjs && esbuild src/generation-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/generations.cjs",
+    "build": "esbuild src/bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/main.cjs && esbuild src/app-server-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/app-server.cjs && esbuild src/generation-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/generations.cjs && esbuild src/router-evidence.worker.ts --bundle --platform=node --format=esm --outfile=dist/router-evidence-worker.mjs",
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --noEmit"
   },

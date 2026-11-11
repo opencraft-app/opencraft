@@ -49,6 +49,7 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
   await buildTerminalOwnerRuntime(dirname(output));
+  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/execution-fault.worker.ts")],outfile:join(dirname(output),"execution-fault-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({

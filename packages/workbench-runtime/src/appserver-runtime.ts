@@ -1,3 +1,4 @@
+import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
 import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
@@ -724,6 +725,8 @@ export function createAppServerWorkbenchRuntime(
       && next.transport.state === snapshot.transport.state
       && next.transport.attemptId === snapshot.transport.attemptId
       && next.transport.reason === snapshot.transport.reason
+      && next.transport.execution === snapshot.transport.execution
+      && next.transport.executionUnavailableThreadIds === snapshot.transport.executionUnavailableThreadIds
       && next.transport.failure === snapshot.transport.failure && sameResidency) return;
     revision += 1;
     snapshot = { ...next, revision };
@@ -1802,7 +1805,7 @@ export function createAppServerWorkbenchRuntime(
           } catch { return; }
         }
         if (status.state === "open" && observedClient.initializeResult === null) recovery.connectionStage("initializing");
-        if (status.state !== "closed" && status.state !== "failed") return;
+        if (status.state !== "closed" && status.state !== "failed") { publish(); return; }
         if (status.failure?.recovery === "manual") automaticReconnectBlock = status;
         connection.lost(status.reason === undefined ? new Error("Host connection lost") : new Error(status.reason),
           status.failure?.recovery === "manual", status.failure?.diagnostic?.closeCode === 1012 || status.failure?.code === 'APP_SERVER_RESTARTING');
@@ -2478,6 +2481,9 @@ export function createAppServerWorkbenchRuntime(
         },
         submit: (intent) =>
           runBindingCommand(binding, async () => {
+            if (executionStatusForThread(snapshot.transport, threadId) !== "ready" && (intent.target.type === "existing-thread" || intent.target.type === "steer-active-turn")) {
+              intent = {...intent, target: {type: "enqueue-follow-up", key: intent.target.key}};
+            }
             // Refuse before Conversation adopts the immutable draft/optimistic
             // queue. Transport failure after adoption is a different boundary.
             if (!config.outbox || (phase === "ready" && binding.runtime.getSnapshot().authoritative && !binding.runtime.getSnapshot().queuedSubmissions.some(item => item.local))) assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"

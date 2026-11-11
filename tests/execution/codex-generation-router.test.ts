@@ -495,3 +495,35 @@ test("all unavailable directory sources return explicit partial coverage without
     assert.equal(f.registry.route(fresh.id)!.generationId, "new");
   } finally { await f.close(); }
 });
+
+test("execution fault retires router callback and connection custody while preserving unknown outcomes", async () => {
+  const f = await fixture({}, false, true);
+  let held: ReturnType<typeof f.hold> | undefined;
+  try {
+    const {thread} = await f.rpc("thread/start");
+    await f.rpc("fixture/approval", {threadId: thread.id});
+    await f.rpc("process/spawn", {processHandle: "terminal", command: ["synthetic"]});
+    held = f.hold("old", "command/exec");
+    const running = f.rpc("command/exec", {processId: "command", command: ["synthetic"]});
+    // The rejection is expected once the failed generation connection is revoked.
+    const rejected = assert.rejects(running);
+    await held.entered;
+    const generation = f.registry.get("old")!;
+    const fault = {id: "execution-fault", generationId: "old", incarnation: generation.incarnation, state: "recovering" as const,
+      attempts: 1, retryAt: 0, threadIds: [thread.id], source: {ownerPid: 10, ownerStart: "owner", nativePid: 11, nativeStart: "native", cliSha256: "fixed", cliVersion: "fixed", unit: "old.service"}};
+    f.owner!.observeExecutionFaults([fault]);
+    f.router.executionFault(fault);
+    await rejected;
+    for (let n = 0; n < 200 && f.owner!.snapshot().activeCalls; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(f.owner!.snapshot().activeCalls, 0, "retired custody must not block controller continuation forever");
+    assert.equal(f.owner!.currentResponsibilityConfirmed(), false, "unconfirmed source stop remains unavailable");
+    f.owner!.observeExecutionFaults([{...fault, state: "recovered"}]);
+    assert.equal(f.owner!.currentResponsibilityConfirmed(), true);
+    const snapshot = f.registry.coldSnapshot() as any;
+    const rows = snapshot.tables.find((table: any) => table.name === "routing_metadata").rows;
+    const unknown = rows.filter((row: any) => row.key.startsWith("router-lease:")).map((row: any) => JSON.parse(row.value))
+      .filter((row: any) => row.executionFaultId === fault.id);
+    assert.ok(unknown.length >= 3);
+    assert.ok(unknown.every((row: any) => row.phase === "released" && row.uncertainty), "release of custody does not claim Native success or erase uncertainty");
+  } finally {held?.release(); await f.close();}
+});

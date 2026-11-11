@@ -175,7 +175,7 @@ class CallbackLane {
       if (operation) this.mutations.delete(operation);
       if (preparationStarted !== undefined) reportExecutionPreparationFailure(method, nativeParams, this.incarnation,
         cause instanceof ExecutionPreparationError ? cause.reason : 'policy-failed', performance.now() - preparationStarted);
-      send(socket, {id: message.id, error: {code: -32084, message: 'Execution environment unavailable'}}); return;
+      send(socket, {id: message.id, error: {code: -32084, message: 'Execution environment unavailable', data: {notSubmitted: true}}}); return;
     }
     finally {
       if (preparation) {

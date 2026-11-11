@@ -1,6 +1,7 @@
+import { bundleCodexCore } from './core-programs.mjs';
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir, cp, readdir, stat } from 'node:fs/promises';
-import { join, dirname, resolve } from 'node:path';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -35,24 +36,7 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   const selectedEngines = normalizeFullRuntimeEngines(engines);
   const enabled = new Set(selectedEngines);
   const full = join(packageRoot, 'full');
-  const bundledPackages = new Map();
-  if (enabled.has('codex')) {
-    await mkdir(join(full, 'core'), { recursive: true });
-    for (const [source, name] of [['bin', 'main'], ['app-server-bin', 'app-server'], ['generation-bin', 'generations']]) {
-      const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + '.cjs'),
-        bundle: true, platform: 'node', format: 'cjs', target: 'node26', external: ['bufferutil', 'utf-8-validate', 'node-pty'] });
-      for (const input of Object.keys(bundle.metafile.inputs)) {
-        if (!input.includes('node_modules/')) continue;
-        let directory = dirname(resolve(repositoryRoot, input));
-        while (directory.startsWith(repositoryRoot)) {
-          try { const manifest = JSON.parse(await readFile(join(directory, 'package.json')));
-            if (manifest.name && manifest.version) { bundledPackages.set(directory, manifest); break; }
-          } catch (error) { if (error.code !== 'ENOENT') throw error; }
-          directory = dirname(directory);
-        }
-      }
-    }
-  }
+  const bundledPackages = enabled.has('codex') ? await bundleCodexCore({ repositoryRoot, directory: join(full, 'core') }) : new Map();
   if (enabled.has('codex')) {
     // Retain the native executor transport with its independently switched Core payload.
     // Codex uses pipes; terminal consumers use execution/native's packaged node-pty.

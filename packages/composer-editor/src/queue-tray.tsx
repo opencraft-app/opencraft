@@ -43,6 +43,8 @@ export interface ComposerQueueTrayItem {
   readonly dismissible?: boolean;
   readonly reorderable?: boolean;
   readonly editing: boolean;
+  /** Automatic recovery waits do not require a manual Resume action. */
+  readonly resumable?: boolean;
   readonly pausedReason?: string | null;
   readonly error?: string | null;
   readonly unconfirmedTargetTurnId?: string;
@@ -292,7 +294,7 @@ export function ComposerQueueTray({
         <div className="opencraft-composer-queue-tray__heading">
           <CircleAlert size={13} aria-hidden="true" />
           <span>{pausedReason}</span>
-          {hasUnconfirmedDelivery || !items.some(item => item.actionable && item.pausedReason) ? null : (
+          {hasUnconfirmedDelivery || !items.some(item => item.actionable && item.pausedReason && item.resumable !== false) ? null : (
             <button
               className="opencraft-composer-queue-tray__resume"
               type="button"

@@ -54,6 +54,10 @@ export interface TransportFailureDisposition {
 }
 
 export interface TransportStatus {
+  /** Execution availability is independent of a readable, open connection. */
+  readonly execution?: "ready" | "recovering" | "unavailable";
+  /** When present, scopes execution recovery to these existing conversations. */
+  readonly executionUnavailableThreadIds?: readonly string[];
   /** Locally generated physical connection correlation; no remote identity. */
   readonly attemptId?: string;
   /** Local connect boundary, never a claim of Host or Thread readiness. */
@@ -62,6 +66,11 @@ export interface TransportStatus {
   reason?: string;
   /** Omitted by legacy transports, which remain automatically recoverable. */
   failure?: TransportFailureDisposition;
+}
+
+export function executionStatusForThread(status: TransportStatus, threadId?: string | null): NonNullable<TransportStatus["execution"]> {
+  if (threadId && status.executionUnavailableThreadIds) return status.executionUnavailableThreadIds.includes(threadId) ? "recovering" : "ready";
+  return status.execution ?? "ready";
 }
 
 export interface DuplexTransport {

@@ -161,7 +161,8 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
   };
   return { ...primary, servers:descriptors, owns:serverId=>ports.has(serverId), serverForHost,
     directory: () => ({instanceId:machineId, servers:descriptors.map(server => ({serverId:server.serverId,label:server.label,
-      engine:server.engine ?? 'codex', connectionState: getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
+      engine:server.engine ?? 'codex', connectionState: ['recovering','unavailable'].includes(getAppHost()?.hostExecutionState?.(server.hostId))
+        ? 'unavailable' : getAppHost()?.hostState(server.hostId) === 'open' ? 'ready' : 'unknown',
       capabilities:{metadata:true,read:!server.engine,boundedRead:!server.engine,queue:true,steer:!server.engine,discoverFilters:!server.engine}}))}),
     metadata(ref) { const hostId = ports.get(ref.serverId)?.hostId ?? reject(); return select({...ref,hostId}).port.metadata(ref); },
     async discoverMetadata(options) {

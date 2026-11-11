@@ -65,7 +65,12 @@ export function maintainHeadlessCodexHost(appHostServer, {
   };
   const monitor = () => {
     if (controller.signal.aborted) return;
-    if (appHostServer.hostState('local-codex') === 'open') schedule(pollMs, monitor);
+    if (appHostServer.hostState('local-codex') === 'open') {
+      const execution = appHostServer.hostExecutionState?.('local-codex');
+      publish(execution === 'recovering' || execution === 'unavailable'
+        ? {state:'unavailable',code:'codex-execution-unavailable',attempt:0} : {state:'ready',attempt:0});
+      schedule(pollMs, monitor);
+    }
     else void initialize();
   };
   const initialize = async () => {

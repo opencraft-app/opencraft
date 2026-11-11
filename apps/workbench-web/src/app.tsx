@@ -1,3 +1,4 @@
+import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
 import { composerCapabilitiesKey } from "./runtime/composer-capabilities-query";
 import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
@@ -20,6 +21,7 @@ import { reportDisplayPaint } from "./runtime/display-paint-diagnostics";
 import { serverFetch } from "./runtime/server-context";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
+import { ExecutionRecoveryNotice } from "./components/execution-recovery-notice";
 import { useAsyncNotices } from "./components/async-notices";
 import { ContinuationFailureNotice } from "./components/continuation-failure-notice";
 import { useObservedReadiness } from './runtime/observability-react';
@@ -2185,6 +2187,7 @@ export function App({
             hidden={!conversationSurfaceVisible}
             inert={!conversationRouteOpen || undefined}
           >
+        <ExecutionRecoveryNotice hostId={snapshot.hostId} execution={executionStatusForThread(snapshot.transport, snapshot.activeThreadId)} />
         {connectionInterventionNode !== null ? (
           <div className="hostless-workbench__empty-stage">
             {connectionInterventionNode}
