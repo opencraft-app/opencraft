@@ -3,7 +3,7 @@ import type { BridgeDelta, BridgeErrorKind, ItemShape } from '@opencraft/agent-b
 /** The connection is supplied by the existing Core owner. This adapter never
  * launches Codex, opens CODEX_HOME, or owns account/exec-server lifecycle. */
 export interface CodexOwnerPort {
-  configureExecution?(threadId:string,environment:Readonly<Record<string,string>>):Promise<void>;
+  configureExecution?(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs?:number,sessionMcp?:Record<string,unknown>|null):Promise<void>;
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
 }
 export class CodexBridgeError extends Error {
@@ -49,7 +49,7 @@ export class CodexBridge {
     this.sessions.delete(threadId);
     this.emit(threadId, [{ op: 'session.ended', scope: { threadId } }]);
   }
-  async start(threadId: string, params: Record<string, unknown>, cliEnvironment?: Readonly<Record<string,string>>): Promise<unknown> {
+  async start(threadId: string, params: Record<string, unknown>, cliEnvironment?: Readonly<Record<string,string>>,cliPreparationDeadlineMs?:number,sessionMcp?:Record<string,unknown>|null): Promise<unknown> {
     const session = this.session(threadId);
     if (session.activeTurn || session.starting || session.uncertainStart) throw new CodexBridgeError('explicit-reject', 'Turn already active');
     if (!Array.isArray(params.input) || params.input.length === 0 || !params.input.every(value => {
@@ -59,7 +59,7 @@ export class CodexBridge {
     session.starting = true;
     let nativeStartAttempted=false;
     try {
-      if(cliEnvironment){if(!this.owner.configureExecution)throw new CodexBridgeError('unsupported','cliUnavailable');await this.owner.configureExecution(session.nativeId,cliEnvironment);}
+      if(cliEnvironment||sessionMcp!==undefined){if(!this.owner.configureExecution)throw new CodexBridgeError('unsupported','cliUnavailable');await this.owner.configureExecution(session.nativeId,cliEnvironment??{},cliPreparationDeadlineMs,sessionMcp);}
       nativeStartAttempted=true;
       const result = await this.owner.request('turn/start', { ...params, threadId: session.nativeId });
       const nativeTurnId = id(record(record(result).turn).id);

@@ -4,6 +4,8 @@ import { mkdtemp, rm, readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomBytes } from 'node:crypto';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { BridgeHost, attachGateway } from '../../apps/agent-bridge-host/src/index';
@@ -14,6 +16,7 @@ import { Collaboration, type ConversationExecutionPort } from '../../packages/ac
 import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
 import { ThreadOrchestrationBroker, type OrchestrationExecutionPort } from '../../packages/access-control/src/thread-orchestration-broker';
 import { SessionCapabilities } from '../../packages/session-capabilities/src/index';
+import { executionCliSourceToken } from '../../packages/session-capabilities/src/credentials';
 import { hostExecutionCli,waitForExecutionCliBinding } from '../../packages/session-capabilities/src/execution-cli';
 import { SessionCapabilityMcp } from '../../packages/session-capabilities/src/mcp';
 import { encodeConversationRef } from '../../packages/appserver-protocol/src/collaboration';
@@ -29,7 +32,8 @@ async function fixture(t:any) {
     async steer(){},async cancel(){return false;},async read(){return {entries:[{turnId:'t',role:'assistant',text:'Child result'}],nextCursor:null};}};
   const execution:OrchestrationExecutionPort={async create(id){if(!created.has(id))created.set(id,{threadId:'child-'+created.size});return created.get(id)!;},
     async snapshot(threadId){return {threadId,turnId:'child-turn',rootTurnId:'child-root',state:'completed'};}};
-  let service=new Collaboration(join(root,'collaboration.sqlite'),actors,native);
+  let resourceAllowed=true;
+  let service=new Collaboration(join(root,'collaboration.sqlite'),actors,native,Date.now,()=>true,undefined,()=>resourceAllowed);
   let runtimeStorage=new OrchestrationRuntimeWorker(join(root,'collaboration.sqlite'));await runtimeStorage.start();
   let broker=new ThreadOrchestrationBroker(service,execution,Date.now,runtimeStorage);
   service.authorizeExecution(owner,'parent','human-input');service.executionStarted('parent','human-input','human-turn');
@@ -45,14 +49,14 @@ async function fixture(t:any) {
   const leases:{revoke():Promise<void>}[]=[];
   t.after(async()=>{await Promise.all(leases.map(lease=>lease.revoke()));await gateway.close();await host.close();await mcp.close();await broker.close();await runtimeStorage.close();await service.close();actors.close();await rm(root,{recursive:true,force:true});});
   const child=(threadId:string,ownerActorId=owner.actorId,driverKind='pi'):ThreadRelation=>({threadId,ownerActorId,driverKind,serverId:'server',parentThreadId:'parent',lifecycleOwnerThreadId:'parent',forkedFromId:null,visibility:'hidden',engineHostGeneration:null,nativeSessionId:threadId,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:1,hasDirectUserInput:false,userInputExcerpt:null});
-  return {root,actors,owner,other,created,session,capabilities,child,key,get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
+  return {root,actors,owner,other,created,session,capabilities,child,key,execution,revokeResources(){resourceAllowed=false;},get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
     async open(scope:CapabilitySession=session){
-      const issued=await port.issue({serverId:scope.serverId,threadId:scope.threadId,credential:mcp.token(scope)});
+      const issued=await port.issue({serverId:scope.serverId,threadId:scope.threadId,credential:executionCliSourceToken(key,scope)});
       leases.push(issued);
       const context=JSON.parse((await exec(issued.launcher,['context','--json'])).stdout);
       return {...issued,context};
     },
-    async restart(){await mcp.close();await broker.close();await runtimeStorage.close();await service.close();service=new Collaboration(join(root,'collaboration.sqlite'),actors,native);
+    async restart(){await mcp.close();await broker.close();await runtimeStorage.close();await service.close();service=new Collaboration(join(root,'collaboration.sqlite'),actors,native,Date.now,()=>true,undefined,()=>resourceAllowed);
       runtimeStorage=new OrchestrationRuntimeWorker(join(root,'collaboration.sqlite'));await runtimeStorage.start();broker=new ThreadOrchestrationBroker(service,execution,Date.now,runtimeStorage);
       mcp=new SessionCapabilityMcp(capabilities,key,undefined,{descriptorPath:join(root,'capability-endpoint.json'),retainEndpoint:true,authorizeExecution:async scope=>{await service.admittedExecution(scope.threadId,scope.execution!.inputId!);},threadCli:async(scope,request)=>{await waitForExecutionCliBinding(()=>service.admittedExecution(scope.threadId,scope.execution!.inputId!));return broker.cli(scope,request);}});await mcp.listen();},
     async run(launcher:string,...args:string[]){return JSON.parse((await exec(launcher,['thread',...args])).stdout);}};
@@ -94,10 +98,15 @@ test('the real executable delegates once, rediscoveries survive restart, and lat
   assert.equal(tell.delivery,'queued');
   const waited=await f.run(opened.launcher,'wait',ref(first.threadId),'--timeout','1500');assert.equal(waited.settled,true);
   const output=await f.run(opened.launcher,'output',ref(first.threadId));assert.equal(output.history.entries[0].text,'Child result');
-  await assert.rejects(f.run(opened.launcher,'spawn','--prompt','Changed','--idempotency-key','one'));
+  await assert.rejects(f.run(opened.launcher,'spawn','--prompt','Changed','--idempotency-key','one'),
+    (error:any)=>JSON.parse(error.stdout).error==='orchestration_idempotency_conflict');
   await f.restart();const reopened=await f.open();
   assert.equal((await f.run(reopened.launcher,'list','--children')).children.length,1);
   assert.equal((await f.run(reopened.launcher,...spawn)).threadId,first.threadId);assert.equal(f.created.size,1);
+  const descriptor=JSON.parse(await readFile(reopened.connectionFile,'utf8'));
+  const conflict=await fetch(descriptor.url,{method:'POST',headers:{authorization:'Bearer '+descriptor.token,'content-type':'application/json'},
+    body:JSON.stringify({command:'spawn',arguments:{prompt:'Changed again'},idempotencyKey:'one'})});
+  assert.equal(conflict.status,409);assert.equal((await conflict.json() as any).error,'orchestration_idempotency_conflict');assert.equal(f.created.size,1);
   const before=f.created.size;
   await assert.rejects(f.broker.cli({...f.session,execution:{inputId:'forged'}},{command:'spawn',arguments:{prompt:'bad'},idempotencyKey:'bad'}),/delegation_required/);
   assert.equal(f.created.size,before);
@@ -142,9 +151,9 @@ test('signed Server admission is required by the Host port and is rechecked afte
   const f=await fixture(t),issued=await f.open();
   const descriptor=JSON.parse(await readFile(issued.connectionFile,'utf8'));
   // The Host receives the shared signing authority through private composition.
-  const key=f.key,{sessionCapabilityToken}=await import('../../packages/session-capabilities/src/credentials');
+  const key=f.key;
   const port=hostExecutionCli({directory:join(f.root,'host-cli'),endpoint:f.mcp.cliEndpoint,key,launcherEndpoint:()=>descriptor.url});
-  const source={serverId:'server',threadId:'parent',credential:sessionCapabilityToken(key,f.session)};
+  const source={serverId:'server',threadId:'parent',credential:executionCliSourceToken(key,f.session)};
   const hostLease=await port.issue(source);assert.ok(hostLease.environment.OPENCRAFT_THREAD_CLI);
   const hostDescriptor=JSON.parse(await readFile(hostLease.connectionFile,'utf8'));
   assert.notEqual(hostDescriptor.token,source.credential);
@@ -169,7 +178,7 @@ test('Host forwarding loss after a write remains unknown and never retries',asyn
   t.after(()=>new Promise<void>(resolve=>server.close(()=>resolve())));
   const endpoint=`http://127.0.0.1:${(server.address() as {port:number}).port}/thread-cli`;
   const port=hostExecutionCli({directory:join(f.root,'proxy'),endpoint,key:f.key,launcherEndpoint:()=>endpoint});
-  const lease=await port.issue({serverId:'server',threadId:'parent',credential:f.mcp.token(f.session)});
+  const lease=await port.issue({serverId:'server',threadId:'parent',credential:executionCliSourceToken(f.key,f.session)});
   const descriptor=JSON.parse(await readFile(lease.connectionFile,'utf8'));
   const result=await port.forward(descriptor.token,{command:'spawn',arguments:{prompt:'bounded'},idempotencyKey:'one'});
   assert.deepEqual(result,{status:503,body:{error:'thread_cli_outcome_unknown'}});assert.equal(writes,1);
@@ -189,4 +198,48 @@ test('real Host launcher waits for Server Turn binding and rejects a revoked pen
   assert.equal(checks,1);
   f.actors.setEnabled(f.owner.actorId,false,'operator');
   await assert.rejects(f.open(scope));
+});
+
+test('concurrent CLI retries with reordered parameters share one immutable operation',async t=>{
+  const f=await fixture(t),opened=await f.open();
+  let release!:()=>void,secondEntered!:()=>void;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const receivedBoth=new Promise<void>(resolve=>{secondEntered=resolve;});
+  t.after(()=>release());
+  const create=f.execution.create;f.execution.create=async(...args)=>{await gate;return create(...args);};
+  const cli=f.broker.cli.bind(f.broker);let calls=0;
+  f.broker.cli=async(...args)=>{const result=cli(...args);if(++calls===2)secondEntered();return result;};
+  const descriptor=JSON.parse(await readFile(opened.connectionFile,'utf8'));
+  const send=(args:Record<string,string>)=>fetch(descriptor.url,{method:'POST',headers:{authorization:'Bearer '+descriptor.token,'content-type':'application/json'},
+    body:JSON.stringify({command:'spawn',arguments:args,idempotencyKey:'concurrent'})});
+  const first=send({prompt:'bounded',title:'same'}),second=send({title:'same',prompt:'bounded'});
+  await receivedBoth;release();
+  const replies=await Promise.all([first,second]);assert.ok(replies.every(reply=>reply.status===200));
+  const [a,b]=await Promise.all(replies.map(reply=>reply.json())) as any[];
+  assert.equal(a.result.operationId,b.result.operationId);assert.equal(f.created.size,1);
+});
+
+test('MCP credentials keep their tools and cannot bypass the Host CLI audience',async t=>{
+  const f=await fixture(t);
+  f.capabilities.register({id:'mcp-audience',tools:()=>[{name:'im_reply',description:'Reply',inputSchema:{type:'object'}}],async call(){return {sent:true};}});
+  const configuration=f.mcp.config(f.session) as {url:string;http_headers:Record<string,string>};
+  const client=new Client({name:'mcp-regression',version:'1'});t.after(()=>client.close());
+  await client.connect(new StreamableHTTPClientTransport(new URL(configuration.url),{requestInit:{headers:configuration.http_headers}}));
+  assert.deepEqual((await client.listTools()).tools.map(tool=>tool.name),['im_reply']);
+  assert.equal((await client.callTool({name:'im_reply',arguments:{}})).isError,false);
+  const wrongAudience=await fetch(f.mcp.cliEndpoint,{method:'POST',headers:{...configuration.http_headers,'content-type':'application/json'},body:'{"command":"context"}'});
+  assert.equal(wrongAudience.status,401);
+  const cliSource=executionCliSourceToken(f.key,f.session);
+  const wrongMcp=await fetch(configuration.url,{method:'POST',headers:{authorization:'Bearer '+cliSource,'content-type':'application/json'},body:'{}'});
+  assert.equal(wrongMcp.status,401);
+  const opened=await f.open();assert.equal(opened.context.reference,ref('parent'));
+  await opened.revoke();assert.equal((await client.callTool({name:'im_reply',arguments:{}})).isError,false);
+});
+
+test('Host issuance rechecks resource grants for an otherwise current Actor',async t=>{
+  const f=await fixture(t),opened=await f.open();f.revokeResources();
+  assert.equal(f.actors.isCurrent(f.owner),true);
+  await assert.rejects(f.open());
+  await assert.rejects(f.run(opened.launcher,'context'));
+  assert.equal(f.created.size,0);
 });

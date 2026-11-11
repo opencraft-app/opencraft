@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BridgeExecutionAdmissionTransport } from '../../apps/opencraft-daemon/src/bridge-execution-admission';
+import { BridgeExecutionAdmissionTransport,createServerCodexBridge } from '../../apps/opencraft-daemon/src/bridge-execution-admission';
 
 test('bridge admission signs verified sources and leaves legacy collaboration frames intact',async()=>{
   const sent:string[]=[],started:unknown[]=[],received:any[]=[];let native!:(raw:string)=>void,admissions=0;
@@ -22,4 +22,11 @@ test('bridge admission signs verified sources and leaves legacy collaboration fr
   assert.equal(sent.length,2);assert.equal(received.at(-1).error.message,'cliUnavailable');
   native(JSON.stringify({method:'turn/started',params:{threadId:'bridge:codex:one',turn:{id:'turn'}}}));
   assert.deepEqual(started,[['bridge:codex:one','input','turn']]);
+});
+
+
+test('the Server bridge factory leaves the default legacy transport and admission owner untouched',()=>{
+  const legacy:any={};
+  const transport=createServerCodexBridge(legacy,undefined,{async admit(){throw Error('legacy admission replaced');},sign(){throw Error('legacy signed');},started(){throw Error('legacy binding replaced');}});
+  assert.equal(transport,legacy);
 });

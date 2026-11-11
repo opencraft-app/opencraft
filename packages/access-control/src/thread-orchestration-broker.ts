@@ -4,7 +4,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { encodeConversationRef, parseConversationRef } from '@opencraft/appserver-protocol/collaboration';
 import { ACTOR_INPUT_PREFIX, Collaboration, CollaborationError } from './collaboration.js';
 import type { BoundedThreadDelegation, OrchestrationMessageOrigin } from './orchestration-authority.js';
-import type { ChildOutcome, ToolOperation } from './orchestration-ledger.js';
+import { canonical,type ChildOutcome,type ToolOperation } from './orchestration-ledger.js';
 
 export const ORCHESTRATION_TOOL_NAMES = ['thread_spawn','thread_tell','thread_inspect','thread_wait'] as const;
 export type OrchestrationRuntimeSnapshot = import("@opencraft/appserver-protocol/collaboration").ThreadOrchestrationSnapshot;
@@ -35,7 +35,7 @@ export class ThreadOrchestrationBroker {
     if(this.closed)return Promise.reject(new CollaborationError(503,'orchestration_closed'));
     text(threadId);text(turnId);text(toolCallKey,1024);
     this.collaboration.delegation(threadId,turnId,delegationId);
-    const fingerprint=JSON.stringify([threadId,turnId,name,args,delegationId,callbackIncarnation]),prior=this.calls.get(toolCallKey);
+    const fingerprint=JSON.stringify(canonical([threadId,turnId,name,args,delegationId,callbackIncarnation])),prior=this.calls.get(toolCallKey);
     if(prior)return prior.fingerprint===fingerprint?prior.promise:Promise.reject(new CollaborationError(409,'orchestration_call_changed'));
     const call=this.perform(threadId,turnId,toolCallKey,name,args,delegationId,callbackIncarnation).finally(()=>{if(this.calls.get(toolCallKey)?.promise===call)this.calls.delete(toolCallKey);});
     this.calls.set(toolCallKey,{fingerprint,promise:call});return call;

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { executionCapabilitySession } from './credentials.js';
+import { executionCliSourceSession } from './credentials.js';
 import { issueThreadCli } from './thread-cli-provider.js';
 
 /** Server→Host admission port: signed source + live Server authority recheck. */
@@ -22,7 +22,7 @@ export function hostExecutionCli(options:{directory:string;endpoint:string;key:B
       return {status:503,body:{error:'thread_cli_outcome_unknown'}};
     }
   },async issue(source:{serverId:string;threadId:string;credential:string}) {
-    const session=executionCapabilitySession(options.key,source.credential);
+    const session=executionCliSourceSession(options.key,source.credential);
     if(session.serverId!==source.serverId||session.threadId!==source.threadId)throw Error('cliUnavailable');
     const authorize=async()=>{
       const response=await fetch(new URL('/execution-admission',options.endpoint),{method:'POST',

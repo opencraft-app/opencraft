@@ -31,3 +31,14 @@ test('bridge configuration waits for native retirement and rechecks owner lifeti
   });
   assert.equal(reads,3);assert.equal(checks,2);assert.equal(calls.filter(method=>method==='thread/unsubscribe').length,1);
 });
+
+test('bridge retirement budget refuses before applying configuration or starting a Turn',async()=>{
+  const calls:string[]=[];
+  await assert.rejects(refreshCodexExecutionConfiguration('thread',{}, {
+    async request(method){calls.push(method);if(method==='thread/read')return {thread:{status:{type:'idle'}}};return {sandbox:{type:'readOnly'}};},
+    current(){},stage(){},nativeStatus(){},ephemeral(){},cancelRelease(){},retirement:()=>undefined,
+    waitForRetirement:true,retirementTimeoutMs:0,pending:()=>Error('cliUnavailable'),invalidate(){},retire(){},unsubscribed(){},clearRetirement(){},
+  }),/cliUnavailable/);
+  assert.equal(calls.filter(method=>method==='thread/resume').length,1);
+  assert.ok(!calls.includes('turn/start'));
+});

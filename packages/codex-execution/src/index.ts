@@ -9,7 +9,7 @@ export async function refreshCodexExecutionConfiguration(threadId:string,config:
   request(method:string,params:RecordValue):Promise<unknown>;
   current():void; stage(value:ConfigurationStage):void; nativeStatus(value:string):void;
   ephemeral():void; cancelRelease():void; retirement():RecordValue|undefined;
-  waitForRetirement:boolean; pending():Error; invalidate():void; retire(live:RecordValue):void;
+  waitForRetirement:boolean; retirementTimeoutMs?:number; pending():Error; invalidate():void; retire(live:RecordValue):void;
   unsubscribed():void; clearRetirement():void;
 }):Promise<boolean> {
   const {request,current}=ports;
@@ -38,7 +38,7 @@ export async function refreshCodexExecutionConfiguration(threadId:string,config:
           if (status !== "notLoaded") throw ports.pending();
           return;
         }
-        const deadline = Date.now() + 90_000;
+        const deadline = Date.now() + (ports.retirementTimeoutMs??90_000);
         while (status !== "notLoaded") {
           current();
           if (Date.now() >= deadline) throw ports.pending();

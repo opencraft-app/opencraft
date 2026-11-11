@@ -6,7 +6,7 @@ Ordinary conversations may work directly or coordinate child conversations. Ther
 
 The configured Host publishes a private launcher after Server domain admission. No `thread_cli` discovery tool is injected. Use `opencraft context` after compaction to rediscover the current authorized context. Each execution has its own namespace; do not copy another execution's descriptor. Unsupported execution adapters report `cliUnavailable` and do not restore orchestration MCP tools.
 
-The endpoint is loopback-only, rejects browser Origin headers, and requires a signed execution-bound capability. Source server, conversation and execution come from that signed scope, not command arguments. Each operation rechecks the original bounded human delegation and target resource permission. Session-only credentials and unbound executions cannot invoke the CLI. The generated private launcher/configuration live under the managed Host data directory; expiry or revocation of their delegation invalidates operations even if the files remain.
+The endpoint is loopback-only, rejects browser Origin headers, and requires a live opaque Host credential. Host retains the Server-signed execution capability for forwarding. Source server, conversation and execution come from that signed scope, not command arguments. Each operation rechecks the original bounded human delegation and target resource permission. Session-only credentials and unbound executions cannot invoke the CLI. The generated private launcher/configuration live under the managed Host data directory; expiry or revocation of their delegation invalidates operations even if the files remain.
 
 ## Commands
 

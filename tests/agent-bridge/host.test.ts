@@ -19,11 +19,12 @@ const declaration: BridgeDeclaration = {
   capabilities: { model: false, reasoning: false, history: false, usage: false, approval: false, inputContentTypes: ['text'], cliExecutable: false, forkCheckpoint: false, skills: false, installation: false,
     steer: { deliveryMethods: [], evidenceKinds: [], withdrawal: 'none', contentLimits: { maxBytes: 1024, allowedContentTypes: ['text'] }, maxPendingWithoutNativeId: 1, fallbackPolicy: 'reject-unknown' } },
 };
-async function config(root: string, id = 'g1', hostPid = process.pid): Promise<Generation> {
+async function config(root: string, id = 'g1', hostPid = process.pid,cliExecutable=false): Promise<Generation> {
   const artifact = resolve('tests/agent-bridge/fixtures/fake-bridge.mjs');
-  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, declaration);
+  const provider={...declaration,capabilities:{...declaration.capabilities,cliExecutable}};
+  const handshake = negotiateHandshake({ protocolVersion: 1, grammarRange: { min: 1, max: 1 } }, provider);
   assert(handshake.ok);
-  return { id, artifact, digest: createHash('sha256').update(await readFile(artifact)).digest('hex'), provider: declaration,
+  return { id, artifact, digest: createHash('sha256').update(await readFile(artifact)).digest('hex'), provider,
     launch: { command: [process.execPath, artifact], cwd: root, env: { HANDSHAKE: JSON.stringify(handshake.result), EXECUTIONS: join(root, 'executions'), HOST_PID: String(hostPid) } } };
 }
 const policy = { id: 'test-bridge', capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } };
@@ -286,10 +287,7 @@ test('execution CLI issuance follows custody admission, refuses missing proof an
       return {environment:{OPENCRAFT_THREAD_CLI:'fixture'},async revoke(){revoked++;}};},
   }});
   t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});
-  const generation=await config(root);
-  generation.provider={...generation.provider,capabilities:{...generation.provider.capabilities,cliExecutable:true}};
-  const handshake=negotiateHandshake({protocolVersion:1,grammarRange:{min:1,max:1}},generation.provider);assert.ok(handshake.ok);
-  generation.launch={...generation.launch,env:{...generation.launch.env,HANDSHAKE:JSON.stringify(handshake.result)}};
+  const generation=await config(root,'g1',process.pid,true);
   await host.add(generation);await host.activate('g1','');
   await host.accept(command('create'));await accepted(host,'create');
   await host.accept(command('denied','turn/start'));
@@ -298,6 +296,59 @@ test('execution CLI issuance follows custody admission, refuses missing proof an
   await assert.rejects(readFile(join(root,'executions')));
   await host.accept(command('allowed','turn/start',{executionSource:'signed-source'}));await accepted(host,'allowed');
   assert.equal(issued,1);assert.equal((await readFile(join(root,'executions'),'utf8')).trim().split('\n').length,1);
+  await host.accept(command('close-refused','session/close',{refuse:true}));
+  await until(()=>host.query('close-refused'),receipt=>receipt?.state==='rejected');
+  assert.equal(revoked,0,'a rejected close keeps the running execution credential live');
   await until(async()=>revoked,count=>count===1);
   await host.accept(command('allowed','turn/start',{executionSource:'signed-source'}));assert.equal(issued,1);
+});
+
+test('a rejected concurrent CLI admission cannot clear another command reservation',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-cli-reservation-'));
+  let release!:()=>void,issued=0;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async issue(){issued++;await gate;return {environment:{OPENCRAFT_THREAD_CLI:'fixture'},async revoke(){}};},
+  }});
+  t.after(async()=>{release();await host.close();await rm(root,{recursive:true,force:true});});
+  const generation=await config(root,'g1',process.pid,true);
+  await host.add(generation);await host.activate('g1','');await host.accept(command('create'));await accepted(host,'create');
+  await host.accept(command('first','turn/start',{executionSource:'source'}));
+  await until(async()=>issued,value=>value===1);
+  for(const id of ['second','third']) {
+    await host.accept(command(id,'turn/start',{executionSource:'source'}));
+    await until(()=>host.query(id),receipt=>receipt?.state==='rejected');
+  }
+  assert.equal(issued,1);release();await accepted(host,'first');
+});
+
+test('a late CLI lease is revoked when its provider exits during issuance',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-cli-late-'));
+  let release!:()=>void,issued=0,revoked=0;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async issue(){issued++;await gate;return {environment:{OPENCRAFT_THREAD_CLI:'fixture'},async revoke(){revoked++;}};},
+  }});
+  t.after(async()=>{release();await host.close();await rm(root,{recursive:true,force:true});});
+  await host.add(await config(root,'g1',process.pid,true));await host.activate('g1','');
+  await host.accept(command('create'));const created=await accepted(host,'create');
+  const pid=(created!.response as any).result.pid;
+  await host.accept(command('pending','turn/start',{executionSource:'source'}));
+  await until(async()=>issued,value=>value===1);
+  process.kill(pid,'SIGKILL');
+  await until(async()=>host.diagnostics() as {failed:boolean}[],rows=>rows.some(row=>row.failed));
+  release();await until(()=>host.query('pending'),receipt=>receipt?.state==='rejected');
+  assert.equal(revoked,1);await assert.rejects(readFile(join(root,'executions')));
+});
+
+test('a Host CLI port does not block generations that do not declare CLI support',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bridge-no-cli-'));
+  const host=await BridgeHost.open({path:join(root,'host.db'),policy,backend:localTestBackend(),executionCli:{
+    async issue(){throw Error('Unsupported generation reached CLI issuance');},
+  }});
+  t.after(async()=>{await host.close();await rm(root,{recursive:true,force:true});});
+  await host.add(await config(root));await host.activate('g1','');
+  await host.accept(command('create'));await accepted(host,'create');
+  await host.accept(command('start','turn/start'));await accepted(host,'start');
+  assert.equal((await readFile(join(root,'executions'),'utf8')).trim().split('\n').length,1);
 });

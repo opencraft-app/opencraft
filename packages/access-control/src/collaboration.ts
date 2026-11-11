@@ -314,6 +314,9 @@ export class Collaboration {
     if(!storage.admission)throw new CollaborationError(503,'execution_admission_unavailable');
     const row=await storage.admission(threadId,inputId);
     if(!row || !this.#validDelegation(row))throw new CollaborationError(403,'execution_delegation_revoked');
+    const context:ActorContext={actorId:String(row.actor_id),generation:Number(row.generation),credentialId:row.credential_id as string|null,expiresAt:Number(row.expires_at)};
+    const serverId=this.execution.serverForThread?.(threadId)??this.execution.serverId;
+    if(!serverId||!this.conversationAllowed(context,{serverId,threadId},'execution.delegate'))throw new CollaborationError(403,'conversation_action_denied');
     return {turnId:typeof row.turn_id==='string'?row.turn_id:null};
   }
 

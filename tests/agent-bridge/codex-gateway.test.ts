@@ -10,6 +10,7 @@ import { build } from 'esbuild';
 import { BridgeHost } from '../../apps/agent-bridge-host/src/host.js';
 import { attachGateway } from '../../apps/agent-bridge-host/src/server.js';
 import { codexDeclaration } from '../../apps/agent-bridge-host/src/codex-declaration.js';
+import { createServerCodexBridge } from '../../apps/opencraft-daemon/src/bridge-execution-admission';
 import { CodexProviderBridge } from '../../apps/opencraft-daemon/src/codex-provider-bridge.js';
 import { localTestBackend } from './fixtures/local-backend.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
@@ -20,7 +21,7 @@ async function until<T>(read: () => T | Promise<T>, predicate: (v: T) => boolean
   throw Error('Expected condition not observed');
 }
 
-test('bundled Codex bridge through durable Host and existing AppServer transport: opt-in, steer, gateway reattach and ID continuity', async t => {
+for(const cli of [false,true,'timeout'])test(`bundled Codex bridge through durable Host: CLI ${cli}, opt-in, steer, reattach and ID continuity`, async t => {
   const root = await mkdtemp(join(tmpdir(), 'codex-p2a-'));
   const native = createServer(), control = createServer((req, res) => {
     assert.equal(req.headers.authorization, `Bearer ${token}`);
@@ -29,6 +30,7 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   const ws = new WebSocketServer({ server: native });
   let nativePeer: WebSocket | undefined, starts = 0, steers = 0;
   let approvalAnswer: unknown, approvalAnswers = 0;
+  let loaded=true,nativeActive=false,issued=0,revoked=0,blockRetirement=cli==='timeout';const nativeConfigurations:any[]=[];
   ws.on('connection', socket => {
     nativePeer = socket;
     socket.on('message', raw => {
@@ -40,7 +42,8 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
       if (f.method === 'thread/start') reply({ thread: { id: 'native-new', cwd: root, turns: [] } });
       if (f.method === 'turn/start' && f.params.clientUserMessageId === 'unknown-start') { socket.send(JSON.stringify({ id: f.id, error: { code: -32000, message: 'Opaque native failure' } })); return; }
       if (f.method === 'turn/start') {
-        starts++; event('turn/started', { threadId: 'native-new', turn: { id: 'native-turn' } });
+        assert.equal(f.params.opencraftExecutionAdmission,undefined);assert.equal(f.params.executionSource,undefined);assert.equal(f.params.opencraftSessionMcp,undefined);
+        nativeActive=true;starts++; event('turn/started', { threadId: 'native-new', turn: { id: 'native-turn' } });
         event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'inProgress' } });
         reply({ turn: { id: 'native-turn', status: 'inProgress', items: [] } });
       }
@@ -49,8 +52,10 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
         event('item/started', { threadId: 'native-new', turnId: 'native-turn', item: { type: 'userMessage', id: 'steer-item', clientId: f.params.clientUserMessageId, content: f.params.input } });
         reply({ turnId: 'native-turn' });
       }
-      if (f.method === 'thread/read') reply({ thread: { id: 'native-new', turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
-      if (f.method === 'thread/resume') reply({ thread: { id: 'native-new', turns: [] } });
+      if (f.method === 'thread/read') reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
+      if(f.method==='thread/unsubscribe'){if(!blockRetirement)loaded=false;reply({});}
+      if(f.method==='thread/settings/update')reply({});
+      if (f.method === 'thread/resume') {loaded=true;if(f.params.config)nativeConfigurations.push(f.params);reply({sandbox:{type:'readOnly'},approvalPolicy:'never',thread: { id: 'native-new', turns: [] }});}
     });
   });
   await new Promise<void>(r => native.listen(join(root, 'native.sock'), r));
@@ -59,9 +64,10 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   await writeFile(config, JSON.stringify({ endpoint: join(root, 'control.sock'), token }), { mode: 0o600 });
   const artifact = join(root, 'codex.cjs');
   await build({ entryPoints: [resolve('apps/agent-bridge-host/src/codex-main.ts')], outfile: artifact, bundle: true, platform: 'node', format: 'cjs' });
-  const host = await BridgeHost.open({ path: join(root, 'host.db'), policy: { id: 'p2a-test', capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } }, backend: localTestBackend() });
+  const host = await BridgeHost.open({ path: join(root, 'host.db'), policy: { id: 'p2a-test', capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 } }, backend: localTestBackend(),...(cli==='timeout'?{requestTimeoutMs:1000}:{}),...(cli?{executionCli:{async issue(source:any){assert.ok(source.credential.startsWith('signed:'));issued++;return {environment:{OPENCRAFT_THREAD_CLI:'fixture',PATH:'fixture'},async revoke(){revoked++;}};}}}:{}) });
   const attachment = await attachGateway(host, token);
-  let transport: CodexProviderBridge | undefined;
+  let transport: any;
+  const currentGateway=()=> (cli?transport.inner:transport).gateway;
   t.after(async () => { await transport?.close(); await attachment.close(); await host.close(); ws.close(); await Promise.all([new Promise<void>(r => native.close(() => r())), new Promise<void>(r => control.close(() => r()))]); await rm(root, { recursive: true, force: true }); });
   await host.add({ id: 'codex-1', artifact, digest: createHash('sha256').update(await readFile(artifact)).digest('hex'), provider: codexDeclaration, launch: { command: [process.execPath, artifact, config], cwd: root, env: {} } });
   await host.activate('codex-1', '');
@@ -76,7 +82,11 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
         if (f.id !== undefined) legacyListener(JSON.stringify({ id: f.id, [LOGICAL_CLIENT_FIELD]: 'client', result: f.method === 'initialize' ? { capabilities: {} } : { data: [{ id: 'native-old' }, { id: 'native-new' }] } }));
       },
     };
-    const next = new CodexProviderBridge(legacy, { url: attachment.url, token, serverId: 'server', inboxPath: join(root, 'gateway.db') });
+    const options={url:attachment.url,token,serverId:'server',inboxPath:join(root,'gateway.db')};
+    const next=cli?createServerCodexBridge(legacy,options,{
+      async admit(threadId,inputId){return {serverId:'server',threadId,execution:{inputId,executionId:inputId}};},
+      sign:scope=>'signed:'+scope.execution!.inputId,sessionMcp:async()=>({url:'http://127.0.0.1:1/mcp',http_headers:{Authorization:'Bearer platform-mcp'}}),started:()=>{},
+    }):new CodexProviderBridge(legacy,options);
     next.subscribeMessage(raw => frames.push(JSON.parse(raw))); await next.connect(); return next;
   };
   transport = await createTransport();
@@ -90,13 +100,24 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   await request('initialize', { capabilities: { extensions: { 'opencraft/steer-evidence': { version: 1 } } } });
   const created = await request('thread/start', { cwd: root, approvalPolicy: 'never', sandbox: 'read-only', agentBridge: { threadId: 'bridge:codex:public-new', clientRequestId: 'create' } });
   assert.equal(created.thread.id, 'bridge:codex:public-new');
+  if(cli==='timeout') {
+    const failedId=++sequence;
+    await transport.send(JSON.stringify({id:failedId,method:'turn/start',params:{threadId:'bridge:codex:public-new',clientUserMessageId:'prepare-timeout',input:[{type:'text',text:'not sent'}]},[LOGICAL_CLIENT_FIELD]:'client'}));
+    const failed=await until(()=>frames.find(frame=>frame.id===failedId),Boolean);
+    assert.equal(failed.error.data.submissionOutcome,'rejected');
+    assert.equal((await host.query(failed.error.data.bridgeCommandId))?.state,'rejected');
+    assert.equal(starts,0);assert.equal(revoked,1);
+    blockRetirement=false;loaded=false;
+  }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' }] });
+  if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');
   nativePeer!.send(JSON.stringify({ id: 'native-approval', method: 'item/commandExecution/requestApproval', params: { threadId: 'native-new', turnId: 'native-turn', itemId: 'tool', command: 'cat input.txt' } }));
   const approval = await until(() => frames.find(f => f.method === 'item/commandExecution/requestApproval'), Boolean);
   assert.equal(approval.params.threadId, 'bridge:codex:public-new');
   assert.equal(approval.params.turnId, turnId); assert.notEqual(approval.params.itemId, 'tool');
-  const answerApproval = () => transport!.send(JSON.stringify({ id: approval.id, result: { decision: 'decline' }, [LOGICAL_CLIENT_FIELD]: 'client' }));
+  const approvalDecision = cli===true ? 'accept' : 'decline';
+  const answerApproval = () => transport!.send(JSON.stringify({ id: approval.id, result: { decision: approvalDecision }, [LOGICAL_CLIENT_FIELD]: 'client' }));
   await request('thread/unsubscribe', { threadId: 'bridge:codex:public-new' });
   await assert.rejects(answerApproval(), /Interaction subscription required/);
   assert.equal(approvalAnswer, undefined);
@@ -121,10 +142,10 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   assert.equal(frames.filter(f => f.id === approval.id && f.method === approval.method).length, 3);
   await answerApproval();
   await until(() => approvalAnswer, Boolean);
-  assert.deepEqual(approvalAnswer, { decision: 'decline' });
+  assert.deepEqual(approvalAnswer, { decision: approvalDecision });
   await assert.rejects(answerApproval(), /Interaction subscription required/);
   assert.equal(approvalAnswers, 1);
-  assert.equal((transport as any).gateway.interactions.size, 0, 'accepted settlement releases cached request body');
+  assert.equal(currentGateway().interactions.size, 0, 'accepted settlement releases cached request body');
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   await request('turn/steer', { threadId: 'bridge:codex:public-new', expectedTurnId: turnId, clientUserMessageId: 'steer', input: [{ type: 'text', text: 'stop after reading' }] });
   assert.equal(starts, 1); assert.equal(steers, 1);
@@ -140,14 +161,15 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   nativePeer!.send(JSON.stringify({ method: 'serverRequest/resolved', params: { threadId: 'native-new', requestId: 'external-approval' } }));
   await until(() => frames.some(f => f.method === 'serverRequest/resolved' && f.params.requestId === external.id), Boolean);
   await assert.rejects(transport.send(JSON.stringify({ id: external.id, result: { decision: 'accept' }, [LOGICAL_CLIENT_FIELD]: 'client' })), /Interaction subscription required/);
-  assert.equal((transport as any).gateway.interactions.size, 0, 'native resolution releases cached request body');
+  assert.equal(currentGateway().interactions.size, 0, 'native resolution releases cached request body');
   const beforeRestart = frames.filter(f => f.method === 'turn/started').length;
   await transport.close(); transport = await createTransport();
   await request('initialize'); await request('thread/resume', { threadId: 'bridge:codex:public-new' });
   assert.equal(frames.filter(f => f.id === approval.id && f.method === approval.method).length, 3, 'settled approval must not reappear from inbox replay');
   assert.equal(frames.filter(f => f.id === external.id && f.method === external.method).length, 1, 'external settlement must not reappear after replacement');
-  assert.equal((transport as any).gateway.interactions.size, 0, 'historical settled bodies are not retained during replay');
+  assert.equal(currentGateway().interactions.size, 0, 'historical settled bodies are not retained during replay');
   nativePeer!.send(JSON.stringify({ method: 'item/completed', params: { threadId: 'native-new', turnId: 'native-turn', item: { type: 'commandExecution', id: 'tool', command: 'cat input.txt', cwd: root, status: 'completed', aggregatedOutput: 'fixture' } } }));
+  nativeActive=false;
   nativePeer!.send(JSON.stringify({ method: 'turn/completed', params: { threadId: 'native-new', turn: { id: 'native-turn', status: 'completed' } } }));
   await until(() => frames.some(f => f.method === 'turn/completed'), Boolean);
   assert.equal(frames.filter(f => f.method === 'turn/started').length, beforeRestart);
@@ -166,5 +188,5 @@ test('bundled Codex bridge through durable Host and existing AppServer transport
   nativePeer!.terminate();
   await until(() => frames.some(f => f.method === 'serverRequest/resolved' && f.params.requestId === lost.id), Boolean);
   assert.deepEqual((await host.snapshot()).interactions, []);
-  assert.equal((transport as any).gateway.interactions.size, 0);
+  assert.equal(currentGateway().interactions.size, 0);
 });

@@ -9,7 +9,7 @@ import type { CapabilityBindings } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
 
 export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
-import { sessionCapabilityToken } from "./credentials.js";
+import { sessionCapabilityToken,executionCliSourceSession } from "./credentials.js";
 export class SessionCapabilityMcp {
   private url: string | undefined;
   private readonly server;
@@ -52,6 +52,9 @@ export class SessionCapabilityMcp {
     try {
       const pair = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
       if (!Array.isArray(pair)) return null;
+      const cliRoute=request.url==='/thread-cli'||request.url==='/execution-admission';
+      if(pair[0]==='execution-cli')return cliRoute?{session:executionCliSourceSession(this.key,auth.slice(7))}:null;
+      if(cliRoute)return null;
       if (pair[0] === "execution" && pair.length === 4) {
         const [_, serverId, threadId, execution] = pair;
         if (![serverId, threadId].every(v => typeof v === "string" && v && v.length <= 512)

@@ -42,7 +42,7 @@ export interface ExecutionCliPort {
 export interface HostOptions { executionCli?: ExecutionCliPort; path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
 export class BridgeHost {
   private readonly cliGenerations = new Map<string,string>();
-  private readonly cliPending = new Set<string>();
+  private readonly cliPending = new Map<string,string>();
   private readonly cliClosedTurns = new Map<string,string>();
   private readonly cliLeases = new Map<string,ExecutionCliLease>();
   private storage: Storage;
@@ -179,22 +179,22 @@ export class BridgeHost {
         await this.storage.call('settle', { id: command.commandId, state: 'rejected' }); return;
       }
       let cliEnvironment: Readonly<Record<string,string>> | undefined;
-      if(command.method==='turn/start' && this.options.executionCli) {
+      if(command.method==='turn/start' && this.options.executionCli && this.capabilities.get(receipt.generation)?.cliExecutable) {
         try {
-          if(!this.capabilities.get(receipt.generation)?.cliExecutable)throw Error('cliUnavailable');
           const credential=command.params.executionSource;
           if(typeof credential!=='string'||credential.length>4096)throw Error('cliUnavailable');
           if(this.cliLeases.has(receipt.route)||this.cliPending.has(receipt.route))throw Error('cliUnavailable');
-          this.cliPending.add(receipt.route);
+          this.cliPending.set(receipt.route,command.commandId);
           const lease=await this.options.executionCli.issue({serverId:command.serverId,threadId:command.threadId,credential});
+          if(this.closing||peer.diagnostic().failed){await lease.revoke();throw Error('cliUnavailable');}
           this.cliLeases.set(receipt.route,lease);this.cliGenerations.set(receipt.route,receipt.generation);cliEnvironment=lease.environment;
         } catch {
           await this.storage.call('settle',{id:command.commandId,state:'rejected',response:{jsonrpc:'2.0',id:`host-command:${command.commandId}`,
             error:{code:-32001,kind:'unsupported',message:'cliUnavailable'}}});return;
-        } finally {this.cliPending.delete(receipt.route);}
+        } finally {if(this.cliPending.get(receipt.route)===command.commandId)this.cliPending.delete(receipt.route);}
       }
       const {executionSource:_executionSource,...providerParams}=command.params;
-      const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...providerParams, ...(cliEnvironment?{cliEnvironment}:{}), threadId: receipt.route, executionEpoch: receipt.epoch });
+      const response = await peer.request(`host-command:${command.commandId}`, command.method, { ...providerParams, ...(cliEnvironment?{cliEnvironment}:{}),...(cliEnvironment||command.params.sessionMcp!==undefined?{cliPreparationDeadlineMs:Date.now()+Math.min(10000,Math.max(1,Math.floor((this.options.requestTimeoutMs??30000)/2)))}:{}), threadId: receipt.route, executionEpoch: receipt.epoch });
       const state = dispatchSettlement(response);
       await this.storage.call('settle', { id: command.commandId, response, state, interactionId: command.params.interactionId });
       if (state === 'rejected' && command.method === 'session/create') {
@@ -206,7 +206,7 @@ export class BridgeHost {
           await this.storage.call('abandon', { route: receipt.route, id: command.commandId }).catch(() => {});
         }
       }
-      if(state==='rejected' || command.method==='turn/stop' && state==='accepted' || command.method==='session/close' && state==='accepted') {
+      if(state==='rejected' && cliEnvironment!==undefined || command.method==='turn/stop' && state==='accepted' || command.method==='session/close' && state==='accepted') {
         const lease=this.cliLeases.get(receipt.route);
         if(lease){await lease.revoke();this.cliLeases.delete(receipt.route);}
       }

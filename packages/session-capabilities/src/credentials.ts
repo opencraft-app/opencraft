@@ -21,15 +21,22 @@ export function sessionCapabilityToken(key: Buffer, session: CapabilitySession):
   return payload + "." + createHmac("sha256", key).update(payload).digest("base64url");
 }
 
+/** Dedicated execution admission audience; MCP credentials retain their existing audience. */
+export function executionCliSourceToken(key:Buffer,session:CapabilitySession):string {
+  if(!session.execution?.inputId||!session.execution.executionId)throw Error('cliUnavailable');
+  const payload=Buffer.from(JSON.stringify(['execution-cli',session.serverId,session.threadId,session.execution])).toString('base64url');
+  return payload+'.'+createHmac('sha256',key).update(payload).digest('base64url');
+}
+
 /** Verify the existing execution capability without trusting transport metadata. */
-export function executionCapabilitySession(key:Buffer,token:string):CapabilitySession {
+export function executionCliSourceSession(key:Buffer,token:string):CapabilitySession {
   const [payload,signature,...extra]=token.split('.');
   if(!payload||!signature||extra.length||token.length>4096)throw Error('cliUnavailable');
   const expected=createHmac('sha256',key).update(payload).digest();
   const actual=Buffer.from(signature,'base64url');
   if(actual.length!==expected.length||!timingSafeEqual(actual,expected))throw Error('cliUnavailable');
   const claims=JSON.parse(Buffer.from(payload,'base64url').toString());
-  if(!Array.isArray(claims)||claims.length!==4||claims[0]!=='execution'
+  if(!Array.isArray(claims)||claims.length!==4||claims[0]!=='execution-cli'
     || ![claims[1],claims[2]].every(v=>typeof v==='string'&&v.length>0&&v.length<=512)
     || !claims[3]||typeof claims[3]!=='object'||Array.isArray(claims[3])
     || Object.keys(claims[3]).some(k=>!['executionId','inputId','turnId','incarnation','callId'].includes(k))
