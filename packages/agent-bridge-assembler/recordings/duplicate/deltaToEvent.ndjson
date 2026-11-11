@@ -1,0 +1,5 @@
+{"seq":1,"run":"duplicate","lane":"deltaToEvent","line":"{\"op\":\"turn.open\",\"nativeTurnId\":\"n1\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":2,"run":"duplicate","lane":"deltaToEvent","line":"{\"op\":\"item.open\",\"nativeKey\":\"k1\",\"shape\":{\"kind\":\"tool\",\"name\":\"fake.tool\",\"status\":\"inProgress\"},\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":3,"run":"duplicate","lane":"deltaToEvent","line":"{\"op\":\"item.close\",\"nativeKey\":\"k1\",\"shape\":{\"kind\":\"tool\",\"name\":\"fake.tool\",\"status\":\"completed\",\"output\":\"[content:f607d804]\"},\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":4,"run":"duplicate","lane":"deltaToEvent","line":"{\"op\":\"item.close\",\"nativeKey\":\"k1\",\"shape\":{\"kind\":\"tool\",\"name\":\"fake.tool\",\"status\":\"completed\",\"output\":\"[content:f607d804]\"},\"scope\":{\"threadId\":\"thr-fixture\"}}"}
+{"seq":5,"run":"duplicate","lane":"deltaToEvent","line":"{\"op\":\"turn.boundary\",\"nativeTurnId\":\"n1\",\"status\":\"completed\",\"scope\":{\"threadId\":\"thr-fixture\"}}"}

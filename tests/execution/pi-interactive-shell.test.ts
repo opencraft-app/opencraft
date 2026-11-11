@@ -65,6 +65,38 @@ test("short bash returns its result inline without an extra model continuation",
   assert.equal((await f.native.snapshot()).submissions.length,1);
 });
 
+test("completed background commands waiting behind a report share one continuation", async t => {
+  let entered!: () => void, release!: () => void;
+  const enteredPromise = new Promise<void>(resolve => entered = resolve);
+  const released = new Promise<void>(resolve => release = resolve);
+  const results: string[][] = [];
+  const acknowledge = (ctx: any) => {
+    results.push(ctx.messages.filter((message: any) => message.role === "user"
+      && typeof message.content === "string" && message.content.startsWith("Background shell result ("))
+      .map((message: any) => message.content));
+    return fauxAssistantMessage("background results acknowledged");
+  };
+  const f = await fixture(t, [
+    fauxAssistantMessage(fauxToolCall("bash", { command: "sleep 0.1; printf first-result", yield_time_ms: 0 }), { stopReason: "toolUse" }),
+    fauxAssistantMessage(fauxToolCall("bash", { command: "sleep 0.1; printf second-result", yield_time_ms: 0 }), { stopReason: "toolUse" }),
+    async () => { entered(); await released; return fauxAssistantMessage("main report"); },
+    acknowledge, acknowledge,
+  ]);
+  await f.native.submit("run", inputData, "original");
+  await enteredPromise;
+  try {
+    await eventually(async () => (await f.native.snapshot()).submissions.filter(s => s.requestId?.startsWith("pi-shell:")).length === 2);
+  } finally { release(); }
+  await eventually(async () => !(await f.native.snapshot()).live.run);
+  assert.equal(results.length, 1, "queued shell results must not each force a separate model reply");
+  assert.equal(results[0]!.length, 2, "the continuation must see every queued result");
+  assert.match(results[0]!.join("\n"), /first-result/);
+  assert.match(results[0]!.join("\n"), /second-result/);
+  const receipts = (await f.native.snapshot()).submissions.filter(s => s.requestId?.startsWith("pi-shell:"));
+  assert.equal(receipts.length, 2, "each command retains its own durable receipt");
+  assert.ok(receipts.every(s => s.status === "done"));
+});
+
 test("headless worker supports output, input and cancellation; workers isolate sessions and exit without retained timers", async t => {
   const directory=await mkdtemp(join(tmpdir(),"pi-shell-pty-"));
   const events:any[]=[];

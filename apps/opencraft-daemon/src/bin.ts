@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { readCodexBridgeConfiguration } from "./bridge-execution-admission.js";
 import { startOpenCraftDaemon } from "./main.js";
 
 function argument(name: string): string | undefined {
@@ -18,7 +19,7 @@ function requiredEnvironment(name: string): string {
   return value;
 }
 
-void startOpenCraftDaemon({
+void (async () => startOpenCraftDaemon({
   endpoint: requiredArgument("--endpoint"),
   runtimeDirectory: requiredArgument("--runtime-directory"),
   authToken: requiredEnvironment("OPENCRAFT_DAEMON_AUTH_TOKEN"),
@@ -32,9 +33,10 @@ void startOpenCraftDaemon({
   codexDataDirectory: requiredArgument("--codex-data-directory"),
   nativeCodexHomeDirectory: requiredArgument("--native-codex-home-directory"),
   codexCoreEndpoint: argument("--codex-core-endpoint"),
+  codexAgentBridge: await readCodexBridgeConfiguration(argument('--codex-agent-bridge-config')),
   codexWriterOwnership: process.argv.includes("--codex-writer-ownership"),
   machineName: argument("--machine-name"),
-}).then((daemon) => {
+}))().then((daemon) => {
   process.stdout.write(`${JSON.stringify({ type: "opencraft-daemon-ready", endpoint: daemon.endpoint, pid: process.pid })}\n`);
   const shutdown = () => void daemon.close().finally(() => process.exit(0));
   process.once("SIGINT", shutdown);

@@ -120,6 +120,7 @@ export interface UserMessageTimelineBlock extends TimelineBlockBase<"user-messag
   readonly clientId: string | null;
   /** Host-authored hidden provenance, independent of message text and Turn owner. */
   readonly sender?: { readonly kind: "employee"; readonly loginName: string } | null;
+  readonly steerEvidence?: import("@opencraft/appserver-protocol").SteerInputStatus;
   readonly steeringStatus: "pending" | "accepted" | "declined" | "cancelled" | null;
   /** Turn start time for the leading message; steering/hook messages may be timeless. */
   readonly sentAtMs: number | null;

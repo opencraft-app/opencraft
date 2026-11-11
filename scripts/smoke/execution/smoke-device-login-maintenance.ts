@@ -16,6 +16,8 @@ const retained = { imageAffinities: [], resetReceipts: [], loginReceipts: [[sess
   { expiresAt: Date.now() + 60_000, result: original }]] as any };
 const source = `
 import React from 'react';import {createRoot} from 'react-dom/client';
+import {LocaleRuntime} from '/packages/i18n/src/index.ts';
+import {IntlRuntimeProvider} from '/packages/i18n/src/react.tsx';
 import {createCodexAccountsView} from '/plugins/builtin-agents/src/codex-accounts/view.tsx';
 import {CodexAccountsService} from '/plugins/builtin-agents/src/codex-accounts/service.ts';
 import {buildOpenCraftThemeCssProperties,opencraftNeutralThemePalette} from '/packages/design-system/src/theme-engine.ts';
@@ -31,7 +33,7 @@ await service.refresh();
 // Reconstruct the client's existing pre-migration login; this synthetic start
 // response never dispatches a new Native login or cancellation.
 window.maintenanceProbe=async()=>{await service.startDeviceLogin();await service.pollDeviceLogin()};
-const View=createCodexAccountsView(service);createRoot(document.getElementById('root')).render(<View/>);
+const View=createCodexAccountsView(service);createRoot(document.getElementById('root')).render(<IntlRuntimeProvider runtime={new LocaleRuntime([])}><View/></IntlRuntimeProvider>);
 `;
 let owner: CodexAccountService | undefined;
 const server = await createServer({ configFile: false, root: process.cwd(), logLevel: "error",

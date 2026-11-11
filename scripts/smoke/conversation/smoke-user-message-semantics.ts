@@ -42,6 +42,10 @@ try {
     await page.addInitScript({ content: `Object.defineProperty(navigator, "clipboard", { value: { async writeText(text) { document.documentElement.dataset.copied = text; } } });` });
     await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}/${theme === "dark" ? "?dark" : ""}`, { waitUntil: "domcontentloaded" });
     const example = (id: string) => page.locator(`[data-case="${id}"]`);
+    await example("bridge-admission").getByText("Accepted; context not yet confirmed", { exact: true }).waitFor();
+    assert.equal(await example("bridge-unknown").getByText("Delivery unconfirmed", { exact: true }).count(), 1);
+    await example("bridge-confirmed").getByText("Input confirmed in task context", { exact: true }).waitFor();
+    assert.equal(await example("bridge-admission").getByText("Input confirmed in task context", { exact: true }).count(), 0);
     await example("goal").locator("[data-status-kind=goal]").waitFor();
     await example("goal").locator("[data-user-message-bubble]").getByText("Ship the release", { exact: true }).waitFor();
     assert.equal(await example("goal").locator("[data-user-message-bubble]").innerText(), "Ship the release");

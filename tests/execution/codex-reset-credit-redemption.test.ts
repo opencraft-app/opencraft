@@ -155,6 +155,9 @@ test("client preserves retry key after lost RPC and never publishes late data af
 
 test("independent account owner exposes capability and both RPCs with synthetic upstream only", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-reset-core-rpc-"));
+  // This owner starts without a test clock, so its coupon must stay unexpired
+  // against the real wall clock instead of a fixed calendar date.
+  const unexpiredCredit = { ...credit, expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString() };
   const store = new AccountPoolStore({ databasePath: join(root, "account-pool.sqlite"), secretsDirectory: join(root, "secrets") });
   store.addAccount({ id: "a", provider: "codex", label: "A", upstreamAccountId: "synthetic-upstream", priority: 1, enabled: true },
     { accessToken: "synthetic-access", refreshToken: "synthetic-refresh", expiresAt: null });
@@ -163,7 +166,7 @@ test("independent account owner exposes capability and both RPCs with synthetic 
   const owner = await CodexAccountService.start({ executable: process.execPath, dataDirectory: root,
     nativeCodexHomeDirectory: join(root, "native"), fetch: async (url, init) => {
       if (init?.method === "POST") { posts++; return Response.json({ outcome: "nothing_to_reset" }); }
-      return Response.json(String(url).endsWith("/usage") ? { rate_limit_reset_credits: { available_count: 2 } } : details());
+      return Response.json(String(url).endsWith("/usage") ? { rate_limit_reset_credits: { available_count: 2 } } : details([unexpiredCredit]));
     } });
   try {
     const accounts = await owner.request("opencraft/codex/accounts/list", {}) as any;

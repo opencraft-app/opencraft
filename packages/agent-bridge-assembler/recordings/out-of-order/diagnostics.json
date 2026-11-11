@@ -1,0 +1,8 @@
+{
+  "translator": [],
+  "assembler": [
+    "out-of-order",
+    "delta-first-synthesized",
+    "out-of-order"
+  ]
+}

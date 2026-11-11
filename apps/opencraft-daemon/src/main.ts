@@ -4,12 +4,14 @@ import { connect } from "node:net";
 
 import { AppHostServer } from "@opencraft/app-host-server";
 import { WebSocketTransport, type AppServerWebSocket } from "@opencraft/appserver-transport-websocket";
-import { acquireLocalAgentStorageOwner, openLocalAgentStorage, startLocalAgentHost } from "@opencraft/local-agent-host";
+import { acquireLocalAgentStorageOwner, openLocalAgentStorageWithWorker, startLocalAgentHost } from "@opencraft/local-agent-host";
 import WebSocket from "ws";
 
 import { readDaemonMachineIdentity } from "./machine-identity.js";
 import { MachineIdentityTransport } from "./machine-transport.js";
 
+import { CodexProviderBridge } from "./codex-provider-bridge.js";
+import type { BridgeGatewayOptions } from "@opencraft/agent-bridge-host/gateway";
 import { CodexEngineAdapter } from "./codex-engine-adapter.js";
 import { startOpenCraftDaemonServer } from "./server.js";
 import { createDesktopAccountHost } from '@opencraft/plugin-local-account/desktop';
@@ -55,6 +57,7 @@ export async function startOpenCraftDaemon(options: {
   readonly codexDataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly codexCoreEndpoint?: string;
+  readonly codexAgentBridge?: BridgeGatewayOptions;
   readonly codexWriterOwnership?: boolean;
   /** Deployment display name; defaults to the OS computer name. */
   readonly machineName?: string;
@@ -63,10 +66,10 @@ export async function startOpenCraftDaemon(options: {
   const machineIdentity = await readDaemonMachineIdentity(options.dataDirectory, options.machineName);
   process.chdir(options.runtimeDirectory);
   const releaseStorageOwner = await acquireLocalAgentStorageOwner(options.dataDirectory);
-  let storage: ReturnType<typeof openLocalAgentStorage>;
+  let storage: Awaited<ReturnType<typeof openLocalAgentStorageWithWorker>>;
   try {
     await removeStaleSocket(options.endpoint);
-    storage = openLocalAgentStorage({ dataDirectory: options.dataDirectory });
+    storage = await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
   } catch (error) { await releaseStorageOwner(); throw error; }
   const storageSummary: import("@opencraft/daemon-ipc").DaemonStorageSummary[] = [...storage.summaries];
   const reportStorage = () => {
@@ -80,7 +83,7 @@ export async function startOpenCraftDaemon(options: {
   try {
     humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '') : null;
   } catch (error) {
-    try { storage.close(); } finally { await releaseStorageOwner(); }
+    try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;
   }
   let localAgent: Awaited<ReturnType<typeof startLocalAgentHost>> | null = null;
@@ -103,11 +106,11 @@ export async function startOpenCraftDaemon(options: {
           modelStorageDirectory: options.modelStorageDirectory,
           skillsDirectory: options.skillsDirectory,
           machineIdentity,
-        }).catch(error => {
+        }).catch(async error => {
           // Host failure closes all supplied handles. Reopen under the same daemon owner
           // before allowing another attempt or advertising ready again.
           try {
-            storage = openLocalAgentStorage({ dataDirectory: options.dataDirectory });
+            storage = await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
             storageSummary.splice(0, storageSummary.length, ...storage.summaries, ...storageSummary.filter(row => row.hostId !== undefined));
             reportStorage();
             localAgentStarting = null;
@@ -140,7 +143,8 @@ export async function startOpenCraftDaemon(options: {
           writerOwnership: options.codexWriterOwnership,
         });
         codexAgents.add(codexAgent);
-        return codexAgent;
+        if (options.codexAgentBridge && !options.codexCoreEndpoint) throw Error("Bridge requires existing Core endpoint");
+        return options.codexAgentBridge ? new CodexProviderBridge(codexAgent, options.codexAgentBridge) : codexAgent;
       }
       throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       });
@@ -161,7 +165,7 @@ export async function startOpenCraftDaemon(options: {
       const agent = localAgent ?? await localAgentStarting?.catch(() => null);
       localAgent = null;
       try { await agent?.close(); } finally {
-        try { storage.close(); } finally { await releaseStorageOwner(); }
+        try { await storage.close(); } finally { await releaseStorageOwner(); }
       }
       await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
       codexAgents.clear();
@@ -182,7 +186,7 @@ export async function startOpenCraftDaemon(options: {
   } catch (error) {
     humanAccounts?.close();
     await appHost.close();
-    try { storage.close(); } finally { await releaseStorageOwner(); }
+    try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;
   }
   return { endpoint: daemonServer.endpoint, close };

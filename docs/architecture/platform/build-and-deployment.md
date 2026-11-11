@@ -324,3 +324,12 @@ current platform contract and actual services. Attachment tests reflect the
 existing 1 GiB chunked capability and verify transport assembly through both
 Codex adapter and local Host; no commercial wire limit is changed here.
 Trusted platform Views receive optional `PlatformViewHost.currentUser` from the selected account contribution's authenticated `identity` projection: provider ID, stable subject ID and explicit handle. Display-only names, retained metadata and anonymous/loading/error snapshots cannot supply that identity. The provider owns authentication and revocation; this projection supplies no credentials or resource grants. enterprise identity maps verified staffId/loginName into this shared contract. Tasks uses an exact registered member handle or a client-selected viewing preference; it does not import enterprise identity or infer identity from a name.
+
+### Automatic AppServer client regression ownership
+
+`test:appserver-client` owns the client receipt/encoding and connection-generation
+regressions. The AppServer aggregate delegates to this leaf suite; the automatic
+Linux headless job also runs it when the existing planner selects protocol or
+client changes. Downstream post-deployment checks invoke the same leaf command.
+Build success does not substitute for these lifecycle tests, and downstream
+validation scheduling remains independent of deployment activation.

@@ -5,6 +5,7 @@ import type {
   ReplicaJsonValue,
   MessageSender,
   SteeringSubmission as ProtocolSteeringSubmission,
+  SteerInputStatus,
 } from "@opencraft/appserver-protocol";
 import type {
   UserInput,
@@ -74,6 +75,7 @@ export interface ConversationRuntime {
   continueTurn(turnId: TurnId): Promise<SubmissionReceipt>;
   respond(response: InteractionResponse): Promise<void>;
   /** Replaces the AppServer-owned queue projection after list/change events. */
+  updateSteerEvidence(inputs: readonly SteerInputStatus[]): void;
   replaceQueuedSubmissions(
     submissions: readonly ProtocolQueuedSubmission[],
     steeringSubmissions?: readonly ProtocolSteeringSubmission[],
@@ -1285,6 +1287,27 @@ export function createReplicaConversationRuntime(
   const pendingSubmissions = new Map<string, OptimisticSubmissionState>();
   const confirmedSteers = new Map<string, OptimisticSubmissionState>();
   const authoritativeSteers = new Map<string, OptimisticSubmissionState>();
+  const steerEvidence = new Map<string, SteerInputStatus>();
+  let evidenceRevision = 0;
+  type EvidenceFrames = import('@opencraft/chat-core').TimelineSnapshot['frames'];
+  const evidenceFrames = new WeakMap<object, { inputs: readonly (SteerInputStatus | undefined)[]; frame: EvidenceFrames[number] }>();
+  let lastEvidenceFrames: { source: EvidenceFrames; revision: number; result: EvidenceFrames } | undefined;
+  const attachEvidence = (frames: EvidenceFrames): EvidenceFrames => {
+    if (steerEvidence.size === 0) return frames;
+    if (lastEvidenceFrames?.source === frames && lastEvidenceFrames.revision === evidenceRevision) return lastEvidenceFrames.result;
+    let changed = false;
+    const result = frames.map(frame => {
+      const inputs = frame.blocks.map(block => block.type === 'user-message' && block.clientId !== null ? steerEvidence.get(block.clientId) : undefined);
+      if (!inputs.some(Boolean)) return frame;
+      changed = true;
+      const old = evidenceFrames.get(frame);
+      if (old && old.inputs.every((v, i) => v === inputs[i])) return old.frame;
+      const projected = { ...frame, blocks: frame.blocks.map((block, i) => block.type === 'user-message' && inputs[i] ? { ...block, steerEvidence: inputs[i] } : block) };
+      evidenceFrames.set(frame, { inputs, frame: projected }); return projected;
+    });
+    lastEvidenceFrames = { source: frames, revision: evidenceRevision, result: changed ? result : frames };
+    return lastEvidenceFrames.result;
+  };
   const steeringClaims = new Map<string, ProtocolSteeringSubmission>();
   const authoritativeQueue = new Map<string, QueuedSubmission>();
   let pendingQueueOrder: readonly string[] | null = null;
@@ -1318,9 +1341,11 @@ export function createReplicaConversationRuntime(
     capacityRetryDispatched = null;
     capacityRetryAttempt = 0;
   };
+  const hasCapacityFailure = (turnId: TurnId) => snapshot.timeline.frames.some(frame =>
+    frame.turnId === turnId && frame.blocks.some(block => block.type === "error" && block.code === "serverOverloaded"));
   const scheduleCapacityRetry = () => {
     const source = snapshot.continuation.turnId;
-    if (disposed || !config.canAutoContinueCapacity?.() || source === null || snapshot.queuedSubmissions.length > 0) {
+    if (disposed || !config.canAutoContinueCapacity?.() || source === null || !hasCapacityFailure(source) || snapshot.queuedSubmissions.length > 0) {
       clearCapacityRetryTimer();
       return;
     }
@@ -1331,7 +1356,7 @@ export function createReplicaConversationRuntime(
     capacityRetryTimer = setTimeout(() => {
       capacityRetryTimer = null;
       capacityRetrySource = null;
-      if (disposed || !config.canAutoContinueCapacity?.() || snapshot.continuation.turnId !== source
+      if (disposed || !config.canAutoContinueCapacity?.() || snapshot.continuation.turnId !== source || !hasCapacityFailure(source)
         || snapshot.queuedSubmissions.length > 0) return;
       capacityRetryDispatched = source;
       capacityRetryAttempt += 1;
@@ -1456,7 +1481,7 @@ export function createReplicaConversationRuntime(
     const indexedCount = thread.historyTurnCount;
     const historyTurnCount = Number.isSafeInteger(indexedCount) && Number(indexedCount) >= source.length
       ? Number(indexedCount) : boolean(pagination.hasLoadedOldest) === true ? source.length : undefined;
-    const countedTimeline = { ...projectedTimeline, historyTurnCount };
+    const countedTimeline = { ...projectedTimeline, historyTurnCount, frames: attachEvidence(projectedTimeline.frames) };
     const timeline = waitingTurn && waitReason && pendingInteractions.length === 0
       ? { ...countedTimeline, interactionWait: { turnId: asTurnId(waitingTurn.id), reason: waitReason as "approval" | "input",
         recovery: view.interactionRecovery === "recovering" ? "recovering" as const : "unavailable" as const } }
@@ -1474,12 +1499,12 @@ export function createReplicaConversationRuntime(
       continuedFromTurnId = null;
       continuationError = null;
     }
-    // Codex offers empty-turn continuation for overload, not arbitrary failures
-    // (e.g. missing credentials). Eligibility is runtime policy, not banner style.
+    // Capacity and confirmed ACP prompt failures support explicit continuation.
+    // Unknown native outcomes and arbitrary failures remain ineligible.
     const recoverableFailure = timeline.frames.some((frame) =>
       frame.turnId === latest?.id && frame.blocks.some((block) =>
         block.type === "error" && block.recovery === "terminal" &&
-        block.code === "serverOverloaded"));
+        (block.code === "serverOverloaded" || block.code === "acpPromptFailed")));
     const threadActive = isRecord(thread.status) && thread.status.type === "active";
     const canContinue = replica.authoritative && replica.phase === "live" &&
       error === null && !threadActive && active === undefined &&
@@ -1931,6 +1956,18 @@ export function createReplicaConversationRuntime(
     },
     continueTurn: continueTurnImpl,
     respond: (response) => config.commands.respond(config.key, response),
+    updateSteerEvidence(inputs) {
+      for (const input of inputs) {
+        const old = steerEvidence.get(input.clientRequestId);
+        if (!old) { steerEvidence.set(input.clientRequestId, structuredClone(input)); continue; }
+        const newer = <T extends { readonly version: number }>(previous: T, next: T): T => next.version >= previous.version ? next : previous;
+        steerEvidence.set(input.clientRequestId, { ...input,
+          admission: newer(old.admission, input.admission), delivery: newer(old.delivery, input.delivery),
+          evidence: newer(old.evidence, input.evidence), withdrawal: newer(old.withdrawal, input.withdrawal),
+        });
+      }
+      evidenceRevision += 1; localRevision += 1; publish();
+    },
     replaceQueuedSubmissions(submissions, steeringSubmissions = []) {
       const previousQueue = new Map(authoritativeQueue);
       authoritativeQueue.clear();

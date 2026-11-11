@@ -1,4 +1,4 @@
-import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
@@ -25,7 +25,7 @@ import { DshAppServerAdapter, decodeModel } from "./dsh-appserver-adapter.js";
 import { DshClient, DshClientError } from "./dsh-client.js";
 import { DshSupervisor } from "./dsh-supervisor.js";
 import { DshRestartBudget } from "./dsh-restart-budget.js";
-import { openLocalAgentStorage, type LocalAgentStorage } from "./storage/local-agent-storage.js";
+import { openLocalAgentStorageWithWorker, type LocalAgentStorage } from "./storage/local-agent-storage.js";
 import { DshCapabilityBroker, normalizeCapabilities } from "./dsh-capability-broker.js";
 import { HostDocumentService, HostDocumentFault } from "./storage/host-document-service.js";
 import { startTasksAgent } from "@opencraft/plugin-tasks/agent";
@@ -48,11 +48,14 @@ import type { ProfileSkillsMethod } from "@opencraft/appserver-protocol";
 import { DshProfileSkillsHandler } from "./dsh-profile-skills.js";
 import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
+import { AgentOnboardingService, createOnboardingDeps } from "./agent-onboarding.js";
+import { ConnectedAgentHost } from "./connected-agents.js";
+import { BridgeEngineProvider, type BridgeEngineProviderOptions } from "./bridge-engine-provider.js";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
 import { LocalWorkspaceResolver } from "./projectless-workspace.js";
 
 export { acquireLocalAgentStorageOwner } from "./storage/daemon-storage-owner.js";
-export { openLocalAgentStorage } from "./storage/local-agent-storage.js";
+export { openLocalAgentStorage, openLocalAgentStorageWithWorker } from "./storage/local-agent-storage.js";
 
 type JsonRpcMessage = Record<string, unknown>;
 const PROFILE_SKILLS_METHODS = new Set<ProfileSkillsMethod>([
@@ -151,9 +154,11 @@ export async function startLocalAgentHost(options: {
   readonly taskSkillDirectories?: readonly string[];
   readonly taskServerId?: string;
   readonly taskConversationCatalog?: (serverId: string, search: string, limit: number, cursor?: string | null) => Promise<unknown>;
+  /** Per-engine new-Thread bridge routing. Absent keeps every legacy owner. */
+  readonly bridge?: { readonly claudeCode?: BridgeEngineProviderOptions };
 } = {}) {
   nodeObserver("dsh");
-  const storage = options.storage ?? openLocalAgentStorage({ dataDirectory: options.dataDirectory });
+  const storage = options.storage ?? await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
   const cleanup: (() => void | Promise<void>)[] = [() => storage.close()];
   let stopAccepting: (() => Promise<void>) | undefined;
   let drainThreads: (() => Promise<void>) | undefined;
@@ -166,6 +171,8 @@ export async function startLocalAgentHost(options: {
     if (failure !== undefined) throw failure;
   };
   try {
+  const agentOnboarding = new AgentOnboardingService();
+  cleanup.push(() => agentOnboarding.close());
   let closing = false;
   let onEngineExit: ((error: Error) => void) | undefined;
   let engineStatus: "ready" | "restarting" | "failed" = "ready";
@@ -291,6 +298,23 @@ export async function startLocalAgentHost(options: {
   adapter.setWorkspaceResolver(new LocalWorkspaceResolver({
     projectlessRoot: projectlessWorkspaceRoot,
   }));
+  const claudeBridge = options.bridge?.claudeCode === undefined ? undefined : new BridgeEngineProvider({
+    ...options.bridge.claudeCode,
+    engine: "claude-code",
+    defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
+  });
+  const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
+    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] });
+  await connectedAgents.start();
+  cleanup.push(() => connectedAgents.close());
+  cleanup.push(connectedAgents.subscribe((method, params) => {
+    if (method !== "thread/name/updated" || typeof params.threadId !== "string" || typeof params.threadName !== "string") return;
+    const projected = { ...params, threadName: storage.threads.manualTitle(params.threadId) ?? params.threadName };
+    catalogChanges.observeNotification(method, projected);
+    for (const [socket, clients] of socketClients) for (const state of clients.values()) {
+      if (state.initialized) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params: projected });
+    }
+  }));
   cleanup.push(() => adapter.close());
   cleanup.push(adapter.subscribe((method, params) => {
     const value = params as { threadId?: string };
@@ -308,7 +332,7 @@ export async function startLocalAgentHost(options: {
       }
     });
     if (bridgeUrl) capabilityLink.attach(bridgeUrl);
-    for (const pending of routing.pending()) routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
+    for (const pending of routing.pending()) await routing.reconcile(pending.logicalId, await capabilityLink.resolveGeneration(pending.logicalId));
   }
   if (capabilityLink) adapter.setBackgroundProofReader((threadId, messageId) => capabilityLink!.backgroundProof(threadId, messageId));
   if (capabilityLink) adapter.setModelInfoReader((provider, model) => capabilityLink!.modelInfo(provider, model));
@@ -473,7 +497,7 @@ export async function startLocalAgentHost(options: {
             for (const session of catalog.items) {
               let current = routing.current(session.sessionId);
               const resolved = await capabilityLink.resolveGeneration(session.sessionId);
-              if (routing.reconcile(session.sessionId, resolved)) current = routing.current(session.sessionId);
+              if (await routing.reconcile(session.sessionId, resolved)) current = routing.current(session.sessionId);
               if (resolved.sessionId !== current.nativeId) throw new Error("Checkpoint and logical routing disagree; recovery requires reconciliation");
               const models = await client.call<{current?:{provider:string;model:string}}>("session.models", { sessionId: session.sessionId });
               if (!models.current) continue;
@@ -481,7 +505,7 @@ export async function startLocalAgentHost(options: {
               // A first interrupted request may not yet have a terminal checkpoint.
               // Capture the already-persisted native log before surface recovery.
               await capabilityLink.checkpoint(current.nativeId);
-              routing.stage(session.sessionId, session.sessionId + ".g" + (current.generation + 1), {
+              await routing.stage(session.sessionId, session.sessionId + ".g" + (current.generation + 1), {
                 expectedNativeId: current.nativeId, generation: current.generation + 1,
                 previousLastSeq: Math.max(-1, ...history.events.map(entry => entry.event.seq)),
                 previousLastTurn: Math.max(0, ...history.events.map(entry => entry.event.data?.turn ?? 0)),
@@ -491,7 +515,7 @@ export async function startLocalAgentHost(options: {
                 cwd: session.cwd ?? homedir(), provider: models.current.provider, model: models.current.model,
                 legacyInstructions: lifecycle.catalog.configuration(session.sessionId),
               });
-              routing.publish(current.nativeId, { logicalId: session.sessionId, nativeId: next.sessionId, generation: next.generation,
+              await routing.publish(current.nativeId, { logicalId: session.sessionId, nativeId: next.sessionId, generation: next.generation,
                 seedThroughSeq: next.seedThroughSeq, seedThroughTurn: next.seedThroughTurn,
                 previousLastSeq: Math.max(-1, ...history.events.map(entry => entry.event.seq)),
                 previousLastTurn: Math.max(0, ...history.events.map(entry => entry.event.data?.turn ?? 0)),
@@ -598,7 +622,7 @@ export async function startLocalAgentHost(options: {
       })));
       await lifecycle.disconnect(state.key);
     };
-    const unsubscribe = adapter.subscribe((method, params) => {
+    const deliver = (method: string, params: unknown) => {
       const value = params as { threadId?: string; thread?: { id: string }; requestId?: unknown };
       const id = value?.threadId ?? value?.thread?.id;
       if (id) lifecycle.touch(id);
@@ -606,7 +630,9 @@ export async function startLocalAgentHost(options: {
         if (method === "serverRequest/resolved") state.offered.delete(String(value.requestId));
         if (!id || lifecycle.receivesNotifications(state.key, id)) sendClient(socket, state.clientId, { jsonrpc: "2.0", method, params });
       }
-    });
+    };
+    const unsubscribe = adapter.subscribe(deliver);
+    const unsubscribeAgents = connectedAgents.subscribe((method, params) => { if (method !== "thread/name/updated") deliver(method, params); });
     const publishShared = (threadId: string, state: LogicalClient) => {
       if (!state.sharedInteractions || !state.initialized || !(state.openedThreads.has(threadId) || lifecycle.receivesNotifications(state.key, threadId))) return;
       sendClient(socket, state.clientId, { jsonrpc: "2.0", method: SHARED_INTERACTIONS_CHANGED,
@@ -666,6 +692,12 @@ export async function startLocalAgentHost(options: {
         return;
       }
       try {
+        if (request.method === "opencraft/agents/usage") {
+          if (request.params != null && (typeof request.params !== "object" || Array.isArray(request.params))) throw new Error("Invalid usage query");
+          const params = request.params as { threadId?: unknown; force?: unknown } | undefined;
+          if (params?.threadId !== undefined && typeof params.threadId !== "string" || params?.force !== undefined && typeof params.force !== "boolean") throw new Error("Invalid usage query");
+          send(socket, { jsonrpc: "2.0", id: request.id, result: await connectedAgents.usage(params as { threadId?: string; force?: boolean } ?? {}) }); return;
+        }
         if (request.method === "opencraft/turn-recovery/read") {
           send(socket, { jsonrpc: "2.0", id: request.id, result: { recovery: interrupted.recovery.notice(String((request.params as any)?.threadId ?? "")) } }); return;
         }
@@ -678,6 +710,31 @@ export async function startLocalAgentHost(options: {
         if (request.method.startsWith("opencraft/tasks/")) {
           const result = tasks.handle(request.method, request.params);
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method === "opencraft/agents/onboarding/status" || request.method === "opencraft/agents/onboarding/act" || request.method === "opencraft/agents/onboarding/models") {
+          const result = request.method === "opencraft/agents/onboarding/status"
+            ? await agentOnboarding.status()
+            : request.method === "opencraft/agents/onboarding/models"
+              ? { models: await connectedAgents.listAgentModels(String((request.params as { id?: string } | null)?.id ?? "")) }
+            : await agentOnboarding.act(request.params);
+          send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
+        }
+        if (request.method === "model/list") {
+          const paging = (request.params ?? {}) as { cursor?: unknown; limit?: unknown };
+          const size = typeof paging.limit === "number" ? Math.min(200, Math.max(1, Math.floor(paging.limit))) : 50;
+          const connectedCursor = typeof paging.cursor === "string" ? /^opencraft-connected-models:(\d+)$/u.exec(paging.cursor) : null;
+          const listed = connectedCursor ? { data: [], nextCursor: null } : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[]; nextCursor?: string | null };
+          const data = [...(listed.data ?? [])];
+          let nextCursor = listed.nextCursor ?? null;
+          if (nextCursor === null) {
+            const extras = await connectedAgents.models();
+            const offset = connectedCursor ? Number(connectedCursor[1]) : 0;
+            const remaining = Math.max(0, size - data.length);
+            data.push(...extras.slice(offset, offset + remaining));
+            nextCursor = offset + remaining < extras.length ? `opencraft-connected-models:${offset + remaining}` : null;
+          }
+          send(socket, { jsonrpc: "2.0", id: request.id, result: { ...listed, data, nextCursor } }, request.method);
+          return;
         }
         if (request.method === "runtime/machine/read" && options.machineIdentity) {
           send(socket, { jsonrpc: "2.0", id: request.id, result: { machine: options.machineIdentity, agent: "OpenCraft" } }); return;
@@ -770,6 +827,11 @@ export async function startLocalAgentHost(options: {
           if (capabilityLink) await capabilityLink.validate(normalized);
         }
         const dispatchThread = async (method: string, params: Record<string, unknown>) => {
+          if (connectedAgents.owns(method, params)) return connectedAgents.dispatch(method, params);
+          if (method === "thread/list" && params.cursor == null) {
+            const reply = await adapter.dispatchOwned(method, params, owner, request.id as string | number) as { data: unknown[] };
+            return { ...reply, data: [...reply.data, ...await connectedAgents.threads()] };
+          }
           lifecycle.assertClient(state.key);
           await prepareExecution();
           lifecycle.assertClient(state.key);
@@ -831,6 +893,14 @@ export async function startLocalAgentHost(options: {
                 [OPENCRAFT_ATTACHMENT_STAGING_EXTENSION]: attachmentStaging.capability,
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
                 [TURN_RECOVERY_EXTENSION]: { version: 1 },
+                "opencraft/agent-usage": { version: 1, providers: ["codex", "cursor"] },
+                ...(claudeBridge === undefined ? {} : {
+                  [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: claudeBridge.extensions[OPENCRAFT_STEER_EVIDENCE_EXTENSION],
+                  "opencraft/execution-engines": { version: 1, defaultEngine: "dsh", providers: [{
+                    id: "claude-code", label: "Claude", threadPrefix: claudeBridge.threadPrefix, modelPrefix: claudeBridge.modelPrefix,
+                    extensions: claudeBridge.extensions,
+                  }] },
+                }),
               },
             },
           };
@@ -875,7 +945,7 @@ export async function startLocalAgentHost(options: {
       for (const pending of httpRequests.values()) pending.abort();
       socketClients.delete(socket);
       for (const state of [...clients.values()]) void disconnectClient(state).catch(() => undefined);
-      unsubscribe(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
+      unsubscribe(); unsubscribeAgents(); unsubscribeProcesses(); connectorListeners.delete(connectorChanged); unsubscribeDocuments();
     });
   });
   await new Promise<void>((resolvePromise, reject) => {

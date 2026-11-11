@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Thread, ThreadListParams, ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
+import type { ThreadCatalogMetadata, ThreadListResponse } from "@opencraft/appserver-protocol";
+import type { Thread, ThreadListParams } from "@opencraft/appserver-protocol/generated/v2";
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const fields = ["id", "environments", "sessionId", "forkedFromId", "parentThreadId", "preview", "ephemeral", "section", "sectionEnteredAt", "projectId", "historyMode", "modelProvider", "model", "reasoningEffort", "createdAt", "updatedAt", "recencyAt", "status", "path", "cwd", "cliVersion", "originator", "source", "canAcceptDirectInput", "threadSource", "agentNickname", "agentRole", "gitInfo", "name", "daybreakEnabled"];
@@ -38,7 +39,7 @@ export class DurableThreadCatalog {
       && params.useStateDbOnly !== false;
   }
   start(): void { if (!this.#closed && this.now() - this.#lastAttempt >= this.intervalMs) void this.refresh().catch(() => {}); }
-  async list(params: Record<string, unknown>): Promise<ThreadListResponse & { catalog: { lastSuccessAt: number | null; state: string; coverage: "complete" | "partial" | "unknown" } }> {
+  async list(params: Record<string, unknown>): Promise<ThreadListResponse & { readonly catalog: ThreadCatalogMetadata }> {
     if (!this.supports(params) || this.#closed) throw new Error("Unsupported catalog query");
     const archived = params.archived === true ? 1 : 0;
     let sync = this.#state(archived);

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { parseCodexAuthFileReference, readCodexAuthFile } from "./codex-auth-file.js";
 
 import type {
   AccountPoolAccount,
@@ -274,7 +275,22 @@ export class CodexDeviceLoginService {
 
   async importFrom(codexHome: string): Promise<AccountPoolAccountSummary> {
     await this.initializeOperation;
-    return this.commitImported(await readCodexCredential(codexHome));
+    const reference = parseCodexAuthFileReference({ kind: "codex-auth-file", path: resolve(codexHome, "auth.json") })!;
+    const { accountId, secret } = readCodexAuthFile(reference);
+    const existing = this.store.listAccounts().find(account => account.upstreamAccountId === accountId);
+    if (existing !== undefined) {
+      // Changing credential ownership requires explicit removal first; never
+      // overwrite a managed credential or an operator's existing reference.
+      throw new Error("This account is already configured. Remove it before using the local Codex login.");
+    }
+    const payload = jwtPayload(secret.accessToken);
+    const email = (typeof payload?.email === "string" ? payload.email : null)
+      ?? nestedString(payload, CHATGPT_PROFILE_CLAIM, "email");
+    const id = randomUUID();
+    this.store.addAccount({ id, provider: "codex", label: email ?? "Codex account", upstreamAccountId: accountId,
+      priority: this.store.listAccounts().length + 1, enabled: true }, reference);
+    this.store.updateSubscriptionMetadata(id, { email });
+    return this.store.listAccounts().find(account => account.id === id)!;
   }
 
   async cancel(sessionId: string): Promise<boolean> {

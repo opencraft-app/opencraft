@@ -481,3 +481,26 @@ export const threadNotes = sqliteTable("thread_notes", {
   serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
   state: blob("state", { mode: "buffer" }).notNull(), updatedAt: integer("updated_at").notNull(),
 }, table => [primaryKey({ columns: [table.serverId, table.threadId] })]);
+
+export const automationGrants = sqliteTable("automation_grants", {
+  id: text("id").primaryKey(), serverId: text("server_id").notNull(), projectId: text("project_id").notNull(),
+  actorId: text("actor_id").notNull(), generation: integer("generation").notNull(),
+  scopeJson: text("scope_json").notNull(), revokedAt: integer("revoked_at"), createdAt: integer("created_at").notNull(),
+});
+export const projectAutomations = sqliteTable("project_automations", {
+  id: text("id").primaryKey(), grantId: text("grant_id").notNull(), projectId: text("project_id").notNull(),
+  actorId: text("actor_id").notNull(), revision: integer("revision").notNull(), enabled: integer("enabled").notNull(),
+  deleted: integer("deleted").notNull().default(0), failures: integer("failures").notNull().default(0), value: text("value").notNull(),
+}, table=>[index("project_automations_project").on(table.projectId,table.id)]);
+export const automationRuns = sqliteTable("automation_runs", {
+  key: text("key").primaryKey(), automationId: text("automation_id").notNull(), revision: integer("revision").notNull(),
+  occurrenceId: text("occurrence_id").notNull(), state: text("state").notNull(), at: integer("at").notNull(),
+  value: text("value").notNull(),
+}, table=>[index("automation_runs_owner").on(table.automationId,table.at),index("automation_runs_state").on(table.state),
+  check("automation_run_state",sql.raw("state IN ('planned','admitted','running','completed','failed','unknown','skipped')"))]);
+export const automationMutations = sqliteTable("automation_mutations", {
+  actorId: text("actor_id").notNull(), key: text("key").notNull(), digest: text("digest").notNull(), result: text("result").notNull(),
+},table=>[primaryKey({columns:[table.actorId,table.key]})]);
+export const automationDelegations = sqliteTable("automation_delegations", {
+  authorityId: text("authority_id").primaryKey(), runKey: text("run_key").notNull(), grantId: text("grant_id").notNull(),
+},table=>[index("automation_delegations_run").on(table.runKey)]);

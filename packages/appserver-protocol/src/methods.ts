@@ -1,4 +1,6 @@
 import type { ThreadAccessMethodMap } from "./thread-access";
+import type { AgentOnboardingMethodMap } from "./agent-onboarding";
+import type { AgentUsageMethodMap } from "./agent-usage";
 import type { ThreadNoteMethodMap } from "./thread-note";
 import type { SharedInteractionMethodMap } from "./shared-interactions";
 import type { TurnRecoveryMethodMap } from "./turn-recovery";
@@ -7,6 +9,7 @@ import type { MessageSender } from "./message-sender";
 import type { RuntimeMachineReadResponse } from "./machine";
 import type { AppServerProcessMethodMap } from "./process";
 import type { ThreadPinsMethodMap } from "./thread-pins";
+import type { ThreadCatalogMetadata } from "./thread-catalog";
 import type { SkillCatalogMethodMap } from "./skill-catalog";
 import type { TasksMethodMap } from "./tasks";
 import type { AppServerAttachmentMethodMap } from "./attachments";
@@ -209,6 +212,8 @@ export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
 export type ThreadItemsListResponse = CursorPage<ThreadItemPageEntry | AppServerThreadItem>;
 
 export type ThreadStartParams = GeneratedThreadStartParams & {
+  /** Explicit new-thread opt-in; IDs remain stable across transport retries. */
+  readonly agentBridge?: { readonly threadId: string; readonly clientRequestId: string };
   /** Host-owned execution Agent. Omitted means the Host default. */
   agentId?: string | null;
 };
@@ -252,6 +257,11 @@ export type ThreadForkResponse = GeneratedThreadForkResponse;
 export type ThreadListParams = GeneratedThreadListParams;
 export type ThreadListResponse = Omit<GeneratedThreadListResponse, "data"> & {
   data: Array<GeneratedThreadListResponse["data"][number] & { pinned?: boolean }>;
+  /**
+   * Optional aggregate-directory coverage from OpenCraft Hosts. Native
+   * AppServers omit it; a partial or unknown page must retain cached rows.
+   */
+  readonly catalog?: ThreadCatalogMetadata;
 };
 export type TurnStartParams = GeneratedTurnStartParams;
 export type TurnStartResponse = GeneratedTurnStartResponse;
@@ -259,9 +269,15 @@ export type TurnSteerParams = GeneratedTurnSteerParams;
 export type TurnSteerResponse = GeneratedTurnSteerResponse & {
   /**
    * Extension used by Hosts that preserve a steer racing Turn completion.
-   * When omitted, the accepted input is treated as `steered`.
+   * When omitted, the accepted input is treated as `steered`, so a queued
+   * input MUST set `disposition: "queued"` explicitly; the additive
+   * steer-evidence notification carries the same disposition for declaring
+   * clients so it is never mistaken for a delivered/steered input.
+   *
+   * `next-turn` and `interrupt-replace` are explicit operator choices; they
+   * are never presented as a native steer.
    */
-  readonly disposition?: "steered" | "queued";
+  readonly disposition?: "steered" | "queued" | "next-turn" | "interrupt-replace";
 };
 export type TurnInterruptParams = GeneratedTurnInterruptParams;
 export type TurnInterruptResponse = GeneratedTurnInterruptResponse;
@@ -344,9 +360,14 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends ThreadAccessMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
+  /** Additive per-input steer evidence status; only served to declaring clients. */
+  "opencraft/steer/status": {
+    params: import("./steer-evidence").OpenCraftSteerStatusParams;
+    result: import("./steer-evidence").OpenCraftSteerStatusResult;
+  };
   "opencraft/collaboration": { params: Record<string, unknown>; result: Record<string, unknown> };
   "mcpServer/resource/read": { params: McpResourceReadParams; result: McpResourceReadResponse };
   "mcpServer/tool/call": { params: McpServerToolCallParams; result: McpServerToolCallResponse };

@@ -2,6 +2,7 @@ import { ConversationSearchTargetContext, blockItemIds, useRevealSearchItem } fr
 import { observeChatMediaDiagnostic } from "../runtime/media-diagnostics";
 import { LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { ForkTurnButton } from "./conversation/fork-turn-button";
+import { Button } from "@opencraft/design-system-web/button";
 import { MessageTimestamp } from "./conversation/message-timestamp";
 import { PatchActivityIcon } from "./activity-glyphs";
 import { ConversationContentWindowContext } from "./conversation/content-window";
@@ -340,7 +341,12 @@ function TodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
 }
 
 function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
+  const intl = useIntl();
   if (block.type !== "error") return null;
+  const message = block.code === "acpPromptFailed"
+    ? intl.formatMessage({ id: "chat.agentRequestFailed", defaultMessage: "The Agent could not complete this response. You can continue to try again." })
+    : block.code === "acpPromptUnconfirmed"
+      ? intl.formatMessage({ id: "chat.agentRequestUnconfirmed", defaultMessage: "The Agent connection was interrupted and the response outcome is unknown. Check the conversation before trying again." }) : block.message;
   if (block.recovery === "automatic") {
     return <div className="thread-stream-error" role="status"><CadencedShimmer active>{block.message}</CadencedShimmer></div>;
   }
@@ -351,12 +357,12 @@ function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
       role="alert"
     >
       <AlertCircle aria-hidden="true" className="thread-system-error__icon" size={16} />
-      <p className="thread-system-error__message">{block.message}</p>
-      {onRetry ? (
-        <button className="thread-system-error__retry" type="button" onClick={onRetry}>
+      <p className="thread-system-error__message">{message}</p>
+      {onRetry && block.code !== "acpPromptUnconfirmed" ? (
+        <Button variant="secondary" size="sm" className="thread-system-error__retry" type="button" onClick={onRetry}>
           <RotateCcw aria-hidden="true" size={14} />
-          Continue
-        </button>
+          {intl.formatMessage({ id: "chat.continueResponse", defaultMessage: "Continue" })}
+        </Button>
       ) : null}
     </aside>
   );

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { AccountPoolSecret } from "./store.js";
 
+export const EXTERNAL_CODEX_REAUTH_MESSAGE = "Shared Codex credentials are unavailable or do not match this account. Run codex login on the host, or remove this account and use device-code login.";
+
 /** Operator-owned reference. Tokens remain in the external owner's auth.json. */
 export interface CodexAuthFileReference {
   readonly kind: "codex-auth-file";
@@ -22,7 +24,7 @@ export function parseCodexAuthFileReference(value: unknown): CodexAuthFileRefere
 
 export function readCodexAuthFile(reference: CodexAuthFileReference, expectedAccountId?: string): ReturnType<typeof parseCodexAuthFile> {
   try { return parseCodexAuthFile(readFileSync(reference.path, "utf8"), expectedAccountId); }
-  catch { throw new Error("Shared Codex credentials are unavailable or do not match this account"); }
+  catch { throw new Error(EXTERNAL_CODEX_REAUTH_MESSAGE); }
 }
 
 /** Validate captured bytes so a storage seal hashes the same credential it checked. */
@@ -48,6 +50,6 @@ export function parseCodexAuthFile(text: string, expectedAccountId?: string): {
     } };
   } catch {
     // Do not include file contents, tokens, account IDs or parse errors.
-    throw new Error("Shared Codex credentials are unavailable or do not match this account");
+    throw new Error(EXTERNAL_CODEX_REAUTH_MESSAGE);
   }
 }

@@ -1,23 +1,231 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { AcpEngine, dshAcpCommand } from "../../plugins/acp-engine/src/index.js";
 import { AcpGenerationHost } from "../../plugins/acp-engine/src/generations.js";
+import { codexBaseModelId, splitModelVariant } from "../../plugins/acp-engine/src/model-variant.js";
 import type { ExecutionEngineClient } from "../../packages/appserver-client/src/execution-engine.js";
 
 const peer = resolve("tests/fixtures/acp-engine-peer.mjs");
 const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("No browser tool owner"); } };
+test("native model suffix parsing handles long hostile names without backtracking", () => {
+  assert.deepEqual(splitModelVariant("one[reasoning=high,fast=true]"), { base: "one", parameters: "reasoning=high,fast=true" });
+  assert.deepEqual(splitModelVariant("one[]"), { base: "one", parameters: "" });
+  assert.equal(splitModelVariant("one[high]tail"), null);
+  assert.equal(splitModelVariant("one[high]tail]"), null);
+  for (const input of ["[".repeat(100000), "[\\".repeat(100000)]) {
+    assert.equal(splitModelVariant(input), null);
+    assert.equal(codexBaseModelId(input), input);
+  }
+  assert.equal(codexBaseModelId("codex:one[low]"), "codex:one");
+  assert.equal(codexBaseModelId("one[other]tail[high]"), "one[other]tail");
+  assert.equal(codexBaseModelId("one[]"), "one[]");
+  assert.equal(codexBaseModelId("one" + "[".repeat(100000) + "]"), "one");
+});
 async function fixture(t: test.TestContext, options: Record<string, any> = {}) {
   const root = await mkdtemp(join(tmpdir(), "acp-engine-test-")), trace = join(root, "trace.jsonl");
-  const engine = new AcpEngine({ command: process.execPath, args: [peer], cwd: root, dataDirectory: join(root, "data"), env: { ACP_TEST_TRACE: trace }, permission: "allow-once", ...options });
+  const engineOptions = { command: process.execPath, args: [peer], cwd: root, dataDirectory: join(root, "data"), permission: "allow-once" as const, ...options, env: { ACP_TEST_TRACE: trace, ...options.env } };
+  const engine = new AcpEngine(engineOptions);
   t.after(async () => { await engine.close(); await rm(root, { recursive: true, force: true }); });
   const calls = async () => { try { return (await readFile(trace, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
-  return { root, engine, calls };
+  return { root, engine, calls, engineOptions };
 }
 async function until(predicate: () => boolean) { const deadline = Date.now() + 4_000; while (!predicate()) { if (Date.now() >= deadline) throw new Error("ACP test condition timed out"); await delay(10); } }
+
+test("ACP titles persist accepted input and native updates even after completion; manual rename wins", async t => {
+  const f = await fixture(t), notices: { method: string; params: any }[] = [];
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "  整理\n模型选择菜单  " }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const path = join(f.root, "data", `${thread.id}.json`);
+  const saved = JSON.parse(await readFile(path, "utf8"));
+  assert.equal(saved.name, "整理 模型选择菜单"); assert.equal(saved.preview, "整理 模型选择菜单");
+  assert.equal((await f.engine.request("thread/list", {}, client)).data[0].name, saved.name);
+  const native = (f.engine as any).native((f.engine as any).sessions.get(thread.id));
+  const info = (title: unknown) => native.request("fixture/sessionInfo", { sessionId: saved.nativeId, title });
+  await info("整理模型与推理选项");
+  await until(() => notices.some(notice => notice.params.threadName === "整理模型与推理选项"));
+  assert.equal(JSON.parse(await readFile(path, "utf8")).name, "整理模型与推理选项", "title notifications follow persistence");
+  await info(null); await info(" "); await info({ title: "invalid" });
+  await f.engine.request("thread/name/set", { threadId: thread.id, name: "我的自定义标题" }, client);
+  await info("迟到的自动标题"); await delay(20);
+  assert.equal((await f.engine.request("thread/read", { threadId: thread.id }, client)).thread.name, "我的自定义标题");
+  assert.ok(!notices.some(notice => notice.params.threadName === "迟到的自动标题"));
+  await f.engine.close();
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  assert.equal((await restored.request("thread/list", {}, client)).data[0].name, "我的自定义标题");
+  assert.equal(restored.processId, null, "catalog reads never wake an agent");
+  await restored.close();
+});
+
+test("old ACP records recover a native catalog title on resume without resending input", async t => {
+  const f = await fixture(t, { env: { ACP_TEST_TITLE_LIST: "Recovered native title" } });
+  const { thread } = await f.engine.request("thread/start", {}, client); await f.engine.close();
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  const notices: any[] = []; restored.subscribe((method, params) => notices.push({ method, params }));
+  await restored.request("thread/resume", { threadId: thread.id }, client);
+  await until(() => notices.some(notice => notice.params.threadName === "Recovered native title"));
+  assert.equal((await restored.request("thread/list", {}, client)).data[0].name, "Recovered native title");
+  assert.ok(!(await f.calls()).some(call => call.method === "session/prompt"));
+  await restored.close();
+});
+
+test("ACP reports native context/plans, surfaces failures and only continues after an explicit request", async t => {
+  const f = await fixture(t, { env: { ACP_TEST_PROGRESS: "1" } }), notices: any[] = [];
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, input: [] }, client), /cannot be continued/);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "fail:response" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const failed = notices.find(notice => notice.method === "turn/completed").params.turn;
+  assert.equal(failed.status, "failed"); assert.equal(failed.items.at(-1).code, "acpPromptFailed");
+  assert.equal(failed.error.codexErrorInfo, "other");
+  assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, 1, "a failure is never automatically replayed");
+  const plans = notices.filter(notice => notice.method === "turn/plan/updated");
+  assert.equal(plans.length, 1); assert.equal(plans[0].params.plan[0].status, "inProgress");
+  const usage = await f.engine.request("opencraft/thread-usage/read", { threadId: thread.id }, client);
+  assert.deepEqual(usage.context, { usedTokens: 1200, limitTokens: 200000 }); assert.equal(usage.total, null);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [] }, client);
+  await until(() => notices.filter(notice => notice.method === "turn/completed").length === 2);
+  assert.equal(notices.filter(notice => notice.method === "turn/completed").at(-1).params.turn.status, "completed");
+});
+
+test("ACP connection loss exposes a controlled error and cannot replay an unknown native outcome", async t => {
+  const f = await fixture(t), notices: any[] = [];
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "wait:unknown" }] }, client);
+  process.kill(f.engine.processIds[0], "SIGKILL");
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const turn = notices.find(notice => notice.method === "turn/completed").params.turn;
+  assert.equal(turn.error.message, "acpPromptUnconfirmed"); assert.equal(turn.items.at(-1).code, "acpPromptUnconfirmed");
+  const before = (await f.calls()).length;
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, input: [] }, client), /cannot be continued/);
+  assert.equal((await f.calls()).length, before, "unsafe Continue never starts or resumes the native peer");
+});
+
+test("Cursor negotiates base models and sends native reasoning/Fast without replacing unrelated parameters", async t => {
+  const f = await fixture(t, { id: "cursor", env: { ACP_TEST_PARAMETERIZED: "1" } });
+  const created = await f.engine.request("thread/start", { model: "cursor:one", reasoningEffort: "low", serviceTier: "fast" }, client);
+  assert.equal(created.model, "cursor:one"); assert.equal(created.reasoningEffort, "low"); assert.equal(created.serviceTier, "fast");
+  const mutationsBeforeDiscovery = (await f.calls()).filter(call => call.method === "session/set_config_option").length;
+  await f.engine.discoverModelCapabilities(created.thread.id);
+  assert.equal((await f.calls()).filter(call => call.method === "session/set_config_option").length, mutationsBeforeDiscovery, "declared schemas need no per-model mutations");
+  const catalog = (await f.engine.request("model/list", {}, client)).data;
+  assert.deepEqual(catalog.map((model: any) => model.id), ["cursor:one", "cursor:two"], "structured choices supersede legacy variants");
+  assert.deepEqual(catalog[0].supportedReasoningEfforts.map((effort: any) => effort.reasoningEffort), ["low", "high"]);
+  assert.equal(catalog[0].defaultReasoningEffort, "high"); assert.equal(catalog[0].serviceTiers[0].id, "fast");
+  assert.deepEqual(catalog[1].supportedReasoningEfforts, []); assert.deepEqual(catalog[1].serviceTiers, []);
+  const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+  await f.engine.request("turn/start", { threadId: created.thread.id, model: "cursor:one", effort: "high", serviceTier: null, input: [{ type: "text", text: "first" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const calls = await f.calls();
+  assert.ok(calls.filter(call => call.method === "initialize").every(call => call.parameterizedPicker === true));
+  assert.deepEqual(calls.find(call => call.method === "session/prompt").settings, { model: "one", effort: "high", fast: false, context: "1m" });
+  const configured = calls.filter(call => call.method === "session/set_config_option");
+  assert.ok(configured.some(call => call.configId === "reasoning" && call.value === "low"));
+  assert.ok(configured.some(call => call.configId === "fast" && call.value === "true"));
+  assert.ok(configured.some(call => call.configId === "fast" && call.value === "false"));
+  assert.ok(!configured.some(call => call.configId === "context"));
+  await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, effort: "ultra", input: [{ type: "text", text: "invalid" }] }, client), /reasoning level is unavailable/);
+  await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "cursor:two", serviceTier: "fast", input: [{ type: "text", text: "invalid" }] }, client), /Fast mode is unavailable/);
+  assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, 1);
+});
+
+test("Cursor falls back to standard ACP option discovery when the model-schema extension is unavailable", async t => {
+  const f = await fixture(t, { id: "cursor", env: { ACP_TEST_PARAMETERIZED: "1", ACP_TEST_NO_MODEL_EXTENSION: "1" } });
+  const created = await f.engine.request("thread/start", {}, client);
+  await f.engine.discoverModelCapabilities(created.thread.id);
+  const catalog = (await f.engine.request("model/list", {}, client)).data;
+  assert.equal(catalog[0].serviceTiers[0].id, "fast"); assert.deepEqual(catalog[1].supportedReasoningEfforts, []);
+  assert.equal((await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.model, "cursor:one");
+});
+
+test("Cursor restores old parameterized IDs after restart and isolates conversations' model settings", async t => {
+  const f = await fixture(t, { id: "cursor", env: { ACP_TEST_PARAMETERIZED: "1" } });
+  const first = await f.engine.request("thread/start", { model: "cursor:one[context=256k,reasoning=low,fast=true]" }, client);
+  const second = await f.engine.request("thread/start", { model: "cursor:two" }, client);
+  const calls = await f.calls(), starts = calls.filter(call => call.method === "session/new");
+  assert.notEqual(starts[0].pid, starts[1].pid, "Cursor has a process-global model manager");
+  assert.equal((await f.engine.request("thread/read", { threadId: first.thread.id }, client)).thread.reasoningEffort, "low");
+  assert.equal((await f.engine.request("thread/read", { threadId: second.thread.id }, client)).thread.model, "cursor:two");
+  await f.engine.close();
+  const path = join(f.root, "data", `${first.thread.id}.json`);
+  const old = JSON.parse(await readFile(path, "utf8"));
+  old.model = "cursor:one[context=256k,reasoning=low,fast=true]";
+  old.modelCatalog = [{ id: old.model, name: "One High" }];
+  for (const key of ["modelConfigValues", "parameterConfigs", "reasoningModels", "reasoningConfig", "fastConfig", "fastModels"]) delete old[key];
+  await writeFile(path, JSON.stringify(old));
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  const notices: any[] = []; restored.subscribe((method, params) => notices.push({ method, params }));
+  const resumed = await restored.request("thread/resume", { threadId: first.thread.id }, client);
+  assert.equal(resumed.model, "cursor:one"); assert.equal(resumed.reasoningEffort, "low"); assert.equal(resumed.serviceTier, "fast");
+  await restored.request("turn/start", { threadId: first.thread.id, model: "cursor:one", input: [{ type: "text", text: "continue" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const continued = (await f.calls()).filter(call => call.method === "session/prompt").at(-1);
+  assert.deepEqual(continued.settings, { model: "one", effort: "low", fast: true, context: "256k" });
+  const catalog = (await restored.request("model/list", {}, client)).data;
+  assert.ok(catalog.every((model: any) => !model.id.includes("[")));
+  const read = await restored.request("thread/resume", { threadId: first.thread.id }, client);
+  assert.equal(read.model, "cursor:one"); assert.equal(read.reasoningEffort, "low"); assert.equal(read.serviceTier, "fast");
+  await restored.close();
+  const cold = new AcpEngine(f.engineOptions); t.after(() => cold.close());
+  const coldResume = await cold.request("thread/resume", { threadId: first.thread.id }, client);
+  assert.equal(coldResume.reasoningEffort, "low"); assert.equal(coldResume.serviceTier, "fast");
+  assert.equal((cold as any).sessions.get(first.thread.id).parameterConfigs.find((config: any) => config.id === "context").currentValue, "256k");
+  await cold.close();
+});
+
+test("Codex splits advertised model variants into native model/reasoning and applies Fast before accepting input", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1" } });
+  const created = await f.engine.request("thread/start", { model: "codex:one[low]", serviceTier: "fast" }, client);
+  assert.equal(created.thread.model, "codex:one[low]"); assert.equal(created.thread.serviceTier, "fast");
+  assert.equal(created.modelProvider, "codex"); assert.equal(created.cwd, f.root);
+  assert.deepEqual(created.runtimeWorkspaceRoots, [f.root]); assert.equal(created.approvalPolicy, "never");
+  assert.deepEqual(created.sandbox, { type: "dangerFullAccess" });
+  const resumed = await f.engine.request("thread/resume", { threadId: created.thread.id }, client);
+  assert.equal(resumed.modelProvider, "codex"); assert.equal(resumed.model, "codex:one[low]");
+  assert.equal(resumed.serviceTier, "fast"); assert.equal(resumed.reasoningEffort, "low");
+  const configured = (await f.calls()).filter(call => call.method === "session/set_config_option");
+  assert.deepEqual(configured.map(call => [call.configId, call.value]), [["model", "one"], ["reasoning_effort", "low"], ["fast-mode", "on"]]);
+  assert.ok(!configured.some(call => call.configId === "model" && call.value.includes("[")), "a model config accepts base IDs, never a combined variant");
+  await f.engine.discoverModelCapabilities(created.thread.id);
+  const catalog = (await f.engine.request("model/list", {}, client)).data;
+  assert.equal(catalog.length, 4, "config-only replies cannot discard the complete concrete catalog");
+  assert.deepEqual(catalog.filter((model: any) => model.serviceTiers.length).map((model: any) => model.id), ["codex:one[low]", "codex:one[high]"]);
+  const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+  await f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:one[high]", serviceTier: null, input: [{ type: "text", text: "hello" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  assert.equal((await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.model, "codex:one[high]");
+  assert.equal((await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.serviceTier, null);
+  const prompts = (await f.calls()).filter(call => call.method === "session/prompt").length;
+  await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:two[high]", serviceTier: "fast", input: [{ type: "text", text: "must not send" }] }, client), /Fast mode is unavailable/);
+  await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:one[ultra]", input: [{ type: "text", text: "must not send" }] }, client), /model option is unavailable/);
+  assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, prompts);
+});
+
+test("Codex resumes before applying cold model/reasoning/Fast selection and supports advertised boolean Fast", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1", ACP_TEST_BOOLEAN_FAST: "1" } });
+  const created = await f.engine.request("thread/start", {}, client); await f.engine.close();
+  const path = join(f.root, "data", `${created.thread.id}.json`);
+  const legacy = JSON.parse(await readFile(path, "utf8"));
+  for (const key of ["modelConfigValues", "legacyModelCatalog", "reasoningConfig", "fastConfig", "fastModels"]) delete legacy[key];
+  await writeFile(path, JSON.stringify(legacy));
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  const notices: any[] = []; restored.subscribe((method, params) => notices.push({ method, params }));
+  await restored.request("turn/start", { threadId: created.thread.id, model: "codex:one[low]", serviceTier: "fast", input: [{ type: "text", text: "resume" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const state = (await restored.request("thread/read", { threadId: created.thread.id }, client)).thread;
+  assert.equal(state.model, "codex:one[low]"); assert.equal(state.serviceTier, "fast");
+  const calls = await f.calls(), resume = calls.findIndex(call => call.method === "session/resume"), fast = calls.findIndex(call => call.configId === "fast-mode");
+  assert.ok(resume >= 0 && fast > resume);
+  assert.deepEqual([calls[fast].type, calls[fast].value], ["boolean", true]);
+  await restored.close();
+});
 
 test("trusted router metadata does not alter any ACP driver's frozen native settings", async t => {
   for (const id of ["acp", "dsh-acp", "claude-code"] as const) {

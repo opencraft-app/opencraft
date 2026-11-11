@@ -54,6 +54,24 @@ Only the control entrypoints and signed metadata are durably copied to
 entrypoint bytes, preserving provenance even when executable bytes coincide.
 Root-owned installation receipts fix the manifest and per-entry digests. These
 independent artifacts are outside Web GC; old code and journals are retained.
+
+The optional protected configuration `fullTargetRoot` selects where future full
+target pins are created; absent configuration keeps `/opt/opencraft-full-targets`.
+A custom directory must already exist at an absolute path, with root ownership,
+no group/world write and no symlinks across its ancestors. The installer preserves
+this field across upgrades. This is distinct from the inspection artifact
+`targetRoot`; old targets, absolute recipe paths and recovery journals are not
+moved or removed when selecting another filesystem.
+
+Parent target pinning uses a fresh, invocation-owned staging directory. A normal
+copy or rename failure removes only that stage and retains the original cause;
+cleanup failure retains both causes and exposes a fixed diagnostic code. A target
+already renamed to its manifest pin is retained even if a later check fails.
+Preexisting stages and accepted targets are never scanned or removed by a new
+attempt. Abrupt process termination can bypass cleanup and requires separate
+ownership and live-reference diagnosis; this path is not a garbage collector.
+The copy helper labels failures with fixed `verify-target` copy/cleanup codes;
+raw command output is not included in these labels.
 No data restoration, destructive GC, OS/Node upgrade or owner restart is offered.
 
 Stable systemd units reference `current-agent`, `current-helper` and

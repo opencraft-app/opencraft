@@ -350,3 +350,5 @@ and the [Workbench design language](../docs/workbench-design-language.md#shared-
   Workbench notice owner reports execution failure/recovery without changing the
   reading layout. Unknown old work stays distinct from newly queued inputs. See
   [execution recovery](../docs/specs/codex-execution-health-and-recovery.md).
+
+PWA sidebar and page capacity share the dynamic viewport bound, including the stationary drawer portal and page overlays; the mobile reading column leaves a reachable page dismiss strip independently of desktop width. See [PWA capacity](invariants/shell-and-layout.md#pwa-sidebar-and-page-capacity).

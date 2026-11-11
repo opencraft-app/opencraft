@@ -181,11 +181,11 @@ try {
   await editor.fill("Keep this engine selection draft");
   await picker.click();
   await page.getByRole("menuitem", { name: "Shared model", exact: true }).click();
-  const standalone = page.locator(".opencraft-composer-selection-menu--model-select");
-  await standalone.getByText("DSH · Models", { exact: true }).waitFor();
-  await standalone.getByText("Pi · provider", { exact: true }).waitFor();
-  assert.equal(await standalone.getByRole("menuitem", { name: "Shared model", exact: true }).count(), 2);
-  await standalone.getByRole("menuitem", { name: "Shared model", exact: true }).nth(1).click();
+  const standalone = page.locator(".opencraft-composer-model-browser-surface");
+  await standalone.getByRole("tab", { name: "DSH · Models", exact: true }).waitFor();
+  await standalone.getByRole("tab", { name: "Pi · provider", exact: true }).click();
+  assert.equal(await standalone.getByRole("menuitem", { name: "Shared model", exact: true }).count(), 1);
+  await standalone.getByRole("menuitem", { name: "Shared model", exact: true }).click();
   await page.waitForFunction(() => (window as unknown as { __selectedEngineModel: string }).__selectedEngineModel === "pi:provider:model");
   assert.equal(await editor.innerText(), "Keep this engine selection draft");
   const standaloneGeometry = await standalone.boundingBox();
@@ -208,6 +208,7 @@ try {
   const activate = async (locator: ReturnType<typeof page.locator>) => touch ? locator.tap() : locator.click();
   await activate(picker);
   await standalone.getByText("还没有可用模型", { exact: true }).waitFor();
+  await activate(standalone.getByRole("tab", { name: "Codex", exact: true }));
   await standalone.getByText("暂时无法加载模型", { exact: true }).waitFor();
   assert.doesNotMatch(await standalone.innerText(), /ENOENT|private\/synthetic/u);
   assert.equal(await page.locator(".opencraft-composer-model-quick__title").count(), 0, "no empty intermediate depth panel");
@@ -236,10 +237,11 @@ try {
     Math.abs(pendingGeometry[key as keyof typeof pendingGeometry] - emptyGeometry[key as keyof typeof emptyGeometry]) <= 1), "held retry keeps the same menu geometry within subpixel/collision rounding");
   assert.equal(await editor.innerText(), "保留尚未发送的草稿");
   await page.evaluate(`window.__setCatalog(current => ({ ...current, agentGroups: current.agentGroups.map(group => group.id === "codex"
-    ? { ...group, loading: false, error: null, models: [{ id: "recovered", value: "recovered", label: "Recovered model", efforts: [], defaultEffort: null }] } : group) }));`);
+    ? { ...group, loading: false, error: null, models: [{ id: "codex:recovered", value: "codex:recovered", label: "Recovered model", efforts: [], defaultEffort: null }] } : group) }));`);
   await activate(standalone.getByRole("menuitem", { name: "Recovered model", exact: true }));
-  await page.waitForFunction(() => (window as any).__selectedEngineModel === "recovered");
+  await page.waitForFunction(() => (window as any).__selectedEngineModel === "codex:recovered");
   // A language switch updates the open menu without replacing the input or draft.
+  await activate(standalone.getByRole("tab", { name: "OpenCraft", exact: true }));
   await page.evaluate('window.__setLocale("en-US")');
   await standalone.getByText("No models available yet", { exact: true }).waitFor();
   assert(await editor.evaluate(element => element === (window as any).__originalEditor));
@@ -250,6 +252,7 @@ try {
   await page.keyboard.press("Enter");
   await standalone.waitFor();
   assert(await standalone.evaluate(element => element.contains(document.activeElement)), "keyboard entry focuses a real menu action");
+  await standalone.getByRole("searchbox").press("ArrowDown");
   await page.keyboard.press("End");
   await page.waitForFunction(() => document.activeElement?.textContent?.includes("Add a model…"));
   await page.keyboard.press("Enter");

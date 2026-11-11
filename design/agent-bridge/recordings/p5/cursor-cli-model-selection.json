@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "cliVersion": "2026.11.05-86047df",
+  "model": "claude-haiku-5-5-low",
+  "evidenceTier": "unverified",
+  "initialize": {
+    "protocolVersion": 1,
+    "agentCapabilities": {
+      "loadSession": true,
+      "promptCapabilities": {
+        "image": true,
+        "audio": false,
+        "embeddedContext": false
+      },
+      "sessionCapabilities": {
+        "list": {}
+      },
+      "mcpCapabilities": {
+        "http": true,
+        "sse": true
+      }
+    },
+    "authMethods": [
+      {
+        "id": "cursor_login",
+        "name": "Cursor Login",
+        "description": "Authenticate using existing Cursor login credentials. Run 'agent login' first if not logged in."
+      }
+    ]
+  },
+  "session": {
+    "sessionId": "opaque-1",
+    "currentModelId": "auto-smart[optimize_for=balanced]",
+    "modes": [
+      "agent",
+      "plan",
+      "ask"
+    ]
+  },
+  "observations": [
+    {
+      "operation": "session/steer-probe",
+      "code": -32601,
+      "message": "Method not found"
+    },
+    {
+      "operation": "model-set",
+      "code": -32602
+    }
+  ],
+  "result": "blocked",
+  "blocker": {
+    "reason": "cheapest model selection unavailable"
+  }
+}

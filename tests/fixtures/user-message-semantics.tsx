@@ -23,6 +23,11 @@ const base: UserMessageTimelineBlock = { type: "user-message", id: "base", sourc
   hookFeedback: false, commentCount: 0, hasExternalAttachments: false };
 const file = { type: "file" as const, id: "f", name: "index.ts", target: "/workspace/index.ts", mimeType: null, startLine: 4, endLine: 8 };
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="80"><rect width="120" height="80" fill="#2876c7"/></svg>')}`;
+const evidence = (confirmed: boolean): import('@opencraft/appserver-protocol').SteerInputStatus => ({
+  inputId: 'fixture-input', clientRequestId: 'fixture-client', expectedTurnId: 'fixture-turn', disposition: 'steered', nativeExecutions: 1,
+  registration: { value: 'registered', version: 1 }, admission: { value: 'accepted', version: 1 }, delivery: { value: 'native-inject', version: 1 },
+  evidence: { value: confirmed ? 'context-confirmed' : 'none', version: confirmed ? 1 : 0 }, withdrawal: { value: 'none', version: 0 }, outcome: confirmed ? 'context-confirmed' : 'pending',
+});
 const cases: [string, Partial<UserMessageTimelineBlock>][] = [
   ["goal", { sentAtMs: 1_700_000_000_000, ...deriveUserMessageSemantics("## Code review guidelines: private context\n## My request: first\n## My request for Codex: /goal Ship the release"), sender: { kind: "employee", loginName: "reviewer" } }],
   ["empty", {}], ["review", { reviewMode: true }], ["prior", { referencesPriorConversation: true }],
@@ -31,6 +36,9 @@ const cases: [string, Partial<UserMessageTimelineBlock>][] = [
   ["context", { content: [{ type: "skill", name: "review", path: "/skills/review/SKILL.md" }] }],
   ["failed", { message: "Retry this", deliveryStatus: "failed" }],
   ["sending", { message: "Sending this", deliveryStatus: "sending" }],
+  ["bridge-admission", { message: "Native follow-up", messageKind: "steering", steerEvidence: evidence(false) }],
+  ["bridge-unknown", { message: "Unconfirmed follow-up", deliveryStatus: "unknown", steerEvidence: { ...evidence(false), admission: { value: "unknown", version: 1 }, outcome: "unknown" } }],
+  ["bridge-confirmed", { message: "Native follow-up", messageKind: "steering", steerEvidence: evidence(true) }],
   ["steer-pending", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "pending", deliveryStatus: "sent" }],
   ["steer-accepted", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "accepted", deliveryStatus: "sent" }],
   ["steer-cancelled", { message: "Focus on the second option", messageKind: "steering", steeringStatus: "cancelled", deliveryStatus: "sent" }],
@@ -72,7 +80,7 @@ function FirstSubmission() {
         : { ...submittedMessageDisplay(firstInput), deliveryStatus: "sent", sender: { kind: "employee", loginName: "alice" } }} />}
   </section>;
 }
-createIntlTestRoot(root).render(<WorkbenchPresentationRootProvider target={root}>
+createIntlTestRoot(root, undefined, new URLSearchParams(location.search).get("locale") ?? "en-US").render(<WorkbenchPresentationRootProvider target={root}>
   <ConversationDocumentContext.Provider value={{ conversationId: "fixture", cwd: "/workspace", hostId: "fixture", theme: dark ? "dark" : "light", onOpenResource: target => { document.documentElement.dataset.opened = target; } }}>
     <FirstSubmission />
     {cases.map(([id, overrides]) => <section key={id} data-case={id}><UserMessageBlock block={{ ...base, ...overrides, id }} /></section>)}

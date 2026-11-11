@@ -15,6 +15,12 @@ export interface ThreadRelation {
   runtimeStatus: ThreadRuntimeStatus; rootTurnId: string | null; turnId: string | null;
   delegationRevision: number; autoExchangeDepth: number; hasDirectUserInput: boolean; userInputExcerpt: string | null;
 }
+/** A definitive refusal before any operation or native mutation is created. */
+export class OrchestrationIdempotencyConflict extends Error {
+  readonly status=409;
+  readonly code='orchestration_idempotency_conflict';
+  constructor(){super('Orchestration idempotency key reused');}
+}
 export interface ToolOperation {
   operationId: string; toolCallKey: string; delegationId: string; issuerActorId: string;
   kind: string; senderThreadId: string; targetThreadId: string | null; clientMessageId: string | null;
@@ -31,7 +37,7 @@ export interface ParentNotification {
   firstQueuedAtMs: number; deliverAfterMs: number; maxDeadlineMs: number; clientMessageId: string | null;
 }
 /** Stable hashing ignores JSON object property order while retaining array order. */
-function canonical(value: unknown): unknown {
+export function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
   if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([k, v]) => [k, canonical(v)]));
   return value;
@@ -153,7 +159,7 @@ export class ThreadOrchestrationLedger {
       const scopedKey = idempotencyKey ? JSON.stringify([value.senderThreadId,idempotencyKey]) : null;
       const prior = this.db.prepare('SELECT DISTINCT o.* FROM opencraft_orchestration_operations o LEFT JOIN opencraft_orchestration_tool_calls c ON c.operation_id=o.operation_id WHERE c.tool_call_key=? OR o.idempotency_key=?').all(toolCallKey,scopedKey);
       if (prior.length) {
-        if (prior.length !== 1 || prior[0]!.fingerprint !== fingerprint || scopedKey !== null && prior[0]!.idempotency_key !== scopedKey) throw new Error('Orchestration idempotency key reused');
+        if (prior.length !== 1 || prior[0]!.fingerprint !== fingerprint || scopedKey !== null && prior[0]!.idempotency_key !== scopedKey) throw new OrchestrationIdempotencyConflict();
         this.db.prepare('INSERT OR IGNORE INTO opencraft_orchestration_tool_calls VALUES(?,?)').run(toolCallKey,String(prior[0]!.operation_id));
         return operation(prior[0]!);
       }

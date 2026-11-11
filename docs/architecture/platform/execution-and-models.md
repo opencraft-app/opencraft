@@ -226,10 +226,11 @@ account state without growing a second account or quota authority in React.
 Device Login runs an isolated Codex maintenance AppServer using the official
 `chatgptDeviceCode` flow; only a completed login with a valid private auth file
 commits an account. An explicit import action reads the external Codex authority
-(`CODEX_HOME`, otherwise `~/.codex`) supplied by Electron Main, copies its
-validated OAuth credential into the private pool and never rewrites the source
-`auth.json`. Refresh likewise round-trips one account through an isolated
-managed-auth profile and verifies that account identity does not change. Login
+(`CODEX_HOME`, otherwise `~/.codex`) supplied by Electron Main and stores a
+read-only file reference, never a token copy. The external owner renews its login;
+OpenCraft never rewrites or refreshes the source `auth.json`. Managed accounts
+(device-code logins and earlier copies) retain refresh through an isolated
+managed-auth profile that verifies account identity does not change. Login
 and refresh profiles are 0700/0600 temporary state and stale profiles are pruned
 on the next service construction. Renderer snapshots never include tokens.
 The external Codex executable is resolved once by Electron from an explicit
@@ -444,11 +445,58 @@ Hubs or Clients observing notifications do not start another attempt. Pure nativ
 core forwarding does not create a second owner; DSH and Hermes
 continue to use their existing title sources.
 
+### Connected ACP conversation titles
+
+The ACP owner persists a first-text preview and an initial conversation name
+before publishing the accepted input. Native `session_info_update.title` replaces
+that initial name, including updates arriving after a Turn completes. Empty or
+malformed titles do not clear it. An engine-side manual rename, including names
+in older records, takes precedence over late automatic updates. Resuming an
+unnamed older record may recover its title through a declared native
+`session/list` capability, without sending another input. A newer title arriving
+during that read invalidates the older catalog observation.
+
+The local Host broadcasts committed title changes to initialized catalog
+observers even without an open conversation. Its existing catalog read path
+merges current connected-agent metadata, so an older Host snapshot cannot erase
+a title during refresh. These reads load saved ACP metadata without starting or
+resuming native sessions. Host-owned manual names continue to override native
+names; notification projection reads that precedence from memory, without adding
+SQL to the event path. The shared sidebar and header consume the same catalog.
+
+### Connected ACP transcript reads
+
+Connected Codex and Cursor sessions use native, read-only history adapters.
+Codex messages and tool items come from its session rollout; Cursor messages
+come from the ordered conversation graph rooted in its local ACP database.
+Unreachable prompt blobs are not conversation history. The Host supplies native
+homes and session identities; public callers cannot supply file paths.
+
+A lifecycle-owned Worker performs parsing and native SQLite reads outside the
+network event loop. Source identity and file/WAL stamps fence the small in-memory
+projection cache. Turn and item pages share the normal bound cursors and order;
+opening or refreshing history never issues native load/resume/prompt or tool
+calls. Missing or invalid sources fail the read instead of reporting an empty
+conversation. Unsupported connected peers likewise cannot claim empty history.
+While a Turn is streaming, the accepted live Turn and Item identities replace
+its matching native tail exactly once; older native Turns remain readable.
+Provider storage remains authority across browser refresh and Host restart.
+
 ### Shared Codex credentials
+
+The account settings action “Use local Codex login” (`opencraft/codex/accounts/import`)
+stores a read-only reference to the Host-configured native Codex home's `auth.json`.
+The RPC accepts no file path. It never copies tokens or changes an existing account's
+credential ownership: remove the existing account before adding a reference.
+Device-code login continues to create independent pool-managed credentials.
+Older copied accounts remain managed until explicitly removed; the list distinguishes
+external references from pool credentials, whose historical login origin is unknown.
+If the external login expires or is rejected, run `codex login` on the host, or remove
+the reference and use device-code login. OpenCraft does not automatically renew it.
 
 An operator may bind an account to an existing OAuth `auth.json` owned by another local credential manager. Run the packaged `runtime/codex-account-reference.mjs` with the installation's Node binary, the Codex data directory, the absolute shared auth file and an optional local account ID. Run as the service identity in its actual mount namespace while no Codex writer owns that directory; the command acquires the existing writer lock. It stores an external file reference and fixed upstream account identity, never the source tokens or shared session databases. This is an operator tool, not a browser RPC for reading arbitrary paths.
 
-Each credential selection rereads the file, including atomic replacements and symlink targets. Source identity must still match the registered account. Missing, malformed or changed-identity files fail closed without a cached credential. The external owner alone refreshes the source; OpenCraft neither refreshes these credentials nor writes or imports over the reference. Expiry or rejection requires that owner to renew the login. Ordinary managed accounts retain their existing refresh behavior.
+Each credential selection rereads the file, including atomic replacements and symlink targets. Source identity must still match the registered account. Missing, malformed or changed-identity files fail closed without a cached credential. Such a source read failure marks only that account as authorization-rejected and follows the existing authorization-failure selection path; it does not change affinity or quota policy. With no usable alternative, inference returns an actionable 401 asking for host `codex login` or device-code login. After the external owner repairs the file, the existing usage-refresh entry can restore the account. The external owner alone refreshes the source; OpenCraft neither refreshes these credentials nor writes or imports over the reference. Expiry or rejection requires that owner to renew the login. Ordinary managed accounts retain their existing refresh behavior.
 
 An ordinary open account Core validates Host authentication and local credential
 records before serving, but does not require an external credential owner to be
@@ -724,3 +772,28 @@ wakeup; permanent preparation errors pause for explicit correction. A new queued
 preparation may finish abandoned retirement after the previous owner exits,
 without an observation `thread/resume` reviving the old runtime. Lost native send
 acknowledgements remain `unknown` and never schedule a resend.
+
+## Native Agent usage observations
+
+Local Host advertises `opencraft/agent-usage` and serves `opencraft/agents/usage`.
+This read-only observation is separate from the server's token allocation ledger.
+Codex and Cursor quota services borrow the CLI credential in memory, call their
+native usage endpoints, and return only normalized plan/window values. They do
+not sign in, refresh credentials, start inference or write account configuration.
+Quota refresh is single-flight with a one-minute account-identity cache and
+bounded cancellation. Expiry invalidates success, and late results from another
+account or a closed owner cannot restore cached observations.
+
+Conversation counts come from native transcript readers in the existing Worker:
+Codex uses the latest cumulative `token_count` snapshot, never a sum of repeated
+snapshots; Cursor exposes its reported context size/limit without fabricated
+input/output totals. Live ACP `usage_update` persists only changed context values.
+Opening or refreshing usage does not resume native execution. Client queries are
+scoped to Host, human account and conversation; older Hosts without the extension
+do not acquire a simulated usage capability.
+
+ACP forwards reported plan entries to shared plan observations. This does not
+enable a missing planning tool. Definitive prompt failures and lost connections
+produce controlled localized error items after failure persistence. Explicit
+Continue translates empty input to a native continuation only for known failed
+or interrupted outcomes; unknown native outcomes remain fenced from replay.

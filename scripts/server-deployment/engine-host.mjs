@@ -19,8 +19,8 @@ import { attachEngineHost } from './engine-host-client.mjs';
 import { handleHostInput } from '../../apps/local-agent-host/src/host-input-http.ts';
 import { createPiModelConfiguration } from '../../apps/local-agent-host/src/model-config/pi-adapter.ts';
 import { PiEngine, piHandoffReconciliation } from '../../plugins/pi-engine/src/index.ts';
+import { BridgeEngineProvider } from '../../apps/local-agent-host/src/bridge-engine-provider.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
-import { THREAD_ORCHESTRATION_TOOLS } from '../../packages/appserver-protocol/src/collaboration.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { attachDshHost, readPrivateJson } from './dsh-host-client.mjs';
 
@@ -70,14 +70,32 @@ export async function startIndependentEngineHost(options) {
       cwd: runtimeDirectory,
       sessionCapabilities: capabilities,
     });
-    pi.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS,
+    pi.setOrchestration({ tools: [],
       call: (threadId, turnId, callId, name, args, signal, inputId) => capabilities.orchestration(threadId, {
         turnId, callId, name, arguments: args, incarnation: pi.orchestrationIncarnation, ...(inputId ? { inputId } : {}),
       }, signal),
     });
+    const bridge = (id, label, prefix, modelPrefix) => {
+      const row = options.bridge?.[id];
+      if (row === undefined) return undefined;
+      if (!row || typeof row !== 'object' || Array.isArray(row)
+        || !['url','token','serverId','inboxPath'].every(key => typeof row[key] === 'string'))
+        throw new Error(`Invalid ${id} agent bridge configuration`);
+      return new BridgeEngineProvider({
+        id, label, engine: id === 'dsh-acp' ? 'dsh-acp' : 'pi',
+        threadPrefix: row.threadPrefix ?? prefix, modelPrefix: row.modelPrefix ?? modelPrefix,
+        defaultCwd: row.defaultCwd ?? runtimeDirectory,
+        ...(typeof row.defaultModel === 'string' ? { defaultModel: row.defaultModel } : {}),
+        ...(Array.isArray(row.models) ? { models: row.models } : {}),
+        ...(typeof row.generation === 'string' ? { generation: row.generation } : {}),
+        gateway: { url: row.url, token: row.token, serverId: row.serverId, inboxPath: row.inboxPath },
+      });
+    };
+    const piBridge = bridge('pi-bridge', 'Pi', 'pi_bridge_', 'pi-bridge:');
+    const dshBridge = bridge('dsh-acp', 'DSH', 'dsh_acp_', 'dsh-acp:');
     const remoteInputs = new Map(), remoteOrigins = new Map();
     const remotes = [];
-    for (const id of engines.filter(id => !['pi', 'dsh'].includes(id))) {
+    for (const id of engines.filter(id => !['pi', 'dsh'].includes(id) && !(id === 'dsh-acp' && dshBridge))) {
       const remote = options.remoteEngines?.find(remote => remote.id === id);
       if (!isAbsolute(remote?.descriptorPath ?? '') || !isAbsolute(remote?.dataDirectory ?? '')) throw new Error('Independent ACP descriptor and data directory required');
       const attachment = await attachEngineHost(remote.descriptorPath, remote.dataDirectory, machine.machineId, [id], id);
@@ -91,7 +109,7 @@ export async function startIndependentEngineHost(options) {
       submit: (threadId,inputId,text,admit) => threadId.startsWith('pi_') ? pi.inputs.submit(threadId,inputId,text,admit) : remoteInputCustody.submit(threadId,inputId,text,admit),
     };
     host = await startEngineHost({
-      providers: [pi, ...remotes],
+      providers: [...(piBridge ? [piBridge] : []), pi, ...remotes, ...(dshBridge ? [dshBridge] : [])],
       defaultEngine,
       machine, strictClose: true, admitRequest: (method, operation) => handoff.run(operation, piHandoffReconciliation(method)),
       resources: {
@@ -103,6 +121,7 @@ export async function startIndependentEngineHost(options) {
             legacy: {
               id: 'dsh',
               label: 'DeepSeek Harness',
+              models: ['claude-code:', 'codex:', 'cursor:', 'codebuddy:'],
               start: () => attachDshHost(dshDescriptorPath, join(dataDirectory, 'agent'), machine.machineId),
             },
           }
@@ -136,7 +155,8 @@ export async function startIndependentEngineHost(options) {
           const threadId = url.searchParams.get('threadId');
           if (!threadId || threadId.length > 512) throw new Error('Invalid Thread');
           let pid, turn;
-          if (pi.ownsThread(threadId)) pid = process.pid;
+          if (piBridge?.ownsThread(threadId) || dshBridge?.ownsThread(threadId)) pid = process.pid;
+          else if (pi.ownsThread(threadId)) pid = process.pid;
           else {
             const id = threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
             if (id === 'dsh' && engines.includes(id)) pid = (await (await attachDshHost(dshDescriptorPath, join(dataDirectory,'agent'), machine.machineId)).getIdentity()).enginePid;

@@ -167,6 +167,13 @@ export class CodexCoreControlClient {
     return value;
   }
 
+  /** Synthetic broker auth only; real account credentials remain in Core. */
+  async brokerAuth(): Promise<{ accessToken: string; chatgptAccountId: string }> {
+    const { auth } = (await this.appServerLaunch()).launch;
+    if (auth.chatgptAccountId !== 'opencraft-account-pool') throw new Error('Core did not provide broker authentication');
+    return { accessToken: auth.accessToken, chatgptAccountId: auth.chatgptAccountId };
+  }
+
   async appServerHealth(observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
     const value = await this.health(undefined, observation) as CodexAppServerHealth;
     if (!isAbsolute(value.dataDirectory ?? "") || typeof value.proxyBaseUrl !== "string") {

@@ -1,0 +1,3 @@
+{"kind":"turn.started","threadId":"thr-fixture","turnId":"t1.1","nativeTurnId":"n1","seq":1,"atMs":1700000000001}
+{"kind":"item.started","threadId":"thr-fixture","turnId":"t1.1","item":{"itemId":"i1.1","nativeKey":"k1","threadId":"thr-fixture","turnId":"t1.1","shape":{"kind":"tool","name":"fake.tool","status":"inProgress"}},"seq":2,"atMs":1700000000002}
+{"kind":"turn.completed","threadId":"thr-fixture","turnId":"t1.1","status":"completed","startedAtMs":1700000000001,"seq":3,"atMs":1700000000003}

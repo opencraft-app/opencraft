@@ -1,0 +1,329 @@
+{
+  "schemaVersion": 1,
+  "recording": "p3-real-acp/amp",
+  "agent": "amp",
+  "cliVersion": "amp-acp 0.10.0 (installed snapshot 8ef5b5ab)",
+  "recordedAt": "2026-11-10T19:01:55.404Z",
+  "profile": {
+    "command": "amp-acp",
+    "args": [],
+    "dialect": "amp",
+    "mode": "accept-edits",
+    "model": "low",
+    "cliVersion": "amp-acp 0.10.0 (installed snapshot 8ef5b5ab)"
+  },
+  "initialize": {
+    "request": {
+      "protocolVersion": 1,
+      "grammarRange": {
+        "min": 1,
+        "max": 1
+      },
+      "hostCapabilities": [
+        "smoke"
+      ]
+    },
+    "response": {
+      "protocolVersion": 1,
+      "grammarVersion": 1,
+      "approvalExecutor": "provider",
+      "effectiveCapabilities": {
+        "model": false,
+        "reasoning": false,
+        "history": false,
+        "usage": false,
+        "approval": true,
+        "inputContentTypes": [
+          "text",
+          "image"
+        ],
+        "cliExecutable": false,
+        "forkCheckpoint": false,
+        "skills": false,
+        "installation": false,
+        "steer": {
+          "deliveryMethods": [
+            "native-inject",
+            "next-turn",
+            "interrupt-replace"
+          ],
+          "evidenceKinds": [
+            "admission",
+            "echo"
+          ],
+          "withdrawal": "before-dispatch",
+          "contentLimits": {
+            "maxBytes": 524288,
+            "allowedContentTypes": [
+              "text",
+              "image"
+            ]
+          },
+          "maxPendingWithoutNativeId": 1,
+          "fallbackPolicy": "reject-unknown"
+        }
+      }
+    },
+    "acpInitialize": {
+      "protocolVersion": 1,
+      "agentInfo": {
+        "name": "amp-acp",
+        "title": "Amp ACP Agent",
+        "version": "0.10.0"
+      },
+      "agentCapabilities": {
+        "loadSession": true,
+        "promptCapabilities": {
+          "image": true,
+          "embeddedContext": true
+        },
+        "sessionCapabilities": {
+          "resume": {},
+          "fork": {}
+        },
+        "mcpCapabilities": {
+          "http": true,
+          "sse": true
+        },
+        "_meta": {
+          "amp-acp/thread-lifecycle": {
+            "version": 1,
+            "methods": {
+              "nativeMetadata": "amp-acp/session/native-metadata",
+              "setArchived": "amp-acp/thread/set-archived"
+            }
+          }
+        }
+      },
+      "authMethods": [
+        {
+          "id": "setup",
+          "name": "Amp API Key Setup",
+          "description": "Run interactive setup to configure your Amp API key",
+          "_meta": {
+            "terminal-auth": {
+              "command": "<home>/.local/bin/amp-acp",
+              "args": [
+                "--setup"
+              ],
+              "label": "Amp API Key Setup"
+            }
+          }
+        }
+      ],
+      "_meta": {
+        "midTurnSteering": true
+      }
+    },
+    "acpEffectiveCapabilities": {
+      "model": false,
+      "reasoning": false,
+      "history": false,
+      "usage": false,
+      "approval": true,
+      "inputContentTypes": [
+        "text",
+        "image"
+      ],
+      "cliExecutable": false,
+      "forkCheckpoint": false,
+      "skills": false,
+      "installation": false,
+      "steer": {
+        "deliveryMethods": [
+          "native-inject",
+          "next-turn",
+          "interrupt-replace"
+        ],
+        "evidenceKinds": [
+          "admission",
+          "echo"
+        ],
+        "withdrawal": "before-dispatch",
+        "contentLimits": {
+          "maxBytes": 524288,
+          "allowedContentTypes": [
+            "text",
+            "image"
+          ]
+        },
+        "maxPendingWithoutNativeId": 1,
+        "fallbackPolicy": "reject-unknown"
+      }
+    }
+  },
+  "session": {
+    "providerThreadId": "S-mwb23xrg-iua5mc",
+    "permission": {
+      "requested": "accept-edits",
+      "approvalPolicy": "accept-edits",
+      "configOptions": [
+        {
+          "id": "permission",
+          "value": "default"
+        }
+      ],
+      "detail": "Amp permission=default; accept-edits is enforced at the approval boundary when Amp asks"
+    },
+    "model": {
+      "configOptionId": "amp-mode",
+      "value": "low"
+    },
+    "capabilities": {
+      "images": true,
+      "nativeSteering": true,
+      "deliveryMethods": [
+        "native-inject",
+        "next-turn",
+        "interrupt-replace"
+      ]
+    }
+  },
+  "task": {
+    "nativeTurnId": "acp:fcaa5a12-174e-4c17-b6cb-c9cff3380e7c",
+    "finalText": "DONE",
+    "fileContent": "ok",
+    "toolItems": 2
+  },
+  "steer": {
+    "requestedDelivery": "native-inject",
+    "response": {
+      "nativeTurnId": "acp:33ccdb5c-a83d-408d-abee-9e944ac1eeac",
+      "delivery": "native-inject",
+      "admission": "pending"
+    },
+    "delivery": {
+      "scope": {
+        "threadId": "thread-1"
+      },
+      "op": "input.delivery",
+      "inputId": "steer-1",
+      "deliveryMethod": "native-inject",
+      "admitted": true,
+      "version": 1
+    },
+    "evidence": {
+      "scope": {
+        "threadId": "thread-1"
+      },
+      "op": "input.evidence",
+      "inputId": "steer-1",
+      "evidenceKind": "admission",
+      "version": 1
+    },
+    "outcome": null,
+    "turnsOpened": 2,
+    "steerTurnText": "WAITED STEERED",
+    "query": {
+      "inputs": [
+        {
+          "inputId": "steer-1",
+          "clientRequestId": "steer-1",
+          "expectedTurnId": "acp:33ccdb5c-a83d-408d-abee-9e944ac1eeac",
+          "disposition": "steered",
+          "nativeExecutions": 1,
+          "registration": {
+            "value": "registered",
+            "version": 0
+          },
+          "admission": {
+            "value": "accepted",
+            "version": 1
+          },
+          "delivery": {
+            "value": "native-inject",
+            "version": 1
+          },
+          "evidence": {
+            "value": "evidence-observed",
+            "version": 1,
+            "kind": "admission"
+          },
+          "withdrawal": {
+            "value": "none",
+            "version": 0
+          },
+          "outcome": "delivered"
+        }
+      ]
+    }
+  },
+  "wire": {
+    "initializeRequest": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "initialize",
+      "params": {
+        "protocolVersion": 1,
+        "clientInfo": {
+          "name": "opencraft-agent-bridge",
+          "version": "1"
+        },
+        "clientCapabilities": {}
+      }
+    },
+    "initializeResponse": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "protocolVersion": 1,
+        "agentInfo": {
+          "name": "amp-acp",
+          "title": "Amp ACP Agent",
+          "version": "0.10.0"
+        },
+        "_meta": {
+          "midTurnSteering": true
+        },
+        "agentCapabilities": {
+          "loadSession": true,
+          "promptCapabilities": {
+            "image": true,
+            "embeddedContext": true
+          },
+          "mcpCapabilities": {
+            "http": true,
+            "sse": true
+          },
+          "sessionCapabilities": {
+            "resume": {},
+            "fork": {}
+          },
+          "_meta": {
+            "amp-acp/thread-lifecycle": {
+              "version": 1,
+              "methods": {
+                "nativeMetadata": "amp-acp/session/native-metadata",
+                "setArchived": "amp-acp/thread/set-archived"
+              }
+            }
+          }
+        },
+        "authMethods": [
+          {
+            "id": "setup",
+            "name": "Amp API Key Setup",
+            "description": "Run interactive setup to configure your Amp API key",
+            "_meta": {
+              "terminal-auth": {
+                "command": "<home>/.local/bin/amp-acp",
+                "args": [
+                  "--setup"
+                ],
+                "label": "Amp API Key Setup"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "frameCount": 28
+  },
+  "notes": [
+    "Amp ACP 0.10.0 initialize declares _meta.midTurnSteering=true; the bridge exposed native-inject.",
+    "The real task created p3-accept.txt with content \"ok\" via a shell tool in a throwaway directory.",
+    "The native steer was admitted during the active turn; no second turn was opened and the final answer contained STEERED.",
+    "Evidence tier is admission (the ACP adapter returned end_turn for the steer prompt); it does not prove model-context consumption."
+  ],
+  "gaps": []
+}
