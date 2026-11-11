@@ -14,7 +14,7 @@
   "dependencies": {
     "@opencraft/identity-core": "*",
     "@opencraft/sqlite-node": "*",
-    "openid-client": "6.8.8",
+    "openid-client": "6.8.9",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/storage-node": "0.1.0"
