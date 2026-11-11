@@ -272,6 +272,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     if (raw === undefined || raw === "" || raw.endsWith(":current")) return this.options.defaultModel;
     if (this.options.engine === "claude-code") return raw.replace(/^claude-code:/u, "") || this.options.defaultModel;
     if (this.options.engine === "dsh-acp") return raw.replace(/^(?:dsh-acp|dsh):/u, "") || this.options.defaultModel;
+    if (this.options.engine === "pi") return raw.replace(/^pi-bridge:/u, "") || this.options.defaultModel;
     return raw || this.options.defaultModel;
   }
 
