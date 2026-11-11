@@ -255,7 +255,7 @@ test("Cursor missing API key returns actionable auth guidance without creating a
   await bridge.handle("initialize", { protocolVersion: 1, grammarRange: { min: 1, max: 1 } });
   await assert.rejects(bridge.handle("session/create", { threadId: "t", cwd: "/", stateDirectory: "/", model: "cheap", permissionMode: "full" }),
     (e: unknown) => e instanceof CursorError && e.kind === "auth" && e.message === CURSOR_KEY_GUIDANCE
-      && e.message.includes("https://cursor.com/dashboard/api") && e.message.includes("CURSOR_API_KEY"));
+      && /(^|\s)https:\/\/cursor\.com\/dashboard\/api(\s|[.,;)]|$)/.test(e.message) && e.message.includes("CURSOR_API_KEY"));
   assert.equal(creates, 0); await bridge.close();
 });
 test("Cursor accepts environment API keys or existing SDK credentials without copying key material", async () => {
