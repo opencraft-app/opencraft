@@ -10,6 +10,7 @@ import type { BridgeEngineProvider } from "./bridge-engine-provider.js";
 import type { AgentConversationUsage, AgentUsageSnapshot } from "@opencraft/appserver-protocol";
 import {
   AgentOnboardingService,
+  ONBOARDING_AGENT_ENGINES as ENGINE_BY_AGENT,
   resolveExecutable,
   type OnboardingAgentId,
   type OnboardingDeps,
@@ -24,13 +25,6 @@ interface ConnectedAgentModel {
   supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
   defaultReasoningEffort: string | null;
 }
-
-const ENGINE_BY_AGENT: Record<OnboardingAgentId, EngineId> = {
-  codex: "codex",
-  cursor: "cursor",
-  claude: "claude-code",
-  codebuddy: "codebuddy",
-};
 
 const PLACEHOLDER = ":current";
 
@@ -49,7 +43,7 @@ export function connectedAgentEngineId(modelOrThread: string): EngineId | null {
 const LABELS: Record<EngineId, string> = {
   codex: "Codex",
   cursor: "Cursor",
-  "claude-code": "Claude",
+  "claude-code": "Claude Code",
   codebuddy: "CodeBuddy",
 };
 
@@ -74,6 +68,8 @@ export function connectedAgentCatalogEntry(engineId: EngineId) {
     serviceTiers: [],
     defaultServiceTier: null,
     isDefault: false,
+    agentId: engineId,
+    agentLabel: LABELS[engineId],
     groupKey: `connected-agent:${engineId}`,
     groupLabel: LABELS[engineId],
     source: "custom" as const,

@@ -76,6 +76,8 @@ test("status reports installed agents and does not invent a signed-in session", 
   const snapshot = await service.status();
   const found = snapshot.agents.find(agent => agent.id === "codex");
   assert.equal(found?.installed, true);
+  assert.equal(found?.engineId, connectedAgentCatalogEntry("codex").agentId);
+  assert.equal(snapshot.agents.find(agent => agent.id === "claude")?.engineId, connectedAgentCatalogEntry("claude-code").agentId);
   assert.equal(found?.version, "codex-cli 1.2.3");
   assert.equal(found?.authenticated, true);
   assert.equal(snapshot.agents.find(agent => agent.id === "claude")?.installed, false);

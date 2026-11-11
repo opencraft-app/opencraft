@@ -120,7 +120,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   constructor(private readonly options: AcpEngineOptions) {
     if (!isAbsolute(options.cwd) || !isAbsolute(options.dataDirectory) || !options.command.trim()) throw new Error("ACP requires explicit absolute workspace and data paths and an installed command");
     this.id = options.id ?? "acp";
-    this.label = options.label ?? (this.id === "claude-code" ? "Claude" : this.id === "dsh-acp" ? "DeepSeek Harness (ACP)" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "ACP Agent");
+    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "Agent");
     this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_";
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({

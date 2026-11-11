@@ -25,7 +25,7 @@ export function ComposerModelPicker({ policyRestricted, label, fullLabel, effort
   const contentFocus = { ...focus.contentProps, onOpenAutoFocus(event: Event) {
     focus.contentProps.onOpenAutoFocus(event);
     if (!event.defaultPrevented) {
-      event.preventDefault(); content.current?.querySelector<HTMLInputElement>('input[type="search"]')?.focus({ preventScroll: true });
+      event.preventDefault(); content.current?.querySelector<HTMLElement>('input[type="search"], [role="menuitem"]:not([data-disabled])')?.focus({ preventScroll: true });
     }
   } };
   return <DropdownMenu.Root open={open} onOpenChange={onOpenChange}>

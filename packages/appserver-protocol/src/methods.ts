@@ -235,6 +235,8 @@ export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "def
   maxTokens?: number;
   source?: "builtin" | "custom";
   /** Optional composition-owned display metadata; not execution authorization. */
+  readonly agentId?: string | null;
+  readonly agentLabel?: string | null;
   groupKey?: string | null;
   groupLabel?: string | null;
   configuredRole?: "primary" | "fallback" | null;

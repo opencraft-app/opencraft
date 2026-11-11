@@ -54,7 +54,7 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
   constructor(private readonly options: AcpGenerationHostOptions) {
     if (!isAbsolute(options.dataDirectory)) throw new Error("ACP generation data directory must be absolute");
     this.handoff = new AcpHostHandoff(options.dataDirectory, this.ownerIncarnation);
-    this.id = options.id; this.label = options.id === "dsh-acp" ? "DeepSeek Harness (ACP)" : options.id === "claude-code" ? "Claude Code (ACP)" : "ACP Agent";
+    this.id = options.id; this.label = options.id === "dsh-acp" ? "DSH" : options.id === "claude-code" ? "Claude Code" : "Agent";
     this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_"; this.modelPrefix = this.id + ":";
     this.inputs = {
       receipt: async (threadId, inputId) => { await this.start(); return this.handoff.run(() => this.owner(threadId).inputs.receipt(threadId, inputId), true); },

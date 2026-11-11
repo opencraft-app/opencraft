@@ -2884,6 +2884,8 @@ svg[data-sidebar-toggle-icon-state] {
   margin-bottom: 12px;
 }
 
+.settings-control-section--center-action > .settings-control-section__heading { align-items: center; }
+
 .settings-control-section__copy {
   min-width: 0;
 
@@ -12921,6 +12923,7 @@ html[data-window-host="browser"] body {
   min-height: 0;
   &__sources {
     display: flex;
+    flex-wrap: wrap;
     flex: none;
     align-items: center;
     gap: var(--spacing);

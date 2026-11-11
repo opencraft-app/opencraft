@@ -326,10 +326,11 @@ export async function startEngineHost(options: {
             const catalog = await singleflight(`${method}:${JSON.stringify(params)}`, async () => {
             const outcomes = await Promise.allSettled([
               ...(options.legacy ? [allLegacy(method, params, clientId).then(data => ({ data: method === "model/list" ? data.map(model => ({ ...model,
+                agentId: model.agentId ?? options.legacy!.id, agentLabel: model.agentLabel ?? options.legacy!.label,
                 groupKey: `dsh:${model.groupKey ?? "models"}`, groupLabel: `DSH · ${model.groupLabel ?? "Models"}`,
                 isDefault: options.defaultEngine === options.legacy?.id && model.isDefault })) : data }))] : []),
               ...options.providers.map(provider => provider.request(method, params, state.owner).then(page => ({ ...page, data: method === "model/list"
-                ? page.data.map((model: Value) => ({ ...model, isDefault: provider.id === options.defaultEngine && model.isDefault })) : page.data }))),
+                ? page.data.map((model: Value) => ({ ...model, agentId: model.agentId ?? provider.id, agentLabel: model.agentLabel ?? provider.label, isDefault: provider.id === options.defaultEngine && model.isDefault })) : page.data }))),
             ]);
             const pages = outcomes.flatMap(outcome => outcome.status === "fulfilled" ? [outcome.value] : []);
             if (!pages.length) throw new Error("No execution engine catalog is available");

@@ -11,7 +11,7 @@ const controller = createComposerController({ type: "new-thread", draftId: "mode
   hostId: "fixture", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] },
 } }, { now: Date.now, createId: () => String(++sequence) });
 controller.dispatch({ type: "set-selections", patch: { model: "codex:one[high]" } });
-const model = (id: string, label: string): ComposerModelOption => ({ id, value: id, label, description: null, isDefault: false, efforts: [], defaultEffort: null });
+const model = (id: string, label: string): ComposerModelOption => ({ id, value: id, label, agentId: id.split(":")[0], agentLabel: ({ codex: "Codex", cursor: "Cursor", api: "API models" } as Record<string, string>)[id.split(":")[0]!], description: null, isDefault: false, efforts: [], defaultEffort: null });
 const models: ComposerModelOption[] = [
   ...["one", "two", "three", ...Array.from({ length: 15 }, (_, i) => `extra-${i}`)].flatMap(name => ["low", "medium", "high", "xhigh", "max", "ultra"].map(effort => model(`codex:${name}[${effort}]`, `${name === "one" ? "Model One" : name === "two" ? "Model Two" : name} (${effort})`))),
   model("cursor:one", "Model One"), model("api:plain", "Plain model"),
@@ -20,13 +20,15 @@ const models: ComposerModelOption[] = [
 ];
 const sent: unknown[] = [], remembered: unknown[] = [];
 function Fixture() {
+  const [disabledAgents, setDisabledAgents] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isFetching, setFetching] = useState(false);
-  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, setError, setFetching,
+  Object.assign(window, { modelBrowserFixture: { controller, models, sent, remembered, setError, setFetching, setDisabledAgents,
     setThemePreference, setAppearanceThemeId,
     selections: () => controller.getSnapshot().draft.selections,
   } });
-  return <OpenCraftComposer controller={controller} selectionCatalog={{ models, permissionProfiles: [], modelError: error,
+  return <OpenCraftComposer controller={controller} selectionCatalog={{ agentsDisabled: disabledAgents.length > 0, models: models.filter(model => !disabledAgents.includes(model.agentId!)), permissionProfiles: [], modelError: error,
+    onConfigureAgents: () => remembered.push("agents"),
     isFetching, retryModels: () => { setError(null); setFetching(false); }, onConfigureModels: () => remembered.push("configure"),
     onRememberModelDefaults: value => remembered.push(value),
   }} onSubmit={intent => { sent.push(intent.selections); return false; }} />;

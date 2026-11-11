@@ -6,6 +6,7 @@ export interface UiPreferenceValues {
   readonly "interface.touchFriendly": "auto" | "on" | "off";
   readonly "voice.inputProvider": "auto" | "system" | "hunyuan";
   readonly "locale.override": string;
+  readonly "chat.agentAvailability": Readonly<Record<string, Readonly<Record<string, boolean>>>>;
   readonly "chat.modelSelections": Readonly<Record<string, { readonly model: string; readonly effort: string | null; readonly serviceTier?: string | null }>>;
   readonly "chat.defaultFollowUpAction": "steer" | "queue";
   readonly "chat.turnNotifications": boolean;
@@ -50,6 +51,17 @@ export const uiPreferenceDefinitions = Object.freeze({
           || new Set(ids).size !== ids.length) return null;
       }
       return Object.fromEntries(entries.map(([key, ids]) => [key, [...ids]]));
+    },
+  },
+  "chat.agentAvailability": {
+    key: "chat.agentAvailability", scope: "installation", defaultValue: {},
+    parse: (value: unknown): UiPreferenceValues["chat.agentAvailability"] | null => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      for (const [scope, agents] of Object.entries(value)) {
+        if (!scope || !agents || typeof agents !== "object" || Array.isArray(agents)
+          || Object.entries(agents).some(([id, enabled]) => !id || typeof enabled !== "boolean")) return null;
+      }
+      return Object.fromEntries(Object.entries(value).map(([scope, agents]) => [scope, { ...agents }]));
     },
   },
   "chat.modelSelections": {
@@ -280,6 +292,34 @@ export class UiPreferencesRuntime {
     }).finally(() => {
       if (this.#tails.get(key) === tail) this.#tails.delete(key);
     });
+    this.#tails.set(key, tail);
+    return tail;
+  }
+
+  /** Apply a pure edit to the latest durable value, re-evaluating after CAS conflicts.
+   * Consumers use this for independent entries in a shared preference map. */
+  update<Key extends UiPreferenceKey>(key: Key, edit: (value: UiPreferenceValue<Key>) => UiPreferenceValue<Key>): Promise<void> {
+    this.#ensureOpen();
+    const definition = definitionFor(key);
+    const store = this.#stores[definition.scope]!;
+    const previous = this.#tails.get(key) ?? Promise.resolve();
+    const tail = previous.catch(() => undefined).then(async () => {
+      let current = parseRecord(key, await store.load(key), this.#defaults[key]);
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const changed = edit(current.value);
+        if (Object.is(changed, current.value)) return;
+        const parsed = definition.parse(changed);
+        if (parsed === null) throw new TypeError(`Invalid UI preference value for ${key}`);
+        const result = await store.compareAndSet(key, current.revision, JSON.stringify(parsed));
+        if (result.outcome === "updated") {
+          this.#publishStoredRevision(key, result.record.revision);
+          if (this.#tails.get(key) === tail) this.#publishValue(key, parsed);
+          return;
+        }
+        current = parseRecord(key, await store.load(key), this.#defaults[key]);
+      }
+      throw new Error(`UI preference conflict for ${key}`);
+    }).finally(() => { if (this.#tails.get(key) === tail) this.#tails.delete(key); });
     this.#tails.set(key, tail);
     return tail;
   }

@@ -21,7 +21,7 @@ try {
   const base = `http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`;
   const page = await browser.newPage({ viewport: { width: 1100, height: 850 } });
   page.setDefaultTimeout(15_000);
-  const errors: string[] = []; page.on("pageerror", (error: Error) => errors.push(error.message));
+  const errors: string[] = []; page.on("pageerror", (error: Error) => { errors.push(error.message); console.error("Onboarding browser error:", error.message); });
   const waitCall = (key: string, count = 1) => page.waitForFunction(({ key, count }) => (window as any).onboardingFixture?.calls.filter((call: string) => call === key).length >= count, { key, count });
   const resolve = (key: string, models: { id: string; name: string }[]) => page.evaluate(({ key, models }) => (window as any).onboardingFixture.resolve(key, { models }), { key, models });
   const codex = [{ id: "codex:one", name: "Codex One" }, { id: "codex:two", name: "Codex Two" },
@@ -35,7 +35,15 @@ try {
   assert.equal(await next.isEnabled(), true, "a ready agent exposes its models without a hidden row click");
   assert.equal(await page.getByRole("button", { name: "Codex One", exact: true }).getAttribute("aria-pressed"), "true");
   await page.getByRole("button", { name: "Codex Two", exact: true }).click();
-  await next.click(); assert.match(await page.locator(".agent-onboard__intro").innerText(), /Codex Two/);
+  await next.click(); assert.match(await page.locator(".agent-onboard__selection").innerText(), /Codex Two/);
+  // Closing the currently selected Agent must not silently choose another ready Agent.
+  await page.evaluate(() => (window as any).onboardingFixture.setDisabledAgents(["codex"]));
+  await page.getByRole("button", { name: "Continue", exact: true }).waitFor();
+  assert.equal(await page.getByRole("button", { name: "Continue", exact: true }).isDisabled(), true);
+  assert.equal(await page.getByRole("button", { name: "Start chatting", exact: true }).count(), 0);
+  assert.equal(await page.locator('li[data-agent="cursor"]').getByRole("button", { name: "Cursor One", exact: true }).count(), 0);
+  await page.evaluate(() => (window as any).onboardingFixture.setDisabledAgents([]));
+  await page.getByRole("button", { name: "Start chatting", exact: true }).waitFor();
   await page.getByRole("button", { name: "Back", exact: true }).click();
   const chooseCursor = page.locator('li[data-agent="cursor"]').getByRole("button", { name: "Choose models" });
   await chooseCursor.focus(); await page.keyboard.press("Enter"); await waitCall("host-a:cursor");
@@ -72,8 +80,8 @@ try {
   // Check the rendered composition with genuine touch input, themes and a short viewport.
   for (const touch of [false, true]) {
     const context = await browser.newContext({ viewport: { width: touch ? 390 : 1100, height: 850 }, hasTouch: touch, isMobile: touch, reducedMotion: "reduce" });
-    const p = await context.newPage(); p.setDefaultTimeout(15_000); await p.goto(`${base}/?locale=zh-CN`);
-    await p.waitForFunction(() => (window as any).onboardingFixture?.calls.includes("host-a:codex"));
+    const p = await context.newPage(); p.on("pageerror", (error: Error) => console.error("Onboarding locale browser error:", error.message)); p.setDefaultTimeout(15_000); await p.goto(`${base}/?locale=zh-CN`);
+    try { await p.waitForFunction(() => (window as any).onboardingFixture?.calls.includes("host-a:codex")); } catch (error) { console.error("Onboarding state", await p.locator("body").innerText()); throw error; }
     await p.evaluate(models => (window as any).onboardingFixture.resolve("host-a:codex", { models }), codex);
     await p.getByRole("button", { name: "Codex Two", exact: true }).waitFor();
     for (const theme of ["light", "dark", "lavender"]) {
@@ -91,10 +99,27 @@ try {
       assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-${theme}.png` });
       if (touch) await next.tap(); else await next.click();
-      assert.match(await p.locator(".agent-onboard__intro").innerText(), /Codex Two/);
+      assert.match(await p.locator(".agent-onboard__selection").innerText(), /Codex Two/);
       await p.getByRole("button", { name: "返回", exact: true }).click();
     }
     await context.close();
   }
+  // During asynchronous Start, every exit button stays disabled until ownership settles.
+  const finishingPage = await browser.newPage();
+  await finishingPage.goto(base);
+  await finishingPage.waitForFunction(() => (window as any).onboardingFixture?.calls.includes("host-a:codex"));
+  await finishingPage.evaluate(() => {
+    const fixture = (window as any).onboardingFixture;
+    fixture.resolve("host-a:codex", { models: [{ id: "codex:one", name: "Codex One" }] });
+    fixture.setPresentation("sheet"); fixture.holdFinish();
+  });
+  await finishingPage.getByRole("button", { name: "Continue", exact: true }).click();
+  await finishingPage.getByRole("button", { name: "Start chatting", exact: true }).click();
+  assert.equal(await finishingPage.getByRole("button", { name: "Back to model settings", exact: true }).isDisabled(), true);
+  assert.equal(await finishingPage.getByRole("button", { name: "Back", exact: true }).isDisabled(), true);
+  assert.equal(await finishingPage.getByRole("button", { name: "Start chatting", exact: true }).isDisabled(), true);
+  await finishingPage.evaluate(() => (window as any).onboardingFixture.releaseFinish());
+  await finishingPage.waitForFunction(() => (window as any).onboardingFixture.finished.includes("codex:one"));
+  await finishingPage.close();
   console.log(`PASS onboarding: automatic discovery, explicit keyboard/touch choices, correct model handoff, late results, host switch, sign-out, failure/retry/empty fallback; screenshots: ${output}. Agent boundary simulated.`);
 } finally { await browser?.close(); await vite.close(); }

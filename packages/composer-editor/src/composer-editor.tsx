@@ -123,6 +123,8 @@ export interface ComposerModelOption {
   /** Concrete AppServer `model` override, which is distinct from catalog id. */
   readonly value: string;
   readonly label: string;
+  readonly agentId?: string | null;
+  readonly agentLabel?: string | null;
   readonly groupKey?: string | null;
   readonly groupLabel?: string | null;
   readonly configuredRole?: "primary" | "fallback" | null;
@@ -171,6 +173,7 @@ export interface ComposerAgentModelGroup {
 export interface ComposerSelectionCatalog {
   readonly policyRestricted?: boolean;
   readonly agentGroups?: readonly ComposerAgentModelGroup[];
+  readonly agentsDisabled?: boolean;
   readonly models: readonly ComposerModelOption[];
   /** Cached names/capabilities for the selected model only; never selectable choices. */
   readonly displayModels?: readonly ComposerModelOption[];
@@ -180,6 +183,7 @@ export interface ComposerSelectionCatalog {
   readonly permissionProfileError?: string | null;
   readonly onModelMenuOpen?: () => void;
   readonly onConfigureModels?: () => void;
+  readonly onConfigureAgents?: () => void;
   readonly onRememberModelDefaults?: (defaults: {
     readonly model: string;
     readonly effort: string | null;
@@ -935,7 +939,7 @@ export const OpenCraftComposer = forwardRef<
       settleEditingFocusRef.current();
     });
   };
-  const intelligenceFocus = useInputAuxiliaryMenuFocus({ open: openPicker === "intelligence", onOpenChange: changePicker("intelligence"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
+  const intelligenceFocus = useInputAuxiliaryMenuFocus({ restoreEditorOnClose: true, open: openPicker === "intelligence", onOpenChange: changePicker("intelligence"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
   const permissionsFocus = useInputAuxiliaryMenuFocus({ open: openPicker === "permissions", onOpenChange: changePicker("permissions"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
   const agentSelectionEpoch = useRef(0);
   const [switchingAgentId, setSwitchingAgentId] = useState<string | null>(null);
@@ -1066,6 +1070,8 @@ export const OpenCraftComposer = forwardRef<
     effectiveSelections?.model ??
     (existingConversation ? null : catalogDefaultModel?.value) ??
     null;
+  const modelUnavailable = !existingConversation && selectedModelValue !== null && !catalogModels.some(model => model.value === selectedModelValue || model.id === selectedModelValue);
+  const modelSelectionBlocked = !existingConversation && selectionCatalog !== undefined && !modelDisplayOnly && modelSelectionPolicy === "user" && (selectedModelValue === null || modelUnavailable);
   const selectedModel = selectedModelValue === null && existingConversation ? null : resolveModelSelection(catalogModels, selectedModelValue);
   // Execution snapshots and retained Composer intent paint without waiting for
   // the complete selectable catalog. Cached metadata cannot grant capabilities.
@@ -1333,7 +1339,7 @@ export const OpenCraftComposer = forwardRef<
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
-        if (dictation.phase !== "listening" || disabled || submissionDisabled || (!modelDisplayOnly && modelSelectionPolicy === "user" && selectedModelValue === null) || composerSnapshot.hasProcessingAssets) return;
+        if (dictation.phase !== "listening" || disabled || submissionDisabled || modelSelectionBlocked || composerSnapshot.hasProcessingAssets) return;
         const draftId = controller.getSnapshot().draft.id;
         const committed = await dictation.finish();
         if (committed && editorViewRef.current === view && editorControllerRef.current === controller
@@ -1348,6 +1354,7 @@ export const OpenCraftComposer = forwardRef<
         editorControllerRef.current !== controller ||
         disabled ||
         submissionDisabled ||
+        modelSelectionBlocked ||
         !controller.getSnapshot().canSubmit ||
         pendingSubmissionRef.current?.controller === controller
       )
@@ -1508,6 +1515,7 @@ export const OpenCraftComposer = forwardRef<
       editingQueuedSubmissionId,
       selectedModel,
       selectedModelValue,
+      modelSelectionBlocked,
       requestedServiceTier,
       requestedEffort,
       effectiveEffort,
@@ -2103,7 +2111,8 @@ export const OpenCraftComposer = forwardRef<
     (selectedModelValue === null
       ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
       : modelIdentifierLabel(selectedModelValue));
-  const compactSelectedModelLabel = compactModelLabel(modelLabel);
+  const compactSelectedModelLabel = displayModel?.agentLabel && !existingConversation
+    ? `${displayModel.agentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
   const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
     : existingConversation ? displayEffortValue : selectedEffortValue);
@@ -2122,9 +2131,10 @@ export const OpenCraftComposer = forwardRef<
     id: "chat.reasoning",
     defaultMessage: "Reasoning",
   });
+  const namedModelLabel = displayModel?.agentLabel && !existingConversation ? `${displayModel.agentLabel} · ${modelLabel}` : modelLabel;
   const intelligenceLabel = visibleEffortValue != null
-    ? `${modelLabel}, ${reasoningLabel}: ${effortLabel}`
-    : modelLabel;
+    ? `${namedModelLabel}, ${reasoningLabel}: ${effortLabel}`
+    : namedModelLabel;
   const permissionsLabel = intl.formatMessage({ id: "composer.permissions", defaultMessage: "Permissions" });
   const permissionSelectionLabel = selectedPermission != null
     ? displayPermissionLabel(selectedPermission, intl)
@@ -2139,7 +2149,7 @@ export const OpenCraftComposer = forwardRef<
 
   const primaryAction = resolveComposerPrimaryAction({
     isResponseInProgress: isStreaming,
-    canSubmit: !disabled && !submissionDisabled && composerSnapshot.canSubmit,
+    canSubmit: !disabled && !submissionDisabled && !modelSelectionBlocked && composerSnapshot.canSubmit,
     defaultFollowUpAction,
     availableFollowUpActions,
   });
@@ -2455,7 +2465,7 @@ export const OpenCraftComposer = forwardRef<
           data-input-mode={voiceActive ? "dictation" : "standard"}
         >
           {inputInteraction === null ? null : <DictationFooter interaction={inputInteraction}
-            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && (modelDisplayOnly || modelSelectionPolicy !== "user" || selectedModelValue !== null)}
+            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && (modelDisplayOnly || modelSelectionPolicy !== "user" || selectedModelValue !== null && !modelUnavailable)}
             onSend={() => { void submit(); }} onCancel={cancelInputInteraction} />}
           <div
             ref={footerLayout.attachmentRef}
@@ -2723,7 +2733,7 @@ export const OpenCraftComposer = forwardRef<
                 aria-label={primaryActionLabel}
                 title={primaryActionTitle}
                 data-composer-primary-action={primaryAction}
-                disabled={disabled || submissionDisabled || !composerSnapshot.canSubmit}
+                disabled={disabled || submissionDisabled || modelSelectionBlocked || !composerSnapshot.canSubmit}
                 onMouseDown={(event) => {
                   // Prevent mouse focus transfer without cancelling touch click synthesis.
                   if (event.button === 0) event.preventDefault();

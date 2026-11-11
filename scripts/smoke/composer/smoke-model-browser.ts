@@ -71,6 +71,30 @@ try {
     await p.locator('[data-composer-primary-action="send"]').click();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.sent[0].model), "api:thinking");
 
+    // Closing the selected Agent blocks both button and keyboard submission without losing the draft.
+    await p.evaluate(() => (window as any).modelBrowserFixture.setDisabledAgents(["api"]));
+    await p.waitForFunction(() => (document.querySelector('[data-composer-primary-action="send"]') as HTMLButtonElement)?.disabled === true);
+    const sentBefore = await p.evaluate(() => (window as any).modelBrowserFixture.sent.length);
+    await editor.focus(); await p.keyboard.press("Enter");
+    assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.sent.length), sentBefore);
+    assert.equal((await editor.innerText()).trimEnd(), "Keep this model selection draft");
+    await editor.fill("Keep this model selection draft");
+    await trigger.click();
+    assert.equal(await p.getByRole("tab", { name: "API models", exact: true }).count(), 0);
+    await p.keyboard.press("Escape");
+    await p.evaluate(() => (window as any).modelBrowserFixture.setDisabledAgents(["api", "cursor", "codex"]));
+    if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
+    await menu.getByText("No enabled agents have available models. Enable an agent or check its setup in settings.", { exact: true }).waitFor();
+    await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-empty.png` });
+    if (!touch) {
+      assert.equal(await menu.getByRole("menuitem", { name: "Manage agents…" }).evaluate(el => el === document.activeElement), true, "keyboard opening of an empty picker focuses its recovery action");
+      await p.keyboard.press("Enter");
+    }
+    else await menu.getByRole("menuitem", { name: "Manage agents…" }).tap();
+    assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.remembered.includes("agents")), true);
+    await p.keyboard.press("Escape");
+    await p.evaluate(() => (window as any).modelBrowserFixture.setDisabledAgents([]));
+
     // Theme and size changes keep the same draft, choices and menu ownership.
     for (const theme of ["light", "dark", "lavender"]) {
       await p.evaluate(theme => { const f = (window as any).modelBrowserFixture; f.setThemePreference(theme === "dark" ? "dark" : "light"); if (theme === "lavender") f.setAppearanceThemeId("opencraft.core.lavender"); }, theme);

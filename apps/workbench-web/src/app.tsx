@@ -1,6 +1,7 @@
+import { useAgentAvailability } from "./runtime/use-agent-availability";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
-import { composerCapabilitiesKey } from "./runtime/composer-capabilities-query";
+import { composerCapabilitiesKey, composerCapabilitiesOptions } from "./runtime/composer-capabilities-query";
 import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
 import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
 import { completeConversationComposerSubmission } from "./runtime/composer-submission-admission";
@@ -160,7 +161,7 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
-import { AgentOnboarding } from "./components/agent-onboarding";
+import { HostAgentOnboarding } from "./components/agent-management";
 import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
@@ -1320,18 +1321,37 @@ export function App({
       : activeHostConnectionPhase === "ready" && ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error) ? "catalog-error" as const
         : activeHostConnectionPhase === "ready" && noUsableModels && !composerCatalog.modelError && !modelReadiness.error ? "models" as const : null
     : null;
+  const onboardingFinishEpoch = useRef(0);
+  useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
   const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | null>(() => {
     try { return localStorage.getItem("opencraft.onboarding.completedAt") === null ? "gate" : null; }
     catch { return null; }
   });
-  const finishOnboarding = (modelId?: string) => {
+  const finishOnboarding = async (modelId?: string) => {
+    const epoch = ++onboardingFinishEpoch.current;
+    if (modelId) {
+      const revision = hostCatalog.navigation.getSnapshot().revision;
+      const account = hostCatalog.threadAttention.getScope();
+      const display = hostCatalog.displayContinuity.getScope();
+      const latest = await queryClient.fetchQuery({ ...composerCapabilitiesOptions(snapshot.hostId, null, runtime.resources.composerCatalog), staleTime: 0 });
+      if (epoch !== onboardingFinishEpoch.current) return;
+      if (revision !== hostCatalog.navigation.getSnapshot().revision || account !== hostCatalog.threadAttention.getScope()
+        || display !== hostCatalog.displayContinuity.getScope()) throw new Error("Onboarding selection scope changed");
+      if (!latest.models.some(model => model.id === modelId || model.model === modelId)) throw new Error("Selected agent model is unavailable");
+    }
+    if (modelId && draft === null) {
+      hostCatalog.navigateToHome({ execution: { hostId: asHostId(snapshot.hostId), workspace: { cwd: activeHost.workspaceBrowseRoots[0] ?? null, runtimeWorkspaceRoots: activeHost.workspaceBrowseRoots } }, entrypoint: "new-chat" });
+      await hostCatalog.selectHost(snapshot.hostId, { model: modelId, effort: null, serviceTier: null });
+      if (epoch !== onboardingFinishEpoch.current) return;
+    }
     try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
     catch { /* The gate can still close when storage is unavailable. */ }
-    if (modelId) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
+    if (modelId && draft !== null) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
     setOnboardingOverlay(null);
   };
   useEffect(() => {
     const replay = (event: Event) => {
+      onboardingFinishEpoch.current += 1;
       const presentation = event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
       setOnboardingOverlay(presentation);
     };
@@ -1367,10 +1387,17 @@ export function App({
   const composerSuggestionCatalog = useAppServerComposerCatalog(
     composerWorkspaceRoots,
   );
+  const agentAvailability = useAgentAvailability();
+  const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
+      agentsDisabled: filterNewAgents && (() => {
+        const groups = engineCatalog.groups.map(group => ({ hostId: group.hostId, models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models }));
+        const declared = groups.flatMap(group => group.models.map(model => ({ hostId: group.hostId, model })));
+        return declared.length > 0 && declared.every(({ hostId, model }) => !agentAvailability.enabled(hostId, model.agentId ?? "host"));
+      })(),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectComposerModelChoices(composerCatalog.models),
+      models: projectComposerModelChoices(composerCatalog.models.filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
         const profile = rawProfile as OpenCraftPermissionProfile;
@@ -1391,12 +1418,13 @@ export function App({
       modelError: composerCatalog.modelError?.message ?? null,
       onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
+      onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
-      agentGroups: modelSelectionPolicy !== "user" || draft === null || presentation.executionSelection === "fixed" ? undefined : engineCatalog.groups.map(group => ({
+      agentGroups: !filterNewAgents ? undefined : engineCatalog.groups.map(group => ({
         id: group.hostId,
         label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
         active: group.hostId === snapshot.hostId,
-        models: projectComposerModelChoices(group.hostId === snapshot.hostId ? composerCatalog.models : group.models),
+        models: projectComposerModelChoices((group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
         loading: group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
         error: group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
@@ -1417,7 +1445,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      filterNewAgents, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -2171,14 +2199,12 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
-          {!embedded && visibleOnboardingOverlay !== null ? <AgentOnboarding
-            hostId={snapshot.hostId}
-            hostName={activeHost.label}
+          {!embedded && visibleOnboardingOverlay !== null ? <HostAgentOnboarding
+            key={snapshot.hostId}
             presentation={visibleOnboardingOverlay}
-            request={(method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params)}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}
-            onClose={() => setOnboardingOverlay(null)}
+            onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}
           /> : null}
           <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
           <div

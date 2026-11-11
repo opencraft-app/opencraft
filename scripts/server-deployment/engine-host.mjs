@@ -100,7 +100,7 @@ export async function startIndependentEngineHost(options) {
       if (!isAbsolute(remote?.descriptorPath ?? '') || !isAbsolute(remote?.dataDirectory ?? '')) throw new Error('Independent ACP descriptor and data directory required');
       const attachment = await attachEngineHost(remote.descriptorPath, remote.dataDirectory, machine.machineId, [id], id);
       const prefix = id === 'dsh-acp' ? 'dsh_acp_' : id === 'claude-code' ? 'claude_' : 'acp_';
-      remotes.push(new RemoteEngineProvider(id, id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs); remoteOrigins.set(id, attachment.getExecutionIdentity);
+      remotes.push(new RemoteEngineProvider(id, ({ "dsh-acp": "DSH", "claude-code": "Claude Code", codex: "Codex", cursor: "Cursor", codebuddy: "CodeBuddy" })[id] ?? id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs); remoteOrigins.set(id, attachment.getExecutionIdentity);
     }
     const remoteInputCustody = new PiRemoteInputs(join(dataDirectory,'pi'), remoteInputs, handoff);
     await remoteInputCustody.load();
