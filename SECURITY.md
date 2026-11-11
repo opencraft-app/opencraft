@@ -155,3 +155,54 @@ because the Cordis HMR service is absent; 0.1.7-rc.2 removed
 without the launch token exchange, 404 after it). This finding is not
 remediated and needs a coordinated engine migration rather than a
 dependency-only update.
+
+### Compatible dependency remediation (2026-11-07, updated 2026-11-11)
+
+The root workspace overrides six transitive dependency lines to fixed
+releases: `lodash-es` 4.18.1
+([GHSA-r5fr-rjxr-66jc](https://github.com/advisories/GHSA-r5fr-rjxr-66jc),
+[GHSA-xxjr-mmjv-4gpg](https://github.com/advisories/GHSA-xxjr-mmjv-4gpg))
+below Mermaid's Chevrotain grammar packages; `nanoid` 3.3.20 and 5.1.16
+([GHSA-28wg-ghj8-5hjv](https://github.com/advisories/GHSA-28wg-ghj8-5hjv),
+[GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8),
+[GHSA-mwcw-c2x4-8c55](https://github.com/advisories/GHSA-mwcw-c2x4-8c55) and
+[GHSA-xwg4-73v4-xw9w](https://github.com/advisories/GHSA-xwg4-73v4-xw9w))
+under Excalidraw and mermaid-to-excalidraw; `re2js` 2.8.7
+([GHSA-gg6h-894w-4m9c](https://github.com/advisories/GHSA-gg6h-894w-4m9c))
+under pi-interactive-shell; `undici` 8.12.3
+([GHSA-2m5v-pch6-74hx](https://github.com/advisories/GHSA-2m5v-pch6-74hx) and
+seven related HTTP, TLS, WebSocket and EventSource advisories) under the Pi
+coding agent; the esbuild 0.18 line to 0.25.12
+([GHSA-67mh-4wv8-2f99](https://github.com/advisories/GHSA-67mh-4wv8-2f99)) used
+by Drizzle Kit's @esbuild-kit config loader; and `node-forge` 1.4.3
+([GHSA-6889-vf6x-f3g5](https://github.com/advisories/GHSA-6889-vf6x-f3g5),
+[GHSA-6cv4-p8m7-4r25](https://github.com/advisories/GHSA-6cv4-p8m7-4r25),
+[GHSA-j8rw-jp99-435v](https://github.com/advisories/GHSA-j8rw-jp99-435v) and
+[GHSA-w4xr-hqv8-ch44](https://github.com/advisories/GHSA-w4xr-hqv8-ch44))
+below Expo CLI's code-signing certificate helper. The node-forge line moves
+from the previously selected 1.4.1 to 1.4.3; the only consumer is
+`@expo/code-signing-certificates`, and the patch release keeps that API. The
+nanoid 4 to 5 and esbuild 0.18 to 0.25 overrides cross a major line; both
+callers are checked against the selected release. nanoid 4 and 5 are ESM-only
+and the consumers use only the named `nanoid` export; the loader uses the
+stable `transform` and `transformSync` API.
+
+`npm ci`, the root dependency audit and an OSV query over all 1,769
+package/version entries in the root lockfile report no advisories. The
+candidate passes the typechecks of the seven affected workspaces, the Pi
+engine suite (78 tests), the structured-preview tests, the Web build
+(including the Excalidraw and Mermaid dynamic imports) and the 1,038-file
+browser compatibility check. A Node smoke parses a Mermaid diagram, generates
+nanoid values, signs a SHA-256 digest with node-forge, compiles a RE2JS matcher
+and loads the Drizzle config through the upgraded esbuild. No lock entries
+outside the named lines changed except the in-range undici 7.30.2 patch and
+the new esbuild platform binaries.
+
+The isolated DSH runtime remains unremediated. The 2026-11-11 registry check
+still finds 0.1.1-rc.2 as the newest release in the 0.1.1 line and 0.2.2-rc.1
+as the newest published engine. The installed
+`@deepseek-ai/dsh-client-connection` 0.1.1-rc.2 still serves the
+`/api/events.mux` and `/api/events.host` downlinks used by
+`apps/local-agent-host`; fixed engine releases changed that transport to the
+launch-token/signed-cookie browser flow, so the engine migration described
+above is still required.
