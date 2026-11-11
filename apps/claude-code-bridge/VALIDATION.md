@@ -6,6 +6,25 @@ baseline fix #214 are merged) in worktree `agent-bridge-p2c`, branch
 gateway deployment or client route was changed. The old ACP Claude route was
 not edited.
 
+## Runtime requirement
+
+The bridge resolves one Claude Code CLI and passes it to every Agent SDK
+`query()` as `pathToClaudeCodeExecutable`, including session startup and the
+`model/list` initialize probe. It does not fall back to the SDK's optional
+platform binary.
+
+1. `CLAUDE_CODE_EXECUTABLE`, when set, must be an executable file. Otherwise
+   the command fails and search does not continue.
+2. `claude` on `PATH`. Windows looks for `claude.exe`.
+3. Common locations for the current platform: `~/.claude/local`, then
+   `~/.local/bin`, then the npm global bin.
+4. If none of those exist, the error tells the operator to install Claude Code
+   or set `CLAUDE_CODE_EXECUTABLE`.
+
+Command `env` cannot override `CLAUDE_CODE_EXECUTABLE` or `PATH`. The historical
+real-account smoke below pinned the CLI with `CLAUDE_CODE_EXECUTABLE`; that pin
+still works.
+
 ## Results
 
 | Command / probe | Result |
@@ -134,5 +153,6 @@ post-rebase run with the stricter assertions).
 - `withdrawal` is declared `none` because the SDK input stream takes ownership
   synchronously in `turn/steer`; claiming a pre-dispatch window would be false.
 - The bridge bundle is built from source and pinned by the Host's artifact
-  digest; `dist/` stays out of Git. The native Claude CLI is pinned separately
-  via `CLAUDE_CODE_EXECUTABLE` or the SDK's optional package.
+  digest; `dist/` stays out of Git. The native Claude CLI is resolved from
+  `CLAUDE_CODE_EXECUTABLE`, `PATH`, or a common install location. The SDK's
+  optional platform package is not a runtime fallback.
