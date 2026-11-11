@@ -173,7 +173,7 @@ jobs:
 
       - name: Install Chromium and system dependencies
         if: ${{ inputs.oidc_probe != true }}
-        run: npx playwright install --with-deps chromium
+        run: bash scripts/ci/install-playwright-chromium.sh
 
       - name: Gate formal releases on performance regressions
         if: ${{ inputs.oidc_probe != true }}

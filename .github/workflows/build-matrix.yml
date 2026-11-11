@@ -43,7 +43,7 @@ jobs:
       - run: npm run test:hover-policy
         if: always() && steps.dependencies.outcome == 'success'
       - id: browser
-        run: npx playwright install --with-deps chromium
+        run: bash scripts/ci/install-playwright-chromium.sh
         if: always() && steps.dependencies.outcome == 'success'
       - run: npm run smoke:touch-hover
         if: always() && steps.browser.outcome == 'success'
@@ -76,7 +76,7 @@ jobs:
       - name: Browser bootstrap regression (current engine)
         if: matrix.target == 'web-browser'
         run: |
-          npx playwright install --with-deps chromium
+          bash scripts/ci/install-playwright-chromium.sh
           npm run smoke:browser-bootstrap
       - name: Browser bootstrap regression (Chrome 116)
         if: matrix.target == 'web-browser'
