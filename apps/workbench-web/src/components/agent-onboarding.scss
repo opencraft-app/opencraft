@@ -112,11 +112,11 @@
     &[data-agent="claude"] { color: #d97757; }
     &[data-agent="codebuddy"] { color: #0052d9; }
   }
-  &__copy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+  &__copy { display: flex; min-width: 0; flex: 1 1 10rem; flex-direction: column; }
   &__name { @include typography.role(control, primary); }
   &__detail { @include typography.role(caption, secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   &__detail--failed { color: var(--color-status-danger, #b42318); }
-  &__actions { display: flex; flex: 0 0 auto; align-items: center; gap: calc(var(--spacing) * 2); }
+  &__actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; max-width: 100%; margin-inline-start: auto; align-items: center; gap: calc(var(--spacing) * 2); }
   &__ready { @include typography.role(caption, primary); color: var(--color-status-success, #168343); }
   &__guide {
     display: flex;

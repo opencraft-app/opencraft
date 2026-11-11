@@ -14,6 +14,8 @@ export interface WorkbenchReasoningEffortChoice {
 export interface WorkbenchComposerModelChoice {
   readonly policyRestricted?: boolean;
   readonly policyRestrictedEfforts?: readonly string[];
+  readonly agentId?: string | null;
+  readonly agentLabel?: string | null;
   readonly groupKey?: string | null;
   readonly groupLabel?: string | null;
   readonly configuredRole?: "primary" | "fallback" | null;
@@ -67,6 +69,8 @@ export function projectComposerModelChoices(
       id: model.id,
       value: model.model,
       label: model.displayName,
+      agentId: model.agentId ?? null,
+      agentLabel: model.agentLabel ?? null,
       groupKey: model.groupKey ?? null,
       groupLabel: model.groupLabel ?? null,
       configuredRole: model.configuredRole ?? null,

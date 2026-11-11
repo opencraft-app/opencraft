@@ -724,7 +724,10 @@ export async function startLocalAgentHost(options: {
           const size = typeof paging.limit === "number" ? Math.min(200, Math.max(1, Math.floor(paging.limit))) : 50;
           const connectedCursor = typeof paging.cursor === "string" ? /^opencraft-connected-models:(\d+)$/u.exec(paging.cursor) : null;
           const listed = connectedCursor ? { data: [], nextCursor: null } : await adapter.dispatchOwned(request.method, request.params, owner, request.id as string | number) as { data?: unknown[]; nextCursor?: string | null };
-          const data = [...(listed.data ?? [])];
+          const data = (listed.data ?? []).map(value => {
+            const model = value as Record<string, unknown>;
+            return { ...model, agentId: model.agentId ?? "dsh", agentLabel: model.agentLabel ?? "DSH" };
+          });
           let nextCursor = listed.nextCursor ?? null;
           if (nextCursor === null) {
             const extras = await connectedAgents.models();

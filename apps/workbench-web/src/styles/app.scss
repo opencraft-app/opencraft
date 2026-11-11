@@ -12921,6 +12921,7 @@ html[data-window-host="browser"] body {
   min-height: 0;
   &__sources {
     display: flex;
+    flex-wrap: wrap;
     flex: none;
     align-items: center;
     gap: var(--spacing);

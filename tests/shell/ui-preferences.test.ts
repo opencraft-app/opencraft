@@ -226,3 +226,57 @@ test("model memory isolates account, display and target Host through production 
   assert.deepEqual(read(restored, scope), choice, "invalid input preserves the last valid selection");
   await restored.close();
 });
+
+test("Agent availability preserves explicit all-off choices across restart and isolates subjects", async () => {
+  const store = new MemoryUiPreferenceStore();
+  const first = await UiPreferencesRuntime.open({ installation: store });
+  const scope = JSON.stringify(["display", "account-a", "host-a"]);
+  const other = JSON.stringify(["display", "account-b", "host-a"]);
+  await first.set("chat.agentAvailability", { [scope]: { pi: false, codex: false }, [other]: { pi: true } });
+  await first.flush();
+  const second = await UiPreferencesRuntime.open({ installation: store });
+  assert.deepEqual(second.get("chat.agentAvailability")[scope], { pi: false, codex: false });
+  assert.equal(second.get("chat.agentAvailability")[other]?.pi, true);
+  assert.equal(second.get("chat.agentAvailability")[JSON.stringify(["display", "account-a", "host-b"])], undefined);
+  await assert.rejects(second.set("chat.agentAvailability", { invalid: { pi: "false" } } as never), /Invalid UI preference/);
+  await first.close(); await second.close();
+});
+
+test("concurrent settings/onboarding Agent choices merge after durable writes, including recovery from failure", async () => {
+  const { agentAvailabilityScope, isAgentEnabled, setAgentEnabled } = await import("../../apps/workbench-web/src/runtime/agent-availability.ts");
+  let rejectWrite = false;
+  class Store extends MemoryUiPreferenceStore {
+    override async compareAndSet(...args: Parameters<MemoryUiPreferenceStore["compareAndSet"]>) {
+      if (rejectWrite) throw new Error("Unavailable");
+      return super.compareAndSet(...args);
+    }
+  }
+  const runtime = await UiPreferencesRuntime.open({ installation: new Store() });
+  const scope = agentAvailabilityScope("display", "account", "host");
+  await Promise.all([setAgentEnabled(runtime, scope, "pi", false), setAgentEnabled(runtime, scope, "codex", false)]);
+  assert.equal(isAgentEnabled(runtime.get("chat.agentAvailability"), scope, "pi"), false);
+  assert.equal(isAgentEnabled(runtime.get("chat.agentAvailability"), scope, "codex"), false);
+  assert.equal(isAgentEnabled(runtime.get("chat.agentAvailability"), scope, "new-agent"), true);
+  rejectWrite = true;
+  await assert.rejects(setAgentEnabled(runtime, scope, "pi", true), /Unavailable/);
+  assert.equal(isAgentEnabled(runtime.get("chat.agentAvailability"), scope, "pi"), false, "failed saves do not change the visible preference");
+  rejectWrite = false;
+  await setAgentEnabled(runtime, scope, "codex", true);
+  assert.equal(isAgentEnabled(runtime.get("chat.agentAvailability"), scope, "pi"), false);
+  assert.equal(isAgentEnabled(runtime.get("chat.agentAvailability"), scope, "codex"), true);
+  await runtime.close();
+});
+
+test("Agent choices merge across two windows after a CAS conflict and discard a retired scope intent", async () => {
+  const { agentAvailabilityScope, setAgentEnabled } = await import("../../apps/workbench-web/src/runtime/agent-availability.ts");
+  const store = new MemoryUiPreferenceStore();
+  const first = await UiPreferencesRuntime.open({ installation: store });
+  const second = await UiPreferencesRuntime.open({ installation: store });
+  const scope = agentAvailabilityScope("display", "account", "host");
+  await Promise.all([setAgentEnabled(first, scope, "pi", false), setAgentEnabled(second, scope, "codex", false)]);
+  const restored = await UiPreferencesRuntime.open({ installation: store });
+  assert.deepEqual(restored.get("chat.agentAvailability")[scope], { pi: false, codex: false });
+  await setAgentEnabled(restored, scope, "pi", true, () => false);
+  assert.deepEqual(restored.get("chat.agentAvailability")[scope], { pi: false, codex: false });
+  await first.close(); await second.close(); await restored.close();
+});

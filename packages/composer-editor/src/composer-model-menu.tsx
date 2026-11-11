@@ -39,18 +39,18 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   for (const group of groups) {
     const scoped = new Map<string, Source>();
     for (const model of group.models) {
-      const identity = brands[model.value.split(":")[0]!];
-      const key = identity?.brand ?? (model.groupKey || "api");
+      const identity = model.agentId ? brands[model.agentId] : undefined;
+      const key = model.agentId ?? "host";
       let source = scoped.get(key);
       if (!source) {
-        const name = identity?.name ?? model.groupLabel ?? apiLabel;
+        const name = model.agentLabel || group.label || intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" });
         source = { id: `${group.id}:${key}`, label: groups.length > 1 && group.label !== name ? `${name} · ${group.label}` : name,
           brand: identity?.brand, group, models: [] };
         scoped.set(key, source); sources.push(source);
       }
       source.models.push(model);
     }
-    if (!scoped.size) sources.push({ id: `${group.id}:api`, label: group.label || apiLabel, group, models: [] });
+    if (!scoped.size && (group.loading || group.error || !catalog?.onConfigureAgents)) sources.push({ id: `${group.id}:api`, label: group.label || apiLabel, group, models: [] });
   }
   const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3 };
   sources.sort((left, right) => (brandOrder[left.brand ?? ""] ?? 4) - (brandOrder[right.brand ?? ""] ?? 4));
@@ -59,7 +59,12 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const source = sources.find(source => source.id === browsing?.id)
     ?? sources.find(source => source.group.id === browsing?.groupId)
     ?? sources.find(source => source.group.active && source.models.some(model => model.value === selected || model.id === selected))
-    ?? sources.find(source => source.group.active) ?? sources[0]!;
+    ?? sources.find(source => source.group.active) ?? sources[0];
+  if (!source) return <div className="opencraft-composer-model-browser">
+    <ModelCatalogStatus emptyTitle={catalog?.agentsDisabled ? <FormattedMessage id="composer.agent.none" defaultMessage="No enabled agents have available models. Enable an agent or check its setup in settings." /> : undefined} emptyHint={catalog?.agentsDisabled ? null : undefined} />
+    {catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
+    {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={onConfigure}><FormattedMessage id="workIn.manageModels" defaultMessage="Manage models…" /></Menu.Item> : null}
+  </div>;
   const families = modelChoiceFamilies(source.models);
   const selectedFamily = source.group.active ? families.find(family => family.models.some(model => model.value === selected || model.id === selected)) : undefined;
   const current = selectedFamily?.models.find(model => model.value === selected || model.id === selected);
@@ -72,20 +77,21 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const searchLabel = intl.formatMessage({ id: "composer.model.search", defaultMessage: "Search models" });
   const choose = (model: ComposerModelOption) => onSelect(model, catalog?.agentGroups?.length ? source.group as ComposerAgentModelGroup : undefined);
   return <div className="opencraft-composer-model-browser">
-    <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.model.sources", defaultMessage: "Model sources" })}>
-      {sources.map(item => <IconButton key={item.id} size="accessory" variant={source.id === item.id ? "outline" : "ghost"}
-        role="tab" aria-selected={source.id === item.id} aria-label={item.label} title={item.label} tabIndex={source.id === item.id ? 0 : -1}
-        onClick={() => browse(item)} onKeyDown={event => {
+    <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
+      {sources.map(item => <Button key={item.id} size="sm" variant={source.id === item.id ? "secondary" : "ghost"}
+        onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+        role="tab" aria-selected={source.id === item.id} tabIndex={source.id === item.id ? 0 : -1}
+        onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault(); event.stopPropagation();
           const index = sources.findIndex(source => source.id === item.id);
           const next = event.key === "Home" ? 0 : event.key === "End" ? sources.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + sources.length) % sources.length;
-          browse(sources[next]!);
-          (event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next])?.focus();
+          browse(sources[next]!); setQuery("");
+          event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
         }}>
         {item.brand ? <AgentBrandIcon agent={item.brand} /> : <ModelIcon size={18} aria-hidden="true" />}
-      </IconButton>)}
-      <span className="opencraft-composer-model-browser__source-name">{source.label}</span>
+        {item.label}
+      </Button>)}
     </div>
     <label className="opencraft-composer-model-browser__search">
       <SearchIcon size={16} aria-hidden="true" />
@@ -131,6 +137,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       <SettingsSwitch checked={serviceTier === fast.id} disabled={!!switchingAgentId} onCheckedChange={checked => onServiceTierChange(checked ? fast.id : null)}
         label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })} />
     </div> : null}
+    {catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__configure" onSelect={onConfigure}>
       <AddIcon size={16} aria-hidden="true" />{groups.find(group => group.active)?.models.length === 0
         ? <FormattedMessage id="composer.model.add" defaultMessage="Add a model…" />

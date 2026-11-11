@@ -11,6 +11,8 @@ export interface OnboardingActivity {
 
 export interface OnboardingAgentSnapshot {
   readonly id: OnboardingAgentId;
+  /** Agent identity used by model/list. Optional for older Hosts. */
+  readonly engineId?: string;
   readonly installed: boolean;
   readonly version: string | null;
   readonly authenticated: boolean | null;

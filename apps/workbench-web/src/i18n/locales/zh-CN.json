@@ -1404,5 +1404,12 @@
   "codexAccounts.external.add": "使用本机 Codex 登录",
   "codexAccounts.external.description": "只读宿主登录，由本机 Codex 续期，不复制凭据。",
   "codexAccounts.external.actionFailed": "操作失败。如遇登录问题，请在宿主运行 codex login，或移除此账户后改用设备码登录。",
-  "codexAccounts.external.failed": "无法使用本机 Codex 登录。若列表中已有此账户，请先移除；否则请在宿主运行 codex login，或使用设备码登录。"
+  "codexAccounts.external.failed": "无法使用本机 Codex 登录。若列表中已有此账户，请先移除；否则请在宿主运行 codex login，或使用设备码登录。",
+  "composer.agent.label": "Agent",
+  "settings.agents.description": "选择此设备上新建会话可用的 Agent。现有会话继续使用原来的 Agent。",
+  "settings.agents.loadFailed": "部分 Agent 无法检查，请重新检查。",
+  "settings.agents.connect": "安装或登录 Agent…",
+  "composer.agent.none": "没有已开启且有可用模型的 Agent。请在设置中开启 Agent 或检查其配置。",
+  "composer.agent.manage": "管理 Agent…",
+  "onboard.agent.startFailed": "无法开始会话，请重试。"
 }

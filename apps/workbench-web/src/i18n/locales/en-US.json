@@ -1380,5 +1380,12 @@
   "codexAccounts.external.add": "Use local Codex login",
   "codexAccounts.external.description": "Read the host's login; local Codex manages renewal. No credentials are copied.",
   "codexAccounts.external.actionFailed": "The action failed. For sign-in problems, run codex login on the host or remove this account and use device-code login.",
-  "codexAccounts.external.failed": "Could not use the local Codex login. If this account is already listed, remove it first. Otherwise, run codex login on the host or sign in with a device code."
+  "codexAccounts.external.failed": "Could not use the local Codex login. If this account is already listed, remove it first. Otherwise, run codex login on the host or sign in with a device code.",
+  "composer.agent.label": "Agent",
+  "settings.agents.description": "Choose which agents appear in new chats on this device. Existing conversations keep their agent.",
+  "settings.agents.loadFailed": "Some agents could not be checked. Try checking again.",
+  "settings.agents.connect": "Install or sign in to an agent…",
+  "composer.agent.none": "No enabled agents have available models. Enable an agent or check its setup in settings.",
+  "composer.agent.manage": "Manage agents…",
+  "onboard.agent.startFailed": "Could not start the chat. Please try again."
 }

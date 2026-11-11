@@ -97,6 +97,16 @@ authorization or persistence boundary.
 
 ### UI preference authority
 
+`chat.agentAvailability` is an installation-scoped map keyed by display/account/Host,
+with explicit Agent boolean choices. Missing choices default to enabled; an explicit
+all-disabled set stays empty. It filters only new-conversation model catalogs and
+send admission, never server engine lifecycle or existing threads. Server model
+metadata owns Agent identity. Settings and onboarding share this preference. Map edits use the Runtime
+`update` operation: load the durable value, apply a pure edit, and re-evaluate the
+edit after a CAS conflict. Failed writes do not publish the proposed value.
+This preserves independent Agent choices across windows as well as within one
+Runtime. Queued edits also check that their display/account scope is still current.
+
 `chat.turnNotifications` is an installation-scoped boolean, defaulting to false.
 The Application owns a `TurnCompletionObserver` across all registered Clients;
 it accepts only validated live `turn/completed` events with completed, failed or

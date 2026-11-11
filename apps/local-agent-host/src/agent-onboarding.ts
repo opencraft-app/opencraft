@@ -5,6 +5,8 @@ import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
+export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy" } as const;
+
 /** Local CLIs the first-run agent step can see. Commands and packages are fixed. */
 export const ONBOARDING_AGENTS = [
   {
@@ -257,6 +259,7 @@ export class AgentOnboardingService {
     const executable = await resolveExecutable(agent.commands, this.deps);
     const base = {
       id: agent.id,
+      engineId: ONBOARDING_AGENT_ENGINES[agent.id],
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
       activity: activityOf(this.tasks.get(agent.id)),

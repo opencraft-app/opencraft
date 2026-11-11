@@ -1382,5 +1382,12 @@
   "codexAccounts.external.add": "Gunakan log masuk Codex tempatan",
   "codexAccounts.external.description": "Baca log masuk hos; Codex tempatan mengurus pembaharuan. Tiada kelayakan disalin.",
   "codexAccounts.external.actionFailed": "Tindakan gagal. Untuk masalah log masuk, jalankan codex login pada hos atau buang akaun ini dan gunakan kod peranti.",
-  "codexAccounts.external.failed": "Log masuk Codex tempatan tidak dapat digunakan. Jika akaun ini sudah disenaraikan, buangnya dahulu. Jika tidak, jalankan codex login pada hos atau gunakan kod peranti."
+  "codexAccounts.external.failed": "Log masuk Codex tempatan tidak dapat digunakan. Jika akaun ini sudah disenaraikan, buangnya dahulu. Jika tidak, jalankan codex login pada hos atau gunakan kod peranti.",
+  "composer.agent.label": "Agent",
+  "settings.agents.description": "Pilih Agent yang muncul dalam sembang baharu pada peranti ini. Perbualan sedia ada mengekalkan Agent asal.",
+  "settings.agents.loadFailed": "Sesetengah Agent tidak dapat disemak. Cuba semak semula.",
+  "settings.agents.connect": "Pasang atau log masuk ke Agent…",
+  "composer.agent.none": "Tiada Agent aktif mempunyai model yang tersedia. Aktifkan Agent atau semak persediaannya dalam tetapan.",
+  "composer.agent.manage": "Urus Agent…",
+  "onboard.agent.startFailed": "Tidak dapat memulakan sembang. Sila cuba lagi."
 }
