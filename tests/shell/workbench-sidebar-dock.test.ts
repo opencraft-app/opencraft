@@ -162,7 +162,7 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     assert.match(source, /usePersistedSidebarWidth\((?:presentation\.shellNavigation)?\)/u);
     assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
   }
-  assert.match(navigationSource, /surface === "applications" \? <NavigationIcon name="applications" selected=/u,
+  assert.match(navigationSource, /<NavigationIcon name="applications" selected=\{projection\.docked\.applications \|\| projection\.peek === "applications"\} \/>/u,
     "the Applications entrance consumes the shared semantic app-grid glyph and open-state projection");
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
@@ -217,8 +217,8 @@ test("device settings replace shared context/content slots without a private lay
     const source = readFileSync(new URL(path, new URL("../", import.meta.url)), "utf8");
     assert.doesNotMatch(source, /useSettingsPresentation|settingsPresentation/);
     assert.doesNotMatch(source, /allowDock: !routeSettingsOpen|sidebar(?:TransientEnabled|Resizable|Collapsible)=\{!routeSettingsOpen\}/);
-    assert.match(source, /settingsActive: routeSettingsOpen/);
-    assert.match(source, /presentation=\{managementSettingsOpen \? "dialog" : "sidebar"\}/);
+    assert.match(source, /settingsActive: sidebarDestination === "settings" \|\| \(routeSettingsOpen && !applicationsSelected\)/);
+    assert.match(source, /presentation=\{sidebarDestination === "settings" \? "sidebar" : managementSettingsOpen \? "dialog" : "sidebar"\}/);
     assert.match(source, /routeSettingsOpen \? settingsNavigation/);
   }
 });
@@ -262,7 +262,10 @@ test("floating dismissal has one Shell hit surface above the conversation", () =
   assert.match(floatingPanel, /useIsPresent\(\)/u);
   assert.match(floatingPanel, /inert=\{!isPresent \|\| undefined\}/u);
   assert.match(floatingPanel, /pointerEvents: isPresent \? "auto" : "none"/u);
-  assert.ok(Number(overlay.match(/z-index:\s*(\d+)/u)?.[1]) > Number(browser.match(/z-index:\s*(\d+)/u)?.[1]));
+  assert.match(browser, /z-index:\s*var\(--layer-workspace-browser\)/u);
+  const browserLayer = Number(designTokens.match(/--layer-workspace-browser:\s*(\d+)/u)?.[1]);
+  assert.ok(Number(overlay.match(/z-index:\s*(\d+)/u)?.[1]) > browserLayer,
+    "the floating Shell overlay remains above the workspace browser layer");
   assert.ok(Number(dismiss.match(/z-index:\s*(\d+)/u)?.[1]) < Number(panel.match(/z-index:\s*(\d+)/u)?.[1]));
 });
 

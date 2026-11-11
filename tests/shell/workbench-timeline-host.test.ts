@@ -140,14 +140,21 @@ function settingsCallbacks(source: string): ts.Expression[] {
 }
 
 test("Settings navigation enters through a semantic route adapter", () => {
-  // Both JSX and object-form props pass events through the same adapter.
+  // Both JSX and object-form route entrypoints pass events through the same
+  // adapter. The Shell settings surface toggle changes the Sidecar destination
+  // without leaving the current route, so it is not a Settings route entrypoint.
   const callbacks = settingsCallbacks(workbenchApp);
   assert.ok(callbacks.length >= 2, "Settings entrypoints must remain covered");
+  let routeEntries = 0;
   for (const callback of callbacks) {
+    const text = callback.getText();
+    if (/\bsetSidebarDestination\(routeSettingsOpen \? "context" : "settings"\)/u.test(text)) continue;
     const target = ts.isArrowFunction(callback) && ts.isCallExpression(callback.body) ? callback.body.expression : callback;
     assert.ok(ts.isIdentifier(target) && target.text === "openSettingsFromConversation",
-      `Settings callback bypasses the semantic adapter: ${callback.getText()}`);
+      `Settings callback bypasses the semantic adapter: ${text}`);
+    routeEntries += 1;
   }
+  assert.ok(routeEntries >= 1, "A Settings route entrypoint must remain covered");
 });
 
 test("Settings callback guard sees raw navigation in either prop syntax", () => {
@@ -166,7 +173,7 @@ test("the first submit atomically hands presentation from Draft to Conversation 
   );
   assert.match(
     workbenchApp,
-    /emptyState=\{draft !== null \? <PendingConversationPage/u,
+    /emptyState=\{unavailableThreadReason !== null \?[\s\S]{0,400}?draft !== null \? <PendingConversationPage/u,
   );
   assert.doesNotMatch(newThreadDraftSource, /Starting task/u);
   assert.match(pendingConversationSource, /contains no Draft[\s\S]*Composer/u);
@@ -733,7 +740,7 @@ test("Composer EditorView and submission callbacks are fenced by Conversation Vi
 test("Composer submission preserves View-owned focus across primary action swaps", () => {
   assert.match(
     composerSource,
-    /requestAnimationFrame\(\(\) => \{[\s\S]{0,160}?disabledRef\.current[\s\S]{0,120}?controller\.focus\(\)/u,
+    /requestAnimationFrame\(\(\) => \{[\s\S]{0,160}?target\.controller !== controller[\s\S]{0,120}?editorControllerRef\.current !== controller[\s\S]{0,1200}?if \(target\.element === editorViewRef\.current\?\.dom\) editorViewRef\.current\.focus\(\)/u,
   );
   assert.equal(
     composerSource.match(

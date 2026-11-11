@@ -15,8 +15,11 @@ export function createNavigationRestorationSession(options: {
   router?: ApplicationRouterOptions;
 } = {}) {
   let connectCalls = 0;
+  // A Host runtime owns one physical connection; concurrent demand awaits the
+  // same operation instead of creating a new pending promise per caller.
+  const connectOperation = options.connect?.();
   const runtime = {
-    async connect() { connectCalls++; await options.connect?.(); },
+    async connect() { connectCalls++; await connectOperation; },
     async dispose() {},
     async acquireThread(threadId: string) { return { threadId, release() {} }; },
   };
