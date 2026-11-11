@@ -1,0 +1,10 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1793322060033,
+    "version": 0,
+    "sqlChecksum": "a60cbde0565fe56b5760b7d13b8fe29b92f944ad9aa212339cecd026ddbad55d",
+    "snapshotChecksum": "abb35f5447ce553bce86c9bd5254532955fdefdd9f0bb2ce5e686d0d9ce324e7",
+    "compiledChecksum": null
+  }
+]

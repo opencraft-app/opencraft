@@ -1,3 +1,4 @@
+import { resolveStoreMigrations, type StorageSchemaId } from "./store-migrations.js";
 import { DatabaseSync } from "node:sqlite";
 import { openConnection } from "./connection.js";
 import { pruneBackups } from "./backup.js";
@@ -15,6 +16,9 @@ export interface DatabaseOutcome {
 export interface ManagedDatabaseOptions {
   readonly path: string;
   readonly migrations: readonly Migration[];
+  readonly schemaId?: StorageSchemaId;
+  /** Complete known unledgered target, before appended generated migrations. */
+  readonly legacyVersion?: number;
   readonly backup?: { readonly keep?: number };
   /** Owner validates the final physical schema before recording the final migration. */
   readonly validateSchema?: (database: DatabaseSync) => void;
@@ -78,7 +82,12 @@ export function createMissingLegacyObjects(sql: string): NonNullable<ManagedData
 export function openManagedDatabase(options: ManagedDatabaseOptions): { database: DatabaseSync; outcome: DatabaseOutcome } {
   let database: DatabaseSync | undefined;
   try {
-    const migrations = prepareMigrations(options.migrations);
+    const migrations = prepareMigrations(options.schemaId === undefined ? options.migrations : resolveStoreMigrations(options.schemaId, options.migrations));
+    const legacyVersion = options.schemaId === undefined ? options.legacyVersion ?? migrations.length : options.migrations.length;
+    if (!Number.isSafeInteger(legacyVersion) || legacyVersion < 1 || legacyVersion > migrations.length
+      || (options.schemaId !== undefined && options.legacyVersion !== undefined && options.legacyVersion !== legacyVersion)) {
+      throw new SqliteLifecycleError("history-mismatch", "Invalid legacy migration boundary");
+    }
     const validateSchema = options.validateSchema ?? createSchemaValidator(migrations.map(m => m.sql).join(";\n"));
     const keep = options.backup?.keep ?? 3;
     if (!Number.isSafeInteger(keep) || keep < 1) throw new SqliteLifecycleError("io", "Backup keep must be a positive integer");
@@ -94,11 +103,28 @@ export function openManagedDatabase(options: ManagedDatabaseOptions): { database
     let backupPath: string | undefined;
     if (legacy) {
       if (options.legacyPolicy === "reject") throw new SqliteLifecycleError("unsupported-legacy", "This owner requires a database migration ledger");
-      const target = openConnection(":memory:");
-      let targetFingerprint: string;
-      try { applyMigrations(target, migrations); targetFingerprint = schemaFingerprint(target); }
-      finally { target.close(); }
-      const matches = fingerprint === targetFingerprint;
+      const legacyMigrations = migrations.slice(0, legacyVersion);
+      let adoptionVersion = legacyVersion;
+      let validateAdoption = legacyVersion === migrations.length ? validateSchema : createSchemaValidator(legacyMigrations.map(m => m.sql).join(";\n"));
+      const targetFingerprint = (chain: typeof migrations) => {
+        const target = openConnection(":memory:");
+        try { applyMigrations(target, chain); return schemaFingerprint(target); }
+        finally { target.close(); }
+      };
+      let adoptionFingerprint = targetFingerprint(legacyMigrations);
+      // A known complete latest schema can still be adopted without replaying SQL.
+      // Strict validation distinguishes versions with identical table_info fields.
+      if (legacyVersion < migrations.length && fingerprint === targetFingerprint(migrations)) {
+        try {
+          validateSchema(database);
+          adoptionVersion = migrations.length;
+          adoptionFingerprint = fingerprint;
+          validateAdoption = validateSchema;
+        } catch (error) {
+          if (!(error instanceof SqliteLifecycleError) || error.kind !== "history-mismatch") throw error;
+        }
+      }
+      const matches = fingerprint === adoptionFingerprint;
       const objects = schemaObjects(database);
       const legacyMigration = !matches && options.legacyMigration?.accepts(fingerprint, objects) ? options.legacyMigration : undefined;
       if (!matches && !legacyMigration) throw new SqliteLifecycleError("unsupported-legacy", "Unknown owner database schema");
@@ -110,12 +136,14 @@ export function openManagedDatabase(options: ManagedDatabaseOptions): { database
           if (hasLedger(connection) || schemaFingerprint(connection) !== fingerprint) throw new SqliteLifecycleError("history-mismatch", "Legacy schema changed during adoption");
           if (legacyMigration && JSON.stringify(schemaObjects(connection)) !== JSON.stringify(objects)) throw new SqliteLifecycleError("history-mismatch", "Legacy objects changed during migration");
           legacyMigration?.migrate(connection);
-          if (schemaFingerprint(connection) !== targetFingerprint) throw new SqliteLifecycleError("unsupported-legacy", "Owner legacy migration did not produce the target schema");
-          validateSchema(connection);
+          if (schemaFingerprint(connection) !== adoptionFingerprint) throw new SqliteLifecycleError("unsupported-legacy", "Owner legacy migration did not produce the target schema");
+          validateAdoption(connection);
           connection.exec(LEDGER_SQL);
-          for (const migration of migrations) recordMigration(connection, migration);
+          for (const migration of migrations.slice(0, adoptionVersion)) recordMigration(connection, migration);
+          // Nested savepoints retain one atomic legacy conversion + forward upgrade.
+          applyMigrations(connection, migrations, validateSchema);
         });
-        status = legacyMigration ? "migrated" : "adopted";
+        status = legacyMigration || adoptionVersion < migrations.length ? "migrated" : "adopted";
       }
     } else if (applied < migrations.length) {
       if (nonempty || hasLedger(database)) {

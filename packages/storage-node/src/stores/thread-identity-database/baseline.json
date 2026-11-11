@@ -1,0 +1,59 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "thread-identity",
+      "checksum": "9cc331662042f5c68146748cd5501c1d8722ee4c32a2588ceda5035ee693115f"
+    },
+    {
+      "version": 2,
+      "name": "immutable-execution-leases",
+      "checksum": "555091035a70dcc3e413a6be64dcfdc4a574799bfe2608ae546dab8de089d7b9"
+    },
+    {
+      "version": 3,
+      "name": "execution-boot-clock",
+      "checksum": "54d6f348751c19776c29569fa98f69bcf094196e5b92d5fc67e3dae66387ffad"
+    }
+  ],
+  "tableOptions": {
+    "execution_leases": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "execution_queue_inputs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "execution_submissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_message_presence": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_participant_state": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_presence_sync": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "ioa_thread_creators": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "message_sender_origins": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "message_senders": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "debe01a67d32f5202d69afa54b9caf6e69e201760fb95785e76d539a526b3486",
+  "baselineSnapshotChecksum": "274345e64e5f84d32b69f4b70f329170f18c8f246a341b1acba8369162eb5271"
+}

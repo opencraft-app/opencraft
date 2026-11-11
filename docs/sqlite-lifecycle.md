@@ -149,6 +149,57 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 
 Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle snapshots 在同目录 `migrations/`。`npm run generate:storage` 生成 SQL、保留所有核心表的 SQLite STRICT 约束并编译随包 TS；`npm run check:storage` 检查源码 SQL 与随包内容一致。迁移测试还检查 schema 与 snapshot 无差异。运行时不读取仓库相对路径、不需要 Drizzle Kit、libsql 或另一个迁移账本。
 
+### 独立 SQLite owner 的 Drizzle 开发流程
+
+Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册31组
+OpenCraft 自有独立 SQLite：Host 状态/附件/身份/路由/执行/计量、Agent Bridge 命令托管、客户端偏好/文档/资源、
+Tasks/IM、连接/模型策略/MCP Apps/定时/恢复、Web push、Git vault、观测及
+OpenCraft 自有 generation registry/account pool 元数据。各声明位于
+`storage-node/src/stores/<id>/schema.ts`，沿现有 owner、文件、独占锁和生命周期执行。
+这不管理 Codex/Pi/DSH 的原生私有数据库，也不将 IndexedDB 转为 SQLite。
+退休六域旧库只作已冻结导入源，不能重新注册成业务写 owner。
+
+既有完整迁移前缀在每库 `baseline.json` 固定 version/name/SHA-256；该库
+`migrations/0000_legacy_baseline.sql` 和 snapshot 表示当前结构，**不作为新迁移执行**。
+运行时 `openManagedDatabase({schemaId, migrations: legacy, ...})` 在打开文件前核对
+冻结前缀，再追加随包生成增量；仍使用同一个 `schema_migrations` 账本。
+初次注册无新增DDL、不重建/重命名文件、不改变已有账本。完整链推导最终结构校验，
+避免旧的固定目标validator在下次生成后仍拒绝新增表/列。
+
+修改步骤：
+
+1. 修改该库 `schema.ts`，运行 `npm run generate:storage -- --store <id>`。
+   不带store时仍走Server迁移的现有生成流程；`storage-migrations.mjs compile` 可编译已审核SQL。
+2. 审查明文SQL及数据变换，提交SQL、snapshot、journal和随包生成清单。
+   独立库增量的journal索引1对应旧链的N+1，而不是重置已安装迁移版本。
+3. 审查后运行 `npm run freeze:storage -- --store <id>`（Server迁移链的发布冻结不在本流程内），
+   将新条目追加到该库 `published.json`，与迁移一起提交。generate/compile可处理尚未冻结
+   的新草稿；check要求全部条目已冻结。新owner的发布清单从 `[]` 开始，基线也需冻结。
+4. 运行 `npm run check:storage`、`npm run test:sqlite-node` 及该owner的升级保留数据测试。
+   检查覆盖所有owner的前缀身份、schema漂移、连续编号/时间顺序、snapshot链和孤立产物。
+   Join完整测试/历史审计仍按现有后置规则，不新增部署审批或前置门禁。
+
+发布清单逐项固定tag、时间、执行版本、SQL原文/snapshot与实际编译SQL的SHA-256。
+结构描述基线的执行版本为0，不写进数据库账本。generate/compile/freeze都会先核对已有
+冻结前缀；freeze只能追加，不能接受既有条目改写或删除，编译器变化也不能改变已经
+应用的SQL。Server与独立库、下游私有库使用同一检查原语；清单不是第二份运行时账本。
+
+编译器保留原表STRICT/WITHOUT ROWID选项，新表默认STRICT；运行时无Drizzle Kit依赖。
+SQLite未命名UNIQUE约束以稳定`legacy_unique_*`别名描述；它们与旧sqlite_autoindex
+在开发期按约束语义核对，不能把别名当作已安装索引执行DROP INDEX。
+Drizzle Kit当前SQLite表达式索引的SQL序列化会拆开表达式内逗号；编译器从生成snapshot
+的结构化columns/internal表达式元信息重建CREATE INDEX，回归覆盖json_extract复合索引。
+含`foreign_keys=OFF`的自动重建不能在当前逐迁移事务里直接执行；应改为符合owner事务及
+外键约束的明确迁移，并验证数据保留，不以关闭外键或修改已发布历史绕过执行器。
+
+下游私有SQLite使用同一通用`resolveMigrationContract(id, legacy, contract)`连接冻结前缀和
+生成增量，schema/SQL/snapshot和生成清单留在产品目录。核心不认识产品schema ID；
+下游复用`storage-migration-tools`与`storage-owner-source`做产物、结构和覆盖检查。
+
+源码注册和运行升级分开：本批主服受管包可启用其包含的owner代码，但不会重启
+独立Core/router/Engine，不能据此声称它们运行中的进程已换代码。以后它们按自己的
+受管维护契约消费同一机制；接入schema不授予生命周期交接权限。
+
 ### openManagedDatabase
 
 [lifecycle](../packages/sqlite-node/src/lifecycle.ts) 的实际步骤是：

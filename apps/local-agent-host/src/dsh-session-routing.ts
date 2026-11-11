@@ -17,7 +17,7 @@ export class DshSessionRouting extends DshRoutingProjection {
   private closed = false;
   constructor(path: string) {
     super();
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "dsh-session-routing",
       path, migrations: [{ version: 1, name: "session-routing", sql: BASELINE }],
       legacyMigration: {
         accepts: (fingerprint, objects) =>

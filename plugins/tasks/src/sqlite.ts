@@ -60,7 +60,7 @@ export class TasksSqliteStore {
   private readonly db: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string, private readonly now: () => number = Date.now) {
-    const managed = openManagedDatabase({ path, legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + propertiesSchema + memberIdentitySchema + tasksV1Schema + tasksArchiveSchema), migrations: [...tasksMigrations, tasksV1Migration, tasksArchiveMigration] });
+    const managed = openManagedDatabase({ schemaId: "tasks", path, legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + propertiesSchema + memberIdentitySchema + tasksV1Schema + tasksArchiveSchema), migrations: [...tasksMigrations, tasksV1Migration, tasksArchiveMigration] });
     this.db = managed.database;
     this.outcome = managed.outcome;
     this.db.exec("PRAGMA foreign_keys=ON");

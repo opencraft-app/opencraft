@@ -1,0 +1,22 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "codex-message-attachments",
+      "checksum": "f44ffe2017640c4000da974b11b6bcda2ca6a2af360515d4ce5fe510d1305194"
+    },
+    {
+      "version": 2,
+      "name": "opencraft-message-attachments-owned-names",
+      "checksum": "1ddeee59084ec834b915e882ad94c043882e4bfdb75e9c93d1f945fdfcfd85f3"
+    }
+  ],
+  "tableOptions": {
+    "opencraft_message_attachments": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "9cde213afdec94727754d184a49631d1379889c719bf7df3ee6f9e23d5b81c0b",
+  "baselineSnapshotChecksum": "c3763aa3ae7340829d4b7f346c4a00941450c6a81ce38745a472f117737a2236"
+}

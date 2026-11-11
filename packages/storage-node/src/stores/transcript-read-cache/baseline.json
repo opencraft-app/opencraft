@@ -1,0 +1,25 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "disposable-transcript-projection",
+      "checksum": "ab2b3c125708aa7edfa19324c6441a1ebb6e6b1da1b5d768f20b56231f1550f9"
+    }
+  ],
+  "tableOptions": {
+    "opencraft_cache_blobs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "opencraft_cache_meta": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "opencraft_turn_offset_index": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "ec3033bd51f85a45e2b03ed7efaf1a7ece4e7859a7cd45900618da47261eb0e0",
+  "baselineSnapshotChecksum": "4bc190b837789d293f7c120179c483af0c6e5269c61c156923bb7646a902556e"
+}

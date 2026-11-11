@@ -8,7 +8,7 @@ export class DesktopConnectorConfigurationStore {
   private readonly db: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "connector-configuration-store",
       path,
       migrations: [{ version: 1, name: "connector-configuration", sql: BASELINE }],
     });

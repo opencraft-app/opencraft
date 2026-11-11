@@ -28,7 +28,7 @@ export class ThreadCatalog {
   manualTitle(id: string): string | null | undefined { return this.manualTitles.get(id); }
 
   constructor(path = ":memory:") {
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "thread-catalog",
       path,
       migrations: [{ version: 1, name: "thread-catalog", sql: BASELINE }],
     });

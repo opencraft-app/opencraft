@@ -1,0 +1,124 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "3eaeb913-1821-431c-b24f-6e3e0151cc29",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "dsh_pending_generations": {
+      "name": "dsh_pending_generations",
+      "columns": {
+        "native_id": {
+          "name": "native_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "logical_id": {
+          "name": "logical_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "intent": {
+          "name": "intent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "dsh_session_generations": {
+      "name": "dsh_session_generations",
+      "columns": {
+        "logical_id": {
+          "name": "logical_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "native_id": {
+          "name": "native_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seed_seq": {
+          "name": "seed_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "seed_turn": {
+          "name": "seed_turn",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prior_seq": {
+          "name": "prior_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prior_turn": {
+          "name": "prior_turn",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "legacy_unique_dsh_session_generations_1": {
+          "name": "legacy_unique_dsh_session_generations_1",
+          "columns": [
+            "native_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "dsh_session_generations_logical_id_generation_pk": {
+          "columns": [
+            "logical_id",
+            "generation"
+          ],
+          "name": "dsh_session_generations_logical_id_generation_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {}
+  }
+}

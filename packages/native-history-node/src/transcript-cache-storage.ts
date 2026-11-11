@@ -96,7 +96,7 @@ export class TranscriptCacheStorage {
     this.db?.close(); this.db = null;
     mkdirSync(this.directory, { recursive: true, mode: 0o700 });
     chmodSync(join(this.dataDirectory, "cache"), 0o700); chmodSync(this.directory, 0o700);
-    const openIndex = () => openManagedDatabase({ path: this.databasePath, migrations: TRANSCRIPT_CACHE_MIGRATIONS,
+    const openIndex = () => openManagedDatabase({ schemaId: "transcript-read-cache", path: this.databasePath, migrations: TRANSCRIPT_CACHE_MIGRATIONS,
       legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(SQL) });
     let opened;
     try { opened = openIndex(); }

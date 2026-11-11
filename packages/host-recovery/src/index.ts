@@ -36,7 +36,7 @@ export class InterruptedTurnRecovery {
   private closing: Promise<void> | null = null;
   private readonly dispatching = new Set<string>();
   constructor(directory: string, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "interrupted-turn-recovery.sqlite"),
+    this.managed = openManagedDatabase({ schemaId: "host-recovery", path: join(directory, "interrupted-turn-recovery.sqlite"),
       migrations: [{ version: 1, name: "interrupted-turn-recovery", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
     this.outcome = this.managed.outcome;
   }

@@ -1,0 +1,25 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "retained-native-usage-evidence",
+      "checksum": "9ce9fc157f8a3bc8fd6687fba39ec018005737e6d66dafb536bc5a9de5b24c7a"
+    }
+  ],
+  "tableOptions": {
+    "usage_events": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_files": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "usage_legacy": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "b15a65e287e64b857f6a7658cc808c6a4f33f5f413b1f59e82d26386d42a0e66",
+  "baselineSnapshotChecksum": "9aa1e8238da1e0073c8d3ece523f6e742bb0de980f05807167c3ae12f49e3fdd"
+}

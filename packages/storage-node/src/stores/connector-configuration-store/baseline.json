@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "connector-configuration",
+      "checksum": "be4cd08429f0b717e029ff9fa474ea18c216e5d49a05a5a4a3d7c32f9060f81e"
+    }
+  ],
+  "tableOptions": {
+    "connector_configuration": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "b3df885627f23bf6c23af40ad968f2b1b73aae186e2c49b73f98b7446f641a02",
+  "baselineSnapshotChecksum": "74f5c65d36efcacf71cf428dab0f0bba12ecdd7c289f31fb5fecfe97aae90089"
+}

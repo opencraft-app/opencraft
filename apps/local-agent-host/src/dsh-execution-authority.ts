@@ -88,7 +88,7 @@ export class DshExecutionAuthority {
   private readonly disconnected = new WeakSet<object>();
   private readonly editing = new Map<string, { owner: DshExecutionOwner; count: number }>();
   constructor(path: string, bootId?: string) {
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "dsh-execution-authority",
       path,
       migrations: [{ version: 1, name: "executions", sql: DSH_EXECUTION_BASELINE }],
       legacyMigration: createMissingLegacyObjects(DSH_EXECUTION_BASELINE),
