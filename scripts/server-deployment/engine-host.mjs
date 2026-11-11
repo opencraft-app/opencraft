@@ -75,17 +75,6 @@ export async function startIndependentEngineHost(options) {
         turnId, callId, name, arguments: args, incarnation: pi.orchestrationIncarnation, ...(inputId ? { inputId } : {}),
       }, signal),
     });
-    const remoteInputs = new Map(), remoteOrigins = new Map();
-    const remotes = [];
-    for (const id of engines.filter(id => !['pi', 'dsh'].includes(id))) {
-      const remote = options.remoteEngines?.find(remote => remote.id === id);
-      if (!isAbsolute(remote?.descriptorPath ?? '') || !isAbsolute(remote?.dataDirectory ?? '')) throw new Error('Independent ACP descriptor and data directory required');
-      const attachment = await attachEngineHost(remote.descriptorPath, remote.dataDirectory, machine.machineId, [id], id);
-      const prefix = id === 'dsh-acp' ? 'dsh_acp_' : id === 'claude-code' ? 'claude_' : 'acp_';
-      remotes.push(new RemoteEngineProvider(id, id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs); remoteOrigins.set(id, attachment.getExecutionIdentity);
-    }
-    const remoteInputCustody = new PiRemoteInputs(join(dataDirectory,'pi'), remoteInputs, handoff);
-    await remoteInputCustody.load();
     const bridge = (id, label, prefix, modelPrefix) => {
       const row = options.bridge?.[id];
       if (row === undefined) return undefined;
@@ -104,6 +93,17 @@ export async function startIndependentEngineHost(options) {
     };
     const piBridge = bridge('pi-bridge', 'Pi', 'pi_bridge_', 'pi-bridge:');
     const dshBridge = bridge('dsh-acp', 'DSH', 'dsh_acp_', 'dsh-acp:');
+    const remoteInputs = new Map(), remoteOrigins = new Map();
+    const remotes = [];
+    for (const id of engines.filter(id => !['pi', 'dsh'].includes(id) && !(id === 'dsh-acp' && dshBridge))) {
+      const remote = options.remoteEngines?.find(remote => remote.id === id);
+      if (!isAbsolute(remote?.descriptorPath ?? '') || !isAbsolute(remote?.dataDirectory ?? '')) throw new Error('Independent ACP descriptor and data directory required');
+      const attachment = await attachEngineHost(remote.descriptorPath, remote.dataDirectory, machine.machineId, [id], id);
+      const prefix = id === 'dsh-acp' ? 'dsh_acp_' : id === 'claude-code' ? 'claude_' : 'acp_';
+      remotes.push(new RemoteEngineProvider(id, id, prefix, `${id}:`, attachment)); remoteInputs.set(id, attachment.inputs); remoteOrigins.set(id, attachment.getExecutionIdentity);
+    }
+    const remoteInputCustody = new PiRemoteInputs(join(dataDirectory,'pi'), remoteInputs, handoff);
+    await remoteInputCustody.load();
     const inputs = {
       receipt: (threadId,inputId) => threadId.startsWith('pi_') ? pi.inputs.receipt(threadId,inputId) : remoteInputCustody.receipt(threadId,inputId),
       submit: (threadId,inputId,text,admit) => threadId.startsWith('pi_') ? pi.inputs.submit(threadId,inputId,text,admit) : remoteInputCustody.submit(threadId,inputId,text,admit),
@@ -121,6 +121,7 @@ export async function startIndependentEngineHost(options) {
             legacy: {
               id: 'dsh',
               label: 'DeepSeek Harness',
+              models: ['claude-code:', 'codex:', 'cursor:', 'codebuddy:'],
               start: () => attachDshHost(dshDescriptorPath, join(dataDirectory, 'agent'), machine.machineId),
             },
           }

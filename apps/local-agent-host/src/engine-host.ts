@@ -19,7 +19,7 @@ interface LegacyHost { websocketUrl: string; resolveWebsocketUrl?: () => Promise
 export async function startEngineHost(options: {
   providers: readonly ExecutionEngineProvider[];
   defaultEngine: string;
-  legacy?: { id: string; label: string; start(): Promise<LegacyHost> };
+  legacy?: { id: string; label: string; models?: readonly string[]; start(): Promise<LegacyHost> };
   machine?: unknown;
   admitRequest?: <T>(method: string, operation: () => Promise<T>) => Promise<T>;
   strictClose?: boolean;
@@ -318,9 +318,10 @@ export async function startEngineHost(options: {
             if (!options.legacy) throw new Error("Skill catalog execution engine is unavailable");
             reply(await callLegacy("skills/list", native, clientId)); return;
           }
+          const legacyModel = typeof params.model === "string" && options.legacy?.models?.some(prefix => params.model.startsWith(prefix));
           const provider = typeof params.threadId === "string" ? options.providers.find(provider => provider.ownsThread(params.threadId))
             : typeof params.model === "string" ? options.providers.find(provider => provider.ownsModel(params.model))
-            : method === "thread/start" ? registry.get(options.defaultEngine) : undefined;
+            : method === "thread/start" && !legacyModel ? registry.get(options.defaultEngine) : undefined;
           if ((method === "model/list" || method === "thread/list") && !params.threadId) {
             const catalog = await singleflight(`${method}:${JSON.stringify(params)}`, async () => {
             const outcomes = await Promise.allSettled([

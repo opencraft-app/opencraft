@@ -224,7 +224,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
     const commandId = this.commandId(threadId, "turn/start", clientRequestId);
     const model = this.model(params);
     const turnParams: Value = this.options.engine === "claude-code"
-      ? { input: { text }, inputId, clientRequestId }
+      ? { text, inputId, clientRequestId }
       : this.options.engine === "pi"
         ? { input: [{ type: "text", text }], inputId, clientRequestId, ...(model ? { model } : {}), ...(typeof params.reasoningEffort === "string" ? { thinkingLevel: params.reasoningEffort } : {}) }
         : { input: { text }, inputId, clientRequestId, permissionMode: "full" };
@@ -252,7 +252,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
       clientRequestId,
       expectedTurnId: native,
       delivery: "native-inject",
-      input: this.options.engine === "pi" ? [{ type: "text", text }] : { text },
+      ...(this.options.engine === "claude-code" ? { text } : { input: this.options.engine === "pi" ? [{ type: "text", text }] : { text } }),
     }));
     return { ...result, turnId: expected, disposition: "steered" };
   }
