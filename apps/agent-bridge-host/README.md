@@ -177,6 +177,24 @@ Local verification is recorded in [P2a validation](VALIDATION-P2a.md). The built
 Workbench smoke uses a synthetic native boundary; it is not real-account steer
 proof. No service, default engine or published artifact is switched by this code.
 
+## Resident-service registration and per-engine routing
+
+The private Host configuration may include `generations` (the same immutable
+registration bodies as `POST /generation/add`) and `activate`. Startup registers
+each generation and activates the configured one only after its sandbox and
+bridge negotiation succeed; a restart therefore never silently replaces a
+generation that still owns native work.
+
+New-Thread routing is a Server-side composition choice, not a Host default. The
+daemon/engine-host accepts an optional private per-engine bridge configuration;
+without it every engine keeps its current path. Claude Code maps new connected
+agent Threads to `session/create`; Pi and DSH enter the independent Engine Host
+as pinned bridge providers (`pi_bridge_` and `dsh_acp_` prefixes). Existing
+Thread identities keep their original provider because routing is selected by
+thread prefix, never by adoption. `BridgeEngineProvider` projects bridge
+callbacks into the existing AppServer notifications and carries turn/steer
+evidence; it does not add a second client protocol.
+
 ## Execution CLI (P7a)
 
 Optional private `cli` configuration contains absolute `directory` and

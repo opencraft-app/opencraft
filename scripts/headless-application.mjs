@@ -121,6 +121,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let engines = ["dsh"];
   let defaultEngine;
   let codexAgentBridgeFile;
+  let agentBridgeFile;
   let sshServersFile;
   let sshConfig;
   let sshPublicOrigin;
@@ -158,6 +159,9 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
     } else if(argument==='--codex-agent-bridge-config') {
       codexAgentBridgeFile=argv[++index];
       if(!codexAgentBridgeFile||!isAbsolute(codexAgentBridgeFile))throw new Error('--codex-agent-bridge-config requires an absolute private file');
+    } else if(argument==='--agent-bridge-config') {
+      agentBridgeFile=argv[++index];
+      if(!agentBridgeFile||!isAbsolute(agentBridgeFile))throw new Error('--agent-bridge-config requires an absolute private file');
     } else if (argument === "--default-engine") {
       defaultEngine = argv[++index];
     } else if (argument === "--machine-name") {
@@ -228,6 +232,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   if (!engines.includes(defaultEngine)) throw new Error("Default engine must be enabled");
   return { help: false, host, port, ...(hubTargetPort === undefined ? {} : { hubTargetPort }), ...(engineHostDescriptor ? {engineHostDescriptor} : {}), ...(engines.length !== 1 || engines[0] !== "dsh" ? { engines, defaultEngine } : {}), dataDirectory: resolve(dataDirectory), allowUnauthenticatedPublic,
     ...(codexAgentBridgeFile ? {codexAgentBridgeFile} : {}),
+    ...(agentBridgeFile ? {agentBridgeFile} : {}),
     ...(machineName ? { machineName } : {}),
     ...(sshConfig ? { sshConfig } : {}),
     ...(accessControl ? { accessControl } : {}), ...(relayConnectFile ? { relayConnectFile } : {}),
@@ -255,6 +260,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (browserOwnerSocket && !isAbsolute(browserOwnerSocket))
     throw new Error('OPENCRAFT_BROWSER_OWNER_SOCKET must be an absolute private socket path');
   const codexAgentBridge=options.codexAgentBridge??await readCodexBridgeConfiguration(options.codexAgentBridgeFile);
+  const agentBridge=options.agentBridge??(options.agentBridgeFile?await readPrivateJson(options.agentBridgeFile):undefined);
+  if(agentBridge!==undefined&&(!agentBridge||typeof agentBridge!=='object'||Array.isArray(agentBridge)))throw new Error('Invalid private agent bridge configuration');
   if(codexAgentBridge&&!options.codexCoreEndpoint)throw new Error('Codex bridge requires an existing Core endpoint');
   const localAccess = await loadLocalMachineAccess(options.localAccessFile);
   if (composition.createIdentity !== undefined && typeof composition.createIdentity !== "function") throw new Error("Invalid Headless identity factory");
@@ -580,6 +587,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         return readTaskCodexConversations(appHostServer, search, limit, cursor);
       },
       machineIdentity,
+      ...(agentBridge?.['claude-code'] ? { bridge: { claudeCode: (() => {
+        const row = agentBridge['claude-code'];
+        if (!row || typeof row !== 'object' || Array.isArray(row)
+          || !['url','token','serverId','inboxPath'].every(key => typeof row[key] === 'string')) throw new Error('Invalid Claude agent bridge configuration');
+        return { id: 'claude-code', label: 'Claude', engine: 'claude-code',
+          threadPrefix: row.threadPrefix ?? 'claude_bridge_', modelPrefix: row.modelPrefix ?? 'claude-code:',
+          defaultCwd: row.defaultCwd ?? (options.runtimeDirectory ?? join(root, 'runtime')),
+          ...(typeof row.defaultModel === 'string' ? { defaultModel: row.defaultModel } : {}),
+          ...(Array.isArray(row.models) ? { models: row.models } : {}),
+          ...(typeof row.generation === 'string' ? { generation: row.generation } : {}),
+          gateway: { url: row.url, token: row.token, serverId: row.serverId, inboxPath: row.inboxPath } };
+      })() } } : {}),
     }).catch(error => {dshAgent=undefined;throw error;});
     if (options.engineHostDescriptor) {
       independentEngine = await attachEngineHost(options.engineHostDescriptor, dataDirectory, machineIdentity.machineId,

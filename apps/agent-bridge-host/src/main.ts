@@ -21,6 +21,15 @@ if(config.cli) {
   executionCli=hostExecutionCli({directory:config.cli.directory,endpoint:config.cli.endpoint,key,launcherEndpoint:()=>launcherEndpoint});
 }
 const host = await BridgeHost.open({ automation:config.automation, executionCli, path: config.database, policy: config.policy, backend: systemdSandboxBackend(config.backendOptions) });
+if (config.generations !== undefined) {
+  if (!Array.isArray(config.generations) || config.generations.length > 16) throw Error('Invalid generation list');
+  for (const generation of config.generations) await host.add(generation);
+}
+if (config.activate !== undefined) {
+  if (typeof config.activate !== 'string' || !config.activate) throw Error('Invalid generation activation');
+  const snapshot = await host.snapshot();
+  await host.activate(config.activate, typeof snapshot.current === 'string' ? snapshot.current : '');
+}
 const gateway = await attachGateway(host, config.token, config.port ?? 0);
 launcherEndpoint=new URL('/thread-cli',gateway.url).href;
 process.stdout.write(JSON.stringify({ url: gateway.url, pid: process.pid }) + '\n');

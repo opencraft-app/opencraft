@@ -1,4 +1,4 @@
-import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
 import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
 import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
@@ -50,6 +50,7 @@ import { SkillCatalogRefresh } from "./skills/catalog-refresh.js";
 import { OPENCRAFT_ATTACHMENT_STAGING_EXTENSION } from "@opencraft/appserver-protocol";
 import { AgentOnboardingService, createOnboardingDeps } from "./agent-onboarding.js";
 import { ConnectedAgentHost } from "./connected-agents.js";
+import { BridgeEngineProvider, type BridgeEngineProviderOptions } from "./bridge-engine-provider.js";
 import { LocalAttachmentStagingService } from "./attachments/local-attachment-staging.js";
 import { LocalWorkspaceResolver } from "./projectless-workspace.js";
 
@@ -153,6 +154,8 @@ export async function startLocalAgentHost(options: {
   readonly taskSkillDirectories?: readonly string[];
   readonly taskServerId?: string;
   readonly taskConversationCatalog?: (serverId: string, search: string, limit: number, cursor?: string | null) => Promise<unknown>;
+  /** Per-engine new-Thread bridge routing. Absent keeps every legacy owner. */
+  readonly bridge?: { readonly claudeCode?: BridgeEngineProviderOptions };
 } = {}) {
   nodeObserver("dsh");
   const storage = options.storage ?? await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
@@ -295,7 +298,14 @@ export async function startLocalAgentHost(options: {
   adapter.setWorkspaceResolver(new LocalWorkspaceResolver({
     projectlessRoot: projectlessWorkspaceRoot,
   }));
-  const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps());
+  const claudeBridge = options.bridge?.claudeCode === undefined ? undefined : new BridgeEngineProvider({
+    ...options.bridge.claudeCode,
+    engine: "claude-code",
+    defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
+  });
+  const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
+    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] });
+  await connectedAgents.start();
   cleanup.push(() => connectedAgents.close());
   cleanup.push(connectedAgents.subscribe((method, params) => {
     if (method !== "thread/name/updated" || typeof params.threadId !== "string" || typeof params.threadName !== "string") return;
@@ -873,6 +883,13 @@ export async function startLocalAgentHost(options: {
                 [CONVERSATION_SCHEDULES_EXTENSION]: { version: 1, target: "existing-thread", repeat: "fixed-interval", summary: true, calendar: true },
                 [TURN_RECOVERY_EXTENSION]: { version: 1 },
                 "opencraft/agent-usage": { version: 1, providers: ["codex", "cursor"] },
+                ...(claudeBridge === undefined ? {} : {
+                  [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: claudeBridge.extensions[OPENCRAFT_STEER_EVIDENCE_EXTENSION],
+                  "opencraft/execution-engines": { version: 1, defaultEngine: "dsh", providers: [{
+                    id: "claude-code", label: "Claude", threadPrefix: claudeBridge.threadPrefix, modelPrefix: claudeBridge.modelPrefix,
+                    extensions: claudeBridge.extensions,
+                  }] },
+                }),
               },
             },
           };
