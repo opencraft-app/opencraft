@@ -2,7 +2,7 @@
 import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '../packages/session-capabilities/src/credentials.ts';
 import { waitForExecutionCliBinding } from '../packages/session-capabilities/src/execution-cli.ts';
-import { createServerCodexBridge,readCodexBridgeConfiguration } from '../apps/opencraft-daemon/src/bridge-execution-admission.ts';
+import { createServerCodexBridge,readCodexBridgeConfiguration,createBridgeSessionMcp } from '../apps/opencraft-daemon/src/bridge-execution-admission.ts';
 import { openServerDatabase } from "../packages/storage-node/src/server/index.ts";
 import { ModelPolicyStore } from '@opencraft/model-usage-policy';
 import { modelPolicyHttp } from '@opencraft/model-usage-policy/http';
@@ -556,6 +556,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       },
     });
     await capabilityMcp.listen();
+    const bridgeSessionMcp=createBridgeSessionMcp(capabilityMcp,
+      threadId=>({serverId:conversationExecution.serverForThread(threadId),threadId}),
+      session=>capabilities.refresh(session));
     const startAgent = options.startAgentHost ?? startLocalAgentHost;
     const startDsh = () => dshAgent ??= startAgent({
       modelPolicyPath,
@@ -753,7 +756,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
               execution:{inputId,executionId:createHash('sha256').update(JSON.stringify([threadId,inputId])).digest('hex')}};
           },
           sign:session=>executionCliSourceToken(capabilityKey,session),
-          sessionMcp:async session=>{await capabilities.refresh(session);return capabilityMcp.config(session);},
+          ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
         })), mcpApps);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');

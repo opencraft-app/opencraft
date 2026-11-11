@@ -78,7 +78,17 @@ export class CodexBridgeRuntime {
         if (this.creating.has(threadId)) throw new CodexBridgeError('explicit-reject', 'Session creation already pending');
         try { this.adapter.nativeSession(threadId); throw new CodexBridgeError('explicit-reject', 'Session already exists'); }
         catch (error) { if (!(error instanceof CodexBridgeError) || error.message !== 'Session is not bound') throw error; }
-        const native = object(p.native);
+        const native = { ...object(p.native) };
+        if(p.cliEnvironment!==undefined) {
+          const environment=object(p.cliEnvironment);
+          if(Object.values(environment).some(v=>typeof v!=='string'||v.includes('\0')))throw new CodexBridgeError('invalid','Invalid initial execution environment');
+          const config=native.config==null?{}:object(native.config);
+          const configured=config['shell_environment_policy.set'];
+          native.config={...config,'shell_environment_policy.set':{...(configured==null?{}:object(configured)),...environment}};
+          // The attached minimum native supports materialization probes for legacy history.
+          // Respect an explicitly selected history contract.
+          native.historyMode??='legacy';
+        }
         if (typeof native.cwd !== 'string' || !native.cwd.startsWith('/')) throw new CodexBridgeError('invalid', 'Explicit absolute workspace required');
         this.creating.add(threadId);
         try {

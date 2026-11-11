@@ -148,7 +148,8 @@ export class BridgeGateway {
       const receipt = await this.rpc(`/command?id=${encodeURIComponent(commandId)}`) as Receipt;
       if (receipt.state === 'accepted') { await this.pull(); return receipt.response && 'result' in receipt.response ? receipt.response.result : null; }
       if (receipt.state === 'rejected' || receipt.state === 'unknown') {
-        const error = receipt.response && 'error' in receipt.response ? receipt.response.error : { code: -32005, message: 'Native outcome unknown; query original command', kind: 'unknown-outcome' };
+        await this.pull();
+        const error = receipt.state==='rejected' && receipt.response && 'error' in receipt.response ? receipt.response.error : { code: -32005, message: 'Native outcome unknown; query original command', kind: 'unknown-outcome' };
         throw Object.assign(Error(error.message), error, { commandId });
       }
       await new Promise(resolve => setTimeout(resolve, 25));

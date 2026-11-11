@@ -1,4 +1,10 @@
-# 重新登录后的真实验收 — 2026-11-11
+# Codex 真实续验与 P7a 首轮修复 — 2026-11-11
+
+**当前结果：P7a 首轮 CLI 通信链修复后真实通过。** 下文按修复前后保留
+两次验收：PR #233 的 no rollout found 是修复前缺口，后续结果见
+[修复后记录](#修复后p7a-首轮修复的本机续验)。P4 与生产装配等缺口仍保留。
+
+## 修复前：重新登录后的真实验收（PR #233）
 
 用户在个人实例完成设备码重新登录后，旧 Codex 同模型对照成功，原 429
 阻塞已解除。本轮没有登录、刷新账号或修复代码。P2a 指定的真实任务以及
@@ -15,7 +21,7 @@ P7b once/cron 成功；P7a 和 P4 仍未验，原因见下表。
 | P7b cron | **通过组件真实执行**；当前 UTC 分钟的一次 cron 触发，已有线程一个 native Turn，回答 `P7B_CRON_OK` | 同上 |
 | P4 | **未验**；`hy3-ioa` 经独立 Host 重试一次，`session/new` 仍为 HTTP 500，没有 prompt 或 steer | [CodeBuddy 重试](../../design/agent-bridge/recordings/live-recheck/codebuddy-retry.json) |
 
-## 成功项实际覆盖的边界
+### 成功项实际覆盖的边界
 
 P2a 使用本分支源码构建并固定 SHA-256 的 Codex bridge、独立 durable Host，
 连接已有 Core 与账号池。真实命令读出 `P2A_READ_OK`，只向临时文件追加
@@ -38,7 +44,7 @@ thread-prepare RPC；prepare 的权限装配不能代替生产装配验收。bri
 不宣称该测试 backend 具备生产资源隔离。没有打开或验证 Web、Electron、Expo
 客户端，因此设计 §7 P2a/P7b 的更广退出条件仍保留，不写成整批全验收。
 
-## P7a 新阻塞
+### P7a 新阻塞
 
 真实 Host 已成功发行执行 CLI 凭据，Server admission 检查通过。
 随后 `CodexOwnerConnection.configureExecution` 进入共享
@@ -53,7 +59,7 @@ turn/start。最后一个本地诊断 bundle 只增加阶段和原生错误的 s
 后续需要调整首轮配置准备与原生 session 生命周期的衔接，并补回归与独审；
 这是独立于已解决账号 429 的缺口。本次没有扩大为该生命周期改造。
 
-## 自行引入的决定
+### 自行引入的决定
 
 - 继续使用 `gpt-5.6-luna`，不换更贵模型。当前目录仍无价格元数据，
   仅确认它是原对照模型，不声称重新核实绝对最低价。CodeBuddy 沿用此前
@@ -69,7 +75,7 @@ turn/start。最后一个本地诊断 bundle 只增加阶段和原生错误的 s
   该链接；未修改依赖、lockfile 或主 checkout。临时脚本、凭据配置、数据库与
   任务目录在脱敏取证后删除，只保留交付证据及 Core 原生历史。
 
-## 检查与剩余缺口
+### 检查与剩余缺口
 
 脱敏 JSON 解析、关键结果断言、文档链接和 `git diff --check` 通过。
 运行 smoke 前移除了 `BASH_FUNC_which%%`。本轮没有代码修复，未运行根
@@ -78,3 +84,40 @@ turn/start。最后一个本地诊断 bundle 只增加阶段和原生错误的 s
 
 剩余：P7a 的首轮 CLI 配置生命周期与完整真实通信链；P4 的外部 HTTP 500；
 生产 headless 装配及 Web/Electron/Expo 的相关客户端连续性验收。
+
+## 修复后：P7a 首轮修复的本机续验
+
+**Codex 新线程首轮已能使用执行 CLI。** 最终方案完成了有界
+spawn / native tell / wait / output，父子各一个模型 Turn，均 completed。
+子线程在同一原生 Turn 收到初始输入和 steer，输出 `P7A_TELL_OK`，
+父线程输出 `P7A_PARENT_OK`。模型为 `gpt-5.6-luna`，low。
+
+- [修复、验证、自行决定和独审裁决](VALIDATION-P7a.md#first-turn-lifecycle-repair--2026-11-11)
+- [本轮脱敏录制](../../design/agent-bridge/recordings/p7a-first-turn/codex-cli.json)
+- [此前 CLI 准备失败](../../design/agent-bridge/recordings/live-recheck/p7a-cli-preparation.json)
+
+此前固定提交 `649c1b6e00` 的复验中，Host 发行和 Server 准入均成功，
+但空原生线程没有 rollout，capture-settings 的 resume 返回
+`-32600 / no rollout found`，没有发出模型 Turn。该批复验文档已由 PR #233 合入 main。这里续记修复后 P7a 的结果，
+不改写 P2a、P7b、P4 的历史结论。
+
+修复在创建时仅预留无 descriptor、无权限的 CLI 入口；Server 准入通过后，
+Host 才把已签名执行一次性绑定进去。首轮消费创建时已安装的设置，原生线程
+与公共线程身份不变，不调用 resume、改写权限或退休旧会话。已有 rollout
+仍走共享 resume 路径。平台 MCP 复用内存中的未绑定 reservation，不新增
+网络主线程 SQLite 路径，不恢复编排 MCP 注入。
+
+独审发现六项 P1 后，先前的“替换空原生会话”候选已撤掉。其历史检测、
+并发、fence、退休和 identity 崩溃窗口均通过消除替换路径及新增回归处理，
+不是以早期真实链结果代替修复验证。最终方案单独重做了真实链。第二轮六项 P1 也已修复：unknown
+回执及延迟启动、终态竞态、创建失败与 owner 关闭清理、待准备预算、
+真正的 mid-read 回归和首轮平台工具预授权，详见主验证文档。
+
+真实链使用临时 Server/Broker/Host 组件、已有 Core 和显式的测试进程后端，
+并非部署中的 headless 装配或生产沙盒验收。成功链使用 native tell；另一次
+queue follow-up 的准备拒绝仍保留为未验缺口。默认引擎、Hermes、其他 provider、
+Web/Electron/Expo、owner 丢失后的恢复没有在本轮真实验收中改动或验证。
+
+临时服务、凭据、数据库和任务目录在脱敏取证后关闭清理，只保留交付证据及
+Core 自有历史。最终检查、审查与变基后的结果见主验证文档。该次验收未部署；
+原本地交付未推送、未开 PR。

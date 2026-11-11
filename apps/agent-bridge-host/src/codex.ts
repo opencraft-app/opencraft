@@ -7,7 +7,7 @@ export interface CodexOwnerPort {
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
 }
 export class CodexBridgeError extends Error {
-  constructor(readonly kind: BridgeErrorKind, message: string) { super(message); }
+  constructor(readonly kind: BridgeErrorKind, message: string, readonly nativeReason?: 'unmaterialized') { super(message); }
 }
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new CodexBridgeError('invalid', 'Expected object');

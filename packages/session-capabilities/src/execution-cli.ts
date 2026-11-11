@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { executionCliSourceSession } from './credentials.js';
-import { issueThreadCli } from './thread-cli-provider.js';
+import { issueThreadCli,reserveThreadCli } from './thread-cli-provider.js';
 
 /** Server→Host admission port: signed source + live Server authority recheck. */
 export function hostExecutionCli(options:{directory:string;endpoint:string;key:Buffer;launcherEndpoint?:()=>string}) {
@@ -8,7 +8,21 @@ export function hostExecutionCli(options:{directory:string;endpoint:string;key:B
   if(endpoint.protocol!=='http:'||endpoint.hostname!=='127.0.0.1'||endpoint.pathname!=='/thread-cli'
     ||endpoint.username||endpoint.password||endpoint.search||endpoint.hash||options.key.length!==32)throw Error('cliUnavailable');
   const active=new Map<string,string>();
-  return {async forward(token:string,body:unknown) {
+  const initial=new Map<string,{slot:Awaited<ReturnType<typeof reserveThreadCli>>;token?:string}>();
+  const scopeKey=(scope:{serverId:string;threadId:string})=>JSON.stringify([scope.serverId,scope.threadId]);
+  return {async reserve(scope:{serverId:string;threadId:string}) {
+    const key=scopeKey(scope);
+    if(initial.has(key))throw Error('CLI reservation already exists');
+    const slot=await reserveThreadCli(options.directory);
+    if(initial.has(key)){await slot.revoke();throw Error('CLI reservation already exists');}
+    const reservation={slot,token:undefined as string|undefined};
+    initial.set(key,reservation);
+    return {environment:slot.environment,async revoke(){
+      if(initial.get(key)===reservation)initial.delete(key);
+      if(reservation.token)active.delete(reservation.token);
+      await slot.revoke();
+    }};
+  },async forward(token:string,body:unknown) {
     const credential=active.get(token);
     if(!credential)throw Error('cliUnavailable');
     try {
@@ -34,9 +48,23 @@ export function hostExecutionCli(options:{directory:string;endpoint:string;key:B
     await authorize();
     if(!options.launcherEndpoint)throw Error('cliUnavailable');
     const token=randomBytes(32).toString('base64url');
-    const lease=await issueThreadCli(options.directory,session,{url:options.launcherEndpoint(),token});
+    const key=scopeKey(source),reserved=initial.get(key);
+    // A reserved namespace binds exactly once, after both signature and live admission.
+    const connection={url:options.launcherEndpoint(),token};
+    const lease=reserved?.slot??await issueThreadCli(options.directory,session,connection);
+    if(reserved){await reserved.slot.publish(connection);reserved.token=token;initial.delete(key);}
     active.set(token,source.credential);
-    return {...lease,revoke:async()=>{active.delete(token);await lease.revoke();}};
+    return {environment:lease.environment,launcher:lease.launcher,connectionFile:lease.connectionFile,...(reserved?{async rejectBeforeStart(){
+      active.delete(token);
+      await reserved.slot.rejectBeforeStart();
+      if(initial.has(key))throw Error('CLI reservation conflict');
+      reserved.token=undefined;initial.set(key,reserved);
+      return {environment:reserved.slot.environment,async revoke(){
+        if(initial.get(key)===reserved)initial.delete(key);
+        if(reserved.token)active.delete(reserved.token);
+        await reserved.slot.revoke();
+      }};
+    }}:{}),revoke:async()=>{active.delete(token);await lease.revoke();}};
   }};
 }
 
