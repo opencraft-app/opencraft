@@ -35,3 +35,20 @@ Output is JSON. Writes require an explicit idempotency key. After an uncertain r
 The CLI adds no engine owner, database or task queue. It shares the existing delegation budget, durable tool receipts, input queue and parent notifications. The configured Host negotiates CLI capability independently of other MCP tools. Interrupt delivery remains explicitly unsupported by the current Broker permission contract; it never becomes queue implicitly. Legacy DSH, arbitrary ACP providers, expired delegation recovery, and native tool schema migration are not implied by the command interface.
 
 An input claimed by the Codex Host immediately before an ambiguous transport loss can remain `unknown` and block later input. The CLI does not blindly replay or discard such input. A new idempotency key is not a safe recovery strategy; inspect delivery and the original conversation. This boundary is independent of CLI operation-receipt deduplication.
+
+## Project automations
+
+`opencraft automation --help` documents list, show, create, update, pause, resume,
+delete, run and runs. Every mutation needs `--idempotency-key`. Manual run also
+needs `--occurrence-id` and the exact `--run-key` combining automation ID,
+revision and occurrence ID. List and runs accept `--cursor` and `--limit`.
+
+Create takes `--grant-id` and `--schedule` JSON. A human creates the revocable
+project grant through the authenticated collaboration `automation-grants` HTTP
+surface. The grant fixes the target and permissions, and contains no saved
+execution bearer. Existing execution credentials cannot create that grant.
+Derived automation execution cannot create or mutate another automation.
+
+See [P7b validation and operational contract](../apps/agent-bridge-host/VALIDATION-P7b.md)
+for grant fields, schedules, reconciliation, script Host configuration, decisions
+and remaining real-execution gaps.

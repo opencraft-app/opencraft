@@ -9,6 +9,7 @@ const path = process.argv[2];
 if (!path || !isAbsolute(path)) throw Error('Supply an absolute private Host configuration path');
 const config = JSON.parse(await readFile(path, 'utf8'));
 if (config.backend !== 'linux-systemd' || !isAbsolute(config.database)) throw Error('Explicit supported backend and database required');
+if(config.automation && (!config.automation.hostId||!config.automation.environment||Object.keys(config.automation).some(key=>!['hostId','environment'].includes(key))))throw Error('Explicit automation Host and environment identities required');
 let executionCli;
 let launcherEndpoint:string;
 if(config.cli) {
@@ -19,7 +20,7 @@ if(config.cli) {
   if(key.length!==32)throw Error('Invalid CLI signing key');
   executionCli=hostExecutionCli({directory:config.cli.directory,endpoint:config.cli.endpoint,key,launcherEndpoint:()=>launcherEndpoint});
 }
-const host = await BridgeHost.open({ executionCli, path: config.database, policy: config.policy, backend: systemdSandboxBackend(config.backendOptions) });
+const host = await BridgeHost.open({ automation:config.automation, executionCli, path: config.database, policy: config.policy, backend: systemdSandboxBackend(config.backendOptions) });
 const gateway = await attachGateway(host, config.token, config.port ?? 0);
 launcherEndpoint=new URL('/thread-cli',gateway.url).href;
 process.stdout.write(JSON.stringify({ url: gateway.url, pid: process.pid }) + '\n');

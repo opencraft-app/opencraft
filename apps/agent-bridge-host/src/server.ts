@@ -27,6 +27,8 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
       let result: unknown;
       if (request.method === 'GET') {
         switch (url.pathname) {
+          case '/script/capabilities': result=host.scriptCapabilities();break;
+          case '/script/show': result=await host.scriptResult(identifier(url.searchParams.get('key')));break;
           case '/health': result = { pid: process.pid, incarnation: host.incarnation, generations: host.diagnostics() }; break;
           case '/command': result = await host.query(identifier(url.searchParams.get('id'))); break;
           case '/events': result = await host.events(Number(url.searchParams.get('cursor') ?? 0)); break;
@@ -41,6 +43,7 @@ export async function attachGateway(host: BridgeHost, token: string, port = 0): 
         }
         const body = object(JSON.parse(Buffer.concat(chunks).toString('utf8')));
         switch (url.pathname) {
+          case '/script/run': result=await host.script(body);break;
           case '/command': result = await host.accept(body); break;
           case '/ack': result = await host.ack(Number(body.cursor)); break;
           case '/generation/add': result = await host.add(body as unknown as Generation); break;

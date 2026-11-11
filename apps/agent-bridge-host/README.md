@@ -200,3 +200,11 @@ continues separately through the shared configuration owner. Bridge preparation
 is bounded to ten seconds and half the Host RPC timeout. Legacy configuration
 refresh retains its original timing.
 See [P7a validation](VALIDATION-P7a.md) for evidence and remaining acceptance gaps.
+
+## Project automations (P7b)
+
+Server control-plane automation uses the existing asynchronous orchestration
+Worker and Broker. The optional Host `automation` configuration declares exact
+`hostId` and `environment` identities for scripts using the selected sandbox
+pool. See [P7b validation](VALIDATION-P7b.md) for CLI, human grants, private
+script routes, failure policies, decisions and real-execution limitations.

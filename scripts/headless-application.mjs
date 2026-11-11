@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '../packages/session-capabilities/src/credentials.ts';
 import { waitForExecutionCliBinding } from '../packages/session-capabilities/src/execution-cli.ts';
 import { createServerCodexBridge,readCodexBridgeConfiguration } from '../apps/opencraft-daemon/src/bridge-execution-admission.ts';
@@ -308,6 +309,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let actorStore;
   let actorCollaboration;
   let threadOrchestration;
+  let projectAutomations;
   let actorCollaborationApi;
   let actorAccess;
   let threadAccess;
@@ -353,6 +355,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       // Custom Web adapters need not implement the optional carrier phase.
       await closeEntry();
       await settle([() => observability?.close()]);
+      await settle([() => projectAutomations?.close()]);
       await settle([() => threadOrchestration?.stop()]);
       await settle([() => appHostServer?.close()]);
       await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => threadNotes?.close()]);
@@ -499,11 +502,15 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     actorCollaboration = new Collaboration(serverStorage, actorStore,
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage,
       (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, context));
-    actorCollaborationApi = new CollaborationHttpApi(actorCollaboration, actorAccess);
-    actorCollaboration.start();
+
     threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
       enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
     }), Date.now, orchestrationStorage);
+    threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(appHostServer,{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
+    projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,codexAgentBridge);
+    actorCollaborationApi=new CollaborationHttpApi(actorCollaboration,actorAccess,projectAutomations);
+    await projectAutomations.start();
+    actorCollaboration.start();
     threadOrchestration.start();
     if (options.localDesktop === true) {
       const observer = createNativeObserver();

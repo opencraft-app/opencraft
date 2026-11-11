@@ -1,3 +1,5 @@
+import type { ProjectAutomations } from './automation-runtime.js';
+import { AutomationError } from './automation.js';
 import { OrchestrationRuntimeWorker } from './orchestration-runtime-store.js';
 import { updateExecutionRequest } from './execution-request-state.js';
 import { sqliteTransaction } from "@opencraft/sqlite-node";
@@ -79,6 +81,7 @@ export class Collaboration {
   readonly orchestration: ThreadOrchestrationLedger;
   private ownedExecutionStorage?: OrchestrationRuntimeWorker;
   #closed = false;
+  automationAuthorityAllowed?: (id:string)=>boolean;
   #cursor = 0;
   #pump: Promise<void> | null = null;
   #operations: Promise<unknown> = Promise.resolve();
@@ -225,14 +228,14 @@ export class Collaboration {
     if (!this.actors.isCurrent(context) || !this.admittedActor(context.actorId)) throw new CollaborationError(403, 'conversation_action_denied');
     return result;
   }
-  sendConversation(context: ActorContext, body: Record<string, unknown>, source: ConversationRef | null = null, delegationId: string | null = null, countBudget = true) {
+  sendConversation(context: ActorContext, body: Record<string, unknown>, source: ConversationRef | null = null, delegationId: string | null = null, countBudget = true, automationRunKey?: string) {
     fields(body, ['reference', 'content', 'idempotencyKey', 'execution']);
     const ref = this.#conversation(context, body.reference, 'message.send'), content = text(body.content, 16384);
     const intent = body.execution === undefined ? {mode: 'queue' as const} : executionIntent(body.execution);
     this.#conversation(context, ref, 'execution.' + intent.mode);
     const target = encodeConversationRef(ref);
     if (source && encodeConversationRef(source) === target) throw new CollaborationError(409, 'self_delivery_denied');
-    return this.#dedupe(context, body.idempotencyKey, ['conversation', ref, content, intent, source, delegationId], () => {
+    return this.#dedupe(context, body.idempotencyKey, ['conversation', ref, content, intent, source, delegationId, ...(automationRunKey?[automationRunKey]:[])], () => {
       if (delegationId && countBudget) this.#consumeToolBudget(delegationId);
       const messageId = randomUUID(), requestId = randomUUID(), now = this.now();
       const seq = Number(this.database.prepare('SELECT COALESCE(MAX(seq),0)+1 AS seq FROM actor_messages').get()!.seq);
@@ -242,9 +245,9 @@ export class Collaboration {
         .run(requestId,context.actorId,context.generation,target,ref.threadId,intent.mode,intent.mode === 'steer' ? intent.expectedTurnId ?? null : null,now,now,null,ref.serverId,context.credentialId,context.expiresAt);
       this.database.prepare('INSERT INTO actor_execution_inputs VALUES(?,?,0)').run(requestId,messageId);
       const inputId=ACTOR_INPUT_PREFIX+requestId, automated=source!==null || this.actors.get(context.actorId)?.kind==='session';
-      this.recordInputOrigin(ref.threadId,inputId,{kind:automated?'agent':'user',clientMessageId:inputId,authorActorId:automated?null:context.actorId,
-        delegatorActorId:delegationId?context.actorId:null,delegationId,senderConversation:source,senderTurnId:null,operationId:null,replyExpectation:'none',
-        delegationRevision:context.generation,usageSourceKind:automated?'system':'human',createdAtMs:now});
+      this.recordInputOrigin(ref.threadId,inputId,{kind:automationRunKey?'system':automated?'agent':'user',clientMessageId:inputId,authorActorId:automated?null:context.actorId,
+        delegatorActorId:delegationId?context.actorId:null,delegationId,senderConversation:source,senderTurnId:null,operationId:automationRunKey??null,replyExpectation:'none',
+        delegationRevision:context.generation,usageSourceKind:automated||automationRunKey?'system':'human',createdAtMs:now});
       this.#audit('conversation.send',context.actorId,target,JSON.stringify({messageId,requestId,source,delegationId}));
       return {messageId,requestId};
     });
@@ -273,6 +276,8 @@ export class Collaboration {
       this.database.prepare('INSERT INTO conversation_turn_authorities VALUES(?,?,?) ON CONFLICT(thread_id,turn_id) DO UPDATE SET authority_id=excluded.authority_id').run(threadId,turnId,String(inputAuthority.id));
       this.database.prepare('INSERT INTO opencraft_thread_authorities VALUES(?,?) ON CONFLICT(thread_id) DO UPDATE SET authority_id=excluded.authority_id').run(threadId,String(inputAuthority.id));
     }
+    const automationOrigin=this.inputOrigin(threadId,inputId);
+    if(automationOrigin?.kind==='system' && automationOrigin.operationId && !inputAuthority)throw new CollaborationError(403,'automation_authority_missing');
     if (!this.#authority(threadId,turnId)) {
       const binding=this.database.prepare('SELECT a.* FROM conversation_authorities a JOIN opencraft_thread_authorities b ON a.id=b.authority_id WHERE b.thread_id=?').get(threadId);
       if (binding && this.#validDelegation(binding)) this.database.prepare('INSERT OR IGNORE INTO conversation_turn_authorities VALUES(?,?,?)').run(threadId,turnId,String(binding.id));
@@ -575,6 +580,10 @@ export class Collaboration {
     return { found: true, receipt: this.conversationDelivery(context, ref, String(prior.request_id)) };
   }
   #allowed(row: Row): boolean {
+    if(row.target_kind==='conversation') {
+      const origin=this.inputOrigin(String(row.thread_id),ACTOR_INPUT_PREFIX+String(row.id));
+      if(origin?.kind==='system' && origin.operationId && origin.delegationId && !this.automationAuthorityAllowed?.(origin.delegationId))return false;
+    }
     if (row.target_kind === 'conversation') return !this.#closed && !['rejected','cancelled'].includes(String(row.state)) && this.conversationAllowed({actorId: String(row.requester_id), generation: Number(row.requester_generation), credentialId: row.credential_id as string | null, expiresAt: Number(row.expires_at)}, {serverId: String(row.server_id), threadId: String(row.thread_id)}, 'execution.' + row.mode);
     const binding = this.binding(row.target_id as string), target = this.actors.get(row.target_id as string);
     return !this.#closed && this.admittedActor(row.requester_id as string) && this.admittedActor(row.target_id as string) && !['rejected', 'cancelled'].includes(row.state as string) && !!target?.enabled
@@ -709,7 +718,7 @@ export class Collaboration {
 
 /** HTTP adapter: only authenticated Actor contexts enter the domain service. */
 export class CollaborationHttpApi {
-  constructor(readonly service: Collaboration, readonly access: ActorAccess) {}
+  constructor(readonly service: Collaboration, readonly access: ActorAccess, readonly automations?: ProjectAutomations) {}
   async handle(request: IncomingMessage, response: ServerResponse): Promise<boolean> {
     const url = new URL(request.url ?? '/', 'http://actors.invalid'), prefix = '/__opencraft_actors/collaboration/';
     if (!url.pathname.startsWith(prefix)) return false;
@@ -741,7 +750,17 @@ export class CollaborationHttpApi {
       try { body = record(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks)))); }
       catch { throw new CollaborationError(400, 'invalid_body'); }
       current();
-      if (path === 'messages') send(200, this.service.send(context, body));
+      if(path==='automations'||path==='automation-grants'||path==='automation-reconcile') {
+        if(!this.automations)throw new CollaborationError(503,'automation_unavailable');
+        fields(body,['command','arguments','idempotencyKey']);
+        if(this.service.actors.get(context.actorId)?.kind!=='human')throw new CollaborationError(403,'automation_human_authority_required');
+        const command=text(body.command),args=record(body.arguments);
+        const result=path==='automation-reconcile'?await this.automations.reconcile({context},text(args.id)):path==='automation-grants'
+          ?await this.automations.grant({context},command,args,body.idempotencyKey)
+          :await this.automations.command({context},command,args,body.idempotencyKey);
+        current();send(200,result);
+      }
+      else if (path === 'messages') send(200, this.service.send(context, body));
       else if (path === 'requests') send(200, this.service.request(context, body));
       else if (path === 'read') { fields(body, ['messageId']); this.service.read(context, text(body.messageId)); send(200, { ok: true }); }
       else if (path === 'cancel') { fields(body, ['requestId']); await this.service.cancel(context, text(body.requestId), current); send(200, { cancelled: true }); }
@@ -751,7 +770,7 @@ export class CollaborationHttpApi {
         admission(); send(200, { binding: await this.service.bind(text(body.actorId), text(body.threadId), Number(body.expectedEpoch), admission, context.actorId) });
       } else throw new CollaborationError(404, 'missing');
       void this.service.pump().catch(() => {});
-    } catch (error) { send(error instanceof CollaborationError ? error.status : 503, { error: error instanceof CollaborationError ? error.code : 'collaboration_unavailable' }); }
+    } catch (error) { send(error instanceof CollaborationError || error instanceof AutomationError ? error.status : 503, { error: error instanceof CollaborationError || error instanceof AutomationError ? error.code : 'collaboration_unavailable' }); }
     return true;
   }
 }
