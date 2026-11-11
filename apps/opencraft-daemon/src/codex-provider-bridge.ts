@@ -149,8 +149,8 @@ export class CodexProviderBridge implements DuplexTransport {
         result = await command('session/create', { native });
       } else if (frame.method === 'turn/start') {
         if (!requestKey) throw Error('Stable client input identity required');
-        const { threadId: _, ...native } = p;
-        result = await command('turn/start', { native });
+        const { threadId: _, opencraftExecutionAdmission,opencraftSessionMcp, ...native } = p;
+        result = await command('turn/start', { native, executionSource:opencraftExecutionAdmission,...(opencraftSessionMcp!==undefined?{sessionMcp:opencraftSessionMcp}:{}) });
       } else if (frame.method === 'turn/steer') {
         if (!identity.evidence) throw Object.assign(Error('This client cannot represent native input admission; use a client with per-input evidence support'), { code: -32601 });
         if (!requestKey) throw Error('Stable client input identity required');

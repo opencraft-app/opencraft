@@ -176,3 +176,27 @@ with retained sessions still requires explicit reconciliation, as in P1b.
 Local verification is recorded in [P2a validation](VALIDATION-P2a.md). The built
 Workbench smoke uses a synthetic native boundary; it is not real-account steer
 proof. No service, default engine or published artifact is switched by this code.
+
+## Execution CLI (P7a)
+
+Optional private `cli` configuration contains absolute `directory` and
+`signingKey` paths and the Server's loopback `endpoint` ending in `/thread-cli`.
+The key is the existing Server capability signing key, not an Actor credential.
+Keep it owned and mode 0600. Configure the Server headless entry with
+`--codex-agent-bridge-config` alongside its existing Core attachment. Its admission
+transport wraps only the selected ProviderBridge and signs the admitted domain
+input with a dedicated CLI audience before sending it to Host. Host checks the
+signature, route and live Server admission before publishing an execution-only
+launcher. PATH and `OPENCRAFT_THREAD_CLI` contain paths, never bearer values.
+The CLI endpoint forwards only while its Host lease is live, and Server rechecks
+bounded delegation and resource authorization on each operation.
+
+Codex consumes the shared execution-configuration owner to retire the old native
+runtime and restore its permission/approval settings around environment changes.
+No permission mode is widened. Providers without an execution environment adapter
+remain unavailable for this port while ordinary turns continue. There is no
+orchestration MCP fallback. General platform MCP configuration, including IM,
+continues separately through the shared configuration owner. Bridge preparation
+is bounded to ten seconds and half the Host RPC timeout. Legacy configuration
+refresh retains its original timing.
+See [P7a validation](VALIDATION-P7a.md) for evidence and remaining acceptance gaps.

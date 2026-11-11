@@ -96,7 +96,14 @@ export class CodexBridgeRuntime {
         return this.owner.request('thread/resume', { threadId: nativeId, excludeTurns: true });
       }
       case 'session/close': await this.adapter.close(threadId); return {};
-      case 'turn/start': return this.adapter.start(threadId, object(p.native));
+      case 'turn/start': {
+        const environment=p.cliEnvironment===undefined?undefined:object(p.cliEnvironment);
+        const deadline=p.cliPreparationDeadlineMs;
+        const sessionMcp=p.sessionMcp===undefined?undefined:p.sessionMcp===null?null:object(p.sessionMcp);
+        if(environment&&Object.values(environment).some(value=>typeof value!=='string'||value.includes('\0'))
+          || deadline!==undefined&&(typeof deadline!=='number'||!Number.isSafeInteger(deadline)))throw new CodexBridgeError('invalid','Invalid execution CLI configuration');
+        return this.adapter.start(threadId,object(p.native),environment as Record<string,string>|undefined,deadline,sessionMcp);
+      }
       case 'turn/steer': return this.adapter.steer(threadId, p);
       case 'turn/stop': return this.adapter.stop(threadId, identifier(p.expectedTurnId));
       case 'input/query': return this.adapter.query(threadId, identifier(p.inputId));

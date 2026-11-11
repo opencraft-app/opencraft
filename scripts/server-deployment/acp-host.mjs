@@ -15,7 +15,6 @@ import { AcpGenerationHost } from '../../plugins/acp-engine/src/generations.ts';
 import { createDshAcpHistory } from './dsh-acp-history.mjs';
 import { dshAcpCommand } from '../../plugins/acp-engine/src/index.ts';
 import { RemoteSessionCapabilities } from '../../packages/session-capabilities/src/remote.ts';
-import { THREAD_ORCHESTRATION_TOOLS } from '../../packages/appserver-protocol/src/collaboration.ts';
 import { readDaemonMachineIdentity } from '../../apps/opencraft-daemon/src/machine-identity.ts';
 import { readPrivateJson } from './dsh-host-client.mjs';
 
@@ -60,7 +59,7 @@ export async function startIndependentAcpHost(options) {
       }
       return { ...config, id, cwd: config.cwd ?? runtimeDirectory };
     } });
-    provider.setOrchestration({ tools: THREAD_ORCHESTRATION_TOOLS,
+    provider.setOrchestration({ tools: [],
       call: (threadId, turnId, callId, name, args, signal, inputId) => capabilities.orchestration(threadId, {
         incarnation: provider.incarnation(threadId), turnId, callId, name, arguments: args, ...(inputId ? { inputId } : {}),
       }, signal),

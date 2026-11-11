@@ -19,6 +19,8 @@
     "@opencraft/sandbox-node": "0.1.0",
     "@opencraft/sqlite-node": "0.1.0",
     "@opencraft/account-pool-host": "0.1.0",
-    "ws": "^8.22.1"
+    "ws": "^8.22.1",
+    "@opencraft/codex-execution": "0.1.0",
+    "@opencraft/session-capabilities": "0.1.0"
   }
 }

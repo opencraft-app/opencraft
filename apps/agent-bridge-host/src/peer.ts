@@ -17,7 +17,7 @@ export class Peer {
   private incarnation = randomUUID();
   private cleanup?: Promise<void>;
   private incoming: Promise<void> = Promise.resolve();
-  constructor(readonly config: Generation, private callback: (id: string, method: string, params: unknown) => Promise<void>, private timeoutMs = 30_000) {}
+  constructor(readonly config: Generation, private callback: (id: string, method: string, params: unknown) => Promise<void>, private timeoutMs = 30_000, private onFailure?:()=>void) {}
   async start(pool: SandboxPool): Promise<void> {
     this.sandbox = await createSandbox(pool, { owner: `agent-bridge:${this.config.id}:${this.config.digest}` });
     try {
@@ -40,6 +40,7 @@ export class Peer {
     } catch (error) { await this.sandbox.close(); throw error; }
   }
   private fail(error: Error): void {
+    if(!this.failed)this.onFailure?.();
     this.failed ??= error;
     for (const waiter of this.pending.values()) { clearTimeout(waiter.timer); waiter.reject(error); }
     this.pending.clear();

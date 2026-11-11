@@ -3,6 +3,7 @@ import type { BridgeDelta, BridgeErrorKind, ItemShape } from '@opencraft/agent-b
 /** The connection is supplied by the existing Core owner. This adapter never
  * launches Codex, opens CODEX_HOME, or owns account/exec-server lifecycle. */
 export interface CodexOwnerPort {
+  configureExecution?(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs?:number,sessionMcp?:Record<string,unknown>|null):Promise<void>;
   request(method: string, params: Record<string, unknown>): Promise<unknown>;
 }
 export class CodexBridgeError extends Error {
@@ -48,7 +49,7 @@ export class CodexBridge {
     this.sessions.delete(threadId);
     this.emit(threadId, [{ op: 'session.ended', scope: { threadId } }]);
   }
-  async start(threadId: string, params: Record<string, unknown>): Promise<unknown> {
+  async start(threadId: string, params: Record<string, unknown>, cliEnvironment?: Readonly<Record<string,string>>,cliPreparationDeadlineMs?:number,sessionMcp?:Record<string,unknown>|null): Promise<unknown> {
     const session = this.session(threadId);
     if (session.activeTurn || session.starting || session.uncertainStart) throw new CodexBridgeError('explicit-reject', 'Turn already active');
     if (!Array.isArray(params.input) || params.input.length === 0 || !params.input.every(value => {
@@ -56,7 +57,10 @@ export class CodexBridge {
     }) || Buffer.byteLength(JSON.stringify(params.input)) > 65536) throw new CodexBridgeError('unsupported', 'Only bounded text input is available');
     // Permission/environment preparation remains the existing owner's responsibility.
     session.starting = true;
+    let nativeStartAttempted=false;
     try {
+      if(cliEnvironment||sessionMcp!==undefined){if(!this.owner.configureExecution)throw new CodexBridgeError('unsupported','cliUnavailable');await this.owner.configureExecution(session.nativeId,cliEnvironment??{},cliPreparationDeadlineMs,sessionMcp);}
+      nativeStartAttempted=true;
       const result = await this.owner.request('turn/start', { ...params, threadId: session.nativeId });
       const nativeTurnId = id(record(record(result).turn).id);
       if (!session.endedTurns.has(nativeTurnId)) {
@@ -68,6 +72,7 @@ export class CodexBridge {
       }
       return result;
     } catch (error) {
+      if(!nativeStartAttempted)throw new CodexBridgeError('unsupported','cliUnavailable');
       if (!(error instanceof CodexBridgeError) || !['explicit-reject', 'stale-target', 'invalid'].includes(error.kind)) session.uncertainStart = true;
       throw error;
     }

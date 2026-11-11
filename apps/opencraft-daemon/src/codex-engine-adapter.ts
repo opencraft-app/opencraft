@@ -1,3 +1,4 @@
+import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import { assertModelPolicy, readPolicy, resolvePolicySelection, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { ProvisionalThreads } from "./provisional-threads.js";
 import { nativeEmptyCreation } from "./native-empty-creation.js";
@@ -3649,82 +3650,16 @@ export class CodexEngineAdapter implements DuplexTransport {
         current();
         return result;
       };
-      stage = "read-thread";
-      const read = record(await request("thread/read", { threadId, includeTurns: false }));
-      const thread = record(read.thread);
-      if (thread.ephemeral === true) {
-        this.ephemeralThreads.add(threadId);
-        return;
-      }
-      stage = "check-idle";
-      let status = string(record(thread.status).type);
-      nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
-      if (!["idle", "systemError", "notLoaded"].includes(status)) throw new Error("Wait until the Codex thread is idle before changing its tools");
-      this.cancelNativeRelease(threadId);
-      const retirement = this.sessionMcpRetirements.get(threadId);
-      const waitForUnload = async () => {
-        stage = "wait-for-unload";
-        // Native unsubscribe releases a subscription, not the Thread runtime.
-        // Keep this admitted input in preparation while native's retirement runs;
-        // never resubmit input or reattach the old runtime to poll readiness.
-        if (!this.options.executionEnvironment) {
-          const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
-          status = string(record(record(snapshot.thread).status).type);
-          nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
-          if (status !== "notLoaded") throw new SessionMcpRecoveryPending();
-          return;
-        }
-        const deadline = Date.now() + 90_000;
-        while (status !== "notLoaded") {
-          current();
-          if (Date.now() >= deadline) throw new SessionMcpRecoveryPending();
-          await new Promise<void>(resolve => setTimeout(resolve, 250));
-          const snapshot = record(await request("thread/read", { threadId, includeTurns: false }));
-          status = string(record(record(snapshot.thread).status).type);
-          nativeStatus = ["idle", "systemError", "notLoaded", "active"].includes(status) ? status : "unknown";
-          if (!["idle", "systemError", "notLoaded"].includes(status)) throw new SessionMcpRecoveryPending();
-        }
-      };
-      if (retirement && status !== "notLoaded") await waitForUnload();
-      stage = "capture-settings";
-      const live = retirement ?? (status === "notLoaded" ? {} : record(await request("thread/resume", { threadId, excludeTurns: true })));
-      const resume: RpcRecord = {};
-      for (const key of ["model", "modelProvider", "serviceTier", "cwd", "runtimeWorkspaceRoots", "approvalPolicy", "approvalsReviewer"])
-        if (live[key] !== undefined) resume[key] = live[key];
-      stage = "preserve-permissions";
-      const profile = string(record(live.activePermissionProfile).id);
-      if (profile) resume.permissions = profile;
-      else {
-        const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
-        if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
-        if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
-      }
-      // Once native configuration can change, the old confirmation is no longer
-      // valid either. A partial failure must not make a later rollback look applied.
-      this.sessionMcpConfigurations.delete(threadId);
-      if (status !== "notLoaded") {
-        this.sessionMcpRetirements.set(threadId, live);
-        stage = "unsubscribe";
-        await request("thread/unsubscribe", { threadId });
-        this.nativeSubscribedThreads.delete(threadId);
-        await waitForUnload();
-      }
-      stage = "apply-tools";
-      await request("thread/resume", { ...resume, threadId, excludeTurns: true, config: {
-        "mcp_servers.opencraft_session": configuration ?? { enabled: false, url: "http://127.0.0.1:1/mcp" },
-        ...(environment ? { 'shell_environment_policy.set': environment.overlay() } : {}),
-      } });
-      this.sessionMcpRetirements.delete(threadId);
-      if (Object.keys(live).length) {
-        const settings: RpcRecord = { threadId };
-        if (profile) settings.permissions = profile;
-        else if (live.sandbox) settings.sandboxPolicy = live.sandbox;
-        for (const key of ["approvalPolicy", "approvalsReviewer", "model", "serviceTier", "collaborationMode"])
-          if (live[key] !== undefined && live[key] !== null) settings[key] = live[key];
-        if (live.reasoningEffort) settings.effort = live.reasoningEffort;
-        stage = "restore-settings";
-        await request("thread/settings/update", settings);
-      }
+      if(!await refreshCodexExecutionConfiguration(threadId, {
+        "mcp_servers.opencraft_session": configuration ?? {enabled:false,url:"http://127.0.0.1:1/mcp"},
+        ...(environment ? {'shell_environment_policy.set':environment.overlay()} : {}),
+      }, {request,current,stage:value=>{stage=value;},nativeStatus:value=>{nativeStatus=value;},
+        ephemeral:()=>{this.ephemeralThreads.add(threadId);},cancelRelease:()=>this.cancelNativeRelease(threadId),
+        retirement:()=>this.sessionMcpRetirements.get(threadId),waitForRetirement:!!this.options.executionEnvironment,
+        pending:()=>new SessionMcpRecoveryPending(),invalidate:()=>{this.sessionMcpConfigurations.delete(threadId);},
+        retire:live=>{this.sessionMcpRetirements.set(threadId,live);},unsubscribed:()=>{this.nativeSubscribedThreads.delete(threadId);},
+        clearRetirement:()=>{this.sessionMcpRetirements.delete(threadId);},
+      }))return;
       this.sessionMcpConfigurations.set(threadId, configuration);
       if (environment) this.executionEnvironments.set(threadId, environment);
       this.sessionMcpRetirements.delete(threadId);
@@ -3788,7 +3723,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     }
     if (this.options.collaboration && message.method === "thread/start") {
       const params = record(message.params), tools = Array.isArray(params.dynamicTools) ? params.dynamicTools : [];
-      const owned = (this.nativeCore?.supportsOrchestration || this.nativeCore?.supportsOrchestrationRouting) && this.options.collaboration.orchestration ? [...CONVERSATION_TOOLS,...THREAD_ORCHESTRATION_TOOLS] : CONVERSATION_TOOLS;
+      const owned = CONVERSATION_TOOLS;
       const names = new Set<string>(owned.map(t=>t.name));
       message = {...message, params:{...params,dynamicTools:[...tools.filter(t=>!names.has(string(record(t).name))),...owned.map(t=>({type:"function",...t}))]}};
     }

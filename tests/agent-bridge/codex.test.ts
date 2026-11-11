@@ -66,3 +66,16 @@ test('native start reply before notification opens one canonical turn before ret
   bridge.notification('turn/started', { threadId: 'native', turn: { id: 'native-turn' } });
   assert.equal(deltas.filter(d => d.op === 'turn.open').length, 1);
 });
+
+test('CLI preparation rejection never poisons an unsent native Turn',async()=>{
+  for(const fault of [new CodexBridgeError('unsupported','cliUnavailable'),new Error('native retirement pending')]) {
+    let prepared=0,starts=0;
+    const bridge=new CodexBridge({async configureExecution(){if(++prepared===1)throw fault;},
+      async request(method){assert.equal(method,'turn/start');starts++;return {turn:{id:'turn'}};}},()=>{});
+    bridge.bind('route','native');
+    const input={input:[{type:'text',text:'bounded'}]},environment={OPENCRAFT_THREAD_CLI:'fixture'};
+    await assert.rejects(bridge.start('route',input,environment),(e:unknown)=>e instanceof CodexBridgeError&&e.kind==='unsupported');
+    assert.equal(starts,0);
+    await bridge.start('route',input,environment);assert.equal(starts,1);
+  }
+});

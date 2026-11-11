@@ -51,6 +51,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[]}>{return this.request('work',{now});}
   pendingAcks():Promise<string[]>{return this.request('pendingAcks');}
   acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
+  admission(threadId:string,inputId:string):Promise<Record<string,unknown>|null>{return this.request('admission',{threadId,inputId});}
   updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
   close():Promise<void>{
     return this.closing??=(async()=>{

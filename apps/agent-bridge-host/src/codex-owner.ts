@@ -1,3 +1,4 @@
+import { refreshCodexExecutionConfiguration } from "@opencraft/codex-execution";
 import WebSocket from 'ws';
 import { CodexCoreControlClient } from '@opencraft/account-pool-host';
 import { codexDeclaration } from './codex-declaration.js';
@@ -49,6 +50,27 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     }
     this.write({ method: 'initialized', params: {} });
   }
+  private readonly uncertainConfigurations=new Set<string>();
+  private readonly retirements = new Map<string,Record<string,any>>();
+  async configureExecution(threadId:string,environment:Readonly<Record<string,string>>,preparationDeadlineMs=Date.now()+10000,sessionMcp?:Record<string,unknown>|null):Promise<void> {
+    if(!Number.isSafeInteger(preparationDeadlineMs)||preparationDeadlineMs<=Date.now()||this.uncertainConfigurations.has(threadId))throw new CodexBridgeError('unsupported','cliUnavailable');
+    const deadline=performance.now()+Math.min(10000,preparationDeadlineMs-Date.now());
+    const current=()=>{if(this.failed||performance.now()>=deadline)throw new CodexBridgeError('unsupported','cliUnavailable');};
+    await refreshCodexExecutionConfiguration(threadId,{
+      ...(Object.keys(environment).length?{'shell_environment_policy.set':environment}:{}),
+      ...(sessionMcp!==undefined?{'mcp_servers.opencraft_session':sessionMcp??{enabled:false,url:'http://127.0.0.1:1/mcp'}}:{}),
+    },{
+      request:async(method,params)=>{
+        current();
+        try {return await this.request(method,params,Math.max(1,deadline-performance.now()));}
+        catch(error){if(method!=='thread/read'&&error instanceof CodexBridgeError&&error.kind==='unknown-outcome')this.uncertainConfigurations.add(threadId);throw error;}
+      },current,
+      stage:()=>{},nativeStatus:()=>{},ephemeral:()=>{throw new CodexBridgeError('unsupported','cliUnavailable');},
+      cancelRelease:()=>{},retirement:()=>this.retirements.get(threadId),waitForRetirement:true,retirementTimeoutMs:Math.max(1,deadline-performance.now()),
+      pending:()=>new CodexBridgeError('unsupported','cliUnavailable: native runtime has not retired'),invalidate:()=>{},
+      retire:live=>{this.retirements.set(threadId,live);},unsubscribed:()=>{},clearRetirement:()=>{this.retirements.delete(threadId);},
+    });
+  }
   private receive(frame: unknown): void {
     if (!frame || typeof frame !== 'object' || Array.isArray(frame)) throw Error('Invalid native frame');
     const p = frame as Record<string, unknown>;
@@ -77,11 +99,11 @@ export class CodexOwnerConnection implements CodexOwnerPort {
     if (this.failed || this.socket?.readyState !== WebSocket.OPEN) throw new CodexBridgeError('unknown-outcome', 'Core connection unavailable');
     this.socket.send(JSON.stringify(value));
   }
-  request(method: string, params: Record<string, unknown>): Promise<unknown> {
+  request(method: string, params: Record<string, unknown>,timeoutMs=30_000): Promise<unknown> {
     if (this.pending.size >= 256) return Promise.reject(new CodexBridgeError('explicit-reject', 'Native request capacity reached'));
     const id = ++this.sequence;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { this.pending.delete(id); reject(new CodexBridgeError('unknown-outcome', 'Native request outcome unknown')); }, 30_000);
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new CodexBridgeError('unknown-outcome', 'Native request outcome unknown')); }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer, method });
       try { this.write({ id, method, params }); }
       catch (error) { clearTimeout(timer); this.pending.delete(id); reject(error); }

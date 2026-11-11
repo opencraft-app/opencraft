@@ -9,6 +9,7 @@ createInterface({ input: process.stdin }).on('line', line => {
   if (!request.method) return;
   const p = request.params;
   if (request.method === 'initialize') { output({ id: request.id, result: JSON.parse(process.env.HANDSHAKE) }); return; }
+  if (p?.refuse) { output({ id: request.id, error: { code: -32000, kind: 'explicit-reject', message: 'Fixture refusal' } }); return; }
   if (request.method === 'session/create') output({ id: `identity:${++sequence}`, method: 'thread/identity', params: { threadId: p.threadId, providerThreadId: `native-${p.threadId}`, sessionRestorable: true } });
   if (request.method === 'session/create' && p.unsettled) {
     const scope = { threadId: p.threadId };
