@@ -6,6 +6,7 @@ import { permissionModeProfileId } from "@opencraft/appserver-protocol";
 import { AcpEngine } from "@opencraft/plugin-acp-engine";
 import { ConnectedAgentHistory } from "./connected-agent-history.js";
 import { AgentProviderUsageService } from "./agent-provider-usage.js";
+import type { BridgeEngineProvider } from "./bridge-engine-provider.js";
 import type { AgentConversationUsage, AgentUsageSnapshot } from "@opencraft/appserver-protocol";
 import {
   AgentOnboardingService,
@@ -85,6 +86,13 @@ interface Launch {
   readonly args: readonly string[];
 }
 
+/** New-thread routing to a pinned Agent Bridge generation. Legacy Threads keep
+ * their ACP owner; the bridge only serves identities with its own prefix. */
+export interface ConnectedAgentBridge {
+  readonly provider: BridgeEngineProvider;
+  readonly engines: readonly EngineId[];
+}
+
 /** Owns ACP sessions for agents that were signed in on this computer. */
 export class ConnectedAgentHost {
   private readonly engines = new Map<EngineId, AcpEngine>();
@@ -102,7 +110,10 @@ export class ConnectedAgentHost {
     private readonly root: string,
     private readonly cwd: string,
     private readonly deps: OnboardingDeps,
+    private readonly bridge?: ConnectedAgentBridge,
   ) { this.providerUsage = new AgentProviderUsageService(deps); }
+  async start(): Promise<void> { await this.bridge?.provider.start(); }
+  ownsBridgeThread(threadId: string): boolean { return this.bridge?.provider.ownsThread(threadId) === true; }
   async usage(params: { threadId?: string; force?: boolean }): Promise<AgentUsageSnapshot> {
     const engineId = params.threadId ? connectedAgentEngineId(params.threadId) : null;
     const conversation = async (): Promise<AgentConversationUsage | null> => {
@@ -110,7 +121,7 @@ export class ConnectedAgentHost {
       const engine = await this.engine(engineId);
       return engine.request("opencraft/thread-usage/read", { threadId: params.threadId }, { notify() {}, async request() {} });
     };
-    const [codex, cursor, current] = await Promise.all([this.providerUsage.read("codex", params.force), this.providerUsage.read("cursor", params.force), conversation().catch(() => null)]);
+    const [codex, cursor, current] = await Promise.all([this.providerUsage.read("codex", params.force), this.providerUsage.read("cursor", params.force), this.bridge?.provider.ownsThread(String(params.threadId ?? "")) ? null : conversation().catch(() => null)]);
     return { providers: [codex, cursor], conversation: current, readAt: Date.now() };
   }
 
@@ -120,9 +131,17 @@ export class ConnectedAgentHost {
   }
 
   owns(method: string, params: Params): boolean {
-    if (method === "thread/start") return connectedAgentEngineId(typeof params.model === "string" ? params.model : "") !== null;
+    const owner = this.engineFor(method, params);
+    if (method === "thread/start") return owner.bridge || owner.engineId !== null;
+    return owner.bridge || owner.engineId !== null;
+  }
+  private engineFor(method: string, params: Params): { engineId: EngineId | null; bridge: boolean } {
     const threadId = typeof params.threadId === "string" ? params.threadId : "";
-    return connectedAgentEngineId(threadId) !== null;
+    if (this.bridge?.provider.ownsThread(threadId)) return { engineId: null, bridge: true };
+    const engineId = method === "thread/start"
+      ? connectedAgentEngineId(typeof params.model === "string" ? params.model : "")
+      : connectedAgentEngineId(threadId);
+    return { engineId, bridge: method === "thread/start" && engineId !== null && this.bridge?.engines.includes(engineId) === true };
   }
 
   async models() {
@@ -166,7 +185,9 @@ export class ConnectedAgentHost {
       } while (cursor !== null);
       return rows;
     }));
-    return results.flatMap(result => result.status === "fulfilled" ? result.value : []);
+    const bridgeThreads = this.bridge ? await this.bridge.provider.request("thread/list", { archived: false }, { request: () => Promise.reject(new Error("Catalog read has no tool owner")), notify: () => undefined })
+      .then(page => Array.isArray(page?.data) ? page.data as Record<string, any>[] : []).catch(() => []) : [];
+    return [...results.flatMap(result => result.status === "fulfilled" ? result.value : []), ...bridgeThreads];
   }
 
   private async ensureAgentModels(engineId: EngineId): Promise<ConnectedAgentModel[]> {
@@ -181,9 +202,12 @@ export class ConnectedAgentHost {
   }
 
   async dispatch(method: string, params: Params): Promise<unknown> {
-    const engineId = method === "thread/start"
-      ? connectedAgentEngineId(typeof params.model === "string" ? params.model : "")
-      : connectedAgentEngineId(typeof params.threadId === "string" ? params.threadId : "");
+    const owner = this.engineFor(method, params);
+    if (owner.bridge) {
+      const client: ExecutionEngineClient = { request: () => Promise.reject(new Error("Connected agents use their own tools")), notify: () => undefined };
+      return this.bridge!.provider.request(method, { ...params, cwd: typeof params.cwd === "string" && params.cwd.startsWith("/") ? params.cwd : this.cwd }, client);
+    }
+    const engineId = owner.engineId;
     if (!engineId) throw new Error("This conversation is not owned by a connected agent");
     if (method === "thread/goal/get") return { goal: null };
     const engine = await this.engine(engineId);
@@ -211,6 +235,7 @@ export class ConnectedAgentHost {
 
   async close(): Promise<void> {
     this.closed = true;
+    await this.bridge?.provider.close().catch(() => undefined);
     this.providerUsage.close();
     await Promise.allSettled(this.engineLoads.values());
     await Promise.all([...this.engines.values()].map(engine => engine.close()));

@@ -87,6 +87,37 @@ export class BridgeGateway {
       }
     })().finally(() => { this.pulling = undefined; });
   }
+  /** Latest canonical turn opened on a bridge Thread, if its event was pulled. */
+  async latestTurn(threadId: string): Promise<string | null> {
+    await this.pull();
+    const turns = this.turns.get(threadId);
+    return turns === undefined ? null : [...turns.values()].at(-1) ?? null;
+  }
+
+  /** Canonical turn for a native turn id, as joined from `turn.started` events. */
+  canonicalTurn(threadId: string, nativeTurnId: string): string | undefined {
+    return this.turns.get(threadId)?.get(nativeTurnId);
+  }
+
+  async nativeSession(threadId: string): Promise<{ nativeId: string; restorable: boolean } | null> {
+    const snapshot = await this.rpc('/snapshot');
+    const route = JSON.stringify([this.options.serverId, threadId]);
+    const row = snapshot.nativeSessions.find((entry: any) => entry.route === route);
+    return row === undefined ? null : { nativeId: row.native_id, restorable: row.restorable === 1 };
+  }
+
+  /** Route rows owned by this attachment, including those created before restart. */
+  async routeRows(): Promise<{ threadId: string; generation: string; nativeId: string | null; restorable: boolean }[]> {
+    const snapshot = await this.rpc('/snapshot');
+    const native = new Map(snapshot.nativeSessions.map((row: any) => [row.route, row]));
+    return snapshot.routes.flatMap((row: any) => {
+      const route = JSON.parse(row.route);
+      if (route[0] !== this.options.serverId) return [];
+      const nativeRow = native.get(row.route) as any;
+      return [{ threadId: route[1], generation: row.generation, nativeId: nativeRow?.native_id ?? null, restorable: nativeRow?.restorable === 1 }];
+    });
+  }
+
   async pendingInteractions(threadId: string): Promise<unknown[]> {
     await this.pull();
     // Request bodies survive in the inbox; the Host ledger is the authority for
