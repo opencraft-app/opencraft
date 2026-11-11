@@ -149,17 +149,17 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | --- | --- | --- |
 | P1a | bridge/schema、纯组装器、现有 AppServer 输出投影、一致性与脱敏回放；无运行切换 | fixture 全矩阵、乱序/重复、写后 EOF 结算正确；既有客户端输出契约与 steer 必要扩展兼容，记录 schema 版本 |
 | P1b | 独立 Host、sandbox、命令账本/outbox、generation；依赖 P1a | fake provider 长任务中重启网关，PID/Turn 不变，事件补齐；Host 崩溃发送窗口保持 unknown；存储锁下心跳正常 |
-| P2a | Codex bridge + codex-core/账号池；依赖 P1b | 真实账号最便宜可用模型建一线程读临时文件，长工具中发一次 steer；留原生证据、不重复文件副作用；网关重启继续、账号池路径不变；现有 Web/Electron/Expo 经 AppServer 查看新旧线程，发送/工具/steer 状态及重连无重复，草稿焦点连续 |
+| P2a | Codex bridge + codex-core/账号池；依赖 P1b | 真实账号最便宜可用模型建一线程读临时文件，长工具中发一次 steer；留原生证据、不重复文件副作用；网关重启继续、账号池路径不变；现有 Web/Electron/Expo 经 AppServer 查看新旧线程，发送/工具/steer 状态及重连无重复，草稿焦点连续；2026-11-11 复查：**未验**，旧 Codex 同模型也报 429，账号认证阻塞，按前置条件停止（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RECHECK.md)） |
 | P2c | Claude SDK bridge；依赖 P1b | 最小真实任务+输入流 steer/收尾竞态，UUID 可用则核验，否则只 admission；旧 ACP Claude 仍可用 |
 | P2d | Pi bridge；依赖 P1b | 最便宜模型一次最小任务+工具间 steer、重复文本、结束前未消费；原生 owner 与 session 无双写 |
 | P3 | 通用 ACP bridge；依赖 P1b | 本机一个通用 ACP fixture + Copilot/Amp 各一次最小真实任务；实际 initialize 录制；Copilot 无原生声明时界面无真 steer 假标签 |
 | P3c | ACP resume/history、model/list、客户端 fs/terminal/elicitation 与 Host 实机收尾；依赖 P3 | 真实 Copilot/Amp 经 Host 完成最小任务、一次 steer、close→resume 与 history；Web 仅核对现有 steering 组件不出现 native 假标签 |
 | P3b | DSH ACP 伴生插件；依赖 P3 | 最便宜模型真实任务中 messageId admission→claimed；插件 absent/未 ready、撤回与 claimed 竞态、未消费清理；旧原生 DSH 保留 |
-| P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收 |
+| P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收；2026-11-11 复查：**未验**，旧 Codex 同模型也报 429，账号认证阻塞，按前置条件停止（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RECHECK.md)） |
 | P5 | Cursor SDK 用户 steer 移植；依赖 P3；[实现与验收记录](../../apps/cursor-bridge/VALIDATION.md) | complete_delivered 只记 SDK 交付；revert 明确未插入、不自动 followup；缺 key 指引、取消清理、unknown 不重放；CLI/hook 结论与真实任务证据单列 |
 | P6 | AGY hook/IPC/轨迹读取；依赖 P3；[实现与验收](p6-agy.md) | AGY 1.5.5 Flash Low 经 Host 工具中 steer，hook→新原始 user 行（idx 3 ≥ floor 1 且 > baseline 2）；同文本 unknown、schema/插件缺失拒绝、SQLite Worker 已验证；无模型理解或生产隔离声明 |
-| P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a | 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
-| P7b | 项目 automation + CLI；依赖 P7a；[实现与验收记录](../../apps/agent-bridge-host/VALIDATION-P7b.md) | 确定性 timezone/DST、重启单次、失败暂停、unknown 与对账、旧 schedule 冲突拒绝已覆盖；真实 script 完成，once/cron 原生接纳后因 429 失败；跨 owner 导入未实现，完整退出条件待补 |
+| P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a | 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过；2026-11-11 复查：**未验**，旧 Codex 同模型也报 429，账号认证阻塞，按前置条件停止（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RECHECK.md)） |
+| P7b | 项目 automation + CLI；依赖 P7a；[实现与验收记录](../../apps/agent-bridge-host/VALIDATION-P7b.md) | 确定性 timezone/DST、重启单次、失败暂停、unknown 与对账、旧 schedule 冲突拒绝已覆盖；真实 script 完成，once/cron 原生接纳后因 429 失败；跨 owner 导入未实现，完整退出条件待补；2026-11-11 复查：**未验**，旧 Codex 同模型也报 429，账号认证阻塞，按前置条件停止（[证据](../../apps/agent-bridge-host/VALIDATION-LIVE-RECHECK.md)） |
 | P9 | Hermes 现有桥兼容回归；依赖 P2a | 旧桥契约录制/替身与现有客户端读取和发送回执一致；旧桥与下游不变。缺真实本机环境则如实登记，不声称真实产品验收 |
 | P8 | 切新默认和有条件移除旧 DSH owner/编排 MCP 注入；依赖 P2a/P2c/P2d、P3/P3b、P4–P7/P9 全验收 | 对本机 agent 配置逐条映射和冒烟，子线程/automation 真实闭环；旧活动代排空且可读历史；Hermes 和其它平台 MCP 保留；下线清单用户确认 |
 

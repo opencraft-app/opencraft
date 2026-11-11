@@ -182,3 +182,10 @@ roots reported zero findings, and all lockfile digests stayed unchanged. These
 advisory findings were not hidden or reported as repaired. Newly contributed
 commit metadata uses the maintainer-approved identity; existing main history was
 not rewritten.
+
+## 2026-11-11 live recheck
+
+**未验**。同模型旧 Codex 路径也在工具前先 401 后 429；Core 账号凭据已过期，
+账号池记录 `authorization-rejected`，后续代理返回 `No eligible Codex account`。
+按修不了即停的边界，本轮未继续真实任务。证据、范围限制与自行决定见
+[本机复查](VALIDATION-LIVE-RECHECK.md)及其脱敏录制。原有 fixture 与真实验收结论分别保留。
