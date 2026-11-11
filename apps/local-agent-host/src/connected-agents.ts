@@ -141,7 +141,7 @@ export class ConnectedAgentHost {
     const engineId = method === "thread/start"
       ? connectedAgentEngineId(typeof params.model === "string" ? params.model : "")
       : connectedAgentEngineId(threadId);
-    return { engineId, bridge: engineId !== null && this.bridge?.engines.includes(engineId) === true };
+    return { engineId, bridge: method === "thread/start" && engineId !== null && this.bridge?.engines.includes(engineId) === true };
   }
 
   async models() {

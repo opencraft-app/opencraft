@@ -277,7 +277,7 @@ export class BridgeEngineProvider implements ExecutionEngineProvider {
 
   private createParams(cwd: string, model: string | undefined): Value {
     switch (this.options.engine) {
-      case "claude-code": return { cwd, ...(model ? { model } : {}), permissionMode: "bypassPermissions", allowDangerouslySkipPermissions: true };
+      case "claude-code": return { cwd, ...(model ? { model } : {}), permissionMode: "acceptEdits" };
       case "pi": return { cwd, ...(model ? { model } : {}) };
       case "dsh-acp": return { cwd, permissionMode: "full", ...(model ? { modelSelection: model } : {}) };
     }
