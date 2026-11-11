@@ -27,8 +27,11 @@ npm run typecheck --workspace @opencraft/claude-code-bridge
 npm run build --workspace @opencraft/claude-code-bridge
 ```
 
-`dist/claude-code-bridge.mjs` is a bundled entrypoint (the Claude CLI binary is
-separate and pinned by `CLAUDE_CODE_EXECUTABLE` or the SDK's optional package).
+`dist/claude-code-bridge.mjs` is a bundled entrypoint. The Claude Code CLI is
+not part of that bundle: the bridge resolves an installed `claude` and passes
+it as `pathToClaudeCodeExecutable`. It does not run the platform binary shipped
+inside `@anthropic-ai/claude-agent-sdk`.
+
 Add it to the Host as a generation whose `artifact` is that absolute file, whose
 SHA-256 digest is pinned, and whose `launch.command` includes the artifact.
 `CLAUDE_BRIDGE_DEBUG=1` writes callback diagnostics to stderr; stdout is only
@@ -47,6 +50,16 @@ JSONL protocol.
   }
 }
 ```
+
+`CLAUDE_CODE_EXECUTABLE` is optional. When it is unset, the same resolver used
+by session startup and the `model/list` initialize probe checks `PATH`
+(`claude`, or `claude.exe` on Windows) and then the current platform's common
+install locations: `~/.claude/local`, `~/.local/bin`, and the npm global bin
+(`npm_config_prefix` or `npm prefix -g`). If the variable is set, it must point
+at an executable file; a missing or non-executable path fails immediately and
+does not continue the search. If no CLI is found, startup fails with an error
+that tells the operator to install Claude Code or set `CLAUDE_CODE_EXECUTABLE`.
+Command `env` still cannot override that variable or `PATH`.
 
 The existing ACP Claude route (`claude_` threads through the independent ACP
 Host and `@agentclientprotocol/claude-agent-acp`) is untouched. Both routes
@@ -148,12 +161,16 @@ effective capability set; it only decides whether an input can reach
 
 `minNativeVersion` is `2.1.321`, the version used for the real smoke. The
 bridge feature-detects rather than refusing an older CLI; older CLIs simply
-stay at admission evidence. The `@anthropic-ai/claude-agent-sdk` dependency is
+stay at admission evidence. The bridge still depends on
+`@anthropic-ai/claude-agent-sdk` for the session API, but the CLI it runs is the
+resolved install, not that package's optional platform binary. The dependency is
 Anthropic's proprietary package (not Apache-2.0); public distribution of the
 bundled artifact needs a license review.
 
 ## Tests
 
+- `tests/agent-bridge/claude-executable.test.ts` — installed CLI resolution
+  (valid pin, invalid pin, `PATH`, a common install location, and no CLI).
 - `tests/agent-bridge/claude-session.test.ts` — pure state machine with a
   scripted native port (steer/end race, held background turn, no-UUID fallback,
   timeout, EOF, idempotence, usage/tool translation).

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import type { SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { resolveClaudeCodeExecutable } from "./executable.js";
 import { InputQueue } from "./input-queue.js";
 import type {
   InterruptReceipt,
@@ -20,9 +21,10 @@ import type {
  */
 function createClaudeSdkSession(options: NativeStartOptions): NativeSessionPort {
   const input = new InputQueue<SDKUserMessage>();
-  // The executable is owned by the pinned generation/Host launch environment,
-  // never by command-supplied session env.
-  const executable = options.executable ?? process.env.CLAUDE_CODE_EXECUTABLE;
+  // The CLI is owned by the launch environment, never by command-supplied
+  // session env. Initialize probes and sessions both enter here, and the SDK
+  // must receive that path so it does not run its bundled binary.
+  const executable = resolveClaudeCodeExecutable({ explicit: options.executable });
   const sdkQuery = query({
     prompt: input,
     options: {
@@ -45,7 +47,7 @@ function createClaudeSdkSession(options: NativeStartOptions): NativeSessionPort 
       ...(options.allowedTools ? { allowedTools: [...options.allowedTools] } : {}),
       ...(options.disallowedTools ? { disallowedTools: [...options.disallowedTools] } : {}),
       ...(options.maxTurns !== undefined ? { maxTurns: options.maxTurns } : {}),
-      ...(executable ? { pathToClaudeCodeExecutable: executable } : {}),
+      pathToClaudeCodeExecutable: executable,
       env: { ...process.env, ...(options.env ?? {}) } as Record<string, string>,
     },
   });
