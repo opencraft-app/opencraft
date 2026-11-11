@@ -107,7 +107,7 @@ Hermes 保留现有 AppServer 桥及下游链路，外围只做兼容验证；�
 | 通用 ACP | 独立 ACP bridge，初始化/会话 capability 探测，adapter 插件提供私有方言 | 标准 prompt accepted 不等于真 steer；无声明时仅 queue/显式 interrupt |
 | DSH | ACP + 用户 acp-compat DSH proxy 与 acp-steering 伴生插件的可移植部分；DSH agent.steer 是上游 API，调用而非复制实现 | 私有 fd 通道 ready 才声明；messageId admission + inbox claimed；未 claimed 要等待删除确认；跨平台通道缺失则不声明 |
 | CodeBuddy | ACP adapter 移植用户 session/steer probe/双回执逻辑 | 同 owner admission + messageId user_message_chunk；纯文本且非 slash；精确错误文本 probe 有版本风险 |
-| Cursor | SDK adapter 移植用户 run.steer patch；底层上游 runner 独立实现或合法依赖 | complete_delivered 仅 SDK 交付；revert_to_followup 必须标 next-turn；本地 recordUserMessage 不是供应商上下文证明 |
+| Cursor | SDK adapter 移植用户 run.steer patch；底层上游 runner 独立实现或合法依赖 | complete_delivered 仅 SDK 交付；按用户最新收窄，revert_to_followup 明确 rejected（未插入当前轮），不自动排队；本地 recordUserMessage 不是供应商上下文证明 |
 | AGY | ACP adapter + 用户 hook 插件、私有 IPC、只读 SQLite 轨迹校验移植 | hook injectSteps 本身不足；新 user 行 + floor 是原生证据，但文本匹配有歧义；SQLite 读取在 Worker；Windows 不宣告现有 Unix 通道能力 |
 | Amp | ACP/CLI streaming adapter，移植用户 native steer patch；上游混合提交按 hunk 分开 | 同进程 steer:true；echo 只做迹象；同文本未回显不重发；SDK/Orb 不自动宣告 |
 | Copilot | 通用 ACP（copilot --acp），固定版本实际初始化探测 | 目前未核实本机原生 inject，默认 queue/显式 interrupt；不能用 Mission Control 字段证明本地 ACP 能力 |
@@ -156,7 +156,7 @@ automation 不能持久保存短期 Thread bearer：保存 human 授权的可撤
 | P3c | ACP resume/history、model/list、客户端 fs/terminal/elicitation 与 Host 实机收尾；依赖 P3 | 真实 Copilot/Amp 经 Host 完成最小任务、一次 steer、close→resume 与 history；Web 仅核对现有 steering 组件不出现 native 假标签 |
 | P3b | DSH ACP 伴生插件；依赖 P3 | 最便宜模型真实任务中 messageId admission→claimed；插件 absent/未 ready、撤回与 claimed 竞态、未消费清理；旧原生 DSH 保留 |
 | P4 | CodeBuddy 用户 adapter 移植；依赖 P3；[实现与验收记录](../../packages/agent-bridge-acp/VALIDATION.md) | 确定性双回执、slash 拒绝和 unknown 不重放已覆盖；最便宜模型工具中 steer 的真实双回执：未验（外部阻塞），不视为全验收 |
-| P5 | Cursor SDK 用户 steer 移植；依赖 P3 | 最便宜可用模型一次真实任务；complete_delivered 与 followup 分别验证，不能只看本地历史；取消无附件残留 |
+| P5 | Cursor SDK 用户 steer 移植；依赖 P3；[实现与验收记录](../../apps/cursor-bridge/VALIDATION.md) | complete_delivered 只记 SDK 交付；revert 明确未插入、不自动 followup；缺 key 指引、取消清理、unknown 不重放；CLI/hook 结论与真实任务证据单列 |
 | P6 | AGY hook/IPC/轨迹读取；依赖 P3；[实现与验收](p6-agy.md) | AGY 1.5.5 Flash Low 经 Host 工具中 steer，hook→新原始 user 行（idx 3 ≥ floor 1 且 > baseline 2）；同文本 unknown、schema/插件缺失拒绝、SQLite Worker 已验证；无模型理解或生产隔离声明 |
 | P7a | CLI credential 中立化与主动发行、稳定入口、限定的 thread 通信与状态查询命令；依赖 P2a | 所有本机 agent 各执行 context 和一次有界 spawn/tell/wait/output 链，权限拒绝与撤销有效；网关重启同 key 不双 spawn；仅编排 thread_* 与 thread_cli 注入退出，其它 MCP 工具回归通过 |
 | P7b | 项目 automation + CLI；依赖 P7a | once 新建子线程、cron reprompt、script 三类本机最小任务；timezone/DST 用假时钟，重启单次执行、连续失败暂停、unknown 不派后续、旧 schedule 不双投 |

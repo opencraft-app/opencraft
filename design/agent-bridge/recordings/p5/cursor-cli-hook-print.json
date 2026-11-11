@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "cliVersion": "2026.11.05-86047df",
+  "mode": "print stream-json, project hooks plus explicit plugin-dir",
+  "model": "glm-5p3-flash[reasoning=high]",
+  "exit": {
+    "code": null,
+    "signal": "SIGKILL"
+  },
+  "timedOut": true,
+  "observations": [],
+  "inboxWrittenDuringTool": false,
+  "hookCalls": [],
+  "transcriptEvidence": [],
+  "markerReturned": false,
+  "stderrCategory": "none",
+  "hookOutputMarker": false,
+  "result": "blocked-before-native-output",
+  "evidenceTier": "unverified",
+  "limitation": "No native output within 60s; does not establish absence of hook support in print or interactive CLI."
+}

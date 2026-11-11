@@ -10,6 +10,7 @@
     { "path": "./packages/agent-bridge-acp" },
     { "path": "./apps/agent-bridge-host" },
     { "path": "./apps/claude-code-bridge" },
+    { "path": "./apps/cursor-bridge" },
     { "path": "./packages/app-host-client" },
     { "path": "./packages/app-host-server" },
     { "path": "./packages/daemon-ipc" },

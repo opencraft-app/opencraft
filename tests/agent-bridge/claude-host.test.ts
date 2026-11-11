@@ -97,7 +97,8 @@ test('Host + scripted Claude bridge holds a turn for a steer result and projects
   const startReceipt = await host.query('start');
   assert.equal(startReceipt?.state, 'accepted');
   await host.accept(command('close', 'session/close')); await accepted(host, 'close');
-  const high = events.at(-1).seq; await host.ack(high);
+  const settledEvents = await host.events(0, 256);
+  const high = settledEvents.at(-1)!.seq; await host.ack(high);
   await host.releaseThread('server-1', 'thread-claude');
 });
 
