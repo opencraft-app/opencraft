@@ -11,6 +11,7 @@ const cancelCloseDeadline = globalThis.clearTimeout;
 
 import {
   AccountPoolStore,
+  AccountCredentialRefreshManager,
   CodexDeviceLoginService,
   createManagedCodexRefresh,
   type CodexMaintenanceClient,
@@ -76,6 +77,8 @@ test("completed Codex device login imports one account without returning tokens"
     assert.doesNotMatch(JSON.stringify(completed), /refresh-a|access_token/);
     assert.equal(store.listAccounts()[0]?.label, "user@example.com");
     assert.equal(store.listAccountStates()[0]?.email, "user@example.com");
+    assert.equal(store.readCredential(store.listAccounts()[0]!.id).refreshToken, "refresh-a");
+    assert.equal(store.listAccounts()[0]?.credentialSource, "managed");
     assert.equal(client.closed, true);
     await service.dispose();
     store.close();
@@ -133,9 +136,44 @@ test("existing native Codex login imports explicitly without modifying its auth 
     });
     const imported = await service.importFrom(nativeHome);
     assert.equal(imported.label, "native@example.com");
+    assert.equal(imported.credentialSource, "external-file");
+    const secretPath = join(root, "secrets", `account-${imported.id}.json`);
+    const referenceBytes = await readFile(secretPath, "utf8");
+    assert.deepEqual(JSON.parse(referenceBytes), { kind: "codex-auth-file", path: join(nativeHome, "auth.json") });
+    assert.doesNotMatch(referenceBytes, /refresh-native|accessToken|access_token/);
+    const credential = store.readCredential(imported.id);
+    assert.equal(credential.accessToken, accessToken);
+    assert.equal(credential.refreshToken, null);
+    assert.equal(credential.external, true);
+    await assert.rejects(service.importFrom(nativeHome), /Remove it before/);
     assert.equal(store.listAccountStates()[0]?.email, "native@example.com");
     assert.equal(await readFile(join(nativeHome, "auth.json"), "utf8"), original);
     assert.doesNotMatch(JSON.stringify(imported), /refresh-native|accessToken/);
+    let refreshes = 0;
+    const refresh = new AccountCredentialRefreshManager({ store, now: () => 30_000_000,
+      refresh: async () => { refreshes++; throw new Error("must not refresh a reference"); } });
+    // Owner replaces the file; the next read sees the new token, never a cache.
+    const rotated = original.replace(accessToken, jwt({ exp: 25_000 }));
+    await writeFile(join(nativeHome, "auth.json"), rotated);
+    const current = store.readCredential(imported.id);
+    assert.notEqual(current.accessToken, accessToken);
+    for (const reason of ["expired", "unauthorized"] as const) {
+      await assert.rejects(refresh.resolve(store.getAccount(imported.id), current, reason), /codex login.*device-code/);
+    }
+    await assert.rejects(refresh.resolve(store.getAccount(imported.id), credential, "expired"), /codex login/);
+    assert.equal(refreshes, 0);
+    assert.equal(await readFile(join(nativeHome, "auth.json"), "utf8"), rotated);
+    assert.equal(await readFile(secretPath, "utf8"), referenceBytes);
+    store.removeAccount(imported.id);
+    assert.equal(await readFile(join(nativeHome, "auth.json"), "utf8"), rotated);
+    // Earlier copies retain ownership and remain usable until explicitly removed.
+    const copied = { accessToken: "legacy-copy", refreshToken: "legacy-refresh", expiresAt: null };
+    store.addAccount({ id: "legacy", provider: "codex", label: "Legacy", upstreamAccountId: "chatgpt-native", priority: 1, enabled: true }, copied);
+    await assert.rejects(service.importFrom(nativeHome), /Remove it before/);
+    assert.equal(store.listAccounts()[0]?.credentialSource, "managed");
+    assert.equal(store.readCredential("legacy").refreshToken, "legacy-refresh");
+    store.removeAccount("legacy");
+    assert.deepEqual(store.listAccounts(), []);
     await service.dispose();
     store.close();
   } finally {

@@ -2635,6 +2635,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         priority: account.priority,
         enabled: account.enabled,
         credentialConfigured: account.credentialConfigured,
+        credentialSource: account.credentialSource,
         email: state.email,
         subscriptionType: state.subscriptionType,
         rateLimitTier: state.rateLimitTier,

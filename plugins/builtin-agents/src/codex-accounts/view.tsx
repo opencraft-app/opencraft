@@ -1,3 +1,4 @@
+import { useIntl } from "@opencraft/i18n/react";
 import { CheckIcon as Check, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, MoreIcon as MoreHorizontal, AddIcon as Plus, RefreshIcon as RefreshCw, DeleteIcon as Trash2, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -138,6 +139,7 @@ function AccountRow({ account, index, total, service, credentialLocation, report
   readonly credentialLocation: string;
   readonly reportError?: ExtensionSettingsViewProps["reportError"];
 }) {
+  const intl = useIntl();
   const detailsId = useId();
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
@@ -148,7 +150,9 @@ function AccountRow({ account, index, total, service, credentialLocation, report
     setPending(key);
     setError(null);
     void action()
-      .catch(cause => setError(cause instanceof Error ? cause.message : "操作失败"))
+      .catch(cause => setError(account.credentialSource === "external-file"
+        ? intl.formatMessage({ id: "codexAccounts.external.actionFailed", defaultMessage: "The action failed. For sign-in problems, run codex login on the host or remove this account and use device-code login." })
+        : cause instanceof Error ? cause.message : "操作失败"))
       .finally(() => setPending(null));
   };
   const move = (offset: number) => {
@@ -175,6 +179,13 @@ function AccountRow({ account, index, total, service, credentialLocation, report
               {relativeDate(account.lastUsedAt)}
               {pending === "refresh" ? <><span aria-hidden="true">·</span>正在刷新…</> : null}
             </span>
+            <span className="engine-account__status-copy">
+              {account.credentialSource === "external-file"
+                ? intl.formatMessage({ id: "codexAccounts.source.external", defaultMessage: "Local Codex login (read-only)" })
+                : account.credentialSource === "managed"
+                  ? intl.formatMessage({ id: "codexAccounts.source.managed", defaultMessage: "Pool credentials (device login or earlier copy)" })
+                  : intl.formatMessage({ id: "codexAccounts.source.unknown", defaultMessage: "Credential source unknown" })}
+            </span>
           </span>
           <span className="engine-account__quotas" aria-label="额度使用情况">
             {account.limitWindows.length === 0 ? <span className="engine-account__quota" data-tone="unknown"><small>额度</small><strong>—</strong></span>
@@ -199,6 +210,7 @@ function AccountRow({ account, index, total, service, credentialLocation, report
           onRemove={() => setConfirming(true)}
         />
       </div>
+      {account.credentialSource === "external-file" && account.status === "error" ? <div className="engine-account__error" role="alert">{intl.formatMessage({ id: "codexAccounts.external.renew", defaultMessage: "Run codex login on the host, or remove this account and sign in with a device code." })}</div> : null}
       {error ? <div className="engine-account__error" role="alert">{maskAccountDisplayIdentity(error)}</div> : null}
       {expanded ? <div className="engine-account__details" id={detailsId}>
         <SettingsRow className="engine-account__credit-policy" label="允许使用积分" description={account.allowCredits === undefined
@@ -226,7 +238,9 @@ function AccountRow({ account, index, total, service, credentialLocation, report
         <AlertDialog.Overlay className="engine-account-dialog__overlay" />
         <AlertDialog.Content className="engine-account-dialog engine-account-dialog--compact">
           <AlertDialog.Title>移除 Codex 账户？</AlertDialog.Title>
-          <AlertDialog.Description>将删除“{maskAccountDisplayIdentity(account.label)}”在{credentialLocation}保存的 OAuth 凭据和账户池绑定。现有会话记录不会删除。</AlertDialog.Description>
+          <AlertDialog.Description>{account.credentialSource === "external-file"
+            ? intl.formatMessage({ id: "codexAccounts.external.remove", defaultMessage: "Remove this account's reference from the pool. The local Codex login and conversation history will be kept." })
+            : <>将删除“{maskAccountDisplayIdentity(account.label)}”在{credentialLocation}保存的 OAuth 凭据和账户池绑定。现有会话记录不会删除。</>}</AlertDialog.Description>
           <footer>
             <AlertDialog.Cancel asChild><SettingsButton disabled={pending !== null}>取消</SettingsButton></AlertDialog.Cancel>
             <SettingsButton variant="danger" disabled={pending !== null} onClick={() => run("remove", () => service.remove(account.id))}>确认移除</SettingsButton>
@@ -245,6 +259,7 @@ function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport, all
   readonly onImport: () => void;
   readonly allowImport: boolean;
 }) {
+  const intl = useIntl();
   return <DropdownMenu.Root>
     <DropdownMenu.Trigger asChild>
       <SettingsButton disabled={disabled}>
@@ -259,7 +274,9 @@ function AddAccountMenu({ disabled, starting, importing, onSignIn, onImport, all
         </DropdownMenu.Item>
         {allowImport ? <DropdownMenu.Item className="engine-account-menu__item engine-account-menu__item--descriptive" disabled={disabled} onSelect={onImport}>
           <Download size={16} />
-          <span><strong>{importing ? "正在导入…" : "导入本机 Codex 登录"}</strong><small>复制此设备已有的 Codex 登录</small></span>
+          <span><strong>{importing
+            ? intl.formatMessage({ id: "codexAccounts.external.adding", defaultMessage: "Connecting…" })
+            : intl.formatMessage({ id: "codexAccounts.external.add", defaultMessage: "Use local Codex login" })}</strong><small>{intl.formatMessage({ id: "codexAccounts.external.description", defaultMessage: "Read the host's login; local Codex manages renewal. No credentials are copied." })}</small></span>
         </DropdownMenu.Item> : null}
       </DropdownMenu.Content>
     </DropdownMenu.Portal>
@@ -316,6 +333,7 @@ export function createCodexAccountsView(service: CodexAccountsService, options: 
   const allowImport = options.allowImport ?? true;
   const credentialLocation = options.credentialLocation ?? "本机";
   return function CodexAccountsView(_props: ExtensionSettingsViewProps) {
+    const intl = useIntl();
     const snapshot = useSyncExternalStore(service.subscribe, service.getSnapshot, service.getSnapshot);
     const [starting, setStarting] = useState(false);
     const [importing, setImporting] = useState(false);
@@ -352,7 +370,7 @@ export function createCodexAccountsView(service: CodexAccountsService, options: 
       actions={<SettingsIconButton label="刷新账户" disabled={snapshot.phase === "loading"} onClick={() => void service.refresh()}><RefreshCw size={16} /></SettingsIconButton>}
     >
       <div className="engine-accounts-page">
-        {snapshot.error ? <SettingsNotice tone="error">{snapshot.phase === "error" ? `账户读取失败：${maskAccountDisplayIdentity(snapshot.error)}。请点击右上角刷新重试。` : maskAccountDisplayIdentity(snapshot.error)}</SettingsNotice> : null}
+        {snapshot.error ? <SettingsNotice tone="error">{snapshot.error === "local-codex-login-unavailable" ? intl.formatMessage({ id: "codexAccounts.external.failed", defaultMessage: "Could not use the local Codex login. If this account is already listed, remove it first. Otherwise, run codex login on the host or sign in with a device code." }) : snapshot.phase === "error" ? `账户读取失败：${maskAccountDisplayIdentity(snapshot.error)}。请点击右上角刷新重试。` : maskAccountDisplayIdentity(snapshot.error)}</SettingsNotice> : null}
         <SettingsSection
           title="ChatGPT 账户"
           description="多个账户按顺序使用；已有会话在账户可用时保持绑定。"

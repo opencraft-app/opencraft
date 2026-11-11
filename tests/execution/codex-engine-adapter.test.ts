@@ -644,6 +644,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
     await adapter.send(JSON.stringify({ id: "b:import", method: "opencraft/codex/accounts/import", params: {}, [LOGICAL_CLIENT_FIELD]: "client-b" }));
     const imported = await waitFor(frames, frame => frame.id === "b:import");
     assert.equal((imported.result as any).account.email, "native@example.com");
+    assert.equal((imported.result as any).account.credentialSource, "external-file");
     assert.doesNotMatch(JSON.stringify(imported), /refresh-native|Bearer/);
     let refreshed: Record<string, any> | null = null;
     for (let attempt = 0; attempt < 20 && refreshed === null; attempt += 1) {
@@ -653,6 +654,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       if ((listed.result as any).accounts[0]?.subscriptionType === "pro") refreshed = listed as Record<string, any>;
       else await new Promise(resolve => setTimeout(resolve, 5));
     }
+    assert.equal((refreshed?.result as any).accounts[0].credentialSource, "external-file");
     assert.equal((refreshed?.result as any).accounts[0].subscriptionType, "pro");
     assert.equal((refreshed?.result as any).accounts[0].limitWindows[0].utilization, 0.1);
   } finally {

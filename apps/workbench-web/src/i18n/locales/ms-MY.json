@@ -1368,5 +1368,15 @@
   "chat.steerEvidence.contextConfirmed": "Input disahkan dalam konteks tugas",
   "chat.steerEvidence.accepted": "Diterima; konteks belum disahkan",
   "chat.steerEvidence.rejected": "Input ditolak",
-  "chat.steerEvidence.unconfirmed": "Penghantaran belum disahkan"
+  "chat.steerEvidence.unconfirmed": "Penghantaran belum disahkan",
+  "codexAccounts.source.external": "Log masuk Codex tempatan (baca sahaja)",
+  "codexAccounts.source.managed": "Kelayakan kumpulan (kod peranti atau salinan lama)",
+  "codexAccounts.source.unknown": "Sumber kelayakan tidak diketahui",
+  "codexAccounts.external.renew": "Jalankan codex login pada hos, atau buang akaun ini dan log masuk dengan kod peranti.",
+  "codexAccounts.external.remove": "Buang rujukan akaun ini daripada kumpulan sahaja. Log masuk Codex tempatan dan sejarah perbualan dikekalkan.",
+  "codexAccounts.external.adding": "Menyambung…",
+  "codexAccounts.external.add": "Gunakan log masuk Codex tempatan",
+  "codexAccounts.external.description": "Baca log masuk hos; Codex tempatan mengurus pembaharuan. Tiada kelayakan disalin.",
+  "codexAccounts.external.actionFailed": "Tindakan gagal. Untuk masalah log masuk, jalankan codex login pada hos atau buang akaun ini dan gunakan kod peranti.",
+  "codexAccounts.external.failed": "Log masuk Codex tempatan tidak dapat digunakan. Jika akaun ini sudah disenaraikan, buangnya dahulu. Jika tidak, jalankan codex login pada hos atau gunakan kod peranti."
 }

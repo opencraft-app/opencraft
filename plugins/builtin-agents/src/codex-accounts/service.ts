@@ -98,7 +98,7 @@ export class CodexAccountsService {
         error: null,
       });
     } catch (error) {
-      this.publish({ ...this.snapshot, error: error instanceof Error ? error.message : String(error) });
+      this.publish({ ...this.snapshot, error: "local-codex-login-unavailable" });
       throw error;
     }
   }

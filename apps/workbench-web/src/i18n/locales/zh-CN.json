@@ -1390,5 +1390,15 @@
   "chat.steerEvidence.contextConfirmed": "已确认输入进入任务上下文",
   "chat.steerEvidence.accepted": "已接纳，尚未确认进入上下文",
   "chat.steerEvidence.rejected": "输入已被拒绝",
-  "chat.steerEvidence.unconfirmed": "投递尚未确认"
+  "chat.steerEvidence.unconfirmed": "投递尚未确认",
+  "codexAccounts.source.external": "本机 Codex 登录（只读）",
+  "codexAccounts.source.managed": "账号池凭据（设备码或旧副本）",
+  "codexAccounts.source.unknown": "凭据来源未知",
+  "codexAccounts.external.renew": "请在宿主运行 codex login，或移除此账户后改用设备码登录。",
+  "codexAccounts.external.remove": "仅移除此账户在账号池中的引用。本机 Codex 登录和会话记录会保留。",
+  "codexAccounts.external.adding": "正在关联…",
+  "codexAccounts.external.add": "使用本机 Codex 登录",
+  "codexAccounts.external.description": "只读宿主登录，由本机 Codex 续期，不复制凭据。",
+  "codexAccounts.external.actionFailed": "操作失败。如遇登录问题，请在宿主运行 codex login，或移除此账户后改用设备码登录。",
+  "codexAccounts.external.failed": "无法使用本机 Codex 登录。若列表中已有此账户，请先移除；否则请在宿主运行 codex login，或使用设备码登录。"
 }

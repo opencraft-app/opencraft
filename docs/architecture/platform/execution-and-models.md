@@ -226,10 +226,11 @@ account state without growing a second account or quota authority in React.
 Device Login runs an isolated Codex maintenance AppServer using the official
 `chatgptDeviceCode` flow; only a completed login with a valid private auth file
 commits an account. An explicit import action reads the external Codex authority
-(`CODEX_HOME`, otherwise `~/.codex`) supplied by Electron Main, copies its
-validated OAuth credential into the private pool and never rewrites the source
-`auth.json`. Refresh likewise round-trips one account through an isolated
-managed-auth profile and verifies that account identity does not change. Login
+(`CODEX_HOME`, otherwise `~/.codex`) supplied by Electron Main and stores a
+read-only file reference, never a token copy. The external owner renews its login;
+OpenCraft never rewrites or refreshes the source `auth.json`. Managed accounts
+(device-code logins and earlier copies) retain refresh through an isolated
+managed-auth profile that verifies account identity does not change. Login
 and refresh profiles are 0700/0600 temporary state and stale profiles are pruned
 on the next service construction. Renderer snapshots never include tokens.
 The external Codex executable is resolved once by Electron from an explicit
@@ -483,9 +484,19 @@ Provider storage remains authority across browser refresh and Host restart.
 
 ### Shared Codex credentials
 
+The account settings action “Use local Codex login” (`opencraft/codex/accounts/import`)
+stores a read-only reference to the Host-configured native Codex home's `auth.json`.
+The RPC accepts no file path. It never copies tokens or changes an existing account's
+credential ownership: remove the existing account before adding a reference.
+Device-code login continues to create independent pool-managed credentials.
+Older copied accounts remain managed until explicitly removed; the list distinguishes
+external references from pool credentials, whose historical login origin is unknown.
+If the external login expires or is rejected, run `codex login` on the host, or remove
+the reference and use device-code login. OpenCraft does not automatically renew it.
+
 An operator may bind an account to an existing OAuth `auth.json` owned by another local credential manager. Run the packaged `runtime/codex-account-reference.mjs` with the installation's Node binary, the Codex data directory, the absolute shared auth file and an optional local account ID. Run as the service identity in its actual mount namespace while no Codex writer owns that directory; the command acquires the existing writer lock. It stores an external file reference and fixed upstream account identity, never the source tokens or shared session databases. This is an operator tool, not a browser RPC for reading arbitrary paths.
 
-Each credential selection rereads the file, including atomic replacements and symlink targets. Source identity must still match the registered account. Missing, malformed or changed-identity files fail closed without a cached credential. The external owner alone refreshes the source; OpenCraft neither refreshes these credentials nor writes or imports over the reference. Expiry or rejection requires that owner to renew the login. Ordinary managed accounts retain their existing refresh behavior.
+Each credential selection rereads the file, including atomic replacements and symlink targets. Source identity must still match the registered account. Missing, malformed or changed-identity files fail closed without a cached credential. Such a source read failure marks only that account as authorization-rejected and follows the existing authorization-failure selection path; it does not change affinity or quota policy. With no usable alternative, inference returns an actionable 401 asking for host `codex login` or device-code login. After the external owner repairs the file, the existing usage-refresh entry can restore the account. The external owner alone refreshes the source; OpenCraft neither refreshes these credentials nor writes or imports over the reference. Expiry or rejection requires that owner to renew the login. Ordinary managed accounts retain their existing refresh behavior.
 
 An ordinary open account Core validates Host authentication and local credential
 records before serving, but does not require an external credential owner to be

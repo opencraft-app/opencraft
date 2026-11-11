@@ -246,6 +246,7 @@ export class CodexAccountService {
         enabled: account.enabled,
         allowCredits: account.allowCredits,
         credentialConfigured: account.credentialConfigured,
+        credentialSource: account.credentialSource,
         email: state.email,
         subscriptionType: state.subscriptionType,
         rateLimitTier: state.rateLimitTier,
