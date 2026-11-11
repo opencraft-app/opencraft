@@ -29,7 +29,7 @@ function App() {
     fail(key: string) { pending.get(key)!.reject(new Error("Unavailable")); pending.delete(key); },
     refresh(ready: boolean) { signedIn = ready; return queryClient.invalidateQueries({ queryKey: ["agent-onboarding", hostId], exact: true }); },
   } });
-  return <QueryClientProvider client={queryClient}><AgentOnboarding hostId={hostId} hostName="Local OpenCraft"
+  return <QueryClientProvider client={queryClient}><AgentOnboarding hostId={hostId}
     agentPreferences={{ enabled: id => !disabledAgents.includes(id), setEnabled: (id, enabled) => setDisabledAgents(current => enabled ? current.filter(value => value !== id) : [...current, id]), saving: false, failed: false }}
     catalogModels={[{ agentId: "codex", id: "codex:current", name: "Codex", isDefault: true }]}
     presentation={presentation} onClose={() => finished.push("close")} onUseModels={() => finished.push("api")}

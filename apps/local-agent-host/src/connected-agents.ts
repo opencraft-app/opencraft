@@ -43,7 +43,7 @@ export function connectedAgentEngineId(modelOrThread: string): EngineId | null {
 const LABELS: Record<EngineId, string> = {
   codex: "Codex",
   cursor: "Cursor",
-  "claude-code": "Claude",
+  "claude-code": "Claude Code",
   codebuddy: "CodeBuddy",
 };
 

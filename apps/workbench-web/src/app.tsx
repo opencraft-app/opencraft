@@ -1,4 +1,3 @@
-import { AgentManagement } from "./components/agent-management";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
@@ -162,7 +161,7 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
-import { AgentOnboarding } from "./components/agent-onboarding";
+import { HostAgentOnboarding } from "./components/agent-management";
 import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
@@ -2200,18 +2199,9 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
-          {!embedded && visibleOnboardingOverlay !== null ? <AgentOnboarding
-            hostId={snapshot.hostId}
-            hostName={activeHost.label}
+          {!embedded && visibleOnboardingOverlay !== null ? <HostAgentOnboarding
+            key={snapshot.hostId}
             presentation={visibleOnboardingOverlay}
-            engineChoices={agents => <AgentManagement connected={false} excludedAgentIds={agents.map(agent => agent.engineId ?? agent.id)} availability={agentAvailability} />}
-            catalogModels={composerCatalog.models.flatMap(model => model.agentId ? [{ agentId: model.agentId, id: model.model, name: model.displayName, isDefault: model.isDefault }] : [])}
-            agentPreferences={{
-              enabled: id => agentAvailability.enabled(snapshot.hostId, id),
-              setEnabled: (id, enabled) => { void agentAvailability.setEnabled(snapshot.hostId, id, enabled); },
-              saving: agentAvailability.saving, failed: agentAvailability.failed,
-            }}
-            request={(method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params)}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}
             onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}

@@ -1,10 +1,12 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AppServerMethodParams, AppServerMethodResult, OnboardingAgentSnapshot, OnboardingSnapshot } from "@opencraft/appserver-protocol";
 import { useIntl } from "@opencraft/i18n/react";
-import { SettingsSwitch } from "@opencraft/extension-react";
+import { SettingsListItem, SettingsSection, SettingsSwitch } from "@opencraft/extension-react";
 import { CheckIcon } from "@opencraft/design-system-web/action-icons";
-import { AgentBrandIcon } from "@opencraft/design-system-web/action-icons";
+import { ResetIcon } from "@opencraft/design-system-web/action-icons";
+import { IconButton } from "@opencraft/design-system-web/button";
+import { AgentIdentityIcon, projectAgentDirectory, type AgentCatalogModel } from "./agent-directory";
 import { Button } from "./ui/button";
 import "./agent-onboarding.scss";
 
@@ -14,7 +16,7 @@ type OnboardingRequest = <M extends OnboardingMethod>(method: M, params: AppServ
 const AGENT_NAMES: Record<string, { id: string; defaultMessage: string }> = {
   codex: { id: "onboard.agent.codex", defaultMessage: "Codex" },
   cursor: { id: "onboard.agent.cursor", defaultMessage: "Cursor" },
-  claude: { id: "onboard.agent.claude", defaultMessage: "Claude" },
+  claude: { id: "onboard.agent.claude", defaultMessage: "Claude Code" },
   codebuddy: { id: "onboard.agent.codebuddy", defaultMessage: "CodeBuddy" },
 };
 
@@ -22,26 +24,27 @@ function isSnapshot(value: unknown): value is OnboardingSnapshot {
   return !!value && typeof value === "object" && Array.isArray((value as OnboardingSnapshot).agents);
 }
 
-interface AgentOnboardingProps {
+export interface AgentOnboardingProps {
   readonly hostId: string;
-  readonly hostName: string;
   readonly request: OnboardingRequest;
-  readonly presentation: "gate" | "sheet";
-  readonly onFinish: (modelId: string) => void | Promise<void>;
-  readonly onUseModels: () => void;
+  readonly presentation: "gate" | "sheet" | "settings";
+  readonly onFinish?: (modelId: string) => void | Promise<void>;
+  readonly onUseModels?: () => void;
   readonly onClose?: () => void;
   readonly agentPreferences?: { enabled(id: string): boolean; setEnabled(id: string, enabled: boolean): void; saving: boolean; failed: boolean };
-  readonly engineChoices?: (agents: readonly OnboardingAgentSnapshot[]) => ReactNode;
-  readonly catalogModels?: readonly { agentId: string; id: string; name: string; isDefault: boolean }[];
+  readonly catalogModels?: readonly AgentCatalogModel[];
+  readonly onRefreshModels?: () => void;
+  readonly catalogError?: boolean;
 }
 
 export function AgentOnboarding(props: AgentOnboardingProps) {
   return <AgentOnboardingContent key={props.hostId} {...props} />;
 }
 
-function AgentOnboardingContent({ hostId, hostName, request, presentation, onFinish, onUseModels, onClose, agentPreferences, engineChoices, catalogModels }: AgentOnboardingProps) {
+function AgentOnboardingContent({ hostId, request, presentation, onFinish, onUseModels, onClose, agentPreferences, catalogModels, onRefreshModels, catalogError }: AgentOnboardingProps) {
   const intl = useIntl();
   const queryClient = useQueryClient();
+  const continueHintId = useId();
   const queryKey = ["agent-onboarding", hostId] as const;
   const [copied, setCopied] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -74,28 +77,28 @@ function AgentOnboardingContent({ hostId, hostName, request, presentation, onFin
       setCopied(id);
     } catch { setCopied(null); }
   };
-  const agents = status.data?.agents;
-  const identity = (agent: OnboardingAgentSnapshot) => agent.engineId ?? agent.id;
-  const readyAgents = agents?.filter(agent => agent.authenticated === true && agent.activity?.phase !== "running" && agentPreferences?.enabled(identity(agent)) !== false) ?? [];
+  const agents = projectAgentDirectory(catalogModels ?? [], status.data?.agents ?? [], nameOf);
+  const management = presentation === "settings";
+  const readyAgents = agents.filter(agent => agent.ready && agentPreferences?.enabled(agent.id) !== false);
   useEffect(() => { if (chosenAgent === null && readyAgents[0]) setChosenAgent(readyAgents[0].id); }, [chosenAgent, readyAgents[0]?.id]);
   const expanded = chosenAgent;
+  const expandedEntry = agents.find(agent => agent.id === expanded);
   const expandedReady = readyAgents.some(agent => agent.id === expanded);
   const agentModels = useQuery({
     queryKey: [...queryKey, "models", expanded],
-    enabled: expanded !== null && expandedReady,
+    enabled: !management && expandedEntry?.native !== undefined && expandedReady,
     retry: false,
     staleTime: Infinity,
     queryFn: async () => {
-      const result = await request("opencraft/agents/onboarding/models", { id: expanded! });
+      const result = await request("opencraft/agents/onboarding/models", { id: expandedEntry!.native!.id });
       if (!result || !Array.isArray(result.models) || result.models.some(model => !model || typeof model.id !== "string" || !model.id || typeof model.name !== "string")) {
         throw new Error("Invalid agent models");
       }
       return result.models;
     },
   });
-  const models = agentModels.data ?? [];
-  const expandedIdentity = agents?.find(agent => agent.id === expanded);
-  const defaults = catalogModels?.filter(model => model.agentId === (expandedIdentity ? identity(expandedIdentity) : expanded));
+  const models = expandedEntry?.native ? agentModels.data ?? [] : expandedEntry?.models ?? [];
+  const defaults = expandedEntry?.models;
   const defaultEntry = defaults?.find(model => model.isDefault) ?? defaults?.[0];
   const defaultModel = defaultEntry?.id;
   const selectedChoice = chosenModel?.agentId === expanded ? chosenModel : null;
@@ -104,97 +107,82 @@ function AgentOnboardingContent({ hostId, hostName, request, presentation, onFin
   const selectedModel = selected?.id ?? null;
   const selectedModelName = selected?.name ?? null;
   const step = requestedStep === "start" && selectedModel ? "start" : "agent";
-  return <div className={presentation === "sheet" ? "agent-onboard-gate agent-onboard-gate--sheet" : "agent-onboard-gate"} role="dialog" aria-modal={presentation === "gate"} aria-labelledby="agent-onboard-title">
-    <section className="agent-onboard" aria-labelledby="agent-onboard-title">
-    {presentation === "sheet" ? <button type="button" className="agent-onboard__back" disabled={finishing} onClick={onClose}>{intl.formatMessage({ id: "onboard.agent.backToSettings", defaultMessage: "Back to model settings" })}</button> : null}
-    <ol className="agent-onboard__steps">
-      <li data-current={step === "agent"}>{intl.formatMessage({ id: "onboard.agent.stepAgent", defaultMessage: "1 · Agent" })}</li>
-      <li data-current={step === "start"}>{intl.formatMessage({ id: "onboard.agent.stepStart", defaultMessage: "2 · Start" })}</li>
-    </ol>
-    <header className="agent-onboard__intro">
-      <h2 id="agent-onboard-title">{intl.formatMessage({ id: "onboard.agent.title", defaultMessage: "Connect a coding agent" })}</h2>
-      <p>{step === "start" && selectedModelName
-        ? intl.formatMessage({ id: "onboard.agent.readyBody", defaultMessage: "New chats will use {name}. You can switch agents later from the model menu." }, { name: selectedModelName })
-        : intl.formatMessage({ id: "onboard.agent.description", defaultMessage: "Install and sign in to an agent you already use. Choose one of its models to start chatting." })}</p>
-    </header>
-    {step === "agent" && !status.isPending ? engineChoices?.(agents ?? []) : null}
+  const refreshButton = <IconButton size="accessory" variant="ghost" aria-label={intl.formatMessage({ id: "onboard.agent.recheck", defaultMessage: "Check again" })}
+    disabled={status.isFetching || finishing} onClick={() => { void status.refetch(); onRefreshModels?.(); }}><ResetIcon size={16} /></IconButton>;
+  const content = <>
+    {!management ? <>
+      {presentation === "sheet" ? <Button variant="ghost" size="sm" disabled={finishing} onClick={onClose}>{intl.formatMessage({ id: "onboard.agent.backToSettings", defaultMessage: "Back to model settings" })}</Button> : null}
+      <ol className="agent-onboard__steps">
+        <li data-current={step === "agent"}>{intl.formatMessage({ id: "onboard.agent.stepAgent", defaultMessage: "1 · Agent" })}</li>
+        <li data-current={step === "start"}>{intl.formatMessage({ id: "onboard.agent.stepStart", defaultMessage: "2 · Start" })}</li>
+      </ol>
+    </> : null}
+    {!management ? <header className="agent-onboard__toolbar">
+      <h2 id="agent-onboard-title">{intl.formatMessage({ id: "onboard.agent.title", defaultMessage: "Choose an agent" })}</h2>
+      {refreshButton}
+    </header> : null}
+    {step === "start" && !management ? <p className="agent-onboard__selection">{expandedEntry?.label} · {selectedModelName}</p> : null}
     {agentPreferences?.failed ? <p role="alert">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</p> : null}
     {finishFailed ? <p role="alert">{intl.formatMessage({ id: "onboard.agent.startFailed", defaultMessage: "Could not start the chat. Please try again." })}</p> : null}
-    <div className="agent-onboard__meta">
-      <span>{intl.formatMessage({ id: "onboard.agent.host", defaultMessage: "On {host}" }, { host: hostName })}</span>
-      <button type="button" onClick={() => { void status.refetch(); }} disabled={status.isFetching}>
-        {intl.formatMessage({ id: "onboard.agent.recheck", defaultMessage: "Check again" })}
-      </button>
-    </div>
-    {status.isPending ? <ul className="agent-onboard__list" aria-hidden="true">
+    {status.isPending && agents.length === 0 ? <ul className="agent-onboard__list" aria-hidden="true">
       {[0, 1, 2, 3].map(index => <li key={index} className="agent-onboard__skeleton" />)}
     </ul> : null}
-    {status.isError ? <p className="agent-onboard__note">{intl.formatMessage({ id: "onboard.agent.unavailable", defaultMessage: "This host can't check local agents yet. You can still configure a model." })}</p> : null}
-    {step === "agent" && agents ? <ul className="agent-onboard__list">
-      {agents.map((agent: OnboardingAgentSnapshot) => {
-        const activity = agent.activity;
-        const ready = agent.authenticated === true && activity?.phase !== "running" && agentPreferences?.enabled(identity(agent)) !== false;
+    {status.isError || catalogError ? <p className="agent-onboard__note">{intl.formatMessage({ id: "settings.agents.loadFailed", defaultMessage: "Some agents could not be checked. Try checking again." })}</p> : null}
+    {(step === "agent" || management) && agents.length > 0 ? <ul className="agent-onboard__list">
+      {agents.map(entry => {
+        const agent = entry.native;
+        const activity = agent?.activity;
+        const ready = entry.ready && agentPreferences?.enabled(entry.id) !== false;
         const subline = activity?.phase === "running"
           ? intl.formatMessage(activity.kind === "install"
             ? { id: "onboard.agent.installing", defaultMessage: "Installing…" }
             : { id: "onboard.agent.signingIn", defaultMessage: "Finish signing in below" })
           : activity?.phase === "failed"
-            ? activity.message || intl.formatMessage(activity.kind === "install"
+            ? intl.formatMessage(activity.kind === "install"
               ? { id: "onboard.agent.installFailed", defaultMessage: "Install didn't finish" }
               : { id: "onboard.agent.signInFailed", defaultMessage: "Sign-in didn't finish" })
-            : !agent.installed
+            : agent && !agent.installed
               ? intl.formatMessage({ id: "onboard.agent.notInstalled", defaultMessage: "Not installed" })
-              : agent.authenticated === true
-                ? agent.account
-                  ? intl.formatMessage({ id: "onboard.agent.account", defaultMessage: "Signed in as {account}" }, { account: agent.account })
-                  : intl.formatMessage({ id: "onboard.agent.signedIn", defaultMessage: "Signed in" })
+              : !agent || agent.authenticated === true
+                ? intl.formatMessage({ id: "onboard.agent.ready", defaultMessage: "Ready" })
                 : agent.authenticated === false
-                  ? intl.formatMessage({ id: "onboard.agent.signInNeeded", defaultMessage: "Installed · not signed in" })
+                  ? intl.formatMessage({ id: "onboard.agent.signInNeeded", defaultMessage: "Not signed in" })
                   : intl.formatMessage({ id: "onboard.agent.unknown", defaultMessage: "Couldn't check this agent" });
-        return <li key={agent.id} data-agent={agent.id} data-selected={expanded === agent.id}>
-          <div className="agent-onboard__row">
-            <span className="agent-onboard__mark" data-agent={agent.id} aria-hidden="true">
-              <AgentBrandIcon agent={agent.id} />
-            </span>
-            <span className="agent-onboard__copy">
-              <span className="agent-onboard__name">{nameOf(agent.id)}</span>
-              <span className={activity?.phase === "failed" ? "agent-onboard__detail agent-onboard__detail--failed" : "agent-onboard__detail"}>{subline}</span>
-            </span>
-            <span className="agent-onboard__actions">
-              {agentPreferences ? <SettingsSwitch label={nameOf(agent.id)} checked={agentPreferences.enabled(identity(agent))} disabled={agentPreferences.saving} onCheckedChange={checked => agentPreferences.setEnabled(identity(agent), checked)} /> : null}
-              {ready ? <span className="agent-onboard__ready">{intl.formatMessage({ id: "onboard.agent.ready", defaultMessage: "Ready" })}</span> : null}
-              {ready ? <Button size="sm" variant="ghost" aria-expanded={expanded === agent.id} aria-controls={`agent-models-${agent.id}`} onClick={() => setChosenAgent(agent.id)}>
+        return <li key={entry.id} data-agent={agent?.id ?? entry.id} data-selected={!management && expanded === entry.id}>
+          <SettingsListItem label={entry.label} description={subline} icon={<AgentIdentityIcon id={entry.id} />}
+            actions={<span className="agent-onboard__actions">
+              {agentPreferences ? <SettingsSwitch label={entry.label} checked={entry.ready && agentPreferences.enabled(entry.id)} disabled={!entry.ready || agentPreferences.saving || finishing} onCheckedChange={checked => agentPreferences.setEnabled(entry.id, checked)} /> : null}
+              {ready && !management ? <Button size="sm" variant="ghost" aria-expanded={expanded === entry.id} aria-controls={`agent-models-${entry.id}`} onClick={() => setChosenAgent(entry.id)}>
                 {intl.formatMessage({ id: "onboard.agent.chooseModels", defaultMessage: "Choose models" })}
               </Button> : null}
-              {activity?.phase === "running" ? <Button size="sm" variant="ghost" disabled={pendingId === agent.id} onClick={() => { void run(agent.id, "cancel"); }}>
+              {agent && activity?.phase === "running" ? <Button size="sm" variant="ghost" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, "cancel"); }}>
                 {intl.formatMessage({ id: "onboard.agent.cancel", defaultMessage: "Cancel" })}
               </Button> : null}
-              {activity?.phase === "failed" ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => { void run(agent.id, activity.kind); }}>
+              {agent && activity?.phase === "failed" ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, activity.kind); }}>
                 {intl.formatMessage({ id: "onboard.agent.retry", defaultMessage: "Retry" })}
               </Button> : null}
-              {!activity && !agent.installed ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => {
-                if (agent.canInstallPackage) void run(agent.id, "install");
+              {agent && !activity && !agent.installed ? <Button size="sm" variant="outline" disabled={pendingId === agent.id} onClick={() => {
+                if (agent.canInstallPackage) void run(agent!.id, "install");
                 else window.open(agent.installUrl, "_blank", "noopener,noreferrer");
               }}>
                 {intl.formatMessage({ id: "onboard.agent.install", defaultMessage: "Install" })}
               </Button> : null}
-              {!activity && agent.installed && agent.authenticated === false ? <Button size="sm" disabled={pendingId === agent.id} onClick={() => { void run(agent.id, "sign-in"); }}>
+              {agent && !activity && agent.installed && agent.authenticated === false ? <Button size="sm" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, "sign-in"); }}>
                 {intl.formatMessage({ id: "onboard.agent.signIn", defaultMessage: "Sign in" })}
               </Button> : null}
-            </span>
-          </div>
-          {ready && expanded === agent.id ? <div className="agent-onboard__models" id={`agent-models-${agent.id}`}>
-            {agentModels.isPending ? <p role="status">{intl.formatMessage({ id: "onboard.agent.modelsLoading", defaultMessage: "Reading this agent's models…" })}</p> : null}
-            {agentModels.isError || (agentModels.isSuccess && models.length === 0) ? <>
+            </span>} />
+          {ready && !management && expanded === entry.id ? <div className="agent-onboard__models" id={`agent-models-${entry.id}`}>
+            {expandedEntry?.native && agentModels.isPending ? <p role="status">{intl.formatMessage({ id: "onboard.agent.modelsLoading", defaultMessage: "Reading this agent's models…" })}</p> : null}
+            {expandedEntry?.native && (agentModels.isError || (agentModels.isSuccess && models.length === 0)) ? <>
               <p role="status">{defaultEntry?.isDefault ? intl.formatMessage({ id: "onboard.agent.modelsFailed", defaultMessage: "Couldn't read this agent's models. You can still continue with its default." }) : intl.formatMessage({ id: "composer.model.failedTitle", defaultMessage: "Couldn't load models" })}</p>
               <div className="agent-onboard__model-actions">
                 <Button size="sm" variant="ghost" disabled={agentModels.isFetching} onClick={() => { void agentModels.refetch(); }}>{intl.formatMessage({ id: "onboard.agent.retry", defaultMessage: "Retry" })}</Button>
-                {defaultModel ? <Button size="sm" variant="outline" aria-pressed={selectedModel === defaultModel} onClick={() => setChosenModel({ agentId: agent.id, id: defaultModel, name: defaultEntry?.name ?? nameOf(agent.id) })}>{defaultEntry?.isDefault ? intl.formatMessage({ id: "onboard.agent.useDefault", defaultMessage: "Use the default model" }) : defaultEntry?.name}</Button> : null}
+                {defaultModel ? <Button size="sm" variant="outline" aria-pressed={selectedModel === defaultModel} onClick={() => setChosenModel({ agentId: entry.id, id: defaultModel, name: defaultEntry?.name ?? entry.label })}>{defaultEntry?.isDefault ? intl.formatMessage({ id: "onboard.agent.useDefault", defaultMessage: "Use the default model" }) : defaultEntry?.name}</Button> : null}
               </div>
             </> : null}
             {models.length > 0 ? <ul>
               {models.map(model => <li key={model.id}>
-                <Button size="sm" variant={selectedModel === model.id ? "outline" : "ghost"} contentLayout="row" aria-pressed={selectedModel === model.id} onClick={() => setChosenModel({ agentId: agent.id, ...model })}>
+                <Button size="sm" variant={selectedModel === model.id ? "outline" : "ghost"} contentLayout="row" aria-pressed={selectedModel === model.id} onClick={() => setChosenModel({ agentId: entry.id, ...model })}>
                   {model.name}{selectedModel === model.id ? <CheckIcon size={14} aria-hidden="true" /> : null}
                 </Button>
               </li>)}
@@ -204,8 +192,8 @@ function AgentOnboardingContent({ hostId, hostName, request, presentation, onFin
             {activity.url ? <a href={activity.url} target="_blank" rel="noreferrer">{intl.formatMessage({ id: "onboard.agent.openLogin", defaultMessage: "Open sign-in page" })}</a> : <span>{intl.formatMessage({ id: "onboard.agent.waiting", defaultMessage: "Waiting for the sign-in link…" })}</span>}
             {activity.userCode ? <span className="agent-onboard__code">
               <code>{activity.userCode}</code>
-              <button type="button" onClick={() => { void copyCode(agent.id, activity.userCode!); }}>
-                {copied === agent.id
+              <button type="button" onClick={() => { void copyCode(agent!.id, activity.userCode!); }}>
+                {copied === agent!.id
                   ? intl.formatMessage({ id: "onboard.agent.copied", defaultMessage: "Copied" })
                   : intl.formatMessage({ id: "onboard.agent.copyCode", defaultMessage: "Copy code" })}
               </button>
@@ -222,15 +210,22 @@ function AgentOnboardingContent({ hostId, hostName, request, presentation, onFin
         </li>;
       })}
     </ul> : null}
-    {step === "agent" ? <p className="agent-onboard__note">{intl.formatMessage({ id: "onboard.agent.other", defaultMessage: "Don't see your agent? Other installed ACP agents can be connected the same way once OpenCraft recognizes their command." })}</p> : null}
-    <div className="agent-onboard__footer">
-      {step === "start" ? <Button variant="ghost" disabled={finishing} onClick={() => setStep("agent")}>{intl.formatMessage({ id: "onboard.agent.back", defaultMessage: "Back" })}</Button> : <Button variant="ghost" disabled={finishing} onClick={onUseModels}>{intl.formatMessage({ id: "onboard.agent.useModels", defaultMessage: "Use an API model instead" })}</Button>}
-      {step === "agent" ? <Button disabled={!selectedModel || agentPreferences?.saving || finishing} onClick={() => setStep("start")}>{intl.formatMessage({ id: "onboard.agent.continue", defaultMessage: "Continue" })}</Button> : <Button disabled={!selectedModel || agentPreferences?.saving || finishing} onClick={() => {
+    {!management ? <div className="agent-onboard__footer">
+      {step === "start" ? <Button variant="ghost" disabled={finishing} onClick={() => setStep("agent")}>{intl.formatMessage({ id: "onboard.agent.back", defaultMessage: "Back" })}</Button> : <Button variant="ghost" disabled={finishing} onClick={onUseModels}>{intl.formatMessage({ id: "onboard.agent.useModels", defaultMessage: "Skip for now" })}</Button>}
+      <div className="agent-onboard__continue">
+      {step === "agent" ? <Button aria-describedby={!selectedModel ? continueHintId : undefined} disabled={!selectedModel || agentPreferences?.saving || finishing} onClick={() => setStep("start")}>{intl.formatMessage({ id: "onboard.agent.continue", defaultMessage: "Continue" })}</Button> : <Button disabled={!selectedModel || agentPreferences?.saving || finishing} onClick={() => {
         if (!selectedModel || !expandedReady) return;
         setFinishing(true); setFinishFailed(false);
-        void Promise.resolve().then(() => onFinish(selectedModel)).catch(() => setFinishFailed(true)).finally(() => setFinishing(false));
+        void Promise.resolve().then(() => onFinish?.(selectedModel)).catch(() => setFinishFailed(true)).finally(() => setFinishing(false));
       }}>{intl.formatMessage({ id: "onboard.agent.enter", defaultMessage: "Start chatting" })}</Button>}
-    </div>
-  </section>
+      {step === "agent" && !selectedModel ? <p id={continueHintId} className="agent-onboard__continue-hint">{intl.formatMessage({ id: "onboard.agent.chooseModelHint", defaultMessage: "Choose an enabled agent and model to continue." })}</p> : null}
+      </div>
+    </div> : null}
+  </>;
+  if (management) return <SettingsSection title={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })} action={refreshButton} actionAlignment="center">
+    {content}
+  </SettingsSection>;
+  return <div className={presentation === "sheet" ? "agent-onboard-gate agent-onboard-gate--sheet" : "agent-onboard-gate"} role="dialog" aria-modal={presentation === "gate"} aria-labelledby="agent-onboard-title">
+    <section className="agent-onboard" aria-labelledby="agent-onboard-title">{content}</section>
   </div>;
 }

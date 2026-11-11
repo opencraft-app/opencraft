@@ -900,7 +900,7 @@ export async function startLocalAgentHost(options: {
                 ...(claudeBridge === undefined ? {} : {
                   [OPENCRAFT_STEER_EVIDENCE_EXTENSION]: claudeBridge.extensions[OPENCRAFT_STEER_EVIDENCE_EXTENSION],
                   "opencraft/execution-engines": { version: 1, defaultEngine: "dsh", providers: [{
-                    id: "claude-code", label: "Claude", threadPrefix: claudeBridge.threadPrefix, modelPrefix: claudeBridge.modelPrefix,
+                    id: "claude-code", label: "Claude Code", threadPrefix: claudeBridge.threadPrefix, modelPrefix: claudeBridge.modelPrefix,
                     extensions: claudeBridge.extensions,
                   }] },
                 }),

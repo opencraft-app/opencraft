@@ -12,7 +12,7 @@ import type { ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCat
 
 const brands: Record<string, { brand: AgentBrand; name: string }> = {
   codex: { brand: "codex", name: "Codex" }, cursor: { brand: "cursor", name: "Cursor" },
-  "claude-code": { brand: "claude", name: "Claude" }, codebuddy: { brand: "codebuddy", name: "CodeBuddy" },
+  "claude-code": { brand: "claude", name: "Claude Code" }, codebuddy: { brand: "codebuddy", name: "CodeBuddy" },
 };
 
 /** Browsing sources/search is local. Only an explicit choice writes a model. */

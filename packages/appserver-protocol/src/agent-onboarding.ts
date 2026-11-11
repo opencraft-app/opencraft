@@ -13,6 +13,7 @@ export interface OnboardingAgentSnapshot {
   readonly id: OnboardingAgentId;
   /** Agent identity used by model/list. Optional for older Hosts. */
   readonly engineId?: string;
+  readonly displayName?: string;
   readonly installed: boolean;
   readonly version: string | null;
   readonly authenticated: boolean | null;

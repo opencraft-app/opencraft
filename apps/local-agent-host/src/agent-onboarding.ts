@@ -11,6 +11,7 @@ export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", clau
 export const ONBOARDING_AGENTS = [
   {
     id: "codex",
+    name: "Codex",
     commands: ["codex"],
     versionArgs: ["--version"],
     statusArgs: ["login", "status"],
@@ -21,6 +22,7 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "cursor",
+    name: "Cursor",
     commands: ["cursor-agent"],
     versionArgs: ["--version"],
     statusArgs: ["status"],
@@ -31,6 +33,7 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "claude",
+    name: "Claude Code",
     commands: ["claude"],
     versionArgs: ["--version"],
     statusArgs: ["auth", "status"],
@@ -41,6 +44,7 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "codebuddy",
+    name: "CodeBuddy",
     commands: ["codebuddy", "cbc"],
     versionArgs: ["--version"],
     statusArgs: ["auth", "status"],
@@ -260,6 +264,7 @@ export class AgentOnboardingService {
     const base = {
       id: agent.id,
       engineId: ONBOARDING_AGENT_ENGINES[agent.id],
+      displayName: agent.name,
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
       activity: activityOf(this.tasks.get(agent.id)),

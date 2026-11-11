@@ -35,7 +35,7 @@ try {
   assert.equal(await next.isEnabled(), true, "a ready agent exposes its models without a hidden row click");
   assert.equal(await page.getByRole("button", { name: "Codex One", exact: true }).getAttribute("aria-pressed"), "true");
   await page.getByRole("button", { name: "Codex Two", exact: true }).click();
-  await next.click(); assert.match(await page.locator(".agent-onboard__intro").innerText(), /Codex Two/);
+  await next.click(); assert.match(await page.locator(".agent-onboard__selection").innerText(), /Codex Two/);
   // Closing the currently selected Agent must not silently choose another ready Agent.
   await page.evaluate(() => (window as any).onboardingFixture.setDisabledAgents(["codex"]));
   await page.getByRole("button", { name: "Continue", exact: true }).waitFor();
@@ -99,7 +99,7 @@ try {
       assert.equal(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-${theme}.png` });
       if (touch) await next.tap(); else await next.click();
-      assert.match(await p.locator(".agent-onboard__intro").innerText(), /Codex Two/);
+      assert.match(await p.locator(".agent-onboard__selection").innerText(), /Codex Two/);
       await p.getByRole("button", { name: "返回", exact: true }).click();
     }
     await context.close();
