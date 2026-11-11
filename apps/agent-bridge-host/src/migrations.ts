@@ -17,4 +17,7 @@ CREATE TABLE callbacks (generation TEXT NOT NULL, id TEXT NOT NULL, digest TEXT 
 CREATE TABLE interactions (route TEXT NOT NULL, id TEXT NOT NULL, generation TEXT NOT NULL, PRIMARY KEY(route,id)) STRICT;
 CREATE TABLE inbox (seq INTEGER PRIMARY KEY, route TEXT NOT NULL, generation TEXT NOT NULL, payload TEXT NOT NULL, projection TEXT NOT NULL) STRICT;
 ` },
+  { version: 3, name: 'automation-script-custody', sql: `
+CREATE TABLE automation_scripts (key TEXT PRIMARY KEY, digest TEXT NOT NULL, state TEXT NOT NULL, result TEXT) STRICT;
+` },
 ];

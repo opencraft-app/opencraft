@@ -1,7 +1,7 @@
 import { isAbsolute } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
-import { createSandboxPool, type SandboxBackend, type SandboxPoolPolicy, type SandboxPool } from '@opencraft/sandbox';
+import { createSandbox, createSandboxPool, type SandboxBackend, type SandboxPoolPolicy, type SandboxPool, SandboxCreationFault } from '@opencraft/sandbox';
 import { BRIDGE_GRAMMAR_RANGE, BRIDGE_PROTOCOL_VERSION, isBridgeCommand, assertMethodAllowed, negotiateHandshake, type BridgeInitializeResult, type BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
 import { Storage } from './storage.js';
 import { Peer, successful } from './peer.js';
@@ -39,7 +39,7 @@ export interface ExecutionCliPort {
   forward?(token:string,body:unknown):Promise<{status:number;body:unknown}>;
   issue(source: {serverId:string;threadId:string;credential:string}): Promise<ExecutionCliLease>;
 }
-export interface HostOptions { executionCli?: ExecutionCliPort; path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
+export interface HostOptions { automation?: {hostId:string;environment:string}; executionCli?: ExecutionCliPort; path: string; policy: SandboxPoolPolicy; backend: SandboxBackend; maxSpoolBytes?: number; requestTimeoutMs?: number }
 export class BridgeHost {
   private readonly cliGenerations = new Map<string,string>();
   private readonly cliPending = new Map<string,string>();
@@ -214,6 +214,51 @@ export class BridgeHost {
       await this.storage.call('settle', { id: command.commandId, state: 'unknown' });
     }
   }
+  scriptCapabilities() {
+    return this.options.automation ? {...this.options.automation,permissionProfile:'sandbox-policy:'+this.options.policy.id} : null;
+  }
+  async script(raw: unknown): Promise<unknown> {
+    const body=object(raw),capabilities=this.scriptCapabilities();
+    if(this.closing || !capabilities || body.hostId!==capabilities.hostId || body.environment!==capabilities.environment || body.permissionProfile!==capabilities.permissionProfile)
+      throw Error('Automation sandbox authority unavailable');
+    if(Object.keys(body).some(key=>!['key','hostId','environment','permissionProfile','cwd','argv'].includes(key)))throw Error('Invalid script fields');
+    const key=identifier(body.key);
+    const bounded=(value:unknown)=>{if(typeof value!=='string'||value.length>4096||value.includes('\0'))throw Error('Invalid script argument');return value;};
+    const cwd=bounded(body.cwd);if(!isAbsolute(cwd))throw Error('Absolute script cwd required');
+    if(!Array.isArray(body.argv)||body.argv.length<1||body.argv.length>64)throw Error('Invalid script argv');
+    const argv=body.argv.map(bounded);if(!argv[0])throw Error('Script executable required');
+    const digest=createHash('sha256').update(JSON.stringify([capabilities,cwd,argv])).digest('hex');
+    const receipt=await this.storage.call('scriptAdmit',{key,digest});
+    if(receipt.fresh){
+      const task=this.runScript(key,cwd,argv);
+      this.tasks.add(task);void task.finally(()=>this.tasks.delete(task)).catch(()=>{});
+    }
+    return receipt;
+  }
+  private async runScript(key:string,cwd:string,argv:string[]):Promise<void> {
+    let sandbox:Awaited<ReturnType<typeof createSandbox>>|undefined;
+    let state='unknown',result:unknown,started=false;
+    try {
+      await this.storage.call('scriptSettle',{key,state:'running'});
+      sandbox=await createSandbox(this.pool,{owner:'automation:'+key});
+      let stdout='',stderr='',bytes=0,truncated=false;
+      const process=await sandbox.spawn({command:argv,cwd,env:{}},output=>{
+        const remaining=Math.max(0,64*1024-bytes),data=Buffer.from(output.data);
+        const text=data.subarray(0,remaining).toString('utf8');bytes+=Math.min(remaining,data.length);
+        if(data.length>remaining)truncated=true;
+        if(output.stream==='stdout')stdout+=text;else stderr+=text;
+      });
+      started=true;
+      if(process.kind==='process')await process.closeStdin();
+      const exit=await process.exited;
+      state=exit.code===0?'completed':'failed';result={stdout,stderr,exit,truncated};
+    } catch(error) {const code=(error as {code?:string}).code;
+      const refused=!started && (['ENOENT','EACCES','SANDBOX_POLICY','SANDBOX_UNAVAILABLE'].includes(code??'') || error instanceof SandboxCreationFault && error.outcome==='not-created');
+      state=refused?'failed':'unknown';result={reason:state==='failed'?'sandbox_preparation_refused':'script_outcome_unknown'};}
+    try {await sandbox?.close();}catch{state='unknown';result={reason:'script_cleanup_unconfirmed'};}
+    await this.storage.call('scriptSettle',{key,state,result});
+  }
+  scriptResult(key:string):Promise<unknown>{return this.storage.call('scriptShow',{key:identifier(key)});}
   async cli(token:string,body:unknown) {
     if(this.closing||!this.options.executionCli?.forward)throw Error('cliUnavailable');
     return this.options.executionCli.forward(token,body);

@@ -27,6 +27,7 @@ let failed = false;
 if (workerData.role === 'host') tx(() => {
   setMeta('epoch', Number(meta('epoch')) + 1);
   run("UPDATE commands SET state='unknown' WHERE state='dispatching'");
+  run("UPDATE automation_scripts SET state='unknown' WHERE state IN ('admitted','running')");
 });
 const receipt = (id: string): Receipt | null => {
   const row = get('SELECT * FROM commands WHERE id=?', id);
@@ -55,6 +56,16 @@ const busy = (route: string): boolean => {
     || state.pendingAccepted.some(id => !state.inputs[id] || unsettledInput(state.inputs[id]!));
 };
 const operations: Record<string, (args: any) => any> = {
+  scriptAdmit: ({key,digest}:any) => tx(()=>{
+    const previous=get('SELECT * FROM automation_scripts WHERE key=?',key);
+    if(previous){require(previous.digest===digest,'Script key reused with different input');return {fresh:false,...previous,result:previous.result?JSON.parse(previous.result):null};}
+    run("INSERT INTO automation_scripts VALUES(?,?,'admitted',NULL)",key,digest);return {fresh:true,key,state:'admitted'};
+  }),
+  scriptShow: ({key}:any) => {const row=get('SELECT * FROM automation_scripts WHERE key=?',key);return row?{...row,result:row.result?JSON.parse(row.result):null}:null;},
+  scriptSettle: ({key,state,result}:any) => {
+    require(['running','completed','failed','unknown'].includes(state),'Invalid script state');
+    run("UPDATE automation_scripts SET state=?,result=? WHERE key=? AND state IN ('admitted','running')",state,JSON.stringify(result??null),key);
+  },
   ready: () => outcome,
   snapshot: () => ({ epoch: Number(meta('epoch')), current: meta('current'), ack: Number(meta('ack')),
     generations: all('SELECT * FROM generations').map(row => ({ ...row, config: JSON.parse(row.config) })), routes: all('SELECT * FROM routes'), nativeSessions: all('SELECT * FROM native_sessions'), interactions: all('SELECT * FROM interactions') }),
