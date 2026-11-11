@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "provider": "cursor-sdk",
+  "sdk": "1.0.32",
+  "model": "claude-haiku-5-5",
+  "recordedAt": "2026-11-11T01:17:51.640Z",
+  "protocolVersion": 1,
+  "grammarVersion": 1,
+  "mapperVersion": 1,
+  "permissionMode": "full",
+  "backend": "Host test process backend; no production isolation claim",
+  "evidenceTier": "unknown-outcome",
+  "receipts": {
+    "create": {
+      "state": "unknown"
+    },
+    "close": {
+      "state": "rejected"
+    }
+  },
+  "nativeToDelta": [
+    {
+      "operation": "create",
+      "error": "unknown-outcome"
+    }
+  ],
+  "deltaToEvent": [],
+  "artifactSha256": "6bece687e8945456d13f377fef84bd5f331e97c8804d77a26c73911fb3ac5c37",
+  "workerSha256": "89a9a3e31068ae7e8b62b839655cce2d960f3a4ef92c2be31a0190e17b6d0c0c",
+  "result": "blocked",
+  "blocker": {
+    "stage": "session-create",
+    "reason": "Host command did not succeed"
+  },
+  "nativeSendCount": 0,
+  "nativeSteerCount": 0
+}
