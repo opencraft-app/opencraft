@@ -67,7 +67,6 @@ if (( ${#missing[@]} )); then
   if (( ${#missing[@]} )); then echo "Still missing: ${missing[*]}" >&2; exit 1; fi
 fi
 pkg-config --exists gtk+-3.0 nss gbm alsa
-# xvfb-run creates its Xauthority file under TMPDIR.
-if [[ -z ${TMPDIR:-} && ! -w /tmp ]]; then export TMPDIR=/var/tmp; fi
-xvfb-run -a xdpyinfo >/dev/null
+# Query the actual X server so a failed display cannot pass preflight.
+"$(dirname "$0")/run-in-xvfb.sh" xdpyinfo >/dev/null
 echo "Linux Electron build dependencies and Xvfb are ready."

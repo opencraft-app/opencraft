@@ -142,7 +142,7 @@ jobs:
         # Visible, focused probe on macOS/Windows; Linux owns an Xvfb display.
         run: |
           prefix=()
-          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
+          if [[ "$RUNNER_OS" == Linux ]]; then prefix=(vendor/electron/run-in-xvfb.sh); fi
           "${prefix[@]}" ${{ matrix.python }} vendor/electron/prepare-desktop-artifact.py \
             --archive "$BUILD_ROOT/src/out/OpenCraft/dist.zip" \
             --distribution "$DISTRIBUTION" --source-root "$BUILD_ROOT" --evidence "$EVIDENCE"
@@ -186,7 +186,7 @@ jobs:
           cd apps/desktop/release
           images=(*.AppImage)
           test "${#images[@]}" = 1 && test -s "${images[0]}"
-          xvfb-run -a node ../e2e/appimage-smoke.mjs "${images[0]}"
+          "$GITHUB_WORKSPACE/vendor/electron/run-in-xvfb.sh" node ../e2e/appimage-smoke.mjs "${images[0]}"
           sha256sum "${images[0]}" > "${images[0]}.sha256"
       - name: Upload Linux desktop download
         if: matrix.id == 'linux-x64'
