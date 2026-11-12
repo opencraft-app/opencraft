@@ -1,11 +1,7 @@
 #!/usr/bin/env bash
-# Use the same display setup for preflight, native probes and the packaged app.
+# Xvfb itself uses /tmp for display locks and compiled keyboard maps.
 set -euo pipefail
-args=(-a -e /dev/stderr)
 if [[ ! -w /tmp ]]; then
-  export TMPDIR=${TMPDIR:-/var/tmp}
-  # Xvfb uses a hardcoded /tmp for its display lock. On Linux its abstract
-  # Unix socket still enforces exclusive ownership of the display number.
-  args+=(-s '-screen 0 1280x1024x24 -nolock')
+  exec bwrap --dev-bind / / --tmpfs /tmp -- xvfb-run -a "$@"
 fi
-exec xvfb-run "${args[@]}" "$@"
+exec xvfb-run -a "$@"

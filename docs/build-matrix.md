@@ -818,7 +818,8 @@ package verifies the extracted distribution against the checked-out fork.
 On Debian or Ubuntu x64, run `vendor/electron/ensure-linux-build-deps.sh --install`
 to provision a build host, or select `install_linux_deps` in the manual build.
 The default `--check` mode reports missing packages and tests pkg-config and
-Xvfb. A provisioned host skips apt and sudo on subsequent invocations. Node and
+Xvfb. Runners with a restricted `/tmp` use Bubblewrap to give display probes a
+private writable mount and must support unprivileged mount namespaces. A provisioned host skips apt and sudo on subsequent invocations. Node and
 Python versions are selected separately by the workflow. The fork sync supplies
 the pinned GN, Ninja, Clang and target sysroot.
 

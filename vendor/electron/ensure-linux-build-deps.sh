@@ -32,6 +32,7 @@ packages=(
   libnss3-dev libx11-xcb-dev libxkbcommon-dev libxshmfence-dev
   desktop-file-utils fakeroot squashfs-tools fonts-liberation xauth x11-utils xvfb
 )
+if [[ ! -w /tmp ]]; then packages+=(bubblewrap); fi
 missing=()
 check_packages() {
   missing=()
