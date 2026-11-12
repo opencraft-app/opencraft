@@ -13,7 +13,7 @@ const descriptors = new Map();
 const desktopDescriptors = new Map();
 for (const { id, ...descriptor } of inventory.messages) {
   // Native Main has its own application runtime/catalog, not Web's languages.
-  const catalog = descriptor.source.startsWith("apps/workbench-electron/") ? desktopDescriptors : descriptors;
+  const catalog = descriptor.source.startsWith("apps/desktop/") ? desktopDescriptors : descriptors;
   const previous = catalog.get(id);
   if (previous && previous.defaultMessage !== descriptor.defaultMessage) errors.push(`Conflicting defaultMessage for ${id}`);
   catalog.set(id, descriptor);
@@ -48,7 +48,7 @@ async function checkCatalogs(directory, messages) {
   }
 }
 await checkCatalogs(join(root, "apps/workbench-web/src/i18n/locales"), descriptors);
-await checkCatalogs(join(root, "apps/workbench-electron/src/locales"), desktopDescriptors);
+await checkCatalogs(join(root, "apps/desktop/src/locales"), desktopDescriptors);
 if (errors.length) { console.error(errors.join("\n")); process.exitCode = 1; }
 else console.log(`i18n: ${inventory.files.length} first-party files; ${descriptors.size} Web/shared and ${desktopDescriptors.size} native messages verified. ${inventory.copy.length} legacy literal occurrences remain explicitly recorded (not translated).`);
 const reportIndex = process.argv.indexOf("--report");

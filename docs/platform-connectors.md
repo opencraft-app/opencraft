@@ -97,7 +97,7 @@ Composer 采用渐进披露，不把完整管理页缩进一个 Modal：未确�
 - [扩展注册 adapter](../apps/workbench-web/src/runtime/connector-contributions.ts)：第一方命名空间与事务接入。
 - [manager](../packages/workbench-runtime/src/connectors/manager.ts)、[OAuth](../packages/workbench-runtime/src/connectors/oauth.ts)、[审批](../packages/workbench-runtime/src/connectors/approvals.ts)、[配置 contract](../packages/workbench-runtime/src/connectors/configuration.ts)：各自独立领域模块，不把协议、存储或 React 塞进 runtime。
 - [用户入口](../apps/workbench-web/src/components/connectors/connector-panel.tsx) 与 [快速选择](../apps/workbench-web/src/components/connectors/connector-quick-picker.tsx)：只消费领域快照/action；Add menu、Popover、焦点与确认由共享 Radix/Modal 持有。
-- [Web store](../apps/workbench-web/src/runtime/connector-configuration-store.ts)、[Desktop store](../apps/workbench-electron/src/connector-configuration-store.ts)：IndexedDB 与 Main SQLite 的平台投影。
+- [Web store](../apps/workbench-web/src/runtime/connector-configuration-store.ts)、[Desktop store](../apps/desktop/src/connector-configuration-store.ts)：IndexedDB 与 Main SQLite 的平台投影。
 
 ## 连接、授权与通知
 

@@ -44,9 +44,8 @@ asynchronous cleanup finishes; repeated stop signals join the same cleanup.
 baseline, checksummed patch series and explicit source/sync/build commands. Its
 initial native patch exposes observation-only editing metadata and caret bounds;
 source verification is separate from compilation and real native input testing.
-Normal desktop and browser-runtime packages continue using their existing pinned
-distribution until a compiled custom artifact is explicitly integrated and
-validated. The fork's initial build entry targets Linux; macOS/Windows builds and
+Linux AppImage packaging requires the verified desktop fork distribution. Other
+package targets follow their own runtime selection. The fork's initial build entry targets Linux; macOS/Windows builds and
 physical input-method validation remain separate work.
 
 ## Developer diagnostics and browser evidence
@@ -336,7 +335,7 @@ artifact and separately compiled Electron host.
 
 The explicit macOS preview command is a local QA contract, not a distribution
 artifact. It writes below `release/preview`, uses product name `OpenCraft
-Preview`, Bundle ID `dev.opencraft.workbench.preview`, and the independent
+Preview`, Bundle ID `app.opencraft.desktop.preview`, and the independent
 `OpenCraft Preview` application-state profile. It disables certificate discovery,
 prunes foreign-platform `node-pty` prebuilds from both packaged runtime trees,
 and applies one consistent ad-hoc hardened-runtime signature and entitlements
@@ -530,7 +529,7 @@ rtk proxy uname -m
 rtk proxy npm run build:electron
 ```
 
-以下例子在 `opencraft/apps/workbench-electron/` 执行。先将 `signing_identity` 替换为本次已验证的
+以下例子在 `opencraft/apps/desktop/` 执行。先将 `signing_identity` 替换为本次已验证的
 Developer ID 身份名称（electron-builder 的 identity 选项使用姓名/团队部分，不加证书类型前缀）。
 `arm64` 只适用于 Apple Silicon 原生构建机；Intel 目标在原生 Intel 构建机上使用 `x64`。
 
@@ -805,3 +804,31 @@ are always processed. External or broken links disable reuse, and a damaged cach
 causes a fresh scan. No npm/minimatch prototypes or matching rules are modified.
 `[package-selection]` reports reuse and elapsed time. Removing the cache restores
 cold selection; this cache never replaces signing or independent archive checks.
+
+
+### Public Linux x64 AppImage
+
+The **Electron fork native artifacts** workflow builds on a version tag or via
+`workflow_dispatch` with `mode=build` and `target=linux-x64`. The repository variable
+`ELECTRON_BUILD_RUNNER_LINUX_X64` selects the provisioned self-hosted runner by
+JSON labels. Source validation runs on a hosted runner. The native build caches
+the probed fork archive and its inventory by target and build inputs. Every
+package verifies the extracted distribution against the checked-out fork.
+
+On Debian or Ubuntu x64, run `vendor/electron/ensure-linux-build-deps.sh --install`
+to provision a build host, or select `install_linux_deps` in the manual build.
+The default `--check` mode reports missing packages and tests pkg-config and
+Xvfb. Xvfb also needs a writable `/tmp` inside the build environment. On
+dedicated systemd-managed runners dispatch `mode=prepare-linux-runner` to
+install the versioned `PrivateTmp=yes` drop-in. It restarts the runner service
+after the maintenance job exits and other active workers finish. Once the runner
+is online, dispatch the normal Linux build. Repeating preparation on a service
+with a working private temporary directory skips the restart. A
+provisioned host skips apt and sudo on subsequent invocations. Node and
+Python versions are selected separately by the workflow. The fork sync supplies
+the pinned GN, Ninja, Clang and target sysroot.
+
+The workflow launches the final AppImage under Xvfb, checks the renderer and
+desktop preload, and uploads the AppImage and SHA-256 checksum as
+`OpenCraft-AppImage-linux-x64-<commit>`. Download that Actions artifact for the
+tested commit. An Actions build does not publish a GitHub Release.

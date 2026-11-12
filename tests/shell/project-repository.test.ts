@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ProjectRepository } from "../../apps/local-agent-host/src/project-repository.js";
-import { ProjectFolderPicker } from "../../apps/workbench-electron/src/project-folder-picker.js";
+import { ProjectFolderPicker } from "../../apps/desktop/src/project-folder-picker.js";
 import { nativeProjectPicker } from "../../apps/workbench-web/src/runtime/project-folder-picker.js";
 
 test("product projects persist, normalize paths and deduplicate concurrent windows", async () => {

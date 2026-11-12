@@ -92,8 +92,8 @@ function run(command, args, options = {}) {
 async function copyRuntimeModules(stageRoot) {
   await copySshRuntime(join(stageRoot, "node_modules"));
   await copyAllServerRuntime(join(stageRoot, "node_modules"));
-  const desktop = JSON.parse(await readFile(join(repositoryRoot, "apps/workbench-electron/package.json"), "utf8"));
-  const sourceBase = join(repositoryRoot, "apps/workbench-electron");
+  const desktop = JSON.parse(await readFile(join(repositoryRoot, "apps/desktop/package.json"), "utf8"));
+  const sourceBase = join(repositoryRoot, "apps/desktop");
   const modules = desktop.build.extraResources.filter((entry) =>
     entry.to.startsWith("runtime/dsh/") && entry.from.startsWith("../local-agent-host/src/"));
   if (modules.length < 10) throw new Error("Desktop DSH capability module inventory is incomplete");

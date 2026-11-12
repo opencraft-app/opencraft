@@ -4,7 +4,7 @@ import { mkdtemp, readFile, writeFile, rm, chmod, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
-import { OpenCraftDaemonClientManager } from '../../apps/workbench-electron/src/daemon-client.ts';
+import { OpenCraftDaemonClientManager } from '../../apps/desktop/src/daemon-client.ts';
 
 test('server manager preserves shared token identity, permissions and ACL and rejects missing/invalid tokens without creating one', async () => {
   const root = await mkdtemp(join(tmpdir(), 'opencraft-token-'));

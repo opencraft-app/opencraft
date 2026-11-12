@@ -26,7 +26,7 @@ const app = await _electron.launch({
   args: [
     ...(process.env.OPENCRAFT_PACKAGED_SMOKE === "1"
       ? []
-      : [resolve("apps/workbench-electron")]),
+      : [resolve("apps/desktop")]),
     `--user-data-dir=${join(root, "profile")}`,
   ],
   env,

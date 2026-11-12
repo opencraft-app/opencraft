@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   requestDesktopSkillHub,
   validateDesktopSkillHubPath,
-} from "../../apps/workbench-electron/src/skillhub-http.js";
+} from "../../apps/desktop/src/skillhub-http.js";
 
 test("Electron SkillHub capability fixes the host, method, and public API path", async () => {
   const calls: Array<{ url: string; method: string; cookie: string | null }> = [];

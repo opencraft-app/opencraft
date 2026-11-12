@@ -386,7 +386,7 @@ apps/workbench-web/src/extensions/
   sandbox-capability-host.ts
   iframe-ui-host.ts
 
-apps/workbench-desktop/src/extensions/
+apps/desktop/src/extensions/
   utility-extension-host.ts
 
 apps/mobile/src/extensions/

@@ -10,6 +10,6 @@
 
 验收：32项聚焦、1项编译原生生命周期自检、完整npm gate、Swift universal与签名检查通过；两个签名桌面脚本通过多片段修订/重发、监听草稿不变、只读、停止一次写入、取消/换草稿、最终后一次正文推理、长按/Enter/明暗/窄窗、设备设置重启与无录音probe。
 准确边界：原生自检只覆盖共享task生命周期，不证明SFSpeech识别质量或音频handoff无延迟；OS事件替身和本地正文端点明确隔离。未读取模型凭据、未提交推送，旧预览保持。
-产物：apps/workbench-electron/release/dictation-session-20260915/mac-arm64/OpenCraft Preview.app。
+产物：apps/desktop/release/dictation-session-20260915/mac-arm64/OpenCraft Preview.app。
 
 路由session误匹配identity-access，must_read已读，不改认证服务。既有未提交代码与旧预览保持。

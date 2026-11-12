@@ -603,7 +603,7 @@ packages/
 packages/workbench-runtime/src/capabilities/appserver-adapter.ts
 packages/workbench-runtime/src/capabilities/mcp-adapter.ts
 apps/workbench-web/src/capabilities/sandbox-host.ts
-apps/workbench-desktop/src/capabilities/utility-host.ts
+apps/desktop/src/capabilities/utility-host.ts
 apps/mobile/src/capabilities/webview-host.tsx
 ```
 

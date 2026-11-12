@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveCodexExecutable } from "../../apps/workbench-electron/src/codex-executable.js";
+import { resolveCodexExecutable } from "../../apps/desktop/src/codex-executable.js";
 
 test("Codex executable resolution prefers explicit, PATH, then the official user install", () => {
   const executable = new Set(["/custom/codex", "/path/bin/codex", "/Users/test/.local/bin/codex"]);

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { activateDesktopProduct, composeDesktopBridge } from "../../apps/workbench-electron/src/desktop-product-lifetime.js";
-import type { DesktopProductFactory, DesktopProductPorts } from "../../apps/workbench-electron/src/product-contract.js";
+import { activateDesktopProduct, composeDesktopBridge } from "../../apps/desktop/src/desktop-product-lifetime.js";
+import type { DesktopProductFactory, DesktopProductPorts } from "../../apps/desktop/src/product-contract.js";
 
 const ports: Omit<DesktopProductPorts, "handle"> = {
   userDataDirectory: "/unused-fixture-profile", privateStorage: { read: () => null, write() {}, remove() {} },

@@ -21,10 +21,10 @@ import {
 
 import { openLocalAgentStorageWithWorker } from "../../apps/local-agent-host/src/storage/local-agent-storage.js";
 import { seedLegacyHostStorage, seedNewerHostStorage } from "../support/local-agent-storage-fixture.js";
-import { OpenCraftDaemonClientManager } from "../../apps/workbench-electron/src/daemon-client.js";
+import { OpenCraftDaemonClientManager } from "../../apps/desktop/src/daemon-client.js";
 import { readDaemonMachineIdentity } from "../../apps/opencraft-daemon/src/machine-identity.js";
 import { startOpenCraftDaemonServer } from "../../apps/opencraft-daemon/src/server.js";
-import { isDaemonEndpointUnavailable } from "../../apps/workbench-electron/src/daemon-client.js";
+import { isDaemonEndpointUnavailable } from "../../apps/desktop/src/daemon-client.js";
 
 class TestTransport implements DuplexTransport {
   readonly sent: string[] = [];
@@ -160,7 +160,7 @@ test("independent OpenCraft Daemon carries App Host frames over authenticated lo
 });
 
 test("Electron Main is a process bridge and no longer owns Agent or physical AppServer transports", async () => {
-  const source = await readFile(new URL("../../apps/workbench-electron/src/main.ts", import.meta.url), "utf8");
+  const source = await readFile(new URL("../../apps/desktop/src/main.ts", import.meta.url), "utf8");
   assert.match(source, /OpenCraftDaemonClientManager/u);
   assert.match(source, /dshCapabilityPlugin:/u);
   assert.match(source, /serve-workbench-static\.mjs/u);

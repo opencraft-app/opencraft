@@ -25,8 +25,8 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
 | `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
-| `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/workbench-electron/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
-| `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../apps/workbench-electron/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
+| `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/desktop/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
+| `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../apps/desktop/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
 | `opencraft-extensions.sqlite` | Electron Main：[document-storage/sqlite](../packages/document-storage/src/sqlite.ts) | Electron `userDataDirectory` | client-local 插件文档、设置与安装记录 |
 | `opencraft-session-routing.sqlite` | daemon 内 Local Agent Host：[dsh-session-routing](../apps/local-agent-host/src/dsh-session-routing.ts) | Host `dataDirectory` | 逻辑/原生身份、generation、水位与 intent |
 | `opencraft-threads.sqlite` | daemon 内 Local Agent Host：[thread-catalog](../apps/local-agent-host/src/thread-catalog.ts) | Host `dataDirectory` | 人工标题、归档、关系与配置 |

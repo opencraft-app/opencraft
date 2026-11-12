@@ -127,8 +127,8 @@ test("desktop packaging refuses foreign native modules", async t => {
   t.after(() => rm(appDir, { recursive: true, force: true }));
   await mkdir(join(appDir, "dist-host"));
   const main = "// desktop main fixture";
-  const production = { displayName: "OpenCraft", applicationId: "dev.opencraft.workbench" };
-  const preview = { displayName: "OpenCraft Preview", applicationId: "dev.opencraft.workbench.preview" };
+  const production = { displayName: "OpenCraft", applicationId: "app.opencraft.desktop" };
+  const preview = { displayName: "OpenCraft Preview", applicationId: "app.opencraft.desktop.preview" };
   await writeFile(join(appDir, "dist-host/main.cjs"), main);
   await writeFile(join(appDir, "dist-host/desktop-identity.json"), JSON.stringify({
     production, preview, mainSha256: createHash("sha256").update(main).digest("hex"),
@@ -148,13 +148,13 @@ test("desktop packaging refuses foreign native modules", async t => {
 });
 
 test("Mac ZIP matrix artifacts match electron-builder naming", async () => {
-  const app = JSON.parse(await readFile(new URL("../../apps/workbench-electron/package.json", import.meta.url), "utf8"));
+  const app = JSON.parse(await readFile(new URL("../../apps/desktop/package.json", import.meta.url), "utf8"));
   const matrix = JSON.parse(await readFile(new URL("../../config/build-matrix.json", import.meta.url), "utf8"));
   for (const arch of ["arm64", "x64"]) {
     const name = app.build.artifactName.replace("${version}", app.version)
       .replace("${os}", "mac").replace("${arch}", arch).replace("${ext}", "zip");
     const target = matrix.targets.find(target => target.id === `electron-macos-${arch}-zip`);
-    assert.deepEqual(target.artifacts, [`apps/workbench-electron/release/${name}`]);
+    assert.deepEqual(target.artifacts, [`apps/desktop/release/${name}`]);
   }
 });
 

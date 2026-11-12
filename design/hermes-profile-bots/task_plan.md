@@ -25,7 +25,7 @@
 - 新Bot的canonical会话可先由Hermes Gateway创建，首条消息前Dashboard历史行尚不存在。身份由Profile canonical session ID而非展示标题拥有；Dashboard的HTTP 200/404语义错误信封统一在History Client边界解包。已成功Resume的canonical Bot Chat可将not-found投影为空历史，普通会话及其他错误继续失败。
 - 桌面服务无跨客户端CAS：本实现只承诺新鲜revision检查与当前Host的串行操作，不宣称服务端CAS。
 - 14项管理聚焦测试与真实组件/API边界替身验收通过；最终完整gate通过。无生产/真实资源写入，未提交推送。
-- 最终Mac包：`apps/workbench-electron/release/bot-management-ready-20260915/mac-arm64/OpenCraft Preview.app`。
+- 最终Mac包：`apps/desktop/release/bot-management-ready-20260915/mac-arm64/OpenCraft Preview.app`。
   严格签名验证通过，457个renderer文件逐一匹配当前构建；真实客户端Bots入口和管理页已验证。
   管理截图为 `evidence/management-light.png`、`management-dark.png`。最终客户端刷新验收以以下补充为准。
   本轮真实远端控制面变更未执行；根context仍有4项历史失败，本Task无新增命中。
@@ -68,7 +68,7 @@
 
 ## 最终产物证据
 
-`apps/workbench-electron/release/hermes-profiles-verified-20260915/mac-arm64/OpenCraft Preview.app`
+`apps/desktop/release/hermes-profiles-verified-20260915/mac-arm64/OpenCraft Preview.app`
 通过 `codesign --verify --deep --strict`；其453个renderer文件逐一SHA-256匹配当前 `dist-electron`。
 使用独立profile与已确认空闲CDP启动，真实Shell/Composer启动和reload无白屏、无空Bot应用入口。
 截图位于 `evidence/mac-startup-final.png`；真实组件边界验收位于 `evidence/profile-restored.png` 和 `evidence/profile-restored-dark.png`。

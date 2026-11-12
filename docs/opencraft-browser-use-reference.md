@@ -729,7 +729,7 @@ apps/
     browser-presentation-root.tsx
     browser-panel-plugin.tsx
 
-  workbench-electron/src/browser/
+  desktop/src/browser/
     electron-cdp-engine.ts
     electron-surface-host.ts
 

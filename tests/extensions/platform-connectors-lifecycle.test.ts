@@ -7,7 +7,7 @@ import { Context } from "@deepseek-ai/cordis";
 import { asHostId, createConversationKey } from "@opencraft/chat-core";
 import { AuthenticationService, ConnectorApprovalQueue, ConnectorManager, ConnectorRuntime, MemoryConnectorConfigurationStore, McpOAuthAuthenticationProvider,
   asConversationScopeId, createConversationBindingStore, emptyConnectorConfiguration, parseConnectorConfiguration } from "@opencraft/workbench-runtime";
-import { DesktopConnectorConfigurationStore } from "../../apps/workbench-electron/src/connector-configuration-store";
+import { DesktopConnectorConfigurationStore } from "../../apps/desktop/src/connector-configuration-store";
 import { connectorHost, waitFor } from "../fixtures/connector-host";
 
 test("write approval is exact, one-shot, redacted in presentation and cancelled by revocation", async () => {

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
-import { bundleDesktopHost, resolveDesktopProductEntries } from "../../apps/workbench-electron/build-host.mjs";
+import { bundleDesktopHost, resolveDesktopProductEntries } from "../../apps/desktop/build-host.mjs";
 
 test("desktop product entries are an explicit local set, never silently dropped", async t => {
   const directory = await mkdtemp(join(tmpdir(), "desktop product ")); t.after(() => rm(directory, { recursive: true, force: true }));
@@ -24,7 +24,7 @@ test("real desktop bundles exclude private accounts by default and package selec
   for (const result of [plain.main, plain.preload]) {
     // The official local-account plugin is core authentication, independent of
     // optional private product identity composition.
-    const sourceRoots = ["apps/workbench-electron/src/", "packages/", "plugins/local-account/src/", "node_modules/"];
+    const sourceRoots = ["apps/desktop/src/", "packages/", "plugins/local-account/src/", "node_modules/"];
     const coreScripts = new Set(["scripts/serve-workbench-static.mjs", "scripts/human-login-page.ts", "scripts/web-asset-cache.mjs"]);
     const unexpectedInputs = Object.keys(result.metafile.inputs).filter(file =>
       !coreScripts.has(file) && !sourceRoots.some(root => file.startsWith(root)));

@@ -24,7 +24,7 @@ test("Electron launch resolves the real binary, application root and caller argu
   });
 
   assert.match(launch.executable, /electron(?:\.app[\\/]Contents[\\/]MacOS[\\/]Electron|\.exe)?$/iu);
-  assert.match(launch.args[0], /apps[\\/]workbench-electron$/u);
+  assert.match(launch.args[0], /apps[\\/]desktop$/u);
   assert.deepEqual(launch.args.slice(1), [
     "--user-data-dir=/tmp/profile",
     "--remote-debugging-port=9472",
@@ -52,7 +52,7 @@ test("startElectron passes the sanitized launch contract to the child process", 
 
 test("the workbench start script uses the sanitized Electron launcher", async () => {
   const manifest = JSON.parse(await readFile(
-    new URL("../../apps/workbench-electron/package.json", import.meta.url),
+    new URL("../../apps/desktop/package.json", import.meta.url),
     "utf8",
   ));
   assert.equal(

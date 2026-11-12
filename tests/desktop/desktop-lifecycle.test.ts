@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DesktopLifecycle, type LifecycleWindow } from "../../apps/workbench-electron/src/desktop-lifecycle";
+import { DesktopLifecycle, type LifecycleWindow } from "../../apps/desktop/src/desktop-lifecycle";
 
 function fixture() {
   const calls: string[] = [];
