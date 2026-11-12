@@ -60,8 +60,8 @@ def build():
         "uniqueFontIdentifier": "OpenCraftRoundedCount-Bold-1.000",
         "fullName": "OpenCraft Rounded Count Bold", "psName": "OpenCraftRoundedCount-Bold",
         "version": "Version 1.000",
-        "copyright": "Copyright 2026 OpenCraft contributors. Licensed under Apache-2.0.",
-        "licenseDescription": "Apache License, Version 2.0", "licenseInfoURL": "https://www.apache.org/licenses/LICENSE-2.0",
+        "copyright": "Copyright 2026 OpenCraft contributors. Licensed under MIT-0.",
+        "licenseDescription": "MIT No Attribution", "licenseInfoURL": "https://www.apache.org/licenses/LICENSE-2.0",
     })
     fb.setupOS2(version=4, sTypoAscender=875, sTypoDescender=-125, sTypoLineGap=0,
                 usWinAscent=875, usWinDescent=125, usWeightClass=700,

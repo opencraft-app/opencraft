@@ -33,6 +33,6 @@ export async function prepareFullMetadata(packageRoot) {
   for (const entry of await readdir(packageRoot, { withFileTypes: true })) {
     if (!entry.isFile() || entry.name === 'package.json' || /^(LICENSE|NOTICE)(\.|$)/i.test(entry.name)) continue;
     const path = join(packageRoot, entry.name), text = await readFile(path, 'utf8');
-    if (!text.includes('SPDX-License-Identifier: Apache-2.0')) await writeFile(path, text + '\n' + (entry.name.endsWith('.service') ? '# ' : '') + 'SPDX-License-Identifier: Apache-2.0\n');
+    if (!text.includes('SPDX-License-Identifier: MIT-0')) await writeFile(path, text + '\n' + (entry.name.endsWith('.service') ? '# ' : '') + 'SPDX-License-Identifier: MIT-0\n');
   }
 }

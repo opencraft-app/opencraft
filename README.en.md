@@ -12,7 +12,7 @@ Connect the agents you run, wherever they live, and make them available to the p
 
 [简体中文](README.md) · [English](README.en.md)
 
-[![Build](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![Security](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
+[![Build](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/build-matrix.yml) [![Security](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml/badge.svg)](https://github.com/opencraft-app/opencraft/actions/workflows/security.yml) [![License: MIT-0](https://img.shields.io/badge/License-MIT--0-64748b)](LICENSE) [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white)](https://github.com/topics/typescript)
 
 [![AI Agents](https://img.shields.io/badge/AI_Agents-18181b)](https://github.com/topics/ai-agents) [![ACP](https://img.shields.io/badge/ACP-18181b)](plugins/acp-engine/README.md) [![MCP](https://img.shields.io/badge/MCP-18181b)](docs/session-capabilities.md) [![Self Hosted](https://img.shields.io/badge/Self_Hosted-18181b)](docker/README.md) [![Collaboration](https://img.shields.io/badge/Collaboration-18181b)](docs/actor-collaboration-api.md)
 
@@ -106,7 +106,7 @@ Contributions to adapters, collaboration, client experiences, documentation and 
 
 ## License
 
-Original OpenCraft contributions are licensed under [Apache-2.0](LICENSE).
+Original OpenCraft contributions are licensed under [MIT-0](LICENSE).
 Third-party components retain their own licenses and required notices.
 
 <div align="center">

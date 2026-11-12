@@ -158,7 +158,7 @@ The editable centerlines, pinned build-only tooling and deterministic generator
 are in `packages/design-system/assets/rounded-count/`. Run `python generate.py`
 there after installing `requirements.txt` in an isolated environment; `--check`
 compares the WOFF2 byte-for-byte. Normal application builds consume the checked-in
-font and need no Python. The face is original project artwork under Apache-2.0;
+font and need no Python. The face is original project artwork under MIT-0;
 it is not a renamed or transformed third-party font. All digits have equal
 advances and open counters. Badge owners retain exact-count formatting,
 accessible labels, hit areas and responsive fitting; the font does not own counts.

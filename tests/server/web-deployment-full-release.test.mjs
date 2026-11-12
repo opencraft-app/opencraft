@@ -43,7 +43,7 @@ test('Pi-only full runtime preparation does not read or create Codex and DSH pay
   const root = await mkdtemp(join(tmpdir(), 'full-runtime-pi-only-')); t.after(() => rm(root, { recursive: true, force: true }));
   const repositoryRoot = join(root, 'source'), packageRoot = join(root, 'package');
   await mkdir(repositoryRoot, { recursive: true }); await mkdir(packageRoot, { recursive: true });
-  await writeFile(join(repositoryRoot, 'LICENSE'), 'Apache-2.0');
+  await writeFile(join(repositoryRoot, 'LICENSE'), 'MIT-0');
   await writeFile(join(repositoryRoot, 'package-lock.json'), JSON.stringify({ name: 'fixture', lockfileVersion: 3, packages: {} }));
   const provenance = await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: source, buildId: 'fixture', engines: ['pi'] });
   assert.deepEqual(provenance.engines, ['pi']);
@@ -364,7 +364,7 @@ test('complete tree components remain consumable by the fixed bridge contract an
  await writeFile(key,privateKey.export({type:'pkcs8',format:'pem'}),{mode:0o600});
  await writeFile(join(pkg,'package.json'),JSON.stringify({name:trust.packageName,version:'1.0.0',license:'MIT',files:['web','runtime','execution','full','release'],opencraftWeb:{schemaVersion:1,workerProtocol:1,buildId:'fixture'}}));await writeFile(join(pkg,'LICENSE'),'MIT');await writeFile(join(pkg,'README.md'),'Deployment');await writeFile(join(pkg,'runtime/main.mjs'),'code');await writeFile(join(pkg,'web/version.json'),JSON.stringify({sourceRevision:source,buildId:'fixture'}));
  const template=fixture();template.updater.bridge=false;const packed=await sealPackage({packageRoot:pkg,directory:root,template,keyPath:key,keyId}),checked=await verifyFullArchive(join(root,packed.filename),trust);
- assert.ok(checked.record.components.some(c=>c.role==='core'));assert.ok(checked.record.components.some(c=>c.role==='cli'));assert.ok(checked.record.components.some(c=>c.role==='dsh'));assert.equal(packed.fullRelease.dryRun.integrity,packed.integrity);assert.equal(packed.fullRelease.dryRun.entries,checked.entries);assert.match(await readFile(join(pkg,'README.md'),'utf8'),/SPDX-License-Identifier: Apache-2.0/);
+ assert.ok(checked.record.components.some(c=>c.role==='core'));assert.ok(checked.record.components.some(c=>c.role==='cli'));assert.ok(checked.record.components.some(c=>c.role==='dsh'));assert.equal(packed.fullRelease.dryRun.integrity,packed.integrity);assert.equal(packed.fullRelease.dryRun.entries,checked.entries);assert.match(await readFile(join(pkg,'README.md'),'utf8'),/SPDX-License-Identifier: MIT-0/);
 });
 
 test('signed npm consumer streams the pinned URL and rejects oversized bytes before tar parsing', {timeout:60000}, async t => {

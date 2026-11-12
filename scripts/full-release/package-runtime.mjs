@@ -85,7 +85,7 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   const rootLock = await readFile(join(repositoryRoot, 'package-lock.json'));
   await writeFile(join(packageRoot, 'release/locks/workspace.json'), rootLock);
   await mkdir(join(packageRoot, 'release'), { recursive: true });
-  const provenance = { schemaVersion: 1, license: 'Apache-2.0', sourceRevision, buildId, engines: selectedEngines,
+  const provenance = { schemaVersion: 1, license: 'MIT-0', sourceRevision, buildId, engines: selectedEngines,
     target: { platform: process.platform, arch: process.arch, nodeAbi: Number(process.versions.modules) },
     rootLockfileSha256: digest(rootLock), coreLicenses, componentLimits: COMPONENT_LIMITS, runtimes: records,
     activation: 'Payload only. Independent Core, generations, DSH, Pi, ACP and broker owners require a compatible P2/P3 plan.' };
