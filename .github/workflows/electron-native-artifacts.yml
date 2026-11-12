@@ -91,6 +91,9 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Use runner-owned scratch space for Linux tools
+        if: matrix.id == 'linux-x64'
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - name: Ensure Linux build dependencies
         if: matrix.id == 'linux-x64'
         env:

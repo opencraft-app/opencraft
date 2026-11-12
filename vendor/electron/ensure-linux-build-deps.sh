@@ -30,7 +30,7 @@ packages=(
   bison flex gperf libtool autoconf automake cmake perl rsync unzip zip xz-utils
   libasound2-dev libcups2-dev libdbus-1-dev libdrm-dev libgbm-dev libgtk-3-dev
   libnss3-dev libx11-xcb-dev libxkbcommon-dev libxshmfence-dev
-  desktop-file-utils fakeroot squashfs-tools fonts-liberation xauth xvfb
+  desktop-file-utils fakeroot squashfs-tools fonts-liberation xauth x11-utils xvfb
 )
 missing=()
 check_packages() {
@@ -67,5 +67,7 @@ if (( ${#missing[@]} )); then
   if (( ${#missing[@]} )); then echo "Still missing: ${missing[*]}" >&2; exit 1; fi
 fi
 pkg-config --exists gtk+-3.0 nss gbm alsa
-xvfb-run -a sh -c 'test -n "$DISPLAY"'
+# xvfb-run creates its Xauthority file under TMPDIR.
+if [[ -z ${TMPDIR:-} && ! -w /tmp ]]; then export TMPDIR=/var/tmp; fi
+xvfb-run -a xdpyinfo >/dev/null
 echo "Linux Electron build dependencies and Xvfb are ready."
