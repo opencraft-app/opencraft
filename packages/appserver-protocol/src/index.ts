@@ -35,3 +35,6 @@ export * from "./thread-access";
 export * from "./agent-onboarding";
 export * from "./agent-usage";
 export * from "./steer-evidence";
+
+export * from "./catalog-merkle";
+export * from "./catalog-merkle-pages";

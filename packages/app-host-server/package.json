@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./interactions": "./src/interactions.ts",
-    "./thread-catalog": "./src/thread-catalog.ts"
+    "./thread-catalog": "./src/thread-catalog.ts",
+    "./thread-directory": "./src/thread-directory/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
