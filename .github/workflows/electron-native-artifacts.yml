@@ -121,7 +121,7 @@ jobs:
           key: desktop-fork-v1-${{ matrix.id }}-${{ hashFiles('vendor/electron/**', '.github/workflows/electron-native-artifacts.yml') }}
       - name: Check build capacity before source download
         if: steps.native-cache.outputs.cache-hit != 'true'
-        run: ${{ matrix.python }} vendor/electron/ci.py preflight --target ${{ matrix.id }} --root "$RUNNER_TEMP"
+        run: ${{ matrix.python }} vendor/electron/ci.py preflight --target ${{ matrix.id }} --root "${OPENCRAFT_ELECTRON_PERSISTENT_ROOT:-$RUNNER_TEMP}"
       - name: Set native absolute paths
         # Python writes native Windows paths; MSYS strings must not reach Node.
         run: |
@@ -129,8 +129,13 @@ jobs:
           import os
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'])
+          # A provisioned runner may keep the fork checkout, Chromium deps and out/
+          # across jobs (manage.py verifies the pinned tree before every use).
+          persistent = os.environ.get('OPENCRAFT_ELECTRON_PERSISTENT_ROOT', '').strip()
+          source = Path(persistent) / 'source' if persistent else root / 'opencraft-electron-source'
           with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as env:
-              for key, name in [('BUILD_ROOT', 'source'), ('DISTRIBUTION', 'distribution'), ('EVIDENCE', 'evidence')]:
+              env.write(f'BUILD_ROOT={source}\n')
+              for key, name in [('DISTRIBUTION', 'distribution'), ('EVIDENCE', 'evidence')]:
                   env.write(f'{key}={root / ("opencraft-electron-" + name)}\n')
           PY
       - run: npm ci --no-audit --no-fund
