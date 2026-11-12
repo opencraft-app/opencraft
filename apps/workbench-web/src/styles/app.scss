@@ -13050,5 +13050,3 @@ html[data-window-host="browser"] body {
   flex-direction: column;
   p { margin: 0; }
 }
-
-.sidebar-access-description { padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 2); @include typography.role(metadata, secondary); }

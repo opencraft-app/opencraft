@@ -1283,7 +1283,6 @@
   "thread.access.share": "Make shared",
   "thread.access.failed": "Could not change access. Refresh and try again.",
   "sidebar.access.mine": "Mine",
-  "sidebar.access.onlyYou": "Only you can see these conversations",
   "sidebar.access.shared": "Shared",
   "sidebar.access.empty": "No private conversations yet",
   "sidebar.access.categories": "Conversation categories",
