@@ -157,11 +157,11 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       manifest.bundleDependencies = [...(manifest.bundleDependencies || []), ...Object.keys(appRuntime)];
     }
     // Both standalone and daemon Hosts mount these persistence/projection patches.
-    const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/workbench-electron/package.json'), 'utf8'));
+    const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8'));
     for (const entry of desktop.build.extraResources.filter(entry => entry.to.startsWith('runtime/dsh/') && entry.from.startsWith('../local-agent-host/src/'))) {
       const destination = join(packageRoot, 'execution', relative('runtime/dsh', entry.to));
       await mkdir(dirname(destination), { recursive: true });
-      await cp(resolve(repositoryRoot, 'apps/workbench-electron', entry.from), destination);
+      await cp(resolve(repositoryRoot, 'apps/desktop', entry.from), destination);
     }
     const ptyRoot = join(repositoryRoot, 'node_modules/node-pty');
     const prebuild = `prebuilds/${process.platform}-${process.arch}`;

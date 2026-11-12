@@ -28,8 +28,8 @@
       "platforms": ["linux", "darwin", "win32"],
       "command": ["npm", "run", "build:electron:host"],
       "artifacts": [
-        "apps/workbench-electron/dist-host/main.cjs",
-        "apps/workbench-electron/dist-host/preload.cjs",
+        "apps/desktop/dist-host/main.cjs",
+        "apps/desktop/dist-host/preload.cjs",
         "apps/opencraft-daemon/dist/main.cjs"
       ],
       "description": "Sandboxed Electron main/preload relay, static loopback origin, and independent OpenCraft Daemon"
@@ -38,49 +38,49 @@
       "id": "electron-macos-arm64-zip",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:arm64:zip"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-mac-arm64.zip"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-mac-arm64.zip"],
       "description": "Unsigned Apple Silicon application ZIP; build natively on an arm64 Mac"
     },
     {
       "id": "electron-macos-arm64-dmg",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:arm64:dmg"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-arm64.dmg"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-arm64.dmg"],
       "description": "Apple Silicon DMG; requires the macOS sips/disk-image toolchain"
     },
     {
       "id": "electron-macos-x64-zip",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:x64:zip"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-mac-x64.zip"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-mac-x64.zip"],
       "description": "Unsigned Intel macOS application ZIP; build natively on an x64 Mac"
     },
     {
       "id": "electron-macos-x64-dmg",
       "platforms": ["darwin"],
       "command": ["npm", "run", "package:electron:mac:x64:dmg"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-x64.dmg"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-x64.dmg"],
       "description": "Intel macOS DMG; requires the macOS sips/disk-image toolchain"
     },
     {
       "id": "electron-linux-x64-appimage",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:appimage"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-linux-x86_64.AppImage"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-linux-x86_64.AppImage"],
       "description": "Portable Linux x64 desktop application"
     },
     {
       "id": "electron-linux-x64-rpm",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:rpm"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-linux-x86_64.rpm"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-linux-x86_64.rpm"],
       "description": "RPM package for TencentOS, RHEL, Fedora, and compatible Linux x64 systems"
     },
     {
       "id": "electron-linux-x64-deb",
       "platforms": ["linux"],
       "command": ["npm", "run", "package:electron:linux:x64:deb"],
-      "artifacts": ["apps/workbench-electron/release/OpenCraft-0.1.0-linux-amd64.deb"],
+      "artifacts": ["apps/desktop/release/OpenCraft-0.1.0-linux-amd64.deb"],
       "description": "DEB package for Debian and Ubuntu Linux x64 systems"
     },
     {

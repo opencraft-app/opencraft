@@ -9,7 +9,7 @@ Turn、原生 queue 或 goal 的生命周期。Codex 在这里是实际执行引
 - [核心进程](../../apps/codex-core/src/main.ts)默认持有 CLI、账户池和维护生命周期；显式拆分后仅持账号，独立 APP Server owner 持 CLI/runtime。
 - [引擎适配器](../../apps/opencraft-daemon/src/codex-engine-adapter.ts)持有逻辑客户端映射、初始化、订阅与 OpenCraft Host 能力。
 - [账户服务](../../packages/account-pool-host/src/codex-account-service.ts)管理账户元数据、私有凭据和维护请求；内嵌与独立 core 复用同一实现。
-- [桌面 daemon 客户端](../../apps/workbench-electron/src/daemon-client.ts)透传显式 core endpoint；默认内嵌模式保持独立。
+- [桌面 daemon 客户端](../../apps/desktop/src/daemon-client.ts)透传显式 core endpoint；默认内嵌模式保持独立。
 
 ## 设计约束
 

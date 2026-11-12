@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { DesktopConnectorConfigurationStore } from "../../apps/workbench-electron/src/connector-configuration-store.js";
+import { DesktopConnectorConfigurationStore } from "../../apps/desktop/src/connector-configuration-store.js";
 import { emptyConnectorConfiguration } from "@opencraft/workbench-runtime/connectors/configuration";
 
 test("DesktopConnectorConfigurationStore: fresh, up-to-date, and CAS operations", async () => {

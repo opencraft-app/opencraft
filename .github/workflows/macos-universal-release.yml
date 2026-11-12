@@ -51,11 +51,11 @@ jobs:
       - run: npm run test:identity
       - run: npm run build:electron:release
       - name: Assemble unsigned arm64 app
-        working-directory: apps/workbench-electron
+        working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: ../../node_modules/.bin/electron-builder --mac dir --arm64 --publish never --config.mac.identity=null --config.directories.output=release/ci-arm64
-      - run: ditto -c -k --sequesterRsrc --keepParent apps/workbench-electron/release/ci-arm64/mac-arm64/OpenCraft.app OpenCraft-arm64-app.zip
+      - run: ditto -c -k --sequesterRsrc --keepParent apps/desktop/release/ci-arm64/mac-arm64/OpenCraft.app OpenCraft-arm64-app.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencraft-macos-arm64-app
@@ -77,11 +77,11 @@ jobs:
       - run: npm run test:identity
       - run: npm run build:electron:release
       - name: Assemble unsigned x64 app
-        working-directory: apps/workbench-electron
+        working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: ../../node_modules/.bin/electron-builder --mac dir --x64 --publish never --config.mac.identity=null --config.directories.output=release/ci-x64
-      - run: ditto -c -k --sequesterRsrc --keepParent apps/workbench-electron/release/ci-x64/mac/OpenCraft.app OpenCraft-x64-app.zip
+      - run: ditto -c -k --sequesterRsrc --keepParent apps/desktop/release/ci-x64/mac/OpenCraft.app OpenCraft-x64-app.zip
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: opencraft-macos-x64-app
@@ -139,7 +139,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: node scripts/sign-notarize-macos.mjs .release/universal/OpenCraft.app
       - name: Package signed DMG and ZIP
-        working-directory: apps/workbench-electron
+        working-directory: apps/desktop
         run: |
           builder_identity="${CSC_NAME#Developer ID Application: }"
           ../../node_modules/.bin/electron-builder \
@@ -154,12 +154,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: node scripts/notarize-macos-dmg.mjs apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+        run: node scripts/notarize-macos-dmg.mjs apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
       - name: Verify final artifacts
         run: |
           app=.release/universal/OpenCraft.app
-          dmg=apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-universal.dmg
-          zip=apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
+          dmg=apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+          zip=apps/desktop/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
           test "$(lipo -archs "$app/Contents/MacOS/OpenCraft")" = "x86_64 arm64" || test "$(lipo -archs "$app/Contents/MacOS/OpenCraft")" = "arm64 x86_64"
           codesign --verify --deep --strict --verbose=2 "$app"
           xcrun stapler validate "$app"
@@ -169,11 +169,11 @@ jobs:
           xcrun stapler validate "$dmg"
           spctl --assess --type open --context context:primary-signature --verbose=4 "$dmg"
           unzip -t "$zip"
-          shasum -a 256 "$dmg" "$zip" > apps/workbench-electron/release/ci-universal/SHA256SUMS
+          shasum -a 256 "$dmg" "$zip" > apps/desktop/release/ci-universal/SHA256SUMS
       - name: Launch and inspect the final notarized DMG
         env:
           OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-universal-smoke
-        run: node scripts/smoke/desktop/smoke-macos-dmg.mjs apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+        run: node scripts/smoke/desktop/smoke-macos-dmg.mjs apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
@@ -185,9 +185,9 @@ jobs:
         with:
           name: opencraft-macos-universal-${{ github.sha }}
           path: |
-            apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-universal.dmg
-            apps/workbench-electron/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
-            apps/workbench-electron/release/ci-universal/SHA256SUMS
+            apps/desktop/release/ci-universal/OpenCraft-0.1.0-universal.dmg
+            apps/desktop/release/ci-universal/OpenCraft-0.1.0-mac-universal.zip
+            apps/desktop/release/ci-universal/SHA256SUMS
           if-no-files-found: error
           retention-days: 30
       - name: Remove temporary credentials

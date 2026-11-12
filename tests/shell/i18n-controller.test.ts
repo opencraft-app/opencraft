@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MemoryUiPreferenceStore, UiPreferencesRuntime } from "@opencraft/ui-preferences";
 import { WorkbenchLocaleController } from "../../apps/workbench-web/src/i18n/workbench-locale";
-import { createDesktopLocaleRuntime, requireDesktopLocale } from "../../apps/workbench-electron/src/desktop-locale";
+import { createDesktopLocaleRuntime, requireDesktopLocale } from "../../apps/desktop/src/desktop-locale";
 import { withProductCatalogs } from "../../apps/workbench-web/src/i18n/product-catalogs";
 
 test("product catalogs add messages without changing core language authority", async () => {

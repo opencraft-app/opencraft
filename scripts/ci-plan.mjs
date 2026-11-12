@@ -56,7 +56,7 @@ export function planChanges(paths, { event = 'pull_request', unknownDiff = false
       continue;
     }
     if (/^apps\/mobile\//.test(path)) { web(); continue; }
-    if (/^apps\/(workbench-electron|opencraft-daemon|local-agent-host)\//.test(path) || path.startsWith('runtime/dsh/')) {
+    if (/^apps\/(desktop|opencraft-daemon|local-agent-host)\//.test(path) || path.startsWith('runtime/dsh/')) {
       headlessTests = true;
       continue;
     }

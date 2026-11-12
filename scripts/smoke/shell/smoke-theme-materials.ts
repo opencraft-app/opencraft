@@ -37,8 +37,8 @@ let desktop: any;
 const evidence: unknown[]=[];const errors:string[]=[];
 try {
   await vite.listen();
-  await build({entryPoints:["apps/workbench-electron/src/preload.ts"],bundle:true,platform:"node",format:"cjs",external:["electron"],outfile:join(output,"preload.cjs")});
-  await build({entryPoints:["apps/workbench-electron/src/window-appearance.ts"],bundle:true,platform:"node",format:"cjs",outfile:join(output,"appearance.cjs")});
+  await build({entryPoints:["apps/desktop/src/preload.ts"],bundle:true,platform:"node",format:"cjs",external:["electron"],outfile:join(output,"preload.cjs")});
+  await build({entryPoints:["apps/desktop/src/window-appearance.ts"],bundle:true,platform:"node",format:"cjs",outfile:join(output,"appearance.cjs")});
   const url=`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`;
   const entry=join(output,"main.cjs");
   await writeFile(entry,`const {app,BrowserWindow,ipcMain,nativeTheme}=require('electron');const {isWindowAppearanceMessage,applyNativeWindowAppearance}=require('./appearance.cjs');app.setPath('userData',${JSON.stringify(join(output,"profile"))});let current={themeSource:'light',resolvedTheme:'light'};globalThis.probe={rejected:0,calls:[]};app.whenReady().then(()=>{const w=new BrowserWindow({width:1000,height:720,show:false,webPreferences:{preload:${JSON.stringify(join(output,"preload.cjs"))},contextIsolation:true,nodeIntegration:false}});globalThis.probe.window=w;const vibrancy=w.setVibrancy.bind(w);w.setVibrancy=value=>{globalThis.probe.calls.push(value);vibrancy(value)};const refresh=()=>{nativeTheme.themeSource=current.themeSource;applyNativeWindowAppearance(w,current,process.platform);globalThis.probe.appearance=current};ipcMain.on('opencraft:set-window-appearance',(event,payload)=>{if(event.sender!==w.webContents||!isWindowAppearanceMessage(payload)){globalThis.probe.rejected++;return;}current=payload;refresh()});w.on('focus',refresh);w.on('blur',refresh);w.loadURL(${JSON.stringify(url)});});app.on('window-all-closed',()=>app.quit());`);

@@ -24,7 +24,7 @@ try {
   if (process.env.OPENCRAFT_I18N_ELECTRON_EXECUTABLE) {
     const profile = await mkdtemp(join(tmpdir(), "opencraft-locale-electron-"));
     await build({ entryPoints: ["tests/fixtures/i18n-electron.ts"], bundle: true, platform: "node", format: "cjs", external: ["electron"], outfile: join(profile, "main.cjs") });
-    await build({ entryPoints: ["apps/workbench-electron/src/preload.ts"], bundle: true, platform: "node", format: "cjs", external: ["electron"], outfile: join(profile, "preload.cjs") });
+    await build({ entryPoints: ["apps/desktop/src/preload.ts"], bundle: true, platform: "node", format: "cjs", external: ["electron"], outfile: join(profile, "preload.cjs") });
     desktop = await _electron.launch({ executablePath: process.env.OPENCRAFT_I18N_ELECTRON_EXECUTABLE, args: [join(profile, "main.cjs")], timeout: 20000, env: {
       ...Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== "ELECTRON_RUN_AS_NODE")),
       OPENCRAFT_LOCALE_PROFILE: profile, OPENCRAFT_LOCALE_SMOKE_URL: url,

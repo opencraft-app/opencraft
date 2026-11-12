@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { EventEmitter } from "node:events";
-import { NativeSpeechManager } from "../../apps/workbench-electron/src/native-speech.js";
+import { NativeSpeechManager } from "../../apps/desktop/src/native-speech.js";
 import { NativeSpeechInputProvider } from "../../plugins/voice-input/src/native-speech-provider.js";
 import { DictationCompletion } from "../../plugins/voice-input/src/dictation-completion.js";
 import { DictationPressGesture } from "../../plugins/voice-input/src/dictation-press-gesture.js";

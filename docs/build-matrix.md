@@ -530,7 +530,7 @@ rtk proxy uname -m
 rtk proxy npm run build:electron
 ```
 
-以下例子在 `opencraft/apps/workbench-electron/` 执行。先将 `signing_identity` 替换为本次已验证的
+以下例子在 `opencraft/apps/desktop/` 执行。先将 `signing_identity` 替换为本次已验证的
 Developer ID 身份名称（electron-builder 的 identity 选项使用姓名/团队部分，不加证书类型前缀）。
 `arm64` 只适用于 Apple Silicon 原生构建机；Intel 目标在原生 Intel 构建机上使用 `x64`。
 

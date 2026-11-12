@@ -1,5 +1,5 @@
 {
-  "name": "@opencraft/workbench-electron",
+  "name": "@opencraft/desktop",
   "private": true,
   "version": "0.1.0",
   "description": "OpenCraft desktop workbench",
@@ -50,6 +50,7 @@
     "typescript": "^5.9.3"
   },
   "build": {
+    "extraMetadata": { "name": "@opencraft/workbench-electron" },
     "appId": "dev.opencraft.workbench",
     "productName": "OpenCraft",
     "protocols": [{ "name": "OpenCraft login", "schemes": ["opencraft"] }],

@@ -33,4 +33,4 @@ No arbitrary tool-result URLs are fetched.
 All model/fault tests used isolated local endpoints and synthetic keys.
 No user logs/config were migrated or erased; no commit/push/release occurred.
 
-Preview: apps/workbench-electron/release/dsh-complete-migration-preview/mac-arm64/OpenCraft Preview.app.
+Preview: apps/desktop/release/dsh-complete-migration-preview/mac-arm64/OpenCraft Preview.app.

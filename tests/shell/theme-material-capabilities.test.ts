@@ -6,7 +6,7 @@ import test from "node:test";
 import { validateThemeOptions } from "@opencraft/design-system/theme-options";
 import { buildOpenCraftThemeCssProperties as build, opencraftNeutralThemePalette, opencraftCanvasThemePalette, frostThemePalette, longingThemePalette } from "@opencraft/design-system/theme-engine";
 import { ExtensionSupervisor } from "@opencraft/extension-runtime";
-import { isWindowAppearanceMessage, resolveWindowAppearance } from "../../apps/workbench-electron/src/window-appearance";
+import { isWindowAppearanceMessage, resolveWindowAppearance } from "../../apps/desktop/src/window-appearance";
 
 test("secondary button labels remain readable on both neutral theme surfaces", () => {
   const rgb = (value: string) => value.startsWith('#')

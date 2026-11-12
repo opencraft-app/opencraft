@@ -4,7 +4,7 @@ OpenCraft is the product name for the Web, Electron, and Expo hosts. Source
 packages use `@opencraft/*`; build environment variables use `OPENCRAFT_*`
 and `VITE_OPENCRAFT_*`. There are no old package aliases or dual environment
 variable readers. The pinned Electron version is owned by the
-[desktop package manifest](../../apps/workbench-electron/package.json) and the
+[desktop package manifest](../../apps/desktop/package.json) and the
 [root lockfile](../../package-lock.json).
 
 ## Directory identity charter
@@ -35,7 +35,7 @@ Installation IDs are owned by each build configuration:
 
 | Host/profile | Identifier | Authority |
 |---|---|---|
-| Desktop installed app | `dev.opencraft.workbench` | `apps/workbench-electron/package.json` |
+| Desktop installed app | `dev.opencraft.workbench` | `apps/desktop/package.json` |
 | macOS local Preview | `dev.opencraft.workbench.preview` | `scripts/package-macos-preview.mjs` |
 | Standalone Expo Android and iOS | `dev.opencraft.workbench` | `apps/mobile/app.json` |
 | Explicit downstream Expo product | Defined by the selected product | Local config selected by `OPENCRAFT_EXPO_PRODUCT_CONFIG` |
@@ -77,9 +77,9 @@ Downstream branding never authorizes a different core data root.
 
 ### Legacy migration
 
-The current [desktop product configuration](../../apps/workbench-electron/src/product-identity.json)
+The current [desktop product configuration](../../apps/desktop/src/product-identity.json)
 declares no legacy profile roots for either production or preview. The
-[desktop directory resolver](../../apps/workbench-electron/src/desktop-directories.ts)
+[desktop directory resolver](../../apps/desktop/src/desktop-directories.ts)
 supports migration when a product explicitly configures a former root. Such a
 root is a migration input; canonical destinations follow the directory identity
 charter above. For a configured production root, migration must run before

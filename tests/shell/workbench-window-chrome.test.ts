@@ -12,7 +12,7 @@ test("pane resize hit targets start below window navigation chrome", () => {
 
 test("Electron consumes the shared narrow-window geometry instead of a platform-local width", () => {
   const desktopMain = readFileSync(
-    new URL("../../apps/workbench-electron/src/main.ts", import.meta.url),
+    new URL("../../apps/desktop/src/main.ts", import.meta.url),
     "utf8",
   );
   assert.equal(workbenchWindowMetrics.minimumWidth, 480);
@@ -192,11 +192,11 @@ test("ordinary browsers ignore Electron preload-only inset attributes", () => {
 
 test("macOS desktop uses a snapshot-safe focus-driven native surface", () => {
   const desktopMain = readFileSync(
-    new URL("../../apps/workbench-electron/src/main.ts", import.meta.url),
+    new URL("../../apps/desktop/src/main.ts", import.meta.url),
     "utf8",
   );
   const desktopPreload = readFileSync(
-    new URL("../../apps/workbench-electron/src/preload.ts", import.meta.url),
+    new URL("../../apps/desktop/src/preload.ts", import.meta.url),
     "utf8",
   );
   const rendererMain = readFileSync(

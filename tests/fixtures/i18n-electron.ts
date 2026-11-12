@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { join } from "node:path";
-import { createDesktopLocaleRuntime, requireDesktopLocale } from "../../apps/workbench-electron/src/desktop-locale";
-import { createDesktopTrayMenu } from "../../apps/workbench-electron/src/desktop-tray";
+import { createDesktopLocaleRuntime, requireDesktopLocale } from "../../apps/desktop/src/desktop-locale";
+import { createDesktopTrayMenu } from "../../apps/desktop/src/desktop-tray";
 
 app.setPath("userData", process.env.OPENCRAFT_LOCALE_PROFILE!);
 const locale = createDesktopLocaleRuntime();

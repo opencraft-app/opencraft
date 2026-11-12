@@ -18,7 +18,7 @@ relevant_evolution: 设计初期 OpenCraft 自有 SQLite 多为建表初始化�
 superseded_refs: 本任务早期“Drizzle 为默认方案”的设计草案已被后续需求取代；不把待实施契约写成既有能力。
 
 ## interface_refs / data_structure_refs
-`apps/workbench-electron/src/{ui-preferences-store,connector-configuration-store,sqlite-debug-reader}.ts`；`apps/local-agent-host/src/{thread-catalog,dsh-session-routing,dsh-execution-authority}.ts`；`packages/connector-host/src/store.ts`。
+`apps/desktop/src/{ui-preferences-store,connector-configuration-store,sqlite-debug-reader}.ts`；`apps/local-agent-host/src/{thread-catalog,dsh-session-routing,dsh-execution-authority}.ts`；`packages/connector-host/src/store.ts`。
 
 ## phases
 1. [complete] 存储清单、物理路径、owner 和不可丢数据分类。

@@ -82,7 +82,7 @@ WantedBy=multi-user.target
 ## 验证
 
 ```sh
-npm run typecheck --workspace @opencraft/codex-core --workspace @opencraft/opencraft-daemon --workspace @opencraft/account-pool-host --workspace @opencraft/workbench-electron
+npm run typecheck --workspace @opencraft/codex-core --workspace @opencraft/opencraft-daemon --workspace @opencraft/account-pool-host --workspace @opencraft/desktop
 npm run test:appserver
 npm run test:codex-core
 npm run check:boundaries

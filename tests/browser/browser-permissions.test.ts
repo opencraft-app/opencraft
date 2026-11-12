@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { BrowserPermissionPolicy } from "../../apps/workbench-electron/src/browser-permissions";
+import { BrowserPermissionPolicy } from "../../apps/desktop/src/browser-permissions";
 test("permission decisions are isolated by partition/origin/type and never grant unsupported access", async () => {
   let state: Record<string, boolean> = {}, prompts = 0;
   const policy = new BrowserPermissionPolicy({ read: () => state, write: value => { state = value; } },

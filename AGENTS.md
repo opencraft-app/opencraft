@@ -31,7 +31,7 @@ GitHub `opencraft-app/opencraft` 是目标核心上游，产品身份来源、�
 | 区域 | Owner |
 |---|---|
 | `apps/workbench-web` | Web 与 Electron 共用的 Renderer、AppShell 和路由呈现 |
-| `apps/workbench-electron` | 桌面窗口、私有存储、Preload 与 IPC |
+| `apps/desktop` | 桌面窗口、私有存储、Preload 与 IPC |
 | `apps/local-agent-host` | 本机执行、DSH 进程与 Host 能力适配 |
 | `packages/` | 跨端领域语义、协议和稳定共享 contract |
 | `plugins/` | 随核心提供的通用插件；私有产品插件由下游 workspace 持有 |
@@ -190,7 +190,7 @@ UI 任务按需读取 [UI 专题索引](design/ui/README.md)，字体任务继�
 | 目标 | 命令与边界 |
 |---|---|
 | Web 轻量预览 | 在仓库根目录运行 `npm run dev:web`，使用终端实际 URL。固定地址时先运行 `npm run build:preview-bridge`，再运行 `npm run dev --workspace @opencraft/workbench-web -- --host 127.0.0.1 --port 5173`。不包含 Main/Preload、IPC、本机 DSH、原生 chrome 或系统能力。 |
-| Electron 当前源码 | 先运行 `npm run build:electron`；创建 `preview_profile="$(mktemp -d /tmp/opencraft-electron-preview-XXXXXX)"`；再运行 `npm run start --workspace @opencraft/workbench-electron -- --user-data-dir="$preview_profile" --remote-debugging-port=9333`。端口仅为示例，启动前确认未占用。 |
+| Electron 当前源码 | 先运行 `npm run build:electron`；创建 `preview_profile="$(mktemp -d /tmp/opencraft-electron-preview-XXXXXX)"`；再运行 `npm run start --workspace @opencraft/desktop -- --user-data-dir="$preview_profile" --remote-debugging-port=9333`。端口仅为示例，启动前确认未占用。 |
 | macOS 打包预览 | 仅在验证签名、打包资源、原生 helper、安装路径或最终桌面行为时运行 `npm run package:electron:mac:arm64:preview`；使用隔离 worktree/profile，按 `docs/build-matrix.md` 验收。 |
 
 - Renderer 重建后旧窗口不会热更新；关闭旧预览并用新构建、隔离 profile 和新调试端口重启。

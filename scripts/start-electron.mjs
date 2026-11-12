@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const electronAppRoot = resolve(repositoryRoot, "apps/workbench-electron");
+const electronAppRoot = resolve(repositoryRoot, "apps/desktop");
 
 export function electronAppEnvironment(source = process.env) {
   const environment = { ...source };
