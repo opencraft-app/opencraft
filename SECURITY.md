@@ -198,7 +198,7 @@ and loads the Drizzle config through the upgraded esbuild. No lock entries
 outside the named lines changed except the in-range undici 7.30.2 patch and
 the new esbuild platform binaries.
 
-The isolated DSH runtime remains unremediated. The 2026-11-11 registry check
+The isolated DSH runtime remains unremediated. The 2026-11-12 registry check
 still finds 0.1.1-rc.2 as the newest release in the 0.1.1 line and 0.2.2-rc.1
 as the newest published engine. The installed
 `@deepseek-ai/dsh-client-connection` 0.1.1-rc.2 still serves the
@@ -206,3 +206,20 @@ as the newest published engine. The installed
 `apps/local-agent-host`; fixed engine releases changed that transport to the
 launch-token/signed-cookie browser flow, so the engine migration described
 above is still required.
+
+### Transitive undici 5 remediation (2026-11-12)
+
+`@cursor/sdk` 1.0.32 pulls `@connectrpc/connect-node` 1.7.0, which selected
+undici 5.29.0 and its `@fastify/busboy` 2.1.1 dependency. The 5.x line has no
+fixed release for the 16 undici advisories (including
+[GHSA-2m5v-pch6-74hx](https://github.com/advisories/GHSA-2m5v-pch6-74hx) and
+[GHSA-qrxm-fqhp-jwvm](https://github.com/advisories/GHSA-qrxm-fqhp-jwvm)) or
+for busboy ([GHSA-gxm5-99cw-xjw9](https://github.com/advisories/GHSA-gxm5-99cw-xjw9)
+and [GHSA-x8mw-p69m-v3mx](https://github.com/advisories/GHSA-x8mw-p69m-v3mx)).
+The root workspace overrides `undici@5` to 8.12.3, the release already used
+for the `undici@8` line; that removes the busboy edge. `@connectrpc/connect-node`
+consumes only the `Headers` export for its Node polyfill, so the major-line
+change keeps the API used by the Cursor bridge. `npm ci`, `npm audit`, the
+Cursor bridge typecheck/build, the agent-bridge suite (314 pass, 1 skipped) and
+a Node smoke importing connect-node and the Cursor SDK pass; OSV reports 0
+hits over the lockfile and installed tree.
