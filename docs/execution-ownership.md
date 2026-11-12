@@ -168,6 +168,8 @@ Codex 的执行激活 `thread/resume` 在已有执行准备工具时等待同一
 
 Pi/DSH 的 snapshot port 可能仍需读取完整原生逻辑快照，不声称其数据库字节支持 JSONL 增量。缓存对比有序 Turn 前缀，只更新变化的未完成尾轮及新增 Turn 的偏移、正文和 Blob；这两类变化保留既有序号与分页 epoch，运行中新轮次不会使用户正在翻阅的旧页失效。SQLite WAL checkpoint 或截短本身也不改变逻辑历史的 epoch。历史前缀改写、删轮或重排、原生来源身份/路径/路由变更、schema 失效或派生文件丢失时重建并更换 epoch；旧游标明确要求重新加载，不能继续解释为另一版历史的偏移。SQLite 只读连接可能改变 WAL 的 ctime，因此 snapshot 水位不以该元数据变化制造内容失效；Codex 保留自己的字节追加判断。
 
+Pi 的完整 Turn 投影统一使用协议值 `itemsView: "full"`，与执行是否完成的 `status` 分开。历史读取与流式事件使用同一投影。修正投影格式时同时推进 Pi snapshot 来源的投影版本，使原生数据库未变化的旧派生缓存也会重建；不能把旧缓存中的非协议值当作没有正文，或修改原生历史来触发重建。
+
 删缓存目录、索引损坏或正文/Blob 校验失败只能重建派生数据，不能修改或删除原生日志。归档或删除的缓存清理与迟到读取通过会话级失效代次协调；清理同时删除索引行及该会话的正文与 Blob。无可用文件来源的临时会话或原生 backend 保留原有只读协议兼容。回归入口为 [原生 snapshot 缓存](../tests/protocol/native-transcript-snapshot-cache.test.ts)、[Codex 缓存](../tests/protocol/transcript-read-cache.test.ts)及 [DSH 冷态来源定位](../tests/execution/dsh-thread-engine.test.mjs)；主服 Host 是否已加载这些能力仍须核对实际版本、进程与行为。
 
 ### 历史读取的等待与取消

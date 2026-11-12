@@ -967,7 +967,7 @@ export class PiEngine {
       const content = await this.compileInput(params.input, params.additionalContext, cwd, model);
       const { native } = await this.configure(session, params, false, true);
       const createdAtMs = Date.now();
-      const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "complete", status: "inProgress", error: null,
+      const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "full", status: "inProgress", error: null,
         startedAt: Math.floor(createdAtMs / 1000), completedAt: null, durationMs: null };
       if (canAdmit && !await canAdmit()) throw new ScheduleAdmissionDeferred();
       if (!this.admissionOpen()) throw new ScheduleAdmissionDeferred();
