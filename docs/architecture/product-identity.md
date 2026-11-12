@@ -35,8 +35,8 @@ Installation IDs are owned by each build configuration:
 
 | Host/profile | Identifier | Authority |
 |---|---|---|
-| Desktop installed app | `dev.opencraft.workbench` | `apps/desktop/package.json` |
-| macOS local Preview | `dev.opencraft.workbench.preview` | `scripts/package-macos-preview.mjs` |
+| Desktop installed app | `app.opencraft.desktop` | `apps/desktop/package.json` |
+| macOS local Preview | `app.opencraft.desktop.preview` | `scripts/package-macos-preview.mjs` |
 | Standalone Expo Android and iOS | `dev.opencraft.workbench` | `apps/mobile/app.json` |
 | Explicit downstream Expo product | Defined by the selected product | Local config selected by `OPENCRAFT_EXPO_PRODUCT_CONFIG` |
 

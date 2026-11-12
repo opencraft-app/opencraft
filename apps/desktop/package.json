@@ -33,10 +33,10 @@
     "package:mac:x64:zip": "electron-builder --mac zip --x64",
     "package:mac:x64:preview": "node ../../scripts/package-macos-preview.mjs x64",
     "package:mac:x64:dmg": "electron-builder --mac dmg --x64",
-    "package:linux:x64:appimage": "electron-builder --linux AppImage --x64",
+    "package:linux:x64:appimage": "node ../../scripts/package-electron-desktop.mjs --linux AppImage --x64",
     "package:linux:x64:rpm": "electron-builder --linux rpm --x64",
     "package:linux:x64:deb": "electron-builder --linux deb --x64",
-    "package:linux:x64": "electron-builder --linux AppImage rpm deb --x64"
+    "package:linux:x64": "node ../../scripts/package-electron-desktop.mjs --linux AppImage rpm deb --x64"
   },
   "devDependencies": {
     "@electron/notarize": "2.5.0",
@@ -51,7 +51,7 @@
   },
   "build": {
     "extraMetadata": { "name": "@opencraft/workbench-electron" },
-    "appId": "dev.opencraft.workbench",
+    "appId": "app.opencraft.desktop",
     "productName": "OpenCraft",
     "protocols": [{ "name": "OpenCraft login", "schemes": ["opencraft"] }],
     "asar": true,

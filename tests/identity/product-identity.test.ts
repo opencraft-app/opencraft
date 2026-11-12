@@ -43,6 +43,7 @@ test("three public hosts agree on OpenCraft branding and identity", () => {
   const electron = json("apps/desktop/package.json");
   const expo = json("apps/mobile/app.json").expo;
   assert.equal(electron.build.productName, desktopProduct.displayName);
+  assert.equal(desktopProduct.applicationId, "app.opencraft.desktop");
   assert.equal(electron.build.appId, desktopProduct.applicationId);
   assert.equal(
     electron.devDependencies.electron,
@@ -63,7 +64,7 @@ test("three public hosts agree on OpenCraft branding and identity", () => {
   assert.match(main, /preparedDirectories\.status === "legacy-active"/u);
   assert.deepEqual(resolveDesktopProduct("OpenCraft"), desktopProduct);
   assert.deepEqual(resolveDesktopProduct("OpenCraft Preview"), desktopPreviewProduct);
-  assert.equal(desktopPreviewProduct.applicationId, "dev.opencraft.workbench.preview");
+  assert.equal(desktopPreviewProduct.applicationId, "app.opencraft.desktop.preview");
   assert.equal(desktopPreviewProduct.profileDirectoryName, "OpenCraft Preview");
   assert.deepEqual(desktopPreviewProduct.legacyProfileDirectoryNames, []);
   assert.match(main, /resolveDesktopProduct\(executableName\)/u);

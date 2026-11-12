@@ -1,6 +1,8 @@
 name: Electron fork native artifacts
 
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       mode:
@@ -11,8 +13,8 @@ on:
       target:
         description: Native target (macos targets include arm64 and x64)
         type: choice
-        options: [all, linux-x64, windows-x64, macos-arm64, macos-x64]
-        default: all
+        options: [linux-x64, all, windows-x64, macos-arm64, macos-x64]
+        default: linux-x64
 
 permissions:
   contents: read
@@ -28,8 +30,8 @@ jobs:
           persist-credentials: false
       - id: targets
         env:
-          TARGET: ${{ inputs.target }}
-          MODE: ${{ inputs.mode }}
+          TARGET: ${{ inputs.target || 'linux-x64' }}
+          MODE: ${{ inputs.mode || 'build' }}
           ELECTRON_BUILD_RUNNER_LINUX_X64: ${{ vars.ELECTRON_BUILD_RUNNER_LINUX_X64 }}
           ELECTRON_BUILD_RUNNER_WINDOWS_X64: ${{ vars.ELECTRON_BUILD_RUNNER_WINDOWS_X64 }}
           ELECTRON_BUILD_RUNNER_MACOS_ARM64: ${{ vars.ELECTRON_BUILD_RUNNER_MACOS_ARM64 }}
@@ -59,7 +61,7 @@ jobs:
       - run: ${{ matrix.python }} vendor/electron/manage.py verify
   build:
     needs: [plan, validate]
-    if: inputs.mode == 'build'
+    if: github.event_name == 'push' || inputs.mode == 'build'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
@@ -71,6 +73,9 @@ jobs:
     env:
       DEPOT_TOOLS_WIN_TOOLCHAIN: '0'
       ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      OPENCRAFT_ELECTRON_ALLOW_STOCK: '0'
+      OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
+      OPENCRAFT_BUILD_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,7 +87,15 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Restore verified Linux fork runtime
+        id: native-cache
+        if: matrix.id == 'linux-x64'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/opencraft-electron-evidence
+          key: desktop-fork-v1-${{ matrix.id }}-${{ hashFiles('vendor/electron/**', '.github/workflows/electron-native-artifacts.yml') }}
       - name: Check build capacity before source download
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: ${{ matrix.python }} vendor/electron/ci.py preflight --target ${{ matrix.id }} --root "$RUNNER_TEMP"
       - name: Set native absolute paths
         # Python writes native Windows paths; MSYS strings must not reach Node.
@@ -97,16 +110,20 @@ jobs:
           PY
       - run: npm ci --no-audit --no-fund
       - name: Install depot_tools
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 https://chromium.googlesource.com/chromium/tools/depot_tools.git "$RUNNER_TEMP/depot_tools"
           echo "$RUNNER_TEMP/depot_tools" >> "$GITHUB_PATH"
       - name: Materialize and sync the fork
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
           ${{ matrix.python }} vendor/electron/manage.py checkout --root "$BUILD_ROOT"
           ${{ matrix.python }} vendor/electron/manage.py sync --root "$BUILD_ROOT"
       - name: Build Electron and dist.zip
+        if: steps.native-cache.outputs.cache-hit != 'true'
         run: ${{ matrix.python }} vendor/electron/manage.py build --root "$BUILD_ROOT" --jobs 8
       - name: Probe and stamp the native distribution
+        if: steps.native-cache.outputs.cache-hit != 'true'
         # Visible, focused probe on macOS/Windows; Linux owns an Xvfb display.
         run: |
           prefix=()
@@ -116,6 +133,7 @@ jobs:
             --distribution "$DISTRIBUTION" --source-root "$BUILD_ROOT" --evidence "$EVIDENCE"
           test -f "$DISTRIBUTION/opencraft-electron-desktop-artifact.json"
       - name: Bundle marker with the unchanged runtime archive
+        if: steps.native-cache.outputs.cache-hit != 'true'
         # Keep dist.zip intact: upload-artifact alone drops POSIX modes/links.
         run: |
           ${{ matrix.python }} - <<'PY'
@@ -126,13 +144,46 @@ jobs:
           shutil.copy2(Path(os.environ['BUILD_ROOT']) / 'src/out/OpenCraft/dist.zip', out / 'dist.zip')
           shutil.copy2(Path(os.environ['DISTRIBUTION']) / 'opencraft-electron-desktop-artifact.json', out)
           PY
+      - name: Save verified Linux fork runtime
+        if: matrix.id == 'linux-x64' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/opencraft-electron-evidence
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - name: Extract cached runtime for package inventory verification
+        if: steps.native-cache.outputs.cache-hit == 'true'
+        run: |
+          python3 - <<'PYRESTORE'
+          import os, runpy, shutil
+          from pathlib import Path
+          evidence, distribution = (Path(os.environ[key]) for key in ('EVIDENCE', 'DISTRIBUTION'))
+          extract = runpy.run_path('vendor/electron/prepare-desktop-artifact.py')['extract_archive']
+          extract(evidence / 'dist.zip', distribution)
+          shutil.copy2(evidence / 'opencraft-electron-desktop-artifact.json', distribution)
+          PYRESTORE
       - name: Build and package OpenCraft with the verified fork
         run: |
-          npm run prepare:dsh-runtime
           npm run build:electron:release
           ${{ matrix.python }} vendor/electron/ci.py package --target ${{ matrix.id }} --distribution "$DISTRIBUTION"
+      - name: Test final AppImage and record checksum
+        if: matrix.id == 'linux-x64'
+        run: |
+          cd apps/desktop/release
+          images=(*.AppImage)
+          test "${#images[@]}" = 1 && test -s "${images[0]}"
+          xvfb-run -a node ../e2e/appimage-smoke.mjs "${images[0]}"
+          sha256sum "${images[0]}" > "${images[0]}.sha256"
+      - name: Upload Linux desktop download
+        if: matrix.id == 'linux-x64'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: OpenCraft-AppImage-linux-x64-${{ github.sha }}
+          path: |
+            apps/desktop/release/*.AppImage
+            apps/desktop/release/*.AppImage.sha256
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
+        if: success()
         with:
           name: opencraft-electron-${{ matrix.id }}
           path: |
