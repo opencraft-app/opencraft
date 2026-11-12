@@ -1,0 +1,11 @@
+# Layer over the compose.yaml supplied with the same runtime release.
+services:
+  gateway:
+    image: ${OPENCRAFT_GATEWAY_IMAGE:?Set the Gateway image reference}
+    build: !reset null
+  brain:
+    image: ${OPENCRAFT_BRAIN_IMAGE:?Set the Brain image reference}
+    build: !reset null
+  hands:
+    image: ${OPENCRAFT_HANDS_IMAGE:?Set the Hands image reference}
+    build: !reset null
