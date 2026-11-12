@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location('electron_fork', Path(__file__).parents[1] / 'manage.py')
@@ -54,6 +55,28 @@ class ForkSourceTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(self.native.read_text(), 'native state available\n')
         self.assertTrue(first['sourceVerified'])
+
+    def test_sync_keeps_pinned_source_and_does_not_request_all_remote_refs(self):
+        fork = self.fork()
+        before = fork.checkout()
+        original_run = module.run
+        calls = []
+
+        def run(args, **kwargs):
+            if str(args[0]) == '/fixture/gclient':
+                calls.append(args)
+                self.assertEqual(kwargs['cwd'], self.root)
+                self.assertTrue((self.root / '.gclient').is_file())
+                return ''
+            return original_run(args, **kwargs)
+
+        with patch.object(module.shutil, 'which', return_value='/fixture/gclient'), patch.object(module, 'run', run):
+            after = fork.sync()
+        self.assertEqual(before, after)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--no-history', calls[0])
+        self.assertNotIn('--with_tags', calls[0])
+        self.assertNotIn('--with_branch_heads', calls[0])
 
     def test_dirty_source_is_preserved_and_rejected(self):
         self.native.write_text('local investigation\n', newline='\n')
