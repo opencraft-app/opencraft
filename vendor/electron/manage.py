@@ -179,8 +179,10 @@ class Fork:
             raise ValueError('existing .gclient differs; it was not overwritten')
         if not path.exists():
             path.write_text(config)
-        run([gclient, 'sync', '--no-history', '--with_branch_heads', '--with_tags'],
-            cwd=self.root)
+        # DEPS selects the required revisions, including individual release
+        # tags. Fetching every tag and branch head adds unrelated history to
+        # each sync and is unnecessary for a fixed native build.
+        run([gclient, 'sync', '--no-history'], cwd=self.root)
         return self.verify()
 
     def build(self, jobs):
