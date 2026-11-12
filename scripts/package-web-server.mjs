@@ -199,7 +199,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);
   if (complete) {
     if (!execution || executionProfile !== 'headless' || splitResources || (fullRelease && fullRelease.template.updater.bridge)) throw new Error('Full release requires an unsplit Headless package and non-bridge metadata');
-    manifest.files.push('full/'); manifest.license = 'Apache-2.0';
+    manifest.files.push('full/'); manifest.license = 'MIT-0';
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: web.sourceRevision, buildId: web.buildId, engines: fullRuntimeEngines });
     await prepareFullMetadata(packageRoot);

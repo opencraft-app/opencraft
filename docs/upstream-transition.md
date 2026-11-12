@@ -251,7 +251,7 @@ Actual provider integrations retain their protocol names. Persisted identifiers
 need explicit compatibility handling when renamed; copy editing cannot silently
 change saved selections or external contracts.
 
-Original core contributions use Apache-2.0. Third-party copyright, license and
+Original core contributions use MIT-0. Third-party copyright, license and
 required notices remain. Removing extra records does not establish redistribution
 rights, claim independent authorship or authorize publication. Do not resume
 implementation replacement work solely for a naming or archive cleanup.

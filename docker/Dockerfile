@@ -33,7 +33,7 @@ COPY --from=build /out/opencraft-server /opt/opencraft
 LABEL org.opencontainers.image.title="OpenCraft" \
       org.opencontainers.image.description="OpenCraft self-hosted Gateway, Brain and Hands runtime" \
       org.opencontainers.image.source="https://github.com/opencraft-app/opencraft" \
-      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.licenses="MIT-0" \
       org.opencontainers.image.version="${OPENCRAFT_BUILD_ID}" \
       org.opencontainers.image.revision="${OPENCRAFT_SOURCE_REVISION}"
 RUN chown root:root /opt/opencraft/runtime/browser/electron/chrome-sandbox \
