@@ -62,9 +62,10 @@ def preflight(target, root):
     required = ['git', 'node', 'npm']
     required += ['xcodebuild'] if sys.platform == 'darwin' else []
     required += ['pkg-config', 'xvfb-run'] if sys.platform == 'linux' else []
-    for command in required:
-        if not shutil.which(command):
-            raise ValueError('Provision build runner with ' + command)
+    missing = [command for command in required if not shutil.which(command)]
+    if missing:
+        raise ValueError(f'{target} runner has {free} GiB free; provision missing tools: '
+                         + ', '.join(missing))
     print(json.dumps({'target': target, 'freeGiB': free, 'platformVerified': True}))
 
 

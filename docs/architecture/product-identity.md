@@ -53,6 +53,11 @@ input, not the current package identity. Changing an identifier creates a separa
 installation; it does not update the old package or rename its data root.
 Downstream branding never authorizes a different core data root.
 
+The desktop bundle identifier changed from `dev.opencraft.workbench` to
+`app.opencraft.desktop`. The existing OpenCraft profile directory is retained.
+macOS permissions tied to the previous signing identity may need to be granted
+again, including microphone and speech recognition access.
+
 ### Authority rules
 
 1. One platform path resolver computes every canonical root before instance
