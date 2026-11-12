@@ -8,7 +8,7 @@ on:
       mode:
         description: Validate source on hosted runners, or build on provisioned large runners
         type: choice
-        options: [validate, build]
+        options: [validate, build, prepare-linux-runner]
         default: validate
       target:
         description: Native target (macos targets include arm64 and x64)
@@ -24,7 +24,17 @@ permissions:
   contents: read
 
 jobs:
+  prepare-linux-runner:
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'prepare-linux-runner' && vars.ELECTRON_BUILD_RUNNER_LINUX_X64 != ''
+    runs-on: ${{ fromJSON(vars.ELECTRON_BUILD_RUNNER_LINUX_X64 || '"ubuntu-24.04"') }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: vendor/electron/ensure-runner-private-tmp.sh
   plan:
+    if: inputs.mode != 'prepare-linux-runner'
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}

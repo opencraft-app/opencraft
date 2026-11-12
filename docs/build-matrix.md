@@ -819,7 +819,11 @@ On Debian or Ubuntu x64, run `vendor/electron/ensure-linux-build-deps.sh --insta
 to provision a build host, or select `install_linux_deps` in the manual build.
 The default `--check` mode reports missing packages and tests pkg-config and
 Xvfb. Xvfb also needs a writable `/tmp` inside the build environment. On
-systemd-managed runners this can be provided with `PrivateTmp=yes`. A
+dedicated systemd-managed runners dispatch `mode=prepare-linux-runner` to
+install the versioned `PrivateTmp=yes` drop-in. It restarts the runner service
+after the maintenance job exits and other active workers finish. Once the runner
+is online, dispatch the normal Linux build. Repeating preparation on a service
+with a working private temporary directory skips the restart. A
 provisioned host skips apt and sudo on subsequent invocations. Node and
 Python versions are selected separately by the workflow. The fork sync supplies
 the pinned GN, Ninja, Clang and target sysroot.
