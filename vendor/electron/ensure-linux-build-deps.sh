@@ -54,8 +54,14 @@ if (( ${#missing[@]} )); then
     fi
     elevate=(sudo -n)
   fi
-  "${elevate[@]}" apt-get -o APT::Update::Error-Mode=any update
-  "${elevate[@]}" env DEBIAN_FRONTEND=noninteractive apt-get \
+  # apt drops privileges to _apt for signature checks. Some runners have a
+  # private /tmp. Give apt a sticky scratch directory shared only for this run.
+  apt_tmp=$("${elevate[@]}" mktemp -d /var/tmp/opencraft-apt.XXXXXXXX)
+  trap '"${elevate[@]}" rm -rf -- "$apt_tmp"' EXIT
+  "${elevate[@]}" chmod 1777 "$apt_tmp"
+  apt=("${elevate[@]}" env "TMPDIR=$apt_tmp" DEBIAN_FRONTEND=noninteractive apt-get)
+  "${apt[@]}" -o APT::Update::Error-Mode=any update
+  "${apt[@]}" \
     -o DPkg::Lock::Timeout=120 install -y --no-install-recommends "${missing[@]}"
   check_packages
   if (( ${#missing[@]} )); then echo "Still missing: ${missing[*]}" >&2; exit 1; fi
