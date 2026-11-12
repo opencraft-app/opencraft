@@ -32,7 +32,6 @@ packages=(
   libnss3-dev libx11-xcb-dev libxkbcommon-dev libxshmfence-dev
   desktop-file-utils fakeroot squashfs-tools fonts-liberation xauth x11-utils xvfb
 )
-if [[ ! -w /tmp ]]; then packages+=(bubblewrap); fi
 missing=()
 check_packages() {
   missing=()
@@ -56,7 +55,7 @@ if (( ${#missing[@]} )); then
     elevate=(sudo -n)
   fi
   # apt drops privileges to _apt for signature checks. Some runners have a
-  # private /tmp. Give apt a sticky scratch directory shared only for this run.
+  # restricted /tmp. Give apt a sticky scratch directory for this run.
   apt_tmp=$("${elevate[@]}" mktemp -d /var/tmp/opencraft-apt.XXXXXXXX)
   trap '"${elevate[@]}" rm -rf -- "$apt_tmp"' EXIT
   "${elevate[@]}" chmod 1777 "$apt_tmp"
@@ -68,6 +67,12 @@ if (( ${#missing[@]} )); then
   if (( ${#missing[@]} )); then echo "Still missing: ${missing[*]}" >&2; exit 1; fi
 fi
 pkg-config --exists gtk+-3.0 nss gbm alsa
-# Query the actual X server so a failed display cannot pass preflight.
-"$(dirname "$0")/run-in-xvfb.sh" xdpyinfo >/dev/null
+# Xvfb uses /tmp for both its display lock and compiled keyboard map, even
+# when TMPDIR points elsewhere. Fail here instead of retrying ten displays.
+if ! probe=$(mktemp /tmp/opencraft-xvfb.XXXXXXXX); then
+  echo 'Xvfb needs writable /tmp. Give the runner service a private /tmp or use a build container.' >&2
+  exit 1
+fi
+rm -- "$probe"
+xvfb-run -a xdpyinfo >/dev/null
 echo "Linux Electron build dependencies and Xvfb are ready."
