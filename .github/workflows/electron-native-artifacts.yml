@@ -15,6 +15,10 @@ on:
         type: choice
         options: [linux-x64, all, windows-x64, macos-arm64, macos-x64]
         default: linux-x64
+      install_linux_deps:
+        description: Install missing system packages on the selected Linux build runner
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -87,6 +91,14 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+      - name: Ensure Linux build dependencies
+        if: matrix.id == 'linux-x64'
+        env:
+          INSTALL_DEPS: ${{ inputs.install_linux_deps }}
+        run: |
+          mode=--check
+          if [[ "$INSTALL_DEPS" == true ]]; then mode=--install; fi
+          vendor/electron/ensure-linux-build-deps.sh "$mode"
       - name: Restore verified Linux fork runtime
         id: native-cache
         if: matrix.id == 'linux-x64'

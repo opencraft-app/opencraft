@@ -815,6 +815,13 @@ JSON labels. Source validation runs on a hosted runner. The native build caches
 the probed fork archive and its inventory by target and build inputs. Every
 package verifies the extracted distribution against the checked-out fork.
 
+On Debian or Ubuntu x64, run `vendor/electron/ensure-linux-build-deps.sh --install`
+to provision a build host, or select `install_linux_deps` in the manual build.
+The default `--check` mode reports missing packages and tests pkg-config and
+Xvfb. A provisioned host skips apt and sudo on subsequent invocations. Node and
+Python versions are selected separately by the workflow. The fork sync supplies
+the pinned GN, Ninja, Clang and target sysroot.
+
 The workflow launches the final AppImage under Xvfb, checks the renderer and
 desktop preload, and uploads the AppImage and SHA-256 checksum as
 `OpenCraft-AppImage-linux-x64-<commit>`. Download that Actions artifact for the
