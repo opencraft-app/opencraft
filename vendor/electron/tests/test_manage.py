@@ -65,7 +65,7 @@ class ForkSourceTests(unittest.TestCase):
         def run(args, **kwargs):
             if str(args[0]) == '/fixture/gclient':
                 calls.append(args)
-                self.assertEqual(kwargs['cwd'], self.root)
+                self.assertEqual(Path(kwargs['cwd']).resolve(), self.root.resolve())
                 self.assertTrue((self.root / '.gclient').is_file())
                 return ''
             return original_run(args, **kwargs)
