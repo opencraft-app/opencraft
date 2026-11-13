@@ -63,14 +63,15 @@ test("standalone Host reports a stable OS machine identity without a reachable e
 });
 
 test("Host health reports all eagerly opened stores", async () => {
-  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1" });
+  const directory = await mkdtemp(join(tmpdir(), "oc-host-health-"));
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", dataDirectory: directory });
   try {
     const url = new URL(host.websocketUrl); url.protocol = "http:"; url.pathname = "/health"; url.search = "";
     const health = await (await fetch(url)).json();
     assert.equal(health.ok, true);
     assert.deepEqual(health.storage.map((item: { name: string; status: string }) => [item.name, item.status]),
       ["session-routing", "threads", "executions", "host-documents", "managed-connectors", "server-collaboration", "interrupted-turn-recovery", "conversation-schedules"].map(name => [name, "fresh"]));
-  } finally { await host.close(); }
+  } finally { await host.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
 test("Host bind failure closes its thread catalog", async t => {
