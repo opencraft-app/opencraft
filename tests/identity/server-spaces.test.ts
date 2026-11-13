@@ -126,8 +126,11 @@ test('Native delivery filters spaces and revokes an already observed conversatio
   assert.deepEqual(JSON.parse(bob.project(bobList)!).result.data.map((r:{id:string})=>r.id),['team-thread']);
   assert(await bob.receive(JSON.stringify({id:12,method:'turn/start',params:{threadId:'old-thread'}})));
   assert(bobFrames.some(frame=>JSON.parse(frame).id===12&&JSON.parse(frame).error));
+  const usage = (id:number) => JSON.stringify({id,method:'opencraft/token-usage/query',params:{threadId:'team-thread'}});
+  assert.equal(await bob.receive(usage(40)),false,'assigned space members can query conversation usage');
   policy.created('codex','team-thread',f.alice);
   policy.set('codex','team-thread','private',1,f.alice);
+  assert.equal(await bob.receive(usage(41)),true,'private conversation usage remains protected');
   await bob.receive(JSON.stringify({id:20,method:'opencraft/server-spaces',params:{action:'list'}}));
   const directory=JSON.parse(bobFrames.find(frame=>JSON.parse(frame).id===20)!).result as ServerSpaceDirectory;
   assert(!directory.assignments.some(row=>row.threadId==='team-thread'),'space directory must not reveal a private Thread ID');
@@ -136,6 +139,7 @@ test('Native delivery filters spaces and revokes an already observed conversatio
   const observed=JSON.stringify({id:21,result:{data:rows}});await bob.prepare(observed);bob.project(observed);
   await runtime.command(f.alice,{action:'remove',spaceId:space.spaceId,actorId:f.bob.actorId});
   assert(bobFrames.some(frame=>JSON.parse(frame).method==='opencraft/thread-access/revoked'));
+  assert.equal(await bob.receive(usage(42)),true,'removed members cannot query conversation usage');
   assert.equal(bob.project(JSON.stringify({method:'thread/updated',params:{threadId:'team-thread'}})),null);
 });
 

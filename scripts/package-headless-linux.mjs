@@ -1,5 +1,5 @@
-import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
 #!/usr/bin/env node
+import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
 import { buildDshRoutingRuntime } from './package-dsh-routing-runtime.mjs';
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
