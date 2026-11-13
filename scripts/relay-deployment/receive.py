@@ -62,7 +62,7 @@ def health(revision):
 def initialize_hub():
     credential = json.loads(Path('/etc/opencraft-relay/operator.json').read_text())['credential']
     endpoint = Path('/etc/opencraft-relay/endpoint').read_text().strip()
-    url = 'http://127.0.0.1:18090/__opencraft_hub/settings'
+    url = 'http://127.0.0.1:18090/__opencraft_hub/operator'
     headers = {'Authorization': 'Bearer ' + credential, 'Content-Type': 'application/json'}
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as response:
         snapshot = json.load(response)
@@ -111,7 +111,7 @@ def activate(archive, revision, digest):
             health(revision)
             if previous is None:
                 initialize_hub()
-        except Exception:
+        except Exception as error:
             if previous is not None:
                 replace_link(previous)
                 subprocess.run(['systemctl', 'restart', SERVICE], check=True)
@@ -119,7 +119,7 @@ def activate(archive, revision, digest):
             else:
                 subprocess.run(['systemctl', 'stop', SERVICE], check=True)
                 current.unlink(missing_ok=True)
-            raise RuntimeError('Candidate failed; previous release restored or first deployment stopped')
+            raise RuntimeError('Candidate failed (' + type(error).__name__ + '); previous release restored or first deployment stopped')
     print(json.dumps({'status': 'deployed', 'revision': revision}))
 
 
