@@ -527,3 +527,8 @@ expired preview must keep its 403 rather than redirect to the server chooser.
 Other Workbench HTML keeps its existing rewrite behavior and bound.
 Regression: `tests/protocol/relay-html-preview.test.ts` exercises the full selected
 Relay/tunnel/instance/ticket path with a report larger than the rewrite limit.
+
+## Dedicated CVM and automatic updates
+
+For a transit-only CVM, restricted deployment credentials, immutable artifacts,
+health verification and rollback, see [CVM deployment](relay-cvm-deployment.md).
