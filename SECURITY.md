@@ -223,3 +223,38 @@ change keeps the API used by the Cursor bridge. `npm ci`, `npm audit`, the
 Cursor bridge typecheck/build, the agent-bridge suite (314 pass, 1 skipped) and
 a Node smoke importing connect-node and the Cursor SDK pass; OSV reports 0
 hits over the lockfile and installed tree.
+
+### Compatible dependency remediation (2026-11-13)
+
+The root workspace and the isolated DSH runtime move `hono` from 4.13.11
+(root) and 4.13.13 (DSH) to 4.13.16
+([GHSA-3gg2-335m-rxc6](https://github.com/advisories/GHSA-3gg2-335m-rxc6),
+[GHSA-46wx-v44x-9hh2](https://github.com/advisories/GHSA-46wx-v44x-9hh2),
+[GHSA-4h7h-rv7c-7m2v](https://github.com/advisories/GHSA-4h7h-rv7c-7m2v),
+[GHSA-4m76-xfj5-7975](https://github.com/advisories/GHSA-4m76-xfj5-7975) and
+[GHSA-h7mg-cq63-vhpq](https://github.com/advisories/GHSA-h7mg-cq63-vhpq)) and
+`@hono/node-server` from 2.1.3 to 2.1.6
+([GHSA-jpvv-r467-5p4w](https://github.com/advisories/GHSA-jpvv-r467-5p4w) and
+[GHSA-qv5m-9pm6-hqp3](https://github.com/advisories/GHSA-qv5m-9pm6-hqp3)).
+Both are patch releases within the existing major lines. The consumers are
+`@modelcontextprotocol/sdk` 1.32.2 under `@opencraft/connector-host` and
+1.32.1 under the DSH MCP client. The SDK imports `getRequestListener` from
+`@hono/node-server` for its Node HTTP adapter, and the patch keeps that API.
+
+`npm ci` exits 0 in both roots and `npm audit` reports 0. The MCP transport
+tests (10 pass), the typechecks for `@opencraft/session-capabilities` and
+`@opencraft/connector-host`, and a Node smoke that serves a Hono route through
+`@hono/node-server` and calls `getRequestListener` pass. OSV reports 0 hits
+over the root lockfile (1,668 entries) and installed tree (1,605 entries).
+
+The isolated DSH runtime still reports one finding in both its lockfile (506
+entries) and installed tree (448 entries):
+`@deepseek-ai/dsh-client-connection` 0.1.1-rc.2
+([GHSA-8m2g-8cgm-3vcp](https://github.com/advisories/GHSA-8m2g-8cgm-3vcp)).
+The 2026-11-13 registry recheck still finds 0.1.1-rc.2 as the newest release in
+the 0.1.1 line; the first published fixed release is 0.1.2-alpha.2, and
+0.2.2-rc.2 is now published under `next` alongside the 0.2.2-rc.1 `latest`
+tag. `apps/local-agent-host` still requires the `/api/events.mux` and
+`/api/events.host` downlinks, which the fixed engines replaced with the
+launch-token/signed-cookie browser flow, so the coordinated engine migration
+remains required instead of a dependency-only update.
