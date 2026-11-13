@@ -1,0 +1,184 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "c82811c8-83d8-4f4a-b318-b06dad290f9b",
+  "prevId": "d9b88b39-360a-4f33-870b-2e912c039355",
+  "tables": {
+    "opencraft_catalog_sync": {
+      "name": "opencraft_catalog_sync",
+      "columns": {
+        "archived": {
+          "name": "archived",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_success_ms": {
+          "name": "last_success_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "watermark": {
+          "name": "watermark",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "last_full_ms": {
+          "name": "last_full_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "state": {
+          "name": "state",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "opencraft_catalog_sync_check_0": {
+          "name": "opencraft_catalog_sync_check_0",
+          "value": "archived IN (0,1)"
+        },
+        "opencraft_catalog_sync_check_1": {
+          "name": "opencraft_catalog_sync_check_1",
+          "value": "state IN ('syncing','ready','error')"
+        }
+      }
+    },
+    "opencraft_thread_catalog": {
+      "name": "opencraft_thread_catalog",
+      "columns": {
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "metadata_json": {
+          "name": "metadata_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "real",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "archived": {
+          "name": "archived",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "observed_at_ms": {
+          "name": "observed_at_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted": {
+          "name": "deleted",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "0"
+        }
+      },
+      "indexes": {
+        "opencraft_thread_catalog_recency": {
+          "name": "opencraft_thread_catalog_recency",
+          "columns": [
+            "archived",
+            "deleted",
+            "updated_at DESC",
+            "thread_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "opencraft_thread_catalog_check_0": {
+          "name": "opencraft_thread_catalog_check_0",
+          "value": "archived IN (0,1)"
+        },
+        "opencraft_thread_catalog_check_1": {
+          "name": "opencraft_thread_catalog_check_1",
+          "value": "deleted IN (0,1)"
+        }
+      }
+    },
+    "opencraft_threads": {
+      "name": "opencraft_threads",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "document": {
+          "name": "document",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "opencraft_thread_catalog_recency": {
+        "columns": {
+          "updated_at DESC": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

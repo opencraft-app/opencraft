@@ -29,7 +29,7 @@ test('docs-only and empty diffs need no build; main and weekly runs still audit 
 test('platform source never starts Electron, Expo or macOS builds automatically', () => {
   assert.deepEqual(planChanges(['apps/mobile/src/app.tsx']), { ...emptyPlan, targets: webTargets });
   for (const path of ['apps/local-agent-host/src/main.ts', 'apps/opencraft-daemon/src/index.ts',
-    'runtime/dsh/src/index.ts', 'apps/workbench-electron/native/speech.swift']) {
+    'runtime/dsh/src/index.ts', 'apps/desktop/native/speech.swift']) {
     assert.deepEqual(planChanges([path]), { ...emptyPlan, headlessTests: true }, path);
   }
 });

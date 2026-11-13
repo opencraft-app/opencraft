@@ -60,7 +60,7 @@
 - 主 Composer 在 Overlay 里实际提交的 target 为原 Host/parent Thread；不是只检查草稿文本保留。
 - 临时 fork 真实 AppServer 测试通过父/子各一轮本地合成模型运行；无外部模型请求。
 - macOS arm64 ad-hoc Preview 实机：底部按住高度 342px；终端移下、移回后分别输出 `after-transfer:retained` 和 `after-return:retained`，证明同一 shell 状态保留。截图已人工检查。
-- 最终产物：`apps/workbench-electron/release/workspace-model-preview-final/mac-arm64/OpenCraft Preview.app`；codesign --verify --deep --strict 通过。使用独立测试 profile，不覆盖用户已有预览。
+- 最终产物：`apps/desktop/release/workspace-model-preview-final/mac-arm64/OpenCraft Preview.app`；codesign --verify --deep --strict 通过。使用独立测试 profile，不覆盖用户已有预览。
 - 文档检查无警告；diff whitespace 检查通过。`validate_change_impact --staged` 通过但当前没有 staged 文件，因此该项不作为本轮映射覆盖的独立证据；正式领域文档与 design 已同步更新。
 
 ### 明确未完成/不支持

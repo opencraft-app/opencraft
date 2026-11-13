@@ -361,7 +361,6 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
       </button></h3>
       <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
-        {key === "mine" ? <div className="sidebar-access-description">{text("sidebar.access.onlyYou", "Only you can see these conversations")}</div> : null}
         {key === "mine" && !rows.length ? <div className="sidebar-activity-empty">{text("sidebar.access.empty", "No private conversations yet")}</div> : null}
         {visible.map(thread => <div key={identity(thread)}>
           {dates.has(thread) ? <h4 className="sidebar-activity-group__heading">{dates.get(thread)}</h4> : null}

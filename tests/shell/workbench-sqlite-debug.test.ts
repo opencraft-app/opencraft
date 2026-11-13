@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { SqliteDebugReader } from "../../apps/workbench-electron/src/sqlite-debug-reader";
+import { SqliteDebugReader } from "../../apps/desktop/src/sqlite-debug-reader";
 
 test("SQLite debugger reads only fixed OpenCraft databases with bounded pages", () => {
   const directory = mkdtempSync(join(tmpdir(), "opencraft-sqlite-debug-"));

@@ -5,7 +5,7 @@ const {_electron}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??"playwri
 const root=await mkdtemp("/tmp/oc-pane-");
 const executablePath=process.env.OPENCRAFT_ELECTRON_EXECUTABLE??resolve("node_modules/electron/dist/Electron.app/Contents/MacOS/Electron");
 const env={...process.env,OPENCRAFT_MODEL_STORAGE_DIRECTORY:join(root,"models")};delete env.ELECTRON_RUN_AS_NODE;
-const app=await _electron.launch({executablePath,args:[...(process.env.OPENCRAFT_PACKAGED_SMOKE==="1"?[]:[resolve("apps/workbench-electron")]),`--user-data-dir=${join(root,"profile")}`],env});
+const app=await _electron.launch({executablePath,args:[...(process.env.OPENCRAFT_PACKAGED_SMOKE==="1"?[]:[resolve("apps/desktop")]),`--user-data-dir=${join(root,"profile")}`],env});
 try{
   const page=await app.firstWindow();
   // tsx/esbuild annotates nested function names; supply its inert helper only

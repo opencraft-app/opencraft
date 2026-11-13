@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { WebSocket, WebSocketServer } from "ws";
 import { MessagePortAppHostClient } from "../../packages/app-host-client/src/index.ts";
-import { OpenCraftDaemonClientManager } from "../../apps/workbench-electron/src/daemon-client.ts";
+import { OpenCraftDaemonClientManager } from "../../apps/desktop/src/daemon-client.ts";
 import { readGatewayUpdateIntent } from './gateway-update-intent.mjs';
 
 const releaseRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));

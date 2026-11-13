@@ -8,7 +8,7 @@ import {
   desktopPreviewProduct,
   desktopProduct,
   resolveDesktopProduct,
-} from "../../apps/workbench-electron/src/product-identity.ts";
+} from "../../apps/desktop/src/product-identity.ts";
 
 import { resolveWorkbenchProductId } from "../../apps/workbench-web/src/workbench-product.ts";
 
@@ -40,9 +40,10 @@ test("all workspace packages use the OpenCraft scope", () => {
 
 
 test("three public hosts agree on OpenCraft branding and identity", () => {
-  const electron = json("apps/workbench-electron/package.json");
+  const electron = json("apps/desktop/package.json");
   const expo = json("apps/mobile/app.json").expo;
   assert.equal(electron.build.productName, desktopProduct.displayName);
+  assert.equal(desktopProduct.applicationId, "app.opencraft.desktop");
   assert.equal(electron.build.appId, desktopProduct.applicationId);
   assert.equal(
     electron.devDependencies.electron,
@@ -54,7 +55,7 @@ test("three public hosts agree on OpenCraft branding and identity", () => {
   assert.match(read("apps/workbench-web/index.html"), /<title>OpenCraft<\/title>/u);
   assert.equal(desktopProduct.profileDirectoryName, "OpenCraft");
   assert.deepEqual(desktopProduct.legacyProfileDirectoryNames, []);
-  const main = read("apps/workbench-electron/src/main.ts");
+  const main = read("apps/desktop/src/main.ts");
   assert.ok(main.indexOf("prepareDesktopDirectories") < main.indexOf("app.requestSingleInstanceLock()"));
   assert.ok(main.indexOf('appendSwitch("user-data-dir"') < main.indexOf("app.requestSingleInstanceLock()"));
   assert.ok(main.indexOf('app.setPath("userData"') < main.indexOf("app.requestSingleInstanceLock()"));
@@ -63,7 +64,7 @@ test("three public hosts agree on OpenCraft branding and identity", () => {
   assert.match(main, /preparedDirectories\.status === "legacy-active"/u);
   assert.deepEqual(resolveDesktopProduct("OpenCraft"), desktopProduct);
   assert.deepEqual(resolveDesktopProduct("OpenCraft Preview"), desktopPreviewProduct);
-  assert.equal(desktopPreviewProduct.applicationId, "dev.opencraft.workbench.preview");
+  assert.equal(desktopPreviewProduct.applicationId, "app.opencraft.desktop.preview");
   assert.equal(desktopPreviewProduct.profileDirectoryName, "OpenCraft Preview");
   assert.deepEqual(desktopPreviewProduct.legacyProfileDirectoryNames, []);
   assert.match(main, /resolveDesktopProduct\(executableName\)/u);

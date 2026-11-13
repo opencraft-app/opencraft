@@ -85,7 +85,7 @@ must preserve existing behavior; incompatible changes need a new API version and
 an explicit migration proposal. Current host compatibility is API **1**, not a
 version-range resolver.
 
-Original contributions use Apache-2.0. Preserve third-party notices and record
+Original contributions use MIT-0. Preserve third-party notices and record
 source provenance for imported/adapted material in the owning integration's
 source records and license notices. Describe imported material, its license and
 any notice changes in the pull request; repository publication does not establish

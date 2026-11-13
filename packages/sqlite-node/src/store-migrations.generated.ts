@@ -238,7 +238,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "a8cfe3f290a0e5abcecda5101bdd2bbaf677c522d8c367e6fd487f29ba70916b"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 2,
+        "name": "0001_messy_bromley",
+        "sql": "CREATE TABLE `opencraft_catalog_sync` (\n\t`archived` integer PRIMARY KEY,\n\t`last_success_ms` integer,\n\t`watermark` real,\n\t`last_full_ms` integer,\n\t`state` text NOT NULL,\n\tCONSTRAINT \"opencraft_catalog_sync_check_0\" CHECK(archived IN (0,1)),\n\tCONSTRAINT \"opencraft_catalog_sync_check_1\" CHECK(state IN ('syncing','ready','error'))\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `opencraft_thread_catalog` (\n\t`thread_id` text PRIMARY KEY NOT NULL,\n\t`metadata_json` text NOT NULL,\n\t`updated_at` real NOT NULL,\n\t`archived` integer NOT NULL,\n\t`observed_at_ms` integer NOT NULL,\n\t`revision` integer NOT NULL,\n\t`deleted` integer DEFAULT 0 NOT NULL,\n\tCONSTRAINT \"opencraft_thread_catalog_check_0\" CHECK(archived IN (0,1)),\n\tCONSTRAINT \"opencraft_thread_catalog_check_1\" CHECK(deleted IN (0,1))\n) STRICT;\n--> statement-breakpoint\nCREATE INDEX `opencraft_thread_catalog_recency` ON `opencraft_thread_catalog` (`archived`, `deleted`, updated_at DESC, `thread_id`);"
+      }
+    ]
   },
   "thread-identity-database": {
     "baseline": [

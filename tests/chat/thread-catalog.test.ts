@@ -71,10 +71,10 @@ test("ThreadCatalog adopts legacy database with matching schema and rejects mism
       }
       const catalog = new ThreadCatalog(path);
       try {
-        assert.equal(catalog.outcome.status, "adopted");
+        assert.equal(catalog.outcome.status, "migrated");
         assert.ok(catalog.outcome.backupPath);
         const files = await readdir(directory);
-        assert.ok(files.some(f => f.includes(".pre-v1-")));
+        assert.ok(files.some(f => /\.pre-v\d+-/.test(f)));
         assert.equal(files.some(f => f.includes(".legacy-")), false);
 
         if (matching) {

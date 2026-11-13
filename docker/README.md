@@ -61,6 +61,33 @@ Internet-facing installation still needs the existing HTTPS and admission
 configuration; do not expose a shared instance merely by changing the listener
 to `0.0.0.0`.
 
+## Deploy prebuilt role images
+
+Use the base Compose file supplied with your runtime release. If your distributor
+provides separate Gateway, Brain and Hands images, add their three full references
+to the deployment `.env` alongside the storage and user settings above. Set
+`OPENCRAFT_GATEWAY_IMAGE`, `OPENCRAFT_BRAIN_IMAGE` and `OPENCRAFT_HANDS_IMAGE` to
+compatible images from the same release. Digest references pin the exact bytes.
+From the `docker/` directory run:
+
+```sh
+docker compose -f compose.yaml -f compose.role-images.yaml config --images
+docker compose -f compose.yaml -f compose.role-images.yaml pull
+docker compose -f compose.yaml -f compose.role-images.yaml up -d --no-build --wait
+```
+
+The overlay selects prebuilt images and inherits service commands, health checks
+and mounts from the base file. To roll back this configuration, restore the
+previous three image references and repeat the commands. The single-image
+transaction command below manages deployments using `OPENCRAFT_IMAGE`.
+
+To preserve absolute project paths, set both `OPENCRAFT_HOST_WORKSPACE_DIR` and
+`OPENCRAFT_WORKSPACE_DIR` to the project parent (for example `/srv/projects`).
+All three containers then see the same project paths. Writes in that workspace
+reach the host under the configured deployment UID and GID. Hands uses its own
+container root filesystem and bind-mounted execution state. Keep private
+application state outside the shared project tree.
+
 ## Storage and permissions
 
 `OPENCRAFT_HOST_DATA_DIR` is mounted as `OPENCRAFT_DATA_DIR` in Brain and

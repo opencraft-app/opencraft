@@ -96,6 +96,49 @@ test("native durable session streams, persists and restores without DSH", async 
   await assert.rejects(reopened.request("turn/start", { threadId, model: "dsh:model", input: [{ type: "text", text: "wrong engine" }] }, noTools), /belongs to Pi/);
 });
 
+test("Pi publishes full Turn bodies in live and cached history", async t => {
+  const f = await fixture(t, [fauxAssistantMessage("stored Pi reply")]);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  const done = completed(f.engine);
+  const started = await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "history" }] }, noTools);
+  const finished = await done;
+  const params = { threadId: thread.id, limit: 10, itemsView: "full", sortDirection: "desc" };
+  const page = await f.engine.request("thread/turns/list", params, noTools);
+  assert.equal(page.data[0].items.find((item: any) => item.type === "agentMessage").text, "stored Pi reply");
+  assert.equal(started.turn.itemsView, "full");
+  assert.equal(finished.itemsView, "full");
+  assert.equal(page.data[0].itemsView, "full");
+  const cached = await f.engine.request("thread/turns/list", params, noTools);
+  assert.deepEqual(cached, page);
+});
+
+test("Pi rebuilds legacy transcript projections before serving full history", async t => {
+  const f = await fixture(t, [fauxAssistantMessage("legacy cached reply")]);
+  const { thread } = await f.engine.request("thread/start", { model: piModel("faux", "faux-1"), cwd: f.directory }, noTools);
+  const done = completed(f.engine);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "history" }] }, noTools);
+  await done;
+  const metadata = (await f.engine.request("thread/read", { threadId: thread.id, includeTurns: false }, noTools)).thread;
+  const turns = (await f.engine.request("thread/turns/list", { threadId: thread.id, limit: 10, itemsView: "full" }, noTools)).data;
+  await f.engine.close();
+  const { TranscriptReadCache, observeNativeTranscriptFiles } = await import("@opencraft/native-history-node");
+  const legacy = new TranscriptReadCache(f.directory, {
+    readThread: async () => metadata,
+    observeSnapshotSource: async () => {
+      const file = join(f.directory, `${thread.id}.sqlite`);
+      return observeNativeTranscriptFiles(f.directory, [file, `${file}-wal`], JSON.stringify(["pi", f.directory, thread.id]));
+    },
+    listTurns: async () => ({ data: turns.map((turn: any) => ({ ...turn, itemsView: "complete" })), nextCursor: null }),
+  });
+  await legacy.page(thread.id, null, 10);
+  await legacy.close();
+  const reopened = new PiEngine({ directory: f.directory, cwd: f.directory, models: fixtureModels([]).models });
+  t.after(() => reopened.close());
+  const page = await reopened.request("thread/turns/list", { threadId: thread.id, limit: 10, itemsView: "full" }, noTools);
+  assert.equal(page.data[0].itemsView, "full");
+  assert.equal(page.data[0].items.find((item: any) => item.type === "agentMessage").text, "legacy cached reply");
+});
+
 test("platform tool calls are namespaced and use the live owner", async t => {
   const f = await fixture(t, [fauxAssistantMessage([fauxToolCall("opencraft_0_lookup", { key: "one" }, { id: "tool-one" })], { stopReason: "toolUse" }), fauxAssistantMessage("done")]);
   let called = 0;

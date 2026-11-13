@@ -46,12 +46,12 @@
   },
   {
     "id": "ui-preferences-store",
-    "owner": "apps/workbench-electron/src/ui-preferences-store.ts",
+    "owner": "apps/desktop/src/ui-preferences-store.ts",
     "index": 0
   },
   {
     "id": "connector-configuration-store",
-    "owner": "apps/workbench-electron/src/connector-configuration-store.ts",
+    "owner": "apps/desktop/src/connector-configuration-store.ts",
     "index": 0
   },
   {

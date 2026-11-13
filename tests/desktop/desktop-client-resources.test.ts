@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { SqliteClientResources } from "@opencraft/document-storage/client-resources-sqlite";
-import { createDesktopClientResourcePort } from "../../apps/workbench-electron/src/client-resource-port.js";
+import { createDesktopClientResourcePort } from "../../apps/desktop/src/client-resource-port.js";
 
 const key = { namespace: "account-a", name: "thread-catalog", id: "host-1", authority: "remote" } as const;
 const record = { version: 2, savedAt: 1, value: { rows: [], complete: true } };

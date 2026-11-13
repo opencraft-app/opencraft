@@ -15,7 +15,7 @@ debug_port="${OPENCRAFT_MAC_DEBUG_PORT:-9223}"
 remote="${mac_ssh_user}@${mac_ssh_host}"
 build_log="/tmp/opencraft-mac-build.log"
 runtime_log="/tmp/opencraft-mac-live.log"
-app_bundle="${mac_repo}/apps/workbench-electron/release/mac-arm64/OpenCraft.app"
+app_bundle="${mac_repo}/apps/desktop/release/mac-arm64/OpenCraft.app"
 app_binary="${app_bundle}/Contents/MacOS/OpenCraft"
 
 ssh_args=(
@@ -95,7 +95,7 @@ rsync -az \
 
 status "building macOS arm64 release"
 if ! ssh "${ssh_args[@]}" "${remote}" \
-  "export PATH=${q_mac_node_bin}:\$PATH; cd ${q_mac_repo}; : > ${q_build_log}; { npm ci --no-audit --no-fund && npm run build:electron:release && cd apps/workbench-electron && CSC_IDENTITY_AUTO_DISCOVERY=false ../../node_modules/.bin/electron-builder --mac dir --arm64; } >> ${q_build_log} 2>&1"; then
+  "export PATH=${q_mac_node_bin}:\$PATH; cd ${q_mac_repo}; : > ${q_build_log}; { npm ci --no-audit --no-fund && npm run build:electron:release && cd apps/desktop && CSC_IDENTITY_AUTO_DISCOVERY=false ../../node_modules/.bin/electron-builder --mac dir --arm64; } >> ${q_build_log} 2>&1"; then
   printf '[opencraft-mac] build failed; remote log follows:\n' >&2
   ssh "${ssh_args[@]}" "${remote}" "tail -n 160 ${q_build_log}" >&2 || true
   exit 1

@@ -373,7 +373,7 @@ apps/workbench-web/src/browser/
   browser-panel-plugin.tsx
   browser-toolbar.tsx
 
-apps/workbench-desktop/src/browser/
+apps/desktop/src/browser/
   electron-browser-host.ts
   electron-browser-ipc.ts
 ```

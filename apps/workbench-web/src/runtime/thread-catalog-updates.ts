@@ -1,8 +1,8 @@
 import type { InfiniteData, QueryClient, QueryKey } from "@tanstack/react-query";
 import type { ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
-import type { ThreadCatalogChange, ThreadCatalogMutation } from "@opencraft/appserver-protocol";
+import type { ThreadCatalogChange, ThreadCatalogFact } from "@opencraft/appserver-protocol";
 
-type Fact = { readonly sequence: number; readonly change: Exclude<ThreadCatalogMutation, { type: "invalidate" }> };
+type Fact = { readonly sequence: number; readonly change: ThreadCatalogFact };
 const journals = new WeakMap<QueryClient, Map<string, ThreadCatalogUpdates>>();
 const boundary = "__opencraftCatalogReadBoundary";
 
@@ -25,6 +25,11 @@ export class ThreadCatalogUpdates {
     if (this.sources.size > 32) this.sources.delete(this.sources.keys().next().value!);
     const change = event.change;
     if (change.type === "invalidate") return;
+    // A batch carries one publisher revision; apply its facts in order, notify once.
+    for (const fact of change.type === "batch" ? change.changes : [change]) this.receiveFact(fact);
+    for (const listener of this.listeners) listener();
+  }
+  private receiveFact(change: ThreadCatalogFact): void {
     const id = change.type === "upsert" ? change.thread.id : change.threadId;
     const previous = this.facts.get(id)?.change;
     let merged = change;
@@ -35,7 +40,6 @@ export class ThreadCatalogUpdates {
       else if (previous?.type === "patch") merged = { ...previous, ...change };
     }
     this.facts.set(id, { sequence: ++this.sequence, change: merged });
-    for (const listener of this.listeners) listener();
   }
   project(base: ThreadListResponse | undefined): ThreadListResponse | undefined {
     if (!this.facts.size) return base;

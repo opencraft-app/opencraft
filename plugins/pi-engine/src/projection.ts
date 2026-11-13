@@ -1,9 +1,10 @@
 import { CompactionEntry, UserEntry } from "@earendil-works/pi-durable";
 import type { PiSnapshot } from "./session.js";
 import { expiredPiSteers } from "./steering.js";
+import type { AppServerTurn } from "@opencraft/appserver-protocol";
 
 type Value = Record<string, any>;
-export type PiTurn = Value & { id: string };
+export type PiTurn = Value & Pick<AppServerTurn, "id" | "itemsView">;
 export const textOf = (content: any): string => typeof content === "string" ? content : (content ?? []).filter((part: Value) => part.type === "text").map((part: Value) => part.text).join("\n");
 const errorOf = (message: string) => ({ message, codexErrorInfo: null, additionalDetails: null });
 function outputItems(content: Value[] = []) {
@@ -56,7 +57,7 @@ export function projectPiSnapshot(session: { id: string; cwd: string; tools: Val
       clientId: metadata.clientId ?? (id.startsWith(`${session.id}:turn:client:`) ? id.slice(`${session.id}:turn:client:`.length) : null),
       ...(metadata.steerTurnId ? { __opencraftMessageKind: "steering", __opencraftSteeringStatus: submission?.entry !== undefined ? "accepted" : state === "unanswered" ? "cancelled" : "pending", deliveryStatus: "sent" } : {}),
       content: metadata.input ?? [{ type: "text", text: textOf(message.content), text_elements: [] }] }],
-      itemsView: "complete", status, error: status === "failed" ? errorOf(String(submission?.detail ?? submission?.reason ?? "Pi input failed")) : null,
+      itemsView: "full", status, error: status === "failed" ? errorOf(String(submission?.detail ?? submission?.reason ?? "Pi input failed")) : null,
       startedAt: typeof createdAt === "number" ? Math.floor(createdAt / 1000) : null, completedAt: null, durationMs: null };
     const existing = grouped.get(id);
     if (existing) {

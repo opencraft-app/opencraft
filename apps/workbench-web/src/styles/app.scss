@@ -1663,7 +1663,9 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-thread-tree__children {
-  padding-inline-start: calc(var(--spacing) * 3);
+  margin-inline-start: calc(var(--spacing) * 2);
+  padding-inline-start: calc(var(--spacing) * 2);
+  border-inline-start: 1px solid var(--color-border-default);
   margin-block-start: var(--gap-navigation-rows);
 }
 
@@ -13048,5 +13050,3 @@ html[data-window-host="browser"] body {
   flex-direction: column;
   p { margin: 0; }
 }
-
-.sidebar-access-description { padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 2); @include typography.role(metadata, secondary); }

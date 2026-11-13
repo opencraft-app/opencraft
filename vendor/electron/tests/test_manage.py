@@ -1,10 +1,13 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location('electron_fork', Path(__file__).parents[1] / 'manage.py')
@@ -54,6 +57,28 @@ class ForkSourceTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(self.native.read_text(), 'native state available\n')
         self.assertTrue(first['sourceVerified'])
+
+    def test_sync_keeps_pinned_source_and_does_not_request_all_remote_refs(self):
+        fork = self.fork()
+        before = fork.checkout()
+        original_run = module.run
+        calls = []
+
+        def run(args, **kwargs):
+            if str(args[0]) == '/fixture/gclient':
+                calls.append(args)
+                self.assertEqual(Path(kwargs['cwd']).resolve(), self.root.resolve())
+                self.assertTrue((self.root / '.gclient').is_file())
+                return ''
+            return original_run(args, **kwargs)
+
+        with patch.object(module.shutil, 'which', return_value='/fixture/gclient'), patch.object(module, 'run', run):
+            after = fork.sync()
+        self.assertEqual(before, after)
+        self.assertEqual(len(calls), 1)
+        self.assertIn('--no-history', calls[0])
+        self.assertNotIn('--with_tags', calls[0])
+        self.assertNotIn('--with_branch_heads', calls[0])
 
     def test_dirty_source_is_preserved_and_rejected(self):
         self.native.write_text('local investigation\n', newline='\n')
@@ -110,6 +135,45 @@ class ForkSourceTests(unittest.TestCase):
             self.fork().checkout()
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
         self.assertEqual(self.git('status', '--porcelain'), '')
+
+
+class OperationLockTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / '.opencraft-operation.lock'
+
+    def exited_pid(self):
+        process = subprocess.Popen([sys.executable, '-c', 'pass'])
+        process.wait()
+        return process.pid
+
+    def test_lock_is_released_after_operation(self):
+        with module.operation_lock(self.root):
+            self.assertEqual(self.path.read_text().strip(), str(os.getpid()))
+        self.assertFalse(self.path.exists())
+
+    def test_live_owner_is_respected(self):
+        self.path.write_text(f'{os.getppid()}\n')
+        with self.assertRaisesRegex(ValueError, 'another operation owns'):
+            with module.operation_lock(self.root):
+                pass
+        self.assertEqual(self.path.read_text().strip(), str(os.getppid()))
+
+    def test_unreadable_owner_is_respected(self):
+        self.path.write_text('')
+        with self.assertRaisesRegex(ValueError, 'another operation owns'):
+            with module.operation_lock(self.root):
+                pass
+        self.assertTrue(self.path.exists())
+
+    def test_lock_left_by_exited_process_is_taken_over(self):
+        self.path.write_text(f'{self.exited_pid()}\n')
+        with module.operation_lock(self.root):
+            self.assertEqual(self.path.read_text().strip(), str(os.getpid()))
+        self.assertFalse(self.path.exists())
+        self.assertEqual(list(self.root.iterdir()), [])
 
 
 class NativeTargetTests(unittest.TestCase):

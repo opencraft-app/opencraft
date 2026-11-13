@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
+import { resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS, OPENCRAFT_HOST_STATE_BASELINE, OPENCRAFT_HOST_BOT_STATE, OPENCRAFT_HOST_IOA_CREATORS, OPENCRAFT_HOST_SENDER_ORIGINS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database";
 import { DurableThreadCatalog } from "../../apps/opencraft-daemon/src/durable-thread-catalog";
 
@@ -39,7 +40,7 @@ test("v4 to v5 migration preserves every existing row and checksum history; tamp
     assert.equal(owner.outcome.status, "migrated"); assert.ok(owner.outcome.backupPath); assert.deepEqual(owner.outcome.movedAsidePaths, []);
     assert.deepEqual(tables.map(table => owner.database.prepare(`SELECT * FROM ${table}`).all()), before);
     assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=4 ORDER BY version").all(), history);
-    assert.equal(owner.database.prepare("SELECT MAX(version) AS n FROM schema_migrations").get()?.n, OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version);
+    assert.equal(owner.database.prepare("SELECT MAX(version) AS n FROM schema_migrations").get()?.n, resolveStoreMigrations("opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS).at(-1)!.version);
     owner.close(); owner = new OpenCraftHostStateDatabase(root); assert.equal(owner.outcome.status, "up-to-date"); owner.close();
     const tamper = new DatabaseSync(path); tamper.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=4"); tamper.close();
     assert.throws(() => new OpenCraftHostStateDatabase(root), e => e instanceof SqliteLifecycleError && e.kind === "history-mismatch");

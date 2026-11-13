@@ -20,12 +20,12 @@ test("packaging rejects a bundle and installer with different identities", async
   await mkdir(join(root, "dist-host"));
   await writeFile(join(root, "dist-host/main.cjs"), "synthetic main");
   await writeFile(join(root, "dist-host/desktop-identity.json"), JSON.stringify({
-    production: { displayName: "OpenCraft", applicationId: "dev.opencraft.workbench" },
-    preview: { displayName: "OpenCraft Preview", applicationId: "dev.opencraft.workbench.preview" },
+    production: { displayName: "OpenCraft", applicationId: "app.opencraft.desktop" },
+    preview: { displayName: "OpenCraft Preview", applicationId: "app.opencraft.desktop.preview" },
     mainSha256: createHash("sha256").update("synthetic main").digest("hex"),
   }));
   const context = { arch: process.arch === "arm64" ? 3 : 1, electronPlatformName: process.platform,
-    packager: { info: { appDir: root }, appInfo: { productName: "OpenCraft", id: "dev.opencraft.workbench" } } };
+    packager: { info: { appDir: root }, appInfo: { productName: "OpenCraft", id: "app.opencraft.desktop" } } };
   await beforePack(context);
   context.packager.appInfo.id = "com.example.other-product";
   await assert.rejects(beforePack(context), /identity mismatch/u);
@@ -34,13 +34,13 @@ test("packaging rejects a bundle and installer with different identities", async
 });
 
 test("macOS preview packaging isolates identity, output, and signing discovery", () => {
-  assert.equal(PREVIEW_APP_ID, "dev.opencraft.workbench.preview");
+  assert.equal(PREVIEW_APP_ID, "app.opencraft.desktop.preview");
   assert.equal(PREVIEW_PRODUCT_NAME, "OpenCraft Preview");
   assert.deepEqual(previewBuilderArguments("arm64"), [
     "--mac",
     "zip",
     "--arm64",
-    "--config.appId=dev.opencraft.workbench.preview",
+    "--config.appId=app.opencraft.desktop.preview",
     "--config.productName=OpenCraft Preview",
     "--config.directories.output=release/preview",
     "--config.artifactName=OpenCraft-Preview-${version}-${os}-${arch}.${ext}",
@@ -52,6 +52,7 @@ test("workspace install scripts are explicitly version-pinned and enforced", asy
   const manifest = JSON.parse(await readFile(new URL("../../package.json", import.meta.url), "utf8"));
   assert.deepEqual(Object.fromEntries(Object.entries(manifest.allowScripts).filter(([, allowed]) => allowed)), {
     "@parcel/watcher@2.6.0": true,
+    "esbuild@0.18.20": true,
     "esbuild@0.25.12": true,
     "esbuild@0.28.2": true,
     "fsevents@2.3.3": true,

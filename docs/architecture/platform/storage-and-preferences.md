@@ -290,7 +290,7 @@ protocol adaptations are tracked there rather than implied by a successful build
 | `composer-editor` | ProseMirror/DOM composer view | DOM only |
 | `workbench-web` | Workbench frame, SCSS, Electron/browser adapters | React DOM |
 | `workbench-expo` | Expo Router routes, native views, Expo Web view | React Native |
-| `workbench-electron` | windows, tray, static origin and App Host byte relay | Electron main |
+| `desktop` | windows, tray, static origin and App Host byte relay | Electron main |
 | `opencraft-daemon` | native Host process, physical transports, local Agent and DSH lifecycle | Node only |
 | `apps/appserver-lab` | machine-first SDK smoke, recordings and fault injection | Node only |
 

@@ -1307,7 +1307,6 @@
   "thread.access.share": "恢复共享",
   "thread.access.failed": "访问权限修改未确认，请刷新后重试。",
   "sidebar.access.mine": "我的",
-  "sidebar.access.onlyYou": "仅自己可见",
   "sidebar.access.shared": "共享",
   "sidebar.access.empty": "还没有私有会话",
   "sidebar.access.categories": "会话分类",

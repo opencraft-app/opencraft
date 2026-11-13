@@ -104,6 +104,30 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.deepEqual(hands.entrypoint, ['/opt/opencraft/bin/opencraft-hands']);
 });
 
+test('prebuilt role images preserve the runtime service contract and project paths', t => {
+  if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
+    return t.skip('Docker Compose CLI is unavailable');
+  const env = { ...process.env, OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/srv/projects' };
+  const roles = ['gateway', 'brain', 'hands'];
+  const image = role => `example.org/opencraft/${role}:v1`;
+  for (const role of roles) env[`OPENCRAFT_${role.toUpperCase()}_IMAGE`] = image(role);
+  const render = (...extra) => JSON.parse(execFileSync('docker', ['compose', '--env-file', 'docker/.env.example',
+    '-f', 'docker/compose.yaml', ...extra, 'config', '--format', 'json'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
+  })).services;
+  const base = render();
+  const overlay = ['-f', 'docker/compose.role-images.yaml'];
+  const rendered = render(...overlay);
+  for (const role of roles) {
+    const { build, ...expected } = base[role];
+    assert.ok(build);
+    assert.deepEqual(rendered[role], { ...expected, image: image(role) });
+    assert.ok(rendered[role].volumes.some(v => v.source === '/srv/projects' && v.target === v.source));
+  }
+  env.OPENCRAFT_HANDS_IMAGE = '';
+  assert.throws(() => render(...overlay), /OPENCRAFT_HANDS_IMAGE/u);
+});
+
 test('the published env example renders without hidden required variables', t => {
   if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
     return t.skip('Docker Compose CLI is unavailable');

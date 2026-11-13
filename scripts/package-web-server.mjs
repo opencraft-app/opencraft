@@ -157,11 +157,11 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       manifest.bundleDependencies = [...(manifest.bundleDependencies || []), ...Object.keys(appRuntime)];
     }
     // Both standalone and daemon Hosts mount these persistence/projection patches.
-    const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/workbench-electron/package.json'), 'utf8'));
+    const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8'));
     for (const entry of desktop.build.extraResources.filter(entry => entry.to.startsWith('runtime/dsh/') && entry.from.startsWith('../local-agent-host/src/'))) {
       const destination = join(packageRoot, 'execution', relative('runtime/dsh', entry.to));
       await mkdir(dirname(destination), { recursive: true });
-      await cp(resolve(repositoryRoot, 'apps/workbench-electron', entry.from), destination);
+      await cp(resolve(repositoryRoot, 'apps/desktop', entry.from), destination);
     }
     const ptyRoot = join(repositoryRoot, 'node_modules/node-pty');
     const prebuild = `prebuilds/${process.platform}-${process.arch}`;
@@ -199,7 +199,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);
   if (complete) {
     if (!execution || executionProfile !== 'headless' || splitResources || (fullRelease && fullRelease.template.updater.bridge)) throw new Error('Full release requires an unsplit Headless package and non-bridge metadata');
-    manifest.files.push('full/'); manifest.license = 'Apache-2.0';
+    manifest.files.push('full/'); manifest.license = 'MIT-0';
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: web.sourceRevision, buildId: web.buildId, engines: fullRuntimeEngines });
     await prepareFullMetadata(packageRoot);

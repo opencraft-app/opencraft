@@ -19,7 +19,7 @@ test("fresh Host storage establishes all configured databases and can reopen up-
   try {
     const storage = openLocalAgentStorage({ dataDirectory: directory });
     try {
-      assert.deepEqual(storage.summaries, names.map(name => ({ name, status: "fresh", appliedVersion: name === "tasks" ? 5 : 1, movedAside: false })));
+      assert.deepEqual(storage.summaries, names.map(name => ({ name, status: "fresh", appliedVersion: name === "tasks" ? 5 : name === "threads" ? 2 : 1, movedAside: false })));
       for (const name of names) assert.ok((await stat(join(directory, name === "tasks" ? "tasks.sqlite" : `opencraft-${name}.sqlite`))).size > 0);
     } finally { storage.close(); storage.close(); }
     const reopened = openLocalAgentStorage({ dataDirectory: directory });
@@ -44,10 +44,10 @@ for (const unknownRouting of [false, true]) test(`legacy Host storage preserves 
     }
     const storage = openLocalAgentStorage({ dataDirectory: directory });
     try {
-      assert.deepEqual(storage.summaries.map(item => item.status), ["migrated", "adopted", "fresh", "fresh", "adopted", "fresh"]);
+      assert.deepEqual(storage.summaries.map(item => item.status), ["migrated", "migrated", "fresh", "fresh", "adopted", "fresh"]);
       assert.equal(storage.threads.get("legacy-thread")?.name, "Legacy title");
       for (const item of storage.summaries.filter(item => item.backupPath)) {
-        assert.match(item.backupPath!, /\.pre-v1-/);
+        assert.match(item.backupPath!, item.name === "threads" ? /\.pre-v2-/ : /\.pre-v1-/);
         assert.ok((await stat(item.backupPath!)).size > 0);
       }
       assert.equal(storage.summaries[0].movedAside, false);

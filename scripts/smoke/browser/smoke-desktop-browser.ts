@@ -21,7 +21,7 @@ try {
   delete env.ELECTRON_RUN_AS_NODE;
   const executablePath = process.env.OPENCRAFT_ELECTRON_EXECUTABLE
     ?? resolve("node_modules/electron/dist", process.platform === "darwin" ? "Electron.app/Contents/MacOS/Electron" : process.platform === "win32" ? "electron.exe" : "electron");
-  const launchArgs = [...(process.env.OPENCRAFT_PACKAGED_SMOKE === "1" ? [] : [resolve("apps/workbench-electron")]), `--user-data-dir=${join(root, "profile")}`];
+  const launchArgs = [...(process.env.OPENCRAFT_PACKAGED_SMOKE === "1" ? [] : [resolve("apps/desktop")]), `--user-data-dir=${join(root, "profile")}`];
   app = await _electron.launch({ executablePath, args: launchArgs, env });
   const page = await app.firstWindow();
   await page.locator(".opencraft-composer-editor").first().waitFor({ timeout: 30000 }).catch(async (error: unknown) => {

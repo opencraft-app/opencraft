@@ -246,7 +246,7 @@ checkFiles("Expo host", "apps/mobile/src", [
   },
 ]);
 
-checkFiles("Electron Main", "apps/workbench-electron/src/main.ts", [
+checkFiles("Electron Main", "apps/desktop/src/main.ts", [
   {
     pattern: /@opencraft\/(?:app-host-server|appserver-transport-websocket|local-agent-host)|\bAppHostServer\b|\bWebSocketTransport\b|\bstartLocalAgentHost\b/m,
     message: "must remain a window/tray/IPC relay and must not own a physical Host",
@@ -257,7 +257,7 @@ checkFiles("Electron Main", "apps/workbench-electron/src/main.ts", [
   },
 ]);
 
-checkFiles("public desktop", "apps/workbench-electron/src", [{
+checkFiles("public desktop", "apps/desktop/src", [{
   pattern: /lightvela-(?:login|session-store|account-http)|\bDesktopLightVelaLogin\b|\blightvelaAccount\b|https:\/\/api\.lightvela\.(?:com|ai)/m,
   message: "must receive private accounts through explicit desktop product composition",
 }]);

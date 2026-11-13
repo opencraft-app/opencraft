@@ -179,8 +179,10 @@ class Fork:
             raise ValueError('existing .gclient differs; it was not overwritten')
         if not path.exists():
             path.write_text(config)
-        run([gclient, 'sync', '--no-history', '--with_branch_heads', '--with_tags'],
-            cwd=self.root)
+        # DEPS selects the required revisions, including individual release
+        # tags. Fetching every tag and branch head adds unrelated history to
+        # each sync and is unnecessary for a fixed native build.
+        run([gclient, 'sync', '--no-history'], cwd=self.root)
         return self.verify()
 
     def build(self, jobs):
@@ -200,8 +202,14 @@ class Fork:
                 raise ValueError(f'{name} missing; sync the pinned Chromium tools first')
         out = 'out/OpenCraft'
         gn_args = (self.directory / 'args.gn').read_text()
-        run([tools['gn'], 'gen', out, '--args=' + gn_args], cwd=self.root / 'src')
-        run([tools['ninja'], '-C', out, '-j', str(jobs), *build_targets()], cwd=self.root / 'src')
+        # Node's config generator also invokes GN by name.
+        environment = dict(os.environ)
+        environment['PATH'] = os.pathsep.join([
+            *(str(Path(tools[name]).parent) for name in ('gn', 'ninja')),
+            environment.get('PATH', ''),
+        ])
+        run([tools['gn'], 'gen', out, '--args=' + gn_args], cwd=self.root / 'src', env=environment)
+        run([tools['ninja'], '-C', out, '-j', str(jobs), *build_targets()], cwd=self.root / 'src', env=environment)
         executable = native_executable(self.root, platform_name)
         if not executable.is_file():
             raise ValueError('native Electron build did not produce ' + str(executable))
@@ -214,14 +222,73 @@ class Fork:
         return result
 
 
+def process_alive(pid):
+    if pid <= 0:
+        return False
+    if sys.platform == 'win32':
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.GetLastError() == 5  # access denied: the process exists
+        try:
+            code = ctypes.c_ulong()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(code)):
+                return True
+            return code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def lock_owner(path):
+    try:
+        text = path.read_text().strip()
+    except FileNotFoundError:
+        return None
+    return int(text) if re.fullmatch(r'[0-9]+', text) else None
+
+
+def remove_stale_lock(path):
+    """Remove the lock only when it names a process that no longer exists."""
+    owner = lock_owner(path)
+    if owner is None or owner == os.getpid() or process_alive(owner):
+        return False
+    claimed = path.with_name(f'{path.name}.stale-{os.getpid()}')
+    try:
+        os.rename(path, claimed)
+    except FileNotFoundError:
+        return True
+    if lock_owner(claimed) != owner:
+        # Another operation replaced the stale lock first; give its lock back.
+        try:
+            os.link(claimed, path)
+        except FileExistsError:
+            pass
+        claimed.unlink()
+        return False
+    claimed.unlink()
+    print(f'removed stale operation lock {path} left by exited process {owner}', file=sys.stderr)
+    return True
+
+
 @contextlib.contextmanager
 def operation_lock(root):
     root.mkdir(parents=True, exist_ok=True)
     path = root / '.opencraft-operation.lock'
-    try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-    except FileExistsError:
-        raise ValueError(f'another operation owns {path}; inspect it before retrying') from None
+    for attempt in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            break
+        except FileExistsError:
+            if attempt or not remove_stale_lock(path):
+                raise ValueError(f'another operation owns {path}; inspect it before retrying') from None
     try:
         with os.fdopen(fd, 'w') as output:
             output.write(str(os.getpid()) + '\n')

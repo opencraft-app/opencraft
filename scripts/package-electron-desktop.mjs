@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { verifyElectronDistribution } from "./electron-distribution.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const electronAppRoot = resolve(repositoryRoot, "apps/workbench-electron");
+const electronAppRoot = resolve(repositoryRoot, "apps/desktop");
 const electronBuilderCli = resolve(repositoryRoot, "node_modules/electron-builder/out/cli/cli.js");
 
 export function packageTarget(args = process.argv.slice(2), {
@@ -42,6 +42,9 @@ export async function packageBuilderArguments(
   const selected = electronDistributionForTarget(environment, target);
   const distribution = selected.path;
   if (!distribution) {
+    if (target.platform === "linux" && args.includes("AppImage")) {
+      throw new Error(`Linux AppImage packaging requires the verified fork in ${selected.key}`);
+    }
     if (environment.OPENCRAFT_ELECTRON_ALLOW_STOCK === "1") return [...args];
     throw new Error(
       `Electron release packaging requires ${selected.key}; `
@@ -53,7 +56,7 @@ export async function packageBuilderArguments(
     resolve(repositoryRoot, "vendor/electron/fork.json"),
     target,
   );
-  return [...args, `--config.electronDist=${verified.distribution}`];
+  return [...args, `--config.electronDist=${verified.distribution}`, `--config.electronVersion=${verified.marker.electronVersion}`];
 }
 
 export async function packageElectronDesktop(args = process.argv.slice(2), {

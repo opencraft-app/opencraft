@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { verifyDesktopServer, ServerAccessDenied, ServerSignInRequired } from '../../apps/workbench-electron/src/desktop-server-admission';
+import { verifyDesktopServer, ServerAccessDenied, ServerSignInRequired } from '../../apps/desktop/src/desktop-server-admission';
 import { configureDesktopServer } from '../../apps/workbench-web/src/runtime/configure-desktop-server';
 import { parseDesktopServerConnection, isDesktopServerConnectMessage } from '@opencraft/app-host-protocol/desktop-server';
 import type { HostConnectionProfile, ProvisionHostInput } from '@opencraft/workbench-runtime';

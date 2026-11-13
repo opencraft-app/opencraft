@@ -1285,7 +1285,6 @@
   "thread.access.share": "เปิดให้เข้าถึงร่วมกันอีกครั้ง",
   "thread.access.failed": "เปลี่ยนสิทธิ์การเข้าถึงไม่สำเร็จ โปรดรีเฟรชแล้วลองอีกครั้ง",
   "sidebar.access.mine": "ของฉัน",
-  "sidebar.access.onlyYou": "มีเพียงคุณเท่านั้นที่เห็นการสนทนาเหล่านี้",
   "sidebar.access.shared": "แชร์",
   "sidebar.access.empty": "ยังไม่มีการสนทนาส่วนตัว",
   "sidebar.access.categories": "หมวดหมู่การสนทนา",
