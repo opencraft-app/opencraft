@@ -59,10 +59,10 @@ def health(revision):
     raise RuntimeError('Expected relay revision did not become healthy')
 
 
-def initialize_hub():
-    credential = json.loads(Path('/etc/opencraft-relay/operator.json').read_text())['credential']
-    endpoint = Path('/etc/opencraft-relay/endpoint').read_text().strip()
-    url = 'http://127.0.0.1:18090/__opencraft_hub/operator'
+def initialize_hub(config_root=Path('/etc/opencraft-relay'), management_origin='http://127.0.0.1:18090'):
+    credential = json.loads((config_root / 'operator.json').read_text())['credential']
+    endpoint = (config_root / 'endpoint').read_text().strip()
+    url = management_origin + '/__opencraft_hub/operator'
     headers = {'Authorization': 'Bearer ' + credential, 'Content-Type': 'application/json'}
     with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=10) as response:
         snapshot = json.load(response)

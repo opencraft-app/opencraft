@@ -5,6 +5,12 @@ import json
 from pathlib import Path
 import tarfile
 import tempfile
+import os
+import secrets
+import socket
+import subprocess
+import time
+import urllib.request
 import unittest
 from unittest import mock
 
@@ -92,6 +98,45 @@ class DeploymentArchiveTests(unittest.TestCase):
                     receiver.activate(path, REVISION, digest)
             self.assertFalse((root / 'current').is_symlink())
             self.assertIn(mock.call(['systemctl', 'stop', receiver.SERVICE], check=True), command.call_args_list)
+
+    @unittest.skipUnless(os.environ.get('OPENCRAFT_RELAY_ARTIFACT'), 'Set the built relay artifact for real bootstrap integration')
+    def test_initial_configuration_uses_the_actual_running_operator_contract(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder).resolve()
+            with socket.socket() as reservation:
+                reservation.bind(('127.0.0.1', 0))
+                port = reservation.getsockname()[1]
+            operator = root / 'operator.json'
+            operator.write_text(json.dumps({'credential': secrets.token_urlsafe(32)}))
+            operator.chmod(0o600)
+            endpoint = 'https://relay.fixture.test'
+            (root / 'endpoint').write_text(endpoint)
+            config = root / 'relay.json'
+            config.write_text(json.dumps({'schemaVersion': 1, 'host': '127.0.0.1', 'port': port, 'routes': [], 'hubNetwork': {'stateFile': str(root / 'hub.json'), 'operatorCredentialFile': str(operator)}}))
+            config.chmod(0o600)
+            process = subprocess.Popen(['node', os.environ['OPENCRAFT_RELAY_ARTIFACT'], str(config)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            origin = 'http://127.0.0.1:' + str(port)
+            try:
+                for attempt in range(100):
+                    try:
+                        with urllib.request.urlopen(origin + '/__opencraft_relay/health', timeout=1) as response:
+                            self.assertTrue(json.load(response)['ok'])
+                        break
+                    except OSError:
+                        if process.poll() is not None or attempt == 99:
+                            self.fail('The real relay artifact did not start')
+                        time.sleep(.05)
+                receiver.initialize_hub(root, origin)
+                request = urllib.request.Request(origin + '/__opencraft_hub/operator', headers={'Authorization': 'Bearer ' + json.loads(operator.read_text())['credential']})
+                with urllib.request.urlopen(request, timeout=2) as response:
+                    snapshot = json.load(response)
+                self.assertTrue(snapshot['accepting'])
+                self.assertTrue(snapshot['forwarding'])
+                self.assertEqual(snapshot['endpoint'], endpoint)
+                self.assertFalse(snapshot['localService'])
+            finally:
+                process.terminate()
+                process.wait(timeout=10)
 
 
 if __name__ == '__main__':
