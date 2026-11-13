@@ -231,3 +231,117 @@ change its initial effort merely because another probe returned first.
 图片请求携带原生 turn ID；网关只接受已通过自定义 Responses 请求登记的回合，并校验原聊天模型仍启用、同一图像配置/凭据绑定仍有效。未知回合、订阅回合、停用或配置更改均拒绝。图像请求不传历史对话，只传本次提示词和显式参考图；每次使用独立 session，避免服务端残留历史串线。原生固定的图片模型值在适配器映射为配置 deployment ID。
 
 混元适配器当前支持普通背景、单张内联 PNG/JPEG/WebP 参考图、PNG 结果。未验证的透明背景、尺寸/质量控制、多参考图及 file_id 显式拒绝。返回 JSON 的 choices[].delta.image.url 被下载并转换为原生 created/data[].b64_json；下载不带凭据、拒绝重定向，仅接受此协议已验证的 HTTPS 腾讯 COS 来源，结果上限32MiB。配置保存不自动发起生图或证明能力。原生负责图片事件、保存路径与展示；失败不自动换服务或重试付费请求。
+
+## Import local Codex and Cursor conversations
+
+Hosts advertising `OnboardingSnapshot.historyImport` expose local resumable
+history during the onboarding Start step, Settings > Chat > Agent, and the
+Import local conversations action at the top of Model services. The model
+configuration action opens history selection directly, without choosing a model
+or repeating onboarding. Users
+explicitly select up to 100 conversations per import; failed selections remain
+available for retry. Native `session/list` provides pagination and trusted
+metadata; the Host accepts only recently discovered native IDs. This imports
+conversations exposed by the installed CLI/ACP peer, not arbitrary IDE files or
+another deployment's conversation store.
+
+`opencraft/agents/onboarding/history` and `/import` are local Host operations.
+The ACP routing ledger persists the native session ID and original working
+directory; the read-only native history adapter validates the transcript before
+registration. Repeated imports reuse the existing route and preserve renamed
+metadata. Import does not call session/new, session/resume or session/prompt.
+Opening/continuing uses the existing read/resume/Turn path. The import is assigned
+to `myself` before a catalog upsert is published. Original source transcripts are
+retained in their native stores; the import is not an independent archive.
+
+Codex imports also preserve the original desktop's project grouping. The native
+history Worker reads `.codex-global-state.json` under the configured Codex home:
+local project IDs/names/order and explicit assignments take precedence, with a
+legacy fallback restricted to saved project roots. Existing imported routes are
+backfilled during catalog discovery; users do not need to import them again.
+Source project metadata is an optional display contract (`nativeProject`),
+separate from OpenCraft execution Project identity, Server membership and cwd.
+It persists through directory/notification/cache projections. The sidebar shows
+source folders with expandable members; ungrouped conversations remain Recent.
+The source file is never modified by this adapter.
+
+
+### Continuing imported Codex conversations across clients
+
+An imported route retains the original native ID. Codex permits one native writer
+at a time: close/release the conversation in the other client before resuming it
+here. The conversation action menu offers explicit **Release Codex conversation**
+when the installed peer advertises `session/close`. Release stops that session's
+background tasks; it is refused during active or unconfirmed work and while other
+OpenCraft clients hold the conversation. A later send resumes the same native ID
+and reads native context again. Merely switching pages does not release a writer.
+
+A native resume rejected with `CODEX_SESSION_BUSY` and `inputNotSent: true`
+proves the new input has not reached Codex. The Workbench submission owner can
+then automatically fork, navigate to the acknowledged child, and transfer the
+same immutable input once. A superseded navigation or unknown fork result stops
+this transfer; arbitrary error text is never sufficient proof for replay. The
+original unsent row remains in the source history.
+
+When automatic transfer is unavailable, the error card offers **Continue in a
+new conversation** if the installed Codex peer advertises `session/fork`. The Host
+forks native storage directly, without resuming the locked source or sending a
+prompt, persists the new native ID, and assigns the new route to the source Server.
+The original route and its unsent input remain unchanged. Forked conversations
+inherit context up to creation and subsequently evolve independently; there is no
+bidirectional merging or simultaneous writing to the original conversation.
+
+`opencraft/agent-session/status` negotiates the actual peer's capabilities;
+`/release` is an explicit serialized lifecycle action. This implementation supports
+full-history Codex forks only, not a selected Turn boundary, ephemeral forks,
+Cursor forks, or fork creation through a configured execution-environment adapter.
+A lost creation acknowledgement is not an invitation to retry automatically.
+
+
+### Model directory read latency and execution ownership
+
+Connected Agent model lists first read declarations already persisted by the ACP
+owner. Login probes and cold peer discovery run independently, with one shared
+background refresh; an unavailable peer does not hold the entire model/list
+response. `opencraft/agents/models/changed` invalidates client capability hints and
+refreshes a previously requested directory. Cached declarations do not authorize
+execution: native admission and model configuration still validate each send.
+
+A native conversation requests its own Agent's directory. The Host advertises
+Codex/Cursor execution-engine capability sets rather than inheriting DSH queues,
+tools, or history behavior. Legacy unqualified IDs are normalized only when the
+owning Agent declares that exact native model. Loading and refresh failures retain
+existing selections; unrelated permission/default queries are not model loading.
+
+
+### Switching Agents from an imported conversation
+
+A scoped native model directory validates the current Agent; it does not hide the
+other Agents from the chooser. Imported Codex/Cursor views also load the Host's
+Agent directory for browsing. Selecting a model from the same Agent updates the
+current Composer. Selecting a different Agent opens a new draft on the same Host,
+Server and working directory, retaining unsent text, ready attachments and context.
+Interrupted attachment processing is marked for re-adding in the destination.
+
+`opencraft/agent-session/export-context` reads the original conversation without
+resuming it. The native history Worker writes a private readable transcript and a
+structured JSONL archive of the complete normalized Turns, including tool/media
+references. These files live under the Host's private connected-agent data root,
+with directory mode 0700 and file mode 0600. They are retained with that data root
+so a persisted draft remains usable after restart; they are not added to the
+workspace or served as public downloads.
+
+The new draft displays a removable reference to that history. Its durable reference and explicit model/effort/tier choices use the existing View-scoped draft continuity envelope, including context-only drafts; refreshing retains the Cursor selection and source record without caching permission grants. The first user
+submission sends this reference as untrusted context; the destination Agent can
+read/search the files rather than stuffing a long conversation into one prompt.
+ACP forwards that context while keeping the visible user message, preview and
+initial title based on the actual input. Source native state remains unchanged;
+this is a context handoff, not a native fork or continuous cross-Agent sync.
+Selecting an Agent alone does not start a new native session or send a prompt.
+
+The selection callback can acknowledge a handled destination transition, preventing
+the previous View from being rewritten with another Agent's model ID. Navigation
+and source ownership are rechecked before preparing the destination. On Servers
+with private-thread access control, private-source handoff is refused until
+creation can atomically preserve destination visibility; it never silently shares
+a private source into a default shared conversation.

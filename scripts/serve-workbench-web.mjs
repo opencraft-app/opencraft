@@ -100,7 +100,19 @@ function bridgeAppServerSocket(client, request, options) {
   const accessSession = options.createAccessSession?.(options.submissionContext, frame => {
     if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
   });
+  let outbound=Promise.resolve();
   const write = (frame, isBinary = false) => {
+    if(accessSession?.prepare) {
+      outbound=outbound.then(async()=>{
+        if(client.readyState!==WebSocket.OPEN||options.authorize?.()===false)return;
+        if(isBinary)throw new Error("Text frames required");
+        await accessSession.prepare(String(frame));
+        if(client.readyState!==WebSocket.OPEN||options.authorize?.()===false)return;
+        const projected=accessSession.project(String(frame));
+        if(projected!==null)client.send(projected,{binary:false});
+      }).catch(()=>{client.close(1002,"Invalid RPC frame");});
+      return;
+    }
     if (client.readyState !== WebSocket.OPEN || options.authorize?.() === false) return;
     if (accessSession && isBinary) { client.close(1003, 'Text frames required'); return; }
     try {
@@ -143,6 +155,7 @@ function bridgeAppServerSocket(client, request, options) {
     try {
       if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
       if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
+      if(accessSession?.rewrite)data=accessSession.rewrite(data.toString('utf8'));
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;

@@ -112,6 +112,9 @@
   --height-toolbar-control: max(32px, var(--size-control-hit-min));
   --radius-toolbar-control: var(--radius-lg);
   --padding-toolbar-control-inline: calc(var(--spacing) * 2);
+  --width-edge-control: 28px;
+  --height-edge-control: max(48px, var(--size-control-hit-min));
+  --spacing-shell-server-edge-gutter: max(calc(var(--spacing) * 5), calc(var(--size-control-hit-min) - var(--padding-sidebar-content-inline) + var(--spacing) * 2));
   --height-accessory-control: max(28px, var(--size-control-hit-min));
   --padding-accessory-control-inline: 7px;
   --gap-accessory-control-content: 4px;

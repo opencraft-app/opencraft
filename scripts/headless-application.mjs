@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { ServerSpacesRuntime } from '../packages/access-control/src/server-spaces-runtime.ts';
+import { ServerSpacesSession } from '../packages/access-control/src/server-spaces-session.ts';
 import { createProjectAutomations } from './project-automations.mjs';
 import { executionCliSourceToken } from '../packages/session-capabilities/src/credentials.ts';
 import { waitForExecutionCliBinding } from '../packages/session-capabilities/src/execution-cli.ts';
@@ -319,6 +321,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let projectAutomations;
   let actorCollaborationApi;
   let actorAccess;
+  let serverSpaces;
   let threadAccess;
   let threadNotes;
   let humanAccounts;
@@ -365,7 +368,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       await settle([() => projectAutomations?.close()]);
       await settle([() => threadOrchestration?.stop()]);
       await settle([() => appHostServer?.close()]);
-      await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => threadNotes?.close()]);
+      await settle([() => threadOrchestration?.close(), () => connectorService?.close(), () => actorCollaboration?.close(), () => threadAccess?.close(), () => serverSpaces?.close(), () => threadNotes?.close()]);
       await settle([() => orchestrationStorage.close()]);
       await settle([() => agent?.close(), async () => (await dshAgent?.catch(() => undefined))?.close(), () => capabilityMcp?.close()]);
       if (releasePiOwner) await settle([() => releasePiOwner()]);
@@ -488,9 +491,12 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           });
         }};
       }});
-    threadAccess = new ThreadAccessStore(serverStorage, actorStore, { permissionOwner: serverStorage.database });
+    serverSpaces = new ServerSpacesRuntime({path:join(dataDirectory,'opencraft-server.sqlite'),bootstrapInstance:true});
+    await serverSpaces.ready;
+    threadAccess = new ThreadAccessStore(serverStorage, actorStore, { permissionOwner: serverStorage.database,
+      spaces:{allows:(actorId,serverId,threadId)=>!serverSpaces.initialized||actorId&&actorStore.get(actorId)?.kind==='session'||serverSpaces.allows(actorId,serverId,threadId),subscribe:listener=>serverSpaces.subscribe(listener)} });
     threadNotes = new ThreadNoteStore(serverStorage);
-    const createThreadAccessSession = (hostId, context, emit) => new ThreadAccessSession(threadAccess,
+    const createThreadPolicySession = (hostId, context, emit) => new ThreadAccessSession(threadAccess,
       (threadId, serverId, method) => {
         if (method === 'opencraft/token-usage/query' && serverId === undefined) return `server:${machineIdentity.machineId}:codex`;
         if (serverId?.startsWith('server:')) return serverId;
@@ -506,6 +512,23 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         if (context.actorContext && (!actorStore.isCurrent(context.actorContext) || instanceAccess && !instanceAccess.admitsActor(context.actorContext.actorId)))
           throw new Error('Conversation access expired');
       }, threadNotes);
+    const createThreadAccessSession=(hostId,context,emit)=>{
+      // Anonymous installations retain their legacy path until an explicit human
+      // administrator initializes collaboration membership.
+      if(!context.actorContext)return createThreadPolicySession(hostId,context,emit);
+      const session=new ServerSpacesSession(serverSpaces,context.actorContext,
+        id=>conversationExecution.serverForHost(hostId,id),emit,createThreadPolicySession(hostId,context,emit),(serverId,threadId)=>threadAccess.allows(serverId,threadId,context.actorContext),()=>{
+          context.resourceOwner?.assertCurrent();
+          if(!actorStore.isCurrent(context.actorContext)||instanceAccess&&!instanceAccess.admitsActor(context.actorContext.actorId))throw new Error('Server access expired');
+        },threadId=>callConversationHost(appHostServer,{hostId,threadId:''},'server-space-history','thread/read',{threadId,includeTurns:false}));
+      return {
+        async receive(frame){
+          if(!serverSpaces.initialized&&instanceAccess?.admitsActor(context.actorContext.actorId)&&membership.actorMembership(context.actorContext.actorId)?.role==='admin')
+            await serverSpaces.bootstrap(context.actorContext.actorId);
+          return session.receive(frame);
+        },rewrite:frame=>session.rewrite(frame),prepare:frame=>session.prepare(frame),project:frame=>session.project(frame),close:()=>session.close(),
+      };
+    };
     actorCollaboration = new Collaboration(serverStorage, actorStore,
       conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage,
       (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, context));
@@ -513,6 +536,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
       enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
     }), Date.now, orchestrationStorage);
+    threadOrchestration.childScope=(parent,child)=>serverSpaces.initialized?serverSpaces.inherit(parent,child):Promise.resolve();
     threadOrchestration.legacySchedule=async threadId=>{const serverId=conversationExecution.serverForThread(threadId),hostId=conversationExecution.hostForServer(serverId);return (await callConversationHost(appHostServer,{hostId,threadId},'automation-schedule-inspect','opencraft/schedules/read',{threadId})).schedule;};
     projectAutomations=createProjectAutomations(orchestrationStorage,threadOrchestration,actorCollaboration,codexAgentBridge);
     actorCollaborationApi=new CollaborationHttpApi(actorCollaboration,actorAccess,projectAutomations);

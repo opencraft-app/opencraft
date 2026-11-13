@@ -19,7 +19,7 @@ export const buttonVariantNames = [
 
 export type ButtonVariant = (typeof buttonVariantNames)[number];
 
-export const buttonSizeNames = ["sm", "md", "lg", "toolbar", "chrome", "navigation", "accessory"] as const;
+export const buttonSizeNames = ["sm", "md", "lg", "toolbar", "chrome", "navigation", "accessory", "edge"] as const;
 
 export type ButtonSize = (typeof buttonSizeNames)[number];
 
@@ -33,6 +33,7 @@ export const buttonTypography = {
   toolbar: typographyRole("controlCompact", "native"),
   chrome: typographyRole("controlCompact", "native"),
   navigation: typographyRole("navigationAction", "native"),
+  edge: typographyRole("controlCompact", "native"),
   accessory: typographyRole("controlCompact", "native"),
 } as const;
 
@@ -47,6 +48,7 @@ export const buttonSizeMetrics = {
   toolbar: { ...buttonTypography.toolbar, height: 32, horizontalPadding: 8 },
   chrome: { ...buttonTypography.chrome, height: 28, horizontalPadding: 0 },
   navigation: { ...buttonTypography.navigation, height: 36, horizontalPadding: 8 },
+  edge: { ...buttonTypography.edge, height: 48, horizontalPadding: 0 },
   accessory: { ...buttonTypography.accessory, height: 28, horizontalPadding: 7 },
 } as const satisfies Record<
   ButtonSize,

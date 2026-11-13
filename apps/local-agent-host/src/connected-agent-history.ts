@@ -1,3 +1,4 @@
+import type { NativeConversationProject } from "@opencraft/appserver-protocol";
 import { Worker } from "node:worker_threads";
 
 type Value = Record<string, any>;
@@ -8,18 +9,18 @@ export class ConnectedAgentHistory {
   private sequence = 0;
   private closed = false;
   private failure?: Error;
-  constructor(private readonly provider: "codex" | "cursor", private readonly home: string) {}
+  constructor(private readonly provider: "codex" | "cursor", private readonly home: string, private readonly contextDirectory?: string) {}
   private fail(error: Error): void {
     this.failure ??= error;
     for (const request of this.pending.values()) request.reject(error);
     this.pending.clear();
   }
-  private request(nativeId: string, params: Value, kind: "turns" | "items" | "snapshot" | "usage"): Promise<any> {
+  private request(nativeId: string, params: Value, kind: "turns" | "items" | "snapshot" | "usage" | "projects" | "export"): Promise<any> {
     if (this.closed || this.failure) return Promise.reject(this.failure ?? new Error("Native history reader closed"));
     if (this.pending.size >= 32) return Promise.reject(new Error("Native history reader busy"));
     if (!this.worker) {
       this.worker = new Worker(new URL("./connected-agent-history-worker.mjs", import.meta.url), {
-        execArgv: [], workerData: { provider: this.provider, home: this.home },
+        execArgv: [], workerData: { provider: this.provider, home: this.home, contextDirectory: this.contextDirectory },
       });
       this.worker.on("error", error => this.fail(error instanceof Error ? error : new Error(String(error))));
       this.worker.on("exit", () => { if (!this.closed) this.fail(new Error("Native history reader exited")); });
@@ -35,10 +36,14 @@ export class ConnectedAgentHistory {
       this.worker!.postMessage({ id, nativeId, params, kind });
     });
   }
+  export(nativeId: string, params: Value): Promise<import("@opencraft/appserver-protocol").AgentConversationContinuation> { return this.request(nativeId, params, "export"); }
   read(nativeId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }> { return this.request(nativeId, params, "turns"); }
   items(nativeId: string, params: Value): Promise<any> { return this.request(nativeId, params, "items"); }
   snapshot(nativeId: string, params: Value): Promise<any[]> { return this.request(nativeId, params, "snapshot"); }
   usage(nativeId: string): Promise<Value | null> { return this.request(nativeId, {}, "usage"); }
+  projects(threads: readonly { id: string; cwd: string }[]): Promise<{ available: boolean; groups: Record<string, NativeConversationProject | null> }> {
+    return this.request("", { threads }, "projects");
+  }
   async close(): Promise<void> {
     this.closed = true; this.fail(new Error("Native history reader closed"));
     await this.worker?.terminate();

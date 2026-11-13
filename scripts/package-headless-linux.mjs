@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
 import { buildDshRoutingRuntime } from './package-dsh-routing-runtime.mjs';
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
@@ -45,6 +46,7 @@ export function headlessWebHostDefinitions() {
 
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
   await buildTranscriptCacheRuntime(dirname(output));
+  await buildServerSpacesRuntime(dirname(output));
   await buildDshRoutingRuntime(dirname(output));
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));

@@ -1,3 +1,4 @@
+import { parseNativeConversationProject } from "./native-conversation-project";
 import type { Thread, ThreadStatus } from "./generated/v2";
 
 export const THREAD_CATALOG_CHANGED = "opencraft/thread-catalog/changed";
@@ -37,6 +38,7 @@ export function threadCatalogEntry(value: unknown): Thread | null {
   const row = object(value);
   if (!id(row.id) || typeof row.cwd !== "string" || !time(row.createdAt) || !time(row.updatedAt) || row.ephemeral === true) return null;
   return { ...Object.fromEntries(fields.filter(key => key in row).map(key => [key, row[key]])),
+    ...(parseNativeConversationProject(row.nativeProject) ? { nativeProject: parseNativeConversationProject(row.nativeProject)! } : {}),
     ...(row.accessMode === 'private' || row.accessMode === 'shared' ? {accessMode:row.accessMode} : {}),
     name: typeof row.name === "string" ? row.name.slice(0, 1024) : null,
     preview: typeof row.preview === "string" ? row.preview.slice(0, 512) : "",

@@ -166,7 +166,8 @@ export interface ComposerAgentModelGroup {
   readonly loading?: boolean;
   readonly error?: string | null;
   readonly retry?: () => void;
-  readonly select: (model: ComposerModelOption) => void | Promise<void>;
+  /** A handled destination transition must not rewrite this View's selection. */
+  readonly select: (model: ComposerModelOption) => void | { selection: "handled" } | Promise<void | { selection: "handled" }>;
   readonly manage?: () => void;
 }
 
@@ -948,7 +949,10 @@ export const OpenCraftComposer = forwardRef<
     const epoch = ++agentSelectionEpoch.current;
     setSwitchingAgentId(group.id);
     setAgentSelectionError(null);
-    try { await group.select(model); }
+    try {
+      const result = await group.select(model);
+      if (epoch === agentSelectionEpoch.current && editorControllerRef.current === controller && result?.selection !== "handled" && group.active) selectModel(model);
+    }
     catch (error) { if (epoch === agentSelectionEpoch.current) setAgentSelectionError({ id: group.id, message: error instanceof Error ? error.message : String(error) }); }
     finally { if (epoch === agentSelectionEpoch.current) setSwitchingAgentId(null); }
   };
@@ -2253,8 +2257,8 @@ export const OpenCraftComposer = forwardRef<
             </button>
           </div>
         )}
-        {attachments.length > 0 && (
-          <div className="opencraft-composer-attachments" aria-label="Attachments" inert={voiceActive ? true : undefined}>
+        {(attachments.length > 0 || composerSnapshot.draft.context.some(reference => reference.visible)) && (
+          <div className="opencraft-composer-attachments" aria-label={intl.formatMessage({ id: "composer.attachmentsAndContext", defaultMessage: "Attachments and context" })} inert={voiceActive ? true : undefined}>
             {attachments.map((attachment) => {
               const image = attachment.mimeType.startsWith("image/");
               const workInError = attachment.metadata?.workInAttachmentError === "interrupted"
@@ -2323,6 +2327,15 @@ export const OpenCraftComposer = forwardRef<
                 </div>
               );
             })}
+            {composerSnapshot.draft.context.filter(reference => reference.visible).map(reference => <div className="opencraft-composer-context" key={`context:${reference.id}`}>
+              <span className="opencraft-composer-attachment__icon"><FileText aria-hidden="true" size={15} /></span>
+              <span className="opencraft-composer-attachment__copy"><strong>{reference.title}</strong>
+                <small>{intl.formatMessage({ id: "composer.context.reference", defaultMessage: "Reference context" })}</small>
+              </span>
+              <span className="opencraft-composer-attachment__actions"><IconButton variant="ghost" size="accessory"
+                aria-label={intl.formatMessage({ id: "composer.context.remove", defaultMessage: "Remove context: {title}" }, { title: reference.title })}
+                onClick={() => controller.dispatch({ type: "remove-context", id: reference.id })}><X aria-hidden="true" size={13} /></IconButton></span>
+            </div>)}
           </div>
         )}
 
@@ -2572,10 +2585,10 @@ export const OpenCraftComposer = forwardRef<
                 label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
-                <ComposerModelMenu catalog={selectionCatalog} selected={selectedModelValue}
+                <ComposerModelMenu key={draftId} catalog={selectionCatalog} selected={selectedModelValue}
                   switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
                   onSelect={(model, group) => {
-                    if (group) { void selectAgentModel(group, model); if (group.active) selectModel(model); }
+                    if (group) { void selectAgentModel(group, model); }
                     else selectModel(model);
                   }}
                   effort={existingConversation ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
