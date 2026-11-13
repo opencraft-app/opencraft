@@ -2,13 +2,13 @@
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { execFile } from "node:child_process";
 import {
   access,
   copyFile,
   lstat,
   mkdir,
-  readFile,
   readdir,
   readlink,
   rm,
@@ -89,7 +89,9 @@ export async function synchronizeRendererFiles(x64AppPath, arm64AppPath) {
 }
 
 async function sha256(path) {
-  return createHash("sha256").update(await readFile(path)).digest("hex");
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  return hash.digest("hex");
 }
 
 async function listFiles(root, current = root, result = []) {
