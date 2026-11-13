@@ -36,6 +36,32 @@ test("Host storage failure neither listens nor starts the engine", async () => {
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("standalone Host reports a stable OS machine identity without a reachable engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-host-machine-"));
+  let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined;
+  let socket: WebSocket | undefined;
+  try {
+    const options = { dataDirectory: directory, dshUrl: "http://127.0.0.1:1" };
+    host = await startLocalAgentHost(options);
+    socket = await connect(host.websocketUrl);
+    const first = await request(socket, 1, "runtime/machine/read");
+    assert.equal(first.agent, "OpenCraft");
+    assert.ok(first.machine.name.trim());
+    assert.equal(first.machine.platform, process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+    assert.equal((await readFile(join(directory, "machine-id"), "utf8")).trim(), first.machine.machineId);
+    socket.close(); socket = undefined; await host.close(); host = undefined;
+    host = await startLocalAgentHost(options);
+    socket = await connect(host.websocketUrl);
+    assert.deepEqual(await request(socket, 2, "runtime/machine/read"), first);
+    socket.close(); socket = undefined; await host.close(); host = undefined;
+    const supplied = { ...first.machine, name: "Configured deployment", machineId: "12345678-1234-4123-8123-123456789abc" };
+    host = await startLocalAgentHost({ ...options, machineIdentity: supplied });
+    socket = await connect(host.websocketUrl);
+    assert.deepEqual(await request(socket, 3, "runtime/machine/read"), { machine: supplied, agent: "OpenCraft" });
+    assert.equal((await readFile(join(directory, "machine-id"), "utf8")).trim(), first.machine.machineId);
+  } finally { socket?.close(); await host?.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
 test("Host health reports all eagerly opened stores", async () => {
   const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1" });
   try {

@@ -22,7 +22,8 @@
     "./dropdown-menu": "./src/dropdown-menu.tsx",
     "./safe-layout": "./src/safe-layout.tsx",
     "./context-menu": "./src/context-menu.tsx",
-    "./touch-contact": "./src/touch-contact.tsx"
+    "./touch-contact": "./src/touch-contact.tsx",
+    "./motion-reduction": "./src/use-motion-reduction.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

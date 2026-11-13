@@ -9,7 +9,9 @@
     "./actor-access": "./src/actor-access.ts",
     "./human-auth": "./src/human-auth.ts",
     "./human-accounts": "./src/human-accounts.ts",
-    "./account-management": "./src/account-management.ts"
+    "./account-management": "./src/account-management.ts",
+    "./server-spaces": "./src/server-spaces-runtime.ts",
+    "./server-spaces-session": "./src/server-spaces-session.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",

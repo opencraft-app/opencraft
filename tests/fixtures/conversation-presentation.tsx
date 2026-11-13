@@ -27,6 +27,10 @@ for (const [key, value] of Object.entries(
 ))
   document.documentElement.style.setProperty(key, value);
 const probe = window as any;
+probe.theme = (theme: "light" | "dark") => {
+  document.documentElement.dataset.theme = theme;
+  for (const [key, value] of Object.entries(buildOpenCraftThemeCssProperties(theme))) document.documentElement.style.setProperty(key, value);
+};
 const planText =
   "# Release plan\n\n" +
   Array.from(
@@ -57,6 +61,13 @@ function Demo() {
   probe.restore = () => setGeneration((value) => value + 1);
   probe.detail = setDetail;
   probe.scenario = (scenario: string) => {
+    if (scenario === "native-busy") {
+      setGeneration(value => value + 1);
+      setTurn({ id: "locked-turn", status: "failed", items: [{ id: "locked-error", type: "error", payload: {
+        message: "Invalid request: This Codex session is in use by another Codex client (the Codex app, the CLI or an IDE extension).", recovery: "terminal",
+      } }] });
+      return;
+    }
     if (scenario === "single-unrelated" || scenario === "single-voice") {
       setGeneration(value => value + 1);
       setTurn({ id: "single-input-turn", status: "complete", items: scenario === "single-unrelated" ? [
@@ -142,9 +153,12 @@ function Demo() {
     createDefaultTimelineProjectorRegistry(),
   );
   return (
-    <div style={{ width: 900, height: 760 }}>
+    <div style={{ width: "min(900px, 100%)", height: 760 }}>
       <TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}>
         <Conversation
+          documentContext={{ conversationId: "fixture", cwd: "/workspace", hostId: "fixture", theme: "light",
+            onForkConversation: () => { probe.forks = (probe.forks ?? 0) + 1; return new Promise((resolve, reject) => { probe.finishFork = resolve; probe.failFork = reject; }); },
+          }}
           scrollPolicy="response-placement"
           key={generation}
           timeline={timeline}

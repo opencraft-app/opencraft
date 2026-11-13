@@ -35,7 +35,8 @@
     "@opencraft/app-host-server": "0.1.0",
     "@opencraft/model-usage-policy": "0.1.0",
     "@opencraft/plugin-acp-engine": "^0.1.0",
-    "@opencraft/agent-bridge-host": "0.1.0"
+    "@opencraft/agent-bridge-host": "0.1.0",
+    "@opencraft/access-control": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

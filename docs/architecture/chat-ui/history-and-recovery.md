@@ -240,6 +240,24 @@ that method. Paginated Durable Threads retain separate Turn and Item loading;
 message-window history keeps its own higher-priority strategy. This applies to
 normal navigation and to conversations opened from linked Tasks alike.
 
+### Local Codex source continuity
+
+The connected Codex history Worker resolves the current rollout from the native
+read-only state index on every read. A physical rollout node is distinct from
+its logical Thread ID: a continuation can retain the Thread ID while changing
+its filename. `session_meta.history_base` supplies ancestor node IDs and exact
+byte/ordinal cutoffs. The reader follows those references in order, includes
+only the valid ancestor prefix, and retains parser state across segment bounds.
+It never concatenates every same-named file or selects a head by modification
+time. Without an index, only an unambiguous source-lineage tip is accepted.
+
+The parsed-history cache fingerprints the complete resolved ranges and current
+head, so a rotated rollout invalidates an otherwise unchanged old file. Missing
+ancestors, identity/cycle failures, partial cutoffs and ordinal mismatches fail
+without substituting stale history. An unfinished final head record remains
+uncommitted until its newline arrives. SQLite/filesystem work stays in the
+existing history Worker; reading does not start a native Turn or rewrite logs.
+
 ### Bounded history recovery
 
 A paginated provider may explicitly advertise `initialTurnsPage: true` and

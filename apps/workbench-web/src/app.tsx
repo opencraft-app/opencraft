@@ -1,3 +1,5 @@
+import { useServerSpaces } from "./runtime/use-server-spaces";
+import { ServerSpacesContent } from "./components/server-spaces-sidebar";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
@@ -367,6 +369,8 @@ export function App({
     : "web";
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
+  const serverSpaces = useServerSpaces(snapshot.hostId);
+  const [serverDrawerOpen,setServerDrawerOpen]=useState(()=>typeof window!=="undefined"&&new URL(window.location.href).searchParams.has("serverInvite"));
   useEffect(() => {
     setConversationSearchTarget(current => current
       && (current.hostId !== snapshot.hostId || current.threadId !== snapshot.activeThreadId) ? null : current);
@@ -409,7 +413,7 @@ export function App({
     cloud: machine.cloud,
     connectable: machine.hosts.some(host => host.enabled),
   })), [newConversationMachines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId);
+  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId, draft === null && /^(codex|cursor)_/u.test(snapshot.activeThreadId ?? ""));
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
@@ -999,6 +1003,15 @@ export function App({
         return invoking.then(() => true);
       }
       let submittedIntent = intent;
+      if(intent.target.type==='new-thread'&&intent.target.execution.hostId===serverSpaces.hostId) {
+        const spaceId=intent.target.execution.collaborationSpaceId??'myself';
+        const supported=runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.['opencraft/server-spaces'];
+        if((!supported&&spaceId!=='myself')||(serverSpaces.directory&&!serverSpaces.directory.spaces.some(space=>space.id===spaceId))){
+          composerController.dispatch({type:'set-lifecycle',phase:'failed',error:intl.formatMessage({id:'serverSpaces.scopeUnavailable',defaultMessage:'This Server is unavailable. Start a new conversation in an available Server.'})});return false;
+        }
+        const {collaborationSpaceId:ignored,...placement}=intent.target.execution;
+        submittedIntent={...intent,target:{...intent.target,execution:{...placement,...(supported?{collaborationSpaceId:spaceId}:{})}}};
+      }
       let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
       const followsActiveTurn =
         context.followUpAction !== null &&
@@ -1054,6 +1067,7 @@ export function App({
       sideChatAction,
       panelToolbarContext,
       hostCatalog,
+      serverSpaces.hostId,serverSpaces.directory,
       queryClient,
       activeThreadLease,
       localThreadId,
@@ -1149,7 +1163,7 @@ export function App({
     },
     [activeThreadLease],
   );
-  const navigateToHome = useCallback(() => {
+  const navigateToHomeForSpace = useCallback((collaborationSpaceId:string) => {
     const activeProtocolThread = catalog.protocolThreads.find(
       (thread) => thread.id === activeThreadLease?.threadId,
     );
@@ -1183,7 +1197,7 @@ export function App({
     const hostId = asHostId(hostCatalog.selectedHostId);
     try {
       hostCatalog.navigateToHome({
-        execution: { hostId, workspace },
+        execution: { hostId, workspace,collaborationSpaceId },
         entrypoint: "new-chat",
       });
     } catch (error) {
@@ -1198,6 +1212,20 @@ export function App({
     setSidebarOpen,
     snapshot.hostId,
   ]);
+
+  const navigateToHome=useCallback(()=>navigateToHomeForSpace(serverSpaces.unavailable?'myself':serverSpaces.selected),[navigateToHomeForSpace,serverSpaces.selected,serverSpaces.unavailable]);
+  const serverViewKey=conversationRouteOpen?JSON.stringify([serverSpaces.ownerKey,draft?.id??activeThreadId]):null;
+  useEffect(()=>{
+    if(!serverViewKey||serverSpaces.unavailable)return;
+    let active=true;const expected=serverSpaces.selectionGeneration();
+    void serverSpaces.refresh().then(result=>{
+      if(!active||result.isError||!result.data)return;
+      const scope=draft?draft.target.execution.collaborationSpaceId??'myself'
+        :result.data.assignments.find(row=>row.threadId===activeThreadId)?.spaceId??'myself';
+      if(result.data.spaces.some(space=>space.id===scope))void serverSpaces.select(scope,expected).catch(()=>{});
+    });
+    return()=>{active=false;};
+  },[serverViewKey,serverSpaces.unavailable]);
 
   const openBrowserTab = useCallback(
     (initialUrl?: string, background = false) => {
@@ -1323,7 +1351,7 @@ export function App({
     : null;
   const onboardingFinishEpoch = useRef(0);
   useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
-  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | null>(() => {
+  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | "history" | null>(() => {
     try { return localStorage.getItem("opencraft.onboarding.completedAt") === null ? "gate" : null; }
     catch { return null; }
   });
@@ -1340,7 +1368,7 @@ export function App({
       if (!latest.models.some(model => model.id === modelId || model.model === modelId)) throw new Error("Selected agent model is unavailable");
     }
     if (modelId && draft === null) {
-      hostCatalog.navigateToHome({ execution: { hostId: asHostId(snapshot.hostId), workspace: { cwd: activeHost.workspaceBrowseRoots[0] ?? null, runtimeWorkspaceRoots: activeHost.workspaceBrowseRoots } }, entrypoint: "new-chat" });
+      hostCatalog.navigateToHome({ execution: { collaborationSpaceId:serverSpaces.selected,hostId: asHostId(snapshot.hostId), workspace: { cwd: activeHost.workspaceBrowseRoots[0] ?? null, runtimeWorkspaceRoots: activeHost.workspaceBrowseRoots } }, entrypoint: "new-chat" });
       await hostCatalog.selectHost(snapshot.hostId, { model: modelId, effort: null, serviceTier: null });
       if (epoch !== onboardingFinishEpoch.current) return;
     }
@@ -1352,13 +1380,13 @@ export function App({
   useEffect(() => {
     const replay = (event: Event) => {
       onboardingFinishEpoch.current += 1;
-      const presentation = event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
+      const presentation = event instanceof CustomEvent && event.detail?.intent === "history" ? "history" : event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
       setOnboardingOverlay(presentation);
     };
     window.addEventListener("opencraft:replay-agent-onboarding", replay);
     return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
   }, []);
-  const visibleOnboardingOverlay = onboardingOverlay === "sheet" || conversationRouteOpen ? onboardingOverlay : null;
+  const visibleOnboardingOverlay = (onboardingOverlay === "sheet" || onboardingOverlay === "history") || conversationRouteOpen ? onboardingOverlay : null;
   const draftSetupNotice = draftSetupKind === null || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
     kind={draftSetupKind} hostName={activeHost.label}
     onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
@@ -1388,6 +1416,10 @@ export function App({
     composerWorkspaceRoots,
   );
   const agentAvailability = useAgentAvailability();
+  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { contextExport?: readonly string[] } | undefined;
+  const conversationAgent = activeThreadId?.startsWith("codex_") ? "codex" : activeThreadId?.startsWith("cursor_") ? "cursor" : null;
+  const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
+    && continuationCapability?.contextExport?.includes(conversationAgent) === true && presentation.executionSelection !== "fixed";
   const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
@@ -1420,15 +1452,25 @@ export function App({
       onConfigureModels: embedded?.onConfigureModels,
       onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
-      agentGroups: !filterNewAgents ? undefined : engineCatalog.groups.map(group => ({
+      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
         id: group.hostId,
         label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
         active: group.hostId === snapshot.hostId,
-        models: projectComposerModelChoices((group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
-        loading: group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
-        error: group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
+        models: projectComposerModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
+        loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
+        error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
         select: async (model) => {
+          if (canContinueWithAgent && model.agentId === conversationAgent) return;
+          if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
+            try {
+              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), model: model.value, effort: model.defaultEffort, serviceTier: null });
+            } catch (error) {
+              if ((error as { code?: unknown })?.code === "PRIVATE_CONTINUATION_UNAVAILABLE") throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.privateUnavailable", defaultMessage: "This Server cannot yet preserve private visibility when continuing with another Agent. Your original conversation and draft are unchanged." }));
+              throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
+            }
+            return { selection: "handled" as const };
+          }
           const currentTier = composerController.getSnapshot().draft.selections.serviceTier;
           const requestedTier = currentTier !== undefined ? currentTier : composerCatalog.newThreadDefaults?.serviceTier;
           const serviceTier = model.serviceTiers?.some(tier => tier.id === requestedTier) ? requestedTier ?? null : null;
@@ -1445,7 +1487,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      filterNewAgents, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -1677,7 +1719,7 @@ export function App({
         onConnectDesktopServer={desktopServerPort() ? async (origin, signal) => {
           const profile = await configureDesktopServer({ origin, signal, port: desktopServerPort()!, profiles: hostCatalog.profiles, provision: hostCatalog.provisionHost });
           signal.throwIfAborted();
-          hostCatalog.navigateToHome({ execution: { hostId: profile.hostId as import('@opencraft/chat-core').HostId, workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+          hostCatalog.navigateToHome({ execution: { collaborationSpaceId:serverSpaces.selected,hostId: profile.hostId as import('@opencraft/chat-core').HostId, workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
         } : undefined}
         onOpenView={workbenchNavigation.openExtensionView}
         onPushViewResource={workbenchNavigation.pushExtensionViewResource}
@@ -1853,6 +1895,13 @@ export function App({
     return () => { document.title = applicationName; };
   }, [embedded, applicationName]);
   const scheduleCapability = executionEngineExtension(runtime.resources.host.getInitializeResult()?.capabilities?.extensions, activeThreadId, "opencraft/conversation-schedules") as { version?: number } | undefined;
+  const nativeSessionCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { version?: number } | undefined;
+  const nativeSession = useQuery({
+    queryKey: ["appserver", snapshot.hostId, "native-session", activeThreadId],
+    enabled: nativeSessionCapability?.version === 1 && activeThreadId?.startsWith("codex_") === true && snapshot.phase === "ready",
+    queryFn: () => hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/status", { threadId: activeThreadId! }),
+    retry: false,
+  });
   const schedulesAvailable = scheduleCapability?.version === 1 && runtime.resources.host.canRequest?.("opencraft/schedules/read") === true;
   const conversationMenuAvailable = conversationSurfaceVisible && draft === null && activeThreadId !== null
         && (schedulesAvailable || hostCatalog.tasks || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).pin || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).archive || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork || activeThread?.project || snapshot.conversation?.execution.cwd || activeProtocolThread?.cwd);
@@ -1904,7 +1953,11 @@ export function App({
                 archive: () => hostCatalog.threadManagement.archive(snapshot.hostId, headerThreadId),
                 refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }),
               }) : undefined,
-    onFork: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork
+    onReleaseNativeSession: nativeSession.data?.release ? async () => {
+      await hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/release", { threadId: headerThreadId });
+      await nativeSession.refetch();
+    } : undefined,
+    onFork: (activeThreadId?.startsWith("codex_") ? nativeSession.data?.fork === true : hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork)
               ? () => forkAndOpenThread({
                 routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
                 fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, headerThreadId),
@@ -2084,6 +2137,13 @@ export function App({
         target={routeHeader.target}
       >
         <AppShell
+          serverDrawer={serverSpaces.unavailable ? undefined : {
+            open:serverDrawerOpen,onOpenChange:setServerDrawerOpen,
+            label:intl.formatMessage({id:'serverSpaces.title',defaultMessage:'Servers'}),
+            closeLabel:intl.formatMessage({id:'serverSpaces.closeDrawer',defaultMessage:'Close Servers'}),
+            openLabel:intl.formatMessage({id:'serverSpaces.openDrawer',defaultMessage:'Open Servers'}),
+            content:<ServerSpacesContent key={serverSpaces.ownerKey} controller={serverSpaces} open={serverDrawerOpen} onClose={()=>setServerDrawerOpen(false)} onSelected={spaceId=>{setServerDrawerOpen(false);navigateToHomeForSpace(spaceId);}}/>,
+          }}
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
@@ -2162,7 +2222,7 @@ export function App({
             host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
             {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
               searchInDialog={presentation.shellNavigation}
-              threads={multiHostCatalog.threads}
+              threads={serverSpaces.filter(multiHostCatalog.threads)}
               threadCatalogs={multiHostCatalog.catalogs}
               threadCatalogDiscovery={multiHostCatalog.discovery}
               {...sidebarCommands}
@@ -2202,6 +2262,7 @@ export function App({
           {!embedded && visibleOnboardingOverlay !== null ? <HostAgentOnboarding
             key={snapshot.hostId}
             presentation={visibleOnboardingOverlay}
+            onImported={async () => { await serverSpaces.select("myself"); }}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}
             onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}
@@ -2332,8 +2393,9 @@ export function App({
                     onOpenResource: openChatResource,
                     onReviewTurnDiff: openTurnDiffReview,
                     composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
+                    onForkConversation: !showingDisplayCache && nativeSession.data?.fork ? conversationToolbarProps.onFork : undefined,
                     onForkTurn: !showingDisplayCache && snapshot.conversation?.authoritative === true
-                      && activeThreadId !== null && hostCatalog.threadManagement.capabilities(snapshot.hostId).fork
+                      && activeThreadId !== null && !activeThreadId.startsWith("codex_") && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
                       ? turnId => forkAndOpenThread({
                           routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
                           fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, activeThreadId, turnId),

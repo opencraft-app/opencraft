@@ -17,6 +17,7 @@ export interface UiPreferenceValues {
   readonly "shell.lastVisibleNavigationDetent": ShellNavigationVisibleDetent;
   readonly "shell.navigationWidth": number;
   readonly "shell.contextSidebarWidth": number;
+  readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
 }
 
@@ -39,6 +40,15 @@ const widthValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const uiPreferenceDefinitions = Object.freeze({
+  "sidebar.collaborationServers": {
+    key:"sidebar.collaborationServers",scope:"installation",defaultValue:{},
+    parse:(value:unknown):Readonly<Record<string,string>>|null=>{
+      if(!value||typeof value!=='object'||Array.isArray(value))return null;
+      const entries=Object.entries(value);
+      if(entries.length>1000||entries.some(([key,id])=>key.length>4096||typeof id!=='string'||!id||id.length>256))return null;
+      return Object.fromEntries(entries) as Record<string,string>;
+    },
+  },
   "shell.toolbarDocks": {
     key: "shell.toolbarDocks", scope: "installation", defaultValue: {},
     parse: (value: unknown): UiPreferenceValues["shell.toolbarDocks"] | null => {

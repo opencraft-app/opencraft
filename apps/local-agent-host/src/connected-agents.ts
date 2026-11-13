@@ -140,12 +140,39 @@ export class ConnectedAgentHost {
     return { engineId, bridge: method === "thread/start" && engineId !== null && this.bridge?.engines.includes(engineId) === true };
   }
 
-  async models() {
-    if (Date.now() - this.probedAt > 60_000) await this.refresh();
-    // Discover once per ready agent, including after Host restart. One failed
-    // peer does not remove the API catalog or another healthy agent.
-    await Promise.allSettled(this.ready.map(engineId => this.ensureAgentModels(engineId)));
-    return this.ready.flatMap(engineId => {
+  private savedModels: Promise<void> | null = null;
+  private catalogRefresh: Promise<void> | null = null;
+  private async readSavedModels(): Promise<void> {
+    await (this.savedModels ??= Promise.allSettled((["codex", "cursor", "claude-code", "codebuddy"] as const).map(async id => {
+      const engine = await this.engine(id);
+      const page = await engine.request("model/list", {}, { notify() {}, async request() {} });
+      const models = this.projectModels(id, page.data ?? []);
+      if (models.length && !this.discovered.has(id)) this.discovered.set(id, models);
+    })).then(() => undefined));
+  }
+  async executionProviders() {
+    await this.readSavedModels();
+    return (["codex", "cursor"] as const).flatMap(id => {
+      const engine = this.engines.get(id);
+      return engine ? [{ id, label: LABELS[id], threadPrefix: engine.threadPrefix, modelPrefix: engine.modelPrefix, extensions: engine.extensions }] : [];
+    });
+  }
+  async models(threadId?: string) {
+    // Saved Agent declarations are metadata, never authorization to execute.
+    // Do not launch peers or wait on login commands on this read path.
+    await this.readSavedModels();
+    if (!this.catalogRefresh && Date.now() - this.probedAt > 60_000) {
+      this.catalogRefresh = this.refresh().then(async () => {
+        await Promise.allSettled(this.ready.map(async id => {
+          const before = JSON.stringify(this.discovered.get(id));
+          await this.ensureAgentModels(id);
+          if (!this.closed && JSON.stringify(this.discovered.get(id)) !== before)
+            for (const listener of this.listeners) listener("opencraft/agents/models/changed", { agentId: id });
+        }));
+      }).catch(() => undefined).finally(() => { this.catalogRefresh = null; });
+    }
+    return [...this.discovered.keys()].flatMap(engineId => {
+      if (threadId && connectedAgentEngineId(threadId) !== engineId) return [];
       const found = this.discovered.get(engineId) ?? [];
       return found.length > 0 ? found.map(model => ({
         ...connectedAgentCatalogEntry(engineId),
@@ -172,7 +199,9 @@ export class ConnectedAgentHost {
     // Installed readers remain cold; an absent CLI leaves the Host's saved row.
     const engines: EngineId[] = ["codex", "cursor", "claude-code", "codebuddy"];
     const results = await Promise.allSettled(engines.map(async id => {
-      const engine = await this.engine(id), rows: Record<string, any>[] = [];
+      const engine = await this.engine(id);
+      await engine.refreshNativeProjects();
+      const rows: Record<string, any>[] = [];
       const client: ExecutionEngineClient = { request: () => Promise.reject(new Error("Catalog read has no tool owner")), notify: () => undefined };
       let cursor: string | null = null;
       do {
@@ -184,6 +213,24 @@ export class ConnectedAgentHost {
     const bridgeThreads = this.bridge ? await this.bridge.provider.request("thread/list", { archived: false }, { request: () => Promise.reject(new Error("Catalog read has no tool owner")), notify: () => undefined })
       .then(page => Array.isArray(page?.data) ? page.data as Record<string, any>[] : []).catch(() => []) : [];
     return [...results.flatMap(result => result.status === "fulfilled" ? result.value : []), ...bridgeThreads];
+  }
+
+  private readonly historyCandidates = new Map<string, { id: string; title: string | null; cwd: string; updatedAt: string | null; seenAt: number }>();
+
+  async localConversations(agentId: "codex" | "cursor", cursor?: string, isCommitted?: (threadId: string) => boolean) {
+    if (agentId !== "codex" && agentId !== "cursor") throw new Error("Unsupported history source");
+    const engine = await this.engine(agentId);
+    const page = await engine.discoverNativeSessions(cursor);
+    for (const entry of page.sessions) this.historyCandidates.set(`${agentId}:${entry.id}`, { ...entry, seenAt: Date.now() });
+    while (this.historyCandidates.size > 5000) this.historyCandidates.delete(this.historyCandidates.keys().next().value!);
+    return { conversations: page.sessions.map(({ importedThreadId, ...entry }) => ({ ...entry,
+      imported: entry.imported && (!isCommitted || (!!importedThreadId && isCommitted(importedThreadId))) })), nextCursor: page.nextCursor };
+  }
+
+  async importLocalConversation(agentId: "codex" | "cursor", id: string): Promise<Record<string, any>> {
+    const entry = this.historyCandidates.get(`${agentId}:${id}`);
+    if (!entry || Date.now() - entry.seenAt > 30 * 60_000) throw new Error("Refresh the local conversation directory before importing");
+    return (await this.engine(agentId)).importNativeSession(entry);
   }
 
   private async ensureAgentModels(engineId: EngineId): Promise<ConnectedAgentModel[]> {
@@ -213,6 +260,11 @@ export class ConnectedAgentHost {
     };
     const forwarded = { ...params };
     if (typeof forwarded.model === "string" && forwarded.model.endsWith(PLACEHOLDER)) delete forwarded.model;
+    if ((method === "turn/start" || method === "thread/fork") && typeof forwarded.model === "string" && !engine.ownsModel(forwarded.model)) {
+      const catalog = await engine.request("model/list", {}, client);
+      const nativeModel = `${engineId}:${forwarded.model}`;
+      if ((catalog.data ?? []).some((model: { id: string }) => model.id === nativeModel)) forwarded.model = nativeModel;
+    }
     if (method === "thread/start") {
       const model = typeof forwarded.model === "string" ? forwarded.model : undefined;
       return engine.request("thread/start", {
@@ -254,14 +306,18 @@ export class ConnectedAgentHost {
     if (engineId === "codex" || engineId === "cursor") await engine.discoverModelCapabilities(created.thread.id);
     const listed = await engine.request("model/list", {}, client) as { data?: { id?: string; displayName?: string; serviceTiers?: unknown;
       supportedReasoningEfforts?: unknown; defaultReasoningEffort?: unknown }[] };
-    const models = (listed.data ?? []).flatMap(model => typeof model.id === "string" && model.id.startsWith(`${engineId}:`)
+    const models = this.projectModels(engineId, listed.data ?? []);
+    const resolved = models.length > 0 ? models : [{ id: `${engineId}${PLACEHOLDER}`, name: LABELS[engineId], serviceTiers: [], supportedReasoningEfforts: [], defaultReasoningEffort: null }];
+    this.discovered.set(engineId, resolved);
+    return resolved;
+  }
+
+  private projectModels(engineId: EngineId, rows: readonly { id?: string; displayName?: string; serviceTiers?: unknown; supportedReasoningEfforts?: unknown; defaultReasoningEffort?: unknown }[]): ConnectedAgentModel[] {
+    return rows.flatMap(model => typeof model.id === "string" && model.id.startsWith(`${engineId}:`)
       ? [{ id: model.id, name: model.displayName || model.id.slice(engineId.length + 1),
         supportedReasoningEfforts: Array.isArray(model.supportedReasoningEfforts) ? model.supportedReasoningEfforts.filter(effort => effort && typeof effort.reasoningEffort === "string" && typeof effort.description === "string") : [],
         defaultReasoningEffort: typeof model.defaultReasoningEffort === "string" ? model.defaultReasoningEffort : null,
         serviceTiers: Array.isArray(model.serviceTiers) ? model.serviceTiers.filter(tier => tier && typeof tier.id === "string" && typeof tier.name === "string" && typeof tier.description === "string") : [] }] : []);
-    const resolved = models.length > 0 ? models : [{ id: `${engineId}${PLACEHOLDER}`, name: LABELS[engineId], serviceTiers: [], supportedReasoningEfforts: [], defaultReasoningEffort: null }];
-    this.discovered.set(engineId, resolved);
-    return resolved;
   }
 
   private async refresh(): Promise<void> {
@@ -297,7 +353,7 @@ export class ConnectedAgentHost {
       permission: "allow-once",
       timeoutMs: 120_000,
       ...(engineId === "codex" || engineId === "cursor" ? { history: new ConnectedAgentHistory(engineId,
-        engineId === "codex" ? process.env.CODEX_HOME || join(homedir(), ".codex") : process.env.CURSOR_CONFIG_DIR || join(homedir(), ".cursor")) } : {}),
+        engineId === "codex" ? process.env.CODEX_HOME || join(homedir(), ".codex") : process.env.CURSOR_CONFIG_DIR || join(homedir(), ".cursor"), join(this.root, "continuations")) } : {}),
     });
     engine.subscribe((method, params) => {
       for (const listener of this.listeners) listener(method, params);

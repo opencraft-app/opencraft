@@ -20,12 +20,12 @@ export function ModelCatalogStatus({ error, loading, retry, emptyTitle, emptyHin
           : error ? <FormattedMessage id="composer.model.failedTitle" defaultMessage="Couldn't load models" />
           : emptyTitle ?? <FormattedMessage id="composer.model.emptyTitle" defaultMessage="No models available yet" />}
       </div>
-      {emptyHint === null && !error && !loading ? null : <div className="opencraft-composer-model-status__hint">
-        {error || loading ? <FormattedMessage id="composer.model.checkSetup" defaultMessage="Check this Agent's setup, then try again." />
+      {loading || emptyHint === null && !error ? null : <div className="opencraft-composer-model-status__hint">
+        {error ? <FormattedMessage id="composer.model.checkSetup" defaultMessage="Check this Agent's setup, then try again." />
           : emptyHint ?? <FormattedMessage id="composer.model.setupHint" defaultMessage="Add a model to start chatting." />}
       </div>}
     </div>
-    {retry && (error || loading) ? <DropdownMenu.Item
+    {retry && error && !loading ? <DropdownMenu.Item
       className="opencraft-composer-selection-menu__item opencraft-composer-model-status__retry"
       disabled={loading}
       onSelect={event => { event.preventDefault(); retry(); }}>

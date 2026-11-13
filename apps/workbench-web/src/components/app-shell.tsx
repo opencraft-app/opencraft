@@ -1,3 +1,6 @@
+import { useMotionReduction } from "@opencraft/design-system-web/motion-reduction";
+import { frame } from "@opencraft/design-system/tokens";
+import { ChevronRightIcon, ChevronLeftIcon } from "@opencraft/design-system-web/action-icons";
 import { IconButton } from "@opencraft/design-system-web/button";
 import { SafeLayout } from "@opencraft/design-system-web/safe-layout";
 import { SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
@@ -10,7 +13,6 @@ import { focusChromeAction } from "../chrome-actions/use-chrome-action-focus";
 import {
   motion,
   useMotionValue,
-  useReducedMotion,
   useTransform,
   type MotionStyle,
   type MotionValue,
@@ -62,7 +64,7 @@ import { useContextPaneGeometry } from "./use-context-pane-geometry";
 import { AppShellRightPanel } from "./app-shell-right-panel";
 import { ComposerOverlayAnchorContext, FloatingComposerRegistryContext, FloatingComposerScopeContext } from "./thread-composer-presentation";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
-import { ShellPageOverlayContext, useShellPageOverlayFrame } from "./shell-page-presentation";
+import { ShellPageDisplacementContext, ShellPageOverlayContext, useShellPageOverlayFrame } from "./shell-page-presentation";
 import { FloatingComposerRegistry } from "./floating-composer-state";
 import {
   SidebarResizeHandle,
@@ -88,6 +90,7 @@ const MotionSafeLayout = motion.create(SafeLayout);
 interface AppShellProps {
   /** Route-selected backdrop; geometry and safe areas stay owned by Shell. */
   surface?: "default" | "application-desktop";
+  serverDrawer?:{open:boolean;onOpenChange(open:boolean):void;content:ReactNode;label:string;openLabel:string;closeLabel:string};
   navigation?: ShellNavigationConfig;
   layoutScope: string;
   mainContentLayout: AppShellMainContentLayout;
@@ -234,6 +237,7 @@ export function useAppShellLayoutMotion(): AppShellLayoutMotion {
 
 export function AppShell({
   surface = "default",
+  serverDrawer,
   navigation,
   layoutScope,
   mainContentLayout,
@@ -626,8 +630,42 @@ export function AppShell({
     getPanelWidth: () => floatingWidth.get(),
     lockOpen: floatingResizing || drawerRequested,
   });
+  const serverSurfaceRef=useRef<HTMLElement|null>(null);
+  const serverEdgeRef=useRef<HTMLButtonElement|null>(null);
+  const serverFocusReturn=useRef<HTMLElement|null>(null);
+  const reducedMotion=useMotionReduction();
+  const serverWidth=useTransform(shellWidth,w=>Math.max(0,Math.min(frame.serverDrawerWidth,Number(w)-64)));
+  const serverGesture=useMobileSidebarGesture({enabled:Boolean(serverDrawer)&&!drawerRequested&&!floatingIntent.requested,open:serverDrawer?.open??false,width:serverWidth,
+    root:shellRootRef,overlay:serverSurfaceRef,foreground:pagePresentationRef,
+    leftEdgeOnly:true,edgeWidth:frame.serverDrawerEdgeWidth,edgeHandle:serverEdgeRef,
+    onInteractionStart:focused=>{if(focused&&focused!==document.body&&!serverSurfaceRef.current?.contains(focused))serverFocusReturn.current=focused;},
+    onOpenChange:next=>serverDrawer?.onOpenChange(next),
+  });
+  const serverBlocked=Boolean(serverDrawer)&&(Boolean(serverDrawer?.open)||serverGesture.present||serverGesture.dragging);
+  const serverX=useTransform([serverGesture.progress,serverWidth],([progress,width])=>Math.max(0,Math.min(1,Number(progress)))*Number(width));
+  const serverParallax=useTransform([serverGesture.progress,serverWidth],([progress,width])=>reducedMotion?0:(Math.max(0,Math.min(1,Number(progress)))-1)*Number(width)*0.12);
+  const previousServerOpen=useRef(false);
+  useLayoutEffect(()=>{
+    if(serverDrawer?.open&&!previousServerOpen.current){
+      const focused=document.activeElement;if(!serverFocusReturn.current&&focused instanceof HTMLElement)serverFocusReturn.current=focused;
+      serverSurfaceRef.current?.querySelector<HTMLElement>('h2,button')?.focus({preventScroll:true});
+      floatingIntent.dismiss();setDrawerRequested(false);
+    }
+    previousServerOpen.current=serverDrawer?.open??false;
+    if(!serverBlocked&&serverFocusReturn.current){const previous=serverFocusReturn.current;serverFocusReturn.current=null;(previous.isConnected&&previous.getClientRects().length&&!previous.closest("[inert]")?previous:serverEdgeRef.current)?.focus({preventScroll:true});}
+  },[serverDrawer?.open,serverBlocked]);
+  useLayoutEffect(()=>{
+    if(!serverDrawer?.open)return;
+    const keydown=(event:KeyboardEvent)=>{
+      if(event.key!=='Escape'||!canHandleWorkbenchShortcut(event,'.app-shell-server-drawer'))return;
+      if(event.target instanceof Node&&serverSurfaceRef.current?.contains(event.target))return;
+      event.preventDefault();event.stopPropagation();serverDrawer.onOpenChange(false);
+    };
+    window.addEventListener('keydown',keydown,true);return()=>window.removeEventListener('keydown',keydown,true);
+  },[serverDrawer?.open,serverDrawer?.onOpenChange]);
   const mobileGesture = useMobileSidebarGesture({
-    enabled: !sidebarSuppressed && mobileSidebarEnabled && !sidebarOpen && !desktopDockMounted && !layoutResizing,
+    enabled: !serverBlocked && !sidebarSuppressed && mobileSidebarEnabled && !sidebarOpen && !desktopDockMounted && !layoutResizing,
+    excludeLeftEdge:Boolean(serverDrawer),edgeWidth:frame.serverDrawerEdgeWidth,
     open: !sidebarSuppressed && (floatingIntent.requested || drawerRequested), width: floatingWidth,
     root: shellRootRef, overlay: floatingOverlayRef, foreground: pagePresentationRef,
     onOpenChange: open => { if (!open) floatingIntent.dismiss(); setDrawerRequested(open); },
@@ -636,13 +674,13 @@ export function AppShell({
   // viewport coordinates (and gesture acquisition) unchanged.
   const mobilePageX = useTransform([mobileGesture.progress, floatingWidth], ([progress, width]) =>
     Math.max(0, Math.min(1, Number(progress))) * Number(width));
-  const reducedMotion = useReducedMotion();
+  const pageX=useTransform([mobilePageX,serverX],([mobile,server])=>Number(mobile)+Number(server));
   const mobilePageWash = useTransform(mobileGesture.progress, value => reducedMotion ? 0 : 0.65 * Math.max(0, Math.min(1, value)));
   // The physical browser surface is portaled outside the moving row. Publish
   // position changes too: ResizeObserver cannot see an ancestor translation.
-  useLayoutEffect(() => mobilePageX.on("change", () => {
+  useLayoutEffect(() => pageX.on("change", () => {
     rightPanelLayoutTick.set(rightPanelLayoutTick.get() + 1);
-  }), [mobilePageX, rightPanelLayoutTick]);
+  }), [pageX, rightPanelLayoutTick]);
   const mobilePageBlocked = !sidebarSuppressed && mobileSidebarEnabled && (drawerRequested || floatingIntent.requested || mobileGesture.dragging || mobileGesture.present);
   // External guests share the page's input boundary, including intent changes
   // that do not change any rectangle.
@@ -650,7 +688,7 @@ export function AppShell({
     rightPanelLayoutTick.set(rightPanelLayoutTick.get() + 1);
   }, [mobilePageBlocked, rightPanelLayoutTick]);
   useShellPageOverlayFrame({ root: shellRootRef, anchor: composerOverlayAnchor,
-    overlay: pageOverlayHost, pageX: mobilePageX, layoutTick: rightPanelLayoutTick });
+    overlay: pageOverlayHost, pageX, layoutTick: rightPanelLayoutTick });
   const sidebarPresentation = resolveSidebarPresentation({
     docked: sidebarOpen,
     layoutMounted: desktopDockMounted,
@@ -832,8 +870,9 @@ export function AppShell({
     }}>
     <SidebarDismissContext.Provider value={dismissSidebarAfterSelection}>
     <AppShellLayoutMotionContext.Provider value={layoutMotion}>
+      <ShellPageDisplacementContext.Provider value={{x:serverX,blocked:serverBlocked}}>
       <ApplicationShellRoot
-        className={`${surface === "application-desktop" ? "has-application-desktop " : ""}${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? " has-unified-sidebar" : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
+        className={`${serverDrawer ? "has-server-drawer " : ""}${surface === "application-desktop" ? "has-application-desktop " : ""}${browserSafeLayout ? "has-browser-safe-layout " : ""}${navigation ? `has-shell-navigation${unifiedNavigation ? " has-unified-sidebar" : ""}${mobileSidebarEnabled ? " has-mobile-sidebar-gestures" : ""}` : ""}`}
         rootRef={shellRootRef}
         windowChrome={windowChrome}
         sidebarOpen={sidebarOpen}
@@ -842,8 +881,18 @@ export function AppShell({
         sidecarPrimaryDetent={navigationController.projection.railDetent}
         style={shellStyle}
       >
+        {serverDrawer?<>
+          <motion.aside ref={serverSurfaceRef} className="app-shell-server-drawer" role="dialog" aria-modal={serverDrawer.open||undefined} aria-label={serverDrawer.label}
+            inert={!serverDrawer.open} aria-hidden={!serverDrawer.open} data-present={serverGesture.present||undefined}
+            style={{width:serverWidth,x:serverParallax}} onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();serverDrawer.onOpenChange(false);}}}>
+            {serverDrawer.content}
+          </motion.aside>
+          <motion.div className="app-shell-server-edge-frame" style={{x:serverX}}><IconButton ref={serverEdgeRef} variant="secondary" surface="integrated" size="edge" className="app-shell-server-edge"
+            aria-label={serverDrawer.open?serverDrawer.closeLabel:serverDrawer.openLabel} aria-expanded={serverDrawer.open}
+            onClick={()=>serverDrawer.onOpenChange(!serverDrawer.open)}>{serverDrawer.open?<ChevronLeftIcon size={14}/>:<ChevronRightIcon size={14}/>}</IconButton></motion.div>
+        </>:null}
         {!sidebarSuppressed && sidebarTransientEnabled && mountFloatingPresenceOwner && typeof document !== "undefined" ? createPortal(
-          <div ref={floatingOverlayRef} className="app-shell-floating-overlay-root" data-mobile-sidebar={mobileSidebarEnabled || undefined} data-sidebar-dragging={mobileGesture.dragging || undefined} style={{
+          <div ref={floatingOverlayRef} className="app-shell-floating-overlay-root" data-server-edge-present={Boolean(serverDrawer) || undefined} data-mobile-sidebar={mobileSidebarEnabled || undefined} data-sidebar-dragging={mobileGesture.dragging || undefined} style={{
             ...shellStyle,
             "--spacing-token-safe-header-left": `${windowChrome.safeArea.left}px`,
             "--spacing-token-safe-header-right": `${windowChrome.safeArea.right}px`,
@@ -919,17 +968,19 @@ export function AppShell({
         {typeof document !== "undefined" ? createPortal(
           <motion.div ref={pagePresentationRef} className="app-shell-page-presentation"
             data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
+            data-server-drawer-present={serverGesture.present||undefined}
             data-mobile-sidebar={mobileSidebarEnabled || undefined}
-            style={{ ...shellStyle, x: mobileSidebarEnabled ? mobilePageX : 0 }}>
-            <div ref={setPageOverlayHost} className="app-shell-page-overlays" inert={mobilePageBlocked || undefined} />
+            style={{ ...shellStyle, x: pageX }}>
+            <div ref={setPageOverlayHost} className="app-shell-page-overlays" inert={mobilePageBlocked || serverBlocked || undefined} />
             {mobileSidebarEnabled ? <motion.div aria-hidden="true" className="app-shell-mobile-page-wash"
               style={{ opacity: mobilePageWash }} /> : null}
-            {mobilePageBlocked ? <button type="button" className="app-shell-mobile-page-dismiss"
-              aria-label="Close sidebar" onClick={() => { sidebarToggleFocusPending.current = true; dismissFloatingSidebar(); }} /> : null}
+            {mobilePageBlocked || serverBlocked ? <button type="button" className="app-shell-mobile-page-dismiss"
+              aria-label={serverBlocked?serverDrawer?.closeLabel:"Close sidebar"} onClick={() => { if(serverBlocked)serverDrawer?.onOpenChange(false);else{sidebarToggleFocusPending.current = true; dismissFloatingSidebar();} }} /> : null}
           </motion.div>, presentationRoot ?? document.body,
         ) : null}
         <MotionSafeLayout edges={browserSafeLayout ? ["top", "bottom"] : []} className="app-shell-row" data-mobile-sidebar-present={mobileSidebarEnabled && mobileGesture.present || undefined}
-          style={mobileSidebarEnabled ? { x: mobilePageX } : undefined}>
+          data-server-drawer-present={serverGesture.present||undefined} inert={serverBlocked||undefined}
+          style={{x:pageX}}>
           <Sidecar animatedWidth={totalLeftWidth} dividerProgress={titlebarDividerProgress} footer={navigation && !unifiedNavigation ? <motion.div
             className="app-shell-sidecar__footer"
             data-compact-only={space.navigationDetent === "compact" && !sidebarOpen}
@@ -1006,7 +1057,7 @@ export function AppShell({
           <main
             className="main-content-surface"
             data-app-shell-main-surface="default"
-            inert={mobilePageBlocked || undefined}
+            inert={mobilePageBlocked || serverBlocked || undefined}
           >
             <motion.div
               className="app-shell-header-motion-host"
@@ -1070,6 +1121,7 @@ export function AppShell({
           </main>
         </MotionSafeLayout>
       </ApplicationShellRoot>
+      </ShellPageDisplacementContext.Provider>
     </AppShellLayoutMotionContext.Provider>
     </SidebarDismissContext.Provider>
     </ShellPresentationContext.Provider>

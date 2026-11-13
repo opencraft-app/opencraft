@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { indexedDB } from "fake-indexeddb";
@@ -197,4 +197,14 @@ test("new conversation fallback prefers the deployment over alphabetically leadi
   const server = { ...profile("opencraft-server"), displayName: "Server", hostKind: "durable" as const };
   assert.equal(chooseNewConversationHost([remote, server])?.hostId, server.hostId);
   assert.equal(chooseNewConversationHost([remote, server], remote.hostId)?.hostId, remote.hostId, "explicit remembered visible selection still wins");
+});
+
+
+test("malformed persisted machine identity is rejected rather than replaced", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-machine-invalid-"));
+  try {
+    await writeFile(join(directory, "machine-id"), "not-an-identity\n");
+    await assert.rejects(readDaemonMachineIdentity(directory), /Invalid persisted/);
+    assert.equal(await readFile(join(directory, "machine-id"), "utf8"), "not-an-identity\n");
+  } finally { await rm(directory, { recursive: true, force: true }); }
 });

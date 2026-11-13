@@ -1,3 +1,4 @@
+import { parseNativeConversationProject } from "@opencraft/appserver-protocol";
 import type { Thread } from "@opencraft/appserver-protocol/generated/v2";
 
 import type { WorkbenchThread } from "./models";
@@ -28,6 +29,7 @@ export function projectAppServerThread(
   thread: Thread & { pinned?: boolean; visibility?: "visible" | "hidden"; accessMode?: "shared" | "private" },
   nowMs = Date.now(),
 ): WorkbenchThread {
+  const nativeProject = parseNativeConversationProject((thread as Thread & { nativeProject?: unknown }).nativeProject);
   const parts = thread.cwd.split("/").filter(Boolean);
   return {
     id: thread.id,
@@ -37,7 +39,8 @@ export function projectAppServerThread(
       || (thread.parentThreadId != null
         ? [thread.agentRole?.trim(), `#${thread.id.slice(-8)}`].filter(Boolean).join(" · ")
         : "New chat"),
-    project: parts.at(-1) ?? "Workspace",
+    project: nativeProject?.name ?? parts.at(-1) ?? "Workspace",
+    ...(nativeProject ? { nativeProject } : {}),
     lineage: thread.parentThreadId != null ? "subagent" : thread.forkedFromId != null ? "fork" : "root",
     parentThreadId: thread.parentThreadId ?? null,
     ...(thread.visibility === undefined ? {} : { visibility: thread.visibility }),

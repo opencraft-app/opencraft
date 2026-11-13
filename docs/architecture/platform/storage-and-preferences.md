@@ -363,3 +363,11 @@ receipts, drafts or credentials. The existing downloadable resource cache has
 its own `OPENCRAFT_RESOURCE_CACHE_DIRECTORY`; it is not an established global
 setting for every temporary store. Broader unification must preserve each
 owner's isolation and retention contract rather than redirecting all data roots.
+
+### Server drawer selection
+
+`sidebar.collaborationServers` stores only the selected collaboration-space ID,
+partitioned by Host and authenticated display/account scope in the installation
+adapter, like the existing model-selection map. The server remains the membership
+authority. Neither membership data nor invitation codes enter this preference.
+Drawer visibility is transient and defaults closed on each new page load.

@@ -43,6 +43,7 @@ export interface ConversationTaskMenuProps {
   readonly onRename?: (title: string) => Promise<void>;
   readonly onSetPinned?: (pinned: boolean) => Promise<void>;
   readonly onArchive?: () => Promise<void>;
+  readonly onReleaseNativeSession?: () => Promise<void>;
   readonly onFork?: () => Promise<void>;
   readonly project?: string;
   readonly workspaceDirectory?: string;
@@ -140,6 +141,7 @@ export function ConversationTaskMenu(props: Props) {
   const notices = useAsyncNotices();
   const trigger = useRef<HTMLButtonElement | null>(null);
   const actionTrigger = useRef<HTMLElement | null>(null);
+  const [releaseOpen, setReleaseOpen] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [imOpen, setImOpen] = useState(false);
@@ -170,8 +172,17 @@ export function ConversationTaskMenu(props: Props) {
     mutationFn: () => props.onFork!(),
     retry: false,
   });
+  const release = useMutation({
+    mutationFn: () => props.onReleaseNativeSession!(),
+    retry: false,
+    onSuccess: () => {
+      setReleaseOpen(false);
+      notices.success({ key: `native-release:${props.scope}:${props.threadId}`, message: intl.formatMessage({ id: "chat.nativeSession.released", defaultMessage: "Released. You can now resume this conversation in another Codex client." }) });
+    },
+    onError: () => notices.error({ key: `native-release:${props.scope}:${props.threadId}`, message: intl.formatMessage({ id: "chat.nativeSession.releaseFailed", defaultMessage: "Could not confirm release. Finish active work, close other OpenCraft views, and check before trying again." }) }),
+  });
   const access = useThreadAccessAction(props.scope,props.threadId,props.access,true);
-  const busy = pin.isPending || archive.isPending || fork.isPending || access?.pending === true;
+  const busy = release.isPending || pin.isPending || archive.isPending || fork.isPending || access?.pending === true;
   const label = intl.formatMessage({ id: "tasks.relation.actions", defaultMessage: "Conversation actions" });
   const actions: ToolbarDockAction[] = [];
   const add = (id: string, label: string, icon: ToolbarDockAction["icon"], invoke: () => void, dialog = false, pending = false) =>
@@ -188,6 +199,7 @@ export function ConversationTaskMenu(props: Props) {
     () => { rename.reset(); setName(props.title ?? ""); setRenameOpen(true); }, true);
   if (props.onSetPinned) add("pin", intl.formatMessage(props.pinned ? { id: "chat.unpin", defaultMessage: "Unpin" } : { id: "chat.pin", defaultMessage: "Pin" }),
     props.pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />, () => pin.mutate(props.pinned !== true));
+  if (props.onReleaseNativeSession) add("release-native", intl.formatMessage({ id: "chat.nativeSession.release", defaultMessage: "Release Codex conversation…" }), <MessageSquare size={16} aria-hidden="true" />, () => setReleaseOpen(true), true);
   if (props.onFork) add("fork", intl.formatMessage({ id: "sidebar.thread.fork", defaultMessage: "Create branch" }),
     fork.isPending ? <LoaderCircle size={16} aria-hidden="true" /> : <GitFork size={16} aria-hidden="true" />, () => fork.mutate(), false, fork.isPending);
   if (props.onArchive) add("archive", intl.formatMessage({ id: "sidebar.thread.archive", defaultMessage: "Archive" }), <Archive size={16} aria-hidden="true" />,
@@ -212,6 +224,12 @@ export function ConversationTaskMenu(props: Props) {
     </ModalSurface> : null}
     {detailsOpen ? <Suspense fallback={null}><ConversationInformationDialog project={props.project} workspaceDirectory={props.workspaceDirectory}
       onDismiss={() => setDetailsOpen(false)} returnFocus={returnFocus} /></Suspense> : null}
+    {releaseOpen ? <ModalSurface size="compact" appearance="utility" label={intl.formatMessage({ id: "chat.nativeSession.release", defaultMessage: "Release Codex conversation…" })} onDismiss={() => setReleaseOpen(false)} returnFocus={returnFocus}>
+      <SettingsPanel title={intl.formatMessage({ id: "chat.nativeSession.release", defaultMessage: "Release Codex conversation…" })}>
+        <SettingsNotice>{intl.formatMessage({ id: "chat.nativeSession.releaseExplanation", defaultMessage: "Release this conversation so another Codex client can resume the same history. This stops its background tasks. You can return here after the other client releases it." })}</SettingsNotice>
+        <SettingsButton disabled={release.isPending} onClick={() => release.mutate()}>{intl.formatMessage({ id: "chat.nativeSession.releaseAction", defaultMessage: "Release conversation" })}</SettingsButton>
+      </SettingsPanel>
+    </ModalSurface> : null}
     {schedulesOpen && props.schedules ? <ConversationSchedulesPanel port={props.schedules} scope={props.scope} hostId={props.serverId} threadId={props.threadId} onClose={() => setSchedulesOpen(false)} returnFocus={returnFocus} /> : null}
     {pickerOpen && props.port ? <TaskPicker {...props} port={props.port} onClose={() => setPickerOpen(false)} returnFocus={returnFocus} /> : null}
   </>;

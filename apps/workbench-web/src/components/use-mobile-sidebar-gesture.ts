@@ -1,4 +1,5 @@
-import { animate, useMotionValue, useReducedMotion, type MotionValue } from "motion/react";
+import { useMotionReduction } from "@opencraft/design-system-web/motion-reduction";
+import { animate, useMotionValue, type MotionValue } from "motion/react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { PANEL_SPRING_TRANSITION } from "./use-panel-animation";
 import { readEdgeGestureHandoff } from "../runtime/edge-gesture-bridge";
@@ -11,19 +12,19 @@ interface HorizontalScroll {
 interface Gesture {
   id: number; x: number; y: number; width: number; start: number; initiallyOpen: boolean;
   owner: MobileGestureOwner; sidebarAllowed: boolean; horizontal: HorizontalScroll | null; scrollports: HorizontalScroll[];
-  motionStartedAt: number | null; samples: GestureSample[];
+  motionStartedAt: number | null; samples: GestureSample[]; initialFocus?:HTMLElement|null;
 }
 
 const foregroundInputSelector = 'dialog[open],[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
-function hasForegroundInputOwner(shell: HTMLElement, path: EventTarget[] = []): boolean {
-  if (path.some(node => node instanceof Element && node.matches(foregroundInputSelector))) return true;
+function hasForegroundInputOwner(shell: HTMLElement, path: EventTarget[] = [], ownedSurface?:HTMLElement|null): boolean {
+  if (path.some(node => node instanceof Element && node!==ownedSurface && node.matches(foregroundInputSelector))) return true;
   // Portals live in the presentation's own DOM root. Document queries cannot
   // see embedded dialogs; a retargeted event.target cannot identify their input.
   const scope = shell.getRootNode() as Document | ShadowRoot;
   const scopes = scope === shell.ownerDocument ? [scope] : [scope, shell.ownerDocument];
   return scopes.some(root => [...root.querySelectorAll(foregroundInputSelector)].some(node =>
-    node.getClientRects().length > 0 && (node.matches('dialog:modal') || !node.closest('[hidden],[inert],[aria-hidden="true"]'))));
+    node!==ownedSurface && node.getClientRects().length > 0 && (node.matches('dialog:modal') || !node.closest('[hidden],[inert],[aria-hidden="true"]'))));
 }
 
 function horizontalInput(path: EventTarget[], boundary: HTMLElement): HorizontalScroll[] | "exclusive" {
@@ -43,18 +44,20 @@ function horizontalInput(path: EventTarget[], boundary: HTMLElement): Horizontal
 }
 
 /** One visibility writer above the shared portal. Vertical/native input stays owned by its view. */
-export function useMobileSidebarGesture({ enabled, open, width, root, overlay, foreground, onOpenChange }: {
+export function useMobileSidebarGesture({ enabled, open, width, root, overlay, foreground, onOpenChange, leftEdgeOnly=false, excludeLeftEdge=false, edgeWidth=36, edgeHandle, onInteractionStart }: {
   enabled: boolean; open: boolean; width: MotionValue<number>;
   root: RefObject<HTMLElement | null>; overlay: RefObject<HTMLElement | null>;
   foreground?: RefObject<HTMLElement | null>;
   onOpenChange(open: boolean): void;
+  onInteractionStart?(focused:HTMLElement|null):void;
+  leftEdgeOnly?:boolean; excludeLeftEdge?:boolean; edgeWidth?:number; edgeHandle?:RefObject<HTMLElement|null>;
 }) {
-  const reducedMotion = useReducedMotion() === true;
+  const reducedMotion = useMotionReduction();
   const progress = useMotionValue(enabled && open ? 1 : 0);
   const [present, setPresent] = useState(enabled && open);
   const [dragging, setDragging] = useState(false);
-  const latest = useRef({ open, onOpenChange, reducedMotion });
-  latest.current = { open, onOpenChange, reducedMotion };
+  const latest = useRef({ open, onOpenChange, reducedMotion,onInteractionStart });
+  latest.current = { open, onOpenChange, reducedMotion,onInteractionStart };
   const gesture = useRef<Gesture | null>(null);
   const generation = useRef(0);
   const target = useRef<boolean | null>(null);
@@ -96,7 +99,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
     };
     const foregroundOwnsInput = (event?: Event) => {
       const shell = root.current;
-      if (!shell || !hasForegroundInputOwner(shell, event?.composedPath())) return false;
+      if (!shell || !hasForegroundInputOwner(shell, event?.composedPath(),overlay.current)) return false;
       cancel(true);
       // Native showModal may dispatch touchcancel before its open mutation is
       // observed. Revoke that already-settling background animation as well.
@@ -133,11 +136,15 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
       const viewport = shell.getBoundingClientRect();
       // Host adapters may hand their reserved contact to this existing owner.
       // Unclaimed screen edges remain native; no host detection belongs here.
+      if(!latest.current.open) {
+        if(leftEdgeOnly&&touch.clientX>viewport.left+edgeWidth)return;
+        if(excludeLeftEdge&&touch.clientX<=viewport.left+edgeWidth)return;
+      }
       const inside = touch.clientX >= viewport.left && touch.clientX <= viewport.right;
-      const sidebarAllowed = inside && (readEdgeGestureHandoff(event) !== undefined
+      const sidebarAllowed = inside && ((edgeHandle?.current && path.includes(edgeHandle.current)) || readEdgeGestureHandoff(event) !== undefined
         || (touch.clientX >= viewport.left + MOBILE_SIDEBAR_EDGE_RESERVE && touch.clientX <= viewport.right - MOBILE_SIDEBAR_EDGE_RESERVE));
       if (!sidebarAllowed && !horizontal) return;
-      gesture.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY, width: width.get(), start: progress.get(), initiallyOpen: latest.current.open, owner: "pending", sidebarAllowed, horizontal, scrollports, motionStartedAt: null, samples: [{ x: touch.clientX, time: event.timeStamp }] };
+      gesture.current = { initialFocus:document.activeElement instanceof HTMLElement?document.activeElement:null,id: touch.identifier, x: touch.clientX, y: touch.clientY, width: width.get(), start: progress.get(), initiallyOpen: latest.current.open, owner: "pending", sidebarAllowed, horizontal, scrollports, motionStartedAt: null, samples: [{ x: touch.clientX, time: event.timeStamp }] };
     };
     const move = (event: TouchEvent) => {
       const transaction = gesture.current;
@@ -192,6 +199,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
         // Stop the old animation before reading its current position.
         progress.stop(); ++generation.current; target.current = null;
         transaction.start = progress.get(); transaction.owner = "sidebar";
+        latest.current.onInteractionStart?.(transaction.initialFocus??null);
         setPresent(true); setDragging(true);
       }
       progress.set(sidebarGestureProgress(transaction.start, dx, transaction.width));
@@ -277,7 +285,42 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
       document.removeEventListener("visibilitychange", visibilityChanged);
       gesture.current = null;
     };
-  }, [enabled, overlay, foreground, root, progress, width]);
+  }, [enabled, overlay, foreground, root, progress, width,leftEdgeOnly,excludeLeftEdge,edgeWidth,edgeHandle]);
+  useLayoutEffect(()=>{
+    const handle=edgeHandle?.current;if(!enabled||!handle)return;
+    let contact:{pointerId:number;x:number;start:number;open:boolean;moving:boolean;samples:GestureSample[];initialFocus:HTMLElement|null}|null=null;
+    const end=(cancel=false,event?:PointerEvent)=>{
+      const current=contact;if(!current)return;contact=null;setDragging(false);
+      if(current.moving)suppressClick.current=performance.now()+500;
+      const next=cancel||!current.moving?current.open:sidebarGestureTarget(progress.get(),sidebarReleaseVelocity(current.samples,event?.clientX??current.x,event?.timeStamp??performance.now()),(event?.clientX??current.x)-current.x,current.open);
+      settleRef.current(next);
+      if(!cancel&&current.moving&&next!==latest.current.open)latest.current.onOpenChange(next);
+    };
+    const down=(event:PointerEvent)=>{
+      if(event.pointerType==='touch'||!event.isPrimary||event.button!==0)return;
+      if(contact)end(true);
+      ++generation.current;progress.stop();
+      contact={initialFocus:document.activeElement instanceof HTMLElement?document.activeElement:null,pointerId:event.pointerId,x:event.clientX,start:progress.get(),open:latest.current.open,moving:false,samples:[{x:event.clientX,time:event.timeStamp}]};
+      suppressClick.current=0;handle.setPointerCapture(event.pointerId);
+    };
+    const move=(event:PointerEvent)=>{
+      if(!contact||event.pointerId!==contact.pointerId)return;
+      const dx=event.clientX-contact.x;
+      if(!contact.moving&&Math.abs(dx)<MOBILE_GESTURE_DEADZONE)return;
+      if(!contact.moving)latest.current.onInteractionStart?.(contact.initialFocus);
+      contact.moving=true;setDragging(true);setPresent(true);
+      contact.samples.push({x:event.clientX,time:event.timeStamp});
+      while(contact.samples.length>2&&contact.samples[1]!.time<event.timeStamp-100)contact.samples.shift();
+      progress.set(Math.max(0,Math.min(1,contact.start+dx/Math.max(1,width.get()))));
+      event.preventDefault();
+    };
+    const up=(event:PointerEvent)=>{if(contact&&event.pointerId===contact.pointerId)end(false,event);};
+    const cancel=()=>end(true);
+    handle.addEventListener('pointerdown',down);handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);
+    handle.addEventListener('pointercancel',cancel);handle.addEventListener('lostpointercapture',cancel);
+    window.addEventListener('blur',cancel);window.addEventListener('resize',cancel);
+    return()=>{contact=null;handle.removeEventListener('pointerdown',down);handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',cancel);handle.removeEventListener('lostpointercapture',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('resize',cancel);};
+  },[enabled,edgeHandle,progress,width]);
   useLayoutEffect(() => () => { ++generation.current; progress.stop(); }, [progress]);
   return { progress, present, dragging };
 }
