@@ -1,5 +1,4 @@
 import { useServerSpaces } from "./runtime/use-server-spaces";
-import { ServerSpacesContent } from "./components/server-spaces-sidebar";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
@@ -236,6 +235,10 @@ import {
   type WorkbenchPresentationPolicy,
 } from "./workbench-presentation-policy";
 
+const ServerSpacesContent = lazy(async () => {
+  const module = await import("./components/server-spaces-sidebar");
+  return { default: module.ServerSpacesContent };
+});
 const SettingsContent = lazy(async () => {
   const module = await import("./components/settings-page");
   return { default: module.SettingsContent };
@@ -371,6 +374,8 @@ export function App({
   const snapshot = useAppServerSnapshot();
   const serverSpaces = useServerSpaces(snapshot.hostId);
   const [serverDrawerOpen,setServerDrawerOpen]=useState(()=>typeof window!=="undefined"&&new URL(window.location.href).searchParams.has("serverInvite"));
+  const [serverDrawerVisited,setServerDrawerVisited]=useState(serverDrawerOpen);
+  useEffect(()=>{if(serverDrawerOpen)setServerDrawerVisited(true);},[serverDrawerOpen]);
   useEffect(() => {
     setConversationSearchTarget(current => current
       && (current.hostId !== snapshot.hostId || current.threadId !== snapshot.activeThreadId) ? null : current);
@@ -2142,7 +2147,7 @@ export function App({
             label:intl.formatMessage({id:'serverSpaces.title',defaultMessage:'Servers'}),
             closeLabel:intl.formatMessage({id:'serverSpaces.closeDrawer',defaultMessage:'Close Servers'}),
             openLabel:intl.formatMessage({id:'serverSpaces.openDrawer',defaultMessage:'Open Servers'}),
-            content:<ServerSpacesContent key={serverSpaces.ownerKey} controller={serverSpaces} open={serverDrawerOpen} onClose={()=>setServerDrawerOpen(false)} onSelected={spaceId=>{setServerDrawerOpen(false);navigateToHomeForSpace(spaceId);}}/>,
+            content:(serverDrawerOpen||serverDrawerVisited)?<Suspense fallback={null}><ServerSpacesContent key={serverSpaces.ownerKey} controller={serverSpaces} open={serverDrawerOpen} onClose={()=>setServerDrawerOpen(false)} onSelected={spaceId=>{setServerDrawerOpen(false);navigateToHomeForSpace(spaceId);}}/></Suspense>:null,
           }}
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
