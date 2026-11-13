@@ -60,7 +60,7 @@ export function ServerSpacesContent({controller,open,onSelected,onClose}:{contro
     const result=await controller.command({action:'join',code:token}) as {spaceId:string};
     if(await controller.select(result.spaceId)){setCode('');go('servers');onSelected(result.spaceId);}
   });
-  
+
   const heading=view==='create'?intl.formatMessage({id:'serverSpaces.create',defaultMessage:'Create Server'}):view==='join'
     ?intl.formatMessage({id:'serverSpaces.join',defaultMessage:'Join Server'}):view==='invite'
       ?intl.formatMessage({id:'serverSpaces.invite',defaultMessage:'Invite members'}):intl.formatMessage({id:'serverSpaces.members',defaultMessage:'Members'});
