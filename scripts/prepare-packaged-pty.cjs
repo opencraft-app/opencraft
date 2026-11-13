@@ -36,10 +36,13 @@ async function preparePackagedPty(context) {
       if (error.code === "ENOENT") continue;
       throw error;
     }
-    const helper = join(root, directory, "spawn-helper");
-    if (!(await stat(helper)).isFile()) throw new Error(`Invalid PTY helper: ${helper}`);
-    await chmod(helper, 0o755);
-    await access(helper, constants.X_OK);
+    // node-pty builds and uses spawn-helper only on macOS; Linux ships pty.node alone.
+    if (context.electronPlatformName === "darwin") {
+      const helper = join(root, directory, "spawn-helper");
+      if (!(await stat(helper)).isFile()) throw new Error(`Invalid PTY helper: ${helper}`);
+      await chmod(helper, 0o755);
+      await access(helper, constants.X_OK);
+    }
     prepared = true;
     break;
   }
