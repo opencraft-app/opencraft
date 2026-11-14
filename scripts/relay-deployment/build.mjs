@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+import {execFileSync} from 'node:child_process';
+import {mkdir,readFile,writeFile} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
+import {resolve,join,dirname} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {packageRelay} from '../package-relay.mjs';
+const root=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
+const revision=execFileSync('git',['rev-parse','HEAD'],{cwd:root,encoding:'utf8'}).trim();
+if(execFileSync('git',['status','--porcelain','--untracked-files=no'],{cwd:root,encoding:'utf8'}).trim())throw new Error('Relay deployment requires a clean commit');
+if(process.env.GITHUB_SHA&&process.env.GITHUB_SHA!==revision)throw new Error('Checkout does not match workflow revision');
+const output=resolve(process.argv[2]??join(root,'dist/relay-release')),payload=join(output,'payload');
+await mkdir(output,{recursive:true});
+process.env.OPENCRAFT_SOURCE_REVISION=revision;
+const built=await packageRelay({output:payload});
+const files=['README.md','access-admin.mjs','hub-admin.mjs','package.json','relay.mjs'];
+const hash=bytes=>createHash('sha256').update(bytes).digest('hex');
+const digests={};for(const name of files)digests[name]=hash(await readFile(join(payload,name)));
+await writeFile(join(payload,'build-manifest.json'),JSON.stringify({schemaVersion:1,application:'opencraft-relay',sourceRevision:revision,buildId:built.buildId,files:digests},null,2));
+const archive=join(output,`opencraft-relay-${revision}.tgz`);
+execFileSync('tar',['-czf',archive,'-C',payload,...files,'build-manifest.json'],{env:{...process.env,COPYFILE_DISABLE:'1'}});
+await writeFile(archive+'.sha256',hash(await readFile(archive))+'\n');
+console.log(JSON.stringify({archive,sourceRevision:revision}));

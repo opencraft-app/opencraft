@@ -5,7 +5,7 @@ import { randomBytes, randomUUID, createHash, timingSafeEqual } from "node:crypt
 import WebSocket, { WebSocketServer } from "ws";
 import { relayDuplex } from '@opencraft/relay-protocol/node';
 import { AssertionSigner, ASSERTION_HEADER, type IdentityProvider } from "@opencraft/identity-core/node";
-import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, relayPathAllowed } from "@opencraft/relay-protocol";
+import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, relayPathAllowed, MACHINE_GATEWAY_CONTROL_PATH, MACHINE_GATEWAY_DATA_PATH, machineEnrollmentRequest } from "@opencraft/relay-protocol";
 import { RelayAuthentication, type EntryOriginResolver } from './authentication.js';
 import type { HubNetwork } from '../../../packages/hub-network/src/node.js';
 import { SERVERS_PATH, LEGACY_SERVERS_PATH, isServerPath, selectedPath, serverBase, selectorPage, scopedHtml, targetCookies, scopedCookies, selectionDefault, parseServerPaths, type ServerPaths } from './selection.js';
@@ -32,8 +32,10 @@ function failure(response: ServerResponse, status: number) {
 function reject(socket: Duplex, code: number) { socket.end(`HTTP/1.1 ${code} Rejected\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); }
 const identityHeaders = new Set(['timestamp', 'signature', 'x-rio-seq', 'staffid', 'staffname', 'x-ext-data', 'x-tai-identity']);
 export function createRelayServer(routes: readonly RelayRoute[], options: { authentication?: { origin: string; provider: IdentityProvider }; entryOrigin?: EntryOriginResolver; build?: { sourceRevision: string | null; buildId: string | null };
-  hub?: HubNetwork; networkRoute?: (service: HubService) => RelayRoute | null; operator?: { credential: string }; serverSelection?: boolean; selectionDefaults?: ReadonlyMap<string, string>; serverPaths?: ServerPaths } = {}) {
-  if ((!routes.length && !options.hub) || routes.length > 1000) throw new Error('Relay requires explicit routes');
+  machineGateway?: { credential: string; origin: string }; hub?: HubNetwork; networkRoute?: (service: HubService) => RelayRoute | null; operator?: { credential: string }; serverSelection?: boolean; selectionDefaults?: ReadonlyMap<string, string>; serverPaths?: ServerPaths } = {}) {
+  if ((!routes.length && !options.hub && !options.machineGateway) || routes.length > 1000) throw new Error('Relay requires explicit routes');
+  if (options.machineGateway && (!/^[A-Za-z0-9_-]{43}$/.test(options.machineGateway.credential) || new URL(options.machineGateway.origin).origin !== options.machineGateway.origin)) throw new Error('Invalid machine gateway');
+  const gatewayRoute = options.machineGateway ? {instanceId: 'personal-machine-owner', ...options.machineGateway} : undefined;
   const byHost = new Map<string, RelayRoute>(), byId = new Map<string, RelayRoute>();
   for (const route of routes) {
     const url = new URL(route.origin);
@@ -80,7 +82,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     for (const stream of connection.streams) stream.destroy();
     for (const [id, p] of pending) if (p.connection === connection) { pending.delete(id); p.reject(new Error('Relay disconnected')); }
   };
-  async function channel(route: RelayRoute, signal: AbortSignal): Promise<Duplex> {
+  async function channel(route: Pick<RelayRoute, 'instanceId' | 'hubId'>, signal: AbortSignal): Promise<Duplex> {
     if (route.hubId && options.hub) return options.hub.open(route.hubId, undefined, signal);
     const connection = connections.get(route.instanceId);
     if (!connection || connection.socket.readyState !== WebSocket.OPEN || connection.streams.size + [...pending.values()].filter(p => p.connection === connection).length >= MAX_RELAY_STREAMS || pending.size + [...connections.values()].reduce((sum,c)=>sum+c.streams.size,0) >= 4096 || closing) throw new Error('Instance unavailable or busy');
@@ -205,6 +207,20 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
     res.end(selectorPage(principal,visible,url.pathname === '/',selectionDefault(principal,options.selectionDefaults) ?? paths?.defaultServer)); return true;
   }
   const server = createServer(async (req, res) => {
+    if (gatewayRoute && machineEnrollmentRequest(req.url ?? '', req.method ?? '')) {
+      if (req.headers.origin || req.headers.host !== new URL(gatewayRoute.origin).host) { failure(res, 403); return; }
+      const abort = new AbortController(); res.once('close', () => abort.abort());
+      let stream: Duplex | undefined;
+      try {
+        stream = await channel(gatewayRoute, abort.signal);
+        const upstream = httpRequest({host: new URL(gatewayRoute.origin).hostname, method: req.method, path: req.url, headers: Object.fromEntries(Object.entries(req.headers).filter(([key]) => key !== 'cookie')), createConnection: () => stream!}, response => {
+          res.writeHead(response.statusCode ?? 502, response.headers); response.on('error', () => res.destroy()); response.pipe(res);
+        });
+        upstream.on('error', () => { stream?.destroy(); failure(res, 503); });
+        req.on('aborted', () => upstream.destroy()); res.once('close', () => upstream.destroy()); req.pipe(upstream);
+      } catch { stream?.destroy(); failure(res, 503); }
+      return;
+    }
     if (req.url === '/__opencraft_hub/operator') {
       if (!options.hub || !options.operator || !['127.0.0.1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress ?? '') || !equal(bearer(req), options.operator.credential)) { failure(res, 403); return; }
       if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(options.hub.snapshot())); return; }
@@ -286,8 +302,27 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
   server.on('upgrade', (req, socket, head) => {
     socket.on('error', () => {});
     if (options.hub?.handleUpgrade(req, socket, head)) return;
-    if (req.url === CONTROL_PATH) {
-      const token = bearer(req), route = [...byId.values()].find(r => token && equal(r.credential, token));
+    if (gatewayRoute && machineEnrollmentRequest(req.url ?? '', req.method ?? '', true)) {
+      if (req.headers.origin || req.headers.host !== new URL(gatewayRoute.origin).host) { reject(socket, 403); return; }
+      const abort = new AbortController(); socket.once('close', () => abort.abort());
+      void (async () => {
+        let stream: Duplex | undefined;
+        try {
+          stream = await channel(gatewayRoute, abort.signal);
+          if (socket.destroyed) { stream.destroy(); return; }
+          const headers = Object.entries(req.headers).filter(([key]) => key !== 'cookie').flatMap(([key,value]) => (Array.isArray(value) ? value : [value]).map(v => `${key}: ${v}`)).join('\r\n');
+          stream.write(`GET ${req.url} HTTP/1.1\r\n${headers}\r\n\r\n`);
+          if (head.length) stream.write(head);
+          stream.on('error', () => socket.destroy()); socket.on('error', () => stream?.destroy());
+          stream.once('close', () => socket.destroy()); socket.once('close', () => stream?.destroy());
+          stream.pipe(socket); socket.pipe(stream);
+        } catch { stream?.destroy(); reject(socket, 503); }
+      })(); return;
+    }
+    if (req.url === CONTROL_PATH || req.url === MACHINE_GATEWAY_CONTROL_PATH) {
+      const token = bearer(req), route = req.url === MACHINE_GATEWAY_CONTROL_PATH
+        ? (gatewayRoute && token && equal(gatewayRoute.credential, token) ? gatewayRoute : undefined)
+        : [...byId.values()].find(r => token && equal(r.credential, token));
       if (!route || req.headers['sec-websocket-protocol'] !== RELAY_PROTOCOL || req.headers.origin) { reject(socket, 401); return; }
       controls.handleUpgrade(req, socket, head, ws => {
         const previous = connections.get(route.instanceId); if (previous) retire(previous);
@@ -297,7 +332,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
         ws.once('close', () => { if (connections.get(route.instanceId) === connection) connections.delete(route.instanceId); retire(connection); });
       }); return;
     }
-    if (req.url === DATA_PATH) {
+    if (req.url === DATA_PATH || req.url === MACHINE_GATEWAY_DATA_PATH) {
       const id = req.headers[STREAM_HEADER], p = typeof id === 'string' ? pending.get(id) : undefined;
       if (!p || !equal(bearer(req), p.token) || req.headers.origin || req.headers['sec-websocket-protocol'] !== RELAY_PROTOCOL) { reject(socket, 401); return; }
       pending.delete(String(id)); data.handleUpgrade(req, socket, head, ws => p.accept(ws)); return;

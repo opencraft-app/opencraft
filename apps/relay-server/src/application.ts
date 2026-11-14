@@ -5,6 +5,7 @@ import type { Server } from 'node:http';
 import type { EntryOriginResolver } from './authentication.js';
 import { readFile } from 'node:fs/promises';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
+import { MACHINE_GATEWAY_CONTROL_PATH, MACHINE_GATEWAY_DATA_PATH, machineEnrollmentRequest } from '@opencraft/relay-protocol';
 import { HubNetwork } from '../../../packages/hub-network/src/node.js';
 import { publicOrigin } from '../../../packages/hub-network/src/contract.js';
 import { parseSelectionDefaults, parseServerPaths, type ServerPaths } from './selection.js';
@@ -20,6 +21,7 @@ export interface RelayConfiguration {
   host: '127.0.0.1' | '0.0.0.0';
   port: number;
   routes: { instanceId: string; origin: string; credential: string; name?: string }[];
+  machineGateway?: {credentialFile: string; origin: string};
   authentication?: RelayAuthenticationConfiguration;
   tlsCertFile?: string;
   tlsKeyFile?: string;
@@ -48,7 +50,7 @@ function file(value: unknown) { return typeof value === 'string' && value.starts
 
 export function parseRelayConfiguration(value: unknown): RelayConfiguration {
   if (!record(value) || value.schemaVersion !== 1 || !port(value.port) || !['127.0.0.1', '0.0.0.0'].includes(String(value.host)) || !Array.isArray(value.routes)
-    || !only(value, ['schemaVersion', 'authentication', 'port', 'host', 'routes', 'tlsCertFile', 'tlsKeyFile', 'tlsTermination', 'hubNetwork', 'serverSelection', 'serverSelectionDefaultsFile', 'serverPaths'])) throw new Error('Invalid relay configuration');
+    || !only(value, ['schemaVersion', 'machineGateway', 'authentication', 'port', 'host', 'routes', 'tlsCertFile', 'tlsKeyFile', 'tlsTermination', 'hubNetwork', 'serverSelection', 'serverSelectionDefaultsFile', 'serverPaths'])) throw new Error('Invalid relay configuration');
   if (value.serverSelection !== undefined && typeof value.serverSelection !== 'boolean') throw new Error('Invalid server selection policy');
   if (value.serverSelectionDefaultsFile !== undefined && (value.serverSelection !== true || !file(value.serverSelectionDefaultsFile))) throw new Error('Invalid selection defaults configuration');
   if (value.serverPaths !== undefined) {
@@ -58,6 +60,10 @@ export function parseRelayConfiguration(value: unknown): RelayConfiguration {
   if (value.tlsTermination !== undefined && value.tlsTermination !== 'trusted-proxy') throw new Error('Invalid TLS termination policy');
   if ((value.tlsCertFile !== undefined || value.tlsKeyFile !== undefined) && (!file(value.tlsCertFile) || !file(value.tlsKeyFile))) throw new Error('Incomplete TLS configuration');
   if (!value.tlsCertFile && !(value.host === '127.0.0.1' || value.tlsTermination === 'trusted-proxy')) throw new Error('Public relay requires TLS or explicit trusted TLS termination');
+  if (value.machineGateway !== undefined) {
+    const gateway = value.machineGateway;
+    if (!record(gateway) || !only(gateway, ['credentialFile', 'origin']) || !file(gateway.credentialFile) || typeof gateway.origin !== 'string' || new URL(gateway.origin).protocol !== 'https:' || publicOrigin(gateway.origin) !== gateway.origin) throw new Error('Invalid machine gateway');
+  }
   const auth = value.authentication;
   if (auth !== undefined) {
     if (!record(auth) || !only(auth, ['issuer', 'privateKey', 'origin', 'providers']) || typeof auth.issuer !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(auth.issuer)
@@ -134,7 +140,9 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
     const operatorCredential = record(operator) ? operator.credential : null;
     if (network && (typeof operatorCredential !== 'string' || !/^[A-Za-z0-9_-]{43}$/u.test(operatorCredential))) throw new Error('Invalid private operator credential');
     hub = network ? new HubNetwork(network.stateFile, { ...(authority ? { authority } : {}), localService: false, ...(network.caFile ? { ca: await readFile(network.caFile, 'utf8') } : {}) }) : undefined;
-    app = createRelayServer(routes, { serverSelection: config.serverSelection === true, selectionDefaults, serverPaths: config.serverPaths, ...(provider ? { authentication: { origin: auth!.origin, provider } } : {}),
+    const gatewayCredential = config.machineGateway ? await readPrivateJson(config.machineGateway.credentialFile) : null;
+    if (config.machineGateway && (!record(gatewayCredential) || typeof gatewayCredential.credential !== 'string')) throw new Error('Invalid machine gateway credential');
+    app = createRelayServer(routes, { ...(config.machineGateway ? {machineGateway: {origin: config.machineGateway.origin, credential: (gatewayCredential as {credential:string}).credential}} : {}), serverSelection: config.serverSelection === true, selectionDefaults, serverPaths: config.serverPaths, ...(provider ? { authentication: { origin: auth!.origin, provider } } : {}),
       ...(hub ? { hub, operator: { credential: operatorCredential as string }, networkRoute: service => {
         if (!authority || !provider || JSON.stringify(service.authority) !== JSON.stringify(authority)) return null;
         return { instanceId: service.hubId, hubId: service.hubId, origin: service.origin, credential: '', identityProvider: provider,
@@ -147,8 +155,8 @@ export async function startRelayApplication(input: unknown, composition: RelayCo
       listener.on('upgrade', (req, socket, head) => app!.server.emit('upgrade', req, socket, head));
     }
     if (network?.port) {
-      peerListener = createHttpsServer({ cert: await readFile(network.tlsCertFile!), key: await readFile(network.tlsKeyFile!) }, (_req, res) => { res.writeHead(404); res.end(); });
-      peerListener.on('upgrade', (req, socket, head) => { if (!hub!.handleUpgrade(req, socket, head)) socket.destroy(); });
+      peerListener = createHttpsServer({ cert: await readFile(network.tlsCertFile!), key: await readFile(network.tlsKeyFile!) }, (req, res) => { if (config.machineGateway && machineEnrollmentRequest(req.url ?? '', req.method ?? '')) app!.server.emit('request', req, res); else {res.writeHead(404); res.end();} });
+      peerListener.on('upgrade', (req, socket, head) => { if (config.machineGateway && (req.url === MACHINE_GATEWAY_CONTROL_PATH || req.url === MACHINE_GATEWAY_DATA_PATH || machineEnrollmentRequest(req.url ?? '', req.method ?? '', true))) app!.server.emit('upgrade', req, socket, head); else if (!hub!.handleUpgrade(req, socket, head)) socket.destroy(); });
       await listen(peerListener, network.port, '0.0.0.0');
     }
     await listen(listener, config.port, config.host);
