@@ -171,9 +171,20 @@ export interface ComposerAgentModelGroup {
   readonly manage?: () => void;
 }
 
+export type ComposerAgentCycleDirection = -1 | 1;
+
+/** Host-declared behavior when an existing conversation is handed to another Agent. */
+export interface ComposerAgentContinuation {
+  readonly startsNewThread: boolean;
+}
+
 export interface ComposerSelectionCatalog {
   readonly policyRestricted?: boolean;
   readonly agentGroups?: readonly ComposerAgentModelGroup[];
+  /** Existing conversation's Agent identity; present even without cross-Agent continuation. */
+  readonly currentAgentId?: string | null;
+  readonly currentAgentLabel?: string | null;
+  readonly agentContinuation?: ComposerAgentContinuation;
   readonly agentsDisabled?: boolean;
   readonly models: readonly ComposerModelOption[];
   /** Cached names/capabilities for the selected model only; never selectable choices. */
@@ -761,6 +772,8 @@ export interface OpenCraftComposerProps {
   /** Animate empty recovery copy while preserving the native editable paragraph. */
   placeholderPending?: boolean;
   selectionCatalog?: ComposerSelectionCatalog;
+  /** Routes the app's registered Agent-cycle shortcut to this Composer's picker. */
+  resolveAgentCycleShortcut?: (event: KeyboardEvent) => ComposerAgentCycleDirection | 0;
   /** user remembers defaults; session overrides only this conversation; host-default offers no override. */
   modelSelectionPolicy?: import("@opencraft/composer-core").ModelSelectionPolicy;
   /** Show inherited execution settings without offering or submitting model overrides. */
@@ -833,6 +846,7 @@ export const OpenCraftComposer = forwardRef<
     placeholder: suppliedPlaceholder,
     placeholderPending = false,
     selectionCatalog,
+    resolveAgentCycleShortcut,
     modelSelectionPolicy = "user",
     modelDisplayOnly = false,
     effectiveSelections,
@@ -924,6 +938,7 @@ export const OpenCraftComposer = forwardRef<
     readonly error: string | null;
   } | null>(null);
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
+  const [agentCycleRequest, setAgentCycleRequest] = useState<{ direction: -1 | 1; nonce: number } | null>(null);
   const changePicker = (picker: SelectionPicker) => (open: boolean) => {
     if (open) setAddMenuOpen(false);
     if (open && picker === "intelligence") selectionCatalog?.onModelMenuOpen?.();
@@ -971,6 +986,39 @@ export const OpenCraftComposer = forwardRef<
   const [editingController, setEditingController] = useState<ComposerController | null>(null);
   const editingActive = editingController === controller;
   const auxiliaryMenuOpen = openPicker !== null || addMenuOpen;
+  useEffect(() => {
+    if (openPicker !== "intelligence") setAgentCycleRequest(null);
+  }, [openPicker]);
+  useEffect(() => {
+    if (!resolveAgentCycleShortcut || disabled || modelDisplayOnly || modelSelectionPolicy !== "user") return;
+    const handleAgentCycle = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      const direction = resolveAgentCycleShortcut(event);
+      if (direction === 0) return;
+      const path = event.composedPath();
+      if (path.some(target => target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"]'))) return;
+      if (voiceActiveRef.current
+        || (document.activeElement instanceof Element && document.activeElement.closest('[inert]') !== null)) return;
+      if (openPicker !== "intelligence") {
+        if (openPicker !== null || addMenuOpen) return;
+        const stack = stackRef.current;
+        if (!stack || document.activeElement === null || !stack.contains(document.activeElement)) return;
+        if (path.some(target => target instanceof Element && target.closest(
+          '[role="menu"], [role="listbox"], .terminal-panel, .cloud-desktop-panel, [data-disable-workbench-shortcuts="true"]',
+        ))) return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      // A held Option chord must not type the composed character. Repeat only
+      // suppresses insertion; it does not queue another Agent cycle.
+      if (event.repeat) return;
+      if (openPicker !== "intelligence") selectionCatalog?.onModelMenuOpen?.();
+      setOpenPicker("intelligence");
+      setAgentCycleRequest(current => ({ direction, nonce: (current?.nonce ?? 0) + 1 }));
+    };
+    window.addEventListener("keydown", handleAgentCycle, true);
+    return () => window.removeEventListener("keydown", handleAgentCycle, true);
+  }, [resolveAgentCycleShortcut, openPicker, addMenuOpen, disabled, modelDisplayOnly, modelSelectionPolicy, selectionCatalog]);
   useLayoutEffect(() => {
     if (auxiliaryMenuOpen) { menuFocusPending.current = true; return; }
     if (!editingActive) return;
@@ -2586,6 +2634,7 @@ export const OpenCraftComposer = forwardRef<
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
                 <ComposerModelMenu key={draftId} catalog={selectionCatalog} selected={selectedModelValue}
+                  agentCycleRequest={openPicker === "intelligence" ? agentCycleRequest : null}
                   switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
                   onSelect={(model, group) => {
                     if (group) { void selectAgentModel(group, model); }

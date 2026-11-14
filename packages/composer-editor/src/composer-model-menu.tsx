@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { AgentBrandIcon, type AgentBrand } from "@opencraft/design-system-web/action-icons";
 import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
@@ -8,7 +8,7 @@ import { SettingsSwitch } from "@opencraft/extension-react";
 import { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families";
 import { modelEffortLabel } from "./model-choice-labels";
 import { ModelCatalogStatus } from "./model-catalog-status";
-import type { ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCatalog } from "./composer-editor";
+import type { ComposerAgentCycleDirection, ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCatalog } from "./composer-editor";
 
 const brands: Record<string, { brand: AgentBrand; name: string }> = {
   codex: { brand: "codex", name: "Codex" }, cursor: { brand: "cursor", name: "Cursor" },
@@ -17,7 +17,7 @@ const brands: Record<string, { brand: AgentBrand; name: string }> = {
 
 /** Browsing sources/search is local. Only an explicit choice writes a model. */
 export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffortChange, serviceTier, onServiceTierChange,
-  switchingAgentId, agentSelectionError, onConfigure }: {
+  switchingAgentId, agentSelectionError, onConfigure, agentCycleRequest }: {
   readonly catalog?: ComposerSelectionCatalog;
   readonly selected: string | null;
   readonly onSelect: (model: ComposerModelOption, group?: ComposerAgentModelGroup) => void;
@@ -28,13 +28,19 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   readonly switchingAgentId: string | null;
   readonly agentSelectionError: { id: string; message: string } | null;
   readonly onConfigure?: () => void;
+  readonly agentCycleRequest?: { readonly direction: ComposerAgentCycleDirection; readonly nonce: number } | null;
 }) {
   const intl = useIntl();
   const [query, setQuery] = useState("");
   const apiLabel = intl.formatMessage({ id: "composer.model.api", defaultMessage: "API models" });
+  const currentAgentId = catalog?.currentAgentId ?? null;
+  const currentAgentLabel = catalog?.currentAgentLabel ?? null;
+  const currentAgentFallbackLabel = currentAgentLabel
+    || (currentAgentId === null ? "" : currentAgentId === "dsh" || currentAgentId === "api" ? apiLabel : brands[currentAgentId]?.name || currentAgentId);
+  const currentTagLabel = intl.formatMessage({ id: "composer.agent.currentTag", defaultMessage: "Current conversation" });
   const groups = catalog?.agentGroups?.length ? catalog.agentGroups : [{ id: "active", label: "", active: true,
     models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, retry: catalog?.retryModels }];
-  type Source = { id: string; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
+  type Source = { id: string; agentId: string; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
   const sources: Source[] = [];
   for (const group of groups) {
     const scoped = new Map<string, Source>();
@@ -44,13 +50,22 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       let source = scoped.get(key);
       if (!source) {
         const name = key === "dsh" ? apiLabel : model.agentLabel || group.label || intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" });
-        source = { id: `${group.id}:${key}`, label: groups.length > 1 && group.label !== name ? `${name} · ${group.label}` : name,
+        source = { id: `${group.id}:${key}`, agentId: key, label: groups.length > 1 && group.label !== name ? `${name} · ${group.label}` : name,
           brand: identity?.brand, group, models: [] };
         scoped.set(key, source); sources.push(source);
       }
       source.models.push(model);
     }
-    if (!scoped.size && (group.loading || group.error || !catalog?.onConfigureAgents)) sources.push({ id: `${group.id}:api`, label: group.label || apiLabel, group, models: [] });
+    if (!scoped.size && (group.loading || group.error || !catalog?.onConfigureAgents)) sources.push({ id: `${group.id}:api`, agentId: "api", label: group.label || apiLabel, group, models: [] });
+  }
+  // A stale or failed current-Agent catalog must not hide the thread's Agent.
+  if (currentAgentId !== null && !sources.some(source => source.agentId === currentAgentId)) {
+    const group = groups.find(candidate => candidate.active) ?? groups[0];
+    if (group !== undefined) sources.push({
+      id: `${group.id}:${currentAgentId}`, agentId: currentAgentId,
+      label: currentAgentFallbackLabel,
+      brand: brands[currentAgentId]?.brand, group, models: [],
+    });
   }
   const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3 };
   sources.sort((left, right) => (brandOrder[left.brand ?? ""] ?? 4) - (brandOrder[right.brand ?? ""] ?? 4));
@@ -59,7 +74,19 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const source = sources.find(source => source.id === browsing?.id)
     ?? sources.find(source => source.group.id === browsing?.groupId)
     ?? sources.find(source => source.group.active && source.models.some(model => model.value === selected || model.id === selected))
+    ?? sources.find(source => source.agentId === currentAgentId)
     ?? sources.find(source => source.group.active) ?? sources[0];
+  const lastCycleNonce = useRef(0);
+  useEffect(() => {
+    if (!agentCycleRequest || agentCycleRequest.nonce === lastCycleNonce.current || !source || sources.length === 0) return;
+    lastCycleNonce.current = agentCycleRequest.nonce;
+    const index = sources.findIndex(item => item.id === source.id);
+    const next = sources[(index + agentCycleRequest.direction + sources.length) % sources.length];
+    if (next) { browse(next); setQuery(""); }
+  }, [agentCycleRequest, source, sources, browse]);
+  const sourceIcon = (brand: AgentBrand | undefined) => brand
+    ? <AgentBrandIcon agent={brand} size={18} />
+    : <ModelIcon size={18} aria-hidden="true" />;
   if (!source) return <div className="opencraft-composer-model-browser">
     <ModelCatalogStatus emptyTitle={catalog?.agentsDisabled ? <FormattedMessage id="composer.agent.none" defaultMessage="No enabled agents have available models. Enable an agent or check its setup in settings." /> : undefined} emptyHint={catalog?.agentsDisabled ? null : undefined} />
     {catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
@@ -76,11 +103,23 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const matches = families.filter(family => `${family.label} ${family.models.map(model => model.value).join(" ")}`.toLocaleLowerCase(intl.locale).includes(query.trim().toLocaleLowerCase(intl.locale)));
   const searchLabel = intl.formatMessage({ id: "composer.model.search", defaultMessage: "Search models" });
   const choose = (model: ComposerModelOption) => onSelect(model, catalog?.agentGroups?.length ? source.group as ComposerAgentModelGroup : undefined);
+  const startsNewThread = catalog?.agentContinuation?.startsNewThread === true;
+  const currentAgent = (item: Source) => currentAgentId !== null && item.agentId === currentAgentId;
+  const tabName = (item: Source) => currentAgent(item)
+    ? intl.formatMessage({ id: "composer.agent.tabCurrent", defaultMessage: "Agent: {agent}, current conversation" }, { agent: item.label })
+    : intl.formatMessage({ id: "composer.agent.tabName", defaultMessage: "Agent: {agent}" }, { agent: item.label });
+  const sourceLabel = currentAgentId === null ? source.label
+    : `${source.label} · ${currentAgent(source) ? currentTagLabel : intl.formatMessage({ id: "composer.agent.currentAgent", defaultMessage: "Current: {agent}" }, { agent: currentAgentFallbackLabel })}`;
+  const showHandoffNotice = startsNewThread && currentAgentId !== null && !currentAgent(source) && source.models.length > 0;
   return <div className="opencraft-composer-model-browser">
     <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
-      {sources.map(item => <Button key={item.id} size="sm" variant={source.id === item.id ? "secondary" : "ghost"}
+      {sources.map(item => <IconButton key={item.id} size="accessory" variant="ghost"
         onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
         role="tab" aria-selected={source.id === item.id} tabIndex={source.id === item.id ? 0 : -1}
+        title={currentAgent(item)
+          ? intl.formatMessage({ id: "composer.agent.currentTitle", defaultMessage: "{agent} (current conversation)" }, { agent: item.label })
+          : item.label}
+        aria-label={tabName(item)} data-current-agent={currentAgent(item) || undefined}
         onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault(); event.stopPropagation();
@@ -89,10 +128,15 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
           browse(sources[next]!); setQuery("");
           event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
         }}>
-        {item.brand ? <AgentBrandIcon agent={item.brand} /> : <ModelIcon size={18} aria-hidden="true" />}
-        {item.label}
-      </Button>)}
+        {sourceIcon(item.brand)}
+      </IconButton>)}
+      <span className="opencraft-composer-model-browser__source-name" role="presentation" title={sourceLabel}>
+        {sourceLabel}
+      </span>
     </div>
+    {showHandoffNotice ? <div className="opencraft-composer-selection-menu__status opencraft-composer-model-browser__handoff" role="status">
+      <FormattedMessage id="composer.agent.newThreadNotice" defaultMessage="Choosing a model from another Agent starts a new conversation with this thread's context." />
+    </div> : null}
     <label className="opencraft-composer-model-browser__search">
       <SearchIcon size={16} aria-hidden="true" />
       <input type="search" value={query} aria-label={searchLabel} placeholder={searchLabel} onChange={event => setQuery(event.target.value)}
