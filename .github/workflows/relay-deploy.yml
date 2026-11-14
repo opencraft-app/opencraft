@@ -70,9 +70,13 @@ jobs:
         with:
           name: relay-${{ github.sha }}
           path: relay-artifact
-      - name: Activate and verify on the relay
+      - name: Install pinned Tencent Cloud CLI
+        run: python3 -m pip install tccli==3.1.147.1
+      - name: Activate and verify through TAT HTTPS
         env:
-          RELAY_SSH_HOST: ${{ secrets.RELAY_SSH_HOST }}
-          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
-          RELAY_SSH_KNOWN_HOSTS: ${{ secrets.RELAY_SSH_KNOWN_HOSTS }}
-        run: bash scripts/relay-deployment/send.sh relay-artifact
+          RELAY_INSTANCE_ID: ${{ vars.RELAY_INSTANCE_ID }}
+          RELAY_REGION: ${{ vars.RELAY_REGION }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.RELAY_TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.RELAY_TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_TOKEN: ${{ secrets.RELAY_TENCENTCLOUD_TOKEN }}
+        run: python3 scripts/relay-deployment/send.py relay-artifact

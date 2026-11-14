@@ -3,7 +3,6 @@
 set -euo pipefail
 [[ $(id -u) == 0 ]] || { echo 'Run as the server operator through sudo.' >&2; exit 1; }
 endpoint="${1:?HTTPS hostname or public IPv4}"
-deploy_key="${2:?Dedicated deploy public key file}"
 source_dir="$(cd -- "$(dirname -- "$0")" && pwd)"
 python3 - "$endpoint" <<'PY'
 import ipaddress,re,sys
@@ -12,7 +11,6 @@ try:ipaddress.IPv4Address(value)
 except ValueError:
  if not re.fullmatch(r'[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?',value):raise SystemExit('Invalid TLS endpoint')
 PY
-[[ $(cat "$deploy_key") =~ ^ssh-ed25519\ [A-Za-z0-9+/=]+(\ .*)?$ ]] || exit 1
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq ca-certificates curl xz-utils openssl python3 sudo
@@ -34,11 +32,6 @@ install -d -m 0755 /opt/opencraft-relay /opt/opencraft-relay/releases /usr/local
 install -d -m 0700 /opt/opencraft-relay/incoming
 install -d -m 0750 -o opencraft-relay -g opencraft-relay /var/lib/opencraft-relay /etc/opencraft-relay
 install -m 0755 "$source_dir/receive.py" /usr/local/libexec/opencraft-relay-activate
-install -m 0755 "$source_dir/ssh-receive.sh" /usr/local/libexec/opencraft-relay-ssh
-install -d -m 0700 -o opencraft-deploy -g opencraft-deploy /home/opencraft-deploy/.ssh
-printf 'restrict,command="/usr/local/libexec/opencraft-relay-ssh" %s\n' "$(cat "$deploy_key")" > /home/opencraft-deploy/.ssh/authorized_keys
-chmod 0600 /home/opencraft-deploy/.ssh/authorized_keys
-chown opencraft-deploy:opencraft-deploy /home/opencraft-deploy/.ssh/authorized_keys
 printf '%s\n' 'opencraft-deploy ALL=(root) NOPASSWD: /usr/local/libexec/opencraft-relay-activate' > /etc/sudoers.d/opencraft-relay-deploy
 chmod 0440 /etc/sudoers.d/opencraft-relay-deploy
 visudo -cf /etc/sudoers.d/opencraft-relay-deploy >/dev/null
@@ -101,7 +94,6 @@ UNIT
 # The receiver starts the service only after the first verified artifact arrives.
 systemctl daemon-reload
 systemctl enable opencraft-relay.service >/dev/null
-printf '%s\n' 'PasswordAuthentication no' 'KbdInteractiveAuthentication no' > /etc/ssh/sshd_config.d/20-opencraft-relay.conf
-sshd -t
-systemctl reload ssh.service
-printf '%s\n' 'Relay bootstrap complete. Awaiting an identified release.'
+# Management uses authenticated Tencent TAT HTTPS APIs; no SSH listener or keys.
+systemctl disable --now ssh.service ssh.socket
+printf '%s\n' 'Relay bootstrap complete. Awaiting an identified release through TAT.'

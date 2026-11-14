@@ -1,39 +1,51 @@
-# CVM relay deployment
+# Tencent Cloud relay deployment
 
-This deployment runs the existing standalone Relay as a transit-only Hub. It does
-not run Agents, publish a Workbench, provide user registration, or grant workspace
-membership. Nodes authenticate with existing signed, revocable Hub invitations.
-Business histories and execution remain with their existing Server owners.
+Run the existing standalone Relay as a transit-only Hub on a dedicated Ubuntu
+24.04 x86-64 Lighthouse or CVM. It does not run Agents, serve a Workbench or offer
+registration. Existing signed, revocable Hub invitations admit peers; business
+histories and execution remain with their Server owners.
 
-## Server bootstrap
+## HTTPS-only networking and management
 
-Use a dedicated Ubuntu 24.04 x86-64 CVM. Allow TCP 443 for authenticated Hub peers
-and TCP 22 for operator SSH and the restricted deployment identity. Do not expose
-the loopback management listener on 18090. Use an independently generated
-operator key and an Ed25519 deployment key; only the latter belongs in Actions.
-Keep instance IDs, IP addresses, private keys and cloud request receipts in the
-operator's ignored `.local/` deployment records, not this repository.
+Allow inbound TCP 443 only. For Lighthouse, create a firewall template containing
+only that rule and pass `FirewallTemplateId` to `CreateInstances`; omitting it
+would apply default rules that can expose SSH. For CVM, attach a dedicated
+443-only security group at creation. Do not open 22, 80 or the management port.
+Do not modify another workload's security rules or forward a workstation port.
 
-After independently verifying the VM's SSH host key, copy
-`scripts/relay-deployment/{bootstrap.sh,receive.py,ssh-receive.sh}` and the deployment
-**public** key to an operator-owned temporary directory on the VM. Run:
+Manage the machine through authenticated Tencent Automation Tools (TAT) HTTPS
+APIs. The TAT agent must be online; no inbound management listener is needed.
+Bootstrap disables both `ssh.service` and `ssh.socket` and installs no SSH keys.
+The relay binds its public peer endpoint to TLS 443; operator and health APIs
+remain exclusively on loopback 127.0.0.1:18090. Loopback HTTP is confined to the
+VM and is never a network forwarding transport.
+
+Keep instance IDs, private configuration, request receipts and credentials outside
+tracked source. Bootstrap and activation must target the same reviewed account,
+region and instance; never infer them from an unrelated CLI default.
+
+## Bootstrap through TAT
+
+Using the operator's existing approved TAT permissions, transfer the reviewed
+`scripts/relay-deployment/bootstrap.sh` and `receive.py` into a root-owned
+private staging directory through TAT `RunCommand`. Run as root:
 
 ```sh
-sudo bash /private/bootstrap/bootstrap.sh relay.example.com /private/bootstrap/deploy.pub
+bash /private/bootstrap/bootstrap.sh relay.example.com
 ```
 
-The bootstrap pins and checksums private Node 26.7.0, creates an unprivileged
-runtime account, installs systemd and an SSH forced-command receiver, and prepares
-private configuration. Runtime state, credentials and TLS keys are outside all
-release directories and are preserved by updates. The service starts only after
-a verified release arrives.
+No deploy key argument is needed. Bootstrap pins and checksums Node 26.7.0,
+creates unprivileged runtime and deployment accounts, installs systemd and a
+root-owned archive receiver. The deployment account may sudo only that receiver;
+it has no authorized SSH keys. Only bootstrap requires root TAT execution;
+release upload and activation use TAT's `Username: opencraft-deploy`.
 
-Without a domain, the endpoint may be a public IPv4 address. Bootstrap creates a
-private CA and a matching one-year TLS certificate; normal hostname/certificate
-validation remains enabled. The signed Hub invitation carries that CA. This does
-not provide a browser-trusted certificate or a registration website. Operators
-must arrange certificate renewal before expiry, or replace it with their
-approved domain and managed certificate. Keep the CA private key on the VM.
+State, operator credentials and TLS keys live outside release directories and
+survive updates. Without a domain, use a public IPv4 endpoint: bootstrap creates
+a private CA and matching one-year certificate. Signed Hub invitations carry
+that CA, preserving normal certificate and hostname validation. This is not a
+browser-trusted website. Arrange renewal before expiry, or use an approved domain
+and managed certificate. Keep the CA private key on the VM.
 
 ## Exact-artifact deployment
 
@@ -41,54 +53,60 @@ From a clean committed checkout with dependencies installed:
 
 ```sh
 node scripts/relay-deployment/build.mjs
+RELAY_INSTANCE_ID=lhins-example RELAY_REGION=ap-guangzhou GITHUB_SHA=$(git rev-parse HEAD) \
+  python3 scripts/relay-deployment/send.py dist/relay-release --profile approved-profile
 ```
 
-The output contains a bundled relay, operator tools, a source revision, a
-per-file SHA-256 manifest and an archive checksum. No deployment configuration or
-credential enters the archive. The dedicated SSH identity accepts only
-`deploy <40-character-revision> <64-character-archive-checksum>` with the archive
-on stdin. It cannot open a shell, forward ports or use the operator's cloud keys.
+Install the pinned `tccli==3.1.147.1` before using the sender. The archive carries
+the source revision, build ID and per-file SHA-256 manifest. The sender verifies
+its outer checksum and size before any write, then sends isolated chunks through
+TAT HTTPS requests within the API's 64KB encoded command limit. No public bucket,
+presigned download URL, SSH or HTTP deployment endpoint is used.
 
-The receiver rejects unknown files, links, traversal, excessive archive size,
-wrong source identity and changed payloads. It activates an immutable release
-through an atomic symlink, restarts the unprivileged service, and checks the
-running health response against the exact source revision. A failed candidate
-restores the prior release; first-deployment failure stops the service. State and
-credentials are never rolled back with the binary. Deployments are serialized.
-On first activation only, the Hub is configured to accept invited peers and
-forward allowed routes; updates preserve later operator policy.
+The receiver rejects unexpected files, links, traversal, excessive size, wrong
+revision and changed payloads. Activation is serialized, atomically changes the
+release symlink and verifies the running exact revision. A failed candidate
+restores the previous release; first-deployment failure stops the service.
+Runtime state and credentials are never rolled back with binaries. Initial
+activation configures the Hub to accept invited peers and forward allowed routes;
+later activation preserves operator policy.
+
+The sender polls bounded invocation results. It does not replay a command on
+unknown completion: inspect its invocation in TAT before retrying. Temporary
+upload cleanup failure is reported separately. Apply privileged receiver/bootstrap
+changes separately through reviewed operator TAT access.
 
 ## GitHub Actions
 
-`.github/workflows/relay-deploy.yml` validates relevant PRs and builds a fresh
-identified archive. Main pushes touching relay inputs deploy the same retained
-artifact; `workflow_dispatch` on main provides a manual redeploy. PRs never access
-the deployment job. The workflow does not publish npm packages or modify release
-tags. Deploying requires the `relay-production` environment and its secrets:
+`.github/workflows/relay-deploy.yml` tests PRs without deployment credentials.
+Relevant main pushes build and retain an identified archive, then deploy that
+same artifact through TAT. `workflow_dispatch` on main permits redeploy. All
+Actions are pinned to commits; no npm release or Git tag is modified.
 
-| Secret | Value |
+An administrator must create `relay-production`, restrict deployments to main,
+and configure:
+
+| Environment setting | Value |
 | --- | --- |
-| `RELAY_SSH_HOST` | Deployment hostname or IPv4 address |
-| `RELAY_SSH_KEY` | Dedicated forced-command private SSH key |
-| `RELAY_SSH_KNOWN_HOSTS` | Independently verified SSH host-key lines |
+| Variable `RELAY_INSTANCE_ID` | Dedicated Lighthouse/CVM instance ID |
+| Variable `RELAY_REGION` | Its exact Tencent Cloud region |
+| Secret `RELAY_TENCENTCLOUD_SECRET_ID` | Approved deployment credential ID |
+| Secret `RELAY_TENCENTCLOUD_SECRET_KEY` | Approved deployment credential key |
+| Optional secret `RELAY_TENCENTCLOUD_TOKEN` | Valid STS token if using temporary credentials |
 
-Restrict the environment to main. Do not substitute `ssh-keyscan` for verification
-inside CI, disable host-key checking, reuse an operator key or store Tencent Cloud
-API credentials in this workflow. The remote forced command and sudo rule only
-permit the fixed, root-owned archive receiver; application code runs as the
-runtime user. All action versions are pinned to commit IDs.
-
-The workflow updates runtime artifacts, not the privileged bootstrap/receiver.
-Review and apply changes to the VM bootstrap through operator access separately.
-Health on the VM is `http://127.0.0.1:18090/__opencraft_relay/health`; TCP 443 is a
-peer-only TLS endpoint and intentionally does not serve a homepage. Initial Hub
-invitations can be issued through the existing loopback operator API. A successful
-connection proves transport admission, not user identity or resource permission.
+Use a dedicated least-privilege deployment identity for TAT RunCommand and
+DescribeInvocationTasks against this deployment; cloud-provider resource-scoping
+support and policy must be verified by the administrator. RunCommand is remote
+execution authority: do not reuse an operator/admin key, broaden CAM policy or
+create credentials automatically. Short-lived credentials expire and must be
+provided by an approved credential workflow; a static expired STS token cannot
+support unattended deployments. No cloud credential is sent to the relay VM.
 
 ## Validation
 
-Run `python3 -m unittest discover -s tests/relay-deployment`, `npm run test:hub-network`
-and the build from a clean commit. Verify the actual deployed source revision,
-unauthenticated peer rejection, certificate validation, persistence across
-restart, and rollback on a deliberately invalid candidate. A built archive or a
-successful Git push alone does not prove a healthy deployment.
+Run `python3 -m unittest discover -s tests/relay-deployment`, the built-artifact
+integration test with `OPENCRAFT_RELAY_ARTIFACT`, and `npm run test:hub-network`.
+Verify actual cloud firewall rules, absence of SSH listeners, TLS certificate
+validation, unauthenticated rejection, deployed source revision and persistence
+across service restart. A successful purchase or Git push does not prove the
+relay is healthy. User/Workbench remote enrollment remains a separate integration.
