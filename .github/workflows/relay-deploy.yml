@@ -9,6 +9,8 @@ on:
       - scripts/package-relay.mjs
       - scripts/relay-deployment/**
       - tests/relay-deployment/**
+      - tests/execution/machine-gateway.test.ts
+      - plugins/relay-connect/**
       - package.json
       - package-lock.json
       - .nvmrc
@@ -20,6 +22,8 @@ on:
       - scripts/package-relay.mjs
       - scripts/relay-deployment/**
       - tests/relay-deployment/**
+      - tests/execution/machine-gateway.test.ts
+      - plugins/relay-connect/**
       - package.json
       - package-lock.json
       - .nvmrc
@@ -42,6 +46,7 @@ jobs:
           node-version-file: .nvmrc
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run test:hub-network
+      - run: npx tsx --test tests/execution/machine-gateway.test.ts
       - run: node scripts/relay-deployment/build.mjs
       - run: python3 -m unittest discover -s tests/relay-deployment
         env:

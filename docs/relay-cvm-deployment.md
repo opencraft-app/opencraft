@@ -110,3 +110,14 @@ Verify actual cloud firewall rules, absence of SSH listeners, TLS certificate
 validation, unauthenticated rejection, deployed source revision and persistence
 across service restart. A successful purchase or Git push does not prove the
 relay is healthy. User/Workbench remote enrollment remains a separate integration.
+
+## Personal machine enrollment publication
+
+A dedicated single-owner deployment can opt in to `machineGateway` with an HTTPS
+`origin` and private `credentialFile` containing `{"credential":"<43-character-key>"}`.
+The local Server connects outbound through the separate machine-gateway control/data
+paths. Only installer/source download, pairing and enrolled machine control/data
+are forwarded, with their original credentials. Workbench, owner status/RPC, Hub
+operator and update paths remain inaccessible. An Origin header is rejected.
+The private publication key authorizes one owner slot, not general membership or
+user authentication. It is not a multi-tenant machine registry.
