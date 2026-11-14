@@ -25,12 +25,12 @@ export function relayPathAllowed(path: string): boolean {
 /** Dedicated owner publication; distinct from enrolled machine control/data. */
 export const MACHINE_GATEWAY_CONTROL_PATH = '/__opencraft_machine_gateway/control';
 export const MACHINE_GATEWAY_DATA_PATH = '/__opencraft_machine_gateway/data';
-export const MACHINE_ENROLLMENT_PATHS = ['/__opencraft_machines/install.sh', '/__opencraft_machines/source.tgz', '/__opencraft_machines/enroll', CONTROL_PATH, DATA_PATH] as const;
+export const MACHINE_ENROLLMENT_PATHS = ['/__opencraft_machines/install.sh', '/__opencraft_machines/source.tgz', '/__opencraft_machines/enroll', CONTROL_PATH, DATA_PATH, '/__opencraft_machines/bootstrap'] as const;
 export function machineEnrollmentRequest(path: string, method: string, upgrade = false): boolean {
   try {
     if (!path.startsWith('/') || path.startsWith('//') || /[\r\n\\]/.test(path)) return false;
     const url = new URL(path, 'http://gateway.invalid');
     if (upgrade) return method === 'GET' && (url.pathname === CONTROL_PATH || url.pathname === DATA_PATH) && url.search === '';
-    return (method === 'GET' && (url.pathname === MACHINE_ENROLLMENT_PATHS[0] || url.pathname === MACHINE_ENROLLMENT_PATHS[1])) || method === 'POST' && url.pathname === MACHINE_ENROLLMENT_PATHS[2];
+    return (method === 'GET' && (url.pathname === MACHINE_ENROLLMENT_PATHS[0] || url.pathname === MACHINE_ENROLLMENT_PATHS[1] || url.pathname === MACHINE_ENROLLMENT_PATHS[5])) || method === 'POST' && url.pathname === MACHINE_ENROLLMENT_PATHS[2];
   } catch { return false; }
 }

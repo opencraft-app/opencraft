@@ -121,3 +121,11 @@ are forwarded, with their original credentials. Workbench, owner status/RPC, Hub
 operator and update paths remain inaccessible. An Origin header is rejected.
 The private publication key authorizes one owner slot, not general membership or
 user authentication. It is not a multi-tenant machine registry.
+
+For a publicly trusted short-lived IP certificate, install the reviewed ACME client
+and `renew-tls.sh` as a root-owned timer job, running daily. It skips certificates
+with over three days remaining and uses TLS-ALPN on 443, briefly stopping the
+relay with an unconditional restart on failure. Keep SSH and port80 closed. Only
+switch peer listener certificate paths after successful issuance; public-trust
+connections omit the previous private CA pin. Renewal failures require operator
+attention before the certificate expires.
