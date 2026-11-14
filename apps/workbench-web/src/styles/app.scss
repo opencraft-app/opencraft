@@ -12947,7 +12947,7 @@ html[data-window-host="browser"] body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: min(360px, calc(100vw - 24px));
+  width: min(340px, calc(100vw - 24px));
   max-height: min(600px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
   padding: 0;
   overflow: hidden;
@@ -12965,9 +12965,12 @@ html[data-window-host="browser"] body {
     padding: calc(var(--spacing) * 2);
     overflow-x: auto;
     border-bottom: .5px solid var(--color-border-subtle);
+    [aria-selected="true"] { border-radius: 0; box-shadow: inset 0 -2px 0 var(--color-text); }
   }
   &__source-name {
-    @include typography.role(metadata, secondary);
+    color: var(--color-text-secondary);
+    font: var(--typography-metadata-font);
+    letter-spacing: var(--typography-metadata-tracking);
     min-width: 0;
     margin-left: auto;
     overflow: hidden;

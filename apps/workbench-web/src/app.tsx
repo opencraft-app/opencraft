@@ -235,6 +235,12 @@ import {
   type WorkbenchPresentationPolicy,
 } from "./workbench-presentation-policy";
 
+/** The app owns shortcut registration; the Composer picker owns the interaction. */
+function resolveAgentCycleShortcut(event: KeyboardEvent): -1 | 0 | 1 {
+  if (matchesWorkbenchShortcut(event, "agentPrevious", navigator.platform)) return -1;
+  return matchesWorkbenchShortcut(event, "agentNext", navigator.platform) ? 1 : 0;
+}
+
 const ServerSpacesContent = lazy(async () => {
   const module = await import("./components/server-spaces-sidebar");
   return { default: module.ServerSpacesContent };
@@ -1426,8 +1432,22 @@ export function App({
   const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
     && continuationCapability?.contextExport?.includes(conversationAgent) === true && presentation.executionSelection !== "fixed";
   const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
+  // Existing conversations always identify their Agent; cross-Agent continuation
+  // is a separate Host capability and must not gate the identity marker.
+  const currentThreadAgent = useMemo(() => {
+    if (draft !== null || activeThreadId === null) return null;
+    const modelValue = snapshot.conversation?.execution.model;
+    const hostModels = engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? [];
+    const model = modelValue == null ? undefined
+      : [...composerCatalog.models, ...composerCatalog.displayModels, ...hostModels].find(candidate => candidate.model === modelValue || candidate.id === modelValue);
+    const agentId = conversationAgent ?? model?.agentId ?? null;
+    return agentId === null ? null : { id: agentId, label: model?.agentLabel ?? null };
+  }, [draft, activeThreadId, conversationAgent, composerCatalog.models, composerCatalog.displayModels, engineCatalog.groups, snapshot.hostId, snapshot.conversation?.execution.model]);
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
+      currentAgentId: currentThreadAgent?.id ?? null,
+      currentAgentLabel: currentThreadAgent?.label ?? null,
+      agentContinuation: canContinueWithAgent ? { startsNewThread: true } : undefined,
       agentsDisabled: filterNewAgents && (() => {
         const groups = engineCatalog.groups.map(group => ({ hostId: group.hostId, models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models }));
         const declared = groups.flatMap(group => group.models.map(model => ({ hostId: group.hostId, model })));
@@ -1492,7 +1512,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -2307,6 +2327,7 @@ export function App({
             selectionCatalog={composerSelectionCatalog}
             catalog={composerSuggestionCatalog}
             effectiveSelections={modelSelectionPolicy === "session" ? undefined : composerCatalog.newThreadDefaults ?? undefined}
+            resolveAgentCycleShortcut={resolveAgentCycleShortcut}
             personalDefaultsPending={composerCatalog.personalDefaultsPending}
             workspaceOptions={draftWorkspaceOptions}
             workspaceOptionsLoading={projectCatalog.isFetching}
@@ -2566,6 +2587,7 @@ export function App({
                         }) : undefined)}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
+                        resolveAgentCycleShortcut={resolveAgentCycleShortcut}
                         mentionSuggestionsEnabled={false}
                         effectiveSelections={{
                           model: snapshot.conversation?.execution.model,

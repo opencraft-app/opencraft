@@ -91,6 +91,7 @@ export interface NewThreadDraftPageProps {
   readonly goals?: ThreadGoalResource;
   readonly onCreateGoal?: (objective: string) => Promise<void>;
   readonly selectionCatalog: ComposerSelectionCatalog;
+  readonly resolveAgentCycleShortcut?: (event: KeyboardEvent) => -1 | 0 | 1;
   readonly catalog: ComposerCatalog;
   readonly effectiveSelections?: ComposerEffectiveSelections;
   readonly modelSelectionPolicy?: import("@opencraft/composer-core").ModelSelectionPolicy;
@@ -478,6 +479,7 @@ export function NewThreadDraftPage({
   composerAddMenuContent,
   composerEndActions,
   shortcutCommands,
+  resolveAgentCycleShortcut,
   personalDefaultsPending = false,
   onSubmit,
 }: NewThreadDraftPageProps) {
@@ -535,6 +537,7 @@ export function NewThreadDraftPage({
     shortcutCommands={shortcutCommands}
     endActions={composerEndActions}
     selectionCatalog={selectionCatalog}
+    resolveAgentCycleShortcut={resolveAgentCycleShortcut}
     catalog={catalog}
     mentionSuggestionsEnabled={false}
     effectiveSelections={effectiveSelections}
