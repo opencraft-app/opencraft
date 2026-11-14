@@ -22,10 +22,12 @@ if [[ ! -x /opt/opencraft-node/bin/node ]]; then
   curl --fail --silent --show-error --location "https://nodejs.org/dist/v${node_version}/${node_archive}" -o "$node_temp/$node_archive"
   curl --fail --silent --show-error --location "https://nodejs.org/dist/v${node_version}/SHASUMS256.txt" -o "$node_temp/checksums"
   (cd "$node_temp"; awk -v name="$node_archive" '$2==name' checksums | sha256sum -c - >/dev/null)
-  mkdir -p /opt/opencraft-node
+  install -d -m 0755 /opt/opencraft-node
   tar -xJf "$node_temp/$node_archive" --strip-components=1 -C /opt/opencraft-node
   rm -rf "$node_temp"; trap - EXIT
 fi
+# TAT may start with umask 077; runtime users must be able to traverse Node.
+chmod 0755 /opt/opencraft-node
 getent passwd opencraft-relay >/dev/null || useradd --system --home-dir /var/lib/opencraft-relay --shell /usr/sbin/nologin opencraft-relay
 getent passwd opencraft-deploy >/dev/null || useradd --create-home --shell /bin/bash opencraft-deploy
 install -d -m 0755 /opt/opencraft-relay /opt/opencraft-relay/releases /usr/local/libexec
