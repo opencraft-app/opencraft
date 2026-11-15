@@ -1350,3 +1350,37 @@ test("connected Pi scopes CLI context to each input and revokes after completion
   }
   assert.deepEqual(issued,["pi-cli-one","pi-cli-two"]);assert.deepEqual(revoked,issued);
 });
+
+test('queued Pi input restores its original execution CLI after reopening; edits and queue starter cannot replace authority',async t=>{
+  const {randomBytes}=await import('node:crypto');
+  const {execFile}=await import('node:child_process');const {promisify}=await import('node:util');
+  const {SessionCapabilityMcp}=await import('../../packages/session-capabilities/src/mcp');
+  const {SessionCapabilities}=await import('../../packages/session-capabilities/src/index');
+  const {localExecutionCli}=await import('../../packages/session-capabilities/src/execution-cli');
+  const {executionCliSourceToken}=await import('../../packages/session-capabilities/src/credentials');
+  const directory=await mkdtemp(join(tmpdir(),'pi-queue-cli-')),key=randomBytes(32),reads:string[]=[];
+  const mcp=new SessionCapabilityMcp(new SessionCapabilities(),key,undefined,{
+    async authorizeExecution(session){assert.equal(session.execution?.inputId,'original-input');},
+    async threadCli(session){reads.push(session.execution!.inputId!);return {originalInput:session.execution!.inputId};},
+  });await mcp.listen();
+  const cli=await localExecutionCli({directory:join(directory,'cli'),endpoint:mcp.cliEndpoint,key});
+  const {models}=fixtureModels([async context=>{
+    const launcher=/OpenCraft execution-scoped thread CLI: '([^']+)'/.exec(JSON.stringify(context))?.[1];assert.ok(launcher);
+    const result=JSON.parse((await promisify(execFile)(launcher,['context'])).stdout);
+    assert.equal(result.originalInput,'original-input');return fauxAssistantMessage('read original source');
+  }]);
+  let engine=new PiEngine({directory,cwd:directory,models,executionCli:cli});
+  t.after(async()=>{await engine.close();await cli.close();await mcp.close();await rm(directory,{recursive:true,force:true});});
+  const {thread}=await engine.request('thread/start',{model:piModel('faux','faux-1'),cwd:directory},noTools);
+  await engine.request('turn/interrupt',{threadId:thread.id},noTools);
+  const credential=executionCliSourceToken(key,{serverId:'server',threadId:thread.id,execution:{inputId:'original-input',executionId:'original-execution'}});
+  const queued=await engine.request('thread/queue/add',{threadId:thread.id,clientUserMessageId:'original-input',__opencraftExecutionCli:credential,input:[{type:'text',text:'read reference'}]},noTools);
+  assert.ok(!JSON.stringify(queued).includes(credential));
+  await engine.request('thread/queue/update',{threadId:thread.id,queuedSubmissionId:queued.queuedSubmission.id,__opencraftExecutionCli:'forged-by-editor',input:[{type:'text',text:'read updated reference'}]},noTools);
+  await engine.close();engine=new PiEngine({directory,cwd:directory,models,executionCli:cli});
+  const listing=await engine.request('thread/queue/list',{threadId:thread.id},noTools);assert.ok(!JSON.stringify(listing).includes(credential));
+  const done=completed(engine);
+  await engine.request('thread/queue/start',{threadId:thread.id,queuedSubmissionId:queued.queuedSubmission.id,__opencraftExecutionCli:'forged-by-starter'},noTools);
+  assert.equal((await done).status,'completed');assert.deepEqual(reads,['original-input']);
+  const history=await engine.request('thread/read',{threadId:thread.id,includeTurns:true},noTools);assert.ok(!JSON.stringify(history).includes(credential));
+});

@@ -8,10 +8,10 @@ Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{hr
 const {createWebWorkbenchCommands}=await import('../../apps/workbench-web/src/runtime/workbench-application-services');
 
 async function fixture(t:test.TestContext) {
-  let fail=false;const creations:any[]=[];
+  let fail=false;let creationGate:Promise<void>|undefined;const creations:any[]=[];
   const registry=new HostRuntimeRegistry([{descriptor:{hostId:'local',label:'Local',kind:'local',transportEndpoint:null,executionLocation:null,workspaceBrowseRoots:['/workspace']},createRuntime:()=>({
     async connect(){},async dispose(){},async acquireThread(threadId:string){return {threadId,release(){}};},
-    async createThread(intent:any){creations.push(intent);if(fail)throw Error('creation refused');return {commandId:intent.commandId,clientMessageId:intent.clientMessageId,hostId:'local',threadId:'destination',turnId:'first',acceptedAt:1,replayed:false};},
+    async createThread(intent:any){creations.push(intent);await creationGate;if(fail)throw Error('creation refused');return {commandId:intent.commandId,clientMessageId:intent.clientMessageId,hostId:'local',threadId:'destination',turnId:'first',acceptedAt:1,replayed:false};},
     resources:{protocol:{async request(_method:string,params:any){return params.action==='reference'?{reference:'opencraft://conversation/v1/server/source'}:{cwd:'/workspace',projectId:'project'};}},threads:{getUnavailableReason(){return null;}}},
   })}]);
   const scopes=createConversationScopeRegistry({initialDraft:{draftId:'seed',execution:{hostId:asHostId('local'),workspace:{cwd:'/workspace',runtimeWorkspaceRoots:['/workspace']}}}});
@@ -25,7 +25,7 @@ async function fixture(t:test.TestContext) {
   source.dispatch({type:'set-document',document:{version:1,blocks:[{type:'paragraph',children:[{type:'text',text:'keep my words'}]}]}});
   source.dispatch({type:'set-selections',patch:{model:'pi-model',effort:'low'}});
   t.after(async()=>{navigation.dispose();activation.dispose();views.dispose();leases.dispose();scopes.dispose();coordinator.dispose();bindings.dispose();await registry.dispose();});
-  return {commands,source,navigation,creations,setFailure(value:boolean){fail=value;}};
+  return {commands,source,navigation,creations,setFailure(value:boolean){fail=value;},holdCreation(gate:Promise<void>|undefined){creationGate=gate;}};
 }
 const selection={hostId:'local',threadId:'source',historyTitle:'History',agentId:'codex',model:'codex-model',effort:'low',permissionProfile:'full'};
 
@@ -51,4 +51,20 @@ test('canceling handoff restores the source selection and keeps edited text',asy
   f.source.dispatch({type:'cancel-agent-handoff'});
   assert.equal(f.source.getSnapshot().draft.handoff,undefined);assert.deepEqual(f.source.getSnapshot().draft.selections,original.selections);
   assert.equal(f.source.getSnapshot().draft.document,original.document);assert.equal(f.creations.length,0);
+});
+
+
+test('explicit retry after leaving and returning reuses an accepted handoff receipt without stealing navigation',async t=>{
+  const f=await fixture(t);await f.commands.continueWithAgent(selection);
+  const intent=f.source.createSubmitIntent();let resolve!:()=>void;
+  f.holdCreation(new Promise<void>(done=>{resolve=done;}));
+  const sending=f.commands.submit(intent);
+  while(!f.creations.length)await new Promise(done=>setImmediate(done));
+  await f.commands.navigate(createWorkbenchThreadLocation('local','elsewhere'));
+  resolve();await assert.rejects(sending,/superseded/);
+  assert.equal((f.navigation.getSnapshot().location as any).key.threadId,'elsewhere');
+  await f.commands.navigate(createWorkbenchThreadLocation('local','source'));
+  await f.commands.submit(intent);
+  assert.equal(f.creations.length,1,'accepted creation is not replayed');
+  assert.equal((f.navigation.getSnapshot().location as any).key.threadId,'destination');
 });

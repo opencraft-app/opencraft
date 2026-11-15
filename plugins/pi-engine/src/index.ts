@@ -414,7 +414,7 @@ export class PiEngine {
       // admission state; only a committed native snapshot announces the Turn.
       session.active = { id: item.id, status: "inProgress", items: [], _queueAdmission: true };
       if (!this.admissionOpen()) throw new Error("Pi admission is fenced");
-      const content = await this.withCli(session.id, item.id, item.clientId ?? "", item.content);
+      const content = await this.withCli(session.id, item.id, item.clientId ?? "", item.content, item.executionCliCredential);
       await native.submit(content, { turnId: item.id, clientId: item.clientId, input: item.input,
         additionalContext: item.additionalContext, createdAtMs: item.createdAtMs,
         ...(item.executionAdmission ? {executionAdmission:item.executionAdmission} : {}) }, item.id);
@@ -932,7 +932,8 @@ export class PiEngine {
         const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
       const content = await this.compileInput(params.input, additionalContext, session.cwd, model);
         const executionAdmission = queued ? queued.executionAdmission : (typeof params.__opencraftExecutionAdmission === "string" && params.__opencraftExecutionAdmission.length <= 128 ? params.__opencraftExecutionAdmission : undefined);
-        const item: PiQueuedInput = { ...(executionAdmission ? {executionAdmission} : {}), id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
+        const executionCliCredential = queued ? queued.executionCliCredential : (typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
+        const item: PiQueuedInput = { ...(executionCliCredential ? {executionCliCredential} : {}), ...(executionAdmission ? {executionAdmission} : {}), id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
           input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
         session.pendingRecovery = true; await this.save(session);
         const result = method === "thread/queue/add" ? await native.enqueue(item) : await native.changeQueue("update", item.id, item);

@@ -878,6 +878,12 @@ export function createWebWorkbenchCommands(input: {
           continuation = { draftId: draft.id, origin, scope };
           handoffDrafts.set(intent.commandId, continuation);
         }
+        const current = input.navigation.getSnapshot();
+        if (current.location.kind !== "thread" || current.location.key.hostId !== intent.target.key.hostId
+          || current.location.key.threadId !== intent.handoff.sourceThreadId || continuation.scope !== input.displayContinuity.getScope()) throw new Error("Handoff source is no longer current");
+        // An explicit retry from the source owns a new navigation intention,
+        // while an already accepted receipt still owns the one destination.
+        continuation.origin = current.revision;
         const draft = input.scopes.getDraft(continuation.draftId);
         if (!draft) throw new Error("Handoff draft unavailable");
         return submissionPipeline.submit({ ...intent, target: draft.target });
