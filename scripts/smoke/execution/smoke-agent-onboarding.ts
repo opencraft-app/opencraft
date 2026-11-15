@@ -104,6 +104,23 @@ try {
     }
     await context.close();
   }
+  const grouped = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  grouped.on("pageerror", (error: Error) => errors.push(error.message));
+  await grouped.goto(base);
+  await grouped.waitForFunction(() => (window as any).onboardingFixture?.calls.includes("host-a:codex"));
+  const variants = ["sol", "terra"].flatMap(name => ["low", "medium", "high"].map(effort => ({ id: `codex:gpt-${name}[${effort}]`, name: `GPT ${name} (${effort})` })));
+  await grouped.evaluate(models => (window as any).onboardingFixture.resolve("host-a:codex", { models }), variants);
+  await grouped.getByRole("button", { name: "GPT sol", exact: true }).waitFor();
+  assert.equal(await grouped.getByRole("button", { name: /GPT sol \(/ }).count(), 0, "effort variants are not separate models");
+  assert.equal(await grouped.getByRole("button", { name: "GPT terra", exact: true }).count(), 1);
+  const depth = grouped.getByRole("slider", { name: "Reasoning", exact: true });
+  await depth.focus(); await grouped.keyboard.press("End");
+  await grouped.getByRole("button", { name: "Continue", exact: true }).click();
+  assert.match(await grouped.locator(".agent-onboard__selection").innerText(), /GPT sol/);
+  assert.match(await grouped.locator(".agent-onboard__selection").innerText(), /High/);
+  await grouped.getByRole("button", { name: "Start chatting", exact: true }).click();
+  assert.equal(await grouped.evaluate(() => (window as any).onboardingFixture.finished.at(-1)), "codex:gpt-sol[high]");
+  await grouped.close();
   // During asynchronous Start, every exit button stays disabled until ownership settles.
   const finishingPage = await browser.newPage();
   await finishingPage.goto(base);

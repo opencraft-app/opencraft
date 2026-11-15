@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
 import { AgentBrandIcon, type AgentBrand } from "@opencraft/design-system-web/action-icons";
-import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, ResetIcon } from "@opencraft/design-system-web/action-icons";
+import { CheckIcon, SearchIcon, ModelIcon, LightningIcon, AddIcon, ResetIcon, ChevronRightIcon } from "@opencraft/design-system-web/action-icons";
+import { DiscreteSlider } from "@opencraft/design-system-web/discrete-slider";
 import * as Menu from "@opencraft/design-system-web/dropdown-menu";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import { SettingsSwitch } from "@opencraft/extension-react";
 import { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families";
 import { modelEffortLabel } from "./model-choice-labels";
 import { ModelCatalogStatus } from "./model-catalog-status";
@@ -13,9 +13,23 @@ import { composerAgentBrands, omitDuplicateHostAgents } from "./agent-menu-sourc
 
 const brands: Record<string, { brand: AgentBrand; name: string }> = composerAgentBrands;
 
+function depthFor(models: readonly ComposerModelOption[], selectedId: string | null, effort: string | null) {
+  const families = modelChoiceFamilies(models);
+  const family = families.find(item => item.models.some(model => model.value === selectedId || model.id === selectedId));
+  const current = family?.models.find(model => model.value === selectedId || model.id === selectedId);
+  const variants = family?.variants ?? [];
+  const options = variants.length ? variants.map(variant => ({ value: variant.effort, label: variant.effort })) : current?.efforts ?? [];
+  const active = variants.length
+    ? variants.find(variant => variant.model.value === selectedId || variant.model.id === selectedId)?.effort ?? null
+    : effort;
+  const defaultEffort = variants.length ? variants.find(variant => variant.model.isDefault)?.effort ?? null : current?.defaultEffort ?? null;
+  const fast = current?.serviceTiers?.find(tier => tier.id === "fast" || tier.name.toLowerCase() === "fast");
+  return { family, current, variants, options, active, defaultEffort, fast, label: family?.label ?? current?.label ?? "" };
+}
+
 /** Browsing sources/search is local. Only an explicit choice writes a model. */
 export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffortChange, serviceTier, onServiceTierChange,
-  switchingAgentId, agentSelectionError, onConfigure, agentCycleRequest }: {
+  switchingAgentId, agentSelectionError, onConfigure, agentCycleRequest, preferEffortLayer, onEffortLayerArmed }: {
   readonly catalog?: ComposerSelectionCatalog;
   readonly selected: string | null;
   readonly onSelect: (model: ComposerModelOption, group?: ComposerAgentModelGroup) => void;
@@ -27,8 +41,12 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   readonly agentSelectionError: { id: string; message: string } | null;
   readonly onConfigure?: () => void;
   readonly agentCycleRequest?: { readonly direction: ComposerAgentCycleDirection; readonly nonce: number } | null;
+  /** Existing threads and a new thread after its first model choice open on the slider. */
+  readonly preferEffortLayer?: boolean;
+  readonly onEffortLayerArmed?: () => void;
 }) {
   const intl = useIntl();
+  const root = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");
   const apiLabel = intl.formatMessage({ id: "composer.model.api", defaultMessage: "API models" });
   const currentAgentId = catalog?.currentAgentId ?? null;
@@ -56,7 +74,6 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     }
     if (!scoped.size && (group.loading || group.error || !catalog?.onConfigureAgents)) sources.push({ id: `${group.id}:api`, agentId: "api", label: group.label || apiLabel, group, models: [] });
   }
-  // A stale or failed current-Agent catalog must not hide the thread's Agent.
   if (currentAgentId !== null && !sources.some(source => source.agentId === currentAgentId)) {
     const group = groups.find(candidate => candidate.active) ?? groups[0];
     if (group !== undefined) sources.push({
@@ -68,40 +85,57 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   sources = omitDuplicateHostAgents(sources);
   const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3, pi: 4 };
   sources.sort((left, right) => (brandOrder[left.brand ?? ""] ?? 5) - (brandOrder[right.brand ?? ""] ?? 5));
+  const selectedSource = sources.find(item => item.models.some(model => model.value === selected || model.id === selected));
+  const depth = depthFor(selectedSource?.models ?? [], selected, effort);
+  const hasDepth = depth.options.length > 0;
   const [browsing, setBrowsing] = useState<{ id: string; groupId: string } | null>(null);
+  const [view, setView] = useState<"models" | "effort">(() => agentCycleRequest || !preferEffortLayer || !hasDepth ? "models" : "effort");
   const browse = (item: Source) => setBrowsing({ id: item.id, groupId: item.group.id });
-  const source = sources.find(source => source.id === browsing?.id)
-    ?? sources.find(source => source.group.id === browsing?.groupId)
-    ?? sources.find(source => source.group.active && source.models.some(model => model.value === selected || model.id === selected))
-    ?? sources.find(source => source.agentId === currentAgentId)
-    ?? sources.find(source => source.group.active) ?? sources[0];
+  const source = sources.find(item => item.id === browsing?.id)
+    ?? sources.find(item => item.group.id === browsing?.groupId)
+    ?? sources.find(item => item.group.active && item.models.some(model => model.value === selected || model.id === selected))
+    ?? sources.find(item => item.agentId === currentAgentId)
+    ?? sources.find(item => item.group.active) ?? sources[0];
   const lastCycleNonce = useRef(0);
+  useEffect(() => { if (view === "effort" && !hasDepth) setView("models"); }, [view, hasDepth]);
   useEffect(() => {
     if (!agentCycleRequest || agentCycleRequest.nonce === lastCycleNonce.current || !source || sources.length === 0) return;
     lastCycleNonce.current = agentCycleRequest.nonce;
     const index = sources.findIndex(item => item.id === source.id);
     const next = sources[(index + agentCycleRequest.direction + sources.length) % sources.length];
-    if (next) { browse(next); setQuery(""); }
+    if (next) { browse(next); setQuery(""); setView("models"); }
   }, [agentCycleRequest, source, sources, browse]);
+  useEffect(() => {
+    const node = root.current;
+    if (!node) return;
+    const active = node.ownerDocument.activeElement;
+    if (!(active instanceof Node) || !node.contains(active)) return;
+    node.querySelector<HTMLElement>(view === "effort" ? '[role="slider"]' : 'input[type="search"]')?.focus({ preventScroll: true });
+  }, [view]);
   const sourceIcon = (brand: AgentBrand | undefined) => brand
     ? <AgentBrandIcon agent={brand} size={18} />
     : <ModelIcon size={18} aria-hidden="true" />;
-  if (!source) return <div className="opencraft-composer-model-browser">
+  if (!source) return <div className="opencraft-composer-model-browser" ref={root}>
     <ModelCatalogStatus emptyTitle={catalog?.agentsDisabled ? <FormattedMessage id="composer.agent.none" defaultMessage="No enabled agents have available models. Enable an agent or check its setup in settings." /> : undefined} emptyHint={catalog?.agentsDisabled ? null : undefined} />
     {catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={onConfigure}><FormattedMessage id="workIn.manageModels" defaultMessage="Manage models…" /></Menu.Item> : null}
   </div>;
   const families = modelChoiceFamilies(source.models);
   const selectedFamily = source.group.active ? families.find(family => family.models.some(model => model.value === selected || model.id === selected)) : undefined;
-  const current = selectedFamily?.models.find(model => model.value === selected || model.id === selected);
-  const variants = selectedFamily?.variants ?? [];
-  const efforts = variants.length ? variants.map(variant => ({ value: variant.effort, label: variant.effort })) : current?.efforts ?? [];
-  const activeEffort = variants.length ? variants.find(variant => variant.model.value === selected || variant.model.id === selected)?.effort : effort;
-  const defaultEffort = variants.length ? variants.find(variant => variant.model.isDefault)?.effort ?? null : current?.defaultEffort ?? null;
-  const fast = current?.serviceTiers?.find(tier => tier.id === "fast" || tier.name.toLowerCase() === "fast");
+  const reasoningLabel = intl.formatMessage({ id: "chat.reasoning", defaultMessage: "Reasoning" });
   const matches = families.filter(family => `${family.label} ${family.models.map(model => model.value).join(" ")}`.toLocaleLowerCase(intl.locale).includes(query.trim().toLocaleLowerCase(intl.locale)));
   const searchLabel = intl.formatMessage({ id: "composer.model.search", defaultMessage: "Search models" });
-  const choose = (model: ComposerModelOption) => onSelect(model, catalog?.agentGroups?.length ? source.group as ComposerAgentModelGroup : undefined);
+  const choose = (model: ComposerModelOption) => {
+    onSelect(model, catalog?.agentGroups?.length ? source.group as ComposerAgentModelGroup : undefined);
+    onEffortLayerArmed?.();
+    const next = depthFor(source.models, model.value, null);
+    setView(next.options.length ? "effort" : "models");
+  };
+  const applyEffort = (value: string) => {
+    const variant = depth.variants.find(item => item.effort === value);
+    if (variant) choose(variant.model);
+    else onEffortChange(value);
+  };
   const startsNewThread = catalog?.agentContinuation?.startsNewThread === true;
   const currentAgent = (item: Source) => currentAgentId !== null && item.agentId === currentAgentId;
   const tabName = (item: Source) => currentAgent(item)
@@ -110,9 +144,41 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const sourceLabel = currentAgentId === null ? source.label
     : `${source.label} · ${currentAgent(source) ? currentTagLabel : intl.formatMessage({ id: "composer.agent.currentAgent", defaultMessage: "Current: {agent}" }, { agent: currentAgentFallbackLabel })}`;
   const showHandoffNotice = startsNewThread && currentAgentId !== null && !currentAgent(source) && source.models.length > 0;
-  return <div className="opencraft-composer-model-browser">
+  const fast = depth.fast;
+  const showEffort = view === "effort" && hasDepth;
+  const modelButtonLabel = depth.label || intl.formatMessage({ id: "chat.model", defaultMessage: "Model" });
+  return <div className="opencraft-composer-model-browser" ref={root} data-layer={showEffort ? "effort" : "models"}>
+    {showEffort ? <div className="opencraft-composer-effort">
+      <DiscreteSlider appearance="capsule" options={depth.options.map(option => ({ value: option.value, label: modelEffortLabel(intl, option.value, option.label) }))}
+        value={depth.active} label={reasoningLabel}
+        unsetLabel={intl.formatMessage({ id: "composer.effort.unset", defaultMessage: "Select reasoning" })}
+        disabled={!!switchingAgentId || depth.current?.policyRestricted === true}
+        preservePointerFocus={() => root.current?.ownerDocument.activeElement instanceof HTMLElement
+          && root.current.ownerDocument.activeElement.classList.contains("opencraft-composer-editor")}
+        onValueChange={applyEffort}
+        renderValue={label => <div className="opencraft-composer-effort__header">
+          <span className="opencraft-composer-effort__side">{fast ? <IconButton size="accessory" variant="ghost" aria-pressed={serviceTier === fast.id}
+            aria-label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })}
+            disabled={!!switchingAgentId} onClick={() => onServiceTierChange(serviceTier === fast.id ? null : fast.id)}>
+            <LightningIcon size={16} filled={serviceTier === fast.id} aria-hidden="true" />
+          </IconButton> : null}</span>
+          <span className="opencraft-composer-effort__titles">
+            <span className="opencraft-composer-effort__name">{label}</span>
+            <Button size="accessory" variant="ghost" aria-label={intl.formatMessage({ id: "composer.model.change", defaultMessage: "Change model, {model}" }, { model: modelButtonLabel })}
+              onClick={() => setView("models")}>
+              <span>{modelButtonLabel}</span><ChevronRightIcon size={14} aria-hidden="true" />
+            </Button>
+          </span>
+          <span className="opencraft-composer-effort__side">{depth.defaultEffort && depth.options.some(option => option.value === depth.defaultEffort) ? <IconButton size="accessory" variant="ghost"
+            aria-label={intl.formatMessage({ id: "composer.resetEffort", defaultMessage: "Reset reasoning to model default" })}
+            disabled={!!switchingAgentId || depth.defaultEffort === depth.active || depth.current?.policyRestrictedEfforts?.includes(depth.defaultEffort)}
+            onClick={() => { if (depth.defaultEffort) applyEffort(depth.defaultEffort); }}>
+            <ResetIcon size={14} aria-hidden="true" />
+          </IconButton> : null}</span>
+        </div>} />
+    </div> : <>
     <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
-      {sources.map(item => <IconButton key={item.id} size="accessory" variant="ghost"
+      {sources.map(item => <Button key={item.id} size="accessory" variant={source.id === item.id ? "secondary" : "ghost"} contentLayout="row"
         onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
         role="tab" aria-selected={source.id === item.id} tabIndex={source.id === item.id ? 0 : -1}
         title={currentAgent(item)
@@ -122,16 +188,16 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
         onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
           if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
           event.preventDefault(); event.stopPropagation();
-          const index = sources.findIndex(source => source.id === item.id);
+          const index = sources.findIndex(candidate => candidate.id === item.id);
           const next = event.key === "Home" ? 0 : event.key === "End" ? sources.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + sources.length) % sources.length;
           browse(sources[next]!); setQuery("");
           event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
         }}>
-        {sourceIcon(item.brand)}
-      </IconButton>)}
-      <span className="opencraft-composer-model-browser__source-name" role="presentation" title={sourceLabel}>
+        {sourceIcon(item.brand)}<span>{item.label}</span>
+      </Button>)}
+      {currentAgentId !== null ? <span className="opencraft-composer-model-browser__source-name" role="presentation" title={sourceLabel}>
         {sourceLabel}
-      </span>
+      </span> : null}
     </div>
     {showHandoffNotice ? <div className="opencraft-composer-selection-menu__status opencraft-composer-model-browser__handoff" role="status">
       <FormattedMessage id="composer.agent.newThreadNotice" defaultMessage="Choosing a model from another Agent starts a new conversation with this thread's context." />
@@ -160,30 +226,11 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       {agentSelectionError?.id === source.group.id ? <div className="opencraft-composer-selection-menu__status is-error" role="alert">{agentSelectionError.message}</div> : null}
       {!source.group.loading && !source.group.error && source.models.length > 0 && selected !== null && !groups.some(group => group.active && group.models.some(model => model.value === selected || model.id === selected)) ? <div className="opencraft-composer-selection-menu__status is-error"><FormattedMessage id="composer.model.unavailable" defaultMessage="The selected model is unavailable. Choose another model." /></div> : null}
     </div>
-    {efforts.length ? <div className="opencraft-composer-model-browser__reasoning" role="group" aria-label={intl.formatMessage({ id: "chat.reasoning", defaultMessage: "Reasoning" })}>
-      <div className="opencraft-composer-model-browser__section-label"><FormattedMessage id="chat.reasoning" defaultMessage="Reasoning" />
-        {defaultEffort && efforts.some(option => option.value === defaultEffort) ? <IconButton size="accessory" variant="ghost"
-          aria-label={intl.formatMessage({ id: "composer.resetEffort", defaultMessage: "Reset reasoning to model default" })}
-          disabled={!!switchingAgentId || defaultEffort === activeEffort || current?.policyRestrictedEfforts?.includes(defaultEffort)}
-          onClick={() => { const variant = variants.find(variant => variant.effort === defaultEffort); if (variant) choose(variant.model); else onEffortChange(defaultEffort); }}>
-          <ResetIcon size={14} aria-hidden="true" />
-        </IconButton> : null}
-      </div>
-      <div className="opencraft-composer-model-browser__efforts">{efforts.map(option => <Button key={option.value} size="sm" density="compact" variant={activeEffort === option.value ? "secondary" : "ghost"}
-        aria-pressed={activeEffort === option.value} disabled={!!switchingAgentId || current?.policyRestrictedEfforts?.includes(option.value)}
-        onClick={() => { const variant = variants.find(variant => variant.effort === option.value); if (variant) choose(variant.model); else onEffortChange(option.value); }}>
-        {modelEffortLabel(intl, option.value, option.label)}
-      </Button>)}</div>
-    </div> : null}
-    {fast ? <div className="opencraft-composer-model-browser__fast">
-      <LightningIcon size={16} aria-hidden="true" /><span><FormattedMessage id="composer.model.fastMode" defaultMessage="Fast mode" /></span>
-      <SettingsSwitch checked={serviceTier === fast.id} disabled={!!switchingAgentId} onCheckedChange={checked => onServiceTierChange(checked ? fast.id : null)}
-        label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })} />
-    </div> : null}
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__configure" onSelect={onConfigure}>
       <AddIcon size={16} aria-hidden="true" />{groups.find(group => group.active)?.models.length === 0
         ? <FormattedMessage id="composer.model.add" defaultMessage="Add a model…" />
         : <FormattedMessage id="workIn.manageModels" defaultMessage="Manage models…" />}
     </Menu.Item> : null}
+    </>}
   </div>;
 }

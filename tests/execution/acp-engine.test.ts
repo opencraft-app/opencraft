@@ -244,6 +244,7 @@ test("Codex splits advertised model variants into native model/reasoning and app
   await f.engine.discoverModelCapabilities(created.thread.id);
   const catalog = (await f.engine.request("model/list", {}, client)).data;
   assert.equal(catalog.length, 4, "config-only replies cannot discard the complete concrete catalog");
+  assert.ok(catalog.every((model: any) => model.supportedReasoningEfforts.length === 0), "bracketed Codex ids do not gain a second effort list");
   assert.deepEqual(catalog.filter((model: any) => model.serviceTiers.length).map((model: any) => model.id), ["codex:one[low]", "codex:one[high]"]);
   const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
   await f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:one[high]", serviceTier: null, input: [{ type: "text", text: "hello" }] }, client);
@@ -253,6 +254,27 @@ test("Codex splits advertised model variants into native model/reasoning and app
   const prompts = (await f.calls()).filter(call => call.method === "session/prompt").length;
   await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:two[high]", serviceTier: "fast", input: [{ type: "text", text: "must not send" }] }, client), /Fast mode is unavailable/);
   await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:one[ultra]", input: [{ type: "text", text: "must not send" }] }, client), /model option is unavailable/);
+  assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, prompts);
+});
+
+test("CodeBuddy publishes advertised thought levels on every flat model and applies the selected value", async t => {
+  const f = await fixture(t, { id: "codebuddy", env: { ACP_TEST_FLAT_REASONING: "1" } });
+  const created = await f.engine.request("thread/start", {}, client);
+  assert.equal(created.reasoningEffort, "high");
+  const catalog = (await f.engine.request("model/list", {}, client)).data;
+  assert.deepEqual(catalog.map((model: any) => model.id), ["codebuddy:claude-opus", "codebuddy:claude-haiku"]);
+  for (const model of catalog) {
+    assert.deepEqual(model.supportedReasoningEfforts.map((effort: any) => effort.reasoningEffort), ["low", "medium", "high", "xhigh", "max", "enabled"]);
+    assert.equal(model.defaultReasoningEffort, null, "a current value is not a declared default");
+  }
+  const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+  await f.engine.request("turn/start", { threadId: created.thread.id, effort: "low", input: [{ type: "text", text: "hello" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  const configured = (await f.calls()).filter(call => call.method === "session/set_config_option");
+  assert.ok(configured.some(call => call.configId === "thought_level" && call.value === "low"));
+  assert.equal((await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.reasoningEffort, "low");
+  const prompts = (await f.calls()).filter(call => call.method === "session/prompt").length;
+  await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, effort: "ultra", input: [{ type: "text", text: "must not send" }] }, client), /reasoning level is unavailable/);
   assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, prompts);
 });
 

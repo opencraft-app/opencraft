@@ -12943,6 +12943,20 @@ html[data-window-host="browser"] body {
 }
 
 .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: none; }
+.opencraft-composer-effort {
+  padding: calc(var(--spacing) * 3);
+  &__header {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    width: 100%;
+    text-align: initial;
+  }
+  &__side { display: flex; justify-content: center; }
+  &__titles { display: flex; flex-direction: column; align-items: center; min-width: 0; gap: var(--spacing); }
+  &__name { color: var(--color-text-accent); font: var(--typography-control-font); letter-spacing: var(--typography-control-tracking); }
+}
+.opencraft-composer-model-browser-surface:has([data-layer="effort"]) { width: min(320px, calc(100vw - 24px)); }
 .opencraft-composer-model-browser-surface {
   box-sizing: border-box;
   display: flex;
@@ -12958,13 +12972,14 @@ html[data-window-host="browser"] body {
   min-height: 0;
   &__sources {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     flex: none;
     align-items: center;
     gap: var(--spacing);
     padding: calc(var(--spacing) * 2);
     overflow-x: auto;
     border-bottom: .5px solid var(--color-border-subtle);
+    [role="tab"] { flex: none; }
     [aria-selected="true"] { border-radius: 0; box-shadow: inset 0 -2px 0 var(--color-text); }
   }
   &__source-name {

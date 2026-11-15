@@ -219,10 +219,24 @@ export interface ComposerExecutionTarget {
 
 type SelectionPicker = "intelligence" | "permissions";
 
-function modelIdentifierLabel(value: string): string {
-  return value.replace(/^:/, "").split(/[-_\s]+/u).filter(Boolean)
-    .map(part => /^gpt$/iu.test(part) ? "GPT" : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)
+function readableModelIdentifier(value: string): string | null {
+  const body = value.replace(/^:/, "");
+  const colon = body.lastIndexOf(":");
+  const rest = (colon >= 0 ? body.slice(colon + 1) : body).replace(/\[[^\]]+\]$/u, "");
+  if (!/[A-Za-z]/u.test(rest)) return null;
+  const label = rest.split(/[-_\s]+/u).filter(Boolean)
+    .map(part => /^gpt$/iu.test(part) ? "GPT" : /^\d/u.test(part) ? part : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)
     .join(" ");
+  return label || null;
+}
+
+function permissionModeFromStoredValue(value: string): "read-only" | "accept-edits" | "auto" | "full" | null {
+  const token = value.toLowerCase().replaceAll("_", "-");
+  if (/(?:^|[-:])full$/u.test(token) || token.endsWith("full-access") || token.endsWith("dangerfullaccess")) return "full";
+  if (/(?:^|[-:])read-only$/u.test(token) || token.endsWith("readonly")) return "read-only";
+  if (/(?:^|[-:])accept-edits$/u.test(token)) return "accept-edits";
+  if (/(?:^|[-:])auto$/u.test(token) || token.endsWith("auto-review")) return "auto";
+  return null;
 }
 
 function compactModelLabel(label: string): string {
@@ -1091,6 +1105,8 @@ export const OpenCraftComposer = forwardRef<
   const [imagePreview, setImagePreview] = useState<{ draftId: string; attachmentId: string; returnFocus: HTMLElement | null } | null>(null);
   const previewFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => { setImagePreview(null); }, [controller, draftId]);
+  const [effortLayerArmed, setEffortLayerArmed] = useState(false);
+  useEffect(() => { setEffortLayerArmed(false); }, [draftId]);
   const previewImages: ComposerPreviewImage[] = attachments.flatMap(attachment => {
     if (!attachment.mimeType.startsWith("image/")) return [];
     const source = attachmentSession.previewUrl(draftId, attachment.id)
@@ -2158,16 +2174,19 @@ export const OpenCraftComposer = forwardRef<
 
   const displayFamily = modelSelectionPolicy === "user" && displayModel ? modelChoiceFamilies([displayModel])[0] : undefined;
   const encodedEffort = displayFamily?.variants[0]?.effort;
+  const fallbackModelLabel = selectedModelValue === null ? null : readableModelIdentifier(selectedModelValue);
   const modelLabel =
     displayFamily?.label ?? displayModel?.label ??
     (selectedModelValue === null
       ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
-      : modelIdentifierLabel(selectedModelValue));
+      : fallbackModelLabel ?? intl.formatMessage({ id: "composer.model.unconfirmed", defaultMessage: "Model not confirmed" }));
   const compactSelectedModelLabel = displayModel?.agentLabel && !existingConversation
     ? `${displayModel.agentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
-  const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
+  const candidateEffort = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
     : existingConversation ? displayEffortValue : selectedEffortValue);
+  const effortIsDeclared = encodedEffort != null || (candidateEffort != null && (displayModel?.efforts.some(option => option.value === candidateEffort) ?? false));
+  const visibleEffortValue = modelDisplayOnly ? candidateEffort : effortIsDeclared ? candidateEffort : null;
   const selectedEffort = displayModel?.efforts.find(effort => effort.value === visibleEffortValue)
     ?? (visibleEffortValue == null ? null : { value: visibleEffortValue, label: formatSelectionLabel(visibleEffortValue), description: null });
   const effortLabel =
@@ -2188,9 +2207,12 @@ export const OpenCraftComposer = forwardRef<
     ? `${namedModelLabel}, ${reasoningLabel}: ${effortLabel}`
     : namedModelLabel;
   const permissionsLabel = intl.formatMessage({ id: "composer.permissions", defaultMessage: "Permissions" });
+  const storedPermissionMode = selectedPermissionValue === null ? null : permissionModeFromStoredValue(selectedPermissionValue);
+  const permissionUnconfirmed = intl.formatMessage({ id: "composer.permissions.unconfirmed", defaultMessage: "Permission not confirmed" });
   const permissionSelectionLabel = selectedPermission != null
     ? displayPermissionLabel(selectedPermission, intl)
-    : selectedPermissionValue === null ? permissionsLabel : formatSelectionLabel(selectedPermissionValue);
+    : storedPermissionMode !== null ? intl.formatMessage(permissionModeMessages[storedPermissionMode])
+    : selectedPermissionValue === null && !existingConversation ? permissionsLabel : permissionUnconfirmed;
   const permissionChangePending = composerSnapshot.draft.selections.permissionProfile != null
     && selectedPermissionValue !== effectiveDisplayPermissionValue;
   const permissionTriggerTitle = permissionChangePending
@@ -2635,6 +2657,7 @@ export const OpenCraftComposer = forwardRef<
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
                 <ComposerModelMenu key={draftId} catalog={selectionCatalog} selected={selectedModelValue}
                   agentCycleRequest={openPicker === "intelligence" ? agentCycleRequest : null}
+                  preferEffortLayer={existingConversation || effortLayerArmed} onEffortLayerArmed={() => setEffortLayerArmed(true)}
                   switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
                   onSelect={(model, group) => {
                     if (group) { void selectAgentModel(group, model); }

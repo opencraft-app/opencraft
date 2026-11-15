@@ -17,11 +17,10 @@ Visual regression checks measure fill end versus rendered thumb center at every
 stop and during held preview, with a subpixel tolerance. A CSS-property assertion
 or screenshots of one favorable stop cannot establish this invariant. Preserve
 a failing pre-fix case; inspect near-start, middle and near-end output in addition
-to theme/density/DPR coverage. Standalone Composer now uses the unified model
-browser rather than this slider presentation. Its model/variant/reasoning/Fast,
-focus and draft contracts are exercised by
-`scripts/smoke/composer/smoke-model-browser.ts`; the old reasoning-slider smoke
-entry delegates to that workflow.
+to theme/density/DPR coverage. Standalone Composer uses this slider as the
+reasoning layer when the selected model declares ordered choices. Its
+model/variant/reasoning/Fast, focus and draft contracts are exercised by
+`scripts/smoke/composer/smoke-model-browser.ts`.
 
 
 ## UI 图标：共享视觉语言

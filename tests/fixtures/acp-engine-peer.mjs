@@ -5,6 +5,16 @@ let latestSession = null;
 const settings = new Map();
 const splitSettings = process.env.ACP_TEST_SPLIT_MODEL_CONFIG === '1';
 const parameterizedSettings = process.env.ACP_TEST_PARAMETERIZED === '1';
+const flatReasoning = process.env.ACP_TEST_FLAT_REASONING === '1';
+const flatModels = ['claude-opus', 'claude-haiku'];
+const flatEfforts = ['low', 'medium', 'high', 'xhigh', 'max', 'enabled'];
+const flatOptions = state => [
+  {id:'model',category:'model',type:'select',currentValue:state.model,options:flatModels.map(value=>({value,name:value}))},
+  {id:'thought_level',category:'thought_level',type:'select',currentValue:state.effort,options:flatEfforts.map(value=>({value,name:value}))},
+];
+const flatSetup = id => { settings.set(id,{model:'claude-opus',effort:'high',fast:false,context:'1m'}); const state = settings.get(id); return {
+  sessionId:id, configOptions:flatOptions(state), models:{currentModelId:state.model, availableModels:flatModels.map(modelId=>({modelId,name:modelId}))},
+};};
 let parameterizedPicker = false;
 const configOptions = (id, state = settings.get(id)) => {
   if (parameterizedSettings) return [
@@ -51,7 +61,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       const sessionId = process.env.ACP_TEST_NATIVE_ID ?? `native-${sessions.size + 1}`;
       for (const server of params.mcpServers) { await mcp(server, 'init', 'initialize'); await mcp(server, 'list', 'tools/list'); }
       if(parameterizedSettings&&!parameterizedPicker)return send({id:frame.id,error:{code:-32602,message:'Parameterized picker not enabled'}});
-      sessions.set(sessionId, params); latestSession = sessionId; if(splitSettings||parameterizedSettings)return result(frame.id,setup(sessionId));return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
+      sessions.set(sessionId, params); latestSession = sessionId; if(flatReasoning)return result(frame.id,flatSetup(sessionId)); if(splitSettings||parameterizedSettings)return result(frame.id,setup(sessionId));return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
     }
     if (frame.method === 'session/fork') {
       if (!process.env.ACP_TEST_SESSION_HANDOFF) return send({id:frame.id,error:{code:-32601,message:'Unsupported'}});
@@ -63,6 +73,13 @@ createInterface({ input: process.stdin }).on('line', line => {
       if(process.env.ACP_TEST_BUSY_NATIVE===params.sessionId)return send({id:frame.id,error:{code:-32600,message:'This Codex session is in use by another Codex client'}});
  sessions.set(params.sessionId, params); latestSession = params.sessionId; if(splitSettings||parameterizedSettings)return result(frame.id,setup(params.sessionId));return result(frame.id, process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:'default-native',availableModels:[{modelId:'default-native',name:'Default'}]}} : {}); }
     if (frame.method === 'session/set_config_option') {
+      if(flatReasoning){
+        const state=settings.get(params.sessionId), option=state&&flatOptions(state).find(option=>option.id===params.configId);
+        if(!option||!option.options.some(choice=>choice.value===params.value))return send({id:frame.id,error:{code:-32602,message:'Invalid params'}});
+        if(params.configId==='model')state.model=params.value;
+        if(params.configId==='thought_level')state.effort=params.value;
+        return result(frame.id,{configOptions:flatOptions(state),models:{currentModelId:state.model,availableModels:flatModels.map(modelId=>({modelId,name:modelId}))}});
+      }
       if(splitSettings||parameterizedSettings){
         const state=settings.get(params.sessionId),option=state&&configOptions(params.sessionId).find(option=>option.id===params.configId);
         if(!option||(option.type==='boolean'?params.type!=='boolean'||typeof params.value!=='boolean':!option.options.some(option=>option.value===params.value)))return send({id:frame.id,error:{code:-32602,message:'Invalid params'}});

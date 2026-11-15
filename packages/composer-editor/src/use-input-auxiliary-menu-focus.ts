@@ -32,6 +32,7 @@ export function useInputAuxiliaryMenuFocus(options: {
     if (!editor) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!preserve.current || !editorHasFocus(editor) || event.isComposing || event.keyCode === 229) return;
+      if (event.target instanceof Node && content.current?.contains(event.target)) return;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const items = content.current?.querySelectorAll<HTMLElement>(':is([role^="menuitem"], [role="slider"]):not([aria-disabled="true"])');
         const target = event.key === "ArrowUp" ? items?.[items.length - 1] : items?.[0];

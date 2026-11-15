@@ -682,6 +682,23 @@ export class AcpEngine implements ExecutionEngineProvider {
         };
       }
     }
+    this.projectSessionReasoning(session);
+  }
+  /** Session-level thought options apply to every flat catalog model. Bracketed Codex ids already carry effort. */
+  private projectSessionReasoning(session: Session): void {
+    if (this.id === "cursor") return;
+    const variantCatalog = (session.modelCatalog ?? []).some(model => /\[[^\]]+\]$/u.test(model.id));
+    if (variantCatalog || !session.reasoningConfig?.values.length) {
+      if (!variantCatalog) session.reasoningModels = undefined;
+      return;
+    }
+    const supportedReasoningEfforts = session.reasoningConfig.values.map(reasoningEffort => ({ reasoningEffort, description: "" }));
+    session.reasoningModels = Object.fromEntries((session.modelCatalog ?? []).map(model => [model.id, {
+      supportedReasoningEfforts, defaultReasoningEffort: null,
+    }]));
+  }
+  private variantReasoningCatalog(session: Session): boolean {
+    return (session.modelCatalog ?? []).some(model => /\[[^\]]+\]$/u.test(model.id));
   }
   private baseModelId(model: string): string { return this.id === "codex" ? codexBaseModelId(model) : model; }
   private async setModel(session: Session, model: string): Promise<void> {
@@ -725,6 +742,11 @@ export class AcpEngine implements ExecutionEngineProvider {
   private async setReasoning(session: Session, effort: unknown): Promise<void> {
     const config = session.reasoningConfig;
     if (typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
+    if (this.id !== "cursor" && this.variantReasoningCatalog(session)) {
+      const selected = session.model?.startsWith(this.modelPrefix) ? session.model.slice(this.modelPrefix.length) : session.model ?? "";
+      if (splitModelVariant(selected)?.parameters === effort) return;
+      return fault("This reasoning level is unavailable for the selected model");
+    }
     if (config.currentValue === effort) return;
     this.captureModels(session, await this.native(session).request("session/set_config_option", {
       sessionId: session.nativeId, configId: config.id, value: effort,
@@ -841,7 +863,9 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
-    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, this.id === "cursor" ? session.reasoningConfig?.currentValue ?? null : null,
+    const advertisedEffort = this.id === "cursor" || (session.reasoningConfig && !this.variantReasoningCatalog(session))
+      ? session.reasoningConfig?.currentValue ?? null : null;
+    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, advertisedEffort,
       (session.modelCatalog ?? []).map(m=>({model:m.id})));
     if (this.options.executionEnvironment) {
       const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));

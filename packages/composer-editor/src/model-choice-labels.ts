@@ -1,6 +1,8 @@
 import type { IntlShape } from "@opencraft/i18n";
 
 const effortMessages = {
+  default: { id: "composer.effort.default", defaultMessage: "Default" },
+  enabled: { id: "composer.effort.enabled", defaultMessage: "Enabled" },
   none: { id: "composer.effort.none", defaultMessage: "None" },
   minimal: { id: "composer.effort.minimal", defaultMessage: "Minimal" },
   low: { id: "composer.effort.low", defaultMessage: "Low" },

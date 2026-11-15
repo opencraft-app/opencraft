@@ -490,9 +490,11 @@ website management or an extension view does not show the initial setup gate or
 mark setup as completed. Returning to the conversation retains pending setup;
 an explicitly opened connection sheet may still be presented from model settings.
 
-Standalone Composer opens one model browser: source tabs, search, a bounded
-model list, then the selected model's supported reasoning choices and optional
-Fast action. Source browsing and search are local presentation state; neither
+Standalone Composer opens one model browser. A new thread's first open shows
+source tabs, search and a bounded model list. Choosing a model with declared
+reasoning moves to the shared DiscreteSlider; later opens and existing threads
+start there, and the model title returns to the tabs. Models without declared
+reasoning stay on the list. Optional Fast stays on the slider when declared. Source browsing and search are local presentation state; neither
 changes the active Host, model, draft or remembered defaults. Selecting a model
 commits through the existing Composer/Host owner. Same-named models on different
 Hosts/providers stay distinct. Long catalogs scroll inside their list while

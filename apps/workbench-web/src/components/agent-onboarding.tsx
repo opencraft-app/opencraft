@@ -7,6 +7,8 @@ import { SettingsListItem, SettingsSection, SettingsSwitch } from "@opencraft/ex
 import { CheckIcon } from "@opencraft/design-system-web/action-icons";
 import { ResetIcon } from "@opencraft/design-system-web/action-icons";
 import { IconButton } from "@opencraft/design-system-web/button";
+import { DiscreteSlider } from "@opencraft/design-system-web/discrete-slider";
+import { chooseFamilyModel, modelChoiceFamilies, modelEffortLabel, type ComposerModelOption } from "@opencraft/composer-editor";
 import { AgentIdentityIcon, projectAgentDirectory, type AgentCatalogModel } from "./agent-directory";
 import { Button } from "./ui/button";
 import "./agent-onboarding.scss";
@@ -113,7 +115,14 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
   const selected = !expandedReady ? null : models.find(model => model.id === selectedChoice?.id) ?? models.find(model => model.id === defaultModel) ?? models[0]
     ?? (!agentModels.isPending && selectedChoice?.id === defaultModel ? selectedChoice : null);
   const selectedModel = selected?.id ?? null;
-  const selectedModelName = selected?.name ?? null;
+  const optionModels: ComposerModelOption[] = models.map(model => ({ id: model.id, value: model.id, label: model.name, description: null, isDefault: model.id === defaultModel, efforts: [], defaultEffort: null }));
+  const families = modelChoiceFamilies(optionModels);
+  const groupedFamilies = families.some(family => family.variants.length > 1);
+  const selectedFamily = families.find(family => family.models.some(model => model.id === selectedModel));
+  const selectedVariant = selectedFamily?.variants.find(variant => variant.model.id === selectedModel);
+  const selectedModelName = selectedFamily && selectedVariant
+    ? `${selectedFamily.label} · ${modelEffortLabel(intl, selectedVariant.effort, selectedVariant.effort)}`
+    : selected?.name ?? null;
   const step = requestedStep === "start" && selectedModel ? "start" : "agent";
   const refreshButton = <IconButton size="accessory" variant="ghost" aria-label={intl.formatMessage({ id: "onboard.agent.recheck", defaultMessage: "Check again" })}
     disabled={status.isFetching || finishing} onClick={() => { void status.refetch(); onRefreshModels?.(); }}><ResetIcon size={16} /></IconButton>;
@@ -192,7 +201,26 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
                 {defaultModel ? <Button size="sm" variant="outline" aria-pressed={selectedModel === defaultModel} onClick={() => setChosenModel({ agentId: entry.id, id: defaultModel, name: defaultEntry?.name ?? entry.label })}>{defaultEntry?.isDefault ? intl.formatMessage({ id: "onboard.agent.useDefault", defaultMessage: "Use the default model" }) : defaultEntry?.name}</Button> : null}
               </div>
             </> : null}
-            {models.length > 0 ? <ul>
+            {models.length > 0 && groupedFamilies ? <>
+              <ul>
+                {families.map(family => <li key={family.id}>
+                  <Button size="sm" variant={family === selectedFamily ? "outline" : "ghost"} contentLayout="row" aria-pressed={family === selectedFamily} onClick={() => {
+                    const chosen = chooseFamilyModel(family, selectedModel);
+                    setChosenModel({ agentId: entry.id, id: chosen.id, name: chosen.label });
+                  }}>
+                    {family.label}{family === selectedFamily ? <CheckIcon size={14} aria-hidden="true" /> : null}
+                  </Button>
+                </li>)}
+              </ul>
+              {selectedFamily && selectedFamily.variants.length > 1 ? <DiscreteSlider appearance="capsule"
+                options={selectedFamily.variants.map(variant => ({ value: variant.model.id, label: modelEffortLabel(intl, variant.effort, variant.effort) }))}
+                value={selectedModel} label={intl.formatMessage({ id: "chat.reasoning", defaultMessage: "Reasoning" })}
+                unsetLabel={intl.formatMessage({ id: "composer.effort.unset", defaultMessage: "Select reasoning" })}
+                onValueChange={id => {
+                  const variant = selectedFamily.variants.find(item => item.model.id === id);
+                  if (variant) setChosenModel({ agentId: entry.id, id: variant.model.id, name: variant.model.label });
+                }} /> : null}
+            </> : models.length > 0 ? <ul>
               {models.map(model => <li key={model.id}>
                 <Button size="sm" variant={selectedModel === model.id ? "outline" : "ghost"} contentLayout="row" aria-pressed={selectedModel === model.id} onClick={() => setChosenModel({ agentId: entry.id, ...model })}>
                   {model.name}{selectedModel === model.id ? <CheckIcon size={14} aria-hidden="true" /> : null}

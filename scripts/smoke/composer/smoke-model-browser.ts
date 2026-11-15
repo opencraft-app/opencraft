@@ -28,7 +28,8 @@ try {
     const codexTab = p.getByRole("tab", { name: "Agent: Codex", exact: true });
     assert.equal(await codexTab.getAttribute("aria-selected"), "true");
     assert.equal(await codexTab.getAttribute("title"), "Codex", "hover exposes the Agent name");
-    assert.equal((await codexTab.innerText()).trim(), "", "Agent tabs show only their brand icon");
+    assert.equal((await codexTab.innerText()).trim(), "Codex", "Agent tabs show the name before selection");
+    assert.equal(await menu.getByRole("slider").count(), 0, "a new thread opens on agents and models");
     assert.equal(await menu.getByText("Choosing a model from another Agent starts a new conversation with this thread's context.", { exact: true }).count(), 0, "a new draft does not claim a handoff");
     if (touch) {
       const box = await codexTab.boundingBox();
@@ -44,7 +45,7 @@ try {
       assert.equal(await codexTab.getAttribute("aria-selected"), "true", "repeat does not queue another cycle");
       await codexTab.focus(); await p.keyboard.press("ArrowRight");
       assert.equal(await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).getAttribute("aria-selected"), "true");
-      assert.equal(await p.locator(".opencraft-composer-model-browser__source-name").innerText(), "Cursor", "the visible name follows keyboard browsing");
+      assert.equal((await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).innerText()).trim(), "Cursor", "the visible name follows keyboard browsing");
       assert.equal(await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).evaluate(el => el === document.activeElement), true, "arrow navigation keeps focus on the tab");
       assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[high]", "browsing tabs cannot select a model");
       await p.keyboard.press("Home");
@@ -57,43 +58,63 @@ try {
       assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[high]", "shortcut browsing writes no model");
     }
     assert.equal(await menu.getByRole("menuitem", { name: "Model One", exact: true }).count(), 1, "six concrete variants appear as one model");
-    assert.equal(await menu.getByRole("button", { name: "High", exact: true }).getAttribute("aria-pressed"), "true");
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.remembered.length), 0, "opening writes no defaults");
-    const low = menu.getByRole("button", { name: "Low", exact: true }); if (touch) await low.tap(); else await low.click();
+    const openModels = () => menu.getByRole("button", { name: /Change model/ });
+    const chooseEffort = async (end: boolean) => {
+      const slider = menu.getByRole("slider", { name: "Reasoning", exact: true });
+      if (touch) {
+        await slider.evaluate((el, toEnd) => {
+          el.dispatchEvent(new KeyboardEvent("keydown", { key: toEnd ? "End" : "Home", bubbles: true }));
+        }, end);
+      } else {
+        await slider.focus();
+        await p.keyboard.press(end ? "End" : "Home");
+      }
+    };
+    if (touch) await menu.getByRole("menuitem", { name: "Model One", exact: true }).tap(); else await menu.getByRole("menuitem", { name: "Model One", exact: true }).click();
+    if (touch) assert.equal(await editor.evaluate(el => el === document.activeElement), true, "touch choices retain editor focus");
+    await menu.getByRole("slider", { name: "Reasoning", exact: true }).waitFor();
+    assert.equal(await menu.getByRole("slider", { name: "Reasoning", exact: true }).getAttribute("aria-valuetext"), "High");
+    await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-effort.png` });
+    await chooseEffort(false);
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[low]");
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().effort), undefined, "variant selection adds no unsupported effort override");
-    if (touch) assert.equal(await editor.evaluate(el => el === document.activeElement), true, "touch choices retain editor focus");
+    if (touch) await openModels().tap(); else await openModels().click();
     const modelTwo = menu.getByRole("menuitem", { name: "Model Two", exact: true }); if (touch) await modelTwo.tap(); else await modelTwo.click();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:two[low]");
-    const search = menu.getByRole("searchbox", { name: "Search models" }); await search.fill("not-a-model");
+    if (touch) await openModels().tap(); else await openModels().click();
+    const search = menu.getByRole("searchbox", { name: "Search models" });
+    await search.click();
+    await p.keyboard.type("not-a-model");
     await menu.getByText("No models match your search.", { exact: true }).waitFor();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:two[low]");
-    await search.fill("Model One"); await search.press("ArrowDown"); await p.keyboard.press("Enter");
+    await search.click(); await p.keyboard.press("Control+a"); await p.keyboard.type("Model One"); await search.press("ArrowDown"); await p.keyboard.press("Enter");
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[low]");
-    await search.fill("");
+    if (touch) await openModels().tap(); else await openModels().click();
+    await search.click(); await p.keyboard.press("Control+a"); await p.keyboard.press("Backspace");
     await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).click();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[low]", "browsing another Agent cannot select it");
     await menu.getByRole("menuitem", { name: "Model One", exact: true }).click();
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "cursor:one");
-    assert.equal(await menu.getByRole("group", { name: "Reasoning", exact: true }).count(), 0, "unsupported controls stay absent");
+    assert.equal(await menu.getByRole("slider").count(), 0, "unsupported controls stay absent");
     const cursorThinking = menu.getByRole("menuitem", { name: "Cursor Thinking", exact: true });
     if (touch) await cursorThinking.tap(); else await cursorThinking.click();
-    const cursorLow = menu.getByRole("button", { name: "Low", exact: true });
-    if (touch) await cursorLow.tap(); else await cursorLow.click();
-    const cursorFast = menu.getByRole("switch", { name: "Fast mode", exact: true });
+    await chooseEffort(false);
+    const cursorFast = menu.getByRole("button", { name: "Fast mode", exact: true });
     if (touch) await cursorFast.tap(); else { await cursorFast.focus(); await p.keyboard.press("Space"); }
     assert.deepEqual(await p.evaluate(() => { const s = (window as any).modelBrowserFixture.selections(); return { model: s.model, effort: s.effort, serviceTier: s.serviceTier }; }), { model: "cursor:thinking", effort: "low", serviceTier: "fast" });
     if (touch) await cursorFast.tap(); else await p.keyboard.press("Space");
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().serviceTier), null, "Cursor Fast off is an explicit clear");
+    if (touch) await openModels().tap(); else await openModels().click();
     await p.getByRole("tab", { name: "Agent: API models", exact: true }).click();
     await menu.getByRole("menuitem", { name: "Thinking model", exact: true }).click();
-    await menu.getByRole("button", { name: "High", exact: true }).click();
-    const fastSwitch = menu.getByRole("switch", { name: "Fast mode", exact: true });
+    await chooseEffort(true);
+    const fastSwitch = menu.getByRole("button", { name: "Fast mode", exact: true });
     if (touch) await fastSwitch.tap(); else { await fastSwitch.focus(); await p.keyboard.press("Space"); }
     const reset = menu.getByRole("button", { name: "Reset reasoning to model default" });
     if (touch) await reset.tap(); else await reset.click();
     assert.deepEqual(await p.evaluate(() => { const s = (window as any).modelBrowserFixture.selections(); return { model: s.model, effort: s.effort, serviceTier: s.serviceTier }; }), { model: "api:thinking", effort: "medium", serviceTier: "fast" });
-    await menu.getByRole("button", { name: "High", exact: true }).click();
+    await chooseEffort(true);
     assert.deepEqual(await p.evaluate(() => { const s = (window as any).modelBrowserFixture.selections(); return { model: s.model, effort: s.effort, serviceTier: s.serviceTier }; }), { model: "api:thinking", effort: "high", serviceTier: "fast" });
     await p.keyboard.press("Escape"); await menu.waitFor({ state: "hidden" });
     assert.equal(await editor.innerText(), "Keep this model selection draft");
@@ -114,6 +135,7 @@ try {
     assert.equal((await editor.innerText()).trimEnd(), "Keep this model selection draft");
     await editor.fill("Keep this model selection draft");
     await trigger.click();
+    if (await menu.getByRole("button", { name: /Change model/ }).count()) await menu.getByRole("button", { name: /Change model/ }).click();
     assert.equal(await p.getByRole("tab", { name: "Agent: API models", exact: true }).count(), 0);
     await p.keyboard.press("Escape");
     await p.evaluate(() => (window as any).modelBrowserFixture.setDisabledAgents(["api", "cursor", "codex"]));
@@ -132,8 +154,9 @@ try {
     // Theme and size changes keep the same draft, choices and menu ownership.
     for (const theme of ["light", "dark", "lavender"]) {
       await p.evaluate(theme => { const f = (window as any).modelBrowserFixture; f.setThemePreference(theme === "dark" ? "dark" : "light"); if (theme === "lavender") f.setAppearanceThemeId("opencraft.core.lavender"); }, theme);
-      await trigger.click(); await menu.waitFor(); await p.getByRole("tab", { name: "Agent: Codex", exact: true }).click();
-      await menu.getByRole("menuitem", { name: "Model One", exact: true }).click();
+      await trigger.click(); await menu.waitFor();
+      if (await menu.getByRole("button", { name: /Change model/ }).count()) await menu.getByRole("button", { name: /Change model/ }).click();
+      await p.getByRole("tab", { name: "Agent: Codex", exact: true }).click();
       assert.equal(await p.locator(".opencraft-composer-model-browser__models").evaluate(el => el.scrollHeight > el.clientHeight), true);
       assert.equal(await menu.evaluate(el => { const r = el.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; }), true);
       await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-${theme}.png` });
@@ -148,6 +171,9 @@ try {
     const trigger = p.locator(".opencraft-composer-mode--intelligence");
     if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
     const menu = p.locator(".opencraft-composer-model-browser-surface"); await menu.waitFor();
+    assert.equal(await menu.getByRole("slider", { name: "Reasoning", exact: true }).count(), 1, "an existing thread opens on reasoning");
+    await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-existing-effort.png` });
+    if (touch) await menu.getByRole("button", { name: /Change model/ }).tap(); else await menu.getByRole("button", { name: /Change model/ }).click();
     const currentCodex = p.getByRole("tab", { name: "Agent: Codex, current conversation", exact: true });
     assert.equal(await currentCodex.getAttribute("aria-selected"), "true", "the existing conversation opens on its own Agent");
     assert.equal(await currentCodex.getAttribute("data-current-agent"), "true");
@@ -158,6 +184,7 @@ try {
     await p.waitForFunction(() => (window as any).modelBrowserFixture.selections().model?.startsWith("codex:two"));
     assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.handoffs.length), 0, "the current Agent selects in place");
     const beforeHandoff = await p.evaluate(() => (window as any).modelBrowserFixture.selections().model);
+    if (touch) await menu.getByRole("button", { name: /Change model/ }).tap(); else await menu.getByRole("button", { name: /Change model/ }).click();
     const cursorTab = p.getByRole("tab", { name: "Agent: Cursor", exact: true });
     if (touch) await cursorTab.tap(); else await cursorTab.click();
     assert.equal(await p.locator(".opencraft-composer-model-browser__source-name").innerText(), "Cursor · Current: Codex", "the visible name follows browsing and keeps the current Agent marked");
@@ -180,6 +207,7 @@ try {
     const trigger = p.locator(".opencraft-composer-mode--intelligence");
     if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
     const menu = p.locator(".opencraft-composer-model-browser-surface"); await menu.waitFor();
+    if (touch) await menu.getByRole("button", { name: /Change model/ }).tap(); else await menu.getByRole("button", { name: /Change model/ }).click();
     assert.equal(await p.getByRole("tablist").count(), 1, "one Agent still renders its identity row");
     const singleTab = p.getByRole("tab", { name: "Agent: Codex, current conversation", exact: true });
     assert.equal(await singleTab.count(), 1);
@@ -198,9 +226,10 @@ try {
     const p = await context.newPage(); p.setDefaultTimeout(20_000);
     await p.goto(`${base}?thread=1&locale=zh-CN`);
     await p.locator(".opencraft-composer-mode--intelligence").click();
-    await p.locator(".opencraft-composer-model-browser-surface").waitFor();
+    const menu = p.locator(".opencraft-composer-model-browser-surface"); await menu.waitFor();
+    await menu.getByRole("button", { name: /更换模型/ }).click();
     assert.equal(await p.getByRole("tab", { name: "Agent：Codex，当前会话", exact: true }).count(), 1, "accessible Agent names come from the active Intl catalog");
     await context.close();
   }
-  console.log(`PASS model browser: icon Agent tabs, underline/current marker, touch hit area, arrow and Alt shortcut browsing, reasoning presence, search/empty, existing-thread handoff, localized accessible names, themes and bounded lists. Screenshots: ${output}. Inference boundary simulated.`);
+  console.log(`PASS model browser: named Agent tabs, reasoning slider layer, touch and keyboard effort, search/empty, existing-thread handoff, localized names, themes and bounded lists. Screenshots: ${output}. Inference boundary simulated.`);
 } finally { await browser?.close(); await vite.close(); }
