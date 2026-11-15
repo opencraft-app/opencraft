@@ -760,7 +760,7 @@ test("refused CLI admission sends no ACP prompt", async t => {
 
 const fullPermissions = { permissions: "opencraft:permission-mode:full", sandbox: "danger-full-access", approvalPolicy: "never" };
 test("Codex explicit Full access reaches native mode before any input and survives restart", async t => {
-  const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1" } });
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1", ACP_TEST_SESSION_HANDOFF: "1" } });
   const created = await f.engine.request("thread/start", fullPermissions, client);
   const applied = (await f.calls()).filter(call => call.configId === "mode");
   assert.deepEqual(applied.map(call => call.value), ["agent-full-access"]);
@@ -771,6 +771,14 @@ test("Codex explicit Full access reaches native mode before any input and surviv
   const resumed = await f.calls();
   assert.equal(resumed.filter(call => call.configId === "mode").length, 2);
   assert.ok(resumed.findIndex(call => call.method === "session/resume") < resumed.findLastIndex(call => call.configId === "mode"));
+  const child = await restored.request("thread/fork", {threadId:created.thread.id}, client);
+  assert.equal(child.activePermissionProfile.id,fullPermissions.permissions);
+  const notices:any[]=[];restored.subscribe((method,params)=>notices.push({method,params}));
+  await restored.request("turn/start", {threadId:child.thread.id,input:[{type:"text",text:"hello"}]},client);
+  await until(()=>notices.some(n=>n.method==="turn/completed"));
+  const calls=await f.calls();
+  assert.ok(calls.findLastIndex(call=>call.configId==="mode") < calls.findLastIndex(call=>call.method==="session/prompt"));
+  assert.equal(calls.filter(call=>call.configId==="mode").length,3);
 });
 test("Codex does not silently grant Full access when no permission was selected", async t => {
   const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1" } });
@@ -805,4 +813,18 @@ test("approval policy alone cannot silently select Full access for Codex", async
   const f = await fixture(t, {id:"codex",env:{ACP_TEST_CODEX_MODES:"1"}});
   await assert.rejects(f.engine.request("thread/start", {approvalPolicy:"never"}, client), /explicit permission profile/);
   assert.deepEqual(await f.calls(), []);
+});
+
+test("observed restricted Codex policy preserves workspace, network and reviewer through native Codex handoff", async t => {
+  const { CodexOrchestrationControl } = await import("../../apps/opencraft-daemon/src/codex-orchestration-control.js");
+  const f = await fixture(t, {id:"codex",env:{ACP_TEST_CODEX_MODES:"1"}});
+  const observed = await f.engine.request("thread/start", {}, client);
+  assert.equal(observed.activePermissionProfile,null);
+  const control = new CodexOrchestrationControl({supported:()=>true,request:async()=>({config:{}})} as any);
+  const prepared = await control.handle("opencraft/orchestration/prepare",{operationId:"restricted",sourceSettings:observed,arguments:{}},
+    {orchestrationOperationId:"restricted",orchestrationCanAdmit:()=>true} as any) as any;
+  assert.equal(prepared.sandbox,"workspace-write");
+  assert.equal(prepared.approvalPolicy,"on-request");assert.equal(prepared.approvalsReviewer,"auto_review");
+  assert.deepEqual(prepared.config.sandbox_workspace_write,{writable_roots:[f.root],network_access:false,exclude_tmpdir_env_var:false,exclude_slash_tmp:false});
+  assert.equal(prepared.permissions,undefined,"no untranslatable custom profile overrides the actual sandbox");
 });

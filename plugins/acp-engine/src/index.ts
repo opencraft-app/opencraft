@@ -663,11 +663,10 @@ export class AcpEngine implements ExecutionEngineProvider {
   private codexPermissionProjection(session: Session, response: boolean): Value {
     if (session.codexMode !== "agent-full-access") {
       if (!["agent", "read-only"].includes(session.codexMode ?? "")) return {};
-      const profile = `codex-acp:${session.codexMode}`;
       return response ? { approvalPolicy: "on-request", approvalsReviewer: session.codexMode === "agent" ? "auto_review" : "user",
-        sandbox: { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
-        activePermissionProfile: { id: profile, extends: null } }
-        : { permissions: profile, approvalPolicy: "on-request", sandbox: "workspace-write" };
+        sandbox: { type: "workspaceWrite", writableRoots: [session.cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+        activePermissionProfile: null }
+        : { approvalPolicy: "on-request", sandbox: "workspace-write" };
     }
     return response ? { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" },
       activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } }
