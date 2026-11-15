@@ -566,7 +566,9 @@ normal menu/trigger focus and navigating to another surface revokes the return.
 
 `chat.agentAvailability` filters only new conversations, with the same scoped
 preference consumed by Chat settings and onboarding. All-off is valid and offers
-Manage agents; unavailable selections disable both the send button and submission.
+Manage agents; a populated model list does not repeat that action. A host-level
+catalog is omitted when an Agent tab already uses that same product name.
+Unavailable selections disable both the send button and submission.
 Existing conversations retain their engine and unfiltered model catalog. See the
 [Agent picker design](../agent-picker.md) for authority, onboarding and empty states.
 

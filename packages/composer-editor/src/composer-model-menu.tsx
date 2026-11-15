@@ -9,11 +9,9 @@ import { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families"
 import { modelEffortLabel } from "./model-choice-labels";
 import { ModelCatalogStatus } from "./model-catalog-status";
 import type { ComposerAgentCycleDirection, ComposerAgentModelGroup, ComposerModelOption, ComposerSelectionCatalog } from "./composer-editor";
+import { composerAgentBrands, omitDuplicateHostAgents } from "./agent-menu-sources";
 
-const brands: Record<string, { brand: AgentBrand; name: string }> = {
-  codex: { brand: "codex", name: "Codex" }, cursor: { brand: "cursor", name: "Cursor" },
-  "claude-code": { brand: "claude", name: "Claude Code" }, codebuddy: { brand: "codebuddy", name: "CodeBuddy" },
-};
+const brands: Record<string, { brand: AgentBrand; name: string }> = composerAgentBrands;
 
 /** Browsing sources/search is local. Only an explicit choice writes a model. */
 export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffortChange, serviceTier, onServiceTierChange,
@@ -41,7 +39,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
   const groups = catalog?.agentGroups?.length ? catalog.agentGroups : [{ id: "active", label: "", active: true,
     models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, retry: catalog?.retryModels }];
   type Source = { id: string; agentId: string; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
-  const sources: Source[] = [];
+  let sources: Source[] = [];
   for (const group of groups) {
     const scoped = new Map<string, Source>();
     for (const model of group.models) {
@@ -67,8 +65,9 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       brand: brands[currentAgentId]?.brand, group, models: [],
     });
   }
-  const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3 };
-  sources.sort((left, right) => (brandOrder[left.brand ?? ""] ?? 4) - (brandOrder[right.brand ?? ""] ?? 4));
+  sources = omitDuplicateHostAgents(sources);
+  const brandOrder: Record<string, number> = { codex: 0, claude: 1, cursor: 2, codebuddy: 3, pi: 4 };
+  sources.sort((left, right) => (brandOrder[left.brand ?? ""] ?? 5) - (brandOrder[right.brand ?? ""] ?? 5));
   const [browsing, setBrowsing] = useState<{ id: string; groupId: string } | null>(null);
   const browse = (item: Source) => setBrowsing({ id: item.id, groupId: item.group.id });
   const source = sources.find(source => source.id === browsing?.id)
@@ -181,7 +180,6 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
       <SettingsSwitch checked={serviceTier === fast.id} disabled={!!switchingAgentId} onCheckedChange={checked => onServiceTierChange(checked ? fast.id : null)}
         label={intl.formatMessage({ id: "composer.model.fastMode", defaultMessage: "Fast mode" })} />
     </div> : null}
-    {catalog?.onConfigureAgents ? <Menu.Item className="opencraft-composer-selection-menu__item" onSelect={catalog.onConfigureAgents}><FormattedMessage id="composer.agent.manage" defaultMessage="Manage agents…" /></Menu.Item> : null}
     {onConfigure ? <Menu.Item className="opencraft-composer-selection-menu__item opencraft-composer-model-browser__configure" onSelect={onConfigure}>
       <AddIcon size={16} aria-hidden="true" />{groups.find(group => group.active)?.models.length === 0
         ? <FormattedMessage id="composer.model.add" defaultMessage="Add a model…" />

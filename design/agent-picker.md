@@ -1,10 +1,10 @@
 # 新建会话的 Agent 与模型
 
-用户先认出要使用的 Agent，再选择它的模型。沿用 Composer 的共享 Radix 菜单：上方为 Agent 页签，下方只列该 Agent 的模型；模型厂商不再充当 Agent。外部触发器显示 Agent 与模型。选择 Agent 先浏览，不启动会话；明确选模型才提交。Manage models 保留，增加 Manage agents 进入聊天设置。
+用户先认出要使用的 Agent，再选择它的模型。沿用 Composer 的共享 Radix 菜单：上方为 Agent 页签，下方只列该 Agent 的模型；模型厂商不再充当 Agent。外部触发器显示 Agent 与模型。选择 Agent 先浏览，不启动会话；明确选模型才提交。有可选模型时只保留 Manage models；全部 Agent 关闭的空态仍提供 Manage agents，用来重新开启。
 
 ## 数据与所有权
 
-服务器的 model/list 给每个模型附带 agentId/agentLabel；聚合 Host 在引擎边界填充，connected-agents 给原生已登录 Agent 填充，聚合不得覆盖其身份。onboarding/status 同时声明 engineId，与 model/list 使用相同的身份；前端不维护 onboarding id 到执行引擎 id 的映射。旧服务器没有这两个字段时保留 Host 级单组，不根据模型名字或括号猜 Agent。安装/登录状态只消费 onboarding/status 声明的 Agent，不在客户端注册可执行能力。
+服务器的 model/list 给每个模型附带 agentId/agentLabel；聚合 Host 在引擎边界填充，connected-agents 给原生已登录 Agent 填充，聚合不得覆盖其身份。onboarding/status 同时声明 engineId，与 model/list 使用相同的身份；前端不维护 onboarding id 到执行引擎 id 的映射。旧服务器没有这两个字段时保留 Host 级单组，不根据模型名字或括号猜 Agent。某 Agent 已有带身份的页签时，不再单独显示同名且没有 agentId 的 Host 目录：本机 Codex CLI 出现后，内置 Codex app server 不再占第二个 Codex 页签；只有本机 Codex 不在目录里时才显示内置目录。安装/登录状态只消费 onboarding/status 声明的 Agent，不在客户端注册可执行能力。
 
 启用是本机用户的新建选择偏好，不是服务器运行配置或权限。UiPreferencesRuntime 的 installation key chat.agentAvailability 按 display/account/Host 隔离，保存 Agent 的明确开关；未配置默认开启，显式全关有效，新增 Agent 默认开启。Web IndexedDB / Electron Main SQLite 继续由已有 adapter 选择。设置与 onboarding 共用同一偏好，不直接读写物理存储。关闭不终止引擎、旧线程或服务端任务；只有独立客户端、用户可选择 Agent 的新草稿，其目录和发送准入受影响。embedded 的 host-default/session 和固定执行模式沿用宿主选择，不消费此偏好。
 
