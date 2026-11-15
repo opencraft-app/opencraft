@@ -742,11 +742,6 @@ export class AcpEngine implements ExecutionEngineProvider {
   private async setReasoning(session: Session, effort: unknown): Promise<void> {
     const config = session.reasoningConfig;
     if (typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
-    if (this.id !== "cursor" && this.variantReasoningCatalog(session)) {
-      const selected = session.model?.startsWith(this.modelPrefix) ? session.model.slice(this.modelPrefix.length) : session.model ?? "";
-      if (splitModelVariant(selected)?.parameters === effort) return;
-      return fault("This reasoning level is unavailable for the selected model");
-    }
     if (config.currentValue === effort) return;
     this.captureModels(session, await this.native(session).request("session/set_config_option", {
       sessionId: session.nativeId, configId: config.id, value: effort,
