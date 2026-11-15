@@ -210,3 +210,59 @@ OPENCRAFT_IMAGE=opencraft:local node ../scripts/smoke/server/smoke-container.mjs
 Acceptance must prove more than HTTP readiness: recreate only Gateway and check
 that Brain PIDs and the Hands worker PID are unchanged, that an existing browser
 tab retains its live document, and that no input is replayed after reattachment.
+
+## GHCR distribution (edge builds)
+
+The container workflow builds and smoke-tests Linux amd64 and arm64 on native
+runners. PRs only validate; the canonical repository's main branch can publish.
+Distribution transfers the tested image as a short-lived Actions artifact; it
+never rebuilds the image after testing. Each architecture is uploaded under a
+run-scoped candidate tag, pulled with an empty Docker credential configuration,
+and smoke-tested again by registry digest. Only after both succeed does a
+serialized job assemble a two-platform index and publish:
+
+- `ghcr.io/opencraft-app/opencraft:sha-<full-source-commit>`: first successful
+  image for that source; a later build with different bytes is rejected.
+- `ghcr.io/opencraft-app/opencraft:edge`: a passing main build, updated only if
+  the source is still the current main tip. This is not a stable release.
+- No `latest` or semantic-version tags are published by this workflow.
+
+The Actions summary records the pinned `ghcr.io/opencraft-app/opencraft@sha256:…`
+reference. For deployment, use that full digest, not `edge`. Obtain this Compose
+file from the source commit recorded in the summary. Follow the directory and
+UID/GID setup in First installation, replace `OPENCRAFT_IMAGE` in `.env` with the
+pinned reference, select `linux/amd64` or `linux/arm64`, then run:
+
+```sh
+node ../scripts/container-deployment/compose-release.mjs doctor
+docker compose pull
+docker compose up -d --no-build --wait
+docker compose ps
+```
+
+Publication never updates a running deployment. Keep the previous image digest,
+matching Compose file and data backups. Existing installations should use the
+transactional deployment/rollback commands documented above; image rollback
+alone cannot undo a data migration.
+
+### First publication and recovery
+
+An organization administrator must permit Actions to create packages. The
+workflow uses its short-lived `GITHUB_TOKEN`, with `packages: write` only in
+main-only distribution/promotion jobs; no personal registry token is required.
+The Dockerfile's source label associates the package with this repository.
+After the first candidate upload, check the package settings and explicitly
+make the package public if needed. A public repository does not guarantee a
+public package. Anonymous pull failures intentionally block promotion.
+
+After correcting permissions or visibility, rerun **all jobs** of the same run
+(artifacts expire after one day). Run-scoped tags include the run attempt;
+rerunning only failed jobs cannot safely reuse candidates from another attempt.
+If a SHA was already published and a rebuild produces different bytes, use a
+new source commit rather than overwrite the SHA tag. Successful partial
+candidates may remain in GHCR; they are not approved deployment references.
+Do not delete digests referenced by deployed SHA tags when cleaning candidates.
+
+The first real Actions run and anonymous pull must pass before claiming GHCR
+is available. The workflow does not change organization visibility policy,
+create GitHub Releases, publish npm packages, or deploy servers.
