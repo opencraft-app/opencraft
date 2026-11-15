@@ -256,6 +256,15 @@ export class AcpEngine implements ExecutionEngineProvider {
       this.capabilities = value(initialized.agentCapabilities);
     })().catch(async error => { await this.transport.close(); await this.closeTools(); throw error; });
   }
+  /** CodeBuddy account lookup. Starts the peer once and does not create a session. */
+  async readCodeBuddyUser(): Promise<boolean> {
+    if (this.id !== "codebuddy") throw new Error("CodeBuddy account lookup is engine-specific");
+    if (this.closed) throw new Error("ACP engine is closed");
+    await this.start();
+    const result = await this.transport.request("_codebuddy.ai/getUserInfo", {});
+    const userId = result?.userInfo?.userId;
+    return typeof userId === "string" && userId.length > 0;
+  }
   /** Native discovery starts no sessions and never replays messages. */
   async discoverNativeSessions(cursor?: string): Promise<{ sessions: { id: string; title: string | null; cwd: string; updatedAt: string | null; imported: boolean; importedThreadId: string | null; nativeProject?: NativeConversationProject }[]; nextCursor: string | null }> {
     if (this.closed) throw new Error("ACP engine is closed");

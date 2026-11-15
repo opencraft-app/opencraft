@@ -806,10 +806,11 @@ not imply a separate HOME or a second CLI login. GUI/service discovery also chec
 the user's NVM installations and supplies their interpreter paths to native peers.
 Explicitly disabled Agents remain disabled in UI preferences.
 
-CodeBuddy versions without an `auth status` subcommand use a native ACP session
-and model handshake to establish readiness. An authentication refusal remains
-signed out; a transport/service error remains unknown. Saved model metadata is
-not authentication evidence, and discovery never sends a model prompt.
+CodeBuddy has no read-only `auth status` subcommand. Readiness uses the native
+`_codebuddy.ai/getUserInfo` account lookup, which starts the peer once and does
+not create a session or write the model cache. A missing account remains signed
+out; a transport or service error remains unknown. Saved model metadata is not
+authentication evidence, and discovery never sends a model prompt.
 
 When native Pi is installed, the local Host exposes its configured model catalog
 through the existing Pi owner. Authentication and models are referenced from

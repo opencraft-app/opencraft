@@ -2,17 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {ConnectedAgentHost} from '../../apps/local-agent-host/src/connected-agents.js';
 
-test('CodeBuddy readiness requires a fresh native session, not a saved model catalog',async()=>{
- let signedIn=true,starts=0;
+test('CodeBuddy readiness reads the native account without opening a session or caching a placeholder model',async()=>{
+ let signedIn=true,lookups=0,starts=0;
  const host=new ConnectedAgentHost({async status(){return {agents:[{id:'codebuddy',installed:true,authenticated:null,activity:null}]};}} as never,'/unused','/workspace',{} as never);
- (host as any).engines.set('codebuddy',{async request(method:string){
-  if(method==='thread/start'){starts++;await new Promise(r=>setTimeout(r,1));if(!signedIn)throw Error('Authentication required');return {thread:{id:'codebuddy_probe'}};}
-  if(method==='model/list')return {data:[{id:'codebuddy:model',displayName:'Native model'}]};
-  if(method==='thread/archive')return {};throw Error('Unexpected execution during discovery');
- },async close(){}});
+ (host as any).engines.set('codebuddy',{
+  async readCodeBuddyUser(){lookups++;await new Promise(r=>setTimeout(r,1));return signedIn;},
+  async request(method:string){if(method==='thread/start')starts++;throw Error('status must not create a session or read the model cache');},
+  async close(){},
+ });
  try{
-  const [a,b]=await Promise.all([host.status(),host.status()]);assert.equal(a.agents[0]?.authenticated,true);assert.equal(b.agents[0]?.authenticated,true);assert.equal(starts,1);
-  signedIn=false;assert.equal((await host.status()).agents[0]?.authenticated,false);assert.equal(starts,2);
+  const [a,b]=await Promise.all([host.status(),host.status()]);
+  assert.equal(a.agents[0]?.authenticated,true);assert.equal(b.agents[0]?.authenticated,true);assert.equal(lookups,1);assert.equal(starts,0);
+  assert.equal((host as any).discovered.has('codebuddy'),false);
+  signedIn=false;assert.equal((await host.status()).agents[0]?.authenticated,false);assert.equal(lookups,2);assert.equal(starts,0);
+  (host as any).engines.set('codebuddy',{async readCodeBuddyUser(){throw Error('ACP engine is not connected');},async request(){throw Error('status must not create a session');},async close(){}});
+  assert.equal((await host.status()).agents[0]?.authenticated,null);
+  (host as any).engines.set('codebuddy',{async readCodeBuddyUser(){throw Error('Authentication required: no account');},async close(){}});
+  assert.equal((await host.status()).agents[0]?.authenticated,false);
  }finally{await host.close();}
 });
 

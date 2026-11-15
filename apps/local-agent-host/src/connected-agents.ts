@@ -349,14 +349,19 @@ export class ConnectedAgentHost {
   private async readStatus(): Promise<OnboardingSnapshot> {
     const snapshot = await this.onboarding.status();
     const codebuddy = snapshot.agents.find(agent => agent.id === "codebuddy");
-    // Some CodeBuddy versions have no `auth status` command. A successful ACP
-    // session/model handshake is native evidence; installation alone is not.
+    // `codebuddy auth status` is not an account probe: this CLI treats it as a
+    // prompt. Read the native account instead of opening a session or writing
+    // the model cache. Installation alone is not authentication.
     if (codebuddy?.installed && codebuddy.authenticated === null && !codebuddy.activity) {
       try {
-        if ((await this.loadAgentModels("codebuddy")).length) return {agents: snapshot.agents.map(agent => agent.id === "codebuddy" ? {...agent, authenticated:true} : agent)};
+        const engine = await this.engine("codebuddy");
+        if (!("readCodeBuddyUser" in engine)) return snapshot;
+        const signedIn = await engine.readCodeBuddyUser();
+        return { agents: snapshot.agents.map(agent => agent.id === "codebuddy" ? { ...agent, authenticated: signedIn } : agent) };
       } catch (error) {
-        if (error instanceof Error && error.message === 'Authentication required') return {agents:snapshot.agents.map(agent => agent.id === 'codebuddy' ? {...agent,authenticated:false} : agent)};
-        // Preserve unknown authentication for service/transport failures.
+        if (error instanceof Error && /^Authentication required\b/u.test(error.message)) {
+          return { agents: snapshot.agents.map(agent => agent.id === "codebuddy" ? { ...agent, authenticated: false } : agent) };
+        }
       }
     }
     return snapshot;
