@@ -23,7 +23,7 @@ import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadActionCallbacks, type ThreadActionCapabilities, type ThreadActionOwner } from "./thread-management";
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { SidebarThreadRowMenu, SidebarThreadBadge, SidebarFiltersMenu, SidebarListContextMenu } from "./sidebar-thread-menu";
-import { sidebarActivityDateHeadings, groupThreadsByNativeProject, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
+import { sidebarActivityDateHeadings, groupThreadsByNativeProject, groupThreadsByTaskFlow, sidebarThreadMetadata } from "../sidebar-activity";
 import { sidebarThreadIdentity, sidebarThreadTree, type SidebarThreadTreeNode } from "../sidebar-thread-tree";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { useSidebarEndPull } from "./use-sidebar-end-pull";
@@ -182,15 +182,15 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
     portalContainer={presentationRoot} onOpenChange={open => changeOverlay("badge", open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}
   /> : null;
-  const metadata = sidebarActivityMetadata(thread);
+  const metadata = sidebarThreadMetadata(thread);
   return <SidebarThreadRowMenu key={sidebarThreadIdentity(thread)} store={menus} target={target} owner={actionOwner}
     capabilities={capabilities} disabled={disabled} activityLabelId={activityId}
     contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
     onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
     <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
-      disabled={disabled} title={title} project={props.projectGrouped ? "" : metadata.project}
-      tooltip={[title, metadata.project, thread.connectionHostLabel, thread.id].join(" · ")}
+      disabled={disabled} title={title} project={props.projectGrouped ? "" : metadata}
+      tooltip={[title, metadata, thread.connectionHostLabel].filter(Boolean).join(" · ")}
       status={thread.status} unread={unread} goalActive={thread.goalActive}
       schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
         onOpenConversation={() => { openConversation(thread.connectionHostId, thread.id); }} />} badge={badge} badgePlacement={threadBadge?.placement}

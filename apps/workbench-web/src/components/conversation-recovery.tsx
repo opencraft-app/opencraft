@@ -7,6 +7,16 @@ import { ArchiveIcon, RestoreArchiveIcon } from "@opencraft/design-system-web/ac
 export type ConversationRecoveryPresentation = "none" | "cold-loading" | "cold-error" | "warm-loading" | "warm-error";
 export type ConversationUnavailableReason = "archived" | "not-found";
 
+/** Archive keeps a readable transcript. Only a missing conversation replaces it. */
+export function conversationArchivePresentation(
+  reason: ConversationUnavailableReason | null,
+  hasHistory: boolean,
+): { readonly showHistory: boolean; readonly banner: "replace" | "alongside" | "none" } {
+  if (reason === "archived") return { showHistory: hasHistory, banner: hasHistory ? "alongside" : "replace" };
+  if (reason === "not-found") return { showHistory: false, banner: "replace" };
+  return { showHistory: true, banner: "none" };
+}
+
 /** Presentation only: a retained timeline is useful even before it is authoritative. */
 export function conversationRecoveryPresentation(input: {
   readonly authoritative: boolean;

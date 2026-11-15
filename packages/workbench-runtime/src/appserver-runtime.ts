@@ -313,7 +313,7 @@ export interface AppServerComposerCatalogResourcePort {
     readonly effort: string | null;
   }): Promise<void>;
   listPermissionProfiles(
-    params?: Partial<PermissionProfileListParams>,
+    params?: Partial<PermissionProfileListParams> & { readonly model?: string | null },
   ): Promise<PermissionProfileListResponse>;
   listSkills(params?: ScopedSkillsListParams): Promise<SkillsListResponse>;
   createFuzzyFileSearchSession(
@@ -2337,10 +2337,13 @@ export function createAppServerWorkbenchRuntime(
           });
         },
         async listPermissionProfiles(params = {}) {
+          const extension = client?.initializeResult?.capabilities?.extensions?.["opencraft/engine-permission-catalog"] as { version?: unknown } | undefined;
+          const { model, ...native } = params;
           return requireClient().request("permissionProfile/list", {
             cursor: null,
             limit: 100,
-            ...params,
+            ...native,
+            ...(extension?.version === 1 && typeof model === "string" && model ? { model } : {}),
           });
         },
         async listSkills(params = {}) {

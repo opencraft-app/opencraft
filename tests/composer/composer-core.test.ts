@@ -7,6 +7,7 @@ import {
   createComposerController,
   invertComposerFollowUpAction,
   legacyContentBlocksToComposer,
+  composerTrailingControls,
   resolveComposerPrimaryAction,
   resolveComposerFollowUpAction,
   retargetSubmitIntentForFollowUp,
@@ -573,6 +574,21 @@ test("the primary Composer action changes from Stop to Queue or Steer when a fol
     }),
     "send",
   );
+});
+
+test("a follow-up draft keeps Stop reachable beside Queue or Steer", () => {
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: true, canSubmit: true, defaultFollowUpAction: "queue",
+  }), { stop: true, primary: "queue" });
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: true, canSubmit: true, defaultFollowUpAction: "steer",
+  }), { stop: true, primary: "steer" });
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: true, canSubmit: false, defaultFollowUpAction: "queue",
+  }), { stop: true, primary: null });
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: false, canSubmit: true, defaultFollowUpAction: "queue",
+  }), { stop: false, primary: "send" });
 });
 
 test("follow-up preferences cannot enable a denied queue operation", () => {

@@ -5,8 +5,10 @@ import { threadServerOrigin } from "@opencraft/workbench-runtime";
 import {
   groupThreadsByActivityDate,
   groupThreadsByTaskFlow,
+  archivedConversationLabel,
   sidebarActivityMetadata,
   sidebarActivityDateHeadings,
+  sidebarThreadMetadata,
   type SidebarActivityThread,
 } from "../../apps/workbench-web/src/sidebar-activity";
 import {
@@ -30,6 +32,16 @@ function thread(
     ...overrides,
   };
 }
+
+test("sidebar rows identify a conversation without a raw thread id", () => {
+  assert.equal(sidebarThreadMetadata({
+    project: "thread-52be165e-a18a-4217-9a11-111111111111", agentLabel: "Codex", time: "Now",
+  }), "Codex · Now");
+  assert.equal(sidebarThreadMetadata({ project: "opencraft", agentLabel: "Pi", time: "5m" }), "Pi · opencraft · 5m");
+  assert.deepEqual(archivedConversationLabel({ id: "thread-1", name: " ", preview: "" }, "New chat"), { label: "New chat" });
+  assert.deepEqual(archivedConversationLabel({ id: "thread-1", name: "thread-52be165e-a18a-4217-9a11-111111111111", preview: "整理菜单" }, "New chat"), { label: "整理菜单" });
+  assert.deepEqual(archivedConversationLabel({ id: "thread-1", name: "发布说明", preview: "整理菜单" }, "New chat"), { label: "发布说明", description: "整理菜单" });
+});
 
 test("Activity chronology owns sections while equal thread ids retain Server provenance", () => {
   const now = new Date(2026, 8, 21, 12);

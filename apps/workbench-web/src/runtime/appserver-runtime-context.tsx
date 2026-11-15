@@ -1022,6 +1022,7 @@ export function useComposerCatalog(
   cwd: string | null,
   threadId: string | null = null,
   runtimeHostConfiguration = true,
+  permissionModel: string | null = null,
 ): ComposerCatalogSnapshot {
   const runtime = useAppServerRuntime();
   const snapshot = useAppServerHostSnapshot();
@@ -1101,13 +1102,14 @@ export function useComposerCatalog(
     retryModels: () => { catalogDemand.requested = true; if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
   }), [enabled, options, queryClient, snapshot.hostId, catalogDemand]);
   const permissionProfiles = useInfiniteQuery({
-    queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,
+    queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd, permissionModel] as const,
     enabled,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam }) => runtime.resources.composerCatalog.listPermissionProfiles({
       cursor: pageParam,
       limit: 100,
       cwd,
+      ...(permissionModel ? { model: permissionModel } : {}),
     }),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     staleTime: 60_000,

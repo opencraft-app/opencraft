@@ -65,8 +65,8 @@ import {
 import {
   createClientId,
   encodeComposerTarget,
+  composerTrailingControls,
   invertComposerFollowUpAction,
-  resolveComposerPrimaryAction,
   resolveComposerFollowUpAction,
   shouldSearchComposerCatalog,
   type ComposerAttachment,
@@ -2199,12 +2199,14 @@ export const OpenCraftComposer = forwardRef<
       : { id: "composer.permissions.nextTurn", defaultMessage: "{profile} · next turn" }, { profile: permissionSelectionLabel })
     : permissionSelectionLabel;
 
-  const primaryAction = resolveComposerPrimaryAction({
+  const trailingControls = composerTrailingControls({
     isResponseInProgress: isStreaming,
     canSubmit: !disabled && !submissionDisabled && !modelSelectionBlocked && composerSnapshot.canSubmit,
     defaultFollowUpAction,
     availableFollowUpActions,
   });
+  const primaryAction = trailingControls.primary ?? "stop";
+  const stopLabel = intl.formatMessage(isStopping ? { id: "chat.stop.pending", defaultMessage: "Stopping response…" } : { id: "chat.stopResponse", defaultMessage: "Stop response" });
   const primaryActionLabel =
     editingQueuedSubmissionId !== null
       ? intl.formatMessage({ id: "chat.saveQueuedMessage", defaultMessage: "Save queued message" })
@@ -2766,6 +2768,27 @@ export const OpenCraftComposer = forwardRef<
               >
                 <Paperclip size={15} />
               </IconButton>
+            ) : null}
+            {trailingControls.stop && trailingControls.primary ? (
+              <button
+                className="opencraft-composer-submit is-stop"
+                type="button"
+                disabled={isStopping}
+                aria-busy={isStopping || undefined}
+                aria-label={stopLabel}
+                title={stopLabel}
+                data-composer-stop="true"
+                onMouseDown={(event) => {
+                  if (event.button === 0) event.preventDefault();
+                }}
+                onClick={(event) => onCancel({
+                  trigger: event.detail === 0 ? "keyboard" : "pointer",
+                  isTrusted: event.isTrusted,
+                  occurredAt: Date.now(),
+                })}
+              >
+                {isStopping ? <LoadingRingIcon className="opencraft-composer-stop-spinner" size={17} /> : <StopCircleIcon size={17} />}
+              </button>
             ) : null}
             {primaryAction === "stop" ? (
               <button

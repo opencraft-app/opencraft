@@ -248,7 +248,8 @@ export async function startEngineHost(options: {
               [SCOPED_SKILL_CATALOG_EXTENSION]: { version: 1 },
               "opencraft/execution-engines": { version: 1, defaultEngine: options.defaultEngine, providers: options.providers.map(provider => ({ id: provider.id, threadPrefix: provider.threadPrefix, modelPrefix: provider.modelPrefix, extensions: provider.extensions })) },
               "opencraft/thread-pins": { version: 1 },
-              "opencraft/scoped-model-catalog": { version: 1 } } } }); return;
+              "opencraft/scoped-model-catalog": { version: 1 },
+              "opencraft/engine-permission-catalog": { version: 1 } } } }); return;
           }
           if (method === "opencraft/schedules/list") {
             const providers = options.providers.filter(provider => (provider.extensions?.["opencraft/conversation-schedules"] as Value)?.summary === true);
@@ -300,7 +301,13 @@ export async function startEngineHost(options: {
               ?? (options.defaultEngine !== options.legacy?.id ? registry.get(options.defaultEngine) : undefined);
             if (target) { reply(await target.request(method, params, state.owner)); return; }
           }
-          if (method === "permissionProfile/list" && !options.legacy) { reply(await registry.get(options.defaultEngine)!.request(method, params, state.owner)); return; }
+          if (method === "permissionProfile/list") {
+            const model = typeof params.model === "string" ? params.model : "";
+            const owner = model ? options.providers.find(provider => provider.ownsModel(model)) : undefined;
+            if (owner) { reply(await owner.request(method, params, state.owner)); return; }
+            if (!options.legacy) { reply(await registry.get(options.defaultEngine)!.request(method, params, state.owner)); return; }
+            if ("model" in params) delete params.model;
+          }
           if (method === "skills/list" || method === SCOPED_SKILL_CATALOG_METHOD) {
             const scoped = method === SCOPED_SKILL_CATALOG_METHOD;
             if (scoped && ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))

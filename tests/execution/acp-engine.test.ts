@@ -11,6 +11,14 @@ import type { ExecutionEngineClient } from "../../packages/appserver-client/src/
 
 const peer = resolve("tests/fixtures/acp-engine-peer.mjs");
 const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("No browser tool owner"); } };
+test("ACP advertises only full access and rejects a read-only start", async t => {
+  const f = await fixture(t, { id: "codex" });
+  const listed = await f.engine.request("permissionProfile/list", {}, client);
+  assert.deepEqual(listed.data.map((profile: { id: string; openCraftMode?: string }) => [profile.id, profile.openCraftMode]), [["opencraft:permission-mode:full", "full"]]);
+  await assert.rejects(f.engine.request("thread/start", { permissions: "opencraft:permission-mode:read-only" }, client), /permission profile/u);
+  assert.deepEqual(await f.calls(), []);
+});
+
 test("CodeBuddy account lookup reads the native user and does not open a session", async t => {
   for (const [mode, expected] of [["present", true], ["missing", false]] as const) {
     const f = await fixture(t, { id: "codebuddy", env: { ACP_TEST_CODEBUDDY_USER: mode } });

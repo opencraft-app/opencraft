@@ -1829,24 +1829,6 @@
     },
     {
       "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
-      "kind": "jsx-text",
-      "text": "Could not start this task",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
-      "kind": "jsx-expression",
-      "text": "The execution host rejected the request.",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
-      "kind": "jsx-text",
-      "text": "Try again",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
       "kind": "aria-label",
       "text": "Conversation",
       "count": 1

@@ -3,6 +3,7 @@ import type { ThreadAccessSnapshot } from "@opencraft/appserver-protocol";
 import { PermissionShieldIcon } from "@opencraft/design-system-web/action-icons";
 import type { PointerEventHandler } from "react";
 import { LoadingRingIcon as LoaderCircle, MoreIcon as MoreHorizontal, EditIcon as Pencil, DeleteIcon as Trash2 } from "@opencraft/design-system-web/action-icons";
+import { archivedConversationLabel } from "../sidebar-activity";
 import { useAsyncNotices } from "./async-notices";
 import { useIntl } from "@opencraft/i18n/react";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
@@ -227,10 +228,12 @@ export function ArchivedThreadsSettings({ hostId, load, restore }: ArchivedThrea
     {query.error ? <SettingsNotice role="alert" tone="error">{query.error.message}</SettingsNotice> : null}
     {empty ? <SettingsNotice>{intl.formatMessage({ id: "settings.archived.empty", defaultMessage: "No archived conversations." })}</SettingsNotice> : null}
     {query.data?.length ? <SettingsGroup aria-label={title}>
-      {query.data.map(thread => <SettingsListItem
+      {query.data.map(thread => {
+        const row = archivedConversationLabel(thread, intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" }));
+        return <SettingsListItem
         key={thread.id}
-        label={thread.name ?? thread.preview ?? intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}
-        description={thread.name != null && thread.preview && thread.preview !== thread.name ? thread.preview : undefined}
+        label={row.label}
+        description={row.description}
         actions={<SettingsButton
           disabled={busy !== null}
           aria-busy={busy === thread.id}
@@ -246,7 +249,8 @@ export function ArchivedThreadsSettings({ hostId, load, restore }: ArchivedThrea
         >{busy === thread.id
           ? intl.formatMessage({ id: "chat.archived.restoring", defaultMessage: "Restoring…" })
           : intl.formatMessage({ id: "chat.archived.restore", defaultMessage: "Restore conversation" })}</SettingsButton>}
-      />)}
+      />;
+      })}
     </SettingsGroup> : null}
     {empty || query.error ? <SettingsActions>
       <SettingsButton type="button" onClick={() => { void query.refetch(); }}>{intl.formatMessage({ id: "settings.archived.refresh", defaultMessage: "Refresh" })}</SettingsButton>

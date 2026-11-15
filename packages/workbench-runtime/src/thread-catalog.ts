@@ -15,6 +15,31 @@ function projectStatus(thread: Thread): WorkbenchThread["status"] {
   return "ready";
 }
 
+const AGENT_LABELS: Readonly<Record<string, string>> = {
+  codex: "Codex",
+  cursor: "Cursor",
+  "claude-code": "Claude Code",
+  codebuddy: "CodeBuddy",
+  pi: "Pi",
+};
+
+/** Opaque session tokens are not a workspace or a title. */
+export function looksLikeThreadToken(value: string): boolean {
+  const text = value.trim();
+  return /^(?:thread-|codex_|cursor_|claude_|codebuddy_|pi_)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/iu.test(text);
+}
+
+export function conversationAgentLabel(provider: string | null | undefined): string | null {
+  if (!provider) return null;
+  return AGENT_LABELS[provider] ?? null;
+}
+
+function directoryLabel(cwd: string, threadId: string, nativeName?: string): string {
+  const folder = (nativeName?.trim() || cwd.split("/").filter(Boolean).at(-1) || "").trim();
+  if (!folder || folder === threadId || looksLikeThreadToken(folder)) return "";
+  return folder;
+}
+
 function relativeTime(timestampSeconds: number, nowMs: number): string {
   const deltaMinutes = Math.max(0, Math.floor((nowMs / 1_000 - timestampSeconds) / 60));
   if (deltaMinutes < 1) return "Now";
@@ -30,7 +55,7 @@ export function projectAppServerThread(
   nowMs = Date.now(),
 ): WorkbenchThread {
   const nativeProject = parseNativeConversationProject((thread as Thread & { nativeProject?: unknown }).nativeProject);
-  const parts = thread.cwd.split("/").filter(Boolean);
+  const agentLabel = conversationAgentLabel(thread.modelProvider);
   return {
     id: thread.id,
     pinned: thread.pinned === true,
@@ -39,7 +64,8 @@ export function projectAppServerThread(
       || (thread.parentThreadId != null
         ? [thread.agentRole?.trim(), `#${thread.id.slice(-8)}`].filter(Boolean).join(" · ")
         : "New chat"),
-    project: nativeProject?.name ?? parts.at(-1) ?? "Workspace",
+    project: directoryLabel(thread.cwd ?? "", thread.id, nativeProject?.name),
+    ...(agentLabel ? { agentLabel } : {}),
     ...(nativeProject ? { nativeProject } : {}),
     lineage: thread.parentThreadId != null ? "subagent" : thread.forkedFromId != null ? "fork" : "root",
     parentThreadId: thread.parentThreadId ?? null,

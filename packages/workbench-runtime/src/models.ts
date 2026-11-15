@@ -7,6 +7,8 @@ export interface WorkbenchThread {
   id: string;
   title: string;
   project: string;
+  /** Product name of the executing agent. Absent when the provider is unknown. */
+  agentLabel?: string;
   nativeProject?: NativeConversationProject;
   lineage: "root" | "fork" | "subagent";
   /** Host-authored topology. Missing metadata never implies a parent. */

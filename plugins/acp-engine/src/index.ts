@@ -414,6 +414,12 @@ export class AcpEngine implements ExecutionEngineProvider {
       const page = await this.options.history.read(session.nativeId, { limit: Math.min(5, Number(params.limit ?? 1)) });
       return { entries: page.data.flatMap((turn: Value) => (turn.items ?? []).filter((item: Value) => ["agentMessage", "userMessage"].includes(item.type)).map((item: Value) => ({ turnId: turn.id, role: item.type === "userMessage" ? "user" : "assistant", text: item.text ?? "" }))) };
     }
+    if (method === "permissionProfile/list") {
+      // ACP sessions here only start in full access. Do not advertise other modes.
+      if (this.options.permission !== "allow-once") return { data: [], nextCursor: null };
+      return { data: [{ id: permissionModeProfileId("full"), description: null, allowed: true,
+        openCraftMode: "full", openCraftLabel: "Full access" }], nextCursor: null };
+    }
     if (method === "thread/start") {
       const sandbox = typeof params.sandbox === "string" ? params.sandbox : params.sandbox?.type;
       if (params.permissions != null && params.permissions !== permissionModeProfileId("full")

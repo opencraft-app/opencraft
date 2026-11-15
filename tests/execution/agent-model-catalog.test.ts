@@ -32,3 +32,27 @@ test("server assigns Agent identity independently of provider grouping and prese
   ]);
   assert.equal(choices[0]?.groupLabel, "Vendor", "model vendor grouping cannot replace execution Agent identity");
 });
+
+test("permission options follow the selected model's engine instead of another host catalog", async t => {
+  const provider = (id: string, profiles: unknown[]) => ({
+    id, label: id, threadPrefix: `${id}_`, modelPrefix: `${id}:`,
+    ownsThread: () => false, ownsModel: (model: string) => model.startsWith(`${id}:`),
+    subscribe: () => () => {}, disconnect() {}, async close() {},
+    async request(method: string) {
+      if (method === "permissionProfile/list") return { data: profiles, nextCursor: null };
+      if (method === "model/list") return { data: [], nextCursor: null };
+      return {};
+    },
+  });
+  const host = await startEngineHost({ defaultEngine: "pi", providers: [
+    provider("pi", [{ id: "opencraft:permission-mode:read-only", allowed: true }, { id: "opencraft:permission-mode:full", allowed: true }]),
+    provider("codex", [{ id: "opencraft:permission-mode:full", allowed: true, openCraftMode: "full" }]),
+  ] as never });
+  const client = new JsonRpcAppServerClient({ hostId: "fixture", transport: new WebSocketTransport({ url: host.websocketUrl, createSocket: url => new WebSocket(url) as never }) });
+  t.after(async () => { await client.close(); await host.close(); });
+  await client.connect({ clientInfo: { name: "test", version: "1" } });
+  const scoped = await client.request("permissionProfile/list", { model: "codex:luna" } as never);
+  assert.deepEqual(scoped.data.map((profile: { id: string }) => profile.id), ["opencraft:permission-mode:full"]);
+  const hostDefault = await client.request("permissionProfile/list", {});
+  assert.deepEqual(hostDefault.data.map((profile: { id: string }) => profile.id), ["opencraft:permission-mode:read-only", "opencraft:permission-mode:full"]);
+});

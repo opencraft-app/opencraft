@@ -1,5 +1,5 @@
 import type { NativeConversationProject } from "@opencraft/appserver-protocol";
-import type { ThreadServerOrigin } from "@opencraft/workbench-runtime";
+import { looksLikeThreadToken, type ThreadServerOrigin } from "@opencraft/workbench-runtime";
 
 export interface SidebarActivityThread {
   readonly id: string;
@@ -83,6 +83,30 @@ export function sidebarActivityMetadata(thread: SidebarActivityThread): {
   return {
     project: thread.project.trim() || "Workspace",
   };
+}
+
+/** Visible row detail: agent, workspace and time. Never a raw thread id. */
+export function sidebarThreadMetadata(thread: {
+  readonly project?: string | null;
+  readonly agentLabel?: string | null;
+  readonly time?: string | null;
+}): string {
+  const project = thread.project?.trim() ?? "";
+  const workspace = project && !looksLikeThreadToken(project) ? project : "";
+  return [thread.agentLabel?.trim(), workspace, thread.time?.trim()].filter(Boolean).join(" · ");
+}
+
+export function archivedConversationLabel(thread: {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly preview?: string | null;
+}, untitled: string): { readonly label: string; readonly description?: string } {
+  const name = thread.name?.trim() ?? "";
+  const preview = thread.preview?.trim() ?? "";
+  const usable = (value: string) => value && value !== thread.id && !looksLikeThreadToken(value) ? value : "";
+  const label = usable(name) || usable(preview) || untitled;
+  const description = usable(preview) && usable(preview) !== label ? usable(preview) : undefined;
+  return description ? { label, description } : { label };
 }
 
 /** Headings follow rendered runs, including when running rows precede newer days. */

@@ -1,5 +1,6 @@
 import { useServerSpaces } from "./runtime/use-server-spaces";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
+import { onboardingNewThreadSelection } from "./runtime/onboarding-selection";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
 import { composerCapabilitiesKey, composerCapabilitiesOptions } from "./runtime/composer-capabilities-query";
@@ -148,6 +149,7 @@ import {
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
   ConversationUnavailableState,
+  conversationArchivePresentation,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
   conversationRecoveryIsUnstable,
@@ -792,8 +794,10 @@ export function App({
   const unavailableThreadReason = unavailableHostId === snapshot.hostId && unavailableThreadId !== null
     ? runtime.resources.threads.getUnavailableReason?.(unavailableThreadId) ?? null
     : null;
+  const archivePresentation = conversationArchivePresentation(
+    unavailableThreadReason, (display.timeline?.frames.length ?? 0) > 0);
   const visibleTimeline = useThreadOrchestrationTimeline(
-    unavailableThreadReason === null ? display.timeline : null, runtime.resources.orchestration,
+    archivePresentation.showHistory ? display.timeline : null, runtime.resources.orchestration,
     unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open");
   const showingDisplayCache = unavailableThreadReason === null
     && display.source !== "history" && display.source !== "empty";
@@ -815,12 +819,12 @@ export function App({
   }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine]);
   useEffect(() => {
     if (!historyPaintAttempt || !historyPaintOwnsView) return;
-    if (unavailableThreadReason !== null || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
+    if ((unavailableThreadReason !== null && archivePresentation.banner !== "alongside") || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
       historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
     } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
       historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
     }
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, unavailableThreadReason]);
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, unavailableThreadReason, archivePresentation.banner]);
 
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
@@ -1318,6 +1322,9 @@ export function App({
   const activeProtocolThread = catalog.protocolThreads.find(
     (thread) => thread.id === activeThreadId,
   );
+  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.model,
+    () => composerController.getSnapshot().draft.selections.model);
   const composerCatalog = useComposerCatalog(
     snapshot.conversation?.execution.cwd ??
       activeProtocolThread?.cwd ??
@@ -1326,6 +1333,7 @@ export function App({
       null,
     draft === null ? activeThreadId : null,
     presentation.runtimeHostConfiguration,
+    explicitSetupModel ?? snapshot.conversation?.execution.model ?? null,
   );
   const setupModelPage = resolveHostModelSettingsPage(
     settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
@@ -1338,9 +1346,6 @@ export function App({
   }, [activeHostConnectionPhase, snapshot.hostId]);
   const initialConnectionFailed = snapshot.error !== null && !draftConnectionObservation.current.wasReady;
   const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
-  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
-    () => composerController.getSnapshot().draft.selections.model,
-    () => composerController.getSnapshot().draft.selections.model);
   const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
     ?? composerCatalog.models.find(model => model.isDefault)?.model ?? null;
   const modelReadiness = useQuery({
@@ -1385,6 +1390,8 @@ export function App({
     }
     try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
     catch { /* The gate can still close when storage is unavailable. */ }
+    const remembered = onboardingNewThreadSelection(modelId);
+    if (remembered) composerCatalog.rememberModelDefaults?.(remembered);
     if (modelId && draft !== null) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
     setOnboardingOverlay(null);
   };
@@ -1528,6 +1535,17 @@ export function App({
       supportsPermissionModes,
     ],
   );
+  const selectedPermissionProfile = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.permissionProfile,
+    () => composerController.getSnapshot().draft.selections.permissionProfile);
+  useEffect(() => {
+    if (draft?.target.type !== "new-thread" || selectedPermissionProfile == null) return;
+    const profiles = composerSelectionCatalog.permissionProfiles;
+    if (profiles.length === 0 || profiles.some(profile => profile.value === selectedPermissionProfile || profile.nativeProfileId === selectedPermissionProfile)) return;
+    const fallback = profiles.find(profile => profile.mode === "full" && !profile.disabled) ?? profiles.find(profile => !profile.disabled);
+    if (!fallback) return;
+    composerController.dispatch({ type: "set-selections", patch: { permissionProfile: fallback.value } });
+  }, [composerController, composerSelectionCatalog.permissionProfiles, draft?.target.type, selectedPermissionProfile]);
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
@@ -2392,8 +2410,8 @@ export function App({
                     if (activeThreadId !== null) hostCatalog.threadAttention.acknowledge(
                       attentionScope, snapshot.hostId, activeThreadId, turnId);
                   }}
-                  emptyState={unavailableThreadReason !== null ? <ConversationUnavailableState
-                      reason={unavailableThreadReason}
+                  emptyState={archivePresentation.banner === "replace" ? <ConversationUnavailableState
+                      reason={unavailableThreadReason === "not-found" ? "not-found" : "archived"}
                       onRestore={unavailableThreadReason === "archived" ? restoreUnavailableThread : undefined}
                       restoring={restoringArchivedThread}
                     /> : draft !== null ? <PendingConversationPage
@@ -2430,7 +2448,7 @@ export function App({
                         }) : undefined,
                     theme: appearanceTheme.resolvedTheme,
                   }}
-                  timeline={draft === null && unavailableThreadReason === null ? visibleTimeline : null}
+                  timeline={draft === null && archivePresentation.showHistory ? visibleTimeline : null}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                   navigationSource={showingDisplayCache ? null : navigationSource}
                   searchTarget={conversationSearchTarget?.hostId === snapshot.hostId && conversationSearchTarget.threadId === snapshot.activeThreadId ? conversationSearchTarget : null}
@@ -2500,7 +2518,15 @@ export function App({
                     conversationScrollApiRef.current = api;
                   }}
                   surfaceCapabilities={timelineSurfaceCapabilities}
-                  footer={unavailableThreadReason !== null ? null : (
+                  footer={archivePresentation.banner === "alongside" ? (
+                    <div className="thread-composer-region">
+                      <ConversationUnavailableState
+                        reason="archived"
+                        onRestore={restoreUnavailableThread}
+                        restoring={restoringArchivedThread}
+                      />
+                    </div>
+                  ) : unavailableThreadReason !== null ? null : (
                     <ThreadComposerPresentation
                       key={panelOwnerId}
                       scopeId={panelOwnerId}
