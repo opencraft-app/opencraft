@@ -11,6 +11,21 @@ export function isAgentEnabled(values: Availability, scope: string, agentId: str
   return values[scope]?.[agentId] !== false;
 }
 
+const AGENT_ID_BY_LABEL: Readonly<Record<string, string>> = {
+  codex: "codex",
+  "claude code": "claude-code",
+  codebuddy: "codebuddy",
+  pi: "pi",
+  cursor: "cursor",
+};
+
+/** Native Host models can omit an Agent id even when the host group itself is
+ * owned by one Agent. Use that group identity as the fallback for switches. */
+export function agentIdForHostLabel(label: string | null | undefined): string | null {
+  const normalized = label?.trim().toLowerCase();
+  return normalized === undefined ? null : AGENT_ID_BY_LABEL[normalized] ?? null;
+}
+
 /** Chat settings write the host the user is editing. A new draft applies that
  * switch to the same agent wherever its models are listed, so closing Codex
  * cannot leave it selectable on another host. */
@@ -19,17 +34,18 @@ export function filterModelsForNewDraft<T extends { agentId?: string | null }>(
   modelHostId: string,
   settingsHostId: string,
   enabled: (hostId: string, agentId: string) => boolean,
+  groupAgentId: string | null = null,
 ): T[] {
-  return models.filter(model => enabled(settingsHostId, model.agentId ?? "host") && modelHostId.length >= 0);
+  return models.filter(model => enabled(settingsHostId, model.agentId ?? groupAgentId ?? "host") && modelHostId.length >= 0);
 }
 
 export function newDraftAgentsDisabled<T extends { agentId?: string | null }>(
-  groups: readonly { readonly hostId: string; readonly models: readonly T[] }[],
+  groups: readonly { readonly hostId: string; readonly agentId?: string | null; readonly models: readonly T[] }[],
   settingsHostId: string,
   enabled: (hostId: string, agentId: string) => boolean,
 ): boolean {
-  const declared = groups.flatMap(group => group.models.map(model => ({ model, hostId: group.hostId })));
-  return declared.length > 0 && declared.every(({ model, hostId }) => filterModelsForNewDraft([model], hostId, settingsHostId, enabled).length === 0);
+  const declared = groups.flatMap(group => group.models.map(model => ({ model, hostId: group.hostId, agentId: group.agentId ?? null })));
+  return declared.length > 0 && declared.every(({ model, hostId, agentId }) => filterModelsForNewDraft([model], hostId, settingsHostId, enabled, agentId).length === 0);
 }
 
 /** Settings and onboarding merge each intent after the preceding durable write.

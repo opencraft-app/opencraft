@@ -1,5 +1,5 @@
 import { useServerSpaces } from "./runtime/use-server-spaces";
-import { filterModelsForNewDraft, newDraftAgentsDisabled } from "./runtime/agent-availability";
+import { agentIdForHostLabel, filterModelsForNewDraft, newDraftAgentsDisabled } from "./runtime/agent-availability";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
 import { onboardingNewThreadSelection } from "./runtime/onboarding-selection";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
@@ -1460,17 +1460,22 @@ export function App({
     const agentId = conversationAgent ?? model?.agentId ?? null;
     return agentId === null ? null : { id: agentId, label: model?.agentLabel ?? null };
   }, [draft, activeThreadId, conversationAgent, composerCatalog.models, composerCatalog.displayModels, engineCatalog.groups, snapshot.hostId, snapshot.conversation?.execution.model]);
+  const hostGroupLabel = useCallback((hostId: string) =>
+    hostCatalog.profiles.find(host => host.hostId === hostId)?.agent
+    ?? hostCatalog.hosts.find(host => host.hostId === hostId)?.label
+    ?? hostId, [hostCatalog]);
+  const hostGroupAgentId = useCallback((hostId: string) => agentIdForHostLabel(hostGroupLabel(hostId)), [hostGroupLabel]);
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
       currentAgentId: currentThreadAgent?.id ?? null,
       currentAgentLabel: currentThreadAgent?.label ?? null,
       agentContinuation: canContinueWithAgent ? { startsNewThread: true } : undefined,
       agentsDisabled: filterNewAgents && newDraftAgentsDisabled(
-        engineCatalog.groups.map(group => ({ hostId: group.hostId, models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models })),
+        engineCatalog.groups.map(group => ({ hostId: group.hostId, agentId: hostGroupAgentId(group.hostId), models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models })),
         snapshot.hostId, agentAvailability.enabled,
       ),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectComposerModelChoices((canContinueWithAgent ? engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? composerCatalog.models : composerCatalog.models).filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
+      models: projectComposerModelChoices((canContinueWithAgent ? engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? composerCatalog.models : composerCatalog.models).filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? hostGroupAgentId(snapshot.hostId) ?? "host"))),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
         const profile = rawProfile as OpenCraftPermissionProfile;
@@ -1495,11 +1500,11 @@ export function App({
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
       agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
         id: group.hostId,
-        label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
+        label: hostGroupLabel(group.hostId),
         active: group.hostId === snapshot.hostId,
         models: projectComposerModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => canContinueWithAgent
-          ? model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? "host")
-          : filterModelsForNewDraft([model], group.hostId, snapshot.hostId, agentAvailability.enabled).length > 0)),
+          ? model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? hostGroupAgentId(group.hostId) ?? "host")
+          : filterModelsForNewDraft([model], group.hostId, snapshot.hostId, agentAvailability.enabled, hostGroupAgentId(group.hostId)).length > 0)),
         loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
         error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
@@ -1529,7 +1534,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId, hostGroupLabel, hostGroupAgentId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
