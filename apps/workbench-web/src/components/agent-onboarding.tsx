@@ -110,7 +110,7 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, pres
   const defaultEntry = defaults?.find(model => model.isDefault) ?? defaults?.[0];
   const defaultModel = defaultEntry?.id;
   const selectedChoice = chosenModel?.agentId === expanded ? chosenModel : null;
-  const selected = !expandedReady ? null : models.find(model => model.id === selectedChoice?.id) ?? models[0]
+  const selected = !expandedReady ? null : models.find(model => model.id === selectedChoice?.id) ?? models.find(model => model.id === defaultModel) ?? models[0]
     ?? (!agentModels.isPending && selectedChoice?.id === defaultModel ? selectedChoice : null);
   const selectedModel = selected?.id ?? null;
   const selectedModelName = selected?.name ?? null;
