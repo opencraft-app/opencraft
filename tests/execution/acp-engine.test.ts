@@ -259,8 +259,8 @@ test("Codex splits advertised model variants into native model/reasoning and app
   const created = await f.engine.request("thread/start", { model: "codex:one[low]", serviceTier: "fast" }, client);
   assert.equal(created.thread.model, "codex:one[low]"); assert.equal(created.thread.serviceTier, "fast");
   assert.equal(created.modelProvider, "codex"); assert.equal(created.cwd, f.root);
-  assert.deepEqual(created.runtimeWorkspaceRoots, [f.root]); assert.equal(created.approvalPolicy, "never");
-  assert.deepEqual(created.sandbox, { type: "dangerFullAccess" });
+  assert.deepEqual(created.runtimeWorkspaceRoots, [f.root]); assert.equal(created.approvalPolicy, undefined, "an unprobed native policy is not projected as Full access");
+  assert.equal(created.sandbox, undefined);
   const resumed = await f.engine.request("thread/resume", { threadId: created.thread.id }, client);
   assert.equal(resumed.modelProvider, "codex"); assert.equal(resumed.model, "codex:one[low]");
   assert.equal(resumed.serviceTier, "fast"); assert.equal(resumed.reasoningEffort, "low");
@@ -756,4 +756,53 @@ test("refused CLI admission sends no ACP prompt", async t => {
   const { thread } = await f.engine.request("thread/start", {}, client);
   await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: "forged", input: [{ type: "text", text: "hello" }] }, client), /delegation_required/);
   assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+});
+
+const fullPermissions = { permissions: "opencraft:permission-mode:full", sandbox: "danger-full-access", approvalPolicy: "never" };
+test("Codex explicit Full access reaches native mode before any input and survives restart", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1" } });
+  const created = await f.engine.request("thread/start", fullPermissions, client);
+  const applied = (await f.calls()).filter(call => call.configId === "mode");
+  assert.deepEqual(applied.map(call => call.value), ["agent-full-access"]);
+  assert.equal(created.activePermissionProfile.id, fullPermissions.permissions);
+  await f.engine.close();
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  await restored.request("thread/resume", { threadId: created.thread.id }, client);
+  const resumed = await f.calls();
+  assert.equal(resumed.filter(call => call.configId === "mode").length, 2);
+  assert.ok(resumed.findIndex(call => call.method === "session/resume") < resumed.findLastIndex(call => call.configId === "mode"));
+});
+test("Codex does not silently grant Full access when no permission was selected", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1" } });
+  const created = await f.engine.request("thread/start", {}, client);
+  assert.notEqual(created.activePermissionProfile?.id, fullPermissions.permissions);
+  assert.ok(!(await f.calls()).some(call => call.configId === "mode"));
+});
+test("Codex refuses unconfirmed native Full access and unsupported permission requests at each boundary", async t => {
+  for (const mode of ["reject", "ignore", undefined]) {
+    const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: mode } });
+    await assert.rejects(f.engine.request("thread/start", fullPermissions, client), /mode|Full access/i);
+    assert.ok(!(await f.calls()).some(call => call.method === "session/prompt"));
+  }
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1" } });
+  const { thread } = await f.engine.request("thread/start", fullPermissions, client);
+  for (const method of ["thread/resume", "turn/start"]) for (const mode of ["read-only", "accept-edits", "auto"]) {
+    await assert.rejects(f.engine.request(method, {threadId:thread.id,permissions:`opencraft:permission-mode:${mode}`,input:[{type:"text",text:"no"}]}, client), /permission profile/);
+  }
+  assert.ok(!(await f.calls()).some(call => call.method === "session/prompt"));
+});
+
+test("restricted Codex callbacks cannot turn the Host allow-once setting into escalation", async t => {
+  for (const full of [false, true]) {
+    const f = await fixture(t, { id: "codex", env: { ACP_TEST_CODEX_MODES: "1" } });
+    const { thread } = await f.engine.request("thread/start", full ? fullPermissions : {}, client);
+    const session = (f.engine as any).sessions.get(thread.id);
+    const response = await (f.engine as any).native(session).request("fixture/requestPermission", { sessionId: session.nativeId });
+    assert.deepEqual(response.outcome, full ? {outcome:"selected",optionId:"allow"} : {outcome:"cancelled"});
+  }
+});
+test("approval policy alone cannot silently select Full access for Codex", async t => {
+  const f = await fixture(t, {id:"codex",env:{ACP_TEST_CODEX_MODES:"1"}});
+  await assert.rejects(f.engine.request("thread/start", {approvalPolicy:"never"}, client), /explicit permission profile/);
+  assert.deepEqual(await f.calls(), []);
 });

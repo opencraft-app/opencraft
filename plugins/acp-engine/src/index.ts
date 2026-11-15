@@ -44,6 +44,9 @@ interface Session {
   createdAt: number; updatedAt: number; tools: Value[]; archived: boolean;
   preview?: string;
   nativeImport?: true;
+  /** Explicit user selection, restored through the native ACP mode API. */
+  codexFullAccess?: true;
+  codexMode?: string;
   forkedFromId?: string;
   nativeProject?: NativeConversationProject;
   nameOrigin?: "input" | "agent" | "manual";
@@ -183,7 +186,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       onRequest: async (method, params) => {
         if (method !== "session/request_permission") return fault("Unsupported ACP client request", -32601);
         const choices = Array.isArray(params.options) ? params.options : [];
-        const choice = this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
+        const session = [...this.sessions.values()].find(session => session.nativeId === params.sessionId);
+        const mayAllow = this.id !== "codex" || session?.codexMode === "agent-full-access";
+        const choice = mayAllow && this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
         return { outcome: choice ? { outcome: "selected", optionId: choice.optionId } : { outcome: "cancelled" } };
       },
       onUnconfirmed: () => {
@@ -343,7 +348,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       preview: session.preview ?? "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
       source: "appServer", engineKind: this.id, path: null, ephemeral: false,
       ...(this.options.history ? { historyMode: "paginated" } : {}),
-      ...(this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
+      ...(this.id === "codex" ? this.codexPermissionProjection(session, false) : this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
   }
   private sessionResponse(session: Session): Value {
     return { thread: this.metadata(session), model: session.model ?? `${this.modelPrefix}current`, modelProvider: this.id,
@@ -351,7 +356,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       serviceTier: session.fastConfig?.currentValue === session.fastConfig?.onValue && session.fastConfig ? "fast" : null,
       reasoningEffort: session.reasoningConfig?.currentValue ?? null, multiAgentMode: "explicitRequestOnly",
       initialTurnsPage: null, turnsBackwardsCursor: null, itemsBackwardsCursor: null, collaborationMode: null,
-      ...(this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
+      ...(this.id === "codex" ? this.codexPermissionProjection(session, true) : this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
         sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } } : {}),
     };
   }
@@ -422,7 +427,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       return { data: [{ id: permissionModeProfileId("full"), description: null, allowed: true,
         openCraftMode: "full", openCraftLabel: "Full access" }], nextCursor: null };
     }
+    if (this.id === "codex" && ["thread/resume", "turn/start", "thread/fork"].includes(method)) this.codexFullAccessRequested(params);
     if (method === "thread/start") {
+      if (this.id === "codex") this.codexFullAccessRequested(params);
       const sandbox = typeof params.sandbox === "string" ? params.sandbox : params.sandbox?.type;
       if (params.permissions != null && params.permissions !== permissionModeProfileId("full")
         || sandbox != null && !["danger-full-access", "dangerFullAccess"].includes(sandbox)
@@ -480,6 +487,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         const now = Math.floor(Date.now() / 1000);
         const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {} };
         this.captureModels(session, result);
+        if (this.id === "codex") await this.applyCodexPermission(session, result, this.codexFullAccessRequested(params));
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(session);
         if (params.model) await this.setModel(session, params.model);
@@ -582,6 +590,7 @@ export class AcpEngine implements ExecutionEngineProvider {
           ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}),
           createdAt: now, updatedAt: now, tools: session.tools, archived: false, receipts: {} };
         this.captureModels(child, result);
+        if (this.id === "codex") await this.applyCodexPermission(child, result, session.codexFullAccess === true || this.codexFullAccessRequested(params));
         this.sessions.set(id, child); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(child);
         if (params.model) await this.setModel(child, params.model);
@@ -589,7 +598,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       } finally { this.pendingMcp.delete(id); }
     }
     if (method === "thread/resume") {
-      await this.resume(session); runtime.owner = client;
+      await this.resume(session);
+      if (this.id === "codex" && (this.codexFullAccessRequested(params) || session.codexFullAccess)) await this.selectCodexFullAccess(session);
+      runtime.owner = client;
       const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.historyRead(session, params.initialTurnsPage) : undefined;
       const reply = this.sessionResponse(session);
       if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.historySnapshot(session, params);
@@ -604,6 +615,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       const continuing = Array.isArray(params.input) && params.input.length === 0;
       if (continuing && (this.nativeOutcomeUnknown || !["failed", "interrupted"].includes(runtime.active?.status ?? session.lastTurn?.status ?? ""))) return fault("This ACP conversation cannot be continued in its current state");
       await this.resume(session, params.clientUserMessageId);
+      if (this.id === "codex" && (this.codexFullAccessRequested(params) || session.codexFullAccess)) await this.selectCodexFullAccess(session);
       if (params.model) await this.setModel(session, params.model);
       if (params.effort != null || params.reasoningEffort != null) await this.setReasoning(session, params.effort ?? params.reasoningEffort);
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
@@ -618,6 +630,48 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "opencraft/driver/status") return this.snapshot(session.id);
     return fault("Unsupported ACP operation", -32601);
+  }
+  private codexFullAccessRequested(params: Value): boolean {
+    const sandbox = typeof params.sandbox === "string" ? params.sandbox : params.sandbox?.type;
+    if (params.permissions != null && params.permissions !== permissionModeProfileId("full")
+      || sandbox != null && !["danger-full-access", "dangerFullAccess"].includes(sandbox)
+      || params.sandboxPolicy != null && params.sandboxPolicy.type !== "dangerFullAccess"
+      || params.approvalsReviewer != null && params.approvalsReviewer !== "user"
+      || params.approvalPolicy != null && params.approvalPolicy !== "never") return fault("ACP cannot preserve the requested permission profile", 403);
+    const requested = params.permissions != null || sandbox != null || params.sandboxPolicy != null;
+    if (!requested && params.approvalPolicy != null) return fault("Codex requires an explicit permission profile, not an approval policy alone", 403);
+    if (requested && this.options.permission !== "allow-once") return fault("ACP Full access is not configured for this Host", 403);
+    return requested;
+  }
+  private async applyCodexPermission(session: Session, result: Value, full: boolean): Promise<void> {
+    const mode = (result.configOptions ?? []).find((option: Value) => option.id === "mode" && option.type === "select");
+    session.codexMode = typeof mode?.currentValue === "string" ? mode.currentValue : undefined;
+    if (!full) return;
+    if (!mode?.options?.some((option: Value) => option.value === "agent-full-access")) return fault("Codex did not advertise native Full access mode", 403);
+    await this.selectCodexFullAccess(session);
+  }
+  private async selectCodexFullAccess(session: Session): Promise<void> {
+    if (session.codexFullAccess && session.codexMode === "agent-full-access") return;
+    const result = await this.native(session).request("session/set_config_option", {
+      sessionId: session.nativeId, configId: "mode", value: "agent-full-access",
+    });
+    const mode = (result.configOptions ?? []).find((option: Value) => option.id === "mode");
+    if (mode?.currentValue !== "agent-full-access") return fault("Codex native Full access mode was not confirmed", 403);
+    session.codexMode = mode.currentValue; session.codexFullAccess = true;
+    await this.save(session);
+  }
+  private codexPermissionProjection(session: Session, response: boolean): Value {
+    if (session.codexMode !== "agent-full-access") {
+      if (!["agent", "read-only"].includes(session.codexMode ?? "")) return {};
+      const profile = `codex-acp:${session.codexMode}`;
+      return response ? { approvalPolicy: "on-request", approvalsReviewer: session.codexMode === "agent" ? "auto_review" : "user",
+        sandbox: { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+        activePermissionProfile: { id: profile, extends: null } }
+        : { permissions: profile, approvalPolicy: "on-request", sandbox: "workspace-write" };
+    }
+    return response ? { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" },
+      activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } }
+      : { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" };
   }
   private promptWithContext(prompt: Value[], context: unknown): Value[] {
     if (context === undefined || context === null) return prompt;
@@ -832,6 +886,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       throw error;
     }
     this.captureModels(session, result);
+    if (this.id === "codex") await this.applyCodexPermission(session, result, session.codexFullAccess === true);
     if (selection?.model) {
       await this.setModel(session, selection.model);
       for (const parameter of selection.parameters ?? []) {
@@ -963,6 +1018,10 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if(update.sessionUpdate === "config_option_update") {
       this.captureModels(session,update);
+      if (this.id === "codex") {
+        const mode = (update.configOptions ?? []).find((option: Value) => option.id === "mode");
+        if (typeof mode?.currentValue === "string") session.codexMode = mode.currentValue;
+      }
       void this.save(session).catch(()=>{this.persistenceFailed=true;});
       return;
     }

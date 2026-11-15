@@ -283,9 +283,9 @@ export class ConnectedAgentHost {
       const model = typeof forwarded.model === "string" ? forwarded.model : undefined;
       return engine.request("thread/start", {
         cwd: typeof forwarded.cwd === "string" && forwarded.cwd.startsWith("/") ? forwarded.cwd : this.cwd,
-        permissions: forwarded.permissions ?? permissionModeProfileId("full"),
-        approvalPolicy: forwarded.approvalPolicy ?? "never",
-        sandbox: forwarded.sandbox ?? "danger-full-access",
+        permissions: forwarded.permissions ?? (engineId === "codex" ? undefined : permissionModeProfileId("full")),
+        approvalPolicy: forwarded.approvalPolicy ?? (engineId === "codex" ? undefined : "never"),
+        sandbox: forwarded.sandbox ?? (engineId === "codex" ? undefined : "danger-full-access"),
         ...(forwarded.sandboxPolicy !== undefined ? {sandboxPolicy:forwarded.sandboxPolicy} : {}),
         ...(model ? { model } : {}),
         ...(forwarded.reasoningEffort != null ? { reasoningEffort: forwarded.reasoningEffort } : {}),
@@ -319,9 +319,7 @@ export class ConnectedAgentHost {
     }
     const created = await engine.request("thread/start", {
       cwd: this.deps.homedir,
-      permissions: permissionModeProfileId("full"),
-      approvalPolicy: "never",
-      sandbox: "danger-full-access",
+      ...(engineId === "codex" ? {} : { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" }),
     }, client);
     await engine.request("thread/archive", { threadId: created.thread.id }, client);
     if (engineId === "codex" || engineId === "cursor") await (engine as AcpEngine).discoverModelCapabilities(created.thread.id);

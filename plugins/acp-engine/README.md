@@ -39,3 +39,19 @@ History is read only through an engine-native reader. ACP itself does not
 promise transcript replay. Opening metadata or supplied native history does not
 start or resume an engine. Durable routing metadata and creation/input receipts
 contain control state, not a second transcript authority.
+
+Connected Codex permissions are applied per session through the advertised
+`mode` config option. Explicit Full access selects `agent-full-access` and must
+be acknowledged by the native peer before the Host reports it or sends input.
+The selection is persisted and reapplied after native resume and fork. Catalog
+probing and requests without a permission selection preserve the native default;
+old records without a selection are not silently upgraded to Full access.
+
+The connected ACP owner currently offers only Full access. Codex ACP's native
+`read-only` preset actually uses workspace-write with network disabled and user
+approval; `agent` uses the same sandbox with auto review. Neither is a native
+read-only sandbox, and their approval routing is not connected by this owner.
+They are not advertised as supported OpenCraft presets. Unselected/legacy
+sessions project their observed native policy, and permission callbacks cannot
+silently allow escalation from a restricted Codex session. Other ACP agents and
+Host configurations retain their existing permission handling.

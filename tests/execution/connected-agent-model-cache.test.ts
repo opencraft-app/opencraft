@@ -57,3 +57,17 @@ test("a native Pi catalog with no usable models never offers an unexecutable cur
  const f=catalogFixture();
  try{(f.host as any).discovered.set('pi',[]);assert.equal((await f.host.models()).some(m=>m.id==='pi:current'),false);}finally{f.release();await f.host.close();}
 });
+
+test("connected Codex forwards only explicit permissions and discovery does not grant Full access", async () => {
+  const f = catalogFixture();
+  try {
+    for(const params of [{agentId:"codex",model:"codex:one"},{agentId:"codex",model:"codex:one",permissions:"opencraft:permission-mode:full",sandbox:"danger-full-access",approvalPolicy:"never"}]) {
+      await assert.rejects(f.host.dispatch("thread/start",params),/Synthetic unavailable peer/);
+    }
+    const calls=f.forwarded.filter(call=>call.method==="thread/start");
+    assert.equal(calls[0].params.permissions,undefined);assert.equal(calls[0].params.sandbox,undefined);assert.equal(calls[0].params.approvalPolicy,undefined);
+    assert.equal(calls[1].params.permissions,"opencraft:permission-mode:full");assert.equal(calls[1].params.sandbox,"danger-full-access");
+    await assert.rejects(f.host.listAgentModels("codex"),/Synthetic unavailable peer/);
+    assert.equal(f.forwarded.filter(call=>call.method==="thread/start").at(-1)?.params.permissions,undefined);
+  } finally { f.release(); await f.host.close(); }
+});
