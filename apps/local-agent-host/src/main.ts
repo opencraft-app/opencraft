@@ -160,6 +160,8 @@ export async function startLocalAgentHost(options: {
   readonly taskConversationCatalog?: (serverId: string, search: string, limit: number, cursor?: string | null) => Promise<unknown>;
   /** Per-engine new-Thread bridge routing. Absent keeps every legacy owner. */
   readonly bridge?: { readonly claudeCode?: BridgeEngineProviderOptions };
+  /** Explicit Pi Engine composition owns its own model authority. */
+  readonly nativePi?: boolean;
 } = {}) {
   nodeObserver("dsh");
   const storage = options.storage ?? await openLocalAgentStorageWithWorker({ dataDirectory: options.dataDirectory });
@@ -305,16 +307,15 @@ export async function startLocalAgentHost(options: {
     options.projectlessWorkspaceDirectory
     ?? process.env.OPENCRAFT_PROJECTLESS_WORKSPACE_DIRECTORY
   )?.trim() || undefined;
-  adapter.setWorkspaceResolver(new LocalWorkspaceResolver({
-    projectlessRoot: projectlessWorkspaceRoot,
-  }));
+  const workspaceResolver = new LocalWorkspaceResolver({projectlessRoot:projectlessWorkspaceRoot});
+  adapter.setWorkspaceResolver(workspaceResolver);
   const claudeBridge = options.bridge?.claudeCode === undefined ? undefined : new BridgeEngineProvider({
     ...options.bridge.claudeCode,
     engine: "claude-code",
     defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
   });
   const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
-    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] });
+    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, {nativePi:options.nativePi,modelPolicyPath:options.modelPolicyPath});
   await connectedAgents.start();
   cleanup.push(() => connectedAgents.close());
   cleanup.push(connectedAgents.subscribe((method, params) => {
@@ -780,7 +781,7 @@ export async function startLocalAgentHost(options: {
         }
         if (request.method === "opencraft/agents/onboarding/status" || request.method === "opencraft/agents/onboarding/act" || request.method === "opencraft/agents/onboarding/models") {
           const result = request.method === "opencraft/agents/onboarding/status"
-            ? { ...await agentOnboarding.status(), historyImport: true }
+            ? { ...await connectedAgents.status(), historyImport: true }
             : request.method === "opencraft/agents/onboarding/models"
               ? { models: await connectedAgents.listAgentModels(String((request.params as { id?: string } | null)?.id ?? "")) }
             : { ...await agentOnboarding.act(request.params), historyImport: true };
@@ -903,6 +904,10 @@ export async function startLocalAgentHost(options: {
         }
         const dispatchThread = async (method: string, params: Record<string, unknown>) => {
           if (connectedAgents.owns(method, params)) {
+            if (method === "thread/start") {
+              const workspace = await workspaceResolver.resolve(params);
+              return connectedAgents.dispatch(method, {...params,cwd:workspace.cwd,runtimeWorkspaceRoots:workspace.runtimeWorkspaceRoots});
+            }
             // Native forks inherit native settings. Catalog configuration is
             // advisory and must not inject a different engine's saved default.
             if (method === "thread/fork" && String(params.threadId).startsWith("codex_") && (request.params as {model?: unknown} | undefined)?.model == null) {

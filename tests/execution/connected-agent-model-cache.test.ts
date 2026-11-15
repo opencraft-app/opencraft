@@ -51,3 +51,9 @@ test("legacy unqualified model IDs are normalized only when the owning Agent dec
     assert.equal(f.forwarded.filter(call => call.method === "turn/start").at(-1)?.params.model, "other:one", "an explicit other Agent is never silently relabeled");
   } finally { f.release(); await f.host.close(); }
 });
+
+
+test("a native Pi catalog with no usable models never offers an unexecutable current-model placeholder",async()=>{
+ const f=catalogFixture();
+ try{(f.host as any).discovered.set('pi',[]);assert.equal((await f.host.models()).some(m=>m.id==='pi:current'),false);}finally{f.release();await f.host.close();}
+});

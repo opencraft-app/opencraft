@@ -117,3 +117,16 @@ test("package install uses the fixed package name", async () => {
   assert.deepEqual(deps.spawned, [["/bin/npm", "install", "-g", "@tencent-ai/codebuddy-code"]]);
   service.close();
 });
+
+
+test("desktop discovery finds a user's NVM installation when the GUI PATH is minimal", async () => {
+  const deps = {env:{PATH:'/usr/bin'},homedir:'/home/person',exists:async (p:string)=>p==='/home/person/.nvm/versions/node/v24/bin/codebuddy',cursorVersions:async()=>[],nodeBinDirectories:async()=>['/home/person/.nvm/versions/node/v24/bin']};
+  assert.equal(await resolveExecutable(['codebuddy'],deps),'/home/person/.nvm/versions/node/v24/bin/codebuddy');
+});
+
+
+test("a discovered Node-owned CLI also receives a working interpreter PATH",async()=>{
+ const {localAgentEnvironment}=await import('../../apps/local-agent-host/src/agent-onboarding.js');
+ const env=await localAgentEnvironment({env:{PATH:'/usr/bin'},homedir:'/home/person',nodeBinDirectories:async()=>['/home/person/.nvm/versions/node/v24/bin']},'/home/person/.local/bin/codebuddy');
+ assert.ok(env.PATH?.split(':').includes('/home/person/.nvm/versions/node/v24/bin'));
+});

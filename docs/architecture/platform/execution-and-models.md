@@ -797,3 +797,29 @@ enable a missing planning tool. Definitive prompt failures and lost connections
 produce controlled localized error items after failure persistence. Explicit
 Continue translates empty input to a native continuation only for known failed
 or interrupted outcomes; unknown native outcomes remain fenced from replay.
+
+## Default local Agent discovery
+
+The local Host discovers installed Codex, Claude Code, Cursor and CodeBuddy with
+the operating-system user's environment. A separate OpenCraft data directory does
+not imply a separate HOME or a second CLI login. GUI/service discovery also checks
+the user's NVM installations and supplies their interpreter paths to native peers.
+Explicitly disabled Agents remain disabled in UI preferences.
+
+CodeBuddy versions without an `auth status` subcommand use a native ACP session
+and model handshake to establish readiness. An authentication refusal remains
+signed out; a transport/service error remains unknown. Saved model metadata is
+not authentication evidence, and discovery never sends a model prompt.
+
+When native Pi is installed, the local Host exposes its configured model catalog
+through the existing Pi owner. Authentication and models are referenced from
+`PI_CODING_AGENT_DIR` or `~/.pi/agent`; the initial native model/thinking preference
+is preserved in the new Host's own defaults. Credentials and native transcripts
+are not copied or imported. New sessions, defaults and model-cache files remain
+under the OpenCraft data root. Explicit standalone Pi composition retains its own
+model-configuration authority and does not add a duplicate native Pi owner.
+
+Discovery uses the OS user's existing home as an operational cwd. Actual new
+conversations share the Host's existing Project/Projectless workspace resolver,
+so a blank Draft allocates its own workspace rather than executing in a package
+or shared discovery directory.
