@@ -257,8 +257,8 @@ watch is used as an authorization freshness guarantee.
 When no identity adapter, human login, instance membership or Hub enrollment is
 configured, Headless permits Agent handoff under an internal deployment operator.
 The browser remains anonymous: this authority is used only for the handoff
-reference RPC and execution delegation, and does not establish a login or grant
-membership administration. Its resource checks use the existing anonymous Thread
+reference and source-metadata RPCs and execution delegation, and does not establish
+a login or grant membership administration. Its resource checks use the existing anonymous Thread
 ACL, so private conversations remain unavailable. Initializing collaboration
 spaces withdraws this authority. Each server start fences previous operator
 execution delegations; starting with identity configured disables the operator.

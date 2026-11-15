@@ -56,7 +56,7 @@ export class AgentDriverSession {
     if (message.method === COLLABORATION_METHOD) {
       const envelope = {id:message.id,...(message[LOGICAL_CLIENT_FIELD] === undefined ? {} : {[LOGICAL_CLIENT_FIELD]:message[LOGICAL_CLIENT_FIELD]})};
       try {
-        if (!actor || operator && params.action !== "reference") throw Object.assign(new Error("actor_authentication_required"), {code:"actor_authentication_required",status:401});
+        if (!actor || operator && !["reference", "metadata"].includes(params.action)) throw Object.assign(new Error("actor_authentication_required"), {code:"actor_authentication_required",status:401});
         context.resourceOwner?.assertCurrent();
         const result = await this.collaboration.command(actor, params);
         context.resourceOwner?.assertCurrent();

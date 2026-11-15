@@ -169,11 +169,11 @@ test('a disposal failure settles other resources but retains the writer until pr
 test('anonymous handoff is selected by deployment configuration on both real RPC ingress paths', async t => {
   for (const identityConfigured of [false,true]) {
     await t.test(identityConfigured ? 'identity adapter with anonymous request' : 'anonymous installation', async t => {
-      const f = await fixture(t);
+      const f = await fixture(t), sourceId='pi_source';
       const backend = new WebSocketServer({host:'127.0.0.1',port:0});await once(backend,'listening');
       backend.on('connection',socket=>socket.on('message',raw=>{
         const message = JSON.parse(String(raw));
-        socket.send(JSON.stringify({id:message.id,...(message.__opencraftClient===undefined?{}:{__opencraftClient:message.__opencraftClient}),result:message.method==='initialize'?{capabilities:{}}:{thread:{id:'target'}}}));
+        socket.send(JSON.stringify({id:message.id,...(message.__opencraftClient===undefined?{}:{__opencraftClient:message.__opencraftClient}),result:message.method==='initialize'?{capabilities:{}}:{thread:{id:message.method==='thread/read'?message.params.threadId:'target',cwd:f.root,status:{type:'idle'}}}}));
       }));
       const app = await startHeadlessServer({...f.options,
         startAgentHost:async()=>({websocketUrl:`ws://127.0.0.1:${backend.address().port}`,close:async()=>{}}),
@@ -201,10 +201,13 @@ test('anonymous handoff is selected by deployment configuration on both real RPC
         };
         const initialized=await rpc(1,'initialize');
         assert.equal(initialized.result.capabilities.extensions['opencraft/thread-access'].agentHandoff,!identityConfigured);
-        const reference=await rpc(2,'opencraft/collaboration',{action:'reference',threadId:'source'});
+        const reference=await rpc(2,'opencraft/collaboration',{action:'reference',threadId:sourceId});
         if(identityConfigured)assert.equal(reference.error.data.code,'actor_authentication_required');
-        else assert.match(reference.result.reference,/source$/);
-        const start=await rpc(3,'thread/start',{handoffSource:{threadId:'source'}});
+        else assert.match(reference.result.reference,/pi_source$/);
+        const metadata=await rpc(4,'opencraft/collaboration',{action:'metadata',reference:identityConfigured?{serverId:'server',threadId:sourceId}:reference.result.ref});
+        if(identityConfigured)assert.equal(metadata.error.data.code,'actor_authentication_required');
+        else assert.equal(metadata.result?.cwd,f.root,JSON.stringify(metadata));
+        const start=await rpc(3,'thread/start',{handoffSource:{threadId:sourceId}});
         if(identityConfigured)assert.equal(start.error.code,-32004);
         else assert.equal(start.result.thread.id,'target');
         socket.close();await once(socket,'close');
