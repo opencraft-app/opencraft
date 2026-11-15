@@ -114,6 +114,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
   let port = 10000;
   let host = "127.0.0.1";
   let hubTargetPort;
+  let isolateBrowserStorage = false;
   let allowUnauthenticatedPublic = false;
   let localDesktop = false;
   let trustedInternalDesktop = false;
@@ -173,6 +174,8 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
       const value = argv[++index];
       if (!value || value.startsWith("--")) throw new Error("--data-dir requires a path");
       dataDirectory = value;
+    } else if (argument === '--isolate-browser-storage') {
+      isolateBrowserStorage = true;
     } else if (argument === '--local-access-file') {
       localAccessFile = argv[++index];
       if (!localAccessFile?.startsWith('/')) throw new Error('--local-access-file requires an absolute private file');
@@ -236,6 +239,7 @@ export function parseHeadlessArguments(argv, env = process.env, getHomeDirectory
     ...(codexAgentBridgeFile ? {codexAgentBridgeFile} : {}),
     ...(agentBridgeFile ? {agentBridgeFile} : {}),
     ...(machineName ? { machineName } : {}),
+    ...(isolateBrowserStorage ? { isolateBrowserStorage } : {}),
     ...(sshConfig ? { sshConfig } : {}),
     ...(accessControl ? { accessControl } : {}), ...(relayConnectFile ? { relayConnectFile } : {}),
     ...(humanAuthConfig ? { humanAuthConfig } : {}),
@@ -848,6 +852,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     const createWeb = options.createWebServer ?? createWorkbenchWebServer;
     web = await createWeb({
       root: webRoot,
+      instanceId: options.isolateBrowserStorage ? machineIdentity.machineId : null,
       observability,
       getExecutionHealth: options.getExecutionHealth,
       getHostReadiness: () => codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {},
@@ -945,7 +950,7 @@ export async function runHeadlessCli({ parseArguments = parseHeadlessArguments, 
       process.stdout.write('Optional human login (bundled opencraft.account plugin for local accounts): --human-auth-config ABSOLUTE_PRIVATE_JSON (local accounts and OIDC); initialize new instances at /setup with a private setupTokenFile, or recover with human-account. setupTokenFile enables instance membership; otherwise add --access-control explicitly.\n');
       process.stdout.write('Optional same-machine managed Web workspace: --local-access-file ABSOLUTE_PRIVATE_FILE (also OPENCRAFT_LOCAL_ACCESS_FILE); the same private key file must be configured at the outer managed Web entry.\n');
       for (const line of help) process.stdout.write(line + '\n');
-      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--hub-target-port PORT] [--data-dir PATH] [--machine-name NAME] [--codex-agent-bridge-config PRIVATE_JSON] [--engines dsh,pi|pi|dsh] [--default-engine dsh|pi] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
+      process.stdout.write("Usage: opencraft-server [--host 127.0.0.1|0.0.0.0] [--port 10000] [--hub-target-port PORT] [--data-dir PATH] [--isolate-browser-storage] [--machine-name NAME] [--codex-agent-bridge-config PRIVATE_JSON] [--engines dsh,pi|pi|dsh] [--default-engine dsh|pi] [--ssh-servers PRIVATE_JSON] [--ssh-public-origin HTTPS_ORIGIN | --ssh-public-access] [--ssh-require-access-key] [--ssh-access-file PRIVATE_FILE] [--allow-unauthenticated-public] [--local-desktop | --trusted-internal-desktop] [--desktop-control]\nDefault: loopback only; SSH management uses shared installation access without an extra key. --ssh-require-access-key or --ssh-access-file enables key protection. Public SSH requires explicit opt-in; every permitted visitor can use saved connections in shared mode. HTTP provides no transport encryption. Desktop requires an installed verified observer. Trusted-internal desktop trusts everyone able to access this deployment; operator-owned network admission is required. Optional desktop control requires a separate installed private native executor.\n");
       return;
     }
     const server = await startServer(args);
