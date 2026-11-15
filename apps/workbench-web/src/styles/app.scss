@@ -507,12 +507,7 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
 .app-shell-floating-overlay-root {
   // This host lives beside AppShell in body. Carry the inherited shell values
   // needed by the unchanged shared sidebar content after it moves here.
-  --sidebar-content-start: calc(8px + 6px);
   --app-shell-left-width: var(--app-shell-left-open-width);
-  .app-shell-header__window-controls-rail[data-navigation-brand] {
-    --window-controls-padding-start: var(--sidebar-content-start);
-    > .application-brand { padding-inline: 0; }
-  }
   --app-shell-header-left-slot-width: var(--app-shell-left-width);
   --app-shell-left-opacity: 1;
   position: fixed;
@@ -853,12 +848,6 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 }
 // Shared header surface removes the empty material band above application pages.
 .has-unified-sidebar {
-  /* List text starts after the panel gutter plus the row inset. Logo and footer icons use that same edge. */
-  --sidebar-content-start: calc(8px + 6px);
-  .app-shell-header__window-controls-rail[data-navigation-brand] {
-    --window-controls-padding-start: var(--sidebar-content-start);
-    > .application-brand { padding-inline: 0; }
-  }
   &[data-opencraft-window-type="browser"] .app-shell-header {
     // Shell owns two painted regions; the live panel-toolbar aperture stays
     // transparent. One pane projection drives paint, resizing and animation.

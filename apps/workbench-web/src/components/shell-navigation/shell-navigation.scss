@@ -93,7 +93,7 @@
     padding-block: var(--padding-shell-footer-block);
   }
   .shell-sidebar__navigation {
-    padding-inline-start: var(--sidebar-content-start, var(--padding-shell-sidebar-inline));
+    padding-inline-start: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline));
     scrollbar-width: none;
     .sidecar-shared-content { height: auto; }
   }
