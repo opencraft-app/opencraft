@@ -82,6 +82,12 @@ createInterface({ input: process.stdin }).on('line', line => {
       send({method:'session/update',params:{sessionId:params.sessionId,update:{sessionUpdate:'session_info_update',title:params.title}}});
       return result(frame.id,{});
     }
+    if (frame.method === '_codebuddy.ai/getUserInfo') {
+      const mode = process.env.ACP_TEST_CODEBUDDY_USER ?? 'missing';
+      if (mode === 'refused') return send({ id: frame.id, error: { code: -32000, message: 'Authentication required' } });
+      if (mode === 'present') return result(frame.id, { userInfo: { userId: 'account' } });
+      return result(frame.id, {});
+    }
     if (frame.method === 'session/cancel') { const pending = prompts.get(params.sessionId); if (pending) { clearTimeout(pending.timer); prompts.delete(params.sessionId); result(pending.id, { stopReason: 'cancelled' }); } return; }
     if (frame.method === 'session/prompt') {
       const text = params.prompt.map(item => item.text).join('');

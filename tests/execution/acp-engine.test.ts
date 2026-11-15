@@ -11,6 +11,21 @@ import type { ExecutionEngineClient } from "../../packages/appserver-client/src/
 
 const peer = resolve("tests/fixtures/acp-engine-peer.mjs");
 const client: ExecutionEngineClient = { notify() {}, async request() { throw new Error("No browser tool owner"); } };
+test("CodeBuddy account lookup reads the native user and does not open a session", async t => {
+  for (const [mode, expected] of [["present", true], ["missing", false]] as const) {
+    const f = await fixture(t, { id: "codebuddy", env: { ACP_TEST_CODEBUDDY_USER: mode } });
+    assert.equal(await f.engine.readCodeBuddyUser(), expected);
+    assert.deepEqual((await f.calls()).map(call => call.method), ["initialize", "_codebuddy.ai/getUserInfo"]);
+    await f.engine.close();
+  }
+  const refused = await fixture(t, { id: "codebuddy", env: { ACP_TEST_CODEBUDDY_USER: "refused" } });
+  await assert.rejects(refused.engine.readCodeBuddyUser(), /Authentication required\b/u);
+  assert.deepEqual((await refused.calls()).map(call => call.method), ["initialize", "_codebuddy.ai/getUserInfo"]);
+  const other = await fixture(t, { id: "codex" });
+  await assert.rejects(other.engine.readCodeBuddyUser(), /engine-specific/u);
+  assert.deepEqual(await other.calls(), []);
+});
+
 test("native model suffix parsing handles long hostile names without backtracking", () => {
   assert.deepEqual(splitModelVariant("one[reasoning=high,fast=true]"), { base: "one", parameters: "reasoning=high,fast=true" });
   assert.deepEqual(splitModelVariant("one[]"), { base: "one", parameters: "" });
