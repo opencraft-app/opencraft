@@ -1,4 +1,5 @@
 import { executionCliInstructions, type ScopedExecutionCliPort } from "@opencraft/session-capabilities/execution-cli";
+import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -248,6 +249,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         // existing flat ACP catalog exposes the shared reasoning slider without
         // having to create a throwaway native session first.
         this.projectSessionReasoning(record);
+        this.sanitizeLabels(record);
         this.sessions.set(record.id, record);
       }
       try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }
@@ -345,12 +347,18 @@ export class AcpEngine implements ExecutionEngineProvider {
     });
   }
 
+  private sanitizeLabels(session: Session): void {
+    const name = threadCliLabel(session.name);
+    const preview = threadCliLabel(session.preview ?? "") ?? "";
+    if (name !== session.name) session.name = name;
+    if (preview !== session.preview) session.preview = preview;
+  }
   private metadata(session: Session): Value {
-    const state = this.state(session.id);
-    return { id: session.id, ...(session.forkedFromId ? { forkedFromId: session.forkedFromId } : {}), ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}), cwd: session.cwd, name: session.name, model: session.model, modelProvider: this.id,
+    const state = this.state(session.id), name = threadCliLabel(session.name), preview = threadCliLabel(session.preview ?? "") ?? "";
+    return { id: session.id, ...(session.forkedFromId ? { forkedFromId: session.forkedFromId } : {}), ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}), cwd: session.cwd, name, model: session.model, modelProvider: this.id,
       reasoningEffort: session.reasoningConfig?.currentValue ?? null, createdAt: session.createdAt, updatedAt: session.updatedAt,
       ...(session.fastConfig ? { serviceTier: session.fastConfig.currentValue === session.fastConfig.onValue ? "fast" : null } : {}),
-      preview: session.preview ?? "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
+      preview, turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
       source: "appServer", engineKind: this.id, path: null, ephemeral: false,
       ...(this.options.history ? { historyMode: "paginated" } : {}),
       ...(this.id === "codex" ? this.codexPermissionProjection(session, false) : this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };

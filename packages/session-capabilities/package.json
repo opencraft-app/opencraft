@@ -11,6 +11,7 @@
     "./authenticated-mcp": "./src/authenticated-mcp.ts",
     "./thread-cli": "./src/thread-cli.ts",
     "./execution-cli": "./src/execution-cli.ts",
+    "./thread-cli-instruction": "./src/thread-cli-instruction.ts",
     "./credentials": "./src/credentials.ts"
   },
   "dependencies": {

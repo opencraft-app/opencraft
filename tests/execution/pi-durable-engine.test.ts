@@ -1349,6 +1349,8 @@ test("connected Pi scopes CLI context to each input and revokes after completion
     assert.equal((await done).status,"completed");
   }
   assert.deepEqual(issued,["pi-cli-one","pi-cli-two"]);assert.deepEqual(revoked,issued);
+  const listing=await engine.request("thread/list",{limit:10},noTools);const row=listing.data.find((entry:any)=>entry.id===thread.id);
+  assert.equal(row.preview,"hello");assert.ok(!JSON.stringify(listing).includes("/private/pi-cli-"));
 });
 
 test('queued Pi input restores its original execution CLI after reopening; edits and queue starter cannot replace authority',async t=>{

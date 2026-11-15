@@ -1,4 +1,5 @@
 import { executionCliInstructions, type ExecutionCliLease, type ScopedExecutionCliPort } from "@opencraft/session-capabilities/execution-cli";
+import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
 import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
@@ -147,6 +148,10 @@ export class PiEngine {
         try {
           const record = JSON.parse(await readFile(join(this.options.directory, file), "utf8"));
           if (record.format !== "pi-durable-1" || `${record.id}.json` !== file || !Array.isArray(record.tools)) throw new Error("Invalid Pi session index");
+          const name = threadCliLabel(record.name);
+          const preview = threadCliLabel(record.preview ?? "") ?? "";
+          if (name !== record.name) record.name = name;
+          if (preview !== record.preview) record.preview = preview;
           this.sessions.set(record.id, record);
           record.needsResume = record.pendingRecovery === true;
         } catch {
@@ -472,7 +477,8 @@ export class PiEngine {
     });
   }
   private thread(session: Session, turns: PiTurn[] = []) {
-    return { id: session.id, sessionId: session.id, forkedFromId: session.forkedFromId ?? null, parentThreadId: null, name: session.name, preview: session.preview,
+    const name = threadCliLabel(session.name), preview = threadCliLabel(session.preview ?? "") ?? "";
+    return { id: session.id, sessionId: session.id, forkedFromId: session.forkedFromId ?? null, parentThreadId: null, name, preview,
       ephemeral: session.ephemeral === true, projectId: session.projectId ?? null, historyMode: "paginated", modelProvider: "pi", model: session.model, reasoningEffort: session.effort ?? null,
       createdAt: session.createdAt, updatedAt: session.updatedAt, recencyAt: session.updatedAt,
       status: session.failed ? { type: "systemError" } : session.active ? { type: "active", activeFlags: [] } : { type: "idle" },
@@ -994,10 +1000,12 @@ export class PiEngine {
         startedAt: Math.floor(createdAtMs / 1000), completedAt: null, durationMs: null };
       if (canAdmit && !await canAdmit()) throw new ScheduleAdmissionDeferred();
       if (!this.admissionOpen()) throw new ScheduleAdmissionDeferred();
+      // The preview is user input, not the execution-scoped CLI note appended below.
+      const previewText = textOf(content).slice(0, 200);
       content = await this.withCli(session.id, turnId, clientId ?? "", content, typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
       session.active = turn; session.pendingRecovery = true;
       const previousPreview = session.preview, previousUpdated = session.updatedAt;
-      session.preview ||= textOf(content).slice(0, 200); session.updatedAt = seconds();
+      session.preview ||= previewText; session.updatedAt = seconds();
       try {
         await this.save(session);
         if (!this.admissionOpen() || canAdmit && !await canAdmit()) {

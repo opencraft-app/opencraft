@@ -36,6 +36,8 @@ CodeBuddy、Claude Code 等 ACP 会话如果用 `thought_level` 或 `effort` 声
 
 发送时才创建新线程，显式提交 agentId、模型、思考深度及权限；第一条消息包含源线程的稳定 conversation reference、用户文字和附件。新 Agent 使用当前执行的 OpenCraft 线程 CLI `thread output` 分页读取旧上下文，引用本身不携带历史，也不授予访问权限。Host 提供该次输入专属的 launcher 路径，不把 bearer 放进提示词或持久草稿。CLI 按发起人的委托、源线程 private ACL 和协作空间成员关系重新授权，执行结束撤销 launcher。Web 默认 `/appserver` 与 `/apphost` 共用同一执行准入及 CLI 签发逻辑；原生开始回执或 Turn 启动事件将输入绑定到实际 Turn，不能用客户端提供的 Turn ID 代替。若原生 Agent 沙箱限制 loopback，沿用该 Agent 的现有权限审批。认证排队输入把原始签发证明保存在原生私有队列中以支持重开；编辑、重放与手动启动队列不替换该证明，队列及历史的客户端投影不携带它。
 
+执行级 CLI 说明仍然随当次用户输入发送，因为 ACP 没有按输入传递系统或开发者指令的通用通道，而 launcher 又只对当次输入有效；会话级系统提示无法预先携带未来的 launcher。Claude Code 与 CodeBuddy 只在 session/new 接受系统提示，Codex ACP 的系统提示变更要求卸载已持久化会话，Pi 的开发者指令属于会话状态且会被排队输入覆盖。为避免原生 CLI 把说明写进用户消息后又在重开历史时显示，说明带稳定的 `[opencraft:thread-cli:v1]` 标记和固定模板，原生历史投影只删除完整的生成块；旧版无标记的生成说明按完整模板识别。用户自己的文字、附件和其他内容块保持不变，内部 launcher 路径不进入投影。
+
 服务端在新建准入和响应交付时都检查源线程权限，新线程继承源线程的 private/shared 可见性和协作空间，不使用当前选择空间覆盖来源。原线程和原生 session 保持原 owner；不迁移工具执行、审批或原生 session，不导出完整历史文件。失败时保留原页草稿和附件，以非阻塞通知提供重试。创建成功后 Router PUSH 到新会话（草稿晋升仍由原有 owner replace），返回可回到旧线程；晚到结果不能抢回用户已经离开的页面。
 
 ## 输入与容器

@@ -7,6 +7,7 @@ import { createInterface } from "node:readline";
 import { join, isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
+import { threadCliFreeText } from "@opencraft/session-capabilities/thread-cli-instruction";
 
 type Value = Record<string, any>;
 type Turn = Value & { id: string; items: Value[] };
@@ -17,10 +18,21 @@ const cache = new Map<string, { stamp: string; turns: Turn[] }>();
 const contained = (path: string) => containedNativeHistoryPath(home, path);
 const text = (content: any): string => typeof content === "string" ? content : Array.isArray(content)
   ? content.filter(block => block && ["text", "Text", "input_text", "output_text"].includes(block.type)).map(block => block.text ?? "").join("") : "";
+/** Native CLIs persist the execution-scoped CLI note as ordinary user content.
+ * Drop only complete generated blocks; every other block is user content. */
+const userText = (value: unknown): string | null => typeof value === "string" ? threadCliFreeText(value) : null;
+const userContent = (content: any): Value[] => {
+  const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
+  return blocks.flatMap((block: Value) => {
+    if (!block || !["text", "Text", "input_text", "output_text"].includes(block.type) || typeof block.text !== "string") return block ? [block] : [];
+    const value = threadCliFreeText(block.text);
+    return value === null ? [] : [{ ...block, text: value }];
+  });
+};
 function codexItem(item: Value): Value {
   const camel = (value: string) => value.replace(/_([a-z])/gu, (_, letter) => letter.toUpperCase()).replace(/^[A-Z]/u, letter => letter.toLowerCase());
   const type = item.type[0].toLowerCase() + item.type.slice(1);
-  if (type === "userMessage") return { ...item, type, content: item.content };
+  if (type === "userMessage") return { ...item, type, content: userContent(item.content) };
   if (type === "agentMessage") return { id: item.id, type, text: text(item.content), phase: item.phase ?? null };
   if (type === "reasoning") return { id: item.id, type, summary: (item.summary ?? []).map((part: any) => typeof part === "string" ? part : part.text ?? ""), content: (item.content ?? []).map((part: any) => typeof part === "string" ? part : part.text ?? "") };
   const converted: Value = Object.fromEntries(Object.entries(item).map(([key, value]) => [key.replace(/_([a-z])/gu, (_, letter) => letter.toUpperCase()), value]));
@@ -53,9 +65,11 @@ async function readCodex(ranges: readonly CodexHistoryRange[]): Promise<Turn[]> 
       upsert(codexItem(p.item));
     } else if (["user_message", "agent_message", "agent_reasoning"].includes(p.type) && current) {
       const kind = p.type === "user_message" ? "userMessage" : p.type === "agent_message" ? "agentMessage" : "reasoning";
-      const item = kind === "userMessage" ? { type: kind, content: [{ type: "text", text: p.message ?? "", text_elements: [] }] }
+      const message = kind === "userMessage" ? userText(p.message) : null;
+      if (kind === "userMessage" && message === null) continue;
+      const item = kind === "userMessage" ? { type: kind, content: [{ type: "text", text: message!, text_elements: [] }] }
         : kind === "reasoning" ? { type: kind, summary: [], content: [p.text ?? ""] } : { type: kind, text: p.message ?? "" };
-      if (!current.items.some((old: Value) => old.type === kind && (kind === "userMessage" ? text(old.content) === p.message : old.text === p.message))) upsert({ id: `${current.id}:${kind}:${current.items.length}`, ...item });
+      if (!current.items.some((old: Value) => old.type === kind && (kind === "userMessage" ? text(old.content) === message : old.text === p.message))) upsert({ id: `${current.id}:${kind}:${current.items.length}`, ...item });
     } else if (["task_complete", "turn_aborted"].includes(p.type)) {
       const turn = turns.find(turn => turn.id === p.turn_id) ?? current;
       if (turn) { turn.status = p.type === "turn_aborted" ? "interrupted" : "completed"; turn.completedAtMs = Date.parse(typeof p.completed_at === "string" ? p.completed_at : record.timestamp); }
@@ -220,8 +234,12 @@ async function readCliTranscript(path: string, nativeId: string): Promise<Turn[]
         if (record.type !== "message") continue;
         const blocks = cliBlocks(record.content);
         if (record.role === "user") {
+          const prompts = blocks.filter(block => ["text", "input_text"].includes(block.type)).flatMap(block => {
+            const value = threadCliFreeText(cliText(block)); return value === null ? [] : [{ type: "text", text: value, text_elements: [] }];
+          });
+          if (!prompts.length) continue;
           start(String(record.id || turns.length + 1), record.timestamp);
-          current!.items.push({ id: `${current!.id}:user`, type: "userMessage", content: blocks.filter(block => ["text", "input_text"].includes(block.type)).map(block => ({ type: "text", text: cliText(block), text_elements: [] })) });
+          current!.items.push({ id: `${current!.id}:user`, type: "userMessage", content: prompts });
         } else if (record.role === "assistant" && current) {
           for (const [index, block] of blocks.entries()) {
             if (block.type === "output_text" || block.type === "text") current.items.push({ id: `${record.id || current.id}:${index}`, type: "agentMessage", text: cliText(block) });
@@ -235,10 +253,12 @@ async function readCliTranscript(path: string, nativeId: string): Promise<Turn[]
       } else if (record.type === "user" || record.type === "assistant") {
         const blocks = cliBlocks(record.message?.content);
         const results = blocks.filter(block => block.type === "tool_result");
-        const prompts = blocks.filter(block => block.type === "text" || block.type === "input_text");
+        const prompts = blocks.filter(block => block.type === "text" || block.type === "input_text").flatMap(block => {
+          const value = threadCliFreeText(cliText(block)); return value === null ? [] : [{ type: "text", text: value, text_elements: [] }];
+        });
         if (record.type === "user" && prompts.length) start(String(record.uuid || turns.length + 1), record.timestamp);
         if (!current) continue;
-        if (record.type === "user" && prompts.length) current.items.push({ id: `${current.id}:user`, type: "userMessage", content: prompts.map(block => ({ type: "text", text: cliText(block), text_elements: [] })) });
+        if (record.type === "user" && prompts.length) current.items.push({ id: `${current.id}:user`, type: "userMessage", content: prompts });
         for (const block of results) {
           const tool = typeof block.tool_use_id === "string" ? tools.get(block.tool_use_id) : undefined;
           if (!tool) continue;

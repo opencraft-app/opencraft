@@ -1,0 +1,57 @@
+{
+ "entry": {
+  "id": 10,
+  "kind": "opencraft.input",
+  "data": {
+   "turnId": "pi_11111111-2222-3333-4444-555555555555:turn:client:input-1",
+   "clientId": "input-1",
+   "input": [
+    {
+     "type": "text",
+     "text": "查一下旧会话",
+     "text_elements": []
+    }
+   ],
+   "additionalContext": null,
+   "createdAtMs": 1794768706769,
+   "turnTrigger": null
+  },
+  "model": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "查一下旧会话"
+     },
+     {
+      "type": "text",
+      "text": "OpenCraft execution-scoped thread CLI: '/tmp/opencraft-preview/data/connected-execution-cli/0123456789abcdef/opencraft'. Use this exact executable in place of opencraft for thread commands. It is authorized only for this input and its initiating person. A conversation reference does not grant access. This launcher uses a loopback connection; if your Agent sandbox blocks it, request approval through its existing permission flow. Read referenced history with thread output; follow history.nextCursor with --cursor when needed."
+     }
+    ],
+    "timestamp": 1794768706783
+   }
+  ],
+  "byTaskId": 1
+ },
+ "nativeUserEntry": {
+  "id": 11,
+  "kind": "pi.user",
+  "model": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "查一下旧会话"
+     },
+     {
+      "type": "text",
+      "text": "OpenCraft execution-scoped thread CLI: '/tmp/opencraft-preview/data/connected-execution-cli/0123456789abcdef/opencraft'. Use this exact executable in place of opencraft for thread commands. It is authorized only for this input and its initiating person. A conversation reference does not grant access. This launcher uses a loopback connection; if your Agent sandbox blocks it, request approval through its existing permission flow. Read referenced history with thread output; follow history.nextCursor with --cursor when needed."
+     }
+    ],
+    "timestamp": 1794768706783
+   }
+  ]
+ }
+}
