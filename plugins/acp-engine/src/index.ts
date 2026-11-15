@@ -243,6 +243,11 @@ export class AcpEngine implements ExecutionEngineProvider {
         if (!file.startsWith(this.threadPrefix) || !/^[a-zA-Z0-9_-]+\.json$/u.test(file)) continue;
         const record = JSON.parse(await readFile(join(this.options.dataDirectory, file), "utf8")) as Session;
         if (record.schemaVersion !== 1 || !safeId(record.id) || file !== `${record.id}.json` || !isAbsolute(record.cwd) || typeof record.nativeId !== "string" || !Array.isArray(record.tools)) throw new Error("Invalid ACP routing metadata");
+        // Records written before thought levels were projected per model still
+        // carry the session reasoning config. Rebuild the read projection so an
+        // existing flat ACP catalog exposes the shared reasoning slider without
+        // having to create a throwaway native session first.
+        this.projectSessionReasoning(record);
         this.sessions.set(record.id, record);
       }
       try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }

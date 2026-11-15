@@ -304,6 +304,24 @@ test("CodeBuddy publishes advertised thought levels on every flat model and appl
   assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, prompts);
 });
 
+test("persisted flat ACP records recover per-model reasoning without a new native session", async t => {
+  const f = await fixture(t, { id: "codebuddy", env: { ACP_TEST_FLAT_REASONING: "1" } });
+  const created = await f.engine.request("thread/start", {}, client);
+  await f.engine.close();
+  const path = join(f.root, "data", `${created.thread.id}.json`);
+  const legacy = JSON.parse(await readFile(path, "utf8"));
+  delete legacy.reasoningModels;
+  await writeFile(path, JSON.stringify(legacy));
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  const catalog = (await restored.request("model/list", {}, client)).data;
+  for (const model of catalog) {
+    assert.deepEqual(model.supportedReasoningEfforts.map((effort: any) => effort.reasoningEffort), ["low", "medium", "high", "xhigh", "max", "enabled"],
+      "the persisted thought-level options must reach every flat model");
+    assert.equal(model.defaultReasoningEffort, null);
+  }
+  assert.equal((await restored.request("thread/read", { threadId: created.thread.id }, client)).thread.reasoningEffort, "high");
+});
+
 test("Codex resumes before applying cold model/reasoning/Fast selection and supports advertised boolean Fast", async t => {
   const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1", ACP_TEST_BOOLEAN_FAST: "1" } });
   const created = await f.engine.request("thread/start", {}, client); await f.engine.close();
