@@ -108,7 +108,8 @@ export class ThreadAccessSession {
     private readonly restoreCreator?: (threadId: string) => Promise<void>,
     private readonly assertCurrent: () => void = () => {},
     private readonly notes?: { exchange(serverId: string, threadId: string, update: string, vector: string): {update: string} },
-    private readonly admittedCatalogOwner = false) {
+    private readonly admittedCatalogOwner = false,
+    private readonly anonymousHandoff: () => boolean = () => false) {
     this.unsubscribe = store.subscribe(policy => {
       const keys=policy?[JSON.stringify([policy.serverId,policy.threadId])]:[...this.seen];
       for(const key of keys) {
@@ -155,8 +156,8 @@ export class ThreadAccessSession {
     }
     if (packet.method === "thread/start" && params.handoffSource !== undefined) {
       const source = object(params.handoffSource);
-      if (!validId(source.threadId) || Object.keys(source).some(key => key !== "threadId") || !this.context
-        || !this.store.actors.isCurrent(this.context) || !this.allowed(source.threadId)) {
+      if (!validId(source.threadId) || Object.keys(source).some(key => key !== "threadId") || !(this.context ? this.store.actors.isCurrent(this.context) : this.anonymousHandoff())
+        || !this.allowed(source.threadId)) {
         if (packet.id !== undefined) this.emit(this.denial(packet)); return true;
       }
     }
@@ -236,7 +237,7 @@ export class ThreadAccessSession {
     const result = object(packet.result);
     if (pending?.method === 'initialize' && !packet.error) {
       const capabilities = object(result.capabilities), extensions = object(capabilities.extensions);
-      extensions['opencraft/thread-access'] = {version:1,agentHandoff:!!this.context};
+      extensions['opencraft/thread-access'] = {version:1,agentHandoff:this.context ? this.store.actors.isCurrent(this.context) : this.anonymousHandoff()};
       // Raw engine summaries can include inaccessible records. Only an admitted
       // history projection may expose a Merkle root through this lane.
       if (!this.admittedCatalogOwner || object(extensions['opencraft/thread-directory-merkle']).admission !== 'reader')

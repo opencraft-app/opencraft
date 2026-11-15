@@ -251,3 +251,17 @@ Server before opening its owner. Legacy string-path repositories with independen
 writers retain live SQLite reads; they cannot safely adopt this projection without
 one write owner or a synchronous invalidation channel. No timer, TTL or filesystem
 watch is used as an authorization freshness guarantee.
+
+### Anonymous Agent handoff
+
+When no identity adapter, human login, instance membership or Hub enrollment is
+configured, Headless permits Agent handoff under an internal deployment operator.
+The browser remains anonymous: this authority is used only for the handoff
+reference RPC and execution delegation, and does not establish a login or grant
+membership administration. Its resource checks use the existing anonymous Thread
+ACL, so private conversations remain unavailable. Initializing collaboration
+spaces withdraws this authority. Each server start fences previous operator
+execution delegations; starting with identity configured disables the operator.
+Authenticated deployments, including requests without a login and explicit local
+access bypasses, never inherit this authority. Execution CLI credentials retain
+their Thread, input and execution scope and require the native Turn binding.

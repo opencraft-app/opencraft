@@ -20,7 +20,8 @@ export class AgentDriverSession {
   constructor(private readonly collaboration: Collaboration,
     private readonly serverForThread: (threadId: string) => string,
     private readonly emitFrame: (frame: string) => void,
-    private readonly signCli?: (session: import("@opencraft/session-capabilities").CapabilitySession) => string) {}
+    private readonly signCli?: (session: import("@opencraft/session-capabilities").CapabilitySession) => string,
+    private readonly anonymousOperator?: () => TransportSubmissionContext["actorContext"]) {}
   private emit(frame: string) { if (!this.closed) this.emitFrame(frame); }
   project(raw: string): string {
     const message = JSON.parse(raw);
@@ -49,13 +50,15 @@ export class AgentDriverSession {
   async prepare(frame: string, context: TransportSubmissionContext): Promise<string | null> {
     if (this.closed) throw new Error("Transport closed");
     const message = JSON.parse(frame), params = message.params ?? {};
+    const operator = context.actorContext ? undefined : this.anonymousOperator?.();
+    const actor = context.actorContext ?? operator;
     if (message.method === "initialize") this.initializing.add(this.key(message));
     if (message.method === COLLABORATION_METHOD) {
       const envelope = {id:message.id,...(message[LOGICAL_CLIENT_FIELD] === undefined ? {} : {[LOGICAL_CLIENT_FIELD]:message[LOGICAL_CLIENT_FIELD]})};
       try {
-        if (!context.actorContext) throw Object.assign(new Error("actor_authentication_required"), {code:"actor_authentication_required",status:401});
+        if (!actor || operator && params.action !== "reference") throw Object.assign(new Error("actor_authentication_required"), {code:"actor_authentication_required",status:401});
         context.resourceOwner?.assertCurrent();
-        const result = await this.collaboration.command(context.actorContext, params);
+        const result = await this.collaboration.command(actor, params);
         context.resourceOwner?.assertCurrent();
         this.emit(JSON.stringify({...envelope,result}));
       } catch (error) {
@@ -70,12 +73,12 @@ export class AgentDriverSession {
     }
     // Renderer fields never confer execution identity, including on anonymous input.
     delete params.__opencraftExecutionCli;
-    if (context.actorContext && ["turn/start", "thread/queue/add", "turn/steer"].includes(message.method)) {
+    if (actor && ["turn/start", "thread/queue/add", "turn/steer"].includes(message.method)) {
       const threadId = params.threadId;
       if (typeof threadId !== "string" || !threadId) throw new Error("Execution Thread required");
       const inputId = params.clientUserMessageId ?? `human-input:${randomUUID()}`;
       if (typeof inputId !== "string" || !inputId || inputId.length > 512) throw new Error("Invalid execution input identity");
-      this.collaboration.authorizeExecution(context.actorContext, threadId, inputId, params.input ?? [], this.serverForThread(threadId));
+      this.collaboration.authorizeExecution(actor, threadId, inputId, params.input ?? [], this.serverForThread(threadId));
       if (message.method === "turn/start" && message.id !== undefined) this.pendingInputs.set(this.key(message), {threadId, inputId});
       message.params = { ...params, clientUserMessageId: inputId,
         ...(this.signCli && ["turn/start", "thread/queue/add"].includes(message.method) ? {__opencraftExecutionCli:this.signCli({serverId:this.serverForThread(threadId),threadId,execution:{inputId,executionId:randomUUID()}})} : {}) };
@@ -91,8 +94,9 @@ export class AgentDriverTransport implements DuplexTransport {
   private emit(frame: string) { for (const listener of this.listeners) listener(frame); }
   constructor(private readonly inner: DuplexTransport, collaboration: Collaboration,
     serverForThread: (threadId: string) => string,
-    signCli?: (session: import("@opencraft/session-capabilities").CapabilitySession) => string) {
-    this.session = new AgentDriverSession(collaboration, serverForThread, frame => this.emit(frame), signCli);
+    signCli?: (session: import("@opencraft/session-capabilities").CapabilitySession) => string,
+    anonymousOperator?: () => TransportSubmissionContext["actorContext"]) {
+    this.session = new AgentDriverSession(collaboration, serverForThread, frame => this.emit(frame), signCli, anonymousOperator);
     this.unsubscribe = inner.subscribeMessage(raw => this.emit(this.session.project(raw)));
   }
   get status() { return this.inner.status; }

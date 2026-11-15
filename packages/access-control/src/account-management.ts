@@ -1,3 +1,4 @@
+import { isDeploymentOperator } from "./deployment-operator.js";
 import { sqliteTransaction } from "@opencraft/sqlite-node";
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
@@ -37,7 +38,7 @@ export class HumanAccountManagement {
     const managed = openServerRepository(path, "account-onboarding");
     this.#db = managed.database; this.#closeDatabase = managed.close;
     if (!this.#db.prepare('SELECT id FROM account_setup WHERE id=1').get()) {
-      const existing = actors.list().some(actor => actor.kind === 'human') || accounts.listLocalAccounts().length > 0
+      const existing = actors.list().some(actor => actor.kind === 'human' && !isDeploymentOperator(actors, actor.id)) || accounts.listLocalAccounts().length > 0
         || members.listActors().length > 0 || members.list().length > 0;
       this.#db.prepare('INSERT INTO account_setup VALUES(1,?,?,NULL,NULL,NULL)').run(existing ? 'complete' : 'new', existing ? 'existing' : null);
     }
@@ -76,7 +77,7 @@ export class HumanAccountManagement {
       const operation = this.#transaction(() => {
         let row = this.#row(); check(row.state !== 'complete', 'setup_already_completed');
         if (row.state === 'new') {
-          check(!this.actors.list().some(a => a.kind === 'human') && !this.accounts.listLocalAccounts().length
+          check(!this.actors.list().some(a => a.kind === 'human' && !isDeploymentOperator(this.actors, a.id)) && !this.accounts.listLocalAccounts().length
             && !this.members.listActors().length && !this.members.list().length, 'existing_installation');
           this.#db.prepare("UPDATE account_setup SET state='pending',mode=?,username=?,subject=? WHERE id=1").run(input.mode, name, randomUUID());
           row = this.#row();
@@ -112,7 +113,7 @@ export class HumanAccountManagement {
     this.requireAdministrator(context);
     return { accounts: this.accounts.listLocalAccounts().map(account => ({ ...account,
       actorId: this.actors.findHuman({ provider: 'local', subject: account.id })?.id ?? null })),
-      humans: this.actors.list().filter(actor => actor.kind === 'human').map(actor => ({ id: actor.id, displayName: actor.displayName, enabled: actor.enabled })),
+      humans: this.actors.list().filter(actor => actor.kind === 'human' && !isDeploymentOperator(this.actors, actor.id)).map(actor => ({ id: actor.id, displayName: actor.displayName, enabled: actor.enabled })),
       members: this.members.listActors() };
   }
   invite(context: ActorContext) {

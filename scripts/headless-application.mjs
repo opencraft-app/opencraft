@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { deploymentOperator } from "../packages/access-control/src/deployment-operator.ts";
 import { localExecutionCli } from "../packages/session-capabilities/src/execution-cli.ts";
 import { ServerSpacesRuntime } from '../packages/access-control/src/server-spaces-runtime.ts';
 import { ServerSpacesSession } from '../packages/access-control/src/server-spaces-session.ts';
@@ -502,6 +503,18 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     await serverSpaces.ready;
     threadAccess = new ThreadAccessStore(serverStorage, actorStore, { permissionOwner: serverStorage.database,
       spaces:{allows:(actorId,serverId,threadId)=>!serverSpaces.initialized||actorId&&actorStore.get(actorId)?.kind==='session'||serverSpaces.allows(actorId,serverId,threadId),subscribe:listener=>serverSpaces.subscribe(listener)} });
+    // Configuration, never missing request credentials, selects the anonymous authority.
+    const anonymousDeployment = !membership && !humanConfiguration && !composition.createIdentity
+      && !relayConfiguration && !!hubController.node
+      && !hubController.node.store.state.origin && !hubController.node.store.state.authority;
+    const operator = deploymentOperator(actorStore, anonymousDeployment, () => !serverSpaces.initialized
+      && !hubController.node.store.state.origin && !hubController.node.store.state.authority);
+    const anonymousHandoff = () => !!operator.context();
+    const signExecutionCli = session => executionCliSourceToken(capabilityKey, session);
+    const anonymousDriver = (transport, hostId) => anonymousDeployment
+      ? new AgentDriverTransport(transport, actorCollaboration,
+        threadId => conversationExecution.serverForHost(hostId, threadId), signExecutionCli, operator.context)
+      : transport;
     threadNotes = new ThreadNoteStore(serverStorage);
     const createThreadPolicySession = (hostId, context, emit) => new ThreadAccessSession(threadAccess,
       (threadId, serverId, method) => {
@@ -518,7 +531,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         context.resourceOwner?.assertCurrent();
         if (context.actorContext && (!actorStore.isCurrent(context.actorContext) || instanceAccess && !instanceAccess.admitsActor(context.actorContext.actorId)))
           throw new Error('Conversation access expired');
-      }, threadNotes);
+      }, threadNotes, false, () => ['local-codex','opencraft-server'].includes(hostId) && anonymousHandoff());
     const createThreadAccessSession=(hostId,context,emit)=>{
       // Anonymous installations retain their legacy path until an explicit human
       // administrator initializes collaboration membership.
@@ -537,8 +550,8 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       };
     };
     actorCollaboration = new Collaboration(serverStorage, actorStore,
-      conversationExecution, Date.now, actorId => !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage,
-      (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, context));
+      conversationExecution, Date.now, actorId => operator.owns(actorId) ? anonymousHandoff() : !instanceAccess || instanceAccess.admitsActor(actorId), orchestrationStorage,
+      (context, ref) => threadAccess.allows(ref.serverId, ref.threadId, operator.owns(context.actorId) ? undefined : context));
 
     threadOrchestration = new ThreadOrchestrationBroker(actorCollaboration, createThreadOrchestrationExecution(() => appHostServer, {
       enabled: ['codex', ...engines.filter(engine => engine !== 'dsh')], prepared: id => actorCollaboration.spawnPreparation(id),
@@ -722,7 +735,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         const transport = new ModelPolicyTransport((() => {
         if (hostId === 'opencraft-server') return new TokenUsageQueryTransport(new MachineIdentityTransport(machineIdentity,'OpenCraft',async () =>
           new AgentDriverTransport(new ExecutionOwnershipTransport(new ModelCapabilityTransport(new ImageModelTransport(new WebSocketTransport({url:agent.resolveWebsocketUrl?await agent.resolveWebsocketUrl():agent.websocketUrl,createSocket:url=>new WebSocket(url)}), new ImageGenerationConfiguration(join(dataDirectory,'models'), new ModelCredentialRepository(join(dataDirectory,'models')))), {read:()=>new ModelConfigurationRepository(join(dataDirectory,'models')).read(),credential:async ref=>(await new ModelCredentialRepository(join(dataDirectory,'models')).resolve(ref))??process.env[ref]}), executionStore, resolveExecutionNative), actorCollaboration,
-            threadId => conversationExecution.serverForHost('opencraft-server', threadId), session=>executionCliSourceToken(capabilityKey,session))), usageQueries, actorId => actorStore.get(actorId));
+            threadId => conversationExecution.serverForHost('opencraft-server', threadId), signExecutionCli, operator.context)), usageQueries, actorId => actorStore.get(actorId));
         const remote = remoteServers.get(hostId);
         if (remote) return new MachineIdentityTransport(null, "Codex", () => createSshCodexEngineAdapter(remote, dataDirectory, createThreadMetadata, storageOpened(hostId)));
         if (hostId.startsWith("ssh:")) {
@@ -730,7 +743,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           return new MachineIdentityTransport(null, "Codex", () => createSshCodexEngineAdapter(binding, dataDirectory, createThreadMetadata, storageOpened(hostId)));
         }
         if (hostId !== "local-codex") throw new Error(`Unknown server Host ${hostId}`);
-        return new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => createServerCodexBridge(options.createCodexTransport?.() ?? new CodexEngineAdapter({
+        return anonymousDriver(new McpAppsTransport(new MachineIdentityTransport(machineIdentity, "Codex", () => createServerCodexBridge(options.createCodexTransport?.() ?? new CodexEngineAdapter({
           createSessionMcp: async () => {
             await capabilitiesReady;
             const reservation = capabilityMcp.prepareExecution();
@@ -811,7 +824,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           sign:session=>executionCliSourceToken(capabilityKey,session),
           ...bridgeSessionMcp,
           started:(threadId,inputId,turnId)=>actorCollaboration.executionStarted(threadId,inputId,turnId),
-        })), mcpApps);
+        })), mcpApps), hostId);
         })(), modelPolicyPath, hostId === 'opencraft-server' ? 'dsh' : 'codex');
         const scopedTransport = identity?.executionEnvironment && ['local-codex', 'opencraft-server'].includes(hostId)
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
@@ -866,7 +879,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       createAppServerAccessSession: (context, emit) => createThreadAccessSession("opencraft-server", context, emit),
       createAppServerDriverSession: emit => new AgentDriverSession(actorCollaboration,
         threadId => conversationExecution.serverForHost('opencraft-server', threadId), emit,
-        session => executionCliSourceToken(capabilityKey, session)),
+        signExecutionCli, operator.context),
       createAppServerQuerySession: emit => new TokenUsageQuerySession(usageQueries, emit, actorId => actorStore.get(actorId)),
       appServerTarget: agent.websocketUrl,
       resolveAppServerTarget: agent.resolveWebsocketUrl,
