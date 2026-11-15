@@ -567,7 +567,9 @@ model menus return to the existing editor on dismissal, while keyboard opening k
 normal menu/trigger focus and navigating to another surface revokes the return.
 
 `chat.agentAvailability` filters only new conversations, with the same scoped
-preference consumed by Chat settings and onboarding. All-off is valid and offers
+preference consumed by Chat settings and onboarding. The new-draft menu applies
+the active settings host's switches to every host's models, so an agent turned
+off there cannot be chosen from another host. All-off is valid and offers
 Manage agents; a populated model list does not repeat that action. A host-level
 catalog is omitted when an Agent tab already uses that same product name.
 Unavailable selections disable both the send button and submission.
