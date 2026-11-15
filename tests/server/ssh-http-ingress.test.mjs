@@ -10,6 +10,7 @@ import { createSshHttpIngress, classifyIngress } from '../../plugins/ssh-http-in
 import { createProtocolIngress, classifyProtocol } from '../../scripts/web-deployment/protocol-ingress.mjs';
 import { createSshNativeRpcGateway } from '../../scripts/ssh-native-rpc-gateway.mjs';
 import { AppHostServer } from '../../packages/app-host-server/src/index.ts';
+import { generateEd25519KeyPair } from '../support/ssh-ed25519.mjs';
 
 const identity = () => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs1', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
@@ -22,7 +23,7 @@ const get = (port, path) => new Promise((resolve, reject) => {
 });
 
 test('dynamic SSH keys retain trusted submission context and retire when their authority is revoked', { timeout: 15_000 }, async () => {
-  const host = ssh2.utils.generateKeyPairSync('ed25519'), user = ssh2.utils.generateKeyPairSync('ed25519');
+  const host = generateEd25519KeyPair(), user = generateEd25519KeyPair();
   const contexts = [], listeners = new Set(); let allowed = true;
   const adapter = {
     get status() { return { state: 'open' }; },
