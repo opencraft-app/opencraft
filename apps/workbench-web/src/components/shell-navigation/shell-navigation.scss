@@ -450,3 +450,14 @@
   width: max-content;
   > .application-brand { flex: 0 0 auto; }
 }
+// The server edge drawer occupies the sidebar's start edge. Add the same
+// gutter to the brand, list and bottom actions as the context list already
+// receives, so their inline origins stay aligned when the drawer is present.
+.has-server-drawer .shell-sidebar__navigation.sidecar-content-slot,
+.app-shell-floating-overlay-root[data-server-edge-present] .shell-sidebar__navigation.sidecar-content-slot {
+  padding-inline-start: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline) + var(--spacing-shell-server-edge-gutter));
+}
+.has-server-drawer .app-shell-header__window-controls-rail[data-navigation-brand],
+.app-shell-floating-overlay-root[data-server-edge-present] .app-shell-header__window-controls-rail[data-navigation-brand] {
+  padding-inline-start: calc(var(--window-controls-padding-start) + var(--spacing-shell-server-edge-gutter));
+}
