@@ -9,7 +9,7 @@ import { ConnectedAgentHistory } from "../../apps/local-agent-host/src/connected
 import { AcpEngine } from "../../plugins/acp-engine/src/index.js";
 
 const id = "11111111-2222-3333-4444-555555555555";
-async function fixture(t: test.TestContext, provider: "codex" | "cursor") {
+async function fixture(t: test.TestContext, provider: "codex" | "cursor" | "codebuddy" | "claude-code") {
   const home = await mkdtemp(join(tmpdir(), "connected-history-")), history = new ConnectedAgentHistory(provider, home);
   t.after(async () => { await history.close(); await rm(home, { recursive: true, force: true }); });
   return { home, history };
@@ -249,4 +249,42 @@ for (const provider of ["codex", "cursor"] as const) test(`${provider} context e
   if (provider === "codex") assert.equal(await readFile(source!, "utf8"), original);
   const untitled = await reader.export(id, { threadId: provider + "_source", title: null, cwd: "/workspace" });
   assert.equal(untitled.title, null, "missing native titles remain missing for the client's localized fallback");
+});
+
+test("CodeBuddy and Claude reopen from their own project transcripts and stay empty before the CLI writes one", async t => {
+  const buddy = "01a1df41-6ae7-7bec-81df-93138cca7a50", claude = "53d49b27-0f9b-473f-b797-a58ff3812e55";
+  const codebuddy = await fixture(t, "codebuddy"), claudeHome = await fixture(t, "claude-code");
+  const cwd = "/data/code/workspace";
+  assert.deepEqual(await codebuddy.history.read(buddy, { threadId: "public", cwd }), { data: [], nextCursor: null, backwardsCursor: null, itemsPaginationByTurnId: {} });
+  const buddyFile = join(codebuddy.home, "projects", "data-code-workspace", `${buddy}.jsonl`);
+  await mkdir(join(codebuddy.home, "projects", "data-code-workspace"), { recursive: true });
+  const line = (value: unknown) => JSON.stringify(value) + "\n";
+  await writeFile(buddyFile, line({ type: "file-history-snapshot", cwd, id: "snap" })
+    + line({ type: "message", role: "user", id: "u1", sessionId: buddy, timestamp: 1000, content: [{ type: "input_text", text: "你好" }] })
+    + line({ type: "message", role: "assistant", id: "a1", sessionId: buddy, timestamp: 1100, content: [{ type: "output_text", text: "在的" }] }));
+  const page = await codebuddy.history.read(buddy, { threadId: "public", cwd, limit: 10, itemsView: "full", sortDirection: "desc" });
+  assert.equal(page.data[0].id, "u1"); assert.equal(page.data[0].items[0].content[0].text, "你好");
+  assert.equal(page.data[0].items[1].text, "在的"); assert.equal(page.data[0].status, "completed");
+  await writeFile(buddyFile, line({ type: "message", role: "user", id: "other", sessionId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", content: [{ type: "input_text", text: "wrong" }] }));
+  await assert.rejects(codebuddy.history.read(buddy, { cwd }), /Could not read the saved agent conversation/);
+  const claudeFile = join(claudeHome.home, "projects", "-data-code-workspace", `${claude}.jsonl`);
+  await mkdir(join(claudeHome.home, "projects", "-data-code-workspace", `${claude}`, "subagents"), { recursive: true });
+  await writeFile(join(claudeHome.home, "projects", "-data-code-workspace", `${claude}`, "subagents", `${claude}.jsonl`), line({ type: "user", sessionId: claude, message: { content: "hidden sidechain" } }));
+  await writeFile(claudeFile, [
+    { type: "user", uuid: "turn-1", sessionId: claude, timestamp: "2026-11-15T00:00:01.000Z", cwd, message: { content: [{ type: "text", text: "查一下" }] } },
+    { type: "assistant", uuid: "think-1", sessionId: claude, message: { content: [{ type: "thinking", thinking: "先看目录" }] } },
+    { type: "assistant", uuid: "call-1", sessionId: claude, message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "ls" } }] } },
+    { type: "user", uuid: "result-1", sessionId: claude, message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "file.txt" }] } },
+    { type: "assistant", uuid: "answer-1", sessionId: claude, isSidechain: true, message: { content: [{ type: "text", text: "sidechain" }] } },
+    { type: "assistant", uuid: "answer-2", sessionId: claude, message: { content: [{ type: "text", text: "只有 file.txt" }] } },
+  ].map(line).join(""));
+  const turns = await claudeHome.history.snapshot(claude, { cwd });
+  assert.equal(turns.length, 1); assert.equal(turns[0].items[0].content[0].text, "查一下");
+  assert.equal(turns[0].items[1].type, "reasoning"); assert.equal(turns[0].items[2].tool, "Bash");
+  assert.equal(turns[0].items[2].contentItems[0].text, "file.txt"); assert.equal(turns[0].items.at(-1).text, "只有 file.txt");
+  assert.equal(JSON.stringify(turns).includes("sidechain"), false);
+  const outside = await mkdtemp(join(tmpdir(), "outside-cli-")); t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(join(outside, `${buddy}.jsonl`), line({ type: "message", role: "user", sessionId: buddy, content: [{ type: "input_text", text: "escaped" }] }));
+  await symlink(outside, join(codebuddy.home, "projects", "linked"));
+  await assert.rejects(codebuddy.history.read(buddy, { cwd: "/linked" }), /Could not read the saved agent conversation/);
 });

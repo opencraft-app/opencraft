@@ -9,7 +9,7 @@ export class ConnectedAgentHistory {
   private sequence = 0;
   private closed = false;
   private failure?: Error;
-  constructor(private readonly provider: "codex" | "cursor", private readonly home: string, private readonly contextDirectory?: string) {}
+  constructor(private readonly provider: "codex" | "cursor" | "codebuddy" | "claude-code", private readonly home: string, private readonly contextDirectory?: string) {}
   private fail(error: Error): void {
     this.failure ??= error;
     for (const request of this.pending.values()) request.reject(error);

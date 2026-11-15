@@ -885,7 +885,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private historyParams(session: Session, params: Value): Value {
     const active = this.state(session.id).active;
-    return { ...params, threadId: session.id, activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
+    return { ...params, threadId: session.id, cwd: session.cwd, activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
   }
   private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;

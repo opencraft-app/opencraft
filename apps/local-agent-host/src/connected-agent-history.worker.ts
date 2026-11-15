@@ -2,7 +2,7 @@ import { exportConversationContext } from "./conversation-context-export.js";
 import { CodexHistorySources, codexHistoryRecords, containedNativeHistoryPath, type CodexHistoryRange } from "./codex-history-sources.js";
 import { codexProjectGroups } from "./codex-project-groups.js";
 import { parentPort, workerData } from "node:worker_threads";
-import { open, readFile, stat } from "node:fs/promises";
+import { open, readFile, readdir, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { join, isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -11,7 +11,7 @@ import { projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-histo
 type Value = Record<string, any>;
 type Turn = Value & { id: string; items: Value[] };
 const port = parentPort!;
-const { provider, home, contextDirectory } = workerData as { provider: "codex" | "cursor"; home: string; contextDirectory?: string };
+const { provider, home, contextDirectory } = workerData as { provider: "codex" | "cursor" | "codebuddy" | "claude-code"; home: string; contextDirectory?: string };
 const codexSources = new CodexHistorySources(home);
 const cache = new Map<string, { stamp: string; turns: Turn[] }>();
 const contained = (path: string) => containedNativeHistoryPath(home, path);
@@ -148,6 +148,123 @@ function readCursor(path: string, nativeId: string): Turn[] {
   } finally { db.close(); }
 }
 let projectState: { stamp: string; data: unknown } | undefined;
+const cliProvider = provider === "codebuddy" || provider === "claude-code";
+/** CodeBuddy drops a leading separator; Claude keeps it. Both collapse repeated dashes. */
+function projectDirectory(cwd: string): string {
+  const replaced = cwd.replace(provider === "codebuddy" ? /[\\/:]+/gu : /[^a-zA-Z0-9]+/gu, "-");
+  return provider === "codebuddy" ? replaced.replace(/^-+|-+$/gu, "") : replaced;
+}
+async function locateCliTranscript(nativeId: string, cwd: unknown): Promise<string | null> {
+  const fileName = `${nativeId}.jsonl`;
+  if (typeof cwd === "string" && isAbsolute(cwd)) {
+    const direct = join(home, "projects", projectDirectory(cwd), fileName);
+    try {
+      const found = await contained(direct);
+      if ((await stat(found)).isFile()) return found;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw error;
+    }
+  }
+  const root = join(home, "projects");
+  let seen = 0;
+  const visit = async (directory: string, depth: number): Promise<string | null> => {
+    if (depth > 3) return null;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(error => { if (error.code === "ENOENT") return []; throw error; });
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      if (++seen > 5000) throw new Error("Native transcript search exceeded its bound");
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "subagents") continue;
+        const found = await visit(path, depth + 1);
+        if (found) return found;
+      } else if (entry.isFile() && entry.name === fileName) return contained(path);
+    }
+    return null;
+  };
+  return visit(root, 0);
+}
+function cliBlocks(content: unknown): Value[] {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return Array.isArray(content) ? content.filter(block => block && typeof block === "object") : [];
+}
+function cliText(block: Value): string {
+  if (typeof block.text === "string") return block.text;
+  if (typeof block.thinking === "string") return block.thinking;
+  if (typeof block.content === "string") return block.content;
+  return Array.isArray(block.content) ? block.content.map((part: Value) => cliText(part ?? {})).join("") : "";
+}
+async function readCliTranscript(path: string, nativeId: string): Promise<Turn[]> {
+  const file = await open(path, "r"), turns: Turn[] = [];
+  let current: Turn | undefined, verified = false, invalid = false;
+  const tools = new Map<string, Value>();
+  const start = (id: string, at: unknown) => {
+    current = { id, items: [], status: "inProgress", startedAtMs: typeof at === "number" ? at : Date.parse(String(at ?? "")) };
+    if (!Number.isFinite(current.startedAtMs)) current.startedAtMs = null;
+    turns.push(current);
+  };
+  try {
+    const lines = createInterface({ input: file.createReadStream({ autoClose: false }), crlfDelay: Infinity });
+    for await (const line of lines) {
+      if (Buffer.byteLength(line) > 8 * 1024 * 1024) throw new Error("Native history record is too large");
+      if (!line.trim()) continue;
+      if (invalid) throw new Error("Invalid native history record");
+      let record: Value; try { record = JSON.parse(line); } catch { invalid = true; continue; }
+      if (typeof record.sessionId === "string") {
+        if (record.sessionId !== nativeId) throw new Error("Native history identity mismatch");
+        verified = true;
+      }
+      if (record.isSidechain === true) continue;
+      if (provider === "codebuddy") {
+        if (record.type !== "message") continue;
+        const blocks = cliBlocks(record.content);
+        if (record.role === "user") {
+          start(String(record.id || turns.length + 1), record.timestamp);
+          current!.items.push({ id: `${current!.id}:user`, type: "userMessage", content: blocks.filter(block => ["text", "input_text"].includes(block.type)).map(block => ({ type: "text", text: cliText(block), text_elements: [] })) });
+        } else if (record.role === "assistant" && current) {
+          for (const [index, block] of blocks.entries()) {
+            if (block.type === "output_text" || block.type === "text") current.items.push({ id: `${record.id || current.id}:${index}`, type: "agentMessage", text: cliText(block) });
+            else if (block.type === "tool_use" && typeof block.id === "string") {
+              const tool = { id: `tool-${block.id}`, type: "dynamicToolCall", namespace: "codebuddy", tool: String(block.name ?? block.id), arguments: block.input ?? {}, status: "inProgress", success: null, contentItems: [] };
+              tools.set(block.id, tool); current.items.push(tool);
+            }
+          }
+          if (current.items.some(item => item.type === "agentMessage")) current.status = "completed";
+        }
+      } else if (record.type === "user" || record.type === "assistant") {
+        const blocks = cliBlocks(record.message?.content);
+        const results = blocks.filter(block => block.type === "tool_result");
+        const prompts = blocks.filter(block => block.type === "text" || block.type === "input_text");
+        if (record.type === "user" && prompts.length) start(String(record.uuid || turns.length + 1), record.timestamp);
+        if (!current) continue;
+        if (record.type === "user" && prompts.length) current.items.push({ id: `${current.id}:user`, type: "userMessage", content: prompts.map(block => ({ type: "text", text: cliText(block), text_elements: [] })) });
+        for (const block of results) {
+          const tool = typeof block.tool_use_id === "string" ? tools.get(block.tool_use_id) : undefined;
+          if (!tool) continue;
+          tool.status = block.is_error === true ? "failed" : "completed";
+          tool.success = block.is_error !== true;
+          const output = cliText(block);
+          if (output) tool.contentItems = [{ type: "inputText", text: output }];
+        }
+        if (record.type === "assistant") {
+          for (const [index, block] of blocks.entries()) {
+            if (block.type === "thinking") current.items.push({ id: `${record.uuid}:${index}`, type: "reasoning", summary: [cliText(block)], content: [] });
+            else if (block.type === "text") current.items.push({ id: `${record.uuid}:${index}`, type: "agentMessage", text: cliText(block) });
+            else if (block.type === "tool_use" && typeof block.id === "string") {
+              const tool = { id: `tool-${block.id}`, type: "dynamicToolCall", namespace: "claude", tool: String(block.name ?? block.id), arguments: block.input ?? {}, status: "inProgress", success: null, contentItems: [] };
+              tools.set(block.id, tool); current.items.push(tool);
+            }
+          }
+          if (current.items.some(item => item.type === "agentMessage")) current.status = "completed";
+        }
+      }
+    }
+    if (invalid) throw new Error("Invalid native history record");
+    if (!verified) throw new Error("Native history identity missing");
+    return turns;
+  } finally { await file.close(); }
+}
 async function read(nativeId: string, params: Value, kind: string): Promise<any> {
   if (kind === "projects") {
     if (provider !== "codex") return { available: false, groups: {} };
@@ -167,13 +284,14 @@ async function read(nativeId: string, params: Value, kind: string): Promise<any>
   }
   if (!/^[a-f0-9-]{32,64}$/u.test(nativeId)) throw new Error("Invalid native conversation identity");
   const ranges = provider === "codex" ? await codexSources.resolve(nativeId) : undefined;
-  const path = ranges ? ranges.at(-1)!.path : await contained(join(home, "acp-sessions", nativeId, "store.db"));
-  const source = await stat(path), wal = provider === "cursor" ? await stat(`${path}-wal`).catch(() => null) : null;
-  if (kind === "usage") return provider === "codex" ? readCodexUsage(path, nativeId) : readCursorUsage(path, nativeId, Math.max(source.mtimeMs, wal?.mtimeMs ?? 0));
-  const stamp = ranges ? JSON.stringify(ranges.map(range => range.stamp)) : JSON.stringify([source.dev, source.ino, source.size, source.mtimeMs, wal?.size, wal?.mtimeMs]);
+  const cliPath = cliProvider ? await locateCliTranscript(nativeId, params.cwd) : undefined;
+  const transcript = cliProvider ? cliPath ?? undefined : ranges ? ranges.at(-1)!.path : await contained(join(home, "acp-sessions", nativeId, "store.db"));
+  const source = transcript ? await stat(transcript) : undefined, wal = provider === "cursor" && transcript ? await stat(`${transcript}-wal`).catch(() => null) : null;
+  if (kind === "usage") return !transcript ? null : provider === "codex" ? readCodexUsage(transcript, nativeId) : cliProvider ? null : readCursorUsage(transcript, nativeId, Math.max(source!.mtimeMs, wal?.mtimeMs ?? 0));
+  const stamp = !transcript ? "missing" : ranges ? JSON.stringify(ranges.map(range => range.stamp)) : JSON.stringify([source!.dev, source!.ino, source!.size, source!.mtimeMs, wal?.size, wal?.mtimeMs]);
   let stored = cache.get(nativeId);
   if (!stored || stored.stamp !== stamp) {
-    stored = { stamp, turns: provider === "codex" ? await readCodex(ranges!) : readCursor(path, nativeId) };
+    stored = { stamp, turns: !transcript ? [] : provider === "codex" ? await readCodex(ranges!) : cliProvider ? await readCliTranscript(transcript, nativeId) : readCursor(transcript, nativeId) };
     cache.set(nativeId, stored); if (cache.size > 8) cache.delete(cache.keys().next().value!);
   }
   let turns = stored.turns;

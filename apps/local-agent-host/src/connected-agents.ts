@@ -400,6 +400,7 @@ export class ConnectedAgentHost {
     }
     const launch = await this.launch(engineId);
     if (this.closed) throw new Error("Connected agents are closed");
+    const history = this.nativeHistory(engineId);
     const engine = new AcpEngine({
       id: engineId,
       label: LABELS[engineId],
@@ -411,14 +412,24 @@ export class ConnectedAgentHost {
       dataDirectory: directory,
       permission: "allow-once",
       timeoutMs: 120_000,
-      ...(engineId === "codex" || engineId === "cursor" ? { history: new ConnectedAgentHistory(engineId,
-        engineId === "codex" ? this.deps.env.CODEX_HOME || join(this.deps.homedir, ".codex") : this.deps.env.CURSOR_CONFIG_DIR || join(this.deps.homedir, ".cursor"), join(this.root, "continuations")) } : {}),
+      ...(history ? { history } : {}),
     });
     engine.subscribe((method, params) => {
       for (const listener of this.listeners) listener(method, params);
     });
     this.engines.set(engineId, engine);
     return engine;
+  }
+
+  /** Codex, Cursor, CodeBuddy and Claude already persist their own transcripts. */
+  private nativeHistory(engineId: EngineId): ConnectedAgentHistory | undefined {
+    const env = this.deps.env, home = this.deps.homedir;
+    const directory = engineId === "codex" ? env.CODEX_HOME || join(home, ".codex")
+      : engineId === "cursor" ? env.CURSOR_CONFIG_DIR || join(home, ".cursor")
+      : engineId === "codebuddy" ? env.CODEBUDDY_CONFIG_DIR || join(home, ".codebuddy")
+      : engineId === "claude-code" ? env.CLAUDE_CONFIG_DIR || join(home, ".claude")
+      : undefined;
+    return directory ? new ConnectedAgentHistory(engineId, directory, join(this.root, "continuations")) : undefined;
   }
 
   private async launch(engineId: EngineId): Promise<Launch> {
