@@ -228,6 +228,24 @@ test("CodeBuddy conversations own separate native processes so another session c
   assert.deepEqual(prompts.map(call => call.pid), starts.map(call => call.pid), "prompts stay on their conversation's process");
 });
 
+test("a fresh ACP thread reads empty history until its native transcript exists, then reports read failures", async t => {
+  const failure = () => { throw new Error("Could not read the saved agent conversation"); };
+  const empty = { data: [], nextCursor: null, backwardsCursor: null, itemsPaginationByTurnId: {} };
+  const history = { read: async () => failure(), snapshot: async () => failure(), items: async () => failure(), close: async () => {} };
+  const f = await fixture(t, { id: "codex", history });
+  const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  assert.deepEqual(await f.engine.request("thread/turns/list", { threadId: thread.id }, client), empty);
+  assert.deepEqual(await f.engine.request("thread/items/list", { threadId: thread.id }, client), { data: [], nextCursor: null });
+  const read = await f.engine.request("thread/read", { threadId: thread.id, initialTurnsPage: { limit: 10 }, includeTurns: true }, client);
+  assert.deepEqual(read.initialTurnsPage, empty);
+  assert.deepEqual(read.thread.turns, []);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "first" }] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  await assert.rejects(f.engine.request("thread/turns/list", { threadId: thread.id }, client), /Could not read the saved agent conversation/);
+  await assert.rejects(f.engine.request("thread/items/list", { threadId: thread.id }, client), /Could not read the saved agent conversation/);
+});
+
 test("Codex splits advertised model variants into native model/reasoning and applies Fast before accepting input", async t => {
   const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1" } });
   const created = await f.engine.request("thread/start", { model: "codex:one[low]", serviceTier: "fast" }, client);

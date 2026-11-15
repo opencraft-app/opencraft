@@ -520,17 +520,17 @@ export class AcpEngine implements ExecutionEngineProvider {
         total: source?.total ?? null, last: source?.last ?? null };
     }
     if (method === "thread/read") {
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
-      const turns = params.includeTurns === true && this.options.history?.snapshot ? await this.options.history.snapshot(session.nativeId, this.historyParams(session, params)) : [];
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.historyRead(session, params.initialTurnsPage) : undefined;
+      const turns = params.includeTurns === true && this.options.history?.snapshot ? await this.historySnapshot(session, params) : [];
       return { thread: { ...this.metadata(session), turns }, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/turns/list") {
       if (!this.options.history) return fault("This ACP peer has no native transcript reader", -32601);
-      return this.options.history.read(session.nativeId, this.historyParams(session, params));
+      return this.historyRead(session, params);
     }
     if (method === "thread/items/list") {
       if (!this.options.history?.items) return fault("This ACP peer has no native item reader", -32601);
-      return this.options.history.items(session.nativeId, this.historyParams(session, params));
+      return this.historyItems(session, params);
     }
     if (method === "opencraft/agent-session/export-context") {
       if (!this.options.history?.export) return fault("Conversation context export is unavailable", -32601);
@@ -582,9 +582,9 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "thread/resume") {
       await this.resume(session); runtime.owner = client;
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.historyRead(session, params.initialTurnsPage) : undefined;
       const reply = this.sessionResponse(session);
-      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.options.history.snapshot(session.nativeId, this.historyParams(session, params));
+      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.historySnapshot(session, params);
       return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
@@ -886,6 +886,27 @@ export class AcpEngine implements ExecutionEngineProvider {
     await this.save(session);
     this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
     this.notify("turn/completed", { threadId: session.id, turn });
+  }
+  private emptyTurnsPage(): Value {
+    return { data: [], nextCursor: null, backwardsCursor: null, itemsPaginationByTurnId: {} };
+  }
+  /** A newly created native session may not have written its transcript yet.
+   * Its first turn must be able to start before the reader can find a file;
+   * once a turn exists, a missing transcript is a real read failure. */
+  private async historyRead(session: Session, params: Value): Promise<Value> {
+    if (!this.options.history) return this.emptyTurnsPage();
+    try { return await this.options.history.read(session.nativeId, this.historyParams(session, params)); }
+    catch (error) { if (session.lastTurn === undefined) return this.emptyTurnsPage(); throw error; }
+  }
+  private async historySnapshot(session: Session, params: Value): Promise<any[]> {
+    if (!this.options.history?.snapshot) return [];
+    try { return await this.options.history.snapshot(session.nativeId, this.historyParams(session, params)); }
+    catch (error) { if (session.lastTurn === undefined) return []; throw error; }
+  }
+  private async historyItems(session: Session, params: Value): Promise<Value> {
+    if (!this.options.history?.items) return { data: [], nextCursor: null };
+    try { return await this.options.history.items(session.nativeId, this.historyParams(session, params)); }
+    catch (error) { if (session.lastTurn === undefined) return { data: [], nextCursor: null }; throw error; }
   }
   private historyParams(session: Session, params: Value): Value {
     const active = this.state(session.id).active;
