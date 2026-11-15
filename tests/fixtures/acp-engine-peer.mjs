@@ -54,9 +54,9 @@ const mcp = async (server, id, method, params = {}) => {
 };
 createInterface({ input: process.stdin }).on('line', line => {
   void (async () => {
-    const frame = JSON.parse(line);
+    const frame = JSON.parse(line); trace(frame);
     if(!frame.method && callbacks.has(frame.id)){callbacks.get(frame.id)(frame.result);callbacks.delete(frame.id);return;}
-    trace(frame); const params = frame.params ?? {};
+    const params = frame.params ?? {};
     if (frame.method === 'initialize') { parameterizedPicker=params.clientCapabilities?._meta?.parameterizedModelPicker===true;return result(frame.id, { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true }, sessionCapabilities: {...(process.env.ACP_TEST_SESSION_HANDOFF ? {fork:{},close:{}} : {}),... (process.env.ACP_TEST_NO_RESUME ? {} : { resume: {} }),...((process.env.ACP_TEST_TITLE_LIST||process.env.ACP_TEST_IMPORT_SESSIONS)?{list:{}}:{})} } }); }
     if(frame.method==='session/list'&&process.env.ACP_TEST_IMPORT_SESSIONS)return result(frame.id,JSON.parse(process.env.ACP_TEST_IMPORT_SESSIONS));
     if(frame.method==='session/list')return result(frame.id,{sessions:[...sessions.keys()].map(sessionId=>({sessionId,title:process.env.ACP_TEST_TITLE_LIST}))});
