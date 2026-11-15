@@ -158,3 +158,14 @@ test("large projection flush yields outside transactions and preserves interveni
   assert.equal(store.get("t350")?.name, "manual during synchronization");
   assert.equal((await directory.list({ ...query, limit: 1000 })).data.length, 400);
 });
+
+
+test("native project grouping survives the directory SQL projection and updates without a new recency timestamp", async t => {
+  const store = new ThreadCatalog(); t.after(() => store.close());
+  let name = "Original group";
+  const directory = store.attachDirectory({ list: async () => ({ data: [{ ...row("imported"), nativeProject: { source: "codex", id: "p", name, position: 2 } }], nextCursor: null }) });
+  let result = await directory.list(query);
+  assert.equal((result.data[0] as any).nativeProject.name, name);
+  name = "Renamed group"; await directory.refresh(); result = await directory.list(query);
+  assert.equal((result.data[0] as any).nativeProject.name, name);
+});

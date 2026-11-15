@@ -2808,12 +2808,6 @@
     {
       "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "aria-label",
-      "text": "Attachments",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "aria-label",
       "text": "Preparing ${…}",
       "count": 1
     },

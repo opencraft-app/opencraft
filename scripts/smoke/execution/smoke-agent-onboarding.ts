@@ -121,5 +121,29 @@ try {
   await finishingPage.evaluate(() => (window as any).onboardingFixture.releaseFinish());
   await finishingPage.waitForFunction(() => (window as any).onboardingFixture.finished.includes("codex:one"));
   await finishingPage.close();
+  // Actual import UI, with only the agent boundary simulated.
+  const historyPage = await browser.newPage({ viewport: { width: 1100, height: 850 } });
+  historyPage.on("pageerror", (error: Error) => errors.push(error.message));
+  await historyPage.goto(`${base}/?history=1`);
+  await historyPage.waitForFunction(() => (window as any).onboardingFixture?.calls.includes("host-a:codex"));
+  await historyPage.evaluate(() => (window as any).onboardingFixture.resolve("host-a:codex", { models: [{ id: "codex:one", name: "Codex One" }] }));
+  await historyPage.getByRole("button", { name: "Continue", exact: true }).click();
+  const choice = historyPage.getByRole("checkbox", { name: /Continue my local project/ });
+  await choice.waitFor(); assert.equal(await historyPage.getByRole("button", { name: "Import selected (0)", exact: true }).isDisabled(), true);
+  await choice.focus(); await historyPage.keyboard.press("Space"); assert.equal(await choice.getAttribute("aria-checked"), "true");
+  await historyPage.screenshot({ path: `${output}/history-selected.png` });
+  await historyPage.getByRole("button", { name: "Import selected (1)", exact: true }).click();
+  assert.equal(await historyPage.getByRole("button", { name: "Start chatting", exact: true }).isDisabled(), true);
+  await historyPage.evaluate(() => (window as any).onboardingFixture.fail("host-a:import"));
+  await historyPage.getByRole("alert").waitFor(); assert.equal(await choice.getAttribute("aria-checked"), "true");
+  await historyPage.getByRole("button", { name: "Import selected (1)", exact: true }).click();
+  await historyPage.evaluate(() => (window as any).onboardingFixture.resolve("host-a:import", { imported: [{ id: "11111111-2222-3333-4444-555555555555", threadId: "codex_fixture" }], failed: [] }));
+  await historyPage.getByRole("status").filter({ hasText: "1 conversations imported" }).waitFor(); assert.equal(await choice.isDisabled(), true);
+  await historyPage.screenshot({ path: `${output}/history-imported.png` });
+  await historyPage.getByRole("button", { name: "Back", exact: true }).click(); await historyPage.getByRole("button", { name: "Continue", exact: true }).click();
+  assert.equal(await choice.isDisabled(), true, "back/forward inside onboarding preserves imported state");
+  await historyPage.setViewportSize({ width: 390, height: 844 });
+  await historyPage.screenshot({ path: `${output}/history-narrow.png` });
+  await historyPage.close(); assert.deepEqual(errors, []);
   console.log(`PASS onboarding: automatic discovery, explicit keyboard/touch choices, correct model handoff, late results, host switch, sign-out, failure/retry/empty fallback; screenshots: ${output}. Agent boundary simulated.`);
 } finally { await browser?.close(); await vite.close(); }

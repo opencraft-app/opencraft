@@ -1,6 +1,6 @@
 # 新建会话的 Agent 与模型
 
-用户先认出要使用的 Agent，再选择它的模型。沿用 Composer 的共享 Radix 菜单：上方为具名 Agent 选择，下方只列该 Agent 的模型；模型厂商不再充当 Agent。外部触发器显示 Agent 与模型。选择 Agent 先浏览，不启动会话；明确选模型才提交。Manage models 保留，增加 Manage agents 进入聊天设置。
+用户先认出要使用的 Agent，再选择它的模型。沿用 Composer 的共享 Radix 菜单：上方为 Agent 页签，下方只列该 Agent 的模型；模型厂商不再充当 Agent。外部触发器显示 Agent 与模型。选择 Agent 先浏览，不启动会话；明确选模型才提交。Manage models 保留，增加 Manage agents 进入聊天设置。
 
 ## 数据与所有权
 
@@ -16,10 +16,18 @@
 
 全关时显示“没有开启的 Agent”及 Manage agents，不默认偷偷选回关闭的模型；可编辑草稿，发送禁用。某 Agent 无模型或读取失败显示已有目录反馈和重试；未安装/未登录只在管理与引导显示状态与安装/登录动作，不进入可发送目录。服务端目录始终是能力依据。已选 Agent 被关闭时保留草稿和选中意图，要求重新选择后才能发送；旧线程沿用完整目录。
 
+## 页签、键盘与旧会话
+
+Agent 页签只显示共享品牌图标，选中项用下划线标出。页签右侧始终显示当前浏览的 Agent 名称，并在已有线程同时标出当前会话 Agent（“当前会话”或“当前：Codex”），键盘聚焦、触控点按和读屏都能得到同一身份；无障碍名称经应用 IntlRuntime 组合。只有一个 Agent 时仍保留该页签和身份名称，不渲染虚假的竞争页签。触控命中区域继续由 `--size-control-hit-min` 与共享按钮密度提供，不另写像素尺寸。页签支持方向键、Home、End；方向键焦点停留在页签上，不把浏览当成选择。
+
+`agentNext` / `agentPrevious` 注册在 Web/Electron 快捷键表中（Alt+P / Alt+Shift+P），设置页的快捷键列表投影同一份定义。快捷键只改变正在浏览的 Agent，不写入模型；选择器关闭时，只有在当前 Composer 内才打开选择器并移动页签。Option 组合键的 `event.key` 会随键盘布局变化，按物理 `event.code` 归一化。
+
+已有线程打开选择器时，无论 Host 是否支持跨 Agent，都从目录和当前模型识别并标出当前 Agent；浏览当前 Agent 时显示“当前会话”，浏览其他 Agent 时显示“当前：Codex”保留身份；当前 Agent 模型缺失时保留当前身份，不因其他 Agent 有缓存而消失。只有 Host 声明了跨 Agent 上下文导出能力时才显示其他 Agent；浏览其他 Agent 时提示将带着当前会话上下文新建会话。选择其他 Agent 的模型沿用现有 `continueWithAgent` 打开新草稿，不伪装成同一线程续聊。没有该能力的旧线程只显示当前 Agent 的目录。
+
 ## 输入与容器
 
-鼠标点击与触控点按使用相同的共享控件，键盘可 Tab 到具名 Agent 按钮并选择，再使用模型菜单的键盘导航；Escape 关闭并由已有焦点 owner 恢复编辑区。菜单不重挂载编辑器、不清草稿。Agent 组在窄容器换行，模型区滚动，触控密度由现有输入偏好决定。页面留白、滚动和路由属于现有 Settings/Composer owner。
+鼠标点击与触控点按使用相同的共享控件，键盘可 Tab 到 Agent 页签并选择，再使用模型菜单的键盘导航；Escape 关闭并由已有焦点 owner 恢复编辑区。菜单不重挂载编辑器、不清草稿。页签在窄容器横向滚动，模型区滚动，触控密度由现有输入偏好决定。页面留白、滚动和路由属于现有 Settings/Composer owner。
 
 ## 验证
 
-验证模型的 Agent 元数据投影、偏好隔离与显式全关、新草稿准入和旧线程不变；实际 Web Shell 在桌面及触控窄屏验证选择、发送、设置开关、onboarding 和空态，保留截图及验证边界。参考 BB 的 provider/model picker 与 ProvidersSettingsSection，参考版本固定为 `73fe7b4ad9a0c7f7c3f16b8e369fc61cccaea7d2`，只读查看 `ModelReasoningPicker.tsx` 与 `ProvidersSettingsSection.tsx`，只借鉴分层选择、启用投影及旧会话保留；实现独立。
+验证模型的 Agent 元数据投影、偏好隔离与显式全关、新草稿准入和旧线程不变；实际 Web Shell 在桌面及触控窄屏验证选择、发送、设置开关、onboarding 和空态，保留截图及验证边界。Agent 页签验证图标-only、下划线、悬停/焦点/触控可见名称、无障碍名称、触控命中区、方向键和焦点环不裁切；推理区验证只在模型声明 effort 时出现；快捷键验证注册、设置列表、循环、长按 repeat 不写入搜索和边界；旧会话验证单 Agent/无跨 Agent 能力时的当前身份、跨 Agent 提示以及新草稿交接。参考 BB 的 provider/model picker 与 ProvidersSettingsSection，参考版本固定为 `73fe7b4ad9a0c7f7c3f16b8e369fc61cccaea7d2`，只读查看 `ModelReasoningPicker.tsx`、`ModelReasoningMenu.tsx`、`modelPickerCycle.ts`、`modelPickerToggle.ts` 与 `ProvidersSettingsSection.tsx`，只借鉴图标页签、组合推理、快捷键与旧会话标记；实现独立。

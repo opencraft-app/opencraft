@@ -231,3 +231,16 @@ Headless Linux 分发及 managed headless execution 包携带 `runtime/browser/`
 
 
 Codex 账号 Core 与 APP Server 的显式拆分、三步升级接口及首次维护/回退见 [Codex 平滑升级](codex-core.md#执行侧平滑升级三步方案)。旧部署省略新参数继续使用兼容合并模式；网站/网关 CI 不自动启用拆分。
+
+## 新数据根与浏览器存储隔离
+
+同一浏览器 Origin 从旧部署改跑全新数据根时，Headless 可显式加入
+`--isolate-browser-storage`。入口 HTML 使用该数据根稳定 machine ID 标记实例，
+客户端通过既有 server storage key owner 隔离连接配置、草稿和缓存；旧浏览器
+记录不删除、不复制到新实例。重启同一数据根继续使用相同作用域；新的数据根
+使用新作用域。已有 Server selector 的身份优先，网络 URL 与身份授权不受影响。
+未选择此参数的现有部署保留原存储键，不能把例行升级当成重置客户端状态。
+
+该模式同时使用 Web build ID 生成资源恢复路径，复用正式
+`/assets/recovery-TOKEN/` 路由绕过旧模块图和已失败的导入缓存；不清除 Cookie、
+IndexedDB 或 localStorage。不同版本使用不同资源地址，同一版本刷新保持稳定。

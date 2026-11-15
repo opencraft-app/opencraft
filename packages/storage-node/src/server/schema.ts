@@ -504,3 +504,22 @@ export const automationMutations = sqliteTable("automation_mutations", {
 export const automationDelegations = sqliteTable("automation_delegations", {
   authorityId: text("authority_id").primaryKey(), runKey: text("run_key").notNull(), grantId: text("grant_id").notNull(),
 },table=>[index("automation_delegations_run").on(table.runKey)]);
+
+export const collaborationSpaces = sqliteTable("collaboration_spaces", {
+  id: text("id").primaryKey(), name: text("name").notNull(), ownerActorId: text("owner_actor_id").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+export const collaborationSpaceMembers = sqliteTable("collaboration_space_members", {
+  spaceId: text("space_id").notNull(), actorId: text("actor_id").notNull(), role: text("role").notNull(),
+  joinedAt: integer("joined_at").notNull(),
+}, table => [primaryKey({columns:[table.spaceId, table.actorId]}),
+  foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]}),
+  check("collaboration_space_role", sql.raw("role IN ('owner','member')"))]);
+export const collaborationSpaceInvitations = sqliteTable("collaboration_space_invitations", {
+  digest: text("digest").primaryKey(), spaceId: text("space_id").notNull(), createdBy: text("created_by").notNull(),
+  expiresAt: integer("expires_at").notNull(), usedBy: text("used_by"),
+}, table => [foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]})]);
+export const collaborationSpaceThreads = sqliteTable("collaboration_space_threads", {
+  engineServerId: text("engine_server_id").notNull(), threadId: text("thread_id").notNull(), spaceId: text("space_id").notNull(),
+}, table => [primaryKey({columns:[table.engineServerId,table.threadId]}),
+  foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]})]);

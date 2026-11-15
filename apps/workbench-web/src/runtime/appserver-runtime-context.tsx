@@ -306,6 +306,7 @@ export function AppServerRuntimeProvider({
     profiles: hostProfileSnapshot.profiles,
     connectionProviders: connectionProviderSnapshot.providers,
     selectHost: commands.selectHost,
+    continueWithAgent: commands.continueWithAgent,
     navigate: commands.navigate,
     selectConversation: commands.selectConversation,
     navigateToHome: commands.navigateToHome,
@@ -1044,6 +1045,12 @@ export function useComposerCatalog(
   // Historical reading needs the persisted selection, not a model directory.
   // The existing menu-open action loads choices when the user requests them.
   const capabilities = useQuery({ ...options, enabled: enabled && threadId === null });
+  const catalogDemand = useMemo(() => ({ requested: false }), [runtime, snapshot.hostId, threadId]);
+  useEffect(() => runtime.resources.composerCatalog.subscribeModelsChanged?.(() => {
+    void invalidateComposerCapabilities(queryClient, snapshot.hostId).then(() => {
+      if (catalogDemand.requested) return queryClient.fetchQuery(options);
+    }).catch(() => undefined);
+  }), [runtime, queryClient, snapshot.hostId, options, catalogDemand]);
   const connectionGeneration = runtime.resources.host.getConnectionGeneration?.() ?? 0;
   const defaultsKey = useMemo(
     () => ["appserver", snapshot.hostId, "composer-new-thread-defaults", connectionGeneration, cwd] as const,
@@ -1087,11 +1094,12 @@ export function useComposerCatalog(
   const catalogActions = useMemo(() => ({
     onModelMenuOpen: () => {
       if (!enabled) return;
+      catalogDemand.requested = true;
       // Recheck server restrictions whenever a user opens the selector.
       void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined);
     },
-    retryModels: () => { if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
-  }), [enabled, options, queryClient, snapshot.hostId]);
+    retryModels: () => { catalogDemand.requested = true; if (enabled) void queryClient.fetchQuery({ ...options, staleTime: 0 }).catch(() => undefined); },
+  }), [enabled, options, queryClient, snapshot.hostId, catalogDemand]);
   const permissionProfiles = useInfiniteQuery({
     queryKey: ["appserver", snapshot.hostId, "permission-profiles", cwd] as const,
     enabled,
@@ -1135,7 +1143,7 @@ export function useComposerCatalog(
     models: currentModels ?? [],
     displayModels: currentModels ?? cachedComposerModelMetadata(queryClient, snapshot.hostId, runtime.resources.composerCatalog),
     permissionProfiles: permissionProfileData,
-    isFetching: capabilities.isFetching || permissionProfiles.isFetching || personalDefaults.isFetching,
+    isFetching: capabilities.isFetching,
     modelError: personalDefaults.error ? errorOrNull(personalDefaults.error) : capabilities.error ? new Error(`${capabilities.data ? "能力目录刷新失败，当前显示上次结果" : "能力目录加载失败"}：${errorOrNull(capabilities.error)!.message}`) : null,
     permissionProfileError: errorOrNull(permissionProfiles.error),
     newThreadDefaults: rememberedSelection ? { ...rememberedSelection, serviceTier: rememberedSelection.serviceTier !== undefined ? rememberedSelection.serviceTier : defaults.data?.supported === true ? defaults.data.serviceTier : undefined } : (defaults.data?.supported === true
@@ -1337,14 +1345,18 @@ export function useAppServerComposerCatalog(workspaceRoots: readonly string[]): 
 }
 
 /** Opening the model menu is the only admission for inactive engine catalogs. */
-export function useWorkInEngineCatalog(hostIds: readonly string[], activeHostId: string) {
+export function useWorkInEngineCatalog(hostIds: readonly string[], activeHostId: string, includeActive = false) {
   const application = useContext(ApplicationRuntimeContext);
   if (!application) throw new Error("AppServerRuntimeProvider is missing");
+  const queryClient = useQueryClient();
+  useEffect(() => application.registry.peekRuntime(activeHostId)?.resources.composerCatalog.subscribeModelsChanged?.(() => {
+    void queryClient.invalidateQueries({ queryKey: ["appserver", activeHostId, "work-in-models"] });
+  }), [application.registry, activeHostId, queryClient]);
   const [requestedMachine, setRequestedMachine] = useState<string | null>(null);
   const machineKey = JSON.stringify(hostIds);
   const queries = useQueries({ queries: hostIds.map(hostId => ({
     queryKey: ["appserver", hostId, "work-in-models"],
-    enabled: requestedMachine === machineKey && hostId !== activeHostId,
+    enabled: requestedMachine === machineKey && (includeActive || hostId !== activeHostId),
     staleTime: 60_000,
     retry: false,
     queryFn: async ({ signal }: { signal: AbortSignal }) => {

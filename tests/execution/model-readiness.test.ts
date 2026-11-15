@@ -6,6 +6,7 @@ function fixture({ configured = false, active = true, enabled = true, models = t
   const calls: string[] = [];
   const request = (async (host: string, method: string) => {
     assert.equal(host, 'target-host'); calls.push(method);
+    if (method === 'model/list') return {data:[],nextCursor:null};
     if (method === 'runtime/providers/list') return { providers: [{ provider: 'fixture', active, enabled, settingsNs: 'llm', settingsPath: [] }] };
     if (method === 'runtime/settings/describe') return { namespaces: [{ ns: 'llm', value: noAuth ? {authentication:"none",apiKeyEnv:"MUST_NOT_RESOLVE"} : oauth ? {} : { apiKeyEnv: 'FIXTURE_API_KEY' } }] };
     if (method === 'runtime/models/list') return { groups: models ? [{ id: 'fixture', models: [{ id: 'fixture-model' }] }] : [] };
@@ -54,4 +55,15 @@ test('another configured provider cannot make the selected unconfigured model re
  assert.equal(await readHostModelReadiness(request,'target-host','pi:ready-other:working'),true);
  assert.equal(await readHostModelReadiness(request,'target-host','dsh-model:ready-other:removed'),false);
  assert.equal(await readHostModelReadiness((async () => { throw new Error('must not ask the host'); }) as HostProtocolRequest,'target-host','cursor:current'),true);
+});
+
+
+test('native Pi readiness follows its exact configured catalog entry, not the product provider document',async()=>{
+ let pages=0;
+ const request=(async(host:string,method:string,params:any)=>{
+  assert.equal(method,'model/list','native Pi must not require a second product credential');pages++;
+  return params.cursor ? {data:[{id:'pi:native:preferred',agentId:'pi',groupKey:'connected-agent:pi'}],nextCursor:null} : {data:[],nextCursor:'next'};
+ }) as HostProtocolRequest;
+ assert.equal(await readHostModelReadiness(request,'target-host','pi:native:preferred'),true);assert.equal(pages,2);
+ const f=fixture();assert.equal(await readHostModelReadiness(f.request,'target-host','pi:fixture:fixture-model'),false);
 });

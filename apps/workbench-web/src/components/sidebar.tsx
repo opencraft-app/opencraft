@@ -1,7 +1,7 @@
 import { useStableEvent } from "@opencraft/react-runtime";
 import { Button } from "@opencraft/design-system-web/button";
 import { ChevronDownIcon as ChevronDown, LoadingRingIcon as LoaderCircle, ComposeIcon as SquarePen, SearchIcon as Search, CheckIcon as Check } from "@opencraft/design-system-web/action-icons";
-import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
+import { FolderIcon, SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import { shortcutLabel, shortcutAria } from "../workbench-shortcuts";
 import { createPortal } from "react-dom";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
@@ -23,7 +23,7 @@ import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadActionCallbacks, type ThreadActionCapabilities, type ThreadActionOwner } from "./thread-management";
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { SidebarThreadRowMenu, SidebarThreadBadge, SidebarFiltersMenu, SidebarListContextMenu } from "./sidebar-thread-menu";
-import { sidebarActivityDateHeadings, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
+import { sidebarActivityDateHeadings, groupThreadsByNativeProject, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
 import { sidebarThreadIdentity, sidebarThreadTree, type SidebarThreadTreeNode } from "../sidebar-thread-tree";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { useSidebarEndPull } from "./use-sidebar-end-pull";
@@ -142,17 +142,18 @@ function SidebarPagination({ total, visibleCount, pageSize, onChange, pullToLoad
   </div>;
 }
 
-const SidebarThreadContent = memo(function SidebarThreadContent({ thread, attention, render }: {
+const SidebarThreadContent = memo(function SidebarThreadContent({ thread, attention, projectGrouped = false, render }: {
   thread: SidebarThread;
   attention: boolean;
-  render: (thread: SidebarThread, attention: boolean) => ReactNode;
+  projectGrouped?: boolean;
+  render: (thread: SidebarThread, attention: boolean, projectGrouped: boolean) => ReactNode;
 }) {
-  return render(thread, attention);
+  return render(thread, attention, projectGrouped);
 });
 
 interface SidebarThreadPresentationProps {
   thread: SidebarThread; attention: boolean; pending: boolean; active: boolean; selected: boolean;
-  title: string; unread: boolean; activityId: string; disabled: boolean;
+  title: string; unread: boolean; activityId: string; disabled: boolean; projectGrouped: boolean;
   rename: boolean; archive: boolean; fork: boolean; delete: boolean; pin?: boolean; reference?: boolean;
   threadBadge: ThreadBadgeContribution | null; threadListGrouping: ThreadListGroupingContribution | null;
   grouping: ThreadListGroupingSnapshot; menus: SidebarThreadMenuStore; actionOwner: ThreadActionOwner;
@@ -188,7 +189,7 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
     onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
     <SidebarActivityItem activityId={activityId} active={active} selected={selected} pending={pending}
-      disabled={disabled} title={title} project={metadata.project}
+      disabled={disabled} title={title} project={props.projectGrouped ? "" : metadata.project}
       tooltip={[title, metadata.project, thread.connectionHostLabel, thread.id].join(" · ")}
       status={thread.status} unread={unread} goalActive={thread.goalActive}
       schedule={thread.schedule} twoLine={attention} resources={<SidebarBrowserResources store={menus} hostId={thread.connectionHostId} threadId={thread.id} unavailable={disabled}
@@ -220,6 +221,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const [query, setQuery] = useState("");
   const [folded, setFolded] = useState<Record<string, boolean>>({});
   const [pinnedLimit, setPinnedLimit] = useState(PINNED_PAGE_SIZE);
+  const [projectLimits, setProjectLimits] = useState<Record<string, number>>({});
   const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
   const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
@@ -312,7 +314,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   };
   const modeItems = (kind: "context" | "dropdown") => <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind={kind}
     onSelect={kind === "dropdown" ? () => menus.setFiltersOpen(false) : undefined} />;
-  const renderThreadContent = useCallback((thread: SidebarThread, attention: boolean) => {
+  const renderThreadContent = useCallback((thread: SidebarThread, attention: boolean, projectGrouped: boolean) => {
     const pending = pendingHostId === thread.connectionHostId && pendingThreadId === thread.id;
     const active = activeHostId === thread.connectionHostId && activeThreadId === thread.id;
     const selected = pendingHostId !== null && pendingThreadId !== null ? pending : active;
@@ -325,7 +327,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
     }) ?? true);
     return <SidebarParentRenderContext.Provider value={props}>
-      <SidebarThreadPresentation thread={thread} attention={attention} pending={pending} active={active}
+      <SidebarThreadPresentation projectGrouped={projectGrouped} thread={thread} attention={attention} pending={pending} active={active}
         selected={selected} title={title} unread={unread} activityId={activityId} disabled={disabled}
         rename={capabilities.rename} archive={capabilities.archive} fork={capabilities.fork}
         delete={capabilities.delete} pin={capabilities.pin} reference={capabilities.reference}
@@ -335,49 +337,54 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   // Parent commits always reevaluate dynamic readers. Scalar row presentation
   // can reuse menu chrome while the badge still observes parent props updates.
   }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix, openRowConversation]);
-  const renderThread = (thread: SidebarThread, attention = false) => <SidebarThreadContent
-    key={identity(thread)} thread={thread} attention={attention} render={renderThreadContent} />;
-  const renderTreeNode = (node: SidebarThreadTreeNode<SidebarThread>, attention: boolean): ReactNode => (
+  const renderThread = (thread: SidebarThread, attention = false, projectGrouped = false) => <SidebarThreadContent
+    key={identity(thread)} thread={thread} attention={attention} projectGrouped={projectGrouped} render={renderThreadContent} />;
+  const renderTreeNode = (node: SidebarThreadTreeNode<SidebarThread>, attention: boolean, projectGrouped = false): ReactNode => (
     <li key={identity(node.thread)} className="sidebar-thread-tree__node"
       data-thread-id={node.thread.id} data-host-id={node.thread.connectionHostId}>
-      {renderThread(node.thread, attention)}
+      {renderThread(node.thread, attention, projectGrouped)}
       {node.children.length ? <ul className="sidebar-thread-tree__children" role="list">
-        {node.children.map(child => renderTreeNode(child, attention))}
+        {node.children.map(child => renderTreeNode(child, attention, projectGrouped && child.thread.nativeProject?.id === node.thread.nativeProject?.id))}
       </ul> : null}
     </li>
   );
-  const renderThreadTree = (thread: SidebarThread, attention = false) => {
+  const renderThreadTree = (thread: SidebarThread, attention = false, projectGrouped = false) => {
     const node = tree.nodes.get(identity(thread));
-    return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention)}</ul> : null;
+    return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention, projectGrouped)}</ul> : null;
   };
-  const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void) => {
+  const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void, nativeProject = false) => {
     if (!rows.length && key !== "mine") return null;
     const collapsed = folded[key] ?? false;
     const visible = limit === undefined ? rows : rows.slice(0, limit);
     const dates = key === "recent" ? sidebarActivityDateHeadings(visible, Date.now(), intl.locale) : new Map<SidebarThread, string>();
-    return <section key={key} className="sidebar-activity-group" aria-label={title} data-collapsed={collapsed}>
+    return <section key={key} className="sidebar-activity-group" aria-label={title} data-collapsed={collapsed} data-native-project={nativeProject || undefined}>
       <h3 className="sidebar-thread-group-heading"><button type="button" className="sidebar-thread-group-toggle" aria-expanded={!collapsed} aria-controls={`${rowIdPrefix}-flow-${key}`}
         onClick={() => setFolded(current => ({ ...current, [key]: !collapsed }))}>
+        {nativeProject ? <span className="sidebar-native-project-icon" aria-hidden="true"><FolderIcon size={16} /></span> : null}
         <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
       </button></h3>
       <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
         {key === "mine" && !rows.length ? <div className="sidebar-activity-empty">{text("sidebar.access.empty", "No private conversations yet")}</div> : null}
         {visible.map(thread => <div key={identity(thread)}>
           {dates.has(thread) ? <h4 className="sidebar-activity-group__heading">{dates.get(thread)}</h4> : null}
-          {renderThreadTree(thread, key === "attention")}
+          {renderThreadTree(thread, key === "attention", nativeProject)}
         </div>)}
         {limit !== undefined && update ? <SidebarPagination total={rows.length} visibleCount={limit}
-          pageSize={key === "pinned" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
+          pageSize={nativeProject ? 6 : key === "pinned" ? PINNED_PAGE_SIZE : RECENT_PAGE_SIZE} onChange={update} pullToLoad={key === "recent"} /> : null}
       </div>
     </section>;
   };
+  const nativeProjects = groupThreadsByNativeProject(taskFlow.recent);
+  const recentWithoutProjects = taskFlow.recent.filter(thread => !thread.nativeProject);
   const groupedSections = grouping.mode && threadListGrouping ? threadListGrouping.project(matchingReferences) : null;
   const visibleSections = [
-    ...(groupedSections ?? Object.entries(taskFlow).filter(([id]) => id !== "mine").map(([id, rows]) => ({
+    ...(groupedSections ?? Object.entries({ ...taskFlow, recent: recentWithoutProjects }).filter(([id]) => id !== "mine").map(([id, rows]) => ({
       id, collapsed: folded[id] ?? false,
       threads: rows.slice(0, id === "pinned" ? pinnedLimit : id === "recent" ? recentLimit : rows.length)
         .map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })),
     }))),
+    ...(!groupedSections ? nativeProjects.map(group => ({ id: `native-project:${group.key}`, collapsed: folded[`native-project:${group.key}`] ?? false,
+      threads: group.threads.slice(0, projectLimits[group.key] ?? 6).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) })) : []),
     { id: "mine", collapsed: folded.mine ?? false,
       threads: taskFlow.mine.slice(0, mineLimit).map(thread => ({ hostId: thread.connectionHostId, threadId: thread.id })) },
   ];
@@ -486,7 +493,12 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
               {renderFlowSection("pinned", text("sidebar.flow.pinned", "Pinned"), taskFlow.pinned, pinnedLimit, setPinnedLimit)}
             </>}
             {renderFlowSection("mine", text("sidebar.access.mine", "Mine"), taskFlow.mine, mineLimit, setMineLimit)}
-            {!groupedSections ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"), taskFlow.recent, recentLimit, setRecentLimit) : null}
+            {!groupedSections && nativeProjects.length ? <div className="sidebar-native-projects">
+              <h3 className="sidebar-native-projects__title">{text("sidebar.nativeProjects", "Projects")}</h3>
+              {nativeProjects.map(group => renderFlowSection(`native-project:${group.key}`, group.label, group.threads, projectLimits[group.key] ?? 6,
+                count => setProjectLimits(current => ({ ...current, [group.key]: count })), true))}
+            </div> : null}
+            {!groupedSections ? renderFlowSection("recent", text("sidebar.flow.recent", "Recent"), recentWithoutProjects, recentLimit, setRecentLimit) : null}
             {empty ? <div className="sidebar-activity-empty">{text("sidebar.empty", "No tasks yet")}</div> : null}
             {catalogErrors.map(catalog => retryFeedback(catalog.hostId, intl.formatMessage(catalog.cachedAt !== undefined
               ? { id: "sidebar.catalog.cached", defaultMessage: "Showing saved {server} conversations; refresh failed" }

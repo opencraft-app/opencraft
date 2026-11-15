@@ -342,8 +342,13 @@ function TodoTimelineRenderer({ block }: TimelineBlockRendererProps) {
 
 function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
   const intl = useIntl();
+  const forkConversation = useContext(ConversationDocumentContext).onForkConversation;
+  const [forkState, setForkState] = useState<"idle" | "pending" | "failed">("idle");
   if (block.type !== "error") return null;
-  const message = block.code === "acpPromptFailed"
+  const sessionBusy = /This Codex session is in use by another Codex client/u.test(block.message);
+  const message = sessionBusy
+    ? intl.formatMessage({ id: "chat.nativeSession.busy", defaultMessage: "This conversation is open in another Codex client. Close it there to continue here, or keep its context in a new conversation. New conversations continue independently. Your unsent message stays here." })
+    : block.code === "acpPromptFailed"
     ? intl.formatMessage({ id: "chat.agentRequestFailed", defaultMessage: "The Agent could not complete this response. You can continue to try again." })
     : block.code === "acpPromptUnconfirmed"
       ? intl.formatMessage({ id: "chat.agentRequestUnconfirmed", defaultMessage: "The Agent connection was interrupted and the response outcome is unknown. Check the conversation before trying again." }) : block.message;
@@ -352,13 +357,22 @@ function ErrorTimelineRenderer({ block, onRetry }: TimelineBlockRendererProps) {
   }
   return (
     <aside
-      className="thread-system-error"
+      className={sessionBusy ? "thread-system-error thread-system-error--native-session" : "thread-system-error"}
       data-error-code={block.code ?? undefined}
       role="alert"
     >
       <AlertCircle aria-hidden="true" className="thread-system-error__icon" size={16} />
-      <p className="thread-system-error__message">{message}</p>
-      {onRetry && block.code !== "acpPromptUnconfirmed" ? (
+      <p className="thread-system-error__message">{message}{forkState === "failed" ? <><br />{intl.formatMessage({ id: "chat.fork.unconfirmed", defaultMessage: "Could not confirm the new branch. Check the conversation list before trying again." })}</> : null}</p>
+      {sessionBusy && forkConversation ? <Button variant="secondary" size="sm" type="button"
+        disabled={forkState !== "idle"} onClick={() => {
+          setForkState("pending");
+          void forkConversation().catch(() => setForkState("failed"));
+        }}>
+        {intl.formatMessage(forkState === "pending"
+            ? { id: "chat.nativeSession.forking", defaultMessage: "Preparing conversation…" }
+            : { id: "chat.nativeSession.fork", defaultMessage: "Continue in a new conversation" })}
+      </Button> : null}
+      {onRetry && !sessionBusy && block.code !== "acpPromptUnconfirmed" ? (
         <Button variant="secondary" size="sm" className="thread-system-error__retry" type="button" onClick={onRetry}>
           <RotateCcw aria-hidden="true" size={14} />
           {intl.formatMessage({ id: "chat.continueResponse", defaultMessage: "Continue" })}

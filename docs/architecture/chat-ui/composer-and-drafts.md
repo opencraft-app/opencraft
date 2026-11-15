@@ -161,7 +161,7 @@ explicit distinction between implemented coordination and pending delivery guara
 
 ## 跨桌面、手机和平板的会话连续性
 
-Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与滚动状态；任务输入槽位以 View ID 标识，但其 Application 级草稿所有权独立于页面缓存。`workbench-runtime` 的 `ConversationDraftOwnerRegistry` 保留原 Controller 与附件资源，`ConversationDraftContinuity` 管理同一输入槽文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除所有草稿所有者及其内部目标缓存，包括已无页面的草稿。附件与临时文件引用不从文档缓存恢复；会话切换保留内存附件不等于刷新恢复字节。
+Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与滚动状态；任务输入槽位以 View ID 标识，但其 Application 级草稿所有权独立于页面缓存。`workbench-runtime` 的 `ConversationDraftOwnerRegistry` 保留原 Controller 与附件资源，`ConversationDraftContinuity` 管理同一输入槽文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除所有草稿所有者及其内部目标缓存，包括已无页面的草稿。附件与临时文件引用不从文档缓存恢复；会话切换保留内存附件不等于刷新恢复字节。 导入会话跨 Agent 续接使用 Host 私有目录内的持久会话记录，属于显式可恢复引用：同一草稿 envelope 的可选 `context` 仅保存标记了 `conversationSourceThreadId` 的文件引用及其只读说明；可选 `modelSelection` 保存该 View 明确选择的 model、effort、serviceTier。无正文但有记录引用或模型选择的草稿仍可恢复目标、工作目录和 Server。它们不保存权限授予、能力目录或临时附件句柄；发送仍由当前 Host 校验。迟到恢复不得覆盖新的模型选择。
 
 `recovery-policy.ts` 中的 `ConversationReturnProbe` 统一短暂离开、较长前台恢复和断网恢复的触发条件。iOS 把 AppState/Expo Network 事件交给它，Web/Electron 把 visibility/online 事件交给它；真正的追平仍调用当前 Thread lease 的 `retryRestore()`。追平不创建新会话，不重置可读历史。已经显示的内容是否权威，仍由 Replica/Session 决定。
 

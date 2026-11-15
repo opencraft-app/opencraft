@@ -27,7 +27,7 @@ function App() {
     calls, finished, setDisabledAgents, setHostId, setPresentation, setThemePreference, setAppearanceThemeId,
     resolve(key: string, value: unknown) { pending.get(key)!.resolve(value); pending.delete(key); },
     fail(key: string) { pending.get(key)!.reject(new Error("Unavailable")); pending.delete(key); },
-    refresh(ready: boolean) { signedIn = ready; return queryClient.invalidateQueries({ queryKey: ["agent-onboarding", hostId], exact: true }); },
+    refresh(ready: boolean) { signedIn = ready; return queryClient.invalidateQueries({ queryKey: ["agent-onboarding", hostId, "local"], exact: true }); },
   } });
   return <QueryClientProvider client={queryClient}><AgentOnboarding hostId={hostId}
     agentPreferences={{ enabled: id => !disabledAgents.includes(id), setEnabled: (id, enabled) => setDisabledAgents(current => enabled ? current.filter(value => value !== id) : [...current, id]), saving: false, failed: false }}
@@ -39,7 +39,15 @@ function App() {
         calls.push(key);
         return await new Promise((resolve, reject) => pending.set(key, { resolve, reject })) as never;
       }
-      return { agents: agents() } as never;
+      if (method === "opencraft/agents/onboarding/history") return { conversations: [
+        { id: "11111111-2222-3333-4444-555555555555", title: "Continue my local project", cwd: "/workspace/project", updatedAt: "2026-11-13T01:00:00Z", imported: false },
+        { id: "22222222-2222-3333-4444-555555555555", title: "Another conversation", cwd: "/workspace/other", updatedAt: null, imported: false },
+      ], nextCursor: null } as never;
+      if (method === "opencraft/agents/onboarding/import") {
+        calls.push(`${hostId}:import`);
+        return await new Promise((resolve, reject) => pending.set(`${hostId}:import`, { resolve, reject })) as never;
+      }
+      return { agents: agents(), historyImport: new URLSearchParams(location.search).has("history") } as never;
     }} /></QueryClientProvider>;
 }
 createIntlTestRoot(document.getElementById("root")!, undefined, new URLSearchParams(location.search).get("locale") ?? "en-US").render(<App />);

@@ -7,6 +7,8 @@ export type {
   ComposerQueuedSubmissionPresentation,
   ComposerEffectiveSelections,
   ComposerExecutionTarget,
+  ComposerAgentContinuation,
+  ComposerAgentCycleDirection,
   ComposerModelOption,
   ComposerPermissionOption,
   ComposerReasoningEffortOption,

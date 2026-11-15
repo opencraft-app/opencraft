@@ -278,3 +278,16 @@
 }
 
 .ui-button.ui-object-title-button[data-object-prominence="reading"] { @include typography.role(panel-title); }
+
+// A visible handle attached to the edge of a shell surface.
+.ui-button[data-size="edge"] {
+  @include typography.role(control-compact, null);
+  width: max(var(--width-edge-control), var(--size-control-hit-min));
+  min-width: max(var(--width-edge-control), var(--size-control-hit-min));
+  height: var(--height-edge-control);
+  min-height: var(--height-edge-control);
+  aspect-ratio: auto;
+  padding: 0;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}

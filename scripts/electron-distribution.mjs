@@ -1,5 +1,6 @@
 import { access, lstat, readFile, readdir, readlink, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { isAbsolute, join, normalize, sep } from "node:path";
 
 export function electronExecutableName(platform = process.platform) {
@@ -14,9 +15,10 @@ export function electronExecutablePath(distribution, platform = process.platform
   return join(distribution, electronExecutableName(platform));
 }
 
+// Stream the file: unstripped native executables can exceed the 2 GiB readFile limit.
 async function sha256(path) {
   const hash = createHash("sha256");
-  hash.update(await readFile(path));
+  for await (const chunk of createReadStream(path)) hash.update(chunk);
   return hash.digest("hex");
 }
 

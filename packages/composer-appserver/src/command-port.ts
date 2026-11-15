@@ -231,6 +231,7 @@ export function createAppServerConversationCommandPort(
       case "new-thread": {
         const started = await config.client.request("thread/start", {
           ...compiled.threadOptions,
+          ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
           ...(config.dynamicTools === undefined
             ? {}
             : { dynamicTools: [...config.dynamicTools] }),
@@ -353,6 +354,7 @@ export function createAppServerConversationCommandPort(
       config.onDiagnostic?.(diagnostic, intent);
     const started = await config.client.request("thread/start", {
       ...compiled.threadOptions,
+          ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
       ...(config.dynamicTools === undefined
         ? {}
         : { dynamicTools: [...config.dynamicTools] }),

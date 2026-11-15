@@ -5,6 +5,7 @@
   z-index: calc(var(--layer-workspace-composer) + 1);
   inset: 0;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   place-items: center;
   padding: 24px;
   overflow: auto;
@@ -12,6 +13,7 @@
   &--sheet { place-items: start center; padding-top: 72px; }
 }
 .agent-onboard {
+  min-width: 0;
   box-sizing: border-box;
   padding: calc(var(--spacing) * 4);
   border: .5px solid var(--color-border-default);
@@ -107,3 +109,21 @@
 
 .agent-onboard__continue { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
 .agent-onboard__continue-hint { @include typography.role(metadata, secondary); max-width: 20rem; margin: var(--spacing) 0 0; }
+
+.agent-history {
+  margin-block: calc(var(--spacing) * 4);
+  border-top: 1px solid var(--color-border-default);
+  padding-top: calc(var(--spacing) * 3);
+  h3 { @include typography.role(body); margin: 0; }
+  p { @include typography.role(caption, secondary); margin-block: calc(var(--spacing) * 2); }
+  &__actions { display:flex; flex-wrap:wrap; gap:var(--spacing); }
+  &__list { list-style:none; padding:0; margin-block:var(--spacing); max-height:min(35vh, 20rem); overflow:auto;
+    li > .ui-button { width:100%; justify-content:flex-start; text-align:start; }
+  }
+  &__identity { flex:1; min-width:0; display:flex; flex-direction:column;
+    > span { overflow-wrap:anywhere; }
+    small { @include typography.role(caption, secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  }
+}
+
+.agent-history__project { display: flex; align-items: center; gap: calc(var(--spacing) * 2); padding: calc(var(--spacing) * 3) calc(var(--spacing) * 2) var(--spacing); @include typography.role(body); }

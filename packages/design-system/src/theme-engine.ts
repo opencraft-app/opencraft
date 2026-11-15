@@ -728,6 +728,8 @@ export function buildOpenCraftThemeCssProperties(
     "--color-background-elevated-primary-opaque": surfaces.popover ?? semantic.elevatedPrimaryOpaque,
     "--color-background-elevated-secondary": semantic.elevatedSecondary,
     "--color-background-elevated-secondary-opaque": semantic.elevatedSecondaryOpaque,
+    "--color-background-shell-underlay": mode === "dark" ? "#151618" : "#dcdcdf",
+    "--color-text-shell-underlay": mode === "dark" ? "#e4e4e7" : "#27282b",
     "--color-background-panel": surfaces.panel ?? mix(theme.surface, panelBase, panelOpacity),
     "--color-background-surface": definition.surface,
     "--color-background-surface-under": theme.surfaceUnder,

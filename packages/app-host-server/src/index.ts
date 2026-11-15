@@ -40,6 +40,8 @@ export interface AppHostServerOptions {
   /** Trusted Hub access boundary, installed per logical lease before native forwarding. */
   readonly createRpcAccessSession?: (hostId: string, context: TransportSubmissionContext, emit: (frame: string) => void) => {
     receive(frame: string): boolean | Promise<boolean>;
+    rewrite?(frame:string):string;
+    prepare?(frame:string):Promise<void>;
     project(frame: string): string | null;
     close(): void;
   };
@@ -328,7 +330,7 @@ export class AppHostServer {
         // Only this boundary proves that native forwarding never began.
         throw new HostSendNotAdmittedError(cause);
       }
-      const frame = this.options.logicalClientRouting
+      let frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
       const claim = this.slots.get(message.hostId)!.claims.get(this.claimKey(connection, message.leaseId))!;
       // Routing identity is owned by this server; never correlate access policy with a client-supplied stamp.
@@ -336,6 +338,7 @@ export class AppHostServer {
         const accessPacket = JSON.parse(message.frame);
         if (this.options.logicalClientRouting) delete accessPacket[LOGICAL_CLIENT_FIELD];
         if (await connection.receiveRpc(message.hostId, message.leaseId, record.generation, JSON.stringify(accessPacket))) return undefined;
+        frame=connection.rewriteRpc(message.hostId,message.leaseId,record.generation,frame);
       }
       await this.forward(record, frame, connection.submissionContext, claim.forwarding.signal);
       return undefined;
@@ -895,6 +898,9 @@ export class AppHostServerConnection {
     return session;
   }
 
+  rewriteRpc(hostId:string,leaseId:string,generation:number,frame:string):string {
+    return this.accessSession(hostId,leaseId,generation)?.rewrite?.(frame)??frame;
+  }
   async receiveRpc(hostId: string, leaseId: string, generation: number, frame: string): Promise<boolean> {
     return await this.accessSession(hostId,leaseId,generation)?.receive(frame) ?? false;
   }
@@ -947,12 +953,24 @@ export class AppHostServerConnection {
     } finally { this.cleaningPort = false; }
   }
 
+  private accessOutbound=Promise.resolve();
   post(message: AppHostToRendererMessage): void {
     if (this.closed) return;
     if (message.type === 'host/frame' && this.createRpcAccessSession) {
       const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
       for (const lease of leases) {
-        const frame = this.accessSession(lease.hostId,lease.leaseId,lease.generation)!.project(message.frame);
+        const access=this.accessSession(lease.hostId,lease.leaseId,lease.generation)!;
+        if(access.prepare) {
+          this.accessOutbound=this.accessOutbound.then(async()=>{
+            if(this.closed||this.accessSession(lease.hostId,lease.leaseId,lease.generation)!==access)return;
+            await access.prepare!(message.frame);
+            if(this.closed||this.accessSession(lease.hostId,lease.leaseId,lease.generation)!==access)return;
+            const projected=access.project(message.frame);
+            if(projected!==null)this.port.postMessage({...message,leaseId:lease.leaseId,frame:projected});
+          }).catch(()=>{this.close();});
+          continue;
+        }
+        const frame = access.project(message.frame);
         if (frame !== null) this.port.postMessage({...message,leaseId:lease.leaseId,frame});
       }
       return;

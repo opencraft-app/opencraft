@@ -15,6 +15,8 @@ export interface ComposerWorkspaceTarget {
  * workspace roots must not replace its document, attachments or selection.
  */
 export interface ComposerExecutionTarget {
+  /** Captured collaboration scope for creation; never a Native engine Server ID. */
+  readonly collaborationSpaceId?: string;
   readonly hostId: HostId;
   readonly workspace: ComposerWorkspaceTarget;
 }

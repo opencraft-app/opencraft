@@ -59,7 +59,7 @@ async function seed(root: string) {
 }
 
 test("Drizzle schema and recorded snapshot have no ungenerated structural changes", async () => {
-  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0003_snapshot.json", import.meta.url), "utf8"));
+  const previous = JSON.parse(readFileSync(new URL("../../packages/storage-node/src/server/migrations/meta/0004_snapshot.json", import.meta.url), "utf8"));
   const next = await generateSQLiteDrizzleJson(schema, previous.id);
   assert.deepEqual(await generateSQLiteMigration(previous, next), []);
   const empty = await generateSQLiteDrizzleJson({});
@@ -278,7 +278,7 @@ async function consolidatedBaseline(root: string) {
   const owner = await openServerDatabase(root);
   const receipts = owner.database.prepare("SELECT * FROM opencraft_server_imports WHERE source NOT IN ('thread-access','thread-notes') ORDER BY source").all();
   // Reconstruct the published v2 database, with its original six receipts.
-  owner.database.exec("DROP TABLE automation_delegations; DROP TABLE automation_mutations; DROP TABLE automation_runs; DROP TABLE project_automations; DROP TABLE automation_grants; DROP TABLE thread_access; DROP TABLE thread_access_audit; DROP TABLE thread_notes; DELETE FROM schema_migrations WHERE version>=3; DELETE FROM opencraft_server_imports WHERE source IN ('thread-access','thread-notes')");
+  owner.database.exec("DROP TABLE collaboration_space_threads; DROP TABLE collaboration_space_invitations; DROP TABLE collaboration_space_members; DROP TABLE collaboration_spaces; DROP TABLE automation_delegations; DROP TABLE automation_mutations; DROP TABLE automation_runs; DROP TABLE project_automations; DROP TABLE automation_grants; DROP TABLE thread_access; DROP TABLE thread_access_audit; DROP TABLE thread_notes; DELETE FROM schema_migrations WHERE version>=3; DELETE FROM opencraft_server_imports WHERE source IN ('thread-access','thread-notes')");
   owner.database.prepare("UPDATE opencraft_server_installation SET contract_hash=?").run(createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS.slice(0, 2))).digest("hex"));
   await owner.close();
   return { before, receipts };

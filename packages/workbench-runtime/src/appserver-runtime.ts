@@ -301,6 +301,7 @@ export interface AppServerThreadResourcePort {
 }
 
 export interface AppServerComposerCatalogResourcePort {
+  subscribeModelsChanged?(listener: () => void): () => void;
   listModels(params?: Partial<ModelListParams>): Promise<ModelListResponse>;
   readNewThreadDefaults(cwd?: string | null): Promise<{
     readonly serviceTier?: string | null;
@@ -542,6 +543,7 @@ export function createAppServerWorkbenchRuntime(
   const maxInactiveThreads = config.maxInactiveThreads ?? 4;
   const listeners = new Set<() => void>();
   const schedulesChangedListeners = new Set<() => void>();
+  const modelsChangedListeners = new Set<() => void>();
   const skillsChangedListeners = new Set<() => void>();
   const bindings = new Map<string, ConversationBinding>();
   const catalogMetadata = new Map<string, ProtocolThread>();
@@ -1724,6 +1726,10 @@ export function createAppServerWorkbenchRuntime(
       });
       terminalController = new AppServerTerminalController(hostId, client);
       removeSkillsNotificationListener = client.subscribeNotification((notification) => {
+        if (notification.method === "opencraft/agents/models/changed") {
+          recentModelPages.clear();
+          for (const listener of modelsChangedListeners) { try { listener(); } catch {} }
+        }
         if (notification.method !== "skills/changed") return;
         for (const listener of skillsChangedListeners) {
           try { listener(); } catch { /* One View cannot break the shared notification pump. */ }
@@ -1877,6 +1883,7 @@ export function createAppServerWorkbenchRuntime(
             || (config.modelSelectionPolicy === "session" && intent.target.type === "new-thread" && intent.selections.model === undefined)
           );
           const modelId = useHostDefault ? null : intent.selections.model ?? (threadId ? bindings.get(threadId)?.runtime.getSnapshot().execution.model : null);
+          if (threadId?.startsWith("codex_") && intent.selections.model === undefined && !modelId) return {};
           const scope = !useHostDefault && client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
           let cursor: string | null = null;
           const seen = new Set<string>();
@@ -2294,6 +2301,7 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       composerCatalog: {
+        subscribeModelsChanged(listener) { modelsChangedListeners.add(listener); return () => { modelsChangedListeners.delete(listener); }; },
         async listModels(params = {}) {
           return listSelectableModels({
             cursor: null,
@@ -2647,6 +2655,7 @@ export function createAppServerWorkbenchRuntime(
         removeGoalNotificationListener?.();
         removeGoalNotificationListener = null;
         skillsChangedListeners.clear();
+        modelsChangedListeners.clear();
         schedulesChangedListeners.clear();
 
         const pending = [

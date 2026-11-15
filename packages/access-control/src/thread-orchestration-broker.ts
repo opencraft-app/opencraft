@@ -22,6 +22,8 @@ const terminal=new Set(['completed','failed','exhausted','unconfirmed','interrup
 /** Hub coordination over the collaboration ledger and existing Host input queue. */
 export class ThreadOrchestrationBroker {
   automations?: ProjectAutomations;
+  /** Record the already-created child in its source collaboration scope before delivery. */
+  childScope?: (parent:import('@opencraft/appserver-protocol/collaboration').ConversationRef,child:import('@opencraft/appserver-protocol/collaboration').ConversationRef)=>Promise<void>;
   legacySchedule?: (threadId:string)=>Promise<{status:string}|null>;
   private readonly calls=new Map<string,{fingerprint:string;promise:Promise<unknown>}>();
   private readonly operationCalls=new Map<string,Promise<unknown>>();
@@ -275,6 +277,7 @@ export class ThreadOrchestrationBroker {
         void this.reconcileAcks();throw new CollaborationError(created.rejected.status,'native_child_creation_rejected');
       }
       const childId=text(created.threadId),parent=ledger.relation(threadId);
+      await this.childScope?.(this.reference(threadId),this.reference(childId));
       ledger.transaction(()=>{
         ledger.createThread({threadId:childId,serverId:this.reference(childId).serverId,driverKind:created.driverKind??String(settings.driver??args.driver??'codex'),ownerActorId:delegation.context.actorId,parentThreadId:threadId,
           lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:args.visibility==='visible'?'visible':'hidden',engineHostGeneration:created.generationId??null,nativeSessionId:childId,

@@ -77,7 +77,15 @@ for (const identityOverlay of [false, true]) for (const entry of ['apphost', 'ap
   assert.equal(initialized.result.capabilities.extensions['opencraft/token-usage'].query, true);
   for (const scope of ['self', 'team']) for (const filtered of [false, true]) {
     const reply = await rpc('opencraft/token-usage/query', { from: '2026-10-21', through: '2026-10-21', scope, ...(filtered ? {threadId:'existing'} : {}) });
-    assert.equal(reply.error, undefined, JSON.stringify(reply.error)); assert.equal(reply.result.summary.tokens, scope === 'self' ? '600' : '1200');
+    if (filtered) {
+      // A ledger row is not proof of conversation access. This historical
+      // native ID has never been assigned to a collaboration space.
+      assert.equal(reply.error?.data?.code, 'THREAD_NOT_FOUND');
+      assert.equal(reply.result, undefined);
+    } else {
+      assert.equal(reply.error, undefined, JSON.stringify(reply.error));
+      assert.equal(reply.result.summary.tokens, scope === 'self' ? '600' : '1200');
+    }
   }
   if (entry === 'appserver') {
     // Separate admitted connections retain their own protocol and authority.

@@ -1,3 +1,4 @@
+import type { ServerSpaceCommand } from "./server-spaces";
 import type { ThreadAccessMethodMap } from "./thread-access";
 import type { AgentOnboardingMethodMap } from "./agent-onboarding";
 import type { AgentUsageMethodMap } from "./agent-usage";
@@ -511,7 +512,7 @@ export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMet
     result: { presentation: Record<string, unknown>; executions: Array<Record<string, unknown>> };
   };
   "thread/start": {
-    params: ThreadStartParams;
+    params: ThreadStartParams & {collaborationSpaceId?:string};
     result: ThreadStartResponse;
   };
   "thread/fork": {
@@ -658,6 +659,7 @@ export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMet
     params: FuzzyFileSearchSessionUpdateParams;
     result: FuzzyFileSearchSessionUpdateResponse;
   };
+  "opencraft/server-spaces": {params: ServerSpaceCommand; result: unknown};
   "fuzzyFileSearch/sessionStop": {
     params: FuzzyFileSearchSessionStopParams;
     result: FuzzyFileSearchSessionStopResponse;

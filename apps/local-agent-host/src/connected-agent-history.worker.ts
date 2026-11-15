@@ -1,43 +1,20 @@
+import { exportConversationContext } from "./conversation-context-export.js";
+import { CodexHistorySources, codexHistoryRecords, containedNativeHistoryPath, type CodexHistoryRange } from "./codex-history-sources.js";
+import { codexProjectGroups } from "./codex-project-groups.js";
 import { parentPort, workerData } from "node:worker_threads";
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { join, relative, isAbsolute } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
 
 type Value = Record<string, any>;
 type Turn = Value & { id: string; items: Value[] };
 const port = parentPort!;
-const { provider, home } = workerData as { provider: "codex" | "cursor"; home: string };
-const paths = new Map<string, string>();
+const { provider, home, contextDirectory } = workerData as { provider: "codex" | "cursor"; home: string; contextDirectory?: string };
+const codexSources = new CodexHistorySources(home);
 const cache = new Map<string, { stamp: string; turns: Turn[] }>();
-async function contained(path: string): Promise<string> {
-  const root = await realpath(home), source = await realpath(path), child = relative(root, source);
-  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new Error("Native history source outside configured home");
-  return source;
-}
-async function rollout(nativeId: string): Promise<string> {
-  const known = paths.get(nativeId);
-  if (known) {
-    try { return await contained(known); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; paths.delete(nativeId); }
-  }
-  for (const directory of ["sessions", "archived_sessions"]) {
-    const visit = async (path: string): Promise<string | null> => {
-      let entries;
-      try { entries = await readdir(path, { withFileTypes: true }); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
-      for (const entry of entries) {
-        const child = join(path, entry.name);
-        if (entry.isDirectory()) { const found = await visit(child); if (found) return found; }
-        else if (entry.isFile() && entry.name.endsWith(`-${nativeId}.jsonl`)) return child;
-      }
-      return null;
-    };
-    const found = await visit(join(home, directory));
-    if (found) { paths.set(nativeId, found); return contained(found); }
-  }
-  throw new Error("Native conversation history is unavailable");
-}
+const contained = (path: string) => containedNativeHistoryPath(home, path);
 const text = (content: any): string => typeof content === "string" ? content : Array.isArray(content)
   ? content.filter(block => block && ["text", "Text", "input_text", "output_text"].includes(block.type)).map(block => block.text ?? "").join("") : "";
 function codexItem(item: Value): Value {
@@ -56,47 +33,34 @@ function codexItem(item: Value): Value {
   }
   return converted;
 }
-async function readCodex(path: string, nativeId: string): Promise<Turn[]> {
-  const file = await open(path, "r"), turns: Turn[] = [];
-  let current: Turn | undefined, verified = false, invalid = false;
+async function readCodex(ranges: readonly CodexHistoryRange[]): Promise<Turn[]> {
+  const turns: Turn[] = [];
+  let current: Turn | undefined;
   const upsert = (item: Value) => {
     if (!current) return;
     const index = current.items.findIndex((old: Value) => old.id === item.id);
     if (index < 0) current.items.push(item); else current.items[index] = item;
   };
-  try {
-    const lines = createInterface({ input: file.createReadStream({ autoClose: false }), crlfDelay: Infinity });
-    for await (const line of lines) {
-      if (Buffer.byteLength(line) > 64 * 1024 * 1024) throw new Error("Native history record is too large");
-      // A writer's unfinished final line is retried on the next source stamp.
-      if (invalid) throw new Error("Invalid native history record");
-      let record: Value; try { record = JSON.parse(line); } catch { invalid = true; continue; }
-      const p = record.payload ?? {};
-      if (record.type === "session_meta") { if ((p.id ?? p.session_id) !== nativeId) throw new Error("Native history identity mismatch"); verified = true; }
-      if (record.type !== "event_msg") continue;
-      if (p.type === "task_started") {
-        if (typeof p.turn_id !== "string" || !p.turn_id) throw new Error("Native history turn identity missing");
-        current = turns.find(turn => turn.id === p.turn_id);
-        if (!current) { current = { id: p.turn_id, items: [], status: "inProgress", startedAtMs: Date.parse(typeof p.started_at === "string" ? p.started_at : record.timestamp) }; turns.push(current); }
-      } else if (p.type === "item_completed" && p.item?.type) {
-        if (!current || p.turn_id && current.id !== p.turn_id) current = turns.find(turn => turn.id === p.turn_id);
-        upsert(codexItem(p.item));
-      } else if (["user_message", "agent_message", "agent_reasoning"].includes(p.type) && current) {
-        const kind = p.type === "user_message" ? "userMessage" : p.type === "agent_message" ? "agentMessage" : "reasoning";
-        const item = kind === "userMessage" ? { type: kind, content: [{ type: "text", text: p.message ?? "", text_elements: [] }] }
-          : kind === "reasoning" ? { type: kind, summary: [], content: [p.text ?? ""] } : { type: kind, text: p.message ?? "" };
-        if (!current.items.some((old: Value) => old.type === kind && (kind === "userMessage" ? text(old.content) === p.message : old.text === p.message))) upsert({ id: `${current.id}:${kind}:${current.items.length}`, ...item });
-      } else if (["task_complete", "turn_aborted"].includes(p.type)) {
-        const turn = turns.find(turn => turn.id === p.turn_id) ?? current;
-        if (turn) { turn.status = p.type === "turn_aborted" ? "interrupted" : "completed"; turn.completedAtMs = Date.parse(typeof p.completed_at === "string" ? p.completed_at : record.timestamp); }
-      } else if (p.type === "thread_rolled_back") turns.splice(Math.max(0, turns.length - Number(p.num_turns ?? 0)));
-    }
-    if (invalid) {
-      const size = (await file.stat()).size, last = Buffer.alloc(1);
-      if (size && (await file.read(last, 0, 1, size - 1)).bytesRead && last[0] === 10) throw new Error("Invalid native history record");
-    }
-  } finally { await file.close(); }
-  if (!verified) throw new Error("Native history identity missing");
+  for await (const record of codexHistoryRecords(ranges)) {
+    const p = record.payload ?? {};
+    if (record.type !== "event_msg") continue;
+    if (p.type === "task_started") {
+      if (typeof p.turn_id !== "string" || !p.turn_id) throw new Error("Native history turn identity missing");
+      current = turns.find(turn => turn.id === p.turn_id);
+      if (!current) { current = { id: p.turn_id, items: [], status: "inProgress", startedAtMs: Date.parse(typeof p.started_at === "string" ? p.started_at : record.timestamp) }; turns.push(current); }
+    } else if (p.type === "item_completed" && p.item?.type) {
+      if (!current || p.turn_id && current.id !== p.turn_id) current = turns.find(turn => turn.id === p.turn_id);
+      upsert(codexItem(p.item));
+    } else if (["user_message", "agent_message", "agent_reasoning"].includes(p.type) && current) {
+      const kind = p.type === "user_message" ? "userMessage" : p.type === "agent_message" ? "agentMessage" : "reasoning";
+      const item = kind === "userMessage" ? { type: kind, content: [{ type: "text", text: p.message ?? "", text_elements: [] }] }
+        : kind === "reasoning" ? { type: kind, summary: [], content: [p.text ?? ""] } : { type: kind, text: p.message ?? "" };
+      if (!current.items.some((old: Value) => old.type === kind && (kind === "userMessage" ? text(old.content) === p.message : old.text === p.message))) upsert({ id: `${current.id}:${kind}:${current.items.length}`, ...item });
+    } else if (["task_complete", "turn_aborted"].includes(p.type)) {
+      const turn = turns.find(turn => turn.id === p.turn_id) ?? current;
+      if (turn) { turn.status = p.type === "turn_aborted" ? "interrupted" : "completed"; turn.completedAtMs = Date.parse(typeof p.completed_at === "string" ? p.completed_at : record.timestamp); }
+    } else if (p.type === "thread_rolled_back") turns.splice(Math.max(0, turns.length - Number(p.num_turns ?? 0)));
+  }
   return turns.filter(turn => turn.items.length);
 }
 
@@ -183,15 +147,33 @@ function readCursor(path: string, nativeId: string): Turn[] {
     db.exec("COMMIT"); return turns;
   } finally { db.close(); }
 }
+let projectState: { stamp: string; data: unknown } | undefined;
 async function read(nativeId: string, params: Value, kind: string): Promise<any> {
+  if (kind === "projects") {
+    if (provider !== "codex") return { available: false, groups: {} };
+    const path = join(home, ".codex-global-state.json");
+    const source = await stat(path).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+    if (!source) return { available: false, groups: {} };
+    if (source.size > 20 * 1024 * 1024 || !Array.isArray(params.threads) || params.threads.length > 10000 || params.threads.some((t: Value) => typeof t.id !== "string" || typeof t.cwd !== "string" || !isAbsolute(t.cwd))) throw new Error("Invalid native project source");
+    const stamp = JSON.stringify([source.ino, source.size, source.mtimeMs]);
+    if (projectState?.stamp !== stamp) projectState = { stamp, data: JSON.parse(await readFile(path, "utf8")) };
+    const data = projectState.data as Record<string, unknown>;
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid native project metadata");
+    const hasLocal = data["local-projects"] !== undefined;
+    const hasLegacy = Array.isArray(data["electron-saved-workspace-roots"]);
+    if (hasLocal && (!data["local-projects"] || typeof data["local-projects"] !== "object" || Array.isArray(data["local-projects"]))) throw new Error("Invalid native project metadata");
+    if (!hasLocal && !hasLegacy) return { available: false, groups: {} };
+    return { available: true, groups: codexProjectGroups(data, params.threads) };
+  }
   if (!/^[a-f0-9-]{32,64}$/u.test(nativeId)) throw new Error("Invalid native conversation identity");
-  const path = provider === "codex" ? await rollout(nativeId) : await contained(join(home, "acp-sessions", nativeId, "store.db"));
+  const ranges = provider === "codex" ? await codexSources.resolve(nativeId) : undefined;
+  const path = ranges ? ranges.at(-1)!.path : await contained(join(home, "acp-sessions", nativeId, "store.db"));
   const source = await stat(path), wal = provider === "cursor" ? await stat(`${path}-wal`).catch(() => null) : null;
   if (kind === "usage") return provider === "codex" ? readCodexUsage(path, nativeId) : readCursorUsage(path, nativeId, Math.max(source.mtimeMs, wal?.mtimeMs ?? 0));
-  const stamp = JSON.stringify([source.dev, source.ino, source.size, source.mtimeMs, wal?.size, wal?.mtimeMs]);
+  const stamp = ranges ? JSON.stringify(ranges.map(range => range.stamp)) : JSON.stringify([source.dev, source.ino, source.size, source.mtimeMs, wal?.size, wal?.mtimeMs]);
   let stored = cache.get(nativeId);
   if (!stored || stored.stamp !== stamp) {
-    stored = { stamp, turns: provider === "codex" ? await readCodex(path, nativeId) : readCursor(path, nativeId) };
+    stored = { stamp, turns: provider === "codex" ? await readCodex(ranges!) : readCursor(path, nativeId) };
     cache.set(nativeId, stored); if (cache.size > 8) cache.delete(cache.keys().next().value!);
   }
   let turns = stored.turns;
@@ -201,6 +183,10 @@ async function read(nativeId: string, params: Value, kind: string): Promise<any>
     const same = tail && Number(tail.startedAtMs) >= Math.floor(Number(active.startedAtMs) / 1000) * 1000
       && text(tail.items.find((item: Value) => item.type === "userMessage")?.content) === text(user?.content);
     turns = [...(same ? turns.slice(0, -1) : turns), active as Turn];
+  }
+  if (kind === "export") {
+    if (!contextDirectory || typeof params.threadId !== "string" || typeof params.cwd !== "string" || params.title !== null && typeof params.title !== "string") throw new Error("Conversation context export is unavailable");
+    return exportConversationContext(contextDirectory, params.threadId, params.title, params.cwd, turns);
   }
   const thread = { id: params.threadId ?? nativeId, turns };
   if (kind === "snapshot") return turns;

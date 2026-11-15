@@ -92,6 +92,8 @@ export const frame = {
   toolbarHeight: 46,
   paneToolbarHeight: 40,
   sidebarDefaultWidth: sidebarListDefaultWidth,
+  serverDrawerWidth: 280,
+  serverDrawerEdgeWidth: 36,
   sidebarIconRailWidth,
   sidebarUnifiedDefaultWidth: sidebarListDefaultWidth,
   sidebarUnifiedMinWidth: sidebarListMinimumWidth,

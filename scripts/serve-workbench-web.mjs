@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { McpAppsRpcSession } from "../packages/mcp-apps/src/transport.ts";
 import { serveNotModified } from "./web-asset-cache.mjs";
+import { resourceRecoveryHtml, resourceRecoveryPath } from './web-resource-recovery.mjs';
 import { HtmlFilePreviews } from "./html-file-previews.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -100,7 +101,19 @@ function bridgeAppServerSocket(client, request, options) {
   const accessSession = options.createAccessSession?.(options.submissionContext, frame => {
     if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
   });
+  let outbound=Promise.resolve();
   const write = (frame, isBinary = false) => {
+    if(accessSession?.prepare) {
+      outbound=outbound.then(async()=>{
+        if(client.readyState!==WebSocket.OPEN||options.authorize?.()===false)return;
+        if(isBinary)throw new Error("Text frames required");
+        await accessSession.prepare(String(frame));
+        if(client.readyState!==WebSocket.OPEN||options.authorize?.()===false)return;
+        const projected=accessSession.project(String(frame));
+        if(projected!==null)client.send(projected,{binary:false});
+      }).catch(()=>{client.close(1002,"Invalid RPC frame");});
+      return;
+    }
     if (client.readyState !== WebSocket.OPEN || options.authorize?.() === false) return;
     if (accessSession && isBinary) { client.close(1003, 'Text frames required'); return; }
     try {
@@ -143,6 +156,7 @@ function bridgeAppServerSocket(client, request, options) {
     try {
       if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
       if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
+      if(accessSession?.rewrite)data=accessSession.rewrite(data.toString('utf8'));
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
@@ -432,11 +446,19 @@ function isWorkbenchApplicationRoute(pathname) {
   return /^\/(?:local|settings|threads|views)\/[^/]+\/?$/u.test(pathname);
 }
 
-async function serveFile(request, response, path, pathname) {
+async function serveFile(request, response, path, pathname, instanceId, assetVersion) {
   const metadata = await stat(path);
   if (!metadata.isFile()) return false;
+  let html = extname(path) === '.html' ? await readFile(path, 'utf8') : null;
+  if (html !== null) {
+    if (instanceId) html = html.replace(/<head(?:\s[^>]*)?>/iu,
+      head => `${head}<script id="opencraft-instance-id" type="application/json">${JSON.stringify(instanceId)}</script>`);
+    const url = new URL(request.url || '/', 'http://localhost');
+    if (assetVersion && !url.searchParams.has('opencraft-resource-recovery')) url.searchParams.set('opencraft-resource-recovery', createHash('sha256').update(assetVersion).digest('hex').slice(0, 24));
+    html = resourceRecoveryHtml(html, url.href);
+  }
   response.statusCode = 200;
-  response.setHeader("content-length", metadata.size);
+  response.setHeader("content-length", html === null ? metadata.size : Buffer.byteLength(html));
   response.setHeader("content-type", contentTypes.get(extname(path).toLowerCase()) || "application/octet-stream");
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("etag", `W/\"${metadata.size.toString(16)}-${Math.trunc(metadata.mtimeMs).toString(16)}\"`);
@@ -447,17 +469,20 @@ async function serveFile(request, response, path, pathname) {
   } else {
     response.setHeader("cache-control", "no-cache");
   }
-  if (serveNotModified(request, response)) return true;
+  if (html === null && serveNotModified(request, response)) return true;
   if (request.method === "HEAD") {
     response.end();
     return true;
   }
-  createReadStream(path).pipe(response);
+  if (html !== null) response.end(html);
+  else createReadStream(path).pipe(response);
   return true;
 }
 
 export async function createWorkbenchWebServer({
   root,
+  instanceId = null,
+  assetVersion = null,
   appServerTarget = "ws://127.0.0.1:9988/rpc",
   resolveAppServerTarget,
   appServerIdentity = null,
@@ -498,6 +523,8 @@ export async function createWorkbenchWebServer({
   ...unknownOptions
 } = {}) {
   if (Object.keys(unknownOptions).length) throw new Error("Unknown workbench gateway option; check server composition");
+  if (instanceId !== null && (typeof instanceId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(instanceId))) throw new Error('Invalid instance storage identity');
+  if (assetVersion !== null && (typeof assetVersion !== 'string' || !assetVersion || assetVersion.length > 128)) throw new Error('Invalid asset version');
   if (identityService !== null && (!identityService || ["admissionStatus", "connectionContext", "handle"].some(method => typeof identityService[method] !== "function"))) throw new Error("Invalid request identity service");
   if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
   if (desktopService !== null && desktopAccess === "loopback" && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
@@ -788,16 +815,17 @@ export async function createWorkbenchWebServer({
         return;
       }
 
-      const requestedPath = resolveRequestPath(staticRoot, url.pathname);
+      const resourcePath = resourceRecoveryPath(url.pathname);
+      const requestedPath = resolveRequestPath(staticRoot, resourcePath);
       if (requestedPath == null) {
         sendJson(response, 400, { ok: false, error: "Invalid path" });
         return;
       }
       try {
-        if (await serveFile(request, response, requestedPath, url.pathname)) return;
+        if (await serveFile(request, response, requestedPath, resourcePath, instanceId, assetVersion)) return;
         // Product-owned standalone documents can share the static origin without
         // booting the Workbench SPA. Admission and reserved API routing stay above.
-        if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname)) return;
+        if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname, instanceId, assetVersion)) return;
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
       }
@@ -807,7 +835,7 @@ export async function createWorkbenchWebServer({
         acceptsHtml &&
         (extname(url.pathname) === "" || isWorkbenchApplicationRoute(url.pathname))
       ) {
-        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html");
+        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", instanceId, assetVersion);
         return;
       }
       sendJson(response, 404, { ok: false, error: "Not found" });

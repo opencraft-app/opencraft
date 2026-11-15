@@ -20,7 +20,7 @@ const tick = () => new Promise<void>(resolve => setTimeout(resolve, 5));
 
 test("new Draft placement shares the existing content envelope, never execution lifecycle", () => {
   const draftTarget = { type: "new-thread", draftId: "new-A", execution: {
-    hostId: asHostId("ssh"), workspace: { cwd: "/fixture", runtimeWorkspaceRoots: ["/fixture"] },
+    hostId: asHostId("ssh"), collaborationSpaceId: "team-a", workspace: { cwd: "/fixture", runtimeWorkspaceRoots: ["/fixture"] },
   } } as const;
   const saved = serializeConversationDraftDocument(document("unsent"), draftTarget);
   assert.deepEqual(parseConversationDraftTarget(saved), draftTarget);
@@ -132,6 +132,10 @@ test("promoting an accepted first turn discards the original new-thread draft", 
   const composer = views.ensure("view", scopeId, hostId, draftTarget).composer;
   composer.dispatch({ type: "set-document", document: document("sent") });
   await tick();
+  const submittedDraft = composer.getSnapshot().draft;
+  const submitted = composer.createSubmitIntent();
+  composer.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  assert.equal(composer.settleSubmission(submittedDraft.id, submitted, { status: "accepted" }), true);
   views.bindScopeTarget(scopeId, target);
   await tick();
   assert.equal(storage.data.size, 0);
@@ -162,4 +166,37 @@ test("credential rotation clears active and target-cached Composer text", async 
   assert.equal(composerDocumentToPlainText(composer.getSnapshot().draft.document), "");
   views.dispose();
   leases.dispose();
+});
+
+
+const continuationContext = { id: "conversation:fixture", kind: "file" as const, title: "Original conversation", uri: "file:///private/fixture.md", visible: true,
+  metadata: { conversationSourceThreadId: "codex_source", additionalContextKind: "untrusted", value: "Read /private/fixture.md" } };
+test("a continuation-only draft restores its history reference, target and explicit Agent model without caching permission grants", async () => {
+  const storage = memoryStorage(), continuity = createConversationDraftContinuity({ namespace: "continuation", storage, delayMs: 0 });
+  const target = { type: "new-thread", draftId: "continuation", execution: { hostId: asHostId("local"), collaborationSpaceId: "team", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } } as const;
+  const first = createComposerController(target, { now: Date.now, createId: () => "continuation-controller" }), stop = continuity.attach("continuation-view", first);
+  first.dispatch({ type: "add-context", reference: continuationContext });
+  first.dispatch({ type: "set-selections", patch: { model: "cursor:auto", effort: "high", serviceTier: null, permissionProfile: "not-a-persisted-grant" } });
+  await tick(); stop(); await tick(); first.dispose();
+  assert.deepEqual(parseConversationDraftTarget([...storage.data.values()][0]), target);
+  const reopened = createComposerController(target, { now: Date.now, createId: () => "continuation-controller" }), stopReopened = continuity.attach("continuation-view", reopened);
+  await tick();
+  assert.deepEqual(reopened.getSnapshot().draft.context, [continuationContext]);
+  assert.equal(reopened.getSnapshot().draft.selections.model, "cursor:auto");
+  assert.equal(reopened.getSnapshot().draft.selections.effort, "high");
+  assert.equal(reopened.getSnapshot().draft.selections.serviceTier, null);
+  assert.equal(reopened.getSnapshot().draft.selections.permissionProfile, undefined);
+  stopReopened(); reopened.dispose();
+});
+test("late continuation hydration does not overwrite a newly selected model", async () => {
+  let release!: (value: string) => void;
+  const pendingRead = new Promise<string>(resolve => { release = resolve; });
+  const continuity = createConversationDraftContinuity({ namespace: "late-continuation", storage: { load: () => pendingRead, async save() {}, async remove() {} }, delayMs: 0 });
+  const controller = createComposerController(target, { now: Date.now, createId: () => "continuation-controller" }), stop = continuity.attach("late-view", controller);
+  controller.dispatch({ type: "set-selections", patch: { model: "codex:new-choice" } });
+  release(serializeConversationDraftDocument(document("restored text"), target, { context: [continuationContext], selections: { model: "cursor:auto" } })!);
+  await tick();
+  assert.equal(controller.getSnapshot().draft.selections.model, "codex:new-choice");
+  assert.deepEqual(controller.getSnapshot().draft.context, [continuationContext]);
+  stop(); controller.dispose();
 });

@@ -70,7 +70,7 @@ export function createCatalogMerkle() {
     return JSON.stringify(value) ?? "null";
   }
   // Execution status and local pin/creation decorations have independent owners.
-  const fields = ["id", "sessionId", "forkedFromId", "parentThreadId", "section", "sectionEnteredAt", "projectId", "historyMode", "modelProvider", "model", "reasoningEffort", "createdAt", "updatedAt", "recencyAt", "path", "cwd", "cliVersion", "originator", "source", "canAcceptDirectInput", "threadSource", "agentNickname", "agentRole", "gitInfo", "daybreakEnabled", "visibility", "accessMode", "name", "preview"];
+  const fields = ["id", "sessionId", "forkedFromId", "parentThreadId", "section", "sectionEnteredAt", "projectId", "nativeProject", "historyMode", "modelProvider", "model", "reasoningEffort", "createdAt", "updatedAt", "recencyAt", "path", "cwd", "cliVersion", "originator", "source", "canAcceptDirectInput", "threadSource", "agentNickname", "agentRole", "gitInfo", "daybreakEnabled", "visibility", "accessMode", "name", "preview"];
   function metadata(row: Thread): Record<string, unknown> {
     const value = row as unknown as Record<string, unknown>;
     return Object.fromEntries(fields.filter(k => value[k] != null).map(k => [k, value[k]]));

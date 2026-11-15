@@ -37,8 +37,13 @@ export const serverFetch: typeof fetch = (input, init) => {
   return globalThis.fetch(input, init);
 };
 export function serverStorageKey(key: string): string {
-  const id = browserServerContext()?.id;
-  return id ? `server:${id}:${key}` : key;
+  const selected = browserServerContext()?.id;
+  if (selected) return `server:${selected}:${key}`;
+  const raw = typeof document === 'undefined' || typeof document.getElementById !== 'function'
+    ? null : document.getElementById('opencraft-instance-id')?.textContent;
+  const instance = raw ? JSON.parse(raw) : null;
+  if (instance !== null && (typeof instance !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(instance))) throw new Error('Invalid instance storage identity');
+  return instance ? `server:${instance}:${key}` : key;
 }
 
 /** A saved deployment recipe may outlive its public route. Match only the

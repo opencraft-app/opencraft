@@ -512,3 +512,129 @@ test("P2c ACP preparation is bound to Host incarnation and admission epoch, incl
   await assert.rejects(f.host.manage("activate", { id: "b", expectedCurrent: "a", preparation: next.preparation }), /preparation/);
   assert.equal(f.host.snapshot().current, "a");
 });
+
+
+test("native history import preserves identity, survives restart, and resumes only on an explicit request", async t => {
+  const id = "11111111-2222-3333-4444-555555555555";
+  let projectName = "Original project";
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_IMPORT_SESSIONS: JSON.stringify({ sessions: [{ sessionId: id, cwd: "/workspace", title: "Local conversation", updatedAt: "2026-11-13T01:00:00Z" }], nextCursor: "page-2" }) },
+    history: { async projects() { return { available: true, groups: { [id]: { source: "codex", id: "native-project-a", name: projectName, position: 3 } } }; }, async read() { return { data: [{ id: "old-turn", items: [{ id: "old-answer", type: "agentMessage", text: "Previous answer" }] }], nextCursor: null }; } } });
+  const page = await f.engine.discoverNativeSessions();
+  assert.equal(page.sessions[0].imported, false); assert.equal(page.nextCursor, "page-2");
+  assert.equal(page.sessions[0].nativeProject?.name, "Original project");
+  const [thread, repeated] = await Promise.all([f.engine.importNativeSession(page.sessions[0]), f.engine.importNativeSession(page.sessions[0])]);
+  assert.equal(thread.id, repeated.id);
+  assert.equal(thread.name, "Local conversation"); assert.equal(thread.cwd, "/workspace");
+  assert.equal((await f.engine.discoverNativeSessions()).sessions[0].imported, true);
+  assert.ok(!(await f.calls()).some(call => ["session/new", "session/resume", "session/prompt"].includes(call.method)));
+  await f.engine.close();
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  const importedPath = join(f.root, "data", `${thread.id}.json`);
+  const oldImport = JSON.parse(await readFile(importedPath, "utf8"));
+  delete oldImport.nativeProject; delete oldImport.nativeImport;
+  await writeFile(importedPath, JSON.stringify(oldImport));
+  await restored.refreshNativeProjects();
+  const backfilled = await restored.request("thread/read", { threadId: thread.id }, client);
+  assert.equal(backfilled.thread.nativeProject.name, "Original project");
+  const executionOwner = (restored as any).sessions.get(thread.id);
+  projectName = "Renamed original project";
+  await restored.refreshNativeProjects();
+  assert.equal((restored as any).sessions.get(thread.id), executionOwner, "project backfill preserves the active execution Session owner");
+  assert.equal((await restored.request("thread/read", { threadId: thread.id }, client)).thread.nativeProject.name, projectName);
+  const listed = await restored.request("thread/list", {}, client); assert.equal(listed.data.length, 1); assert.equal(listed.data[0].id, thread.id);
+  const history = await restored.request("thread/turns/list", { threadId: thread.id }, client); assert.equal(history.data[0].id, "old-turn");
+  assert.equal(restored.processId, null, "reading imported history does not start the CLI");
+  await restored.request("thread/resume", { threadId: thread.id }, client);
+  const calls = await f.calls(); assert.equal(calls.filter(call => call.method === "session/resume").at(-1)?.sessionId, id);
+  assert.ok(!calls.some(call => call.method === "session/new" || call.method === "session/prompt"));
+  let completed = false;
+  restored.subscribe(method => { if (method === "turn/completed") completed = true; });
+  await restored.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "Continue this conversation" }] }, client);
+  await until(() => completed);
+  const continued = await f.calls();
+  assert.equal(continued.find(call => call.method === "session/prompt")?.sessionId, id);
+  assert.equal(continued.some(call => call.method === "session/new"), false);
+});
+
+
+test("Codex branches a locked source without resuming or prompting it, persists its independent identity", async t => {
+  const nativeId = "01a18abe-a779-7a71-abcc-8cdf8d0d5c6b";
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_SESSION_HANDOFF: "1", ACP_TEST_BUSY_NATIVE: nativeId },
+    history: { async read() { return { data: [], nextCursor: null }; } } });
+  const source = await f.engine.importNativeSession({ id: nativeId, cwd: f.root, title: "Original", updatedAt: null });
+  await assert.rejects(f.engine.request("thread/resume", { threadId: source.id }, client), error => {
+    assert.match((error as Error).message, /in use by another/);
+    assert.deepEqual((error as any).domainData, { code: "CODEX_SESSION_BUSY", inputNotSent: true });
+    return true;
+  });
+  assert.deepEqual(await f.engine.request("opencraft/agent-session/status", { threadId: source.id }, client), { fork: true, release: true, loaded: false });
+  const before = (await f.calls()).length;
+  const reply = await f.engine.request("thread/fork", { threadId: source.id, excludeTurns: true }, client);
+  assert.notEqual(reply.thread.id, source.id);
+  assert.equal(reply.thread.forkedFromId, source.id);
+  const calls = (await f.calls()).slice(before);
+  assert.deepEqual(calls.map(call => call.method), ["session/fork"]);
+  assert.equal(calls[0].sessionId, nativeId);
+  const saved = JSON.parse(await readFile(join(f.root, "data", `${reply.thread.id}.json`), "utf8"));
+  assert.notEqual(saved.nativeId, nativeId); assert.equal(saved.cwd, f.root);
+  assert.equal(saved.name, "Original"); assert.equal(saved.forkedFromId, source.id);
+  const original = JSON.parse(await readFile(join(f.root, "data", `${source.id}.json`), "utf8"));
+  assert.equal(original.nativeId, nativeId);
+  await f.engine.request("turn/start", { threadId: reply.thread.id, input: [{ type: "text", text: "continue" }] }, client);
+  await until(() => (f.engine as any).state(reply.thread.id).active?.status === "completed");
+  assert.equal((await f.calls()).filter(call => call.method === "session/prompt").at(-1)?.sessionId, saved.nativeId);
+});
+
+test("Codex explicit release preserves identity, re-resumes before the next turn, and refuses active work", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_SESSION_HANDOFF: "1" } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  const id = thread.id;
+  await f.engine.request("opencraft/agent-session/release", { threadId: id }, client);
+  const status = await f.engine.request("opencraft/agent-session/status", { threadId: id }, client);
+  assert.equal(status.loaded, false);
+  await f.engine.request("turn/start", { threadId: id, input: [{ type: "text", text: "wait" }] }, client);
+  await assert.rejects(f.engine.request("opencraft/agent-session/release", { threadId: id }, client), /finish its current work/);
+  await until(() => (f.engine as any).state(id).active?.status === "completed");
+  await f.engine.request("opencraft/agent-session/release", { threadId: id }, client);
+  const relevant = (await f.calls()).filter(call => ["session/new", "session/resume", "session/close", "session/prompt"].includes(call.method));
+  assert.deepEqual(relevant.map(call => call.method), ["session/new", "session/close", "session/resume", "session/prompt", "session/close"]);
+  assert.ok(relevant.slice(1).every(call => call.sessionId === "native-1"));
+});
+
+test("native branching fails closed for unsupported peers and unsupported fork boundaries", async t => {
+  const f = await fixture(t, { id: "codex" });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  assert.equal((await f.engine.request("opencraft/agent-session/status", { threadId: thread.id }, client)).fork, false);
+  await assert.rejects(f.engine.request("thread/fork", { threadId: thread.id }, client), /unavailable/);
+  const supported = await fixture(t, { id: "codex", env: { ACP_TEST_SESSION_HANDOFF: "1" } });
+  const source = await supported.engine.request("thread/start", {}, client);
+  await assert.rejects(supported.engine.request("thread/fork", { threadId: source.thread.id, lastTurnId: "turn-1" }, client), /full conversation/);
+  assert.equal((await supported.calls()).filter(call => call.method === "session/fork").length, 0);
+});
+
+
+test("Codex fork restores the model forwarded by the persisted Host configuration", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_SESSION_HANDOFF: "1", ACP_TEST_SPLIT_MODEL_CONFIG: "1" } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  const child = await f.engine.request("thread/fork", { threadId: thread.id, model: "codex:two[low]" }, client);
+  assert.equal(child.model, "codex:two[low]");
+  const saved = JSON.parse(await readFile(join(f.root, "data", `${child.thread.id}.json`), "utf8"));
+  assert.equal(saved.model, "codex:two[low]");
+});
+
+
+test("ACP continuation references reach the selected Agent as user context without changing the user input", async t => {
+  const f = await fixture(t, { id: "cursor" }), notices: any[] = [];
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "Continue the work" }], additionalContext: {
+    history: { kind: "untrusted", value: "Read the referenced conversation: /private/synthetic/history.md" },
+  } }, client);
+  await until(() => notices.some(n => n.method === "turn/completed"));
+  const response = notices.filter(n => n.method === "item/agentMessage/delta").map(n => n.params.delta).join("");
+  assert.match(response, /synthetic\/history.md/); assert.match(response, /Continue the work/);
+  const completed = notices.find(n => n.method === "turn/completed").params.turn;
+  assert.equal(completed.items.find((item: any) => item.type === "userMessage").content[0].text, "Continue the work");
+  const saved = JSON.parse(await readFile(join(f.root, "data", `${thread.id}.json`), "utf8"));
+  assert.equal(saved.name, "Continue the work"); assert.equal(saved.preview, "Continue the work");
+});

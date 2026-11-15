@@ -270,7 +270,11 @@ metadata store without editing recipe revisions or asserting SSH machine identit
 The extension is declared in the handwritten OpenCraft method map; upstream
 Codex-generated types remain upstream-owned. Identity-only App Host leases do
 not initialize or start an engine; native initialize remains unchanged for normal
-runtime connections. The Local Agent also exposes the identity supplied by its daemon.
+runtime connections. The Local Agent exposes the identity supplied by its daemon; standalone Hosts
+(including local development) resolve it once from their own data directory when
+none is supplied, using the same persisted `machine-id` and OS name resolver.
+Machine reads are served by the Host without forwarding to an execution engine.
+Filesystem and macOS name discovery are asynchronous.
 
 The client caches the latest report with its Host profile, including for
 activation-owned profiles (metadata persists, the connection recipe does not).

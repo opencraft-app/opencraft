@@ -25,10 +25,14 @@ export class ThreadAccessStore {
   private readonly closeRepository: () => void;
   private readonly db: DatabaseSync;
   private readonly readCache: PermissionReadCache;
+  private readonly spaceAccess?: {allows(actorId:string|undefined,serverId:string,threadId:string):boolean};
   private readonly readPolicy: ReturnType<DatabaseSync["prepare"]>;
   readonly outcome;
-  private readonly listeners = new Set<(policy: ThreadAccessPolicy) => void>();
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, options: { permissionOwner?: object } = {}) {
+  private readonly listeners = new Set<(policy: ThreadAccessPolicy | null) => void>();
+  private readonly unsubscribeSpaces?:()=>void;
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, options: { permissionOwner?: object; spaces?: {allows(actorId:string|undefined,serverId:string,threadId:string):boolean;subscribe?(listener:()=>void):()=>void} } = {}) {
+    this.spaceAccess=options.spaces;
+    this.unsubscribeSpaces=options.spaces?.subscribe?.(()=>{for(const listener of this.listeners)listener(null);});
     const managed = openServerRepository(path, "thread-access");
     this.closeRepository = managed.close;
     this.db = managed.database; this.outcome = managed.outcome;
@@ -51,12 +55,14 @@ export class ThreadAccessStore {
   }
   readablePolicy(serverId: string, threadId: string, context?: ActorContext): ThreadAccessPolicy | null {
     const policy = this.read(serverId,threadId);
+    if(this.spaceAccess && !this.spaceAccess.allows(context?.actorId,serverId,threadId))return null;
     return policy.accessMode === 'shared' || !!context && context.actorId === policy.creatorActorId && this.actors.isCurrent(context) ? policy : null;
   }
   allows(serverId: string, threadId: string, context?: ActorContext): boolean {
     return this.readablePolicy(serverId,threadId,context) !== null;
   }
   allowsActor(serverId: string, threadId: string, actorId: string): boolean {
+    if(this.spaceAccess && !this.spaceAccess.allows(actorId,serverId,threadId))return false;
     const policy = this.read(serverId,threadId);
     return policy.accessMode === 'shared' || policy.creatorActorId === actorId && this.actors.get(actorId)?.enabled === true;
   }
@@ -85,8 +91,8 @@ export class ThreadAccessStore {
     for (const listener of this.listeners) { try { listener(next); } catch { /* Observers cannot undo a committed policy. */ } }
     return this.projection(serverId,threadId,context);
   }
-  subscribe(listener: (policy: ThreadAccessPolicy) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  close() { this.readCache.close(); this.listeners.clear(); this.closeRepository(); }
+  subscribe(listener: (policy: ThreadAccessPolicy | null) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  close() { this.unsubscribeSpaces?.(); this.readCache.close(); this.listeners.clear(); this.closeRepository(); }
 }
 
 interface Pending { method: string; params: Value }
@@ -104,11 +110,14 @@ export class ThreadAccessSession {
     private readonly notes?: { exchange(serverId: string, threadId: string, update: string, vector: string): {update: string} },
     private readonly admittedCatalogOwner = false) {
     this.unsubscribe = store.subscribe(policy => {
-      const key = JSON.stringify([policy.serverId,policy.threadId]);
-      if (this.seen.has(key) && !this.store.allows(policy.serverId,policy.threadId,this.context)) {
-        this.seen.delete(key);
-        let local = false; try { local = this.server(policy.threadId) === policy.serverId; } catch { /* A foreign engine is not this lane. */ }
-        this.emit(JSON.stringify({method:THREAD_ACCESS_REVOKED,params:{threadId:policy.threadId,serverId:policy.serverId,local}}));
+      const keys=policy?[JSON.stringify([policy.serverId,policy.threadId])]:[...this.seen];
+      for(const key of keys) {
+        const [serverId,threadId]=JSON.parse(key) as [string,string];
+        if(this.seen.has(key)&&!this.store.allows(serverId,threadId,this.context)) {
+          this.seen.delete(key);
+          let local=false;try{local=this.server(threadId)===serverId;}catch{/* Foreign engine. */}
+          this.emit(JSON.stringify({method:THREAD_ACCESS_REVOKED,params:{threadId,serverId,local}}));
+        }
       }
       // A title-free invalidation is safe even for viewers who never saw this thread.
       this.emit(JSON.stringify({method:THREAD_ACCESS_CHANGED,params:{}}));

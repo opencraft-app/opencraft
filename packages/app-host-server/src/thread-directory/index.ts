@@ -11,7 +11,7 @@ import { DirectorySnapshotReader } from "./snapshot-reader.js";
 export { DirectorySnapshotPages, SNAPSHOT_START, SNAPSHOT_CURSOR } from "./snapshots.js";
 
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
-const fields = ["id", "environments", "sessionId", "forkedFromId", "parentThreadId", "preview", "ephemeral", "section", "sectionEnteredAt", "projectId", "historyMode", "modelProvider", "model", "reasoningEffort", "createdAt", "updatedAt", "recencyAt", "status", "path", "cwd", "cliVersion", "originator", "source", "canAcceptDirectInput", "threadSource", "agentNickname", "agentRole", "gitInfo", "name", "daybreakEnabled", "visibility", "accessMode"];
+const fields = ["id", "environments", "sessionId", "forkedFromId", "parentThreadId", "preview", "ephemeral", "section", "sectionEnteredAt", "projectId", "nativeProject", "historyMode", "modelProvider", "model", "reasoningEffort", "createdAt", "updatedAt", "recencyAt", "status", "path", "cwd", "cliVersion", "originator", "source", "canAcceptDirectInput", "threadSource", "agentNickname", "agentRole", "gitInfo", "name", "daybreakEnabled", "visibility", "accessMode"];
 /** Native metadata only. In particular, never persist turns or implementation-specific extra payloads. */
 function metadata(value: unknown): Thread | null {
   const row = object(value);

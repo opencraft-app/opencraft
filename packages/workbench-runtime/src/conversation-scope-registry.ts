@@ -90,6 +90,7 @@ function defaultDraftId(): string {
 }
 
 function normalizeExecution(execution: ComposerExecutionTarget): ComposerExecutionTarget {
+  if(execution.collaborationSpaceId!==undefined&&(typeof execution.collaborationSpaceId!=='string'||!execution.collaborationSpaceId||execution.collaborationSpaceId.length>256))throw new Error('Invalid collaboration space');
   const roots = [...new Set(
     execution.workspace.runtimeWorkspaceRoots
       .map((root) => root.trim())
@@ -98,6 +99,7 @@ function normalizeExecution(execution: ComposerExecutionTarget): ComposerExecuti
   const cwd = execution.workspace.cwd?.trim() || null;
   return {
     hostId: asHostId(execution.hostId),
+    ...(execution.collaborationSpaceId===undefined?{}:{collaborationSpaceId:execution.collaborationSpaceId}),
     workspace: {
       cwd,
       runtimeWorkspaceRoots: roots,
@@ -239,7 +241,7 @@ export function createConversationScopeRegistry(
         phase: "editing" as const,
         error: null,
         receipt: null,
-        target: { ...current.target, execution: normalizeExecution(execution) },
+        target: { ...current.target, execution: normalizeExecution({...execution,...(execution.collaborationSpaceId===undefined&&current.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:current.target.execution.collaborationSpaceId}:{})}) },
       });
       drafts.set(draftId, next);
       publish();
@@ -255,6 +257,7 @@ export function createConversationScopeRegistry(
         submission.target.type !== "new-thread"
         || submission.target.draftId !== draftId
         || submission.target.execution.hostId !== current.target.execution.hostId
+        || (submission.target.execution.collaborationSpaceId??"myself") !== (current.target.execution.collaborationSpaceId??"myself")
       ) {
         throw new Error(`Submission does not belong to Draft ${draftId}`);
       }

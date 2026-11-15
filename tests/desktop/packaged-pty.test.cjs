@@ -35,3 +35,20 @@ test('packaging repairs the executable helper before signing and rejects absent 
     assert.equal((await stat(helper)).mode & 0o777, 0o755);
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
+
+test('Linux packaging accepts node-pty without a spawn helper', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'packaged-pty-'));
+  const context = { appOutDir: directory, electronPlatformName: 'linux', arch: 1,
+    packager: { appInfo: { productFilename: 'OpenCraft' } } };
+  try {
+    await assert.rejects(prepare(context), /native module is missing/);
+    const native = join(directory, 'resources/runtime/node_modules/node-pty/build/Release');
+    await mkdir(native, { recursive: true });
+    await writeFile(join(native, 'pty.node'), 'fixture');
+    const foreign = join(directory, 'resources/runtime/node_modules/node-pty/prebuilds/darwin-x64');
+    await mkdir(foreign, { recursive: true });
+    await writeFile(join(foreign, 'spawn-helper'), 'foreign');
+    await prepare(context);
+    await assert.rejects(access(foreign), /ENOENT/);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});

@@ -13,6 +13,8 @@ export function WorkbenchShortcutList() {
     ["sidebar", intl.formatMessage({ id: "shortcuts.sidebar", defaultMessage: "Toggle sidebar" })],
     ["panel", intl.formatMessage({ id: "shortcuts.panel", defaultMessage: "Toggle tool panel" })],
     ["composer", intl.formatMessage({ id: "shortcuts.composer", defaultMessage: "Focus message input" })],
+    ["agentNext", intl.formatMessage({ id: "shortcuts.agentNext", defaultMessage: "Next Agent" })],
+    ["agentPrevious", intl.formatMessage({ id: "shortcuts.agentPrevious", defaultMessage: "Previous Agent" })],
     ["help", intl.formatMessage({ id: "shortcuts.title", defaultMessage: "Keyboard shortcuts" })],
   ];
   return <div className="workbench-shortcut-list">

@@ -299,7 +299,10 @@ export function createModelServicesView(controller: ModelServicesController) {
       <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model services" })} />
       <div className="model-services__agent-entry">
         <p><FormattedMessage id="onboard.agent.reopen" defaultMessage="Set up Codex, Cursor, Claude, or CodeBuddy on this computer." /></p>
-        <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet" } }))}><FormattedMessage id="onboard.agent.reopenAction" defaultMessage="Open agent setup" /></SettingsButton>
+        <div className="model-services__agent-actions">
+          <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet", intent: "history" } }))}><FormattedMessage id="onboard.history.open" defaultMessage="Import local conversations" /></SettingsButton>
+          <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet" } }))}><FormattedMessage id="onboard.agent.reopenAction" defaultMessage="Open agent setup" /></SettingsButton>
+        </div>
       </div>
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />

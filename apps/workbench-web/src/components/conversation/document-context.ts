@@ -35,6 +35,7 @@ export interface ConversationDocumentContextValue {
   /** Workbench-owned read-only review surface; ChatUI only emits open intent. */
   readonly onReviewTurnDiff?: (block: TurnDiffTimelineBlock, path?: string) => void;
   /** Fork through a completed native Turn, inclusive; omitted for cached/read-only views. */
+  readonly onForkConversation?: () => Promise<void>;
   readonly onForkTurn?: (turnId: string) => Promise<void>;
   /** The main Composer is the sole live-resource presenter for this Turn. */
   readonly composerChangeSummaryTurnId?: string | null;

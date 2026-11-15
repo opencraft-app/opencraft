@@ -1,9 +1,12 @@
+import type { NativeConversationProject } from "@opencraft/appserver-protocol";
 import type { ThreadServerOrigin } from "@opencraft/workbench-runtime";
 
 export interface SidebarActivityThread {
   readonly id: string;
   readonly serverOrigin: ThreadServerOrigin;
   readonly project: string;
+  readonly nativeProject?: NativeConversationProject;
+  readonly connectionHostId?: string;
   /** AppServer timestamps are expressed in seconds. */
   readonly updatedAt: number;
   readonly createdAt?: number;
@@ -129,4 +132,19 @@ export function groupThreadsByTaskFlow<T extends SidebarActivityThread & {
   }
   recent.sort(compareRecentThreads);
   return { attention, pinned, recent };
+}
+
+
+/** Source IDs, not display names or cwd basenames, keep imported projects distinct. */
+export function groupThreadsByNativeProject<T extends SidebarActivityThread>(threads: readonly T[]) {
+  const groups = new Map<string, { key: string; label: string; position: number; threads: T[] }>();
+  for (const thread of threads) {
+    const project = thread.nativeProject;
+    if (!project) continue;
+    const key = JSON.stringify([thread.connectionHostId ?? thread.serverOrigin.serverId, project.source, project.id]);
+    const group = groups.get(key);
+    if (group) group.threads.push(thread);
+    else groups.set(key, { key, label: project.name, position: project.position, threads: [thread] });
+  }
+  return [...groups.values()].sort((a, b) => a.position - b.position || a.key.localeCompare(b.key));
 }
