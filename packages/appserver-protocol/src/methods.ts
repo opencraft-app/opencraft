@@ -217,6 +217,8 @@ export type ThreadStartParams = GeneratedThreadStartParams & {
   readonly agentBridge?: { readonly threadId: string; readonly clientRequestId: string };
   /** Host-owned execution Agent. Omitted means the Host default. */
   agentId?: string | null;
+  /** Hub validates source access and inherits its visibility and collaboration space. */
+  readonly handoffSource?: { readonly threadId: string };
 };
 export type ThreadStartResponse = GeneratedThreadStartResponse;
 export type ModelListParams = GeneratedModelListParams & {

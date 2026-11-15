@@ -165,3 +165,24 @@ test('existing instance members and persisted policies migrate; direct historica
   assert.equal(await session.receive(JSON.stringify({id:2,method:'thread/read',params:{threadId:'recent'}})),true);
   assert(!runtime.hasAssignment('codex','recent'));
 });
+
+test('handoff inherits the source space instead of the selected destination and strips Hub-only fields',async t=>{
+  const f=await fixture(t),runtime=new ServerSpacesRuntime({path:join(f.path,'opencraft-server.sqlite'),ownerActorId:f.alice.actorId});
+  await runtime.ready;t.after(()=>runtime.close());
+  const team=await runtime.command(f.alice,{action:'create',name:'Team'});
+  await runtime.assign(f.alice,'pi','source',team.spaceId);
+  const policy=new ThreadAccessStore(f.owner,f.actors,{spaces:runtime});t.after(()=>policy.close());
+  policy.created('pi','source',f.alice);policy.set('pi','source','private',1,f.alice);
+  const {ThreadAccessSession}=await import('../../packages/access-control/src/thread-access');
+  const server=(id:string)=>id==='source'?'pi':'codex';
+  const base=new ThreadAccessSession(policy,server,f.alice,()=>{});
+  const session=new ServerSpacesSession(runtime,f.alice,server,()=>{},base,(s,id)=>policy.allows(s,id,f.alice));t.after(()=>session.close());
+  const request=JSON.stringify({id:1,method:'thread/start',params:{collaborationSpaceId:'myself',agentId:'codex',handoffSource:{threadId:'source'}}});
+  assert.equal(await session.receive(request),false);
+  assert.deepEqual(JSON.parse(session.rewrite(request)).params,{agentId:'codex'});
+  const response=JSON.stringify({id:1,result:{thread:{id:'destination'}}});
+  await session.prepare(response);assert.ok(session.project(response));
+  assert.equal(runtime.spaceFor('codex','destination'),team.spaceId);
+  assert.equal(policy.read('codex','destination').accessMode,'private');
+  assert.equal(runtime.allows(f.bob.actorId,'codex','destination'),false);
+});

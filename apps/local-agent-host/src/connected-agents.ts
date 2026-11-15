@@ -114,7 +114,7 @@ export class ConnectedAgentHost {
     private readonly cwd: string,
     private readonly deps: OnboardingDeps,
     private readonly bridge?: ConnectedAgentBridge,
-    private readonly options: {nativePi?:boolean;modelPolicyPath?:string} = {},
+    private readonly options: {nativePi?:boolean;modelPolicyPath?:string;executionCli?:import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort} = {},
   ) { this.providerUsage = new AgentProviderUsageService(deps); }
   async start(): Promise<void> { await this.bridge?.provider.start(); }
   ownsBridgeThread(threadId: string): boolean { return this.bridge?.provider.ownsThread(threadId) === true; }
@@ -393,7 +393,7 @@ export class ConnectedAgentHost {
     const directory = join(this.root, engineId);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     if (engineId === "pi") {
-      const engine = await createConnectedPi(directory, this.deps.homedir, this.deps, this.options.modelPolicyPath);
+      const engine = await createConnectedPi(directory, this.deps.homedir, this.deps, this.options.modelPolicyPath, this.options.executionCli);
       engine.subscribe((method, params) => { for (const listener of this.listeners) listener(method, params); });
       this.engines.set(engineId, engine);
       return engine;
@@ -402,6 +402,7 @@ export class ConnectedAgentHost {
     if (this.closed) throw new Error("Connected agents are closed");
     const history = this.nativeHistory(engineId);
     const engine = new AcpEngine({
+      executionCli: this.options.executionCli,
       id: engineId,
       label: LABELS[engineId],
       command: launch.command,

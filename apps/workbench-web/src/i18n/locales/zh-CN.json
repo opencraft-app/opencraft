@@ -1,4 +1,8 @@
 {
+  "chat.agentHandoff.failed": "暂时无法换用此 Agent，草稿已保留。请重试。",
+  "composer.agentHandoff.reference": "继续自 {thread}",
+  "composer.agentHandoff.description": "下一条消息将在所选 Agent 的新会话中发送。",
+  "composer.agentHandoff.cancel": "取消换用 Agent",
   "composer.context.conversationHistory": "会话记录",
   "chat.continueWithAgent.privateUnavailable": "此 Server 暂时无法在跨 Agent 续接时保留私有可见性，原会话和草稿仍然保留。",
   "composer.attachmentsAndContext": "附件与参考内容",

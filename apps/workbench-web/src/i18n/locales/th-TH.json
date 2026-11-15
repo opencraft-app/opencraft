@@ -1,4 +1,8 @@
 {
+  "chat.agentHandoff.failed": "ยังทำต่อด้วย Agent นี้ไม่ได้ ฉบับร่างยังอยู่ โปรดลองอีกครั้ง",
+  "composer.agentHandoff.reference": "ทำต่อจาก {thread}",
+  "composer.agentHandoff.description": "ข้อความถัดไปจะเริ่มการสนทนาใหม่กับ Agent ที่เลือก",
+  "composer.agentHandoff.cancel": "ยกเลิกการเปลี่ยน Agent",
   "composer.context.conversationHistory": "ประวัติการสนทนา",
   "chat.continueWithAgent.privateUnavailable": "Server นี้ยังคงสถานะส่วนตัวเมื่อทำต่อด้วย Agent อื่นไม่ได้ การสนทนาและฉบับร่างเดิมยังคงอยู่",
   "composer.attachmentsAndContext": "ไฟล์แนบและบริบท",

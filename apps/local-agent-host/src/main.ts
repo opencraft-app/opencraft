@@ -134,6 +134,7 @@ export async function startLocalAgentHost(options: {
   readonly port?: number;
   readonly token?: string;
   readonly dshUrl?: string;
+  readonly executionCli?: import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort;
   readonly sessionCapabilities?: import("@opencraft/session-capabilities").SessionCapabilityPort;
   readonly authorizeHostInput?: (threadId: string, inputId: string) => boolean | Promise<boolean>;
   readonly dshExecutable?: string;
@@ -315,7 +316,7 @@ export async function startLocalAgentHost(options: {
     defaultCwd: options.bridge.claudeCode.defaultCwd ?? projectlessWorkspaceRoot ?? homedir(),
   });
   const connectedAgents = new ConnectedAgentHost(agentOnboarding, join(productDataRoot, "connected-agents"), projectlessWorkspaceRoot ?? homedir(), createOnboardingDeps(),
-    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, {nativePi:options.nativePi,modelPolicyPath:options.modelPolicyPath});
+    claudeBridge === undefined ? undefined : { provider: claudeBridge, engines: ["claude-code"] }, {nativePi:options.nativePi,modelPolicyPath:options.modelPolicyPath,executionCli:options.executionCli});
   await connectedAgents.start();
   cleanup.push(() => connectedAgents.close());
   cleanup.push(connectedAgents.subscribe((method, params) => {

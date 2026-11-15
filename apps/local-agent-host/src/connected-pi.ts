@@ -14,7 +14,7 @@ class NativePiEngine extends PiEngine {
 
 /** Borrow native Pi authentication and catalog; OpenCraft owns its new sessions
  * and preferences. Existing Pi transcripts and credential files are not copied. */
-export async function createConnectedPi(directory: string, cwd: string, deps: Pick<OnboardingDeps, 'env' | 'homedir'>, modelPolicyPath?:string): Promise<PiEngine> {
+export async function createConnectedPi(directory: string, cwd: string, deps: Pick<OnboardingDeps, 'env' | 'homedir'>, modelPolicyPath?:string, executionCli?: import("@opencraft/session-capabilities/execution-cli").ScopedExecutionCliPort): Promise<PiEngine> {
   const native = deps.env.PI_CODING_AGENT_DIR || join(deps.homedir, '.pi', 'agent');
   const models = await ModelRuntime.create({authPath: join(native, 'auth.json'), modelsPath: join(native, 'models.json'), modelsStorePath:join(directory,'native-model-cache.json'), allowModelNetwork: false});
   let settings: Record<string, unknown> = {};
@@ -27,5 +27,5 @@ export async function createConnectedPi(directory: string, cwd: string, deps: Pi
         ...(typeof settings.defaultThinkingLevel === 'string' ? {effort: settings.defaultThinkingLevel} : {})}), {flag:'wx',mode:0o600});
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
   }
-  return new NativePiEngine({directory, cwd, models,modelPolicyPath}, models);
+  return new NativePiEngine({directory, cwd, models,modelPolicyPath,executionCli}, models);
 }

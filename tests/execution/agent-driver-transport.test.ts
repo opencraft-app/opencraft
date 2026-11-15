@@ -48,3 +48,15 @@ test("execution context crosses the authorized port once and rejected admission 
   assert.equal(forwarded[0][1],context); assert.ok(forwarded[0][0].params.clientUserMessageId);
   assert.equal(JSON.stringify(forwarded[0][0]).includes('"subject"'),false);
 });
+
+test("execution CLI credentials come from authenticated admission and Renderer/anonymous fields are stripped", async () => {
+  const frames:any[]=[], signed:any[]=[];
+  const inner:any={status:{state:'open'},async send(frame:string){frames.push(JSON.parse(frame));}};
+  const transport=new AgentDriverTransport(inner,{authorizeExecution(){}} as any,()=> 'server',session=>{signed.push(session);return 'signed-execution';});
+  const frame=JSON.stringify({id:1,method:'turn/start',params:{threadId:'thread',clientUserMessageId:'input',input:[],__opencraftExecutionCli:'forged'}});
+  await transport.send(frame);
+  assert.equal(frames[0].params.__opencraftExecutionCli,undefined);assert.equal(signed.length,0);
+  await transport.sendWithContext(frame,{sender:null,actorContext:{actorId:'owner',generation:1,expiresAt:Date.now()+10000,credentialId:null}});
+  assert.equal(frames[1].params.__opencraftExecutionCli,'signed-execution');
+  assert.equal(signed[0].threadId,'thread');assert.equal(signed[0].execution.inputId,'input');assert.ok(signed[0].execution.executionId);
+});

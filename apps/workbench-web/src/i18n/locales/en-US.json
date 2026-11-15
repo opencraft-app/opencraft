@@ -1,4 +1,8 @@
 {
+  "chat.agentHandoff.failed": "Could not continue with this Agent. Your draft is preserved. Try again.",
+  "composer.agentHandoff.reference": "Continue from {thread}",
+  "composer.agentHandoff.description": "Your next message starts a new conversation with the selected Agent.",
+  "composer.agentHandoff.cancel": "Cancel Agent handoff",
   "composer.context.conversationHistory": "Conversation history",
   "chat.continueWithAgent.privateUnavailable": "This Server cannot yet preserve private visibility when continuing with another Agent. Your original conversation and draft are unchanged.",
   "composer.attachmentsAndContext": "Attachments and context",

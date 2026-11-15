@@ -1,3 +1,4 @@
+import { executionCliInstructions, type ScopedExecutionCliPort } from "@opencraft/session-capabilities/execution-cli";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -14,6 +15,7 @@ import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
 
 export interface AcpEngineOptions {
+  executionCli?: ScopedExecutionCliPort;
   executionEnvironment?: ExecutionEnvironmentRuntime;
   id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
   timeoutMs?: number;
@@ -607,7 +609,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
       runtime.owner = client;
       const userPrompt = continuing ? [{ type: "text", text: "Continue." }] : this.promptContent(params.input);
-      return this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt);
+      return this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt, typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
     }
     if (method === "turn/interrupt") {
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
@@ -862,7 +864,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (cursor) cursors.add(cursor);
     } while (cursor && !this.closed);
   }
-  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt): Promise<any> {
+  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt, cliCredential?: string): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
     const advertisedEffort = this.id === "cursor" || (session.reasoningConfig && !this.variantReasoningCatalog(session))
       ? session.reasoningConfig?.currentValue ?? null : null;
@@ -873,6 +875,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");
     }
     if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
+    const cli = this.options.executionCli ? await this.options.executionCli.issue(session.id, inputId ?? "", cliCredential) : undefined;
+    if (cli) prompt.push({ type: "text", text: executionCliInstructions(cli) });
+    try {
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
@@ -897,8 +902,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (runtime.active !== active || active.status !== "inProgress") return;
       const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : "acpPromptFailed";
       void this.failPrompt(session, runtime, code).catch(() => { this.persistenceFailed = true; });
-    });
+    }).finally(() => cli?.revoke()).catch(() => { this.persistenceFailed = true; });
     return { turn: this.turn(runtime) };
+    } catch (error) { await cli?.revoke(); throw error; }
   }
   private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
     const active = runtime.active; if (!active || active.status !== "inProgress") return;

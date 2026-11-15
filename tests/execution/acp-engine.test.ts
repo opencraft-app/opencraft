@@ -734,3 +734,26 @@ test("ACP continuation references reach the selected Agent as user context witho
   const saved = JSON.parse(await readFile(join(f.root, "data", `${thread.id}.json`), "utf8"));
   assert.equal(saved.name, "Continue the work"); assert.equal(saved.preview, "Continue the work");
 });
+
+test("connected ACP passes a distinct execution launcher to each input and revokes on completion", async t => {
+  let revoked = 0;
+  const inputs: string[] = [];
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_CAPTURE_PROMPT: "1" }, executionCli: { async issue(_thread: string, input: string) {
+    inputs.push(input); return { environment: { OPENCRAFT_THREAD_CLI: `/private/${input}/opencraft` }, async revoke() { revoked++; } };
+  } } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  for (const inputId of ["one", "two"]) {
+    await f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: inputId, input: [{ type: "text", text: "hello" }] }, client);
+    await until(() => revoked === inputs.length);
+    const sent = (await f.calls()).filter(call => call.method === "session/prompt").at(-1);
+    assert.match(JSON.stringify(sent.prompt), new RegExp(`/private/${inputId}/opencraft`));
+  }
+  assert.deepEqual(inputs, ["one", "two"]); assert.equal(revoked, 2);
+});
+
+test("refused CLI admission sends no ACP prompt", async t => {
+  const f = await fixture(t, { id: "claude-code", executionCli: { async issue() { throw Error("execution_delegation_required"); } } });
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: "forged", input: [{ type: "text", text: "hello" }] }, client), /delegation_required/);
+  assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+});

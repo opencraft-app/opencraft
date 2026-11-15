@@ -1328,3 +1328,25 @@ test("older mixed-Host pages can read an empty Pi approval baseline without acqu
   assert.deepEqual(await f.engine.request("opencraft/interactions/read", { threadId: thread.id }, noTools), snapshot);
   await assert.rejects(f.engine.request("opencraft/interactions/respond", { threadId: thread.id, interactionId: "missing" }, noTools), /does not support/);
 });
+
+test("connected Pi scopes CLI context to each input and revokes after completion", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "pi-cli-")), issued: string[] = [], revoked: string[] = [];
+  const { models } = fixtureModels([context => {
+    assert.match(JSON.stringify(context), /\/private\/pi-cli-one\/opencraft/);
+    return fauxAssistantMessage("first");
+  }, context => {
+    assert.match(JSON.stringify(context), /\/private\/pi-cli-two\/opencraft/);
+    return fauxAssistantMessage("second");
+  }]);
+  const engine = new PiEngine({ directory, cwd: directory, models, executionCli: { async issue(_thread, inputId) {
+    issued.push(inputId); return { environment: { OPENCRAFT_THREAD_CLI: `/private/${inputId}/opencraft` }, async revoke() { revoked.push(inputId); } };
+  } } });
+  t.after(async()=>{await engine.close();await rm(directory,{recursive:true,force:true});});
+  const {thread}=await engine.request("thread/start",{model:piModel("faux","faux-1"),cwd:directory},noTools);
+  for (const inputId of ["pi-cli-one","pi-cli-two"]) {
+    const done=completed(engine);
+    await engine.request("turn/start",{threadId:thread.id,clientUserMessageId:inputId,input:[{type:"text",text:"hello"}]},noTools);
+    assert.equal((await done).status,"completed");
+  }
+  assert.deepEqual(issued,["pi-cli-one","pi-cli-two"]);assert.deepEqual(revoked,issued);
+});

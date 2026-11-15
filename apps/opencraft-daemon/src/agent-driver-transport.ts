@@ -6,7 +6,8 @@ import type { Collaboration } from "../../../packages/access-control/src/collabo
  * methods cannot be promoted from a Renderer frame into trusted admission. */
 export class AgentDriverTransport implements DuplexTransport {
   constructor(private readonly inner: DuplexTransport, private readonly collaboration: Collaboration,
-    private readonly serverForThread: (threadId: string) => string) {}
+    private readonly serverForThread: (threadId: string) => string,
+    private readonly signCli?: (session: import("@opencraft/session-capabilities").CapabilitySession) => string) {}
   get status() { return this.inner.status; }
   connect(signal?: AbortSignal) { return this.inner.connect(signal); }
   subscribeMessage(listener: (frame: string) => void) { return this.inner.subscribeMessage(listener); }
@@ -19,13 +20,16 @@ export class AgentDriverTransport implements DuplexTransport {
       if (!context.orchestrationOperationId || context.orchestrationOperationId !== params.operationId || !context.orchestrationCanAdmit?.())
         throw new Error("Trusted orchestration admission required");
     }
+    // Renderer fields never confer execution identity, including on anonymous input.
+    delete params.__opencraftExecutionCli;
     if (context.actorContext && ["turn/start", "thread/queue/add", "turn/steer"].includes(message.method)) {
       const threadId = params.threadId;
       if (typeof threadId !== "string" || !threadId) throw new Error("Execution Thread required");
       const inputId = params.clientUserMessageId ?? `human-input:${randomUUID()}`;
       if (typeof inputId !== "string" || !inputId || inputId.length > 512) throw new Error("Invalid execution input identity");
       this.collaboration.authorizeExecution(context.actorContext, threadId, inputId, params.input ?? [], this.serverForThread(threadId));
-      message.params = { ...params, clientUserMessageId: inputId };
+      message.params = { ...params, clientUserMessageId: inputId,
+        ...(this.signCli && message.method === "turn/start" ? {__opencraftExecutionCli:this.signCli({serverId:this.serverForThread(threadId),threadId,execution:{inputId,executionId:randomUUID()}})} : {}) };
     }
     // The remote Host receives data, while authority remains in the gateway.
     if (this.inner.sendWithContext) await this.inner.sendWithContext(JSON.stringify(message), context, signal);

@@ -1,4 +1,8 @@
 {
+  "chat.agentHandoff.failed": "Tidak dapat meneruskan dengan Agent ini. Draf anda disimpan. Cuba lagi.",
+  "composer.agentHandoff.reference": "Teruskan daripada {thread}",
+  "composer.agentHandoff.description": "Mesej seterusnya memulakan perbualan baharu dengan Agent yang dipilih.",
+  "composer.agentHandoff.cancel": "Batalkan pertukaran Agent",
   "composer.context.conversationHistory": "Sejarah perbualan",
   "chat.continueWithAgent.privateUnavailable": "Server ini belum dapat mengekalkan keterlihatan peribadi apabila meneruskan dengan Agent lain. Perbualan dan draf asal dikekalkan.",
   "composer.attachmentsAndContext": "Lampiran dan konteks",

@@ -40,6 +40,7 @@ const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...f
 const result = (id, value) => send({ id, result: value });
 const trace = frame => { if (process.env.ACP_TEST_TRACE) appendFileSync(process.env.ACP_TEST_TRACE, JSON.stringify({ method: frame.method, pid: process.pid, sessionId: frame.params?.sessionId, configId:frame.params?.configId,value:frame.params?.value,type:frame.params?.type,build: process.env.ACP_TEST_BUILD,
   ...(frame.method==='initialize'?{parameterizedPicker:frame.params?.clientCapabilities?._meta?.parameterizedModelPicker}:{}),
+  ...(process.env.ACP_TEST_CAPTURE_PROMPT && frame.method==='session/prompt'?{prompt:frame.params.prompt}:{}),
   ...(parameterizedSettings&&frame.method==='session/prompt'?{settings:settings.get(frame.params.sessionId)}:{}),
 }) + '\n'); };
 const mcp = async (server, id, method, params = {}) => {

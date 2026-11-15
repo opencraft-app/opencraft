@@ -427,7 +427,7 @@ export function App({
     cloud: machine.cloud,
     connectable: machine.hosts.some(host => host.enabled),
   })), [newConversationMachines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId, draft === null && /^(codex|cursor)_/u.test(snapshot.activeThreadId ?? ""));
+  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId, draft === null);
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
@@ -969,6 +969,10 @@ export function App({
       intent: SubmitIntent,
       context: { readonly followUpAction: ComposerFollowUpAction | null },
     ): boolean | Promise<boolean> => {
+      if (intent.handoff) return hostCatalog.submit(intent).then(() => true, () => {
+        notices.error({ key: `agent-handoff:${intent.commandId}`, message: intl.formatMessage({ id: "chat.agentHandoff.failed", defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again." }) });
+        throw new Error(intl.formatMessage({ id: "chat.agentHandoff.failed", defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again." }));
+      });
       const sideChatSnapshot = activeThreadLease?.getSnapshot() ?? null;
       const sideChatCommand = runSideChatComposerCommand(intent, {
         key: sideChatSnapshot?.key ?? null,
@@ -1079,6 +1083,7 @@ export function App({
       return true;
     },
     [
+      notices, intl,
       conversationScopes,
       sideChatAction,
       panelToolbarContext,
@@ -1435,10 +1440,14 @@ export function App({
     composerWorkspaceRoots,
   );
   const agentAvailability = useAgentAvailability();
-  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { contextExport?: readonly string[] } | undefined;
-  const conversationAgent = activeThreadId?.startsWith("codex_") ? "codex" : activeThreadId?.startsWith("cursor_") ? "cursor" : null;
+  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-access"] as { agentHandoff?: boolean } | undefined;
+  const executionEngines = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/execution-engines"] as { defaultEngine?: string; providers?: readonly { id: string; threadPrefix?: string; modelPrefix?: string }[] } | undefined;
+  const conversationAgent = activeThreadId === null ? null : executionEngines?.providers?.find(engine =>
+    (engine.threadPrefix && activeThreadId.startsWith(engine.threadPrefix)) || (engine.modelPrefix && activeThreadId.startsWith(engine.modelPrefix)))?.id
+    ?? [...composerCatalog.models, ...composerCatalog.displayModels, ...engineCatalog.groups.flatMap(group => group.hostId === snapshot.hostId ? group.models : [])].find(model => model.id === snapshot.conversation?.execution.model || model.model === snapshot.conversation?.execution.model)?.agentId
+    ?? executionEngines?.defaultEngine ?? null;
   const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
-    && continuationCapability?.contextExport?.includes(conversationAgent) === true && presentation.executionSelection !== "fixed";
+    && continuationCapability?.agentHandoff === true && presentation.executionSelection !== "fixed";
   const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
   // Existing conversations always identify their Agent; cross-Agent continuation
   // is a separate Host capability and must not gate the identity marker.
@@ -1461,7 +1470,7 @@ export function App({
         snapshot.hostId, agentAvailability.enabled,
       ),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectComposerModelChoices(composerCatalog.models.filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
+      models: projectComposerModelChoices((canContinueWithAgent ? engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? composerCatalog.models : composerCatalog.models).filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
         const profile = rawProfile as OpenCraftPermissionProfile;
@@ -1495,12 +1504,11 @@ export function App({
         error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
         select: async (model) => {
-          if (canContinueWithAgent && model.agentId === conversationAgent) return;
+          if (canContinueWithAgent && model.agentId === conversationAgent) composerController.dispatch({ type: "cancel-agent-handoff" });
           if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
             try {
-              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), model: model.value, effort: model.defaultEffort, serviceTier: null });
+              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), agentId: model.agentId!, model: model.value, effort: model.defaultEffort, permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null, serviceTier: null });
             } catch (error) {
-              if ((error as { code?: unknown })?.code === "PRIVATE_CONTINUATION_UNAVAILABLE") throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.privateUnavailable", defaultMessage: "This Server cannot yet preserve private visibility when continuing with another Agent. Your original conversation and draft are unchanged." }));
               throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
             }
             return { selection: "handled" as const };

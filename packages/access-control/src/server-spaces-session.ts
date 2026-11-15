@@ -42,7 +42,9 @@ export class ServerSpacesSession {
         await this.runtime.adoptLegacy(context,this.server(params.threadId),[{id:params.threadId,createdAt:thread.createdAt}]);
     }
     if(['thread/start','thread/fork'].includes(packet.method)&&packet.id!==undefined) {
-      const spaceId=packet.method==='thread/fork'&&typeof params.threadId==='string'
+      const handoffSource=packet.method==='thread/start'?params.handoffSource?.threadId:undefined;
+      const spaceId=typeof handoffSource==='string'
+        ?this.runtime.spaceFor(this.server(handoffSource),handoffSource):packet.method==='thread/fork'&&typeof params.threadId==='string'
         ?this.runtime.spaceFor(this.server(params.threadId),params.threadId):params.collaborationSpaceId??this.selected.get(this.lane(packet))??'myself';
       if(!this.runtime.hasMember(context.actorId,spaceId)) {
         this.emit(JSON.stringify({id:packet.id,...(packet.__opencraftClient===undefined?{}:{__opencraftClient:packet.__opencraftClient}),error:{code:-32004,message:'Server unavailable'}}));return true;
@@ -55,7 +57,7 @@ export class ServerSpacesSession {
   }
   rewrite(frame:string):string {
     const packet=JSON.parse(frame);
-    if(packet.method==='thread/start'&&packet.params&&'collaborationSpaceId' in packet.params)delete packet.params.collaborationSpaceId;
+    if(packet.method==='thread/start'&&packet.params) { delete packet.params.collaborationSpaceId; delete packet.params.handoffSource; }
     return JSON.stringify(packet);
   }
   async prepare(frame:string):Promise<void> {

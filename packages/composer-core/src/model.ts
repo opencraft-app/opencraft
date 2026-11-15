@@ -75,9 +75,17 @@ export interface ComposerOptions {
   readonly developerInstructions?: string;
 }
 
+/** A pending continuation belongs to this draft, never to the source execution. */
+export interface ComposerAgentHandoff {
+  readonly sourceThreadId: string;
+  readonly reference: string;
+  readonly originalSelections: ComposerSelections;
+}
+
 export interface ComposerDraft {
   readonly id: string;
   readonly target: ComposerTarget;
+  readonly handoff?: ComposerAgentHandoff;
   readonly document: ComposerDocument;
   readonly attachments: readonly ComposerAttachment[];
   readonly context: readonly ComposerContextReference[];
@@ -95,6 +103,7 @@ export interface SubmitIntent {
   readonly commandId: string;
   readonly clientMessageId: string;
   readonly target: ComposerTarget;
+  readonly handoff?: ComposerAgentHandoff;
   readonly document: ComposerDocument;
   readonly attachments: readonly ComposerAttachment[];
   readonly context: readonly ComposerContextReference[];

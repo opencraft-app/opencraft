@@ -850,7 +850,7 @@ export const OpenCraftComposer = forwardRef<
     endActions,
     catalog,
     mentionSuggestionsEnabled = true,
-    isStreaming,
+    isStreaming: sourceIsStreaming,
     isRecovering = false,
     isUnstable = false,
     isStopping = false,
@@ -885,6 +885,8 @@ export const OpenCraftComposer = forwardRef<
 ) {
   const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
   const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
+  const handoffActive = useSyncExternalStore(controller.subscribe, () => controller.getSnapshot().draft.handoff !== undefined, () => false);
+  const isStreaming = sourceIsStreaming && !handoffActive;
   const intl = useIntl();
   const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
   const placeholderPendingRef = useRef(placeholderPending);
@@ -1132,7 +1134,7 @@ export const OpenCraftComposer = forwardRef<
     });
   }, [controller, composerSnapshot.draft.id, composerSnapshot.draft.target.type, newThreadDefaultPermission]);
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
-  const existingConversation = composerSnapshot.draft.target.type !== "new-thread";
+  const existingConversation = composerSnapshot.draft.target.type !== "new-thread" && !composerSnapshot.draft.handoff;
   const selectedModelValue = modelDisplayOnly ? effectiveSelections?.model ?? null : modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
     composerSnapshot.draft.selections.model ??
     effectiveSelections?.model ??
@@ -1431,7 +1433,7 @@ export const OpenCraftComposer = forwardRef<
         type: "set-document",
         document: proseMirrorToComposerDocument(view.state.doc),
       });
-      if (isStreaming && (admittedFollowUpAction === null
+      if (isStreaming && !controller.getSnapshot().draft.handoff && (admittedFollowUpAction === null
         || (followUpActionOverride !== undefined && availableFollowUpActions?.includes(followUpActionOverride) === false))) return;
       let intent: SubmitIntent;
       try {
@@ -1481,7 +1483,7 @@ export const OpenCraftComposer = forwardRef<
         ) {
           throw new Error("Queued message editing is unavailable");
         }
-        const followUpAction = isStreaming
+        const followUpAction = isStreaming && !intent.handoff
           ? (followUpActionOverride ?? defaultFollowUpAction)
           : null;
         const submission =
@@ -2329,7 +2331,7 @@ export const OpenCraftComposer = forwardRef<
             </button>
           </div>
         )}
-        {(attachments.length > 0 || composerSnapshot.draft.context.some(reference => reference.visible)) && (
+        {(attachments.length > 0 || composerSnapshot.draft.handoff || composerSnapshot.draft.context.some(reference => reference.visible)) && (
           <div className="opencraft-composer-attachments" aria-label={intl.formatMessage({ id: "composer.attachmentsAndContext", defaultMessage: "Attachments and context" })} inert={voiceActive ? true : undefined}>
             {attachments.map((attachment) => {
               const image = attachment.mimeType.startsWith("image/");
@@ -2399,6 +2401,16 @@ export const OpenCraftComposer = forwardRef<
                 </div>
               );
             })}
+            {composerSnapshot.draft.handoff && <div className="opencraft-composer-context">
+              <span className="opencraft-composer-attachment__icon"><FileText aria-hidden="true" size={15} /></span>
+              <span className="opencraft-composer-attachment__copy"><strong>{intl.formatMessage({ id: "composer.agentHandoff.reference", defaultMessage: "Continue from {thread}" }, { thread: `@thread:${composerSnapshot.draft.handoff.sourceThreadId}` })}</strong>
+                <small>{intl.formatMessage({ id: "composer.agentHandoff.description", defaultMessage: "Your next message starts a new conversation with the selected Agent." })}</small>
+              </span>
+              <span className="opencraft-composer-attachment__actions"><IconButton variant="ghost" size="accessory"
+                disabled={composerSnapshot.draft.lifecycle.phase === "submitting"}
+                aria-label={intl.formatMessage({ id: "composer.agentHandoff.cancel", defaultMessage: "Cancel Agent handoff" })}
+                onClick={() => controller.dispatch({ type: "cancel-agent-handoff" })}><X aria-hidden="true" size={13} /></IconButton></span>
+            </div>}
             {composerSnapshot.draft.context.filter(reference => reference.visible).map(reference => <div className="opencraft-composer-context" key={`context:${reference.id}`}>
               <span className="opencraft-composer-attachment__icon"><FileText aria-hidden="true" size={15} /></span>
               <span className="opencraft-composer-attachment__copy"><strong>{reference.title}</strong>

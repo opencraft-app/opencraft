@@ -1657,3 +1657,19 @@ test("steering never becomes a queued retry after a tool rejection", async () =>
       error => error === cause);
   } finally { await h.close(); }
 });
+
+test("handoff creation carries explicit execution selection, source reference, user text and attachment", () => {
+  const source = "opencraft://conversation/v1/server/source";
+  const compiled = compileSubmitIntent(intent({type:"new-thread",draftId:"handoff",execution:{hostId,workspace:{cwd:"/workspace",runtimeWorkspaceRoots:["/workspace"]}}}, {
+    handoff:{sourceThreadId:"source",reference:source,originalSelections:{model:"old-model"}},
+    document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"Continue the implementation"}]}]},
+    selections:{agentId:"codex",model:"codex:luna[low]",effort:"low",permissionProfile:"opencraft:permission-mode:full"},
+    attachments:[{id:"file",name:"notes.txt",mimeType:"text/plain",size:5,uri:"file:///workspace/notes.txt",lifecycle:"ready",error:null}],
+  }));
+  assert.equal(compiled.threadOptions.agentId,"codex");assert.equal(compiled.threadOptions.model,"codex:luna[low]");
+  assert.equal(compiled.threadOptions.permissions,"opencraft:permission-mode:full");
+  assert.deepEqual(compiled.threadOptions.handoffSource,{threadId:"source"});
+  const text=compiled.input.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n');
+  assert.match(text,/@thread:source/);assert.ok(text.includes(source));assert.match(text,/Continue the implementation/);
+  assert.ok(compiled.input.some(part=>part.type==='mention'&&part.path==='/workspace/notes.txt'));
+});

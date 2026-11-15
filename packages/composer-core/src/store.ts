@@ -16,6 +16,8 @@ import {
 } from "./model";
 
 export type ComposerAction =
+  | { readonly type: "begin-agent-handoff"; readonly sourceThreadId: string; readonly reference: string; readonly selections: ComposerSelections }
+  | { readonly type: "cancel-agent-handoff" }
   | { readonly type: "set-document"; readonly document: ComposerDocument }
   | {
       readonly type: "replace-content";
@@ -196,6 +198,13 @@ function reduce(
   services: ComposerStoreServices,
 ): ComposerDraft {
   switch (action.type) {
+    case "begin-agent-handoff":
+      return updateDraft(draft, services, {
+        handoff: draft.handoff ?? { sourceThreadId: action.sourceThreadId, reference: action.reference, originalSelections: draft.selections },
+        selections: action.selections,
+      });
+    case "cancel-agent-handoff":
+      return draft.handoff ? updateDraft(draft, services, { handoff: undefined, selections: draft.handoff.originalSelections }) : draft;
     case "set-document":
       return updateDraft(draft, services, { document: action.document });
     case "replace-content":
@@ -258,7 +267,7 @@ function reduce(
     case "clear":
       return {
         ...createDraft(draft.target, services),
-        selections: draft.selections,
+        selections: draft.handoff?.originalSelections ?? draft.selections,
         options: draft.options,
       };
     case "reset-all":
@@ -288,7 +297,7 @@ function snapshot(
   const hasUnavailableAssets = draft.attachments.some(
     (attachment) => attachment.lifecycle !== "ready" || attachment.uri === null,
   );
-  const hasContent = draftHasContent(draft) || hasTransientText;
+  const hasContent = draft.handoff !== undefined || draftHasContent(draft) || hasTransientText;
   return {
     revision,
     draft,
@@ -560,7 +569,7 @@ export function createComposerController(
         && (previous.document === draft.document || JSON.stringify(previous.document) === JSON.stringify(draft.document))
         && previous.attachments === draft.attachments
         && previous.context === draft.context && previous.selections === draft.selections
-        && previous.options === draft.options) {
+        && previous.options === draft.options && previous.handoff === draft.handoff) {
         // EditorView serializes its document again on every Send, including an
         // unchanged retry. Preserve delivery identity while using the current
         // document reference so later settlement still belongs to this draft.
@@ -572,6 +581,7 @@ export function createComposerController(
         commandId: services.createId(),
         clientMessageId: services.createId(),
         target: draft.target,
+        ...(draft.handoff ? { handoff: draft.handoff } : {}),
         document: draft.document,
         attachments: draft.attachments,
         context: draft.context,

@@ -47,11 +47,11 @@ export class ThreadAccessStore {
     return {serverId,threadId,creatorActorId:row?.creator_actor_id as string | null ?? null,
       accessMode:row?.access_mode as 'shared' | 'private' ?? 'shared',revision:Number(row?.revision ?? 0)};
   }
-  created(serverId: string, threadId: string, context?: ActorContext): void {
+  created(serverId: string, threadId: string, context?: ActorContext, mode: "shared" | "private" = "shared"): void {
     this.read(serverId,threadId);
     // Null is durable too: a later viewer cannot claim an anonymous creation.
     const creator = context && this.actors.isCurrent(context) && this.actors.get(context.actorId)?.kind === 'human' ? context.actorId : null;
-    withPermissionWrite(() => this.db.prepare("INSERT OR IGNORE INTO thread_access VALUES(?,?,?,'shared',1,?)").run(serverId,threadId,creator,Date.now()), this.readCache);
+    withPermissionWrite(() => this.db.prepare("INSERT OR IGNORE INTO thread_access VALUES(?,?,?,?,1,?)").run(serverId,threadId,creator,mode,Date.now()), this.readCache);
   }
   readablePolicy(serverId: string, threadId: string, context?: ActorContext): ThreadAccessPolicy | null {
     const policy = this.read(serverId,threadId);
@@ -153,6 +153,13 @@ export class ThreadAccessSession {
       // Only replies to requests actually delivered on this lane may reach the native owner.
       return !refs || refs.some(ref => !this.permits(ref));
     }
+    if (packet.method === "thread/start" && params.handoffSource !== undefined) {
+      const source = object(params.handoffSource);
+      if (!validId(source.threadId) || Object.keys(source).some(key => key !== "threadId") || !this.context
+        || !this.store.actors.isCurrent(this.context) || !this.allowed(source.threadId)) {
+        if (packet.id !== undefined) this.emit(this.denial(packet)); return true;
+      }
+    }
     if ([...this.requestRefs(String(packet.method),params),...['parentThreadId','ancestorThreadId'].map(key => params[key]).filter(validId).map(id=>({id}))].some(ref => !this.permits(ref))) { if (packet.id !== undefined) this.emit(this.denial(packet)); return true; }
     if (packet.method === THREAD_NOTE_EXCHANGE) {
       const envelope = {id:packet.id,...(packet.__opencraftClient === undefined ? {} : {__opencraftClient:packet.__opencraftClient})};
@@ -220,14 +227,16 @@ export class ThreadAccessSession {
         && threadUnavailableReason(new AppServerRpcError({code:error.code,message:error.message,data:error.data})) === 'not-found') return this.denial(packet);
       const threadId = object(object(packet.result).thread).id;
       if (!packet.error && ['thread/start','thread/fork'].includes(pending.method) && validId(threadId)) {
-        this.store.created(serverFor(threadId),threadId,this.context);
+        const sourceId = object(pending.params.handoffSource).threadId;
+        const source = validId(sourceId) ? this.store.projection(serverFor(sourceId),sourceId,this.context) : null;
+        this.store.created(serverFor(threadId),threadId,this.context,source?.accessMode ?? "shared");
         policies.clear();
       }
     }
     const result = object(packet.result);
     if (pending?.method === 'initialize' && !packet.error) {
       const capabilities = object(result.capabilities), extensions = object(capabilities.extensions);
-      extensions['opencraft/thread-access'] = {version:1};
+      extensions['opencraft/thread-access'] = {version:1,agentHandoff:!!this.context};
       // Raw engine summaries can include inaccessible records. Only an admitted
       // history projection may expose a Merkle root through this lane.
       if (!this.admittedCatalogOwner || object(extensions['opencraft/thread-directory-merkle']).admission !== 'reader')

@@ -28,7 +28,15 @@ CodeBuddy、Claude Code 等 ACP 会话如果用 `thought_level` 或 `effort` 声
 
 `agentNext` / `agentPrevious` 注册在 Web/Electron 快捷键表中（Alt+P / Alt+Shift+P），设置页的快捷键列表投影同一份定义。快捷键只改变正在浏览的 Agent，不写入模型；选择器关闭时，只有在当前 Composer 内才打开选择器并移动页签。Option 组合键的 `event.key` 会随键盘布局变化，按物理 `event.code` 归一化。
 
-已有线程打开选择器时，无论 Host 是否支持跨 Agent，都从目录和当前模型识别并标出当前 Agent；浏览当前 Agent 时显示“当前会话”，浏览其他 Agent 时显示“当前：Codex”保留身份；当前 Agent 模型缺失时保留当前身份，不因其他 Agent 有缓存而消失。只有 Host 声明了跨 Agent 上下文导出能力时才显示其他 Agent；浏览其他 Agent 时提示将带着当前会话上下文新建会话。选择其他 Agent 的模型沿用现有 `continueWithAgent` 打开新草稿，不伪装成同一线程续聊。没有该能力的旧线程只显示当前 Agent 的目录。
+已有线程打开选择器时，从服务端声明的执行引擎和模型身份识别当前 Agent；浏览当前 Agent 时显示“当前会话”，浏览其他 Agent 时显示“当前：Codex”等身份。只有 Host 声明 `opencraft/thread-access.agentHandoff` 时才开放跨 Agent 选择。只换当前 Agent 的模型仍在原线程发送。
+
+## 会话中途换 Agent
+
+在原线程里选中另一个 Agent 的模型后，仍停在原页面；Composer 显示“继续自 @thread:…”引用及“下一条消息将在所选 Agent 的新会话中发送”。此时可以继续编辑文字、附件、模型、思考深度与权限，不修改原线程的执行选择。引用旁的取消按钮退出 handoff，恢复开始前的选择，移除引用，保留期间编辑的文字及附件；再次选择原 Agent 也退出 handoff。重复选择目标 Agent 不叠加引用。
+
+发送时才创建新线程，显式提交 agentId、模型、思考深度及权限；第一条消息包含源线程的稳定 conversation reference、用户文字和附件。新 Agent 使用当前执行的 OpenCraft 线程 CLI `thread output` 分页读取旧上下文，引用本身不携带历史，也不授予访问权限。Host 提供该次输入专属的 launcher 路径，不把 bearer 放进提示词或持久草稿。CLI 按发起人的委托、源线程 private ACL 和协作空间成员关系重新授权，执行结束撤销 launcher。
+
+服务端在新建准入和响应交付时都检查源线程权限，新线程继承源线程的 private/shared 可见性和协作空间，不使用当前选择空间覆盖来源。原线程和原生 session 保持原 owner；不迁移工具执行、审批或原生 session，不导出完整历史文件。失败时保留原页草稿和附件，以非阻塞通知提供重试。创建成功后 Router PUSH 到新会话（草稿晋升仍由原有 owner replace），返回可回到旧线程；晚到结果不能抢回用户已经离开的页面。
 
 ## 输入与容器
 
