@@ -77,5 +77,13 @@ export function threadCliLabel(value: string | null | undefined): string | null 
   if (exact.startsWith(BODY_PREFIX)) return "";
   const legacy = `\n${BODY_PREFIX}`, legacyIndex = exact.lastIndexOf(legacy);
   if (legacyIndex > 0 && exact.slice(legacyIndex + 1).startsWith(`${BODY_PREFIX}/`)) return exact.slice(0, legacyIndex);
+  // ACP previews join the prompt blocks with spaces before truncating, so the
+  // marker or the pre-marker note may be separated by a space, not a newline.
+  const spacedCurrent = ` ${THREAD_CLI_INSTRUCTION_OPEN}`, spacedLegacy = " OpenCraft execution-scoped ";
+  if (exact.startsWith(spacedCurrent) || exact.startsWith(spacedLegacy)) return "";
+  const spacedCurrentIndex = exact.lastIndexOf(spacedCurrent);
+  if (spacedCurrentIndex > 0) return exact.slice(0, spacedCurrentIndex);
+  const spacedLegacyIndex = exact.lastIndexOf(spacedLegacy);
+  if (spacedLegacyIndex > 0) return exact.slice(0, spacedLegacyIndex);
   return value;
 }

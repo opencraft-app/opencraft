@@ -943,7 +943,10 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
     const cli = this.options.executionCli ? await this.options.executionCli.issue(session.id, inputId ?? "", cliCredential) : undefined;
-    if (cli) prompt.push({ type: "text", text: executionCliInstructions(cli) });
+    // The native prompt may alias the caller's clean userPrompt (no additional
+    // context). Never add the execution-scoped note to that projection array:
+    // the live Turn must show only the user's input until history is reloaded.
+    const nativePrompt = cli ? [...prompt, { type: "text", text: executionCliInstructions(cli) }] : prompt;
     try {
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
@@ -958,7 +961,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     session.updatedAt = Math.floor(Date.now() / 1000); await this.save(session);
     if (initialTitle && session.name === initialTitle && session.nameOrigin === "input") this.notify("thread/name/updated", { threadId: session.id, threadName: initialTitle });
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
-    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => {
+    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt: nativePrompt }, 0).then(result => {
       if (runtime.active !== active || active.status !== "inProgress") return;
       active.status = result.stopReason === "cancelled" ? "interrupted" : "completed";
       session.lastTurn = { id: active.id, status: active.status }; void this.save(session).catch(() => {});

@@ -37,3 +37,11 @@ test("truncated native labels keep the user text and lose the generated path", (
   assert.equal(threadCliLabel("用户自己的标题"), "用户自己的标题");
   assert.equal(threadCliLabel(`${THREAD_CLI_INSTRUCTION_OPEN}\nOpenCraft execution-scoped thread CLI: '/data/code/opencraft/.runtime/ma`), "");
 });
+
+test("ACP space-joined previews drop the marker and the pre-marker note", () => {
+  const marked = 'Reply with exactly the text produced by concatenating "OK" and "-CODEX-279". Do not use tools or change files. [opencraft:thread-cli:v1] OpenCraft execution-sco';
+  assert.equal(threadCliLabel(marked), 'Reply with exactly the text produced by concatenating "OK" and "-CODEX-279". Do not use tools or change files.');
+  const legacy = "Remember this unique verification passphrase: HANDOFF-85FB16F1E758B23A. Reply exactly STORED. Do not use tools or change files. OpenCraft execution-scoped threa";
+  assert.equal(threadCliLabel(legacy), "Remember this unique verification passphrase: HANDOFF-85FB16F1E758B23A. Reply exactly STORED. Do not use tools or change files.");
+  assert.equal(threadCliLabel("用户自己的标题 OpenCraft 使用说明"), "用户自己的标题 OpenCraft 使用说明");
+});

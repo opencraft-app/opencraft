@@ -761,12 +761,16 @@ test("connected ACP passes a distinct execution launcher to each input and revok
   } } });
   const { thread } = await f.engine.request("thread/start", {}, client);
   for (const inputId of ["one", "two"]) {
-    await f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: inputId, input: [{ type: "text", text: "hello" }] }, client);
+    const started = await f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: inputId, input: [{ type: "text", text: "hello" }] }, client);
     await until(() => revoked === inputs.length);
     const sent = (await f.calls()).filter(call => call.method === "session/prompt").at(-1);
     assert.match(JSON.stringify(sent.prompt), new RegExp(`/private/${inputId}/opencraft`));
+    assert.deepEqual(started.turn.items[0].content.map((block: any) => block.text), ["hello"]);
   }
   assert.deepEqual(inputs, ["one", "two"]); assert.equal(revoked, 2);
+  const listed = await f.engine.request("thread/list", {}, client);
+  const row = listed.data.find((entry: any) => entry.id === thread.id);
+  assert.equal(row.preview, "hello"); assert.ok(!JSON.stringify(listed).includes("/private/"));
 });
 
 test("refused CLI admission sends no ACP prompt", async t => {
