@@ -195,6 +195,39 @@ test("Cursor restores old parameterized IDs after restart and isolates conversat
   await cold.close();
 });
 
+test("non-Cursor ACP engines apply an advertised reasoning level before sending the prompt", async t => {
+  for (const id of ["codex", "codebuddy"] as const) {
+    const f = await fixture(t, { id, env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1" } });
+    const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+    const { thread } = await f.engine.request("thread/start", {}, client);
+    await f.engine.request("turn/start", { threadId: thread.id, effort: "low", input: [{ type: "text", text: "reason" }] }, client);
+    await until(() => notices.some(notice => notice.method === "turn/completed"));
+    assert.equal(notices.find(notice => notice.method === "turn/completed").params.turn.status, "completed");
+    const calls = await f.calls();
+    assert.deepEqual(calls.filter(call => call.method === "session/set_config_option" && call.configId === "reasoning_effort").map(call => call.value), ["low"]);
+    assert.equal(calls.filter(call => call.method === "session/prompt").length, 1);
+  }
+});
+
+test("CodeBuddy conversations own separate native processes so another session cannot take over a prompt", async t => {
+  const f = await fixture(t, { id: "codebuddy", timeoutMs: 1_200, env: { ACP_TEST_LATEST_SESSION_ONLY: "1" } });
+  const first = await f.engine.request("thread/start", {}, client);
+  const second = await f.engine.request("thread/start", {}, client);
+  const starts = (await f.calls()).filter(call => call.method === "session/new");
+  assert.equal(starts.length, 2);
+  assert.notEqual(starts[0].pid, starts[1].pid, "each CodeBuddy conversation owns its ACP process");
+  const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const completed = (threadId: string) => notices.find(notice => notice.method === "turn/completed" && notice.params.threadId === threadId);
+  await f.engine.request("turn/start", { threadId: first.thread.id, input: [{ type: "text", text: "first" }] }, client);
+  await until(() => completed(first.thread.id) !== undefined);
+  assert.equal(completed(first.thread.id).params.turn.status, "completed");
+  await f.engine.request("turn/start", { threadId: second.thread.id, input: [{ type: "text", text: "second" }] }, client);
+  await until(() => completed(second.thread.id) !== undefined);
+  assert.equal(completed(second.thread.id).params.turn.status, "completed");
+  const prompts = (await f.calls()).filter(call => call.method === "session/prompt");
+  assert.deepEqual(prompts.map(call => call.pid), starts.map(call => call.pid), "prompts stay on their conversation's process");
+});
+
 test("Codex splits advertised model variants into native model/reasoning and applies Fast before accepting input", async t => {
   const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1" } });
   const created = await f.engine.request("thread/start", { model: "codex:one[low]", serviceTier: "fast" }, client);

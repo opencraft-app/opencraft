@@ -92,6 +92,7 @@
       },
       { "from": "../opencraft-daemon/dist/terminal-pty-owner.mjs", "to": "runtime/terminal-pty-owner.mjs" },
       { "from": "../opencraft-daemon/dist/dsh-session-routing-worker.mjs", "to": "runtime/dsh-session-routing-worker.mjs" },
+      { "from": "../opencraft-daemon/dist/connected-agent-history-worker.mjs", "to": "runtime/connected-agent-history-worker.mjs" },
       {
         "from": "../opencraft-daemon/dist/main.cjs",
         "to": "runtime/opencraft-daemon.cjs"

@@ -423,13 +423,13 @@ export class ConnectedAgentHost {
 
   /** Codex, Cursor, CodeBuddy and Claude already persist their own transcripts. */
   private nativeHistory(engineId: EngineId): ConnectedAgentHistory | undefined {
+    if (engineId !== "codex" && engineId !== "cursor" && engineId !== "codebuddy" && engineId !== "claude-code") return undefined;
     const env = this.deps.env, home = this.deps.homedir;
     const directory = engineId === "codex" ? env.CODEX_HOME || join(home, ".codex")
       : engineId === "cursor" ? env.CURSOR_CONFIG_DIR || join(home, ".cursor")
       : engineId === "codebuddy" ? env.CODEBUDDY_CONFIG_DIR || join(home, ".codebuddy")
-      : engineId === "claude-code" ? env.CLAUDE_CONFIG_DIR || join(home, ".claude")
-      : undefined;
-    return directory ? new ConnectedAgentHistory(engineId, directory, join(this.root, "continuations")) : undefined;
+      : env.CLAUDE_CONFIG_DIR || join(home, ".claude");
+    return new ConnectedAgentHistory(engineId, directory, join(this.root, "continuations"));
   }
 
   private async launch(engineId: EngineId): Promise<Launch> {

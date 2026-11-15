@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { WebSocket, WebSocketServer } from 'ws';
 import { once } from 'node:events';
+import { Worker } from 'node:worker_threads';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -30,6 +31,18 @@ async function fixture(t) {
 test('public Headless artifact has no enterprise implementation and its CLI rejects private configuration', async t => {
   const f = await fixture(t), bundle = join(f.root, 'server.mjs');
   const result = await buildHeadlessBundle(bundle);
+  const workerPath = join(f.root, 'connected-agent-history-worker.mjs');
+  assert.equal((await stat(workerPath)).isFile(), true, 'the packaged Host ships its native history worker');
+  assert.ok(!(await readFile(workerPath, 'utf8')).includes('tsx/esm/api'), 'the packaged worker must not require a TypeScript loader');
+  const worker = new Worker(workerPath, { workerData: { provider: 'codex', home: join(f.root, 'native-home') } });
+  const reply = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('native history worker did not start')), 5_000);
+    worker.once('message', message => { clearTimeout(timer); resolve(message); });
+    worker.once('error', error => { clearTimeout(timer); reject(error); });
+    worker.postMessage({ id: 1, nativeId: '11111111-2222-3333-4444-555555555555', params: {}, kind: 'turns' });
+  });
+  await worker.terminate();
+  assert.deepEqual(reply, { id: 1, error: 'Could not read the saved agent conversation' });
   const inputs = Object.keys(result.metafile.inputs);
   assert.ok(inputs.length > 100, 'inspect the real transitive graph');
   assert.deepEqual(inputs.filter(path => path.includes('/enterprise-identity/') || path.includes('products/join/')), []);

@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
+import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { buildDshRoutingRuntime } from './package-dsh-routing-runtime.mjs';
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
@@ -48,6 +49,7 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await buildTranscriptCacheRuntime(dirname(output));
   await buildServerSpacesRuntime(dirname(output));
   await buildDshRoutingRuntime(dirname(output));
+  await buildConnectedAgentHistoryRuntime(dirname(output));
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
   await buildTerminalOwnerRuntime(dirname(output));

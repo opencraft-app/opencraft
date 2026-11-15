@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline';
 import { appendFileSync } from 'node:fs';
 const sessions = new Map(), prompts = new Map();
+let latestSession = null;
 const settings = new Map();
 const splitSettings = process.env.ACP_TEST_SPLIT_MODEL_CONFIG === '1';
 const parameterizedSettings = process.env.ACP_TEST_PARAMETERIZED === '1';
@@ -50,7 +51,7 @@ createInterface({ input: process.stdin }).on('line', line => {
       const sessionId = process.env.ACP_TEST_NATIVE_ID ?? `native-${sessions.size + 1}`;
       for (const server of params.mcpServers) { await mcp(server, 'init', 'initialize'); await mcp(server, 'list', 'tools/list'); }
       if(parameterizedSettings&&!parameterizedPicker)return send({id:frame.id,error:{code:-32602,message:'Parameterized picker not enabled'}});
-      sessions.set(sessionId, params); if(splitSettings||parameterizedSettings)return result(frame.id,setup(sessionId));return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
+      sessions.set(sessionId, params); latestSession = sessionId; if(splitSettings||parameterizedSettings)return result(frame.id,setup(sessionId));return result(frame.id, { sessionId, ...(process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:"default-native",availableModels:[{modelId:"default-native",name:"Default"},{modelId:"allowed-native",name:"Allowed"}]}} : {}) });
     }
     if (frame.method === 'session/fork') {
       if (!process.env.ACP_TEST_SESSION_HANDOFF) return send({id:frame.id,error:{code:-32601,message:'Unsupported'}});
@@ -60,7 +61,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     if (frame.method === 'session/close') { sessions.delete(params.sessionId); return result(frame.id, {}); }
     if (frame.method === 'session/resume') {
       if(process.env.ACP_TEST_BUSY_NATIVE===params.sessionId)return send({id:frame.id,error:{code:-32600,message:'This Codex session is in use by another Codex client'}});
- sessions.set(params.sessionId, params);if(splitSettings||parameterizedSettings)return result(frame.id,setup(params.sessionId));return result(frame.id, process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:'default-native',availableModels:[{modelId:'default-native',name:'Default'}]}} : {}); }
+ sessions.set(params.sessionId, params); latestSession = params.sessionId; if(splitSettings||parameterizedSettings)return result(frame.id,setup(params.sessionId));return result(frame.id, process.env.ACP_TEST_MODELS ? {...(process.env.ACP_TEST_MODEL_CONFIG_ID ? {configOptions:[{id:process.env.ACP_TEST_MODEL_CONFIG_ID,category:'model',currentValue:'default-native',options:[{value:'default-native',name:'Default'},{value:'allowed-native',name:'Allowed'}]}]} : {}),models:{currentModelId:'default-native',availableModels:[{modelId:'default-native',name:'Default'}]}} : {}); }
     if (frame.method === 'session/set_config_option') {
       if(splitSettings||parameterizedSettings){
         const state=settings.get(params.sessionId),option=state&&configOptions(params.sessionId).find(option=>option.id===params.configId);
@@ -90,6 +91,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     }
     if (frame.method === 'session/cancel') { const pending = prompts.get(params.sessionId); if (pending) { clearTimeout(pending.timer); prompts.delete(params.sessionId); result(pending.id, { stopReason: 'cancelled' }); } return; }
     if (frame.method === 'session/prompt') {
+      if (process.env.ACP_TEST_LATEST_SESSION_ONLY === '1' && latestSession && params.sessionId !== latestSession) return;
       const text = params.prompt.map(item => item.text).join('');
       if(process.env.ACP_TEST_PROGRESS==='1') {
         for(let i=0;i<2;i++)send({method:'session/update',params:{sessionId:params.sessionId,update:{sessionUpdate:'usage_update',used:1200,size:200000}}});

@@ -172,8 +172,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     void pending.finally(() => { if (this.inputCalls.get(key) === pending) this.inputCalls.delete(key); }).catch(() => {});
     return pending;
   }
-  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string): AcpStdioTransport {
-    return new AcpStdioTransport({ ...this.options,
+  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string, cwd = this.options.cwd): AcpStdioTransport {
+    return new AcpStdioTransport({ ...this.options, cwd,
       parameterizedModelPicker: this.id === "cursor",
       env: environment?.apply({ ...process.env, ...this.options.env }) ?? this.options.env,
       redactError: environment ? message => environment.redact(message) : undefined,
@@ -448,10 +448,14 @@ export class AcpEngine implements ExecutionEngineProvider {
           transport = this.createTransport(environment, id);
           this.sessionEnvironments.set(id, environment); this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); this.sessionEnvironments.delete(id); await transport.close(); throw new Error("ACP environment process unavailable"); }
-        } else if (this.id === "cursor") {
-          // Cursor's model manager is process-global. Each conversation owns
-          // its transport so another conversation cannot change its parameters.
-          transport = this.createTransport(undefined, id); this.sessionTransports.set(id, transport);
+        } else if (this.id === "cursor" || this.id === "codebuddy") {
+          // Cursor's model manager is process-global. CodeBuddy's ACP
+          // connection runs only its most recently opened session, so opening
+          // or discovering another conversation would switch the native owner
+          // mid-prompt. Each conversation owns its process; CodeBuddy also
+          // resolves its native project from the process cwd.
+          transport = this.createTransport(undefined, id, this.id === "codebuddy" ? cwd : this.options.cwd);
+          this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); await transport.close(); throw new Error("ACP process unavailable"); }
         }
         let result: Value;
@@ -720,7 +724,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private async setReasoning(session: Session, effort: unknown): Promise<void> {
     const config = session.reasoningConfig;
-    if (this.id !== "cursor" || typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
+    if (typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
     if (config.currentValue === effort) return;
     this.captureModels(session, await this.native(session).request("session/set_config_option", {
       sessionId: session.nativeId, configId: config.id, value: effort,
@@ -785,8 +789,8 @@ export class AcpEngine implements ExecutionEngineProvider {
       const transport = this.createTransport(environment, session.id);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP environment process unavailable"); }
       this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
-    } else if (this.id === "cursor" && !this.sessionTransports.has(session.id)) {
-      const transport = this.createTransport(undefined, session.id);
+    } else if ((this.id === "cursor" || this.id === "codebuddy") && !this.sessionTransports.has(session.id)) {
+      const transport = this.createTransport(undefined, session.id, this.id === "codebuddy" ? session.cwd : this.options.cwd);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP process unavailable"); }
       this.sessionTransports.set(session.id, transport); runtime.loaded = false;
     }
