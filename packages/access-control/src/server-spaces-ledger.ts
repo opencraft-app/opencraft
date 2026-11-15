@@ -73,19 +73,22 @@ export class ServerSpacesLedger {
   adoptLegacy(context:ActorContext,engineServerId:string,threads:readonly {id:string;createdAt:number}[]) {
     this.actor(context);
     const root=this.db.prepare("SELECT created_at FROM collaboration_spaces WHERE id='myself'").get();
-    if(!root||!this.role('myself',context.actorId))return;
+    if(!root||!this.role('myself',context.actorId))return false;
     if(!valid(engineServerId)||threads.length>1000)throw new ServerSpaceError('invalid',-32602);
     // A missing assignment is never permission. Only Native-proven conversations
     // older than installation bootstrap can enter the historical default space.
     const cutoff=Math.floor(Number(root.created_at)/1000)*1000;
+    let changed=false;
     sqliteTransaction(this.db,()=>{
       for(const thread of threads) {
         if(!valid(thread.id)||!Number.isFinite(thread.createdAt)||thread.createdAt<=0)continue;
         const created=thread.createdAt<1e12?thread.createdAt*1000:thread.createdAt;
         if(created>=cutoff)continue;
-        this.db.prepare("INSERT OR IGNORE INTO collaboration_space_threads VALUES(?,?,'myself')").run(engineServerId,thread.id);
+        const result=this.db.prepare("INSERT OR IGNORE INTO collaboration_space_threads VALUES(?,?,'myself')").run(engineServerId,thread.id);
+        changed ||= Number(result.changes)>0;
       }
     });
+    return changed;
   }
   /** Trusted creation reconciliation only; never a client RPC or a member grant. */
   inherit(parentServer:string,parentThread:string,childServer:string,childThread:string) {

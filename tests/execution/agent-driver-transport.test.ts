@@ -75,3 +75,19 @@ test('connected Host reference RPC uses authenticated collaboration authority in
   assert.equal(responses.at(-1).result.reference,'opencraft://conversation/v1/server/private-source');
   assert.deepEqual(actors,[actor]);assert.equal(native.length,1,'reference RPC is not forwarded to an unrelated native protocol');
 });
+
+
+test('only the native started event binds the admitted input to its actual Turn for CLI access',async()=>{
+  let receive!:(frame:string)=>void;const starts:unknown[][]=[];
+  const inner:any={status:{state:'open'},subscribeMessage(listener:(frame:string)=>void){receive=listener;return()=>{};},async send(){}};
+  const transport=new AgentDriverTransport(inner,{authorizeExecution(){},executionStarted(...args:unknown[]){starts.push(args);}} as any,()=> 'server');
+  await transport.sendWithContext(JSON.stringify({id:1,method:'turn/start',params:{threadId:'target',clientUserMessageId:'input',turnId:'forged',input:[]}}),
+    {sender:null,actorContext:{actorId:'owner',generation:1,expiresAt:Date.now()+10000,credentialId:null}});
+  assert.deepEqual(starts,[]);
+  receive(JSON.stringify({method:'turn/started',params:{threadId:'target',turn:{id:'actual-turn',items:[{type:'userMessage',clientId:'input'}]}}}));
+  assert.deepEqual(starts,[['target','input','actual-turn']]);
+  receive(JSON.stringify({id:1,result:{turn:{id:'actual-turn'}}}));
+  assert.equal(starts.length,1,'response and notification bind once');
+  receive(JSON.stringify({method:'turn/started',params:{threadId:'queue',clientMessageId:'original-queued-input',turn:{id:'queued-turn',items:[]}}}));
+  assert.deepEqual(starts.at(-1),['queue','original-queued-input','queued-turn']);
+});

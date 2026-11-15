@@ -89,7 +89,7 @@ export interface ScopedExecutionCliPort {
 export function executionCliInstructions(lease: ExecutionCliLease): string {
   const launcher = lease.environment.OPENCRAFT_THREAD_CLI;
   if (!launcher || !launcher.startsWith('/') || /[\x00-\x1f]/u.test(launcher)) throw Error('cliUnavailable');
-  return `OpenCraft execution-scoped thread CLI: '${launcher.replace(/'/gu, "'\\''")}'. Use this exact executable in place of opencraft for thread commands. It is authorized only for this input and its initiating person. A conversation reference does not grant access. Read referenced history with thread output; follow history.nextCursor with --cursor when needed.`;
+  return `OpenCraft execution-scoped thread CLI: '${launcher.replace(/'/gu, "'\\''")}'. Use this exact executable in place of opencraft for thread commands. It is authorized only for this input and its initiating person. A conversation reference does not grant access. This launcher uses a loopback connection; if your Agent sandbox blocks it, request approval through its existing permission flow. Read referenced history with thread output; follow history.nextCursor with --cursor when needed.`;
 }
 
 /** Local connected Host uses the same P7a issuance/forwarding protocol as BridgeHost. */

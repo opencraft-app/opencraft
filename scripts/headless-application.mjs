@@ -46,7 +46,7 @@ import { ExecutionLeaseStore } from "../apps/opencraft-daemon/src/execution-leas
 import { ThreadIdentityDatabase } from "../apps/opencraft-daemon/src/thread-identity-database.ts";
 import { observeNativeExecutionProcess } from "../apps/opencraft-daemon/src/native-execution-origin.ts";
 import { createWebSocketExecutionTurnInspector } from "../apps/opencraft-daemon/src/native-execution-inspector.ts";
-import { AgentDriverTransport } from "../apps/opencraft-daemon/src/agent-driver-transport.ts";
+import { AgentDriverTransport, AgentDriverSession } from "../apps/opencraft-daemon/src/agent-driver-transport.ts";
 import { WebSocketTransport } from "../packages/appserver-transport-websocket/src/index.ts";
 import { WebSocket } from 'ws';
 import { readDaemonMachineIdentity } from "../apps/opencraft-daemon/src/machine-identity.ts";
@@ -864,6 +864,9 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       getExecutionHealth: options.getExecutionHealth,
       getHostReadiness: () => codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {},
       createAppServerAccessSession: (context, emit) => createThreadAccessSession("opencraft-server", context, emit),
+      createAppServerDriverSession: emit => new AgentDriverSession(actorCollaboration,
+        threadId => conversationExecution.serverForHost('opencraft-server', threadId), emit,
+        session => executionCliSourceToken(capabilityKey, session)),
       createAppServerQuerySession: emit => new TokenUsageQuerySession(usageQueries, emit, actorId => actorStore.get(actorId)),
       appServerTarget: agent.websocketUrl,
       resolveAppServerTarget: agent.resolveWebsocketUrl,

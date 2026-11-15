@@ -186,3 +186,16 @@ test('handoff inherits the source space instead of the selected destination and 
   assert.equal(policy.read('codex','destination').accessMode,'private');
   assert.equal(runtime.allows(f.bob.actorId,'codex','destination'),false);
 });
+
+
+test('historical reads publish a space change once and do not create a refresh loop',async t=>{
+  const f=await fixture(t),runtime=new ServerSpacesRuntime({path:join(f.path,'opencraft-server.sqlite'),ownerActorId:f.alice.actorId});
+  await runtime.ready;t.after(()=>runtime.close());
+  let changes=0;const unsubscribe=runtime.subscribe(()=>changes++);t.after(unsubscribe);
+  const old=[{id:'old',createdAt:Math.floor(Date.now()/1000)-100}];
+  await runtime.adoptLegacy(f.alice,'pi',old);
+  assert(runtime.hasAssignment('pi','old'));assert.equal(changes,1);
+  await runtime.adoptLegacy(f.alice,'pi',old);
+  await runtime.adoptLegacy(f.alice,'pi',[{id:'recent',createdAt:Math.floor(Date.now()/1000)+100}]);
+  assert.equal(changes,1);assert(!runtime.hasAssignment('pi','recent'));
+});

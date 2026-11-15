@@ -34,7 +34,7 @@ CodeBuddy、Claude Code 等 ACP 会话如果用 `thought_level` 或 `effort` 声
 
 在原线程里选中另一个 Agent 的模型后，仍停在原页面；Composer 显示“继续自 @thread:…”引用及“下一条消息将在所选 Agent 的新会话中发送”。此时可以继续编辑文字、附件、模型、思考深度与权限，不修改原线程的执行选择。引用旁的取消按钮退出 handoff，恢复开始前的选择，移除引用，保留期间编辑的文字及附件；再次选择原 Agent 也退出 handoff。重复选择目标 Agent 不叠加引用。
 
-发送时才创建新线程，显式提交 agentId、模型、思考深度及权限；第一条消息包含源线程的稳定 conversation reference、用户文字和附件。新 Agent 使用当前执行的 OpenCraft 线程 CLI `thread output` 分页读取旧上下文，引用本身不携带历史，也不授予访问权限。Host 提供该次输入专属的 launcher 路径，不把 bearer 放进提示词或持久草稿。CLI 按发起人的委托、源线程 private ACL 和协作空间成员关系重新授权，执行结束撤销 launcher。认证排队输入把原始签发证明保存在原生私有队列中以支持重开；编辑、重放与手动启动队列不替换该证明，队列及历史的客户端投影不携带它。
+发送时才创建新线程，显式提交 agentId、模型、思考深度及权限；第一条消息包含源线程的稳定 conversation reference、用户文字和附件。新 Agent 使用当前执行的 OpenCraft 线程 CLI `thread output` 分页读取旧上下文，引用本身不携带历史，也不授予访问权限。Host 提供该次输入专属的 launcher 路径，不把 bearer 放进提示词或持久草稿。CLI 按发起人的委托、源线程 private ACL 和协作空间成员关系重新授权，执行结束撤销 launcher。Web 默认 `/appserver` 与 `/apphost` 共用同一执行准入及 CLI 签发逻辑；原生开始回执或 Turn 启动事件将输入绑定到实际 Turn，不能用客户端提供的 Turn ID 代替。若原生 Agent 沙箱限制 loopback，沿用该 Agent 的现有权限审批。认证排队输入把原始签发证明保存在原生私有队列中以支持重开；编辑、重放与手动启动队列不替换该证明，队列及历史的客户端投影不携带它。
 
 服务端在新建准入和响应交付时都检查源线程权限，新线程继承源线程的 private/shared 可见性和协作空间，不使用当前选择空间覆盖来源。原线程和原生 session 保持原 owner；不迁移工具执行、审批或原生 session，不导出完整历史文件。失败时保留原页草稿和附件，以非阻塞通知提供重试。创建成功后 Router PUSH 到新会话（草稿晋升仍由原有 owner replace），返回可回到旧线程；晚到结果不能抢回用户已经离开的页面。
 

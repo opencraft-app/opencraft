@@ -147,6 +147,8 @@ function bridgeAppServerSocket(client, request, options) {
   const querySession = options.createAppServerQuerySession?.(frame => {
     write(frame);
   });
+  const driverSession = options.createAppServerDriverSession?.(frame => write(frame));
+  client.once('close', () => driverSession?.close());
   const dshPending = new Set();
   const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
   const dshKey = packet => JSON.stringify([packet.__opencraftClient ?? "",packet.id]);
@@ -157,6 +159,11 @@ function bridgeAppServerSocket(client, request, options) {
       if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
       if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
       if(accessSession?.rewrite)data=accessSession.rewrite(data.toString('utf8'));
+      if (!isBinary && driverSession) {
+        const prepared = await driverSession.prepare(data.toString("utf8"), options.submissionContext);
+        if (prepared === null) return;
+        data = prepared;
+      }
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
@@ -208,7 +215,8 @@ function bridgeAppServerSocket(client, request, options) {
         if (identitySession && isBinary) throw new Error("Binary identity frame");
         // Identity restores rewritten request IDs before query initialization is correlated.
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
-        const frame = restored !== null && !isBinary && querySession ? querySession.project(String(restored)) : restored;
+        const driven = restored !== null && !isBinary && driverSession ? driverSession.project(String(restored)) : restored;
+        const frame = driven !== null && !isBinary && querySession ? querySession.project(String(driven)) : driven;
         if (frame !== null) write(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, isBinary);
         if (!isBinary) {
           const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
@@ -487,6 +495,7 @@ export async function createWorkbenchWebServer({
   resolveAppServerTarget,
   appServerIdentity = null,
   createAppServerQuerySession = null,
+  createAppServerDriverSession = null,
   hyperNodeUser = "",
   loopbackOnly = false,
   appHostServer = null,
@@ -1042,6 +1051,7 @@ export async function createWorkbenchWebServer({
         hyperNodeUser,
         identity: appServerIdentity,
         createAppServerQuerySession,
+        createAppServerDriverSession,
         createAccessSession: createAppServerAccessSession,
         submissionContext,
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),

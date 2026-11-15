@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { WebSocket,WebSocketServer } from 'ws';
 import { AppHostServer } from '../../packages/app-host-server/src/index';
+import { AgentDriverSession } from '../../apps/opencraft-daemon/src/agent-driver-transport';
 import { ActorStore } from '../../packages/access-control/src/actors';
 import { ActorAccess } from '../../packages/access-control/src/actor-access';
 import { ThreadAccessStore,ThreadAccessSession } from '../../packages/access-control/src/thread-access';
@@ -18,10 +19,11 @@ test('real AppHost and direct AppServer sockets enforce the same creator, direct
   await writeFile(join(root,'index.html'),'<!doctype html><title>Fixture</title>');
   const actors=new ActorStore(join(root,'actors.sqlite')),store=new ThreadAccessStore(join(root,'policy.sqlite'),actors);
   const access=new ActorAccess(actors,{authenticateHuman:request=>({provider:'fixture',subject:String(request.headers['x-fixture-user']??'anonymous'),displayName:'Fixture',expiresAt:Date.now()+60000}),admitted:()=>true,administrator:()=>false});
+  const nativeFrames:any[]=[];
   const threads=new Map<string,any>(),calls:string[]=[],nativeListeners=new Set<(frame:string)=>void>();
   let created=0;
   const respond=(packet:any)=>{
-    calls.push(packet.method);
+    calls.push(packet.method);nativeFrames.push(packet);
     if(packet.method==='initialize')return {capabilities:{extensions:{'opencraft/method-access':{version:1,methods:['thread/read','thread/list']}}}};
     if(packet.method==='thread/start'){const thread={id:`thread-${++created}`,name:'SECRET TITLE',turns:[]};threads.set(thread.id,thread);return {thread};}
     if(packet.method==='thread/list')return {data:[...threads.values()],nextCursor:null};
@@ -37,7 +39,19 @@ test('real AppHost and direct AppServer sockets enforce the same creator, direct
   })});
   const upstream=new WebSocketServer({host:'127.0.0.1',port:0});await once(upstream,'listening');
   upstream.on('connection',socket=>socket.on('message',raw=>{const packet=JSON.parse(String(raw));socket.send(JSON.stringify({id:packet.id,result:respond(packet)}));}));
+  const admissions:any[]=[],signed:any[]=[];
+  const driver=(emit:(frame:string)=>void)=>new AgentDriverSession({
+    async command(actor:any,params:any){
+      if(!store.allows('server',params.threadId,actor))throw Object.assign(Error('denied'),{code:'resource_denied',status:403});
+      return {reference:`opencraft://conversation/v1/server/${params.threadId}`};
+    },
+    authorizeExecution(actor:any,threadId:string,inputId:string){
+      if(!store.allows('server',threadId,actor))throw Error('denied');
+      admissions.push({actor:actor.actorId,threadId,inputId});
+    },
+  } as any,()=> 'server',emit,session=>{signed.push(session);return 'trusted-proof';});
   const gateway=await createWorkbenchWebServer({root,loopbackOnly:true,actorService:access,appHostServer:host,
+    createAppServerDriverSession:driver,
     appServerTarget:`ws://127.0.0.1:${(upstream.address() as any).port}/rpc`,createAppServerAccessSession:(context:any,emit:any)=>session('local',context,emit),onAppHostDiagnostic:()=>{}});
   const address=await gateway.listen({host:'127.0.0.1',port:0}),origin=`http://127.0.0.1:${address.port}`;
   const sockets:WebSocket[]=[];let sequence=0;
@@ -81,6 +95,16 @@ test('real AppHost and direct AppServer sockets enforce the same creator, direct
   assert.equal(bob.frames.some(row=>row.type==='host/frame'&&JSON.parse(row.frame).method==='opencraft/thread-access/revoked'),true);
   assert.equal(bobDirect.frames.some(row=>row.method==='opencraft/thread-access/revoked'),true);
   assert.equal((await alice.rpc('thread/read',{threadId})).result.thread.name,'SECRET TITLE');
+  const aliceDirect=await page('alice',true);
+  assert.equal((await aliceDirect.rpc('opencraft/collaboration',{action:'reference',threadId})).result.reference,`opencraft://conversation/v1/server/${threadId}`);
+  assert.equal((await bobDirect.rpc('opencraft/collaboration',{action:'reference',threadId})).error.code,-32004);
+  assert.equal(calls.includes('opencraft/collaboration'),false,'gateway reference must never reach native');
+  await aliceDirect.rpc('turn/start',{threadId,clientUserMessageId:'original-input',input:[],__opencraftExecutionCli:'forged'});
+  assert.equal(nativeFrames.at(-1).params.__opencraftExecutionCli,'trusted-proof');
+  assert.equal(admissions.at(-1).inputId,'original-input');
+  assert.equal(signed.at(-1).execution.inputId,'original-input');
+  assert.equal(signed.at(-1).threadId,threadId);
+
   await alice.rpc('opencraft/thread-access/set',{threadId,accessMode:'shared',expectedRevision:2});
   assert.equal((await bobDirect.rpc('thread/read',{threadId})).result.thread.id,threadId);
 });

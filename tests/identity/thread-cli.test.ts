@@ -307,3 +307,20 @@ test('connected Host uses P7a admission and forwarding; a revoked launcher canno
   await lease!.revoke();
   await assert.rejects(f.run(launcher,'output',ref('source-pi')));
 });
+
+test('connected execution CLI becomes readable only after the native start receipt binds its input',async t=>{
+  const f=await fixture(t);
+  const {AgentDriverSession}=await import('../../apps/opencraft-daemon/src/agent-driver-transport');
+  const {localExecutionCli}=await import('../../packages/session-capabilities/src/execution-cli');
+  const port=await localExecutionCli({directory:join(f.root,'receipt-cli'),endpoint:f.mcp.cliEndpoint,key:f.key});
+  t.after(()=>port.close());
+  const driver=new AgentDriverSession(f.service,()=> 'server',()=>{},scope=>executionCliSourceToken(f.key,scope));
+  t.after(()=>driver.close());
+  f.policy.created('server','old-private',f.owner,'private');
+  const prepared=JSON.parse((await driver.prepare(JSON.stringify({id:'start',method:'turn/start',params:{threadId:'parent',clientUserMessageId:'new-input',input:[]}}),{sender:null,actorContext:f.owner}))!);
+  const lease=await port.issue('parent','new-input',prepared.params.__opencraftExecutionCli);
+  assert.deepEqual(await f.service.admittedExecution('parent','new-input'),{turnId:null});
+  driver.project(JSON.stringify({id:'start',result:{turn:{id:'native-turn',items:[]}}}));
+  assert.equal((await f.run(lease!.environment.OPENCRAFT_THREAD_CLI,'output',ref('old-private'))).history.entries[0].text,'Child result');
+  await lease!.revoke();
+});

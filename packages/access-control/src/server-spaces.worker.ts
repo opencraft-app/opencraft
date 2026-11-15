@@ -45,7 +45,7 @@ port.on('message', request => {
         : ledger.command(context,request.command);
       const mutated=['assign','legacy','bootstrap','inherit'].includes(request.method)||['create','invite','join','remove'].includes(request.command?.action);
       const result=mutated?sqliteTransaction(db,execute):execute();
-      port.postMessage({id:request.id,result,...(mutated?{projection:ledger.projection()}:{})});
+      port.postMessage({id:request.id,result,...(mutated&&(request.method!=='legacy'||result===true)?{projection:ledger.projection()}:{})});
     } catch (error) {
       const e=error as Error & {rpcCode?:number;reason?:string};
       port.postMessage({id:request.id,error:{rpcCode:e.rpcCode ?? -32004,reason:e.reason ?? 'unavailable',message:'Server action unavailable'}});
