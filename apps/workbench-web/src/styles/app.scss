@@ -12943,20 +12943,10 @@ html[data-window-host="browser"] body {
 }
 
 .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: none; }
-.opencraft-composer-effort {
-  padding: calc(var(--spacing) * 3);
-  &__header {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    width: 100%;
-    text-align: initial;
-  }
-  &__side { display: flex; justify-content: center; }
-  &__titles { display: flex; flex-direction: column; align-items: center; min-width: 0; gap: var(--spacing); }
-  &__name { color: var(--color-text-accent); font: var(--typography-control-font); letter-spacing: var(--typography-control-tracking); }
+.opencraft-composer-effort { padding: calc(var(--spacing) * 3);
+  &__header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: center; text-align: initial; }
+  &__titles { display: flex; flex-direction: column; align-items: center; min-width: 0; }
 }
-.opencraft-composer-model-browser-surface:has([data-layer="effort"]) { width: min(320px, calc(100vw - 24px)); }
 .opencraft-composer-model-browser-surface {
   box-sizing: border-box;
   display: flex;
@@ -13019,30 +13009,7 @@ html[data-window-host="browser"] body {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
-  &__reasoning {
-    flex: none;
-    padding: calc(var(--spacing) * 2);
-    border-top: .5px solid var(--color-border-subtle);
-  }
-  &__section-label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    @include typography.role(metadata, secondary);
-    padding: var(--spacing) calc(var(--spacing) * 2);
-  }
-  &__efforts { display: flex; flex-wrap: wrap; gap: var(--spacing); }
-  &__fast,
   &__configure { flex: none; margin: calc(var(--spacing) * 2); }
-  &__fast {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--spacing) * 2);
-    padding: calc(var(--spacing) * 2);
-    border-top: .5px solid var(--color-border-subtle);
-    @include typography.role(control, primary);
-    > span { flex: 1; }
-  }
 }
 .opencraft-composer-footer[data-footer-density="minimal"] .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: block; }
 
