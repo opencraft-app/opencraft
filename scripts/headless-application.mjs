@@ -476,6 +476,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     let piEngine;
     let independentEngine;
     const conversationExecution = createRoutedConversationExecution(() => appHostServer, {machineId:machineIdentity.machineId,engines,
+      connectedAgentsOwner: engines.includes('dsh') ? 'dsh' : undefined,
       getInputs:async engine => {
         const inputs = engine !== 'dsh' ? (independentEngine?.inputs ?? (engine === 'pi' ? piEngine?.inputs : undefined)) : (await startDsh()).inputs;
         if (!inputs) return undefined;

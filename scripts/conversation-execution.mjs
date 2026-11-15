@@ -130,7 +130,7 @@ export function createConversationExecution(getAppHost, {serverId, hostId, engin
 
 /** Full conversation identity selects the native engine. Actor run bindings and
  * delegation stay on the default Codex authority until explicitly extended. */
-export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs }) {
+export function createRoutedConversationExecution(getAppHost, { machineId, engines, getInputs, connectedAgentsOwner }) {
   const agentEngine = threadId => threadId.startsWith('dsh_acp_') ? 'dsh-acp' : threadId.startsWith('pi_') ? 'pi'
     : threadId.startsWith('claude_') ? 'claude-code' : threadId.startsWith('acp_') ? 'acp' : 'dsh';
   const descriptors = [{ serverId: `server:${machineId}:codex`, hostId: 'local-codex', label:'Codex' },
@@ -141,7 +141,10 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
   const serverForHost = (hostId, threadId) => {
     if (hostId === 'local-codex') return descriptors[0].serverId;
     if (hostId !== 'opencraft-server') return reject();
-    return descriptors.find(server => server.engine === agentEngine(threadId))?.serverId ?? reject();
+    const requested = agentEngine(threadId);
+    const connected = /^(?:codex_|cursor_|codebuddy_|claude_|pi_)/u.test(threadId);
+    const owner = engines.includes(requested) ? requested : connected ? connectedAgentsOwner : undefined;
+    return descriptors.find(server => server.engine === (owner ?? requested))?.serverId ?? reject();
   };
   const select = binding => {
     const serverId = binding.serverId ?? primary.serverId, port = ports.get(serverId);
@@ -172,7 +175,7 @@ export function createRoutedConversationExecution(getAppHost, { machineId, engin
       const result = await port.discoverMetadata(options);
       return {...result,conversations:result.conversations.filter(row => serverForHost(port.hostId,row.ref.threadId) === options.serverId)};
     },
-    serverForThread: threadId => /^(?:pi_|dsh_acp_|claude_|acp_)/u.test(threadId) ? serverForHost('opencraft-server', threadId) : primary.serverId,
+    serverForThread: threadId => /^(?:pi_|dsh_acp_|claude_|acp_|codex_|cursor_|codebuddy_)/u.test(threadId) ? serverForHost('opencraft-server', threadId) : primary.serverId,
     hostForServer: serverId => ports.get(serverId)?.hostId ?? reject(),
     async discover(search,cursor) {
       const positions = cursor ? JSON.parse(Buffer.from(cursor,'base64url').toString()) : { codex:null, agent:engines.length ? null : false };
