@@ -1415,7 +1415,8 @@ export function createAppServerWorkbenchRuntime(
     return operation;
   };
 
-  const markThreadUnavailable = (threadId: string, reason: ThreadUnavailableReason, cause?: AppServerRpcError) => {
+  const markThreadUnavailable = (threadId: string, reason: ThreadUnavailableReason, cause?: AppServerRpcError,
+    options: { readonly keepReadable?: boolean } = {}) => {
     const failure = cause ?? new AppServerRpcError({ code: reason === "archived" ? -32071 : -32600,
       message: reason === "archived" ? "Thread is archived" : "Thread not found" });
     unavailableThreads.set(threadId, { reason, error: failure });
@@ -1423,10 +1424,18 @@ export function createAppServerWorkbenchRuntime(
     const binding = bindings.get(threadId);
     if (binding) {
       recovery.remove(binding);
-      binding.cancelHydration?.();
-      binding.phase = "error";
-      binding.replica.disconnect();
-      session?.resume.markNeedsResume(threadId);
+      if (options.keepReadable === true) {
+        // A successful read can still describe an archived Thread. Keep the
+        // painted transcript while detaching live updates; the availability
+        // fence still blocks further commands and exposes the restore action.
+        binding.phase = "resident";
+        binding.replica.disconnect();
+      } else {
+        binding.cancelHydration?.();
+        binding.phase = "error";
+        binding.replica.disconnect();
+        session?.resume.markNeedsResume(threadId);
+      }
       binding.replica.reportSyncFailure(failure);
     }
     for (const listener of unavailableListeners) {
@@ -1552,6 +1561,7 @@ export function createAppServerWorkbenchRuntime(
         const extensions = requireClient().initializeResult?.capabilities?.extensions;
         const legacyWindow = executionEngineExtension(extensions, binding.threadId, "opencraft/message-window-history")?.version === 1
           && executionEngineExtension(extensions, binding.threadId, "opencraft/read-history")?.version !== 1;
+        let archived = false;
         try {
           if (ephemeralThreadIds.has(binding.threadId)) {
             const view = currentSession.views.get(binding.threadId);
@@ -1561,10 +1571,12 @@ export function createAppServerWorkbenchRuntime(
           } else if (legacyWindow) {
             // Message-window providers bootstrap their REST preview through
             // Resume until they explicitly advertise a read-only history path.
-            await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected, signal: controller.signal,
+            const view = await currentSession.resume.resume({ threadId: binding.threadId, force, retryRejected, signal: controller.signal,
               unresolvedTurnIds: [...binding.acceptedTurnIds], ...(force ? { historyCheckpoint } : {}) });
+            archived = view.thread?.archived === true;
           } else {
-            await currentSession.resume.read(binding.threadId, { signal: controller.signal, historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
+            const view = await currentSession.resume.read(binding.threadId, { signal: controller.signal, historyCheckpoint, unresolvedTurnIds: [...binding.acceptedTurnIds] });
+            archived = view.thread?.archived === true;
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           if (legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
@@ -1587,6 +1599,9 @@ export function createAppServerWorkbenchRuntime(
           void binding.refreshQueue().catch(() => undefined);
         binding.phase = "resident";
         touchBinding(binding);
+        // The Host persisted the archive before returning its readable history.
+        // Mark after synchronization so the first paint keeps the transcript.
+        if (archived) markThreadUnavailable(binding.threadId, "archived", undefined, { keepReadable: true });
       })
       .catch((cause) => {
         if (current()) {

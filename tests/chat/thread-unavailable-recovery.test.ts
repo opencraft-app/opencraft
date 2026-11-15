@@ -4,7 +4,7 @@ import { AppServerRpcError, AppServerClientError, threadUnavailableReason, isRet
 import { MemoryTransport, type InMemoryAppServerPeer } from "@opencraft/appserver-transport-memory";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 const settle = async () => { for (let i = 0; i < 20; i++) await new Promise(resolve => setImmediate(resolve)); };
-const thread = (id: string) => ({ id, sessionId: id, name: id, cwd: "/workspace", path: `/rollouts/${id}`, historyMode: "paginated", status: { type: "idle" }, turns: [] });
+const thread = (id: string, extra: Record<string, unknown> = {}) => ({ id, sessionId: id, name: id, cwd: "/workspace", path: `/rollouts/${id}`, historyMode: "paginated", status: { type: "idle" }, turns: [], ...extra });
 
 for (const [message, code, reason] of [
   ["workspace view has been destroyed", -32071, "archived"],
@@ -54,22 +54,24 @@ test("unrelated missing resources and transient failures cannot retire a Thread"
   assert.equal(isRetryableAppServerRpcError(new AppServerRpcError({ code: -32602, message: "bad params", data: { retryable: true } })), false);
 });
 
-function fixture(failure?: { code: number; message: string }) {
+function fixture(failure?: { code: number; message: string }, options: { archived?: boolean } = {}) {
   let peer!: InMemoryAppServerPeer;
   let hold = false, release: (() => void) | undefined;
-  let rejected = failure;
+  let rejected = failure, archived = options.archived === true;
   const requests: Array<{ method: string; id?: string }> = [];
   const transport = new MemoryTransport({ connected(value) { peer = value; }, receive(frame, reply) {
     const request = JSON.parse(frame); if (request.id === undefined) return;
     const id = request.params?.threadId; requests.push({ method: request.method, id });
     const send = (result: unknown) => reply.send(JSON.stringify({ id: request.id, result }));
     if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "unavailable-test" });
-    else if (request.method === "thread/unarchive") { rejected = undefined; send({ thread: thread(id) }); }
+    else if (request.method === "thread/unarchive") { rejected = undefined; archived = false; send({ thread: thread(id) }); }
     else if (request.method === "thread/read") {
       if (rejected && id === "old") { reply.send(JSON.stringify({ id: request.id, error: { ...rejected, data: { retryable: true } } })); return; }
-      const complete = () => send({ thread: thread(id), model: "test", modelProvider: "test", cwd: "/workspace",
+      const complete = () => send({ thread: thread(id, archived && id === "old" ? { archived: true } : {}), model: "test", modelProvider: "test", cwd: "/workspace",
         approvalPolicy: "on-request", approvalsReviewer: "user", runtimeWorkspaceRoots: ["/workspace"],
-        sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, initialTurnsPage: { data: [], nextCursor: null }, turnsBackwardsCursor: null, itemsBackwardsCursor: null });
+        sandbox: { type: "workspaceWrite", writableRoots: ["/workspace"] }, initialTurnsPage: { data: archived && id === "old"
+          ? [{ id: "turn-1", status: "completed", itemsView: "full", items: [{ id: "item-1", type: "agentMessage", text: "archived history" }] }]
+          : [], nextCursor: null }, turnsBackwardsCursor: null, itemsBackwardsCursor: null });
       if (hold && id === "old") release = complete; else complete();
     } else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
     else send({});
@@ -101,6 +103,25 @@ for (const failure of [{ code: -32071, message: "Thread is archived" }, { code: 
     } finally { stop(); await f.runtime.dispose(); }
   });
 }
+test("a fresh read of an archived Thread keeps its transcript and reports the restore reason", async () => {
+  const f = fixture(undefined, { archived: true });
+  try {
+    await f.runtime.connect(); const lease = await f.runtime.acquireThread("old"); await settle();
+    assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), "archived");
+    const snapshot = lease.getSnapshot();
+    assert.equal(snapshot.authoritative, false);
+    assert.ok(snapshot.timeline.frames.length > 0, "the archived transcript remains readable");
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1);
+    f.disconnect(); await f.runtime.reconnect(); await settle();
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1, "an archived read is not replayed");
+    assert.equal(f.requests.some(r => ["thread/start", "turn/start", "turn/steer"].includes(r.method)), false);
+    await f.runtime.resources.threads.unarchive!("old"); await lease.retryRestore(); await settle();
+    assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), null);
+    assert.equal(lease.getSnapshot().authoritative, true);
+    lease.release();
+  } finally { await f.runtime.dispose(); }
+});
+
 test("archive acknowledgement stops restoration without notification; unarchive allows explicit reopening", async () => {
   const f = fixture();
   try {

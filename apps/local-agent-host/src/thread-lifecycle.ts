@@ -31,6 +31,9 @@ export class ThreadLifecycle {
     if (!reply?.thread?.id) return reply;
     const thread = this.catalog.upsert(reply.thread);
     return { ...reply, thread: { ...thread, turns: reply.thread.turns ?? [],
+      // Thread metadata owns archive state; an archived Thread still returns
+      // readable history, so the client needs this flag beside the transcript.
+      archived: this.catalog.archived(thread.id),
       status: this.attachments.isLoaded(thread.id) ? reply.thread.status ?? { type: "idle" } : { type: "notLoaded" } },
       ...(reply.runtimeWorkspaceRoots ? { runtimeWorkspaceRoots: this.catalog.configuration(thread.id).runtimeWorkspaceRoots ?? reply.runtimeWorkspaceRoots } : {}) };
   }

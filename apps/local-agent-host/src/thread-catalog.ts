@@ -27,8 +27,11 @@ export class ThreadCatalog {
   directory?: ThreadDirectory;
   private readonly temporary = new Map<string, RecordValue>();
   private readonly manualTitles = new Map<string, string | null>();
+  private readonly archivedState = new Map<string, boolean>();
   /** In-memory projection for notifications; never performs database IO. */
   manualTitle(id: string): string | null | undefined { return this.manualTitles.get(id); }
+  /** In-memory archive projection for RPC decoration; never performs database IO. */
+  archived(id: string): boolean { return this.archivedState.get(id) ?? false; }
 
   constructor(path = ":memory:") {
     const managed = openManagedDatabase({ schemaId: "thread-catalog",
@@ -83,6 +86,7 @@ export class ThreadCatalog {
     }
     const record = parsed as RecordValue;
     this.manualTitles.set(record.snapshot.id, record.manualTitle ?? null);
+    this.archivedState.set(record.snapshot.id, record.archived === true);
     return record;
   }
 
@@ -99,6 +103,7 @@ export class ThreadCatalog {
     else this.database.prepare("INSERT INTO opencraft_threads(id,document) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET document=excluded.document WHERE document<>excluded.document")
       .run(record.snapshot.id, JSON.stringify(payload));
     this.manualTitles.set(record.snapshot.id, record.manualTitle);
+    this.archivedState.set(record.snapshot.id, record.archived === true);
   }
 
   upsert(snapshot: Snapshot, options: ThreadCatalogOptions = {}): Snapshot {
@@ -152,7 +157,7 @@ export class ThreadCatalog {
       .map(row => this.decodeDocument(row.document)).filter(record => record.archived === archived).map(record => record.snapshot);
   }
 
-  forgetTemporary(id: string): void { this.temporary.delete(id); this.manualTitles.delete(id); }
+  forgetTemporary(id: string): void { this.temporary.delete(id); this.manualTitles.delete(id); this.archivedState.delete(id); }
   temporaryIds(): string[] { return [...this.temporary.keys()]; }
-  close(): void { this.directory?.close(); this.temporary.clear(); this.manualTitles.clear(); this.database.close(); }
+  close(): void { this.directory?.close(); this.temporary.clear(); this.manualTitles.clear(); this.archivedState.clear(); this.database.close(); }
 }
