@@ -1,5 +1,6 @@
 export { ComposerAttachedRail } from "./attached-rail";
 export { OpenCraftComposer, composerSchema } from "./composer-editor";
+export { composerAgentBrand, omitDuplicateHostAgents } from "./agent-menu-sources";
 export type {
   OpenCraftComposerHandle,
   OpenCraftComposerProps,
