@@ -296,7 +296,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   if (options.desktopControl && options.localDesktop !== true) throw new Error("Desktop control requires local desktop");
   if (options.localDesktop && desktopAccess === "loopback" && host !== "127.0.0.1") throw new Error("Local desktop requires a loopback-only listener");
   await access(join(webRoot, "index.html"));
-  await assertHeadlessWebRelease(webRoot);
+  const webRelease = await assertHeadlessWebRelease(webRoot);
   await secureDataDirectory(dataDirectory);
   const serverStorage = await openServerDatabase(dataDirectory);
   const orchestrationStorage = new OrchestrationRuntimeWorker(join(dataDirectory, 'opencraft-server.sqlite'));
@@ -853,6 +853,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
     web = await createWeb({
       root: webRoot,
       instanceId: options.isolateBrowserStorage ? machineIdentity.machineId : null,
+      assetVersion: options.isolateBrowserStorage ? webRelease.buildId : null,
       observability,
       getExecutionHealth: options.getExecutionHealth,
       getHostReadiness: () => codexReadiness ? { "local-codex": codexReadiness.snapshot() } : {},
