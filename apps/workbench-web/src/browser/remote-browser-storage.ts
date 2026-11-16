@@ -5,6 +5,10 @@ import { serverStorageKey, serverUrl } from '../runtime/server-context';
 import { browserMetadataKeys, readBrowserMetadataValue } from '@opencraft/workbench-runtime/browser-metadata-identity';
 
 const identity = (key: string) => key;
+const transientStateError = (error: unknown) => {
+  const failure = error as { code?: string; retryable?: boolean };
+  return failure?.code === 'DISCONNECTED' || failure?.code === 'BROWSER_UNAVAILABLE' && failure.retryable === true;
+};
 const remoteStorageKey = 'opencraft.remote-browser-storage.v1';
 const entries = [
   [browserMetadataKeys.pages, 'pages', identity],
@@ -66,7 +70,14 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
       await admission?.(); signal?.throwIfAborted();
       if (this.closed) throw new Error('Browser storage closed');
       await this.connect();
-      const state = await this.call();
+      let state;
+      for (let attempt = 0; ; attempt++) {
+        try { state = await this.call(); break; }
+        catch (error) {
+          if (this.closed || (error as { code?: string }).code !== 'BROWSER_UNAVAILABLE' || !transientStateError(error)) throw error;
+          await this.retryDelay(attempt);
+        }
+      }
       if (this.closed) throw new Error('Browser storage closed');
       signal?.throwIfAborted();
       if (Object.entries(state.values).some(([key, value]) => typeof value !== 'string' || value.length > browserMetadataValueLimit(key))) throw new Error('Invalid browser state response');
@@ -115,7 +126,8 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
           this.synchronize(); return;
         }
         catch (error) {
-          if (this.closed || this.failure || (error as { code?: string }).code !== 'DISCONNECTED') throw this.failure ?? error;
+          if (this.closed || this.failure || !transientStateError(error)) throw this.failure ?? error;
+          this.fresh = false;
           // Retry only the same durable mutation; a lost ACK must not create a new edit.
           await this.retryDelay(attempt);
         }
@@ -163,7 +175,8 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
         try { await this.connect(); state = await this.call(); break; }
         catch (error) {
           if (this.closed) return;
-          if ((error as { code?: string }).code !== 'DISCONNECTED' || attempt >= 5) throw error;
+          if (!transientStateError(error) || attempt >= 5) throw error;
+          this.fresh = false;
           await this.retryDelay(attempt);
         }
       }
@@ -186,7 +199,7 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
       if (this.dirtyRevision > this.snapshotRevision) this.synchronize();
     }, error => {
       this.syncQueued = false;
-      if (!this.closed && !this.failure && (error as { code?: string }).code === 'DISCONNECTED') {
+      if (!this.closed && !this.failure && transientStateError(error)) {
         this.scheduleReconnect(); return;
       }
       throw error;
@@ -255,7 +268,7 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
         if (message.type !== 'result') return;
         const p = this.pending.get(message.id); if (!p) return;
         this.pending.delete(message.id); clearTimeout(p.timer);
-        if (message.error) p.reject(Object.assign(new Error(message.error.message), { code: message.error.code })); else p.resolve(message.value);
+        if (message.error) p.reject(Object.assign(new Error(message.error.message), { code: message.error.code, retryable: message.error.retryable === true })); else p.resolve(message.value);
       };
       ws.onclose = event => {
         clearTimeout(timer);

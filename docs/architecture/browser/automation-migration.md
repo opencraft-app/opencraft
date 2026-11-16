@@ -644,3 +644,32 @@ directory preparation and isolated-runtime access setup. Closing the service whi
 one of those awaits is pending cannot spawn a late Electron child after shutdown
 has already released its resources. A deterministic availability-gate regression
 reproduces the old late spawn and verifies zero spawn attempts after closure.
+
+Direct Electron startup now shares one Promise spanning both process readiness
+and durable native-state reconciliation. Concurrent callers cannot bypass that
+publication or observe success when it later fails. Reconciliation checks its
+captured process identity inside the durable reducer and after publication;
+failure retires that transport before retry. Regression cases hold publication
+while two callers start, then complete, reject, or replace the native process;
+all callers receive the same outcome and a failed attempt can restart cleanly.
+
+Direct startup's failure boundary also includes waiting for the native ready event.
+A ready timeout retires its transport even when kill produces no exit callback;
+service closure explicitly cancels that wait rather than retaining its deadline.
+The cancellation handle is cleared only by its owning attempt. Regressions use a
+silent child to verify immediate close cancellation, timeout retirement, clean
+retry and isolation from old ready/exit/error events.
+
+State loading rejects after service closure, including an otherwise cold service.
+A late metadata/catalog request cannot acquire a new exclusive writer after the
+shutdown release promise has already settled. A regression closes before first
+load, rejects all late reads/load attempts, and verifies a replacement service
+can immediately acquire the same state directory.
+
+Metadata clients preserve the server's retryable flag and distinguish transient
+writer handover (`BROWSER_UNAVAILABLE`, retryable=true) from terminal refusal.
+Initial snapshots, background snapshots and queued writes back off on this explicit
+busy condition; writes retain their original mutation/payload. Readiness stays
+revoked until a successful full snapshot. Unavailable responses without permission,
+conflicts and authorization failures remain terminal. Tests cover all three phases
+and a real WebSocket writer/peer converging after a handover error with one commit.

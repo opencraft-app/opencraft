@@ -62,6 +62,7 @@ export class RemoteBrowserService {
     this.server = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: browserMetadataWireLimit });
   }
   async load() {
+    if (this.closed) throw new Error('Browser service closed');
     this.loading ??= (async () => {
       await mkdir(this.dataDirectory, { recursive: true, mode: 0o700 });
       this.releaseWriter = await acquireBrowserStateWriter(this.dataDirectory);
@@ -626,25 +627,38 @@ export class RemoteBrowserService {
         diagnostics.finish();
         if (failure) failure.native = diagnostics.snapshot();
       });
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const finish = error => { if (settled) return; settled = true; clearTimeout(timer); child.off('message', ready); error ? reject(error) : resolve(); };
-        failStartup = finish;
-        const ready = message => { if (message.type === 'ready') finish(); };
-        const timer = setTimeout(() => { child.kill(); finish(unavailable('Browser startup timed out')); }, 15000);
-        child.on('message', ready); child.once('error', () => finish(unavailable('Browser process could not start')));
-        child.once('exit', () => finish(unavailable('Browser process exited during startup')));
-      });
+      try {
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const cancel = () => finish(new Error('Browser service closed'));
+          const finish = error => {
+            if (settled) return; settled = true; clearTimeout(timer); child.off('message', ready);
+            if (this.cancelStartup === cancel) this.cancelStartup = null;
+            error ? reject(error) : resolve();
+          };
+          failStartup = finish; this.cancelStartup = cancel;
+          const ready = message => { if (message.type === 'ready') finish(); };
+          const timer = setTimeout(() => { child.kill(); finish(unavailable('Browser startup timed out')); }, 15000);
+          child.on('message', ready); child.once('error', () => finish(unavailable('Browser process could not start')));
+          child.once('exit', () => finish(unavailable('Browser process exited during startup')));
+        });
+        const requireNative = () => {
+          requireOpen();
+          if (this.child !== child) throw unavailable('Browser process changed during startup');
+        };
+        requireNative();
+        if (!this.nativeReconciled) {
+          await this.commit(draft => {
+            requireNative();
+            for (const record of draft.pages) record.runtime = { ...record.runtime, kind: 'absent' };
+          });
+          requireNative(); this.nativeReconciled = true;
+        }
+      } catch (error) { retire('startup_failed'); throw error; }
     })();
     const attempt = this.starting;
-    try {
-      await attempt;
-      if (!this.ownerConnector && !this.nativeReconciled) {
-        await this.commit(draft => { for (const record of draft.pages) record.runtime = { ...record.runtime, kind: 'absent' }; });
-        this.nativeReconciled = true;
-      }
-      return;
-    } catch (error) { if (this.starting === attempt) this.starting = null; throw error; }
+    try { await attempt; }
+    catch (error) { if (this.starting === attempt) this.starting = null; throw error; }
   }
   receive(message) {
     if (message.type === 'result') {
@@ -859,6 +873,7 @@ export class RemoteBrowserService {
     if (this.loaded) void this.persist().catch(() => {});
     this.closed = true;
     this.display.close();
+    this.cancelStartup?.();
     this.diagnose('gateway_shutdown');
     for (const ws of this.sockets) {
       ws.close(1012, 'Browser connection restarting');

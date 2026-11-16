@@ -126,3 +126,11 @@ a later attachment must be able to reconcile them without a leaked exclusive pee
 Startup must recheck service lifetime after asynchronous preparation and before
 spawning Electron or attaching Owner. Shutdown must not be followed by an
 unowned late child whose startup resumed after resources were already released.
+Direct Electron startup's shared Promise includes durable native reconciliation,
+not only the ready event. All concurrent callers share its outcome. Fence the
+process during publication and retire failed reconciliation before another start.
+Native ready waits belong to the same startup failure boundary. Timeouts retire
+the transport even without an exit callback; service close cancels the wait and
+removes its deadline so old readiness cannot revive a retired attempt.
+State loading is lifetime-bound: a closed service cannot initialize or acquire
+the writer again through late metadata/catalog reads after shutdown has settled.

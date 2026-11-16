@@ -282,3 +282,82 @@ test('service close during runtime availability check prevents late Electron spa
   release(); await rejected;
   assert.equal(spawned, 0); assert.equal(service.child, undefined);
 });
+
+for (const outcome of ['success', 'failure', 'replacement']) test(`concurrent direct startup shares durable reconciliation ${outcome}`, async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-start-barrier-'));
+  const children = []; let entered, release;
+  const waiting = new Promise(resolve => { entered = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null, allowNoSandbox: true,
+    spawnImpl() {
+      const child = Object.assign(new EventEmitter(), { connected: true, kill() {}, disconnect() { this.connected = false; } });
+      children.push(child); queueMicrotask(() => child.emit('message', { type: 'ready' })); return child;
+    } });
+  service.available = async () => true;
+  let first, second;
+  t.after(async () => { release(); await Promise.allSettled([first, second]); service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  await service.load(); const commit = service.commit.bind(service); let held = false;
+  service.commit = async reduce => {
+    if (!held) {
+      held = true; entered(); await gate;
+      if (outcome === 'failure') throw Error('reconciliation failed');
+      if (outcome === 'replacement') children[0].emit('exit');
+    }
+    return commit(reduce);
+  };
+  first = service.start(); await waiting;
+  let settled = false;
+  second = service.start(); void second.then(() => { settled = true; }, () => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false); assert.equal(children.length, 1);
+  const completed = Promise.allSettled([first, second]); release(); const results = await completed;
+  assert.deepEqual(results.map(result => result.status), outcome === 'success' ? ['fulfilled', 'fulfilled'] : ['rejected', 'rejected']);
+  if (outcome === 'success') assert.equal(service.nativeReconciled, true);
+  else {
+    assert.equal(service.nativeReconciled, false); assert.equal(service.child, null);
+    await service.start(); assert.equal(children.length, 2); assert.equal(service.nativeReconciled, true);
+  }
+});
+
+for (const boundary of ['timeout', 'close']) test(`direct startup ${boundary} retires a child without an exit callback`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const directory = await mkdtemp(join(tmpdir(), 'browser-start-retire-'));
+  let spawned, disconnected = 0, killed = 0;
+  const children = [], entered = new Promise(resolve => { spawned = resolve; });
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null, allowNoSandbox: true,
+    spawnImpl() {
+      const child = Object.assign(new EventEmitter(), { connected: true, kill() { killed++; }, disconnect() { this.connected = false; disconnected++; } });
+      children.push(child); spawned();
+      if (children.length > 1) queueMicrotask(() => child.emit('message', { type: 'ready' }));
+      return child;
+    } });
+  service.available = async () => true;
+  t.after(async () => { service.close(); await service.persistence; await rm(directory, { recursive: true, force: true }); });
+  const pending = service.start(), rejected = assert.rejects(pending, boundary === 'timeout' ? /timed out/ : /closed/);
+  await entered; await new Promise(resolve => setImmediate(resolve));
+  if (boundary === 'timeout') t.mock.timers.tick(15000); else service.close();
+  await rejected;
+  assert.equal(service.child, null); assert.equal(disconnected, 1); assert.equal(killed, 1);
+  children[0].emit('message', { type: 'ready' }); children[0].emit('exit');
+  assert.equal(service.nativeReconciled, false);
+  if (boundary === 'timeout') {
+    await service.start(); assert.equal(children.length, 2); assert.equal(service.nativeReconciled, true);
+    children[0].emit('error', Error('late retired-child error'));
+    assert.equal(service.child, children[1]);
+  }
+});
+
+test('a closed cold service cannot reacquire the state writer through a late read', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'browser-closed-load-'));
+  const service = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null });
+  const replacement = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null });
+  t.after(async () => {
+    service.close(); replacement.close(); await Promise.all([service.persistence, replacement.persistence]);
+    await rm(directory, { recursive: true, force: true });
+  });
+  service.close(); await service.persistence;
+  await assert.rejects(service.metadata('owner', undefined, () => {}), /closed/);
+  await assert.rejects(service.catalog('owner', () => {}), /closed/);
+  await assert.rejects(service.load(), /closed/);
+  await replacement.load(); assert.equal(replacement.loaded, true);
+  assert.equal(service.releaseWriter, undefined); assert.equal(service.loading, undefined);
+});

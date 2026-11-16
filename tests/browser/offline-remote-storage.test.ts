@@ -309,3 +309,42 @@ test('a write with lost ACK recovers after timeout without waiting for close', a
  assert.equal(storage.isReady, true); assert.equal(f.sockets.length, 2);
  assert.equal(mutationIds.length, 2); assert.equal(new Set(mutationIds).size, 1);
 });
+
+for (const phase of ['startup', 'read', 'write']) test(`retryable writer-busy response recovers during ${phase}`, async t => {
+ t.mock.timers.enable({ apis: ['setTimeout'] });
+ let busy = phase === 'startup', busyReplies = 0;
+ const f = startupWire(t, { respond(message, socket) {
+  if (busy) { busyReplies++; socket.error(message, 'BROWSER_UNAVAILABLE', true); return; }
+  if (message.input) { f.state.revision = 2; f.state.values.pages = message.input.value; }
+  socket.result(message, message.input ? { revision: 2, keyRevision: 2 } : f.state);
+ } });
+ const starting = f.start(); await tick();
+ if (phase === 'startup') { assert.equal(f.messages.length, 1); busy = false; t.mock.timers.tick(250); await tick(); }
+ const storage = await starting; await storage.flush(); let failures = 0;
+ storage.onError(() => failures++);
+ if (phase !== 'startup') {
+  busy = true;
+  if (phase === 'write') storage.setItem(key, '["saved"]');
+  else f.sockets[0].onmessage({ data: JSON.stringify({ type: 'metadata-changed', revision: 2 }) });
+  await tick(); assert.equal(storage.isReady, false);
+  busy = false; f.state.revision = 2;
+  t.mock.timers.tick(250); await tick(); await storage.flush();
+ }
+ assert.equal(storage.isReady, true); assert.equal(busyReplies, 1); assert.equal(failures, 0);
+ assert.equal(f.sockets.length, 1);
+ if (phase === 'write') {
+  const writes = f.messages.filter(message => message.input); assert.equal(writes.length, 2);
+  assert.deepEqual(writes[0].input, writes[1].input); assert.equal(storage.getItem(key), '["saved"]');
+ }
+});
+
+test('an unavailable response without retry permission remains terminal', async t => {
+ t.mock.timers.enable({ apis: ['setTimeout'] });
+ const f = startupWire(t, { respond(message, socket) {
+  if (message.input) socket.error(message, 'BROWSER_UNAVAILABLE'); else socket.result(message, f.state);
+ } });
+ const storage = await f.start(); await storage.flush(); storage.setItem(key, '["draft"]');
+ await assert.rejects(storage.flush(), { code: 'BROWSER_UNAVAILABLE', retryable: false });
+ t.mock.timers.tick(30000); await tick();
+ assert.equal(f.messages.filter(message => message.input).length, 1); assert.equal(storage.isReady, false);
+});

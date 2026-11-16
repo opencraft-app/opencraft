@@ -531,3 +531,22 @@ test('published legacy metadata removal still schedules native retirement after 
     && !JSON.parse(reader.getItem('opencraft.browser-tabs.v1')!).some((tab: any) => tab.id === created.tabId));
   assert(f.service.commands.some(command => command.method === 'close'));
 });
+
+test('a retryable writer-handover error does not permanently disable a connected metadata writer', async t => {
+  const f = await fixture(t), writer = await f.client(), reader = await f.client();
+  await writer.flush(); await reader.flush();
+  const metadata = f.service.metadata.bind(f.service); let busy = true;
+  const inputs: any[] = [];
+  f.service.metadata = async (owner: string, input: any, authorize: () => void) => {
+    if (input) {
+      inputs.push(input);
+      if (busy) { busy = false; throw Object.assign(Error('previous writer is releasing'), { code: 'BROWSER_UNAVAILABLE', retryable: true }); }
+    }
+    return metadata(owner, input, authorize);
+  };
+  const value = JSON.stringify([{ scopeId: 'recovered', hostId: 'host', threadId: 'thread' }]);
+  writer.setItem('opencraft.conversation-bindings.v1', value); await writer.flush();
+  await eventually(() => reader.getItem('opencraft.conversation-bindings.v1') === value);
+  assert.equal(writer.isReady, true); assert.equal(inputs.length, 2); assert.deepEqual(inputs[0], inputs[1]);
+  assert.equal((await metadata('owner', undefined, () => {})).revision, 1);
+});
