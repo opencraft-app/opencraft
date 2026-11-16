@@ -7,6 +7,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { CapabilityBindings } from "./bindings.js";
 import { SessionCapabilities, type CapabilitySession, type CapabilityTool } from "./index.js";
+import { capabilityResultToMcp } from "./content.js";
 
 export { capabilitySigningKey, sessionCapabilityToken } from "./credentials.js";
 import { sessionCapabilityToken,executionCliSourceSession } from "./credentials.js";
@@ -267,8 +268,14 @@ export class SessionCapabilityMcp {
     mcp.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
       try {
         if (!authenticated.session) throw new Error("Session is not bound");
-        const result = await this.capabilities.call(authenticated.session, request.params.name, request.params.arguments ?? {}, extra.signal);
-        return { content: result.contentItems.map(item => ({ type: "text" as const, text: item.text })), isError: !result.success };
+        const session = authenticated.session;
+        // JSON-RPC IDs are local to a client, including clients sharing this
+        // execution credential. Each accepted invocation gets its own identity.
+        // An uncertain HTTP call must be inspected, never replayed by request ID.
+        const invocation = session.execution ? { ...session, execution: { ...session.execution,
+          callId: JSON.stringify([session.execution.callId ?? null, randomUUID()]) } } : session;
+        const result = await this.capabilities.call(invocation, request.params.name, request.params.arguments ?? {}, extra.signal);
+        return capabilityResultToMcp(result);
       } catch { return { content: [{ type: "text", text: "Capability denied or failed; do not retry an uncertain external effect." }], isError: true }; }
     });
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });

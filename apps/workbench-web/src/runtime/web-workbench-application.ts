@@ -1,6 +1,7 @@
 import { ThreadSummaryPlugin } from "@opencraft/plugin-thread-summary";
 import { browserMetadataKeys, readBrowserMetadataValue } from "@opencraft/workbench-runtime/browser-metadata-identity";
 import { RemoteBrowserStorage } from '../browser/remote-browser-storage';
+import { subscribeBrowserMetadata } from '../browser/browser-metadata-sync';
 import { discoverRemoteBrowser, discoverRemoteBrowserForStartup, isOfflineShellStartup } from '../browser/remote-browser-capabilities';
 import { supportsH264MediaSource } from '../browser/h264-media-source';
 import { RemoteBrowserSurfaceHost } from '../browser/remote-browser-surface-host';
@@ -183,6 +184,7 @@ export async function createWebWorkbenchApplication(
     throw error;
   }
   let browserWorkbench: BrowserWorkbenchCoordinator;
+  let releaseBrowserMetadata: (() => void) | undefined;
   let terminalSessions: ConversationTerminalSessionRegistry | null = null;
   const terminalHostObservers = new Map<string, () => void>();
   const releaseTerminalRecovery = () => { for (const remove of terminalHostObservers.values()) remove(); terminalHostObservers.clear(); };
@@ -198,6 +200,8 @@ export async function createWebWorkbenchApplication(
       conversationBindings,
       browserStorage,
     );
+    if (remoteStorage && browserSurfaces instanceof RemoteBrowserSurfaceHost)
+      releaseBrowserMetadata = subscribeBrowserMetadata(remoteStorage, conversationBindings, browserSurfaces, browserPages, browserWorkbench);
     await panelRuntime.install(createBrowserWorkbenchPanelPlugin(
       browserWorkbench,
       (context) => browserWorkbench.open(context.resourceOwnerId, {
@@ -315,6 +319,7 @@ export async function createWebWorkbenchApplication(
     }
   } catch (error) {
     releaseBrowserAdmission();
+    releaseBrowserMetadata?.();
     await optionalFeatures?.dispose();
     hostDesktop?.dispose();
     hostProxy.dispose();
@@ -352,11 +357,12 @@ export async function createWebWorkbenchApplication(
       () => panelRuntime.dispose(),
       () => hostDesktop?.dispose(),
       () => chatRenderRuntime.dispose(),
+      () => releaseBrowserMetadata?.(),
       () => browserWorkbench.dispose(),
       () => browserPresentations.dispose(),
       () => browserPages.dispose(),
       () => browserSurfaces.dispose(),
-      async () => { releaseStorageErrors?.(); try { await remoteStorage?.flush(); } finally { remoteStorage?.dispose(); } },
+      async () => { releaseStorageErrors?.(); await remoteStorage?.flushAndDispose(); },
       () => supervisor.dispose(),
     ], "Failed to dispose Web Workbench application"),
   };

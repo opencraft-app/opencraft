@@ -48,3 +48,28 @@ test('Codex bridge continues one native tool/turn across gateway SIGKILL and dur
   assert.equal(status.inputs.length, 1); assert.equal(status.inputs[0].evidence.value, 'context-confirmed');
   assert.deepEqual(fixture.counts(), { starts: 1, steers: 1 });
 });
+
+test('fresh AppHost inspector reads an active Bridge turn without resuming native execution', async t => {
+  const { AppHostServer } = await import('../../packages/app-host-server/src/index.js');
+  const { callConversationHost } = await import('../../scripts/conversation-execution.mjs');
+  const fixture = await createCodexPreview(), transport = fixture.createTransport(), frames: any[] = [];
+  await transport.connect(); transport.subscribeMessage(raw => frames.push(JSON.parse(raw)));
+  const host = new AppHostServer({ logicalClientRouting: true, physicalHostLifetime: 'server', createTransport: () => transport });
+  t.after(async () => { await host.close(); await transport.close(); await fixture.close(); });
+  let sequence = 0;
+  const request = async (method: string, params = {}) => {
+    const id = ++sequence;
+    await transport.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: 'original' }));
+    const frame = frames.find(frame => frame.id === id); assert(frame); assert.equal(frame.error, undefined); return frame.result;
+  };
+  await request('initialize');
+  await request('thread/start', { cwd: '/remote', agentBridge: { threadId: 'preview', clientRequestId: 'create' } });
+  const started = await request('turn/start', { threadId: fixture.publicId, clientUserMessageId: 'input', input: [{ type: 'text', text: 'active turn' }] });
+  for (let inspection = 0; inspection < 2; inspection++) {
+    const result = await callConversationHost(host, { hostId: 'local-codex', threadId: fixture.publicId },
+      'browser-execution-inspect', 'thread/turns/list', { threadId: fixture.publicId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }, { sender: null }, 2000);
+    assert.equal(result.data.length, 1); assert.equal(result.data[0].id, started.turn.id);
+    assert.equal(result.data[0].status, 'inProgress');
+  }
+  assert.deepEqual(fixture.counts(), { starts: 1, steers: 0 });
+});

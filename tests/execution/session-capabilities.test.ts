@@ -6,6 +6,22 @@ import { SessionCapabilityMcp } from "../../packages/session-capabilities/src/mc
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 const tool = {name:"reply",description:"Reply",inputSchema:{type:"object",properties:{text:{type:"string"}},required:["text"]}};
+test('independent MCP clients sharing an execution never reuse an invocation identity', async () => {
+ const service=new SessionCapabilities(),seen:any[]=[];
+ service.register({id:'identity',tools:()=>[tool],async call(session){seen.push(session.execution);return 'ok';}});
+ const mcp=new SessionCapabilityMcp(service,randomBytes(32)),clients:Client[]=[];await mcp.listen();
+ const session={serverId:'server',threadId:'thread',execution:{inputId:'input',turnId:'turn',callId:'native-call'}},config=mcp.config(session) as any;
+ try {
+  for(let i=0;i<2;i++){
+   const client=new Client({name:'independent',version:'1'});clients.push(client);
+   await client.connect(new StreamableHTTPClientTransport(new URL(config.url),{requestInit:{headers:config.http_headers}}));
+   await client.callTool({name:'reply',arguments:{text:'call-'+i}});
+  }
+  assert.notEqual(seen[0].callId,seen[1].callId);
+  for(const execution of seen){const [parent,id]=JSON.parse(execution.callId);assert.equal(parent,'native-call');assert.match(id,/^[0-9a-f-]{36}$/);assert.equal(execution.inputId,'input');assert.equal(execution.turnId,'turn');}
+  assert.equal(session.execution.callId,'native-call');
+ }finally{await Promise.all(clients.map(client=>client.close()));await mcp.close();}
+});
 test("native and MCP share session policy; calls recheck revocation",async t=>{
  const service=new SessionCapabilities();let enabled=true,calls=0;
  service.register({id:"fixture",tools:s=>enabled&&s.serverId==="server"&&s.threadId==="one"?[tool]:[],async call(s,_n,args){assert.equal(s.threadId,"one");calls++;return args;}});
@@ -83,7 +99,10 @@ test("creation MCP waits for one execution binding and never authorizes a staged
   assert.deepEqual((await listing).tools.map(tool => tool.name), ["reply"]);
   assert.throws(() => reservation.bind({ ...session, execution: { inputId: "second", executionId: "execution-second" } }), /already bound/);
   assert.equal((await client.callTool({ name: "reply", arguments: {} })).isError, false);
-  assert.deepEqual(seen, [session.execution]);
+  assert.equal((await client.callTool({ name: "reply", arguments: {} })).isError, false);
+  assert.deepEqual(seen.map(value => { const { callId, ...execution } = value as any; assert.equal(typeof callId, 'string'); return execution; }), [session.execution, session.execution]);
+  assert.notEqual((seen[0] as any).callId, (seen[1] as any).callId);
+  assert.equal(Object.hasOwn(session.execution, 'callId'), false);
   reservation.cancel();
   await assert.rejects(client.listTools());
 });

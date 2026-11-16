@@ -18,6 +18,8 @@ import { CapabilityBindings } from "../packages/session-capabilities/src/binding
 import { SessionCapabilities } from "../packages/session-capabilities/src/index.ts";
 import { SessionCapabilityMcp, capabilitySigningKey } from "../packages/session-capabilities/src/mcp.ts";
 import { RemoteBrowserService } from './remote-browser-service.mjs';
+import { RemoteBrowserCapabilities } from './remote-browser/capabilities.ts';
+import { createBrowserGrantResolver } from './remote-browser/execution-grant.ts';
 import { connectBrowserOwner } from './remote-browser-owner.mjs';
 
 import { createObservabilityIngress } from "./observability-ingress.mjs";
@@ -347,6 +349,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
   let codexReadiness;
   let usageQueries;
   let remoteBrowser;
+  let browserCapabilities;
   let observability;
   let turnPush;
   let connectedExecutionCli;
@@ -364,7 +367,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       let entryClosing;
       const closeEntry = () => entryClosing ??= settle([
         () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
-        () => codexReadiness?.close(), () => usageQueries?.close(), () => remoteBrowser?.close(),
+        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { await browserCapabilities?.close(); remoteBrowser?.close(); },
         () => fileDownloads?.close(), () => desktop?.close(), () => turnPush?.close(),
         () => availabilityNotification?.close(), () => imPlugins?.close(),
       ]);
@@ -580,6 +583,26 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       (hostId, threadId) => {
         return conversationExecution.serverForHost(hostId, threadId);
       });
+    remoteBrowser = new RemoteBrowserService({ root, dataDirectory,
+      allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1',
+      ...(browserOwnerSocket ? { ownerConnector: () => connectBrowserOwner(browserOwnerSocket) } : {}),
+    });
+    browserCapabilities = new RemoteBrowserCapabilities(capabilities, remoteBrowser, createBrowserGrantResolver({
+      serverForThread: threadId => conversationExecution.serverForThread(threadId),
+      hostForServer: serverId => conversationExecution.hostForServer(serverId),
+      source: (threadId, execution) => actorCollaboration.executionContext(threadId, execution),
+      authorize: (context, serverId, threadId) => {
+        if (closing || !actorStore.isCurrent(context) || actorStore.get(context.actorId)?.kind !== 'human'
+          || instanceAccess && !instanceAccess.admitsActor(context.actorId) || !threadAccess.allows(serverId, threadId, context))
+          throw new Error('Browser execution authority revoked');
+      },
+      owner: context => anonymousDeployment && operator.owns(context.actorId) ? 'local-anonymous' : context.actorId,
+      currentTurn: async (hostId, threadId, context) => {
+        const result = await callConversationHost(appHostServer, { hostId, threadId }, 'browser-execution-inspect', 'thread/turns/list',
+          { threadId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }, { sender: null, actorContext: context }, 2000);
+        return Array.isArray(result.data) && result.data.length === 1 ? result.data[0] : null;
+      },
+    }));
     capabilityBindings = new CapabilityBindings(serverStorage);
     const capabilityKey=capabilitySigningKey(join(dataDirectory,"session-capabilities.key"));
     capabilityMcp = new SessionCapabilityMcp(capabilities, capabilityKey, capabilityBindings, {
@@ -926,12 +949,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       authService: humanAuth ?? null,
       accountService: accountApplication ?? null,
       hubService: hubController,
-      remoteBrowserService: remoteBrowser = new RemoteBrowserService({ root, dataDirectory,
-        allowNoSandbox: process.env.OPENCRAFT_BROWSER_ALLOW_NO_SANDBOX === '1',
-        ...(browserOwnerSocket ? {
-          ownerConnector: () => connectBrowserOwner(browserOwnerSocket),
-        } : {}),
-      }),
+      remoteBrowserService: remoteBrowser,
       speechService: new SpeechTranscriptionService({ configuration: new SpeechModelConfiguration(
         new ModelConfigurationRepository(join(dataDirectory, "models")), new ModelCredentialRepository(join(dataDirectory, "models"))) }),
     });

@@ -13,7 +13,7 @@ test('catalog quota round-trips 1200 bindings and local quota rejection preserve
  const storage:any=new RemoteBrowserStorage();
  try{
   const initial=await service.metadata('fixture',undefined,()=>{});
-  storage.initialized=true;storage.scope=initial.scope;storage.connect=async()=>{};
+  storage.initialized=true;storage.fresh=true;storage.socket={readyState:WebSocket.OPEN,close(){}};storage.scope=initial.scope;storage.connect=async()=>{};
   storage.call=async(input:any)=>service.metadata('fixture',input,()=>{});
   const value=JSON.stringify(Array.from({length:1200},(_,i)=>({scopeId:`scope-${i}`,hostId:'host',threadId:'t'+i+'访'.repeat(40)})));
   assert(value.length>64*1024);
@@ -31,4 +31,6 @@ test('catalog quota round-trips 1200 bindings and local quota rejection preserve
 test('wire budget includes worst-case JSON escaping of every allowed field',()=>{
  const values=Object.fromEntries(['bindings','pages','tabs','storage'].map(key=>[key,'\0'.repeat(browserMetadataValueLimit(key))]));
  assert(new TextEncoder().encode(JSON.stringify({values})).byteLength<browserMetadataWireLimit);
+ const input={key:'bindings',baseValue:values.bindings,value:values.bindings};
+ assert(new TextEncoder().encode(JSON.stringify({input})).byteLength<browserMetadataWireLimit);
 });

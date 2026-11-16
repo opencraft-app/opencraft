@@ -10,7 +10,6 @@ interface Guest extends HTMLElement {
   setZoomFactor(factor: number): void;
   capturePage(): Promise<{ toDataURL(): string }>;
   getWebContentsId(): number;
-  executeJavaScript(code: string): Promise<any>;
   src: string;
   loadURL(url: string): Promise<void>;
   getURL(): string;
@@ -303,7 +302,7 @@ export class ElectronBrowserSurfaceHost implements BrowserSurfaceHost {
       page.resolveReady();
       page.automation?.dispose();
       page.automation = guest.getURL().startsWith("http")
-        ? createElectronBrowserAutomation(guest, id, page.generation) : undefined;
+        ? createElectronBrowserAutomation(guest, (window as any).opencraftDesktop.browser) : undefined;
       sync();
     });
     guest.addEventListener("did-start-navigation", event => {

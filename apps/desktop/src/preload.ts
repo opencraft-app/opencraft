@@ -105,6 +105,10 @@ contextBridge.exposeInMainWorld("opencraftDesktop", composeDesktopBridge({
     writeClipboard: (data: { text?: string; html?: string }) => ipcRenderer.invoke('opencraft:remote-browser-clipboard-write', data),
   }),
   browser: Object.freeze({
+    connectAutomation: (guestId: number) => ipcRenderer.invoke('opencraft:browser-automation-connect', guestId),
+    invokeAutomation: (guestId: number, lease: string, requestId: string, method: string, input: unknown) => ipcRenderer.invoke('opencraft:browser-automation-invoke', guestId, lease, requestId, method, input),
+    cancelAutomation: (guestId: number, lease: string, requestId: string) => ipcRenderer.invoke('opencraft:browser-automation-cancel', guestId, lease, requestId),
+    releaseAutomation: (guestId: number, lease: string) => ipcRenderer.invoke('opencraft:browser-automation-release', guestId, lease),
     trackPointer: (guestId: number, trackingId: string, enabled: boolean) => ipcRenderer.invoke("opencraft:browser-track-pointer", guestId, trackingId, enabled),
     onPointer: (listener: (event: { guestId: number; trackingId: string; x: number; y: number; leave: boolean }) => void) => {
       const receive = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => listener(payload);

@@ -45,6 +45,15 @@ export function sessionLink(state, lease) {
   } catch {}
   return null;
 }
+export function conversationScopes(state, hostId, threadId) {
+  const scopes = new Set(['conversation:' + JSON.stringify([hostId, threadId])]);
+  try {
+    const bindings = JSON.parse(state?.values.bindings ?? '[]');
+    if (Array.isArray(bindings)) for (const binding of bindings)
+      if (binding?.hostId === hostId && binding.threadId === threadId && typeof binding.scopeId === 'string') scopes.add(binding.scopeId);
+  } catch {}
+  return scopes;
+}
 export const occupied = record => record.runtime?.kind !== 'absent' && record.lifecycle !== 'closed';
 
 /** Linux abstract UDS is an OS-held writer mutex: exit releases it, no stale

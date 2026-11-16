@@ -1,5 +1,6 @@
 import { executionCliInstructions, type ScopedExecutionCliPort } from "@opencraft/session-capabilities/execution-cli";
 import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
+import { capabilityResultToMcp } from "@opencraft/session-capabilities/content";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
 import { randomUUID, timingSafeEqual } from "node:crypto";
@@ -1141,11 +1142,14 @@ export class AcpEngine implements ExecutionEngineProvider {
         const runtime = this.state(session.id), owner = runtime.owner;
         if (this.closed || runtime.active !== active || active.status !== "inProgress") throw new Error("ACP tool owner expired");
         if (owner) {
+          let reply: Value;
           try {
-            const reply = await owner.request("item/tool/call", { threadId: session.id, turnId: active.id, callId, tool: params.name, arguments: value(params.arguments),
+            reply = await owner.request("item/tool/call", { threadId: session.id, turnId: active.id, callId, tool: params.name, arguments: value(params.arguments),
               __opencraftToolCallKey: key, __opencraftCallbackIncarnation: this.incarnation, __opencraftDelegationId: active.delegationId });
-            return { content: Array.isArray(reply?.contentItems) ? reply.contentItems.map((item: Value) => ({ type: "text", text: String(item.text ?? "") })) : [{ type: "text", text: JSON.stringify(reply) }], isError: reply?.success === false };
-          } catch { if (runtime.owner === owner) runtime.owner = undefined; }
+          } catch { if (runtime.owner === owner) runtime.owner = undefined; continue; }
+          // A received result is final. Formatting failure must not replay a
+          // completed external operation or retire a healthy callback owner.
+          return capabilityResultToMcp(reply);
         }
         await delay(Math.min(backoff, Math.max(1, expires - Date.now()))); backoff = Math.min(500, backoff * 2);
       } while (Date.now() < expires);

@@ -23,6 +23,7 @@ import { DesktopLifecycle } from "./desktop-lifecycle.js";
 import { createDesktopTray } from "./desktop-tray.js";
 import { createDesktopLocaleRuntime, requireDesktopLocale } from "./desktop-locale.js";
 import { installBrowserGuests } from "./browser-guests.js";
+import { installBrowserAutomationIpc } from './browser-automation-ipc.js';
 import { installRemoteBrowserMenu } from './remote-browser-menu.js';
 import { createFilePrivateStorage } from "./private-storage.js";
 import { BrowserPermissionPolicy } from "./browser-permissions.js";
@@ -338,6 +339,7 @@ ipcMain.handle("opencraft:browser-state-write", (event, key: unknown, value: unk
   JSON.parse(value);
   createFilePrivateStorage(join(app.getPath("userData"), "browser-metadata")).write("state", JSON.stringify({ ...readBrowserMetadata(), [key]: value }));
 });
+installBrowserAutomationIpc(ipcMain, { trusted: trustedLoginCaller, guests: () => browserGuests });
 ipcMain.handle("opencraft:browser-track-pointer", (event, guestId: unknown, trackingId: unknown, enabled: unknown) => {
   if (!trustedLoginCaller(event) || !Number.isSafeInteger(guestId) || typeof trackingId !== "string" || trackingId.length > 100 || typeof enabled !== "boolean") throw new Error("Invalid browser pointer tracking request");
   browserGuests?.trackPointer(guestId as number, trackingId, enabled);

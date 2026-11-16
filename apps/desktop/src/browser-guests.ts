@@ -1,5 +1,6 @@
 import type { WebContents } from "electron";
 import type { BrowserPermissionPolicy } from "./browser-permissions.js";
+import { createGuestAutomation } from './browser-guest-automation.js';
 export interface BrowserGuestServices {
   permissions: BrowserPermissionPolicy;
   open(guestId: number, url: string, background: boolean): void;
@@ -13,8 +14,12 @@ export function isBrowserGuestUrl(input: string): boolean {
 
 /** Main is the security authority; guest attributes are untrusted input. */
 export function installBrowserGuests(owner: WebContents, services?: BrowserGuestServices) {
-  const guests = new Map<number, { guest: WebContents; partition: string }>();
+  const guests = new Map<number, { guest: WebContents; partition: string; automation: ReturnType<typeof createGuestAutomation> }>();
   const pointerTracking = new Map<number, string>();
+  owner.on('destroyed', () => {
+    for (const entry of guests.values()) entry.automation.dispose();
+    guests.clear(); pointerTracking.clear();
+  });
   owner.on("will-attach-webview", (event, preferences, params) => {
     if (!/^persist:opencraft-browser:browser-[a-zA-Z0-9-]+$/.test(params.partition ?? "")
       || !isBrowserGuestUrl(params.src || "about:blank")) {
@@ -30,13 +35,14 @@ export function installBrowserGuests(owner: WebContents, services?: BrowserGuest
   });
   owner.on("did-attach-webview", (_event, guest) => {
     let documentGeneration = 0;
+    const automation = createGuestAutomation(guest, () => documentGeneration, () => guests.get(guest.id)?.guest === guest);
     guest.on("did-start-navigation", (_event, _url, inPlace, isMainFrame) => {
-      if (isMainFrame && !inPlace) documentGeneration++;
+      if (isMainFrame && !inPlace) { documentGeneration++; automation.retireDocument(); }
     });
     // Session identity comes from the actual guest, never a caller-supplied partition.
     const partition = guest.session.getStoragePath() ?? `memory:${guest.id}`;
-    guests.set(guest.id, { guest, partition });
-    guest.once("destroyed", () => { guests.delete(guest.id); pointerTracking.delete(guest.id); });
+    guests.set(guest.id, { guest, partition, automation });
+    guest.once("destroyed", () => { automation.dispose(); guests.delete(guest.id); pointerTracking.delete(guest.id); });
     guest.on("before-mouse-event", (_event, input) => {
       const trackingId = pointerTracking.get(guest.id);
       if (trackingId && !owner.isDestroyed() && ["mouseMove", "mouseLeave"].includes(input.type))

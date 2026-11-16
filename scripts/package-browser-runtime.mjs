@@ -29,8 +29,6 @@ export async function packageBrowserRuntime(destination) {
   // so an isolated installed runtime never depends on source-workspace links.
   await build({ entryPoints: [join(root, 'scripts/remote-browser/worker.cjs')], outfile: join(destination, 'worker.cjs'),
     bundle: true, format: 'cjs', platform: 'node', target: 'node24', external: ['electron'] });
-  await build({ entryPoints: [join(root, 'packages/browser-preview-bridge/src/index.ts')], outfile: join(destination, 'preview-bridge.js'),
-    bundle: true, format: 'iife', globalName: 'OpenCraftPreviewBridgeRuntime', platform: 'browser', target: 'chrome120' });
   // Public code/assets must be traversable inside the dynamic-UID mount even
   // when the build/install process uses a private umask. No user data is here.
   async function permissions(path) {

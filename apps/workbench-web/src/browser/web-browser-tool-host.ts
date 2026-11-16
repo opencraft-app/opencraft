@@ -133,7 +133,8 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
           await this.pages.clickElement(page.id, stringArgument(args, "ref", true)!, requiredRevision(args));
           return { action, tabId, clicked: true };
         case "fill":
-          await this.pages.fillElement(page.id, stringArgument(args, "ref", true)!, requiredRevision(args), stringArgument(args, "value") ?? "");
+          if (typeof args["value"] !== "string") throw new BrowserToolError("INVALID_ARGUMENT", "value must be a string");
+          await this.pages.fillElement(page.id, stringArgument(args, "ref", true)!, requiredRevision(args), args["value"]);
           return { action, tabId, filled: true };
         case "press": await this.pages.pressKey(page.id, stringArgument(args, "key", true)!); return { action, tabId, pressed: true };
         case "scroll": await this.pages.scrollPage(page.id, numberArgument(args, "x", 0), numberArgument(args, "y", 0)); return { action, tabId, scrolled: true };
@@ -159,7 +160,7 @@ export class WebBrowserDynamicToolHost implements BrowserDynamicToolHost {
     if (error instanceof WebBrowserCapabilityError)
       return new BrowserToolError(error.code, error.message, error.retryable);
     if (error instanceof BrowserAutomationError)
-      return new BrowserToolError(error.code, error.message, error.retryable);
+      return new BrowserToolError(error.code, error.message, error.retryable, error.outcome);
     return error instanceof Error ? error : new Error(String(error));
   }
 }

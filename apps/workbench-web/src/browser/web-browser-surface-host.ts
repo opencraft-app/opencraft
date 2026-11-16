@@ -67,6 +67,8 @@ export interface BrowserSurfaceHost {
   block(pageId: BrowserPageId): void;
   park(pageId: BrowserPageId): void;
   close(pageId: BrowserPageId): void;
+  /** Drop a projection of a resource already retired by its authoritative owner. */
+  retire?(pageId: BrowserPageId): void;
   dispose(): void;
 }
 

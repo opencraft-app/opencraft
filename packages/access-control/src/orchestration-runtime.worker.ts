@@ -51,6 +51,18 @@ async function execute({id,method,payload}: {id:number;method:string;payload:any
           case 'admission':result=db.prepare(`SELECT a.* FROM conversation_authorities a WHERE a.thread_id=? AND a.input_id=?
             UNION ALL SELECT a.* FROM conversation_authorities a JOIN opencraft_input_authorities i ON i.authority_id=a.id
             WHERE i.thread_id=? AND i.input_id=? LIMIT 1`).get(payload.threadId,payload.inputId,payload.threadId,payload.inputId)??null;break;
+          case 'executionAuthority': {
+            const {inputId,turnId}=payload.execution;
+            const row=inputId ? db.prepare(`SELECT a.* FROM conversation_authorities a WHERE a.thread_id=? AND a.input_id=?
+              UNION ALL SELECT a.* FROM conversation_authorities a JOIN opencraft_input_authorities i ON i.authority_id=a.id
+              WHERE i.thread_id=? AND i.input_id=? LIMIT 1`).get(payload.threadId,inputId,payload.threadId,inputId)
+              : turnId ? db.prepare(`SELECT a.* FROM conversation_authorities a JOIN conversation_turn_authorities t ON t.authority_id=a.id
+                WHERE t.thread_id=? AND t.turn_id=? UNION ALL SELECT * FROM conversation_authorities WHERE thread_id=? AND turn_id=? LIMIT 1`)
+                .get(payload.threadId,turnId,payload.threadId,turnId) : null;
+            result=row && (!turnId || row.thread_id===payload.threadId && row.turn_id===turnId || db.prepare('SELECT 1 FROM conversation_turn_authorities WHERE thread_id=? AND turn_id=? AND authority_id=?').get(payload.threadId,turnId,row.id))
+              ? {...row,turn_id:turnId??row.turn_id,execution_relation:ledger.relation(payload.threadId)} : null;
+            break;
+          }
           case 'updateExecution':updateExecutionRequest(db,payload);break;
           case 'targets':result=[...new Set([...ledger.observedRuntimeThreads(payload.includeTerminal),
             ...ledger.threads().filter(thread=>payload.includeTerminal||!['idle','error'].includes(thread.runtimeStatus)).map(thread=>thread.threadId),

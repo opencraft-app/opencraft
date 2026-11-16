@@ -321,16 +321,24 @@ export class WebBrowserPageRuntime {
   }
 
   close(pageId: BrowserPageId): void {
+    this.removePage(pageId, false);
+  }
+
+  retire(pageId: BrowserPageId): void {
+    this.removePage(pageId, true);
+  }
+
+  private removePage(pageId: BrowserPageId, retired: boolean): void {
     this.zoom.delete(pageId);
     const record = this.pages.get(pageId);
     if (record === undefined) return;
     this.invalidateNavigation(pageId);
-    this.surfaces.close(pageId);
-    this.surfaces.forget?.(pageId);
+    if (retired) { this.pages.delete(pageId); (this.surfaces.retire ?? this.surfaces.close).call(this.surfaces, pageId); }
+    else { this.surfaces.close(pageId); this.surfaces.forget?.(pageId); }
     this.pages.delete(pageId);
     this.navigationGenerations.delete(pageId);
     record.listeners.clear();
-    this.persist();
+    if (!retired) this.persist();
   }
 
   dispose(): void {
@@ -501,8 +509,8 @@ export class WebBrowserPageRuntime {
     const automation = this.surfaces.automation(pageId);
     if (automation === null) {
       throw new WebBrowserCapabilityError(
-        "PREVIEW_BRIDGE_UNAVAILABLE",
-        "This page is presentation-only because it has not installed the OpenCraft Preview Bridge",
+        "AUTOMATION_UNAVAILABLE",
+        "Browser automation is not available for this page",
         true,
       );
     }

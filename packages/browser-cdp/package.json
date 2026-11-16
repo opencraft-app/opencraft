@@ -1,0 +1,19 @@
+{
+  "name": "@opencraft/browser-cdp",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./automation": {
+      "types": "./src/automation/index.d.cts",
+      "default": "./src/automation/index.cjs"
+    },
+    "./electron": {
+      "types": "./src/electron/owner.d.cts",
+      "default": "./src/electron/owner.cjs"
+    }
+  },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": { "@opencraft/browser-core": "0.1.0" }
+}

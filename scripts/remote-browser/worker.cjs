@@ -1,12 +1,14 @@
 // Separate Electron main process. No public listener or application UI.
 const { app, BrowserWindow, ipcMain, session } = require('electron');
-const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createInterface } = require('node:readline');
 const { installClipboard } = require('./clipboard.cjs');
 const { installIme } = require('./ime.cjs');
 const { initializeNativeFocus } = require('./focus.cjs');
+const { createCdpAutomation } = require('@opencraft/browser-cdp/automation');
+const { createAutomationRequests } = require('./automation-requests.cjs');
+const automationRequests = createAutomationRequests();
 const { createControls } = require('./controls.cjs');
 const { isTouchInput, createTouchInput, createWidgetTouchDispatcher, createWidgetWheelDispatcher, MAX_TOUCH_POINTS } = require('./touch.cjs');
 app.commandLine.appendSwitch('opencraft-remote-clipboard');
@@ -32,7 +34,7 @@ function deviceProfile(input = {}) {
   if (!deviceProfiles.has(profile)) throw new Error('Invalid device profile');
   return profile;
 }
-const configuration = p => ({ document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true, touchTiming: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
+const configuration = p => ({ automationBackend: 'electron-cdp', document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true, touchTiming: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
 function userAgent(p, profile) {
   const chrome = process.versions.chrome;
   if (profile === 'iphone') return 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -42,31 +44,30 @@ function userAgent(p, profile) {
 }
 async function emulateDevice(p, size, profile) {
   const wc = p.window.webContents;
-  if (profile === 'desktop' && !wc.debugger.isAttached()) return;
-  if (!wc.debugger.isAttached()) wc.debugger.attach('1.3');
-  // This debugger is private to the worker. Clients select a bounded profile,
-  // never CDP commands, JavaScript, or arbitrary UA/header overrides.
-  const command = (method, input) => wc.debugger.sendCommand(method, input);
-  if (profile !== p.deviceProfile || !p.deviceConfigured) {
-    const android = profile.startsWith('android-'), ios = profile === 'iphone' || profile === 'ipad';
-    const ua = userAgent(p, profile);
-    const platform = ios ? (profile === 'iphone' ? 'iPhone' : 'iPad') : android ? 'Linux armv8l' : p.desktopPlatform;
-    const metadata = { brands: [{brand:'Chromium',version:process.versions.chrome.split('.')[0]}],
-      fullVersionList: [{brand:'Chromium',version:process.versions.chrome}], fullVersion:process.versions.chrome,
-      platform:ios?'iOS':android?'Android':p.desktopPlatformName, platformVersion:ios?'18.0.0':android?'14.0.0':'',
-      architecture:ios||android?'arm':process.arch === 'arm64'?'arm':'x86', bitness:'64', model:'', mobile:ios||profile === 'android-phone' };
-    wc.setUserAgent(ua);
-    await command('Emulation.setUserAgentOverride', {userAgent:ua,platform,userAgentMetadata:metadata});
-  }
-  const mobile = !['desktop','desktop-touch'].includes(profile), touch = profile !== 'desktop';
-  if (mobile) await command('Emulation.setDeviceMetricsOverride', {
-    ...size, screenWidth:size.width, screenHeight:size.height, deviceScaleFactor:1, mobile:true, scale:1,
-    screenOrientation:{type:size.width > size.height?'landscapePrimary':'portraitPrimary',angle:size.width > size.height?90:0} });
-  else await command('Emulation.clearDeviceMetricsOverride');
-  await command('Emulation.setTouchEmulationEnabled', {enabled:touch,maxTouchPoints:MAX_TOUCH_POINTS});
-  // Electron's injected mouse events bypass Chromium's mouse-to-touch hook.
-  // The bounded input adapter below emits actual touch sequences instead.
-  p.deviceConfigured = true;
+  // Private host composition supplies the sole CDP owner. Configuration ACKs
+  // form the same barrier used by native input and automation.
+  return p.cdp.configure(async command => {
+    if (profile !== p.deviceProfile || !p.deviceConfigured) {
+      const android = profile.startsWith('android-'), ios = profile === 'iphone' || profile === 'ipad';
+      const ua = userAgent(p, profile);
+      const platform = ios ? (profile === 'iphone' ? 'iPhone' : 'iPad') : android ? 'Linux armv8l' : p.desktopPlatform;
+      const metadata = { brands: [{brand:'Chromium',version:process.versions.chrome.split('.')[0]}],
+        fullVersionList: [{brand:'Chromium',version:process.versions.chrome}], fullVersion:process.versions.chrome,
+        platform:ios?'iOS':android?'Android':p.desktopPlatformName, platformVersion:ios?'18.0.0':android?'14.0.0':'',
+        architecture:ios||android?'arm':process.arch === 'arm64'?'arm':'x86', bitness:'64', model:'', mobile:ios||profile === 'android-phone' };
+      wc.setUserAgent(ua);
+      await command('Emulation.setUserAgentOverride', {userAgent:ua,platform,userAgentMetadata:metadata});
+    }
+    const mobile = !['desktop','desktop-touch'].includes(profile), touch = profile !== 'desktop';
+    if (mobile) await command('Emulation.setDeviceMetricsOverride', {
+      ...size, screenWidth:size.width, screenHeight:size.height, deviceScaleFactor:1, mobile:true, scale:1,
+      screenOrientation:{type:size.width > size.height?'landscapePrimary':'portraitPrimary',angle:size.width > size.height?90:0} });
+    else await command('Emulation.clearDeviceMetricsOverride');
+    await command('Emulation.setTouchEmulationEnabled', {enabled:touch,maxTouchPoints:MAX_TOUCH_POINTS});
+    // Electron's injected mouse events bypass Chromium's mouse-to-touch hook.
+    // The bounded input adapter below emits actual touch sequences instead.
+    p.deviceConfigured = true;
+  });
 }
 function resize(p, input = {}) {
   // A single writer orders rapid preset/rotation changes and navigation against
@@ -100,7 +101,6 @@ function resize(p, input = {}) {
 }
 const pages = new Map();
 let encoderWindow, encoderReady = false;
-const bridge = readFileSync(join(__dirname, 'preview-bridge.js'), 'utf8');
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('ozone-platform', 'headless');
 app.commandLine.appendSwitch('force-device-scale-factor', '1');
@@ -129,7 +129,7 @@ function activity(p) {
   clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0;
   p.interactive = true; captureRate(p); pump(p); pump(p, 'slow');
   p.activityTimer = setTimeout(() => { p.interactive = false; captureRate(p);
-    p.activityTimer = setTimeout(() => { if (!p.closed) p.window.webContents.setFrameRate(2); }, 2800);
+    p.activityTimer = setTimeout(() => { if (!p.closed && !p.automationDrawing) p.window.webContents.setFrameRate(2); }, 2800);
   }, 1200);
 }
 function stream(p, bucket) {
@@ -142,7 +142,7 @@ function permitted(p, bucket) {
 }
 function captureRate(p) {
   const rate = p.productionPlan ? Math.max(2, ...['fast', 'slow'].filter(b => permitted(p, b)).map(b => p.productionPlan[b].fps)) : p.productionGated ? 2 : p.displayRate ?? 30;
-  p.window.webContents.setFrameRate(Math.min(rate, p.interactive ? 30 : 10));
+  p.window.webContents.setFrameRate(p.automationDrawing ? 30 : Math.min(rate, p.interactive ? 30 : 10));
 }
 function queueFrame(p, image) {
   p.latest = image;
@@ -208,8 +208,10 @@ async function resetInput(p) {
 function closePage(id) {
   const p = pages.get(id); if (!p) return;
   pages.delete(id); p.closed = true;
+  automationRequests.retire(id);
   dispatch?.retire(id);
   p.clipboard?.dispose(); p.ime?.dispose();
+  p.automation?.dispose();
   p.focusDispose?.();
   clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer);
   p.pending = p.previous = p.latest = null;
@@ -229,17 +231,25 @@ async function createPage(id, input) {
     webPreferences: { partition, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   const p = { id, window, width, height, deviceProfile:'desktop', deviceConfigured:false,
     desktopUserAgent:window.webContents.getUserAgent(), desktopPlatform:process.platform === 'darwin'?'MacIntel':process.platform === 'win32'?'Win32':'Linux x86_64',
-    desktopPlatformName:process.platform === 'darwin'?'macOS':process.platform === 'win32'?'Windows':'Linux', epoch: randomUUID(), visible: false, closed: false, key: true, encoderReady: false, document: randomUUID(), bridgeInstalled: null, interactive: false, productionGated: input.productionDemand === true };
+    desktopPlatformName:process.platform === 'darwin'?'macOS':process.platform === 'win32'?'Windows':'Linux', epoch: randomUUID(), visible: false, closed: false, key: true, encoderReady: false, document: randomUUID(), interactive: false, productionGated: input.productionDemand === true };
   pages.set(id, p);
   const wc = window.webContents;
-  p.touch = createTouchInput(createWidgetTouchDispatcher(wc.debugger, () => wc.getZoomFactor(), () => p.document), undefined, () => p.document);
-  p.wheel = createWidgetWheelDispatcher(wc.debugger, () => wc.getZoomFactor(), () => p.document);
+  const cdpPort = { sendCommand(method, params, sessionId) {
+    const document = p.document;
+    return p.cdp.send(method, params, sessionId, { validate() {
+      if (p.closed || document !== p.document)
+        throw Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED' });
+    } });
+  } };
+  p.touch = createTouchInput(createWidgetTouchDispatcher(cdpPort, () => wc.getZoomFactor(), () => p.document), undefined, () => p.document);
+  p.wheel = createWidgetWheelDispatcher(cdpPort, () => wc.getZoomFactor(), () => p.document);
   p.clipboard = installClipboard(p, send); p.ime = installIme(p, send);
   wc.setFrameRate(2); wc.stopPainting();
   wc.setWindowOpenHandler(({ url }) => { try { send({ type: 'new-window', page: id, url: validUrl(url) }); } catch {} return { action: 'deny' }; });
   for (const event of ['will-navigate', 'will-redirect']) wc.on(event, (e, url) => { try { validUrl(url); } catch { e.preventDefault(); } });
   wc.on('did-start-navigation', (_e, _url, inPlace, mainFrame) => { if (!p.closed && mainFrame && !inPlace) {
-    p.document = randomUUID(); p.bridgeInstalled = null; p.domReady = false;
+    automationRequests.documentChanged(id);
+    p.document = randomUUID(); p.domReady = false;
     send({ type: 'input-reset', page: id, document: p.document });
     p.inputReset = (p.inputReset ?? Promise.resolve()).then(() => resetInput(p)).catch(() => {});
   } });
@@ -272,40 +282,60 @@ async function createPage(id, input) {
     p.focusDispose = await initializeNativeFocus(wc, () => {
       if (!p.closed) send({ type: 'error', page: id, message: 'Browser frame initialization failed; reload this tab' });
     });
+    p.cdp = p.focusDispose.owner;
+    p.acquireAutomationDrawing = () => {
+      p.automationDrawing = (p.automationDrawing ?? 0) + 1;
+      wc.startPainting(); captureRate(p);
+      return () => {
+        p.automationDrawing--;
+        if (p.closed) return;
+        if (!p.automationDrawing && !p.visible) { wc.stopPainting(); p.pending = p.previous = p.latest = null; }
+        captureRate(p);
+      };
+    };
+    p.automation = createCdpAutomation({ transport: p.cdp, sessions: () => p.cdp.targetSessions(), instanceId: randomUUID(), platform: process.platform,
+      acquireDrawing: p.acquireAutomationDrawing });
     if (profile !== 'desktop') await resize(p, {...input, width, height});
     return configuration(p);
   } catch (error) { if (pages.get(id) === p) closePage(id); throw error; }
 }
-async function automation(p, method, input) {
-  if (!['readContext', 'inspect', 'click', 'fill', 'press', 'scroll', 'wait'].includes(method)) throw new Error('Unsupported browser operation');
-  const generation = p.document, wc = p.window.webContents;
+async function automation(p, method, input, validate, signal, requestId) {
+  const wc = p.window.webContents;
+  validate(); signal?.throwIfAborted();
+  if (['navigate', 'reload', 'stop', 'back', 'forward'].includes(method)) {
+    const url = method === 'navigate' ? validUrl(input?.url) : undefined;
+    // Return acceptance, not load completion. The existing native events own
+    // committed URL/history and failures. This dispatch never waits or retries.
+    return automationRequests.navigating(requestId, () => {
+      validate(); signal?.throwIfAborted();
+      if (method === 'navigate') void wc.loadURL(url).catch(() => {});
+      else if (method === 'reload') wc.reload();
+      else if (method === 'stop') wc.stop();
+      else if (method === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+      else if (method === 'forward' && wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward();
+      return { accepted: true };
+    });
+  }
   if (!p.domReady) await new Promise((resolve, reject) => {
-    const clean = () => { wc.off('dom-ready', ready); wc.off('did-start-navigation', changed); wc.off('destroyed', destroyed); };
+    const timer = setTimeout(() => { clean(); reject(Object.assign(new Error('Browser document not ready'), { code: 'DOCUMENT_NOT_READY' })); }, 15000);
+    const clean = () => { clearTimeout(timer); wc.off('dom-ready', ready); wc.off('did-start-navigation', changed); wc.off('destroyed', destroyed); signal?.removeEventListener('abort', aborted); };
     const ready = () => { clean(); resolve(); };
-    const destroyed = () => { clean(); reject(new Error('Browser page closed')); };
-    const changed = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { clean(); reject(new Error('Browser document changed')); } };
+    const destroyed = () => { clean(); reject(Object.assign(new Error('Browser page closed'), { code: 'PAGE_CLOSED' })); };
+    const changed = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { clean(); reject(Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED' })); } };
+    const aborted = () => { clean(); reject(Object.assign(new Error('Browser automation cancelled'), { code: 'CDP_ABORTED', retryable: false, outcome: 'not-dispatched' })); };
     wc.once('dom-ready', ready); wc.on('did-start-navigation', changed); wc.once('destroyed', destroyed);
+    signal?.addEventListener('abort', aborted, { once: true }); if (signal?.aborted) aborted();
   });
-  if (p.document !== generation || p.closed) throw new Error('Browser document changed');
-  const frame = wc.mainFrame;
-  const key = 'opencraft.remote.bridge.' + generation;
-  p.bridgeInstalled ??= frame.executeJavaScript(`${bridge}\n;(() => {
-    const api = OpenCraftPreviewBridgeRuntime;
-    const cleanup = api.installPreviewBridgeRuntime({window,parentOrigin:location.origin});
-    const adapter = new api.PreviewBridgeAdapter({hostWindow:window,frameWindow:window,targetOrigin:location.origin,previewId:${JSON.stringify(p.id + ':' + generation)},generation:1});
-    window[Symbol.for(${JSON.stringify(key)})]={adapter,cleanup};
-  })()`);
-  await p.bridgeInstalled;
-  if (p.document !== generation || p.closed) throw new Error('Browser document changed');
-  const result = await frame.executeJavaScript(`(async () => {
-    const state=window[Symbol.for(${JSON.stringify(key)})];
-    if(!state) throw new Error('Browser document changed');
-    try { return {ok:true,value:await state.adapter[${JSON.stringify(method)}](${JSON.stringify(input || {})})}; }
-    catch(error) { return {ok:false,error:{code:error.code||'BROWSER_ERROR',message:error.message,retryable:!!error.retryable}}; }
-  })()`);
-  if (p.document !== generation || p.closed) throw new Error('Browser document changed');
-  if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
-  return result.value;
+  validate();
+  if (method === 'capture') {
+    const release = p.acquireAutomationDrawing();
+    try {
+      const image = await p.cdp.send('Page.captureScreenshot', { format: 'png', fromSurface: true, captureBeyondViewport: false }, undefined, { signal, validate });
+      validate(); signal?.throwIfAborted();
+      return 'data:image/png;base64,' + image.data;
+    } finally { release(); }
+  }
+  return p.automation.invoke(method, input || {}, { validate, signal });
 }
 async function command(message) {
   const { page: id, method, input = {} } = message;
@@ -350,7 +380,7 @@ async function command(message) {
   }
   if (method === 'display-rate') {
     if (!Number.isInteger(input.fps) || input.fps < 5 || input.fps > 30) throw new Error('Invalid display rate');
-    p.displayRate = input.fps; wc.setFrameRate(p.interactive ? input.fps : Math.min(10, input.fps)); return;
+    p.displayRate = input.fps; captureRate(p); return;
   }
   if (method === 'copy') {
     if (input.context !== undefined && (typeof input.context !== 'string' || !/^[a-zA-Z0-9-]{20,100}$/.test(input.context))) throw new Error('Invalid copy context');
@@ -379,7 +409,7 @@ async function command(message) {
       const epoch = p.epoch, image = await wc.capturePage();
       if (!p.closed && p.visible && p.epoch === epoch && image.getSize().width === p.width && image.getSize().height === p.height) { queueFrame(p, image); }
     }
-    else { await resetInput(p); wc.stopPainting(); p.epoch = randomUUID(); releaseStreams(p); p.productionPlan = null; p.productionEpoch = null; p.productionRevision = 0; p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
+    else { await resetInput(p); if (!p.automationDrawing) wc.stopPainting(); p.epoch = randomUUID(); releaseStreams(p); p.productionPlan = null; p.productionEpoch = null; p.productionRevision = 0; p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
     return;
   }
   if (method === 'keyframe') { const bucket = input?.bucket === 'slow' ? 'slow' : 'fast', st = stream(p, bucket); if (performance.now() - (st.lastKey || -1000) >= 500) { st.lastKey = performance.now(); refresh(p, bucket); } return; }
@@ -417,7 +447,16 @@ async function command(message) {
     if (event.type === 'mouseWheel') return p.wheel(event);
     wc.sendInputEvent(event); return;
   }
-  if (method === 'automation') { activity(p); return automation(p, input.method, input.input); }
+  if (method === 'automation') {
+    activity(p);
+    const document = p.document, control = p.controlToken;
+    return automation(p, input.method, input.input, () => {
+      checkDocument();
+      if (p.closed || p.document !== document) throw Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED' });
+      if (message.control !== undefined && (p.controlToken !== control || message.control !== p.controlToken))
+        throw Object.assign(new Error('Browser control changed'), { code: 'CONTROL_LOST' });
+    }, message.signal, message.id);
+  }
   throw new Error('Unsupported browser command');
 }
 ipcMain.on('encoder-ready', event => { if (encoderWindow?.webContents === event.sender) { encoderReady = true; for (const p of pages.values()) { pump(p); pump(p, 'slow'); } } });
@@ -444,11 +483,14 @@ app.whenReady().then(async () => {
   await encoderWindow.loadFile(join(__dirname, 'encoder.html'));
   dispatch = createControls(command, id => pages.get(id)?.document);
   const receive = message => {
-    const operation = dispatch(message);
-    void operation.then(value => send({ type: 'result', id: message.id, value }), error => send({ type: 'result', id: message.id, error: { code: error.code || 'BROWSER_ERROR', message: error.message, retryable: !!error.retryable } })); };
+    if (message.method === 'cancelAutomation') { automationRequests.cancel(message.page, message.input?.requestId); return; }
+    if (message.method === 'close') automationRequests.retire(message.page);
+    if (message.method === 'control') automationRequests.retire(message.page, control => control !== undefined && control !== message.input?.token);
+    const operation = automationRequests.run(message, dispatch);
+    void operation.then(value => send({ type: 'result', id: message.id, value }), error => send({ type: 'result', id: message.id, error: { code: error.code || 'BROWSER_ERROR', message: error.message, retryable: !!error.retryable, outcome: error.outcome } })); };
   if (ipc) process.on('message', receive);
   else { const lines = createInterface({ input: process.stdin }); lines.on('line', line => { try { receive(JSON.parse(line)); } catch {} }); lines.on('close', () => app.exit(0)); }
-  send({ type: 'ready' });
+  send({ type: 'ready', automationNavigation: 1 });
 });
 app.on('window-all-closed', () => {});
 process.on('disconnect', () => app.exit(0));

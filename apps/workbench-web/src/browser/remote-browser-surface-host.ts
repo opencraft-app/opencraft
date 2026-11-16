@@ -30,7 +30,7 @@ interface Page {
   reconnect: ReturnType<typeof setTimeout> | null; connection: number; retries: number; needsKey: boolean;
   viewportMeasured: boolean; width: number; height: number; viewport: { width: number; height: number; deviceProfile?: BrowserDeviceProfile }; sentViewport: string;
   resizeTimer: ReturnType<typeof setTimeout> | null; resizing: boolean; resizeRetry?: { target: string; failures: number }; awaitingFrame?: boolean;
-  nativeCopy: boolean; interaction: number; menuIntent: string | null; automation: BrowserAutomation; resetPointers: () => void; resetInput: () => void; inputDispose: () => void;
+  nativeCopy: boolean; cdpAutomation: boolean; interaction: number; menuIntent: string | null; automation: BrowserAutomation; resetPointers: () => void; resetInput: () => void; inputDispose: () => void;
 }
 /** Physical pages live on the Server. Canvas is only a presentation consumer;
  * the existing tool host still owns thread/tab authorization and use claims. */
@@ -213,6 +213,11 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     if (!this.pages.has(id)) { const lease = this.storageIds.get(id); if (lease) this.discard(lease.replace(':', '-')); return; }
     this.release(id, true);
   }
+  retire(id: BrowserPageId) {
+    this.storageIds.delete(id); this.hostIdentities.delete(id);
+    const p = this.pages.get(id); if (p) p.serverClosed = true;
+    this.release(id, true);
+  }
   private release(id: BrowserPageId, destroy: boolean) {
     const p = this.pages.get(id); if (!p || p.closed) return;
     this.retireMenu(p);
@@ -290,22 +295,23 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     Object.assign(canvas.style, { display: 'block', width: '100%', height: 'auto', outline: 'none', touchAction: 'none' });
     container.append(canvas, receiver); this.root?.prepend(container);
     const p: Page = { mediaReceiver: null, inputPolicy: new AdaptiveInputWindow(), adaptiveInput: false, inputCredits: new CreditWindow({ maxItems: 12, maxBytes: 65536 }), document: undefined, inputAcknowledgements: false, inputQueue: null, control: { epoch: 0, active: false, controller: false, kind: null }, controlGeneration: 0, acquiring: null, agentQueue: Promise.resolve(), serverInitialNavigation: false, gestureActive: false, media: null, video: null, cancelVideoReady: null, id, lease: (this.storageIds.get(id) ?? ('browser-' + crypto.randomUUID())).replace(':', '-'), container, canvas, receiver, ime: null, editor: null, keyboard: null, keyboardIntent: null, editable: false, nativeIme: false, multiTouch: false, events, navigation: 0, url: undefined, socket: null,
-      nativeCopy: false, interaction: 0, menuIntent: null, restored: false, resumed: false, ready: Promise.resolve(), opened: false, disconnected: false, displaced: false, closed: false, visible: false, blocked: false, pending: new Map(), decoder: null,
+      nativeCopy: false, cdpAutomation: false, interaction: 0, menuIntent: null, restored: false, resumed: false, ready: Promise.resolve(), opened: false, disconnected: false, displaced: false, closed: false, visible: false, blocked: false, pending: new Map(), decoder: null,
       viewportMeasured: false, width: 1280, height: 720, viewport: { width: 1280, height: 720 }, sentViewport: '', resizeTimer: null, resizing: false,
       latest: null, raf: 0, reconnect: null, connection: 0, retries: 0, needsKey: true, automation: null!, resetPointers: () => {}, resetInput: () => {}, inputDispose: () => {} };
     if (this.admitted() && !this.storageIds.has(id)) { this.storageIds.set(id, p.lease); this.persistStorage(); }
     const call = (method: string, input?: unknown): Promise<any> => {
-      if (['inspect', 'readContext', 'wait'].includes(method)) return p.ready.then(() => this.call(p, 'automation', { method, input }));
+      const requireCdp = () => { if (!p.cdpAutomation) throw new BrowserAutomationError('AUTOMATION_UNAVAILABLE', 'This browser runtime does not support native automation'); };
+      if (['inspect', 'readContext', 'wait'].includes(method)) return p.ready.then(() => { requireCdp(); return this.call(p, 'automation', { method, input }); });
       const operation = p.agentQueue.catch(() => {}).then(async () => {
-        await p.ready; const token = await this.acquireControl(p, 'agent');
+        await p.ready; requireCdp(); const token = await this.acquireControl(p, 'agent');
         try { return await this.call(p, 'automation', { method, input }, token); }
         finally { await this.releaseControlToken(p, token).catch(() => {}); }
       });
       p.agentQueue = operation; return operation;
     };
     p.automation = {
-      capabilities: { protocolVersion: 1, backend: 'preview-bridge', domInspection: true, semanticInput: true, trustedInput: false,
-        networkObservation: 'fetch-xhr', screenshot: true, deviceEmulation: 'full' },
+      get capabilities() { return { protocolVersion: 1 as const, backend: 'electron-cdp' as const, domInspection: p.cdpAutomation, semanticInput: p.cdpAutomation, trustedInput: p.cdpAutomation,
+        networkObservation: 'none' as const, screenshot: true, deviceEmulation: 'full' as const }; },
       readContext: input => call('readContext', input), inspect: () => call('inspect'), click: input => call('click', input),
       fill: input => call('fill', input), press: input => call('press', input), scroll: input => call('scroll', input),
       wait: input => call('wait', input), dispose: () => {} };
@@ -313,10 +319,10 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     p.ready = this.connect(p); this.watchConnection(p);
     return p;
   }
-  private rejectPending(p: Page) { for (const request of p.pending.values()) { clearTimeout(request.timer); request.reject(new BrowserAutomationError('PAGE_CLOSED', 'Browser disconnected', true)); } p.pending.clear(); }
+  private rejectPending(p: Page) { for (const request of p.pending.values()) { clearTimeout(request.timer); request.reject(new BrowserAutomationError('PAGE_CLOSED', 'Browser disconnected before its result was confirmed', false, 'unknown')); } p.pending.clear(); }
   private resetTransport(p: Page) {
     p.mediaReceiver?.dispose(); p.mediaReceiver = null; p.inputCredits.retire();
-    p.opened = false; p.document = undefined; p.inputAcknowledgements = false; ++p.controlGeneration; p.acquiring = null; p.control = { epoch: 0, active: false, controller: false, kind: null };
+    p.opened = false; p.document = undefined; p.cdpAutomation = false; p.inputAcknowledgements = false; ++p.controlGeneration; p.acquiring = null; p.control = { epoch: 0, active: false, controller: false, kind: null };
     for (const listener of this.controlListeners) listener();
     this.retireMenu(p); p.resetInput(); this.resetKeyboard(p); p.opened = false;
     if (p.resizeTimer) clearTimeout(p.resizeTimer);
@@ -372,7 +378,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
       ws.onopen = () => { if (!current()) return; clearTimeout(timer);
         const viewport = p.viewportMeasured ? { ...p.viewport } : undefined;
         void this.call(p, 'open', { lease: p.lease, metadataRequired: !!this.storage.flush, multiView: true, documentInput: true, inputAcknowledgements: true, mediaFeedback: 1, mediaStage: typeof VideoDecoder !== 'undefined' && typeof EncodedVideoChunk !== 'undefined' ? 'rendered' : 'received', visible: this.isVisible(p), initialUrl: p.url ?? null, viewport, defaultDeviceProfile: remoteBrowserDeviceProfile() }).then(async config => {
-          if (!current()) return; this.applyDocument(p, config.document); p.inputAcknowledgements = config.inputAcknowledgements === true; p.adaptiveInput = config.inputWindow === 12; p.serverInitialNavigation = config.multiView === true; this.setControl(p, config.control); p.resumed = config.resumed === true; p.restored = (config.resumed || config.restored) && !!config.navigation?.url && config.navigation.url !== 'about:blank'; p.nativeCopy = config.nativeCopy === true; p.nativeIme = config.nativeIme === true; p.multiTouch = config.multiTouch === true; this.keyboardChanged(); this.applyViewport(p, config);
+          if (!current()) return; this.applyDocument(p, config.document); p.cdpAutomation = config.automationBackend === 'electron-cdp'; p.inputAcknowledgements = config.inputAcknowledgements === true; p.adaptiveInput = config.inputWindow === 12; p.serverInitialNavigation = config.multiView === true; this.setControl(p, config.control); p.resumed = config.resumed === true; p.restored = (config.resumed || config.restored) && !!config.navigation?.url && config.navigation.url !== 'about:blank'; p.nativeCopy = config.nativeCopy === true; p.nativeIme = config.nativeIme === true; p.multiTouch = config.multiTouch === true; this.keyboardChanged(); this.applyViewport(p, config);
           const effective = { width: config.width, height: config.height, deviceProfile: config.deviceProfile };
           if (!p.viewportMeasured) p.viewport = effective;
           p.sentViewport = JSON.stringify(effective); p.opened = true; for (const listener of this.controlListeners) listener(); p.retries = 0; clearTimeout(timer); resolve();
@@ -403,7 +409,7 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
           p.inputCredits.release(message.id);
           const request = p.pending.get(message.id); if (!request) return;
           p.pending.delete(message.id); clearTimeout(request.timer);
-          message.error ? request.reject(new BrowserAutomationError(message.error.code, message.error.message, message.error.retryable)) : request.resolve(message.value);
+          message.error ? request.reject(new BrowserAutomationError(message.error.code, message.error.message, message.error.retryable, message.error.outcome)) : request.resolve(message.value);
         } else if (message.type === 'control') this.setControl(p, message);
         else if (message.type === 'navigation') {
           if (message.state.isLoading && !p.document) { this.retireMenu(p); p.resetInput(); this.resetKeyboard(p); }
@@ -576,8 +582,8 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
         p.pending.delete(id);
         // Settling unknown never returns credits or replays this operation.
         if (trackedInput && connection === p.connection) socket.close(1013, 'Input result unknown; reconnecting');
-        reject(new BrowserAutomationError('TIMEOUT', `Browser operation timed out (${method})`, true));
-      }, method === 'open' ? 45000 : 25000);
+        reject(new BrowserAutomationError('TIMEOUT', `Browser operation timed out (${method})`, false, 'unknown'));
+      }, method === 'open' ? 45000 : method === 'automation' ? Math.min(65000, Math.max(35000, Number((input as any)?.input?.timeoutMs ?? 0) + 5000)) : 25000);
       p.pending.set(id, { resolve, reject, timer });
       try { socket.send(payload); } catch (error) {
         clearTimeout(timer); p.pending.delete(id); socket.close(); reject(error as Error);

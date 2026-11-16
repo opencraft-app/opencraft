@@ -7,9 +7,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function fixture() {
   const debuggerPort = new EventEmitter(), calls = [], failures = [];
   let attached = false, send = async () => {};
-  Object.assign(debuggerPort, { isAttached: () => attached, attach() { attached = true; },
+  Object.assign(debuggerPort, { isAttached: () => attached, attach() { attached = true; }, detach() { attached = false; },
     async sendCommand(method, input, session) { calls.push({ method, input, session }); return send(method, input, session); } });
-  return { wc: { debugger: debuggerPort, isDestroyed: () => false }, calls, failures,
+  return { wc: Object.assign(new EventEmitter(), { debugger: debuggerPort, isDestroyed: () => false }), calls, failures,
     fail: () => failures.push('failed'), send(value) { send = value; },
     attach(session) { debuggerPort.emit('message', {}, 'Target.attachedToTarget', { sessionId: session, targetInfo: { type: 'iframe' } }); },
     detach(session) { debuggerPort.emit('message', {}, 'Target.detachedFromTarget', { sessionId: session }); } };

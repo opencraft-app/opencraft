@@ -9,7 +9,7 @@ function createControls(command, getDocument = () => undefined) {
   const ordered = new Set(['input', 'text', 'ime', 'copy', 'viewport', 'visible', 'zoom', 'close', 'control']);
   const dispatch = message => {
     const page = message.page;
-    if (['input', 'text', 'ime'].includes(message.method))
+    if (['input', 'text', 'ime', 'automation'].includes(message.method))
       message = { ...message, document: message.document ?? getDocument(page) };
     if (!epochs.has(page)) epochs.set(page, {});
     const epoch = epochs.get(page);
@@ -35,6 +35,7 @@ function createControls(command, getDocument = () => undefined) {
     if (!ordered.has(message.method) && message.control === undefined) return command(message);
     const slot = { message, signature };
     const operation = (tails.get(page) ?? Promise.resolve()).then(() => {
+      if (message.signal?.aborted) throw Object.assign(new Error('Browser automation cancelled'), { code: 'CDP_ABORTED', retryable: false, outcome: 'not-dispatched' });
       if (epochs.get(page) !== epoch)
         throw Object.assign(new Error('Browser renderer replaced'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
       if (message.document !== undefined && message.document !== getDocument(page))

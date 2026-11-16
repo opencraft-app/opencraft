@@ -27,7 +27,7 @@ function readMessages(stream, limit, receive, invalid) {
 async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {} }) {
   const child = spawnWorker(), pending = new Map(), inflight = new Set();
   const diagnostics = createNativeDiagnostics();
-  let peer = null, closing = false, fence = Promise.resolve();
+  let peer = null, closing = false, fence = Promise.resolve(), automationNavigation = 0;
   let readyResolve, readyReject;
   const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
   const startup = setTimeout(() => readyReject(new Error('Browser startup timed out')), 15000); startup.unref();
@@ -36,12 +36,17 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
     if (socket.writableLength > 4 * 1024 * 1024) { socket.destroy(); return; }
     socket.write(JSON.stringify(message) + '\n');
   };
-  function request(message) {
+  const cancelNative = (page, requestId) => {
+    try { child.send({ id: randomUUID(), page, method: 'cancelAutomation', input: { requestId } }, () => {}); } catch {}
+  };
+  function request(message, admitted = () => {}) {
     const id = randomUUID();
     const operation = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(new Error('Browser owner request timed out')); }, 20000); timer.unref();
+      const timeout = message.method === 'automation' ? Math.min(65000, Math.max(35000, Number(message.input?.input?.timeoutMs ?? 0) + 5000)) : 20000;
+      const timer = setTimeout(() => { if (message.method === 'automation') cancelNative(message.page, id); pending.delete(id); reject(Object.assign(new Error('Browser owner request timed out'), { code: 'TIMEOUT', retryable: false, outcome: 'unknown' })); }, timeout); timer.unref();
       pending.set(id, { resolve, reject, timer });
-      child.send({ ...message, id }, error => { if (error) { clearTimeout(timer); pending.delete(id); reject(new Error('Browser transport failed')); } });
+      admitted(id);
+      child.send({ ...message, id }, error => { if (error) { clearTimeout(timer); pending.delete(id); reject(Object.assign(new Error('Browser transport failed'), { retryable: false, outcome: 'unknown' })); } });
     });
     inflight.add(operation); void operation.finally(() => inflight.delete(operation)).catch(() => {});
     return operation;
@@ -49,7 +54,7 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
   child.stderr?.on('data', chunk => diagnostics.consume(chunk));
   child.stderr?.on('end', () => diagnostics.finish());
   child.on('message', message => {
-    if (message.type === 'ready') { clearTimeout(startup); readyResolve(); return; }
+    if (message.type === 'ready') { automationNavigation = message.automationNavigation === 1 ? 1 : 0; clearTimeout(startup); readyResolve(); return; }
     if (message.type === 'result') {
       const job = pending.get(message.id); if (!job) return;
       clearTimeout(job.timer); pending.delete(message.id);
@@ -59,7 +64,7 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
   const fail = () => {
     if (closing) return;
     closing = true; clearTimeout(startup); readyReject(new Error('Browser owner exited'));
-    for (const job of pending.values()) { clearTimeout(job.timer); job.reject(new Error('Browser owner exited')); }
+    for (const job of pending.values()) { clearTimeout(job.timer); job.reject(Object.assign(new Error('Browser owner exited'), { retryable: false, outcome: 'unknown' })); }
     pending.clear(); diagnostics.finish();
     if (peer) { send(peer, { type: 'owner-failure', native: diagnostics.snapshot() }); peer.end(); }
     server.close(); child.kill(); onFailure();
@@ -78,6 +83,7 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
   const server = createServer(socket => {
     socket.on('error', () => socket.destroy());
     let accepted = false, count = 0;
+    const calls = new Map();
     const greeting = setTimeout(() => socket.destroy(), 5000); greeting.unref();
     readMessages(socket, 256 * 1024, message => {
       if (!accepted) {
@@ -97,20 +103,27 @@ async function createBrowserOwner({ socketPath, spawnWorker, onFailure = () => {
           const pages = await request({ method: 'inventory' });
           if (peer !== socket || socket.destroyed) return;
           socket.attached = true;
-          send(socket, { type: 'attached', protocol: PROTOCOL, pages, workerPid: child.pid });
+          send(socket, { type: 'attached', protocol: PROTOCOL, pages, workerPid: child.pid, automationCancellation: 1, automationNavigation });
         }).catch(() => socket.destroy());
         return;
       }
-      if (!socket.attached || typeof message.id !== 'string' || message.id.length > 100 || ++count > 128) { socket.destroy(); return; }
+      if (!socket.attached || typeof message.id !== 'string' || message.id.length > 100) { socket.destroy(); return; }
+      if (message.method === 'cancelAutomation') {
+        const call = calls.get(message.input?.requestId);
+        if (call?.method === 'automation' && call.page === message.page) cancelNative(call.page, call.nativeId);
+        return;
+      }
+      if (calls.has(message.id) || ++count > 128) { socket.destroy(); return; }
       const id = message.id;
-      void request(message).then(value => send(socket, { type: 'result', id, value }), error => send(socket, {
-        type: 'result', id, error: { code: error.code || 'BROWSER_UNAVAILABLE', message: error.message, retryable: error.retryable !== false },
-      })).finally(() => --count);
+      void request(message, nativeId => calls.set(id, { nativeId, page: message.page, method: message.method })).then(value => send(socket, { type: 'result', id, value }), error => send(socket, {
+        type: 'result', id, error: { code: error.code || 'BROWSER_UNAVAILABLE', message: error.message, retryable: error.retryable !== false, outcome: error.outcome },
+      })).finally(() => { calls.delete(id); --count; });
     }, () => socket.destroy());
     socket.on('close', () => {
       clearTimeout(greeting);
       if (peer !== socket) return;
       peer = null;
+      for (const call of calls.values()) if (call.method === 'automation') cancelNative(call.page, call.nativeId);
       fence = fence.then(() => ready).then(resetSession);
       // Fail closed if native control cannot be retired; never grant a new
       // Gateway access alongside an unknown old input transaction.

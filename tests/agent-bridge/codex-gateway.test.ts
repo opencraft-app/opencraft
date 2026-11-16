@@ -62,6 +62,10 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
       }
       if (f.method === 'thread/read'&&f.params.includeTurns&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'thread native-new is not materialized yet; includeTurns is unavailable before first user message'}}));return;}
       if (f.method === 'thread/read') reply({ thread: { id: 'native-new',status:{type:!loaded?'notLoaded':nativeActive?'active':'idle'}, turns: [{ id: 'native-turn', items: [{ type: 'commandExecution', id: 'tool', command: 'cat input.txt', commandActions: [{ type: 'business-data', threadId: 'business-thread', id: 'native-turn' }] }] }] } });
+      if (f.method === 'thread/turns/list') {
+        assert.deepEqual(f.params, { threadId: 'native-new', limit: 1, cursor: null, sortDirection: 'desc', itemsView: 'notLoaded' });
+        reply({ data: [{ id: 'native-turn', status: nativeActive ? 'inProgress' : 'completed', items: [] }], nextCursor: 'older-turn' });
+      }
       if(f.method==='thread/unsubscribe'){if(!blockRetirement)loaded=false;reply({});}
       if(f.method==='thread/settings/update')reply({});
       if(f.method==='thread/resume'&&!hasRollout){socket.send(JSON.stringify({id:f.id,error:{code:-32600,message:'no rollout found'}}));return;}
@@ -138,6 +142,9 @@ for(const cli of [false,true,'timeout','initial','contradiction','closed-contrad
     assert.equal(refusal.error.data.submissionOutcome,'rejected');assert.equal(starts,0);
   }
   const started = await request('turn/start', { threadId: 'bridge:codex:public-new', clientUserMessageId: 'start', input: [{ type: 'text', text: 'read' }] });
+  const latest = await request('thread/turns/list', { threadId: 'bridge:codex:public-new', limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' });
+  assert.equal(latest.data.length, 1); assert.equal(latest.data[0].id, started.turn.id); assert.equal(latest.data[0].status, 'inProgress');
+  assert.equal(latest.nextCursor, 'older-turn');
   if(cli==='initial'){assert.equal(issued,2);assert.equal(nativeConfigurations.length,0);assert.equal(initialConfig['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(initialConfig['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   else if(cli){assert.equal(issued,cli==='timeout'?2:1);assert.equal(nativeConfigurations[0].sandbox,'read-only');assert.equal(nativeConfigurations[0].approvalPolicy,'never');assert.equal(nativeConfigurations[0].config['shell_environment_policy.set'].OPENCRAFT_THREAD_CLI,'fixture');assert.equal(nativeConfigurations[0].config['mcp_servers.opencraft_session'].http_headers.Authorization,'Bearer platform-mcp');}
   const turnId = started.turn.id; assert.notEqual(turnId, 'native-turn');

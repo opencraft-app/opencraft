@@ -54,6 +54,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   pendingAcks():Promise<string[]>{return this.request('pendingAcks');}
   acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
   admission(threadId:string,inputId:string):Promise<Record<string,unknown>|null>{return this.request('admission',{threadId,inputId});}
+  executionAuthority(threadId:string,execution:{inputId?:string;turnId?:string}):Promise<Record<string,unknown>|null>{return this.request('executionAuthority',{threadId,execution});}
   updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
   close():Promise<void>{
     return this.closing??=(async()=>{

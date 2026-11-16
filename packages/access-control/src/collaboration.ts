@@ -87,7 +87,7 @@ export class Collaboration {
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
   readonly #closeDatabase: () => void;
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, readonly execution: ConversationExecutionPort, readonly now = Date.now, readonly admittedActor: (actorId: string) => boolean = () => true, private executionStorage?: Pick<OrchestrationRuntimeWorker, "updateExecution"> & Partial<Pick<OrchestrationRuntimeWorker,"admission"|"executionAuthority">>, readonly resourceAccess: (context: ActorContext, ref: ConversationRef) => boolean = () => true) {
     if (typeof execution.hostId !== 'string' || !execution.hostId.trim() || execution.hostId.length > 256 || /[\x00-\x1f]/u.test(execution.hostId)) throw new CollaborationError(500, 'execution_host_required');
     const managed = openServerRepository(path, "actor-collaboration");
     this.#closeDatabase = managed.close;
@@ -167,8 +167,13 @@ export class Collaboration {
     });
   }
   conversationAllowed(context: ActorContext, ref: ConversationRef, action: string): boolean {
-    if (this.#closed || !this.actors.isCurrent(context) || !this.admittedActor(context.actorId) || !this.#owns(ref.serverId) || !this.resourceAccess(context,ref)) return false;
-    const owned = this.orchestration.relation(ref.threadId);
+    if (!this.#conversationBaseAllowed(context,ref)) return false;
+    return this.#conversationOwnerAllowed(context,ref,action,this.orchestration.relation(ref.threadId));
+  }
+  #conversationBaseAllowed(context:ActorContext,ref:ConversationRef) {
+    return !this.#closed && this.actors.isCurrent(context) && this.admittedActor(context.actorId) && this.#owns(ref.serverId) && this.resourceAccess(context,ref);
+  }
+  #conversationOwnerAllowed(context:ActorContext,ref:ConversationRef,action:string,owned:{serverId:string;ownerActorId:string}|null) {
     if (owned?.serverId === ref.serverId) return owned.ownerActorId === context.actorId || this.actors.can(context, encodeConversationRef(ref), action);
     // Historical conversations retain their explicitly shared instance scope.
     return this.actors.get(context.actorId)?.kind === 'human' || this.actors.can(context, encodeConversationRef(ref), action);
@@ -337,6 +342,21 @@ export class Collaboration {
       'SELECT 1 FROM conversation_turn_authorities WHERE thread_id=? AND turn_id=? AND authority_id=?'
     ).get(threadId,execution.turnId,String(row.id))) throw new CollaborationError(403,'execution_delegation_changed');
     return {turnId,delegation:this.delegation(threadId,turnId,String(row.id))};
+  }
+  /** Async authority lookup for capability admission; no SQL on delivery paths.
+   * Native execution liveness is checked separately by the invoking Host.
+   */
+  async executionContext(threadId:string,execution:{inputId?:string;turnId?:string}) {
+    const storage=await this.#runtimeStorage();
+    if(!storage.executionAuthority)throw new CollaborationError(503,'execution_admission_unavailable');
+    const row=await storage.executionAuthority(threadId,execution);
+    if(!row||!this.#validDelegation(row)||this.actors.get(String(row.actor_id))?.kind!=='human')throw new CollaborationError(403,'execution_delegation_revoked');
+    const context:ActorContext=Object.freeze({actorId:String(row.actor_id),generation:Number(row.generation),credentialId:row.credential_id as string|null,expiresAt:Number(row.expires_at)});
+    const serverId=this.execution.serverForThread?.(threadId)??this.execution.serverId;
+    const relation=row.execution_relation as {serverId:string;ownerActorId:string}|null;
+    if(!serverId||!this.#conversationBaseAllowed(context,{serverId,threadId})
+      || !this.#conversationOwnerAllowed(context,{serverId,threadId},'execution.delegate',relation))throw new CollaborationError(403,'conversation_action_denied');
+    return {context,authorityId:String(row.id),turnId:typeof row.turn_id==='string'?row.turn_id:null};
   }
   #consumeToolBudget(authorityId: string): void {
     const root=this.database.prepare('SELECT root_authority_id FROM opencraft_delegation_roots WHERE authority_id=?').get(authorityId)?.root_authority_id??authorityId;

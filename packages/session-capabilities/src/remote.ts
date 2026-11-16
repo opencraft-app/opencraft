@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { sessionCapabilityToken } from "./mcp.js";
 import type { CapabilityExecution, CapabilityResult, CapabilityTool, SessionCapabilityPort } from "./index.js";
+import { capabilityResultFromMcp } from "./content.js";
 
 /** Same-uid independent Host attachment. The descriptor is rediscovered for each
  * operation; gateway restarts never create a second capability authority. */
@@ -44,11 +45,8 @@ export class RemoteSessionCapabilities implements SessionCapabilityPort {
   async call(threadId: string, name: string, args: unknown, signal: AbortSignal, execution?: CapabilityExecution): Promise<CapabilityResult> {
     signal.throwIfAborted();
     const result = await this.client(threadId, client => client.callTool({ name, arguments: args as Record<string, unknown> }, undefined, { signal }), execution);
-    if (!Array.isArray(result.content)) throw new Error("Invalid capability result");
-    return { success: result.isError !== true, contentItems: result.content.map(item => {
-      if (item.type !== "text" || typeof item.text !== "string") throw new Error("Unsupported capability result");
-      return { type: "inputText" as const, text: item.text };
-    }) };
+    signal.throwIfAborted();
+    return capabilityResultFromMcp(result);
   }
   async authorizeInput(threadId: string, inputId: string): Promise<boolean> {
     try {

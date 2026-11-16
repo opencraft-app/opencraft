@@ -8,6 +8,36 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { WebSocketServer } from 'ws';
 import type { BridgeWireMessage } from '@opencraft/agent-bridge-protocol';
+import { createBrowserGrantResolver } from '../../scripts/remote-browser/execution-grant.js';
+
+test('history preserves bounded latest-turn queries for browser admission in multi-turn sessions', async () => {
+  const calls: any[] = [], frames: any[] = [];
+  const runtime = new CodexBridgeRuntime({ async request(method, params) {
+    calls.push({ method, params });
+    const turns = [{ id: 'active', status: 'inProgress' }, { id: 'previous', status: 'completed' }];
+    return { data: turns.slice(0, Number(params.limit)), nextCursor: null };
+  }, resolve() {} }, frame => frames.push(frame));
+  await runtime.handle({ jsonrpc: '2.0', id: 'init', method: 'initialize', params: { protocolVersion: 1, grammarRange: { min: 1, max: 1 } } });
+  runtime.adapter.bind('public', 'native');
+  const latest = async () => {
+    await runtime.handle({ jsonrpc: '2.0', id: 'latest', method: 'history/read', params: {
+      threadId: 'public', limit: 1, sortDirection: 'desc', itemsView: 'notLoaded',
+    } });
+    const result = frames.at(-1).result;
+    return result.data.length === 1 ? result.data[0] : null;
+  };
+  const context = { actorId: 'human', generation: 1, credentialId: null, expiresAt: Date.now() + 60000 };
+  const resolver = createBrowserGrantResolver({ serverForThread: () => 'server', hostForServer: () => 'host',
+    source: async () => ({ context, authorityId: 'authority', turnId: 'active' }), authorize() {}, owner: c => c.actorId,
+    currentTurn: latest,
+  });
+  assert.equal((await resolver({ serverId: 'server', threadId: 'public', execution: { inputId: 'input' } }, true)).turnId, 'active');
+  assert.deepEqual(calls.at(-1), { method: 'thread/turns/list', params: { threadId: 'native', limit: 1, cursor: null, sortDirection: 'desc', itemsView: 'notLoaded' } });
+  await runtime.handle({ jsonrpc: '2.0', id: 'page', method: 'history/read', params: { threadId: 'public', cursor: 'next', limit: 7, sortDirection: 'asc' } });
+  assert.deepEqual(calls.at(-1).params, { threadId: 'native', limit: 7, cursor: 'next', itemsView: 'full', sortDirection: 'asc' });
+  await runtime.handle({ jsonrpc: '2.0', id: 'items', method: 'history/read', params: { threadId: 'public', turnId: 'active', cursor: 'items-next', limit: 3 } });
+  assert.deepEqual(calls.at(-1), { method: 'thread/items/list', params: { threadId: 'native', turnId: 'active', limit: 3, cursor: 'items-next' } });
+});
 
 test('runtime gates initialization, preserves native permission parameters, refuses foreign resume and double approvals', async () => {
   const calls: Array<{ method: string; params: any }> = [], frames: BridgeWireMessage[] = [];

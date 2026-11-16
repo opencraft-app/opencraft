@@ -435,6 +435,8 @@ export function createWorkbenchWebConfig(
         "@opencraft/remote-interaction",
         "@opencraft/remote-interaction/touch",
         "@opencraft/remote-interaction/websocket",
+        "@opencraft/browser-core/automation-policy",
+        "@opencraft/browser-core/metadata-merge",
         // Some source compositions export this optional CommonJS leaf.
         ...(existsSync(fileURLToPath(new URL("../../packages/browser-core/src/metadata-limits.cjs", import.meta.url)))
           ? ["@opencraft/browser-core/metadata-limits"] : []),

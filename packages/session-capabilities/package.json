@@ -8,6 +8,7 @@
     "./mcp": "./src/mcp.ts",
     "./bindings": "./src/bindings.ts",
     "./remote": "./src/remote.ts",
+    "./content": "./src/content.ts",
     "./authenticated-mcp": "./src/authenticated-mcp.ts",
     "./thread-cli": "./src/thread-cli.ts",
     "./execution-cli": "./src/execution-cli.ts",

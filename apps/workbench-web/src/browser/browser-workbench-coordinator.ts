@@ -289,6 +289,14 @@ export class BrowserWorkbenchCoordinator {
 
   close(ownerId: string, tabId: BrowserTabId): void {
     this.requireOwnedTab(ownerId, tabId);
+    this.closeProjection(tabId, false);
+  }
+
+  retirePersisted(pageIds: readonly string[], tabIds: readonly string[]): void {
+    for (const tab of [...this.tabs.values()]) if (pageIds.includes(tab.pageId) || tabIds.includes(tab.id)) this.closeProjection(tab.id, true);
+  }
+
+  private closeProjection(tabId: BrowserTabId, retired: boolean): void {
     this.closingTabs.add(tabId);
     const panelOwners = [...(this.panelOwners.get(tabId) ?? [])];
     this.panelOwners.delete(tabId);
@@ -296,7 +304,7 @@ export class BrowserWorkbenchCoordinator {
       for (const region of ["right", "bottom"] as const) this.panels.close(panelOwnerId, region, `browser:${tabId}`);
     }
     this.closingTabs.delete(tabId);
-    this.destroyTab(tabId);
+    this.destroyTab(tabId, retired);
   }
 
   disposeOwner(ownerId: string): void {
@@ -346,7 +354,7 @@ export class BrowserWorkbenchCoordinator {
     this.pageSubscriptions.delete(tabId);
   }
 
-  private destroyTab(tabId: BrowserTabId): void {
+  private destroyTab(tabId: BrowserTabId, retired = false): void {
     const tab = this.tabs.get(tabId);
     if (tab === undefined) return;
     this.stopObserving(tabId);
@@ -354,9 +362,10 @@ export class BrowserWorkbenchCoordinator {
     this.tabs.delete(tabId);
     this.tabListeners.get(tabId)?.clear();
     this.tabListeners.delete(tabId);
-    if (![...this.tabs.values()].some((candidate) => candidate.pageId === tab.pageId))
-      this.pages.close(tab.pageId);
-    this.persistTabs();
+    if (![...this.tabs.values()].some((candidate) => candidate.pageId === tab.pageId)) {
+      if (retired) this.pages.retire(tab.pageId); else this.pages.close(tab.pageId);
+    }
+    if (!retired) this.persistTabs();
     this.publishOwnerResources(tab.ownerId);
   }
 

@@ -1,3 +1,5 @@
+import type { BrowserMetadataRetirement } from '@opencraft/browser-core/metadata-merge';
+
 export interface RemoteBrowserResource {
   sessionId: string; lease: string; lifecycle: string; runtime: string; url: string | null;
   link: { pageId: string; tabId: string; scopeId: string; hostId: string | null } | null;
@@ -11,6 +13,8 @@ export type BrowserMetadataStorage = Pick<Storage, "getItem" | "setItem"> & {
   flush?(): Promise<void>;
   listResources?(): Promise<RemoteBrowserCatalog>;
   closeResource?(lease: string): Promise<void>;
+  subscribe?(listener: () => void): () => void;
+  retiredResources?(): readonly BrowserMetadataRetirement[];
 };
 interface DesktopStoragePort {
   read(): Promise<Record<string, string>>;
