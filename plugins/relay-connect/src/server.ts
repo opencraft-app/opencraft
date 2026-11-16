@@ -1,11 +1,12 @@
+import type { Duplex } from 'node:stream';
 import { createConnection } from "node:net";
 import WebSocket from "ws";
 import { relayDuplex } from '@opencraft/relay-protocol/node';
 import { AssertionProvider, readPrivateJson, type AssertionProviderOptions } from '@opencraft/identity-core/node';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, parseOpen } from "@opencraft/relay-protocol";
-export interface RelayConnectOptions { readonly relay: string; readonly credential: string; readonly targetPort: number; readonly allowLoopbackInsecure?: boolean; readonly ca?: string; }
+import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, parseOpen, MACHINE_GATEWAY_CONTROL_PATH, MACHINE_GATEWAY_DATA_PATH } from "@opencraft/relay-protocol";
+export type RelayConnectOptions = { readonly machineGateway?: boolean; readonly relay: string; readonly credential: string; readonly allowLoopbackInsecure?: boolean; readonly ca?: string; } & ({readonly targetPort:number; readonly acceptStream?:never} | {readonly targetPort?:never; readonly acceptStream:(stream:Duplex)=>void});
 export async function loadRelayConnection(path: string, assertionOptions: AssertionProviderOptions = {}) {
   const input = await readPrivateJson(path) as Record<string, unknown>;
   if (!input || input.schemaVersion !== 1 || Object.keys(input).some(k => !['schemaVersion', 'relay', 'credential', 'targetPort', 'allowLoopbackInsecure', 'issuer', 'instanceId', 'origin', 'publicKey', 'caFile'].includes(k))
@@ -24,14 +25,14 @@ export function connectRelay(options: RelayConnectOptions) {
   const endpoint = new URL(options.relay);
   if (endpoint.origin !== options.relay || endpoint.username || endpoint.password
     || (endpoint.protocol !== 'https:' && !(options.allowLoopbackInsecure && endpoint.protocol === 'http:' && endpoint.hostname === '127.0.0.1'))
-    || !/^[A-Za-z0-9_-]{43}$/u.test(options.credential) || !Number.isInteger(options.targetPort) || options.targetPort < 1 || options.targetPort > 65535) throw new Error('Invalid relay connection configuration');
+    || !/^[A-Za-z0-9_-]{43}$/u.test(options.credential) || (!options.acceptStream && (!Number.isInteger(options.targetPort) || options.targetPort < 1 || options.targetPort > 65535))) throw new Error('Invalid relay connection configuration');
   const base = endpoint.origin.replace(/^http/u, 'ws');
   const streams = new Set<WebSocket>();
   let control: WebSocket | undefined, stopped = false, timer: ReturnType<typeof setTimeout> | undefined, attempts = 0;
   let lastPong = Date.now();
   const open = () => {
     if (stopped) return;
-    const ws = new WebSocket(base + CONTROL_PATH, RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${options.credential}` }, perMessageDeflate: false, maxPayload: 4096, handshakeTimeout: 10_000 }); control = ws;
+    const ws = new WebSocket(base + (options.machineGateway ? MACHINE_GATEWAY_CONTROL_PATH : CONTROL_PATH), RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${options.credential}` }, perMessageDeflate: false, maxPayload: 4096, handshakeTimeout: 10_000 }); control = ws;
     ws.on('open', () => { attempts = 0; lastPong = Date.now(); }); ws.on('error', () => {}); ws.on('pong', () => { lastPong = Date.now(); });
     ws.on('message', raw => {
       try {
@@ -41,11 +42,11 @@ export function connectRelay(options: RelayConnectOptions) {
         // this new open; its existing server deadline releases the reservation.
         // Capacity pressure must not revoke the control link and every live stream.
         if (streams.size >= MAX_RELAY_STREAMS) return;
-        const data = new WebSocket(base + DATA_PATH, RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${frame.token}`, [STREAM_HEADER]: frame.id }, perMessageDeflate: false, maxPayload: 65_536, handshakeTimeout: 10_000 });
+        const data = new WebSocket(base + (options.machineGateway ? MACHINE_GATEWAY_DATA_PATH : DATA_PATH), RELAY_PROTOCOL, { ca: options.ca, headers: { authorization: `Bearer ${frame.token}`, [STREAM_HEADER]: frame.id }, perMessageDeflate: false, maxPayload: 65_536, handshakeTimeout: 10_000 });
         streams.add(data); data.on('error', () => {}); data.once('close', () => streams.delete(data));
         data.once('open', () => {
           if (stopped || control !== ws) { data.terminate(); return; }
-          const stream = relayDuplex(data); const target = createConnection({ host: '127.0.0.1', port: options.targetPort });
+          const stream = relayDuplex(data); if(options.acceptStream){options.acceptStream(stream);return;} const target = createConnection({ host: '127.0.0.1', port: options.targetPort });
           stream.on('error', () => target.destroy()); target.on('error', () => stream.destroy());
           stream.once('close', () => { target.destroy(); data.terminate(); }); target.once('close', () => stream.destroy());
           stream.pipe(target); target.pipe(stream);

@@ -4,9 +4,10 @@ import type { Duplex } from 'node:stream';
 import { relayPathAllowed } from '../../relay-protocol/src/index.js';
 
 /** A tunnel never exports the software updater, peer transport or operator authority. */
-export function createLocalIngress(target: () => { port: number; origin: string }) {
+export function createLocalIngress(target: () => { port: number; origin: string }, paths?:readonly string[]) {
   const allowed = (req: { url?: string; headers: { host?: string; origin?: string } }) => {
     try { const local = target(), path = decodeURIComponent(new URL(req.url ?? '/', 'http://hub.invalid').pathname);
+      if(paths)return local.port>0&&req.headers.host===new URL(local.origin).host&&paths.includes(path);
       return local.port > 0 && local.origin && req.headers.host === new URL(local.origin).host
         && (req.headers.origin === undefined || req.headers.origin === local.origin) && relayPathAllowed(req.url ?? '/')
         && (!path.startsWith('/__opencraft_hub') || path === '/__opencraft_hub/settings');

@@ -1,0 +1,87 @@
+name: Relay deployment
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - apps/relay-server/**
+      - packages/**
+      - scripts/package-relay.mjs
+      - scripts/relay-deployment/**
+      - tests/relay-deployment/**
+      - tests/execution/machine-gateway.test.ts
+      - plugins/relay-connect/**
+      - package.json
+      - package-lock.json
+      - .nvmrc
+      - .github/workflows/relay-deploy.yml
+  pull_request:
+    paths:
+      - apps/relay-server/**
+      - packages/**
+      - scripts/package-relay.mjs
+      - scripts/relay-deployment/**
+      - tests/relay-deployment/**
+      - tests/execution/machine-gateway.test.ts
+      - plugins/relay-connect/**
+      - package.json
+      - package-lock.json
+      - .nvmrc
+      - .github/workflows/relay-deploy.yml
+permissions:
+  contents: read
+concurrency:
+  group: relay-${{ github.event.pull_request.number || 'production' }}
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run test:hub-network
+      - run: npx tsx --test tests/execution/machine-gateway.test.ts
+      - run: node scripts/relay-deployment/build.mjs
+      - run: python3 -m unittest discover -s tests/relay-deployment
+        env:
+          OPENCRAFT_RELAY_ARTIFACT: dist/relay-release/payload/relay.mjs
+      - name: Retain exact deployment artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: relay-${{ github.sha }}
+          path: |
+            dist/relay-release/*.tgz
+            dist/relay-release/*.sha256
+          retention-days: 14
+          if-no-files-found: error
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: relay-production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download identified artifact
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: relay-${{ github.sha }}
+          path: relay-artifact
+      - name: Install pinned Tencent Cloud CLI
+        run: python3 -m pip install tccli==3.1.147.1
+      - name: Activate and verify through TAT HTTPS
+        env:
+          RELAY_INSTANCE_ID: ${{ vars.RELAY_INSTANCE_ID }}
+          RELAY_REGION: ${{ vars.RELAY_REGION }}
+          TENCENTCLOUD_SECRET_ID: ${{ secrets.RELAY_TENCENTCLOUD_SECRET_ID }}
+          TENCENTCLOUD_SECRET_KEY: ${{ secrets.RELAY_TENCENTCLOUD_SECRET_KEY }}
+          TENCENTCLOUD_TOKEN: ${{ secrets.RELAY_TENCENTCLOUD_TOKEN }}
+        run: python3 scripts/relay-deployment/send.py relay-artifact
