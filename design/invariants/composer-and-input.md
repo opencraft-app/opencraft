@@ -559,7 +559,8 @@ without replacing the editor, moving Selection or drawing a substitute caret.
 ### Engine identity in model selection
 
 New-conversation menus use the Host's explicit `agentId/agentLabel` model metadata
-for named Agent tabs, followed by only that Agent's models. Model vendor groups and
+for icon-only Agent tabs with accessible names and a visible selected-Agent label,
+followed by only that Agent's models. Model vendor groups and
 model-name suffixes cannot establish Agent identity. Older Hosts without metadata
 retain one Host-level group. Selecting a tab browses; choosing a model commits the
 catalog ID. The editor and native selection survive both operations; pointer-opened

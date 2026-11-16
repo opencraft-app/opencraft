@@ -164,7 +164,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
           </IconButton> : null}</span>
           <span className="opencraft-composer-effort__titles">
             <span className="opencraft-composer-effort__name">{label}</span>
-            <Button size="accessory" variant="ghost" aria-label={intl.formatMessage({ id: "composer.model.change", defaultMessage: "Change model, {model}" }, { model: modelButtonLabel })}
+            <Button className="opencraft-composer-effort__model" size="sm" density="compact" variant="ghost" aria-label={intl.formatMessage({ id: "composer.model.change", defaultMessage: "Change model, {model}" }, { model: modelButtonLabel })}
               onClick={() => setView("models")}>
               <span>{modelButtonLabel}</span><ChevronRightIcon size={14} aria-hidden="true" />
             </Button>
@@ -177,27 +177,29 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
           </IconButton> : null}</span>
         </div>} />
     </div> : <>
-    <div className="opencraft-composer-model-browser__sources" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
-      {sources.map(item => <Button key={item.id} size="accessory" variant={source.id === item.id ? "secondary" : "ghost"} contentLayout="row"
-        onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
-        role="tab" aria-selected={source.id === item.id} tabIndex={source.id === item.id ? 0 : -1}
-        title={currentAgent(item)
-          ? intl.formatMessage({ id: "composer.agent.currentTitle", defaultMessage: "{agent} (current conversation)" }, { agent: item.label })
-          : item.label}
-        aria-label={tabName(item)} data-current-agent={currentAgent(item) || undefined}
-        onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
-          if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-          event.preventDefault(); event.stopPropagation();
-          const index = sources.findIndex(candidate => candidate.id === item.id);
-          const next = event.key === "Home" ? 0 : event.key === "End" ? sources.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + sources.length) % sources.length;
-          browse(sources[next]!); setQuery("");
-          event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
-        }}>
-        {sourceIcon(item.brand)}<span>{item.label}</span>
-      </Button>)}
-      {currentAgentId !== null ? <span className="opencraft-composer-model-browser__source-name" role="presentation" title={sourceLabel}>
+    <div className="opencraft-composer-model-browser__sources">
+      <div className="opencraft-composer-model-browser__tabs" role="tablist" aria-label={intl.formatMessage({ id: "composer.agent.label", defaultMessage: "Agent" })}>
+        {sources.map(item => <Button key={item.id} size="accessory" variant={source.id === item.id ? "secondary" : "ghost"} contentLayout="row"
+          onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+          role="tab" aria-selected={source.id === item.id} tabIndex={source.id === item.id ? 0 : -1}
+          title={currentAgent(item)
+            ? intl.formatMessage({ id: "composer.agent.currentTitle", defaultMessage: "{agent} (current conversation)" }, { agent: item.label })
+            : item.label}
+          aria-label={tabName(item)} data-current-agent={currentAgent(item) || undefined}
+          onClick={() => { browse(item); setQuery(""); }} onKeyDown={event => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            event.preventDefault(); event.stopPropagation();
+            const index = sources.findIndex(candidate => candidate.id === item.id);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? sources.length - 1 : (index + (event.key === "ArrowLeft" ? -1 : 1) + sources.length) % sources.length;
+            browse(sources[next]!); setQuery("");
+            event.currentTarget.parentElement?.querySelectorAll<HTMLElement>('[role="tab"]')[next]?.focus();
+          }}>
+          {sourceIcon(item.brand)}
+        </Button>)}
+      </div>
+      <span className="opencraft-composer-model-browser__source-name" role="presentation" title={sourceLabel}>
         {sourceLabel}
-      </span> : null}
+      </span>
     </div>
     {showHandoffNotice ? <div className="opencraft-composer-selection-menu__status opencraft-composer-model-browser__handoff" role="status">
       <FormattedMessage id="composer.agent.newThreadNotice" defaultMessage="Choosing a model from another Agent starts a new conversation with this thread's context." />

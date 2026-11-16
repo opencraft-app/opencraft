@@ -28,7 +28,8 @@ try {
     const codexTab = p.getByRole("tab", { name: "Agent: Codex", exact: true });
     assert.equal(await codexTab.getAttribute("aria-selected"), "true");
     assert.equal(await codexTab.getAttribute("title"), "Codex", "hover exposes the Agent name");
-    assert.equal((await codexTab.innerText()).trim(), "Codex", "Agent tabs show the name before selection");
+    assert.equal((await codexTab.innerText()).trim(), "", "Agent tabs expose only the icon");
+    assert.equal(await p.locator(".opencraft-composer-model-browser__source-name").innerText(), "Codex", "the selected Agent name stays visible for touch");
     assert.equal(await menu.getByRole("slider").count(), 0, "a new thread opens on agents and models");
     assert.equal(await menu.getByText("Choosing a model from another Agent starts a new conversation with this thread's context.", { exact: true }).count(), 0, "a new draft does not claim a handoff");
     if (touch) {
@@ -45,7 +46,7 @@ try {
       assert.equal(await codexTab.getAttribute("aria-selected"), "true", "repeat does not queue another cycle");
       await codexTab.focus(); await p.keyboard.press("ArrowRight");
       assert.equal(await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).getAttribute("aria-selected"), "true");
-      assert.equal((await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).innerText()).trim(), "Cursor", "the visible name follows keyboard browsing");
+      assert.equal(await p.locator(".opencraft-composer-model-browser__source-name").innerText(), "Cursor", "the visible name follows keyboard browsing");
       assert.equal(await p.getByRole("tab", { name: "Agent: Cursor", exact: true }).evaluate(el => el === document.activeElement), true, "arrow navigation keeps focus on the tab");
       assert.equal(await p.evaluate(() => (window as any).modelBrowserFixture.selections().model), "codex:one[high]", "browsing tabs cannot select a model");
       await p.keyboard.press("Home");
@@ -172,12 +173,34 @@ try {
     if (touch) await trigger.tap(); else { await trigger.focus(); await p.keyboard.press("Enter"); }
     const menu = p.locator(".opencraft-composer-model-browser-surface"); await menu.waitFor();
     assert.equal(await menu.getByRole("slider", { name: "Reasoning", exact: true }).count(), 1, "an existing thread opens on reasoning");
+    const effortGeometry = await p.evaluate(() => {
+      const surface = document.querySelector(".opencraft-composer-model-browser-surface")!;
+      const header = surface.querySelector(".opencraft-composer-effort__header")!;
+      const name = surface.querySelector(".opencraft-composer-effort__name")!;
+      const track = surface.querySelector(".ui-discrete-slider__track")!;
+      const thumb = surface.querySelector(".ui-discrete-slider__visual-thumb")!;
+      return { menuWidth: surface.getBoundingClientRect().width, menuHeight: surface.getBoundingClientRect().height,
+        headerHeight: header.getBoundingClientRect().height, headerColumns: getComputedStyle(header).gridTemplateColumns,
+        nameFontSize: getComputedStyle(name).fontSize, trackWidth: track.getBoundingClientRect().width,
+        trackHeight: track.getBoundingClientRect().height, thumbWidth: thumb.getBoundingClientRect().width,
+        thumbHeight: thumb.getBoundingClientRect().height };
+    });
+    assert.equal(effortGeometry.menuWidth, 288, "the effort layer keeps the former compact picker width");
+    assert.equal(effortGeometry.menuHeight, touch ? 142 : 122, "the effort layer keeps the former compact picker height");
+    assert.equal(effortGeometry.headerHeight, touch ? 64 : 44, "the effort header keeps the former desktop and touch density");
+    assert.equal(effortGeometry.headerColumns, touch ? "44px 166px 44px" : "32px 190px 32px", "header side slots and the model title keep the former geometry");
+    assert.equal(effortGeometry.nameFontSize, "14px", "the effort name keeps the former readout typography");
+    assert.equal(effortGeometry.trackWidth, 262, "the track returns to the former compact width");
+    assert.equal(effortGeometry.trackHeight, 28, "the shared track height is unchanged");
+    assert.equal(effortGeometry.thumbWidth, 30, "the shared thumb size is unchanged");
+    assert.equal(effortGeometry.thumbHeight, 30, "the thumb stays round");
     await p.screenshot({ path: `${output}/${touch ? "touch" : "desktop"}-existing-effort.png` });
     if (touch) await menu.getByRole("button", { name: /Change model/ }).tap(); else await menu.getByRole("button", { name: /Change model/ }).click();
     const currentCodex = p.getByRole("tab", { name: "Agent: Codex, current conversation", exact: true });
     assert.equal(await currentCodex.getAttribute("aria-selected"), "true", "the existing conversation opens on its own Agent");
     assert.equal(await currentCodex.getAttribute("data-current-agent"), "true");
     assert.equal(await currentCodex.getAttribute("title"), "Codex (current conversation)");
+    assert.equal((await currentCodex.innerText()).trim(), "", "the current Agent tab also exposes only its icon");
     assert.equal(await p.locator(".opencraft-composer-model-browser__source-name").innerText(), "Codex · Current conversation", "the current Agent is visibly marked while browsing");
     const currentModel = menu.getByRole("menuitem", { name: "Model Two", exact: true });
     if (touch) await currentModel.tap(); else await currentModel.click();
@@ -231,5 +254,5 @@ try {
     assert.equal(await p.getByRole("tab", { name: "Agent：Codex，当前会话", exact: true }).count(), 1, "accessible Agent names come from the active Intl catalog");
     await context.close();
   }
-  console.log(`PASS model browser: named Agent tabs, reasoning slider layer, touch and keyboard effort, search/empty, existing-thread handoff, localized names, themes and bounded lists. Screenshots: ${output}. Inference boundary simulated.`);
+  console.log(`PASS model browser: icon-only Agent tabs with a visible current name, compact reasoning slider layer, touch and keyboard effort, search/empty, existing-thread handoff, localized names, themes and bounded lists. Screenshots: ${output}. Inference boundary simulated.`);
 } finally { await browser?.close(); await vite.close(); }

@@ -18,11 +18,11 @@
 
 ## 页签、键盘与旧会话
 
-Agent 页签同时显示共享品牌图标和产品名称，选中项用下划线标出。名称在点按前就可见，触控不必靠悬停或逐个试图标。页签右侧仍标出已有线程的当前会话（“当前会话”或“当前：Codex”）。无障碍名称经应用 IntlRuntime 组合。只有一个 Agent 时仍保留该页签和名称。触控命中区域继续由 `--size-control-hit-min` 与共享按钮密度提供。页签横向滚动，不把名称折成多行把模型列表顶出。页签支持方向键、Home、End；方向键焦点停留在页签上，不把浏览当成选择。
+Agent 页签只显示共享品牌图标（没有品牌身份的目录用共享模型图标），选中项用下划线标出；产品名称由 `aria-label` 与悬停提示提供。弹层头部右侧固定显示当前选中页签的名称，已有线程附“当前会话”或“当前：Codex”，触控用户无需悬停即可确认正在浏览的 Agent。无障碍名称经应用 IntlRuntime 组合。只有一个 Agent 时仍保留该页签及其可访问名称。触控命中区域继续由 `--size-control-hit-min` 与共享按钮密度提供。页签在自身轨道内横向滚动，不折行把模型列表顶出；右侧名称保持单行省略。页签支持方向键、Home、End；方向键焦点停留在页签上，不把浏览当成选择。
 
 ## 思考深度层
 
-新线程第一次打开选择器时先是 Agent 页签和模型列表。选中一个声明了思考深度的模型后，菜单留在打开状态并进入滑条层：上方是当前档位名称，模型名可点，下方是共享 DiscreteSlider。已有线程，以及新线程再次打开选择器时，直接进入滑条层。点模型名才回到 Agent 与模型页，沿用页签、搜索和当前会话标记。模型没有声明档位时不显示滑条，选择器停在模型页，也不把线程里别处记下的档位画成可调状态。只有一档时滑条禁用，仍可回到模型页。拖动只预览，松手才提交；方向键、Home 和 End 调整同一档位。Codex 以具体模型 id 表达档位的，滑条仍提交那个 id，不另发 effort。减少动态效果时档位立即到位。草稿、编辑器身份和焦点租约保持不变。
+新线程第一次打开选择器时先是 Agent 页签和模型列表。选中一个声明了思考深度的模型后，菜单留在打开状态并进入滑条层：上方是当前档位名称，模型名可点，下方是共享 DiscreteSlider。滑条层沿用旧版紧凑弹层：288px 宽、12px 内边距、44px 头部（触控 64px）与 28px 轨道 / 30px 拇指；尺寸由该消费者约束，不放大共享 DiscreteSlider token，模型页保持 340px。已有线程，以及新线程再次打开选择器时，直接进入滑条层。点模型名才回到 Agent 与模型页，沿用页签、搜索和当前会话标记。模型没有声明档位时不显示滑条，选择器停在模型页，也不把线程里别处记下的档位画成可调状态。只有一档时滑条禁用，仍可回到模型页。拖动只预览，松手才提交；方向键、Home 和 End 调整同一档位。Codex 以具体模型 id 表达档位的，滑条仍提交那个 id，不另发 effort。减少动态效果时档位立即到位。草稿、编辑器身份和焦点租约保持不变。
 
 CodeBuddy、Claude Code 等 ACP 会话如果用 `thought_level` 或 `effort` 声明一组档位，且目录不是 Codex 那种带方括号的具体 id，model/list 把这组档位投影到该会话的每个模型上，默认档位保持未声明（当前值不是默认值）。选择后通过 `session/set_config_option` 下发。没有这组声明时不显示滑条。
 
@@ -46,4 +46,4 @@ CodeBuddy、Claude Code 等 ACP 会话如果用 `thought_level` 或 `effort` 声
 
 ## 验证
 
-验证模型的 Agent 元数据投影、偏好隔离与显式全关、新草稿准入和旧线程不变；实际 Web Shell 在桌面及触控窄屏验证选择、发送、设置开关、onboarding 和空态，保留截图及验证边界。Agent 页签验证图标加名称、下划线、悬停/焦点/触控可见名称、无障碍名称、触控命中区、方向键和焦点环不裁切；推理区验证滑条层只在模型声明档位时出现，新线程首次打开停在模型页，已有线程直接进入滑条，点模型名才回到 Agent 页；快捷键验证注册、设置列表、循环、长按 repeat 不写入搜索和边界；旧会话验证单 Agent/无跨 Agent 能力时的当前身份、跨 Agent 提示以及新草稿交接。参考 BB 的 provider/model picker 与 ProvidersSettingsSection，参考版本固定为 `73fe7b4ad9a0c7f7c3f16b8e369fc61cccaea7d2`，只读查看 `ModelReasoningPicker.tsx`、`ModelReasoningMenu.tsx`、`modelPickerCycle.ts`、`modelPickerToggle.ts` 与 `ProvidersSettingsSection.tsx`，只借鉴分层选择、快捷键与旧会话标记；实现独立。引导里的 Codex 目录按模型族聚合，深度用同一滑条选择具体 id，不再把每个档位展开成独立模型。
+验证模型的 Agent 元数据投影、偏好隔离与显式全关、新草稿准入和旧线程不变；实际 Web Shell 在桌面及触控窄屏验证选择、发送、设置开关、onboarding 和空态，保留截图及验证边界。Agent 页签验证仅图标、下划线、悬停提示、触控时头部右侧的可见名称、无障碍名称、触控命中区、方向键和焦点环不裁切；推理区验证滑条层只在模型声明档位时出现，新线程首次打开停在模型页，已有线程直接进入滑条，点模型名才回到 Agent 页，滑条层保持 288px 弹层、262px 轨道、44px 头部与 30px 拇指；快捷键验证注册、设置列表、循环、长按 repeat 不写入搜索和边界；旧会话验证单 Agent/无跨 Agent 能力时的当前身份、跨 Agent 提示以及新草稿交接。参考 BB 的 provider/model picker 与 ProvidersSettingsSection，参考版本固定为 `73fe7b4ad9a0c7f7c3f16b8e369fc61cccaea7d2`，只读查看 `ModelReasoningPicker.tsx`、`ModelReasoningMenu.tsx`、`modelPickerCycle.ts`、`modelPickerToggle.ts` 与 `ProvidersSettingsSection.tsx`，只借鉴分层选择、快捷键与旧会话标记；实现独立。引导里的 Codex 目录按模型族聚合，深度用同一滑条选择具体 id，不再把每个档位展开成独立模型。
