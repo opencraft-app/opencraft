@@ -158,3 +158,25 @@ test('interrupt during sandbox preparation prevents a late turn from starting ac
  assert.equal(input.messages.find(m=>m.id==='starting').error.code,-32800);
  assert.equal(f.requests.filter(m=>m.method==='turn/start').length,0);
 });
+
+test('model catalog restores absent configured defaults without inventing or hiding reasoning choices', async t => {
+ const f=await fixture(t),gateway=await f.connect();
+ const model={id:'configured/provider/model',model:'configured/provider/model',defaultReasoningEffort:'none',supportedReasoningEfforts:[{reasoningEffort:'high'}]};
+ const data=[model,{...model,id:'builtin',model:'builtin'},
+  {...model,id:'explicit-none',supportedReasoningEfforts:[{reasoningEffort:'none'}]},
+  {...model,id:'invalid-default',defaultReasoningEffort:'medium'}];
+ gateway.send({id:'catalog',method:'model/list',params:{cursor:null,limit:100}});
+ await until(()=>f.requests.some(m=>m.method==='model/list'));
+ const request=f.requests.find(m=>m.method==='model/list');
+ f.nativeSockets[0]!.send(JSON.stringify({id:request.id,result:{data,nextCursor:'next'}}));
+ await until(()=>gateway.messages.some(m=>m.id==='catalog'));
+ const page=gateway.messages.find(m=>m.id==='catalog').result;
+ assert.equal(page.nextCursor,'next');
+ assert.deepEqual(page.data,[{...model,defaultReasoningEffort:null},...data.slice(1)]);
+ gateway.send({id:'other',method:'thread/read',params:{threadId:'thread'}});
+ await until(()=>f.requests.some(m=>m.method==='thread/read'));
+ const other=f.requests.find(m=>m.method==='thread/read');
+ f.nativeSockets[0]!.send(JSON.stringify({id:other.id,result:{data}}));
+ await until(()=>gateway.messages.some(m=>m.id==='other'));
+ assert.deepEqual(gateway.messages.find(m=>m.id==='other').result,{data});
+});

@@ -1,3 +1,4 @@
+import { projectNativeModelCatalog } from "./native-model-catalog.js";
 import { isHumanInteraction } from "@opencraft/appserver-protocol";
 import { randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
@@ -43,7 +44,7 @@ class CallbackLane {
         const key=String(message.id),pending=this.pending.get(key);
         if (!pending) return;
         this.pending.delete(key);
-        const reply=message.error ? {error:pending.operation?{...object(message.error),data:{...object(object(message.error).data),orchestrationRejected:true}}:message.error}:{result:message.result};
+        const reply=message.error ? {error:pending.operation?{...object(message.error),data:{...object(object(message.error).data),orchestrationRejected:true}}:message.error}:{result:pending.method === "model/list" ? projectNativeModelCatalog(message.result) : message.result};
         if(!message.error && pending.threadId && ['turn/start','turn/steer'].includes(pending.method??'')) {
           const result=object(message.result),turnId=String(object(result.turn).id??result.turnId??'');
           if(turnId)this.bindDelegation(pending.threadId,turnId,pending.delegationId??null);

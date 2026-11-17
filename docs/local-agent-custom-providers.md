@@ -356,7 +356,8 @@ This is a Host/protocol capability; it does not add a new settings screen or con
 
 Only enabled chat models declared as `openai-responses` or `anthropic-messages` are advertised. Their stable catalog identity is
 `configured/<encoded-provider-id>/<encoded-model-id>`; the actual provider model ID is restored only at dispatch. Catalogs expose
-capability declarations, not endpoint URLs or credentials. The resolver rereads configuration and credentials for each request and
+capability declarations, not endpoint URLs or credentials. Native `model/list` normalization restores an absent configured reasoning
+default from native `none` to null only when that connection does not declare `none`; explicit supported choices and built-in models stay untouched. The resolver rereads configuration and credentials for each request and
 rejects a configuration revision change during resolution, rather than pairing a new endpoint with an old connection's key.
 Missing credentials are an unavailable connection (503); disabled, removed or unsupported selections are absent (404). Neither
 falls back to another configured provider or to a pooled OAuth account. Native account catalog entries remain available if configured
