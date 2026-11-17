@@ -122,10 +122,12 @@ test("taskflow precedence is unique, keeps urgent pins visible and retains full 
 
 
 test("reading cannot resolve waits or failures, and unread never creates a todo", () => {
+  // Attention is newest first; distinct times keep the order independent of clock ticks.
+  const now = Date.now();
   for (const unread of [false, true]) {
     const input = [
-      { ...thread("waiting", new Date()), status: "review", unread },
-      { ...thread("failed", new Date()), status: "error", unread },
+      { ...thread("waiting", new Date(now)), status: "review", unread },
+      { ...thread("failed", new Date(now - 1_000)), status: "error", unread },
       { ...thread("completed", new Date()), status: "ready", unread },
       { ...thread("pinned-completed", new Date()), status: "ready", pinned: true, unread },
     ];

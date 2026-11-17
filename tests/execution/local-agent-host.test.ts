@@ -441,7 +441,8 @@ test("Local Agent Host advertises and owns attachment staging", async () => {
         sources: ["client-bytes"],
         locations: ["host-file"],
         maxBytes: 1024 * 1024 * 1024,
-        chunkBytes: 1024 * 1024,
+        chunkBytes: 64 * 1024,
+        uploadRetry: "last-chunk-v1",
       },
     );
     const upload = { uploadId: crypto.randomUUID(), clientAttachmentId: "chunked-host-file", name: "chunked.txt", mimeType: "text/plain", size: 6 };
