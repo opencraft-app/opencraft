@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { mkdtemp, mkdir, writeFile, rm, stat, chmod, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, stat, chmod, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -360,4 +360,24 @@ test('a closed cold service cannot reacquire the state writer through a late rea
   await assert.rejects(service.load(), /closed/);
   await replacement.load(); assert.equal(replacement.loaded, true);
   assert.equal(service.releaseWriter, undefined); assert.equal(service.loading, undefined);
+});
+
+
+test('CLI uses small-shm fallback while retaining sandbox flags and cleaning the worker environment', async () => {
+  const source = await readFile(new URL('../../scripts/remote-browser/owner.cjs', import.meta.url), 'utf8');
+  const main = source.slice(source.indexOf('if (require.main === module)'));
+  const module = { exports: {} };
+  const process = { env: { OPENCRAFT_BROWSER_DATA_DIR: '/tmp/fixture-browser', ELECTRON_RUN_AS_NODE: '1' } };
+  let child;
+  new Function('require', 'module', '__dirname', 'join', 'process', 'createBrowserOwner', 'spawn', main)(
+    { main: module }, module, '/fixture/browser', join, process,
+    async options => { options.spawnWorker(); },
+    (executable, args, options) => { child = { executable, args, options }; return {}; },
+  );
+  assert.equal(child.executable, '/fixture/browser/electron/electron');
+  assert.ok(child.args.includes('--disable-dev-shm-usage'));
+  assert.ok(!child.args.includes('--no-sandbox'));
+  assert.equal(child.args.at(-1), '/fixture/browser/worker.cjs');
+  assert.equal(child.options.env.ELECTRON_RUN_AS_NODE, undefined);
+  assert.equal(process.env.ELECTRON_RUN_AS_NODE, '1');
 });

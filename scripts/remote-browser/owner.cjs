@@ -159,7 +159,8 @@ module.exports = { PROTOCOL, readMessages, createBrowserOwner, installOwnerSigna
 if (require.main === module) {
   const executable = join(__dirname, 'electron/electron');
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
-  const flags = ['--ozone-platform=headless', '--ozone-override-screen-size=1920,1080', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+  // Let Chromium use temporary files instead of a small container /dev/shm mount.
+  const flags = ['--disable-dev-shm-usage', '--ozone-platform=headless', '--ozone-override-screen-size=1920,1080', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
   void createBrowserOwner({ socketPath: join(env.OPENCRAFT_BROWSER_DATA_DIR, 'owner.sock'),
     spawnWorker: () => spawn(executable, [...flags, join(__dirname, 'worker.cjs')], { env, stdio: ['ignore', 'ignore', 'pipe', 'ipc'], serialization: 'json' }),
     onFailure: () => { process.exitCode = 1; },
