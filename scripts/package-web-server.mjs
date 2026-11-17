@@ -122,6 +122,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     for (const [entry, target, format] of [
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
+      ['scripts/remote-browser/state.worker.ts', 'browser-state-worker.mjs', 'esm'],
       ['apps/codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
       ['apps/opencraft-daemon/src/execution-fault.worker.ts', 'execution-fault-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-session-routing.worker.ts', 'dsh-session-routing-worker.mjs', 'esm'],

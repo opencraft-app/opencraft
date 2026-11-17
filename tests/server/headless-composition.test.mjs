@@ -6,6 +6,7 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { startHeadlessServer } from '../../scripts/headless-server.mjs';
+import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
 import { buildHeadlessBundle } from '../../scripts/package-headless-linux.mjs';
 import { loadLocalMachineAccess } from '../../scripts/local-machine-access.mjs';
 import { randomBytes } from 'node:crypto';
@@ -53,7 +54,17 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   assert.match(help.stdout, /human-auth-config/); assert.ok(!help.stdout.includes('enterprise-identity'));
   await assert.rejects(run(process.execPath, [bundle, '--enterprise-identity-token-file', '/not-loaded'], { timeout: 10_000 }), /Unknown option/);
   const api = await import(pathToFileURL(bundle).href);
-  const app = await api.startHeadlessServer(f.options); t.after(() => app.close());
+  const browserWorker = join(f.root, 'browser-state-worker.mjs');
+  assert.equal((await stat(browserWorker)).isFile(), true);
+  assert.ok(!(await readFile(browserWorker, 'utf8')).includes('tsx/esm/api'));
+  const app = await api.startHeadlessServer({ ...f.options, createWebServer: async input => {
+    await input.remoteBrowserService.load();
+    return createWorkbenchWebServer(input);
+  } }); t.after(() => app.close());
+  const health = await fetch(app.url + '/__opencraft_health').then(response => response.json());
+  const storage = health.storage.find(row => row.name === 'remote-browser');
+  assert.equal(storage.appliedVersion, 2);
+  assert.equal(storage.movedAside, false);
   assert.equal((await fetch(app.url)).status, 200);
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);
 });

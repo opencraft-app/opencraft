@@ -25,3 +25,13 @@ test('same-record conflicts, remote deletion and malformed identity never overwr
   assert.equal(merge('pages', null, '[{"id":"local"}]', '[{"id":"remote"}]'), '[{"id":"remote"},{"id":"local"}]');
   assert.equal(merge('storage', '{}', '{"__proto__":"lease"}', '{"other":"lease"}'), '{"other":"lease","__proto__":"lease"}');
 });
+
+test('retirement filtering uses indexed membership without enumerating historical facts', async () => {
+  const { browserMetadataReferences, retireBrowserMetadata } = await import('@opencraft/browser-core/metadata-merge');
+  const visited: string[] = [];
+  const lookup = { pages: { has(id: string) { visited.push(id); return id === 'closed'; } }, tabs: new Set<string>(), leases: new Set<string>() };
+  const value = JSON.stringify([{ id: 'closed' }, { id: 'live' }]);
+  assert.deepEqual(JSON.parse(retireBrowserMetadata('pages', value, lookup)!), [{ id: 'live' }]);
+  assert.deepEqual(visited, ['closed', 'live']);
+  assert.deepEqual(browserMetadataReferences('tabs', JSON.stringify([{ id: 'tab', pageId: 'page' }])), { pages: ['page'], tabs: ['tab'], leases: [] });
+});

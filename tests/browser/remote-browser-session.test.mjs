@@ -1,3 +1,4 @@
+import { readBrowserState, makeLegacyBrowserState } from './browser-state-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
@@ -75,8 +76,8 @@ test('detach keeps the same live page; restart restores URL/config while explici
     assert.equal(restored.width, 430); assert.equal(restored.deviceProfile, 'iphone');
     await third.call('close'); await third.detach();
     assert.equal(f.service.pages.size, 0);
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8')).pages, []);
-    assert.equal((await stat(join(f.directory, 'remote-browser/tabs.json'))).mode & 0o777, 0o600);
+    assert.deepEqual((await readBrowserState(f.directory)).pages, []);
+    assert.equal((await stat(join(f.directory, 'remote-browser/state.sqlite'))).mode & 0o777, 0o600);
   } finally { await f.close(); }
 });
 
@@ -199,9 +200,9 @@ test('corrupt state fails closed and is preserved instead of being replaced with
     await f.service.load();
     const path = join(f.directory, 'remote-browser/tabs.json'); await writeFile(path, '{broken');
     await f.restart();
-    // restart checkpoints valid state first; corrupt the new instance before its first load.
+    // Frozen legacy sources cannot become writable again after migration.
     await writeFile(path, '{broken');
-    const a = await f.connect('a'); await assert.rejects(a.call('state'), /could not be read/); await a.detach();
+    const a = await f.connect('a'); await assert.rejects(a.call('state'), /changed after migration/); await a.detach();
     assert.equal(await readFile(path, 'utf8'), '{broken');
   } finally { await f.close(); }
 });
@@ -232,14 +233,13 @@ test('legacy about:blank recovery records migrate on read without clearing tab i
     const lease = randomUUID(), first = await f.connect('owner-a');
     await first.call('open', { lease }); await first.detach(); await f.restart();
     const path = join(f.directory, 'remote-browser/tabs.json');
-    const saved = JSON.parse(await readFile(path, 'utf8')); saved.pages[0].url = 'about:blank';
-    await writeFile(path, JSON.stringify(saved));
+    const saved = await makeLegacyBrowserState(f.directory, state => { state.pages[0].url = 'about:blank'; });
     const second = await f.connect('owner-a');
     const restored = await second.call('open', { lease });
     assert.equal(restored.restored, true); assert.equal(restored.navigation.url, 'about:blank');
     assert.equal(f.service.pages.size, 1); assert.equal([...f.service.pages.values()][0].url, null);
     assert.equal(f.service.commands.filter(c => c.method === 'navigate').length, 0);
-    assert.equal(JSON.parse(await readFile(path, 'utf8')).pages[0].id, saved.pages[0].id);
+    assert.equal((await readBrowserState(f.directory)).pages[0].id, saved.pages[0].id);
     await assert.rejects(second.call('navigate', { url: 'file:///tmp/private' }), /Unsupported browser URL/);
     await second.call('navigate', { url: 'https://example.test/recovered' }); await second.detach();
   } finally { await f.close(); }
@@ -260,7 +260,7 @@ test('recovery keeps the saved remote target before navigation commits, then fol
     assert.equal(restored.navigation.url, 'https://example.test/remote-authority');
     assert.equal(restored.navigation.isLoading, true);
     await f.service.persistence;
-    let saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    let saved = (await readBrowserState(f.directory));
     assert.equal(saved.pages[0].url, 'https://example.test/remote-authority');
     const record = [...f.service.pages.values()][0];
     f.service.receive({ type: 'navigation', page: record.id, state: { url: 'https://example.test/redirected', isLoading: false } });
@@ -281,7 +281,7 @@ test('accepted close completes after the viewer disconnects before native acknow
     await new Promise(resolve=>setImmediate(resolve)); await f.service.persistence;
     assert.equal(f.service.physical.size, 0, 'native page destroyed');
     assert.equal(f.service.pages.size, 0, 'closed page must stop occupying quota after detach');
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory,'remote-browser/tabs.json'),'utf8')).pages,[]);
+    assert.deepEqual((await readBrowserState(f.directory)).pages,[]);
     await f.restart(); const next = await f.connect('owner');
     await assert.rejects(next.call('open',{lease}), /closed/);
     assert.equal((await next.call('open',{lease:randomUUID()})).restored,false); await next.call('close'); await next.detach();
@@ -299,7 +299,7 @@ test('discard waits for an in-flight create and cannot leave an orphan native pa
     const discarding=control.call('discard',{lease});await new Promise(resolve=>setTimeout(resolve,15));finish();await discarding;await opening;
     await f.service.persistence;
     assert.equal(f.service.pages.size,0);assert.equal(f.service.physical.size,0,'created native page must be retired before discard acknowledges');
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory,'remote-browser/tabs.json'),'utf8')).pages,[]);
+    assert.deepEqual((await readBrowserState(f.directory)).pages,[]);
     await first.detach();await control.detach();
   }finally{finish?.();await f.close()}
 });
@@ -349,14 +349,14 @@ test('failed native destruction remains durably closing and resumes after a serv
     const request = f.service.request.bind(f.service);
     f.service.request = async (id, method, input) => { if (method === 'close') throw new Error('temporary native failure'); return request(id, method, input); };
     await assert.rejects(viewer.call('close'), /temporary/);
-    const saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const saved = (await readBrowserState(f.directory));
     assert.equal(saved.pages[0].closing, true);
     await viewer.detach();
     const reconnect = await f.connect('owner'); await assert.rejects(reconnect.call('open', { lease }), /closed/);
     await reconnect.detach(); await viewer.detach(); await f.restart();
     const state = await f.connect('owner'); await state.call('state');
     await until(() => f.service.pages.size === 0); await f.service.persistence;
-    assert.deepEqual(JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8')).pages, []);
+    assert.deepEqual((await readBrowserState(f.directory)).pages, []);
     await state.detach();
   } finally { await f.close(); }
 });
@@ -434,7 +434,7 @@ test('Agent close respects human control and a takeover queued ahead of close in
     const takeover = viewer.call('control', { action: 'human', takeover: true }); await settle(); release();
     const winner = await takeover; await denied;
     assert.equal(page.controlToken, winner.token); assert.equal(page.closing, undefined);
-    assert.equal(f.service.retiredLeases.size, 0);
+    assert.equal(await f.service.store.hasRetirement(page.key), false);
     await viewer.call('control', { action: 'release', token: winner.token });
     assert.equal((await f.service.closeTab(binding, { tabId: 'service-tab' })).closed, true);
     await viewer.detach(); assert.equal(f.service.pages.size, 0);
@@ -870,10 +870,10 @@ test('committed catalog survives failed create without phantom live occupancy or
     const starting = await a.call('catalog');
     assert.equal(starting.sessions[0].runtime, 'starting'); assert.equal(starting.sessions[0].link, null);
     await b.call('open', { lease: randomUUID() });
-    const before = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const before = (await readBrowserState(f.directory));
     assert.equal(before.pages.find(p => p.ownerId === 'owner-a').runtime.kind, 'starting');
     finish(); assert.match((await failed).message, /initialization failed/);
-    const committed = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const committed = (await readBrowserState(f.directory));
     assert.equal(committed.pages.find(p => p.ownerId === 'owner-a').runtime.kind, 'absent');
     assert.equal((await a.call('catalog')).capacity.accountUsed, 0);
     assert.equal((await b.call('catalog')).sessions.length, 1, 'account isolation');
@@ -927,7 +927,7 @@ test('failed file draft and rejected physical epoch never leak into a later comm
     await f.service.load();
     await assert.rejects(f.service.commit(draft => { draft.pages.push({ id: 'uncommitted' }); throw Error('Abort draft'); }), /Abort draft/);
     const c = await f.connect('owner'); await c.call('open', { lease: randomUUID() });
-    const saved = JSON.parse(await readFile(join(f.directory, 'remote-browser/tabs.json'), 'utf8'));
+    const saved = (await readBrowserState(f.directory));
     assert.equal(saved.pages.length, 1); assert.notEqual(saved.pages[0].id, 'uncommitted');
     const page = [...f.service.pages.values()][0], epoch = page.runtimeEpoch ?? 0;
     f.service.resetVisibility(page); await f.service.runtimeState(page, 'unknown');
@@ -1003,5 +1003,27 @@ for (const boundary of ['before-close', 'after-close']) test(`failed activation 
     assert.equal(f.service.commands.filter(command => command.method === 'close').length, boundary === 'before-close' ? 0 : 1);
     assert.equal((await f.service.catalog('owner', binding.authorize)).sessions[0].runtime, 'unknown');
     assert.equal(f.service.attachments.size, 0);
+  } finally { await f.close(); }
+});
+
+test('discard acknowledgement survives a foreign retirement selection after its commit', async () => {
+  const f = await fixture();
+  try {
+    const client = await f.connect('owner'), lease = 'browser-' + randomUUID(), key = JSON.stringify(['owner', lease]);
+    const commit = f.service.commit.bind(f.service); let replaced = false;
+    f.service.commit = async (reduce, selection) => {
+      const result = await commit(reduce, selection);
+      if (!replaced && selection?.keys?.includes(key)) {
+        replaced = true;
+        await f.service.store.transact(() => {}, { ownerId: 'unrelated-account' });
+      }
+      return result;
+    };
+    await client.call('discard', { lease });
+    assert.equal(replaced, true);
+    assert.equal(await f.service.store.hasRetirement(key), true);
+    assert.equal(f.service.pages.size, 0);
+    assert.equal(f.service.commands.length, 0);
+    await client.detach();
   } finally { await f.close(); }
 });

@@ -24,15 +24,15 @@ export async function closeRemoteTab(service, binding, { tabId }, { signal } = {
     catch (error) { if (error.outcome === undefined) error.outcome = 'not-dispatched'; throw error; }
   };
   authorize(); await service.load(); await service.store.tail; authorize();
-  const receipt = service.store.current.closedTabs?.find(r => r.ownerId === binding.ownerId && r.tabId === tabId && r.hostId === binding.hostId && r.threadId === binding.threadId);
+  const receipt = service.store.account(binding.ownerId).closedTabs?.find(r => r.ownerId === binding.ownerId && r.tabId === tabId && r.hostId === binding.hostId && r.threadId === binding.threadId);
   if (receipt?.status === 'closed') return { tabId, closed: true };
-  const record = receipt ? service.store.current.pages.find(p => p.key === receipt.key)
-    : service.store.current.pages.find(p => p.ownerId === binding.ownerId && p.link?.tabId === tabId);
+  const record = receipt ? service.store.account(binding.ownerId).pages.find(p => p.key === receipt.key)
+    : service.store.account(binding.ownerId).pages.find(p => p.ownerId === binding.ownerId && p.link?.tabId === tabId);
   if (!record) throw denied();
-  const state = () => service.store.current.states.find(([owner]) => owner === binding.ownerId)?.[1];
+  const state = () => service.store.account(binding.ownerId).states[0]?.[1];
   const owns = () => {
     authorize();
-    const pending = service.store.current.closedTabs?.find(r => r.key === record.key);
+    const pending = service.store.account(binding.ownerId).closedTabs?.find(r => r.key === record.key);
     if (pending) {
       if (pending.ownerId !== binding.ownerId || pending.tabId !== tabId || pending.hostId !== binding.hostId || pending.threadId !== binding.threadId) throw denied();
       return;

@@ -52,3 +52,26 @@ test('headless assembly binds browser capabilities to admitted execution and con
   actors.setEnabled(context.actorId, false, 'fixture');
   assert.equal(capabilities.tools(threadId).some(tool => tool.name === 'opencraft_browser_browser_use'), false);
 });
+
+test('Headless waits for the browser Worker drain before closing the agent and releasing host ownership', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'headless-browser-drain-')), webRoot = join(root, 'web');
+  await mkdir(webRoot); await writeFile(join(webRoot, 'index.html'), '<html>fixture</html>');
+  await writeFile(join(webRoot, 'version.json'), JSON.stringify({ schemaVersion: 1, buildId: 'browser-drain', headlessServer: true, headlessHostId: 'opencraft-server' }));
+  let browser: any, app: any, agentClosed = false, release!: () => void, entered!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; }), started = new Promise<void>(resolve => { entered = resolve; });
+  t.after(async () => { release(); await app?.close(); await rm(root, { recursive: true, force: true }); });
+  app = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), port: 0,
+    startAgentHost: async () => ({ websocketUrl: 'ws://127.0.0.1:9/rpc', async close() {
+      assert.equal(browser.store.closed, true, 'agent shutdown must follow browser Worker close'); agentClosed = true;
+    } }),
+    createWebServer: async (input: any) => { browser = input.remoteBrowserService; return createWorkbenchWebServer(input); } });
+  await browser.load();
+  const closeWorker = browser.store.close.bind(browser.store);
+  browser.store.close = async () => { entered(); await gate; await closeWorker(); };
+  const closing = app.close();
+  assert.equal(app.close(), closing);
+  await started;
+  assert.equal(agentClosed, false);
+  release(); await closing;
+  assert.equal(agentClosed, true);
+});

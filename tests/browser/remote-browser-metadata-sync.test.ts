@@ -1,6 +1,7 @@
+import { readBrowserState, makeLegacyBrowserState } from './browser-state-fixture.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
@@ -95,7 +96,7 @@ test('same-record conflict retains the local draft and current server record, wi
 
 test('creation failure cannot publish a partial metadata graph and lost native ACK retains one identity', async t => {
   const f = await fixture(t), commit = f.service.commit.bind(f.service);
-  f.service.commit = (reduce: any) => commit((draft: any) => { reduce(draft); throw new Error('storage rejected draft'); });
+  f.service.commit = (reduce: any, selection: any) => commit((draft: any) => { reduce(draft); throw new Error('storage rejected draft'); }, selection);
   await assert.rejects(f.service.createTab(grant('once'), { url: 'https://example.test/' }), /storage rejected/);
   assert.equal(f.service.store.current.pages.length, 0); assert.equal(f.service.store.current.states.length, 0); assert.equal(f.service.commands.length, 0);
   f.service.commit = commit;
@@ -124,7 +125,7 @@ test('creation published before a reported storage error remains discoverable an
   const f = await fixture(t), commit = f.service.commit.bind(f.service), binding = grant('published-create');
   let failed = false, notifications = 0;
   f.service.metadataChanged = () => { notifications++; };
-  f.service.commit = (reduce: any) => commit(reduce).then((result: any) => {
+  f.service.commit = (reduce: any, selection: any) => commit(reduce, selection).then((result: any) => {
     if (!failed) { failed = true; throw Object.assign(Error('directory sync failed after publish'), { code: 'EIO' }); } return result;
   });
   let tabId: string | undefined;
@@ -142,7 +143,7 @@ test('creation published before a reported storage error remains discoverable an
 
 test('a published creation recovers the same identity after storage error without duplicate metadata', async t => {
   const f = await fixture(t), commit = f.service.commit.bind(f.service), binding = grant('published-recover'); let failed = false;
-  f.service.commit = (reduce: any) => commit(reduce).then((result: any) => {
+  f.service.commit = (reduce: any, selection: any) => commit(reduce, selection).then((result: any) => {
     if (!failed) { failed = true; throw Object.assign(Error('directory sync failed after publish'), { code: 'EIO' }); } return result;
   });
   await assert.rejects(f.service.createTab(binding, { url: 'https://example.test/' }), { outcome: 'unknown' });
@@ -184,7 +185,7 @@ test('permanent retirement facts survive receipt compaction, stale edits and res
   try {
     const restored = await restarted.metadata('owner', undefined, () => {});
     assert(restored.retiredTabs.some(fact => fact.pageIds.includes(first.pageId)));
-    assert.equal(restarted.store.current.retiredResources.length, 257);
+    assert.equal((await readBrowserState(f.directory)).retiredResources.length, 257);
     assert.equal((await restarted.conversationTabs('owner', 'host', 'thread', () => {})).length, 1);
   } finally { restarted.close(); await restarted.persistence; }
 });
@@ -194,13 +195,12 @@ test('old compacted service leases restore retirement facts and metadata reads s
   const tab = await f.service.createTab(binding, { url: 'https://example.test/' });
   const stale = await f.service.metadata('owner', undefined, () => {});
   await f.service.closeTab(binding, { tabId: tab.tabId });
-  await f.service.commit((draft: any) => {
+  f.service.close(); await f.service.persistence;
+  await makeLegacyBrowserState(f.directory, (draft: any) => {
     delete draft.retiredResources; draft.closedTabs = [];
-    // Old versions could admit these stale rows after receipt compaction.
     const state = draft.states.find(([owner]: any) => owner === 'owner')[1];
     state.values = structuredClone(stale.values);
   });
-  f.service.close(); await f.service.persistence;
   const restarted = new Native({ root: f.directory, dataDirectory: f.directory, ownerConnector: null });
   try {
     await restarted.load(); const before = JSON.stringify(restarted.store.current);
@@ -300,11 +300,11 @@ test('cancelled close keeps its accepted intent and capacity until the native ac
 test('a rejected close draft neither retires the page nor schedules unauthorized cleanup', async t => {
   const f = await fixture(t), binding = grant('rejected-close'), tab = await f.service.createTab(binding, { url: 'https://example.test/' });
   const state = await f.service.metadata('owner', undefined, () => {}), commit = f.service.commit.bind(f.service);
-  f.service.commit = (reduce: any) => commit((draft: any) => { reduce(draft); throw Error('close commit failed'); });
+  f.service.commit = (reduce: any, selection: any) => commit((draft: any) => { reduce(draft); throw Error('close commit failed'); }, selection);
   await assert.rejects(f.service.closeTab(binding, { tabId: tab.tabId }), /close commit failed/); f.service.commit = commit;
   assert.deepEqual(await f.service.metadata('owner', undefined, () => {}), state);
   const page = [...f.service.pages.values()][0]; assert.equal(page.closing, undefined); assert.equal(page.controller, null); assert.equal(page.retirementTimer, undefined);
-  assert.equal(f.service.commands.some(call => call.method === 'close'), false); assert.equal(f.service.retiredLeases.has(page.key), false);
+  assert.equal(f.service.commands.some(call => call.method === 'close'), false); assert.equal(await f.service.store.hasRetirement(page.key), false);
 });
 
 test('revocation while the intent waits for the writer cannot authorize a later close', async t => {
@@ -312,21 +312,21 @@ test('revocation while the intent waits for the writer cannot authorize a later 
   const commit = f.service.commit.bind(f.service); let admitted!: () => void, release!: () => void;
   const started = new Promise<void>(resolve => { admitted = resolve; }), gate = new Promise<void>(resolve => { release = resolve; }); t.after(() => release?.());
   let held = false;
-  f.service.commit = (reduce: any) => {
+  f.service.commit = (reduce: any, selection: any) => {
     if (!held) { held = true; f.service.store.tail = gate; admitted(); }
-    return commit(reduce);
+    return commit(reduce, selection);
   };
   const closing = f.service.closeTab(binding, { tabId: tab.tabId }), denied = assert.rejects(closing, { message: 'revoked before commit', outcome: 'not-dispatched' });
   await started; binding.authorize = () => { throw Error('revoked before commit'); }; release(); await denied;
   const page = [...f.service.pages.values()][0];
   assert.equal(page.closing, undefined); assert.equal(page.retirementTimer, undefined); assert.equal(page.controller, null);
-  assert.equal(f.service.retiredLeases.size, 0); assert.equal(f.service.commands.some(call => call.method === 'close'), false);
+  assert.equal(await f.service.store.hasRetirement(page.key), false); assert.equal(f.service.commands.some(call => call.method === 'close'), false);
 });
 
 test('a close intent published before a reported storage error still owns cleanup', async t => {
   const f = await fixture(t), binding = grant('published-close'), tab = await f.service.createTab(binding, { url: 'https://example.test/' });
   const commit = f.service.commit.bind(f.service); let failed = false;
-  f.service.commit = (reduce: any) => commit(reduce).then((result: any) => {
+  f.service.commit = (reduce: any, selection: any) => commit(reduce, selection).then((result: any) => {
     if (!failed && f.service.store.current.pages.some(page => page.lifecycle === 'closing')) {
       failed = true; throw Object.assign(Error('directory sync failed after publish'), { code: 'EIO' });
     }
@@ -389,7 +389,7 @@ test('close racing native bootstrap retires a late create and leaves no orphan',
   const creating = f.service.createTab(binding, { url: 'https://example.test/' }), rejected = assert.rejects(creating, { outcome: 'unknown' }); await admitted;
   const tab = (await f.service.conversationTabs('owner', 'host', 'thread', () => {}))[0];
   const closing = f.service.closeTab(binding, { tabId: tab.tabId });
-  await eventually(() => f.service.retiredLeases.size === 1); release(); await closing; await rejected;
+  await eventually(() => f.service.pages.get(JSON.stringify(['owner', tab.lease]))?.closing === true); release(); await closing; await rejected;
   assert.equal(f.service.native.size, 0); assert.equal(f.service.pages.size, 0); assert.equal(f.service.commands.filter(call => call.method === 'create').length, 1);
 });
 
@@ -501,7 +501,7 @@ test('metadata published before a storage error invalidates peers while rejected
   const before = await f.service.metadata('owner', undefined, () => {});
   const input = { scope: before.scope, key: 'bindings', value: JSON.stringify([{ scopeId: 'published', hostId: 'host', threadId: 'thread' }]),
     baseValue: null, expectedRevision: 0, expectedKeyRevision: 0, mutationId: randomUUID() };
-  f.service.commit = (reduce: any) => commit(reduce).then(() => { throw Object.assign(Error('directory sync failed after publish'), { code: 'EIO' }); });
+  f.service.commit = (reduce: any, selection: any) => commit(reduce, selection).then(() => { throw Object.assign(Error('directory sync failed after publish'), { code: 'EIO' }); });
   await assert.rejects(f.service.metadata('owner', input, () => {}), { code: 'EIO', outcome: 'unknown', retryable: false });
   await eventually(() => reader.getItem('opencraft.conversation-bindings.v1') === input.value);
   assert.equal(notifications, 1); assert.deepEqual([...f.service.states], f.service.store.current.states);
@@ -520,7 +520,7 @@ test('published legacy metadata removal still schedules native retirement after 
   const reader = await f.client(); await reader.flush();
   const before = await f.service.metadata('owner', undefined, () => {}), commit = f.service.commit.bind(f.service);
   let fail = true;
-  f.service.commit = (reduce: any) => commit(reduce).then((result: any) => {
+  f.service.commit = (reduce: any, selection: any) => commit(reduce, selection).then((result: any) => {
     if (fail) { fail = false; throw Object.assign(Error('metadata published before error'), { code: 'EIO' }); }
     return result;
   });
@@ -549,4 +549,119 @@ test('a retryable writer-handover error does not permanently disable a connected
   await eventually(() => reader.getItem('opencraft.conversation-bindings.v1') === value);
   assert.equal(writer.isReady, true); assert.equal(inputs.length, 2); assert.deepEqual(inputs[0], inputs[1]);
   assert.equal((await metadata('owner', undefined, () => {})).revision, 1);
+});
+
+test('retirement cursors send only additions and recover from changed prefixes or other scopes', async () => {
+  const { initializeRetirementFacts, retirementSnapshot } = await import('../../scripts/remote-browser/retirement-facts.mjs');
+  const state: any = { retired: Array.from({ length: 10000 }, (_, index) => JSON.stringify(['owner', `browser-${index.toString(16).padStart(64, '0')}`])) };
+  initializeRetirementFacts(state);
+  assert.equal(state.retiredResources.length, 10000);
+  const initial = retirementSnapshot(state, 'owner', 'scope');
+  assert.equal(initial.retiredTabsMode, 'replace'); assert.equal(initial.retiredTabs.length, 10000);
+  const repeated = retirementSnapshot(state, 'owner', 'scope', initial.retirementCursor);
+  assert.equal(repeated.retiredTabsMode, 'append'); assert.deepEqual(repeated.retiredTabs, []);
+  assert(JSON.stringify({ ...repeated, facts: undefined }).length < 300);
+  const next = structuredClone(state);
+  next.retired.push(JSON.stringify(['owner', 'browser-' + 'f'.repeat(64)])); initializeRetirementFacts(next);
+  const update = retirementSnapshot(next, 'owner', 'scope', initial.retirementCursor);
+  assert.equal(update.retiredTabsMode, 'append'); assert.equal(update.retiredTabs.length, 1);
+  const amended = structuredClone(next); amended.retiredResources[0].pageIds.push('legacy-page');
+  assert.equal(retirementSnapshot(amended, 'owner', 'scope', update.retirementCursor).retiredTabsMode, 'replace');
+  assert.equal(retirementSnapshot(next, 'owner', 'other-scope', update.retirementCursor).retiredTabsMode, 'replace');
+  assert.equal(retirementSnapshot(next, 'owner', 'scope', { ...update.retirementCursor, count: -1 }).retiredTabsMode, 'replace');
+});
+
+test('incremental retirement synchronization preserves earlier fences across successive closes', async t => {
+  const f = await fixture(t);
+  const first = await f.service.createTab(grant('delta-first'), { url: 'https://example.test/first' });
+  const storage = await f.client();
+  await f.service.closeTab(grant('delta-close-first'), { tabId: first.tabId });
+  await eventually(() => storage.retiredResources().some(fact => fact.tabIds.includes(first.tabId)));
+  const second = await f.service.createTab(grant('delta-second'), { url: 'https://example.test/second' });
+  await f.service.closeTab(grant('delta-close-second'), { tabId: second.tabId });
+  await eventually(() => storage.retiredResources().some(fact => fact.tabIds.includes(second.tabId)));
+  const stale = JSON.parse(storage.getItem('opencraft.browser-pages.v1') ?? '[]'); stale.push({ id: first.pageId });
+  storage.setItem('opencraft.browser-pages.v1', JSON.stringify(stale));
+  assert.equal(JSON.parse(storage.getItem('opencraft.browser-pages.v1')!).some((row: any) => row.id === first.pageId), false);
+  assert(storage.retiredResources().some(fact => fact.tabIds.includes(second.tabId)));
+});
+
+test('cold clients receive referenced retirement facts and hold unknown offline rows until server admission', async t => {
+  const f = await fixture(t);
+  const first = await f.service.createTab(grant('reference-old'), { url: 'https://example.test/' });
+  await f.service.closeTab(grant('reference-close'), { tabId: first.tabId });
+  const client = await f.client();
+  assert.equal(client.retiredResources().length, 0, 'fresh client must not download unrelated closed resources');
+  const key = 'opencraft.browser-pages.v1';
+  client.setItem(key, JSON.stringify([{ id: first.pageId, ownerId: 'stale', entries: [], index: 0 }]));
+  assert.equal(client.getItem(key), '[]', 'unknown old identities cannot become visible optimistically');
+  await client.flush(); assert.equal(client.getItem(key), '[]');
+  const fresh = { id: 'new-local-page', ownerId: 'local', entries: [], index: 0 };
+  client.setItem(key, JSON.stringify([fresh])); assert.equal(client.getItem(key), '[]');
+  await client.flush(); assert.equal(JSON.parse(client.getItem(key)!)[0].id, fresh.id, 'new IDs become visible after authoritative admission');
+});
+
+
+test('a cold client with twenty thousand retired resources imports only relevant legacy drafts', async t => {
+  const f = await fixture(t), directory = join(f.directory, 'remote-browser'); await mkdir(directory, { recursive: true });
+  const identity = (index: number) => index.toString(16).padStart(64, '0');
+  await writeFile(join(directory, 'tabs.json'), JSON.stringify({ schemaVersion: 1, pages: [], states: [],
+    retired: Array.from({ length: 20000 }, (_, index) => JSON.stringify(['owner', 'browser-' + identity(index)])) }));
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem(key: string) { return key === 'opencraft.browser-pages.v1' ? JSON.stringify([{ id: 'page-' + identity(1), ownerId: 'offline', entries: [], index: 0 }]) : null; },
+  } });
+  const responses: any[] = [], metadata = f.service.metadata.bind(f.service);
+  f.service.metadata = async (...args: any[]) => { const result = await metadata(...args); if (args[1] === undefined) responses.push(result); return result; };
+  const client = await f.client(); await client.flush();
+  assert.equal(client.getItem('opencraft.browser-pages.v1'), '[]');
+  assert(responses.some(result => result.retiredTabs.some((fact: any) => fact.pageIds.includes('page-' + identity(1)))));
+  assert(responses.every(result => JSON.stringify(result).length < 2000));
+  assert.equal(f.service.store.current.retiredResources.length, 0, 'historical facts are not retained as a main-thread archive');
+  assert.equal((await readBrowserState(f.directory)).retiredResources.length, 20000);
+});
+
+for (const reportedFailure of [false, true]) test(`another account replacing retirement selection cannot break accepted close${reportedFailure ? ' error recovery' : ''}`, async t => {
+  const f = await fixture(t), binding = grant('selection-race-' + reportedFailure);
+  const tab = await f.service.createTab(binding, { url: 'https://example.test/close-race' });
+  const commit = f.service.commit.bind(f.service); let replaced = false;
+  f.service.commit = async (reduce: any, selection: any) => {
+    const result = await commit(reduce, selection);
+    if (!replaced && f.service.store.account('owner').pages.some(page => page.lifecycle === 'closing')) {
+      replaced = true;
+      await f.service.store.transact(() => {}, { ownerId: 'unrelated-account' });
+      if (reportedFailure) throw Object.assign(Error('intent published before selection changed'), { code: 'EIO' });
+    }
+    return result;
+  };
+  const closing = f.service.closeTab(binding, { tabId: tab.tabId });
+  if (reportedFailure) await assert.rejects(closing, { code: 'EIO', outcome: 'unknown' });
+  else assert.equal((await closing).closed, true);
+  await eventually(() => f.service.pages.size === 0);
+  assert.equal(replaced, true);
+  assert.equal(f.service.native.size, 0);
+  assert.equal(f.service.store.account('owner').closedTabs[0].status, 'closed');
+  assert.equal(f.service.commands.filter(call => call.method === 'close').length, 1);
+});
+
+test('creation failure recovery queries committed retirement after concurrent close and foreign selection', async t => {
+  const f = await fixture(t), commit = f.service.commit.bind(f.service); let interrupted = false, key: string;
+  f.service.commit = async (reduce: any, selection: any) => {
+    const result = await commit(reduce, selection);
+    const record = f.service.store.account('owner').pages.find(page => page.creationUrl === 'https://example.test/create-race');
+    if (!interrupted && record) {
+      interrupted = true; key = record.key;
+      const page = { ...structuredClone(record), controller: null, live: false };
+      f.service.pages.set(key, page);
+      await f.service.retire(page);
+      await f.service.store.transact(() => {}, { ownerId: 'unrelated-account' });
+      throw Object.assign(Error('creation published then closed'), { code: 'EIO' });
+    }
+    return result;
+  };
+  await assert.rejects(f.service.createTab(grant('closed-before-create-return'), { url: 'https://example.test/create-race' }),
+    (error: any) => error.code === 'EIO' && error.outcome === 'unknown' && typeof error.tabId === 'string');
+  assert.equal(await f.service.store.hasRetirement(key!), true);
+  assert.equal(f.service.pages.size, 0);
+  assert.equal(f.service.store.account('owner').pages.length, 0);
+  assert.equal(f.service.commands.some(call => call.method === 'create'), false, 'failure recovery cannot replay native creation');
 });

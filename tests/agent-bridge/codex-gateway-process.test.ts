@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fork, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { resolve } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { createCodexPreview } from './fixtures/codex-preview.js';
 import { LOGICAL_CLIENT_FIELD } from '@opencraft/app-host-protocol';
 
@@ -65,11 +66,21 @@ test('fresh AppHost inspector reads an active Bridge turn without resuming nativ
   await request('initialize');
   await request('thread/start', { cwd: '/remote', agentBridge: { threadId: 'preview', clientRequestId: 'create' } });
   const started = await request('turn/start', { threadId: fixture.publicId, clientUserMessageId: 'input', input: [{ type: 'text', text: 'active turn' }] });
-  for (let inspection = 0; inspection < 2; inspection++) {
+  const database = new DatabaseSync(join(dirname(fixture.gatewayOptions.inboxPath), 'host.db'), { readOnly: true });
+  t.after(() => database.close());
+  const commandCount = () => database.prepare('SELECT count(*) AS total FROM commands').get()!.total;
+  const before = commandCount();
+  for (let inspection = 0; inspection < 20; inspection++) {
     const result = await callConversationHost(host, { hostId: 'local-codex', threadId: fixture.publicId },
       'browser-execution-inspect', 'thread/turns/list', { threadId: fixture.publicId, limit: 1, sortDirection: 'desc', itemsView: 'notLoaded' }, { sender: null }, 2000);
     assert.equal(result.data.length, 1); assert.equal(result.data[0].id, started.turn.id);
     assert.equal(result.data[0].status, 'inProgress');
   }
+  const observe = (body: unknown) => fetch(fixture.gatewayOptions.url + '/observe', { method: 'POST',
+    headers: { authorization: 'Bearer ' + fixture.gatewayOptions.token, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const base = { serverId: fixture.gatewayOptions.serverId, threadId: fixture.publicId, params: {} };
+  assert.equal((await observe({ ...base, method: 'turn/start' })).status, 409);
+  assert.equal((await observe({ ...base, method: 'history/read', serverId: 'foreign-server' })).status, 409);
+  assert.equal(commandCount(), before, 'observations must not append durable command receipts');
   assert.deepEqual(fixture.counts(), { starts: 1, steers: 0 });
 });

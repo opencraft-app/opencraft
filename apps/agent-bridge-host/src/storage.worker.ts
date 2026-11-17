@@ -112,6 +112,7 @@ const operations: Record<string, (args: any) => any> = {
     run('INSERT INTO commands(id,digest,epoch,route,generation,method,state) VALUES (?,?,?,?,?,?,?)', command.commandId, digest, Number(meta('epoch')), route, binding.generation, command.method, 'registered');
     return { receipt: receipt(command.commandId), fresh: true };
   }),
+  observationRoute: ({ route }: any) => ({ generation: get('SELECT generation FROM routes WHERE route=?', route)?.generation ?? null, epoch: Number(meta('epoch')) }),
   threadState: ({ route }: any) => ({ state: checkpoint(route), nativeSession: get('SELECT * FROM native_sessions WHERE route=?', route) ?? null }),
   query: ({ id }: any) => receipt(id),
   dispatch: ({ id }: any) => tx(() => {

@@ -170,6 +170,11 @@ export class BridgeGateway {
       ...(Array.isArray(row.data) ? { data: row.data.map(entry) } : {}),
     };
   }
+  async observe(threadId: string, params: Record<string, unknown>): Promise<unknown> {
+    const result = await this.rpc('/observe', { serverId: this.options.serverId, threadId, method: 'history/read', params });
+    await this.pull();
+    return result;
+  }
   async command(threadId: string, commandId: string, method: string, params: Record<string, unknown>): Promise<unknown> {
     const body = { serverId: this.options.serverId, threadId, commandId, method, params };
     try { await this.rpc('/command', body); }

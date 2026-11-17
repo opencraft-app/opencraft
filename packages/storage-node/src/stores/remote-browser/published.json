@@ -1,0 +1,18 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1794874622723,
+    "version": 0,
+    "sqlChecksum": "8e1fc78fab1b6c387b81e42e9b0782a777c548e0d89f103fbb9a7d1f01db8a88",
+    "snapshotChecksum": "21eee53caf541bd1c3f4f9e3a885325dd9e580333f27061f6a910ec4e84757a7",
+    "compiledChecksum": null
+  },
+  {
+    "tag": "0001_tearful_wild_child",
+    "when": 1794878033575,
+    "version": 2,
+    "sqlChecksum": "02a88792b1a5a6eb06f991b9181c46f63b930e7678bd1d191ba78dce20f59794",
+    "snapshotChecksum": "9fb24e94f3268027ba9154acd8e9d09ec0e7f15866b1b48ebf3a63e5740f8e30",
+    "compiledChecksum": "e20da633325cf80675d78fc43918ba285ba9a3ef7d2dac19da08b6df08827bd6"
+  }
+]

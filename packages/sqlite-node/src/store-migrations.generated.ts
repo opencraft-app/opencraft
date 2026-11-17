@@ -535,5 +535,21 @@ export const STORE_MIGRATIONS = {
       }
     ],
     "migrations": []
+  },
+  "remote-browser": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "browser-resources-metadata-retirements",
+        "checksum": "19082d0ae6d55a390ddb1b0cef256fe2bbbcf9acff970b29676769641ac1d800"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 2,
+        "name": "0001_tearful_wild_child",
+        "sql": "CREATE TABLE `browser_retirement_identities` (\n\t`owner` text NOT NULL,\n\t`kind` text NOT NULL,\n\t`id` text NOT NULL,\n\t`key` text NOT NULL,\n\tPRIMARY KEY(`owner`, `kind`, `id`, `key`)\n) STRICT;\n\n--> statement-breakpoint\nINSERT INTO browser_retirement_identities SELECT r.owner,'page',j.value,r.key FROM browser_retirements r,json_each(r.value,'$.pageIds') j GROUP BY r.owner,j.value,r.key;\nINSERT INTO browser_retirement_identities SELECT r.owner,'tab',j.value,r.key FROM browser_retirements r,json_each(r.value,'$.tabIds') j GROUP BY r.owner,j.value,r.key;\nINSERT INTO browser_retirement_identities SELECT owner,'lease',json_extract(value,'$.lease'),key FROM browser_retirements;\n"
+      }
+    ]
   }
 } as const;

@@ -301,6 +301,28 @@ export class BridgeHost {
     if(this.closing||!this.options.executionCli?.forward)throw Error('cliUnavailable');
     return this.options.executionCli.forward(token,body);
   }
+  /** Read-only observations have no mutation receipt or replay custody. */
+  async observe(raw: unknown): Promise<unknown> {
+    if (this.closing) throw Error('Host closing');
+    const body = object(raw);
+    if (body.method !== 'history/read') throw Error('Unsupported observation');
+    const params = structuredClone(object(body.params));
+    if (Buffer.byteLength(stable(params)) > 512 * 1024) throw Error('Observation too large');
+    const route = routeKey(identifier(body.serverId), identifier(body.threadId));
+    const binding = await this.storage.call<{ generation: string | null; epoch: number }>('observationRoute', { route });
+    if (!binding.generation) throw Error('Thread has no retained owner');
+    const peer = await this.peer(binding.generation);
+    const admission = assertMethodAllowed(this.capabilities.get(binding.generation)!, 'history/read');
+    if (!admission.ok || this.closing) throw Error('History unavailable');
+    const current = await this.storage.call<typeof binding>('observationRoute', { route });
+    if (this.closing || current.generation !== binding.generation || current.epoch !== binding.epoch) throw Error('Observation owner changed');
+    const response = await peer.request(`host-observation:${randomUUID()}`, 'history/read', { ...params, threadId: route, executionEpoch: binding.epoch });
+    const after = await this.storage.call<typeof binding>('observationRoute', { route });
+    if (this.closing || after.generation !== binding.generation || after.epoch !== binding.epoch) throw Error('Observation owner changed');
+    if ('error' in response) throw Object.assign(Error(response.error.message), response.error);
+    if (!('result' in response)) throw Error('Invalid observation response');
+    return response.result;
+  }
   threadState(serverId: string, threadId: string): Promise<any> { return this.storage.call('threadState', { route: routeKey(serverId, threadId) }); }
   diagnostics(): unknown { return [...this.diagnosticPeers].map(([generation, peer]) => ({ generation, ...peer.diagnostic() })); }
   query(id: string): Promise<Receipt | null> { return this.storage.call('query', { id }); }

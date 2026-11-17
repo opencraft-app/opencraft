@@ -159,13 +159,13 @@ export class CodexProviderBridge implements DuplexTransport {
         result = { ...object(result), disposition: 'steered' };
       } else if (frame.method === 'turn/interrupt') result = await command('turn/stop', { expectedTurnId: this.gateway.nativeTurn(threadId, p.turnId) });
       else if (frame.method === 'thread/resume') result = await command('session/resume', {});
-      else if (frame.method === 'thread/read') result = await command('history/read', { view: 'thread', includeTurns: p.includeTurns === true });
-      else if (frame.method === 'thread/turns/list') result = await command('history/read', { cursor: p.cursor ?? null,
+      else if (frame.method === 'thread/read') result = await this.gateway.observe(threadId, { view: 'thread', includeTurns: p.includeTurns === true });
+      else if (frame.method === 'thread/turns/list') result = await this.gateway.observe(threadId, { cursor: p.cursor ?? null,
         ...(p.limit !== undefined ? { limit: p.limit } : {}),
         ...(p.sortDirection !== undefined ? { sortDirection: p.sortDirection } : {}),
         ...(p.itemsView !== undefined ? { itemsView: p.itemsView } : {}),
       });
-      else if (frame.method === 'thread/items/list') result = await command('history/read', { turnId: this.gateway.nativeTurn(threadId, p.turnId), cursor: p.cursor ?? null,
+      else if (frame.method === 'thread/items/list') result = await this.gateway.observe(threadId, { turnId: this.gateway.nativeTurn(threadId, p.turnId), cursor: p.cursor ?? null,
         ...(p.limit !== undefined ? { limit: p.limit } : {}),
       });
       else if (frame.method === 'thread/unsubscribe') { this.revokeClient(client, threadId); result = {}; }

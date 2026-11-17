@@ -41,7 +41,7 @@ export async function createRemoteTab(service, binding, input, { signal } = {}) 
       }
       const used = draft.pages.filter(occupied);
       if (used.filter(p => p.ownerId === binding.ownerId).length >= 16) throw fail('ACCOUNT_CAPACITY', 'Your active browser page limit (16) is reached');
-      if (used.length >= 64) throw fail('RUNTIME_CAPACITY', 'Shared browser capacity (64) is full');
+      if (draft.capacityUsed >= 64) throw fail('RUNTIME_CAPACITY', 'Shared browser capacity (64) is full');
       if (draft.pages.filter(p => p.ownerId === binding.ownerId).length >= 256) throw fail('SESSION_CAPACITY', 'Your saved browser session limit (256) is reached');
       const state = draft.states.find(([owner]) => owner === binding.ownerId)?.[1] ?? { revision: 0, values: {} };
       const pages = parse(state, 'pages', []), tabs = parse(state, 'tabs', []), storage = parse(state, 'storage', {}), bindings = parse(state, 'bindings', []);
@@ -67,21 +67,25 @@ export async function createRemoteTab(service, binding, input, { signal } = {}) 
       const record = { id: createHash('sha256').update(key).digest('hex'), key, ownerId: binding.ownerId, lifecycle: 'open', createdAt, version: 1,
         url: url.href, creationUrl: url.href, zoom: 100, link: { pageId, tabId, scopeId, hostId: binding.hostId }, runtime: { kind: 'starting', generation: 0, operationId: identity } };
       draft.pages.push(record); return prepared = { record: structuredClone(record), changed: true };
-    });
-    service.states = new Map(service.store.current.states);
+    }, { ownerId: binding.ownerId, keys: [key] });
+    for (const [owner, state] of service.store.account(binding.ownerId).states) service.states.set(owner, state);
     if (!service.pages.has(key)) service.pages.set(key, { ...committed.record, controller: null, live: false });
     if (committed.changed) service.metadataChanged(binding.ownerId);
     const result = await service.activatePage({ ownerId: binding.ownerId, key, input: { metadataRequired: true }, authorize });
     authorize();
     return { tabId: committed.record.link.tabId, pageId: committed.record.link.pageId, url: result.page.url, visible: false, placement: 'right', runtime: 'live' };
   } catch (error) {
-    // Rename may publish the draft before directory sync rejects its promise.
+    // A reported failure may follow a known committed draft.
     // Reconcile that committed identity without issuing any native action.
-    const durable = service.store.current.pages.find(p => p.key === key && p.creationUrl === url.href);
-    if (!committed && prepared && (durable || service.store.current.retired.includes(key))) {
+    const durable = service.store.account(binding.ownerId).pages.find(p => p.key === key && p.creationUrl === url.href);
+    // Query-scoped reducer facts may have been replaced by another account
+    // while this caller awaited publication. Never use that cache here.
+    const retired = !committed && prepared && !durable
+      ? await service.store.hasRetirement(key).catch(() => false) : false;
+    if (!committed && prepared && (durable || retired)) {
       committed = prepared;
-      service.states = new Map(service.store.current.states);
-      if (durable && !service.pages.has(key)) service.pages.set(key, { ...durable, controller: null, live: false });
+      for (const [owner, state] of service.store.account(binding.ownerId).states) service.states.set(owner, state);
+      if (durable && !service.pages.has(key)) service.pages.set(key, { ...structuredClone(durable), controller: null, live: false });
       if (prepared.changed) service.metadataChanged(binding.ownerId);
     }
     if (committed) Object.assign(error, { retryable: false, outcome: 'unknown', tabId: committed.record.link.tabId,

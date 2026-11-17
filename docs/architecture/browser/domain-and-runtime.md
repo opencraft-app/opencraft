@@ -4,20 +4,38 @@
 
 ## 7. Browser Domain 最小契约
 
-### Headless 文件目录与原生预留
+### Headless 事务存储与原生预留
 
-Headless 远程浏览器由 `RemoteBrowserService` 和 `BrowserStateFile` 单独拥有持久目录；
-继续使用 `remote-browser/tabs.json`，不引入数据库。文件的 `pages` 是已提交逻辑 Session，
-包含账户 owner、稳定 key/id、聊天 link（或 null）、逻辑 lifecycle、runtime 及操作身份。
-`states` 保留旧客户端 tabs/pages/storage/bindings 的兼容投影和按 key 的 CAS 版本/操作回执；
-它们的最后一个依赖提交时，把完整关联一并登记为 Session。缺关联的既有记录仍保留在账户目录，
-不能从消失的聊天 alias 推导关闭。输入、媒体、Viewer 和控制继续使用既有 owner。
+Headless 远程浏览器由 `RemoteBrowserService` 和 `BrowserStateStore` 拥有持久目录。
+`remote-browser/state.sqlite` 由专用 Worker 打开，经过公共 SQLite 生命周期和迁移账本校验。
+资源、账户元数据、关闭回执、永久退役事实共用一个 SQLite 事务，`synchronous=FULL`；
+只有 Worker 确认提交后才公布内存投影及客户端通知。资源记录包含账户 owner、稳定 key/id、
+聊天 link（或 null）、逻辑 lifecycle、runtime 及操作身份。元数据保留旧客户端
+ tabs/pages/storage/bindings 的兼容投影和按 key 的 CAS 版本/操作回执；最后一个关联依赖提交时，
+把完整关联一并登记为 Session。缺关联的既有记录保留，不能从消失的聊天 alias 推导关闭。
+输入、媒体、Viewer 和控制继续使用既有 owner。
 
-文件提交通过一个同步 reducer 修改隔离草稿，临时文件 fsync、rename 和目录 fsync 后才公布；
+授权检查和同步 reducer 在服务队列中运行；草稿不复制永久退役历史，而从索引读取、仅复制
+被修改的事实。Worker 接收变更行，将资源、元数据、回执和事实一起提交，不重写全部历史。
 checkpoint 只更新已提交 Session 的恢复参数，不从在途 Viewer Map 推断是否创建成功。
-Linux 抽象 Unix socket 是该目录的进程级写锁，进程退出由内核释放；所有文件写入共用队列，
-native 等待不持有文件队列。受管切换必须等待旧 Gateway 退出/释放 writer，再接管同一目录；暂忙的 load 可重新尝试，
-不能把一次 writer 争用永久缓存为初始化失败。损坏文件仍保持 fail closed。
+Linux 抽象 Unix socket 继续提供目录的进程级独占写锁，覆盖旧 JSON owner；进程退出由内核释放。
+native 等待不持有事务队列。关闭排空已接纳提交，再关闭 Worker、释放 writer。
+Worker 故障关闭服务，不退回主线程 SQL；丢失确认的提交按 unknown 处理，由新 owner 重读数据库恢复。
+受管切换等待旧 Gateway 释放 writer；暂忙的 load 可重试，损坏状态拒绝启动。
+
+`tabs.json` 仅作一次性导入来源。导入记录、所有业务行及来源摘要在同一事务提交；来源随后改名为
+`tabs.imported.json` 并同步目录。该归档不作读取 authority，健康重启不重新加载或哈希整个历史文件。
+原路径重新出现、已有安装身份或归档但数据库缺失、身份或迁移账本不符时，拒绝启动，
+不从陈旧 JSON 重建目录。迁移完成后数据库可独立恢复，不要求归档重新出现。
+`state.sqlite.identity` 标记已接纳的安装身份，须与数据库一起备份；恢复同一安装的数据库备份可复用该身份。
+迁移 v2 为账户/page/tab/lease 身份建立 SQLite 索引。服务启动只加载活跃配置和有界关闭回执；
+同步 reducer 在队列中预取其精确资源 key、当前元数据及输入/base 所需的退役命中和不存在证明。
+缺少证明的 key 不得按未退役处理。查询/写入与 archive 索引更新同属队列及事务，不回放 reducer。
+
+新客户端发送当前元数据、待提交草稿/base 和一次性旧导入涉及的身份，服务只返回命中的退役身份。
+不存在于完整服务端快照的新身份暂不从存储投影显示，但原始草稿仍保留、提交和合并；未退役的新身份
+在提交后的快照确认后出现，旧关闭身份不能靠离线草稿短暂复活。旧客户端显式保留完整历史/游标兼容路径。
+永久事实永不过期；健康启动与新客户端同步的历史成本取决于当前资源和草稿，不随累计关闭次数增长。
 
 逻辑 Session 为 open/closing/closed；原生状态为 absent/starting/live/stopping/unknown。
 Ensure 在同一提交中检查全局64/账户16的原生预留并登记 starting（代次及 operationId），

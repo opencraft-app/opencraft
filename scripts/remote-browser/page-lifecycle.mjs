@@ -19,16 +19,17 @@ export async function acquirePageActivation(service, key) {
 export async function activateRemotePage(service, { ownerId, key, input = {}, modern = true, authorize,
   attach = () => {}, detach = () => {}, finish = (page, result) => ({ page, ...result }) }) {
   await service.load(); authorize();
+  const retired = await service.store.hasRetirement(key);
   const checkOpen = () => {
     authorize();
     if (service.closed) throw unavailable();
-    if (service.retiredLeases.has(key)) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
+    if (retired || service.pages.get(key)?.closing) throw sessionError('SESSION_CLOSED', 'Browser tab is closed');
   };
   checkOpen();
   const existing = service.pages.get(key);
   if (existing?.closing) throw sessionError('SESSION_CLOSING', 'Browser tab is closing');
   await service.start(); checkOpen();
-  const unknown = service.store.current.pages.find(p => p.key === key)?.runtime?.kind === 'unknown';
+  const unknown = service.store.account(ownerId).pages.find(p => p.key === key)?.runtime?.kind === 'unknown';
   if (unknown && existing && !existing.live) {
     const epoch = existing.runtimeEpoch ?? 0, native = service.child;
     const requireCurrent = () => {

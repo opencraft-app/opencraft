@@ -367,7 +367,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
       let entryClosing;
       const closeEntry = () => entryClosing ??= settle([
         () => hubController?.close(), () => relay?.close(), () => ingress?.close(), () => sshNativeRpc?.close(),
-        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { await browserCapabilities?.close(); remoteBrowser?.close(); },
+        () => codexReadiness?.close(), () => usageQueries?.close(), async () => { await browserCapabilities?.close(); await remoteBrowser?.close(); },
         () => fileDownloads?.close(), () => desktop?.close(), () => turnPush?.close(),
         () => availabilityNotification?.close(), () => imPlugins?.close(),
       ]);
@@ -923,6 +923,7 @@ export async function startHeadlessServer(options = {}, composition = {}) {
         ...(imPlugins ? [{name:'im-switchboard',status:imPlugins.outcome.status,appliedVersion:imPlugins.outcome.appliedVersion,movedAside:imPlugins.outcome.movedAsidePaths.length>0}] : []),
         ...(imPlugins ? [{name:'im-posts',status:imPlugins.postOutcome.status,appliedVersion:imPlugins.postOutcome.appliedVersion,movedAside:imPlugins.postOutcome.movedAsidePaths.length>0}] : []),
         ...(agent.storageOutcomes ?? []),
+        ...(remoteBrowser?.storageOutcomes() ?? []),
         ...(connectorService?.outcomes() ?? []),
         ...(turnPush ? [{name:'web-push',status:turnPush.store.outcome.status,appliedVersion:turnPush.store.outcome.appliedVersion,movedAside:turnPush.store.outcome.movedAsidePaths.length>0}] : []),
         {name:"mcp-apps",status:mcpApps.outcome.status,appliedVersion:mcpApps.outcome.appliedVersion,movedAside:mcpApps.outcome.movedAsidePaths.length>0},

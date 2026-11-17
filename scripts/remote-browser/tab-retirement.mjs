@@ -68,7 +68,7 @@ export function commitRemoteRetirement(draft, page, { threadId, advanceRevision 
  * the tab owner and survives caller cancellation, revocation and disconnect. */
 export function retireRemotePage(service, page, replying, { admit = () => {}, threadId } = {}) {
   if (page.retirement) return page.retirement;
-  let accepted = service.store.current.pages.find(p => p.key === page.key)?.lifecycle === 'closing';
+  let accepted = service.store.account(page.ownerId).pages.find(p => p.key === page.key)?.lifecycle === 'closing';
   let admitted, rejected;
   page.retirementIntent = new Promise((resolve, reject) => { admitted = resolve; rejected = reject; });
   void page.retirementIntent.catch(() => {});
@@ -76,9 +76,9 @@ export function retireRemotePage(service, page, replying, { admit = () => {}, th
     const intent = await service.commit(draft => {
       admit();
       return commitRemoteRetirement(draft, page, { threadId });
-    });
-    accepted = true; page.closing = true; service.retiredLeases.add(page.key);
-    service.states = new Map(service.store.current.states);
+    }, { ownerId: page.ownerId, keys: [page.key] });
+    accepted = true; page.closing = true;
+    for (const [owner, state] of service.store.account(page.ownerId).states) service.states.set(owner, state);
     service.resetVisibility(page);
     clearTimeout(page.keyTimer); clearTimeout(page.slowKeyTimer); clearTimeout(page.retirementTimer);
     page.keyTimer = page.slowKeyTimer = page.retirementTimer = null;
@@ -105,7 +105,7 @@ export function retireRemotePage(service, page, replying, { admit = () => {}, th
         retained.add(entry.key);
       }
       if (draft.closedTabs) draft.closedTabs = draft.closedTabs.filter(r => r.ownerId !== page.ownerId || r.status !== 'closed' || retained.has(r.key));
-    });
+    }, { ownerId: page.ownerId });
     page.live = false;
     if (service.pages.get(page.key) === page) service.pages.delete(page.key);
     service.viewers(page).clear();
@@ -115,13 +115,13 @@ export function retireRemotePage(service, page, replying, { admit = () => {}, th
   })().catch(error => {
     rejected(error);
     page.retirement = null;
-    // Atomic rename can publish the intent before a later directory-fsync
-    // failure rejects its promise. That published intent still owns cleanup.
-    accepted ||= service.store.current.pages.find(p => p.key === page.key)?.lifecycle === 'closing';
+    // A reported failure can follow intent publication. That known
+    // committed intent still owns cleanup.
+    accepted ||= service.store.account(page.ownerId).pages.find(p => p.key === page.key)?.lifecycle === 'closing';
     if (accepted) {
       if (!page.closing) {
-        page.closing = true; service.retiredLeases.add(page.key); service.resetVisibility(page);
-        service.states = new Map(service.store.current.states); service.metadataChanged(page.ownerId);
+        page.closing = true; service.resetVisibility(page);
+        for (const [owner, state] of service.store.account(page.ownerId).states) service.states.set(owner, state); service.metadataChanged(page.ownerId);
       }
       service.retryRetirement(page); Object.assign(error, { retryable: false, outcome: 'unknown' });
     }

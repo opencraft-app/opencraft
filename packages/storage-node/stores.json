@@ -153,5 +153,10 @@
     "id": "host-recovery",
     "owner": "packages/host-recovery/src/index.ts",
     "index": 0
+  },
+  {
+    "id": "remote-browser",
+    "owner": "scripts/remote-browser/state.worker.ts",
+    "index": 0
   }
 ]

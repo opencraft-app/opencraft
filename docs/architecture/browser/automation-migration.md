@@ -386,7 +386,7 @@ continues that same close without creating a replacement page. Caller cancel
 stops waiting with an unknown outcome while accepted cleanup continues; grant
 revocation after commitment cannot strand cleanup. A rejected intent draft
 neither retires the memory object nor schedules a later unauthorized close.
-A state publication followed by a reported directory-sync error remains an
+A state publication followed by a reported storage error remains an
 accepted intent and still owns cleanup.
 
 Completed close receipts are bounded to 256 per account and 512 KiB; unresolved
@@ -486,7 +486,7 @@ there is no automatic HTTP or external-effect replay by request number. Internal
 recovery with the same trusted call context still uses its existing domain receipt.
 An uncertain result directs the caller to inspect the resource directory.
 
-Creation also reconciles state publication followed by directory-sync failure.
+Creation also reconciles state publication followed by a reported storage failure.
 The reducer's prepared identity is checked against current committed state. If
 published, its memory page and account metadata projection are restored and
 clients notified; the error returns `unknown`, `retryable: false` and the committed
@@ -673,3 +673,75 @@ busy condition; writes retain their original mutation/payload. Readiness stays
 revoked until a successful full snapshot. Unavailable responses without permission,
 conflicts and authorization failures remain terminal. Tests cover all three phases
 and a real WebSocket writer/peer converging after a handover error with one commit.
+
+### Observation and retirement scale
+
+Bridge history reads use the private Host `/observe` endpoint, restricted to
+`history/read`. They retain native route, generation and epoch checks without
+creating command custody rows. Mutations continue through `/command`. This
+requires an updated retained Host; an older Host refuses the new lane rather
+than silently accumulating polling receipts again.
+
+Retirement metadata responses carry an account-scoped prefix cursor. Matching
+prefixes return only added facts, including an empty delta for unchanged history;
+missing/mismatched cursors return a full replacement. Changed older facts invalidate
+the prefix. The client advances its cursor only when applying the corresponding
+snapshot, retaining earlier retirement fences when appending. Old clients still
+receive full snapshots. Immutable state projections cache retirement indexes and
+hash chains without writing synchronization state to disk. Initialization builds
+one identity map, avoiding quadratic historical scans.
+
+Browser resources, account metadata, close receipts and permanent retirement
+facts now share Worker SQLite transactions. The service sends row deltas and
+keeps permanent facts in an index; ordinary writes do not clone/serialize history.
+A source JSON import, its digest and its completion receipt commit together.
+Frozen-source changes and a missing database with a retained installation identity
+refuse activation. Worker loss stops the service; lost commit acknowledgements
+remain unknown until reload. Source loaders and both packaged gateways include
+the Worker. See [storage and recovery](domain-and-runtime.md).
+
+Tests cover transactional rollback in the last table, interrupted acknowledgement,
+legacy retry/import/source drift, missing-database fencing, Worker loss and writer
+handover, draining shutdown, main-thread SQL guards, a busy SQLite writer with live
+timers, and 20,000 historical facts with a bounded ordinary-write message.
+
+Retirement scale follow-up is implemented: migration v2 provides indexed identity
+membership, with exact facts/absence proofs prefetched for synchronous reducers.
+Startup no longer fetches the retirement archive. Current/input/base metadata
+filtering uses membership lookups instead of historical enumeration. New clients
+query referenced identities, including offline drafts/legacy imports, and withhold
+unknown IDs from storage reads until a full authoritative snapshot admits them.
+Old clients retain explicit full-history compatibility. Native admission queries
+exact permanent keys asynchronously. The optional imported JSON is archived after
+commit, so healthy startup does not reload/re-hash it.
+
+Scale acceptance includes 20,000 facts with bounded startup messages, indexed
+query plans, owner isolation, a real cold WebSocket client importing stale local
+drafts with responses below 2 KiB, held unknown IDs, valid new-ID admission after
+commit, v1-to-v2 backfill with original checksums preserved, and real CLI/CDP
+creation/input/navigation/screenshot/close/restart acceptance. Synthetic model
+responses are still used; this is not installed-client or paid-model acceptance.
+
+Account metadata and resource reducers now clone/compare only their owner’s rows.
+An immutable owner tree publishes changes without rebuilding global arrays and
+captures exact shared occupancy on the writer queue. Checkpoint/startup/native
+inventory reducers clone only existing page rows; metadata, receipts and retirement
+queries are excluded. They cannot change resource identity/lifecycle or create and
+remove pages. Page projections prune metadata-only subtrees; ordinary scope checks
+and account reads use the owner index.
+
+Global inventory reconciliation still visits saved resource rows to establish native
+presence. Its cost now follows the resource directory, without cloning unrelated
+account metadata or enumerating permanent retirement history.
+
+Startup page validation uses an account index rather than searching all accounts
+per page. Initial retirement prefetch covers resources/receipts only; account
+metadata reference extraction and membership queries occur on owner-scoped reads
+and reducers. This avoids querying every account's metadata during initialization
+while retaining the same permanent fences when that metadata is consumed.
+
+Ordinary navigation, viewport and zoom checkpoints now declare their exact resource
+keys; the store does not materialize global page arrays or clone unrelated resource
+rows. The timer coalesces changed identities, and queue-time lookup ignores a page
+removed before publication. Resource-only reducers cannot enlarge this read set.
+Explicit shutdown flushes and global native inventory keep their broader scope.

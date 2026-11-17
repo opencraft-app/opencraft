@@ -1,5 +1,5 @@
 import { browserMetadataValueLimit, browserMetadataWireLimit } from '@opencraft/browser-core/metadata-limits';
-import { mergeBrowserMetadata, retireBrowserMetadata, type BrowserMetadataRetirement } from '@opencraft/browser-core/metadata-merge';
+import { mergeBrowserMetadata, retireBrowserMetadata, browserMetadataReferences, type BrowserMetadataRetirement, type BrowserMetadataReferences } from '@opencraft/browser-core/metadata-merge';
 import type { BrowserMetadataStorage, RemoteBrowserCatalog } from './desktop-browser-storage';
 import { serverStorageKey, serverUrl } from '../runtime/server-context';
 import { browserMetadataKeys, readBrowserMetadataValue } from '@opencraft/workbench-runtime/browser-metadata-identity';
@@ -29,6 +29,10 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
   private syncQueued = false;
   private dirtyRevision = 0;
   private snapshotRevision = 0;
+  private referenceProjection = false;
+  private admitted = { pages: new Set<string>(), tabs: new Set<string>(), leases: new Set<string>() };
+  private legacyValues: Record<string, string> = {};
+  private retirementCursor: unknown;
   private retirements: readonly BrowserMetadataRetirement[] = [];
   private revision = 0;
   private keyRevisions: Record<string, number> = {};
@@ -69,6 +73,9 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
     try {
       await admission?.(); signal?.throwIfAborted();
       if (this.closed) throw new Error('Browser storage closed');
+      for (const [key, field, scope] of entries) {
+        try { const value = readBrowserMetadataValue(localStorage, key, scope); if (value !== null) this.legacyValues[field] = value; } catch {}
+      }
       await this.connect();
       let state;
       for (let attempt = 0; ; attempt++) {
@@ -83,24 +90,38 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
       if (Object.entries(state.values).some(([key, value]) => typeof value !== 'string' || value.length > browserMetadataValueLimit(key))) throw new Error('Invalid browser state response');
       this.values = { ...state.values }; this.revision = state.revision; this.scope = state.scope; this.keyRevisions = state.keyRevisions ?? {};
       this.snapshotRevision = state.revision;
-      this.retirements = state.retiredTabs ?? [];
+      this.updateAdmission(state);
+      this.retirements = this.receiveRetirements(state);
       // One-time promotion preserves existing tabs on upgraded installations.
       // These records carry no authority; the Server still scopes every tab
       // partition/command to the authenticated owner.
       if (state.revision === 0 && Object.keys(state.values).length === 0) {
         for (const [key, , scope] of entries) {
-          let legacy: string | null = null;
-          try { legacy = readBrowserMetadataValue(localStorage, key, scope); } catch {}
-          if (legacy !== null) this.writeItem(apiKey(key, scope), legacy);
+          const legacy = this.legacyValues[keys[apiKey(key, scope)]];
+          if (legacy !== undefined) this.writeItem(apiKey(key, scope), legacy);
         }
         await this.flush();
+        if (this.referenceProjection) {
+          const promoted = await this.call(); signal?.throwIfAborted();
+          this.values = { ...promoted.values }; this.revision = promoted.revision; this.keyRevisions = promoted.keyRevisions ?? {};
+          this.snapshotRevision = promoted.revision; this.updateAdmission(promoted); this.retirements = this.receiveRetirements(promoted);
+        }
       }
+      this.legacyValues = {};
       signal?.throwIfAborted(); this.initialized = true; this.fresh = this.socket?.readyState === WebSocket.OPEN;
       this.synchronize();
     } catch (error) { this.dispose(); signal?.throwIfAborted(); throw error; }
     finally { signal?.removeEventListener('abort', abort); }
   }
-  getItem(key: string) { return this.values[keys[key]] ?? null; }
+  getItem(key: string) {
+    const field = keys[key], value = this.values[field] ?? null;
+    if (!this.referenceProjection) return value;
+    // Unknown identities remain drafts until an authoritative snapshot admits
+    // them. This bounds history delivery without showing retired offline rows.
+    return retireBrowserMetadata(field, value, {
+      pages: { has: id => !this.admitted.pages.has(id) }, tabs: { has: id => !this.admitted.tabs.has(id) }, leases: { has: id => !this.admitted.leases.has(id) },
+    });
+  }
   setItem(key: string, value: string) {
     if (!this.isReady) throw this.failure ?? Object.assign(new Error('Browser metadata awaits authenticated initialization'), { code: 'BROWSER_UNAVAILABLE', retryable: true });
     this.writeItem(key, value);
@@ -153,6 +174,33 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
       console.error('[browser] Remote tab metadata could not be saved');
     });
   }
+  private retirementReferences(): BrowserMetadataReferences {
+    const sets = { pages: new Set<string>(), tabs: new Set<string>(), leases: new Set<string>() };
+    const add = (key: string, value: string | null) => {
+      const refs = browserMetadataReferences(key, value);
+      for (const kind of ['pages', 'tabs', 'leases'] as const) for (const id of refs[kind]) sets[kind].add(id);
+    };
+    for (const [field, value] of Object.entries({ ...this.legacyValues, ...this.values })) add(field, value);
+    for (const edit of this.edits) { add(edit.field, edit.base); add(edit.field, edit.value); }
+    return { pages: [...sets.pages], tabs: [...sets.tabs], leases: [...sets.leases] };
+  }
+  private updateAdmission(state: any) {
+    this.referenceProjection = state.retirementProjection === 'references';
+    if (!this.referenceProjection) return false;
+    const previous = JSON.stringify(Object.fromEntries(Object.entries(this.admitted).map(([kind, ids]) => [kind, [...ids]])));
+    this.admitted = { pages: new Set(), tabs: new Set(), leases: new Set() };
+    for (const [key, value] of Object.entries(state.values) as [string, string][]) {
+      const refs = browserMetadataReferences(key, value);
+      for (const kind of ['pages', 'tabs', 'leases'] as const) for (const id of refs[kind]) this.admitted[kind].add(id);
+    }
+    return previous !== JSON.stringify(Object.fromEntries(Object.entries(this.admitted).map(([kind, ids]) => [kind, [...ids]])));
+  }
+  private receiveRetirements(state: any): readonly BrowserMetadataRetirement[] {
+    let facts: readonly BrowserMetadataRetirement[] = state.retiredTabs ?? [];
+    if (state.retiredTabsMode === 'append') facts = facts.length ? [...this.retirements, ...facts] : this.retirements;
+    this.retirementCursor = state.retirementCursor;
+    return facts;
+  }
   private project(confirmed: Record<string, string>, retirements: readonly BrowserMetadataRetirement[]) {
     const next = Object.fromEntries(Object.entries(confirmed).map(([field, value]) => [field, retireBrowserMetadata(field, value, retirements)!]));
     for (const edit of this.edits) {
@@ -160,7 +208,8 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
         retireBrowserMetadata(edit.field, edit.value, retirements), next[edit.field] ?? null);
       if (value === null) delete next[edit.field]; else next[edit.field] = value;
     }
-    const changed = JSON.stringify(retirements) !== JSON.stringify(this.retirements) || Object.keys({ ...next, ...this.values }).some(key => next[key] !== this.values[key]);
+    const retirementsChanged = retirements !== this.retirements && JSON.stringify(retirements) !== JSON.stringify(this.retirements);
+    const changed = retirementsChanged || Object.keys({ ...next, ...this.values }).some(key => next[key] !== this.values[key]);
     this.values = next; this.retirements = retirements;
     return changed;
   }
@@ -186,7 +235,8 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
       if (state.revision >= this.revision) {
         const wasReady = this.isReady;
         this.revision = state.revision; this.keyRevisions = state.keyRevisions ?? {};
-        const changed = this.project(state.values, state.retiredTabs ?? []);
+        const admitted = this.updateAdmission(state);
+        const changed = this.project(state.values, this.receiveRetirements(state)) || admitted;
         this.snapshotRevision = state.revision;
         this.fresh = this.socket?.readyState === WebSocket.OPEN;
         this.reconnectAttempt = 0;
@@ -288,7 +338,7 @@ export class RemoteBrowserStorage implements BrowserMetadataStorage {
     if (this.closed) return Promise.reject(new Error('Browser storage closed'));
     if (this.socket?.readyState !== WebSocket.OPEN) return Promise.reject(Object.assign(new Error('Browser state disconnected'), { code: 'DISCONNECTED' }));
     const socket = this.socket;
-    const id = crypto.randomUUID(), payload = JSON.stringify({ id, method, input, ...(method === 'state' ? { subscribe: true } : {}) });
+    const id = crypto.randomUUID(), payload = JSON.stringify({ id, method, input, ...(method === 'state' ? { subscribe: true, retirementCursor: this.retirementCursor, ...(input === undefined ? { retirementReferences: this.retirementReferences() } : {}) } : {}) });
     if (new TextEncoder().encode(payload).byteLength > browserMetadataWireLimit) return Promise.reject(Object.assign(new Error('Browser metadata is too large'), { code: 'STATE_TOO_LARGE' }));
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

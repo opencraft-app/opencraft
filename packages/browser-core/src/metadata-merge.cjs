@@ -34,10 +34,10 @@ function mergeBrowserMetadata(key, base, local, remote) {
 /** Retirement is authoritative for these resource identities. Drop only their
  * metadata edits; unrelated drafts continue through the normal conflict check. */
 function retireBrowserMetadata(key, value, retirements) {
-  if (value === null || !retirements.length || key === 'bindings') return value;
+  if (value === null || key === 'bindings' || retirements.empty === true || Array.isArray(retirements) && !retirements.length) return value;
   try {
-    const pages = new Set(retirements.flatMap(r => r.pageIds)), tabs = new Set(retirements.flatMap(r => r.tabIds));
-    const leases = new Set(retirements.map(r => r.lease)), current = records(key, value), size = current.size;
+    const lookup = Array.isArray(retirements) ? { pages: new Set(retirements.flatMap(r => r.pageIds)), tabs: new Set(retirements.flatMap(r => r.tabIds)), leases: new Set(retirements.map(r => r.lease).filter(lease => typeof lease === 'string')) } : retirements;
+    const { pages, tabs, leases } = lookup, current = records(key, value), size = current.size;
     for (const [id, row] of current) {
       if (key === 'pages' && pages.has(id) || key === 'tabs' && (tabs.has(id) || pages.has(row.pageId))
         || key === 'storage' && (pages.has(id) || typeof row === 'string' && leases.has(row.replace(':', '-')))) current.delete(id);
@@ -45,4 +45,15 @@ function retireBrowserMetadata(key, value, retirements) {
     return current.size === size ? value : JSON.stringify(key === 'storage' ? Object.fromEntries(current) : [...current.values()]);
   } catch { throw conflict(); }
 }
-module.exports = { mergeBrowserMetadata, retireBrowserMetadata };
+function browserMetadataReferences(key, value) {
+  const pages = new Set(), tabs = new Set(), leases = new Set();
+  let entries = [];
+  try { if (value !== null && key !== 'bindings') entries = records(key, value); } catch {}
+  for (const [id, row] of entries) {
+    if (key === 'pages') pages.add(id);
+    if (key === 'tabs') { tabs.add(id); if (typeof row.pageId === 'string') pages.add(row.pageId); }
+    if (key === 'storage') { pages.add(id); if (typeof row === 'string') leases.add(row.replace(':', '-')); }
+  }
+  return { pages: [...pages], tabs: [...tabs], leases: [...leases] };
+}
+module.exports = { mergeBrowserMetadata, retireBrowserMetadata, browserMetadataReferences };

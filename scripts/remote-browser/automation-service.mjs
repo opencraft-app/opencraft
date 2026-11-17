@@ -24,7 +24,7 @@ export async function invokeRemoteAutomation(service, binding, method, input, { 
   const key = JSON.stringify([ownerId, lease]);
   const checkScope = () => {
     authorize();
-    const state = service.store.current.states.find(([owner]) => owner === ownerId)?.[1];
+    const state = service.store.account(ownerId).states[0]?.[1];
     const link = sessionLink(state, lease);
     if (service.closed || !link || link.scopeId !== scopeId || link.hostId !== hostId) throw denied();
     if (binding.threadId !== undefined && !conversationScopes(state, hostId, binding.threadId).has(scopeId)) throw denied();
