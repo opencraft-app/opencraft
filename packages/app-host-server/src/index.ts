@@ -892,7 +892,7 @@ export class AppHostServerConnection {
     if (current?.generation === generation) return current.session;
     current?.session.close();
     const session = this.createRpcAccessSession(hostId, this.submissionContext, frame => {
-      if (!this.closed && this.leases.get(key)?.generation === generation) this.port.postMessage({type:'host/frame',hostId,leaseId,generation,frame});
+      if (!this.closed && this.leases.get(key)?.generation === generation) this.deliver(() => this.port.postMessage({type:'host/frame',hostId,leaseId,generation,frame}));
     });
     this.accessSessions.set(key,{hostId,leaseId,generation,session});
     return session;
@@ -911,8 +911,6 @@ export class AppHostServerConnection {
     try {
       if (!this.closed) {
         this.closed = true;
-        for (const entry of this.accessSessions.values()) entry.session.close();
-        this.accessSessions.clear();
         this.earlyMessages.length = 0;
         this.server.removeConnection(this);
       }
@@ -925,8 +923,6 @@ export class AppHostServerConnection {
     this.retiring = true;
     try {
       this.closed = true;
-      for (const entry of this.accessSessions.values()) entry.session.close();
-      this.accessSessions.clear();
       this.earlyMessages.length = 0;
       this.leases.clear();
       this.logicalClients.clear();
@@ -940,6 +936,11 @@ export class AppHostServerConnection {
     this.server.trackConnectionCleanup(this, true);
     const errors: unknown[] = [];
     try {
+      // Retire admission first; retain failed handles for explicit cleanup retry.
+      for (const [key, entry] of this.accessSessions) {
+        try { entry.session.close(); this.accessSessions.delete(key); }
+        catch (cause) { errors.push(cause); }
+      }
       if (this.unsubscribePort !== null) {
         try { this.unsubscribePort(); this.unsubscribePort = null; }
         catch (cause) { errors.push(cause); }
@@ -953,29 +954,46 @@ export class AppHostServerConnection {
     } finally { this.cleaningPort = false; }
   }
 
+  /** Delivery failures retire one connection, never the shared Host or its peers. */
+  private retireFailedDelivery(): void {
+    try { this.close(); }
+    catch { /* Failed handles remain owned by the server for explicit shutdown retry. */ }
+  }
+
+  private deliver(write: () => void): void {
+    if (this.closed) return;
+    try { write(); }
+    catch { this.retireFailedDelivery(); }
+  }
+
   private accessOutbound=Promise.resolve();
   post(message: AppHostToRendererMessage): void {
-    if (this.closed) return;
-    if (message.type === 'host/frame' && this.createRpcAccessSession) {
-      const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
-      for (const lease of leases) {
-        const access=this.accessSession(lease.hostId,lease.leaseId,lease.generation)!;
-        if(access.prepare) {
-          this.accessOutbound=this.accessOutbound.then(async()=>{
-            if(this.closed||this.accessSession(lease.hostId,lease.leaseId,lease.generation)!==access)return;
-            await access.prepare!(message.frame);
-            if(this.closed||this.accessSession(lease.hostId,lease.leaseId,lease.generation)!==access)return;
-            const projected=access.project(message.frame);
-            if(projected!==null)this.port.postMessage({...message,leaseId:lease.leaseId,frame:projected});
-          }).catch(()=>{this.close();});
-          continue;
+    this.deliver(() => {
+      if (message.type === 'host/frame' && this.createRpcAccessSession) {
+        const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
+        for (const lease of leases) {
+          if (this.closed) return;
+          const access=this.accessSession(lease.hostId,lease.leaseId,lease.generation)!;
+          if(access.prepare) {
+            const current = () => !this.closed
+              && this.leases.get(hostScopedKey(lease.hostId,lease.leaseId))?.generation === lease.generation
+              && this.accessSessions.get(hostScopedKey(lease.hostId,lease.leaseId))?.session === access;
+            this.accessOutbound=this.accessOutbound.then(async()=>{
+              if(!current())return;
+              await access.prepare!(message.frame);
+              if(!current())return;
+              const projected=access.project(message.frame);
+              if(!this.closed && projected!==null)this.port.postMessage({...message,leaseId:lease.leaseId,frame:projected});
+            }).catch(()=>{this.retireFailedDelivery();});
+            continue;
+          }
+          const frame = access.project(message.frame);
+          if (!this.closed && frame !== null) this.port.postMessage({...message,leaseId:lease.leaseId,frame});
         }
-        const frame = access.project(message.frame);
-        if (frame !== null) this.port.postMessage({...message,leaseId:lease.leaseId,frame});
+        return;
       }
-      return;
-    }
-    this.port.postMessage(message);
+      this.port.postMessage(message);
+    });
   }
 
   rememberLease(hostId: string, leaseId: string, generation: number): void {
