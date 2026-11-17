@@ -1,3 +1,4 @@
+import type { AttachmentProgress } from "@opencraft/composer-editor";
 import { useServerSpaces } from "./runtime/use-server-spaces";
 import { agentIdForHostLabel, filterModelsForNewDraft, newDraftAgentsDisabled } from "./runtime/agent-availability";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
@@ -110,7 +111,7 @@ import {
   findHostConnectionInterventionError,
   projectComposerModelChoices,
 } from "@opencraft/workbench-runtime";
-import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedDeliveryRetry, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import {
   lazy,
   Suspense,
@@ -404,7 +405,8 @@ export function App({
     && "version" in permissionModesExtension
     && permissionModesExtension.version === 1;
   const queueAtomicSteer = supportsAtomicQueuedSteer(queueExtension);
-  const queueUnconfirmedSteerDiscard = supportsUnconfirmedSteerDiscard(queueExtension);
+  const queueUnconfirmedDeliveryRetry = supportsUnconfirmedDeliveryRetry(queueExtension)
+    && runtime.resources.host.canRequest?.("thread/queue/retry") !== false;
   const queueReorderable = !(
     typeof queueExtension === "object" &&
     queueExtension !== null &&
@@ -437,8 +439,8 @@ export function App({
     [blobs, runtime, snapshot.hostId, snapshot.connectionGeneration],
   );
   const resolveActiveHostAttachment = useCallback(
-    (file: File, pending: ComposerAttachment, signal?: AbortSignal) =>
-      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal),
+    (file: File, pending: ComposerAttachment, signal?: AbortSignal, onProgress?: (progress: AttachmentProgress | null) => void) =>
+      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal, onProgress),
     [runtime, images],
   );
   const removeActiveHostAttachment = useCallback(
@@ -934,11 +936,11 @@ export function App({
     },
     [activeThreadLease, localOutbox],
   );
-  const discardUnconfirmedSteer = useCallback(
+  const retryUnconfirmedSteer = useCallback(
     async (id: string, expectedTurnId: string) => {
       if (activeThreadLease === null)
         throw new Error("No active Thread owns this steering claim");
-      await activeThreadLease.discardUnconfirmedSteer(id, asTurnId(expectedTurnId));
+      await activeThreadLease.retryUnconfirmedSteer(id, asTurnId(expectedTurnId));
     },
     [activeThreadLease],
   );
@@ -2590,23 +2592,24 @@ export function App({
                           ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
                             visibleTimeline).map((submission) =>
                             queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
-                          ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
+                          ...(snapshot.conversation?.unconfirmedSteers ?? []).map((claim) => ({
                             id: claim.id,
                             sender: queueSenderPresentation(claim.sender, identityAvatar),
                             preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",
-                            state: "queued" as const,
-                            operation: "idle" as const,
+                            state: "unknown" as const,
+                            operation: claim.pausedReason === "delivery-retry-requested" ? "starting" as const : "idle" as const,
                             actionable: false,
                             reorderable: false,
                             editableContent: restoreQueuedInput(claim.input),
-                            pausedReason: "Delivery unconfirmed",
+                            pausedReason: null,
                             error: null,
                             unconfirmedTargetTurnId: claim.targetTurnId,
+                            retryable: claim.retryable === true,
                           })),
                         ]}
                         onUpdateQueuedSubmission={updateQueuedSubmission}
                         onDeleteQueuedSubmission={deleteQueuedSubmission}
-                        onDiscardUnconfirmedSteer={discardUnconfirmedSteer}
+                        onRetryUnconfirmedSteer={queueUnconfirmedDeliveryRetry ? retryUnconfirmedSteer : undefined}
                         onReorderQueuedSubmissions={reorderQueuedSubmissions}
                         onSteerQueuedSubmission={steerQueuedSubmission}
                         supportsQueuedSteer={queueAtomicSteer}

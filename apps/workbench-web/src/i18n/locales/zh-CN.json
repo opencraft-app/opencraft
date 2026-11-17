@@ -870,6 +870,10 @@
   "chat.queue.awaitingTurn": "当前任务完成后将发送此排队消息",
   "chat.queue.steerAction": "引导",
   "chat.queue.sendAction": "发送",
+  "chat.queue.deliveryUnconfirmed": "未确认送达",
+  "chat.queue.retry": "重试",
+  "chat.queue.retrying": "正在重试…",
+  "chat.queue.retryFailed": "重试失败",
   "chat.queue.discarding": "正在移除…",
   "chat.queue.discard": "移除待确认记录",
   "chat.queue.discardUnavailable": "当前服务器无法移除此记录",
@@ -1490,5 +1494,8 @@
   "onboard.history.manage": "导入会话",
   "onboard.history.open": "导入本地会话",
   "sidebar.nativeProjects": "项目",
-  "onboard.history.projects": "导入时会保留原有的项目分组。"
+  "onboard.history.projects": "导入时会保留原有的项目分组。",
+  "composer.attachment.uploading": "正在上传 {name}",
+  "composer.attachment.confirming": "正在处理…",
+  "composer.attachment.preparing": "正在准备…"
 }

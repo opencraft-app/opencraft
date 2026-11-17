@@ -9387,6 +9387,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
       outline-offset: 2px;
     }
 
+    &.is-retry {
+      min-width: var(--size-control-hit-min);
+      min-height: var(--size-control-hit-min);
+    }
+
     &.is-labelled {
       width: auto;
       grid-auto-flow: column;
@@ -9399,12 +9404,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-.opencraft-composer-steer-discard-dialog__body {
-  display: grid;
-  gap: 12px;
-  padding: 24px;
-
-  [role="alert"] { color: var(--color-text-error, #cf222e); }
+.opencraft-composer-queue-item__delivery-status {
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  white-space: nowrap;
 }
 
 @keyframes opencraft-composer-tray-enter {
@@ -10323,6 +10327,14 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     }
   }
 
+  &__percent {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font: var(--typography-label-font);
+  }
+
   &__error {
     display: -webkit-box;
     grid-column: 2;
@@ -10368,6 +10380,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .opencraft-composer-attachment {
   button {
+    min-width: var(--size-control-hit-min, 0px);
+    min-height: var(--size-control-hit-min, 0px);
     display: grid;
     width: 22px;
     height: 22px;
@@ -10391,7 +10405,18 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   gap: 2px;
 }
 
+.opencraft-composer-attachment__progress {
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--color-icon-primary);
+  pointer-events: none;
+}
+
 .opencraft-composer-attachment__icon {
+  position: relative;
   display: grid;
   width: 30px;
   height: 34px;

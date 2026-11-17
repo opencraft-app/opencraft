@@ -1,3 +1,4 @@
+import type { TransportSendProgressObserver } from "./transport";
 import {
   encodeJsonRpcMessage,
   isJsonRpcFailure,
@@ -41,6 +42,9 @@ export interface AppServerClientRequestOptions extends AppServerRequestOptions {
   /** Synchronous final check after lifecycle observers and serialization.
    * Throw to reject before transport admission; the original error is preserved. */
   beforeSend?(): void;
+  /** Local transport estimate; never serialized or treated as remote acknowledgement. */
+  onSendProgress?: TransportSendProgressObserver;
+  sendProgressSignal?: AbortSignal;
 }
 
 export interface AppServerClientConfig {
@@ -492,7 +496,11 @@ export class JsonRpcAppServerClient implements AppServerClient {
         }
         // Admission itself can synchronously cancel/dispose or admit a successor.
         if (this.pending.get(id) !== pending) return;
-        void Promise.resolve(this.transport.send(frame, pending.controller.signal)).catch(fail);
+        void Promise.resolve(this.transport.send(frame, pending.controller.signal, options.onSendProgress ? { signal: options.sendProgressSignal, onProgress: progress => {
+          if (this.pending.get(id) === pending && !options.sendProgressSignal?.aborted) {
+            try { options.onSendProgress?.(progress); } catch { /* Observation cannot fail RPC admission. */ }
+          }
+        } } : undefined)).catch(fail);
       } catch (error) { fail(error); }
     });
   }

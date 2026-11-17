@@ -1,3 +1,5 @@
+import { WebSocketSendProgress } from "./send-progress";
+import type { TransportSendProgressOptions } from "@opencraft/appserver-client/transport";
 import type {
   DuplexTransport,
   TransportStatus,
@@ -19,6 +21,7 @@ interface WebSocketEventMap {
  */
 export interface AppServerWebSocket {
   readonly readyState: number;
+  readonly bufferedAmount?: number;
   send(data: string): void;
   close(code?: number, reason?: string): void;
   terminate?(): void;
@@ -74,6 +77,7 @@ export class WebSocketTransport implements DuplexTransport {
   private cancelConnect: ((error: Error) => void) | null = null;
   private inboundQueue = Promise.resolve();
   private socketGeneration = 0;
+  private outgoing: WebSocketSendProgress | null = null;
 
   constructor(options: WebSocketTransportOptions | string) {
     this.options = typeof options === "string" ? { url: options } : options;
@@ -142,6 +146,8 @@ export class WebSocketTransport implements DuplexTransport {
       try { socket.close(1000, "cancelled attempt"); } catch { socket.terminate?.(); }
       return connectionPromise;
     }
+    this.outgoing?.dispose();
+    this.outgoing = new WebSocketSendProgress(socket);
     this.socket = socket;
     this.inboundQueue = Promise.resolve();
     socket.addEventListener("open", handleOpen);
@@ -176,12 +182,12 @@ export class WebSocketTransport implements DuplexTransport {
     return connectionPromise;
   }
 
-  async send(frame: string, signal?: AbortSignal): Promise<void> {
+  async send(frame: string, signal?: AbortSignal, progress?: TransportSendProgressOptions): Promise<void> {
     if (signal?.aborted) throw abortError("WebSocket send was aborted");
     if (this.socket === null || this.currentStatus.state !== "open" || this.socket.readyState !== 1) {
       throw new Error("WebSocket transport is not open");
     }
-    this.socket.send(frame);
+    this.outgoing!.send(frame, signal, progress);
   }
 
   captureMessageScope(): () => boolean {
@@ -245,6 +251,7 @@ export class WebSocketTransport implements DuplexTransport {
   }
 
   private setStatus(status: TransportStatus): void {
+    if (status.state !== "open" && status.state !== "connecting") this.outgoing?.dispose();
     this.currentStatus = status;
     this.statusListeners.emit(status, () => this.currentStatus === status);
   }

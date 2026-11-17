@@ -848,6 +848,10 @@
   "chat.queue.awaitingTurn": "ข้อความในคิวนี้จะส่งเมื่องานปัจจุบันเสร็จ",
   "chat.queue.steerAction": "แนะนำทิศทาง",
   "chat.queue.sendAction": "ส่ง",
+  "chat.queue.deliveryUnconfirmed": "ยังไม่ยืนยันการส่ง",
+  "chat.queue.retry": "ลองอีกครั้ง",
+  "chat.queue.retrying": "กำลังลองอีกครั้ง…",
+  "chat.queue.retryFailed": "ลองอีกครั้งไม่สำเร็จ",
   "chat.queue.discarding": "กำลังนำออก…",
   "chat.queue.discard": "นำรายการที่ยังไม่ยืนยันออก",
   "chat.queue.discardUnavailable": "เซิร์ฟเวอร์นี้ไม่สามารถนำรายการนี้ออกได้",
@@ -1468,5 +1472,8 @@
   "onboard.history.manage": "นำเข้าการสนทนา",
   "onboard.history.open": "นำเข้าการสนทนาในเครื่อง",
   "sidebar.nativeProjects": "โปรเจกต์",
-  "onboard.history.projects": "ระบบจะเก็บกลุ่มโปรเจกต์เดิมไว้"
+  "onboard.history.projects": "ระบบจะเก็บกลุ่มโปรเจกต์เดิมไว้",
+  "composer.attachment.uploading": "กำลังอัปโหลด {name}",
+  "composer.attachment.confirming": "กำลังประมวลผล…",
+  "composer.attachment.preparing": "กำลังเตรียม…"
 }

@@ -297,6 +297,8 @@ export interface QueuedSubmission {
 }
 /** Host-accepted user input waiting for the active Turn's next step boundary. */
 export interface SteeringSubmission extends QueuedSubmission {
+  /** Host presentation hint; retry still revalidates authority and execution state. */
+  readonly retryable?: boolean;
   readonly targetTurnId: string;
 }
 export interface ThreadQueueAddResponse {
@@ -576,6 +578,10 @@ export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMet
   "thread/queue/start": {
     params: ThreadQueueStartParams;
     result: ThreadQueueStartResponse;
+  };
+  "thread/queue/retry": {
+    params: { readonly threadId: string; readonly queuedSubmissionId: string; readonly expectedTurnId: string };
+    result: Record<string, never>;
   };
   "thread/queue/steer": {
     params: ThreadQueueSteerParams;

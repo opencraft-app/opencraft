@@ -1,3 +1,4 @@
+import type { TransportSendProgressObserver } from "@opencraft/appserver-client/transport";
 import { uploadAttachmentChunks } from "@opencraft/workbench-runtime";
 import type { AppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_LEGACY_MAX_BYTES } from "@opencraft/appserver-protocol";
@@ -36,7 +37,8 @@ export type BrowserAttachmentErrorCode =
 export interface BrowserAttachmentStagingOptions {
   readonly maxBytes?: number;
   readonly chunkBytes?: number;
-  readonly uploadChunk?: (params: AttachmentUploadParams) => Promise<AttachmentUploadResponse>;
+  readonly uploadRetry?: "last-chunk-v1";
+  readonly uploadChunk?: (params: AttachmentUploadParams, onSendProgress?: TransportSendProgressObserver, progressSignal?: AbortSignal) => Promise<AttachmentUploadResponse>;
   readonly uploadCancel?: (uploadId: string) => Promise<{ removed: boolean }>;
   readonly stage:
     | ((
@@ -108,12 +110,14 @@ export async function resolveBrowserAttachmentForHost(
   pending: ComposerAttachment,
   images?: Pick<ImageProcessingService, "compress">,
   signal?: AbortSignal,
+  onProgress?: (progress: { readonly loaded: number; readonly total: number; readonly source?: "sent" | "confirmed" } | null) => void,
 ): Promise<ComposerAttachment> {
   // Inline image preparation has no Host dependency, including HEIC conversion.
   if (file.type.startsWith("image/") || ((file.type === "" || file.type === "application/octet-stream") && /\.hei[cf]$/iu.test(file.name))) {
     return resolveBrowserAttachment(file, pending, undefined, images, signal);
   }
   for (;;) {
+    onProgress?.(null);
     await waitForAttachmentHost(host, signal);
     signal?.throwIfAborted();
     const generation = host.getSnapshot().connectionGeneration;
@@ -124,13 +128,25 @@ export async function resolveBrowserAttachmentForHost(
     try {
       const attachments = host.resources.attachments;
       const capability = attachments.capabilities();
-      return await resolveBrowserAttachment(file, pending, {
+      const resolved = await resolveBrowserAttachment(file, pending, {
         maxBytes: capability?.maxBytes,
         chunkBytes: capability?.chunkBytes,
-        uploadChunk: capability?.chunkBytes ? params => attachments.uploadChunk(params) : undefined,
+        uploadRetry: capability?.uploadRetry,
+        uploadChunk: capability?.chunkBytes ? (params, onSendProgress, progressSignal) => attachments.uploadChunk(params, onSendProgress, progressSignal) : undefined,
         uploadCancel: capability?.chunkBytes ? id => attachments.uploadCancel(id) : undefined,
         stage: capability?.sources.includes("client-bytes") ? (params, requestSignal) => attachments.stage(params, requestSignal) : null,
-      }, images, signal);
+      }, images, signal, onProgress);
+      if (signal?.aborted) {
+        // Final receipt is still awaited even when the Draft is removed. Retire
+        // only that proved ref, and never issue cleanup through a successor Host.
+        const ref = resolved.metadata?.attachmentRef;
+        if (typeof ref === "object" && ref !== null && "id" in ref && typeof ref.id === "string"
+          && hostReady(host) && host.getSnapshot().connectionGeneration === generation) {
+          await attachments.remove(ref.id).catch(() => undefined);
+        }
+        signal.throwIfAborted();
+      }
+      return { ...resolved, metadata: { ...resolved.metadata, attachmentHostId: host.getSnapshot().hostId } };
     } catch (error) {
       signal?.throwIfAborted();
       // Staging is idempotent by clientAttachmentId and content. Restart a lost
@@ -153,6 +169,7 @@ export async function resolveBrowserAttachment(
   staging: BrowserAttachmentStagingOptions = { stage: null },
   images?: Pick<ImageProcessingService, "compress">,
   signal?: AbortSignal,
+  onProgress?: (progress: { readonly loaded: number; readonly total: number; readonly source?: "sent" | "confirmed" } | null) => void,
 ): Promise<ComposerAttachment> {
   const sourceType = (file.type === "" || file.type === "application/octet-stream") && /\.heic$/iu.test(file.name)
     ? "image/heic"
@@ -232,7 +249,7 @@ export async function resolveBrowserAttachment(
     );
   }
 
-  const staged = await stageBrowserFile(file, pending.id, staging, signal);
+  const staged = await stageBrowserFile(file, pending.id, staging, signal, onProgress);
   const uri = staged.ref.location.kind === "host-file"
     ? hostFileUri(staged.ref.location.path)
     : staged.ref.location.url;
@@ -253,7 +270,7 @@ export async function resolveBrowserAttachment(
   };
 }
 
-async function stageBrowserFile(file: File, id: string, staging: BrowserAttachmentStagingOptions, signal?: AbortSignal): Promise<AttachmentStageResponse> {
+async function stageBrowserFile(file: File, id: string, staging: BrowserAttachmentStagingOptions, signal?: AbortSignal, onProgress?: (progress: { readonly loaded: number; readonly total: number; readonly source?: "sent" | "confirmed" }) => void): Promise<AttachmentStageResponse> {
   const chunked = staging.chunkBytes && staging.uploadChunk && staging.uploadCancel;
   const maxBytes = Math.min(MAX_STAGED_BROWSER_FILE_BYTES, staging.maxBytes ?? ATTACHMENT_LEGACY_MAX_BYTES,
     chunked ? MAX_STAGED_BROWSER_FILE_BYTES : ATTACHMENT_LEGACY_MAX_BYTES);
@@ -261,7 +278,7 @@ async function stageBrowserFile(file: File, id: string, staging: BrowserAttachme
   const metadata = { clientAttachmentId: id, name: file.name, mimeType: file.type || "application/octet-stream", size: file.size };
   if (chunked) return uploadAttachmentChunks(metadata,
     async (offset, length) => new Uint8Array(await file.slice(offset, offset + length).arrayBuffer()),
-    { chunkBytes: staging.chunkBytes!, uploadChunk: staging.uploadChunk!, uploadCancel: staging.uploadCancel! }, signal);
+    { chunkBytes: staging.chunkBytes!, uploadRetry: staging.uploadRetry, uploadChunk: staging.uploadChunk!, uploadCancel: staging.uploadCancel! }, signal, onProgress);
   signal?.throwIfAborted();
   const bytes = new Uint8Array(await file.arrayBuffer());
   signal?.throwIfAborted();

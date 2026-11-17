@@ -1,6 +1,7 @@
+import { AttachmentChunkDeadline, type TransportSendProgressObserver } from "@opencraft/appserver-client/transport";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
-import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
+import { supportsUnconfirmedDeliveryRetry, SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -379,7 +380,7 @@ export interface AppServerFileSystemResourcePort {
 }
 
 export interface AppServerAttachmentResourcePort {
-  uploadChunk(params: AttachmentUploadParams): Promise<AttachmentUploadResponse>;
+  uploadChunk(params: AttachmentUploadParams, onSendProgress?: TransportSendProgressObserver, progressSignal?: AbortSignal): Promise<AttachmentUploadResponse>;
   uploadCancel(uploadId: string): Promise<{ removed: boolean }>;
   capabilities(): AttachmentStagingCapability | null;
   stage(
@@ -447,6 +448,7 @@ export interface AppServerThreadRuntimeLease {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
     queuedSubmissionIds: readonly string[],
@@ -1886,6 +1888,8 @@ export function createAppServerWorkbenchRuntime(
         interactions,
         get queueAtomicSteer() { return supportsAtomicQueuedSteer(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
+        get queueUnconfirmedDeliveryRetry() { return supportsUnconfirmedDeliveryRetry(
+          client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         get queueUnconfirmedSteerDiscard() { return supportsUnconfirmedSteerDiscard(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         compiler: { historyMode: "paginated" },
@@ -2291,12 +2295,63 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       attachments: {
-        async uploadChunk(params) {
+        async uploadChunk(params, onSendProgress, progressSignal) {
+          if (params.retry && phase !== "ready") {
+            // Joining the connection owner must not cancel other consumers when
+            // this upload is abandoned. Bound only this upload's local wait.
+            await new Promise<void>((resolve, reject) => {
+              let settled = false;
+              let unsubscribe = () => {};
+              const finish = (error?: unknown) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer); unsubscribe(); progressSignal?.removeEventListener("abort", aborted);
+                if (error) reject(error); else resolve();
+              };
+              const aborted = () => finish(progressSignal?.reason ?? new Error("Attachment upload canceled"));
+              const timer = setTimeout(() => finish(new AppServerClientError("TIMEOUT", "Attachment connection recovery timed out")), 120_000);
+              const check = () => {
+                const current = runtime.getSnapshot();
+                if (disposed) finish(new Error("Attachment Host was disposed"));
+                else if (current.phase === "ready") finish();
+                else if (current.transport.failure?.recovery === "manual") finish(current.error ?? new Error("Attachment Host needs reconnection"));
+              };
+              progressSignal?.addEventListener("abort", aborted, { once: true });
+              if (progressSignal?.aborted) { aborted(); return; }
+              unsubscribe = runtime.subscribe(check);
+              if (settled) { unsubscribe(); return; }
+              check();
+              if (settled) return;
+              // Automatic recovery owns its backoff. An upload observes that
+              // recovery across transient attempts, without advancing its timer.
+              if (config.autoReconnect === false || (phase !== "reconnecting" && phase !== "connecting"))
+                void runtime.connect().then(check, finish);
+            });
+          }
+          progressSignal?.throwIfAborted();
           const capability = runtime.resources.attachments.capabilities();
           if (!capability?.chunkBytes || params.size > capability.maxBytes) throw new Error("Host does not support this attachment upload");
-          return requireClient().request("attachment/uploadChunk", params, {
-            timeoutMs: params.offset + capability.chunkBytes >= params.size ? 60 * 60_000 : 30_000,
-          });
+          if (params.retry && capability.uploadRetry !== "last-chunk-v1") throw new Error("Host no longer supports safe attachment replay");
+          const final = params.offset + capability.chunkBytes >= params.size;
+          const deadline = new AttachmentChunkDeadline(params.dataBase64.length, final);
+          try {
+            return await requireClient().request("attachment/uploadChunk", params, {
+              signal: deadline.signal,
+              // The chunk deadline below follows send progress; the generic RPC
+              // budget would otherwise start before a weak uplink drains the frame.
+              timeoutMs: 0,
+              sendProgressSignal: progressSignal,
+              onSendProgress: progress => {
+                deadline.observe(progress);
+                onSendProgress?.(progress);
+              },
+            });
+          } catch (error) {
+            if (deadline.expired) throw new AppServerClientError("TIMEOUT", deadline.message, { cause: error });
+            throw error;
+          } finally {
+            deadline.dispose();
+          }
         },
         async uploadCancel(uploadId) {
           return requireClient().request("attachment/uploadCancel", { uploadId });
@@ -2570,6 +2625,8 @@ export function createAppServerWorkbenchRuntime(
           runBindingCommand(binding, () =>
             binding.runtime.deleteQueuedSubmission(queuedSubmissionId),
           ),
+        retryUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
+          runBindingCommand(binding, () => binding.runtime.retryUnconfirmedSteer(queuedSubmissionId, expectedTurnId)),
         discardUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
           runBindingCommand(binding, () =>
             binding.runtime.discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId),

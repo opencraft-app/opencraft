@@ -305,3 +305,5 @@ export class DeferredDuplexTransport implements DuplexTransport {
     return this.closing;
   }
 }
+
+export { AttachmentChunkDeadline } from "./attachment-chunk-deadline";

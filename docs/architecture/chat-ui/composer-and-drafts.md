@@ -822,6 +822,13 @@ remain available to the runtime; failed, blocked and unconfirmed delivery still
 show actionable feedback. Attachment-only steering does not reserve an empty
 status footer.
 
+Host-owned unconfirmed queued input stays in the Composer rail with a localized
+“Delivery unconfirmed” status and a single Retry action. There is no record-removal
+dialog, raw RPC error, or refresh instruction. Retry shows pending/failed feedback
+in the same row, preserves the draft and editor, and disables repeated activation.
+An unrelated unconfirmed row does not disable sending or reordering queued input.
+The server queue capability gates Retry; older Hosts still show the status.
+
 ## Composer image attachment preview
 
 Draft image thumbnails open the shared zoomable image viewport in a Radix modal.
@@ -998,3 +1005,40 @@ while preserving non-text input entries. The existing user-message document
 renderer supplies the quote rail, with the user's following request outside it.
 Acknowledgement and reopening history retain the same quote boundary; they do
 not add a second quote block or fabricate a link to the source message.
+
+
+## Chunk upload recovery and measured preparation
+
+Attachment staging negotiates `uploadRetry: "last-chunk-v1"` independently of
+chunk support. Within one Host process the last accepted chunk and bounded final
+receipts can replay an exact upload identity, offset, metadata and byte digest.
+The Host never creates an absent upload from a retry: expiry, cancellation and
+Host restart cannot turn an unknown write into a new upload. This is not durable
+cross-process resume. Older capabilities keep acknowledgement-only behavior and
+never automatically retry an ambiguous chunk.
+
+The uploader joins the existing connection owner and its retry schedule instead
+of creating a competing reconnect loop. Capability is checked again after that
+wait; losing replay support refuses the replay. Cancellation ends this upload's
+wait/observation, not the shared Host connection or an admitted remote operation.
+An admitted final chunk is still awaited so its committed reference can be
+released if the Draft was removed. Cleanup uses only that proved ref on the same
+Host generation; uncertain cleanup or a successor remains subject to Host
+retention rather than deleting through the wrong owner.
+
+Transport drain is a local estimate, not peer acknowledgement. The existing
+Composer attachment session owns progress by Draft, attachment and attempt;
+late observers cannot update a replacement job or a disposed view. Sending 100%
+shows Processing, and cannot mark the file ready or enable submission until the
+committed reference arrives. Retry retains the selected browser File and resets
+progress. Shared determinate rings and localized metadata keep progress in the
+existing attachment row, preserving the draft and editor focus. Cancel/retry
+controls use the shared interaction-density minimum, not viewport-width tests.
+
+`npm run test:attachment-upload` validates its explicit file manifest and runs
+RPC/provider/Host/recovery/Composer ownership regressions. The existing unit gate
+includes it. `npm run smoke:attachment-upload-recovery` exercises actual Composer,
+browser resolver, Workbench runtime, WebSocket transport and Host upload store in
+Chromium desktop/touch contexts and light/dark themes; managed-Web CI runs it.
+Only initialization/control and the final file location are synthetic. This does
+not prove a production login, model, deployed Host or physical-device session.

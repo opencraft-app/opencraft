@@ -3027,3 +3027,23 @@ for (const mismatch of ["commandId", "clientMessageId", "hostId", "threadId"] as
     assert.deepEqual(block?.sender, {kind:"employee",loginName:"local-fallback"});
   } finally { runtime.dispose(); }
 });
+
+
+test("retry keeps the unconfirmed input until authoritative queue reconciliation", async () => {
+  const calls: string[] = [];
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
+    commands: commands({ async retryUnconfirmedSteer(_key, id, turnId) { calls.push(id + ":" + turnId); } }),
+    history: { async loadOlder() {} },
+  });
+  const claim = { id: "claim", clientUserMessageId: "message", input: [{ type: "text" as const, text: "hello", text_elements: [] }], createdAt: 1, pausedReason: "steer-delivery-unconfirmed", targetTurnId: "turn-one" };
+  runtime.replaceQueuedSubmissions([], [claim]);
+  await runtime.retryUnconfirmedSteer("claim", asTurnId("turn-one"));
+  assert.deepEqual(calls, ["claim:turn-one"]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 1);
+  runtime.replaceQueuedSubmissions([], [{ ...claim, pausedReason: "delivery-retry-requested" }]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers[0]?.pausedReason, "delivery-retry-requested");
+  runtime.replaceQueuedSubmissions([], []);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 0);
+  runtime.dispose();
+});

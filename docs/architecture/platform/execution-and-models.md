@@ -192,13 +192,22 @@ Codex queued messages in its Host-state database (`opencraft-host-state.sqlite`
 for new stores; existing `codex-host-queue.sqlite` remains in place); its physical AppServer is
 only the execution target for standard `turn/start` and `turn/steer`. The Host
 serializes queue dispatch per Thread, persists a claim before sending, and
-advertises `atomicSteer` and `unconfirmedSteerDiscard` from this Host-owned
-implementation, independently of a patched Codex binary. An interrupted or
-timed-out dispatch stays delivery-unconfirmed and blocks later auto-dispatch;
-it is never blindly retried. The Host checks paged Codex user-message history
-by client ID before settling a claim. Explicit discard requires an idle Thread,
-the original target Turn and a successful history check; discard acknowledges
-uncertainty, not proof that the model never saw the input.
+advertises `atomicSteer` and `unconfirmedDeliveryRetry` from this Host-owned
+implementation, independently of a patched Codex binary. Interrupted or timed-out
+ordinary user dispatch remains delivery-unconfirmed without blocking subsequent queued input;
+it is never automatically resent. Execution-fault quarantine still blocks admission
+until the existing recovery owner confirms the source exit; retry cannot erase it. The Host checks paged Codex user-message history
+by client ID before settling a claim. The Composer shows only a localized status
+and Retry, without a discard dialog or a second global failure notice.
+`thread/queue/retry` records an explicit retry on the same queue row and client
+message ID. While the original Turn is active it remains pending. After observing
+idle, reconciliation checks history again: an existing message settles as delivered;
+otherwise the input re-enters the queue once. Duplicate retry requests do not create
+new rows or replay delivered input. Managed Actor inputs retain their authority ordering
+and cannot be retried through this human action. A retry whose own acknowledgement is lost
+returns to unconfirmed and requires a new user decision. The legacy target-bound
+discard protocol remains for older clients and still requires an idle Thread and
+successful history check; its UI is no longer exposed.
 Before starting the physical AppServer, the Host migrates any legacy native
 queued rows into its own store and removes the old rows. Migration is
 idempotent and fails closed on malformed or conflicting rows. The single

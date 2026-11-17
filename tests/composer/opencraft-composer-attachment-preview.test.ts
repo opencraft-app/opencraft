@@ -163,3 +163,43 @@ test("refused content admission releases the unowned image preview without start
   await assert.rejects(fetch(preview));
   base.dispose();
 });
+
+test("transfer progress belongs to the current attempt, survives view changes and rejects stale callbacks", async () => {
+  const composer = createController(), session = attachmentPreviewSession(composer);
+  type Report = (progress: { loaded: number; total: number } | null) => void;
+  const reports: Report[] = [];
+  const finish: Array<() => void> = [];
+  const resolver = (_file: File, pending: ComposerAttachment, _signal?: AbortSignal, report?: Report) => {
+    reports.push(report!);
+    return new Promise<ComposerAttachment>(resolve => finish.push(() => resolve({ ...pending, lifecycle: "ready", uri: "file:///done" })));
+  };
+  session.addFiles([new File(["data"], "notes.txt")], resolver);
+  await Promise.resolve();
+  const { draft } = composer.getSnapshot(), id = draft.attachments[0]!.id;
+  reports[0]!({ loaded: 2, total: 4 });
+  assert.deepEqual(session.progress(draft.id, id), { loaded: 2, total: 4 });
+  assert.equal(attachmentPreviewSession(composer), session);
+  for (const invalid of [{ loaded: NaN, total: 4 }, { loaded: 9, total: 4 }, { loaded: 0, total: 0 }]) reports[0]!(invalid);
+  assert.deepEqual(session.progress(draft.id, id), { loaded: 2, total: 4 });
+  session.retry(draft.id, id, resolver);
+  assert.equal(session.progress(draft.id, id), null);
+  await Promise.resolve();
+  reports[0]!({ loaded: 4, total: 4 }); finish[0]!();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(session.progress(draft.id, id), null);
+  reports[1]!({ loaded: 1, total: 4 });
+  reports[1]!(null); // reconnect / new transport attempt
+  assert.equal(session.progress(draft.id, id), null);
+  reports[1]!({ loaded: 3, total: 4 });
+  finish[1]!();
+  await new Promise(resolve => setImmediate(resolve));
+  reports[1]!({ loaded: 4, total: 4 });
+  assert.equal(session.progress(draft.id, id), null);
+  assert.equal(composer.getSnapshot().draft.attachments[0]!.lifecycle, "ready");
+  session.retry(draft.id, id, resolver);
+  await Promise.resolve();
+  session.remove(draft.id, id);
+  reports[2]!({ loaded: 4, total: 4 });
+  assert.equal(session.progress(draft.id, id), null);
+  composer.dispose();
+});

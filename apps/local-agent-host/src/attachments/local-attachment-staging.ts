@@ -26,7 +26,8 @@ export const LOCAL_ATTACHMENT_MAX_BYTES = ATTACHMENT_MAX_BYTES;
 export const LOCAL_ATTACHMENT_STAGING_CAPABILITY: AttachmentStagingCapability =
   Object.freeze({
     version: 1,
-    chunkBytes: ATTACHMENT_CHUNK_BYTES,
+    chunkBytes: 64 * 1024,
+    uploadRetry: "last-chunk-v1",
     sources: ["client-bytes"] as const,
     locations: ["host-file"] as const,
     maxBytes: LOCAL_ATTACHMENT_MAX_BYTES,

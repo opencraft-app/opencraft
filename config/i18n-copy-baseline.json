@@ -2819,18 +2819,6 @@
     },
     {
       "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-text",
-      "text": "KB",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-text",
-      "text": "Adding file…",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "jsx-expression",
       "text": "Could not add file",
       "count": 1

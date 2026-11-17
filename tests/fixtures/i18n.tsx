@@ -67,7 +67,7 @@ function App() {
           selectionCatalog={{ agents: [], models: [{ id: "fixture", value: "fixture", label: "Fixture", isDefault: true, description: null, efforts: [], defaultEffort: null, inputModalities: ["text"] }], permissionProfiles: [] }} />
         <section data-shared-i18n>
           <DictationFooter interaction={{ kind: "dictation", phase: "starting", startedAt: null, audioLevels: { subscribe: () => () => {} }, cancel() {}, finish: async () => false }} canSend={false} onSend={() => {}} onCancel={() => {}} />
-          <ComposerQueueTray items={[{ id: "unknown", preview: "User-authored queue message", state: "unknown", operation: "idle", actionable: false, unconfirmedTargetTurnId: "unknown-turn" }]} isResponseInProgress={false} onDiscardUnconfirmed={async () => {}} />
+          <ComposerQueueTray items={[{ id: "unknown", preview: "User-authored queue message", state: "unknown", operation: "idle", actionable: false, unconfirmedTargetTurnId: "unknown-turn" }]} isResponseInProgress={false} onRetryUnconfirmed={async () => {}} />
           <WebChatDocument documentId="locale-table" source={"| User heading | Value |\n| --- | --- |\n| User cell | 42 |"} />
           <WebChatDocument documentId="locale-image" source={"![](data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=)"} />
         </section>

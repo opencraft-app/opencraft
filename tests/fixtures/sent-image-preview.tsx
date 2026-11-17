@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { createComposerController } from "@opencraft/composer-core";
 import { createConversationKey } from "@opencraft/chat-core";
 import { OpenCraftComposer } from "@opencraft/composer-editor";
@@ -9,6 +9,7 @@ import * as themes from "@opencraft/design-system/theme-engine";
 import type { UserMessageTimelineBlock } from "@opencraft/chat-core";
 import { createIntlTestRoot } from "./intl-root";
 import { UserMessageBlock } from "../../apps/workbench-web/src/components/conversation/user-message";
+import { ConversationDocumentContext } from "../../apps/workbench-web/src/components/conversation/document-context";
 import { WorkbenchPresentationRootProvider } from "../../apps/workbench-web/src/components/workbench-presentation-root";
 import appStyles from "../../apps/workbench-web/src/styles/app.scss?inline";
 
@@ -46,6 +47,36 @@ const block: UserMessageTimelineBlock = {
 };
 
 const mode = new URLSearchParams(location.search).get("mode") === "dark" ? "dark" : "light";
+const multipleMetadataImages = new URLSearchParams(location.search).has("metadata-multiple");
+const metadataDenied = new URLSearchParams(location.search).has("metadata-denied");
+const metadataOnly = new URLSearchParams(location.search).has("metadata-only");
+function SentImageMessage() {
+  const [hydrated, setHydrated] = useState(false);
+  if (!metadataOnly) return <UserMessageBlock block={block} />;
+  Object.assign(window, { hydrateImageContent: () => setHydrated(true) });
+  return <UserMessageBlock block={{ ...block,
+    message: "Inspect these images",
+    content: hydrated ? (multipleMetadataImages
+      ? [{ type: "local-image", source: "/host/second.png", detail: null }, { type: "local-image", source: "/host/IMG_3364.png", detail: null }]
+      : [{ type: "local-image", source: "/host/IMG_3364.png", detail: null }]) : [],
+    attachments: (multipleMetadataImages ? ["IMG_3364.png", "second.png"] : ["IMG_3364.png"]).map(name => ({
+      type: "file", id: name, name, target: `/host/${name}`, mimeType: "image/png", startLine: null, endLine: null,
+    })),
+  }} />;
+}
+const metadataCompletions: (() => void)[] = [];
+const metadataMedia = {
+  conversationId: "preview", hostId: "fixture", cwd: "/host", theme: mode,
+  loadMediaSource: async () => {
+    const state = window as any;
+    state.metadataLoads = (state.metadataLoads ?? 0) + 1;
+    await new Promise<void>(resolve => {
+      metadataCompletions.push(resolve);
+      state.completeMetadataMedia = () => metadataCompletions.splice(0).forEach(complete => complete());
+    });
+    return metadataDenied ? null : { source: image };
+  },
+} as const;
 for (const [key, value] of Object.entries(themes.buildOpenCraftThemeCssProperties(mode, themes.opencraftNeutralThemePalette[mode]))) presentationRoot.style.setProperty(key, value);
 presentationRoot.dataset.theme = mode;
 presentationRoot.dataset.uiDensity = new URLSearchParams(location.search).has("touch") ? "touch" : "compact";
@@ -57,9 +88,9 @@ Object.assign(window, { imagePreviewFixture: { controller, switchThread: (id: st
 createIntlTestRoot(presentationRoot).render(
   <WorkbenchPresentationRootProvider target={presentationRoot}>
     <ImageEditorContext.Provider value={{ id: "opencraft.image-editor", Component: ImageEditor, styles: editorStyles }}>
-    <UserMessageBlock block={block} />
+    {metadataOnly ? <ConversationDocumentContext.Provider value={metadataMedia}><SentImageMessage /></ConversationDocumentContext.Provider> : <SentImageMessage />}
     <div style={{ position: "relative", maxWidth: 760, margin: "24px auto", padding: 12 }}>
-      <OpenCraftComposer controller={controller} portalContainer={presentationRoot} mentionSuggestionsEnabled={false} onCancel={() => {}}
+      <OpenCraftComposer isStreaming={false} controller={controller} portalContainer={presentationRoot} mentionSuggestionsEnabled={false} onCancel={() => {}}
         onSubmit={() => { (window as any).imagePreviewFixture.submissions++; return false; }}
         onResolveAttachment={(file, pending) => { (window as any).imagePreviewFixture.files.push(file); return new Promise(resolve => completions.push(() => resolve({ ...pending, lifecycle: "ready", uri: "file:///synthetic/" + pending.name, error: null }))); }} />
     </div>

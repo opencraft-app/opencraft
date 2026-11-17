@@ -5,70 +5,25 @@ import type { Browser, Page } from "playwright";
 
 // Only the owner-supplied submit/queue command boundary is synthetic. This mounts
 // the real controller, ProseMirror keymap, queue tray and complete Composer.
-const source = `
-import React, {useState} from 'react';
-import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
-import {createConversationKey} from '@opencraft/chat-core';
-import {createComposerController, composerDocumentToPlainText} from '@opencraft/composer-core';
-import {OpenCraftComposer} from '@opencraft/composer-editor';
-import {restoreQueuedInput,compileSubmitIntent} from '@opencraft/composer-appserver';
-import '/apps/workbench-web/src/styles/app.scss';
-const documentFor = text => ({version:1, blocks:[{type:'paragraph', children:text ? [{type:'text',text}] : []}]});
-const makeController = id => createComposerController({type:'existing-thread',key:createConversationKey('probe',id)}, {now:Date.now,createId:()=>crypto.randomUUID()});
-const item = (id, preview) => ({id,preview,state:'queued',operation:'idle',actionable:true,editableContent:{document:documentFor(preview),attachments:[],context:[]}});
-const actions = [];
-let release, editedInput;
-function App() {
-  const [controller,setController] = useState(()=>makeController('one'));
-  const [rows,setRows] = useState(()=>[item('top','First queued message'),item('next','Second queued message')]);
-  const [config,setConfig] = useState({mode:'queue',streaming:true,supported:true,disabled:false,submissionDisabled:false,hold:false});
-  window.fixture = {
-    controller, actions, config, configure: patch=>setConfig(c=>({...c,...patch})),
-    replaceRows:setRows, item, release:()=>release?.(),
-    nativeImage(){setRows([{...item('image','Queued image'),editableContent:restoreQueuedInput([{type:'image',fileId:'uploaded-image-1'}])}])},
-    editedInput:()=>editedInput,
-    switchThread:()=>{setController(makeController('two'));setRows([item('new-top','New thread queue')])},
-    attachment:lifecycle=>controller.dispatch({type:'add-attachment',attachment:{id:'file',name:'notes.txt',mimeType:'text/plain',size:3,uri:lifecycle==='ready'?'data:text/plain,abc':null,lifecycle,error:null}}),
-  };
-  return <main style={{maxWidth:900,margin:'32px auto',padding:12}}><OpenCraftComposer
-    controller={controller} placeholder='Write a message' isStreaming={config.streaming}
-    defaultFollowUpAction={config.mode} supportsQueuedSteer={config.supported}
-    disabled={config.disabled} submissionDisabled={config.submissionDisabled}
-    queuedSubmissions={rows}
-    onSubmit={(intent,context)=>{
-      actions.push({type:'submit',action:context.followUpAction,text:composerDocumentToPlainText(intent.document),attachments:intent.attachments.length});
-      if(context.followUpAction==='queue')setRows(previous=>[...previous,item('added',composerDocumentToPlainText(intent.document))]);
-      return true;
-    }}
-    onUpdateQueuedSubmission={async(id,intent)=>{editedInput=compileSubmitIntent(intent).input;actions.push({type:'edit',id,text:composerDocumentToPlainText(intent.document)})}}
-    onSteerQueuedSubmission={async id=>{
-      actions.push({type:'queue-steer',id});
-      if(config.hold)await new Promise(resolve=>release=resolve);
-      setRows(previous=>previous.filter(row=>row.id!==id));
-    }} onCancel={()=>actions.push({type:'cancel'})}/></main>;
-}
-createIntlTestRoot(document.getElementById('root')).render(<App/>);
-`;
 const vite = await createServer({
   configFile: false, root: process.cwd(), logLevel: "error",
   resolve: { dedupe: ["react", "react-dom"] },
+  optimizeDeps: { entries: ["tests/fixtures/queue-steer-shortcut.jsx"] },
   cacheDir: "node_modules/.vite-queue-steer-shortcut",
   esbuild: { jsx: "automatic", target: "esnext" },
   server: { host: "127.0.0.1", port: 0, hmr: false },
   plugins: [{
     name: "queue-steer-shortcut-probe",
-    resolveId: id => id === "/queue-shortcut.tsx" ? id : null,
-    load: id => id === "/queue-shortcut.tsx" ? source : null,
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (req.url !== "/") return next();
+        if (req.url?.split("?")[0] !== "/") return next();
         res.setHeader("content-type", "text/html");
-        res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/queue-shortcut.tsx"></script>');
+        res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/queue-steer-shortcut.jsx"></script>');
       });
     },
   }],
 });
-const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright") as typeof import("playwright");
 let browser: Browser | undefined;
 const actions = (page: Page) => page.evaluate(() => (window as any).fixture.actions);
 const configure = async (page: Page, patch: Record<string, unknown>) => {
@@ -84,7 +39,9 @@ try {
     await context.addInitScript({content: `Object.defineProperty(navigator, "platform", {get: function () {return "${mac ? "MacIntel" : "Linux x86_64"}";}});`});
     const page = await context.newPage();
     const errors: string[] = [];
-    page.on("pageerror", error => errors.push(error.message));
+    page.on("pageerror", error => { errors.push(error.message); console.error("[queue-smoke]", error.message); });
+    page.on("console", message => { if (message.type() === "error") console.error("[browser-console]", message.text()); });
+    page.on("response", response => { if(response.status() >= 400) console.error("[browser-response]", response.status(), response.url()); });
     const editor = page.locator(".opencraft-composer-editor");
     const shortcut = mac ? "Meta+Enter" : "Control+Enter";
     const reset = async () => {
@@ -152,7 +109,7 @@ try {
     await page.evaluate(() => { const f=(window as any).fixture; f.replaceRows([f.item('top','Ordinary head'),{...f.item('claim','Delivery unknown'),unconfirmedTargetTurnId:'turn'}]); });
     await page.waitForTimeout(30);
     await press();
-    assert.deepEqual(await actions(page), []);
+    assert.deepEqual(await actions(page), [{ type: "queue-steer", id: "top" }]);
     for (const patch of [{ supported: false }, { submissionDisabled: true }, { disabled: true }]) {
       await reset();
       await configure(page, patch);
@@ -236,6 +193,83 @@ try {
     assert.equal(await editor.textContent(), "New conversation draft");
     assert.equal(await page.locator(".opencraft-composer-queue-item__preview").first().textContent(), "New thread queue");
     assert.deepEqual(errors, []);
+    await context.close();
+  }
+  // Real Composer, localized status, no modal or toast; only the command
+  // boundary is synthetic. Exercise touch and keyboard with the draft intact.
+  for (const touch of [false, true]) for (const mode of ["light", "dark"]) {
+    const context = await browser.newContext({ viewport: touch ? {width:390,height:844} : {width:1100,height:800}, hasTouch:touch, isMobile:touch });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", error => { errors.push(error.message); console.error("[queue-smoke]", error.message); });
+    await page.goto(origin + '?locale=zh-CN&mode=' + mode);
+    const editor = page.locator('.opencraft-composer-editor');
+    await editor.fill('保留我的草稿');
+    await configure(page, {hold:true, retryFail:true});
+    await page.evaluate(() => { const f=(window as any).fixture; f.replaceRows([{...f.item('claim','继续检查压缩问题'),actionable:false,reorderable:false,state:'unknown',unconfirmedTargetTurnId:'original-turn'}]); (window as any).retryEditor=document.querySelector('.opencraft-composer-editor'); });
+    const retry = page.getByRole('button', {name:'重试',exact:true});
+    await retry.waitFor();
+    await page.getByText('未确认送达', {exact:true}).waitFor();
+    const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? '.local/queue-delivery-retry';
+    await mkdir(output, {recursive:true});
+    // The fixture binds the production density owner in a React effect. A
+    // mounted button alone does not prove that projection or entry motion has
+    // committed; measure only its settled, owner-ready hit area.
+    await page.waitForFunction(expected => document.documentElement.dataset.uiDensity === expected, touch ? 'touch' : 'compact');
+    await retry.evaluate(async element => {
+      const motions: Animation[] = [];
+      for (let owner: Element | null = element; owner; owner = owner.parentElement) {
+        motions.push(...owner.getAnimations().filter(animation => animation.playState === 'running'
+          && Number.isFinite(animation.effect?.getComputedTiming().endTime)));
+      }
+      await Promise.all(motions.map(animation => animation.finished.catch(() => undefined)));
+    });
+    const bounds = await retry.boundingBox();
+    const geometry = await retry.evaluate(element => ({
+      minWidth: getComputedStyle(element).minWidth, minHeight: getComputedStyle(element).minHeight,
+      density: document.documentElement.dataset.uiDensity,
+      layoutWidth: (element as HTMLElement).offsetWidth, layoutHeight: (element as HTMLElement).offsetHeight,
+      rect: {width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height},
+    }));
+    assert.ok(bounds && bounds.width >= (touch ? 44 : 22) && bounds.height >= (touch ? 44 : 22),
+      JSON.stringify({touch, mode, bounds, geometry}));
+    assert.equal(geometry.density, touch ? 'touch' : 'compact');
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
+    await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+mode+'.png'});
+    if(touch)await retry.tap(); else {await retry.focus();await page.keyboard.press('Enter');}
+    await page.getByText('正在重试…', {exact:true}).waitFor();
+    assert.equal(await retry.isDisabled(), true);
+    assert.equal((await actions(page)).length,1);
+    assert.equal(await page.getByRole('alertdialog').count(),0);
+    await page.evaluate(() => (window as any).fixture.release());
+    await page.getByText('重试失败', {exact:true}).waitFor();
+    assert.equal(await retry.isEnabled(),true);
+    await configure(page, {hold:false,retryFail:false});
+    if(touch)await retry.tap();else {await retry.focus();await page.keyboard.press('Enter');}
+    await page.waitForFunction(()=>!document.querySelector('.opencraft-composer-queue-item'));
+    assert.deepEqual(await actions(page),[{type:'retry',id:'claim',turnId:'original-turn'},{type:'retry',id:'claim',turnId:'original-turn'}]);
+    assert.equal(await editor.textContent(),'保留我的草稿');
+    assert.equal(await page.evaluate(()=>(window as any).retryEditor===document.querySelector('.opencraft-composer-editor')),true);
+    // Same row ID can acquire a new original-Turn identity after reconciliation.
+    // A late rejected attempt must not decorate or lock that successor claim.
+    await configure(page, {hold:true,retryFail:true});
+    await page.evaluate(() => { const f=(window as any).fixture; f.replaceRows([{...f.item('claim','新的投递身份'),actionable:false,reorderable:false,state:'unknown',unconfirmedTargetTurnId:'old-turn'}]); });
+    if(touch)await retry.tap();else {await retry.focus();await page.keyboard.press('Enter');}
+    await page.getByText('正在重试…', {exact:true}).waitFor();
+    await page.evaluate(() => { const f=(window as any).fixture; f.replaceRows([{...f.item('claim','新的投递身份'),actionable:false,reorderable:false,state:'unknown',unconfirmedTargetTurnId:'new-turn'}]); });
+    await page.getByText('未确认送达', {exact:true}).waitFor();
+    await page.evaluate(() => (window as any).fixture.release());
+    await page.waitForTimeout(50);
+    assert.equal(await page.getByText('重试失败', {exact:true}).count(), 0);
+    assert.equal(await retry.isEnabled(), true);
+    await configure(page, {hold:false,retryFail:false});
+    if(touch)await retry.tap();else {await retry.focus();await page.keyboard.press('Enter');}
+    await page.waitForFunction(()=>!document.querySelector('.opencraft-composer-queue-item'));
+    assert.deepEqual((await actions(page)).slice(-2), [{type:'retry',id:'claim',turnId:'old-turn'},{type:'retry',id:'claim',turnId:'new-turn'}]);
+    assert.equal(await editor.textContent(),'保留我的草稿');
+    assert.equal(await page.evaluate(()=>(window as any).retryEditor===document.querySelector('.opencraft-composer-editor')),true);
+    assert.equal(await page.getByRole('alertdialog').count(),0);
+    assert.deepEqual(errors,[]);
     await context.close();
   }
   console.log("Real Composer keyboard smoke passed on Mac Cmd+Enter / Linux Ctrl+Enter: Enter enqueue → head steer, text/attachment priority, processing assets, live policy/order, edit, blocked head/claim/capability/Host, in-flight lock, repeat, IME, focus, idle Send and late completion after thread switch. Submit/queue RPC boundaries synthetic; no real messages sent.");

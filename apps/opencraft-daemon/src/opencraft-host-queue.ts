@@ -121,7 +121,7 @@ export class OpenCraftHostQueue {
   firstUnsettled(threadId: string): HostQueuedSubmission | null { return this.list(threadId)[0] ?? null; }
 
   firstAwaitingAdmission(threadId: string): HostQueuedSubmission | null {
-    const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown') AND NOT(state='unknown' AND COALESCE(paused_reason,'')='execution-interrupted') ORDER BY position,created_at_ms,id LIMIT 1")
+    const row = this.db.prepare("SELECT * FROM opencraft_host_queue WHERE thread_id=? AND (state IN ('queued','dispatching') OR (state='unknown' AND COALESCE(paused_reason,'')!='execution-interrupted' AND (client_id LIKE 'actor-input:%' OR paused_reason='execution-fault-unconfirmed'))) ORDER BY position,created_at_ms,id LIMIT 1")
       .get(threadId);
     return row ? this.project(row) : null;
   }
@@ -140,7 +140,7 @@ export class OpenCraftHostQueue {
 
   reorder(threadId: string, ids: readonly string[]): void {
     const unsettled = this.list(threadId);
-    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown" && row.pausedReason !== "execution-interrupted"))
+    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown" && (row.clientUserMessageId.startsWith("actor-input:") || row.pausedReason === "execution-fault-unconfirmed")))
       throw new Error("Reconcile in-flight delivery before reordering this queue");
     const queued = unsettled.filter(row => row.state === "queued");
     if (ids.length !== queued.length || new Set(ids).size !== ids.length || queued.some(row => !ids.includes(row.id))) {
@@ -171,6 +171,11 @@ export class OpenCraftHostQueue {
       .run(Date.now(), threadId);
     else this.db.prepare("UPDATE opencraft_host_queue SET state='unknown',paused_reason='execution-fault-unconfirmed',updated_at_ms=? WHERE thread_id=? AND state IN ('dispatching','steering','unknown') AND COALESCE(paused_reason,'') NOT IN ('execution-fault-unconfirmed','execution-interrupted')")
       .run(Date.now(), threadId);
+  }
+
+  requestRetry(threadId: string, id: string, expectedTurnId: string): boolean {
+    return this.db.prepare("UPDATE opencraft_host_queue SET paused_reason='delivery-retry-requested',updated_at_ms=? WHERE thread_id=? AND id=? AND state='unknown' AND target_turn_id=? AND client_id NOT LIKE 'actor-input:%' AND COALESCE(paused_reason,'')!='execution-fault-unconfirmed'")
+      .run(Date.now(), threadId, id, expectedTurnId).changes === 1;
   }
 
   discardUnknown(threadId: string, id: string, expectedTurnId: string): boolean {

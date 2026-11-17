@@ -216,10 +216,19 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
   const intl = useIntl();
   const documentContext = useContext(ConversationDocumentContext);
   const { images, audio, contexts, files, mcpContexts } = deriveUserMessageWebLayout(block);
-  const [expandedImageIndex, setExpandedImageIndex] = useState<number | null>(null);
+  // History hydration may reorder images. Identity follows the locator, not its
+  // current position, so mounted reads, keyboard focus and the viewer survive.
+  const occurrences = new Map<string, number>();
+  const imageIds = images.map(part => {
+    const occurrence = occurrences.get(part.source) ?? 0;
+    occurrences.set(part.source, occurrence + 1);
+    return JSON.stringify([block.id, "user-attachment", part.source, occurrence]);
+  });
+  const [expandedImageId, setExpandedImageId] = useState<string | null>(null);
+  const expandedImageIndex = expandedImageId === null ? -1 : imageIds.indexOf(expandedImageId);
   const imageTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const nextImage = () => setExpandedImageIndex(current => current === null ? null : (current + 1) % images.length);
-  const previousImage = () => setExpandedImageIndex(current => current === null ? null : (current + images.length - 1) % images.length);
+  const nextImage = () => setExpandedImageId(imageIds[(expandedImageIndex + 1) % images.length] ?? null);
+  const previousImage = () => setExpandedImageId(imageIds[(expandedImageIndex + images.length - 1) % images.length] ?? null);
   if (images.length === 0 && audio.length === 0 && contexts.length === 0 && files.length === 0 && mcpContexts.length === 0 && !block.referencesPriorConversation) return null;
   const openPath = (path: string) => {
     const decision = resolveStandardChatResource(path, { cwd: documentContext.cwd, externalResourcePolicy: "allow" });
@@ -232,23 +241,23 @@ function UserMessageAttachmentRows({ block }: { readonly block: UserMessageTimel
           <div className="thread-user-message__image-row">
             {images.map((part, index) => (
               <UserMessageImage
-                documentId={`${block.id}:user-attachment:${index}`}
-                key={`${block.id}:user-attachment:${index}`}
+                documentId={imageIds[index]}
+                key={imageIds[index]}
                 local={part.type === "local-image"}
-                onOpen={(trigger) => { imageTriggerRef.current = trigger; setExpandedImageIndex(index); }}
+                onOpen={(trigger) => { imageTriggerRef.current = trigger; setExpandedImageId(imageIds[index]); }}
                 source={part.source}
               />
             ))}
           </div>
         </div>
       )}
-      {expandedImageIndex === null || images[expandedImageIndex] === undefined ? null : (
+      {expandedImageIndex < 0 || images[expandedImageIndex] === undefined ? null : (
         <UserMessageImageViewer
-          documentId={`${block.id}:user-attachment-viewer:${expandedImageIndex}`}
+          documentId={`${expandedImageId}:viewer`}
           imageCount={images.length}
           index={expandedImageIndex}
           local={images[expandedImageIndex].type === "local-image"}
-          onClose={() => setExpandedImageIndex(null)}
+          onClose={() => setExpandedImageId(null)}
           onNext={nextImage}
           onPrevious={previousImage}
           returnFocus={() => imageTriggerRef.current}
