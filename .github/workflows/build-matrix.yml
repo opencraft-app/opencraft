@@ -204,7 +204,9 @@ jobs:
     needs: plan
     if: needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Each suite has its own limit so a hang fails that step with its log kept,
+    # instead of cancelling the job and losing every log.
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -227,34 +229,49 @@ jobs:
         if: always() && steps.dependencies.outcome == 'success'
       - run: npm run typecheck
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 15
       - run: npm run check:boundaries
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:cli
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:sqlite-node
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:local-agent-storage
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:control-standards
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:identity
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:extensions
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:connectors
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:appserver
         if: always() && steps.dsh.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:dsh-bridge
         if: always() && steps.dsh.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:chat
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:adaptive-navigation
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:text-selection
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
       - run: npm run test:workbench:unit
         if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
 
   build-checks:
     if: always()
