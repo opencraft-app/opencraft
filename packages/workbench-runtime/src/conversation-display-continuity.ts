@@ -247,7 +247,7 @@ export function createConversationDisplayContinuity(input: {
         frames: [{ type: "user", id: `submitted:${intent.clientMessageId}`,
           turnId: asTurnId(receipt.turnId ?? `submitted:${intent.clientMessageId}`),
           status: "complete", durationMs: null, hookStats: null, anchors: [],
-          blocks: [submittedMessageDisplay(intent, sender)],
+          blocks: [submittedMessageDisplay(intent, receipt.sender === undefined ? sender : receipt.sender)],
         }],
       });
       // A small transient handoff, not another durable conversation store.

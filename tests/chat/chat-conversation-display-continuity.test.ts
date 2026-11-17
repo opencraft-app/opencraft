@@ -618,3 +618,11 @@ test("complete history count survives bounded messages, persistence and metadata
   const updated = createConversationDisplayContinuity({ namespace: "count", storage: local, now: () => 1001 });
   assert.equal((await updated.load("host", "thread"))?.historyTurnCount, 602);
 });
+
+
+for (const sender of [null, {kind:"employee" as const,loginName:"host-verified"}]) test(`first message handoff prefers exact Host sender proof: ${JSON.stringify(sender)}`, () => {
+  const cache=createConversationDisplayContinuity({namespace:"account",storage:storage()});
+  cache.retainSubmission(submission(), {...accepted,sender}, {kind:"employee",loginName:"browser-fallback"});
+  const block=cache.peekSubmission("host","thread")!.frames[0]!.blocks[0]!;
+  assert.equal(block.type,"user-message"); if(block.type==="user-message") assert.deepEqual(block.sender,sender);
+});

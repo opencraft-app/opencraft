@@ -43,6 +43,15 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   let draining = false;
   let pendingWake = false;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryNotBefore = 0;
+  let retryCommandId: string | null = null;
+  let retryFailures = 0;
+  let retryFailureCommandId: string | null = null;
+  const resetRetry = () => {
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    retryTimer = null; retryNotBefore = 0; retryCommandId = null;
+    retryFailures = 0; retryFailureCommandId = null;
+  };
   let hydrated = false;
   const read = (): Promise<void> => {
     const owner = generation;
@@ -81,7 +90,19 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   const drain = async () => {
     if (disposed || !dispatch?.ready() || (dispatch?.blocked() ?? true)) return;
     if (draining) { pendingWake = true; return; }
+    if (retryCommandId === entries[0]?.intent.commandId && Date.now() < retryNotBefore) {
+      // Timers can fire before the deadline (or the wall clock can move).
+      if (retryTimer === null) {
+        const owner = generation;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (!disposed && owner === generation) wake();
+        }, retryNotBefore - Date.now());
+      }
+      return;
+    }
     if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null; }
+    retryNotBefore = 0; retryCommandId = null;
     draining = true;
     const owner = generation;
     try {
@@ -122,12 +143,23 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
           await commit(() => entries.map(entry => entry.intent.commandId === head.intent.commandId
             ? { ...entry, state, error: state === "waiting" ? undefined : error instanceof Error ? error.message : String(error) } : entry));
           notify();
-          if (error instanceof SubmissionNotDispatchedError && error.retryAfterMs !== undefined
-            && Number.isFinite(error.retryAfterMs) && error.retryAfterMs > 0) {
+          if (error instanceof SubmissionNotDispatchedError) {
+            // Transparent route resumption preserves logical readiness and may
+            // produce no Thread event after it succeeds. Positive non-dispatch
+            // proof keeps custody retryable even without a provider retry hint.
+            // Never apply this fallback to an unknown outcome or a rejection.
+            if (retryFailureCommandId !== head.intent.commandId) retryFailures = 0;
+            retryFailureCommandId = head.intent.commandId;
+            const fallbackMs = Math.min(10_000, 500 * 2 ** Math.min(retryFailures++, 5));
+            const requestedMs = error.retryAfterMs;
+            const delayMs = requestedMs !== undefined && Number.isFinite(requestedMs) && requestedMs > 0
+              ? Math.max(100, Math.min(10_000, requestedMs)) : fallbackMs;
+            retryNotBefore = Date.now() + delayMs;
+            retryCommandId = head.intent.commandId;
             retryTimer = setTimeout(() => {
               retryTimer = null;
               if (!disposed && owner === generation) wake();
-            }, Math.max(100, Math.min(10_000, error.retryAfterMs)));
+            }, delayMs);
           }
           break;
         }
@@ -151,7 +183,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   };
   const wake = () => { void drain(); };
   const stop = config.storage.subscribe(() => {
-    generation++;
+    generation++; resetRetry();
     dispatch?.retire(entries.map(entry => entry.intent.commandId));
     // Account replacement retires every old asynchronous result.
     entries = [];
@@ -164,11 +196,11 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     attach(next: ConversationOutboxDispatch): () => void {
       if (disposed) throw new Error("Conversation outbox is disposed");
-      generation++; dispatch = next;
+      generation++; resetRetry(); dispatch = next;
       hydration = read(); notify(); wake();
       return () => {
         if (dispatch !== next) return;
-        generation++; dispatch = null;
+        generation++; resetRetry(); dispatch = null;
         entries = entries.map(entry => entry.state === "sending" ? { ...entry, state: "unknown" as const } : entry);
         notify();
       };
@@ -258,7 +290,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       } catch (error) { if (!disposed && owner === generation) storageError = error instanceof Error ? error : new Error(String(error)); }
     },
     dispose() {
-      disposed = true; generation++; dispatch = null;
+      disposed = true; generation++; resetRetry(); dispatch = null;
       if (retryTimer !== null) clearTimeout(retryTimer);
       retryTimer = null; stop(); listeners.clear();
     },

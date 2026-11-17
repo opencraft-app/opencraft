@@ -113,6 +113,8 @@ export interface SubmitIntent {
 }
 
 export interface SubmissionReceipt {
+  /** Verified Host attribution for this exact accepted message; absent on older peers. */
+  readonly sender?: import("@opencraft/chat-core").UserMessageTimelineBlock["sender"];
   readonly commandId: string;
   readonly clientMessageId: string;
   readonly hostId: string;

@@ -1734,7 +1734,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       measured("start", 0, { activePhase: "projection" });
       let reply: unknown;
       try {
-        const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result);
+        const projected = projectThreadMessageResult(this.projectSender, method, historyParams, result, { trustedSubmissionSender: !!this.messageSenders });
         reply = this.messageAttachments ? projectThreadAttachmentResult(this.messageAttachments, method, historyParams, projected) : projected;
       } finally { measured("projection", performance.now() - projectionStarted); }
       outcome = "ok";
@@ -2202,8 +2202,8 @@ export class CodexEngineAdapter implements DuplexTransport {
           outcome: "result" in message ? "succeeded" : "failed", pid: this.child?.pid ?? null,
         });
         if ("result" in message) this.observeMetadataResult(pending.method, pending.params, message.result, pending.metadataSender);
-        if (this.messageSenders && "result" in message) message = { ...message, result: projectThreadMessageResult(
-          this.projectSender, pending.method, pending.params, message.result) };
+        if ("result" in message) message = { ...message, result: projectThreadMessageResult(
+          this.projectSender, pending.method, pending.params, message.result, { trustedSubmissionSender: !!this.messageSenders }) };
         if (pending.historyTiming) {
           const trace = pending.historyTiming, nativeRpcMs = receivedAt - (trace.nativeStarted ?? trace.started);
           const timing = { pairId: trace.pairId, coreMs: performance.now() - trace.started,
@@ -3529,7 +3529,8 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (context.actorContext && this.options.collaboration && !actorClientId.startsWith('actor-input:')) {context.resourceOwner?.assertCurrent();this.options.collaboration.authorize(context.actorContext, threadId, string(params.clientUserMessageId), Array.isArray(params.input) ? params.input : []);}
           return queue.add(threadId, string(params.clientUserMessageId), params.input as readonly unknown[], snapshotExecutionSubmission(context));
         });
-        result = { queuedSubmission: this.queueProjection(row) };
+        result = record(projectThreadMessageResult(this.projectSender, method, params,
+          { queuedSubmission: this.queueProjection(row) }, { trustedSubmissionSender: !!this.messageSenders }));
         this.emitQueueChanged(threadId);
         this.scheduleQueueMaintenance(threadId);
       } else if (method === "thread/queue/update") {

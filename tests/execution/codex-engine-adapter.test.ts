@@ -1487,10 +1487,13 @@ test("Host binds each submission to its trusted sender and keeps queued authors 
     await initializeClient(adapter, frames, "a"); await initializeClient(adapter, frames, "b");
     const threadId = (await request("a", "thread/start", { testNoServerRequest: true })).result.thread.id;
     const first = await request("a", "turn/start", { threadId, clientUserMessageId: "first", input: [{ type: "text", text: "one" }], sender: b });
+    assert.deepEqual(first.result.__opencraftSubmissionSender, { clientMessageId: "first", sender: a });
     const turnId = first.result.turn.id;
-    assert.ok((await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "second", input: [{ type: "text", text: "two" }] }, b)).result);
+    const steered = await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "second", input: [{ type: "text", text: "two" }] }, b);
+    assert.deepEqual(steered.result.__opencraftSubmissionSender, { clientMessageId: "second", sender: b });
     const added = await request("a", "thread/queue/add", { threadId, clientUserMessageId: "third", input: [{ type: "text", text: "three" }] });
     assert.deepEqual(added.result.queuedSubmission.sender, a);
+    assert.deepEqual(added.result.__opencraftSubmissionSender, { clientMessageId: "third", sender: a });
     // A repeat ID from another employee must not change authorship or reach native Codex.
     const collision = await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "first", input: [{ type: "text", text: "overwrite" }] }, b);
     assert.match(collision.error.message, /another sender/);
