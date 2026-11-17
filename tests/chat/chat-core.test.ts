@@ -3727,3 +3727,34 @@ test("command completion order preserves unknown clocks, equal starts and real p
   const snapshot = projectTimeline(source([{ id: "untimed", status: "complete", items }]), createDefaultTimelineProjectorRegistry());
   assert.deepEqual(snapshot.frames.flatMap(frame => frame.blocks.flatMap(block => block.sourceItemIds)), items.map(item => item.id));
 });
+
+
+test("Turn grouping preserves interleaved order, last status and invocation isolation", () => {
+  const timeline = projectTimeline(source([
+    { id: "group-a", status: "streaming", items: [
+      { id: "a-user", type: "userMessage", payload: { text: "a" } },
+      { id: "a-answer", type: "agentMessage", payload: { text: "answer" } },
+    ] },
+    { id: "group-b", status: "complete", items: [
+      { id: "b-user", type: "userMessage", payload: { text: "b" } },
+    ] },
+  ]), createDefaultTimelineProjectorRegistry());
+  const a = timeline.frames.filter(frame => frame.turnId === "group-a");
+  const b = timeline.frames.find(frame => frame.turnId === "group-b")!;
+  assert.equal(a.length, 2);
+  const last = Object.freeze({ ...a[1]!, status: b.status });
+  const frames = Object.freeze([Object.freeze(a[0]!), Object.freeze(b), last, last]);
+  const input = Object.freeze({ frames, interactionWait: timeline.interactionWait });
+  const first = groupTimelineFramesByTurn(input);
+  assert.deepEqual(first.map(turn => turn.turnKey), ["group-a", "group-b"]);
+  assert.deepEqual(first[0]?.frames, [a[0], last, last]);
+  assert.equal(first[0]?.status, last.status);
+  assert.equal(first[0]?.frames[1], last);
+  Object.freeze(first[0]!.frames);
+  Object.freeze(first[0]!);
+  const second = groupTimelineFramesByTurn(input);
+  assert.deepEqual(second, first);
+  assert.notEqual(second[0], first[0]);
+  assert.notEqual(second[0]?.frames, first[0]?.frames);
+  assert.deepEqual(groupTimelineFramesByTurn({ ...input, frames: [] }), []);
+});
