@@ -13,27 +13,110 @@ const brandingAliases = new Map(Array.isArray(FILES) ? FILES
   .map(name => [new URL("/" + name, scope).href, url(name)]) : []);
 const configurationUrl = url("opencraft-offline-configuration");
 
+const installationUrl = url("opencraft-offline-installation");
+const installationState = value => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+
+// Cache.put is atomic but cannot itself be cancelled. Fence the install result
+// even if a browser cache write fails to settle after its response is aborted.
+async function withResourceDeadline(work, active) {
+  const controller = new AbortController();
+  active.add(controller);
+  let rejectAbort;
+  const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  const abort = () => rejectAbort(controller.signal.reason ?? new Error("Offline resource aborted"));
+  controller.signal.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error("Offline resource deadline exceeded")), 30_000);
+  try { return await Promise.race([Promise.resolve().then(() => work(controller.signal)), aborted]); }
+  finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener("abort", abort);
+    active.delete(controller);
+  }
+}
+
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
     if (!Array.isArray(FILES)) throw new Error("Offline shell requires a production build");
     const cache = await caches.open(cacheName);
+    const createdAt = Date.now();
+    await cache.put(installationUrl, installationState({ complete: false, active: false, createdAt }));
     try {
-      let index = 0;
-      await Promise.all(Array.from({ length: 4 }, async () => {
-        while (index < FILES.length) {
+      let previous = (await caches.keys()).filter(name => name.startsWith(prefix) && name !== cacheName);
+      const partial = [];
+      for (const name of previous) {
+        const status = await (await caches.open(name)).match(installationUrl);
+        if (!status) continue;
+        try { const value = await status.json(); if (value.complete === false || value.active === false) partial.push({ name, at: value.createdAt ?? 0 }); }
+        catch { /* A legacy complete build has no installation metadata. */ }
+      }
+      // Bound failed-build storage while retaining the active complete build.
+      const retired = partial.sort((a, b) => b.at - a.at).slice(1).map(value => value.name);
+      for (const name of retired) await caches.delete(name);
+      previous = previous.filter(name => !retired.includes(name));
+      let index = 0, failure;
+      const active = new Set();
+      const stop = error => {
+        failure ??= error;
+        for (const controller of active) controller.abort();
+      };
+      const results = await Promise.allSettled(Array.from({ length: 2 }, async () => {
+        while (!failure && index < FILES.length) {
           const name = FILES[index++];
-          const response = await fetch(url(name), { credentials: "omit", cache: "reload", redirect: "error" });
-          if (!response.ok || (name !== "opencraft-offline.html" && response.headers.get("content-type")?.includes("text/html"))) throw new Error("Offline resource unavailable");
-          await cache.put(url(name), response);
+          let response;
+          if (/^assets\/.+-[a-zA-Z0-9_-]{6,}\.[^/]+$/.test(name)) {
+            for (const oldName of [cacheName, ...previous]) {
+              response = await (await caches.open(oldName)).match(url(name));
+              if (response?.ok && !response.headers.get("content-type")?.includes("text/html")) break;
+              response = null;
+            }
+          }
+          if (failure) return;
+          if (response) {
+            try { await withResourceDeadline(() => cache.put(url(name), response), active); }
+            catch (error) { stop(error); throw failure; }
+            continue;
+          }
+          for (let attempt = 0; ; attempt++) {
+            try {
+              await withResourceDeadline(async signal => {
+                response = await fetch(url(name), { credentials: "omit", cache: "default", priority: "low", redirect: "error", signal });
+                if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+                  const error = new Error("Offline resource denied: " + response.status);
+                  stop(error); throw error;
+                }
+                if (!response.ok || (name !== "opencraft-offline.html" && response.headers.get("content-type")?.includes("text/html"))) throw new Error("Offline resource unavailable");
+                // The bound includes body download and the atomic cache write.
+                await cache.put(url(name), response);
+              }, active);
+              break;
+            } catch (error) {
+              if (failure || attempt >= 2 || error?.name === "QuotaExceededError") { stop(error); throw failure; }
+              // Only transient failures retry, with bounded pacing rather than a hot loop.
+              await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+              if (failure) throw failure;
+            }
+          }
         }
       }));
-    } catch (error) { await caches.delete(cacheName); throw error; }
+      const failed = results.find(result => result.status === "rejected");
+      if (failure || failed) throw failure ?? failed.reason;
+      await cache.put(installationUrl, installationState({ complete: true, active: false, createdAt }));
+    } catch (error) {
+      // This is staging until the browser accepts installation. Keep successful
+      // immutable entries for the next attempt; failed installation never activates.
+      throw error;
+    }
     // No skipWaiting: existing documents retain their complete build until closed.
   })());
 });
 self.addEventListener("activate", event => {
   event.waitUntil((async () => {
     const current = await caches.open(cacheName);
+    const installed = await current.match(installationUrl);
+    if (!installed) throw new Error("Offline build is incomplete");
+    const installation = await installed.json();
+    if (installation.complete !== true) throw new Error("Offline build is incomplete");
+    await current.put(installationUrl, installationState({ ...installation, active: true }));
     const previous = (await caches.keys()).filter(name => name.startsWith(prefix) && name !== cacheName).sort().reverse();
     // A waiting update may activate on the first offline navigation, before a
     // document can configure it. Carry only the sanitized public recipe forward.

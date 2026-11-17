@@ -22,7 +22,7 @@ function fixture({ scope = 'https://example.test/', failAsset = false } = {}) {
     clients: { get: async id => ({ id, url: scope }), claim: async () => {} }, skipWaiting: () => assert.fail('must preserve the old document build') };
   const source = readFileSync(new URL('../../apps/workbench-web/offline-shell-worker.js', import.meta.url), 'utf8')
     .replace('"__OPENCRAFT_BUILD__"', '"new"').replace('"__OPENCRAFT_FILES__"', JSON.stringify(['assets/a.js', 'opencraft-icon.svg', 'opencraft-offline.html']));
-  runInNewContext(source, { self, caches: cacheApi, fetch: fetcher, URL, Response, Set, Promise, Error });
+  runInNewContext(source, { self, caches: cacheApi, fetch: fetcher, URL, Response, Set, Promise, Error, AbortController, setTimeout, clearTimeout });
   const emit = async (type, event = {}) => {
     let pending; handlers.get(type)({ ...event, waitUntil: value => { pending = value; } }); await pending;
   };
@@ -70,7 +70,8 @@ test('activation cleans only this deployment old shell caches; failed installati
   assert.equal(f.cachesByName.has('opencraft-push'), true); assert.equal(f.cachesByName.has('opencraft-shell-v1:https://example.test/servers/other/:old'), true);
   const failed = fixture({ failAsset: true }); await failed.cacheApi.open(prefix + 'old');
   await assert.rejects(failed.emit('install'), /offline/);
-  assert.equal(failed.cachesByName.has(prefix + 'old'), true); assert.equal(failed.cachesByName.has(prefix + 'new'), false);
+  assert.equal(failed.cachesByName.has(prefix + 'old'), true); assert.equal(failed.cachesByName.has(prefix + 'new'), true);
+  await assert.rejects(failed.emit('activate'), /incomplete/);
 });
 
 
