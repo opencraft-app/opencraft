@@ -208,6 +208,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The PR merge commit's first parent is the base the format check compares against.
+          fetch-depth: 2
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -215,6 +217,9 @@ jobs:
           cache: npm
       - id: dependencies
         run: npm ci --no-audit --no-fund
+      - name: Format files this pull request adds
+        run: npm run check:format -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success' && github.event_name == 'pull_request'
       - name: Ensure setfacl for token ACL tests
         run: command -v setfacl >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends acl)
       - id: dsh

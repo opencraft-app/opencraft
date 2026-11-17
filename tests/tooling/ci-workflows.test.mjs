@@ -79,4 +79,7 @@ test('core tests run the full typecheck and every npm test suite as independent 
     assert.match(step, /if: always\(\) && steps\.(dependencies|dsh)\.outcome == 'success'/, step);
   }
   assert.match(job('build-checks'), /needs: \[[^\]]*\bcore-tests\b[^\]]*\]/);
+  // Only files a pull request adds are format-checked, against the merge commit's base parent.
+  assert.match(core, /fetch-depth: 2/);
+  assert.match(core, /run: npm run check:format -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
 });
