@@ -73,6 +73,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands;
   for (const value of [service, brain, hands]) {
     assert.equal(value.user, '1234:2345');
+    assert.deepEqual(value.build.args, { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345' });
     assert.equal(value.network_mode, 'host');
     assert.equal(value.ports, undefined);
   }
