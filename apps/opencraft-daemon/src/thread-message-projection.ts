@@ -29,13 +29,28 @@ export function projectThreadMessageResult(
   method: string,
   requestParams: Value,
   resultValue: unknown,
+  options: { readonly trustedSubmissionSender?: boolean; readonly preserveSubmissionSender?: boolean } = {},
 ): unknown {
-  const result = object(resultValue);
+  const original = object(resultValue);
+  // Only a trusted Host owner can mint proof. Secondary enrichment may carry
+  // an already projected result, but native fields are stripped by default.
+  const { __opencraftSubmissionSender: _untrusted, ...withoutProof } = original;
+  const result = options.preserveSubmissionSender ? original : withoutProof;
   const thread = object(result.thread);
   const threadId = string(thread.id) || string(requestParams.threadId);
-  if (!threadId) return resultValue;
+  if (!threadId) return Object.hasOwn(original, "__opencraftSubmissionSender") ? result : resultValue;
+  const inputId = string(requestParams.clientUserMessageId);
+  // Only the Host's stored attribution is trusted, never a renderer field.
+  const requestThreadId = string(requestParams.threadId);
+  const consistentThread = !requestThreadId || !string(thread.id) || requestThreadId === thread.id;
+  const attribution = options.trustedSubmissionSender && consistentThread && inputId && ["turn/start", "turn/steer", "thread/queue/add"].includes(method)
+    ? project(threadId, inputId, {}) : null;
+  // Attachment enrichment uses the same walker and must preserve this proof.
+  const submission = attribution && Object.hasOwn(attribution, "sender")
+    ? { clientMessageId: inputId, sender: attribution.sender ?? null } : null;
   return {
     ...result,
+    ...(submission ? { __opencraftSubmissionSender: submission } : {}),
     ...(result.initialTurnsPage && Array.isArray(object(result.initialTurnsPage).data) ? {
       initialTurnsPage: { ...object(result.initialTurnsPage),
         data: (object(result.initialTurnsPage).data as unknown[]).map(turn => projectTurn(project, threadId, turn)) },

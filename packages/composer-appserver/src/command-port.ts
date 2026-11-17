@@ -226,6 +226,15 @@ export function createAppServerConversationCommandPort(
     let turnId: string | null;
     let queuedSubmissionId: string | undefined;
     let disposition: SubmissionReceipt["disposition"];
+    let sender: SubmissionReceipt["sender"];
+    const observeSender = (response: unknown) => {
+      const proof = (response as { __opencraftSubmissionSender?: {clientMessageId?: unknown; sender?: unknown} })?.__opencraftSubmissionSender;
+      if (proof?.clientMessageId !== intent.clientMessageId) return;
+      const value = proof.sender as {kind?: unknown; loginName?: unknown} | null;
+      if (value === null) sender = null;
+      else if (value?.kind === "employee" && typeof value.loginName === "string" && /^[A-Za-z0-9._-]{1,128}$/u.test(value.loginName))
+        sender = {kind: "employee", loginName: value.loginName};
+    };
 
     switch (intent.target.type) {
       case "new-thread": {
@@ -257,6 +266,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         });
+        observeSender(turn);
         turnId = turn.turn.id;
         break;
       }
@@ -278,6 +288,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         });
+        observeSender(turn);
         turnId = turn.turn.id;
         break;
       }
@@ -292,6 +303,7 @@ export function createAppServerConversationCommandPort(
             : { additionalContext: compiled.additionalContext }),
           ...compiled.turnOptions,
         }, requestOptions);
+        observeSender(turn);
         turnId = turn.turn.id;
         break;
       }
@@ -305,6 +317,7 @@ export function createAppServerConversationCommandPort(
           compiled.additionalContext ?? undefined,
           requestOptions,
         );
+        observeSender(turn);
         disposition = turn.disposition === "queued" ? "queue" : undefined;
         turnId = disposition === "queue" ? null : turn.turnId;
         break;
@@ -318,6 +331,7 @@ export function createAppServerConversationCommandPort(
         }, requestOptions);
         // Older peers can acknowledge admission without returning queue custody.
         // Keep that success; a subsequent queue baseline supplies the exact ID.
+        observeSender(added);
         queuedSubmissionId = added.queuedSubmission?.id;
         turnId = null;
         break;
@@ -325,6 +339,7 @@ export function createAppServerConversationCommandPort(
     }
 
     const receipt: SubmissionReceipt = {
+      ...(sender === undefined ? {} : { sender }),
       ...(queuedSubmissionId === undefined ? {} : { queuedSubmissionId }),
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,

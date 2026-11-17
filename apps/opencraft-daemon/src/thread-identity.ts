@@ -59,7 +59,7 @@ export class ThreadIdentity {
     return { ...rest, sender: this.senders.get(threadId, messageId) };
   };
   projectResult(method: string, params: IdentityRecord, result: unknown): unknown {
-    return projectThreadMessageResult(this.project, method, params, result);
+    return projectThreadMessageResult(this.project, method, params, result, { trustedSubmissionSender: true });
   }
   projectNotification(message: IdentityRecord): IdentityRecord { return projectThreadMessageNotification(this.project, message); }
   close(): void { this.metadata?.close(); }

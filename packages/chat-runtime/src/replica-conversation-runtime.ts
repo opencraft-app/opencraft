@@ -1432,7 +1432,7 @@ export function createReplicaConversationRuntime(
         }
       }
     }
-    if (replica.authoritative) outbox?.reconcile(new Set([
+    if (replica.authoritative && outbox?.hasPending()) outbox.reconcile(new Set([
       ...sourceClientMessageIds(source), ...[...authoritativeQueue.values()].map(item => item.clientMessageId),
     ]));
     resolveOptimisticTurnPlacements(
@@ -1677,6 +1677,16 @@ export function createReplicaConversationRuntime(
       publish();
       try {
         const receipt = await config.commands.submit(intent, options);
+        if (disposed || options?.canDispatch() === false) return receipt;
+        // An accepted message can precede its native echo. Preserve its exact
+        // verified author even when the browser account contribution is late.
+        if (receipt.commandId === intent.commandId && receipt.clientMessageId === intent.clientMessageId
+          && receipt.hostId === config.key.hostId && receipt.threadId === config.key.threadId && receipt.sender !== undefined) {
+          if (receipt.sender === null) submissionSenders.delete(intent.clientMessageId);
+          else submissionSenders.set(intent.clientMessageId, { ...receipt.sender });
+          if (submissionSenders.size > 256) submissionSenders.delete(submissionSenders.keys().next().value!);
+          senderRevision++;
+        }
         if (options?.canDispatch() === false) return receipt;
         if (intent.target.type === "enqueue-follow-up") {
           // A queue snapshot may already have taken ownership and consumed the

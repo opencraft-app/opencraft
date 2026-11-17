@@ -31,7 +31,7 @@ function withAttachments(value: Value, refs: readonly AttachmentRef[]): Value {
 }
 
 export function projectThreadAttachmentResult(reader: MessageAttachmentReader, method: string, params: Value, result: unknown): unknown {
-  return projectThreadMessageResult((threadId, clientId, value) => withAttachments(value, reader.list(threadId, clientId)), method, params, result);
+  return projectThreadMessageResult((threadId, clientId, value) => withAttachments(value, reader.list(threadId, clientId)), method, params, result, { preserveSubmissionSender: true });
 }
 export function projectThreadAttachmentNotification(reader: MessageAttachmentReader, message: Value): Value {
   return projectThreadMessageNotification((threadId, clientId, value) => withAttachments(value, reader.list(threadId, clientId)), message);
