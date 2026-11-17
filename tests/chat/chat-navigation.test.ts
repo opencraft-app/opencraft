@@ -571,3 +571,71 @@ test("an explicit indexed tool target keeps its identity through hydration even 
   removeDuringProjection=true;assert.equal(await source.prepareTarget(anchor.id,{itemId:"tool"}),null);
  }finally{source.dispose();}
 });
+
+test("V3 anchor publications never read full response or tool payloads; previews still do", async () => {
+  let promptReads=0,responseReads=0,outputReads=0,previewAllowed=false,notify=()=>{};
+  const makeTurn=(response:string):AppServerTurn=>({id:"active",items:[
+    {id:"user",type:"userMessage",sender:{kind:"employee",loginName:"alice"},get content(){promptReads++;return "  Prompt  "}},
+    {id:"answer",type:"agentMessage",get content(){responseReads++;assert.ok(previewAllowed,"anchors must not read assistant content");return response}},
+    {id:"files",type:"fileChange",get changes(){outputReads++;assert.ok(previewAllowed,"anchors must not enumerate outputs");return[{path:"/workspace/report.txt"},{path:"/workspace/report.txt"}]}},
+    {id:"later",type:"steeringUserMessage",content:"A second prompt"},
+    {id:"later-answer",type:"agentMessage",content:"Separate answer"},
+  ]});
+  let active=makeTurn("First answer");
+  let view:ThreadView={...createEmptyThreadView("local","thread"),resumeState:"resumed",historyMode:"message-window",tailHydrationComplete:true,turns:[active]};
+  const source=createV3ConversationNavigationSource({threadId:"thread",port:{
+    getView:()=>view,subscribeView(listener){notify=listener;return()=>{}},
+    async listTurns(){throw Error("anchor-only navigation must not fetch full history")},
+    commitHydratedTurn(){throw Error("already-loaded target must not be recommitted")},
+    projectionBarrier:{waitUntilProjected:async()=>9},
+  }});
+  await source.prepare();
+  const first=source.getSnapshot().anchors[0]!;
+  assert.equal(first.itemId,"user");assert.equal(first.label,"Prompt");
+  assert.equal(promptReads,1);assert.equal(responseReads,0);assert.equal(outputReads,0);
+  for(let i=0;i<3;i++){view={...view,revision:view.revision+1};notify()}
+  assert.equal(promptReads,1,"immutable Turn metadata is reused");
+  const target=await source.prepareTarget(first.id);
+  assert.equal(target?.itemId,"user");assert.equal(responseReads,0);assert.equal(outputReads,0);
+  previewAllowed=true;
+  assert.deepEqual(await source.loadPreview(first.id),{sender:{kind:"employee",loginName:"alice"},label:"Prompt",response:"First answer",outputs:[{kind:"file",label:"report.txt"}]});
+  assert.ok(responseReads>0&&outputReads>0);
+  previewAllowed=false;
+  const oldReads={responseReads,outputReads};active=makeTurn("Current answer");view={...view,revision:view.revision+1,turns:[active]};notify();
+  assert.equal(source.getSnapshot().anchors.length,1,"a later steer never expands V3 topology");
+  assert.deepEqual({responseReads,outputReads},oldReads);
+  previewAllowed=true;
+  assert.equal((await source.loadPreview(first.id))?.response,"Current answer","preview hydration must observe a replaced live Turn");
+  source.dispose();
+});
+
+test("V3 empty metadata cache invalidates for late prompts and preserves heartbeat semantics", async () => {
+  let notify=()=>{},itemReads=0;
+  const empty:AppServerTurn={id:"late",get items(){itemReads++;return[{id:"reasoning",type:"reasoning",text:"work"}]}};
+  let view:ThreadView={...createEmptyThreadView("local","thread"),resumeState:"resumed",historyMode:"message-window",tailHydrationComplete:true,turns:[empty]};
+  const source=createV3ConversationNavigationSource({threadId:"thread",port:{
+    getView:()=>view,subscribeView(listener){notify=listener;return()=>{}},
+    async listTurns(){throw Error("not expected")},commitHydratedTurn(){throw Error("not expected")},projectionBarrier:{waitUntilProjected:async()=>1},
+  }});
+  assert.deepEqual(source.getSnapshot().anchors,[]);const initialReads=itemReads;
+  view={...view,revision:view.revision+1};notify();assert.equal(itemReads,initialReads);
+  view={...view,revision:view.revision+1,turns:[{id:"late",items:[{id:"heartbeat",type:"hookPrompt",content:"  Check  "},{id:"user",type:"userMessage",content:"Later"}]}]};notify();
+  assert.deepEqual(source.getSnapshot().anchors.map(({itemId,label,isHeartbeat,isLoaded})=>({itemId,label,isHeartbeat,isLoaded})),[{itemId:"heartbeat",label:"Check",isHeartbeat:true,isLoaded:true}]);
+  source.dispose();
+});
+
+test("V3 anchor metadata preserves first-eligible ordering and last-eligible duplicate Turn ownership", () => {
+  const view:ThreadView={...createEmptyThreadView("local","thread"),turns:[
+    {id:"duplicate",items:[]},turn("middle","Middle"),turn("duplicate","First"),
+    {...turn("duplicate","Last"),items:[{id:"last",type:"steeringUserMessage",content:"Last"}]},
+    {id:"duplicate",items:[]},
+  ]};
+  const source=createV3ConversationNavigationSource({threadId:"thread",port:{
+    getView:()=>view,subscribeView:()=>()=>{},async listTurns(){throw Error("not expected")},
+    commitHydratedTurn(){throw Error("not expected")},projectionBarrier:{waitUntilProjected:async()=>1},
+  }});
+  assert.deepEqual(source.getSnapshot().anchors.map(({turnKey,itemId,label})=>({turnKey,itemId,label})),[
+    {turnKey:"middle",itemId:"middle:user",label:"Middle"},{turnKey:"duplicate",itemId:"last",label:"Last"},
+  ]);
+  source.dispose();
+});
