@@ -183,6 +183,43 @@ test("layout retains input objects and makes no writes to frozen content", () =>
   assert.equal(layout.contexts[0], skill);
 });
 
+function imageFile(overrides: Partial<Extract<UserMessageTimelineBlock["attachments"][number], { type: "file" }>> = {}) {
+  return { type: "file" as const, id: "photo", name: "IMG_3364.png", target: "/host/IMG_3364.png",
+    mimeType: "image/png", startLine: null, endLine: null, ...overrides };
+}
+
+test("metadata-only history starts image preview before image content arrives", () => {
+  for (const file of [imageFile(), imageFile({ mimeType: null }),
+    imageFile({ target: "/host/opaque", mimeType: " IMAGE/PNG; charset=binary " }),
+    imageFile({ target: "https://example.test/photo.PNG?download=1", mimeType: "application/octet-stream" }),
+    imageFile({ target: "/host/opaque", mimeType: null })]) {
+    const layout = deriveUserMessageWebLayout(message({ attachments: [Object.freeze(file)] }));
+    assert.deepEqual(layout.images, [{ type: "local-image", source: file.target, detail: null }]);
+    assert.equal(layout.files.length, 0);
+    assert.equal(layout.showBubble, false);
+  }
+});
+
+test("image hydration retains a single preview and no duplicate file chip", () => {
+  const file = imageFile();
+  assert.ok(file.target !== null);
+  const early = deriveUserMessageWebLayout(message({ attachments: [file, { ...file, id: "duplicate" }] }));
+  const hydrated = deriveUserMessageWebLayout(message({ attachments: [file],
+    content: [{ type: "local-image", source: file.target, detail: null }] }));
+  assert.deepEqual(early.images, hydrated.images);
+  assert.equal(hydrated.files.length, 0);
+});
+
+test("ordinary files, unavailable locators and source line citations retain file actions", () => {
+  for (const file of [imageFile({ mimeType: "text/plain" }), imageFile({ target: null }),
+    imageFile({ startLine: 1 }), imageFile({ endLine: 2 }),
+    imageFile({ name: "notes.txt", target: "/host/notes.txt", mimeType: null })]) {
+    const layout = deriveUserMessageWebLayout(message({ attachments: [file] }));
+    assert.deepEqual(layout.files, [file]);
+    assert.equal(layout.images.length, 0);
+  }
+});
+
 test("status-only Goal and hook feedback retain the empty bubble; review stands alone", () => {
   for (const overrides of [{ goal: true }, { hookFeedback: true }, { deliveryStatus: "failed" as const }]) {
     const layout = deriveUserMessageWebLayout(message(overrides));
