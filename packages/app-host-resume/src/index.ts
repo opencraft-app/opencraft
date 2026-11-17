@@ -94,7 +94,10 @@ export class ResumeLink<T> {
   private unacknowledgedFrames = 0;
   private unacknowledgedBytes = 0;
 
-  constructor(private readonly options: ResumeLinkOptions) {
+  private readonly options: ResumeLinkOptions;
+
+  constructor(options: ResumeLinkOptions) {
+    this.options = options;
     if (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0) throw new RangeError("Invalid resume byte budget");
     if (!Number.isSafeInteger(options.maxFrames ?? RESUME_MAX_FRAMES) || (options.maxFrames ?? RESUME_MAX_FRAMES) < 1)
       throw new RangeError("Invalid resume frame budget");

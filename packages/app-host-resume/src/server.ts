@@ -2,7 +2,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
   RESUME_DETACH_MS, RESUME_GLOBAL_MAX_BYTES, RESUME_GLOBAL_MAX_FRAMES, RESUME_PROTOCOL_VERSION, RESUME_SESSION_MAX_BYTES,
   ResumeLink, type ResumeAttempt, type ResumeFailureReason, type ResumeGrant,
-} from "./index.js";
+} from "@opencraft/app-host-resume";
 
 export class ResumeSessionCapacityError extends Error {
   constructor() { super("Resume session capacity exhausted"); }
@@ -34,15 +34,24 @@ export class ResumeSession<P> {
   private evictedWhileDetached = false;
   detachedAt: number | null = null;
 
+  private readonly registry: ResumeRegistry<P>;
+  readonly id: string;
+  private readonly token: Buffer;
+  readonly identity: string;
+  readonly payload: P;
+  private readonly onEnd: (reason: string) => void;
+
   constructor(
-    private readonly registry: ResumeRegistry<P>,
-    readonly id: string,
-    private readonly token: Buffer,
-    readonly identity: string,
-    readonly payload: P,
-    private readonly onEnd: (reason: string) => void,
+    registry: ResumeRegistry<P>,
+    id: string,
+    token: Buffer,
+    identity: string,
+    payload: P,
+    onEnd: (reason: string) => void,
     maxBytes: number,
   ) {
+    this.registry = registry; this.id = id; this.token = token;
+    this.identity = identity; this.payload = payload; this.onEnd = onEnd;
     this.link = new ResumeLink<RetainedFrame>({ maxBytes, onAccounting: (bytes, frames) => registry.account(this, bytes, frames), onEvict: () => this.noteEviction() });
   }
 
