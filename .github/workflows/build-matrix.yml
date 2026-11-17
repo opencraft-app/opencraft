@@ -198,9 +198,62 @@ jobs:
           path: release/OpenCraft-server-*-linux-amd64.tar.gz
           retention-days: 3
 
+  # Every product change runs the full typecheck and each `npm test` suite.
+  # Suites are separate steps so one failure cannot hide the others.
+  core-tests:
+    needs: plan
+    if: needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Ensure setfacl for token ACL tests
+        run: command -v setfacl >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends acl)
+      - id: dsh
+        run: npm run prepare:dsh-runtime
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run typecheck
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run check:boundaries
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:cli
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:sqlite-node
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:local-agent-storage
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:control-standards
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:identity
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:extensions
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:connectors
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:appserver
+        if: always() && steps.dsh.outcome == 'success'
+      - run: npm run test:dsh-bridge
+        if: always() && steps.dsh.outcome == 'success'
+      - run: npm run test:chat
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:adaptive-navigation
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:text-selection
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run test:workbench:unit
+        if: always() && steps.dependencies.outcome == 'success'
+
   build-checks:
     if: always()
-    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, hover-policy]
+    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, core-tests, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -218,6 +271,8 @@ jobs:
           NATIVE_SELECTED: ${{ needs.plan.outputs.native == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.package_macos) }}
           PACKAGE_SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs.package_macos }}
           HEADLESS_SELECTED: ${{ needs.plan.outputs.headless-tests }}
+          CORE_RESULT: ${{ needs.core-tests.result }}
+          CORE_SELECTED: ${{ needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true' }}
         run: |
           test "$PLAN_RESULT" = success
           test "$HOVER_RESULT" = success
@@ -233,3 +288,4 @@ jobs:
           require_selected "$NATIVE_SELECTED" "$NATIVE_RESULT"
           require_selected "$PACKAGE_SELECTED" "$PACKAGE_RESULT"
           require_selected "$HEADLESS_SELECTED" "$HEADLESS_RESULT"
+          require_selected "$CORE_SELECTED" "$CORE_RESULT"

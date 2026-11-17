@@ -188,6 +188,13 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 | Root manifests/lockfile/toolchain or CI/selector changes | Web build, all installation-root audits, managed Web and Linux server regressions |
 | Server archive/installer/deployment inputs or build artifact contract | Linux server regressions plus archive build and smoke test |
 
+Any change that selects a Web build or Linux server regressions also runs
+`core-tests`: the full `npm run typecheck`, `check:boundaries` and every suite
+listed in `npm test`, each as a separate step so one failure cannot hide the
+rest. It prepares the locked DSH runtime first. Documentation-only changes skip
+it. `tests/tooling/ci-workflows.test.mjs` fails if a suite is added to `npm test`
+without a matching CI step.
+
 The server job installs dependencies once and always runs selected server tests;
 archive building, archive smoke and upload are separately conditional. Shared
 runtime or ordinary lockfile changes do not generate an installation archive.

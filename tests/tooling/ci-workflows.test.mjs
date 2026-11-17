@@ -16,6 +16,7 @@ const selected = {
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
   NATIVE_SELECTED: 'false', NATIVE_RESULT: 'skipped', PACKAGE_SELECTED: 'false', PACKAGE_RESULT: 'skipped',
   HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success',
+  CORE_SELECTED: 'true', CORE_RESULT: 'success',
 };
 function check(env) {
   return spawnSync('bash', ['-e', '-c', gate], { env: { ...process.env, ...selected, ...env }, encoding: 'utf8' }).status;
@@ -23,7 +24,7 @@ function check(env) {
 
 test('the real aggregate script accepts Web/server and documentation-only plans', () => {
   assert.equal(check({}), 0);
-  assert.equal(check({ BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped' }), 0);
+  assert.equal(check({ BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped' }), 0);
   assert.equal(check({ EXTENSIONS_SELECTED: 'true', EXTENSIONS_RESULT: 'success' }), 0);
   assert.equal(check({ NATIVE_SELECTED: 'true', NATIVE_RESULT: 'success' }), 0);
   assert.equal(check({ PACKAGE_SELECTED: 'true', PACKAGE_RESULT: 'success' }), 0);
@@ -32,14 +33,14 @@ test('a selected build cannot pass by failing, cancelling, or being skipped', ()
   for (const result of ['failure', 'cancelled', 'skipped', '']) {
     assert.notEqual(check({ PLAN_RESULT: result }), 0, `plan: ${result}`);
     assert.notEqual(check({ HOVER_RESULT: result }), 0, `hover: ${result}`);
-    for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'EXTENSIONS']) {
+    for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'EXTENSIONS', 'CORE']) {
       assert.notEqual(check({ [`${name}_SELECTED`]: 'true', [`${name}_RESULT`]: result }), 0, `${name}: ${result}`);
     }
   }
   assert.notEqual(check({ BUILD_SELECTED: '', BUILD_RESULT: 'skipped' }), 0, 'missing selector output');
 });
 test('the aggregate rejects an unexpected job execution instead of accepting a mismatched plan', () => {
-  for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'EXTENSIONS']) {
+  for (const name of ['BUILD', 'NATIVE', 'PACKAGE', 'HEADLESS', 'EXTENSIONS', 'CORE']) {
     assert.notEqual(check({ [`${name}_SELECTED`]: 'false', [`${name}_RESULT`]: 'success' }), 0, name);
   }
 });
@@ -64,4 +65,18 @@ test('hover checks run independently of the build plan and scan failures', () =>
   assert.match(hover, /run: npm run test:hover-policy\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success'/);
   assert.match(hover, /run: npm run smoke:touch-hover\n\s+if: always\(\) && steps\.browser\.outcome == 'success'/);
   assert.match(job('build-checks'), /needs: \[[^\]]*hover-policy\]/);
+});
+
+test('core tests run the full typecheck and every npm test suite as independent steps', () => {
+  const core = job('core-tests');
+  assert.match(core, /if: needs\.plan\.outputs\.has-builds == 'true' \|\| needs\.plan\.outputs\.headless-tests == 'true'/);
+  const steps = core.split(/      - /);
+  const runs = steps.map(step => step.match(/^(?:id: \S+\n\s+)?run: npm run (\S+)\n/)?.[1]).filter(Boolean);
+  const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  const suites = manifest.scripts.test.split(' && ').map(part => part.replace(/^npm run /, ''));
+  for (const name of ['typecheck', 'check:boundaries', ...suites]) assert.ok(runs.includes(name), `core-tests misses ${name}`);
+  for (const step of steps.filter(step => /run: npm run (typecheck|check:|test:)/.test(step))) {
+    assert.match(step, /if: always\(\) && steps\.(dependencies|dsh)\.outcome == 'success'/, step);
+  }
+  assert.match(job('build-checks'), /needs: \[[^\]]*\bcore-tests\b[^\]]*\]/);
 });
