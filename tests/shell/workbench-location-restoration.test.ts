@@ -2,12 +2,78 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createConversationKey } from "@opencraft/chat-core";
 import { composerDocumentToPlainText } from "@opencraft/composer-core";
-import { createWorkbenchDraftLocation, createWorkbenchThreadLocation } from "../../packages/workbench-runtime/src/index";
+import { asRouteScopeId, createWorkbenchDraftLocation, createWorkbenchThreadLocation, type RouteScopeId } from "../../packages/workbench-runtime/src/index";
 import { createApplicationNavigation, readWorkbenchBootstrapLocation } from "../../apps/workbench-web/src/runtime/workbench-navigation";
 import { resolveRetainedWorkbenchLocation } from "../../apps/workbench-web/src/runtime/workbench-location-restoration";
 import { createNavigationRestorationSession } from "../fixtures/navigation-restoration-session";
 
 const settle = () => new Promise<void>(resolve => setImmediate(resolve));
+
+test("a durable View ID restores its local input owner after an application restart", async () => {
+  const viewId = asRouteScopeId("durable-view");
+  const session = createNavigationRestorationSession({ router: { restoreViewId: async () => viewId } });
+  const target = createWorkbenchThreadLocation("local", "durable-thread");
+  try {
+    assert.equal(session.views.get(viewId), null);
+    assert.equal(await session.navigation.selectConversation(target), true);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, viewId);
+    assert.deepEqual(session.views.get(viewId)!.composer.getSnapshot().draft.target,
+      { type: "existing-thread", key: target.key });
+    assert.deepEqual(session.coordinator.getSnapshot().location, target);
+  } finally { await session.dispose(); }
+});
+
+test("sidebar selection restores a saved View after bootstrap without mounting the initial Workbench twice", async () => {
+  let savedView: RouteScopeId | undefined;
+  const session = createNavigationRestorationSession({ router: { restoreViewId: async () => savedView } });
+  const target = createWorkbenchThreadLocation("local", "saved-thread");
+  try {
+    assert.equal(await session.navigation.navigate(target), true);
+    savedView = session.navigation.getSnapshot().routeScopeId;
+    const composer = session.views.get(savedView)!.composer;
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "保留已有草稿" }] }] } });
+    session.navigation.navigateToHome(session.initial as ReturnType<typeof createWorkbenchDraftLocation>);
+    session.navigation.forgetView(savedView);
+
+    assert.equal(await session.navigation.selectConversation(target), true);
+    assert.deepEqual(session.navigation.getSnapshot().location, target);
+    assert.equal(session.navigation.getSnapshot().routeScopeId, savedView);
+    assert.equal(session.coordinator.getSnapshot().viewId, savedView);
+    assert.equal(session.views.get(savedView)!.composer, composer);
+    assert.equal(composerDocumentToPlainText(composer.getSnapshot().draft.document), "保留已有草稿");
+    session.navigation.back(); await settle();
+    assert.deepEqual(session.navigation.getSnapshot().location, session.initial);
+    session.navigation.forward(); await settle();
+    assert.equal(session.navigation.getSnapshot().routeScopeId, savedView);
+    assert.equal(session.views.get(savedView)!.composer, composer);
+  } finally { await session.dispose(); }
+});
+
+test("a restored View remains local while Host readiness waits, and cannot be reused for another conversation", async () => {
+  let ready!: () => void;
+  let savedView: RouteScopeId | undefined;
+  const target = createWorkbenchThreadLocation("local", "saved-offline-thread");
+  const session = createNavigationRestorationSession({ initialThread: target,
+    connect: () => new Promise<void>(resolve => { ready = resolve; }),
+    router: { restoreViewId: async () => savedView } });
+  try {
+    savedView = session.navigation.getSnapshot().routeScopeId;
+    session.views.get(savedView)!.composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "offline draft" }] }] } });
+    const home = session.scopes.openDraft({ execution: { hostId: "local", workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+    session.navigation.navigateToHome(createWorkbenchDraftLocation("local", home.id));
+    session.navigation.forgetView(savedView);
+    assert.equal(await session.navigation.selectConversation(target), true);
+    assert.deepEqual(session.navigation.getSnapshot().location, target);
+    assert.equal(session.coordinator.getSnapshot().phase, "resolving");
+    assert.equal(session.coordinator.getActiveThreadLease(), null);
+    const before = session.navigation.getSnapshot();
+    await assert.rejects(session.navigation.selectConversation(createWorkbenchThreadLocation("local", "another-thread")), /does not belong/);
+    assert.deepEqual(session.navigation.getSnapshot(), before);
+    session.navigation.openSettings("appearance");
+    ready(); await settle();
+    assert.deepEqual(session.navigation.getSnapshot().applicationRoute, { kind: "settings", slug: "appearance" });
+  } finally { ready(); await session.dispose(); }
+});
 
 test("bootstrap candidate comes from the current entry, not global last-used preferences", () => {
   const state = { usr: { namespace: "opencraft.application-route.v8",

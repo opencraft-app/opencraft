@@ -264,6 +264,7 @@ export function AppServerRuntimeProvider({
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
     setConversationPresentationActive: supervisor.setConversationPresentationActive,
     tasks: supervisor.tasks,
+    personalMachines: supervisor.personalMachines,
     threadAttention: supervisor.threadAttention,
     clientResources: supervisor.clientResources,
     managedHostCatalog: supervisor.managedHostCatalog,
@@ -365,6 +366,10 @@ export function AppServerRuntimeProvider({
       </ApplicationRuntimeContext.Provider>
     </QueryClientProvider>
   );
+}
+
+function projectRuntimeThread(runtime: AppServerWorkbenchRuntime | null | undefined, thread: Parameters<typeof projectAppServerThread>[0]) {
+  return projectAppServerThread(thread, undefined, runtime?.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/execution-engines"]);
 }
 
 export function useBlobResources(): BlobResourceService {
@@ -551,7 +556,7 @@ export function useThreadCatalog(): {
     () => mergeThreadCatalogPages(query.data?.pages ?? []),
     [query.data],
   );
-  const threads = useMemo(() => protocolThreads.map((thread) => projectAppServerThread(thread)), [protocolThreads]);
+  const threads = useMemo(() => protocolThreads.map((thread) => projectRuntimeThread(runtime, thread)), [protocolThreads, runtime, snapshot.phase]);
   return {
     protocolThreads,
     threads,
@@ -566,6 +571,8 @@ export function useThreadCatalog(): {
 export interface MultiHostWorkbenchThread extends WorkbenchThread {
   readonly schedule?: ConversationScheduleSummary;
   readonly goalActive?: boolean;
+  readonly directoryGroup?: import("../sidebar-activity").SidebarActivityThread["directoryGroup"];
+  readonly instanceGroup?: import("../sidebar-activity").SidebarActivityThread["instanceGroup"];
   readonly interactionAvailable: boolean;
   /** Current transport route. Not the stable Server identity. */
   readonly connectionHostId: string;
@@ -758,7 +765,7 @@ export function useMultiHostThreadCatalog(): {
       } };
       // A first successful page is useful immediately, but is not a complete directory.
       void catalogResources[index]!.observe(cacheThreadCatalog(mergeCachedCatalogRows(
-        query.data.data.map(thread => projectAppServerThread(thread)),
+        query.data.data.map(thread => projectRuntimeThread(runtime, thread)),
         catalogResources[index]!.getSnapshot().value, !query.hasNextPage), !query.hasNextPage), fence).catch(() => undefined);
     });
   }, [catalogResources, querySignature]);
@@ -787,20 +794,22 @@ export function useMultiHostThreadCatalog(): {
   const readGoals = useCallback(() => sidebarGoalSignature(goalSources), [goalSources]);
   const goalRevision = useSyncExternalStore(subscribeGoals, readGoals, readGoals);
   useEffect(() => {
+    let active = true;
     const scope = application.threadAttention.getScope();
     for (const [index, host] of hosts.entries()) {
       if (!admitted[index] || !displayable[index] || queries[index]?.hasNextPage) continue;
       const profile = application.profiles.find(value => value.hostId === host.hostId)!;
       void application.threadAttention.catchUp(profile, queries[index]?.data?.data ?? [], () => {
         const current = application.hostProfiles.getSnapshot().profiles.find(value => value.hostId === host.hostId);
-        return scope === application.threadAttention.getScope() && current?.revision === profile.revision
+        return active && scope === application.threadAttention.getScope() && current?.revision === profile.revision
           && canReadHostThreadCatalog(current, application.registry.peekRuntime(host.hostId)?.getSnapshot().phase,
             application.managedHostCatalog?.getSnapshot() ?? null);
       });
     }
+    return () => { active = false; };
   }, [hosts, querySignature, attentionRevision]);
   const threads = useMemo(() => hosts.flatMap((host, index) =>
-    (displayable[index] ? threadCatalogDisplayRows(queries[index]?.data?.data.map(thread => projectAppServerThread(thread)),
+    (displayable[index] ? threadCatalogDisplayRows(queries[index]?.data?.data.map(thread => projectRuntimeThread(application.registry.peekRuntime(host.hostId), thread)),
       savedCatalogs[index]?.value ?? null, !queries[index]!.hasNextPage) : []).map(({ thread, confirmed }) => {
       const server = legacyDirectServerProjectionFromHost({
         hostId: host.hostId,
@@ -809,6 +818,11 @@ export function useMultiHostThreadCatalog(): {
       });
       return {
         ...thread,
+        instanceGroup: {id: application.profiles.find(profile => profile.hostId === host.hostId)?.machineIdentity?.machineId ?? host.hostId, name: application.profiles.find(profile => profile.hostId === host.hostId)?.machineIdentity?.name ?? host.label},
+        ...(thread.cwd ? { directoryGroup: {
+          id: thread.cwd,
+          name: `${thread.cwd.split(/[\\/]/u).filter(Boolean).at(-1) || thread.cwd}`,
+        } } : {}),
         schedule: scheduleQueries[index]?.data?.schedules.find(plan => plan.threadId === thread.id),
         goalActive: goalSources.some(source => source.goals === application.registry.peekRuntime(host.hostId)?.resources.goals
           && source.isCurrent() && source.goals.capability(thread.id)?.read
@@ -854,7 +868,7 @@ export function useMultiHostThreadCatalog(): {
     };
     return { search: createAppServerContentSearchSource({
       ...scope, label: host.label, supported,
-      project: thread => ({ ...projectAppServerThread(thread),
+      project: thread => ({ ...projectRuntimeThread(runtime, thread),
         ...legacyDirectServerProjectionFromHost({ hostId: host.hostId, hostKind: host.kind, label: host.label }),
         connectionHostId: host.hostId, interactionAvailable: true }),
     }) };

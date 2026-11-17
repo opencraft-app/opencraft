@@ -85,7 +85,8 @@ export class CodexHistorySources {
       }
       const ancestors = new Set(matching.map(row => row.base?.thread_id));
       const tips = matching.filter(row => !ancestors.has(nodeId(row.path)));
-      if (tips.length !== 1) throw new Error("Native history head is missing or ambiguous");
+      if (tips.length === 0) throw Object.assign(new Error("Native history head is missing"), { code: "NATIVE_HISTORY_NOT_FOUND" });
+      if (tips.length !== 1) throw new Error("Native history head is ambiguous");
       head = tips[0]!.path;
     }
     const result: CodexHistoryRange[] = [], seen = new Set<string>();

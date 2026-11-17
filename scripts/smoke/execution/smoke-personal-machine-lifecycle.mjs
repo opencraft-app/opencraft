@@ -1,0 +1,31 @@
+#!/usr/bin/env node
+/** Destructive lifecycle smoke for an explicitly disposable, already-upgraded test machine. */
+import assert from 'node:assert/strict';
+import {readFile,writeFile,mkdir,rm,realpath,symlink} from 'node:fs/promises';
+import {join,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {createHash,randomUUID} from 'node:crypto';
+import {spawn} from 'node:child_process';
+const args=process.argv.slice(2),index=args.indexOf('--state');
+if(!args.includes('--allow-mutating-test-machine')||index<0)throw new Error('Run only on a disposable test machine with --state and --allow-mutating-test-machine');
+const state=await realpath(resolve(args[index+1])),wrapper=join(state,'opencraft-machine');
+const hash=data=>createHash('sha256').update(data).digest('hex');
+const connectionHash=hash(await readFile(join(state,'connection.json')));
+const invoke=options=>new Promise((done,fail)=>{const child=spawn(wrapper,options,{cwd:state,stdio:['ignore','pipe','pipe']});let out='';child.stdout.on('data',c=>out+=c);child.stderr.on('data',c=>out+=c);child.on('error',fail);child.on('exit',code=>code===0?done(out):fail(new Error('Test machine command failed: '+options.join(' '))));});
+const status=async()=>JSON.parse(await invoke(['--status']));
+const baseline=await status();assert.equal(baseline.connected,true);assert.match(baseline.version,/^[a-f0-9]{64}$/);
+const sentinel=join(state,'data','.e2e-sentinel-'+randomUUID()),content=randomUUID();await writeFile(sentinel,content,{mode:0o600});
+assert.match(await invoke(['--check-update']),/up to date/);
+await invoke(['--rollback']);const previous=await status();assert.equal(previous.connected,true);assert.notEqual(previous.version,baseline.version);
+await invoke(['--update']);assert.equal((await status()).version,baseline.version);
+const runtime=await realpath(join(state,'runtime')),failure=join(state,'releases','.intentional-start-failure-'+randomUUID());
+await mkdir(join(failure,'scripts/personal-machine'),{recursive:true});await mkdir(join(failure,'node_modules'));
+await symlink(join(runtime,'node_modules/tsx'),join(failure,'node_modules/tsx'));
+await writeFile(join(failure,'scripts/personal-machine/daemon.ts'),"throw new Error('Intentional disposable-machine startup failure');\n");
+const {activate}=await import(pathToFileURL(join(runtime,'scripts/personal-machine/update.mjs')));
+await assert.rejects(activate(state,failure,'intentional-test-failure'),/previous runtime restored and restarted/);
+assert.equal(await realpath(join(state,'runtime')),runtime);assert.equal((await status()).version,baseline.version);assert.equal((await status()).connected,true);
+assert.equal(hash(await readFile(join(state,'connection.json'))),connectionHash);assert.equal(await readFile(sentinel,'utf8'),content);
+await rm(failure,{recursive:true});await rm(sentinel);
+const result={manualRollback:true,updateAfterRollback:true,failedStartupRollback:true,connected:true,credentialsUnchanged:true,dataUnchanged:true,version:baseline.version,previousVersion:previous.version};
+await writeFile(join(state,'e2e-lifecycle-result.json'),JSON.stringify(result,null,2),{mode:0o600});console.log(JSON.stringify(result));

@@ -3,6 +3,8 @@ export type SidebarThreadMenuKind = "context" | "dropdown";
 export interface OpenSidebarThreadMenu {
   readonly hostId: string;
   readonly threadId: string;
+  /** A conversation may be presented in both Recent and its device directory. */
+  readonly rowId?: string;
   readonly kind: SidebarThreadMenuKind | "badge" | "resources";
 }
 
@@ -14,6 +16,7 @@ export function isSidebarThreadMenuOpen(
 ): boolean {
   return current?.hostId === target.hostId
     && current.threadId === target.threadId
+    && current.rowId === target.rowId
     && current.kind === target.kind;
 }
 
@@ -32,8 +35,8 @@ export class SidebarThreadMenuStore {
   private current: OpenSidebarMenu | null = null;
   private readonly listeners = new Map<string, Set<() => void>>();
 
-  private key(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId">): string {
-    return JSON.stringify([target.hostId, target.threadId]);
+  private key(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId" | "rowId">): string {
+    return JSON.stringify([target.hostId, target.threadId, target.rowId]);
   }
 
   getSnapshot = (): OpenSidebarMenu | null => this.current;
@@ -56,11 +59,11 @@ export class SidebarThreadMenuStore {
     else if (this.current?.kind === "list-context") this.set(null);
   };
 
-  getKind(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId">): OpenSidebarThreadMenu["kind"] | null {
-    return this.current && "hostId" in this.current && this.current.hostId === target.hostId && this.current.threadId === target.threadId ? this.current.kind : null;
+  getKind(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId" | "rowId">): OpenSidebarThreadMenu["kind"] | null {
+    return this.current && "hostId" in this.current && this.key(this.current) === this.key(target) ? this.current.kind : null;
   }
 
-  subscribe(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId">, listener: () => void): () => void {
+  subscribe(target: Pick<OpenSidebarThreadMenu, "hostId" | "threadId" | "rowId">, listener: () => void): () => void {
     return this.subscribeKey(this.key(target), listener);
   }
 

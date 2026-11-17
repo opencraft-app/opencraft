@@ -21,3 +21,24 @@ export function relayPathAllowed(path: string): boolean {
       && !pathname.startsWith('/__opencraft_web_update');
   } catch { return false; }
 }
+
+/** Literal RFC 1918 IPv4 only; a hostname is not proof of private-network scope. */
+export function isPrivateIpv4Address(host:string):boolean {
+  const parts=host.split('.');
+  if(parts.length!==4||parts.some(part=>!/^\d{1,3}$/.test(part)||String(Number(part))!==part||Number(part)>255))return false;
+  const [a=0,b=0]=parts.map(Number);
+  return a===10||a===172&&b>=16&&b<=31||a===192&&b===168;
+}
+
+/** Dedicated owner publication; distinct from enrolled machine control/data. */
+export const MACHINE_GATEWAY_CONTROL_PATH = '/__opencraft_machine_gateway/control';
+export const MACHINE_GATEWAY_DATA_PATH = '/__opencraft_machine_gateway/data';
+export const MACHINE_ENROLLMENT_PATHS = ['/__opencraft_machines/install.sh', '/__opencraft_machines/source.tgz', '/__opencraft_machines/enroll', CONTROL_PATH, DATA_PATH, '/__opencraft_machines/bootstrap'] as const;
+export function machineEnrollmentRequest(path: string, method: string, upgrade = false): boolean {
+  try {
+    if (!path.startsWith('/') || path.startsWith('//') || /[\r\n\\]/.test(path)) return false;
+    const url = new URL(path, 'http://gateway.invalid');
+    if (upgrade) return method === 'GET' && (url.pathname === CONTROL_PATH || url.pathname === DATA_PATH) && url.search === '';
+    return (method === 'GET' && (url.pathname === MACHINE_ENROLLMENT_PATHS[0] || url.pathname === MACHINE_ENROLLMENT_PATHS[1] || url.pathname === MACHINE_ENROLLMENT_PATHS[5])) || method === 'POST' && url.pathname === MACHINE_ENROLLMENT_PATHS[2];
+  } catch { return false; }
+}

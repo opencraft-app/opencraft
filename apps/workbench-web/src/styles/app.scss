@@ -1845,6 +1845,24 @@ svg[data-sidebar-toggle-icon-state] {
   > span[aria-hidden="true"] { flex: 0 0 auto; overflow: visible; }
 }
 
+.sidebar-activity-item__agent {
+  grid-column: -2;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: var(--size-icon-navigation);
+  height: var(--size-icon-navigation);
+  color: var(--color-icon-secondary);
+
+}
+
+.sidebar-activity-item__context {
+  [data-source="device"] { flex: 0 1 auto; min-width: 0; max-width: 50%; }
+  [data-source="device"]:only-child { max-width: none; }
+  [data-source="folder"] { flex: 0 5 auto; min-width: 0; }
+  [data-source="agent"] { flex: 0 0 auto; min-width: 0; max-width: 45%; }
+}
+
 .sidebar-activity-item__trailing {
   // The container reserves only the menu lane. Keep one accessible activity
   // renderer, positioned in that lane even when no actions are authorized.
@@ -2166,17 +2184,19 @@ svg[data-sidebar-toggle-icon-state] {
 
 .composer-utility-scroll-area__content {
   display: flex;
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
   min-height: 36px;
   align-items: center;
   gap: 3px;
   padding: 3px 6px;
 }
 
-.new-thread-context-trigger {
+.new-thread-context-trigger,
+.opencraft-composer-agent-trigger {
   max-width: 260px;
-  flex: 0 0 auto;
+  min-width: 0;
+  flex: 0 1 auto;
   > span {
     min-width: 0;
     overflow: hidden;
@@ -2185,38 +2205,14 @@ svg[data-sidebar-toggle-icon-state] {
   }
 }
 
+.opencraft-composer-agent-trigger {
+  flex-shrink: 0;
+  max-width: 40%;
+}
+
 .new-thread-context-separator {
   flex: 0 0 auto;
   color: var(--color-icon-secondary);
-}
-
-.new-thread-context-branch {
-  display: flex;
-  min-width: 0;
-  height: 31px;
-  align-items: center;
-  gap: 7px;
-  padding: 0 9px;
-  color: var(--color-text-secondary);
-  font: var(--typography-metadata-font);
-  white-space: nowrap;
-
-  > span {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  > svg {
-    flex: 0 0 auto;
-    color: var(--color-icon-secondary);
-  }
-
-  letter-spacing: var(--typography-metadata-tracking)
-}
-
-.new-thread-context-branch {
-  max-width: 150px;
 }
 
 .new-thread-project-menu {
@@ -12028,7 +12024,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 .sidebar-activity-item-container {
   position: relative; width: 100%; min-width: 0; border-radius: var(--radius-lg);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto var(--size-icon-navigation);
   column-gap: 4px;
   padding-inline-end: calc(var(--padding-sidebar-activity-row-inline) + var(--sidebar-activity-menu-space));
   &:has(.sidebar-activity-item.is-selected) {
@@ -12086,8 +12082,19 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 // Resource controls are siblings of navigation, alongside participant badges.
+.sidebar-activity-item-container[data-has-context="true"] {
+  &[data-badge-placement="title"] .sidebar-activity-item {
+    min-height: max(48px, calc(var(--size-control-hit-min) + 12px));
+  }
+  &[data-badge-placement="metadata"] {
+    grid-template-rows: auto auto auto;
+    .sidebar-activity-item { grid-row: 1 / 4; }
+    .sidebar-activity-item__context { grid-column: 1; grid-row: 3; margin-block-end: 6px; }
+    .sidebar-activity-item__badge-slot { margin-block-end: 0; }
+  }
+}
 .sidebar-activity-item-container:has(.sidebar-activity-item__resources-slot:not(:empty)) {
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto var(--size-icon-navigation);
 }
 .sidebar-activity-item__resources-slot {
   grid-column: 3; grid-row: 1; z-index: 1;
@@ -12636,7 +12643,8 @@ html[data-window-host="browser"] body {
   }
   .sidebar-activity-item-container:not([data-badge-placement="metadata"]) .sidebar-activity-item__resources-slot,
   .sidebar-activity-item__badge-slot:not([data-placement="metadata"]),
-  .sidebar-activity-item__trailing { translate: 0 var(--sidebar-title-accessory-offset); }
+  .sidebar-activity-item__trailing,
+  .sidebar-activity-item-container:not([data-badge-placement="metadata"]) .sidebar-activity-item__agent { translate: 0 var(--sidebar-title-accessory-offset); }
   .sidebar-activity-item__menu-trigger {
     > svg { translate: 0 var(--sidebar-title-accessory-offset); }
   }
@@ -13093,9 +13101,49 @@ html[data-window-host="browser"] body {
 .sidebar-native-projects {
   display: flex; flex-direction: column; gap: var(--gap-navigation-rows);
   .sidebar-thread-group-heading { margin: 0; }
-  .sidebar-native-project-icon { display: inline-flex; flex: 0 0 auto; }
   .sidebar-activity-group[data-collapsed="false"] + .sidebar-activity-group { margin-block-start: calc(var(--spacing) * 2); }
   &__title { margin: 0; padding: calc(var(--spacing) * 3) var(--padding-sidebar-activity-row-inline); @include typography.role(body, secondary); }
-  [data-native-project] .sidebar-thread-group-toggle { gap: calc(var(--spacing) * 2); }
   [data-native-project] .sidebar-activity-group__items { padding-inline-start: calc(var(--spacing) * 4); }
 }
+
+.sidebar-instance-toggle { width: 100%; min-width: 0; > svg.is-collapsed { transform: rotate(-90deg); } }
+.sidebar-instance-group {
+  .sidebar-instance-group__projects:not([hidden]) {
+    padding-inline-start: calc(var(--spacing) * 3);
+  }
+  .sidebar-instance-group__projects[hidden] { display: none; }
+}
+
+.sidebar-instance-heading {
+  display: flex; align-items: center;
+  > .sidebar-thread-group-heading { flex: 1; min-width: 0; }
+}
+
+.opencraft-composer-submission-status {
+  @include typography.role(metadata, secondary);
+  padding: calc(var(--spacing) * 1) calc(var(--spacing) * 3);
+}
+
+.sidebar-folder-heading {
+  display: flex;
+  align-items: center;
+  padding-inline-end: var(--padding-sidebar-activity-row-inline);
+  > .sidebar-thread-group-heading { flex: 1; min-width: 0; }
+  // hover-policy: coupled-visibility — mouse reveals the action for the whole
+  // folder row; touch keeps it visible, and keyboard focus always reveals it.
+  @include controls.hover-capable {
+    :where(.sidebar-folder-toggle > svg:last-child) { opacity: 0; }
+    &:hover .sidebar-folder-toggle > svg:last-child { opacity: 1; }
+    :where(.sidebar-folder-new-chat) { opacity: 0; pointer-events: none; }
+    &:hover .sidebar-folder-new-chat { opacity: 1; pointer-events: auto; }
+  }
+  &:focus-within .sidebar-folder-new-chat { opacity: 1; pointer-events: auto; }
+  &:focus-within .sidebar-folder-toggle > svg:last-child { opacity: 1; }
+}
+.sidebar-folder-toggle {
+  width: 100%;
+  min-width: 0;
+  > svg { flex-shrink: 0; }
+  > svg.is-collapsed { transform: rotate(-90deg); }
+}
+.sidebar-folder-new-chat { flex-shrink: 0; }

@@ -1,11 +1,12 @@
-import { createContext, useContext } from "react";
+import { MachineAgentManagement } from "./agent-management";
+import { createContext, useContext, useEffect, useState } from "react";
 import { ArrowLeftIcon as ArrowLeft, CloudIcon as Cloud, LaptopIcon as Laptop, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
 import { useIntl } from "@opencraft/i18n/react";
 import { SettingsButton, SettingsGroup, SettingsListItem, SettingsPageHeader, SettingsRow, SettingsSection } from "@opencraft/extension-react";
 import type { SettingsPageContribution } from "@opencraft/extension-contract";
 import type { WorkInMachine } from "@opencraft/workbench-runtime";
 import { machineName, machineRole } from "../runtime/work-in-presentation";
-import { useMachineConnectionPhase } from "../runtime/appserver-runtime-context";
+import { useAppServerHosts, useHostConnectionPhase, useMachineConnectionPhase } from "../runtime/appserver-runtime-context";
 import { ConnectionLabel, ConnectionStatus, TargetConnectionStatus } from "./target-connection-status";
 import { executionEndpoint } from "./execution-endpoint";
 import { machineSettingsSection } from "../runtime/settings-machine-route";
@@ -55,8 +56,53 @@ function HostStatus({ hostId }: { hostId: string }) {
   return available ? <TargetConnectionStatus hostId={hostId} showLabel /> : <ConnectionLabel phase="idle" showLabel />;
 }
 
+function MachineAgents({ hostId }: { hostId: string }) {
+  const intl = useIntl();
+  const phase = useHostConnectionPhase(hostId);
+  const [opened, setOpened] = useState(phase === "ready");
+  useEffect(() => { if (phase === "ready") setOpened(true); }, [phase]);
+  return opened || phase === "ready" ? <MachineAgentManagement hostId={hostId} />
+    : <SettingsSection title={intl.formatMessage({ id: "settings.machines.agents", defaultMessage: "Agent" })}
+        description={intl.formatMessage({ id: "settings.machines.agentsAfterConnection", defaultMessage: "Connect to load the agents on this machine." })} />;
+}
+
+/** Opening a machine is explicit demand; the shared runtime still owns the connection. */
+function MachineConnection({ hostId }: { hostId: string }) {
+  const available = useContext(MachineConnectionsAvailable);
+  return available ? <ObservedMachineConnection key={hostId} hostId={hostId} /> : <ConnectionLabel phase="idle" showLabel />;
+}
+
+function ObservedMachineConnection({ hostId }: { hostId: string }) {
+  const intl = useIntl();
+  const { agentRuntimes } = useAppServerHosts();
+  const phase = useHostConnectionPhase(hostId);
+  const [attempt, setAttempt] = useState(0);
+  const [result, setResult] = useState<"connecting" | "ready" | "error">("connecting");
+  useEffect(() => {
+    let current = true;
+    setResult("connecting");
+    void agentRuntimes.ensureReady(hostId).then(() => {
+      if (current) setResult("ready");
+    }, () => {
+      if (current) setResult("error");
+    });
+    // Do not disconnect a shared runtime or publish a late result after route exit.
+    return () => { current = false; };
+  }, [agentRuntimes, hostId, attempt]);
+  return <>
+    {phase === "ready" ? <TargetConnectionStatus hostId={hostId} showLabel />
+      : result === "connecting" && phase === "idle" ? <ConnectionLabel phase="connecting" showLabel />
+      : result === "error" ? <ConnectionLabel phase="error" showLabel /> : <TargetConnectionStatus hostId={hostId} showLabel />}
+    {phase !== "ready" && (result === "error" || phase === "error") ? <SettingsButton variant="quiet" loading={result === "connecting"} onClick={() => setAttempt(value => value + 1)}>{intl.formatMessage({ id: "settings.machines.retryConnection", defaultMessage: "Retry connection" })}</SettingsButton> : null}
+  </>;
+}
+
 function MachineStatus({ machine }: { machine: WorkInMachine }) {
   const available = useContext(MachineConnectionsAvailable);
+  // Enrollment control presence is independent of this browser's lazy Host session.
+  const presence = machine.hosts.map(host => host.machinePresence);
+  if (presence.includes("online")) return <MachinePhaseStatus phase="ready" />;
+  if (presence.length > 0 && presence.every(value => value === "offline")) return <MachinePhaseStatus phase="offline" />;
   return available ? <ObservedMachineStatus machine={machine} /> : <MachinePhaseStatus phase="idle" />;
 }
 
@@ -67,10 +113,11 @@ function ObservedMachineStatus({ machine }: { machine: WorkInMachine }) {
 
 function MachinePhaseStatus({ phase }: { phase: string }) {
   const intl = useIntl();
-  return <span className="environment-connection-label"><ConnectionStatus phase={phase} /><span>{intl.formatMessage(phase === "ready"
+  const label = intl.formatMessage(phase === "ready"
     ? { id: "workIn.online", defaultMessage: "Online" }
-    : phase === "idle" ? { id: "settings.connection.notStarted", defaultMessage: "Not started" }
-    : { id: "workIn.offline", defaultMessage: "Offline" })}</span></span>;
+    : phase === "idle" ? { id: "settings.connection.notConnected", defaultMessage: "Not connected" }
+    : { id: "workIn.offline", defaultMessage: "Offline" });
+  return <span className="environment-connection-label"><ConnectionStatus phase={phase === "offline" ? "idle" : phase} label={label} /><span>{label}</span></span>;
 }
 
 export function SettingsMachineIdentity({ machine, platform, onSectionChange, detail = false }: {
@@ -117,13 +164,15 @@ export function SettingsMachine({ machine, pages, platform, onSectionChange }: {
   machine: WorkInMachine; pages: readonly SettingsPageContribution[]; platform: "web" | "electron"; onSectionChange: (section: string) => void;
 }) {
   const intl = useIntl();
+  const available = useContext(MachineConnectionsAvailable);
+  const managedHost = machine.hosts.find(host => host.machinePresence !== undefined);
   // Agent identity is reported by the Host. Unknown Agents retain their Host name.
   const priority = (agent: string) => agent === "OpenCraft" ? 0 : agent === "Codex" ? 1 : 2;
   const agents = [...new Set(machine.hosts.map(host => host.agent ?? `host:${host.hostId}`))].sort((a, b) => priority(a) - priority(b));
   const connections = [...machine.hosts].sort((a, b) => priority(a.agent ?? "") - priority(b.agent ?? ""));
   return <>
     <SettingsMachineIdentity machine={machine} platform={platform} onSectionChange={onSectionChange} detail />
-    <SettingsSection title={intl.formatMessage({ id: "settings.machines.agents", defaultMessage: "Agent" })}><SettingsGroup>{agents.map(agent => {
+    {available && managedHost ? <MachineAgents key={managedHost.hostId} hostId={managedHost.hostId} /> : <SettingsSection title={intl.formatMessage({ id: "settings.machines.agents", defaultMessage: "Agent" })}><SettingsGroup>{agents.map(agent => {
       const hosts = machine.hosts.filter(host => (host.agent ?? `host:${host.hostId}`) === agent);
       const agentPages = pages.filter(page => hosts.some(host => host.hostId === page.targetHostId));
       return <SettingsRow key={agent} label={hosts[0]!.agent ?? hosts[0]!.displayName}>
@@ -132,10 +181,12 @@ export function SettingsMachine({ machine, pages, platform, onSectionChange }: {
           {agentPages.map(page => <SettingsButton key={page.id} variant="quiet" onClick={() => onSectionChange(page.id)}>{page.title}</SettingsButton>)}
         </div>
       </SettingsRow>;
-    })}</SettingsGroup></SettingsSection>
+    })}</SettingsGroup></SettingsSection>}
     <SettingsSection title={intl.formatMessage({ id: "settings.machines.connections", defaultMessage: "Connections" })}>
       <SettingsGroup>{connections.map(host => <SettingsRow key={host.hostId} label={host.agent ?? host.displayName}>
-        <div className="settings-machine-connection"><span className="settings-execution-endpoint" title={executionEndpoint(host, window.location.href)}>{executionEndpoint(host, window.location.href)}</span><HostStatus hostId={host.hostId} /></div>
+        <div className="settings-machine-connection">{host.machinePresence !== undefined
+          ? <span className="settings-execution-endpoint">{intl.formatMessage({ id: "settings.machines.viaServer", defaultMessage: "Via current Server" })}</span>
+          : <span className="settings-execution-endpoint" title={executionEndpoint(host, window.location.href)}>{executionEndpoint(host, window.location.href)}</span>}{host.machinePresence !== undefined ? <MachineConnection hostId={host.hostId} /> : <HostStatus hostId={host.hostId} />}</div>
       </SettingsRow>)}</SettingsGroup>
     </SettingsSection>
   </>;

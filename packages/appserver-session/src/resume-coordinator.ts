@@ -481,9 +481,11 @@ export class ThreadResumeCoordinatorService extends Service {
     const readCapability = executionEngineExtension(this.client.initializeResult?.capabilities?.extensions,
       threadId, "opencraft/read-history");
     const supportsWindow = readCapability?.version === 1 && readCapability.initialTurnsPage !== false;
+    // Establish the current Turn before transferring older tool bodies. The
+    // provider's cursor keeps the rest available through ordinary backfill.
     const requestRead = (window: boolean) => this.client.request("thread/read", { threadId, includeTurns: false,
       ...(readCapability?.version === 1 ? { watch: true } : {}),
-      ...(window ? { initialTurnsPage: { limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
+      ...(window ? { initialTurnsPage: { limit: 1, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
       ...(readCapability?.boundedRecovery === true && options.historyCheckpoint ? { historyCheckpoint: options.historyCheckpoint } : {}),
     }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal, historySource: reread ? "snapshot-reread" : "open" });
     let result;

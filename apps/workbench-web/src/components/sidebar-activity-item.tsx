@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { ClockIcon as Clock, TargetIcon as Target, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
+import { AgentIdentityIcon } from "./agent-directory";
 
 function ThreadActivity({
   id,
@@ -45,6 +46,8 @@ function ThreadActivity({
 
 export function SidebarActivityItem({
   activityId,
+  agent,
+  context,
   active,
   disabled = false,
   twoLine = false,
@@ -63,6 +66,8 @@ export function SidebarActivityItem({
   unread,
 }: {
   readonly activityId?: string;
+  readonly agent?: WorkbenchThread["agent"];
+  readonly context?: { readonly device: string; readonly folder?: string; readonly agent?: string };
   readonly schedule?: import("@opencraft/appserver-protocol").ConversationScheduleSummary;
   readonly active: boolean;
   readonly disabled?: boolean;
@@ -90,7 +95,7 @@ export function SidebarActivityItem({
       ? intl.formatMessage({ id: "sidebar.schedule.paused", defaultMessage: "Scheduled task: paused" })
       : intl.formatMessage({ id: "sidebar.schedule.next", defaultMessage: "Scheduled task: next run {time}" }, { time: intl.formatDate(schedule.nextRunAt, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) });
   return (
-    <div className="sidebar-activity-item-container" data-has-badge={badge ? "true" : undefined} data-badge-placement={titleOnly ? "title" : metadataBadge ? "metadata" : undefined} data-row-lines={!titleOnly && (metadataBadge || twoLine || project) ? "two" : "one"}><button
+    <div className="sidebar-activity-item-container" data-has-context={context ? "true" : undefined} data-has-badge={badge ? "true" : undefined} data-badge-placement={titleOnly ? "title" : metadataBadge ? "metadata" : undefined} data-row-lines={context || !titleOnly && (metadataBadge || twoLine || project) ? "two" : "one"}><button
       type="button"
       disabled={disabled}
       className={[
@@ -112,6 +117,16 @@ export function SidebarActivityItem({
           {twoLine && project ? <span aria-hidden="true">·</span> : null}
           {project ? <span className="sidebar-activity-item__project">{project}</span> : null}
         </span> : null}
+        {context ? <span className="sidebar-activity-item__metadata sidebar-activity-item__context">
+          <span data-source="device" title={intl.formatMessage({ id: "sidebar.recent.device", defaultMessage: "Device: {device}" }, { device: context.device })}>{context.device}</span>
+          {context.folder ? <><span aria-hidden="true">·</span><span data-source="folder" title={intl.formatMessage({ id: "sidebar.recent.folder", defaultMessage: "Folder: {folder}" }, { folder: context.folder })}>{context.folder}</span></> : null}
+          {context.agent ? <><span aria-hidden="true">·</span><span data-source="agent" title={intl.formatMessage({ id: "sidebar.threadAgent", defaultMessage: "Agent: {agent}" }, { agent: context.agent })}>{context.agent}</span></> : null}
+        </span> : null}
+      </span>
+      <span className="sidebar-activity-item__agent" role="img" data-agent={agent?.id}
+        aria-label={agent?.label ? intl.formatMessage({ id: "sidebar.threadAgent", defaultMessage: "Agent: {agent}" }, { agent: agent.label }) : intl.formatMessage({ id: "sidebar.agentUnknown", defaultMessage: "Agent" })}
+        title={agent?.label ?? intl.formatMessage({ id: "sidebar.agentUnknown", defaultMessage: "Agent" })}>
+        <AgentIdentityIcon id={agent?.id ?? ""} size={14} />
       </span>
       <span className="sidebar-activity-item__trailing">
         <ThreadActivity id={activityId} pending={pending} status={status} unread={unread} goalActive={goalActive} />

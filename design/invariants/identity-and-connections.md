@@ -153,3 +153,14 @@ credentials. The existing Codex reset-credit smoke covers these consumers.
 Account menus hand modal input ownership to their confirmation or login dialog.
 Cancelling a dialog must release its pointer lock so account actions remain
 clickable; the menu retains Radix focus, keyboard and dismissal semantics.
+
+## Personal machine enrollment
+
+The trusted local Human owns enrolled machine credentials; `myself` consumes the
+machine's standard Host without granting membership in other collaboration spaces.
+The directory is server-owned and projected as managed profiles, not another IDB
+identity authority. Pairing expires after 15 minutes, long-lived credentials remain
+hashed centrally, and revoke commits before closing live attachments. Worker failure
+fences admission. Installation, public HTTPS reachability and native Agent readiness
+are distinct states. See [personal machines](../../docs/personal-machines.md) and
+[implementation verification](../personal-machines/task_plan.md).

@@ -12,10 +12,14 @@ import { permissionModeProfileId, type NativeConversationProject } from "@opencr
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
+import { acpPromptContent } from "./prompt-content.js";
 
 export interface AcpEngineOptions {
   executionEnvironment?: ExecutionEnvironmentRuntime;
-  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
+  id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codebuddy-ide" | "codex" | "pi-cli";
+  protocol?: "acp" | "pi-rpc";
+  /** Stable storage namespace for separate native data homes of the same provider. */
+  threadNamespace?: string;
   timeoutMs?: number;
   label?: string;
   command: string;
@@ -29,7 +33,10 @@ export interface AcpEngineOptions {
     read(nativeSessionId: string, params: Value): Promise<{ data: any[]; nextCursor: string | null }>;
     items?(nativeSessionId: string, params: Value): Promise<Value>;
     snapshot?(nativeSessionId: string, params: Value): Promise<any[]>;
+    validateResume?(nativeSessionId: string, cwd: string): Promise<void>;
+    sessionPath?(nativeSessionId: string, nativeHistoryEmpty?: boolean): Promise<string | null>;
     usage?(nativeSessionId: string): Promise<Value | null>;
+    directory?(cursor?: string, archived?: boolean): Promise<{available:boolean;sessions:{sessionId:string;cwd:string;title:string|null;updatedAt:string|null;createdAt?:string}[];nextCursor:string|null}>;
     projects?(threads: readonly { id: string; cwd: string }[]): Promise<{ available: boolean; groups: Record<string, NativeConversationProject | null> }>;
     export?(nativeSessionId: string, params: Value): Promise<import("@opencraft/appserver-protocol").AgentConversationContinuation>;
     close?(): Promise<void>;
@@ -42,6 +49,7 @@ interface Session {
   createdAt: number; updatedAt: number; tools: Value[]; archived: boolean;
   preview?: string;
   nativeImport?: true;
+  nativeHistoryEmpty?: true;
   forkedFromId?: string;
   nativeProject?: NativeConversationProject;
   nameOrigin?: "input" | "agent" | "manual";
@@ -54,7 +62,9 @@ interface Session {
   parameterConfigs?: { id: string; currentValue: string; values: string[] }[];
   fastConfig?: { id: string; type: "boolean" | "select"; currentValue: string | boolean; onValue: string | boolean; offValue: string | boolean };
   fastModels?: Record<string, boolean>;
-  modelCatalog?: {id:string;name:string}[];
+  modelCatalog?: {id:string;name:string;inputModalities?: ("text" | "image")[]}[];
+  inputModalities?: ("text" | "image")[];
+  inputModalitiesObservedAt?: number;
   receipts: Record<string, HostInputReceipt>;
   lastTurn?: { id: string; status: string };
 }
@@ -75,7 +85,7 @@ const safeId = (id: unknown): id is string => typeof id === "string" && /^[a-zA-
  * downloaded, and no engine is started inside the execution gateway.
  */
 export class AcpEngine implements ExecutionEngineProvider {
-  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
+  readonly id: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codebuddy-ide" | "codex" | "pi-cli";
   readonly label: string;
   readonly threadPrefix: string;
   readonly modelPrefix: string;
@@ -105,6 +115,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   private nativeOutcomeUnknown = false;
   private started: Promise<void> | null = null;
   private capabilities: Value = {};
+  private inputModalities: ("text" | "image")[] | null = null;
   private toolServer?: Server;
   private toolUrl = "";
   private readonly toolToken = randomUUID();
@@ -125,8 +136,9 @@ export class AcpEngine implements ExecutionEngineProvider {
   constructor(private readonly options: AcpEngineOptions) {
     if (!isAbsolute(options.cwd) || !isAbsolute(options.dataDirectory) || !options.command.trim()) throw new Error("ACP requires explicit absolute workspace and data paths and an installed command");
     this.id = options.id ?? "acp";
-    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "Agent");
-    this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_";
+    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy-ide" ? "CodeBuddy IDE" : this.id === "codebuddy" ? "CodeBuddy CLI" : this.id === "codex" ? "Codex" : "Agent");
+    if (options.threadNamespace && !/^[a-z0-9_]+$/u.test(options.threadNamespace)) throw new Error("Invalid thread namespace");
+    this.threadPrefix = options.threadNamespace ?? (this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_");
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
@@ -172,9 +184,12 @@ export class AcpEngine implements ExecutionEngineProvider {
     void pending.finally(() => { if (this.inputCalls.get(key) === pending) this.inputCalls.delete(key); }).catch(() => {});
     return pending;
   }
-  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string): AcpStdioTransport {
+  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string, cwd?: string, nativeId?: string, nativePath?: string): AcpStdioTransport {
     return new AcpStdioTransport({ ...this.options,
+      ...(["pi-cli", "codebuddy"].includes(this.id) ? { cwd: cwd ?? this.options.cwd } : {}),
+      ...(this.id === "pi-cli" ? { args: [...(this.options.args ?? []), ...(nativePath ? ["--session", nativePath] : nativeId ? ["--session-id", nativeId] : [])] } : {}),
       parameterizedModelPicker: this.id === "cursor",
+      ...(this.id === "codebuddy" ? { sandboxOwner: "codebuddy" } : {}),
       env: environment?.apply({ ...process.env, ...this.options.env }) ?? this.options.env,
       redactError: environment ? message => environment.redact(message) : undefined,
       onNotification: (method, params) => this.update(method, params, threadId),
@@ -254,16 +269,24 @@ export class AcpEngine implements ExecutionEngineProvider {
       const initialized = await this.transport.start();
       if (initialized.protocolVersion !== 1) throw new Error("Unsupported ACP protocol version");
       this.capabilities = value(initialized.agentCapabilities);
+      this.inputModalities = value(this.capabilities.promptCapabilities).image === true ? ["text", "image"] : ["text"];
+      this.notify("opencraft/agents/models/changed", { agentId: this.id });
     })().catch(async error => { await this.transport.close(); await this.closeTools(); throw error; });
   }
+  /** A cold declaration is advisory; native initialization never resumes a conversation. */
+  get hasInputCapabilities(): boolean { return this.inputModalities !== null || [...this.sessions.values()].some(session => session.inputModalities !== undefined); }
+  refreshInputCapabilities(): Promise<void> { return this.admit(() => this.start()); }
   /** Native discovery starts no sessions and never replays messages. */
-  async discoverNativeSessions(cursor?: string): Promise<{ sessions: { id: string; title: string | null; cwd: string; updatedAt: string | null; imported: boolean; importedThreadId: string | null; nativeProject?: NativeConversationProject }[]; nextCursor: string | null }> {
+  async discoverNativeSessions(cursor?: string, archived = false): Promise<{ sessions: { id: string; title: string | null; cwd: string; updatedAt: string | null; createdAt?: string; imported: boolean; importedThreadId: string | null; nativeProject?: NativeConversationProject }[]; nextCursor: string | null; supportsArchived?: boolean }> {
     if (this.closed) throw new Error("ACP engine is closed");
-    await this.start();
-    if (!value(this.capabilities.sessionCapabilities).list || !(value(this.capabilities.sessionCapabilities).resume || this.capabilities.loadSession)) {
+    await this.load();
+    const native = await this.options.history?.directory?.(cursor, archived);
+    if (!native?.available && archived) throw new Error("Archived discovery is unavailable for this agent version");
+    if (!native?.available) await this.start();
+    if (!native?.available && (!value(this.capabilities.sessionCapabilities).list || !(value(this.capabilities.sessionCapabilities).resume || this.capabilities.loadSession))) {
       return fault("This agent cannot list and resume saved conversations", -32601);
     }
-    const result = await this.transport.request("session/list", cursor ? { cursor } : {});
+    const result = native?.available ? native : await this.transport.request("session/list", cursor ? { cursor } : {});
     if (!Array.isArray(result.sessions) || result.sessions.length > 2000) throw new Error("Invalid native conversation directory");
     const groups = await this.options.history?.projects?.(result.sessions.map((entry: Value) => ({ id: entry.sessionId, cwd: entry.cwd }))).catch(() => null);
     const sessions = result.sessions.map((entry: Value) => {
@@ -271,10 +294,11 @@ export class AcpEngine implements ExecutionEngineProvider {
       const imported = [...this.sessions.values()].find(session => session.nativeId === entry.sessionId);
       const project = groups?.available ? groups.groups[entry.sessionId] : imported?.nativeProject;
       return { id: entry.sessionId, ...(project ? { nativeProject: project } : {}), cwd: entry.cwd, title: typeof entry.title === "string" ? entry.title.slice(0, 256) : null,
+        ...(typeof entry.createdAt === "string" && Number.isFinite(Date.parse(entry.createdAt)) ? { createdAt: entry.createdAt } : {}),
         updatedAt: typeof entry.updatedAt === "string" && Number.isFinite(Date.parse(entry.updatedAt)) ? entry.updatedAt : null,
         imported: !!imported, importedThreadId: imported?.id ?? null };
     });
-    return { sessions, nextCursor: typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : null };
+    return { sessions, nextCursor: typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : null, ...(native?.available && this.id === "codex" ? { supportsArchived: true } : {}) };
   }
 
   /** Backfill older imports from native project authority without creating new sessions. */
@@ -316,7 +340,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       const session: Session = { nativeImport: true, ...(projects?.available && projects.groups[entry.id] ? { nativeProject: projects.groups[entry.id]! } : {}), schemaVersion: 1, id: this.threadPrefix + entry.id, nativeId: entry.id, cwd: entry.cwd,
         model: null, name: entry.title, nameOrigin: "agent", createdAt: updatedAt, updatedAt, tools: [], archived: false, receipts: {} };
       if (!this.options.history) throw new Error("This agent has no saved history reader");
-      await this.options.history.read(entry.id, { threadId: session.id, limit: 1 });
+      await this.options.history.read(entry.id, { threadId: session.id, cwd: session.cwd, limit: 1 });
       if (this.closed) throw new Error("ACP engine is closed");
       await this.save(session);
       this.sessions.set(session.id, session);
@@ -436,13 +460,13 @@ export class AcpEngine implements ExecutionEngineProvider {
           const scope = executionScope = envelope === undefined ? { account: null, hostId: 'opencraft-server', projectId: params.projectId ?? null, threadId: null }
             : this.options.executionEnvironment.open(envelope, 'opencraft-server', 'thread/start', params);
           const environment = this.options.executionEnvironment.snapshot(scope);
-          transport = this.createTransport(environment, id);
+          transport = this.createTransport(environment, id, cwd);
           this.sessionEnvironments.set(id, environment); this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); this.sessionEnvironments.delete(id); await transport.close(); throw new Error("ACP environment process unavailable"); }
-        } else if (this.id === "cursor") {
+        } else if (this.id === "cursor" || this.id === "pi-cli" || this.id === "codebuddy") {
           // Cursor's model manager is process-global. Each conversation owns
           // its transport so another conversation cannot change its parameters.
-          transport = this.createTransport(undefined, id); this.sessionTransports.set(id, transport);
+          transport = this.createTransport(undefined, id, cwd); this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); await transport.close(); throw new Error("ACP process unavailable"); }
         }
         let result: Value;
@@ -457,7 +481,8 @@ export class AcpEngine implements ExecutionEngineProvider {
           throw error;
         } finally { this.pendingMcp.delete(id); }
         const now = Math.floor(Date.now() / 1000);
-        const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {} };
+        const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {},
+          ...(["codex", "cursor", "pi-cli", "claude-code", "codebuddy"].includes(this.id) ? { nativeHistoryEmpty: true as const } : {}) };
         this.captureModels(session, result);
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(session);
@@ -479,15 +504,21 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (method === "model/list") {
       // A live parameterized Cursor catalog supersedes catalogs persisted by
       // the previous variant picker. Old session records remain resumable.
-      const sessions = [...this.sessions.values()];
+      const sessions = this.id === "pi-cli" && typeof params.threadId === "string" ? [this.session(params.threadId)] : [...this.sessions.values()];
       const catalogSessions = this.id === "cursor" && sessions.some(session => session.parameterConfigs)
         ? sessions.filter(session => session.parameterConfigs) : sessions;
+      // Prompt capabilities belong to this Agent source, not whichever saved
+      // session happens to overwrite a duplicate model ID last. An undeclared
+      // older record cannot erase a declaration; current negotiation wins.
+      const inputModalities = this.inputModalities ?? sessions.filter(session => session.inputModalities)
+        .sort((a, b) => (b.inputModalitiesObservedAt ?? b.updatedAt * 1000) - (a.inputModalitiesObservedAt ?? a.updatedAt * 1000))[0]?.inputModalities ?? ["text"];
       const fastModels = Object.assign({}, ...catalogSessions.map(session => session.fastModels ?? {})) as Record<string, boolean>;
       const reasoningModels = Object.assign({}, ...catalogSessions.map(session => session.reasoningModels ?? {})) as NonNullable<Session["reasoningModels"]>;
       return { data: [...new Map(catalogSessions.flatMap(session => (session.modelCatalog ?? []).map(model => [model.id, {
         id: model.id, model: model.id, displayName: model.name, hidden: false, isDefault: session.model === model.id,
-        supportedReasoningEfforts: reasoningModels[model.id]?.supportedReasoningEfforts ?? [],
-        defaultReasoningEffort: reasoningModels[model.id]?.defaultReasoningEffort ?? null,
+        inputModalities: model.inputModalities ?? inputModalities,
+        supportedReasoningEfforts: (reasoningModels[model.id]?.supportedReasoningEfforts ?? []).map(effort => this.id === "pi-cli" && effort.reasoningEffort === "off" ? { ...effort, reasoningEffort: "none" } : effort),
+        defaultReasoningEffort: this.id === "pi-cli" && reasoningModels[model.id]?.defaultReasoningEffort === "off" ? "none" : reasoningModels[model.id]?.defaultReasoningEffort ?? null,
         serviceTiers: fastModels[this.baseModelId(model.id)] ? [{ id: "fast", name: "Fast", description: "" }] : [],
       }]))).values()], nextCursor: null };
     }
@@ -587,10 +618,15 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (params.effort != null || params.reasoningEffort != null) await this.setReasoning(session, params.effort ?? params.reasoningEffort);
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
       runtime.owner = client;
-      const userPrompt = continuing ? [{ type: "text", text: "Continue." }] : this.promptContent(params.input);
+      const initialized = await this.native(session).start();
+      const userPrompt = continuing ? [{ type: "text", text: "Continue." }] : await acpPromptContent(params.input,
+        value(initialized.agentCapabilities?.promptCapabilities).image === true);
+      if (this.id === "pi-cli" && userPrompt.some(part => part.type === "image")
+        && !session.modelCatalog?.find(model => model.id === session.model)?.inputModalities?.includes("image")) return fault("This Pi model does not support image input");
       return this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt);
     }
     if (method === "turn/interrupt") {
+      if(this.id === "codebuddy-ide")return fault("Stop this task in CodeBuddy IDE; interruption was not sent",-32601);
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
       if (runtime.active?.status === "inProgress") this.native(session).notify("session/cancel", { sessionId: session.nativeId });
       return {};
@@ -617,11 +653,10 @@ export class AcpEngine implements ExecutionEngineProvider {
       names.add(tool.name); return { name: tool.name, description: String(tool.description ?? ""), inputSchema: tool.inputSchema };
     });
   }
-  private promptContent(input: unknown): Value[] {
-    if (!Array.isArray(input) || !input.length) return fault("ACP input must contain text");
-    return input.map(item => { if (!item || item.type !== "text" || typeof item.text !== "string") return fault("This ACP adapter supports text input only"); return { type: "text", text: item.text }; });
-  }
   private captureModels(session: Session, result: Value): void {
+    const inputModalities: ("text" | "image")[] = value(this.capabilities.promptCapabilities).image === true ? ["text", "image"] : ["text"];
+    if (!session.inputModalitiesObservedAt || !isDeepStrictEqual(session.inputModalities, inputModalities)) session.inputModalitiesObservedAt = Date.now();
+    session.inputModalities = inputModalities;
     const options: Value[] = Array.isArray(result.configOptions) ? result.configOptions : [];
     const option = options.find(o => o.category === "model" || o.id === "model");
     if (typeof option?.id === "string") session.modelConfigId=option.id;
@@ -634,7 +669,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (this.id === "codex" && session.modelCatalog?.some(model => /\[[^\]]+\]$/u.test(model.id))) session.legacyModelCatalog = true;
     if (choices.length && (legacy || !session.legacyModelCatalog)) session.modelCatalog = choices.flatMap(m => {
       const id = m.modelId ?? m.value;
-      return typeof id === "string" ? [{ id: this.modelPrefix + id, name: typeof m.name === "string" ? m.name : id }] : [];
+      return typeof id === "string" ? [{ id: this.modelPrefix + id, name: typeof m.name === "string" ? m.name : id,
+        ...(this.id === "pi-cli" && Array.isArray(m.inputModalities) ? { inputModalities: m.inputModalities.includes("image") ? ["text", "image"] as ("text" | "image")[] : ["text"] as ("text" | "image")[] } : {}) }] : [];
     });
     const reasoning = options.find(o => o.category === "thought_level" || o.id === "reasoning_effort");
     if (reasoning && typeof reasoning.id === "string" && typeof reasoning.currentValue === "string") session.reasoningConfig = {
@@ -657,7 +693,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         : fast?.type === "select" && [on, off].every(value => values.includes(value)) && values.includes(fast.currentValue)
           ? { id: fast.id, type: "select", currentValue: fast.currentValue, onValue: on!, offValue: off! } : undefined;
       if (session.model) (session.fastModels ??= {})[this.baseModelId(session.model)] = !!session.fastConfig;
-      if (this.id === "cursor") {
+      if (this.id === "cursor" || this.id === "pi-cli") {
         session.parameterConfigs = options.filter(o => o.category !== "model" && o.category !== "mode" && o.type === "select"
           && typeof o.id === "string" && typeof o.currentValue === "string").map(o => ({
           id: o.id, currentValue: o.currentValue, values: (o.options ?? []).flatMap((choice: Value) => choice.options ?? [choice])
@@ -673,7 +709,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   private baseModelId(model: string): string { return this.id === "codex" ? codexBaseModelId(model) : model; }
   private async setModel(session: Session, model: string): Promise<void> {
     if (!this.ownsModel(model)) return fault("Model belongs to another ACP provider");
-    if (session.model === model) return;
+    if (session.model === model && this.id !== "pi-cli") return;
     const requested = model.slice(this.modelPrefix.length);
     if (this.id === "cursor") {
       // Previous catalogs stored native parameterized variants as model IDs.
@@ -707,11 +743,17 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if ((!result.models?.currentModelId && !Array.isArray(result.configOptions)) || (Array.isArray(result.configOptions) && result.configOptions.length === 0)) session.model = model;
     await this.save(session);
-    if(session.model!==model) return fault("The requested model was not selected. Choose another model.");
+    // A declared Codex base selection leaves native reasoning unchanged; its
+    // observed model may therefore still carry that reasoning suffix. Explicit
+    // variants continue to require an exact match, including their effort.
+    const selected = this.id === "codex" && !combined && session.modelConfigValues?.includes(requested)
+      ? this.baseModelId(session.model ?? "") : session.model;
+    if (selected !== model) return fault("The requested model was not selected. Choose another model.");
   }
   private async setReasoning(session: Session, effort: unknown): Promise<void> {
     const config = session.reasoningConfig;
-    if (this.id !== "cursor" || typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
+    if (this.id === "pi-cli" && effort === "none") effort = "off";
+    if (!["cursor", "pi-cli"].includes(this.id) || typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
     if (config.currentValue === effort) return;
     this.captureModels(session, await this.native(session).request("session/set_config_option", {
       sessionId: session.nativeId, configId: config.id, value: effort,
@@ -767,17 +809,22 @@ export class AcpEngine implements ExecutionEngineProvider {
     }));
   }
   private async resume(session: Session, inputId?: string): Promise<void> {
+    if (session.nativeImport && ["pi-cli", "claude-code", "codebuddy", "codebuddy-ide"].includes(this.id)) {
+      if (!this.options.history?.validateResume) throw new Error("Native resume validation is unavailable");
+      await this.options.history.validateResume(session.nativeId, session.cwd);
+    }
     await this.start(); const runtime = this.state(session.id);
     if (this.options.executionEnvironment && !this.sessionTransports.has(session.id)) {
       const scope = this.options.executionEnvironment.creation('opencraft-server', session.id)
         ?? (inputId ? this.options.executionEnvironment.execution('opencraft-server', session.id, inputId) : null);
       if (!scope) return; // Legacy catalog reads remain cold until an attested input.
       const environment = this.options.executionEnvironment.snapshot(scope);
-      const transport = this.createTransport(environment, session.id);
+      const transport = this.createTransport(environment, session.id, session.cwd, session.nativeId);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP environment process unavailable"); }
       this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
-    } else if (this.id === "cursor" && !this.sessionTransports.has(session.id)) {
-      const transport = this.createTransport(undefined, session.id);
+    } else if ((this.id === "cursor" || this.id === "pi-cli" || this.id === "codebuddy") && !this.sessionTransports.has(session.id)) {
+      const nativePath = this.id === "pi-cli" ? await this.options.history?.sessionPath?.(session.nativeId, session.nativeHistoryEmpty === true) : undefined;
+      const transport = this.createTransport(undefined, session.id, session.cwd, session.nativeId, nativePath ?? undefined);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP process unavailable"); }
       this.sessionTransports.set(session.id, transport); runtime.loaded = false;
     }
@@ -787,7 +834,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!method) return fault("ACP peer cannot resume persisted sessions", -32601);
     const selection = this.id === "cursor" ? { model: session.model, parameters: session.parameterConfigs?.map(config => ({ ...config })) } : null;
     let result: Value;
-    try { result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] }); }
+    try { result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [],
+      ...(this.id === "codebuddy-ide" && session.nativeImport ? { _meta: { "opencraft/nativeHistoryVerified": true } } : {}) }); }
     catch (error) {
       if (this.id === "codex" && error instanceof AcpProtocolError && /This Codex session is in use by another Codex client/u.test(error.message))
         throw Object.assign(new Error(error.message), { rpcCode: 409, domainData: { code: "CODEX_SESSION_BUSY", inputNotSent: true } });
@@ -828,7 +876,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
-    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, this.id === "cursor" ? session.reasoningConfig?.currentValue ?? null : null,
+    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, ["cursor", "pi-cli"].includes(this.id) ? session.reasoningConfig?.currentValue ?? null : null,
       (session.modelCatalog ?? []).map(m=>({model:m.id})));
     if (this.options.executionEnvironment) {
       const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));
@@ -838,8 +886,11 @@ export class AcpEngine implements ExecutionEngineProvider {
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
-      content: userPrompt.map(item => ({ type: "text", text: item.text, text_elements: [] })) });
+      content: userPrompt.map(item => item.type === "image"
+        ? { type: "image", url: `data:${item.mimeType};base64,${item.data}` }
+        : { type: "text", text: item.text, text_elements: [] }) });
     session.lastTurn = { id: active.id, status: active.status };
+    delete session.nativeHistoryEmpty;
     const firstText = userPrompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
     if (!session.preview && firstText) session.preview = Array.from(firstText).slice(0, 160).join("");
     const initialTitle = !session.name && session.nameOrigin !== "manual" && firstText
@@ -876,7 +927,9 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private historyParams(session: Session, params: Value): Value {
     const active = this.state(session.id).active;
-    return { ...params, threadId: session.id, activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
+    const { nativeHistoryEmpty: _callerEmptyHistory, ...readParams } = params;
+    return { ...readParams, threadId: session.id, ...(session.nativeHistoryEmpty === true && !session.lastTurn ? { nativeHistoryEmpty: true } : {}),
+      activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
   }
   private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;

@@ -77,7 +77,7 @@ export function HostlessWorkbench({
 }) {
   const intl = useIntl();
   const internalDeveloperMode = useInternalDeveloperMode();
-  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications" | "settings">("context");
+  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications">("context");
   const applicationsSelected = sidebarDestination === "applications";
   const [accountOpen, setAccountOpen] = useState(false);
   const appearance = useAppearanceTheme();
@@ -210,17 +210,17 @@ export function HostlessWorkbench({
       routeHeaderHostRef={routeHeader.hostRef}
     />
   );
-  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
+  const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
-        section={sidebarDestination === "settings" ? "" : settingsSection ?? "appearance"}
+        section={settingsSection ?? "appearance"}
         onSectionChange={selectSettingsSection}
         extensionContributions={supervisor.extensions.contributions}
         profiles={profileSnapshot.profiles}
         machines={machines}
         activeHostId=""
         onBack={openConversationSidebar}
-        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
+        presentation={managementSettingsOpen ? "dialog" : "sidebar"}
       />
     </Suspense>
   ) : null;
@@ -331,8 +331,8 @@ export function HostlessWorkbench({
         surface={desktopBackdrop ? "application-desktop" : "default"}
         navigation={{
           applicationsInSidebar: true,
-            settingsInSidebar: true,
-          settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
+            settingsInSidebar: false,
+          settingsActive: routeSettingsOpen && !applicationsSelected,
           updatesActive: routeSettingsOpen && !applicationsSelected && applicationRoute.kind === 'settings' && applicationRoute.slug === 'updates',
           actions: [
             { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: applicationRoute.kind === "conversation" && sidebarDestination === "context", onInvoke: openConversationSidebar },
@@ -351,7 +351,7 @@ export function HostlessWorkbench({
                 await extensionProjection.account?.provider.signOut?.();
               } : undefined,
           },
-          onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
+          onOpenSettings: () => openSettings(),
           onOpenUpdates: () => openSettings('updates'),
         }}
         layoutScope="hostless"
@@ -376,7 +376,7 @@ export function HostlessWorkbench({
             actions={headerNavigationActions}
           />
         )}
-        leftPanel={<ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar} selected={applicationsSelected} actions={extensionProjection.primaryActions} contributions={supervisor.extensions.contributions}
+        leftPanel={<ApplicationsSidebarFrame onReturnToChat={openConversationSidebar} selected={applicationsSelected} actions={extensionProjection.primaryActions} contributions={supervisor.extensions.contributions}
           renderers={supervisor.platformViewRenderers} host={extensionHost} route={applicationRoute}>
           {routeSettingsOpen || applicationRoute.kind === "conversation" || managementSettingsOpen ? leftPanel : null}
         </ApplicationsSidebarFrame>}

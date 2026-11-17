@@ -333,7 +333,7 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
         if (!ownsIntent(epoch, origin)) return false;
         if (viewId !== undefined) {
           if (paint) historyFirstPaint.bindView(paint, viewId, "warm");
-          activation.mountInitial(location, viewId);
+          activation.presentRetained(location, viewId);
           activeLocation = location; activeScope = viewId;
           commitRoute(() => navigation.push(location, { routeScopeId: viewId }),
             () => rememberPresentedView(location, viewId));

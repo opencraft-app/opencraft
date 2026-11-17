@@ -364,3 +364,15 @@ test("unreadable preconditions emit no catalog operation and a later-page failur
     (error, output, stderr) => error ? reject(Object.assign(error, { stdout: output, stderr })) : resolve(output)));
   assert.match(stdout, /catalog observation policy passed/);
 });
+
+test('personally enrolled online machines admit catalog reads after a cold browser refresh',async t=>{
+ const enrolled={...profile,hostKind:'remote-control' as const,machinePresence:'online' as const};
+ assert.equal(canReadHostThreadCatalog(enrolled,undefined,null),true);
+ assert.equal(canReadHostThreadCatalog({...enrolled,machinePresence:'offline'},undefined,null),false);
+ assert.equal(canReadHostThreadCatalog({...enrolled,enabled:false},undefined,null),false);
+ assert.equal(canReadHostThreadCatalog({...enrolled,includeInSidebar:false},undefined,null),false);
+ assert.equal(canReadHostThreadCatalog({...enrolled,machinePresence:undefined},undefined,null),false);
+ const h=harness(enrolled);t.after(()=>h.registry.dispose());
+ const page=await readHostThreadCatalog({profile:enrolled,currentProfile:()=>enrolled,registry:h.registry,management:null});
+ assert.equal(page.data.length,1);
+});

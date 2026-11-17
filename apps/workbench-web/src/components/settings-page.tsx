@@ -1,3 +1,4 @@
+import { HostAgentConfiguration } from "./agent-configuration";
 import { SidebarReturnToApp } from "./sidebar-return-to-app";
 import { Button } from "@opencraft/design-system-web/button";
 import { NavigationList, NavigationGroup, NavigationItem } from "@opencraft/design-system-web/navigation";
@@ -499,7 +500,7 @@ export function SettingsContent({
                     }}
                     contribution={selectedExtensionView}
                     host={extensionViewHost}
-                    regions={regions}
+                    regions={selectedExtensionPage?.modelConfiguration ? { ...regions, AgentConfiguration: HostAgentConfiguration } : regions}
                     reportError={notices?.error}
                   />
                 )
@@ -512,7 +513,7 @@ export function SettingsContent({
                   restore={archivedConversations.restore}
                 />
               ) : section === "chat" ? (
-                <ChatSettings />
+                <ChatSettings onConfigureAgents={(localModelsPage ?? extensionPages.find(page => page.modelConfiguration)) ? () => onSectionChange((localModelsPage ?? extensionPages.find(page => page.modelConfiguration))!.id) : undefined} />
               ) : section === "updates" && platform === "web" && hasManagedWebUpdates() ? (
                 <WebUpdatesSettings />
               ) : section === "shortcuts" ? (

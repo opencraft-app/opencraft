@@ -149,7 +149,8 @@ async function createHarness(options: HarnessOptions = {}): Promise<{
         const turns = params.includeTurns === true ? options.fallbackTurns ?? [] : [];
         peer.send(encodeJsonRpcMessage({
           id: message.id,
-          result: { thread: thread("thread-one", turns, options.historyMode) },
+          result: { thread: thread("thread-one", turns, options.historyMode),
+            ...(params.initialTurnsPage && options.initialTurnsPage ? { initialTurnsPage: options.initialTurnsPage } : {}) },
         }));
         return;
       }
@@ -2060,6 +2061,29 @@ for (const [method, type, field, extra] of [
   } finally { unsubscribe(); await h.close(); }
 });
 
+
+test("read-only opening loads the latest full Turn before older tool-heavy history", async () => {
+  const output = "tool output\n".repeat(100_000);
+  const tail = { id: "latest", itemsView: "full", items: [{ id: "latest-answer", type: "agentMessage", text: "Latest answer" }] };
+  const older = { id: "older", itemsView: "full", items: [{ id: "tool", type: "commandExecution", aggregatedOutput: output }] };
+  const h = await createHarness({ historyMode: "paginated", readHistory: true,
+    initialTurnsPage: { data: [tail], nextCursor: "older-page" }, turnsPages: {
+    null: { data: [tail], nextCursor: "older-page" },
+    "older-page": { data: [older], nextCursor: null },
+  } });
+  try {
+    const view = await h.runtime.resume.read("thread-one");
+    assert.deepEqual(h.requests.find(r => r.method === "thread/read")?.params.initialTurnsPage,
+      { limit: 1, itemsView: "full", sortDirection: "desc" });
+    assert.deepEqual(view.turns.map(turn => turn.id), ["latest"]);
+    assert.equal(view.turnsPagination.olderCursor, "older-page");
+    assert.equal(h.requests.some(r => r.method === "thread/turns/list" || r.method === "thread/items/list"), false);
+    const expanded = await h.runtime.resume.loadOlder("thread-one");
+    assert.deepEqual(expanded.turns.map(turn => turn.id), ["older", "latest"]);
+    assert.equal(expanded.turns[0]?.items?.[0]?.aggregatedOutput, output);
+    assert.equal(h.requests.some(r => r.method === "thread/resume" || r.method === "turn/start"), false);
+  } finally { await h.close(); }
+});
 
 test("presentation read negotiates one Turn and hydrates the exact Item only on demand", async () => {
   const preview = { id: "cmd", type: "commandExecution", command: "echo", aggregatedOutput: "preview", historyDetail: { cursor: "detail-epoch" } };

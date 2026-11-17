@@ -155,3 +155,16 @@ test("fence rejection happens before a remote projection is published or a local
   assert.equal(localResource.getSnapshot().value, null);
   await resources.close();
 });
+
+test('catalog working directory survives display cache restoration without inventing it for legacy rows',()=>{
+ const row={id:'remote-import',title:'Imported',project:'same-name',cwd:'/real/remote/same-name',lineage:'root' as const,updatedAt:1,createdAt:1,status:'ready' as const,time:'old'};
+ const cached=cacheThreadCatalog([row],true);const parsed=threadCatalogResource.parse(cached as any);assert.equal(restoreThreadCatalog(parsed)[0]!.cwd,row.cwd);
+ const {cwd:ignored,...legacy}=cached.rows[0]!;const old=threadCatalogResource.parse({complete:true,rows:[legacy]} as any);assert.equal(restoreThreadCatalog(old)[0]!.cwd,undefined);
+});
+test('cached conversation Agent identity survives reconnect without authorizing execution',()=>{
+ const row={id:'cursor_native',title:'Imported',project:'workspace',lineage:'root' as const,updatedAt:1,status:'ready' as const,time:'old',agent:{id:'cursor',label:'Cursor'}};
+ const parsed=threadCatalogResource.parse(cacheThreadCatalog([row],true) as any);
+ assert.deepEqual(restoreThreadCatalog(parsed)[0]!.agent,row.agent);
+ const {agent:ignored,...legacy}=parsed.rows[0]!;
+ assert.equal(restoreThreadCatalog(threadCatalogResource.parse({complete:true,rows:[legacy]} as any))[0]!.agent,undefined);
+});

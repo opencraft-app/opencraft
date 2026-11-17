@@ -1,3 +1,4 @@
+import {PersonalMachineDirectory} from "./personal-machine-directory";
 import { serverInstalledBuiltins } from './server-installed-extensions';
 import { parseDesktopServerConnection, type DesktopServerConnection } from '@opencraft/app-host-protocol/desktop-server';
 import { DesktopServerConnectionExtension, desktopServerPort } from './desktop-server-connections';
@@ -649,7 +650,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     storedHostProfiles.close();
     throw error;
   }
-  const configuredHostProfiles = sshManagement && sshManagement.getSnapshot().available !== false
+  const sshHostProfiles = sshManagement && sshManagement.getSnapshot().available !== false
     ? new ServerManagedProfileStore(storedHostProfiles, sshManagement, () => [
       ...sshManagement!.getSnapshot().items,
       ...sshManagement!.getSnapshot().legacyServers.map(server => ({ ...server, enabled: true, revision: 1 })),
@@ -659,6 +660,9 @@ export async function createWebWorkbenchApplicationSupervisor(
         transportEndpoint: null, executionLocation: server.displayName, workspaceBrowseRoots: server.workspaceBrowseRoots, revision: server.revision,
       })))
     : storedHostProfiles;
+  const personalMachines = import.meta.env.VITE_PERSONAL_MACHINES_ENABLED === "true" ? new PersonalMachineDirectory() : null;
+  const configuredHostProfiles = personalMachines ? new ServerManagedProfileStore(sshHostProfiles,personalMachines,()=>personalMachines.profiles(),"personal:",()=>personalMachines.close()) : sshHostProfiles;
+  if(personalMachines){personalMachines.start();startupRollback.push(()=>personalMachines.close());}
   if (!fixedPresentation) await refreshBundledHostProfiles(configuredHostProfiles, bootstrapDefinitions);
   const hostProfiles: HostConnectionProfileStore = options.hostProfileMode === "configured"
     ? configuredHostProfiles
@@ -1259,7 +1263,8 @@ export async function createWebWorkbenchApplicationSupervisor(
   };
   for (const connection of earlyServerRevocations) retireDesktopServer(connection);
   forgetUnavailableThread = commands.forgetThread;
-  const tasksStorageHostId = platform === "electron" ? "local-codex" : headlessAppHost ? "opencraft-server" : bootstrapDefinitions[0]?.hostId;
+  const deploymentHostId = platform === "electron" ? "local-codex" : headlessAppHost ? "opencraft-server" : bootstrapDefinitions[0]?.hostId;
+  const tasksStorageHostId = deploymentHostId;
   const tasks: TasksRequestPort | null = import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true" ? {
     request: (method, params) => {
       if (!tasksStorageHostId) return Promise.reject(new Error("Tasks storage unavailable"));
@@ -1338,6 +1343,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     threadAttention,
     turnNotifications,
     agentRuntimes,
+    personalMachines: {request: command => {
+      if (!deploymentHostId) return Promise.reject(new Error("Machine enrollment owner unavailable"));
+      return agentRuntimes.request(deploymentHostId, "opencraft/personal-machines", command);
+    }},
     connectionProviders,
     extensions,
     extensionManager,

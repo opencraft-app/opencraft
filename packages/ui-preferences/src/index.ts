@@ -18,6 +18,7 @@ export interface UiPreferenceValues {
   readonly "shell.navigationWidth": number;
   readonly "shell.contextSidebarWidth": number;
   readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
+  readonly "sidebar.instanceNames": Readonly<Record<string,string>>;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
 }
 
@@ -87,6 +88,15 @@ export const uiPreferenceDefinitions = Object.freeze({
         entries.push([scope, { model: selection.model, effort: selection.effort, ...(selection.serviceTier === undefined ? {} : { serviceTier: selection.serviceTier }) }]);
       }
       return Object.fromEntries(entries);
+    },
+  },
+  "sidebar.instanceNames": {
+    key: "sidebar.instanceNames", scope: "installation", defaultValue: {},
+    parse: (value: unknown): UiPreferenceValues["sidebar.instanceNames"] | null => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const entries = Object.entries(value);
+      if (entries.length > 1000 || entries.some(([key, name]) => !key || key.length > 8192 || typeof name !== "string" || !name.trim() || name.length > 80 || /[\u0000-\u001f\u007f]/u.test(name))) return null;
+      return Object.fromEntries(entries.map(([key,name]) => [key,(name as string).trim()]));
     },
   },
   "sidebar.serverFilter": {

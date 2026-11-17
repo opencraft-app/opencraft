@@ -1,6 +1,10 @@
+import {codexSessionDirectory, codexHistoryHomes} from "./codex-session-directory.js";
 import { exportConversationContext } from "./conversation-context-export.js";
 import { CodexHistorySources, codexHistoryRecords, containedNativeHistoryPath, type CodexHistoryRange } from "./codex-history-sources.js";
 import { codexProjectGroups } from "./codex-project-groups.js";
+import { CodeBuddyIdeHistory } from "./codebuddy-ide-history.js";
+import { NativeCliSessions, projectNativeMessages, readCodeBuddyHistory } from "./native-cli-sessions.js";
+import { readPiCliHistory } from "./pi-cli-history.js";
 import { parentPort, workerData } from "node:worker_threads";
 import { open, readFile, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
@@ -11,7 +15,18 @@ import { projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-histo
 type Value = Record<string, any>;
 type Turn = Value & { id: string; items: Value[] };
 const port = parentPort!;
-const { provider, home, contextDirectory } = workerData as { provider: "codex" | "cursor"; home: string; contextDirectory?: string };
+const { provider, home, contextDirectory, additionalHomes = [] } = workerData as { provider: "codex" | "cursor" | "pi-cli" | "claude-code" | "codebuddy" | "codebuddy-ide"; home: string; contextDirectory?: string; additionalHomes?: string[] };
+const ideHistory = provider === "codebuddy-ide" ? new CodeBuddyIdeHistory(home) : null;
+const nativeFiles = provider === "pi-cli" || provider === "codebuddy" ? new NativeCliSessions(provider, [home, ...additionalHomes]) : null;
+const claudeSdk = provider === "claude-code" ? (() => { process.env.CLAUDE_CONFIG_DIR = home; return import("@anthropic-ai/claude-agent-sdk"); })() : null;
+const missingNative = () => Object.assign(new Error("Native session history not found"), { code: "NATIVE_HISTORY_NOT_FOUND" });
+async function claudeDirectory(cursor?: string) {
+  const offset = cursor === undefined ? 0 : Number(cursor);
+  if (!Number.isSafeInteger(offset) || offset < 0 || String(offset) !== (cursor ?? "0")) throw new Error("Invalid Claude directory cursor");
+  const sdk = await claudeSdk!, rows = await sdk.listSessions({ offset, limit: 201, includeWorktrees: false, includeProgrammatic: false });
+  return { available: true, sessions: rows.slice(0, 200).flatMap(row => typeof row.cwd === "string" && isAbsolute(row.cwd) ? [{ sessionId: row.sessionId, cwd: row.cwd, title: row.customTitle || row.summary || null,
+    updatedAt: new Date(row.lastModified).toISOString(), ...(row.createdAt ? { createdAt: new Date(row.createdAt).toISOString() } : {}) }] : []), nextCursor: rows.length > 200 ? String(offset + 200) : null };
+}
 const codexSources = new CodexHistorySources(home);
 const cache = new Map<string, { stamp: string; turns: Turn[] }>();
 const contained = (path: string) => containedNativeHistoryPath(home, path);
@@ -149,6 +164,25 @@ function readCursor(path: string, nativeId: string): Turn[] {
 }
 let projectState: { stamp: string; data: unknown } | undefined;
 async function read(nativeId: string, params: Value, kind: string): Promise<any> {
+  if (kind === "sources") return provider === "codex" ? codexHistoryHomes(home) : {sources:[]};
+  if (kind === "directory") {
+    if (params.archived && provider !== "codex") throw new Error("Archived native discovery is unavailable");
+    return ideHistory ? ideHistory.directory(params.nativeScope, params.cursor) : provider === "codex" ? codexSessionDirectory(home, params.cursor, params.archived === true)
+      : nativeFiles ? nativeFiles.directory(params.cursor) : provider === "claude-code" ? claudeDirectory(params.cursor) : { available: false, sessions: [], nextCursor: null };
+  }
+  if (kind === "validate") {
+    if (!/^[a-f0-9-]{32,64}$/u.test(nativeId)) throw new Error("Invalid native conversation identity");
+    if (ideHistory) await ideHistory.read(params.nativeScope, nativeId, params.cwd);
+    else if (nativeFiles) { if ((await nativeFiles.resolve(nativeId)).cwd !== params.cwd) throw new Error("Native session workspace changed"); }
+    else if (claudeSdk) { if ((await (await claudeSdk).getSessionInfo(nativeId))?.cwd !== params.cwd) throw new Error("Native session workspace changed"); }
+    else throw new Error("Native resume validation is unavailable");
+    return {};
+  }
+  if (kind === "resolve") {
+    if (!nativeFiles) throw new Error("Native path resolution is unavailable");
+    try { return (await nativeFiles.resolve(nativeId)).path; }
+    catch (error) { if (params.nativeHistoryEmpty === true && (error as NodeJS.ErrnoException).code === "NATIVE_HISTORY_NOT_FOUND") return null; throw error; }
+  }
   if (kind === "projects") {
     if (provider !== "codex") return { available: false, groups: {} };
     const path = join(home, ".codex-global-state.json");
@@ -166,6 +200,46 @@ async function read(nativeId: string, params: Value, kind: string): Promise<any>
     return { available: true, groups: codexProjectGroups(data, params.threads) };
   }
   if (!/^[a-f0-9-]{32,64}$/u.test(nativeId)) throw new Error("Invalid native conversation identity");
+  try { return await readNativeHistory(nativeId, params, kind); }
+  catch (error) {
+    // Native clients create their transcript on the first prompt. Only
+    // the execution owner can attest that this session has accepted no input.
+    const failure = error as NodeJS.ErrnoException;
+    const missing = provider !== "cursor" ? failure.code === "NATIVE_HISTORY_NOT_FOUND"
+      : failure.code === "ENOENT" && failure.path === join(home, "acp-sessions", nativeId, "store.db");
+    if (params.nativeHistoryEmpty === true && kind !== "usage" && missing) {
+      return projectHistory([], nativeId, params, kind);
+    }
+    throw error;
+  }
+}
+async function readNativeHistory(nativeId: string, params: Value, kind: string): Promise<any> {
+  if (ideHistory) {
+    if (kind === "usage") return null;
+    return projectHistory(await ideHistory.read(params.nativeScope, nativeId, params.cwd) as Turn[], nativeId, params, kind);
+  }
+  if (provider === "claude-code") {
+    if (kind === "usage") return null;
+    const sdk = await claudeSdk!, info = await sdk.getSessionInfo(nativeId);
+    if (!info?.cwd || !isAbsolute(info.cwd)) throw missingNative();
+    if (params.cwd !== undefined && params.cwd !== info.cwd) throw new Error("Native session workspace changed");
+    const rows = await sdk.getSessionMessages(nativeId, { dir: info.cwd });
+    if (rows.some(row => row.session_id !== nativeId)) throw new Error("Native session identity changed");
+    return projectHistory(projectNativeMessages(rows, "claude-code") as Turn[], nativeId, params, kind);
+  }
+  if (nativeFiles) {
+    if (kind === "usage") return null;
+    const entry = await nativeFiles.resolve(nativeId);
+    if (params.cwd !== undefined && params.cwd !== entry.cwd) throw new Error("Native session workspace changed");
+    const path = entry.path, source = await stat(path);
+    const stamp = JSON.stringify([source.dev, source.ino, source.size, source.mtimeMs]);
+    let stored = cache.get(nativeId);
+    if (!stored || stored.stamp !== stamp) {
+      stored = { stamp, turns: provider === "pi-cli" ? await readPiCliHistory(path, nativeId) : await readCodeBuddyHistory(path) as Turn[] };
+      cache.set(nativeId, stored); if (cache.size > 8) cache.delete(cache.keys().next().value!);
+    }
+    return projectHistory(stored.turns, nativeId, params, kind);
+  }
   const ranges = provider === "codex" ? await codexSources.resolve(nativeId) : undefined;
   const path = ranges ? ranges.at(-1)!.path : await contained(join(home, "acp-sessions", nativeId, "store.db"));
   const source = await stat(path), wal = provider === "cursor" ? await stat(`${path}-wal`).catch(() => null) : null;
@@ -176,7 +250,10 @@ async function read(nativeId: string, params: Value, kind: string): Promise<any>
     stored = { stamp, turns: provider === "codex" ? await readCodex(ranges!) : readCursor(path, nativeId) };
     cache.set(nativeId, stored); if (cache.size > 8) cache.delete(cache.keys().next().value!);
   }
-  let turns = stored.turns;
+  return projectHistory(stored.turns, nativeId, params, kind);
+}
+function projectHistory(nativeTurns: Turn[], nativeId: string, params: Value, kind: string): any {
+  let turns = nativeTurns;
   const active = params.activeTurn;
   if (active?.status === "inProgress" && Array.isArray(active.items)) {
     const tail = turns.at(-1), user = active.items.find((item: Value) => item.type === "userMessage");

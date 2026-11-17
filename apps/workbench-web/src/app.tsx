@@ -162,8 +162,6 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
-import { HostAgentOnboarding } from "./components/agent-management";
-import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
 import { WorkbenchToolNavigation, useWorkbenchToolActions } from "./components/workbench-tool-navigation";
@@ -235,6 +233,10 @@ import {
   type WorkbenchPresentationPolicy,
 } from "./workbench-presentation-policy";
 
+const HostAgentOnboarding = lazy(async () => {
+  const module = await import("./components/agent-management");
+  return { default: module.HostAgentOnboarding };
+});
 const ServerSpacesContent = lazy(async () => {
   const module = await import("./components/server-spaces-sidebar");
   return { default: module.ServerSpacesContent };
@@ -329,7 +331,7 @@ export function App({
   const notices = useAsyncNotices();
   const modelSelectionPolicy = embedded?.modelSelectionPolicy ?? (embedded ? "host-default" : "user");
   const internalDeveloperMode = useInternalDeveloperMode();
-  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications" | "settings">("context");
+  const [sidebarDestination, setSidebarDestination] = useState<"context" | "applications">("context");
   const applicationsSelected = sidebarDestination === "applications";
   const [accountOpen, setAccountOpen] = useState(false);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
@@ -1336,7 +1338,7 @@ export function App({
     () => composerController.getSnapshot().draft.selections.model,
     () => composerController.getSnapshot().draft.selections.model);
   const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
-    ?? composerCatalog.models.find(model => model.isDefault)?.model ?? null;
+    ?? composerCatalog.models.find(model => model.isDefault)?.model ?? composerCatalog.models[0]?.model ?? null;
   const modelReadiness = useQuery({
     queryKey: [...composerCapabilitiesKey(snapshot.hostId), "setup", snapshot.connectionGeneration, setupSelectedModel],
     enabled: draft !== null && supportsModelSetup && activeHostConnectionPhase === "ready",
@@ -1354,12 +1356,16 @@ export function App({
       : activeHostConnectionPhase === "ready" && ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error) ? "catalog-error" as const
         : activeHostConnectionPhase === "ready" && noUsableModels && !composerCatalog.modelError && !modelReadiness.error ? "models" as const : null
     : null;
+  const agentAvailability = useAgentAvailability();
   const onboardingFinishEpoch = useRef(0);
   useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
-  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | "history" | null>(() => {
+  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | "history" | "remote" | null>(() => {
     try { return localStorage.getItem("opencraft.onboarding.completedAt") === null ? "gate" : null; }
     catch { return null; }
   });
+  useEffect(() => {
+    setOnboardingOverlay(current => current === "gate" ? current : null);
+  }, [workbenchNavigationSnapshot.revision]);
   const finishOnboarding = async (modelId?: string) => {
     const epoch = ++onboardingFinishEpoch.current;
     if (modelId) {
@@ -1379,29 +1385,28 @@ export function App({
     }
     try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
     catch { /* The gate can still close when storage is unavailable. */ }
-    if (modelId && draft !== null) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
+    if (modelId && draft !== null) {
+      composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
+      openConversationSidebar();
+    }
     setOnboardingOverlay(null);
   };
   useEffect(() => {
     const replay = (event: Event) => {
       onboardingFinishEpoch.current += 1;
-      const presentation = event instanceof CustomEvent && event.detail?.intent === "history" ? "history" : event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
+      const presentation = event instanceof CustomEvent && event.detail?.intent === "remote" ? "remote" : event instanceof CustomEvent && event.detail?.intent === "history" ? "history" : event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
       setOnboardingOverlay(presentation);
     };
     window.addEventListener("opencraft:replay-agent-onboarding", replay);
     return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
   }, []);
-  const visibleOnboardingOverlay = (onboardingOverlay === "sheet" || onboardingOverlay === "history") || conversationRouteOpen ? onboardingOverlay : null;
-  const draftSetupNotice = draftSetupKind === null || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
-    kind={draftSetupKind} hostName={activeHost.label}
-    onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
-    onConnectionSettings={() => openSettingsFromConversation("machines")}
-    onConnectAgents={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "gate" } }))}
-    onRetry={() => {
-      if (draftSetupKind === "connection") void runtime.reconnect().catch(() => undefined);
-      else { composerCatalog.retryModels(); void modelReadiness.refetch(); }
-    }}
-  />;
+  const visibleOnboardingOverlay = (onboardingOverlay === "sheet" || onboardingOverlay === "history" || onboardingOverlay === "remote") || conversationRouteOpen ? onboardingOverlay : null;
+  const draftSetupReason = draftSetupKind === "models"
+    ? intl.formatMessage({ id: "composer.setup.chooseAgent", defaultMessage: "Choose an available Agent, or configure its model in settings." })
+    : draftSetupKind === "catalog-error"
+      ? intl.formatMessage({ id: "welcome.models.failed", defaultMessage: "Could not load models from {host}. Try again." }, { host: activeHost.label })
+      : supportsModelSetup && modelReadiness.isPending
+        ? intl.formatMessage({ id: "composer.setup.checking", defaultMessage: "Checking the selected model…" }) : undefined;
   const composerWorkspaceRoots = useMemo<readonly string[]>(() => {
     if (draft !== null) {
       return draft.target.execution.workspace.runtimeWorkspaceRoots;
@@ -1420,7 +1425,6 @@ export function App({
   const composerSuggestionCatalog = useAppServerComposerCatalog(
     composerWorkspaceRoots,
   );
-  const agentAvailability = useAgentAvailability();
   const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { contextExport?: readonly string[] } | undefined;
   const conversationAgent = activeThreadId?.startsWith("codex_") ? "codex" : activeThreadId?.startsWith("cursor_") ? "cursor" : null;
   const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
@@ -1455,7 +1459,7 @@ export function App({
       modelError: composerCatalog.modelError?.message ?? null,
       onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
-      onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
+      onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation(setupModelPage?.id ?? settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.modelConfiguration)?.contribution.id ?? "chat") : undefined,
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
       agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
         id: group.hostId,
@@ -1492,7 +1496,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      setupModelPage?.id, filterNewAgents, canContinueWithAgent, conversationAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -1690,10 +1694,10 @@ export function App({
     extensionContributions: hostCatalog.extensionContributions,
     onSectionChange: selectSettingsSection,
   });
-  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
+  const settingsNavigation = settingsOpen ? (
     <Suspense fallback={null}>
       <SettingsNavigation
-        section={sidebarDestination === "settings" ? "" : settingsSection}
+        section={settingsSection}
         onSectionChange={selectSettingsSection}
         extensionContributions={hostCatalog.extensionContributions}
         profiles={hostCatalog.profiles}
@@ -1701,7 +1705,7 @@ export function App({
         activeHostId={snapshot.hostId}
         showArchivedConversations={archivedConversationsAvailable}
         onBack={openConversationSidebar}
-        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
+        presentation={managementSettingsOpen ? "dialog" : "sidebar"}
       />
     </Suspense>
   ) : null;
@@ -1750,7 +1754,9 @@ export function App({
     </Suspense>
   ) : null;
   const settingsRoute = routeSettingsOpen ? (
-    <section className="settings-page" aria-label="Settings">
+    <section className="settings-page" aria-label="Settings"
+      aria-hidden={visibleOnboardingOverlay !== null || undefined}
+      inert={visibleOnboardingOverlay !== null || undefined}>
       {settingsContent}
     </section>
   ) : null;
@@ -2076,6 +2082,22 @@ export function App({
       });
     },
     onNewTask: navigateToHome,
+    onNewTaskInFolder: ({ hostId, cwd }) => {
+      const profile = hostCatalog.profiles.find(profile => profile.hostId === hostId);
+      if (!profile?.enabled) return;
+      const project = hostId === snapshot.hostId ? projectCatalog.projects.find(project => project.roots.some(root => root.path === cwd)) : undefined;
+      const workspace = { cwd, runtimeWorkspaceRoots: project?.roots.map(root => root.path) ?? [cwd], ...(project ? { projectId: project.id } : {}) };
+      try {
+        hostCatalog.navigateToHome({
+          draftId: `client-new-thread:${crypto.randomUUID()}`,
+          execution: { hostId: asHostId(hostId), workspace, collaborationSpaceId: serverSpaces.unavailable ? "myself" : serverSpaces.selected },
+          entrypoint: "new-chat",
+        });
+        lastDraftWorkspaceRef.current = workspace;
+      } catch {
+        notices.error({ key: `new-chat-folder:${hostId}:${cwd}`, message: intl.formatMessage({ id: "sidebar.folder.newChatFailed", defaultMessage: "Could not open a new chat in this folder. Try again." }) });
+      }
+    },
     onOpenSettings: openSettingsFromConversation,
     onRetryThreadCatalog: hostId => { void multiHostCatalog.retry(hostId); },
     onRetryThreadCatalogDiscovery: () => { void multiHostCatalog.retryDiscovery(); },
@@ -2153,8 +2175,8 @@ export function App({
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
             applicationsInSidebar: true,
-            settingsInSidebar: true,
-            settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
+            settingsInSidebar: false,
+            settingsActive: routeSettingsOpen && !applicationsSelected,
             updatesActive: routeSettingsOpen && !applicationsSelected && workbenchNavigationSnapshot.applicationRoute.kind === 'settings' && workbenchNavigationSnapshot.applicationRoute.slug === 'updates',
             actions: [
               { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen && sidebarDestination === "context",
@@ -2176,7 +2198,7 @@ export function App({
                 await extensionProjection.account?.provider.signOut?.();
               } : undefined,
             },
-            onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
+            onOpenSettings: () => openSettingsFromConversation(),
             onOpenUpdates: () => openSettingsFromConversation('updates'),
           }}
           layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
@@ -2221,16 +2243,18 @@ export function App({
               actions={presentedHeaderNavigationActions}
             />
           )}
-          leftPanel={!presentation.contextSidebar ? null : <ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar}
+          leftPanel={!presentation.contextSidebar ? null : <ApplicationsSidebarFrame onReturnToChat={openConversationSidebar}
             selected={applicationsSelected} actions={extensionProjection.primaryActions}
             contributions={hostCatalog.extensionContributions} renderers={hostCatalog.platformViewRenderers}
             host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
             {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
+              instanceNameScope={displayScope}
               searchInDialog={presentation.shellNavigation}
               threads={serverSpaces.filter(multiHostCatalog.threads)}
               threadCatalogs={multiHostCatalog.catalogs}
               threadCatalogDiscovery={multiHostCatalog.discovery}
               {...sidebarCommands}
+              onNewTaskInFolder={presentation.executionSelection === "selectable" ? sidebarCommands.onNewTaskInFolder : undefined}
               managementNavigation={sidebarManagementNavigation}
               showFooter={false}
               footerAccessory={<AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} />}
@@ -2264,20 +2288,20 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
-          {!embedded && visibleOnboardingOverlay !== null ? <HostAgentOnboarding
+          {!embedded && visibleOnboardingOverlay !== null ? <Suspense fallback={null}><HostAgentOnboarding
             key={snapshot.hostId}
             presentation={visibleOnboardingOverlay}
             onImported={async () => { await serverSpaces.select("myself"); }}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}
             onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}
-          /> : null}
+          /></Suspense> : null}
           <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
           <div
-            aria-hidden={!conversationRouteOpen || undefined}
+            aria-hidden={!conversationRouteOpen || visibleOnboardingOverlay !== null || undefined}
             className="workbench-conversation-route"
             hidden={!conversationSurfaceVisible}
-            inert={!conversationRouteOpen || undefined}
+            inert={!conversationRouteOpen || visibleOnboardingOverlay !== null || undefined}
           >
         <ExecutionRecoveryNotice hostId={snapshot.hostId} execution={executionStatusForThread(snapshot.transport, snapshot.activeThreadId)} />
         {connectionInterventionNode !== null ? (
@@ -2287,7 +2311,7 @@ export function App({
         ) : draft !== null && draft.submission === null ? (
           <NewThreadDraftPage
             key={draft.id}
-            setupNotice={draftSetupNotice}
+            submissionDisabledReason={draftSetupReason}
             setupBlocksSubmission={draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
             activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
             composerPresentationEnabled={conversationRouteOpen}

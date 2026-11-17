@@ -45,6 +45,7 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
     first.set("shell.navigationDetent", "compact"),
     first.set("shell.navigationWidth", 132),
     first.set("shell.contextSidebarWidth", 360),
+    first.set("sidebar.instanceNames", { '["account-a","machine-a"]': "Production" }),
     first.set("sidebar.serverFilter", { serverId: "ssh:fixture", label: "Remote fixture" }),
   ]);
   await first.close();
@@ -62,6 +63,10 @@ test("IndexedDB installation preferences survive runtime recreation", async () =
   assert.equal(second.get("shell.navigationWidth"), 132);
   assert.equal(second.get("shell.contextSidebarWidth"), 360);
   assert.deepEqual(second.get("sidebar.serverFilter"), { serverId: "ssh:fixture", label: "Remote fixture" });
+  assert.deepEqual(second.get("sidebar.instanceNames"), { '["account-a","machine-a"]': "Production" });
+  assert.equal(second.get("sidebar.instanceNames")['["account-b","machine-a"]'], undefined);
+  await assert.rejects(second.set("sidebar.instanceNames", {id:"   "}), /Invalid UI preference/);
+  await assert.rejects(second.set("sidebar.instanceNames", {id:"x".repeat(81)}), /Invalid UI preference/);
   assert.equal(second.storedRevision("shell.applicationsPinned"), 1);
   await second.close();
 });

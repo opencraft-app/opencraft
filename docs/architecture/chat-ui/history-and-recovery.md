@@ -47,6 +47,14 @@ without the page before using this reader. Legacy providers keep full-history
 compatibility. Full pages retain all Items, older cursors and chronological order;
 no tool output or interaction is truncated to improve timing.
 
+Read-only opening requests the newest single full Turn in its negotiated initial
+window (or the existing presentation projection when Item details are supported).
+Older Turns retain their provider cursor and load through ordinary backfill,
+without transferring several older tool-heavy Turns before the active baseline
+can become authoritative. This does not truncate any Turn or change execution
+ownership. The snapshot-overlap reconciliation and cancellation budgets remain
+the same while a Turn is streaming.
+
 Read-only opening and older-page loading halve an oversized full Turn page down
 to one Turn before falling back to headers and adaptive Item reads. A successful
 smaller page retains its native continuation cursor, so the remaining Turns load

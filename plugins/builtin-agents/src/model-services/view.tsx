@@ -3,7 +3,8 @@ import * as Popover from "@radix-ui/react-popover";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
 import { EyeIcon as Eye, EyeOffIcon as EyeOff } from "@opencraft/design-system-web/action-icons";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { Tabs } from "@opencraft/design-system-web/tabs";
+import { useEffect, useId, useState, useSyncExternalStore } from "react";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { SettingsButton, SettingsIconButton, SettingsNotice, SettingsPageHeader, SettingsSelect, SettingsSwitch, SettingsTextInput, type ExtensionSettingsViewProps } from "@opencraft/extension-react";
 import type { RuntimeProviderView, RuntimeModelView } from "@opencraft/appserver-protocol";
@@ -285,6 +286,10 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
 
 export function createModelServicesView(controller: ModelServicesController) {
   return function ModelServicesView(_props: ExtensionSettingsViewProps) {
+    const AgentConfiguration = _props?.regions?.AgentConfiguration;
+    const [tab, setTab] = useState("agents");
+    const id = useId();
+    const agentPanel = `${id}-agents`, modelPanel = `${id}-models`;
     const intl = useIntl();
     const snapshot = useSyncExternalStore(controller.service.subscribe, controller.service.getSnapshot, controller.service.getSnapshot);
     useSyncExternalStore(controller.subscribe, controller.getSnapshot, controller.getSnapshot);
@@ -295,15 +300,18 @@ export function createModelServicesView(controller: ModelServicesController) {
     const visible = providers.filter(provider => provider.displayName.toLowerCase().includes(controller.query.toLowerCase()));
     const pick = (id: string | null) => controller.select(id);
     const providerRow = (provider: RuntimeProviderView) => <ProviderRow key={provider.provider} provider={provider} controller={controller} />;
-    return <div className="model-services">
-      <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model services" })} />
-      <div className="model-services__agent-entry">
-        <p><FormattedMessage id="onboard.agent.reopen" defaultMessage="Set up Codex, Cursor, Claude, or CodeBuddy on this computer." /></p>
-        <div className="model-services__agent-actions">
-          <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet", intent: "history" } }))}><FormattedMessage id="onboard.history.open" defaultMessage="Import local conversations" /></SettingsButton>
-          <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet" } }))}><FormattedMessage id="onboard.agent.reopenAction" defaultMessage="Open agent setup" /></SettingsButton>
-        </div>
-      </div>
+    return <div className="model-agent-settings">
+      <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model/Agent configuration" })} />
+      {AgentConfiguration ? <Tabs className="model-agent-settings__tabs" label={intl.formatMessage({ id: "settings.configuration.tabs", defaultMessage: "Configuration" })}
+        value={tab} onValueChange={setTab} options={[
+          { value: "agents", panelId: agentPanel, label: intl.formatMessage({ id: "settings.configuration.agents", defaultMessage: "Agent configuration" }) },
+          { value: "models", panelId: modelPanel, label: intl.formatMessage({ id: "settings.configuration.models", defaultMessage: "Model configuration" }) },
+        ]} /> : null}
+      {AgentConfiguration ? <div id={agentPanel} role="tabpanel" aria-label={intl.formatMessage({ id: "settings.configuration.agents", defaultMessage: "Agent configuration" })} className="model-agent-settings__panel" hidden={tab !== "agents"}>
+        <AgentConfiguration hostId={controller.service.hostId} active={tab === "agents"} platform={_props.host.platform === "electron" ? "electron" : "web"} />
+      </div> : null}
+      <div id={modelPanel} role={AgentConfiguration ? "tabpanel" : undefined} aria-label={intl.formatMessage({ id: "settings.configuration.models", defaultMessage: "Model configuration" })} className="model-agent-settings__panel" hidden={!!AgentConfiguration && tab !== "models"}>
+      <div className="model-services">
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />
           <CreatePopover label="添加提供商" allowSpeech={!!snapshot.providers?.creation?.speech} allowImage={!!snapshot.providers?.creation?.image} disabled={controller.busy || !snapshot.providers?.creation} onCreate={async (name, type) => { await controller.create(name, type); if (controller.error) throw new Error(controller.error); }} />
@@ -314,6 +322,8 @@ export function createModelServicesView(controller: ModelServicesController) {
         {snapshot.providers?.application?.state === "failed" ? <SettingsNotice tone="error">{snapshot.providers.application.error}<SettingsButton disabled={controller.busy} onClick={() => { void controller.run(()=>controller.service.reapply()); }}>重试应用</SettingsButton></SettingsNotice> : null}
         {snapshot.error ? <SettingsNotice tone="error">{snapshot.error}<SettingsButton onClick={() => { void controller.service.refresh(); }}>重试</SettingsButton></SettingsNotice> : null}
         {selected ? <ProviderDetail key={selected.provider} controller={controller} provider={selected} /> : <div className="model-services__overview"><h2>全部提供商</h2>{visible.map(providerRow)}{!providers.length ? snapshot.phase === "loading" ? <div className="model-services__pending" role="status" aria-label="正在加载提供商"><LoaderCircle aria-hidden="true" className="is-spinning" size={16} /></div> : <p>暂无提供商</p> : null}</div>}
+      </div>
+      </div>
       </div>
     </div>;
   };

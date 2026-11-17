@@ -13,6 +13,7 @@ interface Props {
   readonly store: SidebarThreadMenuStore;
   readonly hostId: string;
   readonly threadId: string;
+  readonly rowId?: string;
   readonly unavailable: boolean;
   readonly onOpenConversation: () => void;
 }
@@ -23,14 +24,14 @@ export function SidebarBrowserResources(props: Props) {
   return runtime ? <ConversationBrowserResources {...props} workbench={runtime.workbench} /> : null;
 }
 
-function ConversationBrowserResources({ store, hostId, threadId, unavailable, onOpenConversation, workbench }: Props & { workbench: BrowserWorkbenchCoordinator }) {
+function ConversationBrowserResources({ store, hostId, threadId, rowId, unavailable, onOpenConversation, workbench }: Props & { workbench: BrowserWorkbenchCoordinator }) {
   const subscribe = useCallback((listener: () => void) => workbench.subscribeConversationTabs(hostId, threadId, listener), [workbench, hostId, threadId]);
   const snapshot = useCallback(() => workbench.getConversationTabs(hostId, threadId), [workbench, hostId, threadId]);
   const tabs = useSyncExternalStore(subscribe, snapshot, snapshot);
-  const kind = useSidebarRowMenu(store, { hostId, threadId }), open = kind === "resources";
+  const kind = useSidebarRowMenu(store, { hostId, threadId, rowId }), open = kind === "resources";
   const intl = useIntl(), notices = useAsyncNotices(), portal = useWorkbenchPresentationRoot();
-  useEffect(() => () => store.update({ hostId, threadId, kind: "resources" }, false), [store, hostId, threadId]);
-  useEffect(() => { if (!tabs.length && open) store.update({ hostId, threadId, kind: "resources" }, false); }, [store, hostId, threadId, tabs.length, open]);
+  useEffect(() => () => store.update({ hostId, threadId, rowId, kind: "resources" }, false), [store, hostId, threadId, rowId]);
+  useEffect(() => { if (!tabs.length && open) store.update({ hostId, threadId, rowId, kind: "resources" }, false); }, [store, hostId, threadId, rowId, tabs.length, open]);
   if (!tabs.length) return null;
   const label = intl.formatMessage({ id: "sidebar.browser.tabs", defaultMessage: "{count, plural, one {# browser tab} other {# browser tabs}}" }, { count: tabs.length });
   const run = (action: () => void) => {
@@ -38,7 +39,7 @@ function ConversationBrowserResources({ store, hostId, threadId, unavailable, on
       notices.error({ key: `browser-resources:${hostId}:${threadId}`, message: intl.formatMessage({ id: "sidebar.browser.failed", defaultMessage: "Could not update browser tabs. Try again." }) });
     }
   };
-  return <DropdownMenu.Root open={open} onOpenChange={value => store.update({ hostId, threadId, kind: "resources" }, value)}>
+  return <DropdownMenu.Root open={open} onOpenChange={value => store.update({ hostId, threadId, rowId, kind: "resources" }, value)}>
     <DropdownMenu.Trigger asChild><button type="button" className="sidebar-browser-resources" aria-label={label} title={label}
       onPointerDown={event => event.stopPropagation()} onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}>
       <GlobeIcon size={14} aria-hidden="true" /><span>{tabs.length}</span>

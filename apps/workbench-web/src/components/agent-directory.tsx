@@ -27,12 +27,12 @@ export function projectAgentDirectory(models: readonly AgentCatalogModel[], nati
   for (const agent of native) {
     const id = agent.engineId ?? agent.id, existing = entries.get(id);
     entries.set(id, { id, label: agent.displayName || existing?.label || fallbackName(agent.id), native: agent,
-      models: existing?.models ?? [], ready: agent.installed && agent.authenticated === true && agent.activity?.phase !== "running" });
+      models: existing?.models ?? [], ready: agent.installed && agent.authenticated === true && agent.connectionRequired !== true && agent.workspaceTrusted !== false && agent.activity?.phase !== "running" });
   }
   return [...entries.values()];
 }
 
-export function AgentIdentityIcon({ id }: { readonly id: string }) {
-  const brand: AgentBrand | undefined = ({ codex: "codex", cursor: "cursor", "claude-code": "claude", claude: "claude", codebuddy: "codebuddy" } as Readonly<Record<string, AgentBrand>>)[id];
-  return brand ? <AgentBrandIcon agent={brand} /> : id === "pi" || id === "pi-bridge" ? <ModelIcon size={18} /> : <AgentIcon size={18} />;
+export function AgentIdentityIcon({ id, size = 18 }: { readonly id: string; readonly size?: number }) {
+  const brand: AgentBrand | undefined = ({ codex: "codex", "codex-bridge": "codex", cursor: "cursor", "claude-code": "claude", claude: "claude", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy" } as Readonly<Record<string, AgentBrand>>)[id];
+  return brand ? <AgentBrandIcon agent={brand} size={size} /> : id === "pi" || id === "pi-bridge" || id === "pi-cli" ? <ModelIcon size={size} /> : <AgentIcon size={size} />;
 }

@@ -29,7 +29,7 @@ import { menuGeometry } from "@opencraft/design-system/tokens";
 import { useMachineConnectionPhase } from "../runtime/appserver-runtime-context";
 import { ConnectionStatus } from "./target-connection-status";
 import { machineResourcePhaseLabel } from "./machine-resource-presentation";
-import { NewFolderIcon as FolderPlus, BranchIcon as GitBranch, CloudIcon as Cloud, LaptopIcon as Laptop, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
+import { NewFolderIcon as FolderPlus, CloudIcon as Cloud, LaptopIcon as Laptop, ServerIcon as Server } from "@opencraft/design-system-web/action-icons";
 import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -86,6 +86,7 @@ export interface NewThreadDraftPageProps {
   readonly heading?: string;
   readonly setupNotice?: ReactNode;
   readonly setupBlocksSubmission?: boolean;
+  readonly submissionDisabledReason?: string;
   readonly draft: NewThreadDraftSnapshot;
   readonly controller: ComposerController;
   readonly goals?: ThreadGoalResource;
@@ -221,6 +222,7 @@ interface ExecutionUtilityBarProps {
   readonly onSelectWorkspace: (workspace: DraftWorkspaceOption) => void;
   readonly onBrowseWorkspace: () => void | Promise<void>;
   readonly onReturnFocus: () => void;
+  readonly agentPicker?: ReactNode;
 }
 
 function ExecutionUtilityBar({
@@ -236,6 +238,7 @@ function ExecutionUtilityBar({
   onSelectWorkspace,
   onBrowseWorkspace,
   onReturnFocus,
+  agentPicker,
 }: ExecutionUtilityBarProps) {
   const intl = useIntl();
   const selectionEpoch = useRef(0);
@@ -438,11 +441,7 @@ function ExecutionUtilityBar({
       )}
       {pickingWorkspace ? <span role="status"><FormattedMessage id="draft.choosingFolder" defaultMessage="Choosing folder…" /></span> : null}
 
-      {selectedWorkspace?.branch ? (
-        <span className="new-thread-context-branch" title={intl.formatMessage({ id: "draft.gitBranch", defaultMessage: "Git branch: {branch}" }, { branch: selectedWorkspace.branch })}>
-          <GitBranch size={14} /><span>{selectedWorkspace.branch}</span>
-        </span>
-      ) : null}
+      {agentPicker ? <><ChevronRight className="new-thread-context-separator" size={12} aria-hidden="true" />{agentPicker}</> : null}
     </ComposerUtilityScrollArea>
   );
 }
@@ -455,6 +454,7 @@ export function NewThreadDraftPage({
   heading,
   setupNotice,
   setupBlocksSubmission = false,
+  submissionDisabledReason,
   draft,
   controller,
   goals,
@@ -503,9 +503,10 @@ export function NewThreadDraftPage({
     ref={composerRef}
     portalContainer={portalContainer}
     controller={controller}
-    chromeHeader={showExecutionControls ? (
+    chromeHeader={showExecutionControls ? (agentPicker => (
       <ExecutionUtilityBar
         portalContainer={portalContainer}
+        agentPicker={agentPicker}
         draft={draft}
         workspaceOptions={workspaceOptions}
         workspaceOptionsLoading={workspaceOptionsLoading}
@@ -518,8 +519,10 @@ export function NewThreadDraftPage({
         onBrowseWorkspace={onBrowseWorkspace}
         onReturnFocus={() => composerRef.current?.focus()}
       />
-    ) : undefined}
+    )) : undefined}
     disabled={goalBusy || draftSubmissionOwnsNavigation(draft.phase)}
+    submissionDisabledReason={connectionPhase !== "ready" ? intl.formatMessage({ id: "chat.waitingForHost", defaultMessage: "Waiting for execution host" })
+      : personalDefaultsPending ? intl.formatMessage({ id: "composer.preferences.loading", defaultMessage: "Loading your preferences…" }) : submissionDisabledReason}
     submissionDisabled={connectionPhase !== "ready" || personalDefaultsPending || setupBlocksSubmission}
     isStreaming={false}
     isRecovering={placeholderPending === true}

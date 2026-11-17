@@ -1,3 +1,4 @@
+import { PersonalMachines } from "./personal-machines.js";
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { SERVER_SPACES_METHOD, SERVER_SPACES_CHANGED, type ServerSpaceCommand } from "@opencraft/appserver-protocol/server-spaces";
 import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
@@ -147,6 +148,8 @@ export async function startLocalAgentHost(options: {
   readonly environmentDataDirectory?: string;
   readonly storage?: LocalAgentStorage;
   readonly machineIdentity?: RuntimeMachineIdentity;
+  /** Only trusted local-owner deployments may enable personal machine enrollment. */
+  readonly personalMachines?: {archive:string;digest:string;installer:string;enrollmentOrigin?:string;enrollmentCa?:string};
   readonly modelStorageDirectory?: string;
   /** Application speech service is installed by Headless; not inferred for desktop/remote engines. */
   readonly speechModelManagement?: boolean;
@@ -576,7 +579,10 @@ export async function startLocalAgentHost(options: {
   cleanup.push(() => tasks.close());
   const projects = new ProjectRepository(options.projectStorageDirectory ?? options.modelStorageDirectory ?? options.dataDirectory);
   const token = options.token ?? randomBytes(24).toString("base64url");
+  const personalMachines = options.personalMachines ? new PersonalMachines({directory:productDataRoot,ownerActorId:spaces.context().actorId,ownerToken:token,...options.personalMachines}) : undefined;
+  if(personalMachines){cleanup.push(()=>personalMachines.close());await personalMachines.ready();}
   const server = createServer((request, response) => {
+    if(personalMachines && (request.url??'').startsWith('/__opencraft_machines')){void personalMachines.http(request,response);return;}
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     response.setHeader("cache-control", "no-store");
     response.setHeader("content-type", "application/json; charset=utf-8");
@@ -594,11 +600,13 @@ export async function startLocalAgentHost(options: {
   const websocketServer = new WebSocketServer({ noServer: true });
   stopAccepting = async () => {
     closing = true;
+    await personalMachines?.close();
     for (const client of websocketServer.clients) client.close(1001, "OpenCraft is quitting");
     websocketServer.close();
     if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
   };
   server.on("upgrade", (request, socket, head) => {
+    if(personalMachines?.upgrade(request,socket,head))return;
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     if (url.pathname !== "/rpc" || url.searchParams.get("token") !== token) {
       socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
@@ -756,20 +764,31 @@ export async function startLocalAgentHost(options: {
           const result = tasks.handle(request.method, request.params);
           send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
         }
-        if (request.method === "opencraft/agents/onboarding/history" || request.method === "opencraft/agents/onboarding/import") {
-          const params = request.params as { id?: unknown; cursor?: unknown; conversationIds?: unknown } | null;
-          if (!params || (params.id !== "codex" && params.id !== "cursor")) throw new Error("Invalid history source");
+        if (request.method === "opencraft/agents/onboarding/history-agents") {
+          if (request.params != null && (typeof request.params !== "object" || Array.isArray(request.params) || Object.keys(request.params).length)) throw new Error("Invalid history directory parameters");
+          send(socket, { jsonrpc: "2.0", id: request.id, result: await agentOnboarding.historyStatus() }); return;
+        }
+        if (request.method === "opencraft/agents/onboarding/history-sources" || request.method === "opencraft/agents/onboarding/history" || request.method === "opencraft/agents/onboarding/import") {
+          const params = request.params as { id?: unknown; cursor?: unknown; archived?: unknown; sourceId?: unknown; conversationIds?: unknown } | null;
+          if (!params || !["codex", "cursor", "claude", "codebuddy", "codebuddy-ide", "pi"].includes(String(params.id))) throw new Error("Invalid history source");
+          const agentId = params.id as import("@opencraft/appserver-protocol").HistoryImportAgentId;
+          if (params.sourceId !== undefined && (typeof params.sourceId !== "string" || !/^(default|[a-f0-9]{24})$/u.test(params.sourceId))) throw new Error("Invalid history source identity");
+          if (request.method.endsWith("/history-sources")) {
+            if(Object.keys(params).some(key => key !== "id"))throw new Error("Invalid source discovery parameters");
+            send(socket,{jsonrpc:"2.0",id:request.id,result:await connectedAgents.historySources(agentId)});return;
+          }
           if (request.method.endsWith("/history")) {
-            if (Object.keys(params).some(key => !["id", "cursor"].includes(key)) || (params.cursor !== undefined && (typeof params.cursor !== "string" || params.cursor.length > 4096))) throw new Error("Invalid history cursor");
-            const result = await connectedAgents.localConversations(params.id, params.cursor as string | undefined, threadId => spaces.hasAssignment("local", threadId));
+            if (Object.keys(params).some(key => !["id", "cursor", "archived", "sourceId"].includes(key)) || (params.cursor !== undefined && (typeof params.cursor !== "string" || params.cursor.length > 4096))) throw new Error("Invalid history cursor");
+            if (params.archived !== undefined && typeof params.archived !== "boolean" || params.archived === true && params.id !== "codex") throw new Error("Invalid history scope");
+            const result = await connectedAgents.localConversations(agentId, params.cursor as string | undefined, threadId => spaces.hasAssignment("local", threadId), params.archived === true, params.sourceId as string | undefined);
             send(socket, { jsonrpc: "2.0", id: request.id, result }); return;
           }
-          if (Object.keys(params).some(key => !["id", "conversationIds"].includes(key)) || !Array.isArray(params.conversationIds) || params.conversationIds.length > 100 || params.conversationIds.some(id => typeof id !== "string" || !/^[a-f0-9-]{32,64}$/u.test(id))) throw new Error("Invalid history selection");
+          if (Object.keys(params).some(key => !["id", "conversationIds", "sourceId"].includes(key)) || !Array.isArray(params.conversationIds) || params.conversationIds.length > 100 || params.conversationIds.some(id => typeof id !== "string" || !/^[a-f0-9-]{32,64}$/u.test(id))) throw new Error("Invalid history selection");
           const imported: { id: string; threadId: string }[] = [], failed: string[] = [];
           for (const id of new Set(params.conversationIds as string[])) {
             try {
               lifecycle.assertClient(state.key);
-              const thread = await connectedAgents.importLocalConversation(params.id, id);
+              const thread = await connectedAgents.importLocalConversation(agentId, id, params.sourceId as string | undefined);
               if (!spaces.hasAssignment("local", thread.id)) await spaces.assign(undefined, "local", thread.id, "myself");
               // The native routing ledger and audience are durable before any catalog notification.
               catalogChanges.observeResult("thread/unarchive", {}, { thread });
@@ -788,7 +807,7 @@ export async function startLocalAgentHost(options: {
         }
         if (request.method === "model/list") {
           const nativeScope = (request.params as { threadId?: unknown } | undefined)?.threadId;
-          if (typeof nativeScope === "string" && /^(codex|cursor|claude|codebuddy)_/u.test(nativeScope) && connectedAgents.owns("thread/read", { threadId: nativeScope })) {
+          if (typeof nativeScope === "string" && /^(codex|cursor|claude|codebuddy|picli)_/u.test(nativeScope) && connectedAgents.owns("thread/read", { threadId: nativeScope })) {
             const extras = await connectedAgents.models(nativeScope);
             send(socket, { jsonrpc: "2.0", id: request.id, result: { data: extras, nextCursor: null } }, request.method); return;
           }
@@ -810,6 +829,11 @@ export async function startLocalAgentHost(options: {
           }
           send(socket, { jsonrpc: "2.0", id: request.id, result: { ...listed, data, nextCursor } }, request.method);
           return;
+        }
+        if(request.method === "opencraft/personal-machines") {
+          if(!personalMachines)throw {rpcCode:-32601,message:"Personal machine enrollment is unavailable"};
+          const result=await personalMachines.command(request.params as import("@opencraft/appserver-protocol/personal-machines").PersonalMachineCommand);
+          send(socket,{jsonrpc:"2.0",id:request.id,result});return;
         }
         if (request.method === "runtime/machine/read") {
           send(socket, { jsonrpc: "2.0", id: request.id, result: { machine: machineIdentity, agent: "OpenCraft" } }); return;

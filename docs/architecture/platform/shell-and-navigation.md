@@ -364,7 +364,12 @@ Thread lease is released; late success/error cannot take navigation ownership.
 POP to a different View of the same conversation must still restore that View.
 Returning to the already retained View, by Chat or POP, presents it locally and
 resumes readiness in the background; a newer intent or disposal fences and
-releases late preparations. Selecting the current sidebar conversation from
+releases late preparations. A View ID recovered from durable draft storage uses
+the same local presentation boundary: restore its Scope/input owner, validate
+any existing slot's conversation identity, and continue Host readiness separately.
+This is ordinary restoration after bootstrap; it must not re-enter the one-time
+initial Workbench mount. Cached presentation never grants a live Thread lease.
+Selecting the current sidebar conversation from
 Settings uses this same return operation, not a new View or a network-gated
 selection. Submission ownership guards remain in force.
 Sidebar and other selection adapters express only `selectConversation`; they do

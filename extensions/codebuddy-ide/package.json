@@ -1,0 +1,37 @@
+{
+  "name": "codebuddy-ide",
+  "displayName": "OpenCraft CodeBuddy IDE Bridge",
+  "description": "Connect CodeBuddy IDE's native agent to your OpenCraft server.",
+  "publisher": "opencraft",
+  "version": "0.1.1",
+  "license": "MIT-0",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onUri",
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "command": "opencraft.codebuddyIde.connect",
+        "title": "%connect.title%"
+      }
+    ]
+  },
+  "l10n": "./l10n",
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "%workspaceTrust.description%"
+    }
+  }
+}

@@ -8,6 +8,7 @@
     "./generations": "./src/generations.ts"
   },
   "dependencies": {
+    "@opencraft/sandbox-node": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/model-usage-policy": "0.1.0"

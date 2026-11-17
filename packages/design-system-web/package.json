@@ -23,7 +23,9 @@
     "./safe-layout": "./src/safe-layout.tsx",
     "./context-menu": "./src/context-menu.tsx",
     "./touch-contact": "./src/touch-contact.tsx",
-    "./motion-reduction": "./src/use-motion-reduction.ts"
+    "./motion-reduction": "./src/use-motion-reduction.ts",
+    "./tabs": "./src/tabs.tsx",
+    "./tabs.web": "./src/tabs.web.scss"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -1,5 +1,7 @@
 import type { NativeConversationProject } from "./native-conversation-project";
-export type OnboardingAgentId = "codex" | "cursor" | "claude" | "codebuddy";
+export type OnboardingAgentId = "codex" | "cursor" | "claude" | "codebuddy" | "codebuddy-ide" | "pi";
+
+export type HistoryImportAgentId = OnboardingAgentId;
 
 export interface OnboardingActivity {
   readonly kind: "sign-in" | "install";
@@ -15,12 +17,21 @@ export interface OnboardingAgentSnapshot {
   /** Agent identity used by model/list. Optional for older Hosts. */
   readonly engineId?: string;
   readonly displayName?: string;
+  /** Native history can be listed, read and resumed by this Host. */
+  readonly historyImport?: boolean;
+  /** Opaque native account/project identity; scopes import UI caches. */
+  readonly historyScope?: string;
   readonly installed: boolean;
   readonly version: string | null;
   readonly authenticated: boolean | null;
+  /** Native desktop client requires its explicit bridge connection. */
+  readonly connectionRequired?: boolean;
+  readonly workspaceTrusted?: boolean;
   readonly account: string | null;
   readonly installUrl: string;
   readonly canInstallPackage: boolean;
+  /** Interactive native setup must run in a terminal on this machine. */
+  readonly setupCommand?: string;
   readonly activity: OnboardingActivity | null;
 }
 
@@ -29,6 +40,7 @@ export interface LocalAgentConversation {
   readonly title: string | null;
   readonly cwd: string;
   readonly updatedAt: string | null;
+  readonly createdAt?: string;
   readonly imported: boolean;
   readonly nativeProject?: NativeConversationProject;
 }
@@ -55,6 +67,11 @@ export interface AgentConversationContinuation {
 }
 
 export interface AgentOnboardingMethodMap {
+  "opencraft/agents/onboarding/history-agents": {
+    params: Record<string, never>;
+    /** Local executable observations and connected IDE metadata; no login probes. */
+    result: OnboardingSnapshot;
+  };
   "opencraft/agent-session/export-context": {
     params: { threadId: string };
     result: AgentConversationContinuation & { collaborationSpaceId: string };
@@ -67,12 +84,16 @@ export interface AgentOnboardingMethodMap {
     params: { threadId: string };
     result: { released: boolean };
   };
+  "opencraft/agents/onboarding/history-sources": {
+    params: { id: HistoryImportAgentId };
+    result: {sources: readonly {id:string;path:string;configured:boolean;hasNames:boolean}[]};
+  };
   "opencraft/agents/onboarding/history": {
-    params: { id: "codex" | "cursor"; cursor?: string };
-    result: { conversations: readonly LocalAgentConversation[]; nextCursor: string | null };
+    params: { id: HistoryImportAgentId; cursor?: string; archived?: boolean; sourceId?: string };
+    result: { conversations: readonly LocalAgentConversation[]; nextCursor: string | null; supportsArchived?: boolean };
   };
   "opencraft/agents/onboarding/import": {
-    params: { id: "codex" | "cursor"; conversationIds: readonly string[] };
+    params: { id: HistoryImportAgentId; conversationIds: readonly string[]; sourceId?: string };
     result: { imported: readonly { id: string; threadId: string }[]; failed: readonly string[] };
   };
   "opencraft/agents/onboarding/status": { params: Record<string, never>; result: OnboardingSnapshot };

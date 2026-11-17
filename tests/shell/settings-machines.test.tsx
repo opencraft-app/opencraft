@@ -31,7 +31,7 @@ test("settings render machine ownership, cold/failed connections, first-level na
       builder.onResolve({ filter: /appearance-theme$/ }, () => ({ path: "appearance", namespace: "test-appearance" }));
       builder.onLoad({ filter: /.*/, namespace: "test-appearance" }, () => ({ contents: 'export const getAppearanceThemePreviewProperties = () => ({});', loader: "js" }));
       builder.onResolve({ filter: /appserver-runtime-context$/ }, () => ({ path: "runtime", namespace: "test" }));
-      builder.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'export const useMachineConnectionPhase = () => "ready"; export const useHostConnectionPhase = id => id === "local-codex" ? "error" : "ready";', loader: "js" }));
+      builder.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'export const useAppServerHosts = () => []; export const useAppServerHostSnapshot = () => ({}); export const useComposerCatalog = () => ({}); export const useHostExecutionState = () => "available"; export const useMachineConnectionPhase = () => "ready"; export const useHostConnectionPhase = id => id === "local-codex" ? "error" : "ready";', loader: "js" }));
     }}], logLevel: "silent",
   });
   const { SettingsMachines, SettingsMachine, MachineConnectionsAvailable, SettingsNavigation, ConnectionLabel, SidebarBots, SidebarEntityDndCoordinator, NavigationContent } = createRequire(import.meta.url)(bundle);
@@ -50,6 +50,14 @@ test("settings render machine ownership, cold/failed connections, first-level na
   assert.equal((list.match(/settings-control-list-item"/g) ?? []).length, 3);
   assert.equal((list.match(/>机器<\/h[123]>/g) ?? []).length, 1);
   assert.match(list, /我的服务器/); assert.match(list, /未知机器 · unknown/); assert.match(list, /云端/); assert.match(list, /已暂停/);
+  const offlineMachine = { ...machines[0], hosts: machines[0].hosts.map(host => ({ ...host, machinePresence: "offline" as const })) };
+  const onlineMachine = { ...offlineMachine, hosts: offlineMachine.hosts.map((host, i) => i === 0 ? { ...host, machinePresence: "online" as const } : host) };
+  const coldRender = (machine: typeof onlineMachine) => render(<MachineConnectionsAvailable.Provider value={false}><SettingsMachines machines={[machine]} platform="web" onSectionChange={onSectionChange} /></MachineConnectionsAvailable.Provider>);
+  assert.match(coldRender(onlineMachine), /在线/);
+  assert.doesNotMatch(coldRender(onlineMachine), /尚未连接|未启动/);
+  assert.match(render(<SettingsMachines machines={[offlineMachine]} platform="web" onSectionChange={onSectionChange} />), /离线/);
+  assert.match(coldRender(offlineMachine), /role="img" aria-label="离线"/);
+  assert.doesNotMatch(coldRender(offlineMachine), /在线|尚未连接|未启动/);
   const pages = [
     { id: "model", title: "模型服务", targetHostId: "local", viewId: "model-view" },
     { id: "codex", title: "Codex 账户", targetHostId: "local-codex", viewId: "codex-view" },
@@ -67,10 +75,10 @@ test("settings render machine ownership, cold/failed connections, first-level na
   const empty = render(<SettingsMachines machines={[]} platform="web" onSectionChange={onSectionChange} />);
   assert.match(empty, /暂无机器/);
   const hostless = render(<MachineConnectionsAvailable.Provider value={false}><SettingsMachine machine={machines[2]} pages={[]} platform="web" onSectionChange={onSectionChange} /></MachineConnectionsAvailable.Provider>);
-  assert.match(render(<ConnectionLabel phase="idle" showLabel />), /未启动/);
+  assert.match(render(<ConnectionLabel phase="idle" showLabel />), /尚未连接/);
   assert.match(render(<ConnectionLabel phase="error" showLabel />), /连接失败/);
   assert.match(render(<ConnectionLabel phase="reconnecting" showLabel />), /重新连接中/);
-  assert.match(hostless, /未启动/); assert.match(hostless, /已暂停/); assert.doesNotMatch(hostless, /已连接/);
+  assert.match(hostless, /尚未连接/); assert.match(hostless, /已暂停/); assert.doesNotMatch(hostless, /已连接/);
   const layout = await SidebarLayoutStore.open({ load: async () => null, save: async (_scope, document) => document });
   context.after(() => layout.close());
   const creation = { noun: "Bot", targets: [], create: async () => { throw new Error("render must not create a Bot"); } };

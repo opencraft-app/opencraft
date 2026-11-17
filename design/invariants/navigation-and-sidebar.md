@@ -527,6 +527,40 @@ and thread model. Missing/hidden contributions retain the default project line.
 Default `trailing` placement and menu/popover exclusivity are unchanged. Products
 own the content and select placement; Shell owns geometry across input modes.
 
+### Conversation Agent glyph (2026-11-17)
+
+Each conversation row shows a quiet 14px shared Agent glyph at the right, before
+the existing activity/menu lane. The Shell reserves a separate grid track, so
+unread dots, running/review/error feedback, Goals, participant badges and resource
+actions retain their own semantics. The glyph remains visible while menus open;
+hover/focus changes do not move it or the title. It is part of the existing
+navigation button: clicking/tapping it opens the same conversation, while its
+tooltip and localized accessible label identify the Agent. Long titles ellipsize.
+
+The shared catalog projection reads the particular Host's declared execution
+providers/default owner, choosing the most specific namespace. It never infers
+Agent identity from a model, model provider or thread title. Missing ownership
+uses a generic glyph. Display caches retain this optional identity across
+reconnects; it grants no execution or access capability. The Web renderer and
+shared Workbench projection serve local and remote Hosts alike.
+
+Verified catalog/cache semantics, Web typecheck, i18n, controls and boundaries.
+The existing real Sidebar consumer's `OPENCRAFT_SIDEBAR_AGENTS_ONLY=1` path covers
+seven declared Agents, activity/Goal states, long titles, menu/keyboard actions,
+glyph navigation, desktop/touch and light/dark/lavender themes. Inspected desktop
+light and touch dark captures in `/tmp/opencraft-sidebar-agent-icons`: compact
+glyphs align beside their corresponding title without colliding with status.
+Also inspected `/tmp/opencraft-sidebar-agent-live.png` from the actual local Web
+Workbench, matching the requested workspace/folder list with Codex/Cursor
+identity and no page errors. No conversation was started or model request sent.
+Installed Electron/mobile binaries were not rebuilt by this visual change.
+The broader Sidebar catalog smoke still fails its existing filter-focus fill
+assertion (`rgba(26,28,31,.098)` versus primary fill); a negative control with the
+staged pre-change Sidebar, row and stylesheet fails identically. The glyph-only
+consumer path passes. Full repository gate separately stops at the existing
+Expo/worklets dependency mismatch. Logs: `/tmp/opencraft-sidebar-agent-ui-final.log`,
+`/tmp/opencraft-sidebar-agent-baseline-ui.log`, `/tmp/opencraft-sidebar-agent-gate.log`.
+
 ## Single-line title badge placement (2026-10-21)
 Thread badge contributions may select `title` for a single-line row. Shell suppresses
 visible project/status metadata, keeps it in the navigation tooltip and retains
@@ -679,6 +713,104 @@ private conversations. Shared and private trees are projected independently so
 cross-access parent links cannot pull a row into the wrong section. Search and
 server filtering apply to both, without a Mine/Shared tab switch. Mine uses the
 same section heading, folding and paginated row controls as the shared flow, with
-its own page limit and empty state. Permission updates move rows between sections
+its own page limit and empty state. Permission updates move rows between access sections
 without navigating or rebuilding the active conversation or draft. Sidebar
 classification never grants access; the Hub remains the permission authority.
+
+## Recent across devices (2026-11-17)
+
+Recent is the flat aggregate immediately after Mine and before the device tree.
+It consumes every visible, admitted catalog row, including private, pinned,
+attention and child conversations. It sorts by canonical updatedAt descending;
+running state does not override recency. Host/thread identity separates equal
+IDs across devices and deduplicates repeated source entries. Existing search,
+Server and participant filters apply before projection. Pagination reveals the
+same complete catalog in pages of ten; there is no independent poll or age cutoff.
+
+The existing Sidebar navigation/row composition and scroll owner remain the
+design reference. Titles keep the primary reading line; a quiet secondary line
+identifies the device (including its saved alias), folder and declared Agent.
+Agent glyphs and status/menu lanes retain their meaning. Long source names
+truncate with full tooltips rather than taking space from the title. Device
+directories and Mine retain independent disclosures and pagination.
+
+A conversation can appear in multiple sections. Row occurrence IDs scope DOM
+labels, menu subscriptions and retained-overlay checks; navigation and actions
+still use only Host/thread identity. One Sidebar owns one menu across every
+occurrence; a late close from a previous occurrence cannot dismiss its successor.
+Selection scrolling locates a visible occurrence rather than a collapsed copy.
+Updates preserve keyed row identity, active conversation and draft owners.
+
+Verification: `OPENCRAFT_SIDEBAR_RECENT_ONLY=1` exercises the real Sidebar in six
+desktop/touch and light/dark/lavender combinations (including reduced motion).
+It covers equal IDs on different Hosts, every access/status category, a child,
+hidden rows, live reordering with stable DOM identity, ten-row pagination,
+source aliases and long names, filtering, cached/offline availability, independent
+disclosures, unique DOM labels and exclusive duplicate-row menus. The six folder
+action regression cases also passed; their geometry is measured relative to
+the folder heading so scrolling to the newly lower device tree does not mimic
+a label shift. All 16 activity/menu unit tests, Web types, i18n and controls
+checks/tests, boundaries and the Web build/browser compatibility check passed.
+
+Viewed the actual local Web desktop and touch drawer at
+`/tmp/opencraft-recent-live-desktop.png` and
+`/tmp/opencraft-recent-live-touch.png`, plus fixture touch dark and desktop
+lavender. Recent follows Mine, source text is subordinate to titles, and long
+folders yield width to device/Agent identity without gaps between short labels.
+Both actual contexts retained unique DOM IDs, working disclosures and no page
+errors; no Thread/Turn start was sent. Synthetic sources cover ordering and
+offline transitions; the actual catalog checks read existing local/remote rows.
+Delivery is this checkout, its verified Web build and current Vite preview;
+Host PID 13624 stayed running. No release, remote upgrade, Electron window or
+physical phone verification is implied.
+
+
+## Folder new-conversation action (2026-11-17)
+
+A folder heading keeps its disclosure and trailing Add as separate shared buttons.
+Mouse hover on the heading reveals Add; keyboard Tab/focus also reveals it, while
+touch presentation keeps it directly available. Space is reserved so revealing
+it never shifts the folder label. The collapsed state is unchanged by Add.
+The Sidebar passes the group's available Host and reported cwd; native display
+project IDs and folder labels never become execution Project IDs or filesystem
+paths. Offline or pathless rows cannot start a draft. Fixed execution surfaces
+retain their owner's choice and do not receive this folder-selection action.
+
+The application uses the existing navigation/draft owner with an explicit draft
+identity and the exact Host/cwd. Only a project from that same active Host's
+catalog can supply an execution project ID and additional roots. The action
+opens an editable draft without starting a Thread or Turn; POP restores the
+previous draft. Sidebar dismissal continues through its existing platform owner.
+
+Design reference: the existing Sidebar instance heading composes a disclosure
+with a trailing shared IconButton. The Sidebar scroll/gutter owner stays in
+place; disclosure is primary, Add is the quiet secondary action.
+
+Verification: `OPENCRAFT_SIDEBAR_FOLDERS_ONLY=1` runs the real Sidebar in desktop
+and genuine touch browser contexts, each in light/dark/lavender, with two
+machines containing same-named folders, a native project, offline rows,
+collapsed groups, hover, Tab and Enter. All six cases passed. Existing 14 Sidebar
+activity tests, controls/i18n checks and tests, Web types, boundaries and Web build
+passed. The broader Sidebar smoke's preexisting filter-focus assertion and the
+full gate's recorded Expo/worklets mismatch are outside this change.
+
+Actual local Web: viewed `/tmp/opencraft-folder-hover-live.png` and
+`/tmp/opencraft-folder-draft-live.png`; the trailing plus appears on the hovered
+opencraft folder, and activation opens the same Mac with the folder's reported
+cwd. Browser Back restored the prior draft text;
+recorded outgoing messages contained no Thread/Turn start and there were no page
+errors. Touch dark and desktop lavender fixture images were also reviewed.
+This is the current Vite preview and a separately verified build, without a
+remote Host update or release; Electron and phone hardware were not exercised.
+
+Visual review caught a clipped trailing keyboard focus ring; reserving the existing
+Sidebar inline gutter keeps that shared ring inside the folder row. A smoke
+assertion now checks its extent. A transient hook-signature error was recorded
+during development HMR; the folder and general New chat intents now reuse the
+existing stable hook. Fresh page verification completed with no page errors.
+
+The machine grouping's user-facing term is now Device/设备, including its rename
+action and name field; stable identities and preference keys remain unchanged.
+All four locale catalogs use the same terminology. The live Chinese Web heading
+was visually checked in `/tmp/opencraft-device-wording-live.png`; i18n checks and
+14 tests, plus the six Sidebar input/theme smoke cases, passed.

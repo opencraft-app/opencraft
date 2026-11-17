@@ -1,12 +1,14 @@
 import { createServer, request } from 'node:http';
-import { createConnection } from 'node:net';
+import { createConnection, createServer as createTcpServer, type Socket } from 'node:net';
+import { isPrivateIpv4Address } from '../../relay-protocol/src/index.js';
 import type { Duplex } from 'node:stream';
 import { relayPathAllowed } from '../../relay-protocol/src/index.js';
 
 /** A tunnel never exports the software updater, peer transport or operator authority. */
-export function createLocalIngress(target: () => { port: number; origin: string }) {
+export function createLocalIngress(target: () => { port: number; origin: string; path?:string }, paths?:readonly string[]) {
   const allowed = (req: { url?: string; headers: { host?: string; origin?: string } }) => {
     try { const local = target(), path = decodeURIComponent(new URL(req.url ?? '/', 'http://hub.invalid').pathname);
+      if(paths)return local.port>0&&req.headers.host===new URL(local.origin).host&&paths.includes(path);
       return local.port > 0 && local.origin && req.headers.host === new URL(local.origin).host
         && (req.headers.origin === undefined || req.headers.origin === local.origin) && relayPathAllowed(req.url ?? '/')
         && (!path.startsWith('/__opencraft_hub') || path === '/__opencraft_hub/settings');
@@ -14,7 +16,7 @@ export function createLocalIngress(target: () => { port: number; origin: string 
   };
   const server = createServer((req, res) => {
     if (!allowed(req)) { res.writeHead(403, { 'cache-control': 'no-store' }); res.end(); return; }
-    const upstream = request({ host: '127.0.0.1', port: target().port, method: req.method, path: req.url, headers: req.headers }, response => {
+    const upstream = request({ host: '127.0.0.1', port: target().port, method: req.method, path: target().path ?? req.url, headers: req.headers }, response => {
       res.writeHead(response.statusCode ?? 502, response.headers); response.on('error', () => res.destroy()); response.on('aborted', () => res.destroy()); response.pipe(res);
     });
     upstream.setTimeout(3600_000, () => upstream.destroy());
@@ -28,9 +30,21 @@ export function createLocalIngress(target: () => { port: number; origin: string 
     upstream.on('error', () => socket.destroy()); socket.on('error', () => upstream.destroy());
     upstream.once('close', () => socket.destroy()); socket.once('close', () => upstream.destroy());
     upstream.once('connect', () => {
-      upstream.write(`${req.method} ${req.url} HTTP/${req.httpVersion}\r\n${Array.from({ length: req.rawHeaders.length / 2 }, (_, i) => `${req.rawHeaders[i * 2]}: ${req.rawHeaders[i * 2 + 1]}`).join('\r\n')}\r\n\r\n`);
+      upstream.write(`${req.method} ${target().path ?? req.url} HTTP/${req.httpVersion}\r\n${Array.from({ length: req.rawHeaders.length / 2 }, (_, i) => `${req.rawHeaders[i * 2]}: ${req.rawHeaders[i * 2 + 1]}`).join('\r\n')}\r\n\r\n`);
       if (head.length) upstream.write(head); socket.pipe(upstream); upstream.pipe(socket);
     });
   });
   return { accept(stream: Duplex) { server.emit('connection', stream); }, close() { server.close(); server.closeAllConnections(); } };
+}
+
+/** An explicitly selected intranet interface, never a wildcard/public listener. */
+export async function listenIntranetIngress(targetPort:number,paths:readonly string[],host:string,port:number){
+  if(!isPrivateIpv4Address(host)||!Number.isInteger(targetPort)||targetPort<1||targetPort>65535||!Number.isInteger(port)||port<1||port>65535)throw new Error('An explicit intranet interface and port are required');
+  const sockets=new Set<Socket>();
+  const ingress=createLocalIngress(()=>({port:targetPort,origin:`http://${host}:${port}`}),paths);
+  const server=createTcpServer(socket=>{sockets.add(socket);socket.once('close',()=>sockets.delete(socket));ingress.accept(socket);});
+  try{await new Promise<void>((resolve,reject)=>{const fail=(error:Error)=>reject(error);server.once('error',fail);server.listen(port,host,()=>{server.off('error',fail);resolve();});});}
+  catch(error){ingress.close();throw error;}
+  let closed:Promise<void>|undefined;
+  return {close(){return closed??=(async()=>{for(const socket of sockets)socket.destroy();ingress.close();await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));})();}};
 }

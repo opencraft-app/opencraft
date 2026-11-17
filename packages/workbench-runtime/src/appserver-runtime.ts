@@ -1890,7 +1890,6 @@ export function createAppServerWorkbenchRuntime(
           do {
             const params = {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})};
             const page: ModelListResponse = recentModelPages.get(modelPageKey(scope, cursor))
-              ?? recentModelPages.get(modelPageKey(null, cursor))
               ?? rememberModelPage(params, await client!.request("model/list", params, { timeoutMs: 1800 }));
             const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
             if (model) {

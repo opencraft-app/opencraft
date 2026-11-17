@@ -1,3 +1,4 @@
+import type { AppServerMethodParams, AppServerMethodResult } from "@opencraft/appserver-protocol";
 import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
 import type { ClientResources } from "@opencraft/document-storage/client-resources";
@@ -96,7 +97,12 @@ import {
 } from "./workbench-navigation-transaction";
 
 // The Context object itself is part of the renderer's hot-reload state.
+export interface PersonalMachineOwnerPort {
+  request(command: AppServerMethodParams<"opencraft/personal-machines">): Promise<AppServerMethodResult<"opencraft/personal-machines">>;
+}
+
 export interface AppServerHostCatalog {
+  readonly personalMachines?: PersonalMachineOwnerPort;
   readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly tasks: TasksRequestPort | null;
@@ -428,6 +434,7 @@ export function createWorkbenchQueryClient(): QueryClient {
 
 
 export interface WebWorkbenchApplicationBase {
+  readonly personalMachines?: PersonalMachineOwnerPort;
   readonly clientResources: ClientResources;
   readonly setConversationPresentationActive?: (active: boolean) => void;
   readonly connectors: ConnectorRuntime;

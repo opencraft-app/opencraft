@@ -16,7 +16,8 @@
     "./collaboration": "./src/collaboration.ts",
     "./token-usage": "./src/token-usage.ts",
     "./host-inputs": "./src/host-inputs.ts",
-    "./server-spaces": "./src/server-spaces.ts"
+    "./server-spaces": "./src/server-spaces.ts",
+    "./personal-machines": "./src/personal-machines.ts"
   },
   "dependencies": {
     "@opencraft/document-storage": "0.1.0"

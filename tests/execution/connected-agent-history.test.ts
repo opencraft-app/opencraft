@@ -69,6 +69,36 @@ test("Codex read-only history restores messages/tools, stable pagination and app
   assert.equal(JSON.stringify(await f.history.snapshot(id, {})).includes("hidden instructions"), false);
 });
 
+for (const provider of ["codex", "cursor"] as const) test(`a new ${provider} session can be read before its first prompt; accepted input revokes the empty-history attestation`, async t => {
+  const f = await fixture(t, provider);
+  const options = { id: provider, command: process.execPath, args: [resolve("tests/fixtures/acp-engine-peer.mjs")], cwd: f.home,
+    dataDirectory: join(f.home, "engine"), env: { ACP_TEST_NATIVE_ID: id }, history: f.history };
+  const owner = { notify() {}, async request() {} };
+  const engine = new AcpEngine(options);
+  const { thread } = await engine.request("thread/start", {}, owner);
+  const page = { limit: 5, itemsView: "full", sortDirection: "desc" };
+  assert.deepEqual((await engine.request("thread/read", { threadId: thread.id, initialTurnsPage: page }, owner)).initialTurnsPage.data, []);
+  await engine.close();
+  const coldHistory = new ConnectedAgentHistory(provider, f.home);
+  const cold = new AcpEngine({ ...options, history: coldHistory });
+  try {
+    assert.deepEqual((await cold.request("thread/turns/list", { threadId: thread.id, ...page }, owner)).data, []);
+    assert.equal(cold.processIds.length, 0, "cold reads of an unprompted session never resume native execution");
+    await cold.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: "first input" }] }, owner);
+    await assert.rejects(cold.request("thread/turns/list", { threadId: thread.id, ...page, nativeHistoryEmpty: true }, owner), /Could not read/,
+      "a caller cannot forge empty history after input was accepted");
+  } finally { await cold.close(); }
+});
+
+test("empty-history attestation never hides an existing or corrupt Codex rollout", async t => {
+  const f = await fixture(t, "codex");
+  assert.deepEqual(await f.history.snapshot(id, { nativeHistoryEmpty: true }), []);
+  const path = await codexSource(f.home);
+  assert.equal((await f.history.snapshot(id, { nativeHistoryEmpty: true })).length, 2);
+  await writeFile(path, "invalid\n");
+  await assert.rejects(f.history.snapshot(id, { nativeHistoryEmpty: true }), /Could not read/);
+});
+
 test("Cursor reads the ordered native graph without exposing unrelated prompt blobs; failures are retryable", async t => {
   const f = await fixture(t, "cursor"), db = await cursorSource(f.home); t.after(() => db.close());
   const turns = await f.history.snapshot(id, {});
@@ -85,6 +115,7 @@ test("Cursor reads the ordered native graph without exposing unrelated prompt bl
   const original = db.prepare("SELECT value FROM meta").get() as { value: string };
   db.prepare("UPDATE meta SET value=?").run(missing);
   await assert.rejects(f.history.snapshot(id, {}), /Could not read/);
+  await assert.rejects(f.history.snapshot(id, { nativeHistoryEmpty: true }), /Could not read/);
   db.prepare("UPDATE meta SET value=?").run(original.value);
   assert.equal((await f.history.snapshot(id, {})).length, 3);
 });

@@ -23,6 +23,8 @@ export interface ConversationActivationCoordinator<TRuntime extends WorkbenchAct
   scopeIdFor(location: WorkbenchLocation): ConversationScopeId;
   /** Publishes only local Scope/View identity; it never starts a Host. */
   mountInitial(location: WorkbenchLocation, viewId: string): void;
+  /** Presents a slot resolved by local persistence, without restarting bootstrap. */
+  presentRetained(location: WorkbenchLocation, viewId: string): void;
   /** Publishes a New-chat Draft and View locally before Host preparation. */
   presentLocalDraft(location: WorkbenchDraftLocation, viewId: string): void;
   /**
@@ -224,6 +226,23 @@ export function createConversationActivationCoordinator<
       if (location.kind === "draft") scopes.activateDraft(location.draftId);
       else scopes.deactivateDraft();
       coordinator.presentInitial(location, viewId);
+      commitActiveView(scopeId, viewId);
+    },
+    presentRetained(location, viewId) {
+      ensureOpen();
+      const owner = views.getDraftOwner(viewId);
+      const target = owner?.composer.getSnapshot().draft.target;
+      const matches = location.kind === "thread"
+        ? target?.type === "existing-thread" && target.key.hostId === location.key.hostId && target.key.threadId === location.key.threadId
+        : target?.type === "new-thread" && target.execution.hostId === location.hostId && target.draftId === location.draftId;
+      if (owner && !matches) throw new Error("Restored Workbench View does not belong to this conversation");
+      const scopeId = ensureLocationScope(location);
+      const scope = leases.get(scopeId)!;
+      views.ensure(viewId, scopeId, scope.hostId, scope.target);
+      stopInitialRecovery?.();
+      if (location.kind === "draft") scopes.activateDraft(location.draftId);
+      else scopes.deactivateDraft();
+      coordinator.presentRetained(location, viewId);
       commitActiveView(scopeId, viewId);
     },
     presentLocalDraft(location, viewId) {

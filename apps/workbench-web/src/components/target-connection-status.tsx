@@ -14,16 +14,16 @@ export function ConnectionLabel({ phase, execution, showLabel = false }: { phase
 }
 
 /** Pure presentation: only the runtime owns connection state. */
-export function ConnectionStatus({ phase, execution }: { phase: string; execution?: string }) {
+export function ConnectionStatus({ phase, execution, label: accessibleLabel }: { phase: string; execution?: string; label?: string }) {
   const intl = useIntl();
-  const label = intl.formatMessage(connectionMessage(phase, execution));
+  const label = accessibleLabel ?? intl.formatMessage(connectionMessage(phase, execution));
   return <span className="workbench-connection-status" data-phase={execution === "recovering" ? "reconnecting" : execution === "unavailable" ? "error" : phase} role="img" aria-label={label} title={label} />;
 }
 
 function connectionMessage(phase: string, execution?: string) {
   if (execution === "recovering" || execution === "unavailable") return {id: "chat.execution.recovering", defaultMessage: "Execution is recovering. New messages will wait in the queue."};
   return phase === "ready" ? { id: "settings.connection.ready", defaultMessage: "Connected" }
-    : phase === "idle" ? { id: "settings.connection.notStarted", defaultMessage: "Not started" }
+    : phase === "idle" ? { id: "settings.connection.notConnected", defaultMessage: "Not connected" }
     : phase === "error" ? { id: "settings.connection.error", defaultMessage: "Connection failed" }
     : phase === "reconnecting" ? { id: "settings.connection.reconnecting", defaultMessage: "Reconnecting" }
     : { id: "settings.connection.connecting", defaultMessage: "Connecting" };

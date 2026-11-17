@@ -1,5 +1,7 @@
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import {CodeBuddyIdeBridge} from "./codebuddy-ide-bridge.js";
+import {fileURLToPath} from "node:url";
+import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { join, isAbsolute } from "node:path";
 import { homedir } from "node:os";
 import type { ExecutionEngineClient } from "@opencraft/appserver-client";
 import { permissionModeProfileId } from "@opencraft/appserver-protocol";
@@ -16,11 +18,15 @@ import {
   type OnboardingDeps,
 } from "./agent-onboarding.js";
 
-type EngineId = "codex" | "cursor" | "claude-code" | "codebuddy";
+type HistoryAgent = OnboardingAgentId;
+const historyEngineId = (id: HistoryAgent): EngineId => ENGINE_BY_AGENT[id];
+type EngineId = "codex" | "cursor" | "claude-code" | "codebuddy" | "codebuddy-ide" | "pi-cli";
+const ENGINE_IDS = Object.values(ENGINE_BY_AGENT);
 type Params = Record<string, unknown>;
 interface ConnectedAgentModel {
   id: string;
   name: string;
+  inputModalities: ("text" | "image")[];
   serviceTiers: { id: string; name: string; description: string }[];
   supportedReasoningEfforts: { reasoningEffort: string; description: string }[];
   defaultReasoningEffort: string | null;
@@ -33,8 +39,10 @@ export function connectedAgentModelId(agentId: OnboardingAgentId): string {
 }
 
 export function connectedAgentEngineId(modelOrThread: string): EngineId | null {
+  if (modelOrThread.startsWith("pi-cli:") || modelOrThread.startsWith("picli_")) return "pi-cli";
   if (modelOrThread.startsWith("claude-code:") || modelOrThread.startsWith("claude_")) return "claude-code";
   if (modelOrThread.startsWith("cursor:") || modelOrThread.startsWith("cursor_")) return "cursor";
+  if (modelOrThread.startsWith("codebuddy-ide:") || modelOrThread.startsWith("codebuddy_ide_")) return "codebuddy-ide";
   if (modelOrThread.startsWith("codebuddy:") || modelOrThread.startsWith("codebuddy_")) return "codebuddy";
   if (modelOrThread.startsWith("codex:") || modelOrThread.startsWith("codex_")) return "codex";
   return null;
@@ -44,7 +52,9 @@ const LABELS: Record<EngineId, string> = {
   codex: "Codex",
   cursor: "Cursor",
   "claude-code": "Claude Code",
-  codebuddy: "CodeBuddy",
+  codebuddy: "CodeBuddy CLI",
+  "codebuddy-ide": "CodeBuddy IDE",
+  "pi-cli": "Pi",
 };
 
 export function connectedAgentCatalogEntry(engineId: EngineId) {
@@ -61,7 +71,7 @@ export function connectedAgentCatalogEntry(engineId: EngineId) {
     hidden: false,
     supportedReasoningEfforts: [],
     defaultReasoningEffort: null,
-    inputModalities: ["text"],
+    inputModalities: ["text"] as ("text" | "image")[],
     supportsPersonality: false,
     multiAgentVersion: null,
     additionalSpeedTiers: [],
@@ -91,8 +101,63 @@ export interface ConnectedAgentBridge {
 
 /** Owns ACP sessions for agents that were signed in on this computer. */
 export class ConnectedAgentHost {
-  private readonly engines = new Map<EngineId, AcpEngine>();
-  private readonly engineLoads = new Map<EngineId, Promise<AcpEngine>>();
+  private readonly ideBridge:CodeBuddyIdeBridge;
+  private readonly engines = new Map<string, AcpEngine>();
+  private readonly sourceHomes = new Map<string,string>();
+  private sourceBindingsLoad?: Promise<void>;
+  private sourceBindingsWrite: Promise<void> = Promise.resolve();
+  private readonly sourceReader = new ConnectedAgentHistory("codex", process.env.CODEX_HOME || join(homedir(), ".codex"));
+  private readSourceBindings(): Promise<void> {
+    return this.sourceBindingsLoad ??= (async () => {
+      const raw = await readFile(join(this.root,"codex-sources.json"),"utf8").catch(error => {if(error.code === "ENOENT") return "[]";throw error;});
+      const rows: unknown = JSON.parse(raw);
+      if (!Array.isArray(rows) || rows.length > 100) throw new Error("Invalid saved Codex sources");
+      const {createHash} = await import("node:crypto");
+      for (const row of rows) {
+        if (!row || typeof row.id !== "string" || typeof row.path !== "string" || !isAbsolute(row.path) || createHash("sha256").update(row.path).digest("hex").slice(0,24) !== row.id) throw new Error("Invalid saved Codex source binding");
+        this.sourceHomes.set(row.id,row.path);
+      }
+    })();
+  }
+  async historySources(agentId:HistoryAgent) { return agentId === "codex" ? this.sourceReader.sources() : {sources:[]}; }
+  private async historyEngine(agentId:HistoryAgent,sourceId?:string,commit=false):Promise<AcpEngine> {
+    if (!sourceId || sourceId === "default") return this.engine(historyEngineId(agentId));
+    if(agentId !== "codex") throw new Error("Unsupported native data source");
+    await this.readSourceBindings();
+    const source = (await this.historySources(agentId)).sources.find(source => source.id === sourceId);
+    if(!source) throw new Error("Native data source is no longer available");
+    if(commit) {
+      this.sourceBindingsWrite = this.sourceBindingsWrite.catch(() => undefined).then(async () => {
+        if(this.sourceHomes.get(sourceId) === source.path)return;
+        const next = new Map(this.sourceHomes);next.set(sourceId,source.path);
+        if(next.size > 100)throw new Error("Too many saved native data sources");
+        await mkdir(this.root,{recursive:true,mode:0o700});
+        const path=join(this.root,"codex-sources.json");
+        await writeFile(path+".tmp",JSON.stringify([...next].map(([id,path])=>({id,path}))),{mode:0o600});
+        await rename(path+".tmp",path);
+        this.sourceHomes.set(sourceId,source.path);
+      });
+      await this.sourceBindingsWrite;
+    }
+    return this.sourceEngine(sourceId,source.path);
+  }
+  private async sourceEngine(id:string,home:string):Promise<AcpEngine> {
+    const key=`source:${id}`;
+    const existing=this.engines.get(key);if(existing)return existing;
+    const loading=this.engineLoads.get(key);if(loading)return loading;
+    if(this.closed)throw new Error("Connected agents are closed");
+    const pending=this.createEngine("codex",{id,home});this.engineLoads.set(key,pending);
+    try{return await pending;}finally{this.engineLoads.delete(key);}
+  }
+  private async threadEngine(engineId:EngineId,threadId?:unknown):Promise<AcpEngine> {
+    const source=typeof threadId === "string" ? /^codex_source_([a-f0-9]{24})_/u.exec(threadId) : null;
+    if(!source)return this.engine(engineId);
+    await this.readSourceBindings();
+    const home=this.sourceHomes.get(source[1]!);
+    if(!home)throw new Error("Native conversation source binding missing");
+    return this.sourceEngine(source[1]!,home);
+  }
+  private readonly engineLoads = new Map<string, Promise<AcpEngine>>();
   private readonly listeners = new Set<(method: string, params: Params) => void>();
   private ready: EngineId[] = [];
   private probedAt = 0;
@@ -107,14 +172,17 @@ export class ConnectedAgentHost {
     private readonly cwd: string,
     private readonly deps: OnboardingDeps,
     private readonly bridge?: ConnectedAgentBridge,
-  ) { this.providerUsage = new AgentProviderUsageService(deps); }
-  async start(): Promise<void> { await this.bridge?.provider.start(); }
+  ) { this.providerUsage = new AgentProviderUsageService(deps);
+    this.ideBridge=new CodeBuddyIdeBridge(join(root,"codebuddy-ide"),deps);
+    onboarding.registerNative?.("codebuddy-ide",{probe:()=>this.ideBridge.snapshot(),historyProbe:()=>this.ideBridge.snapshot(true),act:action=>this.ideBridge.act(action)});
+  }
+  async start(): Promise<void> { await this.ideBridge.start(); await this.bridge?.provider.start(); }
   ownsBridgeThread(threadId: string): boolean { return this.bridge?.provider.ownsThread(threadId) === true; }
   async usage(params: { threadId?: string; force?: boolean }): Promise<AgentUsageSnapshot> {
     const engineId = params.threadId ? connectedAgentEngineId(params.threadId) : null;
     const conversation = async (): Promise<AgentConversationUsage | null> => {
       if (!engineId || !params.threadId) return null;
-      const engine = await this.engine(engineId);
+      const engine = await this.threadEngine(engineId, params.threadId);
       return engine.request("opencraft/thread-usage/read", { threadId: params.threadId }, { notify() {}, async request() {} });
     };
     const [codex, cursor, current] = await Promise.all([this.providerUsage.read("codex", params.force), this.providerUsage.read("cursor", params.force), this.bridge?.provider.ownsThread(String(params.threadId ?? "")) ? null : conversation().catch(() => null)]);
@@ -142,8 +210,16 @@ export class ConnectedAgentHost {
 
   private savedModels: Promise<void> | null = null;
   private catalogRefresh: Promise<void> | null = null;
+  private readonly capabilityProbes = new Map<AcpEngine, Promise<void>>();
+  private refreshInputCapabilities(engine: AcpEngine): void {
+    if (!["codex", "cursor"].includes(engine.id) || engine.hasInputCapabilities !== false || this.capabilityProbes.has(engine) || this.closed) return;
+    // Separate background negotiation from the saved-catalog read. It sends no
+    // session/new, session/resume or prompt, including for imported sources.
+    const pending = engine.refreshInputCapabilities().catch(() => undefined);
+    this.capabilityProbes.set(engine, pending);
+  }
   private async readSavedModels(): Promise<void> {
-    await (this.savedModels ??= Promise.allSettled((["codex", "cursor", "claude-code", "codebuddy"] as const).map(async id => {
+    await (this.savedModels ??= Promise.allSettled(ENGINE_IDS.map(async id => {
       const engine = await this.engine(id);
       const page = await engine.request("model/list", {}, { notify() {}, async request() {} });
       const models = this.projectModels(id, page.data ?? []);
@@ -152,7 +228,7 @@ export class ConnectedAgentHost {
   }
   async executionProviders() {
     await this.readSavedModels();
-    return (["codex", "cursor"] as const).flatMap(id => {
+    return ENGINE_IDS.flatMap(id => {
       const engine = this.engines.get(id);
       return engine ? [{ id, label: LABELS[id], threadPrefix: engine.threadPrefix, modelPrefix: engine.modelPrefix, extensions: engine.extensions }] : [];
     });
@@ -171,18 +247,33 @@ export class ConnectedAgentHost {
         }));
       }).catch(() => undefined).finally(() => { this.catalogRefresh = null; });
     }
-    return [...this.discovered.keys()].flatMap(engineId => {
+    const engineId = threadId ? connectedAgentEngineId(threadId) : null;
+    let catalogs: [EngineId, ConnectedAgentModel[]][];
+    if (threadId && engineId) {
+      const engine = await this.threadEngine(engineId, threadId);
+      const page = await engine.request("model/list", { threadId }, { notify() {}, async request() {} });
+      this.refreshInputCapabilities(engine);
+      catalogs = [[engineId, this.projectModels(engineId, page.data ?? [])]];
+    } else {
+      catalogs = await Promise.all([...this.discovered.keys()].map(async id => {
+        const page = await (await this.engine(id)).request("model/list", {}, { notify() {}, async request() {} });
+        this.refreshInputCapabilities(await this.engine(id));
+        const current = this.projectModels(id, page.data ?? []);
+        return [id, current.length ? current : this.discovered.get(id) ?? []] as [EngineId, ConnectedAgentModel[]];
+      }));
+    }
+    return catalogs.flatMap(([engineId, found]) => {
       if (threadId && connectedAgentEngineId(threadId) !== engineId) return [];
-      const found = this.discovered.get(engineId) ?? [];
       return found.length > 0 ? found.map(model => ({
         ...connectedAgentCatalogEntry(engineId),
         id: model.id,
         model: model.id,
         displayName: model.name,
+        inputModalities: model.inputModalities,
         serviceTiers: model.serviceTiers,
         supportedReasoningEfforts: model.supportedReasoningEfforts,
         defaultReasoningEffort: model.defaultReasoningEffort,
-      })) : [connectedAgentCatalogEntry(engineId)];
+      })) : threadId ? [] : [connectedAgentCatalogEntry(engineId)];
     });
   }
 
@@ -197,9 +288,11 @@ export class ConnectedAgentHost {
   async threads(): Promise<Record<string, any>[]> {
     // Reading a saved conversation does not need a CLI authentication probe.
     // Installed readers remain cold; an absent CLI leaves the Host's saved row.
-    const engines: EngineId[] = ["codex", "cursor", "claude-code", "codebuddy"];
-    const results = await Promise.allSettled(engines.map(async id => {
-      const engine = await this.engine(id);
+    const engines: EngineId[] = ENGINE_IDS;
+    await this.readSourceBindings();
+    const readers = [...engines.map(id => this.engine(id)), ...[...this.sourceHomes].map(([id,home])=>this.sourceEngine(id,home))];
+    const results = await Promise.allSettled(readers.map(async pending => {
+      const engine = await pending;
       await engine.refreshNativeProjects();
       const rows: Record<string, any>[] = [];
       const client: ExecutionEngineClient = { request: () => Promise.reject(new Error("Catalog read has no tool owner")), notify: () => undefined };
@@ -217,20 +310,20 @@ export class ConnectedAgentHost {
 
   private readonly historyCandidates = new Map<string, { id: string; title: string | null; cwd: string; updatedAt: string | null; seenAt: number }>();
 
-  async localConversations(agentId: "codex" | "cursor", cursor?: string, isCommitted?: (threadId: string) => boolean) {
-    if (agentId !== "codex" && agentId !== "cursor") throw new Error("Unsupported history source");
-    const engine = await this.engine(agentId);
-    const page = await engine.discoverNativeSessions(cursor);
-    for (const entry of page.sessions) this.historyCandidates.set(`${agentId}:${entry.id}`, { ...entry, seenAt: Date.now() });
+  async localConversations(agentId: HistoryAgent, cursor?: string, isCommitted?: (threadId: string) => boolean, archived = false, sourceId?:string) {
+    if (!Object.hasOwn(ENGINE_BY_AGENT, agentId)) throw new Error("Unsupported history source");
+    const engine = await this.historyEngine(agentId,sourceId);
+    const page = await engine.discoverNativeSessions(cursor, archived);
+    for (const entry of page.sessions) this.historyCandidates.set(`${agentId}:${sourceId ?? "default"}:${entry.id}`, { ...entry, seenAt: Date.now() });
     while (this.historyCandidates.size > 5000) this.historyCandidates.delete(this.historyCandidates.keys().next().value!);
     return { conversations: page.sessions.map(({ importedThreadId, ...entry }) => ({ ...entry,
-      imported: entry.imported && (!isCommitted || (!!importedThreadId && isCommitted(importedThreadId))) })), nextCursor: page.nextCursor };
+      imported: entry.imported && (!isCommitted || (!!importedThreadId && isCommitted(importedThreadId))) })), nextCursor: page.nextCursor, ...(page.supportsArchived ? { supportsArchived: true } : {}) };
   }
 
-  async importLocalConversation(agentId: "codex" | "cursor", id: string): Promise<Record<string, any>> {
-    const entry = this.historyCandidates.get(`${agentId}:${id}`);
+  async importLocalConversation(agentId: HistoryAgent, id: string, sourceId?:string): Promise<Record<string, any>> {
+    const entry = this.historyCandidates.get(`${agentId}:${sourceId ?? "default"}:${id}`);
     if (!entry || Date.now() - entry.seenAt > 30 * 60_000) throw new Error("Refresh the local conversation directory before importing");
-    return (await this.engine(agentId)).importNativeSession(entry);
+    return (await this.historyEngine(agentId,sourceId,true)).importNativeSession(entry);
   }
 
   private async ensureAgentModels(engineId: EngineId): Promise<ConnectedAgentModel[]> {
@@ -253,7 +346,7 @@ export class ConnectedAgentHost {
     const engineId = owner.engineId;
     if (!engineId) throw new Error("This conversation is not owned by a connected agent");
     if (method === "thread/goal/get") return { goal: null };
-    const engine = await this.engine(engineId);
+    const engine = await this.threadEngine(engineId,params.threadId);
     const client: ExecutionEngineClient = {
       request: () => Promise.reject(new Error("Connected agents use their own tools")),
       notify: () => undefined,
@@ -268,7 +361,7 @@ export class ConnectedAgentHost {
     if (method === "thread/start") {
       const model = typeof forwarded.model === "string" ? forwarded.model : undefined;
       return engine.request("thread/start", {
-        cwd: typeof forwarded.cwd === "string" && forwarded.cwd.startsWith("/") ? forwarded.cwd : this.cwd,
+        cwd: engineId === "codebuddy-ide" && (forwarded.cwd === undefined || forwarded.cwd === this.cwd) ? await this.ideBridge.workspace() : typeof forwarded.cwd === "string" && forwarded.cwd.startsWith("/") ? forwarded.cwd : this.cwd,
         permissions: permissionModeProfileId("full"),
         approvalPolicy: "never",
         sandbox: "danger-full-access",
@@ -285,9 +378,13 @@ export class ConnectedAgentHost {
     this.closed = true;
     await this.bridge?.provider.close().catch(() => undefined);
     this.providerUsage.close();
+    await this.sourceReader.close();
     await Promise.allSettled(this.engineLoads.values());
     await Promise.all([...this.engines.values()].map(engine => engine.close()));
+    await Promise.all(this.capabilityProbes.values());
+    this.capabilityProbes.clear();
     this.engines.clear();
+    await this.ideBridge.close();
   }
 
   private async loadAgentModels(engineId: EngineId): Promise<ConnectedAgentModel[]> {
@@ -297,7 +394,7 @@ export class ConnectedAgentHost {
       notify: () => undefined,
     };
     const created = await engine.request("thread/start", {
-      cwd: this.cwd,
+      cwd: engineId === "codebuddy-ide" ? await this.ideBridge.workspace() : this.cwd,
       permissions: permissionModeProfileId("full"),
       approvalPolicy: "never",
       sandbox: "danger-full-access",
@@ -307,14 +404,15 @@ export class ConnectedAgentHost {
     const listed = await engine.request("model/list", {}, client) as { data?: { id?: string; displayName?: string; serviceTiers?: unknown;
       supportedReasoningEfforts?: unknown; defaultReasoningEffort?: unknown }[] };
     const models = this.projectModels(engineId, listed.data ?? []);
-    const resolved = models.length > 0 ? models : [{ id: `${engineId}${PLACEHOLDER}`, name: LABELS[engineId], serviceTiers: [], supportedReasoningEfforts: [], defaultReasoningEffort: null }];
+    const resolved = models.length > 0 ? models : [{ id: `${engineId}${PLACEHOLDER}`, name: LABELS[engineId], inputModalities: ["text"] as ("text" | "image")[], serviceTiers: [], supportedReasoningEfforts: [], defaultReasoningEffort: null }];
     this.discovered.set(engineId, resolved);
     return resolved;
   }
 
-  private projectModels(engineId: EngineId, rows: readonly { id?: string; displayName?: string; serviceTiers?: unknown; supportedReasoningEfforts?: unknown; defaultReasoningEffort?: unknown }[]): ConnectedAgentModel[] {
+  private projectModels(engineId: EngineId, rows: readonly { id?: string; displayName?: string; inputModalities?: unknown; serviceTiers?: unknown; supportedReasoningEfforts?: unknown; defaultReasoningEffort?: unknown }[]): ConnectedAgentModel[] {
     return rows.flatMap(model => typeof model.id === "string" && model.id.startsWith(`${engineId}:`)
       ? [{ id: model.id, name: model.displayName || model.id.slice(engineId.length + 1),
+        inputModalities: Array.isArray(model.inputModalities) && model.inputModalities.includes("image") ? ["text", "image"] : ["text"],
         supportedReasoningEfforts: Array.isArray(model.supportedReasoningEfforts) ? model.supportedReasoningEfforts.filter(effort => effort && typeof effort.reasoningEffort === "string" && typeof effort.description === "string") : [],
         defaultReasoningEffort: typeof model.defaultReasoningEffort === "string" ? model.defaultReasoningEffort : null,
         serviceTiers: Array.isArray(model.serviceTiers) ? model.serviceTiers.filter(tier => tier && typeof tier.id === "string" && typeof tier.name === "string" && typeof tier.description === "string") : [] }] : []);
@@ -324,7 +422,7 @@ export class ConnectedAgentHost {
     if (Date.now() - this.probedAt < 15_000) return;
     const snapshot = await this.onboarding.status();
     this.probedAt = Date.now();
-    this.ready = snapshot.agents.filter(agent => agent.authenticated === true).map(agent => ENGINE_BY_AGENT[agent.id]);
+    this.ready = snapshot.agents.filter(agent => agent.authenticated === true && agent.connectionRequired !== true && agent.workspaceTrusted !== false).map(agent => ENGINE_BY_AGENT[agent.id]);
   }
 
   private async engine(engineId: EngineId): Promise<AcpEngine> {
@@ -338,31 +436,44 @@ export class ConnectedAgentHost {
     try { return await pending; } finally { this.engineLoads.delete(engineId); }
   }
 
-  private async createEngine(engineId: EngineId): Promise<AcpEngine> {
+  private async createEngine(engineId: EngineId, source?:{id:string;home:string}): Promise<AcpEngine> {
     const launch = await this.launch(engineId);
-    const directory = join(this.root, engineId);
+    const directory = source ? join(this.root,"codex-sources",source.id) : join(this.root, engineId);
     await mkdir(directory, { recursive: true, mode: 0o700 });
     if (this.closed) throw new Error("Connected agents are closed");
     const engine = new AcpEngine({
       id: engineId,
+      ...(engineId === "pi-cli" ? { protocol: "pi-rpc" as const, threadNamespace: "picli_" } : {}),
+      ...(source ? {threadNamespace:`codex_source_${source.id}_`,env:{...process.env,CODEX_HOME:source.home}} : {}),
       label: LABELS[engineId],
       command: launch.command,
       args: launch.args,
       cwd: this.cwd,
       dataDirectory: directory,
+      ...(engineId === "codebuddy-ide" ? {env:{...process.env,OPENCRAFT_CODEBUDDY_IDE_DESCRIPTOR:this.ideBridge.descriptor}} : {}),
       permission: "allow-once",
-      timeoutMs: 120_000,
+      timeoutMs: engineId === "codebuddy-ide" ? 330_000 : 120_000,
+      ...(engineId === "pi-cli" ? { history: new ConnectedAgentHistory("pi-cli", join(directory, "native-sessions"), join(this.root, "continuations"), [join(process.env.PI_CODING_AGENT_DIR || join(homedir(), ".pi", "agent"), "sessions")]) } : {}),
+      ...(engineId === "codebuddy-ide" ? { history: new ConnectedAgentHistory("codebuddy-ide", join(homedir(), process.platform === "darwin" ? "Library/Application Support" : process.platform === "win32" ? "AppData/Local" : ".local/share", "CodeBuddyExtension", "Data"), join(this.root, "continuations"), [], () => this.ideBridge.historyScope()) } : {}),
+      ...(engineId === "claude-code" || engineId === "codebuddy" ? { history: new ConnectedAgentHistory(engineId,
+        engineId === "claude-code" ? process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude") : join(process.env.CODEBUDDY_CONFIG_DIR || join(homedir(), ".codebuddy"), "projects"), join(this.root, "continuations")) } : {}),
       ...(engineId === "codex" || engineId === "cursor" ? { history: new ConnectedAgentHistory(engineId,
-        engineId === "codex" ? process.env.CODEX_HOME || join(homedir(), ".codex") : process.env.CURSOR_CONFIG_DIR || join(homedir(), ".cursor"), join(this.root, "continuations")) } : {}),
+        engineId === "codex" ? source?.home || process.env.CODEX_HOME || join(homedir(), ".codex") : process.env.CURSOR_CONFIG_DIR || join(homedir(), ".cursor"), join(this.root, "continuations")) } : {}),
     });
     engine.subscribe((method, params) => {
       for (const listener of this.listeners) listener(method, params);
     });
-    this.engines.set(engineId, engine);
+    this.engines.set(source ? `source:${source.id}` : engineId, engine);
     return engine;
   }
 
   private async launch(engineId: EngineId): Promise<Launch> {
+    if (engineId === "pi-cli") {
+      const command = await resolveExecutable(["pi"], this.deps);
+      if (!command) throw new Error("Pi is not installed");
+      return { engineId, command, args: ["--mode", "rpc", "--offline", "--approve", "--session-dir", join(this.root, "pi-cli", "native-sessions")] };
+    }
+    if(engineId === "codebuddy-ide")return {engineId,command:process.execPath,args:[fileURLToPath(new URL("../../../scripts/codebuddy-ide/acp-proxy.mjs",import.meta.url))]};
     if (engineId === "cursor") {
       const command = await resolveExecutable(["cursor-agent"], this.deps);
       if (!command) throw new Error("Cursor is not installed");

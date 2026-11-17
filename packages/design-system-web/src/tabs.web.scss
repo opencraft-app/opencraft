@@ -1,0 +1,8 @@
+.ui-tabs {
+  display: flex;
+  align-items: center;
+  gap: var(--gap-control-group);
+  min-width: 0;
+  overflow-x: auto;
+  > button { flex-shrink: 0; }
+}

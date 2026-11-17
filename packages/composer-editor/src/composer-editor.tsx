@@ -2,6 +2,7 @@ import { DisclosureButton, IconButton } from "@opencraft/design-system-web/butto
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { useConversationReferences } from "./conversation-references";
+import { ComposerAgentPicker } from "./composer-agent-picker";
 import { ComposerModelPicker } from "./composer-model-picker";
 import { ComposerModelMenu } from "./composer-model-menu";
 import { modelChoiceFamilies } from "./model-choice-families";
@@ -206,7 +207,7 @@ export interface ComposerExecutionTarget {
   readonly hostLabel: string;
 }
 
-type SelectionPicker = "intelligence" | "permissions";
+type SelectionPicker = "intelligence" | "permissions" | "agent";
 
 function modelIdentifierLabel(value: string): string {
   return value.replace(/^:/, "").split(/[-_\s]+/u).filter(Boolean)
@@ -725,7 +726,7 @@ export interface ComposerQueuedSubmissionContent {
 export interface OpenCraftComposerProps {
   controller: ComposerController;
   /** Composer-owned chrome rendered above attachments and the editor. */
-  chromeHeader?: ReactNode;
+  chromeHeader?: ReactNode | ((agentPicker: ReactNode) => ReactNode);
   /** Host projection rendered after the queue in the shared attached rail. */
   attachedContent?: ReactNode;
   /** Independent host projection above the attached rail and editor. */
@@ -757,6 +758,7 @@ export interface OpenCraftComposerProps {
    * composing while the immutable intent must not cross the transport seam.
    */
   submissionDisabled?: boolean;
+  submissionDisabledReason?: string;
   placeholder?: string;
   /** Animate empty recovery copy while preserving the native editable paragraph. */
   placeholderPending?: boolean;
@@ -830,6 +832,7 @@ export const OpenCraftComposer = forwardRef<
     disabled = false,
     portalContainer,
     submissionDisabled = false,
+    submissionDisabledReason,
     placeholder: suppliedPlaceholder,
     placeholderPending = false,
     selectionCatalog,
@@ -926,7 +929,7 @@ export const OpenCraftComposer = forwardRef<
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
   const changePicker = (picker: SelectionPicker) => (open: boolean) => {
     if (open) setAddMenuOpen(false);
-    if (open && picker === "intelligence") selectionCatalog?.onModelMenuOpen?.();
+    if (open && (picker === "intelligence" || picker === "agent")) selectionCatalog?.onModelMenuOpen?.();
     setOpenPicker(current => open ? picker : current === picker ? null : current);
   };
   const settleEditingFocusRef = useRef<() => void>(() => {});
@@ -941,10 +944,16 @@ export const OpenCraftComposer = forwardRef<
     });
   };
   const intelligenceFocus = useInputAuxiliaryMenuFocus({ restoreEditorOnClose: true, open: openPicker === "intelligence", onOpenChange: changePicker("intelligence"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
+  const agentFocus = useInputAuxiliaryMenuFocus({ restoreEditorOnClose: true, open: openPicker === "agent", onOpenChange: changePicker("agent"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
   const permissionsFocus = useInputAuxiliaryMenuFocus({ open: openPicker === "permissions", onOpenChange: changePicker("permissions"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
   const agentSelectionEpoch = useRef(0);
   const [switchingAgentId, setSwitchingAgentId] = useState<string | null>(null);
   const [agentSelectionError, setAgentSelectionError] = useState<{ id: string; message: string } | null>(null);
+  useEffect(() => {
+    setSwitchingAgentId(null);
+    setAgentSelectionError(null);
+    return () => { agentSelectionEpoch.current += 1; };
+  }, [controller]);
   const selectAgentModel = async (group: ComposerAgentModelGroup, model: ComposerModelOption) => {
     const epoch = ++agentSelectionEpoch.current;
     setSwitchingAgentId(group.id);
@@ -1343,7 +1352,7 @@ export const OpenCraftComposer = forwardRef<
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
-        if (dictation.phase !== "listening" || disabled || submissionDisabled || modelSelectionBlocked || composerSnapshot.hasProcessingAssets) return;
+        if (dictation.phase !== "listening" || disabled || submissionDisabled || switchingAgentId !== null || modelSelectionBlocked || composerSnapshot.hasProcessingAssets) return;
         const draftId = controller.getSnapshot().draft.id;
         const committed = await dictation.finish();
         if (committed && editorViewRef.current === view && editorControllerRef.current === controller
@@ -1358,6 +1367,7 @@ export const OpenCraftComposer = forwardRef<
         editorControllerRef.current !== controller ||
         disabled ||
         submissionDisabled ||
+        switchingAgentId !== null ||
         modelSelectionBlocked ||
         !controller.getSnapshot().canSubmit ||
         pendingSubmissionRef.current?.controller === controller
@@ -1512,6 +1522,7 @@ export const OpenCraftComposer = forwardRef<
       availableFollowUpActions,
       disabled,
       submissionDisabled,
+      switchingAgentId,
       isStreaming,
       onSubmit,
       onUpdateQueuedSubmission,
@@ -2108,6 +2119,7 @@ export const OpenCraftComposer = forwardRef<
     setOpenPicker(null);
   };
 
+  const agentInHeader = typeof chromeHeader === "function" && modelSelectionPolicy === "user" && !modelDisplayOnly;
   const displayFamily = modelSelectionPolicy === "user" && displayModel ? modelChoiceFamilies([displayModel])[0] : undefined;
   const encodedEffort = displayFamily?.variants[0]?.effort;
   const modelLabel =
@@ -2115,7 +2127,7 @@ export const OpenCraftComposer = forwardRef<
     (selectedModelValue === null
       ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
       : modelIdentifierLabel(selectedModelValue));
-  const compactSelectedModelLabel = displayModel?.agentLabel && !existingConversation
+  const compactSelectedModelLabel = displayModel?.agentLabel && !existingConversation && !agentInHeader
     ? `${displayModel.agentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
   const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
@@ -2135,7 +2147,7 @@ export const OpenCraftComposer = forwardRef<
     id: "chat.reasoning",
     defaultMessage: "Reasoning",
   });
-  const namedModelLabel = displayModel?.agentLabel && !existingConversation ? `${displayModel.agentLabel} · ${modelLabel}` : modelLabel;
+  const namedModelLabel = displayModel?.agentLabel && !existingConversation && !agentInHeader ? `${displayModel.agentLabel} · ${modelLabel}` : modelLabel;
   const intelligenceLabel = visibleEffortValue != null
     ? `${namedModelLabel}, ${reasoningLabel}: ${effortLabel}`
     : namedModelLabel;
@@ -2153,7 +2165,7 @@ export const OpenCraftComposer = forwardRef<
 
   const primaryAction = resolveComposerPrimaryAction({
     isResponseInProgress: isStreaming,
-    canSubmit: !disabled && !submissionDisabled && !modelSelectionBlocked && composerSnapshot.canSubmit,
+    canSubmit: !disabled && !submissionDisabled && switchingAgentId === null && !modelSelectionBlocked && composerSnapshot.canSubmit,
     defaultFollowUpAction,
     availableFollowUpActions,
   });
@@ -2168,8 +2180,12 @@ export const OpenCraftComposer = forwardRef<
             ? intl.formatMessage({ id: "chat.steerActiveResponse", defaultMessage: "Steer active response" })
             : intl.formatMessage({ id: "chat.send", defaultMessage: "Send message" });
   const inverseFollowUpAction = resolveComposerFollowUpAction(invertComposerFollowUpAction(defaultFollowUpAction), availableFollowUpActions);
-  const primaryActionTitle = submissionDisabled && primaryAction !== "stop"
-    ? intl.formatMessage({ id: "chat.waitingForHost", defaultMessage: "Waiting for execution host" })
+  const blockedReason = switchingAgentId !== null
+    ? intl.formatMessage({ id: "workIn.switchingAgent", defaultMessage: "Switching Agent…" })
+    : submissionDisabled ? submissionDisabledReason ?? intl.formatMessage({ id: "chat.waitingForHost", defaultMessage: "Waiting for execution host" })
+    : modelSelectionBlocked ? intl.formatMessage({ id: "composer.model.unavailable", defaultMessage: "The selected model is unavailable. Choose another model." }) : null;
+  const primaryActionTitle = blockedReason !== null && primaryAction !== "stop"
+    ? blockedReason
     : isStreaming && primaryAction !== "stop" && inverseFollowUpAction !== null && inverseFollowUpAction !== defaultFollowUpAction
       ? `${primaryActionLabel} (⌘/Ctrl+Enter to ${inverseFollowUpAction})`
       : primaryActionLabel;
@@ -2238,7 +2254,9 @@ export const OpenCraftComposer = forwardRef<
         data-warning={isUnstable ? "true" : undefined}>
         <ComposerRecoveryScan active={isRecovering} />
         {chromeHeader === undefined ? null : (
-          <div className="opencraft-composer-chrome-header">{chromeHeader}</div>
+          <div className="opencraft-composer-chrome-header">{typeof chromeHeader === "function" ? chromeHeader(agentInHeader ? <ComposerAgentPicker catalog={selectionCatalog} selected={selectedModelValue} displayModel={displayModel}
+              disabled={disabled} open={openPicker === "agent"} onOpenChange={changePicker("agent")} portalContainer={portalContainer} focus={agentFocus}
+              onSelect={(model, group) => { if (group) void selectAgentModel(group, model); else selectModel(model); }} /> : null) : chromeHeader}</div>
         )}
         {composerSnapshot.draft.lifecycle.phase === "failed" && (
           <div className="opencraft-composer-error" role="alert">
@@ -2478,7 +2496,7 @@ export const OpenCraftComposer = forwardRef<
           data-input-mode={voiceActive ? "dictation" : "standard"}
         >
           {inputInteraction === null ? null : <DictationFooter interaction={inputInteraction}
-            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && (modelDisplayOnly || modelSelectionPolicy !== "user" || selectedModelValue !== null && !modelUnavailable)}
+            canSend={!disabled && !submissionDisabled && switchingAgentId === null && !composerSnapshot.hasUnavailableAssets && (modelDisplayOnly || modelSelectionPolicy !== "user" || selectedModelValue !== null && !modelUnavailable)}
             onSend={() => { void submit(); }} onCancel={cancelInputInteraction} />}
           <div
             ref={footerLayout.attachmentRef}
@@ -2585,7 +2603,7 @@ export const OpenCraftComposer = forwardRef<
                 label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
-                <ComposerModelMenu key={draftId} catalog={selectionCatalog} selected={selectedModelValue}
+                <ComposerModelMenu key={draftId} agentInHeader={agentInHeader} catalog={selectionCatalog} selected={selectedModelValue}
                   switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
                   onSelect={(model, group) => {
                     if (group) { void selectAgentModel(group, model); }
@@ -2746,7 +2764,7 @@ export const OpenCraftComposer = forwardRef<
                 aria-label={primaryActionLabel}
                 title={primaryActionTitle}
                 data-composer-primary-action={primaryAction}
-                disabled={disabled || submissionDisabled || modelSelectionBlocked || !composerSnapshot.canSubmit}
+                disabled={disabled || submissionDisabled || switchingAgentId !== null || modelSelectionBlocked || !composerSnapshot.canSubmit}
                 onMouseDown={(event) => {
                   // Prevent mouse focus transfer without cancelling touch click synthesis.
                   if (event.button === 0) event.preventDefault();
@@ -2762,6 +2780,8 @@ export const OpenCraftComposer = forwardRef<
             )}
           </div>
         </div>
+        {blockedReason || agentSelectionError ? <div className="opencraft-composer-submission-status" role="status">{agentSelectionError
+          ? intl.formatMessage({ id: "composer.agent.switchFailed", defaultMessage: "Could not switch Agent. Your draft is kept. Try again." }) : blockedReason}</div> : null}
       </div>
     </div></TouchContactScope>
   );

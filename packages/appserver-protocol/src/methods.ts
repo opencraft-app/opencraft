@@ -1,3 +1,4 @@
+import type { PersonalMachinesMethodMap } from "./personal-machines";
 import type { ServerSpaceCommand } from "./server-spaces";
 import type { ThreadAccessMethodMap } from "./thread-access";
 import type { AgentOnboardingMethodMap } from "./agent-onboarding";
@@ -363,7 +364,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends PersonalMachinesMethodMap, ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
   /** Additive per-input steer evidence status; only served to declaring clients. */

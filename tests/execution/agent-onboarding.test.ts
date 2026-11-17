@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolve } from "node:path";
 import { connectedAgentCatalogEntry, connectedAgentEngineId, connectedAgentModelId } from "../../apps/local-agent-host/src/connected-agents.ts";
 import {
   AgentOnboardingService,
@@ -37,6 +38,12 @@ test("executable lookup uses PATH, then known install locations", async () => {
   assert.equal(await resolveExecutable(["codex"], deps), "/opt/homebrew/bin/codex");
   assert.equal(await resolveExecutable(["cursor-agent"], deps), "/Users/me/.local/share/cursor-agent/versions/2026.11.05/cursor-agent");
   assert.equal(await resolveExecutable(["missing"], deps), null);
+});
+test("npm-run's bundled Pi SDK bin cannot shadow the installed native Pi CLI", async () => {
+  const bundled = resolve("node_modules/.bin"), files = new Set([`${bundled}/pi`, "/Users/me/.local/bin/pi"]);
+  const deps = { env: { PATH: `${bundled}:/bin` }, homedir: "/Users/me", exists: async (file: string) => files.has(file), cursorVersions: async () => [] };
+  assert.equal(await resolveExecutable(["pi"], deps), "/Users/me/.local/bin/pi");
+  files.delete("/Users/me/.local/bin/pi"); assert.equal(await resolveExecutable(["pi"], deps), null);
 });
 
 function fakeDeps(files: Set<string>, replies: Map<string, { stdout?: string; stderr?: string; code?: number }>): OnboardingDeps & { spawned: string[][] } {
@@ -83,6 +90,16 @@ test("status reports installed agents and does not invent a signed-in session", 
   assert.equal(snapshot.agents.find(agent => agent.id === "claude")?.installed, false);
   service.close();
 });
+test("history Agent discovery never waits for version or login commands", async () => {
+  const deps = fakeDeps(new Set(["/bin/pi", "/bin/claude", "/bin/codebuddy"]), new Map());
+  deps.exec = async () => { throw new Error("History discovery must not execute a login or version probe"); };
+  const service = new AgentOnboardingService(deps);
+  try {
+    const result = await service.historyStatus();
+    assert.equal(result.agents.filter(agent => agent.installed && agent.historyImport).length, 3);
+    assert.deepEqual(deps.spawned, []);
+  } finally { service.close(); }
+});
 
 test("actions only run the pinned command for a known agent", async () => {
   const deps = fakeDeps(new Set(["/bin/codex", "/bin/npm"]), new Map());
@@ -108,6 +125,30 @@ test("a signed-in agent becomes a selectable model and owns its later threads", 
   assert.equal(connectedAgentEngineId("dsh-model:deepseek:v4"), null);
   assert.equal(connectedAgentCatalogEntry("codex").displayName, "Codex");
   assert.equal(connectedAgentCatalogEntry("codex").groupLabel, "Codex");
+  assert.equal(connectedAgentModelId("pi"), "pi-cli:current");
+  assert.equal(connectedAgentEngineId("pi-cli:provider:model"), "pi-cli");
+  assert.equal(connectedAgentEngineId("picli_native"), "pi-cli");
+  assert.equal(connectedAgentEngineId("pi_existing_durable"), null, "native CLI routing cannot take over the existing durable Pi engine");
+});
+
+test("Pi native readiness and terminal setup are identical for local and Bash-enrolled Hosts", async () => {
+  const table = "provider  model  context  max-out  thinking  images\nfixture  vision  1M  128K  yes  yes\n";
+  assert.equal(interpretAuth("pi", table, "", 0).authenticated, true);
+  assert.equal(interpretAuth("pi", "No models available", "", 0).authenticated, false);
+  assert.equal(interpretAuth("pi", table, "failed", 1).authenticated, null);
+  const deps = fakeDeps(new Set(["/bin/pi", "/bin/npm"]), new Map([
+    ["/bin/pi --version", { stdout: "1.5.2" }], ["/bin/pi --list-models --offline", { stdout: table }],
+  ]));
+  const service = new AgentOnboardingService(deps);
+  try {
+    const pi = (await service.status()).agents.find(agent => agent.id === "pi")!;
+    assert.equal(pi.installed, true); assert.equal(pi.authenticated, true);
+    assert.equal(pi.engineId, "pi-cli"); assert.equal(pi.setupCommand, "pi");
+    assert.equal(deps.spawned.length, 0, "checking readiness never installs or prompts");
+    await assert.rejects(service.act({ id: "pi", action: "sign-in" }), /native agent client/);
+    await service.act({ id: "pi", action: "install" });
+    assert.deepEqual(deps.spawned, [["/bin/npm", "install", "-g", "@earendil-works/pi-coding-agent"]]);
+  } finally { service.close(); }
 });
 
 test("package install uses the fixed package name", async () => {

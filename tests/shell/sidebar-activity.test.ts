@@ -3,8 +3,11 @@ import test from "node:test";
 import { threadServerOrigin } from "@opencraft/workbench-runtime";
 
 import {
+  groupSidebarProjectsByInstance,
+  groupThreadsByNativeProject,
   groupThreadsByActivityDate,
   groupThreadsByTaskFlow,
+  recentSidebarThreads,
   sidebarActivityMetadata,
   sidebarActivityDateHeadings,
   type SidebarActivityThread,
@@ -30,6 +33,47 @@ function thread(
     ...overrides,
   };
 }
+
+test("Recent includes every access/status category in canonical update order without collapsing Host identities", () => {
+  const now = new Date();
+  const rows = [
+    { ...thread("old-running", now), status: "running", updatedAt: 1 },
+    { ...thread("pin", now), status: "ready", pinned: true, updatedAt: 3 },
+    { ...thread("private", now), accessMode: "private", updatedAt: 5 },
+    { ...thread("review-child", now), status: "review", parentThreadId: "pin", updatedAt: 4 },
+    { ...thread("same", now), connectionHostId: "a", updatedAt: 6 },
+    { ...thread("same", now), connectionHostId: "b", updatedAt: 7 },
+    { ...thread("error", now), status: "error", updatedAt: 2 },
+  ];
+  const ordered = recentSidebarThreads(rows);
+  assert.deepEqual(ordered.map(row => [row.connectionHostId, row.id]), [
+    ["b", "same"], ["a", "same"], [undefined, "private"], [undefined, "review-child"],
+    [undefined, "pin"], [undefined, "error"], [undefined, "old-running"],
+  ]);
+  assert.equal(rows[0]!.id, "old-running", "the shared catalog is not mutated");
+  assert.deepEqual(recentSidebarThreads([...rows, { ...rows[4]!, updatedAt: 0 }]), ordered, "stale duplicates cannot replace a newer source row");
+  const updated = { ...rows[0]!, updatedAt: 8 };
+  assert.equal(recentSidebarThreads([...rows.slice(1), updated])[0], updated);
+});
+
+test("One conversation in Recent and its directory has exclusive menus and occurrence-scoped close callbacks", () => {
+  const store = new SidebarThreadMenuStore();
+  const recent = { hostId: "a", threadId: "same", rowId: "recent", kind: "dropdown" } as const;
+  const directory = { ...recent, rowId: "device" };
+  const notifications: string[] = [];
+  store.subscribe(recent, () => notifications.push("recent"));
+  store.subscribe(directory, () => notifications.push("device"));
+  store.update(recent, true);
+  assert.equal(store.getKind(directory), null);
+  store.update(directory, true);
+  assert.equal(store.getKind(recent), null);
+  assert.equal(store.getKind(directory), "dropdown");
+  store.update(recent, false);
+  assert.equal(store.getKind(directory), "dropdown");
+  assert.deepEqual(notifications, ["recent", "recent", "device"]);
+  store.update(directory, false);
+  assert.equal(store.getSnapshot(), null);
+});
 
 test("Activity chronology owns sections while equal thread ids retain Server provenance", () => {
   const now = new Date(2026, 8, 21, 12);
@@ -269,4 +313,22 @@ test("list filters and thread overlays share one owner without notifying unrelat
   store.setListContextOpen(true);
   store.close();
   assert.equal(contextNotifications, 4, 'released list subscriptions stay silent');
+});
+
+test('enrolled remote directory groups are visible independently of old recency and preserve Host identity',async()=>{
+ const {groupThreadsByNativeProject}=await import('../../apps/workbench-web/src/sidebar-activity');
+ const base={id:'remote',project:'project',updatedAt:1,serverOrigin:threadServerOrigin({serverId:'remote-a',label:'Remote A'}),connectionHostId:'remote-a',directoryGroup:{id:'/repo/project',name:'project · Remote A'}};
+ const other={...base,id:'remote-b',connectionHostId:'remote-b',directoryGroup:{id:'/repo/project',name:'project · Remote B'}};
+ const native={...base,id:'local',directoryGroup:undefined,nativeProject:{source:'codex' as const,id:'real-native-project',name:'Local project',position:0}};
+ const groups=groupThreadsByNativeProject([native,base,other]);assert.equal(groups.length,3);assert.deepEqual(groups.map(g=>g.label),['project · Remote A','project · Remote B','Local project']);assert.notEqual(groups[0]!.key,groups[1]!.key);assert.equal(base.updatedAt,1);
+});
+
+test("sidebar instance hierarchy shares physical identity while retaining Host-scoped projects",()=>{
+ const now=new Date();
+ const rows=[thread("a",now,{connectionHostId:"host-a",instanceGroup:{id:"machine-1",name:"Laptop"},directoryGroup:{id:"/work/app",name:"app"}}),thread("b",now,{connectionHostId:"host-b",instanceGroup:{id:"machine-1",name:"Laptop"},directoryGroup:{id:"/work/app",name:"app"}}),thread("c",now,{connectionHostId:"host-c",instanceGroup:{id:"machine-2",name:"Server"},directoryGroup:{id:"/work/app",name:"app"}})];
+ const projects=groupThreadsByNativeProject(rows);
+ assert.equal(projects.length,3,"same path on independent Agent connections is not merged");
+ const instances=groupSidebarProjectsByInstance(projects);
+ assert.deepEqual(instances.map(group=>[group.label,group.projects.length]),[["Laptop",2],["Server",1]]);
+ assert.equal(groupSidebarProjectsByInstance(groupThreadsByNativeProject(rows.slice(0,2))).length,1,"one physical machine retains a two-level project/session view");
 });

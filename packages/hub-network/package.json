@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/contract.ts",
-    "./node": "./src/node.ts"
+    "./node": "./src/node.ts",
+    "./local-ingress": "./src/local-ingress.ts"
   },
   "dependencies": {
     "@opencraft/sqlite-node": "*",

@@ -371,3 +371,11 @@ partitioned by Host and authenticated display/account scope in the installation
 adapter, like the existing model-selection map. The server remains the membership
 authority. Neither membership data nor invitation codes enter this preference.
 Drawer visibility is transient and defaults closed on each new page load.
+
+`sidebar.instanceNames` holds sidebar display aliases keyed by the current
+account/display namespace and stable machine identity (Host fallback only when
+machine identity is unavailable). It is an installation-scoped presentation
+preference, restored by UiPreferencesRuntime before rendering and committed via
+its existing CAS update path. Renaming retains instance IDs, routing and folded
+state; it does not alter operating-system hostnames, remote identity announcements
+or connection configuration, and does not claim cross-device synchronization.

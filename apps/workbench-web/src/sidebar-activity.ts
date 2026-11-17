@@ -6,6 +6,9 @@ export interface SidebarActivityThread {
   readonly serverOrigin: ThreadServerOrigin;
   readonly project: string;
   readonly nativeProject?: NativeConversationProject;
+  /** Viewer grouping from an enrolled machine cwd; never a fabricated native project. */
+  readonly directoryGroup?: {readonly id:string;readonly name:string};
+  readonly instanceGroup?: {readonly id:string;readonly name:string};
   readonly connectionHostId?: string;
   /** AppServer timestamps are expressed in seconds. */
   readonly updatedAt: number;
@@ -16,6 +19,17 @@ export interface SidebarActivityGroup<T extends SidebarActivityThread> {
   readonly key: string;
   readonly label: string;
   readonly threads: readonly T[];
+}
+
+/** One flat activity projection across all admitted sources and access categories. */
+export function recentSidebarThreads<T extends SidebarActivityThread>(threads: readonly T[]): readonly T[] {
+  const byIdentity = new Map<string, T>();
+  const identity = (thread: T) => JSON.stringify([thread.connectionHostId ?? thread.serverOrigin.serverId, thread.id]);
+  for (const thread of threads) {
+    const key = identity(thread), previous = byIdentity.get(key);
+    if (!previous || thread.updatedAt > previous.updatedAt) byIdentity.set(key, thread);
+  }
+  return [...byIdentity.values()].sort((left, right) => right.updatedAt - left.updatedAt || identity(left).localeCompare(identity(right)));
 }
 
 function localDayStart(timestampMs: number): Date {
@@ -135,16 +149,30 @@ export function groupThreadsByTaskFlow<T extends SidebarActivityThread & {
 }
 
 
-/** Source IDs, not display names or cwd basenames, keep imported projects distinct. */
+/** Native project IDs and explicit directory identities remain scoped to their Host. */
 export function groupThreadsByNativeProject<T extends SidebarActivityThread>(threads: readonly T[]) {
   const groups = new Map<string, { key: string; label: string; position: number; threads: T[] }>();
   for (const thread of threads) {
     const project = thread.nativeProject;
-    if (!project) continue;
-    const key = JSON.stringify([thread.connectionHostId ?? thread.serverOrigin.serverId, project.source, project.id]);
+    const directory = thread.directoryGroup;
+    if (!project && !directory) continue;
+    const key = JSON.stringify([thread.connectionHostId ?? thread.serverOrigin.serverId, project?.source ?? "working-directory", project?.id ?? directory!.id]);
     const group = groups.get(key);
     if (group) group.threads.push(thread);
-    else groups.set(key, { key, label: project.name, position: project.position, threads: [thread] });
+    else groups.set(key, { key, label: project?.name ?? directory!.name, position: project?.position ?? -1, threads: [thread] });
   }
   return [...groups.values()].sort((a, b) => a.position - b.position || a.key.localeCompare(b.key));
+}
+
+/** Physical machine identity groups multiple Agent connections on one instance. */
+export function groupSidebarProjectsByInstance<T extends SidebarActivityThread>(projects: ReturnType<typeof groupThreadsByNativeProject<T>>) {
+  const groups=new Map<string,{key:string;label:string;projects:typeof projects[number][]}>();
+  for(const project of projects) {
+    const thread=project.threads[0]!;
+    const id=thread.instanceGroup?.id ?? thread.connectionHostId ?? thread.serverOrigin.serverId;
+    const group=groups.get(id);
+    if(group)group.projects.push(project);
+    else groups.set(id,{key:id,label:thread.instanceGroup?.name ?? thread.serverOrigin.label,projects:[project]});
+  }
+  return [...groups.values()];
 }

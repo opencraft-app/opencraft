@@ -28,8 +28,11 @@ const setup = id => { settings.set(id,{model:'one',effort:'high',fast:false,cont
 const send = frame => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...frame }) + '\n');
 const result = (id, value) => send({ id, result: value });
 const trace = frame => { if (process.env.ACP_TEST_TRACE) appendFileSync(process.env.ACP_TEST_TRACE, JSON.stringify({ method: frame.method, pid: process.pid, sessionId: frame.params?.sessionId, configId:frame.params?.configId,value:frame.params?.value,type:frame.params?.type,build: process.env.ACP_TEST_BUILD,
+  ...(process.env.ACP_TEST_TRACE_CWD==='1'?{cwd:process.cwd()}:{}),
+  ...(process.env.ACP_TEST_TRACE_HOME==='1'?{codexHome:process.env.CODEX_HOME}:{}),
   ...(frame.method==='initialize'?{parameterizedPicker:frame.params?.clientCapabilities?._meta?.parameterizedModelPicker}:{}),
   ...(parameterizedSettings&&frame.method==='session/prompt'?{settings:settings.get(frame.params.sessionId)}:{}),
+  ...(process.env.ACP_TEST_IMAGES==='1'&&frame.method==='session/prompt'?{prompt:frame.params.prompt}:{}),
 }) + '\n'); };
 const mcp = async (server, id, method, params = {}) => {
   const response = await fetch(server.url, { method: 'POST', headers: { 'content-type': 'application/json', ...Object.fromEntries(server.headers.map(header => [header.name, header.value])) }, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) });
@@ -39,7 +42,7 @@ const mcp = async (server, id, method, params = {}) => {
 createInterface({ input: process.stdin }).on('line', line => {
   void (async () => {
     const frame = JSON.parse(line); trace(frame); const params = frame.params ?? {};
-    if (frame.method === 'initialize') { parameterizedPicker=params.clientCapabilities?._meta?.parameterizedModelPicker===true;return result(frame.id, { protocolVersion: 1, agentCapabilities: { mcpCapabilities: { http: true }, sessionCapabilities: {...(process.env.ACP_TEST_SESSION_HANDOFF ? {fork:{},close:{}} : {}),... (process.env.ACP_TEST_NO_RESUME ? {} : { resume: {} }),...((process.env.ACP_TEST_TITLE_LIST||process.env.ACP_TEST_IMPORT_SESSIONS)?{list:{}}:{})} } }); }
+    if (frame.method === 'initialize') { parameterizedPicker=params.clientCapabilities?._meta?.parameterizedModelPicker===true;return result(frame.id, { protocolVersion: 1, agentCapabilities: { ...(process.env.ACP_TEST_IMAGES==='1'?{promptCapabilities:{image:true}}:{}), mcpCapabilities: { http: true }, sessionCapabilities: {...(process.env.ACP_TEST_SESSION_HANDOFF ? {fork:{},close:{}} : {}),... (process.env.ACP_TEST_NO_RESUME ? {} : { resume: {} }),...((process.env.ACP_TEST_TITLE_LIST||process.env.ACP_TEST_IMPORT_SESSIONS)?{list:{}}:{})} } }); }
     if(frame.method==='session/list'&&process.env.ACP_TEST_IMPORT_SESSIONS)return result(frame.id,JSON.parse(process.env.ACP_TEST_IMPORT_SESSIONS));
     if(frame.method==='session/list')return result(frame.id,{sessions:[...sessions.keys()].map(sessionId=>({sessionId,title:process.env.ACP_TEST_TITLE_LIST}))});
     if(frame.method==='_cursor/list_available_models') {
@@ -65,8 +68,8 @@ createInterface({ input: process.stdin }).on('line', line => {
       if(splitSettings||parameterizedSettings){
         const state=settings.get(params.sessionId),option=state&&configOptions(params.sessionId).find(option=>option.id===params.configId);
         if(!option||(option.type==='boolean'?params.type!=='boolean'||typeof params.value!=='boolean':!option.options.some(option=>option.value===params.value)))return send({id:frame.id,error:{code:-32602,message:'Invalid params'}});
-        if(params.configId==='model')state.model=params.value;
-        if(params.configId==='reasoning_effort'||params.configId==='reasoning')state.effort=params.value;
+        if(params.configId==='model'&&process.env.ACP_TEST_REFUSE_MODEL!=='1')state.model=params.value;
+        if((params.configId==='reasoning_effort'||params.configId==='reasoning')&&process.env.ACP_TEST_REFUSE_REASONING!=='1')state.effort=params.value;
         if(params.configId==='fast-mode'||params.configId==='fast')state.fast=params.value===true||params.value==='on'||params.value==='true';
         if(params.configId==='context')state.context=params.value;
         return result(frame.id,{configOptions:configOptions(params.sessionId)});

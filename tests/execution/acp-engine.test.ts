@@ -35,6 +35,72 @@ async function fixture(t: test.TestContext, options: Record<string, any> = {}) {
 }
 async function until(predicate: () => boolean) { const deadline = Date.now() + 4_000; while (!predicate()) { if (Date.now() >= deadline) throw new Error("ACP test condition timed out"); await delay(10); } }
 
+const imageData = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=";
+test("ACP forwards text and screenshot bytes and retains the image in the accepted user message", async t => {
+  const f = await fixture(t, { env: { ACP_TEST_IMAGES: "1", ACP_TEST_MODELS: "1" } }), notices: any[] = [];
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  const input = [{ type: "text", text: "Check this screenshot", text_elements: [] }, { type: "image", url: `data:image/png;base64,${imageData}` }];
+  const result = await f.engine.request("turn/start", { threadId: thread.id, clientUserMessageId: "screenshot-input", input }, client);
+  assert.deepEqual(result.turn.items[0].content, input);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  assert.deepEqual((await f.calls()).find(call => call.method === "session/prompt").prompt,
+    [{ type: "text", text: "Check this screenshot" }, { type: "image", mimeType: "image/png", data: imageData }]);
+  assert.deepEqual((await f.engine.request("model/list", {}, client)).data[0].inputModalities, ["text", "image"]);
+  const path = join(f.root, "screenshot.png"); await writeFile(path, Buffer.from(imageData, "base64"));
+  const local = await f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "localImage", path }] }, client);
+  assert.deepEqual(local.turn.items[0].content, [input[1]]);
+  await until(() => notices.filter(notice => notice.method === "turn/completed").length === 2);
+  assert.deepEqual((await f.calls()).filter(call => call.method === "session/prompt")[1].prompt,
+    [{ type: "image", mimeType: "image/png", data: imageData }]);
+  assert.equal((await f.engine.request("thread/read", { threadId: thread.id }, client)).thread.name, "Check this screenshot");
+  await f.engine.close();
+  const restored = new AcpEngine(f.engineOptions); t.after(() => restored.close());
+  assert.deepEqual((await restored.request("model/list", {}, client)).data[0].inputModalities, ["text", "image"]);
+  assert.equal(restored.processId, null, "saved declarations do not wake the native agent");
+});
+
+test("ACP rejects unsupported or invalid image inputs without starting a Turn or silently dropping content", async t => {
+  const f = await fixture(t), notices: any[] = [];
+  f.engine.subscribe((method, params) => notices.push({ method, params }));
+  const { thread } = await f.engine.request("thread/start", {}, client);
+  await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, input: [{ type: "image", url: `data:image/png;base64,${imageData}` }] }, client), /does not support image input/);
+  assert.equal(notices.some(notice => notice.method === "turn/started"), false);
+  assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+  const supported = await fixture(t, { env: { ACP_TEST_IMAGES: "1" } });
+  const created = await supported.engine.request("thread/start", {}, client);
+  const invalidFile = join(supported.root, "not-an-image.png"); await writeFile(invalidFile, "not an image");
+  for (const input of [[{ type: "image", url: "data:image/png;base64,???" }], [{ type: "image", fileId: "opaque" }], [{ type: "image", url: "http://127.0.0.1/private" }], [{ type: "audio", url: "data:audio/wav;base64,AAAA" }],
+    [{ type: "localImage", path: "relative.png" }], [{ type: "localImage", path: invalidFile }],
+    Array.from({ length: 9 }, () => ({ type: "image", url: `data:image/png;base64,${imageData}` })),
+    [{ type: "image", url: "data:image/png;base64," + "AAAA".repeat(7 * 1024 * 1024) }]]) {
+    await assert.rejects(supported.engine.request("turn/start", { threadId: created.thread.id, input }, client));
+  }
+  assert.equal((await supported.calls()).some(call => call.method === "session/prompt"), false);
+});
+
+test("an older undeclared session cannot erase negotiated image input in a cold Agent catalog", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_IMAGES: "1", ACP_TEST_MODELS: "1" } });
+  const first = await f.engine.request("thread/start", {}, client);
+  const second = await f.engine.request("thread/start", {}, client);
+  await f.engine.close();
+  const original = JSON.parse(await readFile(join(f.root, "data", `${second.thread.id}.json`), "utf8"));
+  delete original.inputModalities;
+  await rm(join(f.root, "data", `${first.thread.id}.json`));
+  await rm(join(f.root, "data", `${second.thread.id}.json`));
+  const known = { ...original, id: "codex_aaa", inputModalities: ["text", "image"] };
+  const old = { ...original, id: "codex_zzz" };
+  await writeFile(join(f.root, "data", "codex_aaa.json"), JSON.stringify(known));
+  await writeFile(join(f.root, "data", "codex_zzz.json"), JSON.stringify(old));
+  const cold = new AcpEngine(f.engineOptions); t.after(() => cold.close());
+  assert.ok((await cold.request("model/list", {}, client)).data.every((m: any) => m.inputModalities.includes("image")));
+  assert.equal(cold.processId, null);
+  await cold.close();
+  const textOnly = new AcpEngine({ ...f.engineOptions, env: { ...f.engineOptions.env, ACP_TEST_IMAGES: "0" } }); t.after(() => textOnly.close());
+  await textOnly.start();
+  assert.ok((await textOnly.request("model/list", {}, client)).data.every((m: any) => !m.inputModalities.includes("image")), "live negotiation overrides an older positive declaration");
+});
+
 test("ACP titles persist accepted input and native updates even after completion; manual rename wins", async t => {
   const f = await fixture(t), notices: { method: string; params: any }[] = [];
   f.engine.subscribe((method, params) => notices.push({ method, params }));
@@ -206,6 +272,31 @@ test("Codex splits advertised model variants into native model/reasoning and app
   await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:two[high]", serviceTier: "fast", input: [{ type: "text", text: "must not send" }] }, client), /Fast mode is unavailable/);
   await assert.rejects(f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:one[ultra]", input: [{ type: "text", text: "must not send" }] }, client), /model option is unavailable/);
   assert.equal((await f.calls()).filter(call => call.method === "session/prompt").length, prompts);
+});
+
+test("Codex accepts a declared base model when the native selection retains its reasoning suffix", async t => {
+  const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1", ACP_TEST_IMAGES: "1" } });
+  const created = await f.engine.request("thread/start", { model: "codex:two" }, client);
+  assert.equal(created.model, "codex:two[high]", "retain the actual native reasoning choice");
+  const notices: any[] = []; f.engine.subscribe((method, params) => notices.push({ method, params }));
+  await f.engine.request("turn/start", { threadId: created.thread.id, model: "codex:one", input: [
+    { type: "text", text: "Check the screenshot" }, { type: "image", url: `data:image/png;base64,${imageData}` },
+  ] }, client);
+  await until(() => notices.some(notice => notice.method === "turn/completed"));
+  assert.equal((await f.engine.request("thread/read", { threadId: created.thread.id }, client)).thread.model, "codex:one[high]");
+  const calls = await f.calls();
+  assert.deepEqual(calls.filter(call => call.configId === "model").map(call => call.value), ["two", "one"]);
+  assert.equal(calls.some(call => call.configId === "reasoning_effort"), false, "a base-model request does not change reasoning");
+  assert.deepEqual(calls.find(call => call.method === "session/prompt").prompt.map((item: any) => item.type), ["text", "image"]);
+});
+
+test("Codex still refuses an unselected base model or an unselected explicit reasoning variant", async t => {
+  for (const [env, model] of [[{ ACP_TEST_REFUSE_MODEL: "1" }, "codex:two"], [{ ACP_TEST_REFUSE_REASONING: "1" }, "codex:one[low]"]] as const) {
+    const f = await fixture(t, { id: "codex", env: { ACP_TEST_SPLIT_MODEL_CONFIG: "1", ...env } });
+    const { thread } = await f.engine.request("thread/start", {}, client);
+    await assert.rejects(f.engine.request("turn/start", { threadId: thread.id, model, input: [{ type: "text", text: "must not send" }] }, client), /requested model was not selected/);
+    assert.equal((await f.calls()).some(call => call.method === "session/prompt"), false);
+  }
 });
 
 test("Codex resumes before applying cold model/reasoning/Fast selection and supports advertised boolean Fast", async t => {
@@ -554,6 +645,7 @@ test("native history import preserves identity, survives restart, and resumes on
   const continued = await f.calls();
   assert.equal(continued.find(call => call.method === "session/prompt")?.sessionId, id);
   assert.equal(continued.some(call => call.method === "session/new"), false);
+  await restored.close();
 });
 
 
@@ -637,4 +729,11 @@ test("ACP continuation references reach the selected Agent as user context witho
   assert.equal(completed.items.find((item: any) => item.type === "userMessage").content[0].text, "Continue the work");
   const saved = JSON.parse(await readFile(join(f.root, "data", `${thread.id}.json`), "utf8"));
   assert.equal(saved.name, "Continue the work"); assert.equal(saved.preview, "Continue the work");
+});
+
+test('native resume directory uses indexed names and pagination without starting ACP or resuming a session',async t=>{
+ const calls:unknown[]=[];
+ const f=await fixture(t,{id:'codex',history:{async directory(cursor?:string,archived?:boolean){calls.push([cursor,archived]);return {available:true,sessions:[{sessionId:'11111111-2222-4333-8444-555555555555',cwd:'/workspace',title:'Native renamed conversation',updatedAt:'2026-11-16T00:00:00Z',createdAt:'2026-10-01T00:00:00Z'}],nextCursor:'native-next'};},async read(){throw new Error('Must not read or resume transcript');}}});
+ const page=await f.engine.discoverNativeSessions();assert.equal(page.sessions[0]!.title,'Native renamed conversation');assert.equal(page.sessions[0]!.createdAt,'2026-10-01T00:00:00Z');assert.equal(page.supportsArchived,true);assert.equal(page.nextCursor,'native-next');
+ await f.engine.discoverNativeSessions('native-next',true);assert.deepEqual(calls,[[undefined,false],['native-next',true]]);assert.deepEqual(await f.calls(),[]);
 });

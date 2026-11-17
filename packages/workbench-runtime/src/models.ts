@@ -7,7 +7,11 @@ export interface WorkbenchThread {
   id: string;
   title: string;
   project: string;
+  /** Host-reported working directory; absent in older display-only snapshots. */
+  cwd?: string;
   nativeProject?: NativeConversationProject;
+  /** Display identity from this Host's declared execution owner. */
+  agent?: { readonly id: string; readonly label?: string };
   lineage: "root" | "fork" | "subagent";
   /** Host-authored topology. Missing metadata never implies a parent. */
   parentThreadId?: string | null;

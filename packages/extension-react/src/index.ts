@@ -42,6 +42,8 @@ export interface PlatformViewRegions {
   readonly ToolbarSelect?: ComponentType<PlatformToolbarSelectProps>;
   /** Platform-owned capability content; plugins supply only the selected Host identity. */
   readonly ConnectorLibrary?: ComponentType<{ readonly hostId: string }>;
+  /** Platform-owned Agent setup for a Host. Inactive panels retain their work but pause reads. */
+  readonly AgentConfiguration?: ComponentType<{ readonly hostId: string; readonly active: boolean; readonly platform: "web" | "electron" }>;
   /** Application-scoped extension inventory; independent of the selected execution Host. */
   readonly ExtensionLibrary?: ComponentType;
 }

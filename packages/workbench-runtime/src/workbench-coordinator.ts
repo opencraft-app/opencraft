@@ -49,11 +49,11 @@ export interface WorkbenchCoordinator<TRuntime extends WorkbenchActivatableRunti
   setViewId(viewId: string): void;
   /**
    * Publishes a locally valid View identity without waiting for a physical
-   * Host connection. Only application bootstrap may use this path; ordinary
-   * navigation continues to prepare remotely before replacing the visible
-   * View.
+   * Host connection. Only application bootstrap may use this path.
    */
   presentInitial(location: WorkbenchLocation, viewId: string): void;
+  /** Presents a locally restored View; remote readiness remains a separate prepare(). */
+  presentRetained(location: WorkbenchLocation, viewId: string): void;
   /**
    * Commits a locally owned New-chat Draft as the visible Home route without
    * waiting for its physical Host. Remote readiness continues via prepare().
@@ -229,6 +229,25 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
     }
   };
 
+  const presentLocal = (nextLocation: WorkbenchLocation, nextViewId: string) => {
+    ensureOpen();
+    if (nextViewId.trim().length === 0) throw new RangeError("Workbench View ID must not be empty");
+    const runtime = registry.getRuntime(workbenchLocationHostId(nextLocation));
+    cancelPreparation?.();
+    generation += 1;
+    const previousLease = activeThreadLease;
+    activeRuntime = runtime;
+    activeThreadLease = null;
+    previousLease?.release();
+    location = nextLocation;
+    viewId = nextViewId;
+    pendingLocation = nextLocation;
+    phase = "resolving";
+    error = null;
+    failureStage = null;
+    publish();
+  };
+
   return {
     cancelPending() { cancelPreparation?.(); ++generation; publish(); },
     getSnapshot: () => snapshot,
@@ -271,23 +290,8 @@ export function createWorkbenchCoordinator<TRuntime extends WorkbenchActivatable
       error = null;
       publish();
     },
-    presentLocalDraft(nextLocation, nextViewId) {
-      ensureOpen();
-      if (nextViewId.trim().length === 0) {
-        throw new RangeError("Workbench View ID must not be empty");
-      }
-      generation += 1;
-      const previousLease = activeThreadLease;
-      activeRuntime = registry.getRuntime(nextLocation.hostId);
-      activeThreadLease = null;
-      previousLease?.release();
-      location = nextLocation;
-      viewId = nextViewId;
-      pendingLocation = nextLocation;
-      phase = "resolving";
-      error = null;
-      publish();
-    },
+    presentRetained: presentLocal,
+    presentLocalDraft: presentLocal,
     prepare,
     async activate(nextLocation) {
       const prepared = await prepare(nextLocation);

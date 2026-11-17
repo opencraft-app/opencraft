@@ -14,16 +14,24 @@ import{Sidebar}from'/apps/workbench-web/src/components/sidebar.tsx';
 import{UiPreferencesProvider,openWorkbenchUiPreferences}from'/apps/workbench-web/src/runtime/ui-preferences-runtime.tsx';
 import{SidebarLayoutStore}from'@opencraft/sidebar-layout';
 import{legacyDirectServerProjectionFromHost}from'@opencraft/workbench-runtime';
-import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';
+import{initializeAppearanceTheme,setThemePreference,setAppearanceThemeId}from'/apps/workbench-web/src/appearance-theme.ts';
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const preferences=await openWorkbenchUiPreferences();
 const actions=[];
+let failNameSave=false;
+const updatePreference=preferences.update.bind(preferences);
+preferences.update=(key,edit)=>{if(key==='sidebar.instanceNames'&&failNameSave){failNameSave=false;return Promise.reject(new Error('Synthetic write failure'));}return updatePreference(key,edit)};
 let snapshot={revision:0,mode:null,modes:[],hideRowBadge:false,notice:null,filter:{label:'My conversations',enabled:false}};
 const listeners=new Set();
 const grouping={id:'filter-fixture',getSnapshot:()=>snapshot,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},watch:()=>()=>{},project:()=>[],setMode:()=>{},toggleGroup:()=>{},filterThreads:refs=>snapshot.filter.enabled?refs.filter(ref=>ref.hostId==='local'):refs,setFilterEnabled:enabled=>{snapshot={...snapshot,revision:snapshot.revision+1,filter:{...snapshot.filter,enabled}};listeners.forEach(fn=>fn())}};
 function row(i,remote=false){const hostId=remote?'ssh:remote':'local';return{id:'thread-'+i,title:'Task '+i,project:'workspace',status:'ready',updatedAt:Date.now()-i*1000,connectionHostId:hostId,connectionHostLabel:remote?'Remote':'Local',...legacyDirectServerProjectionFromHost({hostId,hostKind:remote?'remote-ssh':'local',label:remote?'Remote':'Local'})};}
+function agentRows(){
+ const agents=[['codex','Codex','codex_'],['cursor','Cursor','cursor_'],['pi-cli','Pi','picli_'],['claude-code','Claude Code','claude_'],['codebuddy','CodeBuddy CLI','codebuddy_'],['codebuddy-ide','CodeBuddy IDE','codebuddy_ide_'],['dsh','DSH','dsh_']];
+ const declaration={defaultEngine:'codex',providers:agents.map(([id,label,threadPrefix])=>({id,label,threadPrefix}))};
+ return agents.map(([id,label,prefix],i)=>({...row(i,i===1),...projectAppServerThread({id:i===0?'thread-0':prefix+i,name:i===0?'Project review':i===1?'OpenCraft confirmation response with a very long title':'New chat',cwd:'/workspace',createdAt:1,updatedAt:100-i,modelProvider:'openai',status:i===1?{type:'active',activeFlags:[]}:i===3?{type:'active',activeFlags:['waitingOnUserInput']}:i===4?{type:'systemError'}:{type:'idle'}},100000,declaration),pinned:true,unread:i===0,goalActive:i===2}));
+}
 function App(){const[filterUi,setFilterUi]=useState(false);const[epoch,setEpoch]=useState(0);const[threads,setThreads]=useState([]);const[catalogs,setCatalogs]=useState([{hostId:'ssh:remote',label:'Remote',phase:'loading'}]);const[discovery,setDiscovery]=useState(null);const[remoteAvailable,setRemoteAvailable]=useState(true);
 const profile={hostId:'ssh:remote',hostKind:'remote-ssh',enabled:true,includeInSidebar:true,autoConnect:false,revision:1};
 const cachedRows=[{...row(0),pinned:true},{...row(1,true),pinned:true},{...row(2,true),pinned:true},{...row(3),pinned:true}];
@@ -33,9 +41,9 @@ setRemoteAvailable(phase==='ready'&&admitted);
 setThreads(cachedRows.filter(r=>r.connectionHostId==='local'||canDisplayHostThreadCatalog(profile,management))
  .map(r=>({...r,interactionAvailable:r.connectionHostId==='local'||(phase==='ready'&&admitted)})));
 return admitted;}
-window.fixture={setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,connection};
+window.fixture={preferences,failNextNameSave:()=>{failNameSave=true},setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,setAppearanceThemeId,agentRows,connection};
 const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>{},onDelete:async()=>{},onSetPinned:async(target,pinned)=>{actions.push({pin:target.threadId,pinned});setThreads(rows=>rows.map(row=>row.id===target.threadId&&row.connectionHostId===target.hostId?{...row,pinned}:row));}};
-return <div className={location.search.includes('mobile-layout')?'shell-sidebar__column':undefined} data-navigation-layout={location.search.includes('mobile-layout')?'mobile':undefined} style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar key={epoch} threadListGrouping={filterUi?grouping:null} threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote'&&remoteAvailable,rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onOpenSettings={()=>{}} /></div>;}
+return <div className={location.search.includes('mobile-layout')?'shell-sidebar__column':undefined} data-navigation-layout={location.search.includes('mobile-layout')?'mobile':undefined} style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar key={epoch} threadListGrouping={filterUi?grouping:null} threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote'&&remoteAvailable,rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onNewTaskInFolder={target=>actions.push({folder:target})} onOpenSettings={()=>{}} /></div>;}
 const liveQuery=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false}}});
 const liveProfile={hostId:'live',hostKind:'local',enabled:true,includeInSidebar:true,autoConnect:true,revision:1};
 let liveRows=Array.from({length:150},(_,i)=>({id:'old-'+i,name:'Old '+i,cwd:'/workspace',createdAt:1,updatedAt:300-i,preview:'',ephemeral:false,source:'cli',status:{type:'idle'},turns:[]}));
@@ -123,6 +131,160 @@ try {
   await vite.listen();
   const origin = vite.resolvedUrls!.local[0]!;
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
+  if (process.env.OPENCRAFT_SIDEBAR_RECENT_ONLY === '1') {
+    const output=process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR ?? '/tmp/opencraft-sidebar-recent';
+    await (await import('node:fs/promises')).mkdir(output,{recursive:true});
+    for(const touch of [false,true])for(const theme of ['light','dark','lavender']){
+      const context=await browser.newContext({viewport:{width:touch?390:900,height:1000},hasTouch:touch,isMobile:touch,reducedMotion:theme==='lavender'?'reduce':'no-preference'});
+      const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
+      await page.addInitScript('globalThis.__name = fn => fn');
+      await page.goto(origin);await page.waitForFunction(()=>Boolean((window as any).fixture));
+      await page.evaluate(async theme=>{
+        const f=(window as any).fixture,now=Math.floor(Date.now()/1000);
+        f.setThemePreference(theme==='dark'?'dark':'light');if(theme==='lavender')f.setAppearanceThemeId('opencraft.core.lavender');
+        await f.preferences.set('sidebar.instanceNames',{'["local","local"]':'My Mac'});
+        const make=(i,remote=false)=>({...f.row(i,remote),updatedAt:now-i,cwd:remote?'/remote/app':'/local/app',directoryGroup:{id:remote?'/remote/app':'/local/app',name:'app'},instanceGroup:{id:remote?'remote':'local',name:remote?'Remote server':'Original Mac'},agent:remote?{id:'cursor',label:'Cursor'}:{id:'codex',label:'Codex'}});
+        (window as any).recentRows=[
+          {...make(0),title:'Local newest'}, {...make(0,true),title:'Remote newest',updatedAt:now-1},
+          {...make(2),title:'Private',accessMode:'private'}, {...make(3),title:'Pinned',pinned:true},
+          {...make(4),title:'Review',status:'review'}, {...make(5),title:'Child',parentThreadId:'thread-0'},
+          ...Array.from({length:9},(_,i)=>({...make(i+7),title:'Older '+(i+7)})),
+          {...make(6),title:'Old running',status:'running',updatedAt:now-30},
+          {...make(16),title:'Hidden',visibility:'hidden',updatedAt:now+1},
+        ];
+        f.setCatalogs([]);f.setThreads((window as any).recentRows);
+      },theme);
+      const recent=page.getByRole('region',{name:'Recent',exact:true});
+      await recent.waitFor();
+      const titles=recent.locator('.sidebar-activity-item__title');
+      await page.waitForFunction(()=>document.querySelectorAll('[data-row-scope="recent"] .sidebar-activity-item').length===10);
+      assert.deepEqual((await titles.allTextContents()).slice(0,6),['Local newest','Remote newest','Private','Pinned','Review','Child']);
+      assert.equal(await recent.locator('.sidebar-thread-tree__children').count(),0,'child conversations are represented exactly once in the flat timeline');
+      assert.equal(await recent.getByText('Hidden',{exact:true}).count(),0);
+      await recent.getByRole('button',{name:'Show more',exact:true}).click();
+      await page.waitForFunction(()=>document.querySelectorAll('[data-row-scope="recent"] .sidebar-activity-item').length===16);
+      const source=recent.locator('.sidebar-activity-item__context').first();
+      assert.equal(await source.locator('[data-source="device"]').textContent(),'My Mac');
+      assert.equal(await source.locator('[data-source="folder"]').textContent(),'app');
+      assert.equal(await source.locator('[data-source="agent"]').textContent(),'Codex');
+      assert.equal(await page.evaluate(()=>{const mine=document.querySelector('[aria-label="Mine"]'),r=document.querySelector('[aria-label="Recent"]'),devices=document.querySelector('.sidebar-native-projects');return Boolean(mine&&r&&devices&&(mine.compareDocumentPosition(r)&Node.DOCUMENT_POSITION_FOLLOWING)&&(r.compareDocumentPosition(devices)&Node.DOCUMENT_POSITION_FOLLOWING));}),true);
+      const remote=recent.locator('[data-host-id="ssh:remote"][data-thread-id="thread-0"]');
+      if(touch)await remote.locator('.sidebar-activity-item').tap();else await remote.locator('.sidebar-activity-item').click();
+      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.actions.at(-1)),{hostId:'ssh:remote',id:'thread-0'});
+      const menu=remote.locator('.sidebar-activity-item__menu-trigger');
+      if(touch)await menu.tap();else{await menu.focus();await page.keyboard.press('Enter');}
+      await page.getByRole('menu').waitFor();assert.equal(await page.getByRole('menu').count(),1,'duplicated conversation opens one menu');
+      await page.keyboard.press('Escape');
+      const dir=page.locator('.sidebar-native-projects [data-host-id="ssh:remote"][data-thread-id="thread-0"]');
+      const dirMenu=dir.locator('.sidebar-activity-item__menu-trigger');
+      if(touch)await dirMenu.tap();else{await dirMenu.focus();await page.keyboard.press('Enter');}
+      await page.getByRole('menu').waitFor();assert.equal(await page.getByRole('menu').count(),1);await page.keyboard.press('Escape');
+      const toggle=recent.getByRole('button',{name:'Recent',exact:true});
+      if(touch)await toggle.tap();else await toggle.click();
+      assert.equal(await recent.locator('.sidebar-activity-group__items').isVisible(),false);
+      assert.equal(await dir.isVisible(),true,'Recent disclosure does not collapse the device tree');
+      if(touch)await toggle.tap();else await toggle.click();
+      assert.equal((await titles.allTextContents()).at(-1),'Old running','running status never overrides update time');
+      const original=await remote.elementHandle();
+      await page.evaluate(()=>{const f=(window as any).fixture,rows=(window as any).recentRows;rows[1]={...rows[1],updatedAt:rows[0].updatedAt+10};f.setThreads([...rows]);});
+      await page.waitForFunction(()=>document.querySelector('[data-row-scope="recent"] .sidebar-activity-item__title')?.textContent==='Remote newest');
+      assert.equal(await remote.evaluate((el,original)=>el===original,original),true,'activity updates reorder without replacing the row');
+      await page.evaluate(()=>{const f=(window as any).fixture;f.setThreads((window as any).recentRows.map(r=>r.connectionHostId==='ssh:remote'?{...r,interactionAvailable:false}:r));f.setCatalogs([{hostId:'ssh:remote',label:'Remote server',phase:'error',cachedAt:Date.now()}]);});
+      await page.waitForFunction(()=>document.querySelector('[data-row-scope="recent"][data-host-id="ssh:remote"] .sidebar-activity-item')?.hasAttribute('disabled'));
+      assert.equal(await remote.locator('.sidebar-activity-item__context').isVisible(),true,'offline saved sources retain their annotations');
+      await page.evaluate(()=>{const f=(window as any).fixture;f.setCatalogs([]);f.setThreads((window as any).recentRows);f.setFilterUi(true);f.grouping.setFilterEnabled(true);});
+      await page.waitForFunction(()=>!document.querySelector('[data-row-scope="recent"][data-host-id="ssh:remote"]'));
+      const search=page.getByRole('searchbox',{name:'Search conversations'});await search.fill('Child');
+      await page.waitForFunction(()=>document.querySelectorAll('[data-row-scope="recent"]').length===1);
+      assert.equal(await titles.first().textContent(),'Child');
+      await search.fill('');await page.evaluate(()=>{const f=(window as any).fixture;f.grouping.setFilterEnabled(false);});
+      assert.equal(await page.evaluate(()=>{const ids=[...document.querySelectorAll('[id]')].map(el=>el.id);return ids.length===new Set(ids).size;}),true,'all repeated conversation occurrences have unique DOM ids');
+      await page.evaluate(()=>{const f=(window as any).fixture;f.setThreads((window as any).recentRows.map(r=>r.connectionHostId==='ssh:remote'?{...r,instanceGroup:{...r.instanceGroup,name:'remote-build-machine-01'},directoryGroup:{...r.directoryGroup,name:'sample_workspace_operations'}}:r));});
+      await page.waitForFunction(()=>document.querySelector('[data-row-scope="recent"][data-host-id="ssh:remote"] [data-source="device"]')?.textContent==='remote-build-machine-01');
+      const longSources=remote.locator('.sidebar-activity-item__context');
+      assert.equal(await longSources.locator('[data-source="device"]').getAttribute('title'),'Device: remote-build-machine-01');
+      const sizes=await longSources.evaluate(el=>{const device=el.querySelector('[data-source="device"]')!.getBoundingClientRect(),folder=el.querySelector('[data-source="folder"]')!.getBoundingClientRect(),agent=el.querySelector('[data-source="agent"]')!.getBoundingClientRect();return{device:device.width,folder:folder.width,agent:agent.width,bounds:el.getBoundingClientRect().width,contained:agent.right<=el.getBoundingClientRect().right+1};});
+      assert(sizes.device>sizes.folder&&sizes.agent>0&&sizes.contained,'device and Agent retain priority over a long folder label');
+      await recent.getByRole('button',{name:'Show less',exact:true}).click();
+      await toggle.scrollIntoViewIfNeeded();
+      await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'.png',animations:'disabled'});
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
+      evidence.push({touch,theme,chronology:true,allSources:true,sourceLabels:true,duplicateMenuIsolation:true,pagination:true,offline:true,filter:true,rowIdentity:true});await context.close();
+    }
+  } else if (process.env.OPENCRAFT_SIDEBAR_FOLDERS_ONLY === '1') {
+    const output=process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR ?? '/tmp/opencraft-sidebar-folder-actions';
+    await (await import('node:fs/promises')).mkdir(output,{recursive:true});
+    for(const touch of [false,true])for(const theme of ['light','dark','lavender']){
+      const context=await browser.newContext({viewport:{width:touch?390:900,height:900},hasTouch:touch,isMobile:touch});
+      const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
+      await page.goto(origin);await page.waitForFunction(()=>Boolean((window as any).fixture));
+      await page.evaluate(theme=>{const f=(window as any).fixture;f.setThemePreference(theme==='dark'?'dark':'light');if(theme==='lavender')f.setAppearanceThemeId('opencraft.core.lavender');f.setCatalogs([]);f.setThreads([
+        {...f.row(0),cwd:'/local/app',directoryGroup:{id:'/local/app',name:'app'},instanceGroup:{id:'local',name:'Local Mac'}},
+        {...f.row(1,true),cwd:'/remote/app',directoryGroup:{id:'/remote/app',name:'app'},instanceGroup:{id:'remote',name:'Remote server'}},
+        {...f.row(2,true),cwd:'/remote/unavailable',interactionAvailable:false,directoryGroup:{id:'/remote/unavailable',name:'offline'},instanceGroup:{id:'remote',name:'Remote server'}},
+        {...f.row(3),nativeProject:{source:'codex',id:'opaque-native-project',name:'Native project',position:0},cwd:'/local/native',instanceGroup:{id:'local',name:'Local Mac'}},
+      ]);},theme);
+      const local=page.locator('[data-instance-id="local"]'),remote=page.locator('[data-instance-id="remote"]');
+      const folder=remote.locator('[data-native-project]').filter({has:page.getByRole('button',{name:'app',exact:true})});
+      const toggle=folder.locator('.sidebar-folder-toggle'),plus=folder.getByRole('button',{name:'New chat in app',exact:true});
+      await plus.waitFor();await plus.scrollIntoViewIfNeeded();
+      const labelBounds=await toggle.locator('.sidebar-thread-group-label').evaluate(el=>{const r=el.getBoundingClientRect(),p=el.closest('.sidebar-folder-heading')!.getBoundingClientRect();return{x:r.x-p.x,y:r.y-p.y,width:r.width,height:r.height};});
+      if(!touch){
+        await page.mouse.move(800,800);assert.equal(await plus.evaluate(el=>getComputedStyle(el).opacity),'0');
+        await toggle.hover();await page.waitForFunction(()=>[...document.querySelectorAll('.sidebar-folder-heading:hover .sidebar-folder-new-chat')].some(el=>getComputedStyle(el).opacity==='1'));assert.equal(await plus.evaluate(el=>getComputedStyle(el).opacity),'1');
+        assert.deepEqual(await toggle.locator('.sidebar-thread-group-label').evaluate(el=>{const r=el.getBoundingClientRect(),p=el.closest('.sidebar-folder-heading')!.getBoundingClientRect();return{x:r.x-p.x,y:r.y-p.y,width:r.width,height:r.height};}),labelBounds,'revealing does not move the folder name');
+      }else assert.equal(await plus.evaluate(el=>getComputedStyle(el).opacity),'1','touch does not depend on hover');
+      if(touch)await plus.tap();else await plus.click();
+      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.actions.at(-1)),{folder:{hostId:'ssh:remote',cwd:'/remote/app'}});
+      assert.equal(await toggle.getAttribute('aria-expanded'),'true','plus must not collapse folder');
+      if(touch)await toggle.tap();else await toggle.click();
+      assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+      if(touch)await plus.tap();else{await plus.focus();await page.keyboard.press('Enter');}
+      assert.equal(await toggle.getAttribute('aria-expanded'),'false','new chat also leaves a collapsed folder unchanged');
+      const native=local.getByRole('button',{name:'New chat in Native project',exact:true});
+      if(touch)await native.tap();else{await native.focus();await page.keyboard.press('Enter');}
+      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.actions.at(-1)),{folder:{hostId:'local',cwd:'/local/native'}},'native display project id must not become execution project/cwd');
+      const offline=remote.getByRole('button',{name:'New chat in offline',exact:true});assert(await offline.isDisabled());
+      if(!touch){await page.mouse.move(800,800);await toggle.focus();await page.keyboard.press('Tab');assert(await plus.evaluate(el=>el===document.activeElement),'Tab reaches the folder action');await page.waitForFunction(()=>document.activeElement && getComputedStyle(document.activeElement).opacity==='1');assert.equal(await plus.evaluate(el=>getComputedStyle(el).opacity),'1');}
+      const headerBounds=await folder.locator('.sidebar-folder-heading').boundingBox(),buttonBounds=await plus.boundingBox();
+      assert(buttonBounds!.x + buttonBounds!.width <= headerBounds!.x + headerBounds!.width+1);
+      if(touch)assert(buttonBounds!.height>=44&&buttonBounds!.width>=44);
+      else {
+        const ring=await plus.evaluate(el=>{const style=getComputedStyle(el);return Math.max(0,parseFloat(style.outlineWidth)||0)+Math.max(0,parseFloat(style.outlineOffset)||0);});
+        assert(buttonBounds!.x+buttonBounds!.width+ring<=headerBounds!.x+headerBounds!.width,'keyboard focus stays inside the folder row');
+      }
+      await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'.png',animations:'disabled'});
+      assert.deepEqual(errors,[]);evidence.push({touch,theme,folderAction:true,hostAndCwdScoped:true,disclosureUnchanged:true,offlineDisabled:true});console.log('PASS folder action',touch?'touch':'desktop',theme);await context.close();
+    }
+  } else if (process.env.OPENCRAFT_SIDEBAR_AGENTS_ONLY === '1') {
+    const output=process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR ?? '/tmp/opencraft-sidebar-agent-icons';
+    await (await import('node:fs/promises')).mkdir(output,{recursive:true});
+    for(const touch of [false,true])for(const theme of ['light','dark','lavender']){
+      const context=await browser.newContext({viewport:{width:touch?390:900,height:900},hasTouch:touch,isMobile:touch,reducedMotion:'reduce'});
+      const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
+      await page.goto(origin);await page.waitForFunction(()=>Boolean((window as any).fixture));
+      await page.evaluate(theme=>{const f=(window as any).fixture;f.setThemePreference(theme==='dark'?'dark':'light');if(theme==='lavender')f.setAppearanceThemeId('opencraft.core.lavender');f.setThreads(f.agentRows());f.setCatalogs([]);},theme);
+      for(let i=0;i<10&&await page.locator('.sidebar-activity-item__agent').count()<7;i++){const more=page.locator('.sidebar-activity-more:visible').first();if(!await more.count())break;await more.click();}
+      for(const id of ['codex','cursor','pi-cli','claude-code','codebuddy','codebuddy-ide','dsh']){
+        const icon=page.locator('.sidebar-activity-item__agent[data-agent="'+id+'"]').first();await icon.waitFor();
+        const measurements=await icon.evaluate(el=>{const button=el.closest('button')!,title=button.querySelector('.sidebar-activity-item__title')!,status=button.querySelector('.sidebar-activity-item__trailing')!;
+          const r=el.getBoundingClientRect(),t=title.getBoundingClientRect(),s=status.getBoundingClientRect();return{width:r.width,height:r.height,beforeStatus:r.right<=s.left,afterTitle:r.left>=t.right,navHit:document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')===button};});
+        assert.equal(measurements.width,14);assert.equal(measurements.height,14);assert.ok(measurements.beforeStatus);assert.ok(measurements.afterTitle);assert.ok(measurements.navHit);
+      }
+      const cursor=page.locator('.sidebar-activity-row').filter({has:page.locator('.sidebar-activity-item__agent[data-agent="cursor"]')}).first();
+      const icon=cursor.locator('.sidebar-activity-item__agent'),before=await icon.boundingBox();
+      if(touch)await icon.tap();else await icon.click();
+      assert.ok(await page.evaluate(()=>(window as any).fixture.actions.some(action=>action?.hostId==='ssh:remote'&&action?.id==='cursor_1')));
+      const menu=cursor.locator('.sidebar-activity-item__menu-trigger');
+      if(touch)await menu.tap();else{await menu.focus();await page.keyboard.press('Enter');}
+      await page.getByRole('menu').waitFor();assert.deepEqual(await icon.boundingBox(),before,'Agent glyph is stable while actions open');
+      await page.keyboard.press('Escape');
+      if(!touch){await menu.hover();assert.deepEqual(await icon.boundingBox(),before,'hover does not move or replace the Agent glyph');}
+      await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'.png',animations:'disabled'});
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
+      evidence.push({touch,theme,declaredAgents:7,sharedGlyphSize:14,independentActivityAndMenu:true,navigationAndMenuInput:true});await context.close();
+    }
+  } else {
   const scenarios = [{ touch: false, mobileLayout: false }, { touch: true, mobileLayout: true }];
   if (process.env.OPENCRAFT_SIDEBAR_GROUPS_ONLY === '1') scenarios.push({ touch: false, mobileLayout: true });
   if (process.env.OPENCRAFT_SMOKE_CATALOG_LIVE_ONLY) {
@@ -413,6 +575,58 @@ try {
     assert.deepEqual(errors, []);
     evidence.push({ touch, theme, reducedMotion: true, quietLoading: true, savedDirectoryFailureRetry: true, loadingNotEmpty: true, stableHistoryGeometry: true, failedHostIsolation: true, scopedRetry: true, discoveryRetryWithoutProfiles: true, matchingResultsOnly: true, filteredRowsHaveNoFooter: true, loadMorePreservesFilters: true, serverFilterSurvivesReload: true, missingFilteredServerNeverBroadens: true, offlineControlsDisabled: true, capabilityLossPreservesRows: true, successfulEmpty: true, cachedRowsStableThroughReconnect: true, revokedCacheHidden: true, nativePinPresentation: true, unsupportedPinHidden: true, pinDoesNotConsumeRecentBudget: true });
     await context.close();
+  }
+  for(const touch of [false,true])for(const theme of ["light","dark"]) {
+    const context=await browser.newContext({viewport:{width:touch?390:1000,height:900},hasTouch:touch,isMobile:touch,reducedMotion:"reduce"});
+    const page=await context.newPage();const errors:string[]=[];page.on("pageerror",(error:Error)=>errors.push(error.message));
+    await page.goto(origin);await page.waitForFunction(()=>(window as any).fixture?.setThreads);
+    await page.evaluate(theme=>{const f=(window as any).fixture;f.setThemePreference(theme);f.setCatalogs([]);f.setThreads([
+      {...f.row(0),instanceGroup:{id:"laptop",name:"My laptop"},directoryGroup:{id:"/work/app",name:"app"}},
+      {...f.row(1,true),instanceGroup:{id:"remote",name:"Remote server"},directoryGroup:{id:"/work/app",name:"app"}},
+      {...f.row(2,true),instanceGroup:{id:"remote",name:"Remote server"},directoryGroup:{id:"/work/api",name:"api"}},
+    ]);},theme);
+    const remote=page.locator('[data-instance-id="remote"]');await remote.waitFor();
+    assert.equal(await page.locator('.sidebar-instance-group').count(),2);
+    assert.equal(await remote.locator('[data-native-project]').count(),2);
+    const toggle=remote.getByRole('button',{name:'Remote server',exact:true});
+    const row=remote.locator('[data-thread-id="thread-1"] .sidebar-activity-item');await row.waitFor();
+    if(touch)await toggle.tap();else{await toggle.focus();await page.keyboard.press('Enter');}
+    assert.equal(await toggle.getAttribute('aria-expanded'),'false');assert.equal(await row.isVisible(),false);
+    if(touch)await toggle.tap();else await page.keyboard.press('Enter');
+    await row.waitFor();
+    const project=remote.getByRole('button',{name:'app',exact:true});if(touch)await project.tap();else await project.click();
+    assert.equal(await row.isVisible(),false);await project.click();await row.waitFor();
+    const rename=remote.getByRole('button',{name:'Rename device',exact:true});
+    if(touch)await rename.tap();else{await rename.focus();await page.keyboard.press('Enter');}
+    let dialog=page.getByRole('dialog',{name:'Rename device',exact:true});
+    const nameInput=dialog.getByRole('textbox',{name:'Device name',exact:true});
+    await nameInput.fill('');assert.equal(await dialog.getByRole('button',{name:'Save',exact:true}).isDisabled(),true);
+    await nameInput.fill('Cancelled name');await dialog.getByRole('button',{name:'Cancel',exact:true}).click();
+    await remote.getByRole('button',{name:'Remote server',exact:true}).waitFor();
+    await rename.click();dialog=page.getByRole('dialog',{name:'Rename device',exact:true});
+    await dialog.getByRole('textbox',{name:'Device name',exact:true}).fill('Production node');
+    await page.evaluate(()=>(window as any).fixture.failNextNameSave());
+    await dialog.getByRole('button',{name:'Save',exact:true}).click();await dialog.getByRole('alert').waitFor();
+    assert.equal(await dialog.getByRole('textbox').inputValue(),'Production node','failed persistence keeps the edit');
+    await page.screenshot({animations:'disabled',path:`/tmp/opencraft-instance-rename-${touch?'touch':'desktop'}-${theme}.png`});
+    await dialog.getByRole('button',{name:'Save',exact:true}).click();await dialog.waitFor({state:'detached'});
+    await remote.getByRole('button',{name:'Production node',exact:true}).waitFor();
+    assert.equal(await remote.getByRole('button',{name:'Production node',exact:true}).getAttribute('aria-expanded'),'true','rename preserves disclosure state');
+    if(!touch)assert.equal(await rename.evaluate(el=>el===document.activeElement),true,'save restores the opener focus');
+    await page.reload();await page.waitForFunction(()=>(window as any).fixture?.setThreads);
+    await page.evaluate(()=>{const f=(window as any).fixture;f.setCatalogs([]);f.setThreads([
+      {...f.row(0),instanceGroup:{id:'laptop',name:'My laptop'},directoryGroup:{id:'/work/app',name:'app'}},
+      {...f.row(1,true),instanceGroup:{id:'remote',name:'Remote server'},directoryGroup:{id:'/work/app',name:'app'}}
+    ]);});
+    await remote.getByRole('button',{name:'Production node',exact:true}).waitFor();
+    await page.screenshot({animations:"disabled",path:`/tmp/opencraft-sidebar-instances-${touch?'touch':'desktop'}-${theme}.png`});
+    await page.evaluate(()=>{const f=(window as any).fixture;f.setThreads([{...f.row(0),instanceGroup:{id:'laptop',name:'My laptop'},directoryGroup:{id:'/work/app',name:'app'}}]);});
+    await page.waitForFunction(()=>document.querySelectorAll('.sidebar-instance-group').length===0);
+    assert.equal(await page.locator('[data-native-project]').count(),1,'single instance displays project/session directly');
+    await page.locator('[data-thread-id="thread-0"] .sidebar-activity-item').waitFor();
+    assert.deepEqual(errors,[]);evidence.push({touch,theme,instanceProjectSession:true,singleInstanceTwoLevels:true,keyboardOrTouchDisclosures:true});
+    await context.close();
+  }
   }
   console.log(JSON.stringify({ ok: true, realSidebar: true, evidence }));
 } finally { await browser?.close(); await vite.close(); }

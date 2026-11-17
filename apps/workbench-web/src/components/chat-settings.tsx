@@ -1,12 +1,12 @@
 import { AgentManagement } from "./agent-management";
 import { useState } from "react";
 import { useIntl } from "@opencraft/i18n/react";
-import { SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, SettingsSwitch } from "@opencraft/extension-react";
+import { SettingsButton, SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, SettingsSwitch } from "@opencraft/extension-react";
 import { useUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { useDefaultFollowUpAction } from "../runtime/use-default-follow-up-action";
 import { TurnNotificationSettings } from "./turn-notification-settings";
 
-export function ChatSettings() {
+export function ChatSettings({ onConfigureAgents }: { onConfigureAgents?: () => void } = {}) {
   const intl = useIntl();
   const preferences = useUiPreferencesRuntime();
   const defaultFollowUpAction = useDefaultFollowUpAction();
@@ -31,7 +31,9 @@ export function ChatSettings() {
         }} />
       </SettingsRow>
     </SettingsGroup>
-    <AgentManagement />
+    {onConfigureAgents ? <SettingsGroup><SettingsRow label={intl.formatMessage({ id: "settings.configuration.agents", defaultMessage: "Agent configuration" })}>
+      <SettingsButton variant="quiet" onClick={onConfigureAgents}>{intl.formatMessage({ id: "composer.agent.manage", defaultMessage: "Manage agents…" })}</SettingsButton>
+    </SettingsRow></SettingsGroup> : <AgentManagement />}
     <TurnNotificationSettings />
     {saveError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</SettingsNotice> : null}
   </>;

@@ -2,6 +2,27 @@
 
 [Architecture index](../../platform-architecture.md) · [Documentation index](../../README.md)
 
+### Installed native Pi CLI
+
+The connected-Agent Host exposes installed Pi as `pi-cli`, with `pi-cli:` models
+and `picli_` threads. Local and Bash-enrolled personal machines share this owner.
+Each conversation runs native JSONL RPC in its own workspace; native configuration,
+credentials, tools and session files remain Pi-owned. The history Worker reads
+the current native branch without starting inference. This adapter is separate
+from the bundled Pi SDK engine and does not take over `pi_` threads or OpenCraft
+model configuration. Model-specific images and thinking are confirmed by the CLI;
+unknown execution results are never automatically replayed. See
+[native Pi CLI](../../native-pi-cli.md) for setup, lifecycle and verification limits.
+
+Native import sources are declared per Agent through the read-only
+`opencraft/agents/onboarding/history-agents` catalog. This catalog checks local
+executables and consumes the connected IDE's in-memory account/project projection;
+it never waits for CLI version or login probes. The same Host serves local and
+Bash-enrolled machines. Pi, Claude Code, CodeBuddy CLI and connected CodeBuddy IDE
+join Codex/Cursor through the same import transaction, native routing ledger and
+Worker-owned history reads. Native identity/cwd are revalidated before resume;
+IDE imports additionally require the connected account/project and bridge 0.1.1.
+
 ### Host-side provider account pooling
 
 In server Web deployments, the Server Connections extension
@@ -464,6 +485,49 @@ resuming native sessions. Host-owned manual names continue to override native
 names; notification projection reads that precedence from memory, without adding
 SQL to the event path. The shared sidebar and header consume the same catalog.
 
+### Connected ACP model selection
+
+Codex base-model selections and explicit reasoning variants have different
+confirmation semantics. A base ID declared in native model configuration is
+confirmed against the observed model's base, preserving its native reasoning
+suffix. An explicit variant still requires an exact model/effort match; a
+different base or an ignored effort selection must reject before prompt dispatch.
+The adapter retains the full observed model identity in metadata instead of
+overwriting it with the requested base just to satisfy validation.
+
+### Connected ACP image input
+
+The ACP v1 adapter forwards Composer inline images and staged Host-local images
+as native `image` blocks (`mimeType` plus base64 `data`), preserving text/image
+order. It checks the current session transport's negotiated
+`agentCapabilities.promptCapabilities.image` before accepting images. PNG, JPEG,
+GIF and WebP are supported, with at most eight images and 20 MiB combined decoded
+image data per input. Local files are read asynchronously with a bounded size;
+arbitrary remote URLs and opaque file IDs are not fetched or reinterpreted.
+Invalid or unsupported content cannot start a Turn or silently become text.
+
+The accepted user-message projection retains image content. Saved model
+declarations preserve the negotiated input modalities through the connected
+Agent catalog, without starting a native process on a catalog read. Persisted
+declarations are for presentation; current native negotiation remains the input
+admission authority. Older records without a declaration remain conservative
+until negotiation refreshes them. The native source's live negotiation takes
+precedence over saved declarations; cold projection uses the most recently
+observed declaration and ignores undeclared older sessions when deduplicating
+model IDs. Codex/Cursor may negotiate a missing declaration in a separate,
+deduplicated background initialization, without session creation, resume or
+prompt dispatch. The owner drains those probes on close, and successful
+negotiation invalidates client model pages.
+
+A conversation-scoped model list reads that Thread's actual native source,
+including a nondefault Codex data home. The Host projects its current declaration
+instead of reusing its earlier default-source cache. The client's submission
+compiler may reuse a model page only from the same scope; an unscoped cache is
+not a substitute for a scoped page, in either the supported or unsupported
+direction. Remote machines
+must update their companion runtime to consume an adapter change; refreshing
+the Renderer cannot replace that process.
+
 ### Connected ACP transcript reads
 
 Connected Codex and Cursor sessions use native, read-only history adapters.
@@ -478,6 +542,13 @@ projection cache. Turn and item pages share the normal bound cursors and order;
 opening or refreshing history never issues native load/resume/prompt or tool
 calls. Missing or invalid sources fail the read instead of reporting an empty
 conversation. Unsupported connected peers likewise cannot claim empty history.
+New Codex/Cursor sessions persist an execution-owner attestation that no input
+has been accepted. If their native transcript has not been created yet, reads
+return a bounded empty page so the first input can proceed. Existing native
+records are still read and validated. The attestation is revoked before the
+first accepted prompt is saved, never inferred for legacy/imported sessions,
+and cannot be supplied by a public history caller. Missing or corrupt history
+after that boundary remains a read failure.
 While a Turn is streaming, the accepted live Turn and Item identities replace
 its matching native tail exactly once; older native Turns remain readable.
 Provider storage remains authority across browser refresh and Host restart.

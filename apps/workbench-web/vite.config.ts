@@ -181,7 +181,13 @@ export function createWorkbenchWebConfig(
   const developmentAppServer = new URL(process.env.OPENCRAFT_APPSERVER_URL || "ws://127.0.0.1:9988/rpc");
   if (!["ws:", "wss:", "http:", "https:"].includes(developmentAppServer.protocol)
     || developmentAppServer.username || developmentAppServer.password || developmentAppServer.hash) throw new Error("Invalid development AppServer URL");
+  const machineTarget = developmentAppServer.origin.replace(/^ws/u, "http");
   const appServerProxy = {
+    "/__opencraft_machines": {target:machineTarget,ws:true,changeOrigin:true,configure(proxy:any){
+      const authorize=(upstream:any,request:any)=>{if(/\/(status|rpc)(?:\?|$)/.test(request.url??""))upstream.setHeader("authorization",`Bearer ${developmentAppServer.searchParams.get("token")??""}`);};
+      proxy.on("proxyReq",authorize);proxy.on("proxyReqWs",authorize);
+    }},
+    "/__opencraft_relay": {target:machineTarget,ws:true,changeOrigin:true},
     "/appserver": {
       target: developmentAppServer.origin.replace(/^ws/u, "http"),
       ws: true,
@@ -514,6 +520,7 @@ export function createWorkbenchWebConfig(
           strictExecutionOrder: true,
           // Isolate stable third-party runtime from application/plugin hash churn.
           codeSplitting: { groups: [
+            { name: "derived-history", test: /\/packages\/appserver-session\/src\/derived-history\.ts$/, includeDependenciesRecursively: false },
             // Optional document engines also import server rendering helpers; keep those
             // with their lazy consumers instead of the startup React runtime.
             { name: "react-runtime", test: id => /\/node_modules\/(?:react|react-dom|scheduler)\//.test(id) && !/\/react-dom\/(?:server(?:[./-])|cjs\/react-dom-server)/.test(id), includeDependenciesRecursively: false },

@@ -2,6 +2,21 @@
 
 [Invariant index](../invariants.md) · [Design index](../README.md)
 
+## New conversation execution choices
+
+The draft Composer header owns exactly Machine, Folder and Agent, in that order.
+The shared Composer owns Agent/model selection and supplies its picker through
+that header slot; the Workbench retains Machine/Folder intent ownership. The
+lower model menu is scoped to the selected Agent. No ready-Agent action card
+appears above the draft. Switching never creates or sends a conversation, and
+keeps the mounted editor and draft. A previous menu's outside listener cannot
+close a newly reopened Agent menu when its trigger owns the contact.
+
+Send availability follows actual content, current model, connection, preferences
+and selection transaction. Native Pi CLI does not depend on unrelated API
+provider configuration. Blockers are visible near Send; failure retains the
+previous choice and text, and late completion cannot unlock a newer selection.
+
 ## Native touch contact retirement
 
 A native accepted trigger click is not rejected merely because an ancestor

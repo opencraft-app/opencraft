@@ -55,3 +55,11 @@ test('another configured provider cannot make the selected unconfigured model re
  assert.equal(await readHostModelReadiness(request,'target-host','dsh-model:ready-other:removed'),false);
  assert.equal(await readHostModelReadiness((async () => { throw new Error('must not ask the host'); }) as HostProtocolRequest,'target-host','cursor:current'),true);
 });
+
+
+test('native Pi CLI readiness uses its native credentials, independent of API provider setup', async () => {
+  const f = fixture();
+  assert.equal(await readHostModelReadiness(f.request, 'target-host', 'pi-cli:anthropic/claude-sonnet'), true);
+  assert.deepEqual(f.calls, [], 'no unrelated API provider checks for a native Agent');
+  assert.equal(await readHostModelReadiness(f.request, 'target-host', 'pi:fixture:fixture-model'), false, 'bundled Pi still checks its API credentials');
+});

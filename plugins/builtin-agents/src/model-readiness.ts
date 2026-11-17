@@ -3,7 +3,7 @@ import type { HostProtocolRequest } from './local-agent-settings-service';
 /** Read-only setup projection. This checks configured credentials, never their
  * values or external model connectivity, and never changes the default model. */
 export async function readHostModelReadiness(request: HostProtocolRequest, hostId: string, selectedModel?: string | null): Promise<boolean> {
-  if (selectedModel && /^(?:cursor|codebuddy|codex|claude-code):/u.test(selectedModel)) return true;
+  if (selectedModel && /^(?:cursor|codebuddy|codebuddy-ide|codex|claude-code|pi-cli):/u.test(selectedModel)) return true;
   const [providers, settings, models] = await Promise.all([
     request(hostId, 'runtime/providers/list', {}),
     request(hostId, 'runtime/settings/describe', {}),

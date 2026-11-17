@@ -1,16 +1,19 @@
 import { useMemo, type ComponentProps } from "react";
 import { useStableEvent } from "@opencraft/react-runtime";
-import type { Sidebar } from "./sidebar";
+import type { Sidebar, SidebarFolderTarget } from "./sidebar";
 import type { ThreadActionCallbacks } from "./thread-management";
 
 type SidebarCommands = Required<Pick<ComponentProps<typeof Sidebar>,
-  "onSelectThread" | "onNewTask" | "onOpenSettings" | "onRetryThreadCatalog" | "onRetryThreadCatalogDiscovery" | "threadActions">>;
+  "onSelectThread" | "onNewTask" | "onNewTaskInFolder" | "onOpenSettings" | "onRetryThreadCatalog" | "onRetryThreadCatalogDiscovery" | "threadActions">>;
 
 /** Commands use the latest committed route without invalidating catalog paint.
  * Render-time readers (titles/capabilities) keep explicit revision dependencies. */
 export function useSidebarCommands(commands: SidebarCommands): SidebarCommands {
   const onSelectThread = useStableEvent(commands.onSelectThread);
-  const onNewTask = useStableEvent(commands.onNewTask);
+  const onNewTask = useStableEvent((folder?: SidebarFolderTarget) => {
+    if (folder) commands.onNewTaskInFolder(folder);
+    else commands.onNewTask();
+  });
   const onOpenSettings = useStableEvent(commands.onOpenSettings);
   const onRetryThreadCatalog = useStableEvent(commands.onRetryThreadCatalog);
   const onRetryThreadCatalogDiscovery = useStableEvent(commands.onRetryThreadCatalogDiscovery);
@@ -27,5 +30,5 @@ export function useSidebarCommands(commands: SidebarCommands): SidebarCommands {
   const threadActions = useMemo(() => ({ onRename, onFork, onArchive, onDelete,
     ...(canPin ? { onSetPinned } : {}), ...(canReference ? {onCopyReference} : {}),
   }), [onRename, onFork, onArchive, onDelete, onSetPinned, canPin, onCopyReference, canReference]);
-  return { onSelectThread, onNewTask, onOpenSettings, onRetryThreadCatalog, onRetryThreadCatalogDiscovery, threadActions };
+  return { onSelectThread, onNewTask, onNewTaskInFolder: onNewTask, onOpenSettings, onRetryThreadCatalog, onRetryThreadCatalogDiscovery, threadActions };
 }

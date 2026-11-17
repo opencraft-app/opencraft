@@ -5,7 +5,11 @@ import { ModalSurface } from "./modal";
 import "./conversation-rename-dialog.scss";
 
 /** Shared presentation for header and sidebar; the caller owns the draft and write. */
-export function ConversationRenameDialog({ value, pending, onChange, onSubmit, onDismiss, returnFocus }: {
+export function EntityRenameDialog({ value, pending, onChange, onSubmit, onDismiss, returnFocus, title, nameLabel, error, maxLength = 60 }: {
+  readonly title: string;
+  readonly nameLabel: string;
+  readonly error?: string;
+  readonly maxLength?: number;
   readonly value: string;
   readonly pending: boolean;
   readonly onChange: (value: string) => void;
@@ -15,7 +19,6 @@ export function ConversationRenameDialog({ value, pending, onChange, onSubmit, o
 }) {
   const intl = useIntl();
   const titleId = useId();
-  const title = intl.formatMessage({ id: "chat.rename.title", defaultMessage: "Rename conversation" });
   return <ModalSurface label={title} size="compact" appearance="utility" className="conversation-rename-dialog"
     onDismiss={() => { if (!pending) onDismiss(); }} returnFocus={returnFocus}>
     <form aria-labelledby={titleId} onSubmit={event => {
@@ -23,11 +26,12 @@ export function ConversationRenameDialog({ value, pending, onChange, onSubmit, o
       if (!pending && value.trim()) onSubmit(value.trim());
     }}>
       <h2 id={titleId}>{title}</h2>
-      <SettingsTextInput autoFocus aria-label={intl.formatMessage({ id: "chat.rename.name", defaultMessage: "Conversation name" })}
+      <SettingsTextInput autoFocus aria-label={nameLabel} aria-invalid={!!error}
         onKeyDown={event => { if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault(); }}
-        maxLength={60} autoCapitalize="sentences" autoComplete="off" spellCheck={false}
+        maxLength={maxLength} autoCapitalize="sentences" autoComplete="off" spellCheck={false}
         value={value} disabled={pending} onChange={event => onChange(event.target.value)}
         onFocus={event => { if (!matchMedia("(pointer: coarse)").matches) event.currentTarget.select(); }} />
+      {error ? <p role="alert">{error}</p> : null}
       <div className="conversation-rename-dialog__actions">
         <SettingsButton type="button" disabled={pending} onClick={onDismiss}>
           {intl.formatMessage({ id: "common.cancel", defaultMessage: "Cancel" })}
@@ -38,4 +42,11 @@ export function ConversationRenameDialog({ value, pending, onChange, onSubmit, o
       </div>
     </form>
   </ModalSurface>;
+}
+
+export function ConversationRenameDialog(props: Omit<Parameters<typeof EntityRenameDialog>[0], "title" | "nameLabel" | "error" | "maxLength">) {
+  const intl = useIntl();
+  return <EntityRenameDialog {...props}
+    title={intl.formatMessage({ id: "chat.rename.title", defaultMessage: "Rename conversation" })}
+    nameLabel={intl.formatMessage({ id: "chat.rename.name", defaultMessage: "Conversation name" })} />;
 }

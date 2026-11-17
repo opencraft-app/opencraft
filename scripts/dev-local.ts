@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,13 +10,19 @@ const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 let child: ReturnType<typeof spawn> | undefined;
 let host: Awaited<ReturnType<typeof import('../apps/local-agent-host/src/main.js').startLocalAgentHost>> | undefined;
 let vite: import('vite').ViteDevServer | undefined;
+let machineIngress: Awaited<ReturnType<typeof import('@opencraft/hub-network/local-ingress').listenIntranetIngress>> | undefined;
+let machineRelay: ReturnType<typeof import('../plugins/relay-connect/src/server.js').connectRelay> | undefined;
+let relayIngress: ReturnType<typeof import('@opencraft/hub-network/local-ingress').createLocalIngress> | undefined;
 let releaseStorage: (() => Promise<void>) | undefined;
 let closeOperation: Promise<void> | undefined;
 function close(): Promise<void> {
   return closeOperation ??= (async () => {
     child?.kill('SIGTERM');
-    try { await vite?.close(); } finally {
-      try { await host?.close(); } finally { await releaseStorage?.(); }
+    machineRelay?.close(); relayIngress?.close();
+    try { await machineIngress?.close(); } finally {
+      try { await vite?.close(); } finally {
+        try { await host?.close(); } finally { await releaseStorage?.(); }
+      }
     }
   })();
 }
@@ -44,12 +50,47 @@ try {
   await mkdir(workspace, { recursive: true });
   const { startLocalAgentHost, acquireLocalAgentStorageOwner } = await import('../apps/local-agent-host/src/main.js');
   releaseStorage = await acquireLocalAgentStorageOwner(dataDirectory);
-  host = await startLocalAgentHost({ dataDirectory, projectlessWorkspaceDirectory: workspace,
+  const { packagePersonalMachine } = await import('./package-personal-machine.mjs');
+  const archive = await packagePersonalMachine(root, resolve(dataDirectory,'machine-installer'));
+  const intranetAddress=process.env.OPENCRAFT_MACHINE_INTRANET_ADDRESS;
+  const intranetPort=Number(process.env.OPENCRAFT_MACHINE_INTRANET_PORT||15473);
+  let relayConfig: {schemaVersion:1;origin:string;credential:string;ca?:string}|undefined;
+  try {
+    const {readPrivateJson}=await import('@opencraft/identity-core/node');
+    const input=await readPrivateJson(resolve(dataDirectory,'machine-relay.json')) as Record<string,unknown>;
+    if(input.schemaVersion!==1||Object.keys(input).some(k=>!['schemaVersion','origin','credential','ca'].includes(k))||typeof input.origin!=='string'||new URL(input.origin).protocol!=='https:'||new URL(input.origin).origin!==input.origin||typeof input.credential!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(input.credential)||input.ca!==undefined&&(typeof input.ca!=='string'||!input.ca.includes('-----BEGIN CERTIFICATE-----')))throw new Error('Invalid machine relay configuration');
+    relayConfig=input as typeof relayConfig;
+  } catch(error) {if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+  if(relayConfig&&intranetAddress)throw new Error('Choose one machine enrollment ingress');
+  let enrollmentOrigin:string|undefined=relayConfig?.origin;
+  if(intranetAddress){
+    const {isPrivateIpv4Address}=await import('@opencraft/relay-protocol');
+    if(!isPrivateIpv4Address(intranetAddress)||!Number.isInteger(intranetPort)||intranetPort<1||intranetPort>65535)throw new Error('An explicit intranet address is required');
+    enrollmentOrigin=`http://${intranetAddress}:${intranetPort}`;
+  }
+  host = await startLocalAgentHost({ personalMachines:{enrollmentOrigin,enrollmentCa:relayConfig?.ca,archive:archive.path,digest:archive.digest,installer:resolve(root,'scripts/personal-machine/install.sh')}, dataDirectory, projectlessWorkspaceDirectory: workspace,
     dshExecutable: resolve(root, 'runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js') });
+  if(relayConfig){
+    const {connectRelay}=await import('../plugins/relay-connect/src/server.js');
+    const {createLocalIngress}=await import('@opencraft/hub-network/local-ingress');
+    const {MACHINE_ENROLLMENT_PATHS}=await import('@opencraft/relay-protocol');
+    relayIngress=createLocalIngress(()=>({port:Number(new URL(host!.websocketUrl).port),origin:relayConfig!.origin}),MACHINE_ENROLLMENT_PATHS);
+    machineRelay=connectRelay({relay:relayConfig.origin,credential:relayConfig.credential,ca:relayConfig.ca,machineGateway:true,acceptStream:stream=>relayIngress!.accept(stream)});
+    console.log('Personal machine enrollment uses the configured HTTPS relay.');
+  }
+  if(intranetAddress){
+    const {listenIntranetIngress}=await import('@opencraft/hub-network/local-ingress');
+    machineIngress=await listenIntranetIngress(Number(new URL(host.websocketUrl).port),[
+      '/__opencraft_machines/install.sh','/__opencraft_machines/source.tgz','/__opencraft_machines/enroll',
+      '/__opencraft_relay/control','/__opencraft_relay/data',
+    ],intranetAddress,intranetPort);
+    console.log('Machine enrollment is listening on the selected intranet interface.');
+  }
   // Only Vite sees the private token. Renderer recipes contain a same-origin path.
   process.env.OPENCRAFT_APPSERVER_URL = host.websocketUrl;
   process.env.VITE_APPSERVER_HOSTS_JSON = JSON.stringify([{ hostId: 'local', label: 'Local OpenCraft',
     kind: 'local', url: '/appserver', executionLocation: 'Local', workspaceBrowseRoots: [workspace] }]);
+  process.env.VITE_PERSONAL_MACHINES_ENABLED = 'true';
   process.env.VITE_WEB_BUILTIN_AGENTS = 'enabled';
   process.env.VITE_HYPERNODE_PLUGIN = 'disabled';
   // An explicit renderer URL must not bypass the authenticated local proxy.
@@ -62,7 +103,7 @@ try {
       // The proxy carries a private Host credential. A different website must
       // not be able to use it via a cross-site WebSocket to loopback.
       server.httpServer?.prependListener('upgrade', (request, socket) => {
-        if (!request.url?.startsWith('/appserver')) return;
+        if (!request.url?.startsWith('/appserver') && !/^\/__opencraft_machines\/[-a-f0-9]+\/rpc/.test(request.url??'')) return;
         const address = server.httpServer?.address();
         const origin = address && typeof address !== 'string' ? `http://127.0.0.1:${address.port}` : null;
         if (request.headers.origin !== origin || request.headers.host !== origin?.slice(7)) socket.destroy();

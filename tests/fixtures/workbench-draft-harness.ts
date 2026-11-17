@@ -74,6 +74,7 @@ export function createHarness(
   firstTurnDurability = false,
   rejectTurn = false,
   lifecycleCapability: unknown = undefined,
+  scopedModels?: readonly Record<string, unknown>[],
 ): DraftHarness {
   const requests: JsonRpcRequest[] = [];
   let releaseTurn = () => undefined;
@@ -107,6 +108,7 @@ export function createHarness(
       if (message.method === "initialize") {
         send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "draft-test",
           capabilities: { extensions: {
+            ...(scopedModels ? { "opencraft/scoped-model-catalog": { version: 1 } } : {}),
             ...(declareResumeHistory
               ? { [OPENCRAFT_RESUME_HISTORY_EXTENSION]: { version: 1, mode: declareResumeHistory === "message-window" ? "message-window" : "paginated" } }
               : {}),
@@ -121,7 +123,7 @@ export function createHarness(
               : { "opencraft/thread-lifecycle": lifecycleCapability }),
           } } });
       } else if (message.method === "model/list") {
-        send({ data: models, nextCursor:null });
+        send({ data: (message.params as { threadId?: string } | undefined)?.threadId && scopedModels ? scopedModels : models, nextCursor:null });
       } else if (message.method === "config/read") {
         send({
           config: { model: "gpt-5.6", model_reasoning_effort: "high" },

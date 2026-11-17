@@ -5,6 +5,29 @@ import { createConversationKey } from "@opencraft/chat-core";
 import { createAppServerWorkbenchRuntime } from "@opencraft/workbench-runtime";
 import { createHarness, intent, waitForAuthoritative } from "../fixtures/workbench-draft-harness";
 
+test("existing-source image admission uses the scoped model page even when an unscoped page is cached", async () => {
+  for (const supported of [true, false]) {
+    const model = (image: boolean) => ({ id: "fixture-model", model: "fixture-model", isDefault: true,
+      inputModalities: image ? ["text", "image"] : ["text"], supportedReasoningEfforts: [], defaultReasoningEffort: null });
+    const harness = createHarness(false, false, [], false, [model(!supported)], false, false, false, false, undefined, [model(supported)]);
+    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false, modelSelectionPolicy: "session" });
+    try {
+      await runtime.connect();
+      await runtime.resources.composerCatalog.listModels();
+      const threadId = "codex_source_ded37448630ace2d13b6d686_existing";
+      const lease = await runtime.acquireThread(threadId); await waitForAuthoritative(lease);
+      const input: SubmitIntent = { ...intent({ type: "new-thread", draftId: "source-image", execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } }),
+        target: { type: "existing-thread", key: createConversationKey("local", threadId) }, selections: { model: "fixture-model" },
+        attachments: [{ id: "image", name: "screenshot.png", mimeType: "image/png", size: 68, uri: "data:image/png;base64,AAAA", lifecycle: "ready", error: null }] };
+      if (supported) await lease.submit(input);
+      else await assert.rejects(lease.submit(input), /不支持 image 输入/);
+      assert.ok(harness.requests.some(r => r.method === "model/list" && (r.params as { threadId?: string }).threadId === threadId));
+      assert.equal(harness.requests.some(r => r.method === "turn/start"), supported);
+      lease.release();
+    } finally { await runtime.dispose(); }
+  }
+});
+
 test("session-selected configured model reaches new and existing conversation requests", async () => {
   for (const existing of [false, true]) {
     const models = [

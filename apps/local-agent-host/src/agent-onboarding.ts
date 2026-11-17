@@ -3,9 +3,10 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy" } as const;
+export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy", "codebuddy-ide": "codebuddy-ide", pi: "pi-cli" } as const;
 
 /** Local CLIs the first-run agent step can see. Commands and packages are fixed. */
 export const ONBOARDING_AGENTS = [
@@ -44,15 +45,18 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "codebuddy",
-    name: "CodeBuddy",
+    name: "CodeBuddy CLI",
     commands: ["codebuddy", "cbc"],
     versionArgs: ["--version"],
-    statusArgs: ["auth", "status"],
-    signInArgs: ["auth", "login"],
+    statusArgs: [],
+    signInArgs: [],
     signInEnv: {},
     installPackage: "@tencent-ai/codebuddy-code",
     installUrl: "https://www.codebuddy.cn/cli/",
   },
+  {id:"codebuddy-ide",name:"CodeBuddy IDE",commands:[],versionArgs:[],statusArgs:[],signInArgs:[],signInEnv:{},installPackage:null,installUrl:"https://www.codebuddy.cn/ide/"},
+  { id: "pi", name: "Pi", commands: ["pi"], versionArgs: ["--version"], statusArgs: ["--list-models", "--offline"],
+    signInArgs: [], signInEnv: {}, installPackage: "@earendil-works/pi-coding-agent", installUrl: "https://pi.dev" },
 ] as const;
 
 export type { OnboardingActivity, OnboardingAgentId, OnboardingAgentSnapshot, OnboardingSnapshot };
@@ -109,6 +113,11 @@ export function parseSignInOutput(output: string): { url: string | null; userCod
 
 export function interpretAuth(id: OnboardingAgentId, stdout: string, stderr: string, code: number): { authenticated: boolean | null; account: string | null } {
   const text = stripTerminal(`${stdout}\n${stderr}`).trim();
+  if (id === "pi") {
+    if (code !== 0) return { authenticated: null, account: null };
+    const lines = stripTerminal(stdout).split("\n"), header = lines.findIndex(line => /^provider\s+model\s+/iu.test(line.trim()));
+    return { authenticated: header >= 0 && lines.slice(header + 1).some(line => /^\S+\s+\S+\s+[\d,.]+[km]?\s+/iu.test(line.trim())), account: null };
+  }
   if (id === "claude") {
     const start = text.indexOf("{");
     const end = text.lastIndexOf("}");
@@ -135,6 +144,9 @@ export async function resolveExecutable(commands: readonly string[], deps: Pick<
   const dirs = [...new Set([...(deps.env.PATH ?? "").split(delimiter), join(deps.homedir, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean))];
   for (const command of commands) {
     for (const dir of dirs) {
+      // The bundled Pi SDK also exposes a bin. npm-run PATH injection must
+      // not masquerade as the user's installed native CLI or shadow its version.
+      if (command === "pi" && resolve(dir) === fileURLToPath(new globalThis.URL("../../../node_modules/.bin", import.meta.url))) continue;
       const candidate = join(dir, command);
       if (await deps.exists(candidate)) return candidate;
     }
@@ -187,8 +199,22 @@ function activityOf(task: LiveTask | undefined): OnboardingActivity | null {
 export class AgentOnboardingService {
   private readonly tasks = new Map<OnboardingAgentId, LiveTask>();
   private closed = false;
+  private readonly native = new Map<OnboardingAgentId,{probe():Promise<OnboardingAgentSnapshot>;historyProbe?():Promise<OnboardingAgentSnapshot>;act(action:unknown):Promise<void>}>();
+  registerNative(id:OnboardingAgentId,adapter:{probe():Promise<OnboardingAgentSnapshot>;historyProbe?():Promise<OnboardingAgentSnapshot>;act(action:unknown):Promise<void>}) { this.native.set(id,adapter); }
 
   constructor(private readonly deps: OnboardingDeps = createOnboardingDeps()) {}
+
+  async historyStatus(): Promise<OnboardingSnapshot> {
+    if (this.closed) throw new Error("Agent onboarding is closed");
+    return { historyImport: true, agents: await Promise.all(ONBOARDING_AGENTS.map(async agent => {
+      const native = this.native.get(agent.id);
+      if (native?.historyProbe) return native.historyProbe();
+      return { id: agent.id, engineId: ONBOARDING_AGENT_ENGINES[agent.id], displayName: agent.name,
+        installed: !!await resolveExecutable(agent.commands, this.deps), version: null, authenticated: null,
+        account: null, activity: null, installUrl: agent.installUrl, canInstallPackage: agent.installPackage !== null,
+        historyImport: agent.id !== "codebuddy-ide" };
+    })) };
+  }
 
   async status(): Promise<OnboardingSnapshot> {
     if (this.closed) throw new Error("Agent onboarding is closed");
@@ -201,6 +227,8 @@ export class AgentOnboardingService {
     const params = input && typeof input === "object" ? input as { id?: unknown; action?: unknown } : {};
     const agent = definition(typeof params.id === "string" ? params.id : "");
     if (!agent) throw new Error("Unknown agent");
+    const native = this.native.get(agent.id);
+    if(native){await native.act(params.action);return this.status();}
     const action = params.action;
     if (action === "cancel") this.clear(agent.id);
     else if (action === "sign-in") await this.start(agent, "sign-in");
@@ -231,6 +259,7 @@ export class AgentOnboardingService {
       ? await resolveExecutable([process.platform === "win32" ? "npm.cmd" : "npm"], this.deps)
       : await resolveExecutable(agent.commands, this.deps);
     if (!executable) throw new Error(kind === "install" ? "npm is not available" : "Agent is not installed");
+    if (kind === "sign-in" && agent.signInArgs.length === 0) throw new Error("Sign in from the native agent client before connecting");
     const args = kind === "install" ? ["install", "-g", agent.installPackage!] : agent.signInArgs;
     const env = { ...this.deps.env, ...agent.signInEnv, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
     const child = this.deps.spawn(executable, args, env);
@@ -260,13 +289,15 @@ export class AgentOnboardingService {
   }
 
   private async probe(agent: (typeof ONBOARDING_AGENTS)[number]): Promise<OnboardingAgentSnapshot> {
+    const native=this.native.get(agent.id);if(native)return native.probe();
     const executable = await resolveExecutable(agent.commands, this.deps);
     const base = {
       id: agent.id,
-      engineId: ONBOARDING_AGENT_ENGINES[agent.id],
+      engineId: ONBOARDING_AGENT_ENGINES[agent.id], historyImport: agent.id !== "codebuddy-ide",
       displayName: agent.name,
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
+      ...(agent.id === "pi" ? { setupCommand: "pi" } : {}),
       activity: activityOf(this.tasks.get(agent.id)),
     };
     if (!executable) {
@@ -279,7 +310,7 @@ export class AgentOnboardingService {
     const env = { ...this.deps.env, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
     const [version, status] = await Promise.all([
       this.deps.exec(executable, agent.versionArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
-      this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
+      agent.statusArgs.length ? this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })) : Promise.resolve({stdout:"",stderr:"",code:0}),
     ]);
     const auth = interpretAuth(agent.id, status.stdout, status.stderr, status.code);
     return {

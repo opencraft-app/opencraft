@@ -78,7 +78,9 @@ export function canReadHostThreadCatalog(
     // Static recipes have no managed row; their authenticated live profile
     // still requires an explicitly established logical connection.
   }
-  return profile.autoConnect || phase === "ready";
+  // Personally enrolled, owner-observed online machines admit metadata reads
+  // after refresh; unlike arbitrary remote recipes they are already connected to this Hub.
+  return profile.machinePresence === "online" || profile.autoConnect || phase === "ready";
 }
 
 /** A connection precondition failed before any catalog read could start. */

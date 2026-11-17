@@ -1,0 +1,27 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+.agent-configuration {
+  display: grid; grid-template-columns: 280px minmax(0, 1fr); height: 100%; min-height: 0; min-width: 0; container-type: inline-size;
+  &__navigation { min-width: 0; overflow-y: auto; border-inline-end: 1px solid var(--color-border-subtle); }
+  &__search { display: flex; align-items: center; gap: var(--gap-control-group); padding: calc(var(--spacing) * 2); position: sticky; top: 0; background: var(--color-background-surface); z-index: 1;
+    > input { min-width: 0; flex: 1; }
+  }
+  &__group { margin-block-end: calc(var(--spacing) * 3); }
+  &__device, &__directory-state { @include typography.role(metadata, secondary); padding: calc(var(--spacing) * 2) calc(var(--spacing) * 3); }
+  &__directory-state { display: flex; align-items: center; gap: var(--gap-control-group); }
+  &__name { min-width: 0; flex: 1; text-align: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  &__name > small { display: block; @include typography.role(metadata, secondary); }
+  &__remote { @include typography.role(metadata, secondary); margin-inline-start: auto; }
+  &__main { min-width: 0; min-height: 0; overflow-y: auto; }
+  &__detail { max-width: 960px; margin-inline: auto; padding: calc(var(--spacing) * 6) calc(var(--spacing) * 7); }
+  &__detail > h3 { @include typography.role(panel-title); margin: 0 0 calc(var(--spacing) * 4); }
+  &__location { @include typography.role(metadata, secondary); margin: 0 0 calc(var(--spacing) * 4); }
+  &__mobile-back { display: none; }
+}
+@container (max-width: 650px) {
+  .agent-configuration { grid-template-columns: minmax(0, 1fr); }
+  .agent-configuration[data-detail-open="false"] .agent-configuration__main,
+  .agent-configuration[data-detail-open="true"] .agent-configuration__navigation { display: none; }
+  .agent-configuration__navigation { border: 0; }
+  .agent-configuration__mobile-back { display: flex; padding: calc(var(--spacing) * 2); }
+  .agent-configuration__detail { padding: calc(var(--spacing) * 4); }
+}
