@@ -48,7 +48,7 @@ test("opening details uses only GET; confirmed redemption binds exact account, c
     assert.equal(init?.redirect, "error");
     if (method === "GET") return Response.json(details());
     assert.equal(String(url), "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume");
-    return Response.json({ outcome: "reset" });
+    return Response.json({ code: "reset", windows_reset: 1 });
   }, async () => { refreshes++; });
   try {
     await fixture.service.list("a");
@@ -62,6 +62,35 @@ test("opening details uses only GET; confirmed redemption binds exact account, c
     assert.equal(calls.filter(c => c.method === "POST").length, 1, "completed attempt is not submitted twice");
     await assert.rejects(fixture.service.consume({ ...request, creditId: "other-credit" }), /identity/);
   } finally { await fixture.close(); }
+});
+
+test("redemption prefers code and retains legacy outcome compatibility", async () => {
+  const cases = [
+    { body: { code: "reset", outcome: "no_credit" }, expected: "reset" },
+    { body: { code: "nothing_to_reset" }, expected: "nothingToReset" },
+    { body: { code: "no_credit" }, expected: "noCredit" },
+    { body: { code: "already_redeemed" }, expected: "alreadyRedeemed" },
+    { body: { outcome: "reset" }, expected: "reset" },
+    { body: { outcome: "nothing_to_reset" }, expected: "nothingToReset" },
+    { body: { outcome: "no_credit" }, expected: "noCredit" },
+    { body: { outcome: "already_redeemed" }, expected: "alreadyRedeemed" },
+    { body: { code: null, outcome: "reset" }, expected: "reset" },
+    { body: { code: "future_value", outcome: "reset" }, expected: "unknown" },
+    { body: { code: "", outcome: "reset" }, expected: "unknown" },
+    { body: {}, expected: "unknown" },
+  ];
+  for (const { body, expected } of cases) {
+    let posts = 0;
+    const fixture = await setup(async (_url, init) => {
+      if (init?.method !== "POST") return Response.json(details());
+      posts++;
+      return Response.json(body);
+    });
+    try {
+      assert.equal((await fixture.service.consume(request)).outcome, expected, JSON.stringify(body));
+      assert.equal(posts, 1);
+    } finally { await fixture.close(); }
+  }
 });
 
 test("confirmation, identity, current status, supported plan and known unexpired expiry are required before POST", async () => {
@@ -87,7 +116,7 @@ test("unknown transport outcome is not retried automatically; explicit retry ret
     if (init?.method !== "POST") return Response.json(details());
     bodies.push(JSON.parse(String(init.body)));
     if (bodies.length === 1) throw new TypeError("synthetic connection lost after commit");
-    return Response.json({ outcome: "already_redeemed" });
+    return Response.json({ code: "already_redeemed" });
   });
   try {
     assert.equal((await fixture.service.consume(request)).outcome, "unknown");
@@ -98,7 +127,7 @@ test("unknown transport outcome is not retried automatically; explicit retry ret
 });
 
 test("unrecognized/failed POST never reports success; failure to refresh does not repeat a successful reset", async () => {
-  for (const response of [Response.json({ outcome: "future_value" }), new Response("error", { status: 503 }), new Response("not json")]) {
+  for (const response of [Response.json({ code: "future_value" }), new Response("error", { status: 503 }), new Response("not json")]) {
     let posts = 0;
     const fixture = await setup(async (_url, init) => {
       if (init?.method !== "POST") return Response.json(details());
@@ -165,7 +194,7 @@ test("independent account owner exposes capability and both RPCs with synthetic 
   let posts = 0;
   const owner = await CodexAccountService.start({ executable: process.execPath, dataDirectory: root,
     nativeCodexHomeDirectory: join(root, "native"), fetch: async (url, init) => {
-      if (init?.method === "POST") { posts++; return Response.json({ outcome: "nothing_to_reset" }); }
+      if (init?.method === "POST") { posts++; return Response.json({ code: "nothing_to_reset" }); }
       return Response.json(String(url).endsWith("/usage") ? { rate_limit_reset_credits: { available_count: 2 } } : details([unexpiredCredit]));
     } });
   try {

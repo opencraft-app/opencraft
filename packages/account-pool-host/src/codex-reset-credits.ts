@@ -144,7 +144,8 @@ export class CodexResetCreditService {
       const response = await this.request(account, secret, true, { credit_id: params.creditId, redeem_request_id: params.idempotencyKey });
       if (response.ok) {
         const body = record(await response.json());
-        const raw = body?.outcome;
+        // The ChatGPT backend reports the redemption result as `code`; keep `outcome` for older responses.
+        const raw = typeof body?.code === "string" ? body.code : body?.outcome;
         const outcomes: Record<string, CodexResetCreditOutcome> = { reset: "reset", nothing_to_reset: "nothingToReset", nothingToReset: "nothingToReset",
           no_credit: "noCredit", noCredit: "noCredit", already_redeemed: "alreadyRedeemed", alreadyRedeemed: "alreadyRedeemed" };
         outcome = typeof raw === "string" ? outcomes[raw] ?? "unknown" : "unknown";
