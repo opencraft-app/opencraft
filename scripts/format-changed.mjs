@@ -14,7 +14,8 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const formattable = /\.(?:[cm]?[jt]sx?)$/u;
-const excluded = /^(?:vendor|dist|release|runtime\/dsh\/node_modules)\/|\/(?:dist|node_modules|generated)\/|_generated\./u;
+const excluded =
+  /^(?:vendor|dist|release|runtime\/dsh\/node_modules)\/|\/(?:dist|node_modules|generated)\/|_generated\./u;
 
 const args = process.argv.slice(2);
 const check = args.includes("--check");
@@ -28,8 +29,9 @@ const candidates = [
   ...git("diff", "--name-only", "--diff-filter=A", "-z", base).split("\0"),
   ...git("ls-files", "--others", "--exclude-standard", "-z").split("\0"),
 ];
-const added = [...new Set(candidates)]
-  .filter((file) => file && formattable.test(file) && !excluded.test(file) && existsSync(resolve(repositoryRoot, file)));
+const added = [...new Set(candidates)].filter(
+  (file) => file && formattable.test(file) && !excluded.test(file) && existsSync(resolve(repositoryRoot, file)),
+);
 
 if (!added.length) {
   console.log("format: no added source files");

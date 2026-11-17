@@ -4,7 +4,8 @@ import test from "node:test";
 import { anthropicCompactionResponse } from "../../packages/account-pool-host/src/anthropic-compaction.ts";
 
 const completed = {
-  id: "resp_1", status: "completed",
+  id: "resp_1",
+  status: "completed",
   output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "summary" }] }],
 };
 
