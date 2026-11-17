@@ -1083,3 +1083,44 @@ tools; the existing engine's PTY path is unchanged. Real local acceptance and
 the explicit gaps (no real unconsumed-race reproduction; no real-model Host
 round trip) are recorded in
 [`plugins/pi-bridge/VALIDATION.md`](../plugins/pi-bridge/VALIDATION.md).
+
+
+## Browser AppHost route resumption
+
+The WebSocket adapter can replace a physical route without replacing the logical
+AppHost connection or its Host leases. This is an in-memory optimization, not a
+durable operation receipt or permission grant. Non-WebSocket ports are unchanged.
+
+- A client advertises `hello.resume: {v: 1}`; an accepting server returns a
+  `ready.capabilities.resume` grant. Subsequent data frames carry per-direction
+  sequence numbers. ACKs, heartbeats and resumption controls are unnumbered.
+  The replacement hello presents the grant and the last received sequence;
+  `connection/resumed` acknowledges the reverse direction before replay.
+- Every upgrade requires fresh ingress admission. The grant is bound to the
+  renderer and trusted route/identity/authorization context. Detached logical
+  sessions retain revocation and expiry watches; an old carrier cannot revoke
+  its successor. Tokens are secrets, not diagnostics or persistent client state.
+- Detached sessions expire after five minutes by default. Each server session
+  retains at most 1 MiB of unacknowledged data, with a shared 1 GiB byte budget;
+  frame/session count limits bound small-frame overhead separately. These are
+  replay-cache limits, **not** a process RSS limit. The browser retains at most
+  8 MiB. Eviction can make resumption unavailable. Session saturation falls back
+  to the legacy route rather than evicting an unrelated live owner.
+- Browser resumption spends at most 30 seconds total, including handshakes capped
+  at 10 seconds each. Failure falls back to ordinary logical reconnection.
+  Shared physical retry admission prevents multiple Host owners from multiplying
+  attempts; lifecycle hints are throttled and background probes are suspended.
+- Sequenced replay does not resubmit a business operation. A send whose local
+  queue-drain progress is being observed cannot silently migrate between routes.
+  A positively undispatched outbox entry retries with bounded backoff, preserving
+  its message identity and FIFO custody even without another timeline event.
+  Unknown or rejected outcomes are never automatically retried by that fallback.
+  Queue-drain progress is neither peer receipt nor operation completion.
+- Set `OPENCRAFT_APPHOST_RESUME=0` to disable server negotiation. Legacy clients
+  continue without sequence numbers; server restarts and normal closure do not
+  promise recovery. The optimization does not survive process replacement.
+
+Protocol and registry tests live in `tests/protocol/app-host-resume*.test.ts`;
+real-WebSocket browser-adapter scenarios live in
+`tests/protocol/websocket-app-host-resume.test.ts`. They use synthetic execution
+boundaries and do not prove a production Agent/Host or authentication provider.
