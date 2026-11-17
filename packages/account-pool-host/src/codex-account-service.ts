@@ -1,3 +1,4 @@
+import type { ConfiguredCodexResponses } from "./configured-responses.js";
 import { join } from "node:path";
 import { deviceLoginMaintenanceReason } from "./device-login-maintenance.js";
 import type { CodexAccountView } from "@opencraft/appserver-protocol";
@@ -20,6 +21,7 @@ export interface CodexAccountServiceOptions {
   readonly upstreamBaseUrl?: string;
   /** Fixed loopback port for an independently running AppServer. */
   readonly proxyPort?: number;
+  readonly configuredResponses?: ConfiguredCodexResponses;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
   readonly ownerHandoff?: {
@@ -74,7 +76,7 @@ export class CodexAccountService {
       deferRecovery: options.ownerHandoff?.admissionOpen() === false,
       onAccountImported: account => { void this.subscriptions.refreshAccount(account.id).catch(() => undefined); },
     });
-    this.proxy = new CodexAccountPoolProxy({ store,
+    this.proxy = new CodexAccountPoolProxy({ store, configuredResponses: options.configuredResponses,
       upstreamBaseUrl: options.upstreamBaseUrl ?? "https://chatgpt.com/backend-api/codex",
       fetch: options.fetch, resolveCredential: (account, secret, reason) => refresh.resolve(account, secret, reason) });
     if (options.ownerHandoff?.retained) {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createConfiguredCodexResponses } from "./configured-responses.js";
 import { readFile } from "node:fs/promises";
 import { startCodexCore, type CodexCoreOptions } from "./main.js";
 import { AccountCoreOwner, sealLegacyAccountMaintenance, sealFencedAccountMaintenance, sealExportedAccountMaintenance, inspectRetainedAccountExport } from "./account-owner.js";
@@ -14,6 +15,9 @@ function argument(name: string): string {
 function optional(name: string): string | undefined { return process.argv.includes(name) ? argument(name) : undefined; }
 
 async function main() {
+  const modelDirectory = optional("--model-storage-directory");
+  if (modelDirectory !== undefined && !isAbsolute(modelDirectory)) throw new Error("Model storage directory must be absolute");
+  if (!modelDirectory && process.argv.includes("--allow-insecure-local-model-network")) throw new Error("Local model network opt-in requires a model storage directory");
   const token = (await readFile(argument("--token-file"), "utf8")).trim();
   let shutdown: ((code: number) => Promise<void>) | undefined;
   const options: CodexCoreOptions = {
@@ -21,6 +25,9 @@ async function main() {
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),
     appServerEndpoint: optional("--app-server-endpoint"),
+    configuredResponses: modelDirectory ? createConfiguredCodexResponses(modelDirectory, {
+      allowInsecureLocalNetwork: process.argv.includes("--allow-insecure-local-model-network"),
+    }) : undefined,
     proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   };

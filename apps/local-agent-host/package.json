@@ -7,7 +7,8 @@
     ".": "./src/main.ts",
     "./attachments/local-staging": "./src/attachments/local-attachment-staging.ts",
     "./desktop": "./src/desktop/local-desktop-service.ts",
-    "./desktop-native": "./src/desktop/native-observer.ts"
+    "./desktop-native": "./src/desktop/native-observer.ts",
+    "./model-config": "./src/model-config/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

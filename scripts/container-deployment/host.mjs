@@ -85,6 +85,7 @@ try {
     '--codex-executable', join(root, 'runtime/codex/bin/codex'),
     '--runtime-directory', paths.runtimeDirectory,
     '--data-directory', join(paths.dataDirectory, 'codex'),
+    '--model-storage-directory', join(paths.dataDirectory, 'models'),
     '--native-codex-home-directory', join(paths.dataDirectory, 'native-codex'),
   ]);
   start('codex-app-server.cjs', [

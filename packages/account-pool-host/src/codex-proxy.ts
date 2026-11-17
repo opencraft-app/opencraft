@@ -1,3 +1,6 @@
+import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
+import { decodeResponsesRequestBody, forwardConfiguredResponses } from "./configured-forward.js";
+import { responsesPayloadForOpenAI } from "./foreign-history.js";
 import { ExternalCodexCredentialError } from "./store.js";
 import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file.js";
 import type {
@@ -219,6 +222,7 @@ export class CodexAccountPoolProxy {
   private readonly upstreamBaseUrl: string;
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
+  private readonly configuredResponses?: ConfiguredCodexResponses;
   private readonly resolveCredential?: (
     account: AccountPoolAccount,
     secret: AccountPoolSecret,
@@ -230,6 +234,7 @@ export class CodexAccountPoolProxy {
     readonly upstreamBaseUrl: string;
     readonly fetch?: typeof fetch;
     readonly now?: () => number;
+    readonly configuredResponses?: ConfiguredCodexResponses;
     readonly resolveCredential?: (
       account: AccountPoolAccount,
       secret: AccountPoolSecret,
@@ -241,6 +246,7 @@ export class CodexAccountPoolProxy {
     this.fetch = createUpstreamFetch(options.fetch);
     this.now = options.now ?? Date.now;
     this.resolveCredential = options.resolveCredential;
+    this.configuredResponses = options.configuredResponses;
   }
 
   async handle(request: Request, onDispatch?: () => void): Promise<Response> {
@@ -256,7 +262,39 @@ export class CodexAccountPoolProxy {
     if (hostId === null) return new Response(null, { status: 401 });
     const body = request.method === "GET" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
     if (body.byteLength > ACCOUNT_POOL_MAX_REQUEST_BYTES) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
-    let identity = affinity(request, body);
+    // Resolve configured models before touching OAuth account affinity, quotas or credentials.
+    let decoded: Uint8Array = body;
+    if (route === "/v1/responses") {
+      const result = await decodeResponsesRequestBody(request.headers.get("content-encoding"), body);
+      if (result instanceof Response) return result;
+      decoded = result;
+    }
+    const payload = route === "/v1/responses" ? parseJson(decoded) : null;
+    if (typeof payload?.model === "string" && payload.model.startsWith(CONFIGURED_CODEX_MODEL_PREFIX)) {
+      let configured;
+      try { configured = await this.configuredResponses?.resolve(payload.model); }
+      catch { return Response.json({ error: { message: "Configured Codex model connection is unavailable" } }, { status: 503 }); }
+      if (!configured) return Response.json({ error: { message: "Configured Codex model is disabled or unavailable" } }, { status: 404 });
+      // Never forward local Host/OAuth headers; never retry or fall back across providers.
+      return forwardConfiguredResponses({ configured, payload, publicModel: payload.model, accept: request.headers.get("accept"),
+        signal: request.signal, fetch: this.fetch, onDispatch });
+    }
+    // After a switch away from a configured Anthropic model, its bridge-only history must not reach OpenAI.
+    const sanitized = payload ? responsesPayloadForOpenAI(payload) : null;
+    const forwardBody = sanitized ? new TextEncoder().encode(JSON.stringify(sanitized)) : body;
+    let extraModels: readonly Record<string, unknown>[] = [];
+    if (route === "/v1/models") {
+      try { extraModels = await this.configuredResponses?.catalog() ?? []; }
+      catch { console.warn("[opencraft account-pool] configured model catalog is unavailable"); }
+    }
+    const catalogResponse = async (upstream: Response) => {
+      if (!extraModels.length || !upstream.ok || route !== "/v1/models") return upstream;
+      const catalog = object(await upstream.json());
+      if (!catalog || !Array.isArray(catalog.models)) throw new Error("Invalid Codex model catalog");
+      const ids = new Set(catalog.models.map(model => object(model)?.slug));
+      return Response.json({ ...catalog, models: [...catalog.models, ...extraModels.filter(model => !ids.has(model.slug))] });
+    };
+    let identity = affinity(request, decoded);
     if (mcpRequest) {
       const metadata = object(object(parseJson(body)?.params)?._meta);
       identity = { affinityId: text(metadata?.threadId) ?? "catalog", parentAffinityId: null };
@@ -304,6 +342,7 @@ export class CodexAccountPoolProxy {
             lastFailure = { status: 401, message: EXTERNAL_CODEX_REAUTH_MESSAGE };
           }
         }
+        if (route === "/v1/models" && extraModels.length) return Response.json({ models: extraModels });
         return lastFailure === null
           ? Response.json({ error: { message: "No eligible Codex account" } }, { status: 429 })
           : Response.json({ error: { message: lastFailure.message } }, { status: lastFailure.status });
@@ -331,12 +370,13 @@ export class CodexAccountPoolProxy {
       try {
         const target = upstreamUrl(this.upstreamBaseUrl, request.url);
         const headers = requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId);
+        if (sanitized) headers.delete("content-encoding");
         request.signal.throwIfAborted();
         onDispatch?.();
         upstream = await this.fetch(target, {
           method: request.method,
           headers,
-          ...(request.method === "GET" || request.method === "DELETE" ? {} : { body }),
+          ...(request.method === "GET" || request.method === "DELETE" ? {} : { body: forwardBody }),
           signal: request.signal,
         });
       } catch (error) {
@@ -394,11 +434,11 @@ export class CodexAccountPoolProxy {
         continue;
       }
       if (upstream.ok) selection.accept();
-      return new Response(upstream.body, {
+      return catalogResponse(new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
         headers: responseHeaders(upstream.headers),
-      });
+      }));
     }
     return lastFailure === null
       ? Response.json({ error: { message: "No eligible Codex account" } }, { status: 429 })

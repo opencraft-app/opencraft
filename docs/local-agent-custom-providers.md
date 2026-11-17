@@ -345,3 +345,39 @@ and source ownership are rechecked before preparing the destination. On Servers
 with private-thread access control, private-source handoff is refused until
 creation can atomically preserve destination visibility; it never silently shares
 a private source into a default shared conversation.
+
+## Codex Responses / Anthropic projection
+
+Codex can consume the same installation-owned model document as the other engine adapters. Start the account/control owner with
+`--model-storage-directory <absolute-model-directory>` (the container native-Host launcher uses its existing `models` directory).
+The optional `CodexAccountServiceOptions.configuredResponses` interface provides the equivalent embedding seam. Without either,
+existing account-pool behavior is unchanged. There is no separate credential store, provider default or persisted model selection.
+This is a Host/protocol capability; it does not add a new settings screen or configure an independently managed external Core.
+
+Only enabled chat models declared as `openai-responses` or `anthropic-messages` are advertised. Their stable catalog identity is
+`configured/<encoded-provider-id>/<encoded-model-id>`; the actual provider model ID is restored only at dispatch. Catalogs expose
+capability declarations, not endpoint URLs or credentials. The resolver rereads configuration and credentials for each request and
+rejects a configuration revision change during resolution, rather than pairing a new endpoint with an old connection's key.
+Missing credentials are an unavailable connection (503); disabled, removed or unsupported selections are absent (404). Neither
+falls back to another configured provider or to a pooled OAuth account. Native account catalog entries remain available if configured
+catalog loading fails, and configured entries remain available without an OAuth account.
+
+HTTPS endpoints are accepted. Plain HTTP defaults to literal loopback or `localhost`; the separate
+`--allow-insecure-local-model-network` flag explicitly permits local-network names/addresses for this projection.
+Embedders use `allowInsecureLocalNetwork: true` on `createConfiguredCodexResponses` / `createEngineModelSource`.
+This is permission to send the configured credential over plaintext on that network, not proof of DNS isolation or encryption.
+Public plaintext endpoints, embedded URL credentials, query strings and fragments are rejected. Redirects are not followed.
+
+Responses requests pass through to the connection's `/responses` endpoint. Anthropic connections translate to `/messages`, using
+only that connection's `x-api-key`; local Host tokens and OAuth account headers are never forwarded. Streaming conversion requires
+a genuine `message_stop` plus a valid terminal reason: truncated, malformed, empty or interrupted replies cannot become a successful
+answer or compaction checkpoint. Tool names/namespaces, free-text arguments and root schema combinators use reversible wire projections.
+Unsupported structured-output bounds become descriptions; this is not a replacement for the caller's original schema validation.
+Hosted OAuth search is not advertised as an Anthropic capability. Cancellation releases the upstream reader.
+
+Protocol switching preserves visible messages and tool results. Anthropic signatures and bridge item IDs are removed only from the
+outgoing OpenAI projection; the original native history is not rewritten. An explicit Anthropic invalid-thinking-signature HTTP 400
+may be resent **once to the same endpoint**, after stripping earlier thinking blocks. No other provider failure triggers a resend.
+Error-body inspection is capped at 64 KiB; logs contain allowlisted categories, never provider bodies or prompts. Provider error text
+returned to the authenticated caller is bounded and credential-redacted. Native AppServer/provider interoperability still needs a real
+runtime acceptance run; synthetic protocol tests do not establish availability of a particular hosted model.

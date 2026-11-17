@@ -419,6 +419,7 @@ test("Codex launch exposes only the virtual provider route and Host token", () =
   });
   assert.equal(launch.env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN, "host-scoped-token");
   assert.ok(launch.args.includes('model_provider="opencraft-account-pool"'));
+  assert.ok(launch.args.includes('model_providers.opencraft-account-pool.model_catalog_url="http://127.0.0.1:43123/v1/models"'));
   assert.ok(launch.args.some(value => value.includes("http://127.0.0.1:43123/v1")));
   assert.doesNotMatch(JSON.stringify(launch.args), /host-scoped-token|account-a|access-a/);
 });
