@@ -148,8 +148,8 @@ function ApplicationBootstrap() {
     const cancel = startAfterWorkbenchPaint(() => state.application.startOptionalFeatures(), owner.signal);
     const cancelOffline = import.meta.env.PROD && clientRuntime.kind === "web" && !mobileContainer()
       ? startAfterWorkbenchPaint(async () => {
-        try { const module = await import("./runtime/offline-shell"); if (!owner.signal.aborted) await module.prepareOfflineShell(); }
-        catch (error) { reportRuntimeError(error, "offline-shell"); }
+        try { const module = await import("./runtime/offline-shell"); if (!owner.signal.aborted) await module.prepareOfflineShell(owner.signal); }
+        catch (error) { if (!owner.signal.aborted) reportRuntimeError(error, "offline-shell"); }
       }, owner.signal) : () => {};
     return () => { owner.abort(); cancel(); cancelOffline(); };
   }, [state]);

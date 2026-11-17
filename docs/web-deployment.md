@@ -582,3 +582,29 @@ a regular application payload alone does not replace that handler or the agent.
 Execution readiness now uses the same per-request health budget as status
 observation and preserves a bounded last failure reason and observation count.
 Dependency errors and raw response bodies are never copied into that diagnostic.
+
+
+### Optional offline preparation and bounded navigation
+
+The Web entry starts offline preparation after the usable Workbench paint. It
+waits for page load, a ten-second grace period and a visible idle window before
+registering a worker. Save-Data, 2G and offline connections do not start a new
+registration; an existing worker can still receive the sanitized public recipe.
+Page retirement cancels pending waits and fences late registration/configuration
+results. A registration already issued to the browser cannot itself be cancelled.
+Only the `remote` and `iframe` browser-backend hints survive offline configuration;
+this is not account authority, and build downloads still omit credentials.
+
+For recognized in-scope document routes, the worker budgets eight seconds through
+receipt of a complete HTML body, bounded to 2 MiB. A stalled, broken or oversized
+body can use the complete configured cached Shell. If no such Shell exists at the
+deadline, it continues waiting for that same network request rather than aborting
+it or inventing a successful page. Explicit 401/403/404 responses, redirects,
+non-HTML responses and excluded API/auth routes keep their existing semantics.
+The cached Shell does not grant execution, account or Host authority.
+
+`npm run smoke:offline-startup-continuity` checks real ServiceWorker/Cache APIs in
+desktop and touch Chromium contexts using synthetic public artifacts and document
+routes. It covers deferred warming, draft continuity before warming, stalled HTML
+fallback, sanitized browser-backend hints and explicit refusal. This fixture is
+not an authenticated full Workbench, production deployment or physical-device test.

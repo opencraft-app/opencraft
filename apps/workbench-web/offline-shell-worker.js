@@ -136,6 +136,7 @@ self.addEventListener("activate", event => {
 
 function publicConfiguration(value) {
   const result = {};
+  if (value.browserBackend === "remote" || value.browserBackend === "iframe") result.browserBackend = value.browserBackend;
   if (value.deployment) {
     const input = value.deployment;
     if (!Array.isArray(input.hosts) || input.hosts.length > 64) throw new Error("Invalid offline configuration");
@@ -188,10 +189,48 @@ async function offlineDocument() {
   const inert = (id, value) => value ? `<script id="${id}" type="application/json">${JSON.stringify(value).replaceAll("<", "\\u003c")}</script>` : "";
   const body = (await template.text()).replace(/<head(?:\s[^>]*)?>/i, head => head
     + `<meta name="opencraft-offline-build" content="${BUILD.replaceAll('"', '&quot;')}">`
+    + (configuration.browserBackend ? `<meta name="opencraft-browser-backend" content="${configuration.browserBackend}">` : "")
     + `<base href="${scope.href.replaceAll('"', '&quot;')}">`
     + inert("opencraft-deployment-config", configuration.deployment)
     + inert("opencraft-server-context", configuration.server));
   return new Response(body, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-opencraft-offline-build": BUILD } });
+}
+async function navigationResponse(request) {
+  let timer;
+  // A fetch resolves at headers. Keep the navigation budget until a bounded
+  // complete HTML document is available; streamed partial HTML is not a shell.
+  const controller = new AbortController();
+  const network = fetch(request, { signal: controller.signal }).then(async response => {
+    if (response.status === 401 || response.status === 403) return response;
+    if (response.status >= 500) return offlineDocument();
+    if (response.redirected || !response.ok || !response.headers.get('content-type')?.includes('text/html') || !response.body) return response;
+    const reader = response.body.getReader(), chunks = []; let size = 0;
+    try {
+      for (;;) {
+        const next = await reader.read(); if (next.done) break;
+        size += next.value.byteLength;
+        if (size > 2 * 1024 * 1024) throw new Error('Navigation HTML exceeds shell limit');
+        chunks.push(next.value);
+      }
+      const body = new Uint8Array(size); let offset = 0;
+      for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+      const headers = new Headers(response.headers);
+      headers.delete('content-length'); headers.delete('content-encoding');
+      return new Response(body, {status:response.status,statusText:response.statusText,headers});
+    } catch (error) { void reader.cancel().catch(() => {}); throw error; }
+    finally { reader.releaseLock(); }
+  }).catch(offlineDocument);
+  const fallback = new Promise(resolve => {
+    timer = setTimeout(async () => {
+      try {
+        const cached = await offlineDocument();
+        if (cached.type === "error") resolve(network);
+        else { controller.abort(); resolve(cached); }
+      } catch { resolve(network); }
+    }, 8_000);
+  });
+  try { return await Promise.race([network, fallback]); }
+  finally { clearTimeout(timer); }
 }
 self.addEventListener("fetch", event => {
   const request = event.request;
@@ -205,6 +244,6 @@ self.addEventListener("fetch", event => {
   if (!target.pathname.startsWith(scope.pathname)) return;
   const relative = target.pathname.slice(scope.pathname.length);
   if (request.mode === "navigate" && (relative === "" || relative === "index.html" || /^(?:local|overhome|environments|views|settings|apps|threads|tasks)(?:\/|$)/.test(relative))) {
-    event.respondWith(fetch(request).then(response => response.status >= 500 ? offlineDocument() : response, offlineDocument));
+    event.respondWith(navigationResponse(request));
   }
 });

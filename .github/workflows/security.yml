@@ -107,6 +107,7 @@ jobs:
       - run: npm run test:web-updates:e2e
       - run: npm run smoke:attachment-upload-recovery
       - run: npm run smoke:image-metadata-preview
+      - run: npm run smoke:offline-startup-continuity
 
   security-checks:
     if: always()
