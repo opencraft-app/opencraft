@@ -86,3 +86,24 @@ test("native submission markers are stripped without a trusted identity owner or
     {trustedSubmissionSender:true}) as object;
   assert.equal(Object.hasOwn(read,"__opencraftSubmissionSender"),false,"history RPC cannot manufacture acceptance proof");
 });
+
+
+test("Host receipt proof survives a database reopen and never uses caller or native sender", async t => {
+  const root = await mkdtemp(join(tmpdir(), "submission-proof-"));
+  t.after(() => rm(root, { recursive:true, force:true }));
+  const ports = { readMessageIds: async () => [], notify() {} };
+  let database = new ThreadIdentityDatabase(root), identity = new ThreadIdentity(database.database, ports);
+  identity.recordSubmission({threadId:"t",clientUserMessageId:"persisted"}, context("verified-author"));
+  identity.recordSubmission({threadId:"t",clientUserMessageId:"anonymous"}, {sender:null});
+  identity.close(); database.close();
+  database = new ThreadIdentityDatabase(root); identity = new ThreadIdentity(database.database, ports);
+  try {
+    for (const [clientUserMessageId, sender] of [["persisted",employee("verified-author")],["anonymous",null]] as const) {
+      for (const method of ["turn/start","turn/steer","thread/queue/add"]) {
+        const projected = identity.projectResult(method, {threadId:"t",clientUserMessageId,sender:employee("caller-forgery")},
+          {__opencraftSubmissionSender:{clientMessageId:clientUserMessageId,sender:employee("native-forgery")}}) as any;
+        assert.deepEqual(projected.__opencraftSubmissionSender,{clientMessageId:clientUserMessageId,sender});
+      }
+    }
+  } finally { identity.close(); database.close(); }
+});

@@ -1124,3 +1124,28 @@ Protocol and registry tests live in `tests/protocol/app-host-resume*.test.ts`;
 real-WebSocket browser-adapter scenarios live in
 `tests/protocol/websocket-app-host-resume.test.ts`. They use synthetic execution
 boundaries and do not prove a production Agent/Host or authentication provider.
+
+## Accepted-message display provenance
+
+A successful `turn/start`, `turn/steer` or `thread/queue/add` can precede its
+native user-message echo. The trusted Host identity owner may attach
+`__opencraftSubmissionSender: { clientMessageId, sender }` to that successful
+result, using the exact persisted Thread/message attribution. Renderer request
+fields and native-engine response fields are not a source of verified identity.
+The generic native projection strips an incoming marker; only an explicit
+trusted identity projection mints one. Attachment enrichment preserves the
+already projected marker. A mismatched result Thread cannot mint one.
+
+The command receipt retains only a matching message ID and the existing bounded
+sender shape. `sender: null` is explicit anonymous attribution; an omitted sender
+keeps compatibility with older peers. The optimistic timeline and the transient
+new-Thread display handoff consume this receipt without waiting for account
+metadata. A canonical native echo, including explicit absence of a sender,
+remains authoritative. Late or mismatched receipt ownership cannot replace the
+current runtime's author. This is display provenance, not an authorization grant,
+proof of model execution, or a new identity provider.
+
+History acknowledgement reconciliation is unnecessary when the local outbox has
+no custody. Once asynchronous storage restoration supplies pending entries, the
+same authoritative reconciliation runs again; the optimization must not strand
+restored unknown outcomes or convert absence in history into non-execution proof.

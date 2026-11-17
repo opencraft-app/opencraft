@@ -3529,7 +3529,8 @@ export class CodexEngineAdapter implements DuplexTransport {
           if (context.actorContext && this.options.collaboration && !actorClientId.startsWith('actor-input:')) {context.resourceOwner?.assertCurrent();this.options.collaboration.authorize(context.actorContext, threadId, string(params.clientUserMessageId), Array.isArray(params.input) ? params.input : []);}
           return queue.add(threadId, string(params.clientUserMessageId), params.input as readonly unknown[], snapshotExecutionSubmission(context));
         });
-        result = { queuedSubmission: this.queueProjection(row) };
+        result = record(projectThreadMessageResult(this.projectSender, method, params,
+          { queuedSubmission: this.queueProjection(row) }, { trustedSubmissionSender: !!this.messageSenders }));
         this.emitQueueChanged(threadId);
         this.scheduleQueueMaintenance(threadId);
       } else if (method === "thread/queue/update") {
