@@ -300,3 +300,60 @@ test('spawn defaults to a hidden subagent and preserves explicit visible convers
  assert.equal(f.service.orchestration.relation(visible.threadId)?.visibility,'visible');
  assert.equal(f.service.orchestration.relation(hidden.threadId)?.visibility,'hidden');
 });
+
+test('timer sweeps back off unchanged children, slow stale starting ones, and still settle waits',async t=>{
+ const f=await fixture(t);f.states.set('peer',{threadId:'peer',turnId:null,rootTurnId:null,state:'starting'});
+ const waited=await f.invoke('paced-wait','thread_wait',{threadIds:['peer'],timeoutMs:1});assert.equal(waited.settled,false);
+ const read=f.execution.snapshot;let reads=0;f.execution.snapshot=async id=>{if(id==='peer')reads++;return read(id);};
+ const tick=async(count:number,step=500)=>{for(let i=0;i<count;i++){f.advance(step);await f.broker.reconcile(true);}};
+ // 10 s of 500 ms timer ticks: 500 ms x4, 1 s x4, then 2 s -> about half the fixed-rate reads.
+ await tick(20);assert.ok(reads>=8&&reads<=12,`unchanged child read ${reads} times in 10 s`);
+ // Unchanged reads are capped at one per 5 s.
+ reads=0;await tick(20,500*10);assert.ok(reads>=18&&reads<=20,`capped child read ${reads} times in 100 s`);
+ // Still "starting" (no first turn) after 10 minutes: one read per 15 s.
+ await tick(100,5000);reads=0;await tick(120);assert.ok(reads>=3&&reads<=5,`stale starting child read ${reads} times in 60 s`);
+ // An explicit reconcile reads every target immediately.
+ reads=0;await f.broker.reconcile();assert.equal(reads,1);
+ // A settled child is still observed and wakes its waiter within one stale interval.
+ f.states.set('peer',{threadId:'peer',turnId:'peer-turn',rootTurnId:'peer-root',state:'completed',summary:'Done'});
+ await tick(32);f.advance(2100);await f.broker.reconcile(true);await f.service.pump();
+ assert.equal(f.service.orchestration.wait(waited.waitTicketId)?.state,'satisfied');assert.equal(f.inputs.filter(input=>input.threadId==='parent').length,1);
+});
+
+test('a direct operation on a child makes the next timer sweep read it again',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ f.states.set('recipient',{threadId:'recipient',turnId:'r',rootTurnId:'r',state:'active'});
+ const waited=await f.invoke('recipient-wait','thread_wait',{threadIds:['recipient'],timeoutMs:1});assert.equal(waited.settled,false);
+ const read=f.execution.snapshot;let reads=0;f.execution.snapshot=async id=>{if(id==='recipient')reads++;return read(id);};
+ for(let i=0;i<40;i++){f.advance(500);await f.broker.reconcile(true);}
+ const before=reads;f.advance(10);await f.broker.reconcile(true);assert.equal(reads,before,'not due yet');
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});
+ const afterTell=reads;f.advance(10);await f.broker.reconcile(true);assert.equal(reads,afterTell+1,'tell clears the backoff');
+});
+
+
+test('a direct child operation racing a snapshot cannot restore stale backoff',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ f.states.set('recipient',{threadId:'recipient',turnId:'r',rootTurnId:'r',state:'active'});
+ await f.invoke('race-wait','thread_wait',{threadIds:['recipient'],timeoutMs:1});
+ const read=f.execution.snapshot;
+ let pause=true,reads=0,release!:()=>void,reached!:()=>void;
+ const gate=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{reached=resolve;});
+ f.execution.snapshot=async id=>{if(id==='recipient'){reads++;if(pause){reached();await gate;}}return read(id);};
+ const sweep=f.broker.reconcile();await started;
+ try{await f.invoke('race-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});}
+ finally{pause=false;release();await sweep;}
+ const before=reads;f.advance(10);await f.broker.reconcile(true);
+ assert.equal(reads,before+1,'late snapshot cannot overwrite direct-operation invalidation');
+});
+
+test('a transient paced snapshot failure is retried on the next tick without cached settlement',async t=>{
+ const f=await fixture(t);f.states.set('peer',{threadId:'peer',turnId:null,rootTurnId:null,state:'starting'});
+ const waited=await f.invoke('failure-wait','thread_wait',{threadIds:['peer'],timeoutMs:1});
+ await f.broker.reconcile();
+ const read=f.execution.snapshot;let failures=1,reads=0;
+ f.execution.snapshot=async id=>{if(id==='peer'){reads++;if(failures-->0)throw Error('temporary');}return read(id);};
+ f.advance(500);await f.broker.reconcile(true);
+ assert.equal(f.service.orchestration.wait(waited.waitTicketId)?.state,'active');
+ f.advance(500);await f.broker.reconcile(true);assert.equal(reads,2);
+});

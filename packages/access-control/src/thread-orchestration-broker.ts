@@ -18,6 +18,11 @@ const text=(value:unknown,max=256)=>{
 const fields=(value:Record<string,unknown>,allowed:readonly string[])=>{if(Object.keys(value).some(k=>!allowed.includes(k)))throw new CollaborationError(400,'unexpected_orchestration_field');};
 const permissionSnapshot=(settings:Record<string,unknown>)=>JSON.stringify(canonical({permissions:settings.permissions,sandbox:settings.sandbox,approvalPolicy:settings.approvalPolicy,approvalsReviewer:settings.approvalsReviewer,runtimeWorkspaceRoots:settings.runtimeWorkspaceRoots,config:settings.config,cwd:settings.cwd}));
 const terminal=new Set(['completed','failed','exhausted','unconfirmed','interrupted_by_user']);
+// Timer sweeps re-read a child only when due: observed changes reset to 500 ms, unchanged ones back
+// off to 5 s, and a child stuck in "starting" (no first turn) for 10 min to 15 s. Each status
+// read costs a full logical-client lifecycle in the engine, so a fixed 500 ms poll of every
+// non-terminal child creates constant background load.
+export const ORCHESTRATION_POLL_MIN_MS=500,ORCHESTRATION_POLL_MAX_MS=5_000,ORCHESTRATION_STALE_STARTING_MS=10*60_000,ORCHESTRATION_STALE_STARTING_POLL_MS=15_000;
 
 /** Hub coordination over the collaboration ledger and existing Host input queue. */
 export class ThreadOrchestrationBroker {
@@ -34,10 +39,12 @@ export class ThreadOrchestrationBroker {
   private closed=false;
   private reportedSweepFailure=false;
   private readonly observations=new Set<Promise<void>>();
+  private readonly pacingEpoch=new Map<string,number>();
+  private readonly pacing=new Map<string,{key:string;unchanged:number;since:number;dueAt:number;state:OrchestrationRuntimeSnapshot}>();
   constructor(readonly collaboration:Collaboration,private readonly execution:OrchestrationExecutionPort,private readonly now=Date.now,private readonly runtimeStorage:OrchestrationRuntimeStorage){}
-  start():void {if(!this.timer&&!this.closed){this.timer=setInterval(()=>{void this.reconcile().then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});},500);this.timer.unref();}}
+  start():void {if(!this.timer&&!this.closed){this.timer=setInterval(()=>{void this.reconcile(true).then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});},500);this.timer.unref();}}
   get available():boolean{return !this.closed;}
-  stop():void{this.closed=true;if(this.timer)clearInterval(this.timer);}
+  stop():void{this.closed=true;if(this.timer)clearInterval(this.timer);this.pacing.clear();this.pacingEpoch.clear();}
   async close():Promise<void>{this.stop();await this.sweep?.catch(()=>{});await this.ackSweep?.catch(()=>{});await Promise.allSettled([...this.observations]);await Promise.allSettled([...this.calls.values()].map(call=>call.promise));}
   async invoke(threadId:string,turnId:string,toolCallKey:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
     if(this.closed)return Promise.reject(new CollaborationError(503,'orchestration_closed'));
@@ -228,6 +235,8 @@ export class ThreadOrchestrationBroker {
     return {state:'running',result:binding};
   }
   private async perform(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
+    // A direct operation on a child is new evidence; read it again on the next sweep.
+    for(const id of [args.threadId,...(Array.isArray(args.threadIds)?args.threadIds:[])])if(typeof id==='string'){this.pacing.delete(id);this.pacingEpoch.set(id,(this.pacingEpoch.get(id)??0)+1);}
     if(['read_thread','send_message_to_thread','get_thread_delivery'].includes(name))return this.conversationTool(threadId,turnId,key,name,args,delegationId);
     if(!ORCHESTRATION_TOOL_NAMES.includes(name as typeof ORCHESTRATION_TOOL_NAMES[number]))throw new CollaborationError(400,'unknown_orchestration_tool');
     const delegation=this.collaboration.delegation(threadId,turnId,delegationId),ledger=this.collaboration.orchestration;
@@ -325,7 +334,8 @@ export class ThreadOrchestrationBroker {
     do{
       checkWait();
       const remaining=Math.max(0,deadline-Date.now());
-      const query=Promise.all(ticket.targetThreadIds.map(id=>this.execution.snapshot(id))).then(async states=>{if(!this.closed)await Promise.all(states.map(state=>this.observe(state)));return states;}).catch(()=>null);
+      const epochs=new Map(ticket.targetThreadIds.map(id=>[id,this.pacingEpoch.get(id)??0]));
+      const query=Promise.all(ticket.targetThreadIds.map(id=>this.execution.snapshot(id))).then(async states=>{if(!this.closed){await Promise.all(states.map(state=>this.observe(state)));for(const state of states)this.pace(state.threadId,state,this.now(),epochs.get(state.threadId)??0);}return states;}).catch(()=>null);
       const states=remaining===0?null:await Promise.race([query,delay(remaining).then(()=>null)]);
       checkWait();
       if(!states){void query.catch(()=>{});result={settled:false,waitTicketId:ticket.waitTicketId,threads:ticket.targetThreadIds.map(id=>({threadId:id,status:ledger.relation(id)?.runtimeStatus??'unknown'}))};break;}
@@ -379,13 +389,31 @@ export class ThreadOrchestrationBroker {
     void operation.then(()=>this.observations.delete(operation),()=>this.observations.delete(operation));
     return operation;
   }
-  reconcile():Promise<void>{if(this.closed)return Promise.resolve();return this.sweep??=this.runSweep().finally(()=>{this.sweep=null;});}
-  private async runSweep():Promise<void>{
+  reconcile(paced=false):Promise<void>{if(this.closed)return Promise.resolve();return this.sweep??=this.runSweep(paced).finally(()=>{this.sweep=null;});}
+  /** Record one observed child state and schedule its next timer-driven read. */
+  private pace(id:string,state:OrchestrationRuntimeSnapshot,now:number,epoch:number):void{
+    if(this.closed||(this.pacingEpoch.get(id)??0)!==epoch)return;
+    const key=JSON.stringify([state.state,state.turnId??null,state.rootTurnId??null]),prior=this.pacing.get(id),same=prior?.key===key;
+    const unchanged=same?prior.unchanged+1:0,since=same?prior.since:now;
+    const interval=state.state==='starting'&&now-since>=ORCHESTRATION_STALE_STARTING_MS?ORCHESTRATION_STALE_STARTING_POLL_MS
+      :Math.min(ORCHESTRATION_POLL_MAX_MS,ORCHESTRATION_POLL_MIN_MS*2**Math.floor(unchanged/4));
+    this.pacing.set(id,{key,unchanged,since,dueAt:now+interval,state});
+  }
+  private async runSweep(paced=false):Promise<void>{
     void this.reconcileAcks();
     const ledger=this.collaboration.orchestration;
     const targets=new Set(await this.runtimeStorage.targets(!this.reconciledStartup,this.now()));
+    if(this.closed)return;
     const snapshots=new Map<string,OrchestrationRuntimeSnapshot>();
-    for(const id of targets){let state:OrchestrationRuntimeSnapshot;try{state=await this.execution.snapshot(id);}catch{continue;}if(this.closed)return;await this.observe(state);if(this.closed)return;snapshots.set(id,state);}
+    for(const id of [...this.pacing.keys()])if(!targets.has(id))this.pacing.delete(id);
+    for(const id of [...this.pacingEpoch.keys()])if(!targets.has(id))this.pacingEpoch.delete(id);
+    const sweepAt=this.now();
+    for(const id of targets){
+      const pace=this.pacing.get(id),epoch=this.pacingEpoch.get(id)??0;
+      // Not due: the last observed state stands in (it already passed observe()).
+      if(paced&&pace&&pace.dueAt>sweepAt){snapshots.set(id,pace.state);continue;}
+      let state:OrchestrationRuntimeSnapshot;try{state=await this.execution.snapshot(id);}catch{continue;}if(this.closed)return;await this.observe(state);if(this.closed)return;snapshots.set(id,state);this.pace(id,state,this.now(),epoch);
+    }
     this.reconciledStartup=true;
     const work=await this.runtimeStorage.work(this.now());
     if(this.closed)return;
