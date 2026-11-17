@@ -40,7 +40,7 @@ test("actual Host acknowledges generation fences, preserves queued admissions, a
   const control = await startControlServer(runtimeEndpoint, token, async request => {
     if (request.url === "/health") { const current = runtime.registry.current(), h = await runtime.ensure(current.generation.id); return { status: 200, value: { ...h, nativeSocket: join(root, "routing/native.sock"), routingEpoch: runtime.registry.ownerEpoch, routingPid: process.pid } }; }
     const envelope = await readControlJson(request), p = envelope.params as any;
-    return { status: 200, value: envelope.operation === "claim" ? runtime.claimHost(p.instanceId, p.routingEpoch) : runtime.publishHostUsage(p) };
+    return { status: 200, value: envelope.operation === "claim" ? await runtime.claimHost(p.instanceId, p.routingEpoch) : (await runtime.publishHostUsage(p)) };
   });
   let engine: CodexEngineAdapter | undefined;
   async function wait(check: () => boolean, label: string) { for (let n = 0; n < 400; n++) { if (check()) return; await delay(25); } throw new Error(label); }

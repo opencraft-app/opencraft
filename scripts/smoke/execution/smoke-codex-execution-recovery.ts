@@ -97,7 +97,7 @@ try {
   await new Promise<void>(resolve => model.listen(0, "127.0.0.1", resolve)); await new Promise<void>(resolve => accounts.listen(endpoint, resolve));
   process.env.OPENCRAFT_SANDBOX_CONFIG = configuration;
   const supervisor = new SystemdGenerationSupervisor({registryDirectory: join(root, "registry"), coreEndpoint: endpoint, dataDirectory: data, tokenFile, token, scope: "system"});
-  runtime = new CodexGenerationRuntime({directory: join(root, "registry"), dataDirectory: data, proxyBaseUrl: `http://127.0.0.1:${(model.address() as any).port}`, supervisor,
+  runtime = await CodexGenerationRuntime.open({directory: join(root, "registry"), dataDirectory: data, proxyBaseUrl: `http://127.0.0.1:${(model.address() as any).port}`, supervisor,
     requireHostUsage: false, replaceRetiredHome: async () => {throw new Error("Fault recovery must not replace HOME");}});
   const g = await runtime.prepare({id: "one", endpoint: join(root, "sockets/control.sock"), runtimeDataDirectory: runtimeData, executable, bundle: join(root, "app-server.cjs"), node: process.execPath, cwd: root});
   await runtime.activate("one", 0);

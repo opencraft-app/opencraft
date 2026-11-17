@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { routerStorageTask, type GenerationRegistryPort } from "./generation-registry-worker.js";
+import { routerDigest, routerNativeDigest, routerPhysicalNativeDigest, hostRestartRuntime, routerFileDigest, archivedHostColdUnavailable, type RouterMaintenanceReceipt } from "./router-maintenance.js";
 import type { ExecutionFault } from "./execution-fault-recovery.js";
-import type { CodexGenerationRegistry } from "./generation-registry.js";
-import { routerDigest, routerNativeDigest, routerPhysicalNativeDigest, hostRestartRuntime, readRouterMaintenance, routerFileDigest, verifyRouterController, verifyRouterConsumers, processStamp, archivedHostColdUnavailable, type RouterMaintenanceReceipt } from "./router-maintenance.js";
 
-import { OperatorLease, type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
+import { RouterOperatorLease } from "./router-operator-lease.js";
+import { type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
 
 const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 type State = { version: 1; epoch: number; phase: "open" | "fenced" | "released" | "cold-ready";
@@ -23,12 +24,12 @@ export interface RouterLeaseContext {
 export type RouterUnknownReason = "unattributed" | "consumer-disconnected" | "native-disconnected" | "generation-replaced"
   | "native-result-unknown" | "native-resolved-before-reply" | "ambiguous-native-completion";
 export interface RouterLease {
-  (): void;
+  (): Promise<void>;
   readonly id: string;
-  update(context: RouterLeaseContext): void;
-  sent(): void;
-  unknown(reason: RouterUnknownReason): void;
-  retireForExecutionFault(recoveryId: string): void;
+  update(context: RouterLeaseContext): Promise<void>;
+  sent(): Promise<void>;
+  unknown(reason: RouterUnknownReason): Promise<void>;
+  retireForExecutionFault(recoveryId: string): Promise<void>;
 }
 type LeaseRecord = RouterLeaseContext & { version: 1; id: string; kind: string; routerOwner: string; routerIncarnation: string;
   bootId: string; pid: number; phase: "accepted" | "sent" | "released"; acceptedAt: string; sentAt?: string; releasedAt?: string;
@@ -51,8 +52,13 @@ function leaseContext(input: RouterLeaseContext): RouterLeaseContext {
 export class CodexRouterOwner {
   readonly owner = randomUUID();
   readonly incarnation = randomUUID();
-  readonly bootId = readFileSync("/proc/sys/kernel/random/boot_id", "utf8").trim();
-  private state: State;
+  bootId!: string;
+  readonly ready: Promise<void>;
+  private operations: Promise<unknown> = Promise.resolve();
+  private serialize<T>(action: () => Promise<T>): Promise<T> { const next = this.operations.then(action); this.operations = next.catch(() => {}); return next; }
+  async drain(): Promise<void> { await this.ready; await this.operations; }
+  private state!: State;
+  private historyCache?: { revision: string; ids: string; rows: { id: string; value: { version: number; receipt: RouterMaintenanceReceipt } }[]; digest?: string };
   private deferredExecutionStartup = false;
   private executionFaults: readonly ExecutionFault[] = [];
   private executionExplainsUncertainty = false;
@@ -60,12 +66,16 @@ export class CodexRouterOwner {
   private readonly otherUncertainty: RouterLeaseContext[] = [];
   private failed = false;
   private calls = 0;
-  private busy = false;
-  private operatorLease?: OperatorLease;
+  private busy = true;
+  private operatorLease?: RouterOperatorLease;
   private proof?: { identity: string; expires: number; storage: string };
   private maintenance?: RouterMaintenanceReceipt;
-  constructor(private readonly registry: CodexGenerationRegistry, maintenanceFile?: string, options: {deferExecutionRecovery?: boolean} = {}) {
-    const stored = registry.metadata("router-handoff") as State | null;
+  constructor(private readonly registry: GenerationRegistryPort, maintenanceFile?: string, options: {deferExecutionRecovery?: boolean} = {}) {
+    this.ready = this.initialize(maintenanceFile, options);
+  }
+  private async initialize(maintenanceFile: string | undefined, options: {deferExecutionRecovery?: boolean}) {
+    this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
+    const stored = this.registry.metadata("router-handoff") as State | null;
     this.state = stored ?? { version: 1, epoch: 0, phase: "open", uncertain: false };
     if (this.state.version !== 1 || !Number.isSafeInteger(this.state.epoch) || this.state.epoch < 0
       || !["open", "fenced", "released", "cold-ready"].includes(this.state.phase) || typeof this.state.uncertain !== "boolean"
@@ -73,7 +83,7 @@ export class CodexRouterOwner {
       || ["released", "cold-ready"].includes(this.state.phase) && (!this.state.sealed || !this.state.configuration)) throw new Error("Invalid router handoff state");
     this.history();
     if (["open", "fenced"].includes(this.state.phase) && maintenanceFile) {
-      this.maintenance = readRouterMaintenance(maintenanceFile, this.state, this.storage(), createHash("sha256").update(readFileSync(process.argv[1]!)).digest("hex"), this.historicalPending().size, this.historicalUnknownSha256());
+      this.maintenance = await routerStorageTask<RouterMaintenanceReceipt>("read-maintenance", [maintenanceFile, this.state, await this.storage(), createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex"), this.historicalPending().size, this.historicalUnknownSha256()]);
       this.busy = true; return;
     }
     if (this.currentUnconfirmed()) {
@@ -82,22 +92,25 @@ export class CodexRouterOwner {
       // every unresolved current responsibility. Ordinary uncertainty still fails.
       this.deferredExecutionStartup = true; this.busy = true; return;
     }
-    this.finishStartup();
+    await this.finishStartup();
   }
-  private finishStartup(): void {
+  private async finishStartup(): Promise<void> {
     if (this.state.phase === "open" && this.state.history?.length) throw Error("Router historical owner restart requires explicit cold recovery");
     if (this.state.phase === "fenced") throw new Error("Router old writer release is unconfirmed; recovery required");
-    if (this.state.phase !== "open" && this.storage() !== this.state.sealed) throw new Error("Router current registry differs from release");
-    if (this.state.phase === "open") this.registry.updateMetadata({ "router-live-owner": this.processIdentity() });
+    if (this.state.phase !== "open" && (await this.storage()) !== this.state.sealed) throw new Error("Router current registry differs from release");
+    if (this.state.phase === "open") await this.registry.updateMetadata({ "router-live-owner": await this.processIdentity() });
+    this.busy = false;
   }
-  private processIdentity() { return { owner: this.owner, incarnation: this.incarnation, pid: process.pid, startTime: processStamp(process.pid), bootId: this.bootId,
+  private async processIdentity() { const processStat = await readFile(`/proc/${process.pid}/stat`, "utf8"); return { owner: this.owner, incarnation: this.incarnation, pid: process.pid, startTime: processStat.slice(processStat.lastIndexOf(")") + 1).trim().split(/\s+/u)[19]!, bootId: this.bootId,
     node: process.execPath, arguments: process.argv.slice(2).flatMap((value, i, args) =>
       ["--endpoint", "--core-endpoint", "--token-file", "--data-directory", "--registry-directory", "--bootstrap-file", "--native-history-failures-file", "--systemd-scope"].includes(value) && args[i + 1]
         ? [value, args[i + 1]!] : value === "--native-only" ? [value] : []),
-    bundle: process.argv[1]!, bundleSha256: createHash("sha256").update(readFileSync(process.argv[1]!)).digest("hex") }; }
+    bundle: process.argv[1]!, bundleSha256: createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex") }; }
   private history() {
     if (this.state.history !== undefined && (!Array.isArray(this.state.history) || new Set(this.state.history).size !== this.state.history.length)) throw Error("Invalid router historical responsibility");
-    const rows = (this.state.history ?? []).map(id => {
+    const revision = this.registry.routerHistoryRevision(), ids = JSON.stringify(this.state.history ?? []);
+    const cached = this.historyCache;
+    const rows = cached?.revision === revision && cached.ids === ids ? cached.rows : (this.state.history ?? []).map(id => {
       if (!/^[a-f0-9]{64}$/u.test(id)) throw Error("Invalid router historical identity");
       const value = this.registry.metadata(`router-history:${id}`) as { version: number; receipt: RouterMaintenanceReceipt } | null;
       if (!value || routerDigest(value) !== id || value.version !== 1 || !value.receipt?.sourceHandoff
@@ -106,6 +119,7 @@ export class CodexRouterOwner {
     });
     if (rows.some(row => row.value.receipt.sourceHandoff.uncertain === true || (row.value.receipt.sourceHandoff.pending as unknown[] | undefined)?.length) && !this.state.uncertain
       || rows.flatMap(row => row.value.receipt.sourceHandoff.pending as string[] | undefined ?? []).some(id => !this.state.pending?.includes(id))) throw Error("Router historical responsibility was removed");
+    if (rows !== cached?.rows) this.historyCache = { revision, ids, rows, digest: rows.length ? digest(rows) : undefined };
     return rows;
   }
   private historicalPending() { return new Set(this.history().flatMap(row => row.value.receipt.sourceHandoff.pending as string[] | undefined ?? [])); }
@@ -121,7 +135,8 @@ export class CodexRouterOwner {
       && unknown.every(record => !!this.executionFaultFor(record)) && this.otherUncertainty.every(record => !!this.executionFaultFor(record));
   }
   needsExecutionRecoveryEvidence(): boolean { return this.deferredExecutionStartup; }
-  resumeExecutionFaults(faults: readonly ExecutionFault[], evidence: readonly {key: string; value: unknown}[] = []): void {
+  async resumeExecutionFaults(faults: readonly ExecutionFault[], evidence: readonly {key: string; value: unknown}[] = []): Promise<void> {
+    await this.ready;
     if (this.deferredExecutionStartup) {
       const historicalOwners = new Set(this.history().map(row => row.value.receipt.source.owner));
       for (const {key, value} of evidence) {
@@ -142,7 +157,7 @@ export class CodexRouterOwner {
     const unexplainedPending = (this.state.pending ?? []).some(id => !historical.has(id) && !this.executionFaultFor(this.leaseRecords.get(id)));
     const rawUnknown = this.state.currentUncertain === true || this.state.uncertain && !this.state.history?.length;
     if (unexplainedPending || rawUnknown && !this.executionExplainsUncertainty) throw new Error("Router accepted work is unconfirmed; recovery required");
-    this.finishStartup();
+    await this.finishStartup();
     this.deferredExecutionStartup = false; this.busy = false;
   }
   private currentUnconfirmed() {
@@ -153,7 +168,7 @@ export class CodexRouterOwner {
     const rawUnknown = this.state.currentUncertain === true || this.state.uncertain && !this.state.history?.length;
     return rawUnknown && !this.executionExplainsUncertainty || this.executionFaults.some(fault => fault.state === "recovering");
   }
-  historicalUnknownSha256() { return this.state.history?.length ? digest(this.history()) : undefined; }
+  historicalUnknownSha256() { this.history(); return this.historyCache?.digest; }
   maintenancePending() { return this.maintenance !== undefined; }
   hostRestartPending() { const receipt = this.hostRestartReceipt(); return receipt ? { sourceBootId: receipt.source.bootId, sourceOwner: receipt.source.owner, recoveryBootId: this.bootId, ...(this.maintenance ? {} : { policyArchived: true }) } : undefined; }
   private archivedColdUnavailable() { return archivedHostColdUnavailable(this.state.history, key => this.registry.metadata(key)); }
@@ -165,16 +180,16 @@ export class CodexRouterOwner {
     return (receipt?.mode === "interrupted-source" || receipt?.mode === "crashed-source")
       && (receipt.native as { policy?: string } | undefined)?.policy === "continuing-v1";
   }
-  currentResponsibilityConfirmed() { return !this.failed && !this.currentUnknown(); }
+  currentResponsibilityConfirmed() { return this.registry.available && !this.failed && !this.currentUnknown(); }
   async importMaintenance(configuration: string, readNative: () => Promise<unknown>) {
     const receipt = this.maintenance;
     if (!receipt || !this.busy) throw Error("Explicit router maintenance required");
-    verifyRouterController(receipt); verifyRouterConsumers(receipt.consumers, receipt.systemdScope);
+    await routerStorageTask<void>("verify-maintenance", [receipt]);
     const source = this.registry.metadata("router-live-owner") as Record<string, unknown> | null;
     if (source && ["pid", "startTime", "bootId", "owner", "bundleSha256"].some(key => source[key] !== (receipt.source as unknown as Record<string, unknown>)[key])) throw Error("Durable router source identity changed");
     if (receipt.configurationSha256 !== configuration || await routerFileDigest(receipt.source.bundle) !== receipt.source.bundleSha256) throw Error("Router maintenance configuration or source payload changed");
     const native = await readNative();
-    if (routerNativeDigest(native) !== routerNativeDigest(receipt.native) || this.storage() !== receipt.registrySha256
+    if (routerNativeDigest(native) !== routerNativeDigest(receipt.native) || (await this.storage()) !== receipt.registrySha256
       || digest(this.registry.metadata("router-handoff")) !== digest(receipt.sourceHandoff)) throw Error("Router maintenance current data or Native proof changed");
     const adoptions: { key: string; value: unknown }[] = [];
     if (receipt.mode === "host-restart") {
@@ -188,109 +203,126 @@ export class CodexRouterOwner {
         adoptions.push({ key, value: hostRestartRuntime(row.previousIdentity, row.identity) });
       }
     }
-    verifyRouterController(receipt); verifyRouterConsumers(receipt.consumers, receipt.systemdScope);
+    await routerStorageTask<void>("verify-maintenance", [receipt]);
     const archive = { version: 1, receipt }, id = digest(archive);
     try {
-      this.registry.metadataTransaction(() => {
-        if (this.registry.metadata(`router-history:${id}`) !== null) throw Error("Router maintenance receipt already exists");
-        this.registry.setMetadata(`router-history:${id}`, archive);
-        for (const row of adoptions) this.registry.setMetadata(row.key, row.value);
-        const next: State = { ...this.state, epoch: this.state.epoch + (this.state.phase === "open" ? 1 : 0), phase: "released", operatorLease: undefined,
-          operationId: receipt.operationId, fence: receipt.fence, sourceOwner: receipt.source.owner,
-          history: [...(this.state.history ?? []), id], currentUncertain: false, maintenanceSeal: id,
-          uncertain: this.state.uncertain || !!this.state.pending?.length,
-          sealed: this.storage(), configuration, ready: undefined };
-        this.registry.setMetadata("router-handoff", next); this.state = next;
-      });
+      const next = await this.registry.importHandoff(Object.fromEntries([[`router-history:${id}`, archive], ...adoptions.map(row => [row.key, row.value])]), {
+        ...this.state, epoch: this.state.epoch + (this.state.phase === "open" ? 1 : 0), phase: "released", operatorLease: undefined,
+        operationId: receipt.operationId, fence: receipt.fence, sourceOwner: receipt.source.owner,
+        history: [...(this.state.history ?? []), id], currentUncertain: false, maintenanceSeal: id,
+        uncertain: this.state.uncertain || !!this.state.pending?.length, configuration, ready: undefined,
+      }, `router-history:${id}`);
+      this.state = next as State;
       this.maintenance = undefined; this.busy = false;
     } catch (error) { this.failed = true; throw error; }
   }
-  dispose() { this.operatorLease?.dispose(); this.operatorLease = undefined; }
-  private expireOperatorLease(lease: OperatorLease, reason: OperatorLeaseEnd) {
-    if (!lease.ended() || this.operatorLease !== lease || this.failed || this.busy || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner) return;
+  async dispose() { const lease=this.operatorLease; this.operatorLease=undefined; await lease?.dispose(); }
+  private async expireOperatorLease(lease: RouterOperatorLease, reason: OperatorLeaseEnd) {
+    if (!await lease.ended() || this.operatorLease !== lease || this.failed || this.busy || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner) return;
     const receipt: OperatorLeaseAbort = { version: 1, owner: this.owner, epoch: this.state.epoch,
       operationId: this.state.operationId!, fence: this.state.fence!, operatorLease: lease.claim, reason, abortedAt: new Date().toISOString() };
-    this.save({ ...this.state, phase: "open", operatorLease: undefined,
+    await this.save({ ...this.state, phase: "open", operatorLease: undefined,
       operatorLeaseAborts: [...(this.state.operatorLeaseAborts ?? []), receipt] });
-    this.proof = undefined; this.dispose();
+    this.proof = undefined; await this.dispose();
   }
-  renewOperatorLease(input: RouterExpectation) {
+  async renewOperatorLease(input: RouterExpectation) {
     this.check(input);
     if (this.busy || this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || !this.operatorLease) throw Error("Operator lease unavailable");
-    this.operatorLease.renew(input.operatorLease);
+    await this.operatorLease.renew(input.operatorLease);
   }
-  isOpen = () => !this.failed && !this.busy && this.state.phase === "open";
-  enter(reconciliation = false, context: RouterLeaseContext = {}): RouterLease {
+  isOpen = () => this.registry.available && !this.failed && !this.busy && this.state.phase === "open";
+  async enter(reconciliation = false, context: RouterLeaseContext = {}): Promise<RouterLease> {
+    await this.ready; return this.serialize(async () => {
     const sourceReply = reconciliation && !this.failed && !this.busy && this.state.phase === "fenced" && this.state.sourceOwner === this.owner;
     if (!this.isOpen() && !sourceReply) throw new Error("Router admission is fenced");
     return this.retain("rpc", context);
+    });
   }
-  retainNativeCallback(context: RouterLeaseContext = {}): RouterLease {
+  async retainNativeCallback(context: RouterLeaseContext = {}): Promise<RouterLease> {
+    await this.ready; return this.serialize(async () => {
     if (this.failed || this.busy || !["open", "fenced"].includes(this.state.phase)
       || this.state.phase === "fenced" && this.state.sourceOwner !== this.owner) throw new Error("Router callback admission is unconfirmed");
     return this.retain("native-callback", context);
+    });
   }
-  retainConnectionTool(context: RouterLeaseContext = {}): RouterLease {
+  async retainConnectionTool(context: RouterLeaseContext = {}): Promise<RouterLease> {
+    await this.ready; return this.serialize(async () => {
     if (this.failed || !this.calls || !["open", "fenced"].includes(this.state.phase)) throw new Error("Router tool admission is unconfirmed");
     return this.retain("connection-tool", context);
+    });
   }
   private recent(): string[] {
     const recent = this.registry.metadata(RECENT_LEASES) ?? [];
     if (!Array.isArray(recent) || recent.length > RECENT_LIMIT || !recent.every(id => typeof id === "string" && /^[a-f0-9-]{36}$/u.test(id))) throw new Error("Invalid router lease retention state");
     return recent;
   }
-  private retain(kind: string, context: RouterLeaseContext): RouterLease {
+  private async retain(kind: string, context: RouterLeaseContext): Promise<RouterLease> {
     const id = randomUUID(), key = `router-lease:${id}`;
     let record: LeaseRecord = { version: 1, id, kind, routerOwner: this.owner, routerIncarnation: this.incarnation,
       bootId: this.bootId, pid: process.pid, phase: "accepted", acceptedAt: new Date().toISOString(), ...leaseContext(context) };
-    this.save({ ...this.state, pending: [...(this.state.pending ?? []), id] }, { [key]: record });
+    await this.save({ ...this.state, pending: [...(this.state.pending ?? []), id] }, { [key]: record });
+
     this.leaseRecords.set(id, record);
     this.calls++; let done = false;
-    const release = (() => {
-      if (done) return; done = true;
-      record = { ...record, phase: "released", releasedAt: new Date().toISOString() };
+    const release = (() => this.serialize(async () => {
+      if (done) return;
+      const next: LeaseRecord = { ...record, phase: "released", releasedAt: new Date().toISOString() };
       const recent = this.recent().filter(value => value !== id);
-      if (!record.uncertainty) recent.push(id);
+      if (!next.uncertainty) recent.push(id);
       const expired = recent.splice(0, Math.max(0, recent.length - RECENT_LIMIT));
-      this.save({ ...this.state, pending: this.state.pending?.filter(value => value !== id) },
-        { [key]: record, [RECENT_LEASES]: recent }, expired.map(value => `router-lease:${value}`));
+      await this.save({ ...this.state, pending: this.state.pending?.filter(value => value !== id) },
+        { [key]: next, [RECENT_LEASES]: recent }, expired.map(value => `router-lease:${value}`));
+      record=next;done=true;
       this.leaseRecords.set(id, record); for (const expiredId of expired) this.leaseRecords.delete(expiredId);
       this.calls--;
-    }) as RouterLease;
+    })) as RouterLease;
     Object.assign(release, {
       id,
-      update: (context: RouterLeaseContext) => {
+      update: (context: RouterLeaseContext) => this.serialize(async () => {
         if (done) return;
-        record = { ...record, ...leaseContext(context) }; this.save(this.state, { [key]: record }); this.leaseRecords.set(id, record);
-      },
-      sent: () => {
-        if (done || record.sentAt) return;
-        record = { ...record, phase: "sent", sentAt: new Date().toISOString() }; this.save(this.state, { [key]: record }); this.leaseRecords.set(id, record);
-      },
-      unknown: (reason: RouterUnknownReason) => {
+        const changes = leaseContext(context);
+        if (Object.entries(changes).every(([key, value]) => record[key as keyof LeaseRecord] === value)) return;
+        const next = { ...record, ...changes }; await this.save(this.state, { [key]: next }); record=next; this.leaseRecords.set(id, record);
+      }),
+      sent: () => this.serialize(async () => {
+        if (!this.registry.available || this.failed) throw new Error("Router storage is unavailable before submission");
+        if (done) throw new Error("Router lease was released before submission");
+        if (record.sentAt) return;
+        const next: LeaseRecord = { ...record, phase: "sent", sentAt: new Date().toISOString() }; await this.save(this.state, { [key]: next }); record=next; this.leaseRecords.set(id, record);
+      }),
+      unknown: (reason: RouterUnknownReason) => this.serialize(async () => {
         const at = new Date().toISOString(), prior = record.uncertainty?.[reason];
-        record = { ...record, uncertainty: { ...record.uncertainty, [reason]: { firstAt: prior?.firstAt ?? at, lastAt: at, count: (prior?.count ?? 0) + 1 } } };
-        this.save({ ...this.state, uncertain: true, currentUncertain: true }, { [key]: record, [RECENT_LEASES]: this.recent().filter(value => value !== id) });
-        this.leaseRecords.set(id, record); this.observeExecutionFaults(this.executionFaults);
-      },
-      retireForExecutionFault: (recoveryId: string) => {
-        if (this.executionFaultFor(record)?.id !== recoveryId) throw new Error("Router lease does not belong to the execution fault");
-        record = {...record, executionFaultId: recoveryId};
-        release.unknown("generation-replaced"); release();
+        const next = { ...record, uncertainty: { ...record.uncertainty, [reason]: { firstAt: prior?.firstAt ?? at, lastAt: at, count: (prior?.count ?? 0) + 1 } } };
+        // Retain conservative evidence even if persistence fails; a later release cannot erase it.
+        record = next; this.leaseRecords.set(id, record); this.observeExecutionFaults(this.executionFaults);
+        await this.save({ ...this.state, uncertain: true, currentUncertain: true }, { [key]: next, [RECENT_LEASES]: this.recent().filter(value => value !== id) });
+        record=next; this.leaseRecords.set(id, record);
+      }),
+      retireForExecutionFault: async (recoveryId: string) => {
+        await this.serialize(async () => {
+          if (this.executionFaultFor(record)?.id !== recoveryId) throw new Error("Router lease does not belong to the execution fault");
+          record = { ...record, executionFaultId: recoveryId };
+        });
+        await release.unknown("generation-replaced");
+        await release();
       },
     });
     return release;
   }
-  uncertain(reason: RouterUnknownReason = "unattributed", context: RouterLeaseContext = {}) {
+  async uncertain(reason: RouterUnknownReason = "unattributed", context: RouterLeaseContext = {}) {
+    await this.ready; return this.serialize(async () => {
     const id = randomUUID();
     this.otherUncertainty.push(leaseContext(context)); this.observeExecutionFaults(this.executionFaults);
-    this.save({ ...this.state, uncertain: true, currentUncertain: true }, { [`router-uncertainty:${id}`]: { version: 1, id, reason,
+
+    await this.save({ ...this.state, uncertain: true, currentUncertain: true }, { [`router-uncertainty:${id}`]: { version: 1, id, reason,
       at: new Date().toISOString(), routerOwner: this.owner, routerIncarnation: this.incarnation, bootId: this.bootId, pid: process.pid, ...leaseContext(context) } });
+    });
   }
-  private storage() { return digest(this.registry.coldSnapshot()); }
-  private save(state: State, evidence: Record<string, unknown> = {}, remove: readonly string[] = []) {
-    try { this.registry.updateMetadata({ "router-handoff": state, ...evidence }, remove); this.state = state; }
+  private async storage() { return digest(await this.registry.coldSnapshot()); }
+  private async save(state: State, evidence: Record<string, unknown> = {}, remove: readonly string[] = [], expectedStorage?: string) {
+    try { await this.registry.updateMetadata({ "router-handoff": state, ...evidence }, remove, expectedStorage); this.state = state; }
     catch (error) {
+      if (["REGISTRY_CHANGED","REGISTRY_QUEUE_FULL"].includes((error as {code?:string}).code ?? "")) throw error;
       this.failed = true;
       // A later successful counter release must retain a failed unknown write's
       // restart barrier. Keep the conservative bit in memory for that retry.
@@ -301,32 +333,37 @@ export class CodexRouterOwner {
   snapshot() { return { ...this.state, operatorLease: this.state.operatorLease && structuredClone(this.state.operatorLease),
     operatorLeaseAborts: this.state.operatorLeaseAborts && structuredClone(this.state.operatorLeaseAborts), owner: this.owner, incarnation: this.incarnation, bootId: this.bootId,
     operatorLeaseProtocolVersion: 1, operatorLeaseStatus: this.operatorLease?.status(),
-    protocolVersion: 1, pid: process.pid, activeCalls: this.calls, persistence: this.failed ? "unknown" : "ready",
+    protocolVersion: 1, pid: process.pid, activeCalls: this.calls, persistence: this.failed || !this.registry.available ? "unknown" : "ready",
     releaseKind: this.state.maintenanceSeal ? "legacy-maintenance" : "protocol",
     historicalUnknownSha256: this.historicalUnknownSha256(), historicalPendingCount: this.historicalPending().size,
-    historicalUnknownSnapshots: this.history().map(row => ({ id: row.id, source: row.value.receipt.source, sourceHandoff: row.value.receipt.sourceHandoff })) }; }
+    historicalUnknownSnapshots: this.history().map(row => ({ id: row.id, source: structuredClone(row.value.receipt.source), sourceHandoff: structuredClone(row.value.receipt.sourceHandoff) })) }; }
   private check(input: RouterExpectation, existing = true) {
-    if (this.failed || input.expectedOwner !== this.owner || input.expectedEpoch !== this.state.epoch
+    if (!this.registry.available || this.failed || input.expectedOwner !== this.owner || input.expectedEpoch !== this.state.epoch
       || ![input.operationId, input.fence].every(v => typeof v === "string" && /^[a-zA-Z0-9_-]{1,128}$/u.test(v))
       || input.historicalUnknownSha256 !== this.historicalUnknownSha256()
       || existing && (input.operationId !== this.state.operationId || input.fence !== this.state.fence)) throw new Error("Router handoff conflict");
   }
-  fence(input: RouterExpectation) {
+  async fence(input: RouterExpectation) {
+    await this.ready; return this.serialize(async () => {
     this.check(input, this.state.phase !== "open");
     if (this.state.phase !== "open") return;
-    const lease = new OperatorLease(input.operatorLease, this.state.operatorLeaseAborts?.map(receipt => receipt.operatorLease.id));
-    this.save({ ...this.state, operatorLease: lease.claim, version: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, maintenanceSeal: undefined,
+    const lease = await RouterOperatorLease.open(input.operatorLease, this.state.operatorLeaseAborts?.map(receipt => receipt.operatorLease.id));
+    await this.save({ ...this.state, operatorLease: lease.claim, version: 1, epoch: this.state.epoch + 1, phase: "fenced", operationId: input.operationId, maintenanceSeal: undefined,
       fence: input.fence, sourceOwner: this.owner, pending: this.state.pending, uncertain: this.state.uncertain });
     this.operatorLease = lease;
-    lease.start(reason => this.expireOperatorLease(lease, reason), () => { this.failed = true; lease.dispose(); });
+    await lease.start(reason => this.serialize(() => this.expireOperatorLease(lease, reason)), () => { this.failed = true; void lease.dispose(); });
+    });
   }
-  abort(input: RouterExpectation) {
+  async abort(input: RouterExpectation) {
+    await this.ready; return this.serialize(async () => {
     this.check(input);
     if (this.state.phase !== "fenced" || this.state.sourceOwner !== this.owner || this.busy) throw new Error("Router source cannot abort after release");
-    this.save({ ...this.state, phase: "open", operatorLease: undefined });
-    this.proof = undefined; this.dispose();
+    await this.save({ ...this.state, phase: "open", operatorLease: undefined });
+    this.proof = undefined; await this.dispose();
+    });
   }
-  inspect(input: RouterExpectation, observation: RouterObservation) {
+  async inspect(input: RouterExpectation, observation: RouterObservation) {
+    await this.ready; return this.serialize(async () => {
     this.check(input);
     const coverage = this.failed || this.currentUnknown() ? "unknown" : observation.coverage;
     const proof = { ownerId: this.owner, operationId: this.state.operationId, epoch: this.state.epoch, fence: this.state.fence,
@@ -334,24 +371,27 @@ export class CodexRouterOwner {
       activeCount: coverage === "complete" ? observation.activeCount + this.calls : null, historicalCount: observation.historicalCount, counts: observation.counts,
       historicalUnknownSha256: this.historicalUnknownSha256(), historicalPendingCount: this.historicalPending().size };
     const identity = digest(proof);
-    this.proof = proof.activeCount === 0 ? { identity, expires: Date.parse(proof.expiresAt), storage: this.storage() } : undefined;
+    this.proof = proof.activeCount === 0 ? { identity, expires: Date.parse(proof.expiresAt), storage: (await this.storage()) } : undefined;
     return { ...proof, identity };
+    });
   }
-  release(input: RouterExpectation & { proof?: string }, observation: RouterObservation, configuration: string) {
+  async release(input: RouterExpectation & { proof?: string }, observation: RouterObservation, configuration: string) {
+    await this.ready; return this.serialize(async () => {
     this.check(input);
     if (this.busy || this.state.phase !== "fenced" || this.currentUnconfirmed() || this.calls || observation.coverage !== "complete" || observation.activeCount
-      || !this.proof || this.proof.identity !== input.proof || this.proof.expires <= Date.now() || this.storage() !== this.proof.storage) throw new Error("Router is not drained or exact proof changed");
+      || !this.proof || this.proof.identity !== input.proof || this.proof.expires <= Date.now() || (await this.storage()) !== this.proof.storage) throw new Error("Router is not drained or exact proof changed");
     if (!this.operatorLease) throw Error("Live operator lease required");
-    this.operatorLease.assertLive();
-    this.save({ ...this.state, operatorLease: undefined, phase: "released", sealed: this.proof.storage, configuration });
-    this.dispose();
+    await this.operatorLease.assertLive();
+    await this.save({ ...this.state, operatorLease: undefined, phase: "released", sealed: this.proof.storage, configuration }, {}, [], this.proof.storage);
+    await this.dispose();
+    });
   }
   async coldReady(input: RouterExpectation, configuration: string, readNative: () => Promise<unknown>) {
     this.check(input);
     if (this.busy || !["released", "cold-ready"].includes(this.state.phase) || this.state.sourceOwner === this.owner) throw new Error("Cold router successor required");
     this.busy = true;
     try {
-      if (configuration !== this.state.configuration || this.storage() !== this.state.sealed) throw new Error("Router configuration or current registry changed");
+      if (configuration !== this.state.configuration || (await this.storage()) !== this.state.sealed) throw new Error("Router configuration or current registry changed");
       const native = await readNative();
       if (this.continuingNative()) {
         const receipt = this.history().find(row => row.id === this.state.maintenanceSeal)!.value.receipt;
@@ -359,14 +399,14 @@ export class CodexRouterOwner {
       }
       const host = this.hostRestartReceipt();
       if (host && routerPhysicalNativeDigest(native) !== routerPhysicalNativeDigest(host.native)) throw Error("Host Native owner changed after import");
-      if (this.storage() !== this.state.sealed) throw new Error("Router registry changed during cold read");
+      if ((await this.storage()) !== this.state.sealed) throw new Error("Router registry changed during cold read");
       const value = { owner: this.owner, bootId: this.bootId, incarnation: this.incarnation, storageSha256: this.state.sealed,
         releaseKind: this.state.maintenanceSeal ? "legacy-maintenance" : "protocol", historicalUnknownSha256: this.historicalUnknownSha256(),
-        manifestSha256: createHash("sha256").update(readFileSync(process.argv[1]!)).digest("hex"), configurationSelectorSha256: configuration,
+        manifestSha256: createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex"), configurationSelectorSha256: configuration,
         capabilitySha256: digest({ protocol: 1, node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch,
           native: this.continuingNative() ? routerNativeDigest(native) : native }), storageOutcome: "ready" };
       const identity = digest(value);
-      this.save({ ...this.state, phase: "cold-ready", ready: { owner: this.owner, identity } });
+      await this.save({ ...this.state, phase: "cold-ready", ready: { owner: this.owner, identity } }, {}, [], this.state.sealed);
       return { ...value, identity, evidenceId: identity };
     } finally { this.busy = false; }
   }
@@ -375,6 +415,6 @@ export class CodexRouterOwner {
     if (this.state.phase !== "cold-ready" || this.state.ready?.owner !== this.owner || input.identity !== this.state.ready.identity) throw new Error("Router readiness incarnation changed");
     const ready = await this.coldReady(input, configuration, readNative);
     if (ready.identity !== input.identity) throw new Error("Router cold readiness changed");
-    this.save({ ...this.state, phase: "open", sealed: undefined, ready: undefined }, { "router-live-owner": this.processIdentity() });
+    await this.save({ ...this.state, phase: "open", sealed: undefined, ready: undefined }, { "router-live-owner": await this.processIdentity() }, [], this.state.sealed);
   }
 }

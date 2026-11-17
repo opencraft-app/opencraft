@@ -29,7 +29,7 @@ async function fixture(kind: "core" | "router", seed = true) {
     appServerEndpoint: join(directory, "app.sock"), authToken: "synthetic-operator-lease-token", proxyPort: 12345 })
     : new CodexRouterOwner(registry = new CodexGenerationRegistry(directory));
   if (owner instanceof AccountCoreOwner) { await owner.load(); if (seed) await owner.uncertain("/v1/responses"); }
-  else if (seed) { const pending = owner.enter(); pending.unknown("consumer-disconnected"); }
+  else { await owner.ready; if (seed) { const pending = await owner.enter(); await pending.unknown("consumer-disconnected"); } }
   const snapshot = (): any => structuredClone(owner.snapshot());
   const responsibility = () => {
     const s = snapshot(); return { uncertain: s.uncertain, pending: s.pending, currentUncertain: s.currentUncertain,
@@ -38,9 +38,9 @@ async function fixture(kind: "core" | "router", seed = true) {
   const input = (operatorLease?: Awaited<ReturnType<typeof claim>>) => ({ expectedOwner: owner.owner, expectedEpoch: snapshot().epoch,
     operationId: "lease-test", fence: "lease-test-fence", historicalUnknown: snapshot().uncertain,
     historicalUnknownSha256: snapshot().historicalUnknownSha256, operatorLease });
-  const fence = async (lease?: Awaited<ReturnType<typeof claim>>) => owner.fence(input(lease));
+  const fence = async (lease?: Awaited<ReturnType<typeof claim>>) => await owner.fence(input(lease));
   return { owner, directory, snapshot, responsibility, input, fence,
-    async close() { (owner as any).dispose?.(); registry?.close(); await rm(directory, { recursive: true, force: true }); },
+    async close() { await (owner as any).dispose?.(); if (owner instanceof CodexRouterOwner) await owner.drain().catch(() => {}); registry?.close(); await rm(directory, { recursive: true, force: true }); },
     async durable() { return kind === "core" ? JSON.parse(await readFile(join(directory, "account-handoff.json"), "utf8")) : registry!.metadata("router-handoff"); } };
 }
 async function waitOpen(snapshot: () => any) {
@@ -70,7 +70,7 @@ for (const kind of ["core", "router"] as const) {
     try { const lease = await claim(process.pid); await f.fence(lease);
       const end = Date.now() + 1700;
       while (Date.now() < end) { await delay(200); await (f.owner as any).renewOperatorLease(f.input(lease)); assert.equal(f.snapshot().phase, "fenced"); }
-      if (f.owner instanceof AccountCoreOwner) await f.owner.abortFence(f.input(lease)); else f.owner.abort(f.input(lease));
+      if (f.owner instanceof AccountCoreOwner) await f.owner.abortFence(f.input(lease)); else await f.owner.abort(f.input(lease));
       assert.equal(f.snapshot().phase, "open"); assert.equal((await f.durable() as any).operatorLeaseAborts?.length ?? 0, 0);
     } finally { await f.close(); }
   });
@@ -93,9 +93,9 @@ for (const kind of ["core", "router"] as const) {
       await waitOpen(f.snapshot);
       await assert.rejects(f.fence(good), /terminated/);
       assert.equal(f.snapshot().phase, "open", "expired claim cannot fence again at the latest epoch");
-      await assert.rejects(async () => f.owner.renewOperatorLease(stale));
+      await assert.rejects(async () => await f.owner.renewOperatorLease(stale));
       const next = await claim(process.pid); await f.fence(next);
-      await assert.rejects(async () => f.owner.renewOperatorLease(stale));
+      await assert.rejects(async () => await f.owner.renewOperatorLease(stale));
       assert.equal(f.snapshot().phase, "fenced"); assert.equal(f.snapshot().operatorLease.id, next.id);
     } finally { await f.close(); }
   });
@@ -109,13 +109,13 @@ for (const kind of ["core", "router"] as const) {
       }
       const lease = await claim(process.pid); await f.fence(lease);
       const observation = { coverage: "complete" as const, activeCount: 0, historicalCount: 0, counts: {} };
-      const proof = f.owner instanceof AccountCoreOwner ? f.owner.inspect(observation) : f.owner.inspect(f.input(), observation);
+      const proof = f.owner instanceof AccountCoreOwner ? f.owner.inspect(observation) : await f.owner.inspect(f.input(), observation);
       const durable = await f.durable();
-      f.owner.renewOperatorLease(f.input(lease));
+      await f.owner.renewOperatorLease(f.input(lease));
       assert.deepEqual(await f.durable(), durable, "renewal does not change cold data or the persisted fence");
       const input = { ...f.input(), proof: proof.identity };
       if (f.owner instanceof AccountCoreOwner) await f.owner.release(input, observation, () => ({ imageAffinities: [], resetReceipts: [], loginReceipts: [] }), async () => { await delay(1200); });
-      else f.owner.release(input, observation, "configuration");
+      else await f.owner.release(input, observation, "configuration");
       await delay(1100);
       assert.equal(f.snapshot().phase, "released");
       assert.equal(f.snapshot().operatorLeaseAborts?.length ?? 0, 0);
@@ -133,8 +133,8 @@ for (const kind of ["core", "router"] as const) {
         if (request.method === "POST") {
           const input: any = await readControlJson(request); actions.push(input.action);
           if (input.action === "fence") await f.owner.fence(input);
-          else if (input.action === "renew-operator-lease") f.owner.renewOperatorLease(input);
-          else if (input.action === "abort") { if (f.owner instanceof AccountCoreOwner) await f.owner.abortFence(input); else f.owner.abort(input); }
+          else if (input.action === "renew-operator-lease") await f.owner.renewOperatorLease(input);
+          else if (input.action === "abort") { if (f.owner instanceof AccountCoreOwner) await f.owner.abortFence(input); else await f.owner.abort(input); }
           else throw Error("Unexpected fixture action");
         }
         return { status: 200, value: { pid: process.pid, handoff: f.snapshot() } };
@@ -156,7 +156,7 @@ for (const kind of ["core", "router"] as const) test(`${kind}: mutable snapshot 
   try {
     const lease = await claim(process.pid); await f.fence(lease);
     const copy: any = f.owner.snapshot(); copy.operatorLease.controller.pid = 0;
-    f.owner.renewOperatorLease(f.input(lease));
+    await f.owner.renewOperatorLease(f.input(lease));
     await waitOpen(f.snapshot);
     const archived: any = f.owner.snapshot(); archived.operatorLeaseAborts.pop();
     assert.equal(f.snapshot().operatorLeaseAborts.length, 1);

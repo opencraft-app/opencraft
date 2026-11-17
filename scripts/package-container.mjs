@@ -26,6 +26,8 @@ for (const [source, target] of [
 for (const [source, target, format] of [
   ['apps/codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
   ['apps/codex-core/src/app-server-bin.ts', 'codex-app-server.cjs', 'cjs'],
+  ['apps/codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],
+  ['apps/codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
   ['scripts/container-deployment/host.mjs', 'native-host.mjs', 'esm'],
   ['scripts/container-deployment/hands.mjs', 'native-hands.mjs', 'esm'],
 ]) await build({ entryPoints: [join(repository, source)], outfile: join(root, 'runtime', target),

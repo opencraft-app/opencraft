@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { inspectRouterNative, readRouterRegistry, routerDigest, routerFileDigest, committedHostRestartArchive, archivedHostColdUnavailable, type HostColdUnavailablePolicy } from "./router-maintenance.js";
+import { inspectRouterNative, routerDigest, routerFileDigest, committedHostRestartArchive, archivedHostColdUnavailable, type HostColdUnavailablePolicy } from "./router-maintenance.js";
 import type { RouterExpectation } from "./router-owner.js";
 import { setTimeout as delay } from "node:timers/promises";
 import { realpath, mkdir, stat, chown, chmod, readFile } from "node:fs/promises";
@@ -10,6 +10,8 @@ import { CodexGenerationRuntime } from "./generation-runtime.js";
 import { CodexGenerationRouter, startGenerationSocket } from "./generation-router.js";
 import { coldHomeValidator } from "./generation-cold-home.js";
 import { type GenerationSupervisor, SystemdGenerationSupervisor } from "./generation-supervisor.js";
+import { routerStorageTask } from "./generation-registry-worker.js";
+import type { inspectGenerationRegistry } from "./generation-registry.js";
 import type { GenerationDefinition } from "./generation-registry.js";
 import { nativeHistoryFailures, type NativeHistoryFailures } from "./native-history-read.js";
 
@@ -55,7 +57,7 @@ export async function startCodexGenerationService(options: {
   const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory, coreEndpoint: options.coreEndpoint,
     dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
   const validator = coldHomeValidator({ directory: join(registryDirectory, "cold-upgrades"), socketParentDirectory: dirname(options.endpoint), supervisor, nativeHistoryFailures: options.nativeHistoryFailures });
-  const runtime = new CodexGenerationRuntime({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
+  const runtime = await CodexGenerationRuntime.open({ directory: registryDirectory, dataDirectory, proxyBaseUrl, supervisor,
     requireHostUsage: options.requireHostUsage, replaceRetiredHome: validator, executionUid: execution.uid, executionGid: execution.gid,
     runtimeParentDirectory: dirname(dataDirectory), socketParentDirectory: dirname(options.endpoint), nativeHistoryFailures: options.nativeHistoryFailures, maintenanceFile: options.maintenanceFile });
   const router = new CodexGenerationRouter(runtime); runtime.serverRequestCount = id => router.serverRequestCount(id);
@@ -70,7 +72,7 @@ export async function startCodexGenerationService(options: {
       retention: runtime.registry.metadata(`retention:${generation.id}`), retirementHistory: runtime.registry.metadata(`retirement-history:${generation.id}`),
       retirement: runtime.registry.metadata(`retirement:${generation.id}`), unresolvedCreations: runtime.registry.unresolvedCreations(generation.id) })),
     fences: runtime.fences(true), storage: runtime.registry.outcome });
-  const close = () => closing ??= (async () => { runtime.owner.dispose(); await control?.close(); await socket?.close(); await runtime.close(); })();
+  const close = () => closing ??= (async () => { await runtime.owner.dispose(); await control?.close(); await socket?.close(); await runtime.close(); })();
   try {
     await runtime.initializeExecutionRecovery();
     if (runtime.owner.isOpen()) await validator.recover(runtime.registry.list());
@@ -104,18 +106,18 @@ export async function startCodexGenerationService(options: {
         let proof: unknown, ready: unknown;
         if (request.method === "POST") {
           const value = await readControlJson(request), input = value as unknown as RouterExpectation;
-          if (value.action === "fence") { runtime.owner.fence(input); await runtime.quiesceRouter(); }
-          else if (value.action === "renew-operator-lease") runtime.owner.renewOperatorLease(input);
-          else if (value.action === "abort") runtime.owner.abort(input);
-          else if (value.action === "inspect") proof = runtime.owner.inspect(input, await observation());
-          else if (value.action === "release") { const config = await configuration(); runtime.owner.release(value as unknown as RouterExpectation & { proof?: string }, await observation(), config); }
+          if (value.action === "fence") { await runtime.owner.fence(input); await runtime.quiesceRouter(); }
+          else if (value.action === "renew-operator-lease") await runtime.owner.renewOperatorLease(input);
+          else if (value.action === "abort") await runtime.owner.abort(input);
+          else if (value.action === "inspect") proof = await runtime.owner.inspect(input, await observation());
+          else if (value.action === "release") { const config = await configuration(); await runtime.owner.release(value as unknown as RouterExpectation & { proof?: string }, await observation(), config); }
           else if (value.action === "cold-ready") ready = await runtime.owner.coldReady(input, await configuration(), coldRead);
           else if (value.action === "resume") await runtime.owner.resume(value as unknown as RouterExpectation & { identity?: string }, await configuration(), coldRead);
           else throw new Error("Unknown router handoff action");
         } else if (request.method !== "GET") throw new Error("Unknown router handoff method");
         return { status: 200, value: { pid: process.pid, handoff: runtime.owner.snapshot(), proof, ready } };
       }
-      const done = runtime.owner.enter(false, { method: `${request.method ?? "UNKNOWN"}/control`, operation: ["/health", "/generations", "/generation-host", "/generation-directory"].find(path => request.url?.split("?")[0] === path) });
+      const done = await runtime.owner.enter(false, { method: `${request.method ?? "UNKNOWN"}/control`, operation: ["/health", "/generations", "/generation-host", "/generation-directory"].find(path => request.url?.split("?")[0] === path) });
       try {
       if (request.method === "GET" && request.url?.split("?")[0] === "/generation-directory") {
         const query = new URL(request.url, "http://local.invalid");
@@ -138,12 +140,12 @@ export async function startCodexGenerationService(options: {
       if (request.method !== "POST" || !["/generations", "/generation-host"].includes(request.url ?? "")) return { status: 404, value: { error: "Unknown generation operation" } };
       const value = await readControlJson(request), params = value.params as Record<string, unknown>;
       if (!params || typeof params !== "object" || Array.isArray(params)) return { status: 400, value: { error: "Invalid generation envelope" } };
-      done.update({ operation: typeof value.operation === "string" ? value.operation : undefined, generationId: typeof params.id === "string" ? params.id : typeof (params.definition as Record<string, unknown> | undefined)?.id === "string" ? (params.definition as Record<string, unknown>).id as string : undefined });
+      await done.update({ operation: typeof value.operation === "string" ? value.operation : undefined, generationId: typeof params.id === "string" ? params.id : typeof (params.definition as Record<string, unknown> | undefined)?.id === "string" ? (params.definition as Record<string, unknown>).id as string : undefined });
       if (request.url === "/generation-host") {
-        if (value.operation === "claim") return { status: 200, value: runtime.claimHost(String(params.instanceId ?? ""), String(params.routingEpoch ?? "")) };
-        if (value.operation === "state") return { status: 200, value: runtime.publishHostUsage(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
+        if (value.operation === "claim") return { status: 200, value: await runtime.claimHost(String(params.instanceId ?? ""), String(params.routingEpoch ?? "")) };
+        if (value.operation === "state") return { status: 200, value: await runtime.publishHostUsage(params as unknown as import("@opencraft/account-pool-host").CodexGenerationHostUsage) };
       } else {
-        if (value.operation === "retention") return { status: 200, value: runtime.setRetention(params) };
+        if (value.operation === "retention") return { status: 200, value: await runtime.setRetention(params) };
         if (value.operation === "app-payload") return { status: 200, value: await runtime.selectAppPayload(params) };
         if (value.operation === "prepare") return { status: 200, value: await runtime.prepare(params.definition as unknown as GenerationDefinition, params.legacy === true, params.expectedOwner as string | undefined, params.expectedHost as string | undefined) };
         if (value.operation === "preparation") return { status: 200, value: { preparation: await runtime.preparation(String(params.id ?? ""), params.expectedOwner as string | undefined, params.expectedHost as string | undefined) } };
@@ -153,7 +155,7 @@ export async function startCodexGenerationService(options: {
         if (value.operation === "retire") return { status: 200, value: await runtime.retire(String(params.id ?? "")) };
       }
       return { status: 400, value: { error: "Unknown generation operation" } };
-      } finally { done(); }
+      } finally { await done(); }
     });
     await chown(options.endpoint, execution.uid, execution.gid);
     if (runtime.owner.isOpen() && options.bootstrap && (!runtime.registry.get(options.bootstrap.generation.id) || runtime.registry.epoch() === 0)) {
@@ -189,7 +191,7 @@ export async function inspectRouterMaintenanceService(options: Parameters<typeof
   const launch = await new CodexCoreControlClient(options.coreEndpoint, options.token).appServerLaunch();
   if (await realpath(options.dataDirectory) !== launch.dataDirectory) throw Error("Router account data selector changed");
   const base = launch.launch.args.find(v => v.startsWith("chatgpt_base_url=")); if (!base) throw Error("Router proxy selector unavailable");
-  const proxyBaseUrl: string = JSON.parse(base.slice(base.indexOf("=") + 1)), state = readRouterRegistry(options.registryDirectory);
+  const proxyBaseUrl: string = JSON.parse(base.slice(base.indexOf("=") + 1)), state = await routerStorageTask<ReturnType<typeof inspectGenerationRegistry>>("inspect", [options.registryDirectory]);
   const supervisor = options.supervisor ?? new SystemdGenerationSupervisor({ registryDirectory: options.registryDirectory, coreEndpoint: options.coreEndpoint,
     dataDirectory: options.dataDirectory, tokenFile: options.tokenFile, token: options.token, scope: options.systemdScope });
   const source = state.metadata["router-live-owner"] as { bootId?: string; owner?: string } | null;
@@ -211,7 +213,7 @@ export async function inspectRouterMaintenanceService(options: Parameters<typeof
   const native = await inspectRouterNative({ ...state, supervisor, coreEndpoint: options.coreEndpoint, token: options.token, failures: options.nativeHistoryFailures! }, continuing || !!committedHostRestart,
     hostRestart && !committedHostRestart ? { sourceBootId: source!.bootId!, sourceOwner: source!.owner, recoveryBootId, ...(policyArchived ? { policyArchived: true } : {}) } : undefined, coldUnavailable ?? retainedUnavailable,
     !!inheritedUnavailable && routerDigest(coldUnavailable ?? retainedUnavailable) === routerDigest(inheritedUnavailable));
-  const after = readRouterRegistry(options.registryDirectory);
+  const after = await routerStorageTask<ReturnType<typeof inspectGenerationRegistry>>("inspect", [options.registryDirectory]);
   if (!provisional && (routerDigest(after.snapshot) !== routerDigest(state.snapshot) || routerDigest(after.metadata["router-handoff"]) !== routerDigest(state.metadata["router-handoff"]))) throw Error("Router current registry changed during collection");
   return { ...(provisional ? { provisional: true } : {}), sourceHandoff: state.metadata["router-handoff"], registrySha256: routerDigest(state.snapshot), native,
     unconfirmedRecords: Object.entries(state.metadata).filter(([key, value]) => key.startsWith("router-uncertainty:")

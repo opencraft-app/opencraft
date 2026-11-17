@@ -40,7 +40,7 @@ async function fixture() {
     beforeDiscard(fn: () => Promise<void>) { beforeDiscard = fn; },
     failStart(v: boolean) { failedStart = v; }, callbackVersion(v: 1 | undefined) { callbackVersion = v; },
     duringValidation(fn: () => Promise<void>) { duringValidation = fn; }, beforeInspect(fn: () => Promise<void>) { beforeInspect = fn; },
-    async reopen() { await runtime.close(); runtime = new CodexGenerationRuntime(options); },
+    async reopen() { await runtime.close(); runtime = new CodexGenerationRuntime(options); await runtime.ready; },
     async close() { await runtime.close(); await rm(root, { recursive: true, force: true }); } };
 }
 

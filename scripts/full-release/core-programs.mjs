@@ -10,10 +10,12 @@ export async function bundleCodexCore({ repositoryRoot, directory }) {
     ['bin', 'main.cjs', 'cjs'], ['app-server-bin', 'app-server.cjs', 'cjs'],
     ['generation-bin', 'generations.cjs', 'cjs'],
     ['router-evidence.worker', 'router-evidence-worker.mjs', 'esm'],
+    ['generation-registry.worker', 'generation-registry-worker.mjs', 'esm'],
   ]) {
     const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot,
       entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(directory, name),
-      bundle: true, platform: 'node', format, target: 'node26', external: ['bufferutil', 'utf-8-validate', 'node-pty'], logLevel: 'silent' });
+      bundle: true, platform: 'node', format, target: 'node26',
+      ...(source === 'generation-registry.worker' ? { banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } } : {}), external: ['bufferutil', 'utf-8-validate', 'node-pty'], logLevel: 'silent' });
     for (const input of Object.keys(bundle.metafile.inputs)) {
       if (!input.includes('node_modules/')) continue;
       let current = dirname(resolve(repositoryRoot, input));

@@ -170,15 +170,16 @@ test("unsupported retired durable history blocks source release while abort rema
   const runtime = new CodexGenerationRuntime({ directory: root, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1",
     requireHostUsage: false, replaceRetiredHome: async () => {}, supervisor: { start: async () => { throw Error("No start"); }, identify: async () => { throw Error("No identity"); }, stop: async () => {}, discardUnready: async () => {}, processesQuiet: async () => false } });
   try {
+    await runtime.ready;
     for (const id of ["old","new"]) { runtime.registry.register({ id, endpoint: join(root,id,"control.sock"), runtimeDataDirectory: join(root,id,"data"), executable: process.execPath, bundle: process.argv[1]!, node: process.execPath, cwd: root }); runtime.registry.ready(id); }
     runtime.registry.activate("old",0); runtime.registry.discover("retired-history","old"); runtime.registry.activate("new",1);
     runtime.registry.fenceRetirement("old",1); runtime.registry.retire("old",1);
     const input=()=>({ operatorLease, expectedOwner:runtime.owner.owner, expectedEpoch:runtime.owner.snapshot().epoch, operationId:"retired",fence:"fence" });
-    runtime.owner.fence(input()); const observation=await runtime.handoffObservation();
+    (await runtime.owner.fence(input())); const observation=await runtime.handoffObservation();
     assert.ok(observation.counts.lifecycle>0);
-    const proof=runtime.owner.inspect(input(),observation); assert.notEqual(proof.activeCount,0);
-    assert.throws(()=>runtime.owner.release({...input(),proof:proof.identity},observation,"config"),/drained/);
-    runtime.owner.abort(input()); assert.ok(runtime.owner.isOpen());
+    const proof=(await runtime.owner.inspect(input(),observation)); assert.notEqual(proof.activeCount,0);
+    await assert.rejects(async()=>(await runtime.owner.release({...input(),proof:proof.identity},observation,"config")),/drained/);
+    (await runtime.owner.abort(input())); assert.ok(runtime.owner.isOpen());
   } finally { await runtime.close(); await rm(root,{recursive:true,force:true}); }
 });
 
@@ -187,8 +188,9 @@ test("unconfirmed router callbacks prevent background native retirement", async 
   const runtime=new CodexGenerationRuntime({directory:root,dataDirectory:root,proxyBaseUrl:"http://127.0.0.1:1",requireHostUsage:false,replaceRetiredHome:async()=>{},supervisor:{
     start:async()=>{throw Error("Native observation must not start while outcome is unknown");},identify:async()=>{throw Error("No identity");},stop:async()=>{stops++;},discardUnready:async()=>{},processesQuiet:async()=>true}});
   try{
+    await runtime.ready;
     for(const id of ["old","new"]){runtime.registry.register({id,endpoint:join(root,id,"control.sock"),runtimeDataDirectory:join(root,id,"data"),executable:process.execPath,bundle:process.argv[1]!,node:process.execPath,cwd:root});runtime.registry.ready(id);}
-    runtime.registry.activate("old",0);runtime.registry.activate("new",1);runtime.owner.uncertain();
+    runtime.registry.activate("old",0);runtime.registry.activate("new",1);(await runtime.owner.uncertain());
     const result=await runtime.retire("old");assert.equal(result.retired,false);assert.ok(result.reasons.includes("router-outcome-unknown"));
     assert.equal(stops,0);assert.equal(runtime.registry.get("old")!.state,"draining");
   }finally{await runtime.close();await rm(root,{recursive:true,force:true});}

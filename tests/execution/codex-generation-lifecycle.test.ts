@@ -11,7 +11,7 @@ import type { GenerationRecord } from "../../apps/codex-core/src/generation-regi
 import { CodexCoreControlClient, CodexCoreUnavailableError, CodexExecutionUnavailableError } from "@opencraft/account-pool-host";
 import { startControlServer } from "../../apps/codex-core/src/control-server.js";
 
-async function fixture(now?: () => number) {
+async function fixture(now?: () => number, worker = false) {
   const root = await mkdtemp(join(tmpdir(), "oc-gen-life-"));
   const running = new Map<string, { close(): Promise<void>; serial: number }>(), serials = new Map<string, number>();
   const stopped: string[] = [], cold: string[] = [];
@@ -42,18 +42,19 @@ async function fixture(now?: () => number) {
     async discardUnready(g) { const process = running.get(g.id); if (process) { await process.close(); running.delete(g.id); } },
     async processesQuiet() { return quiet; },
   };
-  const runtime = new CodexGenerationRuntime({ directory: join(root, "routing"), dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1234", supervisor,
-    now, requireHostUsage: true, replaceRetiredHome: async (old, current) => { assert.equal(running.has(old.id), false, "backup cannot inspect a live HOME"); cold.push(old.id); return { replacement: current.executable, backupVerified: true }; } });
+  const options: ConstructorParameters<typeof CodexGenerationRuntime>[0] = { directory: join(root, "routing"), dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1234", supervisor,
+    now, requireHostUsage: true, replaceRetiredHome: async (old, current) => { assert.equal(running.has(old.id), false, "backup cannot inspect a live HOME"); cold.push(old.id); return { replacement: current.executable, backupVerified: true }; } };
+  const runtime = worker ? await CodexGenerationRuntime.open(options) : new CodexGenerationRuntime(options);
   for (const id of ["old", "new"]) await runtime.prepare({ id, endpoint: join(root, id, "control.sock"), runtimeDataDirectory: join(root, id, "data"), executable: `/fixed/${id}/codex`, bundle: `/fixed/${id}/app-server.cjs`, node: process.execPath, cwd: root });
-  await runtime.activate("old", 0); runtime.registry.discover("old-thread", "old");
+  await runtime.activate("old", 0); await runtime.registry.discover("old-thread", "old");
   let sequence = 0;
   const host = () => runtime.claimHost("host", runtime.registry.ownerEpoch);
-  let lease = host();
-  const publish = (blockedThreadIds: string[] = [], acknowledgedFenceEpoch = runtime.fences().fenceEpoch, unscopedBusy = false) => runtime.publishHostUsage({ ...lease, sequence: ++sequence, blockedThreadIds, acknowledgedFenceEpoch, unscopedBusy, discoveryComplete: true });
-  publish(); await runtime.activate("new", 1);
+  let lease = await host();
+  const publish = async (blockedThreadIds: string[] = [], acknowledgedFenceEpoch = runtime.fences().fenceEpoch, unscopedBusy = false) => (await runtime.publishHostUsage({ ...lease, sequence: ++sequence, blockedThreadIds, acknowledgedFenceEpoch, unscopedBusy, discoveryComplete: true }));
+  await publish(); await runtime.activate("new", 1);
   const waitFence = async () => { for (let n = 0; n < 200 && !runtime.fences().fencedGenerationIds.includes("old"); n++) await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(runtime.fences().fencedGenerationIds.includes("old"), true); };
   return { root, runtime, supervisor, stopped, cold, native, publish, waitFence, running, setQuiet(value: boolean) { quiet = value; }, failNextStop() { failStop = true; },
-    replaceHost() { const previous = lease; lease = host(); sequence = 0; return previous; },
+    async replaceHost() { const previous = lease; lease = await host(); sequence = 0; return previous; },
     async close() { await runtime.close(); for (const process of running.values()) await process.close(); await rm(root, { recursive: true, force: true }); } };
 }
 
@@ -84,9 +85,9 @@ test("execution failure restarts only its instance without waiting for busy Nati
 test("Host queue and Native goal keep the old owner serving without installing an admission fence", async () => {
   const f = await fixture();
   try {
-    f.publish(["old-thread"]); assert.deepEqual((await f.runtime.retire("old")).reasons, ["host-thread-work"]);
+    await f.publish(["old-thread"]); assert.deepEqual((await f.runtime.retire("old")).reasons, ["host-thread-work"]);
     assert.deepEqual(f.runtime.fences().fencedGenerationIds, []); assert.deepEqual(f.stopped, []);
-    f.publish(); f.native.get("old")!.goal = true;
+    await f.publish(); f.native.get("old")!.goal = true;
     assert.deepEqual((await f.runtime.retire("old")).reasons, ["native-goal"]); assert.deepEqual(f.runtime.fences().fencedGenerationIds, []);
   } finally { await f.close(); }
 });
@@ -101,7 +102,7 @@ test("native HOME directory resolves old and new Threads without waking retired 
     assert.deepEqual(current.route, { threadId: "new-thread", generationId: "new" });
     assert.equal(new Set(old.homes.map(home => home.codexHome)).size, 2);
     const leaseBefore = f.runtime.registry.metadata("host-usage");
-    const retiring = f.runtime.retire("old"); await f.waitFence(); f.publish(); await retiring;
+    const retiring = f.runtime.retire("old"); await f.waitFence(); await f.publish(); await retiring;
     const leaseAfterRetirement = f.runtime.registry.metadata("host-usage");
     assert.equal(f.running.has("old"), false);
     assert.equal(f.runtime.directory("old-thread").homes.find(home => home.generationId === "old")!.codexHome,
@@ -126,7 +127,7 @@ test("work accepted before a Host fence is visible in the acknowledgement and pr
   const f = await fixture();
   try {
     const retiring = f.runtime.retire("old"); await f.waitFence();
-    f.publish(["old-thread"]);
+    await f.publish(["old-thread"]);
     assert.equal((await retiring).retired, false); assert.deepEqual(f.stopped, []);
     assert.equal(f.runtime.registry.get("old")!.state, "draining"); assert.deepEqual(f.runtime.fences().fencedGenerationIds, []);
   } finally { await f.close(); }
@@ -136,7 +137,7 @@ test("an acknowledged empty Host fence permits retirement and validated cold rep
   const f = await fixture();
   try {
     const root = f.runtime.registry.get("old")!.runtimeDataDirectory;
-    const retiring = f.runtime.retire("old"); await f.waitFence(); f.publish();
+    const retiring = f.runtime.retire("old"); await f.waitFence(); await f.publish();
     assert.equal((await retiring).retired, true); assert.deepEqual(f.stopped, ["old"]); assert.equal(f.running.has("new"), true);
     assert.equal(f.runtime.registry.get("old")!.state, "retired"); assert.deepEqual(f.runtime.fences().fencedGenerationIds, []);
     await f.runtime.ensure("old");
@@ -148,7 +149,7 @@ test("an acknowledged empty Host fence permits retirement and validated cold rep
 test("a live native shell blocks retirement after the Host acknowledgement", async () => {
   const f = await fixture();
   try {
-    f.setQuiet(false); const retiring = f.runtime.retire("old"); await f.waitFence(); f.publish();
+    f.setQuiet(false); const retiring = f.runtime.retire("old"); await f.waitFence(); await f.publish();
     assert.deepEqual((await retiring).reasons, ["native-process"]); assert.deepEqual(f.stopped, []);
   } finally { await f.close(); }
 });
@@ -157,7 +158,7 @@ test("failed stopping keeps a durable retirement fence and retries before any HO
   const f = await fixture();
   try {
     f.failNextStop(); const retiring = f.runtime.retire("old"); const rejected = assert.rejects(retiring, /synthetic stop lost/);
-    await f.waitFence(); f.publish(); await rejected;
+    await f.waitFence(); await f.publish(); await rejected;
     assert.equal(f.runtime.registry.get("old")!.state, "retiring"); await assert.rejects(f.runtime.ensure("old"), /maintenance/);
     assert.deepEqual(f.cold, []); assert.equal(f.running.has("old"), true);
     assert.equal((await f.runtime.retire("old")).retired, true); assert.equal(f.runtime.registry.get("old")!.state, "retired");
@@ -167,16 +168,16 @@ test("failed stopping keeps a durable retirement fence and retries before any HO
 test("old Host leases and snapshots cannot overwrite the current retirement proof", async () => {
   const f = await fixture();
   try {
-    const previous = f.replaceHost();
-    assert.throws(() => f.runtime.publishHostUsage({ ...previous, sequence: 100, blockedThreadIds: [], unscopedBusy: false, discoveryComplete: true, acknowledgedFenceEpoch: f.runtime.fences().fenceEpoch }), /Stale/);
-    f.publish(["old-thread"]); assert.deepEqual((await f.runtime.retire("old")).reasons, ["host-thread-work"]);
+    const previous = await f.replaceHost();
+    await assert.rejects(async () => (await f.runtime.publishHostUsage({ ...previous, sequence: 100, blockedThreadIds: [], unscopedBusy: false, discoveryComplete: true, acknowledgedFenceEpoch: f.runtime.fences().fenceEpoch })), /Stale/);
+    await f.publish(["old-thread"]); assert.deepEqual((await f.runtime.retire("old")).reasons, ["host-thread-work"]);
   } finally { await f.close(); }
 });
 
 test("explicit rollback after retirement reopens the preserved payload and current HOME", async () => {
   const f = await fixture();
   try {
-    const retiring = f.runtime.retire("old"); await f.waitFence(); f.publish(); assert.equal((await retiring).retired, true);
+    const retiring = f.runtime.retire("old"); await f.waitFence(); await f.publish(); assert.equal((await retiring).retired, true);
     assert.equal(await f.runtime.activate("old", 2), 3);
     assert.equal(f.runtime.registry.current().generation.executable, "/fixed/old/codex");
     assert.equal(f.runtime.registry.get("new")!.state, "draining"); assert.deepEqual(f.cold, ["old"]);
@@ -190,7 +191,7 @@ test("automatic historical reads never downgrade a newer HOME after default roll
     await f.runtime.activate("old", 2);
     const retiring = f.runtime.retire("new");
     for (let n = 0; n < 200 && !f.runtime.fences().fencedGenerationIds.includes("new"); n++) await new Promise(resolve => setTimeout(resolve, 5));
-    f.publish(); assert.equal((await retiring).retired, true);
+    await f.publish(); assert.equal((await retiring).retired, true);
     await f.runtime.ensure("new"); assert.equal(f.runtime.registry.get("new")!.executable, "/fixed/new/codex");
     assert.equal(f.runtime.registry.current().generation.id, "old");
   } finally { await f.close(); }
@@ -211,7 +212,7 @@ test("P2c readiness expires across Host leases, native incarnation changes and d
   const f = await fixture();
   try {
     let proof = await f.runtime.preparation("old");
-    f.replaceHost();
+    await f.replaceHost();
     await assert.rejects(f.runtime.activate("old", 2, proof), /preparation/);
     proof = await f.runtime.preparation("old");
     await f.running.get("old")!.close(); f.running.delete("old");
@@ -308,7 +309,7 @@ test("P2c native preparation checks expected routing/Host identity and activatio
   try {
     const owner = f.runtime.registry.ownerEpoch, host = f.runtime.preparationOwner();
     await assert.rejects(f.runtime.preparation("old", "other-owner", host), /owner or Host/);
-    f.replaceHost();
+    await f.replaceHost();
     await assert.rejects(f.runtime.preparation("old", owner, host), /owner or Host/);
     const proof = await f.runtime.preparation("old", owner, f.runtime.preparationOwner());
     const operationId = "a".repeat(64);
@@ -382,23 +383,23 @@ test("generation router keeps Native history readable while the execution admiss
 
 test("controller restart explains only fault-scoped unknown leases and preserves their evidence without replay", async () => {
   let time = 1_000, disconnected = true;
-  const f = await fixture(() => time);
+  const f = await fixture(() => time, true);
   let replacement: CodexGenerationRuntime | undefined, denied: CodexGenerationRuntime | undefined;
   try {
     const g = f.runtime.registry.get("new")!;
-    const rpc = f.runtime.owner.enter({generationId: "new", incarnation: g.incarnation, method: "command/exec"});
-    const callback = f.runtime.owner.retainNativeCallback({generationId: "new", incarnation: g.incarnation, method: "item/tool/call", threadId: "new-thread"});
-    callback.sent();
+    const rpc = await f.runtime.owner.enter(false, {generationId: "new", incarnation: g.incarnation, method: "command/exec"});
+    const callback = await f.runtime.owner.retainNativeCallback({generationId: "new", incarnation: g.incarnation, method: "item/tool/call", threadId: "new-thread"});
+    await callback.sent();
     f.supervisor.inspect = async g => {if (g.id === "new" && disconnected) throw new CodexExecutionUnavailableError("disconnected"); return f.supervisor.start(g);};
     f.supervisor.inspectNative = g => f.supervisor.start(g);
     f.supervisor.restartFailed = async () => {throw new Error("Stop is not yet confirmed");};
     await f.runtime.recoverExecutions();
     const fault = f.runtime.fences().executionRecoveries!.find(row => row.generationId === "new")!;
-    callback.retireForExecutionFault(fault.id); rpc();
+    await callback.retireForExecutionFault(fault.id); await rpc();
     assert.equal(f.runtime.owner.snapshot().activeCalls, 0);
     const options = (f.runtime as any).options;
     await f.runtime.close();
-    replacement = new CodexGenerationRuntime(options);
+    replacement = await CodexGenerationRuntime.open(options);
     assert.equal(replacement.owner.isOpen(), false, "unconfirmed startup cannot admit before reading the journal");
     await replacement.initializeExecutionRecovery();
     assert.equal(replacement.owner.isOpen(), true, "fault-scoped uncertainty allows recovery to continue");
@@ -409,21 +410,21 @@ test("controller restart explains only fault-scoped unknown leases and preserves
     await replacement.recoverExecutions();
     assert.equal(replacement.fences().executionRecoveries?.find(row => row.id === fault.id)?.state, "recovered");
     assert.equal(replacement.owner.currentResponsibilityConfirmed(), true);
-    await replacement.close(); replacement = new CodexGenerationRuntime(options);
+    await replacement.close(); replacement = await CodexGenerationRuntime.open(options);
     await replacement.initializeExecutionRecovery();
     assert.equal(replacement.owner.isOpen(), true, "the completed fault remains restartable");
     // A second failure must not discard the source proof that still explains
     // the first failure's retained unknown callback record.
     const secondGeneration = replacement.registry.get("new")!;
-    const secondRpc = replacement.owner.enter({generationId: "new", incarnation: secondGeneration.incarnation, method: "process/spawn"});
-    const secondCallback = replacement.owner.retainNativeCallback({generationId: "new", incarnation: secondGeneration.incarnation, threadId: "new-thread"});
+    const secondRpc = await replacement.owner.enter(false, {generationId: "new", incarnation: secondGeneration.incarnation, method: "process/spawn"});
+    const secondCallback = await replacement.owner.retainNativeCallback({generationId: "new", incarnation: secondGeneration.incarnation, threadId: "new-thread"});
     disconnected = true;
     f.supervisor.restartFailed = async () => {throw new Error("Second source stop pending");};
     await replacement.recoverExecutions();
     const secondFault = replacement.fences().executionRecoveries!.find(row => row.generationId === "new")!;
     assert.notEqual(secondFault.id, fault.id);
-    secondCallback.retireForExecutionFault(secondFault.id); secondRpc();
-    await replacement.close(); replacement = new CodexGenerationRuntime(options);
+    await secondCallback.retireForExecutionFault(secondFault.id); await secondRpc();
+    await replacement.close(); replacement = await CodexGenerationRuntime.open(options);
     await replacement.initializeExecutionRecovery();
     assert.equal(replacement.owner.isOpen(), true, "both generations' unknown proofs survive a repeated incident");
     time += 1_000;
@@ -431,9 +432,9 @@ test("controller restart explains only fault-scoped unknown leases and preserves
     await replacement.recoverExecutions();
     assert.equal(replacement.owner.currentResponsibilityConfirmed(), true);
     assert.ok((replacement.registry.metadata(`router-lease:${callback.id}`) as any).uncertainty);
-    replacement.owner.uncertain("unattributed");
+    await replacement.owner.uncertain("unattributed");
     await replacement.close(); replacement = undefined;
-    denied = new CodexGenerationRuntime(options);
+    denied = await CodexGenerationRuntime.open(options);
     await assert.rejects(denied.initializeExecutionRecovery(), /unconfirmed/, "unrelated uncertainty still requires its original recovery contract");
   } finally {await denied?.close(); await replacement?.close(); await f.close();}
 });

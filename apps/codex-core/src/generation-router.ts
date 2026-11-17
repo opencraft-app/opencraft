@@ -4,7 +4,8 @@ import { dirname } from "node:path";
 import { createServer } from "node:http";
 import WebSocket, { WebSocketServer } from "ws";
 import type { CodexAppServerHealth, CodexGenerationFenceState } from "@opencraft/account-pool-host";
-import { CodexGenerationRegistry, type GenerationRecord, type GenerationTicket } from "./generation-registry.js";
+import type { GenerationRecord, GenerationTicket } from "./generation-registry.js";
+import type { GenerationRegistryPort } from "./generation-registry-worker.js";
 import { GenerationPeer, NativeGenerationError, rpcRecord, type RpcRecord } from "./generation-peer.js";
 import { generationThreadPath } from "./generation-thread-path.js";
 import type { CodexRouterOwner, RouterLease, RouterLeaseContext } from "./router-owner.js";
@@ -19,7 +20,7 @@ const historyReadMethods = new Set(["thread/read", "thread/resume", "thread/turn
 const missingThread = (reason: unknown) => reason instanceof NativeGenerationError && /(?:thread|rollout).*(?:not found|does not exist)|no rollout|unknown thread/iu.test(reason.message);
 
 export interface GenerationRuntimeDirectory {
-  readonly registry: CodexGenerationRegistry;
+  readonly registry: GenerationRegistryPort;
   readonly owner?: CodexRouterOwner;
   ensure(id: string): Promise<CodexAppServerHealth>;
   readHealth?(id: string): Promise<CodexAppServerHealth>;
@@ -36,27 +37,30 @@ export class CodexGenerationRouter {
   attach(socket: WebSocket, callbackLaneId?: string): void {
     if (this.runtime.owner && !this.runtime.owner.isOpen()) { socket.close(1013); return; }
     const session = new RoutingSession(this, socket, callbackLaneId);
-    this.sessions.add(session); socket.once("close", () => { this.sessions.delete(session); session.close(); });
+    this.sessions.add(session); socket.once("close", () => { void session.close().catch(() => {}).finally(() => this.sessions.delete(session)); });
   }
   routesUpdated(): void { for (const session of this.sessions) session.flushStarts(); }
   executionFault(fault: ExecutionFault): void { for (const session of this.sessions) session.executionFault(fault); }
   serverRequestCount(id: string): number { return [...this.sessions].reduce((n, s) => n + s.serverRequestCount(id), 0); }
   handoffCounts() { return { subscriptions: this.sessions.size, connectionTools: [...this.sessions].reduce((n, s) => n + s.toolCount(), 0) }; }
-  close(): void { for (const s of this.sessions) s.close(); this.sessions.clear(); }
+  async close(): Promise<void> { await Promise.all([...this.sessions].map(s => s.close())); this.sessions.clear(); }
 }
 
 class RoutingSession {
+  private closing?: Promise<void>;
+  private readonly lifetime = new AbortController();
+  private readonly operations = new Set<Promise<unknown>>();
   private readonly epoch = randomUUID();
   private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
   private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string } }>();
-  private readonly pendingStarts = new Map<string, { forward: () => void; context: RouterLeaseContext }>();
+  private readonly pendingStarts = new Map<string, { forward: () => Promise<void>; context: RouterLeaseContext }>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean; release?: RouterLease }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean; release?: RouterLease }>();
   private initializeParams: RpcRecord | null = null;
   private initialized = false;
   private closed = false;
   constructor(private readonly router: CodexGenerationRouter, private readonly socket: WebSocket, private readonly callbackLaneId?: string) {
-    socket.on("error", () => this.close());
+    socket.on("error", () => { void this.close().catch(() => {}); });
     socket.on("message", frame => {
       let message: RpcRecord;
       try { message = rpcRecord(JSON.parse(String(frame))); } catch { socket.close(1002); return; }
@@ -65,15 +69,16 @@ class RoutingSession {
         const reply = typeof message.method !== "string" && message.id !== undefined ? this.serverRequests.get(String(message.id)) : undefined;
         const reconciliation = !!reply && !reply.answered && this.registry.valid(reply.ticket);
         if (this.router.runtime.owner && !this.router.runtime.owner.isOpen() && !reconciliation) throw error("Router admission is fenced", true);
-        release = this.router.runtime.owner?.enter(reconciliation, { ...this.context(typeof message.method === "string" ? message.method : "serverRequest/reply", reply?.ticket, rpcRecord(message.params), message.id),
+        release = await this.router.runtime.owner?.enter(reconciliation, { ...this.context(typeof message.method === "string" ? message.method : "serverRequest/reply", reply?.ticket, rpcRecord(message.params), message.id),
           ...(reply ? { parentLeaseId: reply.release?.id, nativeRequestId: String(reply.nativeId), turnId: reply.completion?.turnId, callId: reply.completion?.callId } : {}) });
         if (this.closed) throw error("Routing connection is closed");
         await this.receive(message, release);
       };
-      void operation().catch(reason => {
+      const flight = operation().catch(reason => {
         if (message.id !== undefined) this.emit({ id: message.id, error: reason instanceof NativeGenerationError ? reason.rpcError
           : { code: -32081, message: "Generation routing unavailable; delivery is unconfirmed", data: { resultUnknown: true } } });
-      }).finally(() => release?.());
+      }).finally(async () => { await release?.(); }).catch(() => this.socket.close(1011));
+      this.operations.add(flight); void flight.finally(() => this.operations.delete(flight));
     });
   }
   private context(method: string, ticket?: GenerationTicket, params: RpcRecord = {}, rpcId?: unknown): RouterLeaseContext {
@@ -90,13 +95,13 @@ class RoutingSession {
     const existing = this.peers.get(id);
     if (existing?.incarnation === generation.incarnation) return existing.operation;
     if (existing) {
-      this.releaseIncarnation(id, existing.incarnation);
+      await this.releaseIncarnation(id, existing.incarnation);
       this.generationLost(id, existing.incarnation, `replaced:${existing.incarnation}`, generation.incarnation);
       void existing.operation.then(value => value.peer.close()).catch(() => {});
     }
     const incarnation = generation.incarnation;
     let connectionEpoch = "starting";
-    const forward = (message: RpcRecord) => {
+    const forward = async (message: RpcRecord) => {
         const live = this.registry.get(id);
         if (this.closed || !live || live.incarnation !== incarnation || live.state === "retired") return;
         const nativeParams = rpcRecord(message.params), processHandle = text(nativeParams.processHandle), processId = text(nativeParams.processId);
@@ -108,10 +113,10 @@ class RoutingSession {
         if (message.method === "item/completed" && completedItem.type === "dynamicToolCall" && ["completed", "failed"].includes(text(completedItem.status))) {
           const matches = [...this.serverRequests].filter(([, request]) => request.operation === operation && request.completion
             && request.completion.threadId === nativeParams.threadId && request.completion.turnId === nativeParams.turnId && request.completion.callId === completedItem.id);
-          if (matches.length > 1) for (const [, request] of matches) request.release?.unknown("ambiguous-native-completion");
+          if (matches.length > 1) for (const [, request] of matches) await request.release?.unknown("ambiguous-native-completion");
           if (matches.length === 1) {
             const [key, request] = matches[0]!;
-            if (request.answered) request.release?.(); else request.release?.unknown("native-resolved-before-reply");
+            if (request.answered) await request.release?.(); else await request.release?.unknown("native-resolved-before-reply");
             this.serverRequests.delete(key);
             this.emit({ method: "serverRequest/resolved", params: { threadId: request.completion!.threadId, requestId: key } });
           }
@@ -119,23 +124,24 @@ class RoutingSession {
         if (message.method === "serverRequest/resolved") {
           const entry = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === nativeParams.requestId);
           if (!entry) return;
-          if (entry[1].answered) entry[1].release?.(); else entry[1].release?.unknown("native-resolved-before-reply");
+          if (entry[1].answered) await entry[1].release?.(); else await entry[1].release?.unknown("native-resolved-before-reply");
           this.serverRequests.delete(entry[0]); message = { ...message, params: { ...nativeParams, requestId: entry[0] } };
         }
         const process = processHandle ? this.processes.get(processHandle) : undefined;
         if (processHandle && (!process || process.ticket.generationId !== id || process.ticket.incarnation !== incarnation)) return;
-        if (message.method === "process/exited" && process) { process.active = false; process.release?.(); }
+        if (message.method === "process/exited" && process) { process.active = false; await process.release?.(); }
         const tid = threadId(message);
         if (tid && !this.registry.route(tid) && message.method === "thread/started" && this.registry.unresolvedCreations(id)) {
           this.pendingStarts.set(tid, { forward: () => forward(message), context: this.context("thread/started", { ownerEpoch: this.registry.ownerEpoch, generationId: id, incarnation, admissionEpoch: this.registry.epoch(), threadId: tid }, nativeParams) }); return;
         }
         let ticket: GenerationTicket;
         try {
-          ticket = tid ? this.registry.discover(tid, id) : { ownerEpoch: this.registry.ownerEpoch, generationId: id, incarnation, admissionEpoch: this.registry.epoch() };
+          ticket = tid ? await this.registry.discover(tid, id) : { ownerEpoch: this.registry.ownerEpoch, generationId: id, incarnation, admissionEpoch: this.registry.epoch() };
         } catch { this.socket.close(1011); return; }
         if (!this.registry.valid(ticket)) return;
-        if (tid && rpcRecord(nativeParams.thread).ephemeral === true) this.registry.markNonpersistent(tid, "ephemeral");
-        if (tid && message.method === "thread/deleted") this.registry.markNonpersistent(tid, "deleted");
+        if (tid && rpcRecord(nativeParams.thread).ephemeral === true) await this.registry.markNonpersistent(tid, "ephemeral");
+        if (tid && message.method === "thread/deleted") await this.registry.markNonpersistent(tid, "deleted");
+        if (this.closed) return;
         this.router.routesUpdated();
         this.router.runtime.observe(live, message);
         if (message.id !== undefined && typeof message.method === "string") {
@@ -144,33 +150,38 @@ class RoutingSession {
           // a fresh public identity, so stale responses cannot answer it.
           const liveRequest = [...this.serverRequests].find(([, request]) => request.operation === operation && request.nativeId === message.id);
           const key = liveRequest?.[0] ?? `ocg:${this.epoch}:${randomUUID()}`;
-          if (!liveRequest) this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false, release: this.router.runtime.owner?.retainNativeCallback({ ...this.context(message.method, ticket, nativeParams, key), nativeRequestId: String(message.id) }),
-            completion: message.method === "item/tool/call" && tid && text(nativeParams.turnId) && text(nativeParams.callId)
-              ? { threadId: tid, turnId: text(nativeParams.turnId), callId: text(nativeParams.callId) } : undefined });
-          if (!liveRequest) this.serverRequests.get(key)?.release?.sent();
+          if (!liveRequest) {
+            const callback = await this.router.runtime.owner?.retainNativeCallback({ ...this.context(message.method, ticket, nativeParams, key), nativeRequestId: String(message.id) });
+            if (this.closed) { await callback?.unknown("consumer-disconnected"); return; }
+            this.serverRequests.set(key, { operation, nativeId: message.id, ticket, answered: false, release: callback,
+              completion: message.method === "item/tool/call" && tid && text(nativeParams.turnId) && text(nativeParams.callId)
+                ? {threadId:tid,turnId:text(nativeParams.turnId),callId:text(nativeParams.callId)} : undefined });
+            await callback?.sent();
+          }
           this.emit({ ...message, id: key });
         } else this.emit({ ...message, __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: id,
           incarnation, admissionEpoch: ticket.admissionEpoch, threadId: tid } });
     };
+    let notifications: Promise<unknown> = Promise.resolve();
     const operation = GenerationPeer.open(health.nativeSocket, this.initializeParams!, {
-      message: forward,
-      disconnected: () => {
+      message: message => { const next = notifications.then(() => forward(message)); this.operations.add(next); notifications = next.catch(() => { this.socket.close(1011); }).finally(() => this.operations.delete(next)); return next; },
+      disconnected: async () => {
         if (this.closed) return;
         if (this.peers.get(id)?.operation !== operation) return;
         this.peers.delete(id);
         const live = this.registry.get(id);
-        if (live && live.incarnation !== incarnation) { this.releaseIncarnation(id, incarnation); this.generationLost(id, incarnation, connectionEpoch, live.incarnation); return; }
+        if (live && live.incarnation !== incarnation) { await this.releaseIncarnation(id, incarnation); this.generationLost(id, incarnation, connectionEpoch, live.incarnation); return; }
         if (live && ["retiring", "retired"].includes(live.state)) return;
         // Process handles are leases of this native connection, not durable tasks.
-        for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation && command.active) { command.release?.unknown("native-disconnected"); command.active = false; }
-        for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation && process.active) { process.release?.unknown("native-disconnected"); process.active = false; process.pending = false; }
+        for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation && command.active) { await command.release?.unknown("native-disconnected"); command.active = false; }
+        for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation && process.active) { await process.release?.unknown("native-disconnected"); process.active = false; process.pending = false; }
         for (const [key, request] of this.serverRequests) if (request.ticket.generationId === id) {
-          request.release?.unknown("native-disconnected"); this.serverRequests.delete(key);
+          await request.release?.unknown("native-disconnected"); this.serverRequests.delete(key);
           this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
         }
         this.generationLost(id, incarnation, connectionEpoch, incarnation);
       },
-    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1}));
+    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined, this.lifetime.signal).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1}));
     void operation.then(value => { connectionEpoch = value.peer.connectionEpoch; }).catch(() => {});
     this.peers.set(id, { incarnation, operation });
     try { const value = await operation; if (this.closed) { value.peer.close(); throw error("Routing connection is closed"); } return value; }
@@ -190,7 +201,7 @@ class RoutingSession {
       catch (reason) { if (!missingThread(reason)) throw reason; }
     }
     if (matches.length !== 1) throw error(matches.length ? "Thread identity is ambiguous across generations" : "Thread was not found in any generation");
-    const route = this.registry.discover(id, matches[0]!); this.router.routesUpdated(); return route;
+    const route = await this.registry.discover(id, matches[0]!); this.router.routesUpdated(); return route;
   }
   private async receive(message: RpcRecord, lease?: RouterLease): Promise<void> {
     const method = text(message.method);
@@ -217,7 +228,7 @@ class RoutingSession {
       if (id === undefined || this.initializeParams !== null) throw error("Routing connection is already initialized");
       this.initializeParams = params;
       const epoch = this.registry.epoch(), current = this.registry.current();
-      lease?.update(this.context(method, { ownerEpoch: this.registry.ownerEpoch, generationId: current.generation.id, incarnation: current.generation.incarnation, admissionEpoch: epoch }));
+      await lease?.update(this.context(method, { ownerEpoch: this.registry.ownerEpoch, generationId: current.generation.id, incarnation: current.generation.incarnation, admissionEpoch: epoch }));
       const { result } = await this.peer(current.generation.id, true);
       if (epoch !== this.registry.epoch()) throw error("Generation admission changed during initialization; reconnect", true);
       this.initialized = true;
@@ -230,7 +241,7 @@ class RoutingSession {
     if (!method && id !== undefined) {
       const pending = this.serverRequests.get(String(id));
       if (!pending || pending.answered) return;
-      if (this.registry.valid(pending.ticket)) { pending.answered = true; const peer = (await pending.operation).peer; lease?.sent(); peer.notify({ ...message, id: pending.nativeId }); }
+      if (this.registry.valid(pending.ticket)) { pending.answered = true; const peer = (await pending.operation).peer; await lease?.sent(); peer.notify({ ...message, id: pending.nativeId }); }
       return;
     }
     if (method === "opencraft/orchestration/ack") {
@@ -252,7 +263,7 @@ class RoutingSession {
       for (const generation of this.registry.list().filter(value => !["retired", "retiring", "candidate", "discarded"].includes(value.state))) {
         const { peer } = await this.peer(generation.id, true), result = rpcRecord(await peer.call(method, params));
         if (!Array.isArray(result.data) || !result.data.every(v => typeof v === "string")) throw error("Invalid native loaded Thread list");
-        for (const tid of result.data as string[]) { this.registry.discover(tid, generation.id); data.add(tid); }
+        for (const tid of result.data as string[]) { await this.registry.discover(tid, generation.id); data.add(tid); }
       }
       this.emit({ id, result: { data: [...data] } }); return;
     }
@@ -278,12 +289,12 @@ class RoutingSession {
     const delegatedSource=text(params.__opencraftOrchestrationSourceThreadId);
     if(delegatedSource&&(!text(params.__opencraftOrchestrationOperation)||method!=='thread/start'||!text(params.__opencraftOrchestrationIncarnation)))throw error('Trusted source callback identity is required');
     const source=delegatedSource?await this.findThread(delegatedSource):null;
-    const ticket = creation ? this.registry.acceptCreation(source?.generationId??existing?.generationId, text(params.__opencraftOrchestrationOperation) || undefined)
+    const ticket = creation ? await this.registry.acceptCreation(source?.generationId??existing?.generationId, text(params.__opencraftOrchestrationOperation) || undefined)
       : existing ?? (command && !executing ? command.ticket : null) ?? (process && !spawning ? process.ticket : null) ?? { ownerEpoch: this.registry.ownerEpoch, generationId: this.registry.current().generation.id,
         incarnation: this.registry.current().generation.incarnation, admissionEpoch: this.registry.epoch() };
-    lease?.update(this.context(method, ticket, params, id));
-    if (executing && processId) { command = { ticket, active: true, release: this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.commands.set(processId, command); }
-    if (spawning) { process = { ticket, active: true, pending: true, release: this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.processes.set(processHandle, process); }
+    await lease?.update(this.context(method, ticket, params, id));
+    if (executing && processId) { command = { ticket, active: true, release: await this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.commands.set(processId, command); }
+    if (spawning) { process = { ticket, active: true, pending: true, release: await this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.processes.set(processHandle, process); }
     let release: (() => void) | undefined, sent = false;
     try {
       const readOnly = historyReadMethods.has(method);
@@ -294,39 +305,39 @@ class RoutingSession {
         if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>!['thread_spawn','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
       }
       release = this.router.runtime.admit(ticket, readOnly);
-      if (id === undefined) { lease?.sent(); peer.notify(message); return; }
+      if (id === undefined) { await lease?.sent(); peer.notify(message); return; }
       const nativeStarted = performance.now();
       if (method === "thread/read" && timing) timing.nativeStarted = nativeStarted;
       let result: unknown;
-      try { result = await peer.call(method, params, nativeRequestId => { lease?.update({ nativeRequestId }); lease?.sent(); if (executing) { command?.release?.update({ nativeRequestId }); command?.release?.sent(); } if (spawning) { process?.release?.update({ nativeRequestId }); process?.release?.sent(); } sent = true; if (creation) this.registry.markSent(ticket); }, null); }
+      try { result = await peer.call(method, params, async nativeRequestId => { await lease?.update({ nativeRequestId }); await lease?.sent(); if (executing) { await command?.release?.update({ nativeRequestId }); await command?.release?.sent(); } if (spawning) { await process?.release?.update({ nativeRequestId }); await process?.release?.sent(); } sent = true; if (creation) await this.registry.markSent(ticket); }, null); }
       finally {
         if (method === "thread/read" && timing) timing.nativeFinished = performance.now();
       }
-      if (executing && command) { command.active = false; command.release?.(); }
+      if (executing && command) { command.active = false; await command.release?.(); }
       if (spawning && process) process.pending = false;
       if (!this.registry.valid(ticket)) throw error("Stale generation response discarded");
       if (!creation && !tid && !processHandle && !processId && epochSensitiveRead(method) && ticket.admissionEpoch !== this.registry.epoch()) throw error("Generation admission changed; response discarded", true);
       const value = rpcRecord(result), thread = rpcRecord(value.thread), returnedThreadId = text(thread.id);
       if (tid && returnedThreadId && returnedThreadId !== tid && !creation) throw error("Native response returned a different Thread identity");
       const returnedTurnId = text(rpcRecord(value.turn).id);
-      lease?.update({ ...(returnedThreadId ? { threadId: returnedThreadId } : {}), ...(returnedTurnId ? { turnId: returnedTurnId } : {}) });
+      await lease?.update({ ...(returnedThreadId ? { threadId: returnedThreadId } : {}), ...(returnedTurnId ? { turnId: returnedTurnId } : {}) });
       if (params.turnId && returnedTurnId && params.turnId !== returnedTurnId) throw error("Native response returned a different Turn identity");
       if (creation) {
         if (!returnedThreadId) throw error("Native creation did not return a Thread identity");
-        this.registry.resolveCreation(ticket, returnedThreadId, thread.ephemeral === true || params.ephemeral === true); this.router.routesUpdated();
+        await this.registry.resolveCreation(ticket, returnedThreadId, thread.ephemeral === true || params.ephemeral === true); this.router.routesUpdated();
       }
-      if (method === "thread/delete" && tid) this.registry.markNonpersistent(tid, "deleted");
+      if (method === "thread/delete" && tid) await this.registry.markNonpersistent(tid, "deleted");
       this.router.runtime.observe(this.registry.get(ticket.generationId)!, { method, params, result });
       this.emit({ id, result, __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: ticket.generationId,
         incarnation: ticket.incarnation, admissionEpoch: ticket.admissionEpoch, threadId: returnedThreadId || tid } });
     } catch (reason) {
       if (sent && reason instanceof NativeGenerationError && rpcRecord(reason.rpcError.data).resultUnknown
-        && !epochSensitiveRead(method)) lease?.unknown("native-result-unknown");
-      if (executing && command && (!sent || (reason instanceof NativeGenerationError && reason.nativeRejection))) { command.active = false; command.release?.(); }
-      if (spawning && (!sent || (reason instanceof NativeGenerationError && reason.nativeRejection))) { process?.release?.(); this.processes.delete(processHandle); }
+        && !epochSensitiveRead(method)) await lease?.unknown("native-result-unknown");
+      if (executing && command && (!sent || (reason instanceof NativeGenerationError && reason.nativeRejection))) { command.active = false; await command.release?.(); }
+      if (spawning && (!sent || (reason instanceof NativeGenerationError && reason.nativeRejection))) { await process?.release?.(); this.processes.delete(processHandle); }
       if (creation) {
-        if (reason instanceof NativeGenerationError && reason.nativeRejection && !rpcRecord(reason.rpcError.data).resultUnknown) this.registry.resolveRejectedCreation(ticket);
-        else this.registry.rejectUnsent(ticket);
+        if (reason instanceof NativeGenerationError && reason.nativeRejection && !rpcRecord(reason.rpcError.data).resultUnknown) await this.registry.resolveRejectedCreation(ticket);
+        else await this.registry.rejectUnsent(ticket);
       }
       throw reason;
     } finally { release?.(); }
@@ -378,7 +389,7 @@ class RoutingSession {
               if (!Array.isArray(page.data)) throw error("Invalid native Thread directory");
               const rows = page.data.map(rpcRecord), next = typeof page.nextCursor === "string" ? page.nextCursor : null;
               if (queue.fetched && next !== null && queue.next === next) throw error("Native directory cursor did not advance");
-              for (const row of rows) this.registry.discover(text(row.id), generationId);
+              for (const row of rows) await this.registry.discover(text(row.id), generationId);
               discovered ||= rows.length > 0;
               queue.data = rows; queue.next = next; queue.fetched = true;
             }
@@ -412,12 +423,17 @@ class RoutingSession {
     return { data, nextCursor, ...(view.unavailable.size ? { catalog: { state: "error", coverage: "partial" } } : {}) };
   }
   executionFault(fault: ExecutionFault): void {
+    const operation = this.handleExecutionFault(fault);
+    this.operations.add(operation);
+    void operation.catch(() => { this.socket.terminate(); }).finally(() => this.operations.delete(operation));
+  }
+  private async handleExecutionFault(fault: ExecutionFault): Promise<void> {
     const id = fault.generationId, current = this.registry.get(id);
     if (!current) return;
     this.generationLost(id, fault.incarnation, `execution-${fault.id}-${fault.state}`, current.incarnation,
       fault.state === "recovering" ? "execution-environment-failed" : "execution-environment-recovered", fault.id, fault.threadIds);
     if (fault.state === "recovering") {
-      this.releaseIncarnation(id, fault.incarnation, fault.id);
+      await this.releaseIncarnation(id, fault.incarnation, fault.id);
       const peer = this.peers.get(id); this.peers.delete(id);
       if (peer) void peer.operation.then(value => value.peer.close()).catch(() => {});
     }
@@ -426,30 +442,36 @@ class RoutingSession {
     this.emit({ method: "opencraft/codex/generation/lost", params: { generationId: id, incarnation, connectionEpoch, threadIds: affectedThreadIds ?? this.registry.threadIds(id), ...(reason ? {reason, recoveryId} : {}) },
       __opencraftGeneration: { routingEpoch: this.registry.ownerEpoch, generationId: id, incarnation: currentIncarnation } });
   }
-  private releaseIncarnation(id: string, incarnation: number, faultId?: string): void {
-    const retire = (lease: import("./router-owner.js").RouterLease | undefined) => {
-      if (faultId) lease?.retireForExecutionFault(faultId); else lease?.unknown("generation-replaced");
+  private async releaseIncarnation(id: string, incarnation: number, faultId?: string): Promise<void> {
+    const retire = async (lease: import("./router-owner.js").RouterLease | undefined) => {
+      if (faultId) await lease?.retireForExecutionFault(faultId); else await lease?.unknown("generation-replaced");
     };
-    for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation && process.active) { retire(process.release); process.active = false; process.pending = false; }
-    for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation && command.active) { retire(command.release); command.active = false; }
+    for (const process of this.processes.values()) if (process.ticket.generationId === id && process.ticket.incarnation === incarnation && process.active) { await retire(process.release); process.active = false; process.pending = false; }
+    for (const command of this.commands.values()) if (command.ticket.generationId === id && command.ticket.incarnation === incarnation && command.active) { await retire(command.release); command.active = false; }
     for (const [key, request] of this.serverRequests) if (request.ticket.generationId === id && request.ticket.incarnation === incarnation) {
-      retire(request.release); this.serverRequests.delete(key); this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
+      await retire(request.release); this.serverRequests.delete(key); this.emit({ method: "serverRequest/resolved", params: { threadId: request.ticket.threadId ?? "", requestId: key } });
     }
   }
   flushStarts(): void {
-    for (const [id, pending] of this.pendingStarts) if (this.registry.route(id)) { this.pendingStarts.delete(id); pending.forward(); }
+    for (const [id, pending] of this.pendingStarts) if (this.registry.route(id)) { this.pendingStarts.delete(id); void pending.forward().catch(() => this.socket.close(1011)); }
   }
   serverRequestCount(generationId: string): number { return [...this.serverRequests.values()].filter(value => value.ticket.generationId === generationId).length + [...this.commands.values()].filter(value => value.active && value.ticket.generationId === generationId).length + [...this.processes.values()].filter(value => value.active && value.ticket.generationId === generationId).length; }
   toolCount(): number { return this.serverRequests.size + [...this.commands.values()].filter(v => v.active).length + [...this.processes.values()].filter(v => v.active).length + this.pendingStarts.size; }
-  close(): void {
-    if (this.closed) return; this.closed = true;
-    for (const request of this.serverRequests.values()) request.release?.unknown("consumer-disconnected");
-    for (const command of this.commands.values()) if (command.active) command.release?.unknown("consumer-disconnected");
-    for (const process of this.processes.values()) if (process.active) process.release?.unknown("consumer-disconnected");
-    for (const pending of this.pendingStarts.values()) this.router.runtime.owner?.uncertain("consumer-disconnected", pending.context);
-    for (const pending of this.peers.values()) void pending.operation.then(value => value.peer.close()).catch(() => {});
-    this.peers.clear(); this.serverRequests.clear(); this.pendingStarts.clear(); this.processes.clear(); this.commands.clear(); this.cursors.clear(); this.socket.terminate();
-  }
+  close(): Promise<void> { return this.closing ??= (async () => {
+    this.closed = true; this.lifetime.abort();
+    // Stop producers first, then retain/settle every admitted responsibility before storage closes.
+    const peers = [...this.peers.values()].map(async pending => { const value=await pending.operation; value.peer.close(); await value.peer.drain(); });
+    this.socket.terminate();
+    try {
+      for (const request of this.serverRequests.values()) await request.release?.unknown("consumer-disconnected");
+      for (const command of this.commands.values()) if (command.active) await command.release?.unknown("consumer-disconnected");
+      for (const process of this.processes.values()) if (process.active) await process.release?.unknown("consumer-disconnected");
+      for (const pending of this.pendingStarts.values()) await this.router.runtime.owner?.uncertain("consumer-disconnected", pending.context);
+    } finally {
+      await Promise.allSettled([...this.operations,...peers]);
+      this.peers.clear(); this.serverRequests.clear(); this.pendingStarts.clear(); this.processes.clear(); this.commands.clear(); this.cursors.clear();
+    }
+  })(); }
 }
 
 export async function startGenerationSocket(path: string, router: CodexGenerationRouter) {
@@ -464,5 +486,5 @@ export async function startGenerationSocket(path: string, router: CodexGeneratio
   });
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, () => { server.off("error", reject); resolve(); }); });
   await chmod(path, 0o600);
-  return { async close() { router.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve())); await unlink(path).catch(() => {}); } };
+  return { async close() { await router.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve())); await unlink(path).catch(() => {}); } };
 }

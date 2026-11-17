@@ -5,7 +5,7 @@ import { execFile } from "node:child_process";
 import { readFile, readlink, stat, readdir, realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { CodexCoreControlClient, type CodexAppServerHealth } from "@opencraft/account-pool-host";
-import { generationDirectory } from "./generation-files.js";
+import { routerStorageTask } from "./generation-registry-worker.js";
 import { generationArtifactDigest } from "./generation-artifact-digest.js";
 import type { GenerationRecord } from "./generation-registry.js";
 
@@ -102,7 +102,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const publicEnvironment = new Set(["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]);
       const environment = Object.keys(process.env).filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) && !managed.has(name)
         && (sameUser || publicEnvironment.has(name))).map(name => `--setenv=${name}`);
-      const temporary = `${g.runtimeDataDirectory}/tmp`; generationDirectory(temporary, identity.uid, identity.gid);
+      const temporary = `${g.runtimeDataDirectory}/tmp`; await routerStorageTask<void>("create-directory", [temporary, identity.uid, identity.gid]);
       // NAME without '=value' copies the private process environment; no secret is an argv value.
       const sandboxConfig = await engineSandboxConfiguration();
       const sandboxProperties = sandboxConfig ? systemdExecutionOwnerProperties(await readSandboxRuntimeConfiguration(sandboxConfig)) : [];

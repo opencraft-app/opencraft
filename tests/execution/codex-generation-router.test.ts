@@ -56,7 +56,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
     registry.register({ id, endpoint: join(directory, "control.sock"), runtimeDataDirectory: join(directory, "data"), executable: join(directory, "codex"), bundle: join(directory, "app-server.cjs"), node: process.execPath, cwd: root }); registry.ready(id);
   }
   registry.activate("old", 0);
-  const owner = handoff ? new CodexRouterOwner(registry) : undefined;
+  const owner = handoff ? new CodexRouterOwner(registry) : undefined; await owner?.ready;
   const runtime: GenerationRuntimeDirectory = { registry, owner,
     async ensure(id) { return { protocolVersion: 1, pid: 1, codexPid: 2, dataDirectory: root, proxyBaseUrl: "http://127.0.0.1:1", nativeSocket: join(root, id, replay&&callbacks[id]?"callback.sock":"native.sock"),...(callbacks[id]?{callbackProtocolVersion:1 as const,pendingCallbacks:0,pendingOrchestrationMutations:0}:{}) }; },
     admit(ticket: GenerationTicket) { assert.equal(registry.valid(ticket), true);if(fenced.has(ticket.generationId))throw Error('Generation retirement fenced');return () => {}; }, observe() {}, };
@@ -79,7 +79,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
       const entered = new Promise<void>(resolve => { enteredResolve = resolve; }), done = new Promise<void>(resolve => { finish = resolve; });
       const value = { method, entered, enteredResolve, done, release: finish }; holds.set(id, value); return value;
     },
-    async close() { for (const gate of holds.values()) gate.release(); client.terminate(); await listener.close();for(const relay of relays.values())await relay.close(); for (const socket of sockets) socket.terminate(); for (const server of servers) { server.close(); await (server as any).closeHttp(); } owner?.dispose(); registry.close(); await rm(root, { recursive: true, force: true }); } };
+    async close() { for (const gate of holds.values()) gate.release(); client.terminate(); await listener.close();for(const relay of relays.values())await relay.close(); for (const socket of sockets) socket.terminate(); for (const server of servers) { server.close(); await (server as any).closeHttp(); } await owner?.dispose(); registry.close(); await rm(root, { recursive: true, force: true }); } };
 }
 
 test("native routing keeps old work and accepted creations on their generation across atomic activation", async () => {
@@ -325,7 +325,7 @@ test("router handoff counts all native server requests and preserves uncertainty
     assert.equal(f.router.handoffCounts().connectionTools, 1, "native server requests must count even without an APP callback counter");
     f.client.terminate(); await new Promise(resolve => setTimeout(resolve, 50));
     assert.equal(f.owner!.snapshot().uncertain, true, "disconnect cannot turn an unresolved native callback into idle");
-    assert.throws(() => new CodexRouterOwner(f.registry), /unconfirmed/);
+    await assert.rejects(async () => new CodexRouterOwner(f.registry).ready, /unconfirmed/);
   } finally { await f.close(); }
 });
 
@@ -334,9 +334,9 @@ test("fenced router accepts only the original callback reply and drains its dura
   try {
     const { thread } = await f.rpc("thread/start"); await f.rpc("fixture/approval", { threadId: thread.id });
     assert.ok(f.owner!.snapshot().pending!.length, "callback dispatch must survive a router crash as unconfirmed admission");
-    assert.throws(() => new CodexRouterOwner(f.registry), /unconfirmed/);
+    await assert.rejects(async () => new CodexRouterOwner(f.registry).ready, /unconfirmed/);
     const input = () => ({ expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "callback", fence: "fence" });
-    f.owner!.fence({ ...input(), operatorLease }); await assert.rejects(f.rpc("thread/start"), /fenced/);
+    (await f.owner!.fence({ ...input(), operatorLease })); await assert.rejects(f.rpc("thread/start"), /fenced/);
     const callback = f.messages.find(m => m.method === "item/commandExecution/requestApproval");
     f.client.send(JSON.stringify({ id: callback.id, result: { decision: "accept" } }));
     for (let n = 0; n < 100 && f.router.handoffCounts().connectionTools; n++) await new Promise(resolve => setTimeout(resolve, 5));
@@ -345,8 +345,8 @@ test("fenced router accepts only the original callback reply and drains its dura
     f.client.terminate(); await new Promise(resolve => setTimeout(resolve, 50));
     assert.equal(f.owner!.snapshot().uncertain, false);
     const counts = f.router.handoffCounts(); const observation = { coverage: "complete" as const, counts, activeCount: Object.values(counts).reduce((a,b) => a+b,0), historicalCount: 1 };
-    const proof = f.owner!.inspect(input(), observation); assert.equal(proof.activeCount, 0);
-    f.owner!.release({ ...input(), proof: proof.identity }, observation, "configuration");
+    const proof = (await f.owner!.inspect(input(), observation)); assert.equal(proof.activeCount, 0);
+    (await f.owner!.release({ ...input(), proof: proof.identity }, observation, "configuration"));
     assert.equal(f.owner!.snapshot().phase, "released");
   } finally { await f.close(); }
 });
@@ -359,9 +359,9 @@ test("native callback cancellation cannot erase a possibly dispatched Host opera
     assert.equal(f.owner!.snapshot().uncertain, true);
     assert.ok(responsibilityRows(f.registry).some(row => row.threadId === thread.id && row.turnId === "turn" && row.uncertainty?.["native-resolved-before-reply"]));
     const input = { expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "cancelled", fence: "fence" };
-    f.owner!.fence({ ...input, operatorLease });
+    (await f.owner!.fence({ ...input, operatorLease }));
     const counts = f.router.handoffCounts();
-    const proof = f.owner!.inspect({ ...input, expectedEpoch: input.expectedEpoch + 1 }, { coverage: "complete", counts, activeCount: Object.values(counts).reduce((a,b)=>a+b,0), historicalCount: 1 });
+    const proof = (await f.owner!.inspect({ ...input, expectedEpoch: input.expectedEpoch + 1 }, { coverage: "complete", counts, activeCount: Object.values(counts).reduce((a,b)=>a+b,0), historicalCount: 1 }));
     assert.equal(proof.coverage, "unknown"); assert.equal(proof.activeCount, null);
   } finally { await f.close(); }
 });
@@ -374,7 +374,7 @@ test("native dynamic-tool item completion is an exact callback receipt scoped to
     f.notifyNative("old", { method: "item/completed", params: { threadId: thread.id, turnId: "other-turn", item: { type: "dynamicToolCall", id: "native-call", status: "completed" } } });
     await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(f.router.handoffCounts().connectionTools, 1);
     const input = { expectedOwner: f.owner!.owner, expectedEpoch: f.owner!.snapshot().epoch, operationId: "dynamic", fence: "fence" };
-    f.owner!.fence({ ...input, operatorLease }); f.client.send(JSON.stringify({ id: callback.id, result: { success: true, contentItems: [] } }));
+    (await f.owner!.fence({ ...input, operatorLease })); f.client.send(JSON.stringify({ id: callback.id, result: { success: true, contentItems: [] } }));
     for (let n=0;n<100&&(f.router.handoffCounts().connectionTools || !f.messages.some(m=>m.method==="serverRequest/resolved"&&m.params.requestId===callback.id));n++) await new Promise(resolve=>setTimeout(resolve,5));
     assert.equal(f.replies.length,1); assert.equal(f.router.handoffCounts().connectionTools,0);
     assert.deepEqual(f.owner!.snapshot().pending,[]); assert.equal(f.owner!.snapshot().uncertain,false);

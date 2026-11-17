@@ -153,6 +153,13 @@ test('container candidates carry pinned bases, source identity and both public a
   assert.ok(workflow.indexOf('npm ci --no-audit --no-fund') < workflow.indexOf('node --test tests/server/container-deployment.test.mjs'));
 });
 
+test('standalone container Core entries ship the registry and recovery Workers beside the runtime', async () => {
+  const packager = await readFile(new URL('../../scripts/package-container.mjs', import.meta.url), 'utf8');
+  for (const [source, target] of [['generation-registry.worker.ts', 'generation-registry-worker.mjs'], ['router-evidence.worker.ts', 'router-evidence-worker.mjs']]) {
+    assert.ok(packager.includes(`['apps/codex-core/src/${source}', '${target}', 'esm']`));
+  }
+});
+
 test('the local GitHub builder is portable, locked, revision-pinned and advances its moving tag only after success', async () => {
   const root = new URL('../..', import.meta.url);
   const [builder, environmentExample, service, timer] = await Promise.all([

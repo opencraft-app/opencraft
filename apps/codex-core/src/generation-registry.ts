@@ -1,5 +1,6 @@
+import { RegistryOperationRejected } from "./generation-registry-protocol.js";
 import type { AppPayloadChoice } from "./generation-app-payload.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { chmodSync, mkdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep, dirname, basename } from "node:path";
 import { generationDirectory } from "./generation-files.js";
@@ -52,6 +53,18 @@ export const CODEX_GENERATION_MIGRATIONS = [{ version: 1, name: "codex-generatio
 
 /** One durable routing writer. It stores identities and fences, never user input. */
 export class CodexGenerationRegistry {
+  private historyRevision = 0;
+  private metadataProjection?: Record<string, string>;
+  private externalRevision: unknown;
+  routerHistoryRevision(): string { return String(this.database.prepare("PRAGMA data_version").get()!.data_version) + ":" + this.historyRevision; }
+  private projectedMetadata(): Record<string, string> {
+    const revision = this.database.prepare("PRAGMA data_version").get()!.data_version;
+    if (!this.metadataProjection || revision !== this.externalRevision) {
+      this.metadataProjection = Object.fromEntries(this.database.prepare("SELECT key,value FROM routing_metadata").all().map(row => [String(row.key), String(row.value)]));
+      this.externalRevision = revision;
+    }
+    return { ...this.metadataProjection };
+  }
   readonly ownerEpoch = randomUUID();
   readonly outcome: DatabaseOutcome;
   private readonly database: DatabaseSync;
@@ -76,31 +89,31 @@ export class CodexGenerationRegistry {
   private transaction<T>(action: () => T): T {
     this.database.exec("BEGIN IMMEDIATE");
     try { const result = action(); this.database.exec("COMMIT"); return result; }
-    catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    catch (error) { this.metadataProjection = undefined; this.historyRevision++; this.database.exec("ROLLBACK"); throw error; }
   }
   register(definition: GenerationDefinition): GenerationRecord {
     if (!/^[a-z0-9][a-z0-9._-]{0,63}$/u.test(definition.id)
       || ![definition.endpoint, definition.runtimeDataDirectory, definition.executable, definition.bundle, definition.node, definition.cwd].every(isAbsolute)
       || definition.nativeLauncher !== undefined && (!definition.nativeLauncher || ![definition.nativeLauncher.entrypoint, definition.nativeLauncher.executable].every(path => typeof path === "string" && isAbsolute(path)))) {
-      throw new Error("Invalid generation definition");
+      throw new RegistryOperationRejected("Invalid generation definition");
     }
     const executionUid = definition.executionUid ?? process.getuid!(), executionGid = definition.executionGid ?? process.getgid!();
-    if (![executionUid, executionGid].every(value => Number.isSafeInteger(value) && value >= 0)) throw new Error("Invalid generation execution identity");
+    if (![executionUid, executionGid].every(value => Number.isSafeInteger(value) && value >= 0)) throw new RegistryOperationRejected("Invalid generation execution identity");
     generationDirectory(definition.runtimeDataDirectory, executionUid, executionGid);
     generationDirectory(dirname(definition.endpoint), executionUid, executionGid);
     const normalized = { ...definition, executionUid, executionGid, endpoint: join(realpathSync(dirname(definition.endpoint)), basename(definition.endpoint)), runtimeDataDirectory: realpathSync(definition.runtimeDataDirectory) };
-    if (basename(normalized.endpoint) === "native.sock") throw new Error("Generation control and native socket must differ");
+    if (basename(normalized.endpoint) === "native.sock") throw new RegistryOperationRejected("Generation control and native socket must differ");
     const home = join(normalized.runtimeDataDirectory, "runtime"); generationDirectory(home, executionUid, executionGid);
-    if (realpathSync(home) !== home) throw new Error("Generation HOME must not alias another directory");
+    if (realpathSync(home) !== home) throw new RegistryOperationRejected("Generation HOME must not alias another directory");
     for (const prior of this.list()) {
-      if (prior.id !== definition.id && dirname(prior.endpoint) === dirname(normalized.endpoint)) throw new Error("Generations need separate native socket directories");
+      if (prior.id !== definition.id && dirname(prior.endpoint) === dirname(normalized.endpoint)) throw new RegistryOperationRejected("Generations need separate native socket directories");
       const priorHome = join(prior.runtimeDataDirectory, "runtime");
-      if (prior.id !== definition.id && (home.startsWith(priorHome + sep) || priorHome.startsWith(home + sep))) throw new Error("Generation HOMEs must not overlap");
+      if (prior.id !== definition.id && (home.startsWith(priorHome + sep) || priorHome.startsWith(home + sep))) throw new RegistryOperationRejected("Generation HOMEs must not overlap");
     }
     const existing = this.get(definition.id);
     if (existing) {
       const { state: _state, incarnation: _incarnation, ...prior } = existing;
-      if (JSON.stringify(prior) !== JSON.stringify(normalized)) throw new Error("Generation identity is immutable until retired");
+      if (JSON.stringify(prior) !== JSON.stringify(normalized)) throw new RegistryOperationRejected("Generation identity is immutable until retired");
       return existing;
     }
     this.database.prepare("INSERT INTO generations VALUES(?,?,?,?,'candidate',0)")
@@ -116,22 +129,22 @@ export class CodexGenerationRegistry {
   }
   ready(id: string): GenerationRecord {
     const prior = this.get(id);
-    if (!prior || prior.state !== "candidate") throw new Error("Generation must be a candidate before becoming ready");
+    if (!prior || prior.state !== "candidate") throw new RegistryOperationRejected("Generation must be a candidate before becoming ready");
     this.database.prepare("UPDATE generations SET state='ready',incarnation=incarnation+1 WHERE id=?").run(id);
     return this.get(id)!;
   }
   current(): { generation: GenerationRecord; epoch: number } {
     const row = this.database.prepare("SELECT generation_id,epoch FROM admission WHERE singleton=1").get()!;
     const generation = row.generation_id === null ? null : this.get(String(row.generation_id));
-    if (!generation || generation.state !== "active") throw new Error("No generation is accepting new Threads");
+    if (!generation || generation.state !== "active") throw new RegistryOperationRejected("No generation is accepting new Threads");
     return { generation, epoch: Number(row.epoch) };
   }
   activate(id: string, expectedEpoch: number, operationId?: string): number {
     return this.transaction(() => {
       const admission = this.database.prepare("SELECT generation_id,epoch FROM admission WHERE singleton=1").get()!;
-      if (Number(admission.epoch) !== expectedEpoch) throw new Error("Generation admission epoch changed");
+      if (Number(admission.epoch) !== expectedEpoch) throw new RegistryOperationRejected("Generation admission epoch changed");
       const next = this.get(id);
-      if (!next || !["ready", "active", "draining"].includes(next.state)) throw new Error("Generation is not ready");
+      if (!next || !["ready", "active", "draining"].includes(next.state)) throw new RegistryOperationRejected("Generation is not ready");
       if (admission.generation_id === id) return expectedEpoch;
       // Every previously admitted HOME follows future upgrades, including cold reopened HOMEs.
       this.database.prepare("UPDATE generations SET state='draining' WHERE state='active' OR (state='ready' AND incarnation>1)").run();
@@ -147,32 +160,32 @@ export class CodexGenerationRegistry {
     const row = this.database.prepare("SELECT * FROM creation_claims WHERE id=?").get(`orchestration:${operationId}`);
     if (!row) return null;
     const generation = this.get(String(row.generation_id));
-    if (!generation || row.incarnation !== generation.incarnation || row.state === "rejected" && !allowRejected) throw new Error("Orchestration creation outcome is unconfirmed in this incarnation");
+    if (!generation || row.incarnation !== generation.incarnation || row.state === "rejected" && !allowRejected) throw new RegistryOperationRejected("Orchestration creation outcome is unconfirmed in this incarnation");
     return { ownerEpoch: this.ownerEpoch, generationId: generation.id, incarnation: generation.incarnation, admissionEpoch: Number(row.epoch), claimId: String(row.id) };
   }
   acceptCreation(generationId?: string, operationId?: string): GenerationTicket {
     return this.transaction(() => {
       if (operationId) {
-        if (operationId.length > 256 || /[\x00-\x20]/u.test(operationId)) throw new Error("Invalid orchestration creation identity");
+        if (operationId.length > 256 || /[\x00-\x20]/u.test(operationId)) throw new RegistryOperationRejected("Invalid orchestration creation identity");
         const prior = this.creationTicket(operationId,true);
-        if (prior) { if (generationId && generationId !== prior.generationId) throw new Error("Orchestration creation belongs to another generation"); return prior; }
+        if (prior) { if (generationId && generationId !== prior.generationId) throw new RegistryOperationRejected("Orchestration creation belongs to another generation"); return prior; }
       }
       const current = this.current(), generation = generationId ? this.get(generationId) : current.generation;
-      if (!generation || !["active", "ready", "draining"].includes(generation.state)) throw new Error("Generation is not accepting execution");
+      if (!generation || !["active", "ready", "draining"].includes(generation.state)) throw new RegistryOperationRejected("Generation is not accepting execution");
       const claimId = operationId ? `orchestration:${operationId}` : randomUUID();
       this.database.prepare("INSERT INTO creation_claims(id,generation_id,epoch,state,thread_id,incarnation) VALUES(?,?,?,'accepted',NULL,?)").run(claimId, generation.id, current.epoch, generation.incarnation);
       return { ownerEpoch: this.ownerEpoch, generationId: generation.id, incarnation: generation.incarnation, admissionEpoch: current.epoch, claimId };
     });
   }
   markSent(ticket: GenerationTicket): void {
-    if (!this.valid(ticket) || !ticket.claimId) throw new Error("Stale generation admission");
+    if (!this.valid(ticket) || !ticket.claimId) throw new RegistryOperationRejected("Stale generation admission");
     this.database.prepare("UPDATE creation_claims SET state='sent' WHERE id=? AND state='accepted'").run(ticket.claimId);
   }
   rejectUnsent(ticket: GenerationTicket): void {
     if (ticket.claimId) this.database.prepare("DELETE FROM creation_claims WHERE id=? AND state='accepted'").run(ticket.claimId);
   }
   resolveCreation(ticket: GenerationTicket, threadId: string, ephemeral = false): void {
-    if (!ticket.claimId || !this.valid(ticket)) throw new Error("Stale generation creation result");
+    if (!ticket.claimId || !this.valid(ticket)) throw new RegistryOperationRejected("Stale generation creation result");
     this.transaction(() => {
       this.bind(threadId, ticket.generationId, ticket.admissionEpoch);
       if (ephemeral) this.markNonpersistent(threadId, "ephemeral");
@@ -183,14 +196,14 @@ export class CodexGenerationRegistry {
     if (ticket.claimId && this.valid(ticket)) this.database.prepare("UPDATE creation_claims SET state='rejected' WHERE id=?").run(ticket.claimId);
   }
   private bind(threadId: string, generationId: string, epoch: number): void {
-    if (!threadId) throw new Error("Missing Thread identity");
+    if (!threadId) throw new RegistryOperationRejected("Missing Thread identity");
     const prior = this.database.prepare("SELECT generation_id FROM thread_routes WHERE thread_id=?").get(threadId);
-    if (prior && prior.generation_id !== generationId) throw new Error("Thread identity exists in another generation");
+    if (prior && prior.generation_id !== generationId) throw new RegistryOperationRejected("Thread identity exists in another generation");
     if (!prior) this.database.prepare("INSERT INTO thread_routes VALUES(?,?,?)").run(threadId, generationId, epoch);
   }
   discover(threadId: string, generationId: string): GenerationTicket {
     const generation = this.get(generationId);
-    if (!generation) throw new Error("Unknown generation");
+    if (!generation) throw new RegistryOperationRejected("Unknown generation");
     this.bind(threadId, generationId, this.epoch());
     return this.route(threadId)!;
   }
@@ -215,20 +228,20 @@ export class CodexGenerationRegistry {
   }
   fenceRetirement(id: string, incarnation: number): void {
     const generation = this.get(id);
-    if (!generation || generation.state !== "draining" || generation.incarnation !== incarnation || this.unresolvedCreations(id)) throw new Error("Generation is not drained");
+    if (!generation || generation.state !== "draining" || generation.incarnation !== incarnation || this.unresolvedCreations(id)) throw new RegistryOperationRejected("Generation is not drained");
     this.database.prepare("UPDATE generations SET state='retiring' WHERE id=?").run(id);
   }
   retire(id: string, incarnation: number): void {
     const generation = this.get(id);
-    if (!generation || !["draining", "retiring"].includes(generation.state) || generation.incarnation !== incarnation || this.unresolvedCreations(id)) throw new Error("Generation is not drained");
+    if (!generation || !["draining", "retiring"].includes(generation.state) || generation.incarnation !== incarnation || this.unresolvedCreations(id)) throw new RegistryOperationRejected("Generation is not drained");
     this.database.prepare("UPDATE generations SET state='retired' WHERE id=?").run(id);
   }
   replaceRetired(id: string, replacement: Pick<GenerationDefinition, "executable" | "bundle" | "node" | "nativeLauncher">): GenerationRecord {
     const generation = this.get(id);
-    if (!generation || generation.state !== "retired") throw new Error("Only a retired HOME can change runtime payload");
+    if (!generation || generation.state !== "retired") throw new RegistryOperationRejected("Only a retired HOME can change runtime payload");
     const { state: _state, incarnation: _incarnation, externalUnit: _unit, ...definition } = generation;
     const next = { ...definition, ...replacement };
-    if (![next.executable, next.bundle, next.node, ...(next.nativeLauncher ? [next.nativeLauncher.entrypoint, next.nativeLauncher.executable] : [])].every(isAbsolute)) throw new Error("Runtime payload paths must be absolute");
+    if (![next.executable, next.bundle, next.node, ...(next.nativeLauncher ? [next.nativeLauncher.entrypoint, next.nativeLauncher.executable] : [])].every(isAbsolute)) throw new RegistryOperationRejected("Runtime payload paths must be absolute");
     this.database.prepare("UPDATE generations SET definition=?,state='candidate' WHERE id=?").run(JSON.stringify(next), id);
     return this.get(id)!;
   }
@@ -237,7 +250,7 @@ export class CodexGenerationRegistry {
       const g = this.get(id);
       if (!g || g.incarnation !== incarnation || this.epoch() !== epoch || this.current().generation.id === id
         || !(recovering ? g.state === "candidate" && !!(this.metadata(`app-payload:${id}`) as AppPayloadChoice | null)?.applied
-          : ["ready", "draining", "retired"].includes(g.state)) || this.unresolvedCreations(id)) throw new Error("APP payload selection identity changed");
+          : ["ready", "draining", "retired"].includes(g.state)) || this.unresolvedCreations(id)) throw new RegistryOperationRejected("APP payload selection identity changed");
       this.setMetadata(`app-payload:${id}`, choice);
       if (recovering) this.database.prepare("UPDATE generations SET state='retired' WHERE id=?").run(id);
       else if (g.state === "ready") this.database.prepare("UPDATE generations SET state='draining' WHERE id=?").run(id);
@@ -246,7 +259,7 @@ export class CodexGenerationRegistry {
   applyAppPayload(id: string, choice: AppPayloadChoice): GenerationRecord {
     return this.transaction(() => {
       const g = this.get(id);
-      if (!g || g.state !== "retired" || JSON.stringify(this.metadata(`app-payload:${id}`)) !== JSON.stringify(choice)) throw new Error("APP payload choice changed before cold open");
+      if (!g || g.state !== "retired" || JSON.stringify(this.metadata(`app-payload:${id}`)) !== JSON.stringify(choice)) throw new RegistryOperationRejected("APP payload choice changed before cold open");
       const next = this.replaceRetired(id, { executable: g.executable, node: g.node, nativeLauncher: g.nativeLauncher, bundle: choice.bundle });
       this.setMetadata(`app-payload:${id}`, { ...choice, applied: true });
       return next;
@@ -257,7 +270,7 @@ export class CodexGenerationRegistry {
     if (this.epoch() !== expectedEpoch || !generation || generation.state !== "ready" || generation.incarnation !== incarnation
       || generation.externalUnit || this.metadata(`admitted:${id}`) || this.durableThreadIds(id).length
       || Number(this.database.prepare("SELECT count(*) AS n FROM creation_claims WHERE generation_id=?").get(id)!.n)) {
-      throw new Error("Only a never admitted owned ready candidate can be revoked");
+      throw new RegistryOperationRejected("Only a never admitted owned ready candidate can be revoked");
     }
   }
   beginRevoke(id: string, incarnation: number, expectedEpoch: number): void {
@@ -268,12 +281,12 @@ export class CodexGenerationRegistry {
   }
   finishRevoke(id: string, incarnation: number): void {
     const generation = this.get(id);
-    if (!generation || generation.state !== "revoking" || generation.incarnation !== incarnation) throw new Error("Revocation identity changed");
+    if (!generation || generation.state !== "revoking" || generation.incarnation !== incarnation) throw new RegistryOperationRejected("Revocation identity changed");
     this.database.prepare("UPDATE generations SET state='discarded' WHERE id=?").run(id);
   }
   discard(id: string): void {
     const generation = this.get(id);
-    if (!generation || generation.state !== "candidate" || this.unresolvedCreations(id)) throw new Error("Only an unadmitted candidate can be discarded");
+    if (!generation || generation.state !== "candidate" || this.unresolvedCreations(id)) throw new RegistryOperationRejected("Only an unadmitted candidate can be discarded");
     this.database.prepare("UPDATE generations SET state='discarded' WHERE id=?").run(id);
   }
   metadata(key: string): unknown {
@@ -281,12 +294,20 @@ export class CodexGenerationRegistry {
     return row ? JSON.parse(String(row.value)) : null;
   }
   setMetadata(key: string, value: unknown): void {
-    this.database.prepare("INSERT INTO routing_metadata VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(key, JSON.stringify(value));
+    const serialized = JSON.stringify(value);
+    if (key.startsWith("router-history:")) this.historyRevision++;
+    this.database.prepare("INSERT INTO routing_metadata VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE routing_metadata.value IS NOT excluded.value").run(key, serialized);
+    if (this.metadataProjection) Object.defineProperty(this.metadataProjection, key, { value: serialized, writable: true, enumerable: true, configurable: true });
   }
   /** One writer transaction couples responsibility evidence to its admission state. */
-  updateMetadata(values: Readonly<Record<string, unknown>>, remove: readonly string[] = []): void {
+  updateMetadata(values: Readonly<Record<string, unknown>>, remove: readonly string[] = [], expectedStorage?: string): void {
     this.transaction(() => {
-      for (const key of remove) this.database.prepare("DELETE FROM routing_metadata WHERE key=?").run(key);
+      if (expectedStorage !== undefined && createHash("sha256").update(JSON.stringify(this.coldSnapshot())).digest("hex") !== expectedStorage) throw new RegistryOperationRejected("Router registry changed before handoff commit", "REGISTRY_CHANGED");
+      for (const key of remove) {
+        if (key.startsWith("router-history:")) this.historyRevision++;
+        this.database.prepare("DELETE FROM routing_metadata WHERE key=?").run(key);
+        if (this.metadataProjection) delete this.metadataProjection[key];
+      }
       for (const [key, value] of Object.entries(values)) this.setMetadata(key, value);
     });
   }
@@ -301,7 +322,7 @@ export class CodexGenerationRegistry {
   durableThreadIds(generationId: string): string[] { return this.threadIds(generationId).filter(id => !this.isNonpersistent(id)); }
   runtimeChanged(id: string): GenerationRecord {
     const row = this.get(id);
-    if (!row || !["ready", "active", "draining"].includes(row.state)) throw new Error("Generation has no live incarnation");
+    if (!row || !["ready", "active", "draining"].includes(row.state)) throw new RegistryOperationRejected("Generation has no live incarnation");
     this.database.prepare("UPDATE generations SET incarnation=incarnation+1 WHERE id=?").run(id);
     return this.get(id)!;
   }
@@ -309,7 +330,47 @@ export class CodexGenerationRegistry {
   coldSnapshot(): unknown {
     return registrySnapshot(this.database);
   }
-  close(): void { if (!this.closed) { this.closed = true; this.database.close(); this.lock.close(); } }
+  selectRetention(id: string, incarnation: number, epoch: number, receipt: unknown): void {
+    this.transaction(() => {
+      const generation = this.get(id);
+      if (!generation || generation.incarnation !== incarnation || this.epoch() !== epoch || !["active", "ready", "draining", "retired"].includes(generation.state)) throw new RegistryOperationRejected("Generation retention identity changed");
+      this.setMetadata(`retention:${id}`, receipt);
+    });
+  }
+  compareMetadata(key: string, expected: unknown, value: unknown): void {
+    this.transaction(() => {
+      if (JSON.stringify(this.metadata(key)) !== JSON.stringify(expected)) throw new RegistryOperationRejected("Generation metadata changed before commit");
+      this.setMetadata(key, value);
+    });
+  }
+  /** Storage-only projection; consumers never borrow the SQLite connection. */
+  projection(metadataOnly = false) {
+    const routingUnchanged = metadataOnly && !!this.metadataProjection && this.externalRevision === this.database.prepare("PRAGMA data_version").get()!.data_version;
+    return { routingUnchanged, ownerEpoch: this.ownerEpoch, outcome: this.outcome, generations: routingUnchanged ? [] : this.list(),
+      admission: this.database.prepare("SELECT generation_id,epoch FROM admission WHERE singleton=1").get()!,
+      routes: routingUnchanged ? [] : this.database.prepare("SELECT * FROM thread_routes ORDER BY thread_id").all(),
+      claims: routingUnchanged ? [] : this.database.prepare("SELECT * FROM creation_claims ORDER BY id").all(),
+      // Preserve the stored JSON text. Expanding historical receipts here makes
+      // every lease ACK clone the entire archive through the Worker channel.
+      metadata: this.projectedMetadata() };
+  }
+  /** The seal must include adopted metadata and exclude the handoff itself. */
+  importHandoff(values: Record<string, unknown>, state: Record<string, unknown>, archiveKey: string): unknown {
+    return this.metadataTransaction(() => {
+      if (this.metadata(archiveKey) !== null) throw new RegistryOperationRejected("Router maintenance receipt already exists");
+      for (const [key, value] of Object.entries(values)) this.setMetadata(key, value);
+      const sealed = createHash("sha256").update(JSON.stringify(this.coldSnapshot())).digest("hex");
+      const next = { ...state, sealed };
+      this.setMetadata("router-handoff", next); return next;
+    });
+  }
+  get available(): boolean { return !this.closed; }
+  close(): void {
+    if (this.closed) return;this.closed=true;let failure:unknown;
+    try{this.database.close();}catch(error){failure=error;}
+    try{this.lock.close();}catch(error){failure??=error;}
+    if(failure!==undefined)throw failure;
+  }
 }
 
 function registrySnapshot(database: DatabaseSync) {
