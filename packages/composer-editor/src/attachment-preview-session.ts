@@ -1,9 +1,12 @@
 import { createClientId, type ComposerAttachment, type ComposerController } from "@opencraft/composer-core";
 
+export interface AttachmentProgress { readonly loaded: number; readonly total: number; readonly source?: "sent" | "confirmed"; }
+
 export type AttachmentResolver = (
   file: File,
   pending: ComposerAttachment,
   signal?: AbortSignal,
+  onProgress?: (progress: AttachmentProgress | null) => void,
 ) => ComposerAttachment | Promise<ComposerAttachment>;
 
 interface AttachmentJob {
@@ -12,6 +15,7 @@ interface AttachmentJob {
   readonly file: File;
   readonly previewUrl: string | null;
   controller: AbortController | null;
+  progress: AttachmentProgress | null;
 }
 
 const sessions = new WeakMap<ComposerController, AttachmentPreviewSession>();
@@ -44,6 +48,10 @@ export class AttachmentPreviewSession {
     return this.jobs.get(jobKey(draftId, attachmentId))?.previewUrl ?? null;
   }
 
+  progress(draftId: string, attachmentId: string): AttachmentProgress | null {
+    return this.jobs.get(jobKey(draftId, attachmentId))?.progress ?? null;
+  }
+
   canRetry(draftId: string, attachmentId: string): boolean {
     return this.jobs.has(jobKey(draftId, attachmentId));
   }
@@ -56,7 +64,7 @@ export class AttachmentPreviewSession {
     if ((this.previewUrl(draftId, attachmentId) ?? current.uri) !== expectedSource) return false;
     const key = jobKey(draftId, attachmentId), previous = this.jobs.get(key);
     const previewUrl = URL.createObjectURL(file);
-    const entry: AttachmentJob = { draftId, attachmentId, file, previewUrl, controller: null };
+    const entry: AttachmentJob = { draftId, attachmentId, file, previewUrl, controller: null, progress: null };
     this.jobs.set(key, entry);
     try {
       if (!this.composer.updateDraftAttachment(draftId, attachmentId, {
@@ -92,7 +100,7 @@ export class AttachmentPreviewSession {
         try { previewUrl = URL.createObjectURL(file); }
         catch { /* The attachment can still resolve without an immediate preview. */ }
       }
-      const entry: AttachmentJob = { draftId, attachmentId, file, previewUrl, controller: null };
+      const entry: AttachmentJob = { draftId, attachmentId, file, previewUrl, controller: null, progress: null };
       this.jobs.set(jobKey(draftId, attachmentId), entry);
       const pending: ComposerAttachment = {
         id: attachmentId,
@@ -139,11 +147,20 @@ export class AttachmentPreviewSession {
     if (pending === null) return;
     const job = new AbortController();
     entry.controller = job;
+    entry.progress = null;
+    this.notify();
     this.composer.updateDraftAttachment(entry.draftId, entry.attachmentId, {
       lifecycle: pending.mimeType.startsWith("image/") ? "processing" : "uploading",
       error: null,
     });
-    void Promise.resolve().then(() => resolve(entry.file, pending, job.signal)).then(
+    void Promise.resolve().then(() => resolve(entry.file, pending, job.signal, progress => {
+      if (this.disposed || job.signal.aborted || entry.controller !== job
+        || this.jobs.get(jobKey(entry.draftId, entry.attachmentId)) !== entry) return;
+      if (progress !== null && (!Number.isFinite(progress.loaded) || !Number.isFinite(progress.total)
+        || progress.total <= 0 || progress.loaded < 0 || progress.loaded > progress.total)) return;
+      entry.progress = progress === null ? null : { loaded: progress.loaded, total: progress.total, ...(progress.source ? { source: progress.source } : {}) };
+      this.notify();
+    })).then(
       resolved => {
         if (job.signal.aborted || entry.controller !== job) return;
         const { id: _id, ...patch } = resolved;
@@ -159,7 +176,7 @@ export class AttachmentPreviewSession {
     ).catch(() => {
       // A disposed Controller rejects late writes; its resources are already released.
     }).finally(() => {
-      if (entry.controller === job) entry.controller = null;
+      if (entry.controller === job) { entry.controller = null; entry.progress = null; this.notify(); }
     });
   }
 

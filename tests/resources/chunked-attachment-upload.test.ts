@@ -19,7 +19,8 @@ test("new Host capability advertises 1024 MiB and chunks; old capability stays c
   t.after(async () => { await service.close(); await rm(root, { recursive: true, force: true }); });
   const capability = parseAttachmentStagingCapability(service.capability);
   assert.equal(capability.maxBytes, ATTACHMENT_MAX_BYTES);
-  assert.equal(capability.chunkBytes, ATTACHMENT_CHUNK_BYTES);
+  assert.equal(capability.chunkBytes, 64 * 1024);
+  assert.equal(capability.uploadRetry, "last-chunk-v1");
   assert.equal(parseAttachmentStagingCapability({ version: 1, sources: ["client-bytes"], locations: ["host-file"], maxBytes: 32 * 1024 * 1024 }).chunkBytes, undefined);
   let maxRead = 0;
   const blob = new File([new Uint8Array(metadata.size).fill(71)], metadata.name, { type: metadata.mimeType });
@@ -33,7 +34,7 @@ test("new Host capability advertises 1024 MiB and chunks; old capability stays c
     uploadCancel: uploadId => service.handle("attachment/uploadCancel", { uploadId }) as any,
   });
   assert.equal(resolved.lifecycle, "ready");
-  assert.equal(maxRead, ATTACHMENT_CHUNK_BYTES);
+  assert.equal(maxRead, capability.chunkBytes);
   const stored = await readFile(decodeURIComponent(resolved.uri!.replace("file://", "")));
   assert.equal(stored.length, blob.size);
   assert(stored.every(byte => byte === 71));
@@ -51,7 +52,8 @@ test("upload validation rejects oversized files, oversized chunks and mismatched
   await assert.rejects(store.chunk({ ...params(), dataBase64: "AR==" }), /encoding/);
   const request = params();
   assert.deepEqual(await store.chunk(request), { receivedBytes: 1, ref: null });
-  await assert.rejects(store.chunk(request), /offset/);
+  assert.deepEqual(await store.chunk({ ...request, retry: true }), { receivedBytes: 1, ref: null });
+  await assert.rejects(store.chunk({ ...request, dataBase64: "Ag==", retry: true }), /replay/);
   await assert.rejects(store.chunk({ ...request, offset: 1, name: "replacement" }), /metadata/);
   assert.deepEqual(await store.cancel(request.uploadId), { removed: true });
   assert.deepEqual(await readdir(root), []);
@@ -113,4 +115,81 @@ test("legacy Host limits still reject files before whole-file allocation", async
     maxBytes: ATTACHMENT_MAX_BYTES, stage: async () => { throw new Error("Must reject before staging"); },
   }), /32 MB/);
   assert.equal(read, false);
+});
+
+test("progress counts acknowledged bytes only, including through the browser resolver", async () => {
+  const file = new File(["abcdef"], "notes.txt", { type: "text/plain" });
+  const progress: number[] = [];
+  let acknowledge!: () => void;
+  const result = resolveBrowserAttachment(file,
+    { id: "progress", name: file.name, mimeType: file.type, size: file.size, uri: null, lifecycle: "pending", error: null },
+    { chunkBytes: 3, maxBytes: 100, stage: async () => { throw new Error("Expected chunks"); },
+      uploadCancel: async () => ({ removed: true }),
+      uploadChunk: p => new Promise(resolve => {
+        const receivedBytes = p.offset + 3;
+        acknowledge = () => resolve({ receivedBytes, ref: receivedBytes === 6
+          ? { id: "ref", name: file.name, mimeType: file.type, size: 6, location: { kind: "host-file", path: "/notes.txt" } }
+          : null });
+      }),
+    }, undefined, undefined, p => { if (p) progress.push(p.loaded); });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(progress, [0]);
+  acknowledge();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(progress, [0, 3]);
+  acknowledge();
+  assert.equal((await result).lifecycle, "ready");
+  assert.deepEqual(progress, [0, 3, 6]);
+});
+
+test("sent progress can fill the ring while readiness still waits for the committed ref", async () => {
+  const progress: Array<{ loaded: number; total: number; source?: string }> = [];
+  let report!: (p: { loaded: number; total: number }) => void, finish!: (r: any) => void;
+  let ready = false;
+  const promise = uploadAttachmentChunks({ clientAttachmentId: "sent", name: "sent", mimeType: "text/plain", size: 6 },
+    async () => new Uint8Array(6), { chunkBytes: 6, uploadCancel: async () => ({ removed: true }),
+      uploadChunk: (_params, onProgress) => { report = onProgress!; return new Promise(resolve => { finish = resolve; }); }
+    }, undefined, p => progress.push(p)).then(value => { ready = true; return value; });
+  await new Promise(resolve => setImmediate(resolve));
+  report({ loaded: 50, total: 100 }); report({ loaded: 100, total: 100 });
+  assert.deepEqual(progress.at(-1), { loaded: 6, total: 6, source: "sent" });
+  assert.equal(ready, false);
+  finish({ receivedBytes: 6, ref: { id: "sent", name: "sent", mimeType: "text/plain", size: 6, location: { kind: "host-file", path: "/sent" } } });
+  await promise;
+  assert.equal(ready, true);
+  assert.equal(progress.at(-1)!.source, "confirmed");
+  const count = progress.length; report({ loaded: 1, total: 100 });
+  assert.equal(progress.length, count, "old transport observer loses ownership after ack");
+});
+
+test("lost final acknowledgement replays one commit; expired replay cannot recreate it", async t => {
+  const root = await mkdtemp(join(tmpdir(), "attachment-replay-"));
+  let commits = 0;
+  const ref = { id: "receipt", name: "one", mimeType: "text/plain", size: 1, location: { kind: "host-file" as const, path: "/one" } };
+  const store = new AttachmentUploadStore(root, async () => { commits++; return { ref }; });
+  t.after(async () => { await store.close(); await rm(root, { recursive: true, force: true }); });
+  let calls = 0;
+  const result = await uploadAttachmentChunks({ clientAttachmentId: "one", name: "one", mimeType: "text/plain", size: 1 },
+    async () => new Uint8Array([1]), {
+      chunkBytes: 1, uploadRetry: "last-chunk-v1",
+      uploadCancel: id => store.cancel(id),
+      uploadChunk: async request => {
+        const response = await store.chunk(request);
+        if (++calls === 1) throw Object.assign(new Error("lost ack"), { code: "TIMEOUT" });
+        assert.equal(request.retry, true);
+        return response;
+      },
+    });
+  assert.deepEqual(result.ref, ref);
+  assert.equal(commits, 1);
+  await assert.rejects(store.chunk({ ...params(), size: 1, retry: true }), /expired or is unavailable/);
+});
+
+test("legacy capability never retries an ambiguous upload", async () => {
+  let calls = 0;
+  await assert.rejects(uploadAttachmentChunks({ ...metadata, size: 1 }, async () => new Uint8Array([1]), {
+    chunkBytes: 1, uploadCancel: async () => ({ removed: false }),
+    uploadChunk: async () => { calls++; throw Object.assign(new Error("lost ack"), { code: "TIMEOUT" }); },
+  }), /lost ack/);
+  assert.equal(calls, 1);
 });

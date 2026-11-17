@@ -1,3 +1,4 @@
+import type { AttachmentProgress } from "@opencraft/composer-editor";
 import { useServerSpaces } from "./runtime/use-server-spaces";
 import { agentIdForHostLabel, filterModelsForNewDraft, newDraftAgentsDisabled } from "./runtime/agent-availability";
 import { useAgentAvailability } from "./runtime/use-agent-availability";
@@ -437,8 +438,8 @@ export function App({
     [blobs, runtime, snapshot.hostId, snapshot.connectionGeneration],
   );
   const resolveActiveHostAttachment = useCallback(
-    (file: File, pending: ComposerAttachment, signal?: AbortSignal) =>
-      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal),
+    (file: File, pending: ComposerAttachment, signal?: AbortSignal, onProgress?: (progress: AttachmentProgress | null) => void) =>
+      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal, onProgress),
     [runtime, images],
   );
   const removeActiveHostAttachment = useCallback(

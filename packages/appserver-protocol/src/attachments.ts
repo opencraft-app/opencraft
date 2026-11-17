@@ -22,6 +22,8 @@ export interface AttachmentStagingCapability {
   readonly version: 1;
   /** Optional, negotiated file upload RPC; old Hosts keep the one-shot path. */
   readonly chunkBytes?: number;
+  /** Exact last-chunk replay and bounded final receipts within the current Host process. */
+  readonly uploadRetry?: "last-chunk-v1";
   readonly sources: readonly AttachmentStageSource["kind"][];
   readonly locations: readonly AttachmentLocation["kind"][];
   readonly maxBytes: number;
@@ -56,6 +58,8 @@ export interface AttachmentRemoveResponse {
 }
 
 export interface AttachmentUploadParams extends Omit<AttachmentStageParams, "source"> {
+  /** Replay must never create an upload after expiry or Host restart. */
+  readonly retry?: boolean;
   readonly uploadId: string;
   readonly offset: number;
   readonly dataBase64: string;
@@ -116,6 +120,7 @@ export function parseAttachmentStagingCapability(
   }
   return {
     version: 1,
+    ...(value.uploadRetry === "last-chunk-v1" ? { uploadRetry: "last-chunk-v1" as const } : {}),
     sources,
     locations,
     maxBytes: Number(value.maxBytes),

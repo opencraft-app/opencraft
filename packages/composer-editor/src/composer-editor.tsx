@@ -1,3 +1,4 @@
+import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
@@ -19,7 +20,7 @@ import { defineMessages, type IntlShape } from "@opencraft/i18n";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { DictationFooter } from "./dictation-footer";
 import { ImageAttachmentPreview, type ComposerPreviewImage } from "./image-attachment-preview";
-import { attachmentPreviewSession } from "./attachment-preview-session";
+import { attachmentPreviewSession, type AttachmentProgress } from "./attachment-preview-session";
 import { SkillIcon } from "./skill-icon";
 import { resolveDictationKeyAction } from "./dictation-keyboard";
 import { closeHistory, history, redo, undo } from "prosemirror-history";
@@ -814,6 +815,7 @@ export interface OpenCraftComposerProps {
     file: File,
     pending: ComposerAttachment,
     signal?: AbortSignal,
+    onProgress?: (progress: AttachmentProgress | null) => void,
   ) => ComposerAttachment | Promise<ComposerAttachment>;
   onRemoveAttachment?: (
     attachment: ComposerAttachment,
@@ -2334,6 +2336,7 @@ export const OpenCraftComposer = forwardRef<
         {(attachments.length > 0 || composerSnapshot.draft.handoff || composerSnapshot.draft.context.some(reference => reference.visible)) && (
           <div className="opencraft-composer-attachments" aria-label={intl.formatMessage({ id: "composer.attachmentsAndContext", defaultMessage: "Attachments and context" })} inert={voiceActive ? true : undefined}>
             {attachments.map((attachment) => {
+              const progress = attachmentSession.progress(composerSnapshot.draft.id, attachment.id);
               const image = attachment.mimeType.startsWith("image/");
               const workInError = attachment.metadata?.workInAttachmentError === "interrupted"
                 ? intl.formatMessage({ id: "workIn.attachmentInterrupted", defaultMessage: "Attachment processing was interrupted. Add it again." })
@@ -2358,8 +2361,10 @@ export const OpenCraftComposer = forwardRef<
                       : <img alt="" draggable={false} src={previewUrl} />}
                   </button>
                   {attachment.lifecycle === "pending" || attachment.lifecycle === "processing" || attachment.lifecycle === "uploading" ? (
-                    <span aria-label={`Preparing ${attachment.name}`} className="opencraft-composer-image-attachment__status" role="status">
-                      <LoadingRingIcon aria-hidden="true" size={22} />
+                    <span aria-label={`Preparing ${attachment.name}`} className="opencraft-composer-image-attachment__status" role="progressbar"
+                      aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress ? Math.round(progress.loaded / progress.total * 100) : undefined}>
+                      <ProgressIndicator size={44} value={progress ? progress.loaded / progress.total : undefined} />
+                      {progress ? <span className="opencraft-composer-image-attachment__percent" aria-hidden="true">{Math.round(progress.loaded / progress.total * 100)}%</span> : null}
                     </span>
                   ) : null}
                   {attachment.lifecycle === "failed" ? (
@@ -2384,13 +2389,24 @@ export const OpenCraftComposer = forwardRef<
               const preparing = attachment.lifecycle === "pending" || attachment.lifecycle === "processing" || attachment.lifecycle === "uploading";
               return (
                 <div aria-busy={preparing} className="opencraft-composer-attachment" data-state={attachment.lifecycle} key={attachment.id}>
-                  <span className="opencraft-composer-attachment__icon"><FileText size={15} /></span>
+                  <span className="opencraft-composer-attachment__icon">
+                    <FileText size={15} />
+                    {preparing ? <span className="opencraft-composer-attachment__progress" role="progressbar"
+                      aria-label={intl.formatMessage({ id: "composer.attachment.uploading", defaultMessage: "Uploading {name}" }, { name: attachment.name })}
+                      aria-valuemin={0} aria-valuemax={100}
+                      aria-valuenow={progress ? Math.round(progress.loaded / progress.total * 100) : undefined}>
+                      <ProgressIndicator size={44} value={progress ? progress.loaded / progress.total : undefined} />
+                    </span> : null}
+                  </span>
                   <span className="opencraft-composer-attachment__copy">
                     <strong>{attachment.name}</strong>
-                    <small>{Math.max(1, Math.ceil(attachment.size / 1024))} KB</small>
-                    {preparing ? <small role="status">Adding file…</small> : null}
-                    {workInError !== null ? <small role="alert">{workInError}</small>
-                      : attachment.lifecycle === "failed" ? <small role="alert">{attachment.error ?? "Could not add file"}</small> : null}
+                    <small title={workInError ?? attachment.error ?? undefined} role={workInError !== null || attachment.lifecycle === "failed" ? "alert" : undefined}>{workInError ?? (attachment.lifecycle === "failed" ? attachment.error ?? "Could not add file" : preparing
+                      ? progress
+                        ? progress.loaded === progress.total && progress.source === "sent"
+                          ? intl.formatMessage({ id: "composer.attachment.confirming", defaultMessage: "Processing…" })
+                          : Math.round(progress.loaded / progress.total * 100) + "% · " + attachmentByteLabel(progress.loaded, intl) + " / " + attachmentByteLabel(progress.total, intl)
+                        : intl.formatMessage({ id: "composer.attachment.preparing", defaultMessage: "Preparing…" })
+                      : attachmentByteLabel(attachment.size, intl))}</small>
                   </span>
                   <span className="opencraft-composer-attachment__actions">
                     {attachment.lifecycle === "failed" && attachmentSession.canRetry(composerSnapshot.draft.id, attachment.id) && onResolveAttachment !== undefined ? (
@@ -2873,3 +2889,9 @@ export const OpenCraftComposer = forwardRef<
     </div></TouchContactScope>
   );
 });
+
+/** Compact byte amounts keep preparation, transfer and ready in the same metadata slot. */
+function attachmentByteLabel(bytes: number, intl: IntlShape): string {
+  const divisor = bytes >= 1024 * 1024 ? 1024 * 1024 : bytes >= 1024 ? 1024 : 1;
+  return intl.formatNumber(bytes / divisor, { maximumFractionDigits: 1 }) + " " + (divisor === 1 ? "B" : divisor === 1024 ? "KB" : "MB");
+}

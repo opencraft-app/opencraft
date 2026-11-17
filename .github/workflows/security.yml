@@ -105,6 +105,7 @@ jobs:
       - run: npm run test:web-updates
       - run: bash scripts/ci/install-playwright-chromium.sh
       - run: npm run test:web-updates:e2e
+      - run: npm run smoke:attachment-upload-recovery
 
   security-checks:
     if: always()

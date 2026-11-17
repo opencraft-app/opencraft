@@ -1468,5 +1468,8 @@
   "onboard.history.manage": "นำเข้าการสนทนา",
   "onboard.history.open": "นำเข้าการสนทนาในเครื่อง",
   "sidebar.nativeProjects": "โปรเจกต์",
-  "onboard.history.projects": "ระบบจะเก็บกลุ่มโปรเจกต์เดิมไว้"
+  "onboard.history.projects": "ระบบจะเก็บกลุ่มโปรเจกต์เดิมไว้",
+  "composer.attachment.uploading": "กำลังอัปโหลด {name}",
+  "composer.attachment.confirming": "กำลังประมวลผล…",
+  "composer.attachment.preparing": "กำลังเตรียม…"
 }

@@ -1466,5 +1466,8 @@
   "onboard.history.manage": "Import conversations",
   "onboard.history.open": "Import local conversations",
   "sidebar.nativeProjects": "Projects",
-  "onboard.history.projects": "Original project groups are preserved."
+  "onboard.history.projects": "Original project groups are preserved.",
+  "composer.attachment.uploading": "Uploading {name}",
+  "composer.attachment.confirming": "Processing…",
+  "composer.attachment.preparing": "Preparing…"
 }

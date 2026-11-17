@@ -1468,5 +1468,8 @@
   "onboard.history.manage": "Import perbualan",
   "onboard.history.open": "Import perbualan setempat",
   "sidebar.nativeProjects": "Projek",
-  "onboard.history.projects": "Kumpulan projek asal dikekalkan."
+  "onboard.history.projects": "Kumpulan projek asal dikekalkan.",
+  "composer.attachment.uploading": "Memuat naik {name}",
+  "composer.attachment.confirming": "Memproses…",
+  "composer.attachment.preparing": "Menyediakan…"
 }
