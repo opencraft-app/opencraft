@@ -430,6 +430,7 @@ async function harness(): Promise<Harness> {
         case "thread/queue/delete":
           result = { deleted: true };
           break;
+        case "thread/queue/retry":
         case "thread/queue/reorder":
           result = {};
           break;
@@ -475,6 +476,7 @@ function commandPort(
     interactions: { respond: async () => undefined },
     queueAtomicSteer: true,
     queueUnconfirmedSteerDiscard: true,
+    queueUnconfirmedDeliveryRetry: true,
     compiler: { historyMode: "paginated" },
     dynamicTools,
     now: () => 1_000 + retryId,
@@ -1691,4 +1693,21 @@ test("submission receipts retain exact Host sender proof and ignore a different 
   proofId = "message-1"; sender = null;
   assert.equal((await port.submit(intent({type: "existing-thread", key: existingKey}))).sender, null);
   await h.close();
+});
+
+
+test("manual delivery retry uses the retry capability and never the discard operation", async () => {
+  const h = await harness();
+  try {
+    const port = commandPort(h);
+    await port.retryUnconfirmedSteer!(existingKey, "claim", asTurnId("original-turn"));
+    assert.deepEqual(h.requests.map(request => request.method), ["thread/queue/retry"]);
+    assert.deepEqual(h.requests[0]?.params, { threadId: "thread-existing", queuedSubmissionId: "claim", expectedTurnId: "original-turn" });
+    const legacy = createAppServerConversationCommandPort({ hostId, client: h.client, interactions: { respond: async () => undefined } });
+    await assert.rejects(legacy.retryUnconfirmedSteer!(existingKey, "claim", asTurnId("original-turn")), /unavailable/);
+    const restricted = createAppServerConversationCommandPort({ hostId, client: h.client, queueUnconfirmedDeliveryRetry: true,
+      canRequest: () => false, interactions: { respond: async () => undefined } });
+    await assert.rejects(restricted.retryUnconfirmedSteer!(existingKey, "claim", asTurnId("original-turn")), /unavailable/);
+    assert.equal(h.requests.length, 1);
+  } finally { await h.close(); }
 });

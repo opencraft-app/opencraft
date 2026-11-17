@@ -315,6 +315,7 @@ function withCodexHostCapabilities(value: unknown, attachmentStaging: Attachment
           reorder: true,
           atomicSteer: true,
           unconfirmedSteerDiscard: true,
+          unconfirmedDeliveryRetry: true,
           perItemPause: false,
         } satisfies OpenCraftThreadQueueCapability,
         [OPENCRAFT_THREAD_GOAL_EXTENSION]: { version: 1, read: true, write: true },
@@ -1354,7 +1355,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         this.emit({ id, result: { recovery: this.providerRetry?.notice(threadId) ?? this.recovery?.notice(threadId) ?? null } }, clientId);
         return;
       }
-      if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/settings/update", "thread/queue/add", "thread/queue/steer", "thread/queue/start"].includes(message.method)) {
+      if (["turn/start", "turn/steer", "turn/interrupt", "thread/archive", "thread/delete", "thread/goal/set", "thread/goal/clear", "thread/settings/update", "thread/queue/add", "thread/queue/steer", "thread/queue/start", "thread/queue/retry"].includes(message.method)) {
         if (!context.collaborationRequestId) {
           this.recovery?.handled(string(record(message.params).threadId), message.method === "turn/interrupt" ? "user_stop" : "user_input");
           this.providerRetry?.handled(string(record(message.params).threadId));
@@ -3338,6 +3339,18 @@ export class CodexEngineAdapter implements DuplexTransport {
         row.targetTurnId === "unknown" ? null : row.targetTurnId)) {
         queue.settle(threadId, row.id, "delivered");
         this.emitQueueChanged(threadId);
+      } else if (row.state === "unknown" && row.pausedReason === "delivery-retry-requested"
+          && await this.queueThreadIsIdle(threadId)) {
+        // Absence during a live Turn is not evidence of rejection. Only an
+        // explicit retry may re-enter the queue, after the original Turn ends.
+        // Recheck after the idle observation to include its final history writes.
+        if (await this.historyHasClientMessage(threadId, row.clientUserMessageId,
+            row.targetTurnId === "unknown" ? null : row.targetTurnId)) {
+          queue.settle(threadId, row.id, "delivered");
+        } else {
+          queue.settle(threadId, row.id, "queued");
+        }
+        this.emitQueueChanged(threadId);
       } else if (row.state === "steering" && await this.queueThreadIsIdle(threadId)) {
         queue.settle(threadId, row.id, "unknown", "steer-delivery-unconfirmed");
         this.emitQueueChanged(threadId);
@@ -3397,7 +3410,7 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (this.executionBlocked(threadId)) throw new RecoveryNotSubmitted("Execution is recovering before queue dispatch");
     const queue = this.queueStore();
     const head = queue.firstAwaitingAdmission(threadId);
-    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Managed input delivery or execution recovery is still unconfirmed");
     if (head?.state === "dispatching") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is still being sent");
     const queued = queue.find(threadId, id);
     if (queued && !queued.executionSubmission) this.executionLeases?.capture(threadId, queued.clientUserMessageId, { principal: null, ownership: "unknown" });
@@ -3448,9 +3461,8 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async dispatchQueuedSteer(threadId: string, id: string, expectedTurnId: string, context?:TransportSubmissionContext): Promise<RpcRecord> {
     const queue = this.queueStore();
-    if (queue.firstAwaitingAdmission(threadId)?.state === "unknown") await this.reconcileQueue(threadId);
     const head = queue.firstAwaitingAdmission(threadId);
-    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
+    if (head?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Managed input delivery is still unconfirmed");
     if (head?.state === "dispatching") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is still being sent");
     const queued = queue.find(threadId, id);
     if (!queued) throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
@@ -3509,7 +3521,8 @@ export class CodexEngineAdapter implements DuplexTransport {
           data: page.map(row => this.queueProjection(row)),
           nextCursor: cursor + page.length < queued.length ? String(cursor + page.length) : null,
           ...(cursor === 0 ? { steering: rows.filter(row => row.state === "steering" || row.state === "unknown" || row.state === "dispatching")
-            .map(row => ({ ...this.queueProjection(row), targetTurnId: row.targetTurnId ?? "unknown" })) } : {}),
+            .map(row => ({ ...this.queueProjection(row), targetTurnId: row.targetTurnId ?? "unknown",
+              retryable: !row.clientUserMessageId.startsWith("actor-input:") && row.pausedReason !== "execution-fault-unconfirmed" })) } : {}),
         };
       } else if (method === "thread/queue/add") {
         try { await this.assertDurableQueueThread(threadId); }
@@ -3533,6 +3546,22 @@ export class CodexEngineAdapter implements DuplexTransport {
           { queuedSubmission: this.queueProjection(row) }, { trustedSubmissionSender: !!this.messageSenders }));
         this.emitQueueChanged(threadId);
         this.scheduleQueueMaintenance(threadId);
+      } else if (method === "thread/queue/retry") {
+        await this.withThreadOperation(threadId, async () => {
+          if (this.executionBlocked(threadId)) throw new RecoveryNotSubmitted("Execution is recovering before retry");
+          const itemId = string(params.queuedSubmissionId);
+          const row = queue.find(threadId, itemId);
+          if (!row || row.clientUserMessageId.startsWith("actor-input:"))
+            throw new OpenCraftQueueRpcError(-32600, "Message is unavailable for retry");
+          // Repeated clicks / a lost retry receipt never create a second input.
+          if (row.state === "delivered" || row.state === "queued" || row.state === "dispatching" || row.state === "steering") return;
+          if (!queue.requestRetry(threadId, itemId, string(params.expectedTurnId)))
+            throw new OpenCraftQueueRpcError(-32600, "Message changed before retry");
+          await this.reconcileQueue(threadId);
+        });
+        result = {};
+        this.emitQueueChanged(threadId);
+        this.scheduleQueueMaintenance(threadId);
       } else if (method === "thread/queue/update") {
         const row = queue.update(threadId, string(params.queuedSubmissionId), params.input as readonly unknown[]);
         if (!row) throw new OpenCraftQueueRpcError(-32600, "Queued message is not editable");
@@ -3551,7 +3580,7 @@ export class CodexEngineAdapter implements DuplexTransport {
             if (await this.historyHasClientMessage(threadId, row.clientUserMessageId, target === "unknown" ? null : target)) {
               queue.settle(threadId, itemId, "delivered");
               this.emitQueueChanged(threadId);
-              throw new OpenCraftQueueRpcError(-32600, "Steered input is present in Codex history");
+              return;
             }
             if (!queue.discardUnknown(threadId, itemId, target)) throw new OpenCraftQueueRpcError(-32600, "Delivery claim changed before discard");
           });
@@ -3574,7 +3603,6 @@ export class CodexEngineAdapter implements DuplexTransport {
           const row = string(params.queuedSubmissionId)
             ? queue.find(threadId, string(params.queuedSubmissionId))
             : queue.firstAwaitingAdmission(threadId);
-          if (row?.state === "unknown") throw new OpenCraftQueueRpcError(-32600, "Earlier delivery is unconfirmed; review it before sending another message");
           if (!row || row.state !== "queued") throw new OpenCraftQueueRpcError(-32600, "Queued message is unavailable");
           if (row.clientUserMessageId.startsWith('actor-input:') && row.clientUserMessageId !== `actor-input:${actorRequest}`) throw new OpenCraftQueueRpcError(-32600, 'Actor input requires its trusted admission');
           return this.dispatchQueuedStart(threadId, row.id,context);

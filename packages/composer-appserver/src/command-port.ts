@@ -39,6 +39,7 @@ export interface AppServerConversationCommandPortConfig {
   /** Only a Host with one queue-to-active-Turn operation may consume a queued steer. */
   readonly queueAtomicSteer?: boolean;
   readonly queueUnconfirmedSteerDiscard?: boolean;
+  readonly queueUnconfirmedDeliveryRetry?: boolean;
   readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
   /** Host defaults supersede persisted Composer model and effort choices. */
@@ -496,6 +497,11 @@ export function createAppServerConversationCommandPort(
         queuedSubmissionId,
       });
       return response.deleted;
+    },
+    async retryUnconfirmedSteer(key, queuedSubmissionId, expectedTurnId) {
+      assertConversationHost(key);
+      if (config.queueUnconfirmedDeliveryRetry !== true || config.canRequest?.("thread/queue/retry") === false) throw new Error("Message retry is unavailable on this Host");
+      await config.client.request("thread/queue/retry", { threadId: key.threadId, queuedSubmissionId, expectedTurnId });
     },
     async discardUnconfirmedSteer(key, queuedSubmissionId, expectedTurnId) {
       assertConversationHost(key);

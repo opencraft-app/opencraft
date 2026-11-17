@@ -9387,6 +9387,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
       outline-offset: 2px;
     }
 
+    &.is-retry {
+      min-width: var(--size-control-hit-min);
+      min-height: var(--size-control-hit-min);
+    }
+
     &.is-labelled {
       width: auto;
       grid-auto-flow: column;
@@ -9399,12 +9404,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-.opencraft-composer-steer-discard-dialog__body {
-  display: grid;
-  gap: 12px;
-  padding: 24px;
-
-  [role="alert"] { color: var(--color-text-error, #cf222e); }
+.opencraft-composer-queue-item__delivery-status {
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  white-space: nowrap;
 }
 
 @keyframes opencraft-composer-tray-enter {

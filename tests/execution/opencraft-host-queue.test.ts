@@ -16,6 +16,8 @@ test("confirmed execution recovery retains unknown history but releases later ex
     queue.interruptExecution("thread", false);
     const next = queue.add("thread", "new-input", [{type: "text", text: "new work"}]);
     assert.equal(queue.firstAwaitingAdmission("thread")?.id, old.id);
+    assert.equal(queue.requestRetry("thread", old.id, "old-turn"), false, "retry cannot overwrite an unconfirmed execution fault");
+    assert.throws(() => queue.reorder("thread", [next.id]), /Reconcile in-flight/);
     queue.interruptExecution("thread", true);
     // A late rejection of the original send cannot turn the sealed unknown back into a blocker.
     queue.settle("thread", old.id, "unknown", "steer-delivery-unconfirmed");
@@ -65,9 +67,14 @@ test("accepted steer remains visible for reconciliation without blocking admissi
     queue.reorder("thread-1", [second.id]);
     queue.claim("thread-1", second.id, "turn-1");
     queue.settle("thread-1", second.id, "unknown", "steer-delivery-unconfirmed");
-    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, second.id);
-    assert.equal(queue.firstAwaitingAdmission("thread-1")?.state, "unknown");
-    assert.throws(() => queue.reorder("thread-1", []), /Reconcile in-flight/);
+    assert.equal(queue.firstAwaitingAdmission("thread-1"), null);
+    queue.reorder("thread-1", []);
+    const next = queue.add("thread-1", "message-3", [{ type: "text", text: "third" }]);
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, next.id);
+    assert.equal(queue.requestRetry("thread-1", second.id, "wrong-turn"), false);
+    assert.equal(queue.requestRetry("thread-1", second.id, "turn-1"), true);
+    assert.equal(queue.find("thread-1", second.id)?.pausedReason, "delivery-retry-requested");
+    assert.equal(queue.find("thread-1", second.id)?.state, "unknown", "retry is still fenced by original execution");
     queue.close();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -104,4 +111,28 @@ test("deleting a Thread retires its Host-owned queued inputs", async () => {
     assert.deepEqual(queue.list("thread-1"), []);
     queue.close();
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("explicit retry survives restart while managed delivery keeps its authority ordering", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-queue-retry-restart-"));
+  try {
+    const queue = new OpenCraftHostQueue(root);
+    const row = queue.add("thread", "human-message", [{ type: "text", text: "retry" }]);
+    queue.claim("thread", row.id, "original-turn");
+    queue.settle("thread", row.id, "unknown", "steer-delivery-unconfirmed");
+    assert.equal(queue.requestRetry("thread", row.id, "original-turn"), true);
+    queue.close();
+    const restored = new OpenCraftHostQueue(root);
+    try {
+      assert.equal(restored.find("thread", row.id)?.pausedReason, "delivery-retry-requested");
+      assert.equal(restored.find("thread", row.id)?.clientUserMessageId, "human-message");
+      assert.equal(restored.firstAwaitingAdmission("thread"), null);
+      const managed = restored.add("thread", "actor-input:external", [{ type: "text", text: "managed" }]);
+      restored.claim("thread", managed.id, "original-turn");
+      restored.settle("thread", managed.id, "unknown", "steer-delivery-unconfirmed");
+      restored.add("thread", "subsequent", [{ type: "text", text: "next" }]);
+      assert.equal(restored.firstAwaitingAdmission("thread")?.id, managed.id);
+    } finally { restored.close(); }
+  } finally { await rm(root, {recursive:true,force:true}); }
 });

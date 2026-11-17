@@ -85,6 +85,7 @@ export interface ConversationRuntime {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
     queuedSubmissionIds: readonly string[],
@@ -1581,7 +1582,7 @@ export function createReplicaConversationRuntime(
         };
       }),
       unconfirmedSteers: [...steeringClaims.values()].filter(
-        (item) => item.pausedReason === "steer-delivery-unconfirmed",
+        (item) => item.pausedReason === "steer-delivery-unconfirmed" || item.pausedReason === "delivery-retry-requested",
       ),
       history: {
         hasOlder:
@@ -2146,6 +2147,12 @@ export function createReplicaConversationRuntime(
         localRevision += 1;
         publish();
       }
+    },
+    async retryUnconfirmedSteer(queuedSubmissionId, expectedTurnId) {
+      if (!config.commands.retryUnconfirmedSteer) throw new Error("Message retry is unavailable");
+      await config.commands.retryUnconfirmedSteer(config.key, queuedSubmissionId, expectedTurnId);
+      // Queue events own reconciliation, including a retry accepted while the
+      // original Turn is still running. Do not delete the local claim early.
     },
     async discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId) {
       const claim = steeringClaims.get(queuedSubmissionId);

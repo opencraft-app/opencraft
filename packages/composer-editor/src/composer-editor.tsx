@@ -740,6 +740,7 @@ export interface ComposerQueuedSubmissionPresentation {
   readonly pausedReason?: string | null;
   readonly error?: string | null;
   readonly unconfirmedTargetTurnId?: string;
+  readonly retryable?: boolean;
 }
 
 export interface ComposerQueuedSubmissionContent {
@@ -807,7 +808,7 @@ export interface OpenCraftComposerProps {
     intent: SubmitIntent,
   ) => Promise<void>;
   onDeleteQueuedSubmission?: (id: string) => Promise<void>;
-  onDiscardUnconfirmedSteer?: (id: string, expectedTurnId: string) => Promise<void>;
+  onRetryUnconfirmedSteer?: (id: string, expectedTurnId: string) => Promise<void>;
   onReorderQueuedSubmissions?: (ids: readonly string[]) => Promise<void>;
   onSteerQueuedSubmission?: (id: string) => Promise<void>;
   onResumeQueuedSubmissions?: () => Promise<void>;
@@ -874,7 +875,7 @@ export const OpenCraftComposer = forwardRef<
     supportsQueuedSteer = false,
     onUpdateQueuedSubmission,
     onDeleteQueuedSubmission,
-    onDiscardUnconfirmedSteer,
+    onRetryUnconfirmedSteer,
     onReorderQueuedSubmissions,
     onSteerQueuedSubmission,
     onResumeQueuedSubmissions,
@@ -1628,8 +1629,7 @@ export const OpenCraftComposer = forwardRef<
     if (defaultFollowUpAction !== "queue" || disabled || submissionDisabled || !head
       || !onSteerQueuedSubmission || editorControllerRef.current !== controller
       || pendingSubmissionRef.current?.controller === controller
-      || !canSteerQueueItem(head, isStreaming, supportsQueuedSteer,
-        queuedSubmissions.some(item => item.unconfirmedTargetTurnId !== undefined))) return;
+      || !canSteerQueueItem(head, isStreaming, supportsQueuedSteer)) return;
     // Never skip a blocked head, clear a draft, or replay a failed queue action.
     void steerQueueItem(head.id).catch(() => undefined);
   };
@@ -2302,7 +2302,7 @@ export const OpenCraftComposer = forwardRef<
             await onDeleteQueuedSubmission?.(id);
             if (id === editingQueuedSubmissionId) cancelQueueEdit();
           }}
-          onDiscardUnconfirmed={onDiscardUnconfirmedSteer}
+          onRetryUnconfirmed={onRetryUnconfirmedSteer}
           onReorder={onReorderQueuedSubmissions}
           onSteer={steerQueueItem}
           onResume={onResumeQueuedSubmissions}

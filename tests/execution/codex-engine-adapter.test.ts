@@ -426,7 +426,7 @@ test("Codex Host stages ordinary files for its native process without forwarding
     await initializeClient(adapter, frames, clientId);
     const initialized = await waitFor(frames, frame => frame.id === `${clientId}:init`);
     assert.deepEqual((initialized.result as any).capabilities.extensions[OPENCRAFT_ATTACHMENT_STAGING_EXTENSION], {
-      version: 1, chunkBytes: 1024 * 1024, sources: ["client-bytes"], locations: ["host-file"], maxBytes: 1024 * 1024 * 1024,
+      version: 1, chunkBytes: 64 * 1024, uploadRetry: "last-chunk-v1", sources: ["client-bytes"], locations: ["host-file"], maxBytes: 1024 * 1024 * 1024,
     });
     const upload = { uploadId: crypto.randomUUID(), clientAttachmentId: "chunked-notes", name: "chunked.md", mimeType: "text/markdown", size: 6 };
     const chunk = async (id: string, offset: number, text: string) => {
@@ -606,7 +606,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       { version: 1, fork: true, ephemeral: true, injectItems: true, rename: true, archive: true, unsubscribe: true },
     );
     assert.deepEqual((first.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false });
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false });
 
     await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.id === "a:start");
@@ -899,7 +899,7 @@ test("Codex Host queue Steer capability does not depend on a patched native mark
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false },
     );
   } finally {
     await adapter.close();
@@ -946,7 +946,7 @@ test("older native queue marker does not change Host queue capabilities", async 
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false },
     );
   } finally {
     await adapter.close();
@@ -1009,54 +1009,48 @@ test("Host-owned Codex queue admits a second steer before the first appears in h
   }
 });
 
-test("ambiguous Codex queue steer stays claimed until explicit history-checked discard", async () => {
-  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-"));
+for (const lateReceipt of [false, true]) test(`unconfirmed input retries only on request after final reconciliation (late receipt: ${lateReceipt})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-queue-retry-"));
   const frames: Array<Record<string, unknown>> = [];
-  const adapter = createRoutingAdapter(root, frames, 0, "ambiguous");
-  const client = "client-a";
+  const adapter = createRoutingAdapter(root, frames, 0, lateReceipt ? "defer-history" : "ambiguous");
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
-    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     return waitFor(frames, frame => frame.id === id);
   };
   try {
-    await adapter.connect();
-    await initializeClient(adapter, frames, client);
+    await adapter.connect(); await initializeClient(adapter, frames, "client-a");
     await request("thread", "thread/start", { cwd: root });
-    const turn = await request("turn", "turn/start", {
-      threadId: "fixture-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first",
-    });
-    const targetTurnId = (turn.result as any).turn.id;
-    const added = await request("add", "thread/queue/add", {
-      threadId: "fixture-thread-1", input: [{ type: "text", text: "possibly delivered" }], clientUserMessageId: "maybe-1",
-    });
+    const turn = await request("turn", "turn/start", { threadId: "fixture-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first" });
+    const threadId = "fixture-thread-1", targetTurnId = (turn.result as any).turn.id;
+    const added = await request("add", "thread/queue/add", { threadId, input: [{ type: "text", text: "retry me" }], clientUserMessageId: "retry-message" });
     const queuedId = (added.result as any).queuedSubmission.id;
-    const next = await request("add-next", "thread/queue/add", {
-      threadId: "fixture-thread-1", input: [{ type: "text", text: "must wait" }], clientUserMessageId: "next-1",
-    });
-    const steer = await request("steer", "thread/queue/steer", {
-      threadId: "fixture-thread-1", queuedSubmissionId: queuedId, expectedTurnId: targetTurnId,
-    });
-    assert.ok(steer.error);
-    const unknown = await request("unknown", "thread/queue/list", { threadId: "fixture-thread-1" });
-    assert.equal((unknown.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
-    const blocked = await request("blocked", "thread/queue/steer", {
-      threadId: "fixture-thread-1", queuedSubmissionId: (next.result as any).queuedSubmission.id, expectedTurnId: targetTurnId,
-    });
-    assert.match((blocked.error as any).message, /Earlier delivery is unconfirmed/);
-    const stillQueued = await request("still-queued", "thread/queue/list", { threadId: "fixture-thread-1" });
-    assert.equal((stillQueued.result as any).data[0].clientUserMessageId, "next-1");
-    await request("complete", "test/completeTurn", { threadId: "fixture-thread-1" });
-    const deleted = await request("discard", "thread/queue/delete", {
-      threadId: "fixture-thread-1", queuedSubmissionId: queuedId,
-      expectedTurnId: targetTurnId, acknowledgeUnknownDelivery: true,
-    });
-    assert.deepEqual(deleted.result, { deleted: true });
-    const settled = await request("settled", "thread/queue/list", { threadId: "fixture-thread-1" });
-    assert.deepEqual((settled.result as any).steering, []);
-  } finally {
-    await adapter.close();
-    await rm(root, { recursive: true, force: true });
-  }
+    await request("steer", "thread/queue/steer", { threadId, queuedSubmissionId: queuedId, expectedTurnId: targetTurnId });
+    const queue = (adapter as any).queueStore();
+    if (lateReceipt) queue.settle(threadId, queuedId, "unknown", "steer-delivery-unconfirmed");
+    const next = await request("add-next", "thread/queue/add", { threadId, input: [{ type: "text", text: "next" }], clientUserMessageId: "next-message" });
+    const nextId = (next.result as any).queuedSubmission.id;
+    assert.equal(queue.firstAwaitingAdmission(threadId)?.id, nextId, "unknown input must not block later messages");
+    assert.equal((await request("reorder", "thread/queue/reorder", { threadId, queuedSubmissionIds: [nextId] })).error, undefined);
+    await request("remove-next", "thread/queue/delete", { threadId, queuedSubmissionId: nextId });
+    const wrong = await request("wrong", "thread/queue/retry", { threadId, queuedSubmissionId: queuedId, expectedTurnId: "wrong-turn" });
+    assert.ok(wrong.error);
+    for (const id of ["retry", "retry-again"]) {
+      const reply = await request(id, "thread/queue/retry", { threadId, queuedSubmissionId: queuedId, expectedTurnId: targetTurnId });
+      assert.equal(reply.error, undefined, "retry during an active Turn is accepted without an error dialog");
+    }
+    assert.equal(queue.find(threadId, queuedId)?.pausedReason, "delivery-retry-requested");
+    const before = (await request("before", "test/readAcceptedInputs", {})).result as any;
+    assert.equal(before.data.filter((row: any) => row.params.clientUserMessageId === "retry-message").length, 1);
+    await request("complete", "test/completeTurn", { threadId });
+    await waitFor(frames, () => queue.find(threadId, queuedId)?.state === "delivered");
+    const after = (await request("after", "test/readAcceptedInputs", {})).result as any;
+    const inputs = after.data.filter((row: any) => row.params.clientUserMessageId === "retry-message");
+    assert.equal(inputs.length, lateReceipt ? 1 : 2, "late original acceptance prevents replay; otherwise exactly one explicit retry");
+    if (!lateReceipt) assert.equal(inputs[1].method, "turn/start");
+    assert.equal((await request("retry-delivered", "thread/queue/retry", { threadId, queuedSubmissionId: queuedId, expectedTurnId: targetTurnId })).error, undefined);
+    const final = (await request("final", "test/readAcceptedInputs", {})).result as any;
+    assert.equal(final.data.length, after.data.length, "a lost retry receipt is idempotent");
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("a queued start with an unknown target reconciles against all Turn history by client message identity", async () => {
@@ -1247,7 +1241,7 @@ test("definitive Codex steer rejection releases the Host claim without losing th
   }
 });
 
-test("restart preserves an unconfirmed claim and blocks a later queued turn", async () => {
+test("restart preserves an unconfirmed input without blocking the next queued turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-restart-"));
   const dataRoot = join(root, "data");
   await mkdir(dataRoot);
@@ -1265,9 +1259,14 @@ test("restart preserves an unconfirmed claim and blocks a later queued turn", as
     const listed = await waitFor(frames, frame => frame.id === "list");
     assert.equal((listed.result as any).steering[0].id, uncertain.id);
     assert.equal((listed.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
-    assert.equal((listed.result as any).data[0].clientUserMessageId, "later");
-    await new Promise(resolve => setTimeout(resolve, 30));
-    assert.equal(frames.some(frame => frame.method === "turn/started"), false);
+    // Maintenance can already have dispatched this row before list returns.
+    // Verify durable identity and actual one-time native delivery, not a stale queued snapshot.
+    assert.equal((adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.clientUserMessageId, "later");
+    await waitFor(frames, () => (adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.state === "delivered");
+    assert.equal((adapter as any).queueStore().find("fixture-thread-1", uncertain.id)?.state, "unknown");
+    await adapter.send(JSON.stringify({ id: "accepted", method: "test/readAcceptedInputs", params: {}, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const accepted = (await waitFor(frames, frame => frame.id === "accepted")).result as any;
+    assert.deepEqual(accepted.data.map((input: any) => input.params.clientUserMessageId), ["later"]);
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });
@@ -2096,13 +2095,17 @@ test("a queued native send with a lost acknowledgement remains unknown and never
     const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
     const request = (adapter as any).requestPhysical.bind(adapter);
     (adapter as any).requestPhysical = async (method: string, ...args: any[]) => {
-      if (method === "turn/start") { sends++; throw new Error("Native acknowledgement was lost"); }
+      if (method === "turn/start" && ++sends === 1) throw new Error("Native acknowledgement was lost");
       return request(method, ...args);
     };
     const queued = (await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "uncertain", input: [{ type: "text", text: "one" }] })).result as any;
     await waitFor(frames, f => f.method === "thread/queue/changed" &&
       (adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state === "unknown");
     assert.equal(sends, 1); assert.equal((adapter as any).queuePreparationRetries.size, 0);
+    const next = (await rpc("next", "thread/queue/add", { threadId, clientUserMessageId: "subsequent", input: [{ type: "text", text: "two" }] })).result as any;
+    await waitFor(frames, () => (adapter as any).queueStore().find(threadId, next.queuedSubmission.id)?.state === "delivered");
+    assert.equal(sends, 2, "subsequent input dispatches without retrying the unknown input");
+    assert.equal((adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state, "unknown");
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 

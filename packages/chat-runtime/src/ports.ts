@@ -79,6 +79,11 @@ export interface ConversationCommandPort {
     key: ConversationKey,
     queuedSubmissionId: string,
   ): Promise<boolean>;
+  retryUnconfirmedSteer?(
+    key: ConversationKey,
+    queuedSubmissionId: string,
+    expectedTurnId: TurnId,
+  ): Promise<void>;
   discardUnconfirmedSteer(
     key: ConversationKey,
     queuedSubmissionId: string,

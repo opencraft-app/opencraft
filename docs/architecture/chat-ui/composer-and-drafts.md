@@ -822,6 +822,13 @@ remain available to the runtime; failed, blocked and unconfirmed delivery still
 show actionable feedback. Attachment-only steering does not reserve an empty
 status footer.
 
+Host-owned unconfirmed queued input stays in the Composer rail with a localized
+“Delivery unconfirmed” status and a single Retry action. There is no record-removal
+dialog, raw RPC error, or refresh instruction. Retry shows pending/failed feedback
+in the same row, preserves the draft and editor, and disables repeated activation.
+An unrelated unconfirmed row does not disable sending or reordering queued input.
+The server queue capability gates Retry; older Hosts still show the status.
+
 ## Composer image attachment preview
 
 Draft image thumbnails open the shared zoomable image viewport in a Radix modal.

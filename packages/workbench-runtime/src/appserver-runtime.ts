@@ -1,7 +1,7 @@
 import { AttachmentChunkDeadline, type TransportSendProgressObserver } from "@opencraft/appserver-client/transport";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
-import { SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
+import { supportsUnconfirmedDeliveryRetry, SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { ThreadOrchestrationResource } from "./thread-orchestration-resource";
 import { executionEngineExtension } from "@opencraft/appserver-client";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
@@ -448,6 +448,7 @@ export interface AppServerThreadRuntimeLease {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
     queuedSubmissionIds: readonly string[],
@@ -1887,6 +1888,8 @@ export function createAppServerWorkbenchRuntime(
         interactions,
         get queueAtomicSteer() { return supportsAtomicQueuedSteer(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
+        get queueUnconfirmedDeliveryRetry() { return supportsUnconfirmedDeliveryRetry(
+          client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         get queueUnconfirmedSteerDiscard() { return supportsUnconfirmedSteerDiscard(
           client?.initializeResult?.capabilities?.extensions?.[OPENCRAFT_THREAD_QUEUE_EXTENSION]); },
         compiler: { historyMode: "paginated" },
@@ -2611,6 +2614,8 @@ export function createAppServerWorkbenchRuntime(
           runBindingCommand(binding, () =>
             binding.runtime.deleteQueuedSubmission(queuedSubmissionId),
           ),
+        retryUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
+          runBindingCommand(binding, () => binding.runtime.retryUnconfirmedSteer(queuedSubmissionId, expectedTurnId)),
         discardUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
           runBindingCommand(binding, () =>
             binding.runtime.discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId),
