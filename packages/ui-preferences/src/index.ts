@@ -1,6 +1,12 @@
 export type UiPreferenceScope = "installation" | "account" | "workspace";
 export type ShellNavigationDetent = "expanded" | "compact" | "hidden";
 export type ShellNavigationVisibleDetent = Exclude<ShellNavigationDetent, "hidden">;
+export interface RecentConversationPreference {
+  /** Local pin ordering clock in milliseconds. */
+  readonly pinnedAt?: number;
+  /** Canonical observed conversation updatedAt in seconds; newer activity returns. */
+  readonly dismissedAt?: number;
+}
 
 export interface UiPreferenceValues {
   readonly "interface.touchFriendly": "auto" | "on" | "off";
@@ -19,6 +25,7 @@ export interface UiPreferenceValues {
   readonly "shell.contextSidebarWidth": number;
   readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
   readonly "sidebar.instanceNames": Readonly<Record<string,string>>;
+  readonly "sidebar.recentConversations": Readonly<Record<string, RecentConversationPreference>>;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
 }
 
@@ -41,6 +48,20 @@ const widthValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const uiPreferenceDefinitions = Object.freeze({
+  "sidebar.recentConversations": {
+    key: "sidebar.recentConversations", scope: "installation", defaultValue: {},
+    parse: (value: unknown): UiPreferenceValues["sidebar.recentConversations"] | null => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const result: Record<string, RecentConversationPreference> = {};
+      for (const [key, entry] of Object.entries(value)) {
+        if (!key || key.length > 8192 || !entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+        const { pinnedAt, dismissedAt } = entry as RecentConversationPreference;
+        if ([pinnedAt, dismissedAt].some(time => time !== undefined && (typeof time !== "number" || !Number.isFinite(time) || time < 0))) return null;
+        result[key] = { ...(pinnedAt === undefined ? {} : { pinnedAt }), ...(dismissedAt === undefined ? {} : { dismissedAt }) };
+      }
+      return result;
+    },
+  },
   "sidebar.collaborationServers": {
     key:"sidebar.collaborationServers",scope:"installation",defaultValue:{},
     parse:(value:unknown):Readonly<Record<string,string>>|null=>{

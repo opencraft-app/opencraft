@@ -20,11 +20,13 @@ const preferences=await openWorkbenchUiPreferences();
 const locale=new WorkbenchLocaleController(preferences,{ideLocale:'en-US'});await locale.initialize();
 const controller=createComposerController({type:'existing-thread',key:{hostId:'fixture',threadId:'one'}},{now:Date.now,createId:()=>crypto.randomUUID()});
 const calls=[];
-function App(){const[active,setActive]=useState(true);const action=useDefaultFollowUpAction();
-window.fixture={setActive,calls,flush:()=>preferences.flush(),draft:()=>controller.getSnapshot().draft,setTheme:mode=>Object.entries(buildOpenCraftThemeCssProperties(mode,opencraftCanvasThemePalette[mode])).forEach(([k,v])=>document.documentElement.style.setProperty(k,v))};
-return <main style={{padding:20,maxWidth:750}}><ChatSettings/><OpenCraftComposer controller={controller} defaultFollowUpAction={action} isStreaming={active} selectionCatalog={{models:[{id:'fixture-model',value:'fixture-model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} onSubmit={(intent,context)=>{calls.push({text:intent.plainText,action:context.followUpAction});return true}} onCancel={()=>{}}/></main>}
+let stops=0;
+function App(){const[active,setActive]=useState(true);const[available,setAvailable]=useState(undefined);const action=useDefaultFollowUpAction();
+window.fixture={setActive,setAvailable,calls,stops:()=>stops,flush:()=>preferences.flush(),draft:()=>controller.getSnapshot().draft,setTheme:mode=>Object.entries(buildOpenCraftThemeCssProperties(mode,opencraftCanvasThemePalette[mode])).forEach(([k,v])=>document.documentElement.style.setProperty(k,v))};
+return <main style={{padding:20,maxWidth:750}}><ChatSettings onConfigureAgents={()=>{}}/><OpenCraftComposer controller={controller} defaultFollowUpAction={action} availableFollowUpActions={available} isStreaming={active} selectionCatalog={{models:[{id:'fixture-model',value:'fixture-model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} onSubmit={(intent,context)=>{calls.push({text:intent.plainText,action:context.followUpAction});return true}} onCancel={()=>{stops++}}/></main>}
 createRoot(document.getElementById('root')).render(<UiPreferencesProvider runtime={preferences}><WorkbenchIntlProvider controller={locale} target={document.documentElement}><AsyncNoticesProvider><App/></AsyncNoticesProvider></WorkbenchIntlProvider></UiPreferencesProvider>);
 `;
+const modifiedEnter = process.platform === "darwin" ? "Meta+Enter" : "Control+Enter";
 
 const server = await createServer({
   configFile: false, root: process.cwd(), logLevel: "error",
@@ -52,7 +54,7 @@ try {
     const context = await browser.newContext({ viewport: mobile ? { width: 390, height: 844 } : { width: 1180, height: 760 }, hasTouch: mobile, isMobile: mobile });
     await context.addInitScript("window.__name = value => value");
     const page = await context.newPage();
-    page.on("pageerror", (error: Error) => errors.push(error.message));
+    page.on("pageerror", (error: Error) => { errors.push(error.message); console.error(error.message); });
     await page.goto(origin);
     const toggle = page.getByRole("switch", { name: "Follow up immediately while responding", exact: true });
     const editor = page.locator(".opencraft-composer-editor");
@@ -61,6 +63,11 @@ try {
     assert.equal(await toggle.getAttribute("aria-checked"), "false");
     await editor.fill("preserved draft");
     assert.equal(await action(), "queue");
+    const stop = page.getByRole("button", { name: "Stop response", exact: true });
+    assert.equal(await stop.count(), 1, "running task remains stoppable with a nonempty draft");
+    if (mobile) await stop.tap(); else await stop.click();
+    assert.equal(await page.evaluate(() => (window as any).fixture.stops()), 1);
+    assert.equal(await editor.innerText(), "preserved draft", "Stop preserves the unsubmitted draft");
     await page.evaluate(() => {
       (window as any).originalEditor = document.querySelector(".opencraft-composer-editor");
       const text = document.createTreeWalker(document.querySelector(".opencraft-composer-editor")!, NodeFilter.SHOW_TEXT).nextNode()!;
@@ -79,7 +86,7 @@ try {
     assert.equal(await page.evaluate(() => getSelection()!.toString()), "ese");
     await page.locator("[data-composer-primary-action]").click();
     assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "queue");
-    await editor.fill("shortcut override"); await editor.press("Control+Enter");
+    await editor.fill("shortcut override"); await editor.press(modifiedEnter);
     assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "steer");
     await toggle.click(); await page.evaluate(() => (window as any).fixture.flush());
     await editor.fill("steer click"); await page.locator("[data-composer-primary-action]").click();
@@ -93,8 +100,14 @@ try {
     } else {
       assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "steer");
     }
-    await editor.fill("queue override"); await editor.press("Control+Enter");
+    await editor.fill("queue override"); await editor.press(modifiedEnter);
     assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "queue");
+    await page.evaluate(() => (window as any).fixture.setAvailable(["queue"]));
+    await editor.fill("connected ACP follow-up");
+    assert.equal(await action(), "queue", "queue-only connected Agent overrides the steer preference");
+    await page.locator("[data-composer-primary-action]").click();
+    assert.equal(await page.evaluate(() => (window as any).fixture.calls.at(-1).action), "queue");
+    await page.evaluate(() => (window as any).fixture.setAvailable(undefined));
     for (const mode of ["light", "dark"]) {
       await page.evaluate(mode => (window as any).fixture.setTheme(mode), mode);
       const box = await toggle.boundingBox();

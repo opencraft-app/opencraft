@@ -20,9 +20,9 @@ initializeAppearanceTheme();
 const layout=await SidebarLayoutStore.open({load:async()=>null,save:async(_scope,doc)=>doc});
 const preferences=await openWorkbenchUiPreferences();
 const actions=[];
-let failNameSave=false;
+let failNameSave=false,failRecentSave=false,holdRecentSave=false,releaseRecentSave;
 const updatePreference=preferences.update.bind(preferences);
-preferences.update=(key,edit)=>{if(key==='sidebar.instanceNames'&&failNameSave){failNameSave=false;return Promise.reject(new Error('Synthetic write failure'));}return updatePreference(key,edit)};
+preferences.update=(key,edit)=>{if(key==='sidebar.recentConversations'&&failRecentSave){failRecentSave=false;return Promise.reject(new Error('Synthetic recent save failure'));}if(key==='sidebar.recentConversations'&&holdRecentSave){holdRecentSave=false;return new Promise((resolve,reject)=>{releaseRecentSave=()=>updatePreference(key,edit).then(resolve,reject);});}if(key==='sidebar.instanceNames'&&failNameSave){failNameSave=false;return Promise.reject(new Error('Synthetic write failure'));}return updatePreference(key,edit)};
 let snapshot={revision:0,mode:null,modes:[],hideRowBadge:false,notice:null,filter:{label:'My conversations',enabled:false}};
 const listeners=new Set();
 const grouping={id:'filter-fixture',getSnapshot:()=>snapshot,subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},watch:()=>()=>{},project:()=>[],setMode:()=>{},toggleGroup:()=>{},filterThreads:refs=>snapshot.filter.enabled?refs.filter(ref=>ref.hostId==='local'):refs,setFilterEnabled:enabled=>{snapshot={...snapshot,revision:snapshot.revision+1,filter:{...snapshot.filter,enabled}};listeners.forEach(fn=>fn())}};
@@ -32,7 +32,7 @@ function agentRows(){
  const declaration={defaultEngine:'codex',providers:agents.map(([id,label,threadPrefix])=>({id,label,threadPrefix}))};
  return agents.map(([id,label,prefix],i)=>({...row(i,i===1),...projectAppServerThread({id:i===0?'thread-0':prefix+i,name:i===0?'Project review':i===1?'OpenCraft confirmation response with a very long title':'New chat',cwd:'/workspace',createdAt:1,updatedAt:100-i,modelProvider:'openai',status:i===1?{type:'active',activeFlags:[]}:i===3?{type:'active',activeFlags:['waitingOnUserInput']}:i===4?{type:'systemError'}:{type:'idle'}},100000,declaration),pinned:true,unread:i===0,goalActive:i===2}));
 }
-function App(){const[filterUi,setFilterUi]=useState(false);const[epoch,setEpoch]=useState(0);const[threads,setThreads]=useState([]);const[catalogs,setCatalogs]=useState([{hostId:'ssh:remote',label:'Remote',phase:'loading'}]);const[discovery,setDiscovery]=useState(null);const[remoteAvailable,setRemoteAvailable]=useState(true);
+function App(){const[scope,setScope]=useState('local');const[filterUi,setFilterUi]=useState(false);const[epoch,setEpoch]=useState(0);const[threads,setThreads]=useState([]);const[catalogs,setCatalogs]=useState([{hostId:'ssh:remote',label:'Remote',phase:'loading'}]);const[discovery,setDiscovery]=useState(null);const[remoteAvailable,setRemoteAvailable]=useState(true);
 const profile={hostId:'ssh:remote',hostKind:'remote-ssh',enabled:true,includeInSidebar:true,autoConnect:false,revision:1};
 const cachedRows=[{...row(0),pinned:true},{...row(1,true),pinned:true},{...row(2,true),pinned:true},{...row(3),pinned:true}];
 function connection(state,authenticated=true,phase=state==='open'?'ready':'reconnecting'){const management={available:true,authenticated,items:[{serverId:'ssh:remote',enabled:true,revision:1,state}],legacyServers:[],refreshing:false,error:null};
@@ -41,9 +41,9 @@ setRemoteAvailable(phase==='ready'&&admitted);
 setThreads(cachedRows.filter(r=>r.connectionHostId==='local'||canDisplayHostThreadCatalog(profile,management))
  .map(r=>({...r,interactionAvailable:r.connectionHostId==='local'||(phase==='ready'&&admitted)})));
 return admitted;}
-window.fixture={preferences,failNextNameSave:()=>{failNameSave=true},setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,setAppearanceThemeId,agentRows,connection};
+window.fixture={preferences,scope,setScope,failNextRecentSave:()=>{failRecentSave=true},holdNextRecentSave:()=>{holdRecentSave=true},releaseRecentSave:()=>releaseRecentSave?.(),failNextNameSave:()=>{failNameSave=true},setFilterUi,resetList:()=>setEpoch(v=>v+1),grouping,setThreads,setCatalogs,setDiscovery,row,actions,setThemePreference,setAppearanceThemeId,agentRows,connection};
 const threadActions={onRename:async()=>{},onFork:async()=>{},onArchive:async()=>{},onDelete:async()=>{},onSetPinned:async(target,pinned)=>{actions.push({pin:target.threadId,pinned});setThreads(rows=>rows.map(row=>row.id===target.threadId&&row.connectionHostId===target.hostId?{...row,pinned}:row));}};
-return <div className={location.search.includes('mobile-layout')?'shell-sidebar__column':undefined} data-navigation-layout={location.search.includes('mobile-layout')?'mobile':undefined} style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar key={epoch} threadListGrouping={filterUi?grouping:null} threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote'&&remoteAvailable,rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onNewTaskInFolder={target=>actions.push({folder:target})} onOpenSettings={()=>{}} /></div>;}
+return <div className={location.search.includes('mobile-layout')?'shell-sidebar__column':undefined} data-navigation-layout={location.search.includes('mobile-layout')?'mobile':undefined} style={{height:'100vh',width:300,display:'flex',flexDirection:'column'}}><Sidebar key={epoch} instanceNameScope={scope} threadListGrouping={filterUi?grouping:null} threads={threads} activeHostId='local' activeThreadId='thread-0' sidebarLayout={layout} threadActions={threadActions} threadCapabilities={hostId=>({pin:hostId==='ssh:remote'&&remoteAvailable,rename:false,archive:false,fork:false,delete:false})} threadCatalogs={catalogs} threadCatalogDiscovery={discovery} onRetryThreadCatalogDiscovery={()=>{actions.push('discovery-read');setDiscovery('loading');}} onRetryThreadCatalog={id=>{actions.push(id);setCatalogs([{hostId:id,label:'Remote',phase:'loading'}]);}} onSelectThread={(hostId,id)=>actions.push({hostId,id})} onNewTask={()=>{}} onNewTaskInFolder={target=>actions.push({folder:target})} onOpenSettings={()=>{}} /></div>;}
 const liveQuery=new QueryClient({defaultOptions:{queries:{retry:false,refetchOnWindowFocus:false}}});
 const liveProfile={hostId:'live',hostKind:'local',enabled:true,includeInSidebar:true,autoConnect:true,revision:1};
 let liveRows=Array.from({length:150},(_,i)=>({id:'old-'+i,name:'Old '+i,cwd:'/workspace',createdAt:1,updatedAt:300-i,preview:'',ephemeral:false,source:'cli',status:{type:'idle'},turns:[]}));
@@ -131,7 +131,98 @@ try {
   await vite.listen();
   const origin = vite.resolvedUrls!.local[0]!;
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
-  if (process.env.OPENCRAFT_SIDEBAR_RECENT_ONLY === '1') {
+  if (process.env.OPENCRAFT_SIDEBAR_SWIPE_ONLY === '1') {
+    const output=process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR ?? '/tmp/opencraft-sidebar-swipe';
+    await (await import('node:fs/promises')).mkdir(output,{recursive:true});
+    for(const touch of (process.env.OPENCRAFT_SWIPE_TOUCH_ONLY ? [true] : process.env.OPENCRAFT_SWIPE_DESKTOP_ONLY ? [false] : [false,true]))for(const theme of (process.env.OPENCRAFT_SWIPE_TOUCH_ONLY || process.env.OPENCRAFT_SWIPE_DESKTOP_ONLY ? ['light'] : ['light','dark','lavender'])){
+      const context=await browser.newContext({viewport:{width:touch?390:900,height:1000},hasTouch:touch,isMobile:touch,reducedMotion:theme==='lavender'?'reduce':'no-preference'});
+      const page=await context.newPage(),errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));
+      await page.addInitScript('globalThis.__name=fn=>fn');await page.goto(origin);await page.waitForFunction(()=>Boolean((window as any).fixture));
+      const configure=async()=>page.evaluate(theme=>{
+        const f=(window as any).fixture;f.setThemePreference(theme==='dark'?'dark':'light');if(theme==='lavender')f.setAppearanceThemeId('opencraft.core.lavender');
+        (window as any).swipeRows=[...Array.from({length:15},(_,i)=>({...f.row(i),updatedAt:200-i,cwd:'/local/app',directoryGroup:{id:'/local/app',name:'app'},instanceGroup:{id:'local',name:'My Mac'},agent:{id:'codex',label:'Codex'}})),{...f.row(0,true),updatedAt:100,cwd:'/remote/app',directoryGroup:{id:'/remote/app',name:'app'},instanceGroup:{id:'remote',name:'Remote'},agent:{id:'cursor',label:'Cursor'}}];
+        f.setThreads((window as any).swipeRows);f.setCatalogs([]);
+      },theme);
+      await configure();
+      const recent=page.getByRole('region',{name:'Recent',exact:true});await recent.waitFor();
+      const row=(id:number)=>recent.locator('[data-host-id="local"][data-thread-id="thread-'+id+'"]');
+      const pref=async(id:number)=>page.evaluate(i=>(window as any).fixture.preferences.get('sidebar.recentConversations')[JSON.stringify(['local','local','thread-'+i])]??null,id);
+      const settle=async()=>page.waitForFunction(()=>[...document.querySelectorAll('.ui-swipe-actions')].every(el=>!el.hasAttribute('data-preview')&&Math.abs(new DOMMatrixReadOnly(getComputedStyle(el).transform).m42)<.5));
+      const cdp=await context.newCDPSession(page);
+      let start:{x:number;y:number};
+      const begin=async(id:number)=>{
+        await settle();const target=row(id).locator('.ui-swipe-actions');await target.scrollIntoViewIfNeeded();const box=await target.boundingBox();assert(box);start={x:box.x+box.width/2,y:box.y+box.height/2};
+        if(touch)await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{...start,id:1}]});else{await page.mouse.move(start.x,start.y);await page.mouse.down();}
+      };
+      const move=async(dx:number,dy=0)=>{
+        if(touch)await cdp.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:start.x+dx,y:start.y+dy,id:1}]});else await page.mouse.move(start.x+dx,start.y+dy,{steps:4});
+        await page.waitForTimeout(25);
+      };
+      const end=async(cancel=false)=>{
+        if(touch)await cdp.send('Input.dispatchTouchEvent',{type:cancel?'touchCancel':'touchEnd',touchPoints:[]});else{if(cancel)await page.evaluate(()=>window.dispatchEvent(new Event('blur')));await page.mouse.up();}
+        await settle();
+      };
+      const swipe=async(id:number,dx:number,waitForSave=true)=>{await begin(id);await move(dx/2);await move(dx);await end();if(waitForSave)await page.waitForFunction(()=>!document.querySelector('[aria-busy="true"].sidebar-recent-row'));};
+      await begin(2);await move(45);await move(120);
+      assert.equal(await pref(2),null,'holding previews without committing');assert.equal(await row(2).locator('.ui-swipe-actions').getAttribute('data-armed'),'true');
+      await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'-held.png'});
+      await end();await page.waitForFunction(()=>Boolean((window as any).fixture.preferences.get('sidebar.recentConversations')['["local","local","thread-2"]']?.pinnedAt));
+      assert.equal(await recent.locator('.sidebar-activity-item__title').first().textContent(),'Task 2');assert.equal(await row(2).getByRole('img',{name:'Pinned to top',exact:true}).count(),1);
+      assert.deepEqual(await page.evaluate(()=>(window as any).fixture.actions),[],'swiping does not open or remotely pin the conversation');
+      await swipe(2,120);assert.equal(await pref(2),null,'right swipe toggles the local pin');
+      await swipe(2,35);assert.equal(await pref(2),null,'short release springs back');
+      await begin(2);await move(120);await end(true);assert.equal(await pref(2),null,'cancel/blur cannot commit');
+      if(touch){await begin(2);await move(120);await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:start.x+120,y:start.y,id:1},{x:330,y:400,id:2}]});await end();assert.equal(await pref(2),null,'multitouch cancels the held action');}
+      await page.locator('.sidebar-content-scroll').evaluate(el=>{el.scrollTop=0});
+      await begin(2);await move(0,-35);await move(0,-80);await move(0,-140);await end();assert.equal(await pref(2),null,'vertical gestures never invoke row actions');
+      if(touch)await page.waitForFunction(()=>document.querySelector('.sidebar-content-scroll')!.scrollTop>0);
+      else{await row(2).hover();await page.mouse.wheel(0,180);await page.waitForFunction(()=>document.querySelector('.sidebar-content-scroll')!.scrollTop>0);}
+
+      await begin(3);await move(120);await move(-120);await end();
+      await row(3).waitFor({state:'detached'});assert.equal((await pref(3)).dismissedAt,197,'release direction owns the action after reversal');
+      assert.equal(await page.locator('.sidebar-native-projects [data-host-id="local"][data-thread-id="thread-3"]').count(),1,'dismissal retains the device directory');
+      await recent.getByRole('button',{name:'Undo',exact:true}).click();await row(3).waitFor();
+      const trigger=row(4).locator('.sidebar-activity-item__menu-trigger');await trigger.focus();await page.keyboard.press('Enter');
+      await page.getByRole('menuitem',{name:'Pin to top',exact:true}).click();await settle();assert.ok((await pref(4)).pinnedAt,'keyboard menu shares the same preference action');
+      await row(4).locator('.sidebar-activity-item__menu-trigger').click();await page.getByRole('menuitem',{name:'Unpin from top',exact:true}).click();await settle();assert.equal(await pref(4),null);
+      if(!touch){
+        await settle();await row(4).scrollIntoViewIfNeeded();await row(4).hover();await page.mouse.wheel(-120,0);
+        await page.waitForFunction(()=>Boolean((window as any).fixture.preferences.get('sidebar.recentConversations')['["local","local","thread-4"]']?.pinnedAt));
+        await settle();await row(4).hover();await page.mouse.wheel(-120,0);await page.waitForFunction(()=>!(window as any).fixture.preferences.get('sidebar.recentConversations')['["local","local","thread-4"]']);await settle();
+      }
+      await begin(4);await move(120);await page.evaluate(()=>(window as any).fixture.setScope('account-b'));await end();
+      assert.equal(await page.evaluate(()=>(window as any).fixture.preferences.get('sidebar.recentConversations')['["account-b","local","thread-4"]']??null),null,'a held gesture cannot cross account scopes');
+      await page.evaluate(()=>(window as any).fixture.setScope('local'));
+      await page.evaluate(()=>(window as any).fixture.failNextRecentSave());await swipe(4,120);
+      await page.getByText('Could not update Recent. Try again.',{exact:true}).first().waitFor();assert.equal(await pref(4),null,'failed writes do not change order or pins');
+      await swipe(2,120);assert.ok((await pref(2)).pinnedAt);await swipe(3,-120);await row(3).waitFor({state:'detached'});
+      await page.reload();await page.waitForFunction(()=>Boolean((window as any).fixture));await configure();await recent.waitFor();
+      assert.ok((await pref(2)).pinnedAt);assert.equal(await row(3).count(),0,'dismissal survives recreation');assert.equal(await recent.locator('.sidebar-activity-item__title').first().textContent(),'Task 2');
+      await page.evaluate(()=>(window as any).fixture.setScope('account-b'));await row(3).waitFor();assert.equal(await recent.locator('.sidebar-activity-item__title').first().textContent(),'Task 0');
+      await page.evaluate(()=>(window as any).fixture.setScope('local'));await row(3).waitFor({state:'detached'});
+      await page.evaluate(()=>{const f=(window as any).fixture;f.setThreads((window as any).swipeRows.map(r=>r.connectionHostId==='local'&&r.id==='thread-3'?{...r,updatedAt:300}:r));});await row(3).waitFor();
+      assert.equal((await recent.locator('.sidebar-activity-item__title').allTextContents())[1],'Task 3','new activity re-enters below pinned conversations');
+      await page.evaluate(()=>(window as any).fixture.holdNextRecentSave());await swipe(5,120,false);assert.equal(await row(5).locator('.sidebar-recent-row').getAttribute('aria-busy'),'true');
+      await page.evaluate(()=>(window as any).fixture.setScope('account-b'));await page.waitForFunction(()=>(window as any).fixture.scope==='account-b');
+      await page.evaluate(()=>(window as any).fixture.setScope('local'));await page.waitForFunction(()=>(window as any).fixture.scope==='local');await page.evaluate(()=>(window as any).fixture.releaseRecentSave());
+      await page.waitForFunction(()=>!document.querySelector('[aria-busy="true"].sidebar-recent-row'));
+      await page.evaluate(()=>(window as any).fixture.setScope('local'));assert.equal(await pref(5),null,'retired scope cannot commit its delayed intent');
+      await begin(0);await move(-120);const scrollBefore=await page.locator('.sidebar-content-scroll').evaluate(el=>el.scrollTop);await end();await row(0).waitFor({state:'detached'});
+      const scrollAfter=await page.locator('.sidebar-content-scroll').evaluate(el=>el.scrollTop);assert(scrollAfter<=scrollBefore+100,'removing the active Recent row does not jump to its device-directory copy');
+      await recent.getByRole('button',{name:'Undo',exact:true}).click();await row(0).waitFor();
+      await page.evaluate(()=>(window as any).fixture.setThreads(rows=>rows.map(r=>r.id==='thread-4'?{...r,interactionAvailable:false}:r)));
+      assert.equal(await row(4).locator('.sidebar-activity-item').isDisabled(),true);
+      await row(4).hover();
+      await row(4).locator('.sidebar-activity-item__menu-trigger').click();await page.getByRole('menuitem',{name:'Pin to top',exact:true}).click();
+      await page.waitForFunction(()=>Boolean((window as any).fixture.preferences.get('sidebar.recentConversations')['["local","local","thread-4"]']?.pinnedAt));await settle();
+      await row(4).locator('.sidebar-activity-item__menu-trigger').click();await page.getByRole('menuitem',{name:'Unpin from top',exact:true}).click();
+      await page.waitForFunction(()=>!(window as any).fixture.preferences.get('sidebar.recentConversations')['["local","local","thread-4"]']);await settle();
+      assert.equal(await page.evaluate(()=>JSON.stringify((window as any).fixture.actions)), '[]');
+      await recent.locator('.sidebar-thread-group-toggle').scrollIntoViewIfNeeded();await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+theme+'-final.png'});
+      assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);assert.deepEqual(errors,[]);
+      evidence.push({touch,theme,heldPreview:true,releaseAndReverse:true,cancel:true,verticalScroll:true,menu:true,undo:true,persistence:true,scopeIsolation:true,failureRecovery:true,noRemoteMutations:true});console.log('PASS Recent swipe',touch,theme);await context.close();
+    }
+  } else if (process.env.OPENCRAFT_SIDEBAR_RECENT_ONLY === '1') {
     const output=process.env.OPENCRAFT_SSH_UI_ARTIFACT_DIR ?? '/tmp/opencraft-sidebar-recent';
     await (await import('node:fs/promises')).mkdir(output,{recursive:true});
     for(const touch of [false,true])for(const theme of ['light','dark','lavender']){

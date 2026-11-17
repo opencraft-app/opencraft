@@ -8,6 +8,7 @@ import {
   groupThreadsByActivityDate,
   groupThreadsByTaskFlow,
   recentSidebarThreads,
+  recentConversationKey,
   sidebarActivityMetadata,
   sidebarActivityDateHeadings,
   type SidebarActivityThread,
@@ -73,6 +74,22 @@ test("One conversation in Recent and its directory has exclusive menus and occur
   assert.deepEqual(notifications, ["recent", "recent", "device"]);
   store.update(directory, false);
   assert.equal(store.getSnapshot(), null);
+});
+
+test("Recent preferences pin within Recent, hide through a recorded update, and separate accounts and Hosts", () => {
+  const first = { ...thread("same", new Date()), connectionHostId: "a", updatedAt: 100 };
+  const other = { ...first, connectionHostId: "b", updatedAt: 200 };
+  const old = { ...first, id: "old", updatedAt: 1 };
+  const input = [first, other, old];
+  const prefs = {
+    [recentConversationKey("account-a", "a", "same")]: { dismissedAt: 100 },
+    [recentConversationKey("account-a", "a", "old")]: { pinnedAt: 1 },
+  };
+  assert.deepEqual(recentSidebarThreads(input, prefs, "account-a"), [old, other]);
+  assert.deepEqual(recentSidebarThreads(input, prefs, "account-b"), [other, first, old]);
+  const updated = { ...first, updatedAt: 201 };
+  assert.deepEqual(recentSidebarThreads([updated, other, old], prefs, "account-a"), [old, updated, other]);
+  assert.equal("pinned" in old, false, "display pinning never writes the conversation's domain pin");
 });
 
 test("Activity chronology owns sections while equal thread ids retain Server provenance", () => {

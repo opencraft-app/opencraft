@@ -721,7 +721,7 @@ classification never grants access; the Hub remains the permission authority.
 
 Recent is the flat aggregate immediately after Mine and before the device tree.
 It consumes every visible, admitted catalog row, including private, pinned,
-attention and child conversations. It sorts by canonical updatedAt descending;
+attention and child conversations. Unpinned rows sort by canonical updatedAt descending;
 running state does not override recency. Host/thread identity separates equal
 IDs across devices and deduplicates repeated source entries. Existing search,
 Server and participant filters apply before projection. Pagination reveals the
@@ -764,6 +764,62 @@ Delivery is this checkout, its verified Web build and current Vite preview;
 Host PID 13624 stayed running. No release, remote upgrade, Electron window or
 physical phone verification is implied.
 
+
+## Recent row gestures (2026-11-17)
+
+Recent rows reuse the existing Sidebar navigation, status, Agent and menu tracks.
+Pin to top and Remove from Recent are local presentation actions with keyboard
+and mouse menu equivalents; Recent menus use that local pin instead of also
+offering the conversation's unrelated server pin. The device tree, conversation
+access and execution are unchanged. Pinned Recent rows sort first with a quiet
+pin glyph and heading. Removal offers an inline Undo; newer canonical activity
+returns a dismissed row. Preference changes do not navigate or scroll to another
+occurrence of the selected conversation, and preserve the chat/draft subtree.
+
+The shared `SwipeActions` primitive owns horizontal preview, physical direction,
+threshold feedback and spring return. A single primary pointer enters pending,
+locks horizontal after an 8px deadzone and 1.35 axis ratio, follows the contact,
+then commits only on release beyond 30% of actual row width (64–112px). Short
+release returns; reversal uses the final displacement. Vertical/native input,
+cancel, loss of owned capture, multitouch, blur, resize, foreground focus, account
+change and unmount retire the held intent. Implicit child-to-row touch capture
+handoff is not cancellation. Recognized drags suppress their synthesized click,
+while a later tap or keyboard activation remains available. Reduced motion keeps
+direct following but removes settling/layout travel. Row actions opt out of the
+Shell's drawer gesture; menu, browser-resource and participant controls retain
+their own input. Horizontal trackpad wheel has one explicit 160ms idle end,
+including its momentum tail; vertical wheel keeps native scrolling.
+
+UiPreferencesRuntime owns durable CAS edits under the display/account + Host +
+conversation key. The row is busy until commit; failure retains its original
+position and offers retry. Queued writes and held gestures cannot cross scopes.
+Undo restores only its still-current dismissal. The shared primitive owns
+geometry/motion; the Sidebar owns actions, persistence and focus restoration.
+
+Verification: `OPENCRAFT_SIDEBAR_SWIPE_ONLY=1` uses the real Sidebar and actual
+pointer/touch/trackpad input in desktop and touch contexts, each in light, dark
+and lavender (including reduced motion). All six cases pass held preview,
+release, short return, reversal, cancellation, multitouch, native vertical
+scrolling, keyboard/menu equivalents, Undo, reload persistence, account isolation,
+retired queued writes even after returning to the same account, write failure,
+offline local actions and selection/scroll continuity. No navigation or remote
+mutation callbacks fire from swipes. Capture-aware hover checking now accepts
+real pointer ownership in the capture phase, with positive/negative guard tests.
+All 34 activity/preference/desktop-storage tests, Web/Design System/preference
+types, i18n and controls checks/tests, eight hover-policy tests, boundaries and
+the Web build/browser compatibility check pass.
+
+Viewed real local Web desktop and touch held, pinned and removed states in
+`/tmp/opencraft-recent-swipe-live-*-{held,pinned,removed}.png`, plus fixture touch
+dark held and desktop lavender final. The neutral reveal identifies the action;
+content follows the finger, pinned rows have a quiet marker, and removal exposes
+Undo without changing conversation content. Actual-page gestures completed pin,
+dismiss, Undo and unpin with the drawer still open, the same editor node and
+draft text retained, no page errors and no Thread/Turn start. Source, a verified
+Web build and the current Vite preview are updated; only the frontend development
+service reloaded, while Host PID 13624 stayed running. Electron's storage adapter
+is tested; an Electron window and physical phone remain unverified. No release or
+remote companion upgrade is part of this change.
 
 ## Folder new-conversation action (2026-11-17)
 

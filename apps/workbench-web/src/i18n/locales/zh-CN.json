@@ -519,6 +519,14 @@
   "sidebar.flow.running": "进行中",
   "sidebar.flow.attention": "等你处理",
   "sidebar.flow.pinned": "置顶",
+  "sidebar.recent.pin": "固定在顶部",
+  "sidebar.recent.unpin": "取消置顶",
+  "sidebar.recent.dismiss": "移出最近",
+  "sidebar.recent.pinned": "已置顶",
+  "sidebar.recent.failed": "无法更新最近列表，请重试。",
+  "sidebar.recent.removed": "已移出最近",
+  "sidebar.recent.undo": "撤销",
+  "sidebar.recent.empty": "暂无最近会话",
   "sidebar.recent.device": "设备：{device}",
   "sidebar.recent.folder": "文件夹：{folder}",
   "sidebar.flow.recent": "最近",
@@ -1532,7 +1540,8 @@
   "onboard.ide.open": "打开 CodeBuddy IDE 完成连接",
   "onboard.ide.required": "请连接 IDE 接入扩展",
   "onboard.ide.trust": "请在 CodeBuddy IDE 中信任此项目",
-  "onboard.ide.trustAction": "确认项目信任",
+  "onboard.ide.trustFailed": "请切换到 CodeBuddy IDE，打开“工作区信任”检查此项目，完成后返回刷新。",
+  "onboard.ide.trustAction": "检查项目信任",
   "onboard.ide.connecting": "请在 CodeBuddy IDE 中完成连接",
   "onboard.ide.reload": "首次安装扩展后，请重载 CodeBuddy IDE 窗口，再打开连接链接。",
   "onboard.agent.actionFailed": "未能完成接入，请检查 Agent 后重试。",
@@ -1557,5 +1566,7 @@
   "settings.agents.directoryEmpty": "此设备上未发现 Agent。",
   "settings.agents.offline": "此设备已离线，重新连接后可配置 Agent 或导入会话。",
   "settings.agents.select": "选择一个 Agent，配置接入或导入会话。",
-  "settings.agents.noResults": "没有匹配的 Agent。"
+  "settings.agents.noResults": "没有匹配的 Agent。",
+  "composer.model.ideCurrent": "使用 IDE 当前模型",
+  "composer.model.ideCurrent.description": "在 CodeBuddy IDE 中选择模型，发送消息时会跟随该选择。"
 }

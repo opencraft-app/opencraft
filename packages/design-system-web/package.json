@@ -24,6 +24,8 @@
     "./context-menu": "./src/context-menu.tsx",
     "./touch-contact": "./src/touch-contact.tsx",
     "./motion-reduction": "./src/use-motion-reduction.ts",
+    "./swipe-actions": "./src/swipe-actions.tsx",
+    "./swipe-actions.web": "./src/swipe-actions.web.scss",
     "./tabs": "./src/tabs.tsx",
     "./tabs.web": "./src/tabs.web.scss"
   },

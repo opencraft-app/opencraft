@@ -13,6 +13,7 @@ const calls: string[] = [], finished: string[] = [];
 const machineCommands: unknown[] = [];
 const historyImports: unknown[] = [];
 let signedIn = true;
+let ideState = new URLSearchParams(location.search).get("ide");
 let holdFinish = false;
 let releaseFinish: (() => void) | null = null;
 const baseAgents = (): OnboardingAgentSnapshot[] => ["codex", "cursor"].map(id => ({
@@ -20,7 +21,7 @@ const baseAgents = (): OnboardingAgentSnapshot[] => ["codex", "cursor"].map(id =
   activity: null, version: "1", installUrl: "https://example.invalid", canInstallPackage: false,
 }));
 function agents(): OnboardingAgentSnapshot[] {
-  const state=new URLSearchParams(location.search).get("ide");
+  const state=ideState;
   const pi = new URLSearchParams(location.search).get("pi");
   if (new URLSearchParams(location.search).has("historyAll")) return ["codex", "cursor", "claude", "codebuddy", "codebuddy-ide", "pi"].map(id => ({ id: id as OnboardingAgentSnapshot["id"], engineId: id === "claude" ? "claude-code" : id === "pi" ? "pi-cli" : id, installed: true, authenticated: true, historyImport: true, version: "fixture", account: null, activity: null, canInstallPackage: false, installUrl: "https://example.invalid" }));
   return [...baseAgents(), ...(pi ? [{ id: "pi" as const, engineId: "pi-cli", displayName: "Pi", installed: true, authenticated: pi === "ready", setupCommand: "pi", account: null, activity: null, version: "1.5.2", installUrl: "https://pi.dev", canInstallPackage: true }] : []), ...(state ? [
@@ -29,11 +30,14 @@ function agents(): OnboardingAgentSnapshot[] {
   ] : [])];
 }
 function App() {
+  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(new URLSearchParams(location.search).get("selectedAgent") ?? undefined);
   const [disabledAgents, setDisabledAgents] = useState<string[]>([]);
   const [hostId, setHostId] = useState("host-a");
   const [presentation, setPresentation] = useState<"gate" | "sheet" | "history" | "remote" | "settings">(new URLSearchParams(location.search).has("remoteOnly") ? "remote" : new URLSearchParams(location.search).has("management") ? "settings" : new URLSearchParams(location.search).has("historyOnly") ? "history" : "gate");
   useEffect(()=>{const open=(event:Event)=>{if(event instanceof CustomEvent&&event.detail?.intent==='remote')setPresentation('remote');};window.addEventListener('opencraft:replay-agent-onboarding',open);return()=>window.removeEventListener('opencraft:replay-agent-onboarding',open);},[]);
   Object.assign(window, { onboardingFixture: {
+    setSelectedAgentId,
+    setIdeState(state: string) { ideState = state; return queryClient.invalidateQueries({ queryKey: ["agent-onboarding", hostId, "local"], exact: true }); },
     holdFinish() { holdFinish = true; },
     releaseFinish() { releaseFinish?.(); },
     calls, finished, machineCommands, historyImports, setDisabledAgents, setHostId, setPresentation, setThemePreference, setAppearanceThemeId,
@@ -41,7 +45,7 @@ function App() {
     fail(key: string) { pending.get(key)!.reject(new Error("Unavailable")); pending.delete(key); },
     refresh(ready: boolean) { signedIn = ready; return queryClient.invalidateQueries({ queryKey: ["agent-onboarding", hostId, "local"], exact: true }); },
   } });
-  return <QueryClientProvider client={queryClient}><AgentOnboarding hostId={hostId}
+  return <QueryClientProvider client={queryClient}><AgentOnboarding hostId={hostId} selectedAgentId={selectedAgentId}
     agentPreferences={{ enabled: id => !disabledAgents.includes(id), setEnabled: (id, enabled) => setDisabledAgents(current => enabled ? current.filter(value => value !== id) : [...current, id]), saving: false, failed: false }}
     catalogModels={[{ agentId: "codex", id: "codex:current", name: "Codex", isDefault: true }]}
     presentation={presentation} onClose={() => finished.push("close")} onUseModels={() => finished.push("api")}
@@ -78,6 +82,7 @@ function App() {
         calls.push(`${hostId}:import`);historyImports.push(params);
         return await new Promise((resolve, reject) => pending.set(`${hostId}:import`, { resolve, reject })) as never;
       }
+      if (method === "opencraft/agents/onboarding/act" && new URLSearchParams(location.search).has("failIdeSetup")) throw new Error("Synthetic native setup failure");
       if(method === "opencraft/agents/onboarding/status") calls.push(`${hostId}:status`);
       return { agents: agents(), historyImport: new URLSearchParams(location.search).has("history") } as never;
     }} /></QueryClientProvider>;

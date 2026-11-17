@@ -1,6 +1,17 @@
 import {randomUUID} from 'node:crypto';
 const PREFIX='tencentcloud.codingcopilot.';
 const REQUIRED=['getContext','chat.sendMessage','isAgentBusy','ide.getRuntimeProductConfig'].map(name=>PREFIX+name);
+/** Native completion stores structured message content as well as plain text. */
+export function nativeAssistantText(content,depth=0){
+  if(depth>3)return '';
+  if(typeof content==='string'){
+    try{const parsed=JSON.parse(content);const blocks=Array.isArray(parsed)&&parsed.length>0&&parsed.every(part=>part&&typeof part==='object'&&['text','reasoning','tool-call','tool-result'].includes(part.type));if(blocks||parsed?.role==='assistant'&&Object.hasOwn(parsed,'content'))return nativeAssistantText(parsed,depth+1);}catch{}
+    return content;
+  }
+  if(Array.isArray(content))return content.filter(part=>part?.type==='text'&&typeof part.text==='string').map(part=>part.text).join('\n');
+  if(content&&typeof content==='object'&&Object.hasOwn(content,'content'))return nativeAssistantText(content.content,depth+1);
+  return '';
+}
 export class NativeCodeBuddyAdapter {
   constructor(commands,workspace,trusted=()=>true){this.commands=commands;this.workspace=workspace;this.trusted=trusted;this.accepted=new Map();this.pending=new Set();}
   async describe(){
@@ -26,7 +37,8 @@ export class NativeCodeBuddyAdapter {
       if(known&&(known.cwd!==state.cwd||known.userId!==state.userId))throw new Error('The IDE account or project changed');
       // A cold import is admitted only after the Host verifies the original
       // transcript in this connected account and project.
-      if(!this.accepted.has(params.sessionId)&&state.currentSessionId!==params.sessionId&&params._meta?.['opencraft/nativeHistoryVerified']!==true)throw new Error('Open this conversation in CodeBuddy IDE before resuming');
+      const empty=params._meta?.['opencraft/nativeHistoryEmpty']===true&&/^[a-f0-9-]{36}$/u.test(params.sessionId);
+      if(!this.accepted.has(params.sessionId)&&state.currentSessionId!==params.sessionId&&!empty&&params._meta?.['opencraft/nativeHistoryVerified']!==true)throw new Error('Open this conversation in CodeBuddy IDE before resuming');
       this.accepted.set(params.sessionId,{cwd:state.cwd,userId:state.userId});return {sessionId:params.sessionId};
     }
     if(method==='prompt'){
@@ -45,7 +57,9 @@ export class NativeCodeBuddyAdapter {
         const completion=result?.completion;
         if(result?.id!==id||completion?.conversationId!==id||completion?.success!==true)throw new Error('CodeBuddy IDE did not confirm completion; check the original conversation before retrying');
         if(!Array.isArray(completion.messages))throw new Error('CodeBuddy IDE returned no conversation result');
-        return {sessionId:id,messages:completion.messages.filter(message=>message?.role==='assistant'&&typeof message.content==='string').map(message=>({text:message.content}))};
+        const messages=completion.messages.filter(message=>message?.role==='assistant').map(message=>({text:nativeAssistantText(message.content)})).filter(message=>message.text.trim());
+        if(!messages.length)throw new Error('CodeBuddy IDE returned no assistant response; check the original conversation');
+        return {sessionId:id,messages};
       }finally{this.pending.delete(id);}
     }
     throw new Error('Unsupported IDE operation');

@@ -494,6 +494,14 @@
   "sidebar.flow.running": "Sedang berjalan",
   "sidebar.flow.attention": "Memerlukan perhatian anda",
   "sidebar.flow.pinned": "Disematkan",
+  "sidebar.recent.pin": "Sematkan di atas",
+  "sidebar.recent.unpin": "Nyahsemat dari atas",
+  "sidebar.recent.dismiss": "Alih keluar daripada Terkini",
+  "sidebar.recent.pinned": "Disematkan di atas",
+  "sidebar.recent.failed": "Tidak dapat mengemas kini Terkini. Cuba lagi.",
+  "sidebar.recent.removed": "Dialih keluar daripada Terkini",
+  "sidebar.recent.undo": "Buat asal",
+  "sidebar.recent.empty": "Tiada perbualan terkini",
   "sidebar.recent.device": "Peranti: {device}",
   "sidebar.recent.folder": "Folder: {folder}",
   "sidebar.flow.recent": "Terkini",
@@ -1510,6 +1518,7 @@
   "onboard.ide.open": "Buka CodeBuddy IDE untuk menyambung",
   "onboard.ide.required": "Sambungkan jambatan IDE",
   "onboard.ide.trust": "Percayai projek ini dalam CodeBuddy IDE",
+  "onboard.ide.trustFailed": "Buka Kepercayaan Ruang Kerja dalam CodeBuddy IDE, semak projek ini, kemudian semak semula di sini.",
   "onboard.ide.trustAction": "Semak kepercayaan projek",
   "onboard.ide.connecting": "Selesaikan sambungan dalam CodeBuddy IDE",
   "onboard.ide.reload": "Jika sambungan baru dipasang, muat semula tetingkap CodeBuddy IDE, kemudian buka pautan sambungan.",
@@ -1535,5 +1544,7 @@
   "settings.agents.directoryEmpty": "Tiada agent ditemui pada peranti ini.",
   "settings.agents.offline": "Peranti ini di luar talian. Sambung semula untuk mengkonfigurasi agent atau mengimport perbualan.",
   "settings.agents.select": "Pilih agent untuk mengkonfigurasinya atau mengimport perbualan.",
-  "settings.agents.noResults": "Tiada agent yang sepadan."
+  "settings.agents.noResults": "Tiada agent yang sepadan.",
+  "composer.model.ideCurrent": "Gunakan model IDE semasa",
+  "composer.model.ideCurrent.description": "Pilih model dalam CodeBuddy IDE. Mesej menggunakan pilihan tersebut."
 }

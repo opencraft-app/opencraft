@@ -44,6 +44,9 @@ test("pointer movement needs gesture ownership rather than just a down handler",
   assert.ok(inspectHoverHandlers(component('resize(event)'), 'fixture.tsx').length);
   assert.ok(inspectHoverHandlers(component('if(drag.pointerId === event.pointerId)return;resize(event)'), 'fixture.tsx').length);
   assert.ok(inspectHoverHandlers('<div onPointerMove={event=>{if(drag.pointerId !== event.pointerId)return;resize(event)}}/>', 'fixture.tsx').length);
+  const capture = body => `<div onPointerDownCapture={begin} onPointerCancel={cancel} onPointerMove={event=>{${body}}}/>`;
+  assert.deepEqual(inspectHoverHandlers(capture('if(contact.pointerId !== event.pointerId)return;resize(event)'), 'fixture.tsx'), []);
+  assert.ok(inspectHoverHandlers(capture('resize(event)'), 'fixture.tsx').length);
 });
 test("separate document styles and source locations are scanned", () => {
   for (const file of ['document.html', 'template.ts', 'template.mjs']) {

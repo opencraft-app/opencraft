@@ -2,7 +2,7 @@ import { hasFullWidthOpeningPunctuation } from "@opencraft/design-system/typogra
 import type { ReactNode } from "react";
 import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
-import { ClockIcon as Clock, TargetIcon as Target, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
+import { PinIcon, ClockIcon as Clock, TargetIcon as Target, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { AgentIdentityIcon } from "./agent-directory";
 
 function ThreadActivity({
@@ -48,6 +48,7 @@ export function SidebarActivityItem({
   activityId,
   agent,
   context,
+  pinnedInRecent = false,
   active,
   disabled = false,
   twoLine = false,
@@ -67,6 +68,7 @@ export function SidebarActivityItem({
 }: {
   readonly activityId?: string;
   readonly agent?: WorkbenchThread["agent"];
+  readonly pinnedInRecent?: boolean;
   readonly context?: { readonly device: string; readonly folder?: string; readonly agent?: string };
   readonly schedule?: import("@opencraft/appserver-protocol").ConversationScheduleSummary;
   readonly active: boolean;
@@ -111,6 +113,7 @@ export function SidebarActivityItem({
     >
       <span className="sidebar-activity-item__body">
         <span className="sidebar-activity-item__title-line"><span className="sidebar-activity-item__title" data-optical-leading-punctuation={hasFullWidthOpeningPunctuation(title) ? "true" : undefined}>{title}</span>
+          {pinnedInRecent ? <span className="sidebar-activity-item__recent-pin" role="img" aria-label={intl.formatMessage({ id: "sidebar.recent.pinned", defaultMessage: "Pinned to top" })} title={intl.formatMessage({ id: "sidebar.recent.pinned", defaultMessage: "Pinned to top" })}><PinIcon size={12} aria-hidden="true" /></span> : null}
           {scheduleLabel ? <span className="sidebar-activity-item__schedule" role="img" aria-label={scheduleLabel} title={scheduleLabel}><Clock size={16} aria-hidden="true" /></span> : null}</span>
         {!titleOnly && !metadataBadge && (twoLine || project) ? <span className="sidebar-activity-item__metadata">
           {stateLabel}
@@ -131,6 +134,6 @@ export function SidebarActivityItem({
       <span className="sidebar-activity-item__trailing">
         <ThreadActivity id={activityId} pending={pending} status={status} unread={unread} goalActive={goalActive} />
       </span>
-    </button>{resources ? <div className="sidebar-activity-item__resources-slot">{resources}</div> : null}{badge ? <div className="sidebar-activity-item__badge-slot" data-placement={badgePlacement}>{badge}{metadataBadge ? stateLabel : null}</div> : null}</div>
+    </button>{resources ? <div data-swipe-ignore className="sidebar-activity-item__resources-slot">{resources}</div> : null}{badge ? <div data-swipe-ignore className="sidebar-activity-item__badge-slot" data-placement={badgePlacement}>{badge}{metadataBadge ? stateLabel : null}</div> : null}</div>
   );
 }

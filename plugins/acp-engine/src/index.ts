@@ -13,6 +13,7 @@ import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-proto
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
 import { acpPromptContent } from "./prompt-content.js";
+import { emptyAcpQueue, validateAcpQueue, acpQueueFingerprint, acpQueueProjection, type AcpQueue } from "./queue.js";
 
 export interface AcpEngineOptions {
   executionEnvironment?: ExecutionEnvironmentRuntime;
@@ -66,7 +67,8 @@ interface Session {
   inputModalities?: ("text" | "image")[];
   inputModalitiesObservedAt?: number;
   receipts: Record<string, HostInputReceipt>;
-  lastTurn?: { id: string; status: string };
+  lastTurn?: { id: string; status: string; clientUserMessageId?: string };
+  queue?: AcpQueue;
 }
 export type AcpOrchestrationPort = AgentOrchestrationPort;
 interface Runtime {
@@ -108,6 +110,8 @@ export class AcpEngine implements ExecutionEngineProvider {
   private readonly creating = new Map<string, Promise<any>>();
   private readonly inputCalls = new Map<string, Promise<HostInputReceipt | null>>();
   private readonly threadAdmissions = new Map<string, Promise<unknown>>();
+  private readonly queueDrains = new Map<string, Promise<void>>();
+  private readonly queueOwners = new Map<string, ExecutionEngineClient>();
   private readonly listeners = new Set<(method: string, params: Value) => void>();
   private loaded: Promise<void> | null = null;
   private persistence: Promise<void> = Promise.resolve();
@@ -131,6 +135,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   get occupancy() {
     return { nativeOutcomeUnknown: this.nativeOutcomeUnknown ? 1 : 0, storageUnknown: this.persistenceFailed ? 1 : 0, unconfirmedTurns: [...this.sessions.values()].filter(session => { const active = this.runtime.get(session.id)?.active; return active ? active.status === "unconfirmed" : session.lastTurn?.status === "inProgress"; }).length, ...Object.fromEntries(Object.keys(this.transport.occupancy).map(key => [key, [this.transport, ...this.sessionTransports.values()].reduce((count, transport) => count + (transport.occupancy as Record<string, number>)[key], 0)])), activeTurns: [...this.runtime.values()].filter(state => state.active?.status === "inProgress").length,
       pendingCallbacks: this.activeCallbacks, pendingCreations: this.creations.size, preparedTickets: this.preparations.size, activeAdmissions: this.activeAdmissions,
+      queuedInputs: [...this.sessions.values()].reduce((sum, session) => sum + (session.queue?.items.length ?? 0), 0),
       unconfirmedInputs: [...this.sessions.values()].reduce((sum, session) => sum + Object.values(session.receipts).filter(receipt => receipt.state === "unknown").length, 0) };
   }
   constructor(private readonly options: AcpEngineOptions) {
@@ -142,7 +147,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
-      "opencraft/thread-follow-up": { version: 1, queue: false, steer: false },
+      "opencraft/thread-follow-up": { version: 1, queue: true, steer: false },
+      "opencraft/thread-queue": { version: 2, reorder: true, atomicSteer: false, perItemPause: false },
       ...(options.history ? { "opencraft/read-history": { version: 1, initialTurnsPage: true } } : {}),
       "opencraft/agent-driver": { version: 1, kind: this.id === "claude-code" ? "claude-code" : "acp", incarnation: this.incarnation, callbackReplay: true },
     });
@@ -251,6 +257,23 @@ export class AcpEngine implements ExecutionEngineProvider {
         if (!file.startsWith(this.threadPrefix) || !/^[a-zA-Z0-9_-]+\.json$/u.test(file)) continue;
         const record = JSON.parse(await readFile(join(this.options.dataDirectory, file), "utf8")) as Session;
         if (record.schemaVersion !== 1 || !safeId(record.id) || file !== `${record.id}.json` || !isAbsolute(record.cwd) || typeof record.nativeId !== "string" || !Array.isArray(record.tools)) throw new Error("Invalid ACP routing metadata");
+        if (this.id === "codebuddy-ide" && !record.nativeImport && !record.lastTurn) record.nativeHistoryEmpty = true;
+        if (record.queue) {
+          validateAcpQueue(record.queue);
+          for (const item of [...record.queue.items]) if (item.state === "dispatching") {
+            if (record.lastTurn?.clientUserMessageId === item.clientUserMessageId) {
+              record.receipts[item.clientUserMessageId] = { state: "delivered", turnId: record.lastTurn.id };
+              record.queue.items.splice(record.queue.items.indexOf(item), 1);
+            } else {
+              // prompt() commits its stable input identity before sending any
+              // native bytes. No such commit means this claim never sent input.
+              item.state = "queued"; delete record.receipts[item.clientUserMessageId];
+            }
+          }
+          // Reading history never wakes an execution owner. Recovery requires
+          // explicit Resume queue; an attempted input remains non-replayable.
+          if (record.queue.items.length) record.queue.pausedReason ??= "user-stopped";
+        }
         this.sessions.set(record.id, record);
       }
       try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }
@@ -375,8 +398,9 @@ export class AcpEngine implements ExecutionEngineProvider {
     try { return await operation(); } finally { this.activeAdmissions--; }
   }
   request(method: string, params: Value, client: ExecutionEngineClient): Promise<any> {
-    return ["thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/interrupt", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
-      ? this.admit(() => ["turn/start", "thread/resume", "thread/fork", "opencraft/agent-session/release"].includes(method) && typeof params.threadId === "string"
+    if (method === "thread/queue/list") return this.serializeThread(String(params.threadId ?? ""), () => this.handle(method, params, client));
+    return method.startsWith("thread/queue/") && method !== "thread/queue/list" || ["thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/interrupt", "thread/archive", "thread/unarchive", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
+      ? this.admit(() => typeof params.threadId === "string"
         ? this.serializeThread(params.threadId, () => this.handle(method, params, client)) : this.handle(method, params, client))
       : this.handle(method, params, client);
   }
@@ -482,7 +506,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         } finally { this.pendingMcp.delete(id); }
         const now = Math.floor(Date.now() / 1000);
         const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {},
-          ...(["codex", "cursor", "pi-cli", "claude-code", "codebuddy"].includes(this.id) ? { nativeHistoryEmpty: true as const } : {}) };
+          ...(["codex", "cursor", "pi-cli", "claude-code", "codebuddy", "codebuddy-ide"].includes(this.id) ? { nativeHistoryEmpty: true as const } : {}) };
         this.captureModels(session, result);
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(session);
@@ -529,6 +553,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       return { acknowledged: !creation || creation.state === "created" };
     }
     const session = this.session(String(params.threadId ?? "")), runtime = this.state(session.id);
+    if (method.startsWith("thread/queue/")) return this.handleQueue(method, params, session, client);
     if (method === "opencraft/thread-usage/read") {
       const source = await this.options.history?.usage?.(session.nativeId).catch(() => null);
       const live = session.contextUsage;
@@ -564,7 +589,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (method === "opencraft/agent-session/release") {
       await this.start();
       if (this.id !== "codex" || !value(this.capabilities.sessionCapabilities).close) return fault("Native session release is unavailable", -32601);
-      if (this.nativeOutcomeUnknown || runtime.active?.status === "inProgress" || runtime.active?.status === "unconfirmed") return fault("The session must finish its current work before release", -32000);
+      if (this.nativeOutcomeUnknown || session.queue?.items.length || runtime.active?.status === "inProgress" || runtime.active?.status === "unconfirmed") return fault("The session must finish its current work before release", -32000);
       if (runtime.loaded) await this.native(session).request("session/close", { sessionId: session.nativeId });
       runtime.loaded = false; runtime.owner = undefined;
       return { released: true };
@@ -606,7 +631,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
-    if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; await this.save(session); return {}; }
+    if (method === "thread/archive" || method === "thread/unarchive") { session.archived = method === "thread/archive"; if (session.archived && session.queue?.items.length) session.queue.pausedReason = "user-stopped"; await this.save(session); return {}; }
     if (method === "thread/unsubscribe") { if (runtime.owner === client) runtime.owner = undefined; return {}; }
     if (method === "turn/start") {
       if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
@@ -623,16 +648,122 @@ export class AcpEngine implements ExecutionEngineProvider {
         value(initialized.agentCapabilities?.promptCapabilities).image === true);
       if (this.id === "pi-cli" && userPrompt.some(part => part.type === "image")
         && !session.modelCatalog?.find(model => model.id === session.model)?.inputModalities?.includes("image")) return fault("This Pi model does not support image input");
-      return this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt);
+      const result = await this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt);
+      if (session.queue?.pausedReason) { session.queue.pausedReason = null; await this.save(session); this.notify("thread/queue/changed", { threadId: session.id }); }
+      return result;
     }
     if (method === "turn/interrupt") {
       if(this.id === "codebuddy-ide")return fault("Stop this task in CodeBuddy IDE; interruption was not sent",-32601);
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
+      if (session.queue) { session.queue.pausedReason = "user-stopped"; await this.save(session); this.notify("thread/queue/changed", { threadId: session.id }); }
       if (runtime.active?.status === "inProgress") this.native(session).notify("session/cancel", { sessionId: session.nativeId });
       return {};
     }
     if (method === "opencraft/driver/status") return this.snapshot(session.id);
     return fault("Unsupported ACP operation", -32601);
+  }
+  private async handleQueue(method: string, params: Value, session: Session, client: ExecutionEngineClient): Promise<any> {
+    if (this.persistenceFailed) return fault("Queue storage is unavailable; reconnect after recovery", 503);
+    const queue = session.queue ?? emptyAcpQueue();
+    if (method === "thread/queue/list") {
+      const cursor = params.cursor == null ? 0 : Number(params.cursor), limit = params.limit ?? 50;
+      if (!Number.isSafeInteger(cursor) || cursor < 0 || !Number.isSafeInteger(limit) || limit < 1) return fault("Invalid queue page");
+      const data = queue.items.slice(cursor, cursor + Math.min(limit, 100)).map(item => acpQueueProjection(item, queue));
+      return { data, steering: [], nextCursor: cursor + data.length < queue.items.length ? String(cursor + data.length) : null };
+    }
+    if (session.archived) return fault("Unarchive the conversation before changing its queue");
+    session.queue = queue;
+    const item = queue.items.find(entry => entry.id === params.queuedSubmissionId);
+    if (method === "thread/queue/add" || method === "thread/queue/update") {
+      const updating = method === "thread/queue/update", clientId = updating ? item?.clientUserMessageId : params.clientUserMessageId;
+      if (typeof clientId !== "string" || !clientId || clientId.length > 512 || ["__proto__", "constructor", "prototype"].includes(clientId)) return fault("Invalid queued input identity");
+      if (updating && (!item || item.state !== "queued")) return fault("Queued input is no longer editable");
+      const content = await acpPromptContent(params.input, (this.inputModalities ?? session.inputModalities ?? []).includes("image"));
+      const additionalContext = updating ? item!.additionalContext : params.additionalContext ?? null;
+      this.promptWithContext(content, additionalContext);
+      const input = content.map(part => part.type === "image" ? { type: "image", url: `data:${part.mimeType};base64,${part.data}` } : { type: "text", text: part.text, text_elements: [] });
+      const fingerprint = acpQueueFingerprint(input, additionalContext), known = queue.admissions[clientId];
+      if (!updating && known) {
+        if (known.fingerprint !== fingerprint) return fault("Queued input identity already has different content", 409);
+        if (session.receipts[clientId]?.state === "discarded") return fault("This queued input was removed", 409);
+        const existing = queue.items.find(entry => entry.id === known.id);
+        return { queuedSubmission: acpQueueProjection(existing ?? { ...known, clientUserMessageId: clientId, input, additionalContext, state: "queued" }, queue) };
+      }
+      if (!updating && session.receipts[clientId]) return fault("This input identity is already in use", 409);
+      const accepted = { id: item?.id ?? `acp-queue-${randomUUID()}`, clientUserMessageId: clientId,
+        input, additionalContext, createdAt: item?.createdAt ?? Date.now(), state: "queued" as const };
+      if (updating) queue.items[queue.items.indexOf(item!)] = accepted; else queue.items.push(accepted);
+      queue.admissions[clientId] = { id: accepted.id, createdAt: accepted.createdAt, fingerprint };
+      await this.save(session);
+      this.notify("thread/queue/changed", { threadId: session.id });
+      this.queueOwners.set(session.id, client);
+      this.scheduleQueue(session, client);
+      return { queuedSubmission: acpQueueProjection(accepted, queue) };
+    }
+    if (method === "thread/queue/delete") {
+      if (!item) return { deleted: false };
+      if (item.state !== "queued") return fault("Delivery of this input needs review before it can be removed", 409);
+      queue.items.splice(queue.items.indexOf(item), 1);
+      session.receipts[item.clientUserMessageId] = { state: "discarded", turnId: null };
+    } else if (method === "thread/queue/reorder") {
+      const ids = params.queuedSubmissionIds;
+      if (!Array.isArray(ids) || ids.length !== queue.items.length || new Set(ids).size !== ids.length
+        || ids.some(id => typeof id !== "string" || !queue.items.some(entry => entry.id === id))
+        || queue.items.some(entry => entry.state !== "queued")) return fault("Queue changed before reordering", 409);
+      queue.items = ids.map(id => queue.items.find(entry => entry.id === id)!);
+    } else if (method === "thread/queue/start") {
+      if (params.queuedSubmissionId != null && !item) return fault("Queued input is no longer available", 409);
+      this.queueOwners.set(session.id, client);
+      return this.dispatchQueue(session, client, true, params.queuedSubmissionId);
+    } else return fault("Unsupported queue operation", -32601);
+    await this.save(session);
+    if (!queue.items.length) this.queueOwners.delete(session.id);
+    this.notify("thread/queue/changed", { threadId: session.id });
+    return method === "thread/queue/delete" ? { deleted: true } : {};
+  }
+  private scheduleQueue(session: Session, client = this.queueOwners.get(session.id) ?? this.state(session.id).owner): void {
+    if (this.closed || this.suspending || this.persistenceFailed || this.nativeOutcomeUnknown || this.queueDrains.has(session.id) || !client
+      || session.archived || session.queue?.pausedReason || !session.queue?.items.length
+      || session.queue.items[0].state !== "queued" || session.receipts[session.queue.items[0].clientUserMessageId]
+      || ["inProgress", "unconfirmed"].includes(this.state(session.id).active?.status ?? "")) return;
+    const pending = this.admit(() => this.serializeThread(session.id, () => this.dispatchQueue(session, client))).then(() => {}, () => {
+      // dispatchQueue retains custody and commits a pause before surfacing failure.
+    }).finally(() => { this.queueDrains.delete(session.id); this.scheduleQueue(session, client); });
+    this.queueDrains.set(session.id, pending);
+  }
+  private async dispatchQueue(session: Session, client: ExecutionEngineClient, explicit = false, id?: string): Promise<any> {
+    const queue = session.queue, active = this.state(session.id).active;
+    if (this.closed || this.suspending || this.persistenceFailed || session.archived || !queue?.items.length
+      || ["inProgress", "unconfirmed"].includes(active?.status ?? "") || this.nativeOutcomeUnknown) return fault("Finish or review the current task before continuing the queue", 409);
+    if (queue.pausedReason && !explicit) return null;
+    const item = id ? queue.items.find(entry => entry.id === id)! : queue.items[0];
+    if (item.state !== "queued" || session.receipts[item.clientUserMessageId]) return fault("Delivery of this input cannot be replayed", 409);
+    try {
+      // Commit uncertainty before any native operation. A process death at any
+      // subsequent await can never turn an attempted input into a second prompt.
+      item.state = "dispatching";
+      session.receipts[item.clientUserMessageId] = { state: "unknown", turnId: null };
+      await this.save(session);
+      if (this.closed || this.suspending) throw new Error("Queue owner is closing");
+      const result = await this.handle("turn/start", { threadId: session.id, input: item.input,
+        additionalContext: item.additionalContext, clientUserMessageId: item.clientUserMessageId }, client);
+      session.receipts[item.clientUserMessageId] = { state: "delivered", turnId: result.turn.id };
+      queue.items.splice(queue.items.indexOf(item), 1); queue.pausedReason = null;
+      await this.save(session);
+      if (!queue.items.length) this.queueOwners.delete(session.id);
+      this.notify("thread/queue/changed", { threadId: session.id });
+      return result;
+    } catch (error) {
+      // A failure before prompt admission is safe to retry; an attempted native
+      // prompt keeps its unknown receipt and cannot be blindly replayed.
+      if (this.state(session.id).active === active && !this.nativeOutcomeUnknown && !this.persistenceFailed) {
+        item.state = "queued"; delete session.receipts[item.clientUserMessageId];
+      }
+      queue.pausedReason = "delivery-failed";
+      await this.save(session);
+      this.notify("thread/queue/changed", { threadId: session.id });
+      throw error;
+    }
   }
   private promptWithContext(prompt: Value[], context: unknown): Value[] {
     if (context === undefined || context === null) return prompt;
@@ -835,7 +966,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     const selection = this.id === "cursor" ? { model: session.model, parameters: session.parameterConfigs?.map(config => ({ ...config })) } : null;
     let result: Value;
     try { result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [],
-      ...(this.id === "codebuddy-ide" && session.nativeImport ? { _meta: { "opencraft/nativeHistoryVerified": true } } : {}) }); }
+      ...(this.id === "codebuddy-ide" ? { _meta: { ...(session.nativeImport ? { "opencraft/nativeHistoryVerified": true } : {}),
+        ...(session.nativeHistoryEmpty && !session.lastTurn ? { "opencraft/nativeHistoryEmpty": true } : {}) } } : {}) }); }
     catch (error) {
       if (this.id === "codex" && error instanceof AcpProtocolError && /This Codex session is in use by another Codex client/u.test(error.message))
         throw Object.assign(new Error(error.message), { rpcCode: 409, domainData: { code: "CODEX_SESSION_BUSY", inputNotSent: true } });
@@ -889,7 +1021,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       content: userPrompt.map(item => item.type === "image"
         ? { type: "image", url: `data:${item.mimeType};base64,${item.data}` }
         : { type: "text", text: item.text, text_elements: [] }) });
-    session.lastTurn = { id: active.id, status: active.status };
+    session.lastTurn = { id: active.id, status: active.status, ...(inputId ? { clientUserMessageId: inputId } : {}) };
     delete session.nativeHistoryEmpty;
     const firstText = userPrompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
     if (!session.preview && firstText) session.preview = Array.from(firstText).slice(0, 160).join("");
@@ -899,31 +1031,36 @@ export class AcpEngine implements ExecutionEngineProvider {
     session.updatedAt = Math.floor(Date.now() / 1000); await this.save(session);
     if (initialTitle && session.name === initialTitle && session.nameOrigin === "input") this.notify("thread/name/updated", { threadId: session.id, threadName: initialTitle });
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
-    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => {
+    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => this.serializeThread(session.id, async () => {
       if (runtime.active !== active || active.status !== "inProgress") return;
       active.status = result.stopReason === "cancelled" ? "interrupted" : "completed";
-      session.lastTurn = { id: active.id, status: active.status }; void this.save(session).catch(() => {});
+      session.lastTurn = { id: active.id, status: active.status, ...(active.inputId ? { clientUserMessageId: active.inputId } : {}) };
+      if (active.status === "interrupted" && session.queue) session.queue.pausedReason = "user-stopped";
+      await this.save(session);
       for (const item of active.items) if (item.type === "agentMessage" || item.type === "reasoning") this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
       this.notify("turn/completed", { threadId: session.id, turn: this.turn(runtime) });
       for (const key of this.callbacks.keys()) if (key.startsWith(`${this.incarnation}:${session.id}:${active.id}:`)) this.callbacks.delete(key);
-    }, () => {
+      this.scheduleQueue(session);
+    }), () => {
       if (runtime.active !== active || active.status !== "inProgress") return;
       const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : "acpPromptFailed";
       void this.failPrompt(session, runtime, code).catch(() => { this.persistenceFailed = true; });
-    });
+    }).catch(() => { this.persistenceFailed = true; });
     return { turn: this.turn(runtime) };
   }
   private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
     const active = runtime.active; if (!active || active.status !== "inProgress") return;
     active.status = "failed";
+    if (session.queue) session.queue.pausedReason = "delivery-failed";
     active.error = { message: code, codexErrorInfo: "other", additionalDetails: null };
     const item = { id: `${active.id}:error`, type: "error", code, message: code };
     active.items.push(item);
-    session.lastTurn = { id: active.id, status: active.status };
+    session.lastTurn = { id: active.id, status: active.status, ...(active.inputId ? { clientUserMessageId: active.inputId } : {}) };
     const turn = this.turn(runtime);
     await this.save(session);
     this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
     this.notify("turn/completed", { threadId: session.id, turn });
+    if (session.queue?.items.length) this.notify("thread/queue/changed", { threadId: session.id });
   }
   private historyParams(session: Session, params: Value): Value {
     const active = this.state(session.id).active;
@@ -1088,7 +1225,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     if (!this.toolServer) return;
     this.toolServer.closeAllConnections(); await new Promise<void>(resolve => this.toolServer!.close(() => resolve())); this.toolServer = undefined;
   }
-  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await Promise.all([this.transport.close(), ...[...this.sessionTransports.values()].map(transport => transport.close())]); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
+  async close(): Promise<void> { if (this.closed) return; this.closed = true; this.callbackAbort.abort(); await Promise.all([this.transport.close(), ...[...this.sessionTransports.values()].map(transport => transport.close())]); await Promise.allSettled([...this.queueDrains.values()]); this.queueOwners.clear(); await this.closeTools(); await this.persistence; await this.options.history?.close?.(); }
 }
 
 /** Explicit DSH ACP launch. The previous web generation remains a separate owner. */

@@ -53,8 +53,20 @@ export class CodeBuddyIdeHistory {
       if (row.id !== ref.id) throw new Error("IDE message identity changed");
       const raw = typeof row.message === "string" ? JSON.parse(row.message) : row.message;
       if (!raw || typeof raw !== "object") throw new Error("Unsupported IDE message");
-      const content = typeof raw.content === "string" ? [{ type: "text", text: raw.content }] : raw.content;
+      const extra = typeof row.extra === "string" ? JSON.parse(row.extra) : row.extra;
+      if (extra?.isHelperMessage === true) continue;
+      let content = typeof raw.content === "string" ? [{ type: "text", text: raw.content }] : raw.content;
       if (!Array.isArray(content)) throw new Error("Unsupported IDE message content");
+      // Native storage expands the user message with workspace instructions.
+      // Its display phrases retain what the user actually typed. Consume that
+      // native field instead of exposing the generated execution envelope.
+      const phrases = Array.isArray(extra?.inputPhrase) ? extra.inputPhrase.filter((part: Value) => part?.type === "normal" && typeof part.content === "string") : [];
+      if ((row.role ?? raw.role) === "user" && phrases.length) {
+        const envelope = content.findIndex((part: Value) => part.type === "text" && typeof part.text === "string"
+          && part.text.startsWith("<user_info>\n") && part.text.includes("<user_query>\n") && part.text.endsWith("\n</user_query>"));
+        if (envelope >= 0) content = content.map((part: Value, index: number) => index === envelope
+          ? { type: "text", text: phrases.map((phrase: Value) => phrase.content).join("") } : part);
+      }
       const parts = content.map((part: Value) => part.type === "tool-call" ? { type: "tool_use", id: part.toolCallId, name: part.toolName, input: part.args ?? part.input }
         : part.type === "tool-result" ? { type: "tool_result", tool_use_id: part.toolCallId, content: typeof part.result === "string" ? part.result : JSON.stringify(part.result ?? part.output), is_error: part.isError === true }
         : part.type === "reasoning" ? { type: "thinking", thinking: part.text } : part);

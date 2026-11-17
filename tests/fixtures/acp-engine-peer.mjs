@@ -103,9 +103,10 @@ createInterface({ input: process.stdin }).on('line', line => {
         send({ method: 'session/update', params: { sessionId: params.sessionId, update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'done:' + text } } } });
         result(frame.id, { stopReason: 'end_turn' }); prompts.delete(params.sessionId);
       };
-      const timer = setTimeout(() => void finish().catch(() => send({ id: frame.id, error: { code: -32603, message: 'Fixture tool failed' } })), text.startsWith('wait') ? 600 : 5);
-      prompts.set(params.sessionId, { id: frame.id, timer }); return;
+      const timer = setTimeout(() => void finish().catch(() => send({ id: frame.id, error: { code: -32603, message: 'Fixture tool failed' } })), text.startsWith('wait') ? Number(process.env.ACP_TEST_WAIT_MS || 600) : 5);
+      prompts.set(params.sessionId, { id: frame.id, timer, finish }); return;
     }
+    if (frame.method === 'fixture/finish') { const pending=prompts.get(params.sessionId);if(pending){clearTimeout(pending.timer);await pending.finish();}return result(frame.id,{}); }
     result(frame.id, {});
   })().catch(() => process.exit(2));
 });

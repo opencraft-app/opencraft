@@ -494,6 +494,14 @@
   "sidebar.flow.running": "กำลังดำเนินการ",
   "sidebar.flow.attention": "รอคุณจัดการ",
   "sidebar.flow.pinned": "ปักหมุด",
+  "sidebar.recent.pin": "ปักหมุดด้านบน",
+  "sidebar.recent.unpin": "ยกเลิกปักหมุด",
+  "sidebar.recent.dismiss": "นำออกจากล่าสุด",
+  "sidebar.recent.pinned": "ปักหมุดด้านบนแล้ว",
+  "sidebar.recent.failed": "อัปเดตรายการล่าสุดไม่ได้ โปรดลองอีกครั้ง",
+  "sidebar.recent.removed": "นำออกจากล่าสุดแล้ว",
+  "sidebar.recent.undo": "เลิกทำ",
+  "sidebar.recent.empty": "ไม่มีการสนทนาล่าสุด",
   "sidebar.recent.device": "อุปกรณ์: {device}",
   "sidebar.recent.folder": "โฟลเดอร์: {folder}",
   "sidebar.flow.recent": "ล่าสุด",
@@ -1510,6 +1518,7 @@
   "onboard.ide.open": "เปิด CodeBuddy IDE เพื่อเชื่อมต่อ",
   "onboard.ide.required": "เชื่อมต่อส่วนขยาย IDE",
   "onboard.ide.trust": "อนุญาตให้เชื่อถือโปรเจ็กต์นี้ใน CodeBuddy IDE",
+  "onboard.ide.trustFailed": "เปิด Workspace Trust ใน CodeBuddy IDE ตรวจสอบโปรเจกต์นี้ แล้วกลับมาตรวจสอบอีกครั้งที่นี่",
   "onboard.ide.trustAction": "ตรวจสอบความเชื่อถือโครงการ",
   "onboard.ide.connecting": "เชื่อมต่อให้เสร็จใน CodeBuddy IDE",
   "onboard.ide.reload": "หากเพิ่งติดตั้งส่วนขยาย ให้โหลดหน้าต่าง CodeBuddy IDE ใหม่ แล้วเปิดลิงก์การเชื่อมต่อ",
@@ -1535,5 +1544,7 @@
   "settings.agents.directoryEmpty": "ไม่พบ Agent บนอุปกรณ์นี้",
   "settings.agents.offline": "อุปกรณ์นี้ออฟไลน์ เชื่อมต่ออีกครั้งเพื่อตั้งค่า Agent หรือนำเข้าการสนทนา",
   "settings.agents.select": "เลือก Agent เพื่อตั้งค่าหรือนำเข้าการสนทนา",
-  "settings.agents.noResults": "ไม่พบ Agent ที่ตรงกัน"
+  "settings.agents.noResults": "ไม่พบ Agent ที่ตรงกัน",
+  "composer.model.ideCurrent": "ใช้โมเดลปัจจุบันของ IDE",
+  "composer.model.ideCurrent.description": "เลือกโมเดลใน CodeBuddy IDE ข้อความจะใช้โมเดลที่เลือกไว้"
 }

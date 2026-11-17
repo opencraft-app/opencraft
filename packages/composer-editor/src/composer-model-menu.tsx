@@ -88,6 +88,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
         {family.models.some(model => model.configuredRole === "fallback") ? <span className="opencraft-composer-model-role"><FormattedMessage id="composer.model.fallbackShort" defaultMessage="Backup" /></span> : null}
         {family === selectedFamily ? <CheckIcon size={16} aria-hidden="true" /> : null}
       </Menu.Item>)}
+      {source.models.length === 1 && source.models[0].description ? <div className="opencraft-composer-selection-menu__status" role="note">{source.models[0].description}</div> : null}
       {query.trim() && !matches.length && families.length ? <div className="opencraft-composer-selection-menu__status"><FormattedMessage id="composer.model.noResults" defaultMessage="No models match your search." /></div> : null}
       {source.group.loading || source.group.error || source.models.length === 0 ? <ModelCatalogStatus loading={source.group.loading} error={!!source.group.error} retry={source.group.retry} /> : null}
       {switchingAgentId === source.group.id ? <div className="opencraft-composer-selection-menu__status" role="status"><FormattedMessage id="workIn.switchingAgent" defaultMessage="Switching Agent…" /></div> : null}

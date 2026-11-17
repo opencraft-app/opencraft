@@ -16,11 +16,14 @@ test("Electron UI preferences persist with revision conflicts and a fixed key re
     assert.equal(stored.outcome, "updated");
     assert.equal(first.compareAndSet("shell.applicationsPinned", 0, "false").outcome, "conflict");
     assert.equal(first.compareAndSet("chat.defaultFollowUpAction", 0, '"queue"').outcome, "updated");
+    const recent = JSON.stringify({ '["account-a","host-a","thread"]': { pinnedAt: 100 } });
+    assert.equal(first.compareAndSet("sidebar.recentConversations", 0, recent).outcome, "updated");
     assert.throws(() => first.load("arbitrary.preference"), /Invalid UI preference key/u);
     first.close();
 
     const reopened = new DesktopUiPreferenceStore(path);
     assert.equal(reopened.load("chat.defaultFollowUpAction")?.valueJson, '"queue"');
+    assert.equal(reopened.load("sidebar.recentConversations")?.valueJson, recent);
     assert.deepEqual(reopened.load("shell.applicationsPinned"), stored.outcome === "updated"
       ? stored.record
       : null);

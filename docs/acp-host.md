@@ -76,6 +76,39 @@ native reader do not advertise history replay. Fork, deletion, images and
 reasoning selection are not advertised by this adapter. Claude bridge session creation and model execution are
 separate checks; a successful ACP handshake alone does not prove model access.
 
+## Queued follow-ups
+
+The ACP execution owner also holds pending messages, including connected Codex,
+Cursor, Claude, CodeBuddy and Pi CLI sessions. It advertises queue support and
+editable/reorderable custody, while native steering remains unavailable. The
+Composer uses the queue when the selected Agent cannot steer, even if the user's
+preferred follow-up mode is immediate. A nonempty draft exposes Queue and a
+separate Stop action; stopping keeps that draft.
+
+Queue entries, inline image bytes, additional context, admission fingerprints
+and execution receipts use the session's existing asynchronous atomic file owner.
+Acceptance follows the committed write. One per-thread dispatcher admits the
+next message after successful completion, independently of the viewing client.
+Stop pauses custody before cancelling; provider failure and archive also pause
+pending input. Editing, removal, exact reordering and explicit resume use the
+same serialized owner. A new successful direct input resumes normal dispatch.
+
+On restart, reading history or queue state never starts the Agent. Remaining
+custody is paused for explicit resume. An attempted claim is reconciled against
+the stable client identity committed with the Turn before native prompt bytes
+are sent. A committed Turn retires custody; a claim without that commit remains
+editable and can resume. Unconfirmed native operations still block execution.
+Admission tombstones prevent deleted or already-delivered input from replaying
+after a lost ACK. Pending custody contributes to generation occupancy and prevents
+suspending or retiring that owner.
+
+`tests/execution/acp-queue.test.ts` covers FIFO, screenshots, client disconnect,
+Stop/failure, edits/removal/reordering, admission replay and restart boundaries.
+`npm run smoke:acp-follow-up` mounts the actual Workbench route against an isolated
+RPC Host and ACP stdio peer, exercising desktop and touch queue submissions and
+automatic completion. The external Agent and its history reader are controlled
+fixtures; this does not claim paid model access or an upgraded remote machine.
+
 The trusted generation config uses `permission: "allow-once"` when the Host
 should automatically approve native ACP permission requests and expose its Full
 access profile. The default rejects those requests and cannot prepare a child

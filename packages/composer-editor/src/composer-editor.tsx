@@ -2736,6 +2736,13 @@ export const OpenCraftComposer = forwardRef<
                 <Paperclip size={15} />
               </IconButton>
             ) : null}
+            {isStreaming && primaryAction !== "stop" ? <IconButton size="chrome" variant="ghost"
+              disabled={isStopping} aria-busy={isStopping || undefined}
+              aria-label={intl.formatMessage(isStopping ? { id: "chat.stop.pending", defaultMessage: "Stopping response…" } : { id: "chat.stopResponse", defaultMessage: "Stop response" })}
+              onMouseDown={event => { if (event.button === 0) event.preventDefault(); }}
+              onClick={event => onCancel({ trigger: event.detail === 0 ? "keyboard" : "pointer", isTrusted: event.isTrusted, occurredAt: Date.now() })}>
+              {isStopping ? <LoadingRingIcon size={17} /> : <StopCircleIcon size={17} />}
+            </IconButton> : null}
             {primaryAction === "stop" ? (
               <button
                 className="opencraft-composer-submit is-stop"

@@ -428,6 +428,14 @@
   "sidebar.filters": "Filters",
   "sidebar.flow.attention": "Needs your attention",
   "sidebar.flow.pinned": "Pinned",
+  "sidebar.recent.pin": "Pin to top",
+  "sidebar.recent.unpin": "Unpin from top",
+  "sidebar.recent.dismiss": "Remove from Recent",
+  "sidebar.recent.pinned": "Pinned to top",
+  "sidebar.recent.failed": "Could not update Recent. Try again.",
+  "sidebar.recent.removed": "Removed from Recent",
+  "sidebar.recent.undo": "Undo",
+  "sidebar.recent.empty": "No recent conversations",
   "sidebar.recent.device": "Device: {device}",
   "sidebar.recent.folder": "Folder: {folder}",
   "sidebar.flow.recent": "Recent",
@@ -1508,6 +1516,7 @@
   "onboard.ide.open": "Open CodeBuddy IDE to connect",
   "onboard.ide.required": "Connect the IDE bridge",
   "onboard.ide.trust": "Trust this project in CodeBuddy IDE",
+  "onboard.ide.trustFailed": "Open Workspace Trust in CodeBuddy IDE, review this project, then check again here.",
   "onboard.ide.trustAction": "Review project trust",
   "onboard.ide.connecting": "Finish connecting in CodeBuddy IDE",
   "onboard.ide.reload": "If the extension was just installed, reload the CodeBuddy IDE window, then open the connection link.",
@@ -1533,5 +1542,7 @@
   "settings.agents.directoryEmpty": "No agents found on this device.",
   "settings.agents.offline": "This device is offline. Reconnect to configure its agents or import conversations.",
   "settings.agents.select": "Select an agent to configure it or import conversations.",
-  "settings.agents.noResults": "No matching agents."
+  "settings.agents.noResults": "No matching agents.",
+  "composer.model.ideCurrent": "Use current IDE model",
+  "composer.model.ideCurrent.description": "Choose the model in CodeBuddy IDE. Messages use that selection."
 }

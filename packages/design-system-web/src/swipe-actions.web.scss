@@ -1,0 +1,22 @@
+@use "@opencraft/design-system/typography.web" as typography;
+
+.ui-swipe-actions {
+  position: relative; min-width: 0; border-radius: var(--radius-lg); touch-action: pan-y;
+  .ui-swipe-actions__reveal {
+    position: absolute; inset: 0; border-radius: inherit; display: flex; align-items: center;
+    @include typography.role(label, secondary);
+    gap: var(--gap-control-group); padding-inline: calc(var(--spacing) * 3);
+    background: var(--color-background-button-secondary); color: var(--color-text-button-secondary);
+    opacity: 0;
+    > svg { flex: 0 0 auto; }
+    > span { max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  }
+  &[data-preview] { overflow: clip; }
+  &[data-preview] .ui-swipe-actions__reveal { opacity: 1; }
+  &[data-preview="left"] .ui-swipe-actions__reveal { justify-content: flex-end; }
+  &[data-armed] .ui-swipe-actions__reveal {
+    background: var(--color-background-button-primary); color: var(--color-text-button-primary);
+  }
+  .ui-swipe-actions__content { position: relative; min-width: 0; border-radius: inherit; }
+  &[data-preview] .ui-swipe-actions__content { background: var(--color-background-surface); }
+}

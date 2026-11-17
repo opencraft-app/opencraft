@@ -247,8 +247,8 @@ export class AcpGenerationHost implements ExecutionEngineProvider {
     });
     this.mutation = operation; return operation;
   }
-  /** Complete for this ACP Host: ACP has no independent queue/goal/schedule
-   * executor. Native pending RPCs and callbacks remain owner authority. */
+  /** Includes durable queued input in each provider's occupancy. Queue dispatch,
+   * native pending RPCs and callbacks remain with the same execution owner. */
   occupancy() {
     const state = this.handoff.snapshot();
     const generations = [...this.providers].map(([id, provider]) => ({ id, ...provider.occupancy }));

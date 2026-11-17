@@ -1,5 +1,6 @@
 import type { NativeConversationProject } from "@opencraft/appserver-protocol";
 import type { ThreadServerOrigin } from "@opencraft/workbench-runtime";
+import type { RecentConversationPreference } from "@opencraft/ui-preferences";
 
 export interface SidebarActivityThread {
   readonly id: string;
@@ -22,14 +23,21 @@ export interface SidebarActivityGroup<T extends SidebarActivityThread> {
 }
 
 /** One flat activity projection across all admitted sources and access categories. */
-export function recentSidebarThreads<T extends SidebarActivityThread>(threads: readonly T[]): readonly T[] {
+export const recentConversationKey = (scope: string, hostId: string, threadId: string) => JSON.stringify([scope, hostId, threadId]);
+
+export function recentSidebarThreads<T extends SidebarActivityThread>(threads: readonly T[],
+  preferences: Readonly<Record<string, RecentConversationPreference>> = {}, scope = "local",
+): readonly T[] {
   const byIdentity = new Map<string, T>();
   const identity = (thread: T) => JSON.stringify([thread.connectionHostId ?? thread.serverOrigin.serverId, thread.id]);
   for (const thread of threads) {
     const key = identity(thread), previous = byIdentity.get(key);
     if (!previous || thread.updatedAt > previous.updatedAt) byIdentity.set(key, thread);
   }
-  return [...byIdentity.values()].sort((left, right) => right.updatedAt - left.updatedAt || identity(left).localeCompare(identity(right)));
+  const entry = (thread: T) => preferences[recentConversationKey(scope, thread.connectionHostId ?? thread.serverOrigin.serverId, thread.id)];
+  return [...byIdentity.values()].filter(thread => entry(thread)?.dismissedAt === undefined || thread.updatedAt > entry(thread)!.dismissedAt!)
+    .sort((left, right) => (entry(right)?.pinnedAt ?? -1) - (entry(left)?.pinnedAt ?? -1)
+      || right.updatedAt - left.updatedAt || identity(left).localeCompare(identity(right)));
 }
 
 function localDayStart(timestampMs: number): Date {

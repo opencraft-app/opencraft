@@ -61,7 +61,7 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
   const continueHintId = useId();
   const queryKey = ["agent-onboarding", hostId, identityScope] as const;
   const [copied, setCopied] = useState<string | null>(null);
-  const [actionFailed, setActionFailed] = useState(false);
+  const [actionFailed, setActionFailed] = useState<{ id: string; goal: "install" | "connect" | "trust" | "authenticate" | "cancel" } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [requestedStep, setStep] = useState<"agent" | "start">("agent");
   const [chosenAgent, setChosenAgent] = useState<string | null>(null);
@@ -84,13 +84,24 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
     refetchInterval: query => query.state.data?.agents.some(agent => agent.activity?.phase === "running" || agent.id === "codebuddy-ide" && agent.connectionRequired === false && (agent.authenticated === false || agent.workspaceTrusted === false)) ? 3000 : false,
   });
   useEffect(() => { if (status.data) onStatusChange?.(status.data); }, [status.data, onStatusChange]);
+  const failedAgent = actionFailed && status.data?.agents.find(agent => agent.id === actionFailed.id);
+  const actionRecovered = failedAgent && actionFailed && (actionFailed.goal === "install" ? failedAgent.installed
+    : actionFailed.goal === "connect" ? failedAgent.connectionRequired === false
+      : actionFailed.goal === "trust" ? failedAgent.workspaceTrusted === true
+        : actionFailed.goal === "cancel" ? failedAgent.activity?.phase !== "running" : failedAgent.authenticated === true);
+  useEffect(() => {
+    if (actionRecovered) setActionFailed(current => current === actionFailed ? null : current);
+  }, [actionRecovered, actionFailed]);
   const nameOf = (id: string) => intl.formatMessage(AGENT_NAMES[id] ?? { id: "onboard.agent.unknownName", defaultMessage: "Agent" });
   const run = async (id: string, action: "sign-in" | "install" | "cancel") => {
-    setPendingId(id); setActionFailed(false);
+    const agent = status.data?.agents.find(agent => agent.id === id);
+    const goal = action === "install" ? "install" : action === "cancel" ? "cancel"
+      : agent?.workspaceTrusted === false ? "trust" : agent?.connectionRequired ? "connect" : "authenticate";
+    setPendingId(id); setActionFailed(null);
     try {
       const result = await request("opencraft/agents/onboarding/act", { id, action });
       if (isSnapshot(result)) queryClient.setQueryData(queryKey, result);
-    } catch { setActionFailed(true); } finally { setPendingId(null); }
+    } catch { setActionFailed({ id, goal }); } finally { setPendingId(null); }
   };
   const copyCode = async (id: string, code: string) => {
     try {
@@ -159,7 +170,9 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
     {remoteEntry}
     {step === "start" && !management ? <p className="agent-onboard__selection">{expandedEntry?.label} · {selectedModelName}</p> : null}
     {agentPreferences?.failed ? <p role="alert">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</p> : null}
-    {actionFailed ? <p role="alert">{intl.formatMessage({id:"onboard.agent.actionFailed",defaultMessage:"Could not complete setup. Check the agent and try again."})}</p> : null}
+    {actionFailed && !actionRecovered && (!selectedAgentId || actionFailed.id === selectedAgentId) ? <p role="alert">{intl.formatMessage(actionFailed.id === "codebuddy-ide" && actionFailed.goal === "trust"
+      ? { id: "onboard.ide.trustFailed", defaultMessage: "Open Workspace Trust in CodeBuddy IDE, review this project, then check again here." }
+      : {id:"onboard.agent.actionFailed",defaultMessage:"Could not complete setup. Check the agent and try again."})}</p> : null}
     {finishFailed ? <p role="alert">{intl.formatMessage({ id: "onboard.agent.startFailed", defaultMessage: "Could not start the chat. Please try again." })}</p> : null}
     {status.isPending && agents.length === 0 ? <ul className="agent-onboard__list" aria-hidden="true">
       {[0, 1, 2, 3].map(index => <li key={index} className="agent-onboard__skeleton" />)}
@@ -215,7 +228,7 @@ function AgentOnboardingContent({ hostId, identityScope = "local", request, requ
                 {intl.formatMessage(copied === agent.id ? { id: "onboard.agent.commandCopied", defaultMessage: "Command copied" } : { id: "onboard.agent.copySetup", defaultMessage: "Copy setup command" })}
               </Button> : null}
               {agent && !agent.setupCommand && !activity && agent.installed && (agent.authenticated === false || agent.connectionRequired || agent.workspaceTrusted === false) ? <Button size="sm" disabled={pendingId === agent.id} onClick={() => { void run(agent!.id, "sign-in"); }}>
-                {intl.formatMessage(agent.workspaceTrusted === false ? {id:"onboard.ide.trustAction",defaultMessage:"Review project trust"} : agent.id === "codebuddy-ide" ? { id: "onboard.ide.connect", defaultMessage: "Connect IDE" } : { id: "onboard.agent.signIn", defaultMessage: "Sign in" })}
+                {intl.formatMessage(agent.workspaceTrusted === false ? {id:"onboard.ide.trustAction",defaultMessage:"Review project trust"} : agent.id === "codebuddy-ide" && agent.connectionRequired !== false ? { id: "onboard.ide.connect", defaultMessage: "Connect IDE" } : { id: "onboard.agent.signIn", defaultMessage: "Sign in" })}
               </Button> : null}
             </span>} />
           {agent?.setupCommand && agent.installed && agent.authenticated !== true ? <p className="agent-onboard__note">

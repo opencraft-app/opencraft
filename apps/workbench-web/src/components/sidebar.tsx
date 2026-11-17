@@ -1,3 +1,6 @@
+import { useAsyncNotices } from "./async-notices";
+import { SidebarRecentRow, recentRowLabels, type RecentRowAction } from "./sidebar-recent-row";
+import type { RecentConversationPreference } from "@opencraft/ui-preferences";
 import { SidebarInstanceHeading } from "./sidebar-instance-heading";
 import { useStableEvent } from "@opencraft/react-runtime";
 import { Button, IconButton } from "@opencraft/design-system-web/button";
@@ -24,7 +27,7 @@ import { SidebarBots, SidebarEntityDndCoordinator } from "./sidebar-bots";
 import { ThreadActionModals, threadActionKey, useThreadActionOwner, type ThreadActionCallbacks, type ThreadActionCapabilities, type ThreadActionOwner } from "./thread-management";
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu, type SidebarThreadMenuKind } from "./sidebar-thread-menu-state";
 import { SidebarThreadRowMenu, SidebarThreadBadge, SidebarFiltersMenu, SidebarListContextMenu } from "./sidebar-thread-menu";
-import { sidebarActivityDateHeadings, recentSidebarThreads, groupSidebarProjectsByInstance, groupThreadsByNativeProject, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
+import { sidebarActivityDateHeadings, recentSidebarThreads, recentConversationKey, groupSidebarProjectsByInstance, groupThreadsByNativeProject, groupThreadsByTaskFlow, sidebarActivityMetadata } from "../sidebar-activity";
 import { sidebarThreadIdentity, sidebarThreadTree, type SidebarThreadTreeNode } from "../sidebar-thread-tree";
 import { NavigationIcon as SidebarContributionIcon, type NavigationAction as SidebarActionItem } from "./shell-navigation/navigation-action";
 import { useSidebarEndPull } from "./use-sidebar-end-pull";
@@ -166,7 +169,8 @@ const SidebarThreadContent = memo(function SidebarThreadContent({ thread, attent
 interface SidebarThreadPresentationProps {
   thread: SidebarThread; attention: boolean; pending: boolean; active: boolean; selected: boolean;
   title: string; unread: boolean; activityId: string; disabled: boolean; projectGrouped: boolean;
-  contextDevice?: string; contextFolder?: string;
+  contextDevice?: string; contextFolder?: string; recentScope: string; recent?: boolean; recentPinned?: boolean; recentBusy?: boolean;
+  onRecentAction(thread: SidebarThread, action: RecentRowAction): void;
   rename: boolean; archive: boolean; fork: boolean; delete: boolean; pin?: boolean; reference?: boolean;
   threadBadge: ThreadBadgeContribution | null; threadListGrouping: ThreadListGroupingContribution | null;
   grouping: ThreadListGroupingSnapshot; menus: SidebarThreadMenuStore; actionOwner: ThreadActionOwner;
@@ -183,11 +187,12 @@ function LiveSidebarThreadBadge(props: ComponentProps<typeof SidebarThreadBadge>
 const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props: SidebarThreadPresentationProps) {
   const { thread, attention, pending, active, selected, title, unread, activityId, disabled,
     threadBadge, threadListGrouping, grouping, menus, actionOwner, presentationRoot, openConversation } = props;
+  const labels = recentRowLabels(useIntl(), props.recentPinned ?? false);
   const target = { hostId: thread.connectionHostId, threadId: thread.id, title, pinned: thread.pinned };
   const capabilities = { rename: props.rename, archive: props.archive, fork: props.fork,
-    delete: props.delete, pin: props.pin, reference: props.reference };
+    delete: props.delete, pin: props.recent ? false : props.pin, reference: props.reference };
   const changeOverlay = (kind: OpenSidebarThreadMenu["kind"], open: boolean) => {
-    if (open && disabled) return;
+    if (open && disabled && !(props.recent && (kind === "dropdown" || kind === "context"))) return;
     menus.update({ hostId: target.hostId, threadId: target.threadId, rowId: activityId, kind }, open);
   };
   const badge = threadBadge && !(grouping.mode && grouping.hideRowBadge) ? <LiveSidebarThreadBadge
@@ -196,12 +201,16 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}
   /> : null;
   const metadata = sidebarActivityMetadata(thread);
-  return <SidebarThreadRowMenu key={sidebarThreadIdentity(thread)} store={menus} rowId={activityId} target={target} owner={actionOwner}
+  const row = <SidebarThreadRowMenu key={sidebarThreadIdentity(thread)} store={menus} rowId={activityId} target={target} owner={actionOwner}
     capabilities={capabilities} disabled={disabled} activityLabelId={activityId}
+    additionalActions={props.recent ? [
+      { id: "recent-pin", label: labels.pin, disabled: props.recentBusy, onSelect: () => props.onRecentAction(thread, props.recentPinned ? "unpin" : "pin") },
+      { id: "recent-dismiss", label: labels.dismiss, disabled: props.recentBusy, onSelect: () => props.onRecentAction(thread, "dismiss") },
+    ] : undefined}
     contextMenuExtra={threadListGrouping ? <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind="context" /> : undefined}
     onOpenMenuChange={(kind, open) => changeOverlay(kind, open)}
     onCloseAutoFocus={event => { if (menus.getSnapshot() !== null) event.preventDefault(); }}>
-    <SidebarActivityItem activityId={activityId} agent={thread.agent} active={active} selected={selected} pending={pending}
+    <SidebarActivityItem pinnedInRecent={props.recentPinned} activityId={activityId} agent={thread.agent} active={active} selected={selected} pending={pending}
       disabled={disabled} title={title} context={props.contextDevice ? { device: props.contextDevice, folder: props.contextFolder, agent: thread.agent?.label } : undefined} project={props.projectGrouped || props.contextDevice ? "" : metadata.project}
       tooltip={[title, metadata.project, thread.connectionHostLabel, thread.id].join(" · ")}
       status={thread.status} unread={unread} goalActive={thread.goalActive}
@@ -209,6 +218,8 @@ const SidebarThreadPresentation = memo(function SidebarThreadPresentation(props:
         onOpenConversation={() => { openConversation(thread.connectionHostId, thread.id); }} />} badge={badge} badgePlacement={threadBadge?.placement}
       onInvoke={() => { menus.close(); openConversation(thread.connectionHostId, thread.id); }} />
   </SidebarThreadRowMenu>;
+  return props.recent ? <SidebarRecentRow key={props.recentScope} store={menus} hostId={target.hostId} threadId={target.threadId} rowId={activityId}
+    pinned={props.recentPinned ?? false} pending={props.recentBusy ?? false} onAction={action => props.onRecentAction(thread, action)}>{row}</SidebarRecentRow> : row;
 });
 
 export const Sidebar = memo(function Sidebar(props: SidebarProps) {
@@ -226,6 +237,19 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const preferences = useUiPreferencesRuntime();
   const preferenceState = useSyncExternalStore(preferences.subscribe, preferences.getSnapshot, preferences.getSnapshot);
   const serverFilter = preferenceState.values["sidebar.serverFilter"];
+  const recentPreferences = preferenceState.values["sidebar.recentConversations"];
+  const recentScope = props.instanceNameScope ?? "local";
+  const notices = useAsyncNotices();
+  const scopeRef = useRef(recentScope), scopeEpoch = useRef(0);
+  if (scopeRef.current !== recentScope) { scopeRef.current = recentScope; scopeEpoch.current += 1; }
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const restoreRecentFocus = useRef(false);
+  const busyRecentRef = useRef(new Set<string>());
+  const [busyRecent, setBusyRecent] = useState<ReadonlySet<string>>(new Set());
+  const [recentUndo, setRecentUndo] = useState<{ scope: string; key: string; dismissedAt: number; previous?: RecentConversationPreference } | null>(null);
+  const recentKey = (thread: SidebarThread) => recentConversationKey(recentScope, thread.connectionHostId, thread.id);
+  const isRecentPinned = (thread: SidebarThread) => recentPreferences[recentKey(thread)]?.pinnedAt !== undefined;
   const grouping = useSyncExternalStore(
     threadListGrouping ? (listener) => threadListGrouping.subscribe(listener) : noSubscribe,
     threadListGrouping ? () => threadListGrouping.getSnapshot() : getDefaultGrouping,
@@ -238,6 +262,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   const [recentLimit, setRecentLimit] = useState(RECENT_PAGE_SIZE);
   const [mineLimit, setMineLimit] = useState(RECENT_PAGE_SIZE);
   const [menus] = useState(() => new SidebarThreadMenuStore());
+  useLayoutEffect(() => { menus.close(); setRecentUndo(null); restoreRecentFocus.current = false; }, [menus, recentScope]);
   const actionOwner = useThreadActionOwner(threadActions ?? noThreadActions);
   useEffect(() => {
     const target = actionOwner.modal?.target;
@@ -310,7 +335,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const taskFlow = { ...groupThreadsByTaskFlow(roots), mine: mineTree.roots.map(node => node.thread) };
     return { matching, matchingById, tree, matchingReferences, taskFlow };
   }, [threads, references, allowedKeys, needle, serverFilter.serverId]);
-  const recent = useMemo(() => recentSidebarThreads(matching), [matching]);
+  const recent = useMemo(() => recentSidebarThreads(matching, recentPreferences, recentScope), [matching, recentPreferences, recentScope]);
   const applicableCatalogs = threadCatalogs.filter(catalog => !serverFilter.serverId
     || catalog.hostId === serverFilter.serverId
     || threads.some(thread => thread.connectionHostId === catalog.hostId && thread.serverOrigin.serverId === serverFilter.serverId));
@@ -328,6 +353,47 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
   };
   const modeItems = (kind: "context" | "dropdown") => <ThreadListModeItems contribution={threadListGrouping} snapshot={grouping} kind={kind}
     onSelect={kind === "dropdown" ? () => menus.setFiltersOpen(false) : undefined} />;
+  const onRecentAction = useStableEvent((thread: SidebarThread, action: RecentRowAction) => {
+    const scope = recentScope, epoch = scopeEpoch.current, key = recentKey(thread);
+    if (busyRecentRef.current.has(key)) return;
+    busyRecentRef.current.add(key); setBusyRecent(new Set(busyRecentRef.current));
+    if (action === "dismiss") restoreRecentFocus.current = document.activeElement instanceof Element
+      && !!document.activeElement.closest('.sidebar-recent-row,[role="menu"]');
+    menus.close();
+    let previous: RecentConversationPreference | undefined;
+    const pinnedAt = Date.now();
+    void preferences.update("sidebar.recentConversations", current => {
+      if (!alive.current || scopeRef.current !== scope || scopeEpoch.current !== epoch) return current;
+      previous = current[key];
+      const { [key]: removed, ...rest } = current;
+      return action === "unpin" ? rest : { ...rest, [key]: action === "pin" ? { pinnedAt } : { dismissedAt: thread.updatedAt } };
+    }).then(() => {
+      if (alive.current && scopeRef.current === scope && scopeEpoch.current === epoch && action === "dismiss") setRecentUndo({ scope, key, dismissedAt: thread.updatedAt, previous });
+    }).catch(() => {
+      if (alive.current && scopeRef.current === scope && scopeEpoch.current === epoch) notices.error({ key: "recent-update", message: text("sidebar.recent.failed", "Could not update Recent. Try again.") });
+    }).finally(() => {
+      busyRecentRef.current.delete(key); if (alive.current) setBusyRecent(new Set(busyRecentRef.current));
+    });
+  });
+  const undoRecent = () => {
+    const undo = recentUndo;
+    if (!undo || undo.scope !== recentScope || busyRecentRef.current.has(undo.key)) return;
+    const epoch = scopeEpoch.current;
+    busyRecentRef.current.add(undo.key); setBusyRecent(new Set(busyRecentRef.current));
+    void preferences.update("sidebar.recentConversations", current => {
+      if (!alive.current || scopeRef.current !== undo.scope || scopeEpoch.current !== epoch || current[undo.key]?.dismissedAt !== undo.dismissedAt) return current;
+      const { [undo.key]: removed, ...rest } = current;
+      return undo.previous ? { ...rest, [undo.key]: undo.previous } : rest;
+    }).then(() => { if (alive.current && scopeRef.current === undo.scope && scopeEpoch.current === epoch) setRecentUndo(null); })
+      .catch(() => { if (alive.current && scopeRef.current === undo.scope && scopeEpoch.current === epoch) notices.error({ key: "recent-update", message: text("sidebar.recent.failed", "Could not update Recent. Try again.") }); })
+      .finally(() => { busyRecentRef.current.delete(undo.key); if (alive.current) setBusyRecent(new Set(busyRecentRef.current)); });
+  };
+  useLayoutEffect(() => {
+    if (!restoreRecentFocus.current || recentUndo?.scope !== recentScope) return;
+    restoreRecentFocus.current = false;
+    if (document.activeElement === document.body || contentViewport.current?.contains(document.activeElement))
+      contentViewport.current?.querySelector<HTMLButtonElement>(".sidebar-recent-feedback button")?.focus({ preventScroll: true });
+  }, [recentUndo, recentScope]);
   const renderThreadContent = useCallback((thread: SidebarThread, attention: boolean, projectGrouped: boolean, rowScope: string) => {
     const pending = pendingHostId === thread.connectionHostId && pendingThreadId === thread.id;
     const active = activeHostId === thread.connectionHostId && activeThreadId === thread.id;
@@ -348,7 +414,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
       hostId: thread.connectionHostId, threadId: thread.id, updatedAt: thread.updatedAt, pinned: thread.pinned,
     }) ?? true);
     return <SidebarParentRenderContext.Provider value={props}>
-      <SidebarThreadPresentation contextDevice={context?.device} contextFolder={context?.folder} projectGrouped={projectGrouped} thread={thread} attention={attention} pending={pending} active={active}
+      <SidebarThreadPresentation recentScope={recentScope} recent={rowScope === "recent"} recentPinned={rowScope === "recent" && isRecentPinned(thread)} recentBusy={busyRecent.has(recentKey(thread))} onRecentAction={onRecentAction} contextDevice={context?.device} contextFolder={context?.folder} projectGrouped={projectGrouped} thread={thread} attention={attention} pending={pending} active={active}
         selected={selected} title={title} unread={unread} activityId={activityId} disabled={disabled}
         rename={capabilities.rename} archive={capabilities.archive} fork={capabilities.fork}
         delete={capabilities.delete} pin={capabilities.pin} reference={capabilities.reference}
@@ -357,7 +423,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     </SidebarParentRenderContext.Provider>;
   // Parent commits always reevaluate dynamic readers. Scalar row presentation
   // can reuse menu chrome while the badge still observes parent props updates.
-  }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix, openRowConversation, preferenceState]);
+  }, [props, actionOwner, grouping, presentationRoot, dismiss, menus, rowIdPrefix, openRowConversation, preferenceState, busyRecent, onRecentAction, recentScope]);
   const renderThread = (thread: SidebarThread, attention: boolean, projectGrouped: boolean, rowScope: string) => <SidebarThreadContent
     key={identity(thread)} thread={thread} attention={attention} projectGrouped={projectGrouped} rowScope={rowScope} render={renderThreadContent} />;
   const renderTreeNode = (node: SidebarThreadTreeNode<SidebarThread>, attention: boolean, projectGrouped: boolean, rowScope: string): ReactNode => (
@@ -378,12 +444,12 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     return node ? <ul className="sidebar-thread-tree" role="list">{renderTreeNode(node, attention, projectGrouped, rowScope)}</ul> : null;
   };
   const renderFlowSection = (key: string, title: string, rows: readonly SidebarThread[], limit?: number, update?: (count: number) => void, nativeProject = false) => {
-    if (!rows.length && key !== "mine") return null;
+    if (!rows.length && key !== "mine" && (key !== "recent" || matching.length === 0 && recentUndo?.scope !== recentScope)) return null;
     const collapsed = folded[key] ?? false;
     const visible = limit === undefined ? rows : rows.slice(0, limit);
     const folderThread = nativeProject ? rows.find(thread => !!thread.cwd && thread.interactionAvailable !== false) ?? rows.find(thread => !!thread.cwd) : undefined;
     const newFolderChatLabel = intl.formatMessage({ id: "sidebar.folder.newChat", defaultMessage: "New chat in {folder}" }, { folder: title });
-    const dates = key === "recent" ? sidebarActivityDateHeadings(visible, Date.now(), intl.locale) : new Map<SidebarThread, string>();
+    const dates = key === "recent" ? sidebarActivityDateHeadings(visible.filter(thread => !isRecentPinned(thread)), Date.now(), intl.locale) : new Map<SidebarThread, string>();
     return <section key={key} className="sidebar-activity-group" aria-label={title} data-collapsed={collapsed} data-native-project={nativeProject || undefined}>
       {nativeProject ? <div className="sidebar-folder-heading">
         <h3 className="sidebar-thread-group-heading"><Button variant="ghost" size="navigation" contentLayout="row" className="sidebar-folder-toggle"
@@ -403,8 +469,13 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
         <span className="sidebar-thread-group-label">{title}</span><ChevronDown size={12} className={collapsed ? "is-collapsed" : undefined} />
       </button></h3>}
       <div className="sidebar-activity-group__items" id={`${rowIdPrefix}-flow-${key}`} hidden={collapsed}>
+        {key === "recent" && recentUndo?.scope === recentScope ? <div className="sidebar-recent-feedback" role="status">
+          <span>{text("sidebar.recent.removed", "Removed from Recent")}</span><Button size="sm" variant="ghost" disabled={busyRecent.has(recentUndo.key)} onClick={undoRecent}>{text("sidebar.recent.undo", "Undo")}</Button>
+        </div> : null}
+        {key === "recent" && !rows.length ? <div className="sidebar-activity-empty">{text("sidebar.recent.empty", "No recent conversations")}</div> : null}
         {key === "mine" && !rows.length ? <div className="sidebar-activity-empty">{text("sidebar.access.empty", "No private conversations yet")}</div> : null}
         {visible.map(thread => <div key={identity(thread)}>
+          {key === "recent" && thread === visible[0] && isRecentPinned(thread) ? <h4 className="sidebar-activity-group__heading">{text("sidebar.recent.pinned", "Pinned to top")}</h4> : null}
           {dates.has(thread) ? <h4 className="sidebar-activity-group__heading">{dates.get(thread)}</h4> : null}
           {renderThreadTree(thread, key === "attention", nativeProject, key)}
         </div>)}
@@ -443,8 +514,8 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const key = JSON.stringify([current.hostId, current.threadId]);
     const target = matchingById.get(key);
     const rootKey = tree.rootByIdentity.get(key) ?? key;
-    const visible = target && target.interactionAvailable !== false && visibleSections.some(group =>
-      !group.collapsed && current.rowId === sidebarRowId(rowIdPrefix, group.id, key)
+    const visible = target && visibleSections.some(group =>
+      (group.id === "recent" || target.interactionAvailable !== false) && !group.collapsed && current.rowId === sidebarRowId(rowIdPrefix, group.id, key)
       && group.threads.some(ref => JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "recent" ? key : rootKey)));
     if (!visible) menus.close();
   });
@@ -455,10 +526,11 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     JSON.stringify([ref.hostId, ref.threadId]) === (group.id === "recent" ? selectedKey : selectedRootKey)));
   const selectedSectionId = selectedSection?.id;
   const selectedVisible = selectedSection !== undefined && !selectedSection.collapsed;
-  const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit, mineLimit });
+  const previousSelection = useRef({ key: selectedKey, pinnedLimit, recentLimit, mineLimit, recentPreferences });
   useLayoutEffect(() => {
     const previous = previousSelection.current;
-    previousSelection.current = { key: selectedKey, pinnedLimit, recentLimit, mineLimit };
+    previousSelection.current = { key: selectedKey, pinnedLimit, recentLimit, mineLimit, recentPreferences };
+    if (previous.key === selectedKey && previous.recentPreferences !== recentPreferences) return;
     // Revealing more history is a reading action, not a new navigation intent.
     if (previous.key === selectedKey && (pinnedLimit > previous.pinnedLimit || recentLimit > previous.recentLimit || mineLimit > previous.mineLimit)) return;
     if (!selectedVisible) return;
@@ -479,7 +551,7 @@ export const Sidebar = memo(function Sidebar(props: SidebarProps) {
     const item = row.getBoundingClientRect();
     if (item.top < top) viewport.scrollTop += item.top - top;
     else if (item.bottom > bottom) viewport.scrollTop += Math.min(item.bottom - bottom, item.top - top);
-  }, [selectedKey, selectedSectionId, selectedVisible, pinnedLimit, recentLimit, mineLimit]);
+  }, [selectedKey, selectedSectionId, selectedVisible, pinnedLimit, recentLimit, mineLimit, recentPreferences]);
   const navigationAction = (action: SidebarActionItem) => <SidebarNavigationItem key={action.id} title={action.title}
     active={action.active} icon={<SidebarContributionIcon name={action.icon} />} onInvoke={() => dismissAfter(action.onInvoke)} />;
   const retryLabel = text("sidebar.catalog.retry", "Retry");

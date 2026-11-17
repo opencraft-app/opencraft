@@ -1430,6 +1430,12 @@ export function App({
   const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
     && continuationCapability?.contextExport?.includes(conversationAgent) === true && presentation.executionSelection !== "fixed";
   const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
+  const projectModelChoices = useCallback((models: Parameters<typeof projectComposerModelChoices>[0]) =>
+    projectComposerModelChoices(models).map(model => model.value === "codebuddy-ide:current" ? {
+      ...model,
+      label: intl.formatMessage({ id: "composer.model.ideCurrent", defaultMessage: "Use current IDE model" }),
+      description: intl.formatMessage({ id: "composer.model.ideCurrent.description", defaultMessage: "Choose the model in CodeBuddy IDE. Messages use that selection." }),
+    } : model), [intl]);
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
       agentsDisabled: filterNewAgents && (() => {
@@ -1438,8 +1444,8 @@ export function App({
         return declared.length > 0 && declared.every(({ hostId, model }) => !agentAvailability.enabled(hostId, model.agentId ?? "host"));
       })(),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectComposerModelChoices(composerCatalog.models.filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
-      displayModels: projectComposerModelChoices(composerCatalog.displayModels),
+      models: projectModelChoices(composerCatalog.models.filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? "host"))),
+      displayModels: projectModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
         const profile = rawProfile as OpenCraftPermissionProfile;
         return {
@@ -1465,7 +1471,7 @@ export function App({
         id: group.hostId,
         label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
         active: group.hostId === snapshot.hostId,
-        models: projectComposerModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
+        models: projectModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? "host"))),
         loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
         error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
@@ -1510,6 +1516,7 @@ export function App({
       composerCatalog.permissionProfileError,
       composerCatalog.permissionProfiles,
       supportsPermissionModes,
+      projectModelChoices,
     ],
   );
   const draftWorkspaceOptions = useMemo(() => {

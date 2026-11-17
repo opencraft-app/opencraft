@@ -159,7 +159,7 @@ export function inspectHoverHandlers(source, file) {
       const portal = node.parent.parent.tagName?.getText(ast)?.endsWith(".Content");
       const continuity = portal && expression && ts.isIdentifier(expression) && ["cancelDismiss", "cancelClose"].includes(expression.text);
       const inline = expression && (ts.isArrowFunction(expression) || ts.isFunctionExpression(expression));
-      const gestureOwner = name === "onPointerMove" && attributes.some(a => ts.isJsxAttribute(a) && a.name.getText(ast) === "onPointerDown") && attributes.some(a => ts.isJsxAttribute(a) && /^onPointer(?:Up|Cancel)$/u.test(a.name.getText(ast))) && inline && guardedBody(expression, unownedPointerComparison);
+      const gestureOwner = name === "onPointerMove" && attributes.some(a => ts.isJsxAttribute(a) && ["onPointerDown", "onPointerDownCapture"].includes(a.name.getText(ast))) && attributes.some(a => ts.isJsxAttribute(a) && /^onPointer(?:Up|Cancel)$/u.test(a.name.getText(ast))) && inline && guardedBody(expression, unownedPointerComparison);
       if (!continuity && !gestureOwner && !(name.startsWith("onPointer") && inline && guardedBody(expression, mouseComparison))) issues.push({ file, line: ast.getLineAndCharacterOfPosition(node.getStart(ast)).line + 1, message: "Hover entry must guard mouse input before effects; pointer movement gestures need a matching pointer owner." });
     }
     ts.forEachChild(node, visit);

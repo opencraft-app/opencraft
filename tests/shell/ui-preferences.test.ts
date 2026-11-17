@@ -30,6 +30,30 @@ test("UI preference defaults keep Applications unpinned", async () => {
   await runtime.close();
 });
 
+test("Recent preferences survive recreation and independent CAS edits, reject invalid clocks and retain state on failure", async () => {
+  const store = new MemoryUiPreferenceStore();
+  let first = await UiPreferencesRuntime.open({ installation: store });
+  const second = await UiPreferencesRuntime.open({ installation: store });
+  await Promise.all([
+    first.update("sidebar.recentConversations", current => ({ ...current, '["a","host-a","same"]': { pinnedAt: 10 } })),
+    second.update("sidebar.recentConversations", current => ({ ...current, '["a","host-b","same"]': { dismissedAt: 100 } })),
+  ]);
+  await first.close();
+  first = await UiPreferencesRuntime.open({ installation: store });
+  assert.deepEqual(first.get("sidebar.recentConversations"), {
+    '["a","host-a","same"]': { pinnedAt: 10 }, '["a","host-b","same"]': { dismissedAt: 100 },
+  });
+  await assert.rejects(first.set("sidebar.recentConversations", { key: { pinnedAt: -1 } }), TypeError);
+  await assert.rejects(first.set("sidebar.recentConversations", { key: { dismissedAt: NaN } }), TypeError);
+  const before = first.get("sidebar.recentConversations");
+  const compareAndSet = store.compareAndSet.bind(store);
+  store.compareAndSet = async () => { throw new Error("Synthetic persistence failure"); };
+  await assert.rejects(first.update("sidebar.recentConversations", () => ({})), /Synthetic/);
+  assert.equal(first.get("sidebar.recentConversations"), before);
+  store.compareAndSet = compareAndSet;
+  await first.close(); await second.close();
+});
+
 test("IndexedDB installation preferences survive runtime recreation", async () => {
   const factory = new IDBFactory();
   const firstStore = await IndexedDbUiPreferenceStore.open({

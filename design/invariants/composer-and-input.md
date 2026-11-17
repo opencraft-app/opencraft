@@ -689,6 +689,13 @@ A locally submitted follow-up paints immediately in the existing attached rail.
 The same client message retains its DOM and avatar across server queue admission;
 authoritative queue IDs still own actions. Superseded reads and late RPC receipts
 cannot clear or resurrect that row during handoff.
+An active response with sendable content exposes the admitted follow-up action
+and a separate Stop control. Stop preserves the unsubmitted draft; an empty
+editor keeps the existing single Stop action. Agent capabilities choose the
+admitted operation: queue-only native ACP sessions fall back to Queue even when
+the preferred mode is Steer. Desktop/touch acceptance uses the actual Workbench
+route in `scripts/smoke/conversation/smoke-acp-follow-up.ts`, including FIFO
+consumption after the controlled native response completes.
 The task-link action uses two interlocking rounded links in its shared semantic glyph. Toolbar, overflow and customization consume the same artwork and localized accessible name; artwork changes do not change action identity, geometry, preferences or task transactions.
 
 ## Skill candidate ownership

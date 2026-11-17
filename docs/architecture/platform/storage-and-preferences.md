@@ -372,6 +372,16 @@ adapter, like the existing model-selection map. The server remains the membershi
 authority. Neither membership data nor invitation codes enter this preference.
 Drawer visibility is transient and defaults closed on each new page load.
 
+`sidebar.recentConversations` holds local Recent-only pin clocks and dismissal
+watermarks, keyed by display/account scope, Host and conversation ID. It uses
+the installation UiPreferencesRuntime and its durable CAS `update` path; queued
+intents check the current scope before committing. Failed writes retain the
+visible order. Dismissal hides only through that conversation's observed
+canonical update time; newer activity returns it. Pinning clears dismissal and
+orders pinned entries before the normal chronology. Neither choice changes
+Thread pin/archive state, access, device directories or execution. The in-view
+Undo restores a previous entry only while its own dismissal is still current.
+
 `sidebar.instanceNames` holds sidebar display aliases keyed by the current
 account/display namespace and stable machine identity (Host fallback only when
 machine identity is unavailable). It is an installation-scoped presentation

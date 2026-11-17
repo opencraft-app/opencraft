@@ -1,3 +1,4 @@
+@use "@opencraft/design-system-web/swipe-actions.web";
 @use "../../../../packages/chat-render-web/src/zoomable-image";
 @use "../../../../packages/composer-editor/src/recovery-scan";
 @use "../../../../packages/composer-editor/src/model-catalog-status";
@@ -1788,6 +1789,11 @@ svg[data-sidebar-toggle-icon-state] {
     opacity: 1;
     pointer-events: auto;
   }
+}
+
+.sidebar-activity-row[data-local-actions]:has(.sidebar-activity-item:disabled) .sidebar-activity-item__menu-trigger {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-activity-item__menu-trigger[data-forking="true"] {
@@ -13147,3 +13153,13 @@ html[data-window-host="browser"] body {
   > svg.is-collapsed { transform: rotate(-90deg); }
 }
 .sidebar-folder-new-chat { flex-shrink: 0; }
+
+// Recent owns presentation preferences; swipe geometry and motion belong to the shared primitive.
+.sidebar-recent-row { min-width: 0; }
+.sidebar-activity-item__recent-pin { display: inline-flex; flex: 0 0 auto; color: var(--color-icon-secondary); }
+.sidebar-recent-feedback {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--gap-control-group);
+  padding-inline: var(--padding-sidebar-activity-row-inline);
+  @include typography.role(metadata, secondary);
+  > span { min-width: 0; }
+}

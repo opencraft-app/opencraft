@@ -3,7 +3,7 @@
   "displayName": "OpenCraft CodeBuddy IDE Bridge",
   "description": "Connect CodeBuddy IDE's native agent to your OpenCraft server.",
   "publisher": "opencraft",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT-0",
   "engines": {
     "vscode": "^1.100.0"

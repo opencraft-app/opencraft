@@ -15,11 +15,11 @@ try{
    const ide=page.locator('li[data-agent="codebuddy-ide"]');await ide.waitFor();
    assert.match(await page.locator('li[data-agent="codebuddy"]').innerText(),/CodeBuddy CLI/);
    assert.match(await ide.innerText(),/CodeBuddy IDE/);
-   if(state==='trust')await ide.getByRole('button',{name:'确认项目信任',exact:true}).waitFor();
-   else if(state!=='ready')await ide.getByRole('button',{name:'接入 IDE',exact:true}).waitFor();
+   if(state==='trust')await ide.getByRole('button',{name:'检查项目信任',exact:true}).waitFor();
+   else if(state!=='ready')await ide.getByRole('button',{name:state==='sign-in'?'登录':'接入 IDE',exact:true}).waitFor();
    assert.equal(await ide.getByRole('switch').isDisabled(),state!=='ready');
    if(state==='trust'){
-    const action=ide.getByRole('button',{name:'确认项目信任',exact:true});
+    const action=ide.getByRole('button',{name:'检查项目信任',exact:true});
     if(touch)await action.tap();else{await action.focus();await page.keyboard.press('Enter');}
     await page.getByRole('alert').waitFor({state:'hidden'});
    }
@@ -29,7 +29,21 @@ try{
     await page.screenshot({path:`${output}/${touch?'touch':'desktop'}-${state}-${theme}.png`});
    }
   }
+  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as {port:number}).port}/?management=1&ide=trust&failIdeSetup=1&selectedAgent=codebuddy-ide&locale=en-US`);
+  const ide=page.locator('li[data-agent="codebuddy-ide"]');await ide.waitFor();
+  await ide.getByRole('button',{name:'Review project trust',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Open Workspace Trust in CodeBuddy IDE'}).waitFor();
+  await page.evaluate(()=>(window as any).onboardingFixture.setIdeState('trust'));
+  assert.match(await page.getByRole('alert').innerText(),/Open Workspace Trust/,'an unrelated ready Agent cannot clear this failure');
+  await page.evaluate(()=>(window as any).onboardingFixture.setSelectedAgentId('codex'));await page.getByRole('alert').waitFor({state:'hidden'});
+  await page.evaluate(()=>(window as any).onboardingFixture.setSelectedAgentId('codebuddy-ide'));await page.getByRole('alert').waitFor();
+  await page.evaluate(()=>(window as any).onboardingFixture.setIdeState('sign-in'));await page.getByRole('alert').waitFor({state:'hidden'});
+  assert(await ide.getByRole('switch').isDisabled(),'native trust recovery is separate from native login');
+  await ide.getByRole('button',{name:'Sign in',exact:true}).click();await page.getByRole('alert').filter({hasText:'Could not complete setup'}).waitFor();
+  await page.evaluate(()=>(window as any).onboardingFixture.setIdeState('ready'));await page.getByRole('alert').waitFor({state:'hidden'});
+  assert.equal(await ide.getByRole('switch').isDisabled(),false,'fresh native readiness removes obsolete setup errors');
+  await page.screenshot({path:`${output}/${touch?'touch':'desktop'}-recovered.png`});
   await context.close();
  }
- assert.deepEqual(errors,[]);console.log('IDE and CLI identities, connection/trust/login states, keyboard and touch composition passed.');
+ assert.deepEqual(errors,[]);console.log('IDE and CLI identities, connection/trust/login states, scoped error recovery, keyboard and touch composition passed.');
 }finally{await browser.close();await vite.close();}
