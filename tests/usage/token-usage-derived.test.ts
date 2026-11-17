@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, writeFile, appendFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, appendFile, rm, stat, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
@@ -261,3 +261,68 @@ test("v6 cache upgrades its recency index without discarding ready projections o
  assert.equal(d.database.prepare('SELECT max(version) AS version FROM schema_migrations').get()!.version,7);
  assert.deepEqual(values(d),expected);await drain(d);assert.deepEqual(values(d),expected);
 }));
+
+test("an unchanged complete rollout is not re-resolved through Codex Core on every pass",()=>fixture(async f=>{
+ await writeFile(f.path,start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2));
+ let resolves=0;
+ const storage=new CodexNativeStorage(null,()=>f.home);
+ const derived=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
+  nativeHomes:()=>storage.homes(),resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path,true);}});
+ try{
+  await derived.discover();await drain(derived);const before=snapshot(derived).summary.tokens;assert.notEqual(before,"0");
+  const settled=resolves;
+  for(let i=0;i<5;i++){await derived.discover();await drain(derived);}
+  assert.equal(resolves,settled,"complete unchanged file skipped without resolving its source");
+  await appendFile(f.path,count("7","7",3));
+  await derived.discover();await drain(derived);
+  assert.ok(resolves>settled,"growth is read");
+  const retained=new DatabaseSync(join(f.directory,"token-usage-retained.sqlite"),{readOnly:true});
+  try{assert.equal(Number(retained.prepare("SELECT cursor FROM usage_files").get()!.cursor),(await stat(f.path)).size,"appended bytes are read");}finally{retained.close();}
+  assert.ok(BigInt(snapshot(derived).summary.tokens)>=BigInt(before));
+ }finally{derived.close();}
+}));
+
+for (const mode of ["truncate", "replace"] as const) {
+ test(`a ${mode}d complete rollout takes the validated read path and preserves known usage`,()=>fixture(async f=>{
+  const text=start()+count("5","5")+line("event_msg",{type:"task_complete",turn_id:turn},2);
+  await writeFile(f.path,text);
+  let resolves=0;
+  const storage=new CodexNativeStorage(null,()=>f.home);
+  const d=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
+   resolveSource:(id,path)=>{resolves++;return storage.resolve(id,path,true);}});
+  try{
+   await drain(d);assert.equal(snapshot(d).summary.tokens,"5");const settled=resolves;
+   if(mode==="truncate")await writeFile(f.path,start());
+   else {await writeFile(f.path+".replacement",text);await rename(f.path+".replacement",f.path);}
+   await drain(d);
+   assert.ok(resolves>settled,"changed source cannot use the unchanged-file shortcut");
+   assert.equal(snapshot(d).summary.tokens,"5","retained historical usage survives source loss");
+   assert.equal(snapshot(d).coverage.partial,true);
+  }finally{d.close();}
+ }));
+}
+
+test("close during the unchanged-file stat does not access a closed database",()=>fixture(async f=>{
+ await writeFile(f.path,start()+count("5","5"));const d=f.open();await drain(d);
+ const pending=d.step();d.close();assert.equal(await pending,false);
+}));
+
+for (const rejected of [false, true]) {
+ test(`close during source resolution ignores a late ${rejected ? "failure" : "success"}`,()=>fixture(async f=>{
+  await writeFile(f.path,start()+count("5","5"));
+  const storage=new CodexNativeStorage(null,()=>f.home);
+  let pause=false,release!:()=>void,reached!:()=>void;
+  const waiting=new Promise<void>(resolve=>{reached=resolve;});
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  const d=new RolloutDerivedTokenUsage({databasePath:join(f.directory,"token-usage.sqlite"),nativeHome:f.home,serverId:"server",
+   resolveSource:async(id,path)=>{
+    if(pause){reached();await gate;if(rejected)throw new Error("source unavailable");}
+    return storage.resolve(id,path,true);
+   }});
+  try{
+   await drain(d);pause=true;await appendFile(f.path,count("7","2",3));
+   const pending=d.step();await waiting;d.close();release();
+   assert.equal(await pending,false);
+  }finally{release();try{d.close();}catch{}}
+ }));
+}
