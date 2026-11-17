@@ -1,7 +1,7 @@
 import { ServerSpacesRuntime } from "@opencraft/access-control/server-spaces";
 import { SERVER_SPACES_METHOD, SERVER_SPACES_CHANGED, type ServerSpaceCommand } from "@opencraft/appserver-protocol/server-spaces";
 import { OPENCRAFT_TERMINAL_RESTORE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_EXTENSION, SHARED_INTERACTIONS_EXTENSION, SHARED_INTERACTIONS_CHANGED, SHARED_INTERACTIONS_READ, SHARED_INTERACTIONS_RESPOND } from "@opencraft/appserver-protocol";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { dshHostInputs } from "./dsh-host-inputs.js";
 import { handleHostInput } from "./host-input-http.js";
 import type { DshExecutionOwner } from "./dsh-execution-authority.js";

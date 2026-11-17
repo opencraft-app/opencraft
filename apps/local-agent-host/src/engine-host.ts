@@ -1,6 +1,6 @@
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { LocalHostResources } from "./host-resources.js";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";

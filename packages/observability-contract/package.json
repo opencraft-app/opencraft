@@ -1,0 +1,16 @@
+{
+  "name": "@opencraft/observability-contract",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.mts",
+      "default": "./index.mjs"
+    },
+    "./node": {
+      "types": "./node.d.mts",
+      "default": "./node.mjs"
+    }
+  }
+}

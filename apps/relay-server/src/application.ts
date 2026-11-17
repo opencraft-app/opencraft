@@ -5,8 +5,8 @@ import type { Server } from 'node:http';
 import type { EntryOriginResolver } from './authentication.js';
 import { readFile } from 'node:fs/promises';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
-import { HubNetwork } from '../../../packages/hub-network/src/node.js';
-import { publicOrigin } from '../../../packages/hub-network/src/contract.js';
+import { HubNetwork } from "@opencraft/hub-network/node";
+import { publicOrigin } from "@opencraft/hub-network";
 import { parseSelectionDefaults, parseServerPaths, type ServerPaths } from './selection.js';
 
 export interface RelayAuthenticationConfiguration {

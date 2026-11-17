@@ -1,4 +1,4 @@
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { unlink } from "node:fs/promises";
 import { connect } from "node:net";
 

@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "scope": "Runtime source under apps/*/src, packages/*/src and plugins/*/src.",
+  "reason": "Recorded debt: relative imports that leave their own workspace package. Move shared code into a package and import it by name; remove the entry when it is fixed. Do not add entries for new code.",
+  "entries": [
+    {
+      "file": "apps/codex-core/src/account-owner.ts",
+      "target": "scripts/full-upgrade/account-core-limits.mjs"
+    },
+    {
+      "file": "apps/codex-core/src/split-core.ts",
+      "target": "scripts/full-upgrade/account-core-limits.mjs"
+    },
+    {
+      "file": "apps/desktop/src/main.ts",
+      "target": "scripts/human-login-page.js"
+    },
+    {
+      "file": "apps/desktop/src/main.ts",
+      "target": "scripts/serve-workbench-static.mjs"
+    },
+    {
+      "file": "apps/local-agent-host/src/dsh-acp-execution-environment.mjs",
+      "target": "plugins/acp-engine/src/execution-thread-resolver.mjs"
+    },
+    {
+      "file": "apps/local-agent-host/src/dsh-capability-plugin.mjs",
+      "target": "scripts/execution-environment.ts"
+    },
+    {
+      "file": "apps/local-agent-host/src/durable-process-service.ts",
+      "target": "scripts/execution-environment.js"
+    },
+    {
+      "file": "apps/local-agent-host/src/process-service.ts",
+      "target": "scripts/account-environment.js"
+    },
+    {
+      "file": "apps/local-agent-host/src/process-service.ts",
+      "target": "scripts/execution-environment.js"
+    },
+    {
+      "file": "apps/mobile/src/runtime/mobile-messages.ts",
+      "target": "apps/workbench-web/src/i18n/locales/ms-MY.json"
+    },
+    {
+      "file": "apps/mobile/src/runtime/mobile-messages.ts",
+      "target": "apps/workbench-web/src/i18n/locales/th-TH.json"
+    },
+    {
+      "file": "apps/mobile/src/runtime/mobile-messages.ts",
+      "target": "apps/workbench-web/src/i18n/locales/zh-CN.json"
+    },
+    {
+      "file": "apps/opencraft-daemon/src/codex-engine-adapter.ts",
+      "target": "scripts/execution-environment.js"
+    },
+    {
+      "file": "apps/opencraft-daemon/src/machine-identity.ts",
+      "target": "apps/local-agent-host/src/machine-identity.js"
+    },
+    {
+      "file": "plugins/acp-engine/src/index.ts",
+      "target": "scripts/execution-environment.js"
+    },
+    {
+      "file": "plugins/pi-engine/src/index.ts",
+      "target": "scripts/execution-environment.js"
+    },
+    {
+      "file": "plugins/pi-engine/src/session.ts",
+      "target": "scripts/execution-environment.js"
+    },
+    {
+      "file": "plugins/pi-engine/src/shell.ts",
+      "target": "scripts/execution-environment.js"
+    }
+  ]
+}

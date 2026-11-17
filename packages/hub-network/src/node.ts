@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { Duplex } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import WebSocket, { WebSocketServer } from 'ws';
-import { relayDuplex } from '../../relay-protocol/src/node.js';
-import { AssertionProvider, type IdentityProvider, type IdentityRequest } from '../../identity-core/src/node.js';
-import { MAX_STREAMS } from '../../relay-protocol/src/index.js';
+import { relayDuplex } from "@opencraft/relay-protocol/node";
+import { AssertionProvider, type IdentityProvider, type IdentityRequest } from "@opencraft/identity-core/node";
+import { MAX_STREAMS } from "@opencraft/relay-protocol";
 import { HUB_CONTROL_PATH, HUB_DATA_PATH, HUB_PROTOCOL, MAX_HOPS, publicOrigin, transportEndpoint, validHubId,
   type HubNetworkSnapshot, type HubRoute, type IdentityAuthority } from './contract.js';
 import { HubStore, authority, digest, hubId, parseInvitation, random, signed, verified, type Invitation, type InvitePayload, type Peer } from './store.js';

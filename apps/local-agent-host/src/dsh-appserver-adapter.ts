@@ -1,4 +1,4 @@
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { AppServerThread, AppServerTurn } from "@opencraft/appserver-protocol";
 import { randomUUID } from "node:crypto";

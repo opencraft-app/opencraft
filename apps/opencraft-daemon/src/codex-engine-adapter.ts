@@ -17,7 +17,7 @@ import { CodexNativeStorage } from "./codex-native-storage.js";
 import type { AppServerThread } from "@opencraft/appserver-protocol";
 import { InterruptedTurnRecovery, RecoveryNotSubmitted, ProviderTurnRetry, codexProviderFailure, pooledRetryAt, type ProviderRetry, type ProviderFailure, type RecoveryTurn } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION } from "@opencraft/appserver-protocol";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { labelUsagePeople } from "./token-usage-people.js";
 import { TokenUsageStateDatabase } from "./token-usage-state-database.js";
 import { TokenUsageTelemetry } from "./token-usage-telemetry.js";

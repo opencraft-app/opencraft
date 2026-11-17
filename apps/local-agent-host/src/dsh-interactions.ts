@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { HostInteractions } from "@opencraft/app-host-server/interactions";
-import { nodeObserver } from '../../../packages/observability-contract/node.mjs';
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import type { DshClient } from "./dsh-client.js";
 
 type RecordValue = Record<string, any>;

@@ -11,7 +11,8 @@
     "./human-accounts": "./src/human-accounts.ts",
     "./account-management": "./src/account-management.ts",
     "./server-spaces": "./src/server-spaces-runtime.ts",
-    "./server-spaces-session": "./src/server-spaces-session.ts"
+    "./server-spaces-session": "./src/server-spaces-session.ts",
+    "./collaboration": "./src/collaboration.ts"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",

@@ -4,7 +4,7 @@ import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-poli
 import { queueProjection, type PiQueuedInput } from "./queue.js";
 import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION, SHARED_INTERACTIONS_READ } from "@opencraft/appserver-protocol";
 import type { SessionCapabilityPort } from "@opencraft/session-capabilities";

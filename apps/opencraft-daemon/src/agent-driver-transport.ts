@@ -2,7 +2,7 @@ import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { COLLABORATION_METHOD, COLLABORATION_CAPABILITIES } from "@opencraft/appserver-protocol/collaboration";
 import { randomUUID } from "node:crypto";
 import type { DuplexTransport, TransportStatus, TransportSubmissionContext } from "@opencraft/appserver-client/transport";
-import type { Collaboration } from "../../../packages/access-control/src/collaboration.js";
+import type { Collaboration } from "@opencraft/access-control/collaboration";
 
 /** Establish execution authority at authenticated ingress. Internal Host control
  * methods cannot be promoted from a Renderer frame into trusted admission. */

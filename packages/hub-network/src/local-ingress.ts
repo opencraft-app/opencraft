@@ -1,7 +1,7 @@
 import { createServer, request } from 'node:http';
 import { createConnection } from 'node:net';
 import type { Duplex } from 'node:stream';
-import { relayPathAllowed } from '../../relay-protocol/src/index.js';
+import { relayPathAllowed } from "@opencraft/relay-protocol";
 
 /** A tunnel never exports the software updater, peer transport or operator authority. */
 export function createLocalIngress(target: () => { port: number; origin: string }) {

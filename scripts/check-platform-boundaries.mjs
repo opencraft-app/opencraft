@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const sourceExtensions = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs", ".scss"]);
@@ -323,6 +323,41 @@ for (const directory of ["apps/workbench-web/src/components", "apps/mobile/src/c
 for (const entry of readdirSync(resolve(repositoryRoot, "tests"), { recursive: true })) {
   if (basename(entry).startsWith("appserver-lab") && !entry.endsWith(".test.ts")) {
     violations.push(`tests/${entry}: AppServer Lab tests must be TypeScript`);
+  }
+}
+
+// Runtime source reaches another workspace package by its name and exports,
+// never by a relative path that walks out of its own package root. Recorded
+// debt lives in config/cross-package-import-baseline.json and may only shrink.
+{
+  const baseline = JSON.parse(readFileSync(resolve(repositoryRoot, "config/cross-package-import-baseline.json"), "utf8"));
+  const allowed = new Set(baseline.entries.map(({ file, target }) => `${file} -> ${target}`));
+  const found = new Set();
+  const specifier = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(['"])(\.{1,2}\/[^'"]+)\1/g;
+  for (const group of ["apps", "packages", "plugins"]) {
+    for (const name of readdirSync(resolve(repositoryRoot, group))) {
+      const packageRoot = resolve(repositoryRoot, group, name);
+      const sourceRoot = join(packageRoot, "src");
+      let isDirectory = false;
+      try { isDirectory = statSync(sourceRoot).isDirectory(); } catch {}
+      if (!isDirectory) continue;
+      for (const path of collectFiles(sourceRoot)) {
+        if (path.endsWith(".scss")) continue;
+        const source = readFileSync(path, "utf8");
+        for (const match of source.matchAll(specifier)) {
+          const target = resolve(dirname(path), match[2].replace(/\?.*$/u, ""));
+          if (target === packageRoot || target.startsWith(packageRoot + sep)) continue;
+          const entry = `${relative(repositoryRoot, path)} -> ${relative(repositoryRoot, target)}`;
+          found.add(entry);
+          if (!allowed.has(entry)) {
+            violations.push(`${entry}: import another workspace package by its package name, not a relative path out of ${group}/${name}`);
+          }
+        }
+      }
+    }
+  }
+  for (const entry of allowed) {
+    if (!found.has(entry)) violations.push(`${entry}: fixed; remove it from config/cross-package-import-baseline.json`);
   }
 }
 

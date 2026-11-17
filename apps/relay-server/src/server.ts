@@ -7,10 +7,10 @@ import { relayDuplex } from '@opencraft/relay-protocol/node';
 import { AssertionSigner, ASSERTION_HEADER, type IdentityProvider } from "@opencraft/identity-core/node";
 import { CONTROL_PATH, DATA_PATH, STREAM_HEADER, RELAY_PROTOCOL, MAX_RELAY_STREAMS, relayPathAllowed } from "@opencraft/relay-protocol";
 import { RelayAuthentication, type EntryOriginResolver } from './authentication.js';
-import type { HubNetwork } from '../../../packages/hub-network/src/node.js';
+import type { HubNetwork } from "@opencraft/hub-network/node";
 import { SERVERS_PATH, LEGACY_SERVERS_PATH, isServerPath, selectedPath, serverBase, selectorPage, scopedHtml, targetCookies, scopedCookies, selectionDefault, parseServerPaths, type ServerPaths } from './selection.js';
 import type { Principal } from '@opencraft/identity-core';
-import type { HubService } from '../../../packages/hub-network/src/contract.js';
+import type { HubService } from "@opencraft/hub-network";
 
 export interface RelayRoute {
   readonly instanceId: string;
@@ -210,7 +210,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(options.hub.snapshot())); return; }
       if (req.method !== 'POST') { failure(res, 403); return; }
       try {
-        const { readCommand } = await import('../../../packages/hub-network/src/node.js'); const input = await readCommand(req);
+        const { readCommand } = await import("@opencraft/hub-network/node"); const input = await readCommand(req);
         const operator = typeof req.headers['x-opencraft-hub-operator'] === 'string' ? Buffer.from(req.headers['x-opencraft-hub-operator'], 'base64url').toString('utf8') : 'local-operator';
         const result = options.hub.command(input, operator); res.writeHead('conflict' in result ? 409 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(result));
       } catch { res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end('{"error":"invalid_hub_change"}'); } return;
