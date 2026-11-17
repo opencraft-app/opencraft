@@ -1901,12 +1901,14 @@ export function createAppServerWorkbenchRuntime(
           if (threadId?.startsWith("codex_") && intent.selections.model === undefined && !modelId) return {};
           const scope = !useHostDefault && client!.initializeResult?.capabilities?.extensions?.[OPENCRAFT_SCOPED_MODEL_CATALOG_EXTENSION] !== undefined ? threadId : null;
           let cursor: string | null = null;
+          let catalogHasModels = false;
           const seen = new Set<string>();
           do {
             const params = {cursor,limit:100,includeHidden:false,...(scope ? {threadId:scope} : {})};
             const page: ModelListResponse = recentModelPages.get(modelPageKey(scope, cursor))
               ?? recentModelPages.get(modelPageKey(null, cursor))
               ?? rememberModelPage(params, await client!.request("model/list", params, { timeoutMs: 1800 }));
+            if (page.data.length) catalogHasModels = true;
             const model = page.data.find(model => modelId ? model.id === modelId || model.model === modelId : model.isDefault);
             if (model) {
               const inputModalities = modelInputModalities(model.inputModalities);
@@ -1935,7 +1937,16 @@ export function createAppServerWorkbenchRuntime(
             cursor = page.nextCursor;
             if (cursor) { if (seen.has(cursor)) throw new Error("模型目录分页重复"); seen.add(cursor); }
           } while (cursor);
-          return {}; // An incomplete catalog must not block submission.
+          // A fully read, nonempty catalog is authoritative: a missing explicit choice
+          // or Host default can only fail on the Host, so reject before any RPC.
+          // An empty catalog (e.g. Hermes) declares nothing and must not block submission.
+          if (catalogHasModels && !followUp) {
+            if (useHostDefault) throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", "当前 Bot 未配置可用的默认模型");
+            if (config.modelSelectionPolicy === "session" && intent.selections.model !== undefined) {
+              throw new SubmitCompileError("CAPABILITY_UNAVAILABLE", "所选模型已不可用，请重新选择");
+            }
+          }
+          return {};
         },
         dynamicTools: declaredDynamicTools(),
         onInterrupt: (event) => console.info("[turn-interrupt] client request", event),

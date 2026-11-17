@@ -173,7 +173,8 @@ test("the first submit atomically hands presentation from Draft to Conversation 
   );
   assert.match(
     workbenchApp,
-    /emptyState=\{unavailableThreadReason !== null \?[\s\S]{0,400}?draft !== null \? <PendingConversationPage/u,
+    // Unavailable/archived presentation wins; otherwise a pending Draft owns the empty state.
+    /emptyState=\{[^{}]{0,120}\? <ConversationUnavailableState[\s\S]{0,400}?\/> : draft !== null \? <PendingConversationPage/u,
   );
   assert.doesNotMatch(newThreadDraftSource, /Starting task/u);
   assert.match(pendingConversationSource, /contains no Draft[\s\S]*Composer/u);
@@ -742,12 +743,14 @@ test("Composer submission preserves View-owned focus across primary action swaps
     composerSource,
     /requestAnimationFrame\(\(\) => \{[\s\S]{0,160}?target\.controller !== controller[\s\S]{0,120}?editorControllerRef\.current !== controller[\s\S]{0,1200}?if \(target\.element === editorViewRef\.current\?\.dom\) editorViewRef\.current\.focus\(\)/u,
   );
+  const primaryActions = composerSource.match(/aria-label=\{(?:stopLabel|primaryActionLabel)\}/gu)?.length ?? 0;
+  assert.ok(primaryActions >= 2, "Send and Stop actions exist");
   assert.equal(
     composerSource.match(
       /onMouseDown=\{\(event\) => \{[\s\S]{0,150}?if \(event\.button === 0\) event\.preventDefault\(\);\s*\}\}/gu,
     )?.length,
-    2,
-    "Send and Stop must not take pointer focus from the current EditorView",
+    primaryActions,
+    "Every Send and Stop action must not take pointer focus from the current EditorView",
   );
   assert.doesNotMatch(
     composerSource,

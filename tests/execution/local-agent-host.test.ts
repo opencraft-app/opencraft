@@ -13,6 +13,9 @@ import { seedNewerHostStorage } from "../support/local-agent-storage-fixture.js"
 import { ConnectedAgentHost, connectedAgentCatalogEntry } from "../../apps/local-agent-host/src/connected-agents.js";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
 import { DshExecutionAuthority } from "../../apps/local-agent-host/src/dsh-execution-authority.js";
+import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
+import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from "../../apps/local-agent-host/src/terminal-owner-wire.js";
+import { connect as connectSocket } from "node:net";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { OpenCraftMessageSenders } from "../../apps/opencraft-daemon/src/opencraft-message-senders.js";
 import { SshConnectionStore } from "../../apps/opencraft-daemon/src/ssh-connection-store.js";
@@ -517,8 +520,23 @@ test("DSH questions cross the real mux and AppServer WebSocket, survive reconnec
   } finally { preflight.close(); socket.close(); await host.close(); await dsh.close(); }
 });
 
+/** The PTY owner intentionally outlives its Host; tests own and stop the one in their private data root. */
+async function stopTerminalOwner(dataDirectory: string) {
+  const { endpoint } = await terminalOwnerLocation(dataDirectory);
+  const pid = await new Promise<number | null>(resolve => {
+    const socket = connectSocket(endpoint);
+    const done = (value: number | null) => { clearTimeout(timer); socket.destroy(); resolve(value); };
+    const timer = setTimeout(() => done(null), 2000);
+    socket.once("error", () => done(null));
+    socket.once("connect", () => sendOwnerFrame(socket, { type: "attach", protocol: TERMINAL_OWNER_PROTOCOL }));
+    readOwnerFrames(socket, message => done(message?.type === "attached" && Number.isSafeInteger(message.pid) ? message.pid : null));
+  });
+  if (pid !== null) process.kill(pid, "SIGTERM");
+}
+
 test("process RPC survives WebSocket replacement without contacting the Agent harness", async () => {
-  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", token: "process-test" });
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-process-rpc-"));
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", token: "process-test", dataDirectory: directory });
   let socket = await connect(host.websocketUrl);
   try {
     await request(socket, 1, "process/spawn", {
@@ -540,7 +558,11 @@ test("process RPC survives WebSocket replacement without contacting the Agent ha
     }
     assert.equal(snapshot.phase, "exited");
     assert.match(snapshot.output.map((c: { deltaBase64: string }) => Buffer.from(c.deltaBase64, "base64").toString()).join(""), /RPC_alive/);
-  } finally { socket.close(); await host.close(); }
+  } finally {
+    socket.close(); await host.close();
+    await stopTerminalOwner(directory);
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 test("local Agent Host authenticates and projects DSH history into stable AppServer turns", async () => {
