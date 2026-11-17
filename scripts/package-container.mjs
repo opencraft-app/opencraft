@@ -1,6 +1,7 @@
 import { build } from 'esbuild';
 import { cp, mkdir, readFile, writeFile, readdir, chmod } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,8 +45,11 @@ async function inventory(directory) {
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name), name = relative(root, path);
     if (entry.isDirectory()) await inventory(path);
-    else if (entry.isFile() && name !== 'manifest.json')
-      files.push({ path: name, sha256: createHash('sha256').update(await readFile(path)).digest('hex') });
+    else if (entry.isFile() && name !== 'manifest.json') {
+      const hash = createHash('sha256');
+      for await (const chunk of createReadStream(path)) hash.update(chunk);
+      files.push({ path: name, sha256: hash.digest('hex') });
+    }
   }
 }
 await inventory(root);
