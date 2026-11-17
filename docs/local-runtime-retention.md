@@ -14,7 +14,12 @@ removes only directories with no process reference and no credential material.
 There is no seven-day grace period: an unreferenced historical directory is
 eligible immediately. If `/proc` cannot be read completely, the directory is
 kept. `team-credentials`, `credentials`, and `private` path components are
-always kept and must be handled separately by their owner.
+always kept and must be handled separately by their owner. `.local/steward` is
+the bb-steward workbook root: the workbook, its requirements ledger, and its
+local Git history. It is owner data rather than a runtime artifact, so the tool
+always keeps the `.local/steward` path (including under an audited root), keeps
+any candidate that contains it, and reports it as `reason=protected-steward`
+instead of treating an unreferenced workbook as historical runtime data.
 
 ```sh
 node scripts/maintenance/prune-local-runtime.mjs       # report only

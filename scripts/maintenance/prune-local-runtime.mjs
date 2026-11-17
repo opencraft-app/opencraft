@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { appendFile, lstat, mkdir, readFile, readdir, readlink, rm } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve, sep } from "node:path";
 
 export const DAY = 86_400_000;
 
@@ -25,6 +25,20 @@ function sensitiveFileKind(name) {
 function protectedDirectory(path, repoRoot) {
   const parts = relative(repoRoot, path).split('/');
   return parts.some((part) => /^(?:team-credentials|credentials|private)$/u.test(part));
+}
+
+// bb-steward keeps its workbook at <checkout>/.local/steward. It is owner data,
+// not runtime output, so the workbook, its contents, and any candidate
+// containing it stay.
+function protectedSteward(path, repoRoot) {
+  const candidate = resolve(path);
+  const parts = candidate.split(sep);
+  const steward = parts.lastIndexOf("steward");
+  if (steward > 0 && parts[steward - 1] === ".local") {
+    return true;
+  }
+  const workbook = join(resolve(repoRoot), ".local", "steward");
+  return workbook.startsWith(`${candidate}${sep}`);
 }
 
 function isUnder(path, root) {
@@ -164,6 +178,7 @@ function eligibleForRemoval(candidate, repoRoot, protectedRoots) {
     !candidate.credential &&
     !protectedDirectory(candidate.path, repoRoot) &&
     !candidate.protectedDescendant &&
+    !protectedSteward(candidate.path, repoRoot) &&
     !protectedRoots.some((root) => protectedByRoot(candidate.path, root))
   );
 }
@@ -188,6 +203,9 @@ function retentionReasons(candidate, repoRoot, protectedRoots = []) {
   }
   if (candidate.protectedDescendant) {
     reasons.push("reason=protected-descendant");
+  }
+  if (protectedSteward(candidate.path, repoRoot)) {
+    reasons.push("reason=protected-steward");
   }
   if (protectedRoots.some((root) => protectedByRoot(candidate.path, root))) {
     reasons.push("reason=operator-protected");

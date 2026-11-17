@@ -71,6 +71,49 @@ test("credential files and credential directories are always retained", async (t
   assert.ok(f.output.some((line) => line.includes("reason=protected-directory")));
 });
 
+test("steward workbook is always retained and reported separately", async (t) => {
+  const f = await fixture(t);
+  const path = await f.createRun("steward");
+  await writeFile(join(path, "agent-bridge.md"), "workbook");
+  const result = await f.run({ apply: true });
+  assert.equal(result.candidates[0].refs.length, 0);
+  assert.equal(result.eligible.length, 0);
+  assert.ok((await lstat(path)).isDirectory());
+  assert.equal(await readFile(join(path, "agent-bridge.md"), "utf8"), "workbook");
+  const line = f.output.find((entry) => entry.split("\t")[3] === ".local/steward");
+  assert.ok(line);
+  assert.equal(line.split("\t")[0], "kept");
+  assert.ok(line.includes("reason=protected-steward"));
+});
+
+test("a candidate containing the steward workbook is retained", async (t) => {
+  const f = await fixture(t);
+  const path = await f.createRun("steward");
+  const result = await f.run({ roots: [f.repoRoot] });
+  const local = join(f.repoRoot, ".local");
+  assert.equal(result.eligible.some((entry) => entry.path === local), false);
+  assert.ok((await lstat(path)).isDirectory());
+  const line = f.output.find((entry) => entry.split("\t")[3] === ".local");
+  assert.ok(line);
+  assert.equal(line.split("\t")[0], "kept");
+  assert.ok(line.includes("reason=protected-steward"));
+});
+
+test("steward workbook under an audited root is retained", async (t) => {
+  const f = await fixture(t);
+  const external = join(f.repoRoot, "external");
+  const path = join(external, ".local", "steward");
+  await mkdir(path, { recursive: true });
+  await writeFile(join(path, "agent-bridge.md"), "workbook");
+  const result = await f.run({ apply: true, roots: [join(external, ".local")] });
+  assert.equal(result.eligible.length, 0);
+  assert.ok((await lstat(path)).isDirectory());
+  assert.equal(await readFile(join(path, "agent-bridge.md"), "utf8"), "workbook");
+  const line = f.output.find((entry) => entry.endsWith(".local/steward\treason=protected-steward"));
+  assert.ok(line);
+  assert.equal(line.startsWith("kept\t"), true);
+});
+
 test("credentials win over database markers and nested protected directories", async (t) => {
   const f = await fixture(t);
   const path = await f.createRun("mixed");
