@@ -605,14 +605,36 @@ function automaticApprovalReviews(
   });
 }
 
-function fileChanges(value: unknown): readonly FileChange[] {
+/** Match split("\n") line-prefix semantics without allocating line/filter arrays. */
+function diffLineCounts(diff: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  let start = 0;
+  while (start < diff.length) {
+    const prefix = diff[start];
+    if ((prefix === "+" || prefix === "-")
+      && !(diff[start + 1] === prefix && diff[start + 2] === prefix)) {
+      if (prefix === "+") additions += 1;
+      else deletions += 1;
+    }
+    const newline = diff.indexOf("\n", start);
+    if (newline < 0) break;
+    start = newline + 1;
+  }
+  return { additions, deletions };
+}
+
+function fileChanges(value: unknown, cache: WeakMap<object, readonly FileChange[]>): readonly FileChange[] {
   if (!Array.isArray(value)) return [];
-  return value.map((entry): FileChange => {
+  const cached = cache.get(value);
+  if (cached !== undefined) return cached;
+  const changes = value.map((entry): FileChange => {
     const source = record(entry);
     const rawKind = string(source.kind) ?? string(source.type) ?? string(source.status);
     const diff = string(source.diff) ?? string(source.unifiedDiff) ?? string(source.unified_diff);
-    const additions = diff === null ? number(source.additions) : diff.split("\n").filter((line) => line.startsWith("+") && !line.startsWith("+++")).length;
-    const deletions = diff === null ? number(source.deletions) : diff.split("\n").filter((line) => line.startsWith("-") && !line.startsWith("---")).length;
+    const counts = diff === null ? null : diffLineCounts(diff);
+    const additions = counts?.additions ?? number(source.additions);
+    const deletions = counts?.deletions ?? number(source.deletions);
     const kind = rawKind === "add" || rawKind === "added" ? "add"
       : rawKind === "modify" || rawKind === "modified" || rawKind === "update" || rawKind === "updated" ? "modify"
       : rawKind === "delete" || rawKind === "deleted" ? "delete"
@@ -626,6 +648,8 @@ function fileChanges(value: unknown): readonly FileChange[] {
       movePath: string(source.movePath) ?? string(source.move_path),
     };
   });
+  cache.set(value, changes);
+  return changes;
 }
 
 function todoEntries(value: unknown): readonly TodoEntry[] {
@@ -787,6 +811,9 @@ function orchestrationSubagent(item: TimelineSourceItem, source: RecordValue, co
 }
 
 export function createBuiltinTimelineProjectors(): readonly TimelineItemProjector[] {
+  // Timeline source payloads are immutable. Retain only pure file metadata,
+  // weakly and per registry; status, approvals and context must still be fresh.
+  const fileChangeCache = new WeakMap<object, readonly FileChange[]>();
   return [
     simpleProjector("user-message", ["userMessage"], (item, source, context) => {
       const rawContent = source.content ?? source.input ?? source.text ?? source.message;
@@ -924,7 +951,7 @@ export function createBuiltinTimelineProjectors(): readonly TimelineItemProjecto
       block: {
         ...blockBase(item, "patch"),
         title: string(source.title) ?? "Changed files",
-        changes: fileChanges(source.changes),
+        changes: fileChanges(source.changes, fileChangeCache),
         automaticApprovalReviews: automaticApprovalReviews(source.automaticApprovalReviews, context),
         status: executionStatus(source.status),
       },

@@ -153,7 +153,12 @@ export function deriveTimelineLatestTurnPhase(
 export function groupTimelineFramesByTurn(
   timeline: Pick<TimelineSnapshot, "frames" | "interactionWait">,
 ): readonly TimelineTurnView[] {
-  const turns: TimelineTurnView[] = [];
+  // These builders belong only to this invocation; input frames remain immutable.
+  // Appending avoids copying the same Turn prefix for each interleaved frame.
+  const turns: (Omit<TimelineTurnView, "frames" | "status"> & {
+    frames: TimelineFrame[];
+    status: TimelineStatus;
+  })[] = [];
   const indexByTurnId = new Map<TurnId, number>();
   for (const frame of timeline.frames) {
     const existingIndex = indexByTurnId.get(frame.turnId);
@@ -171,11 +176,8 @@ export function groupTimelineFramesByTurn(
     }
     const existing = turns[existingIndex];
     if (existing === undefined) continue;
-    turns[existingIndex] = {
-      ...existing,
-      status: frame.status,
-      frames: [...existing.frames, frame],
-    };
+    existing.status = frame.status;
+    existing.frames.push(frame);
   }
   return turns;
 }
