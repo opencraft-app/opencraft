@@ -550,3 +550,17 @@ available above Chat and general Settings context, so it never requires opening
 the wallpaper desktop first. Board is an application contribution; products
 register their own applications through the same extension contract. The global
 right header, floating drawer header and footer do not duplicate this entrance.
+
+### File search index lifetime
+
+Opening a file browser acquires only a local search handle. The shared AppServer
+controller starts remote indexing on its first non-empty query, stops the native
+session when the query is cleared, and starts it again only for a later query.
+Controller disposal stops every owned native session, including starts acknowledged
+after disposal. Late query failures cannot recreate a released session.
+
+File searches require a project directory. The controller rejects filesystem roots,
+broad machine storage roots and Linux kernel/device trees before submitting an RPC.
+This lexical check is a client resource guard, not server-side canonical path
+confinement or a bound on the upstream index size. Normal project paths and the
+older one-shot AppServer protocol remain supported.
