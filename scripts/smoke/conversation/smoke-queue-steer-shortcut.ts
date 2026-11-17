@@ -212,9 +212,28 @@ try {
     await page.getByText('未确认送达', {exact:true}).waitFor();
     const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? '.local/queue-delivery-retry';
     await mkdir(output, {recursive:true});
+    // The fixture binds the production density owner in a React effect. A
+    // mounted button alone does not prove that projection or entry motion has
+    // committed; measure only its settled, owner-ready hit area.
+    await page.waitForFunction(expected => document.documentElement.dataset.uiDensity === expected, touch ? 'touch' : 'compact');
+    await retry.evaluate(async element => {
+      const motions: Animation[] = [];
+      for (let owner: Element | null = element; owner; owner = owner.parentElement) {
+        motions.push(...owner.getAnimations().filter(animation => animation.playState === 'running'
+          && Number.isFinite(animation.effect?.getComputedTiming().endTime)));
+      }
+      await Promise.all(motions.map(animation => animation.finished.catch(() => undefined)));
+    });
     const bounds = await retry.boundingBox();
-    assert.ok(bounds && bounds.width >= (touch ? 44 : 22) && bounds.height >= (touch ? 44 : 22));
-    assert.equal(await page.evaluate(() => document.documentElement.dataset.uiDensity), touch ? 'touch' : 'compact');
+    const geometry = await retry.evaluate(element => ({
+      minWidth: getComputedStyle(element).minWidth, minHeight: getComputedStyle(element).minHeight,
+      density: document.documentElement.dataset.uiDensity,
+      layoutWidth: (element as HTMLElement).offsetWidth, layoutHeight: (element as HTMLElement).offsetHeight,
+      rect: {width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height},
+    }));
+    assert.ok(bounds && bounds.width >= (touch ? 44 : 22) && bounds.height >= (touch ? 44 : 22),
+      JSON.stringify({touch, mode, bounds, geometry}));
+    assert.equal(geometry.density, touch ? 'touch' : 'compact');
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     await page.screenshot({path:output+'/'+(touch?'touch':'desktop')+'-'+mode+'.png'});
     if(touch)await retry.tap(); else {await retry.focus();await page.keyboard.press('Enter');}
