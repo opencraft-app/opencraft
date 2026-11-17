@@ -25,6 +25,8 @@
     "electron-winstaller@5.4.0": false
   },
   "scripts": {
+    "maintenance:local-runtime": "node scripts/maintenance/prune-local-runtime.mjs",
+    "test:local-runtime": "node --test tests/maintenance/prune-local-runtime.test.mjs",
     "gate:performance": "node scripts/performance/run.mjs",
     "test:performance-gate": "node --test tests/tooling/performance-gate.test.mjs",
     "smoke:mobile-web-workbench": "tsx scripts/smoke/shell/smoke-mobile-web-workbench.ts",
