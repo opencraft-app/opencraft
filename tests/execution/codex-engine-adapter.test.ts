@@ -1989,7 +1989,14 @@ for (const [method, stage] of [["thread/read", "read-thread"], ["thread/unsubscr
       const error = internals.sessionMcpFailure(failure);
       assert.equal(error.data.stage, stage); assert.equal(error.data.reason, "native-rpc-failed");
       assert.equal(error.data.nativeCode, -32005); assert.equal(error.data.submissionOutcome, "rejected");
-      assert.equal(diagnostics[0]!.diagnosticId, error.data.diagnosticId);
+      const diagnostic = diagnostics.find(event => event.event === "session-mcp-preparation-failed")!;
+      assert.equal(diagnostic.diagnosticId, error.data.diagnosticId);
+      assert.equal(diagnostic.rpcMethod, method);
+      assert.equal(diagnostic.rpcTransport, "child-stdio");
+      assert.equal(diagnostic.connectionGeneration, 0);
+      assert.equal(diagnostic.nativeErrorHint, "redacted");
+      assert.ok(Number.isSafeInteger(diagnostic.rpcElapsedMs) && Number(diagnostic.rpcElapsedMs) >= 0);
+      assert.equal(error.data.rpcMethod, undefined, "extra diagnostic context is server-only");
       assert.equal(JSON.stringify({ error, diagnostics }).includes("fixture-secret"), false);
       assert.equal(JSON.stringify({ error, diagnostics }).includes("/private/path"), false);
     } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
@@ -2235,4 +2242,52 @@ test("execution preflight refusal of a queued steer retains the unsent input and
     const inputs = (await rpc("test/readAcceptedInputs")).result as any;
     assert.deepEqual(inputs.data.map((row: any) => row.params.clientUserMessageId), ["old", "new"]);
   } finally {await adapter.close(); await rm(root, {recursive: true, force: true});}
+});
+
+for (const [message, expectedHint] of [
+  ["list_turns is not supported yet", "turn-history-unsupported"],
+  ["Method not found", "method-not-found"],
+  ["Unknown method: thread/resume", "method-not-found"],
+  ["No client handler for account/chatgptAuthTokens/refresh", "client-handler-missing"],
+  ["experimental API is not enabled", "experimental-api-unavailable"],
+  ["Bearer fixture-secret /private/path\nrequest payload fixture-prompt", "redacted"],
+  ["list_turns is not supported yet: Bearer fixture-secret", "redacted"],
+] as const) test(`capture-settings RPC logs only a safe hint: ${expectedHint} (${message.slice(0, 18)})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-capture-diagnostics-"));
+  const diagnostics: Array<Record<string, unknown>> = [], calls: string[] = [];
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp", http_headers: { Authorization: "Bearer fixture-secret" } }),
+    undefined, event => diagnostics.push(event));
+  const internals = adapter as any;
+  const nativeError = Object.assign(new Error(message), { code: -32601,
+    data: { credential: "fixture-secret", cwd: "/private/path", input: "fixture-prompt" } });
+  internals.requestPhysical = async (method: string, params: any) => {
+    calls.push(method);
+    if (method === "thread/read") return { thread: { status: { type: "idle" } } };
+    assert.equal(method, "thread/resume");
+    assert.equal(params.config, undefined, "failure is settings capture, before tool application");
+    throw nativeError;
+  };
+  try {
+    let failure: any;
+    try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+    assert.ok(failure); assert.equal(failure.cause, nativeError, "logging preserves the original cause");
+    const error = internals.sessionMcpFailure(failure);
+    assert.equal(error.data.stage, "capture-settings");
+    assert.equal(error.data.reason, "native-rpc-failed");
+    assert.equal(error.data.nativeCode, -32601);
+    assert.equal(error.data.submissionOutcome, "rejected");
+    assert.deepEqual(calls, ["thread/read", "thread/resume"], "no replay, unsubscribe or input dispatch");
+    const events = diagnostics.filter(event => event.event === "session-mcp-preparation-failed");
+    assert.equal(events.length, 1, "reuse the existing failure event rather than adding success traffic");
+    const event = events[0];
+    assert.equal(event.diagnosticId, error.data.diagnosticId);
+    assert.equal(event.threadId, "thread"); assert.equal(event.inputId, "input");
+    assert.equal(event.nativeStatus, "idle");
+    assert.equal(event.rpcMethod, "thread/resume");
+    assert.equal(event.nativeErrorHint, expectedHint);
+    assert.ok(Number.isSafeInteger(event.rpcElapsedMs) && Number(event.rpcElapsedMs) >= 0);
+    assert.equal(error.data.nativeErrorHint, undefined, "native hint is not sent to the browser");
+    assert.doesNotMatch(JSON.stringify({ error, diagnostics }), /fixture-secret|fixture-prompt|private\/path|Authorization|credential|stack/);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

@@ -139,10 +139,27 @@ class SessionMcpRecoveryPending extends Error {
 type SessionMcpStage = "initial-preparation" | "resolve-tools" | "resolve-environment" | "read-thread"
   | "check-idle" | "capture-settings" | "preserve-permissions" | "unsubscribe" | "wait-for-unload"
   | "apply-tools" | "restore-settings" | "release-initial";
+interface SessionMcpRpcFailureDiagnostic {
+  readonly rpcMethod: string;
+  readonly rpcElapsedMs: number;
+  readonly nativeErrorHint: string;
+}
+// Only bounded, public error categories enter the server log. In particular,
+// -32601 may describe an unsupported nested operation, not the outer method.
+// Never copy native messages, data, stacks, request params or environment values.
+function sessionMcpNativeErrorHint(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : "";
+  if (message === "list_turns is not supported yet") return "turn-history-unsupported";
+  if (/^(?:method not found|unknown method|unsupported method)(?:: thread\/(?:read|resume|unsubscribe|settings\/update))?\.?$/iu.test(message)) return "method-not-found";
+  if (/^No client handler for [a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)*$/iu.test(message)) return "client-handler-missing";
+  if (/experimental[^\n]*(?:not enabled|disabled|unsupported)/iu.test(message)) return "experimental-api-unavailable";
+  return "redacted";
+}
 class SessionMcpPreparationFailure extends Error {
   readonly diagnosticId = randomUUID();
   constructor(readonly stage: SessionMcpStage, cause: unknown, readonly threadId: string,
-    readonly inputId?: string, readonly nativeStatus?: string) {
+    readonly inputId?: string, readonly nativeStatus?: string, readonly rpcFailure?: SessionMcpRpcFailureDiagnostic,
+    readonly connectionGeneration?: number) {
     super(errorMessage(cause), { cause });
   }
 }
@@ -3590,7 +3607,10 @@ export class CodexEngineAdapter implements DuplexTransport {
     const diagnostic = { diagnosticId, stage, reason, nativeCode,
       ...(failure?.nativeStatus ? { nativeStatus: failure.nativeStatus } : {}) };
     this.diagnostic({ event: "session-mcp-preparation-failed", category: recovering ? "recovering" : "unavailable",
-      ...diagnostic, ...(failure ? { threadId: failure.threadId, inputId: failure.inputId } : {}) });
+      ...diagnostic, ...(failure ? { threadId: failure.threadId, inputId: failure.inputId,
+        ...(failure.rpcFailure ? { ...failure.rpcFailure,
+          rpcTransport: this.options.kind === "remote" ? "remote" : this.nativeCore ? "native-core" : "child-stdio",
+          connectionGeneration: failure.connectionGeneration } : {}) } : {}) });
     const message = unavailable ? "This conversation is unavailable; input was not sent."
       : recovering ? original.message
       : reason === "thread-busy" ? "The previous turn is still active; input was not sent. Wait for it to finish and retry."
@@ -3748,6 +3768,7 @@ export class CodexEngineAdapter implements DuplexTransport {
 
   private async refreshSessionMcp(threadId: string, generation: number, inputId?: string, executionId?: string): Promise<void> {
     let stage: SessionMcpStage = "resolve-tools";
+    let rpcFailure: SessionMcpRpcFailureDiagnostic | undefined;
     let nativeStatus: string | undefined;
     try {
       const current = () => {
@@ -3769,7 +3790,14 @@ export class CodexEngineAdapter implements DuplexTransport {
         && (!environment || environment.key === this.executionEnvironments.get(threadId)?.key)) return;
       const request = async (method: string, params: RpcRecord): Promise<unknown> => {
         current();
-        const result = await this.requestPhysical(method, params);
+        const started = performance.now();
+        let result: unknown;
+        try { result = await this.requestPhysical(method, params); }
+        catch (cause) {
+          rpcFailure = { rpcMethod: method, rpcElapsedMs: Math.round(performance.now() - started),
+            nativeErrorHint: sessionMcpNativeErrorHint(cause) };
+          throw cause;
+        }
         current();
         return result;
       };
@@ -3790,7 +3818,7 @@ export class CodexEngineAdapter implements DuplexTransport {
       this.sessionMcpInitial.get(threadId)?.reservation.cancel();
       this.sessionMcpInitial.delete(threadId);
     } catch (cause) {
-      throw new SessionMcpPreparationFailure(stage, cause, threadId, inputId, nativeStatus);
+      throw new SessionMcpPreparationFailure(stage, cause, threadId, inputId, nativeStatus, rpcFailure, generation);
     }
   }
 
