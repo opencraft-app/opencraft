@@ -2,6 +2,7 @@ import React from "react";
 import { createWebChatRenderRuntime, WebChatRenderRuntimeProvider } from "@opencraft/chat-render-web";
 import { createIntlTestRoot } from "./intl-root";
 import { createConversationDisplayContinuity, selectConversationDisplay } from "@opencraft/workbench-runtime";
+import { createConversationKey } from "@opencraft/chat-core";
 import type { SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 import type { MessageSender } from "@opencraft/appserver-protocol";
 import { UserMessageBlock } from "../../apps/workbench-web/src/components/conversation/user-message";
@@ -15,7 +16,7 @@ const presentation=document.createElement("div");presentation.className="opencra
 presentation.style.cssText="max-width:760px;margin:24px auto;padding:16px;--color-text:#21272b;--color-text-tertiary:#77818a;--color-background-surface:white";shadow.append(presentation);
 const root=createIntlTestRoot(presentation);
 const chatRendering=await createWebChatRenderRuntime();
-const intent:SubmitIntent={commandId:"command",clientMessageId:"message",target:{type:"new-thread",draftId:"draft",execution:{hostId:"host",workspace:{cwd:null,runtimeWorkspaceRoots:[]}}},document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"Accepted input before native echo"}]}]},attachments:[],context:[],selections:{},options:{autoContext:false},createdAt:1};
+const intent:SubmitIntent={commandId:"command",clientMessageId:"message",target:{type:"new-thread",draftId:"draft",execution:{hostId:createConversationKey("host","thread").hostId,workspace:{cwd:null,runtimeWorkspaceRoots:[]}}},document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"Accepted input before native echo"}]}]},attachments:[],context:[],selections:{},options:{autoContext:false},createdAt:1};
 const storage={load:async()=>null,save:async()=>{},remove:async()=>{}};
 const fallback:MessageSender={kind:"employee",loginName:"legacy-fallback"};
 const receipt:SubmissionReceipt={commandId:"command",clientMessageId:"message",hostId:"host",threadId:"thread",turnId:null,acceptedAt:1,replayed:false};
