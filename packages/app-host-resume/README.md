@@ -47,3 +47,30 @@ Control frames are never numbered; every other App Host message carries `seq`
 
 The client retries resumption for at most 30 seconds after it detects a dead
 route, then falls back.
+
+## Authority and receipt boundaries
+
+A grant is a replay capability, not authentication. Every new physical socket
+passes the existing HTTP/WS admission owner before the resume token is examined.
+The session also binds the trusted route, principal/actor context and expiry,
+admission mode and logical renderer ID. A changed identity or credential lifetime
+requires a fresh logical connection. The old resource context follows the adopted
+carrier/request rather than keeping a destroyed socket or superseded proof alive.
+
+Revocation watches and expiry belong to the logical resumable session, including
+while detached. Successful adoption installs the fresh authority lease and retires
+its predecessor; late predecessor callbacks cannot revoke the successor. Ending
+the session fences replay writers before releasing their byte/record accounting.
+Server shutdown ends detached owners as well as live ones, without masking the
+existing restart close code. Invalid sequence/control data ends the logical session
+rather than bypassing negotiated duplicate suppression.
+
+Frame acknowledgement only confirms transport receipt. It is not a native input
+admission or completion receipt. An unavailable replay window causes full reconnect
+and the existing Host/history reconciliation; it does not authorize automatically
+resubmitting `turn/start`, `turn/steer` or a business mutation with an unknown outcome.
+
+The server exposes trusted composition options `appHostResumeEnabled` and
+`appHostResumeOptions` (registry budgets). `OPENCRAFT_APPHOST_RESUME=0` disables new
+grants. Legacy clients retain their unnumbered, connection-scoped behavior. Registry
+saturation falls back to that legacy behavior without evicting another owner.

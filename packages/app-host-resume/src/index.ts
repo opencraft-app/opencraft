@@ -87,6 +87,7 @@ export class ResumeLink<T> {
   private head = 0;
   private retainedBytes = 0;
   private lastSent = 0;
+  private disposed = false;
   /** Highest frame evicted before acknowledgement; the peer can't resume from before it. */
   private lostThrough = 0;
   private lastReceived = 0;
@@ -107,12 +108,14 @@ export class ResumeLink<T> {
 
   /** Assign the next outgoing sequence number. */
   next(): number {
+    if (this.disposed) throw new Error("Resume link is closed");
     if (this.lastSent >= Number.MAX_SAFE_INTEGER) throw new RangeError("Resume sequence exhausted");
     return ++this.lastSent;
   }
 
   /** Retain an outgoing frame (already numbered with next()) for replay. */
   retain(seq: number, data: T, bytes: number): void {
+    if (this.disposed) throw new Error("Resume link is closed");
     if (!Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError("Invalid retained frame size");
     if (!isSequence(seq) || seq !== this.lastSent) throw new Error("Retained frames must be numbered in order");
     if (bytes > this.options.maxBytes) { this.drop(this.frames); this.lostThrough = seq; this.options.onEvict?.(); return; }
@@ -133,7 +136,7 @@ export class ResumeLink<T> {
 
   /** The peer has received every frame up to `received`. False: impossible value. */
   acknowledge(received: number): boolean {
-    if (!isAcknowledgement(received) || received > this.lastSent) return false;
+    if (this.disposed || !isAcknowledgement(received) || received > this.lastSent) return false;
     let count = 0;
     while (this.head + count < this.retained.length && this.retained[this.head + count]!.seq <= received) count++;
     this.drop(count);
@@ -151,6 +154,7 @@ export class ResumeLink<T> {
 
   /** Classify an incoming numbered frame. Only "deliver" may be processed. */
   accept(seq: number, bytes = 0): Arrival {
+    if (this.disposed) throw new Error("Resume link is closed");
     if (!isSequence(seq) || !Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError("Invalid received frame");
     if (seq <= this.lastReceived) return "duplicate";
     if (seq !== this.lastReceived + 1) return "gap";
@@ -175,6 +179,9 @@ export class ResumeLink<T> {
 
   /** Release every retained frame (session ended). */
   clear(): void { this.drop(this.frames); }
+
+  /** End the owner and fence all late writers before releasing accounting. */
+  dispose(): void { if (this.disposed) return; this.disposed = true; this.clear(); }
 
   private drop(count: number): void {
     if (count <= 0) return;

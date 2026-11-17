@@ -4,6 +4,10 @@ import {
   ResumeLink, type ResumeAttempt, type ResumeFailureReason, type ResumeGrant,
 } from "./index.js";
 
+export class ResumeSessionCapacityError extends Error {
+  constructor() { super("Resume session capacity exhausted"); }
+}
+
 export interface ResumeRegistryOptions {
   readonly maxBytes?: number;
   /** Bounds payload owners and empty sessions independently of retained bytes. */
@@ -84,7 +88,7 @@ export class ResumeSession<P> {
     this.ended = true;
     if (this.detachTimer !== null) this.registry.timers.clearTimeout(this.detachTimer);
     this.detachTimer = null;
-    this.link.clear();
+    this.link.dispose();
     this.registry.forget(this);
     try { this.onEnd(reason); } catch { /* The integration's cleanup cannot strand the registry. */ }
   }
@@ -138,7 +142,7 @@ export class ResumeRegistry<P> {
 
   create(identity: string, payload: P, onEnd: (reason: string) => void): ResumeSession<P> {
     if (this.closed) throw new Error("Resume registry is closed");
-    if (this.sessions.size >= this.maxSessions) throw new Error("Resume session capacity exhausted");
+    if (this.sessions.size >= this.maxSessions) throw new ResumeSessionCapacityError();
     let id: string;
     do id = randomBytes(16).toString("hex"); while (this.sessions.has(id));
     const session = new ResumeSession(this, id, randomBytes(32), identity, payload, onEnd, this.sessionMaxBytes);

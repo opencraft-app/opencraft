@@ -189,3 +189,14 @@ test('global frame accounting bounds empty records across sessions and releases 
   }
   registry.close(); assert.equal(registry.stats.frames, 0); assert.equal(registry.stats.bytes, 0);
 });
+
+test('ending a session fences late writers so forgotten owners cannot retain orphaned bytes', () => {
+  const registry = new ResumeRegistry<null>();
+  const session = registry.create('identity', null, () => {});
+  const seq = session.link.next(); session.link.retain(seq, Buffer.alloc(10), 10);
+  session.end('ended');
+  assert.throws(() => session.link.retain(seq, Buffer.alloc(10), 10), /closed/);
+  assert.throws(() => session.link.next(), /closed/);
+  assert.equal(session.link.replay(0), null);
+  assert.deepEqual(registry.stats, { sessions: 0, detached: 0, bytes: 0, frames: 0 });
+});
