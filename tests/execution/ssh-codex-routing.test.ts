@@ -200,8 +200,20 @@ test("native fork preserves the caller's no-fixed-deadline contract", async cont
   const f = setup();
   try {
     await f.initialize();
-    await f.send("a", 77, "thread/fork", { threadId: "source" });
+    const sending = f.send("a", 77, "thread/fork", { threadId: "source" });
+    // Native fork first reads the source's execution choices, then forks with them.
+    let resume: any;
+    for (let turn = 0; turn < 20 && !resume; turn++) {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      resume = f.physical.sent.find(frame => frame.method === "thread/resume");
+    }
+    assert.ok(resume, "fork reads its source before forking");
+    assert.equal(resume.params.excludeTurns, true);
+    f.physical.receive({ id: resume.id, result: { thread: { id: "source" }, model: "source-model" } });
+    await sending;
     const request = f.physical.sent.at(-1);
+    assert.equal(request.method, "thread/fork");
+    assert.equal(request.params.model, "source-model");
     context.mock.timers.tick(180_000);
     assert.equal(f.frames.length, 0);
     f.physical.receive({ id: request.id, result: { thread: { id: "forked" } } });
