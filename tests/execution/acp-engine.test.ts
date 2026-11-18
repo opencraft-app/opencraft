@@ -77,10 +77,14 @@ async function fixture(t: test.TestContext, options: Record<string, any> = {}) {
   t.after(async () => {
     // Close every owner before removing its shared data directory, including
     // owners created later for restart/import coverage.
-    const outcomes = await Promise.allSettled(engines.reverse().map(owner => owner.close()));
+    const errors: unknown[] = [];
+    for (const owner of engines.reverse()) {
+      try { await owner.close(); } catch (error) { errors.push(error); }
+    }
+    // A failed close may leave persistence or transport work running; preserve
+    // the directory rather than racing it or hiding the original failure.
+    if (errors.length) throw new AggregateError(errors, `ACP fixture close failed; preserved ${root}`);
     await rm(root, { recursive: true, force: true });
-    const errors = outcomes.filter((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
-    if (errors.length) throw new AggregateError(errors.map(error => error.reason), "ACP fixture cleanup failed");
   });
   const calls = async () => { try { return (await readFile(trace, "utf8")).trim().split("\n").filter(Boolean).map(line => JSON.parse(line)); } catch { return []; } };
   return { root, engine, calls, engineOptions, track };
