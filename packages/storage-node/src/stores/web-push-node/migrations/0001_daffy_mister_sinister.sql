@@ -1,0 +1,3 @@
+ALTER TABLE push_devices ADD COLUMN target TEXT;
+ALTER TABLE push_devices ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE push_preferences (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL) STRICT;

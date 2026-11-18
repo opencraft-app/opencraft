@@ -6,5 +6,14 @@
     "sqlChecksum": "c94ffea3fb2e04b849c40eae0956e6920d885ceb0c193a4e34a389e4fa995b35",
     "snapshotChecksum": "7aa33b84e040a9266eb6ddd70bacbd0baf2879b454388dbfce7d0ebefe440061",
     "compiledChecksum": null
+  },
+  {
+    "tag": "0001_daffy_mister_sinister",
+    "when": 1794994542298,
+    "version": 2,
+    "sqlChecksum": "051fcc6e15af2eb7a8838d774beca6cafa0270dd067a966b688cc0859e26c7b6",
+    "snapshotChecksum": "dfd9ad2bd79325e3e971d485502f326f13adc7ce5b84a665899061a9d4c875f5",
+    "compiledChecksum": "051fcc6e15af2eb7a8838d774beca6cafa0270dd067a966b688cc0859e26c7b6",
+    "ledgerName": "notification-destinations"
   }
 ]

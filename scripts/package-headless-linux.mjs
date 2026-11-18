@@ -48,6 +48,7 @@ export function headlessWebHostDefinitions() {
 export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
   await build({ entryPoints: [join(repositoryRoot, "scripts/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
+  await build({entryPoints:[join(repositoryRoot,"packages/web-push-node/src/store.worker.ts")],outfile:join(dirname(output),"push-storage-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning",banner:{js:"import {createRequire} from 'node:module';const require=createRequire(import.meta.url);"}});
   await buildServerSpacesRuntime(dirname(output));
   await buildDshRoutingRuntime(dirname(output));
   await buildConnectedAgentHistoryRuntime(dirname(output));

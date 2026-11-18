@@ -68,7 +68,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "678e3b48103d62bfc63ffa780e43c2c493256de50db5375a62b296d5af89b59e"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 2,
+        "name": "notification-destinations",
+        "sql": "ALTER TABLE push_devices ADD COLUMN target TEXT;\nALTER TABLE push_devices ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;\nCREATE TABLE push_preferences (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL) STRICT;"
+      }
+    ]
   },
   "generation-registry": {
     "baseline": [

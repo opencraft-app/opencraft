@@ -28,6 +28,8 @@ export const table_push_devices = sqliteTable("push_devices", {
   "base_path": text("base_path").notNull(),
   "locale": text("locale").notNull(),
   "messages": text("messages").notNull(),
+  "target": text("target"),
+  "enabled": integer("enabled").notNull().default(sql`1`),
 }, table => [
   primaryKey({ columns: [table["id"]] }),
   index("push_devices_actor").on(table["actor_id"]),
@@ -56,3 +58,8 @@ export const table_push_watches = sqliteTable("push_watches", {
   primaryKey({ columns: [table["id"]] }),
   index("push_watches_pending").on(table["done"], table["created_at"]),
 ]);
+
+export const table_push_preferences = sqliteTable("push_preferences", {
+  "actor_id": text("actor_id").notNull(),
+  "enabled": integer("enabled").notNull(),
+}, table => [primaryKey({ columns: [table["actor_id"]] })]);
