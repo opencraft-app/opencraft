@@ -531,7 +531,10 @@ test('broker fence includes pending admission, drains existing signer, and cold 
   f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Synthetic', email: 'synthetic@example.test' }, token: 'synthetic-only', signing: generateGitSigningKey() });
   const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' });
   const call = (input: any) => queryGitIdentityBroker(f.socket, { op: 'owner-handoff', ...input });
-  const initial = (await call({ action: 'snapshot' })).handoff;
+  // Owner handoff is a root operator action; an unprivileged peer is refused outright.
+  const snapshot = await call({ action: 'snapshot' });
+  if (process.getuid?.() !== 0) { assert.deepEqual(snapshot, { status: 'denied' }); return; }
+  const initial = snapshot.handoff;
   const stat = await readFile(`/proc/${process.pid}/stat`, 'utf8');
   const claim = { version: 1, id: 'broker-test-lease', ttlMs: 15000, controller: { pid: process.pid, startTime: stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/u)[19], bootId: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() } };
   const input = { expectedOwner: initial.owner, expectedEpoch: initial.epoch, operationId: 'broker-test', fence: 'broker-test-fence', operatorLease: claim };
