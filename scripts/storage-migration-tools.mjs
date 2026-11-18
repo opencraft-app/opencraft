@@ -26,11 +26,65 @@ export function readJournal(directory) {
 
 /** Drizzle snapshots omit SQLite table options. Preserve them across rebuilds. */
 export function retainTableOptions(sql, tableOptions) {
-  return sql.replace(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?(?:`([^`]+)`|"([^"]+)"|(\w+))([\s\S]*?)\);/gi, (statement, backtick, quoted, plain) => {
-    const name = (backtick ?? quoted ?? plain).replace(/^__new_/, '');
-    const options = tableOptions[name] ?? { strict: true, withoutRowid: false };
-    return statement.slice(0, -1) + (options.strict ? ' STRICT' : '') + (options.withoutRowid ? (options.strict ? ', ' : ' ') + 'WITHOUT ROWID' : '') + ';';
-  });
+  const tokens = sqliteTokens(sql), insertions = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].word !== 'CREATE' || tokens[i + 1]?.word !== 'TABLE') continue;
+    let cursor = i + 2;
+    if (tokens[cursor]?.word === 'IF' && tokens[cursor + 1]?.word === 'NOT' && tokens[cursor + 2]?.word === 'EXISTS') cursor += 3;
+    const name = tokens[cursor++];
+    if (!name || !['word', 'identifier'].includes(name.kind) || tokens[cursor]?.text !== '(') continue;
+    let depth = 0;
+    for (; cursor < tokens.length; cursor++) {
+      const token = tokens[cursor];
+      if (token.kind !== 'symbol') continue;
+      if (token.text === '(') depth++;
+      if (token.text === ')' && --depth === 0) break;
+      if (token.text === ';') break;
+    }
+    if (cursor === tokens.length || tokens[cursor].text !== ')') continue;
+    const close = cursor++, options = [];
+    while (cursor < tokens.length && tokens[cursor].text !== ';') options.push(tokens[cursor++]);
+    const strict = options.some(token => token.word === 'STRICT');
+    const withoutRowid = options.some((token, index) => token.word === 'WITHOUT' && options[index + 1]?.word === 'ROWID');
+    const expected = tableOptions[name.value.replace(/^__new_/, '')] ?? { strict: true, withoutRowid: false };
+    const missing = [...(expected.strict && !strict ? ['STRICT'] : []), ...(expected.withoutRowid && !withoutRowid ? ['WITHOUT ROWID'] : [])];
+    if (missing.length) {
+      const at = (options.at(-1) ?? tokens[close]).end;
+      insertions.push({ at, text: (options.length ? ', ' : ' ') + missing.join(', ') });
+    }
+    i = cursor;
+  }
+  for (const { at, text } of insertions.reverse()) sql = sql.slice(0, at) + text + sql.slice(at);
+  return sql;
+}
+
+/** Token boundaries keep quoted/comment text and balanced CHECK expressions out
+ * of DDL matching. In particular, an existing STRICT must not consume the next
+ * CREATE INDEX statement while searching for a bare `);`. */
+function sqliteTokens(sql) {
+  const tokens = [];
+  for (let i = 0; i < sql.length;) {
+    if (/\s/.test(sql[i])) { i++; continue; }
+    if (sql.startsWith('--', i)) { const end = sql.indexOf('\n', i + 2); i = end === -1 ? sql.length : end + 1; continue; }
+    if (sql.startsWith('/*', i)) { const end = sql.indexOf('*/', i + 2); i = end === -1 ? sql.length : end + 2; continue; }
+    const start = i, quote = sql[i];
+    if (['"', "'", '`', '['].includes(quote)) {
+      const delimiter = quote === '[' ? ']' : quote;
+      let value = ''; i++;
+      while (i < sql.length) {
+        if (sql[i] === delimiter) {
+          if (quote !== '[' && sql[i + 1] === delimiter) { value += delimiter; i += 2; continue; }
+          i++; break;
+        }
+        value += sql[i++];
+      }
+      tokens.push({ kind: quote === "'" ? 'string' : 'identifier', text: sql.slice(start, i), value, end: i });
+    } else if (/[\w$]/.test(quote)) {
+      while (i < sql.length && /[\w$]/.test(sql[i])) i++;
+      const text = sql.slice(start, i); tokens.push({ kind: 'word', text, value: text, word: text.toUpperCase(), end: i });
+    } else { i++; tokens.push({ kind: 'symbol', text: quote, end: i }); }
+  }
+  return tokens;
 }
 
 /** Freeze both source artifacts and the SQL the managed executor will hash. */

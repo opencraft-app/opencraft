@@ -9,7 +9,13 @@ import { DatabaseSync } from "node:sqlite";
 import { generateSQLiteDrizzleJson, generateSQLiteMigration } from "drizzle-kit/api";
 import { sqliteTable, text, primaryKey, index } from "drizzle-orm/sqlite-core";
 import { openManagedDatabase, resolveMigrationContract, type Migration } from "../../packages/sqlite-node/src/index";
-import { assertSchemaCurrent, compileStore, freezeStore, readJournal } from "../../scripts/storage-migration-tools.mjs";
+import {
+  assertSchemaCurrent,
+  compileStore,
+  freezeStore,
+  readJournal,
+  retainTableOptions,
+} from "../../scripts/storage-migration-tools.mjs";
 import { readOwnerMigrations } from "../../scripts/storage-owner-source.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -284,5 +290,61 @@ test("adopted SQL cannot disable transactional or STRICT protections even with a
     writeJson(join(directory, "adopted-identities.json"), [{ ...identity(), checksum: digest(sql) }]);
     assert.throws(() => compileStore(directory), /transactional|UNIQUE constraint|Adopted migration SQL differs/);
     assert.throws(() => freezeStore(directory), /transactional|UNIQUE constraint|Adopted migration SQL differs/);
+  }
+});
+
+test("table-option retention preserves already-STRICT SQL and cannot consume the following index", () => {
+  const sql =
+    "CREATE TABLE exact (id TEXT PRIMARY KEY, state TEXT CHECK(state IN ('queued','closed'))) STRICT;\nCREATE INDEX exact_state ON exact(state);\nCREATE TABLE second (id INTEGER PRIMARY KEY) STRICT;";
+  assert.equal(retainTableOptions(sql, {}), sql);
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(retainTableOptions(sql, {}));
+    assert.equal(
+      db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE type='index' AND name='exact_state'").get()?.n,
+      1,
+    );
+    assert.equal(db.prepare("SELECT strict FROM pragma_table_list WHERE name='second'").get()?.strict, 1);
+  } finally {
+    db.close();
+  }
+});
+
+test("DDL option retention respects strings, comments, identifier quoting and existing WITHOUT ROWID", () => {
+  const prefix =
+    "-- CREATE TABLE ignored (id TEXT);\nSELECT 'CREATE TABLE quoted (id TEXT);';\n/* CREATE TABLE comment (id TEXT); */\n";
+  const sql =
+    prefix +
+    "CREATE TABLE [first] (id TEXT PRIMARY KEY, body TEXT CHECK(body != ');')) /* ); CREATE TABLE not_a_table(x); */;\nCREATE TABLE `__new_second` (id INTEGER PRIMARY KEY) WITHOUT ROWID;";
+  const result = retainTableOptions(sql, {
+    first: { strict: true, withoutRowid: true },
+    second: { strict: true, withoutRowid: true },
+  });
+  assert.ok(result.startsWith(prefix));
+  assert.match(result, /\) STRICT, WITHOUT ROWID \/\* \); CREATE TABLE/);
+  assert.match(result, /WITHOUT ROWID, STRICT;/);
+  assert.equal(
+    retainTableOptions(result, {
+      first: { strict: true, withoutRowid: true },
+      second: { strict: true, withoutRowid: true },
+    }),
+    result,
+  );
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(result);
+    for (const name of ["first", "__new_second"]) {
+      const row = db.prepare("SELECT strict, wr FROM pragma_table_list WHERE name=?").get(name);
+      assert.equal(row?.strict, 1);
+      assert.equal(row?.wr, 1);
+    }
+    assert.equal(
+      db
+        .prepare("SELECT count(*) AS n FROM sqlite_master WHERE name IN ('ignored','quoted','comment','not_a_table')")
+        .get()?.n,
+      0,
+    );
+  } finally {
+    db.close();
   }
 });
