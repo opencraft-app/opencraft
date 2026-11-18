@@ -1,4 +1,5 @@
 import { asItemId, asTurnId, type ConversationKey, type ItemId } from "./identity";
+import { inferSettledMessagePhases } from "./message-phase";
 import type {
   TimelineAnchor,
   TimelineBlock,
@@ -248,7 +249,7 @@ function projectTurnFrames(
   registry: TimelineProjectorRegistry,
 ): readonly TimelineFrame[] {
   const frames: TimelineFrame[] = [];
-    const turn = normalizeTurnUserMessages(normalizeCommandCompletionOrder(sourceTurn));
+    const turn = inferSettledMessagePhases(normalizeTurnUserMessages(normalizeCommandCompletionOrder(sourceTurn)));
     const workStatus = deriveTurnWorkStatus(turn);
     // Compatibility Items are lowered once here, not allowed to participate
     // in transcript topology. An explicit Turn value (including null) wins.
