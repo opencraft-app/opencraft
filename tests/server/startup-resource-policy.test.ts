@@ -82,3 +82,12 @@ test("shared file and table preview implementations activate after intent", () =
     assert.deepEqual(startupResourceViolations(report(module,false)),[]);
   }
 });
+
+test('startup sidebar consumers use typography mixins without re-emitting global tokens', async () => {
+  const { readFile } = await import('node:fs/promises');
+  for (const file of ['apps/workbench-web/src/components/applications-sidebar.scss', 'apps/workbench-web/src/components/connectors/connector-panel.scss']) {
+    const source = await readFile(file, 'utf8');
+    assert.match(source, /typography-mixins\.web/);
+    assert.doesNotMatch(source, /typography\.web/);
+  }
+});

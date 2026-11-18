@@ -14,7 +14,10 @@ interface TurnProjection {
  * currently pending Turn projections; per-request artifacts have weak keys. */
 export function createPendingInteractionProjector(
   project: (interaction: PendingInteraction) => InteractionItems,
-): (source: readonly TimelineSourceTurn[], interactions: readonly PendingInteraction[]) => readonly TimelineSourceTurn[] {
+): (
+  source: readonly TimelineSourceTurn[],
+  interactions: readonly PendingInteraction[],
+) => readonly TimelineSourceTurn[] {
   const requestItems = new WeakMap<PendingInteraction, InteractionItems>();
   let previous = new Map<TimelineSourceTurn, TurnProjection>();
   let synthetic = new Map<string, TimelineSourceTurn>();
@@ -28,15 +31,21 @@ export function createPendingInteractionProjector(
     for (const interaction of interactions) {
       const id = interaction.turnId ?? asTurnId(`interaction:${interaction.requestId}`);
       let group = groups.get(id);
-      if (!group) { group = []; groups.set(id, group); }
+      if (!group) {
+        group = [];
+        groups.set(id, group);
+      }
       group.push(interaction);
     }
     const next = new Map<TimelineSourceTurn, TurnProjection>();
     const nextSynthetic = new Map<string, TimelineSourceTurn>();
     const attach = (turn: TimelineSourceTurn, group: readonly PendingInteraction[]): TimelineSourceTurn => {
       const cached = previous.get(turn);
-      if (cached && cached.interactions.length === group.length
-        && group.every((interaction, index) => interaction === cached.interactions[index])) {
+      if (
+        cached &&
+        cached.interactions.length === group.length &&
+        group.every((interaction, index) => interaction === cached.interactions[index])
+      ) {
         next.set(turn, cached);
         return cached.turn;
       }
@@ -44,9 +53,12 @@ export function createPendingInteractionProjector(
       let commands: Set<string> | undefined;
       for (const interaction of group) {
         let projected = requestItems.get(interaction);
-        if (!projected) { projected = project(interaction); requestItems.set(interaction, projected); }
+        if (!projected) {
+          projected = project(interaction);
+          requestItems.set(interaction, projected);
+        }
         if (projected.provisionalCommand) {
-          commands ??= new Set(items.filter(item => item.type === "commandExecution").map(item => item.id));
+          commands ??= new Set(items.filter((item) => item.type === "commandExecution").map((item) => item.id));
           if (!commands.has(projected.provisionalCommand.id)) {
             items.push(projected.provisionalCommand);
             commands.add(projected.provisionalCommand.id);
@@ -59,7 +71,7 @@ export function createPendingInteractionProjector(
       next.set(turn, { interactions: group, turn: result });
       return result;
     };
-    const result = source.map(turn => {
+    const result = source.map((turn) => {
       const group = groups.get(turn.id);
       if (!group) return turn;
       // The former find() selected the first matching Turn, even for malformed

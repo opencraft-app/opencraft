@@ -85,7 +85,7 @@ const legacyAccountPoolMigration = {
   migrate(database: DatabaseSync): void {
     database.exec(BASELINE.replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS "));
     for (const [table, additions] of [
-      ["pool_accounts", ["email TEXT", "subscription_type TEXT", "rate_limit_tier TEXT", "last_used_at INTEGER", "last_used_host_id TEXT", "reset_credit_count INTEGER CHECK(reset_credit_count >= 0)", "reset_credits_observed_at INTEGER", "allow_credits INTEGER NOT NULL DEFAULT 1 CHECK(allow_credits IN (0,1))", "owner_actor TEXT"]],
+      ["pool_accounts", ["email TEXT", "subscription_type TEXT", "rate_limit_tier TEXT", "last_used_at INTEGER", "last_used_host_id TEXT", "reset_credit_count INTEGER CHECK(reset_credit_count >= 0)", "reset_credits_observed_at INTEGER", "allow_credits INTEGER NOT NULL DEFAULT 1 CHECK(allow_credits IN (0,1))"]],
       ["pool_quota", ["limit_windows_json TEXT NOT NULL DEFAULT '[]'"]],
     ] as const) {
       const columns = new Set(database.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
@@ -93,7 +93,6 @@ const legacyAccountPoolMigration = {
         if (!columns.has(definition.split(" ")[0]!)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
       }
     }
-    database.exec("CREATE INDEX IF NOT EXISTS pool_account_owner ON pool_accounts(owner_actor)");
   },
 };
 

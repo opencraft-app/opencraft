@@ -11868,6 +11868,7 @@ html[data-window-host="browser"] body {
 }
 .deferred-view__indicator .ui-progress-indicator,
 .deferred-view__indicator svg { width: 16px; height: 16px; }
+@media (prefers-reduced-motion: reduce) { .deferred-view__indicator { animation: none; } }
 
 // Floating conversation chrome shares control owners with ordinary chrome.
 :root[data-ui-density="touch"] {

@@ -105,7 +105,7 @@ test("HTTP Bot adapter is pinned to its origin, refuses redirects/write methods 
   const calls = [];
   const port = httpPlatformAssistantPort({
     origin: "http://127.0.0.1:1234",
-    token: "oc_actor_v1.synthetic",
+    token: "oc_actor_v1.synthetic", // gitleaks:allow -- intentionally synthetic test credential
     fetch: async (url, options) => {
       calls.push({ url: String(url), options });
       return new Response(
@@ -126,7 +126,7 @@ test("HTTP Bot adapter is pinned to its origin, refuses redirects/write methods 
     () =>
       httpPlatformAssistantPort({
         origin: "http://remote.example",
-        token: "oc_actor_v1.synthetic",
+        token: "oc_actor_v1.synthetic", // gitleaks:allow -- intentionally synthetic test credential
       }),
     /HTTPS/,
   );

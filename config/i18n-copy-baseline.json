@@ -2884,18 +2884,6 @@
       "count": 1
     },
     {
-      "file": "packages/extension-react/src/deferred-view.tsx",
-      "kind": "jsx-text",
-      "text": "重试",
-      "count": 1
-    },
-    {
-      "file": "packages/extension-react/src/deferred-view.tsx",
-      "kind": "jsx-text",
-      "text": "正在加载…",
-      "count": 1
-    },
-    {
       "file": "packages/extension-react/src/settings-panel.tsx",
       "kind": "label",
       "text": "Edit ${…}",

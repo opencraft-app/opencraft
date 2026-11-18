@@ -53,12 +53,12 @@ test("Codex reset credits render authoritative totals, zero, and unknown for old
 test("Codex credits render balance, unlimited, unavailable and unknown states", async () => {
   Object.assign(globalThis, { React });
   for (const [credits, value, note] of [
-    [undefined, "—", "未报告"],
-    [null, "—", "未报告"],
-    [{ available: true, unlimited: false, balance: "1234.6", observedAt: 1_000 }, "1,235", "余额"],
-    [{ available: true, unlimited: false, balance: null, observedAt: 1_000 }, "可用", "余额未报告"],
-    [{ available: true, unlimited: true, balance: null, observedAt: 1_000 }, "不限量", "可用"],
-    [{ available: false, unlimited: false, balance: "0", observedAt: 1_000 }, "0", "不可用"],
+    [undefined, "—", "Not reported"],
+    [null, "—", "Not reported"],
+    [{ available: true, unlimited: false, balance: "1234.6", observedAt: 1_000 }, "1,235", "Balance"],
+    [{ available: true, unlimited: false, balance: null, observedAt: 1_000 }, "Available", "Balance not reported"],
+    [{ available: true, unlimited: true, balance: null, observedAt: 1_000 }, "Unlimited", "Available"],
+    [{ available: false, unlimited: false, balance: "0", observedAt: 1_000 }, "0", "Unavailable"],
   ] as const) {
     const account: CodexAccountView = {
       id: "a", label: "person@example.test", priority: 1, enabled: true, credentialConfigured: true,
@@ -71,8 +71,8 @@ test("Codex credits render balance, unlimited, unavailable and unknown states", 
       await service.refresh();
       const View = createCodexAccountsView(service);
       const markup = renderToStaticMarkup(createElement(View, {} as any));
-      assert.ok(markup.includes(`<small>积分</small><strong>${value}</strong><span class="engine-account__reset">${note}</span>`), markup);
-      assert.match(markup, credits ? /上次确认：/ : /服务端尚未报告积分/);
+      assert.ok(markup.includes(`<small>Credits</small><strong>${value}</strong><span class="engine-account__reset">${note}</span>`), markup);
+      assert.match(markup, credits ? /Last confirmed:/ : /The server has not reported credits/);
     } finally { service.dispose(); }
   }
 });

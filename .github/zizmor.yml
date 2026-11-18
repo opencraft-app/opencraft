@@ -1,0 +1,11 @@
+# zizmor (GitHub Actions security lint) configuration, used by the workflow-lint job.
+rules:
+  # Calling this repository's reusable workflows as ./.github/workflows/... is
+  # correct; the $/... form it suggests is a style preference.
+  self-repository:
+    disable: true
+  # release.yml installs one exact npm version for trusted publishing and
+  # verifies it with `npm --version` before use.
+  adhoc-packages:
+    ignore:
+      - release.yml

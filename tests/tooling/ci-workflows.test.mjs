@@ -250,3 +250,10 @@ test('web-browser matrix exercises queue Markdown preview', () => {
   assert.match(workflow, /if: matrix\.target == 'web-browser'[\s\S]*?install-playwright-chromium\.sh[\s\S]*?npm run smoke:queue-markdown/);
   assert.match(scripts['smoke:queue-markdown'], /scripts\/smoke\/composer\/smoke-queue-markdown\.ts/);
 });
+
+test('workflow-lint checks every workflow change with pinned actionlint and zizmor', () => {
+  const lint = readFileSync(new URL('../../.github/workflows/workflow-lint.yml', import.meta.url), 'utf8');
+  assert.match(lint, /pull_request:\n    paths:\n      - \.github\/\*\*\n  push:\n    branches: \[main\]\n    paths:\n      - \.github\/\*\*/);
+  assert.match(lint, /run: go run github\.com\/rhysd\/actionlint\/cmd\/actionlint@v\d+\.\d+\.\d+ -pyflakes=\n/);
+  assert.match(lint, /run: pipx run zizmor==\d+\.\d+\.\d+ --offline --min-severity low --config \.github\/zizmor\.yml \.github\/workflows\/\n/);
+});

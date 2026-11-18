@@ -2234,5 +2234,19 @@
   "onboard.history.manage": "导入会话",
   "onboard.history.open": "导入本地会话",
   "sidebar.nativeProjects": "项目",
-  "onboard.history.projects": "导入时会保留原有的项目分组。"
+  "onboard.history.projects": "导入时会保留原有的项目分组。",
+  "composer.attachment.uploading": "正在上传 {name}",
+  "composer.attachment.confirming": "正在处理…",
+  "composer.attachment.preparing": "正在准备…",
+  "codexAccounts.credits.notReported": "未报告",
+  "codexAccounts.credits.unlimited": "不限量",
+  "codexAccounts.credits.available": "可用",
+  "codexAccounts.credits.none": "无",
+  "codexAccounts.credits.unavailable": "不可用",
+  "codexAccounts.credits.balanceMissing": "余额未报告",
+  "codexAccounts.credits.balance": "余额",
+  "codexAccounts.credits.serverMissing": "服务端尚未报告积分",
+  "codexAccounts.credits.lastConfirmed": "上次确认：{date}",
+  "codexAccounts.credits.title": "积分",
+  "codexAccounts.credits.lastConfirmedLabel": "积分最近确认"
 }

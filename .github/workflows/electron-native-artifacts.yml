@@ -62,6 +62,10 @@ jobs:
     defaults:
       run:
         shell: bash
+    # Matrix values reach shell scripts only through the environment.
+    env:
+      PYTHON: ${{ matrix.python }}
+      TARGET: ${{ matrix.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -70,10 +74,14 @@ jobs:
         with:
           python-version: '3.12'
       - name: Verify native runner architecture
-        run: ${{ matrix.python }} vendor/electron/ci.py platform --target ${{ matrix.id }}
-      - run: ${{ matrix.python }} -m unittest discover -s vendor/electron/tests -v
-      - run: ${{ matrix.python }} vendor/electron/manage.py checkout
-      - run: ${{ matrix.python }} vendor/electron/manage.py verify
+        run: |
+          "$PYTHON" vendor/electron/ci.py platform --target "$TARGET"
+      - run: |
+          "$PYTHON" -m unittest discover -s vendor/electron/tests -v
+      - run: |
+          "$PYTHON" vendor/electron/manage.py checkout
+      - run: |
+          "$PYTHON" vendor/electron/manage.py verify
   build:
     needs: [plan, validate]
     if: github.event_name == 'push' || inputs.mode == 'build'
@@ -91,6 +99,9 @@ jobs:
       OPENCRAFT_ELECTRON_ALLOW_STOCK: '0'
       OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
       OPENCRAFT_BUILD_ID: github-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.sha }}
+      # Matrix values reach shell scripts only through the environment.
+      PYTHON: ${{ matrix.python }}
+      TARGET: ${{ matrix.id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -101,7 +112,8 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+          # Release artifacts must not depend on a cache a pull request could write.
+          package-manager-cache: false
       - name: Use runner-owned scratch space for Linux tools
         if: matrix.id == 'linux-x64'
         run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
@@ -122,11 +134,12 @@ jobs:
           key: desktop-fork-v1-${{ matrix.id }}-${{ hashFiles('vendor/electron/**', '.github/workflows/electron-native-artifacts.yml') }}
       - name: Check build capacity before source download
         if: steps.native-cache.outputs.cache-hit != 'true'
-        run: ${{ matrix.python }} vendor/electron/ci.py preflight --target ${{ matrix.id }} --root "${OPENCRAFT_ELECTRON_PERSISTENT_ROOT:-$RUNNER_TEMP}"
+        run: |
+          "$PYTHON" vendor/electron/ci.py preflight --target "$TARGET" --root "${OPENCRAFT_ELECTRON_PERSISTENT_ROOT:-$RUNNER_TEMP}"
       - name: Set native absolute paths
         # Python writes native Windows paths; MSYS strings must not reach Node.
         run: |
-          ${{ matrix.python }} - <<'PY'
+          "$PYTHON" - <<'PY'
           import os
           from pathlib import Path
           root = Path(os.environ['RUNNER_TEMP'])
@@ -148,22 +161,22 @@ jobs:
       - name: Materialize and sync the fork
         if: steps.native-cache.outputs.cache-hit != 'true'
         run: |
-          ${{ matrix.python }} vendor/electron/manage.py checkout --root "$BUILD_ROOT"
-          ${{ matrix.python }} vendor/electron/manage.py sync --root "$BUILD_ROOT"
+          "$PYTHON" vendor/electron/manage.py checkout --root "$BUILD_ROOT"
+          "$PYTHON" vendor/electron/manage.py sync --root "$BUILD_ROOT"
       - name: Build Electron and dist.zip
         if: steps.native-cache.outputs.cache-hit != 'true'
         # Match parallelism to the provisioned runner rather than a fixed 8.
         run: |
-          jobs="$(${{ matrix.python }} -c 'import os; print(os.cpu_count() or 8)')"
+          jobs="$("$PYTHON" -c 'import os; print(os.cpu_count() or 8)')"
           echo "Building with $jobs parallel jobs"
-          ${{ matrix.python }} vendor/electron/manage.py build --root "$BUILD_ROOT" --jobs "$jobs"
+          "$PYTHON" vendor/electron/manage.py build --root "$BUILD_ROOT" --jobs "$jobs"
       - name: Probe and stamp the native distribution
         if: steps.native-cache.outputs.cache-hit != 'true'
         # Visible, focused probe on macOS/Windows; Linux owns an Xvfb display.
         run: |
           prefix=()
           if [[ "$RUNNER_OS" == Linux ]]; then prefix=(xvfb-run -a); fi
-          "${prefix[@]}" ${{ matrix.python }} vendor/electron/prepare-desktop-artifact.py \
+          "${prefix[@]}" "$PYTHON" vendor/electron/prepare-desktop-artifact.py \
             --archive "$BUILD_ROOT/src/out/OpenCraft/dist.zip" \
             --distribution "$DISTRIBUTION" --source-root "$BUILD_ROOT" --evidence "$EVIDENCE"
           test -f "$DISTRIBUTION/opencraft-electron-desktop-artifact.json"
@@ -171,7 +184,7 @@ jobs:
         if: steps.native-cache.outputs.cache-hit != 'true'
         # Keep dist.zip intact: upload-artifact alone drops POSIX modes/links.
         run: |
-          ${{ matrix.python }} - <<'PY'
+          "$PYTHON" - <<'PY'
           import os, shutil
           from pathlib import Path
           out = Path(os.environ['EVIDENCE'])
@@ -212,7 +225,7 @@ jobs:
       - name: Build and package OpenCraft with the verified fork
         run: |
           npm run build:electron:release
-          ${{ matrix.python }} vendor/electron/ci.py package --target ${{ matrix.id }} --distribution "$DISTRIBUTION"
+          "$PYTHON" vendor/electron/ci.py package --target "$TARGET" --distribution "$DISTRIBUTION"
       - name: Test final AppImage and record checksum
         if: matrix.id == 'linux-x64'
         run: |

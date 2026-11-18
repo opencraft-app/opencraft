@@ -32,8 +32,12 @@ export function createSteeringAcknowledgementResolver(): SteeringAcknowledgement
         const data = candidate.payload;
         if (typeof data !== "object" || data === null || Array.isArray(data)) continue;
         const payload = data as Readonly<Record<string, unknown>>;
-        const clientId = typeof payload.clientId === "string" ? payload.clientId
-          : typeof payload.clientUserMessageId === "string" ? payload.clientUserMessageId : null;
+        const clientId =
+          typeof payload.clientId === "string"
+            ? payload.clientId
+            : typeof payload.clientUserMessageId === "string"
+              ? payload.clientUserMessageId
+              : null;
         if (clientId !== null) {
           if (!byClientId.has(clientId)) byClientId.set(clientId, position);
         } else if (followsAssistantOutput) {
@@ -41,7 +45,10 @@ export function createSteeringAcknowledgementResolver(): SteeringAcknowledgement
           // assistant-owned boundary, never the primary Composer message.
           const key = userMessageCompareKey(payload.content ?? payload.input);
           let counts = byInput.get(key.rawText);
-          if (!counts) { counts = new Map(); byInput.set(key.rawText, counts); }
+          if (!counts) {
+            counts = new Map();
+            byInput.set(key.rawText, counts);
+          }
           if (!counts.has(key.imageCount)) counts.set(key.imageCount, position);
         }
       }

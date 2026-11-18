@@ -2058,5 +2058,19 @@
   "onboard.history.manage": "นำเข้าการสนทนา",
   "onboard.history.open": "นำเข้าการสนทนาในเครื่อง",
   "sidebar.nativeProjects": "โปรเจกต์",
-  "onboard.history.projects": "ระบบจะเก็บกลุ่มโปรเจกต์เดิมไว้"
+  "onboard.history.projects": "ระบบจะเก็บกลุ่มโปรเจกต์เดิมไว้",
+  "composer.attachment.uploading": "กำลังอัปโหลด {name}",
+  "composer.attachment.confirming": "กำลังประมวลผล…",
+  "composer.attachment.preparing": "กำลังเตรียม…",
+  "codexAccounts.credits.notReported": "ไม่ได้รายงาน",
+  "codexAccounts.credits.unlimited": "ไม่จำกัด",
+  "codexAccounts.credits.available": "พร้อมใช้งาน",
+  "codexAccounts.credits.none": "ไม่มี",
+  "codexAccounts.credits.unavailable": "ไม่พร้อมใช้งาน",
+  "codexAccounts.credits.balanceMissing": "ไม่ได้รายงานยอดคงเหลือ",
+  "codexAccounts.credits.balance": "ยอดคงเหลือ",
+  "codexAccounts.credits.serverMissing": "เซิร์ฟเวอร์ยังไม่ได้รายงานเครดิต",
+  "codexAccounts.credits.lastConfirmed": "ยืนยันล่าสุด: {date}",
+  "codexAccounts.credits.title": "เครดิต",
+  "codexAccounts.credits.lastConfirmedLabel": "ยืนยันเครดิตล่าสุด"
 }

@@ -18,8 +18,10 @@ export function parseServerInstalledExtensions(value: unknown): readonly ServerI
   if (!Array.isArray(value)) throw new Error('Invalid server-installed plugins');
   return value.map(item => {
     const manifest = parseExtensionManifestV1(item.manifest);
-    if ((item.entry !== `${manifest.id}/plugin.mjs` && !(typeof item.entry === 'string'
-      && new RegExp(`^${manifest.id.replace(/[.]/g, '\\.')}\/[a-f0-9]{64}\/plugin\\.mjs$`).test(item.entry))) || !/^[a-f0-9]{64}$/.test(item.sha256)
+    const entryParts = typeof item.entry === 'string' ? item.entry.split('/') : [];
+    const validEntry = entryParts[0] === manifest.id && (entryParts.length === 2 && entryParts[1] === 'plugin.mjs'
+      || entryParts.length === 3 && /^[a-f0-9]{64}$/.test(entryParts[1]!) && entryParts[2] === 'plugin.mjs');
+    if (!validEntry || !/^[a-f0-9]{64}$/.test(item.sha256)
       || (item.access !== undefined && item.access !== 'public')
       || !Array.isArray(item.replaces) || !item.replaces.every((id: unknown) => typeof id === 'string')) throw new Error('Invalid server-installed plugin');
     if ((item.renderer !== undefined && item.renderer !== 'trusted-react-v1')

@@ -3,6 +3,8 @@ import { requiresModelGateway } from "./model-gateway-connection.js";
 import { bindModelGatewaySponsor } from "./model-gateway-sponsor.js";
 import { configuredModelGatewayPath, ModelGatewayError } from "./model-gateway-store.js";
 import { meteredModelRequest } from "./model-gateway-meter.js";
+import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
+import { responsesPayloadForOpenAI } from "./foreign-history.js";
 import { creditBalanceText, ExternalCodexCredentialError } from "./store.js";
 import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file.js";
 import type {
@@ -15,8 +17,6 @@ import type {
 import type { AccountCredentialRefreshReason } from "./oauth-refresh.js";
 import { ACCOUNT_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
 import { Agent, fetch as undiciFetch } from "undici";
-import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
-import { responsesPayloadForOpenAI } from "./foreign-history.js";
 import { decodeResponsesRequestBody, forwardConfiguredResponses, forwardedResponseHeaders } from "./configured-forward.js";
 
 const HOST_TOKEN_HEADER = "x-opencraft-account-pool-token";
