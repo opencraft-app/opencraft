@@ -111,6 +111,9 @@ function Demo() {
           timeline={timeline}
           scrollPolicy="natural"
           threadDetailLevel="STEPS_PROSE"
+          onOpenSubagent={(threadId, displayName) => {
+            (window as any).subagentOpen = { threadId, displayName };
+          }}
           footer={<div style={{ height: 48 }}>Composer fixture</div>}
           onVisibleContentReady={() => {
             document.documentElement.dataset.conversationReady = "true";

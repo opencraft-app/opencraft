@@ -60,10 +60,20 @@ try {
       assert.equal(await page.locator(".thread-subagent-details__row").count(), 4);
       assert.equal(await page.locator(".thread-subagent-details__meta").count(), 0);
       assert.equal(await page.getByText("Review fixtures and summarize the result.", { exact: true }).count(), 1);
+      const firstAgent = page.locator(".thread-subagent-details__name").first();
+      if (touch) await firstAgent.tap();
+      else await firstAgent.click();
+      assert.deepEqual(await page.evaluate(() => (window as any).subagentOpen), {
+        threadId: "child0",
+        displayName: "fixtures",
+      });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       await page.screenshot({ path: "/tmp/subagent-" + (touch ? "touch" : "desktop") + "-" + theme + ".png" });
       if (touch) await toggle.tap();
-      else await page.keyboard.press("Enter");
+      else {
+        await toggle.focus();
+        await page.keyboard.press("Enter");
+      }
       await page.waitForFunction(() => !document.querySelector(".thread-subagent-details"));
       assert.deepEqual(errors, []);
       results.push({ touch, theme, passed: true });
