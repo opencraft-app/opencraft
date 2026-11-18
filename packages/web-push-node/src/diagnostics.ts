@@ -56,7 +56,7 @@ export function observeNotificationRequest(
   let code = "unknown",
     done = false;
   const end = response.end;
-  response.end = function (this: ServerResponse, ...args: any[]) {
+  response.end = function (this: ServerResponse, ...args: unknown[]) {
     try {
       if (
         response.statusCode >= 400 &&
@@ -70,7 +70,7 @@ export function observeNotificationRequest(
     } catch {
       /* Diagnostics must not affect responses. */
     }
-    return end.apply(this, args as any);
+    return Reflect.apply(end, this, args);
   } as typeof response.end;
   const record = (aborted: boolean) => {
     if (done) return;

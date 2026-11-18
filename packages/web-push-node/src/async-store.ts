@@ -1,5 +1,6 @@
 import { Worker } from "node:worker_threads";
 import type { PushStore } from "./store";
+import type { DatabaseOutcome } from "@opencraft/sqlite-node";
 export type PushStorePort = {
   [K in keyof PushStore]: PushStore[K] extends (...args: infer A) => infer R
     ? (...args: A) => R | Promise<R>
@@ -17,9 +18,9 @@ export async function openPushStore(path: string): Promise<PushStorePort> {
   );
   let sequence = 0,
     closed = false;
-  const pending = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
-  let readyResolve: (value: any) => void, readyReject: (error: Error) => void;
-  const ready = new Promise<any>((resolve, reject) => {
+  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  let readyResolve: (value: DatabaseOutcome) => void, readyReject: (error: Error) => void;
+  const ready = new Promise<DatabaseOutcome>((resolve, reject) => {
     readyResolve = resolve;
     readyReject = reject;
   });
@@ -46,7 +47,7 @@ export async function openPushStore(path: string): Promise<PushStorePort> {
   });
   const outcome = await ready;
   return new Proxy({ outcome } as PushStorePort, {
-    get(target, property) {
+    get(_target, property) {
       if (property === "outcome") return outcome;
       if (property === "then") return undefined;
       return (...args: unknown[]) => {
@@ -54,7 +55,12 @@ export async function openPushStore(path: string): Promise<PushStorePort> {
         const id = ++sequence;
         const result = new Promise((resolve, reject) => {
           pending.set(id, { resolve, reject });
-          worker.postMessage({ id, method: property, args: property === "keys" ? [] : args });
+          try {
+            worker.postMessage({ id, method: property, args: property === "keys" ? [] : args });
+          } catch {
+            pending.delete(id);
+            reject(Error("notification_storage_unavailable"));
+          }
         });
         if (property === "close")
           return result.finally(() => {

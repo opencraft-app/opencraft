@@ -28,7 +28,10 @@ const methods = new Set([
 parentPort!.on("message", ({ id, method, args }) => {
   try {
     if (!methods.has(method)) throw Error("invalid_store_method");
-    const result = method === "keys" ? store.keys(() => webpush.generateVAPIDKeys()) : (store as any)[method](...args);
+    const result =
+      method === "keys"
+        ? store.keys(() => webpush.generateVAPIDKeys())
+        : Reflect.apply((store as unknown as Record<string, (...params: unknown[]) => unknown>)[method]!, store, args);
     parentPort!.postMessage({ id, result });
     if (method === "close") parentPort!.close();
   } catch {

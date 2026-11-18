@@ -643,3 +643,15 @@ test("authenticated HTTP and HTTPS same-origin saves work without provider origi
     f.remove();
   }
 });
+
+test("worker rejects an uncloneable request without losing later requests", async () => {
+  const f = fixture();
+  const store = await openPushStore(f.path);
+  try {
+    await assert.rejects(Reflect.apply(store.get, store, [() => {}]), /notification_storage_unavailable/);
+    assert.equal(await store.get("missing"), null);
+  } finally {
+    await store.close();
+    f.remove();
+  }
+});
