@@ -84,5 +84,7 @@ test('core tests run the full typecheck and every npm test suite as independent 
   assert.match(core, /run: npm run check:format -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
   assert.match(core, /run: npm run lint:changed -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
   // Test files run with a private HOME/TMPDIR and fail on processes they leave behind.
-  assert.match(core, /NODE_OPTIONS: --import \$\{\{ github\.workspace \}\}\/tests\/support\/test-isolation\.mjs --test-global-setup=\$\{\{ github\.workspace \}\}\/tests\/support\/test-isolation-global\.mjs/);
+  // Set through GITHUB_ENV after npm ci: checkout and setup-node run on Node before the file exists.
+  assert.doesNotMatch(core, /^    env:[\s\S]*?NODE_OPTIONS/m);
+  assert.match(core, /run: npm ci --no-audit --no-fund\n\s+#[^\n]*\n(?:\s+#[^\n]*\n)*\s+- name: Enable test isolation\n\s+run: echo "NODE_OPTIONS=--import \$GITHUB_WORKSPACE\/tests\/support\/test-isolation\.mjs --test-global-setup=\$GITHUB_WORKSPACE\/tests\/support\/test-isolation-global\.mjs" >> "\$GITHUB_ENV"/);
 });
