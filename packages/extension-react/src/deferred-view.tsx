@@ -1,6 +1,7 @@
 import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { Button } from "@opencraft/design-system-web/button";
-import React, { useEffect, useState, type ComponentType } from "react";
+import React, { useContext, useEffect, useState, type ComponentType } from "react";
+import { IntlContext } from "react-intl";
 
 /** A registration is cheap; its presentation is loaded only by a mounted View.
  * Successful modules are shared, rejected attempts are retryable, and a retired
@@ -15,6 +16,9 @@ export function createDeferredView<Props extends object>(load: () => Promise<Com
     return pending;
   };
   return function DeferredView(props: Props) {
+    const intl = useContext(IntlContext);
+    const loadingLabel = intl?.formatMessage({ id: "chat.composer.loading", defaultMessage: "Loading…" }) ?? "Loading…";
+    const retryLabel = intl?.formatMessage({ id: "common.retry", defaultMessage: "Try again" }) ?? "Try again";
     const [Loaded, setLoaded] = useState<ComponentType<Props> | null>(() => component);
     const [attempt, retry] = useState(0);
     const [failed, setFailed] = useState(false);
@@ -26,8 +30,8 @@ export function createDeferredView<Props extends object>(load: () => Promise<Com
       return () => { active = false; };
     }, [Loaded, attempt]);
     if (Loaded) return <Loaded {...props} />;
-    return <div className="deferred-view" role="status" aria-live="polite" aria-label={failed ? undefined : "正在加载"}>
-      {failed ? <Button type="button" className="ui-button" density="compact" variant="outline" onClick={() => retry(value => value + 1)}>重试</Button> : <span className="deferred-view__indicator" aria-hidden="true"><ProgressIndicator /></span>}
+    return <div className="deferred-view" role="status" aria-live="polite" aria-label={failed ? undefined : loadingLabel}>
+      {failed ? <Button type="button" className="ui-button" density="compact" variant="outline" onClick={() => retry(value => value + 1)}>{retryLabel}</Button> : <span className="deferred-view__indicator" aria-hidden="true"><ProgressIndicator /></span>}
     </div>;
   };
 }
