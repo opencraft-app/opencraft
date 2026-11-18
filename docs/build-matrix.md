@@ -166,7 +166,12 @@ behavioral tests; optional preview/media errors must not break those flows.
 
 ## Pull-request CI selection
 
-`build-matrix` runs on every PR, but `scripts/ci-plan.mjs` chooses its jobs from
+`build-matrix` runs on every PR and again on every commit pushed to `main`. A PR
+is tested against the `main` it saw; when several merge close together, the
+push run is what tests their combination, and it reports a break right after
+the merge rather than preventing it. Each `main` commit keeps its own run and is
+never cancelled, so a failure names the merge that caused it; a push run selects
+jobs from the pushed range. `scripts/ci-plan.mjs` chooses its jobs from
 Git's full merge-base diff. It includes deleted paths and both sides of a rename;
 it does not use GitHub's limited workflow path filter or a paginated file API.
 The reusable `ci-plan.yml` tests the selector and aggregate check without

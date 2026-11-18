@@ -88,3 +88,10 @@ test('core tests run the full typecheck and every npm test suite as independent 
   assert.doesNotMatch(core, /^    env:[\s\S]*?NODE_OPTIONS/m);
   assert.match(core, /run: npm ci --no-audit --no-fund\n\s+#[^\n]*\n(?:\s+#[^\n]*\n)*\s+- name: Enable test isolation\n\s+run: echo "NODE_OPTIONS=--import \$GITHUB_WORKSPACE\/tests\/support\/test-isolation\.mjs --test-global-setup=\$GITHUB_WORKSPACE\/tests\/support\/test-isolation-global\.mjs" >> "\$GITHUB_ENV"/);
 });
+
+test('every main commit runs build-matrix in its own run', () => {
+  assert.match(workflow, /^on:\n  pull_request:\n(?:  #[^\n]*\n)*  push:\n    branches: \[main\]\n/m);
+  // A PR commit supersedes its predecessor; main commits are never grouped or cancelled.
+  assert.match(workflow, /group: build-matrix-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);
+  assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+});
