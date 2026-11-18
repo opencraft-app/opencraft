@@ -80,7 +80,7 @@ for (const [id, chain] of [["left", left], ["right", right]] as const) test(`${i
   const directory = mkdtempSync(join(tmpdir(), "sqlite-history-selection-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const path = join(directory, "server.sqlite");
-  let first = openManagedDatabase({ path, migrations: chain.slice(0, 2) });
+  const first = openManagedDatabase({ path, migrations: chain.slice(0, 2) });
   first.database.prepare("INSERT INTO data VALUES (?,?)").run(4, "preserved");
   const before = first.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   first.database.close();
