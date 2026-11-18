@@ -1,4 +1,5 @@
 import { createPendingInteractionProjector } from "./pending-interaction-projection";
+import { createSteeringAcknowledgementResolver, type SteeringAcknowledgementResolver } from "./steering-acknowledgement-index";
 import { humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { userInputQuestionExtensions } from "@opencraft/chat-core";
 import type {
@@ -13,7 +14,6 @@ import type {
 } from "@opencraft/appserver-protocol/generated/v2";
 import {
   asTurnId,
-  userMessageCompareKey,
   createDefaultTimelineProjectorRegistry,
   projectTimeline,
   summarizeHookRuns,
@@ -964,34 +964,6 @@ function authoritativeUserMessageVisible(
   });
 }
 
-function sameUserMessageInput(left: unknown, right: unknown): boolean {
-  const leftKey = userMessageCompareKey(left);
-  const rightKey = userMessageCompareKey(right);
-  return leftKey.rawText === rightKey.rawText
-    && leftKey.imageCount === rightKey.imageCount;
-}
-
-function steeringAcknowledgementIndex(
-  turn: TimelineSourceTurn,
-  state: OptimisticSubmissionState,
-): number {
-  return turn.items.findIndex((candidate, index) => {
-    if ((candidate.type !== "userMessage" && candidate.type !== "steeringUserMessage") || !isRecord(candidate.payload as ReplicaJsonValue)) return false;
-    const payload = candidate.payload as JsonRecord;
-    const clientId = string(payload.clientId) ?? string(payload.clientUserMessageId);
-    if (clientId !== null) return clientId === state.clientMessageId;
-    // Reconstructed Hermes history can omit client ids. Only compare content
-    // after the Turn has crossed an assistant-owned boundary, otherwise a
-    // repeated steer could steal the primary Composer message.
-    const followsAssistantOutput = turn.items.slice(0, index).some((item) =>
-      item.type !== "userMessage"
-      && item.type !== "steeringUserMessage"
-      && item.type !== "hookPrompt");
-    return followsAssistantOutput
-      && sameUserMessageInput(payload.content ?? payload.input, state.input);
-  });
-}
-
 function optimisticItem(state: OptimisticSubmissionState): TimelineSourceItem {
   return {
     id: `optimistic-user:${state.clientMessageId}`,
@@ -1023,6 +995,7 @@ function optimisticItem(state: OptimisticSubmissionState): TimelineSourceItem {
 function mergeOptimisticSubmissions(
   turns: readonly TimelineSourceTurn[],
   submissions: Iterable<OptimisticSubmissionState>,
+  steeringAcknowledgementIndex: SteeringAcknowledgementResolver,
 ): readonly TimelineSourceTurn[] {
   const states = [...submissions];
   if (states.length === 0) return turns;
@@ -1199,6 +1172,7 @@ function pruneAcknowledgedSubmissions(
   turns: readonly TimelineSourceTurn[],
   submissions: Map<string, OptimisticSubmissionState>,
   confirmedSteers: Map<string, OptimisticSubmissionState>,
+  steeringAcknowledgementIndex: SteeringAcknowledgementResolver,
 ): void {
   if (submissions.size === 0) return;
   const clientIds = sourceClientMessageIds(turns);
@@ -1230,6 +1204,7 @@ function pruneAcknowledgedSubmissions(
 function reconcileSteeringAcknowledgements(
   turns: readonly TimelineSourceTurn[],
   submissions: Map<string, OptimisticSubmissionState>,
+  steeringAcknowledgementIndex: SteeringAcknowledgementResolver,
 ): void {
   for (const [commandId, state] of submissions) {
     if (state.kind !== "steer" || state.targetTurnId === null) continue;
@@ -1300,6 +1275,7 @@ export function createReplicaConversationRuntime(
       },
     };
   });
+  const steeringAcknowledgementIndex = createSteeringAcknowledgementResolver();
   const projectReviews = createGuardianApprovalReviewProjector();
   const actionTurnCache = new WeakMap<TimelineSourceTurn, TimelineSourceTurn>();
   const commandActionCache: CommandActionProjectionCache = new WeakMap();
@@ -1484,8 +1460,8 @@ export function createReplicaConversationRuntime(
       pendingSubmissions,
     );
     rebaseOptimisticTurnPlacements(source, pendingSubmissions);
-    reconcileSteeringAcknowledgements(source, pendingSubmissions);
-    pruneAcknowledgedSubmissions(source, pendingSubmissions, confirmedSteers);
+    reconcileSteeringAcknowledgements(source, pendingSubmissions, steeringAcknowledgementIndex);
+    pruneAcknowledgedSubmissions(source, pendingSubmissions, confirmedSteers, steeringAcknowledgementIndex);
     const locallyOwnedClientIds = new Set([
       ...confirmedSteers.values(),
       ...pendingSubmissions.values(),
@@ -1502,7 +1478,7 @@ export function createReplicaConversationRuntime(
         ...confirmedSteers.values(),
         ...pendingSubmissions.values(),
         ...visibleAuthoritativeSteers,
-      ])),
+      ], steeringAcknowledgementIndex)),
       sourceGuardianApprovalReviews(view.guardianApprovalReviews),
     );
     const turns = projectActions(
