@@ -1,3 +1,4 @@
+import { startupLeafGroups } from "./startup-leaf-groups.vite";
 import { resolveWorkbenchPresentation, type WorkbenchPresentationOptions } from "./src/workbench-presentation";
 import browserslistToEsbuild from "browserslist-to-esbuild";
 import { browserTargets } from "../../config/browser-compatibility.mjs";
@@ -516,6 +517,7 @@ export function createWorkbenchWebConfig(
           strictExecutionOrder: true,
           // Isolate stable third-party runtime from application/plugin hash churn.
           codeSplitting: { groups: [
+            ...startupLeafGroups,
             // Optional document engines also import server rendering helpers; keep those
             // with their lazy consumers instead of the startup React runtime.
             { name: "react-runtime", test: id => /\/node_modules\/(?:react|react-dom|scheduler)\//.test(id) && !/\/react-dom\/(?:server(?:[./-])|cjs\/react-dom-server)/.test(id), includeDependenciesRecursively: false },
