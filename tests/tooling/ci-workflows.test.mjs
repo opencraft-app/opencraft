@@ -208,3 +208,9 @@ test('managed-web runs every suite exactly once across its parallel groups', () 
   }
   assert.match(security, /needs: \[plan, secrets, dependency-audit, managed-web\]/);
 });
+
+test('electron-fork cancels superseded PR runs but never main commits', () => {
+  const fork = readFileSync(new URL('../../.github/workflows/electron-fork.yml', import.meta.url), 'utf8');
+  assert.match(fork, /group: electron-fork-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);
+  assert.match(fork, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+});
