@@ -400,3 +400,35 @@ test('a request whose receipt read keeps throwing is backed off as well',async t
  const after=f.service.database.prepare('SELECT state,reason FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string;reason:string};
  assert.deepEqual({...after},{state:'unknown',reason:request.reason});
 });
+
+
+test('concurrent waits share one status read and reuse unchanged snapshots',async t=>{
+ const f=await fixture(t);let reads=0;
+ f.execution.snapshot=async id=>{reads++;await new Promise(resolve=>setTimeout(resolve,20));return {threadId:id,state:'active',turnId:'turn',rootTurnId:'turn'};};
+ const results=await Promise.all([f.invoke('wait-one','thread_wait',{threadIds:['peer'],timeoutMs:650}),f.invoke('wait-two','thread_wait',{threadIds:['peer'],timeoutMs:650})]);
+ assert.equal(reads,1);assert.ok(results.every(result=>result.settled===false));
+});
+
+test('failed status reads back off rather than retrying on every timer tick',async t=>{
+ const f=await fixture(t);let reads=0;f.execution.snapshot=async()=>{reads++;throw Error('Host unavailable');};
+ await f.invoke('failed-wait','thread_wait',{threadIds:['peer'],timeoutMs:1});
+ for(let i=0;i<240;i++){f.advance(500);await f.broker.reconcile(true);}
+ assert.ok(reads<15,`failure backoff made ${reads} calls in 120 seconds`);
+ const before=reads;await f.broker.reconcile();assert.equal(reads,before+1,'explicit reconcile can revalidate immediately');
+ f.execution.snapshot=async id=>({threadId:id,state:'completed',turnId:'done',rootTurnId:'done'});
+ await f.broker.reconcile();assert.equal(f.service.orchestration.wait((f.service.orchestration.operation('parent:parent-turn:failed-wait')!.result as any).waitTicketId)?.state,'satisfied');
+});
+
+test('a tell invalidates an in-flight status read without reusing or caching the stale result',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ let release!:()=>void,reached!:()=>void,reads=0;
+ const gate=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{reached=resolve;});
+ f.execution.snapshot=async id=>{const sequence=++reads;if(sequence===1){reached();await gate;return {threadId:id,state:'starting',turnId:null,rootTurnId:null};}return {threadId:id,state:'active',turnId:'new-turn',rootTurnId:'new-turn'};};
+ const owner=f.broker as any,old=owner.readStatus('recipient');await started;
+ try{
+  await f.invoke('invalidate-status','thread_tell',{threadId:'recipient',message:'Please inspect'});
+  const fresh=await owner.readStatus('recipient');assert.equal(fresh.state,'active');assert.equal(reads,2);
+ }finally{release();}
+ await assert.rejects(old,/superseded/);
+ const current=await owner.readStatus('recipient');assert.equal(current.state,'active');assert.equal(reads,2,'stale completion cannot replace fresh cache');
+});
