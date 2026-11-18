@@ -324,18 +324,33 @@ export function projectTimeline(
 ): TimelineSnapshot {
   const projected = source.turns.flatMap(turn => registry.projectTurn(turn));
   const previous = previousProjection.get(registry);
-  const unchanged = previous !== undefined && projected.length === previous.frames.length
-    && projected.every((frame, index) => frame === previous.frames[index]);
-  const frames = unchanged ? previous.frames : projected;
+  let unchanged = previous !== undefined && projected.length === previous.frames.length;
+  let anchorsUnchanged = unchanged;
+  if (previous !== undefined && unchanged) {
+    for (let index = 0; index < projected.length; index++) {
+      const frame = projected[index]!, old = previous.frames[index]!;
+      if (frame === old) continue;
+      unchanged = false;
+      // Streamed text/status may replace a frame without moving any locator.
+      // Compare ordered anchors so duplicate-key winners and Map order remain
+      // exactly the same, rather than rebuilding every historical locator.
+      if (frame.id !== old.id || frame.anchors.length !== old.anchors.length
+        || frame.anchors.some((anchor, i) => anchor.type !== old.anchors[i]!.type || anchor.id !== old.anchors[i]!.id)) {
+        anchorsUnchanged = false;
+        break;
+      }
+    }
+  }
+  const frames = unchanged ? previous!.frames : projected;
 
-  const anchorFrameIds = unchanged ? previous.anchorFrameIds : new Map<string, string>();
-  if (!unchanged) {
+  const anchorFrameIds = anchorsUnchanged ? previous!.anchorFrameIds : new Map<string, string>();
+  if (!anchorsUnchanged) {
     const anchors = anchorFrameIds as Map<string, string>;
     for (const frame of frames) {
       for (const anchor of frame.anchors) anchors.set(`${anchor.type}:${anchor.id}`, frame.id);
     }
-    previousProjection.set(registry, { frames, anchorFrameIds });
   }
+  if (!unchanged) previousProjection.set(registry, { frames, anchorFrameIds });
   return {
     key: source.key,
     revision: source.revision,

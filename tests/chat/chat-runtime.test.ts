@@ -2600,6 +2600,7 @@ test("tail updates reuse all completed historical frames and metadata-only updat
   replica.setEntity(next);
   assert.equal(projectedItems, 1);
   assert.equal(runtime.getSnapshot().timeline.frames[0], before.frames[0]);
+  assert.equal(runtime.getSnapshot().timeline.anchorFrameIds, before.anchorFrameIds, "text-only tail updates retain historical locators");
   const after = runtime.getSnapshot().timeline;
   projectedItems = 0;
   replica.setEntity({ ...next, notificationRevision: 42 });

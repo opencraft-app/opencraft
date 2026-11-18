@@ -62,6 +62,7 @@ import {
   visibleThreadHandoffSteps,
   type TimelineProjectionSource,
   type TimelineBlock,
+  type TimelineFrame,
   type AssistantTurnPresentationPlan,
   type ReasoningRenderUnit,
 } from "@opencraft/chat-core";
@@ -3820,4 +3821,49 @@ test("Turn grouping invalidates wait transitions and never mutates a frozen prio
   const oldFirst = removed[0];
   group({ ...timeline, frames: timeline.frames.slice(1) });
   assert.notEqual(group(timeline)[0], oldFirst);
+});
+
+
+test("text-only projections reuse immutable locator indexes; topology changes rebuild exact cold maps", () => {
+  const input = source([{ id: "locator-turn", status: "streaming", items: [
+    { id: "locator-user", type: "userMessage", payload: { clientId: "client", content: [{ type: "text", text: "question" }] } },
+    { id: "locator-answer", type: "agentMessage", payload: { text: "answer" } },
+  ] }]);
+  const initial = projectTimeline(input, createDefaultTimelineProjectorRegistry());
+  let frames: readonly TimelineFrame[] = initial.frames;
+  const registry = createDefaultTimelineProjectorRegistry();
+  registry.projectTurn = () => frames;
+  const project = () => projectTimeline(input, registry);
+  const cold = () => {
+    const registry = createDefaultTimelineProjectorRegistry(); registry.projectTurn = () => frames;
+    return projectTimeline(input, registry);
+  };
+  const verify = () => {
+    const next = project(); assert.deepEqual([...next.anchorFrameIds], [...cold().anchorFrameIds]); return next;
+  };
+  const first = verify();
+  frames = frames.map(frame => ({ ...frame, durationMs: 5, anchors: frame.anchors.map(anchor => ({ ...anchor })) }));
+  const textOnly = verify();
+  assert.notEqual(textOnly.frames, first.frames);
+  assert.equal(textOnly.anchorFrameIds, first.anchorFrameIds);
+  assert.equal(project().frames, textOnly.frames, "the latest frames are retained even while their locator index is reused");
+  const originalEntries = [...first.anchorFrameIds];
+  const mutate = (next: readonly TimelineFrame[]) => {
+    const old = project(); frames = next;
+    const changed = verify(); assert.notEqual(changed.anchorFrameIds, old.anchorFrameIds);
+    assert.deepEqual([...first.anchorFrameIds], originalEntries, "old indexes are never mutated");
+    return changed;
+  };
+  mutate(frames.map((frame, i) => i ? { ...frame, id: frame.id + ":ack" } : frame));
+  mutate(frames.map((frame, i) => i ? { ...frame, anchors: [...frame.anchors, {type: "item", id: asItemId("late-anchor")}] } : frame));
+  mutate([...frames].reverse());
+  mutate(frames.map((frame, i) => i ? { ...frame, anchors: [...frame.anchors].reverse() } : frame));
+  const duplicate = { type: "item" as const, id: asItemId("duplicate") };
+  mutate(frames.map(frame => ({ ...frame, anchors: [duplicate, ...frame.anchors] })));
+  const winner = frames.at(-1)!.id;
+  assert.equal(project().anchorFrameIds.get("item:duplicate"), winner);
+  mutate(frames.slice(0, -1));
+  assert.equal(project().anchorFrameIds.get("item:duplicate"), frames[0]!.id);
+  mutate([]);
+  assert.equal(project().anchorFrameIds.size, 0);
 });
