@@ -4,7 +4,12 @@ import { isTimelineTurnSettled, type TimelineStatus } from "../../packages/chat-
 
 test("completed-message actions wait until the Turn has settled", () => {
   const expected: Record<TimelineStatus, boolean> = {
-    pending: false, streaming: false, complete: true, failed: true, interrupted: true,
+    pending: false,
+    streaming: false,
+    complete: true,
+    failed: true,
+    interrupted: true,
   };
-  for (const [status, settled] of Object.entries(expected)) assert.equal(isTimelineTurnSettled(status as TimelineStatus), settled, status);
+  for (const [status, settled] of Object.entries(expected))
+    assert.equal(isTimelineTurnSettled(status as TimelineStatus), settled, status);
 });
