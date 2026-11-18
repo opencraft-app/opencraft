@@ -108,7 +108,7 @@ export async function smokeCodexAppHost(origin, projectPath = null) {
     assert.ok(initializeResult.result, JSON.stringify(initializeResult.error));
     assert.equal(initializeResult.result.opencraftQueueSteerVersion, undefined);
     assert.deepEqual(initializeResult.result.capabilities?.extensions?.["opencraft/thread-queue"], {
-      version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false,
+      version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false,
     });
     const lifecycle = initializeResult.result.capabilities?.extensions?.["opencraft/thread-lifecycle"];
     assert.equal(lifecycle?.rename, true);
