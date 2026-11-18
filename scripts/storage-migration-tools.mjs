@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export const digest = value => createHash('sha256').update(value).digest('hex');
 export function readJournal(directory) {
@@ -197,19 +197,37 @@ export function restoreIndexExpressions(sql, snapshot) {
   return output + sql.slice(cursor);
 }
 
-export async function assertSchemaCurrent(directory) {
+export async function assertSchemaCurrent(directory, { schemaFiles = [join(directory, 'schema.ts')] } = {}) {
   const { mkdtempSync, rmSync } = await import('node:fs');
   const { tmpdir } = await import('node:os');
   const { pathToFileURL } = await import('node:url');
   const { build } = await import('esbuild');
   const { generateSQLiteDrizzleJson, generateSQLiteMigration } = await import('drizzle-kit/api');
+  if (!Array.isArray(schemaFiles) || !schemaFiles.length || schemaFiles.some(file => typeof file !== 'string' || !file)) throw new Error('Schema validation needs concrete source files');
+  const files = schemaFiles.map(file => resolve(file));
+  if (new Set(files).size !== files.length) throw new Error('Duplicate schema source file');
   const journal = readJournal(join(directory, 'migrations'));
   const previous = JSON.parse(readFileSync(join(directory, 'migrations/meta', `${String(journal.entries.length - 1).padStart(4, '0')}_snapshot.json`), 'utf8'));
   const scratch = mkdtempSync(join(tmpdir(), 'oc-schema-check-'));
   try {
     const entry = join(scratch, 'schema.mjs');
-    await build({ entryPoints: [join(directory, 'schema.ts')], outfile: entry, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
-    const schema = await import(pathToFileURL(entry).href);
+    const contents = files.map((file, index) => `import * as schema${index} from ${JSON.stringify(file)};`).join('\n')
+      + `\nexport default [${files.map((_, index) => `schema${index}`).join(',')}];\n`;
+    await build({ stdin: { contents, resolveDir: resolve(directory), loader: 'ts' }, outfile: entry,
+      bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
+    const sources = (await import(pathToFileURL(entry).href)).default;
+    const { is, getTableName } = await import('drizzle-orm');
+    const { SQLiteTable } = await import('drizzle-orm/sqlite-core');
+    const schema = Object.create(null), tables = new Map();
+    for (const [index, source] of sources.entries()) for (const [name, value] of Object.entries(source)) {
+      if (Object.hasOwn(schema, name)) throw new Error(`Duplicate schema export: ${name}`);
+      if (is(value, SQLiteTable)) {
+        const table = getTableName(value), prior = tables.get(table);
+        if (prior && (prior.index !== index || prior.value !== value)) throw new Error(`Duplicate schema table owner: ${table}`);
+        tables.set(table, { index, value });
+      }
+      schema[name] = value;
+    }
     if ((await generateSQLiteMigration(previous, await generateSQLiteDrizzleJson(schema, previous.id))).length) throw new Error(`Ungenerated schema changes: ${directory}`);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
 }

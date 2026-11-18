@@ -348,3 +348,49 @@ test("DDL option retention respects strings, comments, identifier quoting and ex
     db.close();
   }
 });
+
+test("schema checks compose declared extension sources without dropping tables or accepting duplicate owners", async (t) => {
+  const { directory, temporary } = await fixture(t);
+  const previous = json(join(directory, "migrations/meta/0001_snapshot.json"));
+  const extensionNotes = sqliteTable("extension_notes", {
+    id: text("id").primaryKey(),
+    body: text("body").notNull(),
+  });
+  const next = await generateSQLiteDrizzleJson({ ...schema(), extensionNotes }, previous.id);
+  const sql = (await generateSQLiteMigration(previous, next)).join("\n");
+  assert.match(sql, /CREATE TABLE `extension_notes`/);
+  assert.doesNotMatch(sql, /DROP|ALTER/);
+  const journal = readJournal(join(directory, "migrations"));
+  journal.entries.push({
+    idx: 2,
+    version: "6",
+    when: journal.entries[1].when + 1,
+    tag: "0002_extension_notes",
+    breakpoints: true,
+  });
+  writeFileSync(join(directory, "migrations/0002_extension_notes.sql"), sql);
+  writeJson(join(directory, "migrations/meta/0002_snapshot.json"), next);
+  writeJson(join(directory, "migrations/meta/_journal.json"), journal);
+  freezeStore(directory);
+  const core = join(directory, "schema.ts"),
+    extension = join(temporary, "extension-schema.ts");
+  writeFileSync(
+    extension,
+    `import {sqliteTable,text} from ${JSON.stringify(join(root, "node_modules/drizzle-orm/sqlite-core/index.js"))};\nexport const extensionNotes=sqliteTable('extension_notes',{id:text('id').primaryKey(),body:text('body').notNull()});\n`,
+  );
+  await assert.rejects(assertSchemaCurrent(directory), /Ungenerated schema changes/);
+  await assertSchemaCurrent(directory, { schemaFiles: [core, extension] });
+  await assert.rejects(assertSchemaCurrent(directory, { schemaFiles: [] }), /concrete source files/);
+  await assert.rejects(assertSchemaCurrent(directory, { schemaFiles: [core, core] }), /Duplicate schema source/);
+  const duplicate = join(temporary, "duplicate-schema.ts");
+  writeFileSync(duplicate, `export {provider} from ${JSON.stringify(core)};\n`);
+  await assert.rejects(
+    assertSchemaCurrent(directory, { schemaFiles: [core, duplicate] }),
+    /Duplicate schema export: provider/,
+  );
+  writeFileSync(duplicate, `export {provider as anotherOwner} from ${JSON.stringify(core)};\n`);
+  await assert.rejects(
+    assertSchemaCurrent(directory, { schemaFiles: [core, duplicate] }),
+    /Duplicate schema table owner: provider_retries/,
+  );
+});

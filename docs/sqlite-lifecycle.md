@@ -949,3 +949,8 @@ cost remains separate; permanent anti-resurrection facts are never expired.
 - 后续正常生成的迁移继续以 journal tag 为 name，不需要这个文件。运行时仍消费生成的契约并严格验证全部历史；采纳清单不从线上数据库或客户端请求读取，也不允许任意新版/未知结构。
 
 采纳前必须核实原 SQL/name/version 与既有账本来源，审查 schema，并验证旧基线、既有增量、空库、重复打开及后续追加迁移的数据/备份行为。此工具不自动认领分叉版本，不允许两个不同 SQL 共用同一版本。测试见 [published ledger adoption](../tests/storage/published-ledger-adoption.test.ts)。
+
+
+### 多源声明模型检查
+
+Server 的 `check:storage` 与生成器读取同一份 `packages/storage-node/drizzle.config.ts` 中的 `schema` 配置：支持单个具体文件路径或非空路径数组，路径相对该包解析。产品消费者可在自己的配置中组合独立声明模块，不需要把产品表复制进核心 schema。检查不读取运行中数据库，不接受 glob，缺失文件、重复源、重复导出名或跨源重复表 owner 均失败；完整声明模型仍须与最后的冻结 snapshot 一致。其他独立 owner 默认继续检查各自的 `schema.ts`。
