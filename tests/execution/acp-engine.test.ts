@@ -69,11 +69,30 @@ test("native model suffix parsing handles long hostile names without backtrackin
   assert.equal(codexBaseModelId("one[]"), "one[]");
   assert.equal(codexBaseModelId("one" + "[".repeat(100000) + "]"), "one");
 });
+// A failed first close must remain observable by fixture cleanup. The engine
+// itself marks closed before every underlying operation has necessarily settled.
+function trackFixtureClose<T extends { close(): Promise<void> }>(owner: T): T {
+  const close = owner.close.bind(owner);
+  let completion: Promise<void> | undefined;
+  owner.close = () => completion ??= close();
+  return owner;
+}
+
+test("ACP fixture preserves the first close failure for cleanup", async () => {
+  let calls = 0;
+  const failure = new Error("synthetic close failure");
+  const owner = trackFixtureClose({ async close() { calls++; throw failure; } });
+  await assert.rejects(owner.close(), error => error === failure);
+  await assert.rejects(owner.close(), error => error === failure);
+  assert.equal(calls, 1);
+});
+
 async function fixture(t: test.TestContext, options: Record<string, any> = {}) {
   const root = await mkdtemp(join(tmpdir(), "acp-engine-test-")), trace = join(root, "trace.jsonl");
   const engineOptions = { command: process.execPath, args: [peer], cwd: root, dataDirectory: join(root, "data"), permission: "allow-once" as const, ...options, env: { ACP_TEST_TRACE: trace, ...options.env } };
-  const engine = new AcpEngine(engineOptions), engines = [engine];
-  const track = (next: AcpEngine) => { engines.push(next); return next; };
+  const engines: AcpEngine[] = [];
+  const track = (next: AcpEngine) => { const owner = trackFixtureClose(next); engines.push(owner); return owner; };
+  const engine = track(new AcpEngine(engineOptions));
   t.after(async () => {
     // Close every owner before removing its shared data directory, including
     // owners created later for restart/import coverage.
