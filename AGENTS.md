@@ -194,6 +194,7 @@ UI 任务按需读取 [UI 专题索引](design/ui/README.md)，字体任务继�
 | Electron 当前源码 | 先运行 `npm run build:electron`；创建 `preview_profile="$(mktemp -d /tmp/opencraft-electron-preview-XXXXXX)"`；再运行 `npm run start --workspace @opencraft/desktop -- --user-data-dir="$preview_profile" --remote-debugging-port=9333`。端口仅为示例，启动前确认未占用。 |
 | macOS 打包预览 | 仅在验证签名、打包资源、原生 helper、安装路径或最终桌面行为时运行 `npm run package:electron:mac:arm64:preview`；使用隔离 worktree/profile，按 `docs/build-matrix.md` 验收。 |
 
+- Linux 测试工具链只有一份：GitHub CI 与 Claude Code 云端会话（`.claude/hooks/session-start.sh`）都调用 `scripts/ci/setup-toolchain.sh`，使用 `.nvmrc` 的 Node、测试所需系统包、`npm ci` 与同一套测试隔离。新增系统依赖只改该脚本，不在 workflow 里另写 apt 步骤。
 - Renderer 重建后旧窗口不会热更新；关闭旧预览并用新构建、隔离 profile 和新调试端口重启。
 - Electron Main 必须由仓库 `start` 入口启动；不得用 `node dist-host/main.cjs`，也不得让父环境的 `ELECTRON_RUN_AS_NODE=1` 进入 Main。该变量只属于明确以 Electron 二进制承载 Node bundle 的 Daemon/工具子进程。若 `require("electron")` 返回二进制路径字符串、`app` 为 `undefined` 或模块找不到，先检查实际可执行文件、参数和 `ELECTRON_RUN_AS_NODE`，再用同一 Electron 二进制的最小正常 Main 对照；这类结果本身不能证明 Electron 版本回归或缓存损坏。
 - `opencraft://` 是全机 scheme。发起系统浏览器登录前确认 LaunchServices 实际指向本次预览；浏览器打开不等于回调已进入当前窗口。不得为排查批量注销其他预览或读取回调 code/token。

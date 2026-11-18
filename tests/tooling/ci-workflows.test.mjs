@@ -123,3 +123,32 @@ test('every npm run gate script runs in CI unless it is a recorded exception', (
   assert.deepEqual(missing, [], 'add these gate scripts to a CI job or record why they are excluded');
   for (const name of GATE_ONLY_EXCEPTIONS.keys()) assert.ok(gateScripts.includes(name), `${name} is no longer in gate; drop its exception`);
 });
+
+test('CI and Claude Code cloud sessions share one Linux toolchain setup', () => {
+  // Both test jobs install system packages through the shared script, never apt directly.
+  for (const name of ['core-tests', 'gate-tests']) {
+    assert.match(job(name), /run: bash scripts\/ci\/setup-toolchain\.sh system\n/, name);
+  }
+  const workflows = readdirSync(new URL('../../.github/workflows/', import.meta.url)).filter(file => /\.ya?ml$/.test(file));
+  for (const file of workflows) {
+    const text = readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(text, /apt-get install[^\n]*\b(?:acl|openssh-client)\b/, `${file} installs toolchain packages outside setup-toolchain.sh`);
+  }
+  // Cloud sessions run the hook at startup and resume.
+  const settings = JSON.parse(readFileSync(new URL('../../.claude/settings.json', import.meta.url), 'utf8'));
+  const start = settings.hooks.SessionStart.find(entry => entry.matcher === 'startup|resume');
+  assert.equal(start?.hooks[0]?.command, 'bash "$CLAUDE_PROJECT_DIR"/.claude/hooks/session-start.sh');
+  // The hook enables exactly the test isolation CI enables.
+  const hook = readFileSync(new URL('../../.claude/hooks/session-start.sh', import.meta.url), 'utf8');
+  assert.match(hook, /setup-toolchain\.sh" all/);
+  const ci = workflow.match(/echo "NODE_OPTIONS=([^"]+)" >> "\$GITHUB_ENV"/)[1].replaceAll('$GITHUB_WORKSPACE', '$root');
+  assert.ok(hook.includes(`export NODE_OPTIONS=\\"${ci}\\"`), 'session-start.sh NODE_OPTIONS differs from CI');
+});
+
+test('the cloud session hook does nothing outside Claude Code cloud sessions', () => {
+  const env = { ...process.env, CLAUDE_PROJECT_DIR: process.cwd() };
+  delete env.CLAUDE_CODE_REMOTE;
+  const result = spawnSync('bash', ['.claude/hooks/session-start.sh'], { env, encoding: 'utf8' });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, '');
+});

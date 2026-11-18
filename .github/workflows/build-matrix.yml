@@ -236,8 +236,9 @@ jobs:
       - name: Lint files this pull request adds
         run: npm run lint:changed -- --base HEAD^1
         if: always() && steps.dependencies.outcome == 'success' && github.event_name == 'pull_request'
-      - name: Ensure setfacl for token ACL tests
-        run: command -v setfacl >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends acl)
+      # Same system packages as Claude Code cloud sessions (.claude/hooks/session-start.sh).
+      - name: Ensure system packages for Git identity and token tests
+        run: bash scripts/ci/setup-toolchain.sh system
       - id: dsh
         run: npm run prepare:dsh-runtime
         if: always() && steps.dependencies.outcome == 'success'
@@ -307,8 +308,9 @@ jobs:
       # Same isolation as core-tests: private HOME/TMPDIR, leaked processes fail.
       - name: Enable test isolation
         run: echo "NODE_OPTIONS=--import $GITHUB_WORKSPACE/tests/support/test-isolation.mjs --test-global-setup=$GITHUB_WORKSPACE/tests/support/test-isolation-global.mjs" >> "$GITHUB_ENV"
-      - name: Ensure ssh-keygen and setfacl for Git identity and token tests
-        run: command -v ssh-keygen >/dev/null && command -v setfacl >/dev/null || (sudo apt-get update && sudo apt-get install -y --no-install-recommends openssh-client acl)
+      # Same system packages as Claude Code cloud sessions (.claude/hooks/session-start.sh).
+      - name: Ensure system packages for Git identity and token tests
+        run: bash scripts/ci/setup-toolchain.sh system
       - run: npm run test:controls
         if: always() && steps.dependencies.outcome == 'success'
         timeout-minutes: 10
