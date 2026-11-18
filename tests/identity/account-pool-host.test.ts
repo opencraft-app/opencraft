@@ -134,6 +134,48 @@ for (const failure of ["missing", "malformed", "identity-changed", "expired"] as
   });
 }
 
+test("a rejected shared credential stays rejected until its file changes, then recovers on the next request", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-external-rejection-"));
+  const path = join(root, "auth.json");
+  const pool = new AccountPoolStore({ databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets") });
+  const save = (token: string) => writeFile(path, JSON.stringify({ tokens: { account_id: "shared", access_token: token } }));
+  let upstreamCalls = 0;
+  try {
+    await save("refused-token");
+    pool.addAccount({ id: "shared", provider: "codex", label: "Shared", upstreamAccountId: "shared", priority: 1, enabled: true }, { kind: "codex-auth-file", path });
+    const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://example.test",
+      fetch: async (_url, init) => {
+        upstreamCalls++;
+        return new Headers(init?.headers).get("authorization") === "Bearer refused-token"
+          ? new Response(null, { status: 401 }) : Response.json({ ok: true });
+      },
+    });
+    const hostToken = pool.issueHostToken("host");
+    const request = () => proxy.handle(new Request("http://localhost/v1/responses", { method: "POST",
+      headers: { "content-type": "application/json", "session-id": "thread", "x-opencraft-account-pool-token": hostToken },
+      body: '{"model":"test","input":[]}' }));
+    assert.equal((await request()).status, 401);
+    const refusedCalls = upstreamCalls;
+    // An unchanged file is not retried against the provider on every request.
+    for (let attempt = 0; attempt < 2; attempt++) assert.equal((await request()).status, 401);
+    assert.equal(upstreamCalls, refusedCalls);
+    // `codex login` writes a new credential; the next request uses it without a usage refresh.
+    await save("renewed-token");
+    assert.equal((await request()).status, 200);
+    assert.equal(pool.listAccountStates().find(state => state.accountId === "shared")?.error, null);
+    // A request while the file is missing records it as unreadable; it recovers when the file returns.
+    await rm(path);
+    assert.equal((await request()).status, 401);
+    await save("renewed-token");
+    assert.equal((await request()).status, 200);
+    // A rejection follows the credential, not the path: restoring the same refused bytes stays rejected.
+    pool.markAccountError("shared", "authorization-rejected");
+    await rm(path);
+    await save("renewed-token");
+    assert.equal((await request()).status, 401);
+  } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("windowless successful external recheck clears only auth error and preserves quota", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-windowless-recovery-"));
   const path = join(root, "auth.json");
