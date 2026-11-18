@@ -8776,7 +8776,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   &__header {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     min-width: 0;
     min-height: 32px;
     align-items: center;
@@ -8786,8 +8786,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &__toggle {
     display: inline-flex;
     min-width: 0;
-    height: 28px;
-    flex: 0 0 auto;
+    min-height: 32px;
+    width: 100%;
+    justify-content: flex-start;
+    text-align: start;
+    flex: 1 1 auto;
     align-items: center;
     padding: 0 2px 0 0;
     border: 0;
@@ -8823,7 +8826,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     flex: 0 0 auto;
     margin-left: auto;
     color: var(--color-icon-tertiary);
-    opacity: 0;
+    opacity: 1;
     transition:
       transform 300ms var(--ease-standard),
       opacity 160ms ease;
@@ -8877,6 +8880,14 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
       font: var(--typography-metadata-font);
       letter-spacing: var(--typography-metadata-tracking);
     }
+  }
+
+  &__name.ui-button {
+    min-height: 0;
+    padding: 0;
+    white-space: normal;
+    text-align: start;
+    overflow-wrap: anywhere;
   }
 
   &__message {

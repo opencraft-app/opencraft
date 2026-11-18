@@ -4,7 +4,7 @@ import { collaborationMessages, collaborationStateMessage } from "./collaboratio
 import { CheckIcon as Check, ChevronRightIcon as ChevronRight, LoadingRingIcon as LoaderCircle, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import {
   threadToolNavigationTarget, createdThreadToolResult,
-  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation, subagentHeaderCall,
+  deriveSubagentActivityGroupPresentation, deriveSubagentActivityPresentation,
   extractToolCallContentParts, formatThreadHandoffStepLabel, isCodexAppThreadTool,
   threadHandoffToolResult, visibleThreadHandoffSteps,
   type SubagentActivityRenderUnit, type TimelineBlock, type ToolCallContentPart,
@@ -14,7 +14,7 @@ import { ZoomableImage, LazyHighlightedCodeSurface, resolveStandardChatResource 
 import { CircleIcon as Circle, CodeIcon as Code2, GlobeIcon as Globe2, ImageIcon, MessageIcon as MessageSquare } from "@opencraft/design-system-web/action-icons";
 import { lazy, Suspense, useCallback, useContext, useEffect, useState, type CSSProperties } from "react";
 import { Button } from "@opencraft/design-system-web/button";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useDisclosureReflow } from "../../use-disclosure-reflow";
 import { useDisclosureHeight } from "../../use-disclosure-height";
 import { ConversationDocumentContext, browserReadableImageSource } from "../../conversation/document-context";
@@ -344,18 +344,18 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
     : collaborationMessages[state]);
   const presentation = grouped ? deriveSubagentActivityGroupPresentation(blocks)
     : deriveSubagentActivityPresentation(blocks[0]!);
-  const detailsByThread = new Map<string, { block: AgentBlock; actionLabel: string }>();
+  const detailsByThread = new Map<string, AgentBlock>();
   for (const block of blocks) {
-    const detail = deriveSubagentActivityPresentation(block);
-    for (const agent of detail.agents) detailsByThread.set(agent.threadId, { block, actionLabel: detail.actionLabel });
+    for (const agent of deriveSubagentActivityPresentation(block).agents) {
+      // Keep task text when a later inspection has no prompt.
+      if (!detailsByThread.has(agent.threadId) || block.prompt) detailsByThread.set(agent.threadId, block);
+    }
   }
-  const headerCall = subagentHeaderCall(blocks)!;
-  const running = blocks.some(block => block.status === "running" || block.status === "pending");
-  const [open, setOpen] = useActivityOpen(running, false, restoreKey);
-  const [showAllAgents, setShowAllAgents] = useActivityOpen(false, false,
-    JSON.stringify(["subagent-members", restoreKey]));
-  const visibleAgents = showAllAgents ? presentation.agents : presentation.agents.slice(0, 3);
-  const hiddenAgentCount = presentation.agents.length - visibleAgents.length;
+  const [open, setOpen] = useActivityOpen(false, false, restoreKey);
+  const reducedMotion = useReducedMotion();
+  const summary = presentation.agents.length
+    ? presentation.agents.slice(0, 2).map(agent => agent.displayName).join(" · ")
+      + (presentation.agents.length > 2 ? " · " + intl.formatMessage(collaborationMessages.more, { count: presentation.agents.length - 2 }) : "") : toolName(blocks[0]!.tool);
   const reflow = useDisclosureReflow();
   const height = useDisclosureHeight("auto");
   if (!grouped && blocks[0]!.tool === null && blocks[0]!.activityKind !== null && presentation.agents.length === 1) {
@@ -369,44 +369,31 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
   }
   return <section className="thread-subagent-activity" data-status={presentation.summaryStatus} data-open={open || undefined}>
     <div className="thread-subagent-activity__header">
-      {renderToggle({ label: toolName(headerCall.tool), open, disabled: !presentation.expandable, onClick: event => {
+      {renderToggle({ label: stateName(presentation.summaryStatus) + " · " + summary, open,
+        disabled: !presentation.expandable, onClick: event => {
           reflow.begin(event.currentTarget); setOpen(!open);
         } })}
-      <div className="thread-subagent-chips">{visibleAgents.map(agent =>
-        <button key={agent.threadId} type="button" className="thread-subagent-chip" data-status={agent.status}
-          title={agent.model ?? undefined} aria-label={intl.formatMessage(collaborationMessages.open,{name:agent.displayName})}
-          disabled={navigation.open === null} onClick={() => navigation.open?.(agent.threadId, agent.displayName)}>
-          <Avatar agent={agent} /><span>{agent.displayName}</span>{agent.role ? <small>{agent.role}</small> : null}
-        </button>)}
-        {hiddenAgentCount > 0 ? <button type="button" className="thread-subagent-chips__more"
-          onClick={() => setShowAllAgents(true)}>{intl.formatMessage(collaborationMessages.more,{count:hiddenAgentCount})}</button> : null}
-      </div>
-      <span className="thread-subagent-activity__status" data-child-runtime-status={presentation.groupStatusLabel} data-summary-status={presentation.summaryStatus}>{stateName(presentation.summaryStatus)}</span>
-      {presentation.expandable ? <ChevronRight size={12} className="thread-subagent-activity__chevron" /> : null}
     </div>
     <AnimatePresence initial={false}>{open && presentation.expandable ? <motion.div className="thread-subagent-details"
       initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-      style={{ height }} transition={{ duration: 0.3 }} onAnimationComplete={reflow.complete}>
+      style={{ height }} transition={{ duration: reducedMotion ? 0 : 0.2 }} onAnimationComplete={reflow.complete}>
       <div className="thread-subagent-details__inner">
-      {blocks.map(block => {
-        const detail = deriveSubagentActivityPresentation(block);
-        const status = detail.groupStatusLabel;
-        return <p key={block.id} className="thread-subagent-details__meta"
-          title={intl.formatMessage(collaborationMessages.axes,{tool:stateName(block.toolCallStatus),delivery:deliveryName(block.deliveryStatus),child:stateName(status)})}
-          data-tool-call-status={block.toolCallStatus} data-delivery-status={block.deliveryStatus ?? "none"}
-          data-child-runtime-status={status === "started working" ? "working" : status === "finished" ? "done" : status}>
-          {toolName(block.tool)} · {stateName(detail.summaryStatus)}
-        </p>;
-      })}
+      {blocks.filter(block => block.toolCallStatus === "failed" || block.deliveryStatus === "rejected"
+        || block.deliveryStatus === "cancelled").map(block => <p key={block.id} className="thread-subagent-details__meta"
+          data-tool-call-status={block.toolCallStatus} data-delivery-status={block.deliveryStatus ?? "none"}>
+          {toolName(block.tool)} · {stateName(block.toolCallStatus)} · {deliveryName(block.deliveryStatus)}
+        </p>)}
       {presentation.agents.map(agent => {
-        const { block } = detailsByThread.get(agent.threadId)!;
+        const block = detailsByThread.get(agent.threadId)!;
         return <div key={agent.threadId} className="thread-subagent-details__row" data-status={agent.status}>
-          <Avatar agent={agent} /><div><p><span>{toolName(block.tool)} </span><strong>{agent.displayName}</strong>
-            {block.prompt && block.tool === "spawnAgent" ? <>：<span>{block.prompt}</span></>
-              : block.prompt && (block.tool === "sendInput" || block.tool === "resumeAgent") ? <>: <span>{block.prompt}</span></>
-              : !block.prompt && block.action ? <> · {block.action}</> : null}
-</p>
-
+          <Avatar agent={agent} /><div><p>
+            <Button variant="link" size="sm" className="thread-subagent-details__name"
+              disabled={navigation.open === null}
+              aria-label={intl.formatMessage(collaborationMessages.open,{name:agent.displayName})}
+              onClick={() => navigation.open?.(agent.threadId, agent.displayName)}>{agent.displayName}</Button>
+            <span> · {stateName(agent.statusLabel)}</span>
+          </p>
+            {block.prompt ? <p>{block.prompt}</p> : block.action ? <p>{block.action}</p> : null}
             {agent.statusMessage ? <p className="thread-subagent-details__message">{agent.statusMessage}</p> : null}
           </div></div>;
       })}
@@ -422,17 +409,19 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
 
 export function SubagentBlock({ block }: { block: AgentBlock }) {
   return <Agents blocks={[block]} grouped={false} restoreKey={JSON.stringify(["subagent", block.id])} renderToggle={props =>
-    <button type="button" className="thread-subagent-activity__toggle thread-activity-item__header"
+    <Button variant="ghost" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-activity-item__header"
       aria-expanded={props.open} disabled={props.disabled} onClick={props.onClick}>
       <ActivityIcon><AgentActivityIcon /></ActivityIcon><span className="thread-activity-item__summary">{props.label}</span>
-    </button>} />;
+      <ChevronRight size={12} aria-hidden className="thread-subagent-activity__chevron" />
+    </Button>} />;
 }
 
 export function SubagentActivityGroup({ unit }: { readonly unit: SubagentActivityRenderUnit }) {
   return unit.blocks.length > 0 ? <Agents blocks={unit.blocks} grouped={unit.blocks.length > 1}
     restoreKey={JSON.stringify(["subagent-group", unit.id])} renderToggle={props =>
-    <button type="button" className="thread-subagent-activity__toggle thread-activity-item__header"
+    <Button variant="ghost" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-activity-item__header"
       aria-expanded={props.open} disabled={props.disabled} onClick={props.onClick}>
       <ActivityIcon><AgentActivityIcon /></ActivityIcon><span className="thread-activity-item__summary">{props.label}</span>
-    </button>} /> : <></>;
+      <ChevronRight size={12} aria-hidden className="thread-subagent-activity__chevron" />
+    </Button>} /> : <></>;
 }
