@@ -79,10 +79,18 @@ test('core tests run the full typecheck and every npm test suite as independent 
     assert.match(step, /if: always\(\) && steps\.(dependencies|dsh)\.outcome == 'success'/, step);
   }
   assert.match(job('build-checks'), /needs: \[[^\]]*\bcore-tests\b[^\]]*\]/);
+  // Static checks and test suites run as two parallel halves; each step belongs to one.
+  assert.match(core, /part: \[static, tests\]/);
+  assert.match(core, /fail-fast: false/);
+  for (const step of steps.filter(step => /run: npm run (typecheck|check:|test:)/.test(step))) {
+    const part = step.match(/matrix\.part == '(static|tests)'/)?.[1];
+    assert.ok(part, `step not assigned to a core-tests part: ${step}`);
+    assert.equal(part, /run: npm run (typecheck|check:)/.test(step) ? 'static' : 'tests', step);
+  }
   // Only files a pull request adds are format-checked, against the merge commit's base parent.
   assert.match(core, /fetch-depth: 2/);
-  assert.match(core, /run: npm run check:format -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
-  assert.match(core, /run: npm run lint:changed -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
+  assert.match(core, /run: npm run check:format -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request' && matrix\.part == 'static'\n/);
+  assert.match(core, /run: npm run lint:changed -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request' && matrix\.part == 'static'\n/);
   // Test files run with a private HOME/TMPDIR and fail on processes they leave behind.
   // Set through GITHUB_ENV after npm ci: checkout and setup-node run on Node before the file exists.
   assert.doesNotMatch(core, /^    env:[\s\S]*?NODE_OPTIONS/m);
