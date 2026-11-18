@@ -4,7 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { selectMigrationHistory, openManagedDatabase, type Migration } from "../../packages/sqlite-node/src/index.js";
+import { selectMigrationHistory, openManagedDatabase, acquireProcessWriter, type Migration } from "../../packages/sqlite-node/src/index.js";
+import { beginRecovery } from "../../packages/sqlite-node/src/recovery.js";
+import { applyMigrations, prepareMigrations } from "../../packages/sqlite-node/src/migrations.js";
 
 const common: Migration = { version: 1, name: "base", sql: "CREATE TABLE data(id INTEGER PRIMARY KEY, value TEXT NOT NULL) STRICT" };
 const left: readonly Migration[] = [common,
@@ -94,4 +96,61 @@ for (const [id, chain] of [["left", left], ["right", right]] as const) test(`${i
     assert.equal(migrated.database.prepare("SELECT value FROM data WHERE id=4").get()?.value, "preserved");
     assert.deepEqual(migrated.database.prepare("PRAGMA foreign_key_check").all(), []);
   } finally { migrated.database.close(); }
+});
+
+for (const [id, chain] of [["left", left], ["right", right]] as const) for (const committed of [false, true]) test(`${id} history selection resumes a pending upgrade ${committed ? "after" : "before"} commit`, t => {
+  const directory = mkdtempSync(join(tmpdir(), "sqlite-history-recovery-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, "server.sqlite"), release = acquireProcessWriter(join(directory, "server.lock"));
+  try {
+    const first = openManagedDatabase({ path, migrations: chain.slice(0, 2) });
+    first.database.prepare("INSERT INTO data VALUES (?,?)").run(7, "preserved");
+    const prior = first.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+    const prepared = prepareMigrations(chain);
+    const recovery = beginRecovery(first.database, path, prepared);
+    assert.ok(recovery);
+    if (committed) applyMigrations(first.database, prepared);
+    first.database.close();
+    // Selection and reopening are protected by the same owner writer fence.
+    const reader = new DatabaseSync(path, { readOnly: true });
+    const selection = selectMigrationHistory(reader, histories);
+    assert.throws(() => acquireProcessWriter(join(directory, "server.lock")), error => (error as { code?: string }).code === "ELOCKED");
+    reader.close();
+    assert.equal(selection.history.id, id);
+    const resumed = openManagedDatabase({ path, migrations: selection.history.migrations });
+    try {
+      assert.equal(resumed.outcome.appliedVersion, 3);
+      assert.equal(resumed.database.prepare("SELECT value FROM data WHERE id=7").get()?.value, "preserved");
+      assert.deepEqual(resumed.database.prepare("SELECT * FROM schema_migrations WHERE version<=2 ORDER BY version").all(), prior);
+      assert.ok(existsSync(recovery.backupPath));
+      assert.equal(existsSync(path + ".pending-migration.json"), false);
+    } finally { resumed.database.close(); }
+  } finally { release(); }
+});
+
+test("a noncanonical ledger table cannot be mistaken for a usable history", () => {
+  for (const extra of [", extra TEXT NOT NULL", ", extra TEXT"]) {
+    const { database } = openManagedDatabase({ path: ":memory:", migrations: left });
+    try {
+      const rows = database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+      database.exec("ALTER TABLE schema_migrations RENAME TO old_ledger");
+      database.exec(`CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at INTEGER NOT NULL${extra}) STRICT`);
+      const extraColumn = extra.includes("NOT NULL") ? ", 'required'" : ", NULL";
+      database.exec(`INSERT INTO schema_migrations SELECT version,name,checksum,applied_at${extraColumn} FROM old_ledger; DROP TABLE old_ledger`);
+      assert.throws(() => selectMigrationHistory(database, histories), /ledger schema is invalid/);
+      assert.equal(database.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, rows.length);
+    } finally { database.close(); }
+  }
+});
+
+test("data-dependent migrations are rejected rather than guessed from an empty schema replay", () => {
+  const dependent = [...left.slice(0, 1), { version: 2, name: "requires-live-row", sql: "CREATE TABLE verify_row(x INTEGER NOT NULL); INSERT INTO verify_row SELECT NULL WHERE NOT EXISTS(SELECT 1 FROM data WHERE id=42); DROP TABLE verify_row" }];
+  // This owner deliberately bypasses the ordinary schema replay for a data-dependent history.
+  const { database } = openManagedDatabase({ path: ":memory:", migrations: [common] });
+  try {
+    database.prepare("INSERT INTO data VALUES (?,?)").run(42, "existing");
+    applyMigrations(database, prepareMigrations(dependent));
+    assert.throws(() => selectMigrationHistory(database, [{ id: "dependent", migrations: dependent }]));
+    assert.equal(database.prepare("SELECT value FROM data WHERE id=42").get()?.value, "existing");
+  } finally { database.close(); }
 });

@@ -1,9 +1,16 @@
 import type { DatabaseSync } from "node:sqlite";
 import { SqliteLifecycleError } from "./errors.js";
 import { createSchemaValidator } from "./lifecycle.js";
-import { hasLedger, prepareMigrations, validateHistory, type Migration } from "./migrations.js";
+import { hasLedger, LEDGER_SQL, prepareMigrations, validateHistory, type Migration } from "./migrations.js";
 
 /** A complete, owner-supplied append-only history. IDs are local identifiers, not database input. */
+// SQLite removes IF NOT EXISTS when persisting CREATE TABLE. Ignore layout, not
+// quoted literals or identifiers; reject alternate ledger constraints and columns.
+function normalizeLedgerDefinition(sql: string): string {
+  return sql.replace(/^CREATE TABLE IF NOT EXISTS /i, "CREATE TABLE ")
+    .replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\s+/g, token => /^\s/.test(token) ? "" : token);
+}
+
 export interface MigrationHistory {
   readonly id: string;
   readonly migrations: readonly Migration[];
@@ -14,6 +21,8 @@ export interface MigrationHistory {
  * writer fence through selection and the subsequent managed open, on its storage
  * worker rather than a request/event-loop thread. No migration
  * or ledger row is modified here; an unknown, empty or changed history fails closed.
+ * Every historical prefix must be replayable on an empty in-memory database for
+ * strict schema verification; owners of data-dependent SQL must not use this API.
  *
  * If multiple chains share the current prefix, the owner must provide a matching
  * preferred ID. This chooses a future append path, not a different interpretation
@@ -32,6 +41,10 @@ export function selectMigrationHistory(
   // alternative must not silently turn an ambiguous configuration into a match.
   const prepared = histories.map(history => ({ history, migrations: prepareMigrations(history.migrations) }));
   if (!hasLedger(database)) throw new SqliteLifecycleError("history-mismatch", "Database migration ledger is missing");
+  const ledger = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get()?.sql;
+  if (typeof ledger !== "string" || normalizeLedgerDefinition(ledger) !== normalizeLedgerDefinition(LEDGER_SQL)) {
+    throw new SqliteLifecycleError("history-mismatch", "Database migration ledger schema is invalid");
+  }
   const matches: Array<{ history: MigrationHistory; appliedVersion: number }> = [];
   for (const { history, migrations } of prepared) {
     let applied: number;
