@@ -842,7 +842,7 @@ export async function createWorkbenchWebServer({
         if (connectorService && await connectorService.handle(request, response)) return;
         sendJson(response, 404, { error: "missing" }); return;
       }
-      if (url.pathname === '/__opencraft_push') {
+      if (url.pathname === '/__opencraft_push' || url.pathname === '/__opencraft_notifications') {
         if (turnPushService && await turnPushService.handle(request, response)) return;
         sendJson(response, 404, { error: 'missing' }); return;
       }
