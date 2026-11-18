@@ -62,13 +62,13 @@ remain development goals. See the [implemented collaboration API](docs/actor-col
 
 ### Install the local service
 
-Use **Node.js 24 LTS** by default. Node.js 24.22.3 and 22.23.5 have been verified on Apple Silicon. Choose a complete package that matches your operating system, CPU architecture, and Node major version. The complete package is awaiting publication to public npm. You can install it from a locally built `.tgz` archive.
+On an **Apple Silicon Mac with Node.js 24 LTS**, run the following command. npx downloads the complete package from GitHub Releases.
 
 ```sh
-npx --yes --package="/absolute/path/to/opencraft-app-opencraft-VERSION.tgz" -- opencraft start
+npx --yes --package=https://github.com/sliverp/opencraft/releases/download/v0.1.18-local.1/opencraft-0.1.18-local.1-darwin-arm64-node24.tgz -- opencraft start
 ```
 
-Replace the example path with your archive path. Once a complete version is published, you can pass `@opencraft-app/opencraft@<exact-complete-version>` to `--package`. See the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导) for build and update channel instructions.
+[Release notes and SHA-256 checksums](https://github.com/sliverp/opencraft/releases/tag/v0.1.18-local.1). For other platforms or Node major versions, build a matching archive using the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导).
 
 The command starts the local execution service and opens Workbench in your browser. Connect an installed, signed-in Agent or configure a model provider. On a machine without a desktop, pass `--no-open` and use the address printed in the terminal. Closing the browser leaves the service running. Press Ctrl+C to stop it.
 
@@ -78,11 +78,9 @@ The command starts the local execution service and opens Workbench in your brows
 2. When an update appears, authorize it using the key from the `web/admin-key` file shown in the terminal and select **Update website**. Refresh when prompted. To restore the previous version, select **Roll back previous version**.
 3. Updates and rollbacks reuse your data directory, retaining Agent settings, conversation history, and Server records. The default is `~/.opencraft`. You can set `OPENCRAFT_HOME` or pass `--data-dir`. Keep using the same directory when you restart.
 
-To keep data from a previous `npm run dev` installation, stop the old service before starting the complete package against its data directory:
+The npm update channel for this GitHub preview is awaiting publication. The update page reports no published version while the channel is empty.
 
-```sh
-npx --yes --package="/absolute/path/to/opencraft-app-opencraft-VERSION.tgz" -- opencraft start --data-dir "$HOME/.opencraft/dev-local"
-```
+To keep data from `npm run dev`, first stop the old service. Append `--data-dir "$HOME/.opencraft/dev-local"` to the installation command above.
 
 ### Develop from source
 

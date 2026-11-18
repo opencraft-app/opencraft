@@ -31,6 +31,8 @@ node /opt/opencraft-web/bootstrap/node_modules/@opencraft-app/opencraft/runtime/
 
 本地完整服务包包含 Web 客户端、Local Agent Host、固定依赖的 DSH 运行时和当前平台的原生组件。它与只包含网站的包有不同的能力声明；`opencraft start` 会拒绝把纯网站包当成完整服务。源码新增入口不代表 npm 已发布，使用前须选择实际发布的、与操作系统／CPU／Node 主版本匹配的**本地完整包版本**。不应拿旧 `latest` 的网站包代替。
 
+Apple Silicon Mac 使用 Node.js 24 LTS 时，可用 [README 的 npx 命令](../README.md#安装本地服务) 从 GitHub Release 直接安装预览版。该预览版仍从 npm 更新频道检查更新，频道发布后才会出现可安装的新版。
+
 已取得兼容的完整包版本后，一条命令完成 npm 安装、服务启动及打开浏览器客户端：
 
 ```sh
