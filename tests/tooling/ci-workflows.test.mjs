@@ -236,3 +236,10 @@ test('every job has a timeout instead of the six-hour default', () => {
     }
   }
 });
+
+test('portable web validation runs subagent disclosure browser smoke', () => {
+  const portable = job('portable');
+  assert.match(portable, /if: matrix\.target == 'web-browser'[\s\S]*?install-playwright-chromium\.sh[\s\S]*?npm run smoke:subagent-activity/);
+  const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
+  assert.match(scripts['smoke:subagent-activity'], /scripts\/smoke\/conversation\/smoke-subagent-activity\.ts/);
+});

@@ -84,6 +84,7 @@ jobs:
         run: |
           bash scripts/ci/install-playwright-chromium.sh
           npm run smoke:browser-bootstrap
+          npm run smoke:subagent-activity
       - name: Browser bootstrap regression (Chrome 116)
         if: matrix.target == 'web-browser'
         env:
