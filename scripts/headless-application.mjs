@@ -85,7 +85,7 @@ import { OrchestrationRuntimeWorker } from '../packages/access-control/src/orche
 import { ThreadOrchestrationBroker } from '../packages/access-control/src/thread-orchestration-broker.ts';
 import { createThreadOrchestrationExecution, driverForThread } from './thread-orchestration-execution.mjs';
 import { createRoutedConversationExecution, callConversationHost } from './conversation-execution.mjs';
-import { PushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
+import { openPushStore, TurnPushService, PushObservationTransport } from '../packages/web-push-node/src/index.ts';
 import { readImConfiguration, startImPlugins } from './im-plugins.mjs';
 import { HumanAccounts } from '../packages/access-control/src/human-accounts.ts';
 import { LocalAccountServerPlugin } from '../plugins/local-account/src/server.ts';
@@ -853,11 +853,11 @@ export async function startHeadlessServer(options = {}, composition = {}) {
           ? new ExecutionEnvironmentTransport(transport, identity.executionEnvironment, hostId) : transport;
         return ['local-codex', 'opencraft-server'].includes(hostId) ? new PushObservationTransport(scopedTransport, value => {
           if (!turnPush || actorStore.get(value.actorId)?.kind !== 'human') return;
-          turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId);
+          void Promise.resolve(turnPush.store.watch(value.actorId, conversationExecution.serverForHost(hostId, value.threadId), hostId, value.threadId, value.inputId)).catch(() => {});
         }) : scopedTransport;
       },
     });
-    turnPush = new TurnPushService(new PushStore(join(dataDirectory, 'web-push.sqlite')), {
+    turnPush = new TurnPushService(await openPushStore(join(dataDirectory, 'web-push.sqlite')), {
       hosts: ['local-codex', 'opencraft-server'],
       authenticate: request => {
         const context = actorAccess.authenticate(request);

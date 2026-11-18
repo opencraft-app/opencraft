@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { PushStore, TurnPushService, type PushBinding } from "@opencraft/web-push-node";
+import { openPushStore, TurnPushService, type PushBinding } from "@opencraft/web-push-node";
 import { createWorkbenchWebServer } from "../../scripts/serve-workbench-web.mjs";
 
 const messages = { completed: "Done", failed: "Failed", interrupted: "Stopped", body: "Return", test: "Test" };
@@ -14,7 +14,7 @@ test("workbench routes the destination API through the authenticated real push o
     context: { actorId: "human-a", credentialId: null, generation: 1, expiresAt: Date.now() + 60_000 },
   };
   let authenticated = false;
-  const store = new PushStore(join(root, "push.sqlite"));
+  const store = await openPushStore(join(root, "push.sqlite"));
   const push = new TurnPushService(store, {
     authenticate: () => (authenticated ? binding : null),
     current: () => true,
