@@ -44,10 +44,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+          # Release artifacts must not depend on a cache a pull request could write.
+          package-manager-cache: false
       - run: test "$(uname -m)" = arm64
       - run: npm ci --no-audit --no-fund
       - run: npm run test:identity
@@ -71,10 +74,13 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+          # Release artifacts must not depend on a cache a pull request could write.
+          package-manager-cache: false
       - run: test "$(uname -m)" = x86_64
       - run: npm ci --no-audit --no-fund
       - run: npm run test:identity
@@ -100,10 +106,13 @@ jobs:
     environment: macos-release
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: npm
+          # Release artifacts must not depend on a cache a pull request could write.
+          package-manager-cache: false
       - run: npm ci --no-audit --no-fund
       - run: npm run test:macos-release
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
