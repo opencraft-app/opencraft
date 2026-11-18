@@ -9298,6 +9298,18 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
+.opencraft-composer-queue-item__preview-trigger {
+  display: block;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
 .opencraft-composer-queue-item__preview {
   min-width: 0;
   margin-inline-start: calc(var(--spacing) * 2);

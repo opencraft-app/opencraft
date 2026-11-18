@@ -46,6 +46,13 @@ over exact-client optimistic hints. Current-account changes, edits and reorder
 cannot reattribute old entries. Accessible pointer/keyboard sorting and existing
 queue actions remain available.
 
+Queue rows project Markdown through `chatDocumentPlainText` into a single-line
+label. Links retain visible titles, code retains literal punctuation, and table
+cells become text; the queued input remains unchanged. Activating the row preview
+renders the complete source with `WebUserMessageDocument` inside the existing
+bounded scrollport, preserving tables, lists and code. Touch, pointer and keyboard
+activation must preserve the Composer draft and independent queue actions.
+
 ## Queue modified-Enter shortcut
 
 In Queue mode, Cmd/Ctrl+Enter keeps draft content first: text, attachments,

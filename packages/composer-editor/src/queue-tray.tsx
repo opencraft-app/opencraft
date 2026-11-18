@@ -1,3 +1,4 @@
+import { ChatDocumentCompiler, chatDocumentPlainText } from "@opencraft/chat-document";
 import { EditIcon as Pencil, DeleteIcon as Trash2, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import { AvatarImage } from "@opencraft/extension-react";
 import { useIntl } from "@opencraft/i18n/react";
@@ -19,7 +20,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import * as Tooltip from "@radix-ui/react-tooltip";
-import React, { useRef, useState } from "react";
+import React, { lazy, Suspense, useMemo, useRef, useState } from "react";
+
+const WebUserMessageDocument = lazy(() => import("@opencraft/chat-render-web").then(module => ({ default: module.WebUserMessageDocument })));
 import { AlertIcon as CircleAlert, TurnRightIcon as CornerDownRight, GripIcon as GripVertical, PlayIcon as Play, PersonIcon as User } from "@opencraft/design-system-web/action-icons";
 
 /** Display-only author resolved by the host; the Composer owns no directory policy. */
@@ -78,15 +81,27 @@ function ignoreRejected(operation: Promise<void> | undefined): void {
   void operation?.catch(() => undefined);
 }
 
-function QueueTooltip({ children, label, portalContainer, disabled = false }: {
+function QueueTooltip({ children, label, content, portalContainer, disabled = false, tapToOpen = false }: {
   readonly children: React.ReactElement;
   readonly label: string;
+  readonly content?: React.ReactNode;
   readonly portalContainer?: HTMLElement | null;
   readonly disabled?: boolean;
+  readonly tapToOpen?: boolean;
 }) {
+  const [open, setOpen] = useState(false);
+  const pointerStartedOpen = useRef(false);
   return (
-    <Tooltip.Root>
-      <Tooltip.Trigger asChild>
+    <Tooltip.Root open={tapToOpen ? open : undefined} onOpenChange={tapToOpen ? setOpen : undefined}>
+      <Tooltip.Trigger asChild aria-expanded={tapToOpen ? open : undefined}
+        onPointerDown={tapToOpen ? () => { pointerStartedOpen.current = open; } : undefined}
+        onPointerLeave={tapToOpen ? event => { if (event.pointerType === "touch") event.preventDefault(); } : undefined}
+        onClick={tapToOpen ? event => {
+          // Radix normally dismisses a tooltip on click. Message previews also
+          // support deliberate activation; capture before its pointer-down close.
+          event.preventDefault();
+          setOpen(event.detail === 0 ? !open : !pointerStartedOpen.current);
+        } : undefined}>
         {disabled ? (
           <span
             className="opencraft-composer-queue-action-trigger"
@@ -99,7 +114,7 @@ function QueueTooltip({ children, label, portalContainer, disabled = false }: {
       </Tooltip.Trigger>
       <Tooltip.Portal container={portalContainer ?? undefined}>
         <Tooltip.Content className="opencraft-composer-queue-action-tooltip" side="top" sideOffset={8} collisionPadding={8}>
-          {label}
+          {tapToOpen ? <div className="opencraft-composer-queue-message-text" style={{ maxHeight: "min(50dvh, calc(var(--radix-tooltip-content-available-height, 50dvh) - 24px))", overflowY: "auto", overscrollBehavior: "contain", whiteSpace: content ? "normal" : "pre-wrap" }}>{content ?? label}</div> : label}
           <Tooltip.Arrow className="opencraft-composer-queue-action-tooltip__arrow" width={10} height={6} />
         </Tooltip.Content>
       </Tooltip.Portal>
@@ -129,6 +144,7 @@ function SortableQueueItem({
   readonly onSteer?: ComposerQueueTrayProps["onSteer"];
 }) {
   const intl = useIntl();
+  const plainPreview = useMemo(() => chatDocumentPlainText(new ChatDocumentCompiler().compile(item.preview, { dialect: "user-message" }).nodes).replace(/\s+/gu, " ").trim(), [item.preview]);
   const steerLabel = intl.formatMessage({ id: "chat.queue.steer", defaultMessage: "Steer with queued message" });
   const reorderLabel = intl.formatMessage({ id: "chat.queue.reorder", defaultMessage: "Reorder queued message" });
   const cancelEditLabel = intl.formatMessage({ id: "chat.queue.cancelEdit", defaultMessage: "Cancel editing queued message" });
@@ -201,8 +217,11 @@ function SortableQueueItem({
         </span>
       </QueueTooltip>
 
-      <QueueTooltip label={item.error ?? item.pausedReason ?? item.preview} portalContainer={portalContainer}>
-        <span className="opencraft-composer-queue-item__preview" tabIndex={0}>{item.preview}</span>
+      <QueueTooltip label={[plainPreview, item.error ?? item.pausedReason].filter(Boolean).join("\n\n")} content={<>
+        <Suspense fallback={item.preview}><WebUserMessageDocument documentId={`queue-preview:${item.id}`} source={item.preview} allowWideBlocks={false} /></Suspense>
+        {item.error ?? item.pausedReason ? <p>{item.error ?? item.pausedReason}</p> : null}
+      </>} portalContainer={portalContainer} tapToOpen>
+        <button type="button" aria-label={plainPreview || intl.formatMessage({ id: "chat.queue.message", defaultMessage: "Queued message" })} className="opencraft-composer-queue-item__preview-trigger" style={{ width: "100%", minWidth: 0, maxWidth: "100%", textAlign: "left" }}><span className="opencraft-composer-queue-item__preview">{plainPreview}</span></button>
       </QueueTooltip>
 
       <div className="opencraft-composer-queue-item__actions">

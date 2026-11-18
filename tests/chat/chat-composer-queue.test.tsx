@@ -274,3 +274,11 @@ test("older Hosts present unconfirmed status without an unsupported retry action
   assert.ok(!markup.includes(">Retry</button>"));
   assert.doesNotMatch(markup, /alertdialog|Review &amp; discard/);
 });
+
+test("queue labels project Markdown to visible single-line text", () => {
+  const markdown = "1. **邀请群成员**\n2. 查看 [文档](https://example.com/private-path) 和 `a_b`\n\n| 名称 | 状态 |\n| --- | --- |\n| 服务 | 正常 |";
+  const markup = renderToStaticMarkup(<ComposerQueueTray items={[{ ...pendingItem, preview: markdown }]} isResponseInProgress />);
+  const label = markup.match(/class="opencraft-composer-queue-item__preview">([^<]*)<\/span>/)?.[1];
+  assert.equal(label, "邀请群成员 查看 文档 和 a_b 名称 状态 服务 正常");
+  assert.doesNotMatch(markup, /private-path|\*\*|\| ---/);
+});

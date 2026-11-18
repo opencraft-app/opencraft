@@ -243,3 +243,10 @@ test('portable web validation runs subagent disclosure browser smoke', () => {
   const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
   assert.match(scripts['smoke:subagent-activity'], /scripts\/smoke\/conversation\/smoke-subagent-activity\.ts/);
 });
+
+test('web-browser matrix exercises queue Markdown preview', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/build-matrix.yml', import.meta.url), 'utf8');
+  const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
+  assert.match(workflow, /if: matrix\.target == 'web-browser'[\s\S]*?install-playwright-chromium\.sh[\s\S]*?npm run smoke:queue-markdown/);
+  assert.match(scripts['smoke:queue-markdown'], /scripts\/smoke\/composer\/smoke-queue-markdown\.ts/);
+});
