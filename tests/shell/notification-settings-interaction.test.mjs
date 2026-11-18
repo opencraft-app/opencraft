@@ -56,7 +56,7 @@ test("destination settings controls dispatch the correct master and target actio
       const notices={loading(){},info(){},success(){},warning(){},error(){},dismiss(){},dismissAll(){}};
       const local={supported:true,permission:'granted',enabled:true,busy:false,delivery:'page',backgroundAvailable:false,testSent:false,error:null};
       export function mount(element,calls){
-        const owner={getSnapshot:()=>snap,subscribe:()=>()=>{},operation:async(...args)=>{calls.push(args);return config}};
+        const owner={getSnapshot:()=>snap,subscribe:()=>()=>{},operation:async(...args)=>{calls.push(args);return {...config,savedId:"saved-target"}}};
         const root=createRoot(element);
         root.render(React.createElement(IntlProvider,{locale:'en'},React.createElement(AsyncNoticesContext.Provider,{value:notices},React.createElement(NotificationDestinationSettings,{controller:{destinations:owner,setEnabled:()=>{}},local,localDescription:'Local device'}))));
         return root;
@@ -94,6 +94,46 @@ test("destination settings controls dispatch the correct master and target actio
       ["master", { enabled: false }],
       ["enable", { id: "one", enabled: false }],
     ]);
+    const add = [...document.querySelectorAll("button")].find(
+      (element) => element.getAttribute("aria-label") === "Add notification method",
+    );
+    assert.ok(add);
+    await act(async () => {
+      add.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    });
+    const webhook = [...document.querySelectorAll('[role="menuitem"]')].find(
+      (element) => element.textContent === "Webhook",
+    );
+    assert.ok(webhook);
+    await act(async () => {
+      webhook.dispatchEvent(new MouseEvent("click", { bubbles: true, button: 0 }));
+    });
+    const dialog = document.querySelector('[role="dialog"]');
+    assert.ok(dialog);
+    assert.equal(
+      document.activeElement,
+      dialog,
+      "opening the sheet should focus its surface rather than the text input",
+    );
+    const input = dialog.querySelector("input");
+    assert.ok(input);
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set.call(
+        input,
+        "https://receiver.example/hook",
+      );
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const save = [...dialog.querySelectorAll("button")].find((element) => element.textContent === "Save and test");
+    assert.ok(save);
+    await act(async () => {
+      save.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    assert.equal(calls[2][0], "save");
+    assert.deepEqual(calls[2][1].target, { kind: "webhook", url: "https://receiver.example/hook", authorization: "" });
+    assert.match(calls[2][1].creationId, /^[a-f0-9-]{36}$/);
+    assert.deepEqual(calls[3], ["test", { id: "saved-target" }]);
+    assert.equal(document.querySelector('[role="dialog"]'), null);
   } finally {
     if (app) await act(async () => app.unmount());
     dom.window.close();
