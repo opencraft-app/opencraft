@@ -84,8 +84,9 @@ export class Collaboration {
   automationAuthorityAllowed?: (id:string)=>boolean;
   #cursor = 0;
   #pump: Promise<void> | null = null;
-  // Timer pumps re-read an unchanged engine "queued" receipt with backoff (500 ms -> 5 s): a
-  // queue head paused for a human Resume otherwise costs one engine logical client every 500 ms.
+  // Timer pumps re-read an unchanged receipt with backoff: "queued" 500 ms -> 5 s, "unknown"
+  // (awaits human review) 500 ms -> 30 s. A paused queue head or an unconfirmed handoff otherwise
+  // costs one engine logical client every 500 ms for as long as it stays.
   readonly #receiptPacing = new Map<string, { key: string; unchanged: number; dueAt: number }>();
   #operations: Promise<unknown> = Promise.resolve();
   #timer: ReturnType<typeof setInterval> | null = null;
@@ -682,7 +683,7 @@ export class Collaboration {
       if (this.#closed) return;
       this.#cursor = Number(snapshot.cursor);
       const id = snapshot.id as string, binding = this.#executionBinding(snapshot);
-      if (paced && snapshot.state === 'queued' && (this.#receiptPacing.get(id)?.dueAt ?? 0) > this.now()) continue;
+      if (paced && (snapshot.state === 'queued' || snapshot.state === 'unknown') && (this.#receiptPacing.get(id)?.dueAt ?? 0) > this.now()) continue;
       let observed = snapshot;
       const update = async (requestId: string, state: string, reason: string | null = null, receipt?: ExecutionReceipt) => {
         const queueId = receipt?.id ?? observed.queue_id ?? null, turnId = receipt?.targetTurnId ?? observed.turn_id ?? null;
@@ -693,10 +694,10 @@ export class Collaboration {
       try {
         let receipt = await this.execution.receipt(binding, id);
         if (this.#closed) return;
-        if (snapshot.state === 'queued' && receipt?.state === 'queued') {
-          const key = JSON.stringify([receipt.id, receipt.targetTurnId ?? null]), prior = this.#receiptPacing.get(id);
-          const unchanged = prior?.key === key ? prior.unchanged + 1 : 0;
-          this.#receiptPacing.set(id, { key, unchanged, dueAt: this.now() + Math.min(5_000, 500 * 2 ** Math.floor(unchanged / 4)) });
+        if ((snapshot.state === 'queued' && receipt?.state === 'queued') || snapshot.state === 'unknown') {
+          const key = JSON.stringify([snapshot.state, snapshot.reason ?? null, receipt?.id ?? null, receipt?.state ?? null, receipt?.targetTurnId ?? null]), prior = this.#receiptPacing.get(id);
+          const unchanged = prior?.key === key ? prior.unchanged + 1 : 0, cap = snapshot.state === 'unknown' ? 30_000 : 5_000;
+          this.#receiptPacing.set(id, { key, unchanged, dueAt: this.now() + Math.min(cap, 500 * 2 ** Math.floor(unchanged / 4)) });
         } else this.#receiptPacing.delete(id);
         // An engine receipt remains factual after revocation. Never relabel committed input as unexecuted.
         if (receipt?.state === 'delivered' || receipt?.state === 'steering') {
