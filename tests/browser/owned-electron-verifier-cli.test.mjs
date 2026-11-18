@@ -88,3 +88,59 @@ test("desktop verifier CLI verifies inventory and rejects tampered native bytes"
   assert.notEqual(invalid.status, 0);
   assert.match(invalid.stderr, /inventory mismatch/);
 });
+
+test(
+  "restored browser archive must match its evidence before it is usable",
+  { skip: process.platform !== "linux" || process.arch !== "x64" },
+  async (t) => {
+    const root = await mkdtemp(join(tmpdir(), "owned-restore-e2e-"));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const evidence = join(root, "evidence"),
+      distribution = join(root, "restored"),
+      fork = join(root, "fork.json");
+    await mkdir(evidence);
+    const definition = JSON.stringify({ version: "44.8.0", chromiumVersion: "152.0.7977.167" });
+    await writeFile(fork, definition);
+    const files = ["electron", "LICENSE", "LICENSES.chromium.html"].map((name) => {
+      const bytes = Buffer.from("fixture " + name);
+      return { path: name, sha256: hash(bytes), size: bytes.length };
+    });
+    await writeFile(
+      join(evidence, "opencraft-electron-artifact.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        platform: "linux",
+        arch: "x64",
+        forkDefinitionSha256: hash(definition),
+        electronVersion: "44.8.0",
+        chromiumVersion: "152.0.7977.167",
+        nativeCopyProbePassed: true,
+        files,
+      }),
+    );
+    const zip = spawnSync(
+      "python3",
+      [
+        "-c",
+        `import stat,sys,zipfile
+with zipfile.ZipFile(sys.argv[1], 'w') as z:
+ for name in ('electron','LICENSE','LICENSES.chromium.html'):
+  item=zipfile.ZipInfo(name);item.create_system=3;item.external_attr=(stat.S_IFREG | 0o755) << 16
+  z.writestr(item, 'fixture '+name)
+`,
+        join(evidence, "dist.zip"),
+      ],
+      { encoding: "utf8" },
+    );
+    assert.equal(zip.status, 0, zip.stderr);
+    const restore = spawnSync(
+      "python3",
+      ["vendor/electron/restore-artifact.py", "--directory", root, "--distribution", distribution, "--kind", "browser"],
+      { encoding: "utf8" },
+    );
+    assert.equal(restore.status, 0, restore.stderr);
+    assert.equal(run("browser", "linux-x64", distribution, fork).status, 0);
+    await writeFile(join(distribution, "electron"), "tampered");
+    assert.notEqual(run("browser", "linux-x64", distribution, fork).status, 0);
+  },
+);
