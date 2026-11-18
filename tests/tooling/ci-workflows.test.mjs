@@ -152,3 +152,24 @@ test('the cloud session hook does nothing outside Claude Code cloud sessions', (
   assert.equal(result.status, 0);
   assert.equal(result.stdout, '');
 });
+
+test('managed-web runs every suite exactly once across its parallel groups', () => {
+  const security = readFileSync(new URL('../../.github/workflows/security.yml', import.meta.url), 'utf8');
+  const managed = security.match(/^  managed-web:\n([\s\S]*?)(?=^  [a-z][a-z-]*:)/m)[1];
+  const suites = managed.match(/suite: \[([^\]]+)\]/)[1].split(',').map(name => name.trim());
+  assert.deepEqual(suites, ['release', 'browser-e2e', 'browser-smoke']);
+  assert.match(managed, /fail-fast: false/);
+  const expected = [
+    'typecheck --workspace @opencraft/workbench-web', 'test:web-release', 'test:web-updates', 'test:web-updates:e2e',
+    'smoke:attachment-upload-recovery', 'smoke:image-metadata-preview', 'smoke:offline-startup-continuity',
+    'test:queue-delivery-retry', 'smoke:queue-delivery-retry',
+  ];
+  const steps = [...managed.matchAll(/- run: npm run (.+)\n\s+if: (.+)\n/g)].map(([, command, condition]) => ({ command, condition }));
+  assert.deepEqual(steps.map(step => step.command).sort(), [...expected].sort());
+  for (const { command, condition } of steps) {
+    const suite = condition.match(/matrix\.suite == '([^']+)'/)?.[1];
+    assert.ok(suites.includes(suite), `${command} is not assigned to a matrix suite`);
+    assert.match(condition, /^always\(\) && steps\.(dependencies|browser)\.outcome == 'success' && /, command);
+  }
+  assert.match(security, /needs: \[plan, secrets, dependency-audit, managed-web\]/);
+});
