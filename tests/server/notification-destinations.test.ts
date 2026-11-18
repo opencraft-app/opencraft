@@ -109,6 +109,7 @@ test("version 1 upgrade retains Web Push keys, devices and queued deliveries", (
   const f = fixture();
   try {
     // The immutable, previously shipped version-1 SQL remains the migration input.
+    // source-contract: seed the exact previously published SQL and verify the real owner upgrades its data.
     const original = readFileSync(new URL("../../packages/web-push-node/src/store.ts", import.meta.url), "utf8")
       .match(/const SCHEMA = `([\s\S]*?)`\.trim\(\);/)![1]!
       .trim();
