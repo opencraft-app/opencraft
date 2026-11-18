@@ -19,7 +19,7 @@ import {
   activeTimelineTurnTodo,
   ReasoningPresentationCache,
   deriveAsyncQuestionPresentation,
-  groupTimelineFramesByTurn,
+  createTimelineTurnGrouper,
   presentAutomationUpdate,
   type AssistantTurnPresentationPlan,
   type AutomationUpdateTimelineBlock,
@@ -803,7 +803,8 @@ export function Conversation({
 }: ConversationProps) {
   const intl = useIntl();
   const allowEntryMotion = useConversationEntryMotion(timeline);
-  const entries = useMemo(() => timeline === null ? [] : groupTimelineFramesByTurn(timeline), [timeline]);
+  const groupTurns = useMemo(() => createTimelineTurnGrouper(), []);
+  const entries = useMemo(() => groupTurns(timeline), [groupTurns, timeline]);
   const latestTurn = entries.length === 0 ? null : entries[entries.length - 1] ?? null;
   const isLatestTurnInProgress = latestTurn?.status === "pending" || latestTurn?.status === "streaming";
   const activeTodo = useMemo(
