@@ -200,6 +200,14 @@ rest. It prepares the locked DSH runtime first. Documentation-only changes skip
 it. `tests/tooling/ci-workflows.test.mjs` fails if a suite is added to `npm test`
 without a matching CI step.
 
+`gate-tests` runs in parallel with `core-tests`, under the same selection and
+test isolation, for the suites `npm run gate` requires beyond `npm test`
+(sandbox, identity and actor authorization, relay, hub network, Codex core and
+others), plus the startup cache evidence. `tests/tooling/ci-workflows.test.mjs`
+fails when a `gate` script runs in no workflow and is not a recorded exception;
+`test:startup` is excluded until its Expo native-module version mismatch is
+resolved.
+
 On pull requests `core-tests` also formats and lints the source files the PR
 adds (`check:format`, `lint:changed`). Its suites run with
 `tests/support/test-isolation.mjs`: each test file gets a private HOME/TMPDIR,

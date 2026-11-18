@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
@@ -16,7 +16,7 @@ const selected = {
   PLAN_RESULT: 'success', BUILD_SELECTED: 'true', BUILD_RESULT: 'success',
   NATIVE_SELECTED: 'false', NATIVE_RESULT: 'skipped', PACKAGE_SELECTED: 'false', PACKAGE_RESULT: 'skipped',
   HEADLESS_SELECTED: 'true', HEADLESS_RESULT: 'success',
-  CORE_SELECTED: 'true', CORE_RESULT: 'success',
+  CORE_SELECTED: 'true', CORE_RESULT: 'success', GATE_RESULT: 'success',
 };
 function check(env) {
   return spawnSync('bash', ['-e', '-c', gate], { env: { ...process.env, ...selected, ...env }, encoding: 'utf8' }).status;
@@ -24,7 +24,7 @@ function check(env) {
 
 test('the real aggregate script accepts Web/server and documentation-only plans', () => {
   assert.equal(check({}), 0);
-  assert.equal(check({ BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped' }), 0);
+  assert.equal(check({ BUILD_SELECTED: 'false', BUILD_RESULT: 'skipped', HEADLESS_SELECTED: 'false', HEADLESS_RESULT: 'skipped', CORE_SELECTED: 'false', CORE_RESULT: 'skipped', GATE_RESULT: 'skipped' }), 0);
   assert.equal(check({ EXTENSIONS_SELECTED: 'true', EXTENSIONS_RESULT: 'success' }), 0);
   assert.equal(check({ NATIVE_SELECTED: 'true', NATIVE_RESULT: 'success' }), 0);
   assert.equal(check({ PACKAGE_SELECTED: 'true', PACKAGE_RESULT: 'success' }), 0);
@@ -94,4 +94,32 @@ test('every main commit runs build-matrix in its own run', () => {
   // A PR commit supersedes its predecessor; main commits are never grouped or cancelled.
   assert.match(workflow, /group: build-matrix-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
+});
+
+test('gate-tests shares core-tests selection and build-checks requires it', () => {
+  for (const result of ['failure', 'cancelled', 'skipped', '']) assert.notEqual(check({ GATE_RESULT: result }), 0, `gate: ${result}`);
+  assert.notEqual(check({ CORE_SELECTED: 'false', CORE_RESULT: 'skipped', GATE_RESULT: 'success' }), 0, 'unexpected gate run');
+  assert.match(job('gate-tests'), /if: needs\.plan\.outputs\.has-builds == 'true' \|\| needs\.plan\.outputs\.headless-tests == 'true'/);
+  assert.match(job('build-checks'), /needs: \[[^\]]*\bgate-tests\b[^\]]*\]/);
+});
+
+// Scripts npm run gate requires that CI does not run, each with the reason.
+const GATE_ONLY_EXCEPTIONS = new Map([
+  ['build:web', 'covered by the portable web-browser build'],
+  ['build:expo:web', 'Expo builds are opt-in platform validation'],
+  ['build:expo:ios', 'requires macOS with Xcode'],
+  ['test:startup', 'pending: react-native-worklets 0.13.1 does not match the Expo SDK 58 pin 0.13.0'],
+]);
+
+test('every npm run gate script runs in CI unless it is a recorded exception', () => {
+  const scripts = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).scripts;
+  const gateScripts = [...scripts.gate.matchAll(/npm run ([\w:.-]+)/g)].map(match => match[1]);
+  const testScripts = [...scripts.test.matchAll(/npm run ([\w:.-]+)/g)].map(match => match[1]);
+  const directory = new URL('../../.github/workflows/', import.meta.url);
+  const workflows = readdirSync(directory).filter(name => /\.ya?ml$/.test(name)).map(name => readFileSync(new URL(name, directory), 'utf8')).join('\n');
+  const ran = new Set([...workflows.matchAll(/npm run ([\w:.-]+)/g)].map(match => match[1]));
+  for (const name of testScripts) ran.add(name);
+  const missing = gateScripts.filter(name => !ran.has(name) && !GATE_ONLY_EXCEPTIONS.has(name));
+  assert.deepEqual(missing, [], 'add these gate scripts to a CI job or record why they are excluded');
+  for (const name of GATE_ONLY_EXCEPTIONS.keys()) assert.ok(gateScripts.includes(name), `${name} is no longer in gate; drop its exception`);
 });
