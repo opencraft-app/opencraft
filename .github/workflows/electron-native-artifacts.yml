@@ -36,6 +36,7 @@ jobs:
   plan:
     if: inputs.mode != 'prepare-linux-runner'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.targets.outputs.matrix }}
     steps:

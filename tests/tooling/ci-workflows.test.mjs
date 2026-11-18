@@ -214,3 +214,25 @@ test('electron-fork cancels superseded PR runs but never main commits', () => {
   assert.match(fork, /group: electron-fork-\$\{\{ github\.event\.pull_request\.number \|\| \(github\.event_name == 'push' && github\.sha\) \|\| github\.ref \}\}/);
   assert.match(fork, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
 });
+
+const workflowFiles = readdirSync(new URL('../../.github/workflows/', import.meta.url)).filter(file => /\.ya?ml$/.test(file))
+  .map(file => [file, readFileSync(new URL(`../../.github/workflows/${file}`, import.meta.url), 'utf8')]);
+
+test('every external action is pinned to a full commit SHA', () => {
+  for (const [file, text] of workflowFiles) {
+    for (const [, action] of text.matchAll(/^\s*-?\s*uses: (\S+)/gm)) {
+      if (action.startsWith('./')) continue;
+      assert.match(action, /@[0-9a-f]{40}$/, `${file}: ${action} is not pinned to a commit SHA`);
+    }
+  }
+});
+
+test('every job has a timeout instead of the six-hour default', () => {
+  for (const [file, text] of workflowFiles) {
+    const jobs = text.slice(text.search(/^jobs:\n/m));
+    for (const [, name, body] of jobs.matchAll(/^  ([a-z][a-z0-9-]*):\n((?:(?: {4}.*)?\n)*)/gm)) {
+      if (/^ {4}uses: /m.test(body)) continue; // reusable workflow call
+      assert.match(body, /^ {4}timeout-minutes: \d+/m, `${file}: job ${name} has no timeout-minutes`);
+    }
+  }
+});

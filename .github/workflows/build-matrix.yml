@@ -165,7 +165,7 @@ jobs:
           name: electron-macos-smoke
           path: ${{ runner.temp }}/opencraft-macos-smoke
           retention-days: 3
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: electron-macos-native
           path: apps/desktop/release/OpenCraft-*
@@ -177,8 +177,8 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -197,7 +197,7 @@ jobs:
         if: needs.plan.outputs.headless-package == 'true'
       - run: npm run smoke:headless:linux
         if: needs.plan.outputs.headless-package == 'true'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.plan.outputs.headless-package == 'true'
         with:
           name: headless-linux-amd64-tar
