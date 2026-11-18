@@ -82,4 +82,7 @@ test('core tests run the full typecheck and every npm test suite as independent 
   // Only files a pull request adds are format-checked, against the merge commit's base parent.
   assert.match(core, /fetch-depth: 2/);
   assert.match(core, /run: npm run check:format -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
+  assert.match(core, /run: npm run lint:changed -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
+  // Test files run with a private HOME/TMPDIR and fail on processes they leave behind.
+  assert.match(core, /NODE_OPTIONS: --import \$\{\{ github\.workspace \}\}\/tests\/support\/test-isolation\.mjs --test-global-setup=\$\{\{ github\.workspace \}\}\/tests\/support\/test-isolation-global\.mjs/);
 });

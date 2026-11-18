@@ -1,38 +1,13 @@
 #!/usr/bin/env node
-// Formats only source files that a change adds. Existing files keep their
-// current layout so a small edit never turns into a whole-file reformat.
+// Formats only source files that a change adds.
 //
 //   node scripts/format-changed.mjs [--check] [--base <ref>]
-//
-// --base defaults to the merge-base with origin/main. CI passes the pull
-// request merge commit's first parent.
-import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { addedSourceFiles, repositoryRoot } from "./added-source-files.mjs";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const formattable = /\.(?:[cm]?[jt]sx?)$/u;
-const excluded =
-  /^(?:vendor|dist|release|runtime\/dsh\/node_modules)\/|\/(?:dist|node_modules|generated)\/|_generated\./u;
-
-const args = process.argv.slice(2);
-const check = args.includes("--check");
-const baseIndex = args.indexOf("--base");
-const git = (...gitArgs) => execFileSync("git", gitArgs, { cwd: repositoryRoot, encoding: "utf8" }).trim();
-const base = baseIndex >= 0 ? args[baseIndex + 1] : git("merge-base", "origin/main", "HEAD");
-if (!base) throw new Error("--base requires a Git ref");
-
-// The working tree, including untracked files, so new files are covered before they are committed.
-const candidates = [
-  ...git("diff", "--name-only", "--diff-filter=A", "-z", base).split("\0"),
-  ...git("ls-files", "--others", "--exclude-standard", "-z").split("\0"),
-];
-const added = [...new Set(candidates)].filter(
-  (file) => file && formattable.test(file) && !excluded.test(file) && existsSync(resolve(repositoryRoot, file)),
-);
-
+const check = process.argv.includes("--check");
+const added = addedSourceFiles();
 if (!added.length) {
   console.log("format: no added source files");
   process.exit(0);
