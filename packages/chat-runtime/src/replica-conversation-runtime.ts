@@ -1,3 +1,4 @@
+import { createPendingInteractionProjector } from "./pending-interaction-projection";
 import { humanInteractionWaitReason } from "@opencraft/appserver-protocol";
 import { userInputQuestionExtensions } from "@opencraft/chat-core";
 import type {
@@ -442,9 +443,12 @@ const interactionMethods = new Set([
 
 function sourcePendingInteractions(
   value: ReplicaJsonValue | undefined,
+  cache: WeakMap<object, PendingInteraction>,
 ): readonly PendingInteraction[] {
   return array(value).flatMap((candidate): PendingInteraction[] => {
     if (!isRecord(candidate)) return [];
+    const cached = cache.get(candidate);
+    if (cached) return [cached];
     const requestId = string(candidate.requestId);
     const method = string(candidate.method);
     const receivedAtMs = number(candidate.receivedAtMs);
@@ -471,8 +475,7 @@ function sourcePendingInteractions(
         if (step !== "role" && step !== "task" && step !== "context") return [];
       }
     }
-    return [
-      {
+    const interaction = {
         requestId,
         method,
         turnId:
@@ -484,8 +487,9 @@ function sourcePendingInteractions(
         ...(["pending", "responding", "unconfirmed"].includes(String(candidate.responseState)) ? { responseState: candidate.responseState } : {}),
         ...(typeof candidate.canRespond === "boolean" ? { canRespond: candidate.canRespond } : {}),
         params: candidate.params,
-      } as unknown as PendingInteraction,
-    ];
+      } as unknown as PendingInteraction;
+    cache.set(candidate, interaction);
+    return [interaction];
   });
 }
 
@@ -833,47 +837,6 @@ function provisionalCommandApprovalItem(
       __opencraftProvisionalApproval: true,
     },
   };
-}
-
-function attachPendingInteractions(
-  source: readonly TimelineSourceTurn[],
-  interactions: readonly PendingInteraction[],
-): readonly TimelineSourceTurn[] {
-  if (interactions.length === 0) return source;
-  const turns = [...source];
-  for (const interaction of interactions) {
-    const targetTurnId =
-      interaction.turnId ?? asTurnId(`interaction:${interaction.requestId}`);
-    let turn = turns.find((candidate) => candidate.id === targetTurnId);
-    if (turn === undefined) {
-      turn = { id: targetTurnId, status: "pending", items: [] };
-      turns.push(turn);
-    }
-    const index = turns.indexOf(turn);
-    turn = { ...turn, items: [...turn.items] };
-    turns[index] = turn;
-    const items = turn.items as TimelineSourceItem[];
-    const provisionalCommand = provisionalCommandApprovalItem(interaction);
-    if (
-      provisionalCommand !== null &&
-      !items.some(
-        (item) =>
-          item.id === provisionalCommand.id && item.type === "commandExecution",
-      )
-    ) {
-      items.push(provisionalCommand);
-    }
-    const projected = interactionPayload(interaction);
-    items.push({
-      id: `server-request:${interaction.requestId}`,
-      type: projected.type,
-      payload: { ...projected.payload,
-        ...(interaction.responseState ? { responseState: interaction.responseState } : {}),
-        ...(interaction.canRespond === undefined ? {} : { canRespond: interaction.canRespond }),
-      },
-    });
-  }
-  return turns;
 }
 
 function assertIntentTarget(key: ConversationKey, intent: SubmitIntent): void {
@@ -1322,6 +1285,21 @@ export function createReplicaConversationRuntime(
   const projectors =
     config.projectors ?? createDefaultTimelineProjectorRegistry();
   const sourceTurnCache = new WeakMap<object, TimelineSourceTurn>();
+  const pendingInteractionCache = new WeakMap<object, PendingInteraction>();
+  const attachPendingInteractions = createPendingInteractionProjector(interaction => {
+    const projected = interactionPayload(interaction);
+    return {
+      provisionalCommand: provisionalCommandApprovalItem(interaction),
+      request: {
+        id: `server-request:${interaction.requestId}`,
+        type: projected.type,
+        payload: { ...projected.payload,
+          ...(interaction.responseState ? { responseState: interaction.responseState } : {}),
+          ...(interaction.canRespond === undefined ? {} : { canRespond: interaction.canRespond }),
+        },
+      },
+    };
+  });
   const projectReviews = createGuardianApprovalReviewProjector();
   const actionTurnCache = new WeakMap<TimelineSourceTurn, TimelineSourceTurn>();
   const commandActionCache: CommandActionProjectionCache = new WeakMap();
@@ -1467,7 +1445,7 @@ export function createReplicaConversationRuntime(
       ? string(execution.activePermissionProfile.id)
       : string(execution.activePermissionProfile);
     const pendingInteractions = sourcePendingInteractions(
-      view.pendingInteractions,
+      view.pendingInteractions, pendingInteractionCache,
     );
     const history = sourceTurns(view.turns ?? thread.turns, sourceTurnCache);
     const source = history.map((original, index) => {

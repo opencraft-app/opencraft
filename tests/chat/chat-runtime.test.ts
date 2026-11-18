@@ -3163,3 +3163,35 @@ test("stable command payloads are expanded once across live tail updates, but ne
     finally { independent.dispose(); }
   } finally { runtime.dispose(); }
 });
+
+test("unchanged pending request records reuse parsing and display artifacts during streaming", () => {
+  let clockReads = 0, actionReads = 0;
+  const request = {
+    requestId: "stable-approval", method: "item/commandExecution/requestApproval", turnId: "turn-one", itemId: "waiting-command",
+    get receivedAtMs() { clockReads++; return 1; },
+    params: { command: "cat a", get commandActions() { actionReads++; return [{type:"read",command:"cat a",name:"a",path:"a"}]; } },
+  };
+  const replica = new FakeReplica(threadView({ pendingInteractions: [request] }));
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} },
+  });
+  assert.equal(runtime.getSnapshot().pendingInteractions.length, 1);
+  assert.ok(clockReads > 0 && actionReads > 0);
+  const initial = {clockReads,actionReads};
+  for (const suffix of ["one","two","three"]) {
+    replica.setEntity(threadView({ pendingInteractions: [request], turns: [{id:"turn-one",status:"inProgress",
+      items:[{id:"tail",type:"agentMessage",text:"Streaming "+suffix}]}] }));
+    assert.equal(runtime.getSnapshot().pendingInteractions.length, 1);
+    assert.deepEqual({clockReads,actionReads}, initial);
+  }
+  const responding = {...request,responseState:"responding",canRespond:false};
+  replica.setEntity(threadView({pendingInteractions:[responding]}));
+  assert.equal(runtime.getSnapshot().pendingInteractions[0]?.responseState, "responding");
+  assert.equal(runtime.getSnapshot().pendingInteractions[0]?.canRespond, false);
+  replica.setEntity(threadView({pendingInteractions:[{...responding,responseState:"pending",canRespond:true,params:{command:"cat changed"}}]}));
+  assert.equal(runtime.getSnapshot().pendingInteractions[0]?.responseState, "pending");
+  assert.equal(runtime.getSnapshot().pendingInteractions[0]?.canRespond, true);
+  replica.setEntity(threadView({pendingInteractions:[]}));
+  assert.equal(runtime.getSnapshot().pendingInteractions.length,0);
+  runtime.dispose();
+});
