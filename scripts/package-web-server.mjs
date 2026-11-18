@@ -25,6 +25,8 @@ import { createHash } from 'node:crypto';
 import { normalizeFullRuntimeEngines, packageFullRuntime } from './full-release/package-runtime.mjs';
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
+import {packageLocalService} from './package-local-service.mjs';
+import {MAX_LOCAL_SERVICE_ENTRIES} from './web-deployment/archive-limits.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 export function executionModuleOptions(format) {
@@ -32,7 +34,8 @@ export function executionModuleOptions(format) {
     ? { define: {}, banner: { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } }
     : { define: { 'import.meta.url': 'import_meta_url' }, banner: { js: "const import_meta_url = require('node:url').pathToFileURL(__filename).href;" } };
 }
-export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], additionalRuntimeAssets = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, fullRuntimeEngines = undefined, completeRuntime = false, dryRun = false, prepareOnly = false }) {
+export async function packageWebServer({ version, webRoot = join(repositoryRoot, 'apps/workbench-web/dist'), output, execution = false, executionProfile = 'daemon', localService = false, splitResources = process.env.OPENCRAFT_SPLIT_WEB_RESOURCES === '1', packageName = PACKAGE_NAME, resourcePackageName = RESOURCE_PACKAGE, registry = process.env.OPENCRAFT_NPM_REGISTRY, relayEntry = join(repositoryRoot, 'apps/relay-server/src/main.ts'), headlessGatewayEntry = join(repositoryRoot, 'scripts/server-deployment/headless-gateway.mjs'), additionalGitRuntimeEntries = [], additionalRuntimeAssets = [], fullUpgradeProfile = null, fullRelease = null, fullReleaseTrust = null, fullRuntimeEngines = undefined, completeRuntime = false, dryRun = false, prepareOnly = false }) {
+  if(localService){if(executionProfile!=='daemon')throw new Error('Local service requires its own execution profile');execution=true;}
   if (prepareOnly && !fullRelease) throw new Error('Prepared trees require a signed full release');
   if (completeRuntime && !fullRelease && !dryRun) throw new Error('Complete unsigned payloads are supported only for dry-run');
   assertPackageName(packageName); assertPackageName(resourcePackageName);
@@ -68,14 +71,18 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const html = await readFile(indexPath, 'utf8');
   await writeFile(indexPath, html.replace('</head>', `<meta name="opencraft-web-updates" content="/__opencraft_updates">${resources ? `<meta name="opencraft-web-resources" content="${web.buildId}">` : ''}</head>`));
   manifest.version = version;
+  manifest.bin.opencraft='runtime/start-cli.mjs';
+  if(localService){manifest.opencraftLocalService={schemaVersion:1,updateChannel:`local-${process.platform}-${process.arch}-node${process.versions.node.split('.')[0]}`};manifest.files.push('local-runtime/');}
   await buildConversationCli(join(packageRoot, 'runtime/opencraft-cli.mjs'));
+  await cp(join(repositoryRoot,'scripts/web-deployment/start-cli.mjs'),join(packageRoot,'runtime/start-cli.mjs'));
+  await chmod(join(packageRoot,'runtime/start-cli.mjs'),0o755);
   manifest.opencraftWeb = { userPlugins: 1, schemaVersion: 1, workerProtocol: 1, buildId: web.buildId, ...(resources ? { resources: { packageName: resources.packageName, version, buildId: web.buildId, integrity: resources.integrity } } : {}) };
   await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
   await cp(join(repositoryRoot, 'docs/web-deployment.md'), join(packageRoot, 'README.md'));
   await cp(join(repositoryRoot, 'LICENSE'), join(packageRoot, 'LICENSE'));
   const unit = await readFile(join(repositoryRoot, 'packaging/web-server/opencraft-web.service'), 'utf8');
   await writeFile(join(packageRoot, 'opencraft-web.service'), unit.replace(`node_modules/${PUBLIC_PACKAGE_NAME}/`, `node_modules/${packageName}/`));
-  for (const entry of ['cli', 'worker', 'controlled-registry', 'prefetch']) {
+  for (const entry of ['cli', 'worker', 'controlled-registry', 'prefetch', 'local-start']) {
     await build({ entryPoints: [join(repositoryRoot, `scripts/web-deployment/${entry}.mjs`)], outfile: join(packageRoot, `runtime/${entry}.mjs`),
       bundle: true, platform: 'node', format: 'esm', target: 'node22',
       external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node'],
@@ -136,6 +143,11 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['scripts/server-deployment/acp-host.mjs', 'acp-host.mjs', 'esm'],
       ['scripts/server-deployment/sandbox-command.mjs', 'sandbox-command.mjs', 'esm'],
       ['scripts/server-deployment/dsh-terminal-agent.mjs', 'dsh-terminal-agent.mjs', 'esm'],
+      ...(localService ? [
+        ['apps/local-agent-host/src/main.ts','local-agent-host.mjs','esm'],
+        ['apps/local-agent-host/src/connected-agent-history.worker.ts','connected-agent-history-worker.mjs','esm'],
+        ['apps/local-agent-host/src/personal-machines.worker.ts','personal-machines-worker.mjs','esm'],
+      ] : []),
     ]) {
       await build({ nodePaths: [join(repositoryRoot, 'node_modules')], entryPoints: [resolve(repositoryRoot, entry)], outfile: join(packageRoot, 'execution', target),
         bundle: true, platform: 'node', format, target: 'node22', define:{...executionModuleOptions(format).define,'process.env.OPENCRAFT_OBSERVE_SOURCE_REVISION':JSON.stringify(web.sourceRevision??null),'process.env.OPENCRAFT_OBSERVE_BUILD_ID':JSON.stringify(web.buildId)}, external: ['bufferutil', 'utf-8-validate', 'cpu-features', '*.node', '@earendil-works/pi-*', '@earendil-works/chord'],
@@ -197,6 +209,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
     await cp(join(repositoryRoot, 'packaging/web-server/opencraft-acp-host.service'), join(packageRoot, 'opencraft-acp-host.service'));
   }
   await chmod(join(packageRoot, 'runtime/cli.mjs'), 0o755);
+  if(localService)await packageLocalService({repositoryRoot,packageRoot});
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);
   if (complete) {
     if (!execution || executionProfile !== 'headless' || splitResources || (fullRelease && fullRelease.template.updater.bridge)) throw new Error('Full release requires an unsplit Headless package and non-bridge metadata');
@@ -224,11 +237,13 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   }
   const { stdout } = await promisify(execFile)('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', directory], { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 });
   const result = parseNpmPackResult(JSON.parse(stdout));
+  if(localService && (!Number.isSafeInteger(result.entryCount) || result.entryCount > MAX_LOCAL_SERVICE_ENTRIES))throw new Error('Local service archive exceeds its installation entry budget');
   return { version, buildId: web.buildId, packageRoot, archive: join(directory, result.filename), integrity: result.integrity, sha: result.shasum, images, ...(resources ? { resources } : {}) };
 }
 export async function packageWebServerFromEnvironment(composition = {}) {
   return packageWebServer({ version: process.env.OPENCRAFT_RELEASE_VERSION,
     execution: process.env.OPENCRAFT_PACKAGE_EXECUTION === '1',
+    localService: process.env.OPENCRAFT_PACKAGE_LOCAL_SERVICE === '1',
     executionProfile: process.env.OPENCRAFT_EXECUTION_PROFILE || 'daemon',
     prepareOnly: process.env.OPENCRAFT_PACKAGE_PREPARE_ONLY === '1',
     completeRuntime: process.env.OPENCRAFT_PACKAGE_FULL_RELEASE === '1',

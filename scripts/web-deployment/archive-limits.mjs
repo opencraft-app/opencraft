@@ -6,6 +6,7 @@ import { stat } from 'node:fs/promises';
 // and expanded bounds; verify large archives without buffering them in memory.
 export const MAX_ARCHIVE_BYTES = 512 * 1024 * 1024;
 export const MAX_UNPACKED_BYTES = 2 * 1024 * 1024 * 1024;
+export const MAX_LOCAL_SERVICE_ENTRIES = 60_000;
 export async function verifyArchiveIntegrity(path, integrity, allowedAlgorithms = ['sha512', 'sha256'], maxArchiveBytes = MAX_ARCHIVE_BYTES) {
   const match = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/.exec(integrity || '');
   if (!match || !allowedAlgorithms.includes(match[1])) throw new Error('Invalid release integrity');

@@ -12,10 +12,12 @@ export interface WebUpdateStatus {
   readonly enabled: true;
   readonly localInstall: boolean;
   readonly localTreeInstall?: 0 | 1;
+  readonly fullUpgrade?: boolean;
   readonly authenticated: boolean;
   readonly current: WebReleaseIdentity;
   readonly latest: WebReleaseIdentity | null;
   readonly checking: boolean;
+  readonly automaticCheck?: {readonly enabled: boolean; readonly intervalMs: number; readonly nextCheckAt: string | null};
   readonly checkedAt: string | null;
   readonly checkError: string | null;
   readonly checkErrorCode: 'authentication' | 'network' | 'unavailable' | 'registry' | null;

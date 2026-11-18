@@ -306,7 +306,8 @@
     "test:sandbox": "node --import tsx --test tests/execution/sandbox-primitive.test.ts tests/execution/sandbox-engine-runtime.test.ts",
     "smoke:sandbox": "node --import tsx scripts/smoke/execution/smoke-sandbox.ts",
     "test:appserver-client": "tsx --test tests/protocol/appserver-client.test.ts tests/protocol/appserver-connection-lifecycle.test.ts",
-    "test:agent-bridge": "node --import tsx --test tests/agent-bridge/*.test.ts"
+    "test:agent-bridge": "node --import tsx --test tests/agent-bridge/*.test.ts",
+    "package:web:local": "OPENCRAFT_PACKAGE_LOCAL_SERVICE=1 npm run package:web:server"
   },
   "dependencies": {
     "deepmerge": "file:vendor/deepmerge",

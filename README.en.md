@@ -60,7 +60,33 @@ remain development goals. See the [implemented collaboration API](docs/actor-col
 
 ## Get started
 
-Use **Node.js 26.7.0** and **npm 11**. The repository pins Node in [`.nvmrc`](.nvmrc).
+### Install the local service
+
+Use **Node.js 24 LTS** by default. Node.js 24.22.3 and 22.23.5 have been verified on Apple Silicon. Choose a complete package that matches your operating system, CPU architecture, and Node major version. The complete package is awaiting publication to public npm. You can install it from a locally built `.tgz` archive.
+
+```sh
+npx --yes --package="/absolute/path/to/opencraft-app-opencraft-VERSION.tgz" -- opencraft start
+```
+
+Replace the example path with your archive path. Once a complete version is published, you can pass `@opencraft-app/opencraft@<exact-complete-version>` to `--package`. See the [local installation guide](docs/web-deployment.md#npx-本地完整服务引导) for build and update channel instructions.
+
+The command starts the local execution service and opens Workbench in your browser. Connect an installed, signed-in Agent or configure a model provider. On a machine without a desktop, pass `--no-open` and use the address printed in the terminal. Closing the browser leaves the service running. Press Ctrl+C to stop it.
+
+### Check for updates and keep your data
+
+1. Open **Settings → Website updates**. The running service checks at startup and every six hours by default. You can also select **Check updates**.
+2. When an update appears, authorize it using the key from the `web/admin-key` file shown in the terminal and select **Update website**. Refresh when prompted. To restore the previous version, select **Roll back previous version**.
+3. Updates and rollbacks reuse your data directory, retaining Agent settings, conversation history, and Server records. The default is `~/.opencraft`. You can set `OPENCRAFT_HOME` or pass `--data-dir`. Keep using the same directory when you restart.
+
+To keep data from a previous `npm run dev` installation, stop the old service before starting the complete package against its data directory:
+
+```sh
+npx --yes --package="/absolute/path/to/opencraft-app-opencraft-VERSION.tgz" -- opencraft start --data-dir "$HOME/.opencraft/dev-local"
+```
+
+### Develop from source
+
+For source development, use **Node.js 26.7.0** and **npm 11**. The repository pins the development version in [`.nvmrc`](.nvmrc). Choose a complete package built and tested for your Node version and platform.
 
 ```bash
 git clone https://github.com/opencraft-app/opencraft.git

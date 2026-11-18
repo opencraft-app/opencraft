@@ -1568,5 +1568,10 @@
   "settings.agents.select": "选择一个 Agent，配置接入或导入会话。",
   "settings.agents.noResults": "没有匹配的 Agent。",
   "composer.model.ideCurrent": "使用 IDE 当前模型",
-  "composer.model.ideCurrent.description": "在 CodeBuddy IDE 中选择模型，发送消息时会跟随该选择。"
+  "composer.model.ideCurrent.description": "在 CodeBuddy IDE 中选择模型，发送消息时会跟随该选择。",
+  "webUpdates.automaticCheck": "自动检查更新",
+  "webUpdates.automaticCheckHint": "关闭页面后，服务端仍会检查新版本。点击更新后才会安装。",
+  "webUpdates.checkEveryHours": "每 {hours} 小时",
+  "webUpdates.checkEveryMinutes": "每 {minutes} 分钟",
+  "webUpdates.checkEverySeconds": "每 {seconds} 秒"
 }

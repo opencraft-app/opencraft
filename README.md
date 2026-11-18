@@ -59,7 +59,33 @@ OpenCraft 是一个开源 Agent 工作台，围绕 **Anyone Agents Anywhere** �
 
 ## 快速开始
 
-使用 **Node.js 26.7.0** 和 **npm 11**，仓库通过 [`.nvmrc`](.nvmrc) 固定 Node 版本。
+### 安装本地服务
+
+推荐使用 **Node.js 24 LTS**。Apple Silicon 上已验证 Node.js 24.22.3 和 22.23.5，请选择与操作系统、CPU 架构及 Node 主版本匹配的完整包。完整包尚未发布到公共 npm，可以用本地构建的 `.tgz` 归档安装。
+
+```sh
+npx --yes --package="/绝对路径/opencraft-app-opencraft-版本.tgz" -- opencraft start
+```
+
+把示例路径替换为实际归档。发布后，可以把 `--package` 的值换成 `@opencraft-app/opencraft@<完整包的精确版本>`。从源码构建归档和配置更新频道的步骤见 [Web 安装与更新](docs/web-deployment.md#npx-本地完整服务引导)。
+
+命令启动本地执行服务和 Web 客户端，并自动打开浏览器。在引导页接入已安装并登录的 Agent，或配置模型服务。无桌面环境时可加 `--no-open`，再使用终端打印的地址。关闭浏览器后服务继续运行，按 Ctrl+C 停止服务。
+
+### 检查更新与保留数据
+
+1. 打开 **设置 → 网站更新**。只要服务在运行，启动后及默认每 6 小时会自动检查一次，也可以点击 **检查更新**。
+2. 发现新版本后，用终端提示的 `web/admin-key` 文件里的管理密钥授权，再点击 **更新网站**。按页面提示刷新；需要恢复上一版时，点击 **回退上一版**。
+3. 更新和回退复用安装时的数据目录，保留 Agent 配置、对话历史和 Server 记录。默认数据目录是 `~/.opencraft`，也可通过 `OPENCRAFT_HOME` 或 `--data-dir` 指定。更新后的启动命令继续使用同一目录。
+
+如果之前通过 `npm run dev` 使用过 OpenCraft，先正常停止旧服务，再用同一个归档启动并指定原数据目录：
+
+```sh
+npx --yes --package="/绝对路径/opencraft-app-opencraft-版本.tgz" -- opencraft start --data-dir "$HOME/.opencraft/dev-local"
+```
+
+### 从源码开发
+
+从源码开发时使用 **Node.js 26.7.0** 和 **npm 11**，仓库通过 [`.nvmrc`](.nvmrc) 固定开发环境。运行完整安装包时，按该包验证过的 Node 版本和平台选择归档。
 
 ```bash
 git clone https://github.com/opencraft-app/opencraft.git

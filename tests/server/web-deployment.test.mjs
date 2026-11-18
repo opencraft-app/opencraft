@@ -59,6 +59,7 @@ test('npm package installs, switches without disconnecting existing execution so
     fixture = await releaseFixture(directory); await open();
     await assertPlugin();
     assert.equal((await status()).current.version, '1.0.0');
+    assert.equal((await status()).fullUpgrade, false, 'unconfigured component upgrades are not advertised');
     const malformed = await new Promise((accept, reject) => {
       const request = httpRequest(`${base}`, { path: '//[' }, response => { response.resume(); response.on('end', () => accept(response.statusCode)); });
       request.on('error', reject); request.end();
@@ -93,7 +94,14 @@ test('npm package installs, switches without disconnecting existing execution so
     assert.equal((await post('install', { version: '1.1.0' })).status, 409);
     await rm(recoveryMarker);
     let releaseDownload; fixture.holdDownload(new Promise(resolve => { releaseDownload = resolve; }));
-    const accepted = await post('install', { version: '1.1.0' });
+    let releaseLookup; fixture.holdLookup(new Promise(resolve => { releaseLookup = resolve; }));
+    assert.equal((await post('check')).status, 202);
+    await until(status, result => result.checking);
+    const installation = post('install', { version: '1.1.0' });
+    await sleep(50);
+    assert.equal((await status()).job, null, 'installation waits for the in-flight discovery result');
+    releaseLookup(); fixture.holdLookup(null);
+    const accepted = await installation;
     assert.equal(accepted.status, 202);
     const duplicate = await post('install', { version: '1.1.0' });
     assert.equal(duplicate.status, 202);

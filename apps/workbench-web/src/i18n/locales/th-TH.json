@@ -1546,5 +1546,10 @@
   "settings.agents.select": "เลือก Agent เพื่อตั้งค่าหรือนำเข้าการสนทนา",
   "settings.agents.noResults": "ไม่พบ Agent ที่ตรงกัน",
   "composer.model.ideCurrent": "ใช้โมเดลปัจจุบันของ IDE",
-  "composer.model.ideCurrent.description": "เลือกโมเดลใน CodeBuddy IDE ข้อความจะใช้โมเดลที่เลือกไว้"
+  "composer.model.ideCurrent.description": "เลือกโมเดลใน CodeBuddy IDE ข้อความจะใช้โมเดลที่เลือกไว้",
+  "webUpdates.automaticCheck": "ตรวจสอบการอัปเดตอัตโนมัติ",
+  "webUpdates.automaticCheckHint": "เซิร์ฟเวอร์จะตรวจสอบเวอร์ชันใหม่แม้ปิดหน้านี้แล้ว และจะติดตั้งเมื่อคุณเลือกอัปเดตเท่านั้น",
+  "webUpdates.checkEveryHours": "ทุก {hours} ชั่วโมง",
+  "webUpdates.checkEveryMinutes": "ทุก {minutes} นาที",
+  "webUpdates.checkEverySeconds": "ทุก {seconds} วินาที"
 }

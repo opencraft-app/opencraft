@@ -48,6 +48,7 @@ const app = await createManagedWebServer({
   channel: process.env.OPENCRAFT_UPDATE_CHANNEL,
   userconfig: process.env.OPENCRAFT_NPM_USERCONFIG,
   publicOrigin: process.env.OPENCRAFT_PUBLIC_ORIGIN,
+  ...(process.env.OPENCRAFT_UPDATE_CHECK_INTERVAL_MS === undefined ? {} : {updateCheckIntervalMs:Number(process.env.OPENCRAFT_UPDATE_CHECK_INTERVAL_MS)}),
   appServerTarget: process.env.OPENCRAFT_APPSERVER_URL || null,
   codexServerTarget: process.env.OPENCRAFT_CODEX_APPSERVER_URL || null,
   hyperNodeUser: process.env.OPENCRAFT_HYPERNODE_USER || '',
