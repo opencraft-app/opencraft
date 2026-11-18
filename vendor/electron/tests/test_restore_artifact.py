@@ -1,5 +1,6 @@
 """CI artifact extraction preserves native archives and rejects ambiguous input."""
 import importlib.util
+import os
 from pathlib import Path
 import stat
 import tempfile
@@ -31,7 +32,8 @@ class RestoreArtifactTests(unittest.TestCase):
             source = self.fixture(root)
             self.module.restore(root, root / 'browser', 'browser')
             self.assertEqual((root / 'browser/electron').read_bytes(), b'fixture native binary')
-            self.assertTrue((root / 'browser/electron').stat().st_mode & 0o111)
+            if os.name != 'nt':
+                self.assertTrue((root / 'browser/electron').stat().st_mode & 0o111)
             self.assertEqual((root / 'browser/opencraft-electron-artifact.json').read_bytes(),
                              (source / 'opencraft-electron-artifact.json').read_bytes())
 
