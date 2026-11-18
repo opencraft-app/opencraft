@@ -177,7 +177,12 @@ export async function packageHeadlessLinux(composition = {}) {
   const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
   const output = outputOverride
     ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-${architecture}.tar.gz`);
-  const temporary = await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
+  // stageInto: lay the tree out at <stageInto>/opencraft-server and return that
+  // directory instead of an archive. The container build copies the tree into
+  // its image, so compressing it only to extract it again cost about 75s.
+  const stageInto = composition.stageInto;
+  if (stageInto !== undefined && !isAbsolute(stageInto)) throw new Error("stageInto must be absolute");
+  const temporary = stageInto ?? await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
   const stage = join(temporary, "opencraft-server");
   try {
     await mkdir(join(stage, "bin"), { recursive: true });
@@ -211,13 +216,14 @@ export async function packageHeadlessLinux(composition = {}) {
       buildId: versionInfo.buildId,
       files,
     }, null, 2)}\n`);
+    if (stageInto !== undefined) return stage;
     await mkdir(dirname(output), { recursive: true });
     await run("tar", ["--sort=name", "--mtime=@0", "--owner=0", "--group=0", "--numeric-owner",
       "-czf", output, "-C", temporary, "opencraft-server"]);
     await stat(output);
     return output;
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    if (stageInto === undefined) await rm(temporary, { recursive: true, force: true });
   }
 }
 

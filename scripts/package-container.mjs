@@ -2,7 +2,6 @@ import { build } from 'esbuild';
 import { cp, mkdir, readFile, writeFile, readdir, chmod } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { join, resolve, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { packageHeadlessLinux, buildHeadlessBundle } from './package-headless-linux.mjs';
@@ -10,12 +9,10 @@ import { packageHeadlessLinux, buildHeadlessBundle } from './package-headless-li
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(process.argv[2] ?? '/out');
 await mkdir(output, { recursive: true });
-process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT = join(output, 'server.tar.gz');
-console.log('Building the verified Headless archive and native runtimes');
-const archive = await packageHeadlessLinux({ architecture: process.arch === 'arm64' ? 'arm64' : 'amd64' });
+console.log('Building the verified Headless tree and native runtimes');
+// Staged in place: the image copies this directory, so no archive is needed.
+const root = await packageHeadlessLinux({ architecture: process.arch === 'arm64' ? 'arm64' : 'amd64', stageInto: output });
 console.log('Preparing container Gateway, Brain and Hands owner entries');
-execFileSync('tar', ['-xzf', archive, '-C', output]);
-const root = join(output, 'opencraft-server');
 for (const [source, target] of [
   ['scripts/container-deployment/gateway.mjs', 'container-gateway.mjs'],
   ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs'],
