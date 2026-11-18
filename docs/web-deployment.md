@@ -27,6 +27,47 @@ node /opt/opencraft-web/bootstrap/node_modules/@opencraft-app/opencraft/runtime/
 
 私有 registry 的包名要求由部署侧确认；构建可显式设置 `OPENCRAFT_NPM_PACKAGE_NAME`、`OPENCRAFT_NPM_RESOURCE_PACKAGE_NAME` 和 `OPENCRAFT_NPM_REGISTRY`，归档、runtime、更新源和资源下载使用同一发行身份。首次换名须升级固定 bootstrap；新版保留原公共命名安装的载入和回退。公共默认值保持不变。默认只发布一个自包含主包，再推进该部署目标的频道；独立网站与Headless服务器使用不同构建和频道，更新器在切换前拒绝不匹配的execution profile。显式拆包时才先发布资源包。公开源暂不提供本次资源包，现有公开 workflow 显式设置 `OPENCRAFT_SPLIT_WEB_RESOURCES=0` 保持完整包；未来显式启用公开拆包时，须将两份固定归档一起交付，不能单独发布引用未发布资源的主包。完整设计见 [Web 可选资源交付](web-resource-delivery.md)。
 
+## npx 本地完整服务引导
+
+本地完整服务包包含 Web 客户端、Local Agent Host、固定依赖的 DSH 运行时和当前平台的原生组件。它与只包含网站的包有不同的能力声明；`opencraft start` 会拒绝把纯网站包当成完整服务。源码新增入口不代表 npm 已发布，使用前须选择实际发布的、与操作系统／CPU／Node 主版本匹配的**本地完整包版本**。不应拿旧 `latest` 的网站包代替。
+
+已取得兼容的完整包版本后，一条命令完成 npm 安装、服务启动及打开浏览器客户端：
+
+```sh
+npx --yes --package="@opencraft-app/opencraft@${OPENCRAFT_LOCAL_VERSION:?设置已发布的本地完整包版本}" -- opencraft start
+```
+
+安装包尚未公开发布时，也可使用生成的精确 `.tgz` 归档作为 `--package=/absolute/path/package.tgz` 做同样的本地安装验证。这里的客户端是浏览器中的完整 Workbench；此命令不安装 Electron App。
+
+1. 启动后自动打开本机客户端；无桌面环境时使用终端打印的网址。`--no-open` 可只启动服务，`--port 10000` 可指定监听端口。当前完整本地服务只监听回环，不自动开放公网端口。
+2. 在引导页接入已安装且已登录的 Agent，或配置模型服务。安装过程不覆盖原生 CLI 的账号目录，也不自动发送模型请求。
+3. 打开“设置 → 网站更新”。服务启动后自动检查，默认每 6 小时再次检查；关闭浏览器不影响检查。发现新版本后使用安装数据目录中 `web/admin-key` 文件的管理密钥授权，然后点击“更新网站”。复制密钥时不要发送到聊天或提交仓库。
+4. 网站切换后按页面提示刷新。Local Agent Host 与原生 Agent 不属于可替换的 Web worker；网站更新不会重新初始化这些 owner。执行运行时由持久化版本指针固定，普通重启也不跟随网站回退去切换旧执行代码；执行运行时的维护须走其独立升级流程，不能靠删除指针或重建数据目录升级。
+
+数据默认保存于 `OPENCRAFT_HOME`，否则 `~/.opencraft`；它不随 npx 缓存、启动目录或包版本变化。`web/` 保存更新状态和受管程序版本；`connected-agents/`、`models/`、`projects/`、`collaboration/` 及原生执行历史继续由其现有 owner 持有。更新与回退只切换程序，不删除这些目录，也不将旧数据快照覆盖回去。
+
+已有源码开发数据位于 `~/.opencraft/dev-local` 时，先正常停止原开发服务，再明确复用原目录：
+
+```sh
+npx --yes --package="@opencraft-app/opencraft@${OPENCRAFT_LOCAL_VERSION:?设置已发布的本地完整包版本}" -- opencraft start --data-dir "$HOME/.opencraft/dev-local"
+```
+
+不要重新建立一个空目录来“修复”已有数据，也不要让两个服务同时写同一目录。重复启动会被已有的存储 owner 锁拒绝。更换设备／迁移中心服务应另行迁移账号和协作权威；一键本机安装不等于跨设备云同步。
+
+从源码构建归档时，先切换到目标 Node 主版本，再在仓库根目录运行以下命令。将示例版本换成本次构建使用的精确版本。
+
+```sh
+npm ci
+npm run prepare:dsh-runtime
+OPENCRAFT_RELEASE_VERSION=0.1.18-local.1 npm run package:web:local
+```
+
+打包输出会打印 `archive` 字段，使用该路径即可通过上面的 npx 命令安装。本地安装默认建议选择 Node.js 24 LTS。目前在 Apple Silicon 上验证过 Node.js 24.22.3 和 22.23.5 各自构建的完整包。Node 22 更早的补丁版本及其他平台需要单独验证。
+
+归档记录构建时的平台、架构和 Node ABI，启动时会核对。默认更新频道也随构建固定，例如 Apple Silicon 的 Node 24 和 Node 22 包分别使用 `local-darwin-arm64-node24` 和 `local-darwin-arm64-node22`。发布者需为目标平台构建兼容版本，并在对应频道中发布同类完整包；部署者可用 `OPENCRAFT_UPDATE_CHANNEL` 明确覆盖。纯网站包、其他执行 profile 和不匹配的原生 ABI 会被更新器拒绝。
+
+该命令在当前终端前台运行。关闭浏览器不会停止服务；停止服务应使用 Ctrl+C 等待正常退出。长期在线的服务器应由进程管理器运行固定安装路径，不能把 npx 的可清理缓存目录当作持久程序或数据目录。
+
 ## 首次安装
 
 在部署用户自己的 npm 配置中设置npm 源和认证；认证凭据只留在服务器，不写入网页或仓库：
@@ -45,7 +86,7 @@ npm exec --registry=https://registry.npmjs.org/ \
   -- opencraft-web
 ```
 
-`opencraft-web` 是网站入口；源码中的 `opencraft` 命令已用于会话 CLI。不要依赖裸包名的默认可执行文件选择。GitHub main 的修复不等于 registry 已发布：需要最新源码能力时先使用 [源码快速开始](../README.md#quick-start)，部署时仍固定经验证的精确版本，不复用旧版本号。
+`opencraft-web` 是网站入口；`opencraft start` 是完整本地包的启动入口，其余 `opencraft connection/thread/server` 子命令继续使用原会话 CLI。网站独立部署明确指定 `opencraft-web`，不依赖默认可执行文件选择。GitHub main 的修复不等于 registry 已发布：需要最新源码能力时先使用 [源码快速开始](../README.md#从源码开发)，部署时仍固定经验证的精确版本，不复用旧版本号。
 
 长期运行时固定安装启动包，避免每次服务启动重新解析 `latest`：
 

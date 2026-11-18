@@ -1546,5 +1546,10 @@
   "settings.agents.select": "Pilih agent untuk mengkonfigurasinya atau mengimport perbualan.",
   "settings.agents.noResults": "Tiada agent yang sepadan.",
   "composer.model.ideCurrent": "Gunakan model IDE semasa",
-  "composer.model.ideCurrent.description": "Pilih model dalam CodeBuddy IDE. Mesej menggunakan pilihan tersebut."
+  "composer.model.ideCurrent.description": "Pilih model dalam CodeBuddy IDE. Mesej menggunakan pilihan tersebut.",
+  "webUpdates.automaticCheck": "Semakan kemas kini automatik",
+  "webUpdates.automaticCheckHint": "Pelayan menyemak versi baharu walaupun halaman ini ditutup. Kemas kini hanya dipasang apabila anda memilih untuk mengemas kini.",
+  "webUpdates.checkEveryHours": "Setiap {hours} jam",
+  "webUpdates.checkEveryMinutes": "Setiap {minutes} minit",
+  "webUpdates.checkEverySeconds": "Setiap {seconds} saat"
 }

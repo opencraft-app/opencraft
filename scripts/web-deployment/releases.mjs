@@ -8,7 +8,7 @@ import { readFile, mkdir, readdir, stat, chmod } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { x } from 'tar';
 import semver from 'semver';
-import { MAX_ARCHIVE_BYTES, MAX_UNPACKED_BYTES, verifyArchiveIntegrity } from './archive-limits.mjs';
+import { MAX_ARCHIVE_BYTES, MAX_UNPACKED_BYTES, MAX_LOCAL_SERVICE_ENTRIES, verifyArchiveIntegrity } from './archive-limits.mjs';
 import { parseNpmPackResult } from './npm-pack-result.mjs';
 import { parseWebReleaseMetadata } from '../../packages/web-update-protocol/src/index.mjs';
 import { PACKAGE_NAME, PUBLIC_PACKAGE_NAME, RESOURCE_PACKAGE, PUBLIC_RESOURCE_PACKAGE } from './package-identity.mjs';
@@ -113,7 +113,7 @@ export function createNpmReleaseSource({ registry = DEFAULT_REGISTRY, channel = 
     },
   };
 }
-export async function unpackPackage(archive, directory, limits = null) {
+export async function unpackPackage(archive, directory, limits = null, maxEntries = 20_000) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   let bytes = 0; let count = 0; let invalid = false; const fileModes = new Map();
   await x({ file: archive, cwd: directory, strict: true, preservePaths: false, preserveOwner: false,
@@ -122,7 +122,7 @@ export async function unpackPackage(archive, directory, limits = null) {
     filter(path, entry) {
       const parts = path.split('/');
       if (!path.startsWith('package/') || parts.includes('..') || path.includes('\\')
-        || !['File', 'Directory'].includes(entry.type) || ++count > (limits?.entries || 20_000)
+        || !['File', 'Directory'].includes(entry.type) || ++count > (limits?.entries || maxEntries)
         || (bytes += entry.size || 0) > (limits?.unpackedBytes || MAX_UNPACKED_BYTES)) { invalid = true; return false; }
       if (entry.type === 'Directory') {
         if (limits && (entry.mode & 0o7777) !== 0o755) { invalid = true; return false; }
@@ -146,10 +146,10 @@ export async function unpackPackage(archive, directory, limits = null) {
   if (entries.length !== 1 || entries[0] !== 'package') throw new Error('Invalid Web archive layout');
   return join(directory, 'package');
 }
-export async function unpackRelease(archive, directory, { stateFile = null } = {}) {
+export async function unpackRelease(archive, directory, { stateFile = null, localService = false } = {}) {
   let accepted = null;
   if (fullReleaseTrust) accepted = await verifyFullArchive(archive, fullReleaseTrust, { state: await readReplayState(stateFile) });
-  const release = await inspectRelease(await unpackPackage(archive, directory, accepted?.record.budgets.outer));
+  const release = await inspectRelease(await unpackPackage(archive, directory, accepted?.record.budgets.outer, localService ? MAX_LOCAL_SERVICE_ENTRIES : 20_000));
   if (accepted && stateFile) await writeReplayState(stateFile, accepted.state);
   return accepted ? { ...release, fullRelease: { manifestSha256: accepted.state.manifestSha256,
     releaseId: accepted.record.release.releaseId, releaseSequence: accepted.record.release.releaseSequence,

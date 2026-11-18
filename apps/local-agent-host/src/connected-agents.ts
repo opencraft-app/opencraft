@@ -172,8 +172,9 @@ export class ConnectedAgentHost {
     private readonly cwd: string,
     private readonly deps: OnboardingDeps,
     private readonly bridge?: ConnectedAgentBridge,
+    private readonly assets?: {readonly proxy:string;readonly extension:string},
   ) { this.providerUsage = new AgentProviderUsageService(deps);
-    this.ideBridge=new CodeBuddyIdeBridge(join(root,"codebuddy-ide"),deps);
+    this.ideBridge=new CodeBuddyIdeBridge(join(root,"codebuddy-ide"),deps,assets?.extension);
     onboarding.registerNative?.("codebuddy-ide",{probe:()=>this.ideBridge.snapshot(),historyProbe:()=>this.ideBridge.snapshot(true),act:action=>this.ideBridge.act(action)});
   }
   async start(): Promise<void> { await this.ideBridge.start(); await this.bridge?.provider.start(); }
@@ -473,7 +474,7 @@ export class ConnectedAgentHost {
       if (!command) throw new Error("Pi is not installed");
       return { engineId, command, args: ["--mode", "rpc", "--offline", "--approve", "--session-dir", join(this.root, "pi-cli", "native-sessions")] };
     }
-    if(engineId === "codebuddy-ide")return {engineId,command:process.execPath,args:[fileURLToPath(new URL("../../../scripts/codebuddy-ide/acp-proxy.mjs",import.meta.url))]};
+    if(engineId === "codebuddy-ide")return {engineId,command:process.execPath,args:[this.assets?.proxy??fileURLToPath(new URL("../../../scripts/codebuddy-ide/acp-proxy.mjs",import.meta.url))]};
     if (engineId === "cursor") {
       const command = await resolveExecutable(["cursor-agent"], this.deps);
       if (!command) throw new Error("Cursor is not installed");

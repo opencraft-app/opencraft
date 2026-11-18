@@ -58,6 +58,7 @@ export function useManagedWebUpdateNotice(): ManagedWebUpdateNotice {
   useEffect(() => {
     if (
       !status?.enabled ||
+      status.automaticCheck !== undefined ||
       status.checkedAt !== null ||
       status.checking ||
       Boolean(status.checkError) ||
@@ -80,7 +81,7 @@ export function useManagedWebUpdateNotice(): ManagedWebUpdateNotice {
         await client.invalidateQueries({ queryKey });
       }
     })();
-  }, [status?.enabled, status?.checkedAt, status?.checking, status?.checkError, client]);
+  }, [status?.enabled, status?.automaticCheck, status?.checkedAt, status?.checking, status?.checkError, client]);
 
   const currentBuild = typeof document !== 'undefined'
     ? document.querySelector('meta[name="opencraft-build-id"]')?.getAttribute('content') ?? null
@@ -127,11 +128,16 @@ function ManagedWebUpdatesSettings() {
   const needsRefresh = status && currentBuild !== status.current.buildId;
   return <div className="web-updates-settings">
     <SettingsPageHeader title={intl.formatMessage({ id: 'webUpdates.title', defaultMessage: 'Website updates' })} description={status?.execution ? intl.formatMessage({ id: 'webUpdates.serverDescription', defaultMessage: 'Update the website and execution gateway. Codex tasks continue in the independent core; OpenCraft tasks may be interrupted.' }) : intl.formatMessage({ id: 'webUpdates.description', defaultMessage: 'Update this website from the npm registry. Your execution service keeps running.' })} />
-    <FullUpgradeSettings authenticated={status?.authenticated ?? false} />
+    {status && status.fullUpgrade !== false && <FullUpgradeSettings authenticated={status.authenticated} />}
     {query.error && <SettingsNotice tone="error">{query.error.message}</SettingsNotice>}
     {error && <SettingsNotice tone="error">{error}</SettingsNotice>}
     {status && <SettingsSection title={intl.formatMessage({ id: 'webUpdates.version', defaultMessage: 'Website version' })} description={status.execution ? intl.formatMessage({ id: 'webUpdates.executionScope', defaultMessage: 'Includes the execution gateway and daemon. Codex core, CLI and DSH engine are maintained separately.' }) : undefined} action={<SettingsButton aria-busy={pending === 'check' || status.checking} disabled={pending !== null || !!running} onClick={() => void action('check')}><FormattedMessage id="webUpdates.check" defaultMessage="Check updates" /></SettingsButton>}>
       <SettingsGroup>
+        {status.automaticCheck?.enabled && <SettingsRow label={<FormattedMessage id="webUpdates.automaticCheck" defaultMessage="Automatic update checks" />} description={<FormattedMessage id="webUpdates.automaticCheckHint" defaultMessage="The server checks for new versions even when this page is closed. Updates are installed when you choose to update." />}>
+          {status.automaticCheck.intervalMs>=3_600_000?<FormattedMessage id="webUpdates.checkEveryHours" defaultMessage="Every {hours} hours" values={{hours:status.automaticCheck.intervalMs / 3_600_000}} />
+            :status.automaticCheck.intervalMs>=60_000?<FormattedMessage id="webUpdates.checkEveryMinutes" defaultMessage="Every {minutes} minutes" values={{minutes:status.automaticCheck.intervalMs / 60_000}} />
+              :<FormattedMessage id="webUpdates.checkEverySeconds" defaultMessage="Every {seconds} seconds" values={{seconds:status.automaticCheck.intervalMs / 1000}} />}
+        </SettingsRow>}
         <SettingsRow label={<FormattedMessage id="webUpdates.installed" defaultMessage="Installed version" />} description={status.current.buildId ? <SettingsIdentifier value={status.current.buildId} /> : undefined}><SettingsIdentifier value={status.current.version} /></SettingsRow>
         {status.execution && <SettingsRow label={<FormattedMessage id="webUpdates.executionVersion" defaultMessage="Execution gateway version" />} description={status.execution.buildId ? <SettingsIdentifier value={status.execution.buildId} /> : undefined}>
           {status.execution.version ? <SettingsIdentifier value={status.execution.version} /> : '—'}

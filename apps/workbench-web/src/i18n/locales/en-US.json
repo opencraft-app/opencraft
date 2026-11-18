@@ -1544,5 +1544,10 @@
   "settings.agents.select": "Select an agent to configure it or import conversations.",
   "settings.agents.noResults": "No matching agents.",
   "composer.model.ideCurrent": "Use current IDE model",
-  "composer.model.ideCurrent.description": "Choose the model in CodeBuddy IDE. Messages use that selection."
+  "composer.model.ideCurrent.description": "Choose the model in CodeBuddy IDE. Messages use that selection.",
+  "webUpdates.automaticCheck": "Automatic update checks",
+  "webUpdates.automaticCheckHint": "The server checks for new versions even when this page is closed. Updates are installed when you choose to update.",
+  "webUpdates.checkEveryHours": "Every {hours} hours",
+  "webUpdates.checkEveryMinutes": "Every {minutes} minutes",
+  "webUpdates.checkEverySeconds": "Every {seconds} seconds"
 }

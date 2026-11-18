@@ -1,6 +1,6 @@
 import {createServer,type Server} from 'node:http';
 import {createHash,randomBytes,randomUUID,timingSafeEqual} from 'node:crypto';
-import {mkdir,writeFile,unlink,access} from 'node:fs/promises';
+import {mkdir,writeFile,unlink,access,copyFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {WebSocket,WebSocketServer} from 'ws';
@@ -21,7 +21,7 @@ export class CodeBuddyIdeBridge {
   private link:string|null=null;
   private closed=false;
   private enabled=true;
-  constructor(private readonly directory:string,private readonly deps:OnboardingDeps){this.descriptor=join(directory,'codebuddy-ide-bridge.json');}
+  constructor(private readonly directory:string,private readonly deps:OnboardingDeps,private readonly packagedExtension?:string){this.descriptor=join(directory,'codebuddy-ide-bridge.json');}
   async start(){
     if(this.server)return;
     const server=createServer((_request,response)=>response.writeHead(404).end());this.server=server;
@@ -73,9 +73,12 @@ export class CodeBuddyIdeBridge {
     this.enabled=true;
     if(this.hello){const state=await this.call('describe');await this.call(state.workspaceTrusted===false?'trust':'sign-in');return;}
     const launcher=await this.launcher();if(!launcher)throw new Error('Install CodeBuddy IDE first');
-    const root=fileURLToPath(new URL('../../../',import.meta.url));
-    const build=await this.deps.exec(process.execPath,[join(root,'scripts/build-codebuddy-ide-extension.mjs'),join(this.directory,'extension'),this.descriptor],120000,this.deps.env);
-    if(build.code!==0)throw new Error('Could not prepare the IDE bridge extension');
+    if(this.packagedExtension){await mkdir(join(this.directory,'extension'),{recursive:true});await copyFile(this.packagedExtension,join(this.directory,'extension/opencraft-codebuddy-ide.vsix'));}
+    else {
+      const root=fileURLToPath(new URL('../../../',import.meta.url));
+      const build=await this.deps.exec(process.execPath,[join(root,'scripts/build-codebuddy-ide-extension.mjs'),join(this.directory,'extension'),this.descriptor],120000,this.deps.env);
+      if(build.code!==0)throw new Error('Could not prepare the IDE bridge extension');
+    }
     const install=await this.deps.exec(launcher,['--install-extension',join(this.directory,'extension/opencraft-codebuddy-ide.vsix'),'--force'],120000,this.deps.env);
     if(install.code!==0)throw new Error('CodeBuddy IDE could not install the bridge extension');
     this.link='codebuddycn://opencraft.codebuddy-ide/connect?descriptor='+encodeURIComponent(this.descriptor);
