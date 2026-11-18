@@ -15,7 +15,13 @@ await mkdir(output, {recursive: true});
 const engines = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? 'playwright');
 const playwright = engines.default ?? engines;
 const vite = await createServer({configFile: false, root: process.cwd(), logLevel: 'error', esbuild: {jsx: 'automatic'},
-  resolve: {dedupe: ['react', 'react-dom']}, server: {host: '127.0.0.1', port: 0}, plugins: [{name: 'upload-fixture', configureServer(server) {
+  resolve: {dedupe: ['react', 'react-dom']},
+  // Crawl the fixture before serving it. Without entries Vite discovers React on
+  // the first page load, re-optimizes, and the reload mixes two React copies
+  // ("Cannot read properties of null (reading 'useMemo')") on a cold cache.
+  optimizeDeps: {entries: ['tests/fixtures/attachment-upload-progress.tsx']},
+  cacheDir: 'node_modules/.vite-attachment-upload-recovery',
+  server: {host: '127.0.0.1', port: 0}, plugins: [{name: 'upload-fixture', configureServer(server) {
     server.middlewares.use((req, res, next) => {
       if (!req.url?.startsWith('/?')) return next();
       res.setHeader('content-type', 'text/html');
