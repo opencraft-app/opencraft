@@ -7,7 +7,7 @@ const NEUTRAL_ITEMS = new Set(["steered", "worktreeInit", "turnDiff"]);
 const MESSAGE_ITEMS = new Set(["agentMessage", "assistantMessage"]);
 
 function record(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 }
 
 function isAsync(payload: Record<string, unknown>): boolean {
@@ -27,23 +27,40 @@ export function inferSettledMessagePhases(turn: TimelineSourceTurn): TimelineSou
   if (turn.status !== "complete" && turn.status !== "failed" && turn.status !== "interrupted") return turn;
   // Native phase-aware histories may deliberately contain unqualified messages.
   // Derive structure only for providers that supplied no phase contract at all.
-  if (turn.items.some(item => MESSAGE_ITEMS.has(item.type)
-    && (record(item.payload).phase === "commentary" || record(item.payload).phase === "final_answer"))) return turn;
-  const unknown = turn.items.some(item => MESSAGE_ITEMS.has(item.type)
-    && record(item.payload).phase == null && !isAsync(record(item.payload)));
+  if (
+    turn.items.some(
+      (item) =>
+        MESSAGE_ITEMS.has(item.type) &&
+        (record(item.payload).phase === "commentary" || record(item.payload).phase === "final_answer"),
+    )
+  )
+    return turn;
+  const unknown = turn.items.some(
+    (item) => MESSAGE_ITEMS.has(item.type) && record(item.payload).phase == null && !isAsync(record(item.payload)),
+  );
   if (!unknown) return turn;
   const inferred = new Map<number, "commentary" | "final_answer">();
   let followedByWork = false;
   let answerSeen = false;
   for (let index = turn.items.length - 1; index >= 0; index--) {
     const item = turn.items[index]!;
-    if (INPUT_ITEMS.has(item.type)) { followedByWork = false; answerSeen = false; continue; }
+    if (INPUT_ITEMS.has(item.type)) {
+      followedByWork = false;
+      answerSeen = false;
+      continue;
+    }
     if (NEUTRAL_ITEMS.has(item.type)) continue;
-    if (!MESSAGE_ITEMS.has(item.type)) { followedByWork = true; continue; }
+    if (!MESSAGE_ITEMS.has(item.type)) {
+      followedByWork = true;
+      continue;
+    }
     const payload = record(item.payload);
     if (isAsync(payload)) continue;
     if (payload.phase === "commentary") continue;
-    if (payload.phase === "final_answer") { answerSeen = true; continue; }
+    if (payload.phase === "final_answer") {
+      answerSeen = true;
+      continue;
+    }
     inferred.set(index, followedByWork || answerSeen ? "commentary" : "final_answer");
     if (!followedByWork) answerSeen = true;
   }
