@@ -31,6 +31,7 @@ interface MutableConversationViewLease {
   readonly composer: ComposerController;
   unsubscribeComposer: () => void;
   readonly releaseScope: () => void;
+  readonly releasePresentation: () => void;
   readonly retainers: Map<symbol, () => void>;
   touchedAt: number;
 }
@@ -70,8 +71,8 @@ export interface ConversationViewRegistryConfig {
  * may observe the same Conversation Scope while borrowing independent Composer,
  * scroll and physical presentation state. Conversation panel state belongs to
  * the parent Scope and is deliberately absent here. Each cached View retains
- * its semantic Scope. Cached presentations do not retain Draft owners: their
- * content budget and attachment lifetime are independent of the View budget.
+ * its semantic Scope and empty input controller. This presentation lease does
+ * not protect draft content from its independent capacity/attachment budget.
  */
 export function createConversationViewRegistry(
   config: ConversationViewRegistryConfig,
@@ -119,6 +120,11 @@ export function createConversationViewRegistry(
     }
     try {
       entry.releaseScope();
+    } catch (error) {
+      failures.push(error);
+    }
+    try {
+      entry.releasePresentation();
     } catch (error) {
       failures.push(error);
     }
@@ -187,6 +193,7 @@ export function createConversationViewRegistry(
         composer: owner.composer,
         unsubscribeComposer: () => {},
         releaseScope: config.scopeLeases.retain(scopeId, `conversation-view:${viewId}`),
+        releasePresentation: draftOwners.retainPresentation(viewId),
         retainers: new Map(),
         touchedAt: ++logicalClock,
       };

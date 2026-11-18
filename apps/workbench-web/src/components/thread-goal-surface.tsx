@@ -5,12 +5,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, use
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import * as Popover from "@radix-ui/react-popover";
 import { PausedCircleIcon as CirclePause, PlayIcon as Play, TargetIcon as Target } from "@opencraft/design-system-web/action-icons";
-import type { ThreadGoalResource, ThreadGoalSnapshot } from "@opencraft/workbench-runtime";
+import { GoalMutationError, type ThreadGoalResource, type ThreadGoalSnapshot } from "@opencraft/workbench-runtime";
 import { defineMessages, type IntlShape } from "@opencraft/i18n";
 import { useIntl } from "@opencraft/i18n/react";
 import { ModalSurface } from "./modal/modal-surface";
 import { Button } from "./ui/button";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
+
+import { exponentialBackoffMs } from "@opencraft/workbench-runtime/retry-schedule";
+const GOAL_SILENT_RETRIES = 3;
 
 const messages = defineMessages({
   active: { id: "goal.status.active", defaultMessage: "Pursuing goal" },
@@ -39,7 +42,14 @@ const messages = defineMessages({
   newDescription: { id: "goal.newDescription", defaultMessage: "Describe the result you want. A new conversation will be created to pursue this goal." },
   description: { id: "goal.description", defaultMessage: "Describe the result you want. Your goal persists when you leave this page." },
   usage: { id: "goal.usage", defaultMessage: "Used {used} / {budget}" },
-  refreshError: { id: "goal.refreshError", defaultMessage: "Could not update the goal. Click to retry." },
+  refreshError: { id: "goal.refreshError", defaultMessage: "Goal sync interrupted. Retry" },
+  versionRequired: { id: "goal.versionRequired", defaultMessage: "The current goal needs to be refreshed. Close and reopen this dialog before saving." },
+  conflict: { id: "goal.conflict", defaultMessage: "A goal already exists. Close this dialog and review the current goal before editing." },
+  atomicReplacementRequired: { id: "goal.atomicReplacementRequired", defaultMessage: "This host does not yet support safe goal replacement. The completed goal has been preserved." },
+  outcomeUnknown: { id: "goal.outcomeUnknown", defaultMessage: "The write result could not be confirmed. Review the current goal before retrying; it may already have been saved." },
+  requestRejected: { id: "goal.requestRejected", defaultMessage: "The goal request was not accepted. Check the connection and host capabilities before retrying." },
+  serverError: { id: "goal.serverError", defaultMessage: "The server returned a goal operation error. Review the current goal before taking further action; do not submit it again blindly." },
+  diagnosticCode: { id: "goal.diagnosticCode", defaultMessage: "Error code: {code}" },
   actionFailed: { id: "goal.actionFailed", defaultMessage: "The action could not be completed. Please try again." },
   objectiveRequired: { id: "goal.objectiveRequired", defaultMessage: "Enter a goal objective." },
   days: { id: "goal.duration.days", defaultMessage: "{days, plural, one {# day} other {# days}} {hours, plural, one {# hour} other {# hours}} {minutes, plural, one {# minute} other {# minutes}}" },
@@ -104,14 +114,29 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
   const [expanded, setExpanded] = useState(false);
   const [editorMode, setEditorMode] = useState<"create" | "edit" | "view" | null>(null);
   const [draft, setDraft] = useState("");
+  const editorVersion = useRef<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [actionError, setActionError] = useState<"actionFailed" | "objectiveRequired" | null>(null);
+  const [actionError, setActionError] = useState<"actionFailed" | "objectiveRequired" | GoalMutationError | null>(null);
   const presentationScope = useMemo(() => ({}), [goals, threadId, draftScope]);
   const currentScope = useRef<object | null>(presentationScope);
 
   useEffect(() => {
     if (threadId !== null && capability?.read) void goals.refresh(threadId).catch(() => undefined);
   }, [capability?.read, goals, threadId]);
+  // Goal reads can fail transiently (reconnects, host restarts). Retry quietly with
+  // backoff and only surface the failure for an existing goal that stays unreachable.
+  const [refreshFailures, setRefreshFailures] = useState(0);
+  useEffect(() => { setRefreshFailures(0); }, [threadId]);
+  useEffect(() => {
+    if (snapshot.phase !== "error") { setRefreshFailures(0); return; }
+    if (threadId === null || !capability?.read || refreshFailures >= GOAL_SILENT_RETRIES) return;
+    const timer = window.setTimeout(() => {
+      setRefreshFailures(count => count + 1);
+      void goals.refresh(threadId).catch(() => undefined);
+    }, exponentialBackoffMs(refreshFailures, { initialMs: 2_000, maxMs: 30_000 }));
+    return () => window.clearTimeout(timer);
+  }, [capability?.read, goals, refreshFailures, snapshot.phase, threadId]);
+  const showRefreshError = snapshot.phase === "error" && goal !== null && refreshFailures >= GOAL_SILENT_RETRIES;
   useLayoutEffect(() => {
     currentScope.current = presentationScope;
     setCreating(false);
@@ -149,16 +174,20 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
   const busy = snapshot.busy || creating;
   if ((!newGoal && threadId === null) || !capability?.read) return children?.(null, false, null) ?? null;
 
+  const actionErrorText = actionError === null ? null : intl.formatMessage(messages[typeof actionError === "string" ? actionError : actionError.code])
+    + (actionError instanceof GoalMutationError && actionError.diagnosticCode !== null
+      ? ` ${intl.formatMessage(messages.diagnosticCode, { code: actionError.diagnosticCode })}` : "");
   const elapsed = goal === null ? 0 : goal.timeUsedSeconds + (goal.status === "active" ? Math.max(0, now / 1000 - goal.updatedAt) : 0);
   const openEditor = (opener?: HTMLElement | null, mode: "create" | "edit" | "view" = goal === null ? "create" : "edit") => {
     if (presentationScope !== currentScope.current) return;
     editorReturnFocus.current = opener ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
+    editorVersion.current = snapshot.version ?? null;
     setDraft(mode === "create" ? "" : goal?.objective ?? ""); setActionError(null); setEditorMode(mode);
   };
   const run = (action: () => Promise<void>) => {
     setActionError(null);
-    void action().catch(() => {
-      if (presentationScope === currentScope.current) setActionError("actionFailed");
+    void action().catch((cause: unknown) => {
+      if (presentationScope === currentScope.current) setActionError(cause instanceof GoalMutationError ? cause : "actionFailed");
     });
   };
   const save = () => {
@@ -177,8 +206,8 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
           }
         }
       } else if (threadId !== null) {
-        if (editorMode === "create") await goals.create(threadId, objective);
-        else await goals.set(threadId, { objective, ...(goal?.status === "complete" ? { status: "active" as const } : {}) });
+        if (editorMode === "create") await goals.create(threadId, objective, editorVersion.current);
+        else await goals.set(threadId, { objective, expectedVersion: editorVersion.current, ...(goal?.status === "complete" ? { status: "active" as const } : {}) });
       }
       if (presentationScope === currentScope.current) setEditorMode(null);
     });
@@ -204,7 +233,7 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
   const elapsedLabel = duration(elapsed, intl);
   const showUsage = capability.usageAccounting !== false;
   const needsResume = threadGoalNeedsResume(goal);
-  const goalContent = !completed && (goal !== null || snapshot.phase === "error" || actionError) ? <div className="thread-goal" data-goal-status={needsResume ? "paused" : goal?.status ?? "none"}>
+  const goalContent = !completed && (goal !== null || actionError) ? <div className="thread-goal" data-goal-status={needsResume ? "paused" : goal?.status ?? "none"}>
     {goal === null || threadId === null ? null : <div className="thread-goal__bar">
       <Popover.Root open={expanded} onOpenChange={setExpanded}>
         <Popover.Trigger asChild>
@@ -229,8 +258,8 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
         </Popover.Portal>
       </Popover.Root>
       {capability.write ? <div className="thread-goal__actions">
-        {goal.status === "active" && !needsResume ? <Button variant="ghost" size="sm" disabled={busy || disabled} aria-label={intl.formatMessage(messages.pause)} title={intl.formatMessage(messages.pause)} onClick={() => run(() => goals.set(threadId, { status: "paused" }))}><CirclePause size={16} aria-hidden="true" /></Button>
-          : goal.status !== "complete" ? <Button variant="ghost" size="sm" disabled={busy || disabled} aria-label={intl.formatMessage(messages.resume)} title={intl.formatMessage(messages.resume)} onClick={() => run(() => goals.set(threadId, { status: "active" }))}><Play size={16} aria-hidden="true" /></Button> : null}
+        {goal.status === "active" && !needsResume ? <Button variant="ghost" size="sm" disabled={busy || disabled} aria-label={intl.formatMessage(messages.pause)} title={intl.formatMessage(messages.pause)} onClick={() => run(() => goals.set(threadId, { status: "paused", expectedVersion: snapshot.version ?? null }))}><CirclePause size={16} aria-hidden="true" /></Button>
+          : goal.status !== "complete" ? <Button variant="ghost" size="sm" disabled={busy || disabled} aria-label={intl.formatMessage(messages.resume)} title={intl.formatMessage(messages.resume)} onClick={() => run(() => goals.set(threadId, { status: "active", expectedVersion: snapshot.version ?? null }))}><Play size={16} aria-hidden="true" /></Button> : null}
         <Button ref={editRef} className="thread-goal__edit" variant="ghost" size="sm" disabled={busy || disabled} aria-label={intl.formatMessage(messages.edit)} title={intl.formatMessage(messages.edit)} onClick={() => openEditor(editRef.current)}><Pencil size={16} aria-hidden="true" /></Button>
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild><Button ref={actionsRef} variant="ghost" size="sm" disabled={busy || disabled} aria-label={intl.formatMessage(messages.actions)} title={intl.formatMessage(messages.actions)}><MoreHorizontal size={16} aria-hidden="true" /></Button></DropdownMenu.Trigger>
@@ -240,14 +269,14 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
               if (action) { event.preventDefault(); afterMenuClose.current = null; action(); }
             }}>
               <DropdownMenu.Item className="opencraft-composer-selection-menu__item" onSelect={() => { afterMenuClose.current = () => openEditor(actionsRef.current); }}><Pencil size={15} aria-hidden="true" />{intl.formatMessage(messages.edit)}</DropdownMenu.Item>
-              <DropdownMenu.Item className="opencraft-composer-selection-menu__item" onSelect={() => run(() => goals.clear(threadId))}><Trash2 size={15} aria-hidden="true" />{intl.formatMessage(messages.remove)}</DropdownMenu.Item>
+              <DropdownMenu.Item className="opencraft-composer-selection-menu__item" onSelect={() => run(() => goals.clear(threadId, snapshot.version ?? null))}><Trash2 size={15} aria-hidden="true" />{intl.formatMessage(messages.remove)}</DropdownMenu.Item>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
       </div> : null}
     </div>}
-    {snapshot.phase === "error" ? <Button className="thread-goal__error" variant="ghost" size="sm" onClick={() => { if (threadId !== null) void goals.refresh(threadId).catch(() => undefined); }}>{intl.formatMessage(messages.refreshError)}</Button> : null}
-    {actionError ? <p className="thread-goal__error" role="alert">{intl.formatMessage(messages[actionError])}</p> : null}
+    {showRefreshError ? <Button className="thread-goal__error" variant="ghost" size="sm" onClick={() => { if (threadId !== null) void goals.refresh(threadId).catch(() => undefined); }}>{intl.formatMessage(messages.refreshError)}</Button> : null}
+    {actionError ? <p className="thread-goal__error" role="alert">{actionErrorText}</p> : null}
   </div> : null;
 
   return <>
@@ -264,17 +293,17 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
           <div className="thread-goal__metrics">{showUsage ? <span>{elapsedLabel}</span> : null}
             {goal?.tokenBudget != null ? <small>{intl.formatMessage(messages.usage, { used: intl.formatNumber(goal.tokensUsed), budget: intl.formatNumber(goal.tokenBudget) })}</small> : null}
           </div>
-          {snapshot.phase === "error" && threadId !== null ? <Button variant="ghost" disabled={busy} onClick={() => { void goals.refresh(threadId).catch(() => undefined); }}>{intl.formatMessage(messages.refreshError)}</Button> : null}
-          {actionError ? <p role="alert">{intl.formatMessage(messages[actionError])}</p> : null}
+          {showRefreshError && threadId !== null ? <Button variant="ghost" disabled={busy} onClick={() => { void goals.refresh(threadId).catch(() => undefined); }}>{intl.formatMessage(messages.refreshError)}</Button> : null}
+          {actionError ? <p role="alert">{actionErrorText}</p> : null}
           <div className="thread-goal__editor-actions">
             {capability.write && threadId !== null && goal !== null ? <Button variant="ghost" disabled={busy || disabled} onClick={() => run(async () => {
-              await goals.clear(threadId);
+              await goals.clear(threadId, editorVersion.current);
               if (presentationScope === currentScope.current) setEditorMode(null);
             })}><Trash2 size={16} aria-hidden="true" />{intl.formatMessage(messages.remove)}</Button> : null}
             {capability.write && snapshot.goal !== null && threadId !== null ? <>
               <Button variant="ghost" disabled={busy || disabled} onClick={() => openEditor(editorReturnFocus.current, "edit")}><Pencil size={16} aria-hidden="true" />{intl.formatMessage(messages.edit)}</Button>
               <Button disabled={busy || disabled} onClick={() => run(async () => {
-                await goals.set(threadId, { status: "active" });
+                await goals.set(threadId, { status: "active", expectedVersion: editorVersion.current });
                 if (presentationScope === currentScope.current) setEditorMode(null);
               })}><Play size={16} aria-hidden="true" />{intl.formatMessage(messages.resume)}</Button>
             </> : <Button onClick={() => setEditorMode(null)} disabled={busy}>{intl.formatMessage(messages.close)}</Button>}
@@ -282,7 +311,7 @@ export function ThreadGoalSurface({ threadId, goals, draftScope, onCreateGoal, d
         </> : <>
           <p>{intl.formatMessage(newGoal ? messages.newDescription : editorMode === "create" && completed ? messages.replaceDescription : editorMode === "edit" && completed ? messages.finishedWhileEditing : messages.description)}</p>
           <textarea autoFocus value={draft} onChange={event => setDraft(event.target.value)} rows={5} maxLength={4000} aria-label={intl.formatMessage(messages.objective)} disabled={busy} />
-          {actionError ? <p role="alert">{intl.formatMessage(messages[actionError])}</p> : null}
+          {actionError ? <p role="alert">{actionErrorText}</p> : null}
           <div className="thread-goal__editor-actions">
             <Button variant="ghost" onClick={() => setEditorMode(null)} disabled={busy}>{intl.formatMessage(messages.cancel)}</Button>
             {editorMode === "edit" ? <Button variant="ghost" disabled={busy || draft === goal?.objective} onClick={() => { setDraft(goal?.objective ?? ""); setActionError(null); }}>{intl.formatMessage(messages.revert)}</Button> : null}

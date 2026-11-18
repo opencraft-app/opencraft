@@ -3,7 +3,7 @@ import { appendFileSync, chmodSync, closeSync, existsSync, fstatSync, mkdirSync,
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, createSchemaValidator, type DatabaseOutcome } from "@opencraft/sqlite-node";
-import type { AppServerTurn, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
+import type { AppServerTurn, HistoryImageResource, ThreadTurnsListResponse } from "@opencraft/appserver-protocol";
 function object(value: unknown): Record<string, any> {return value!==null&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,any>:{};}
 const OUTPUT_FIELDS = ["aggregatedOutput", "output", "result", "structuredResult", "contentItems", "results"] as const;
 import { TRANSCRIPT_CACHE_MIGRATIONS, TRANSCRIPT_CACHE_SQL as SQL } from "./transcript-cache-schema.js";
@@ -19,11 +19,14 @@ function transaction<T>(db: DatabaseSync, run: () => T): T {
   try { const value = run(); db.exec("COMMIT"); return value; }
   catch (error) { db.exec("ROLLBACK"); throw error; }
 }
-function encodeTurn(turn: AppServerTurn) {
+type ImageResources = Readonly<Record<string, HistoryImageResource>>;
+function encodeTurn(turn: AppServerTurn, resources: ImageResources = {}) {
   if (typeof turn.id !== "string" || !Array.isArray(turn.items)) throw new Error("Invalid native Turn");
   const blobs: { hash: string; size: number; body: Buffer }[] = [];
   const items = turn.items.map(item => {
     const preview = { ...item }, refs: Record<string, unknown> = {};
+    // This namespace is cache-owned; native payloads cannot manufacture a resource receipt.
+    delete preview.outputBlobRef;
     for (const key of OUTPUT_FIELDS) {
       const value = preview[key];
       if (value == null) continue;
@@ -31,7 +34,9 @@ function encodeTurn(turn: AppServerTurn) {
       if (encoded === undefined || Buffer.byteLength(encoded) <= 1024) continue;
       const body = Buffer.from(encoded), hash = createHash("sha256").update(body).digest("hex");
       preview[key] = body.subarray(0, 1024).toString("utf8");
-      refs[key] = { sha256: hash, byteSize: body.length, encoding: typeof value === "string" ? "utf8" : "json" };
+      refs[key] = { sha256: hash, byteSize: body.length, encoding: typeof value === "string" ? "utf8" : "json",
+        ...(key === "result" && item.type === "imageGeneration" && resources[JSON.stringify([turn.id, item.id])]
+          ? { imageResource: resources[JSON.stringify([turn.id, item.id])] } : {}) };
       blobs.push({ hash, size: body.length, body });
     }
     if (Object.keys(refs).length) preview.outputBlobRef = refs;
@@ -43,7 +48,7 @@ function encodeTurn(turn: AppServerTurn) {
 
 /** Only collapsed tool details are deferred. Message content and attachment
  * identities retain their existing semantics. Unknown Item types stay lossless. */
-function presentationItem(item: import("@opencraft/appserver-protocol").AppServerThreadItem, cursor: string) {
+export function presentationItem(item: import("@opencraft/appserver-protocol").AppServerThreadItem, cursor: string) {
   if (item.status === "inProgress" || !["commandExecution", "fileChange"].includes(item.type ?? "")) {
     // Non-tool blobs must still be restored by the full reader.
     return null;
@@ -69,9 +74,24 @@ function presentationItem(item: import("@opencraft/appserver-protocol").AppServe
     if (typeof diff !== "string" || diff.length <= 1024) return change;
     deferred = true;
     const { diff: _diff, unifiedDiff: _unifiedDiff, unified_diff: _unified_diff, ...rest } = value;
+    const started = performance.now();
+    const kind = typeof value.kind === "string" ? value.kind : object(value.kind).type;
     const lines = diff.split("\n");
-    return { ...rest, additions: lines.filter(line => line.startsWith("+") && !line.startsWith("+++")).length,
-      deletions: lines.filter(line => line.startsWith("-") && !line.startsWith("---")).length };
+    if (lines.at(-1) === "") lines.pop();
+    let additions = 0, deletions = 0, inHunk = false;
+    if (kind === "add" || kind === "added") additions = lines.length;
+    else if (kind === "delete" || kind === "deleted") deletions = lines.length;
+    else for (const line of lines) {
+      if (line.startsWith("diff --git ")) { inHunk = false; continue; }
+      if (line.startsWith("@@ ")) { inHunk = true; continue; }
+      if (!inHunk) continue;
+      if (line.startsWith("+")) additions++;
+      else if (line.startsWith("-")) deletions++;
+    }
+    if (process.env.OPENCRAFT_TRACE_CHANGE_STATS === "1") console.debug("[change-stats]", JSON.stringify({
+      stage: "presentation-prepared", at: Date.now(), durationMs: performance.now() - started,
+      additions, deletions, bodyChars: diff.length }));
+    return { ...rest, additions, deletions, diffStatsVersion: 1 };
   });
   return deferred ? { ...preview, historyDetail: { cursor } } : preview;
 }
@@ -129,7 +149,7 @@ export class TranscriptCacheStorage {
     rmSync(paths.turns, { force: true }); rmSync(paths.blobs, { recursive: true, force: true });
     mkdirSync(this.directory,{recursive:true,mode:0o700});
   }
-  readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded" | "presentation", sortDirection: "asc" | "desc", detailItemId?: string): ThreadTurnsListResponse {
+  readPage(threadId: string, cursor: string | null, limit: number, itemsView: "full" | "notLoaded" | "presentation", sortDirection: "asc" | "desc", detailItemId?: string, imageResources = false): ThreadTurnsListResponse {
     const db = this.database(), meta = db.prepare("SELECT * FROM opencraft_cache_meta WHERE thread_id=?").get(threadId)! as Row;
     let before = Number.MAX_SAFE_INTEGER;
     let after = -Number.MAX_SAFE_INTEGER;
@@ -160,6 +180,20 @@ export class TranscriptCacheStorage {
         // The wire's existing full-items contract is lossless. Cold bodies are
         // stored separately, then restored only for the requested ten Turns.
         return { ...turn, items: turn.items.filter(item => detailItemId === undefined || item.id === detailItemId).map(item => {
+          if (itemsView === "presentation" && imageResources && item.type === "imageGeneration") {
+            const resource = object(object(object(item.outputBlobRef).result).imageResource);
+            if (resource.version === 1 && typeof resource.path === "string" && resource.path.startsWith("/")
+              && resource.path.length <= 8192 && !/[\0\r\n]/u.test(resource.path)
+              && Number.isSafeInteger(resource.byteSize) && resource.byteSize > 0 && resource.byteSize <= 32 * 1024 * 1024
+              && /^[a-f0-9]{64}$/.test(resource.sha256) && resource.mimeType === "image/png"
+              && Number.isSafeInteger(resource.width) && resource.width > 0 && resource.width <= 32768
+              && Number.isSafeInteger(resource.height) && resource.height > 0 && resource.height <= 32768 && resource.width * resource.height <= 64 * 1024 * 1024) {
+              const { outputBlobRef: _refs, ...preview } = item;
+              return { ...preview, result: null, src: resource.path,
+                imageDimensions: { width: resource.width, height: resource.height },
+                historyDetail: { cursor: `transcript:${meta.epoch}:${row.turn_seq + 1}` } };
+            }
+          }
           if (itemsView === "presentation") {
             const preview = presentationItem(item, `transcript:${meta.epoch}:${row.turn_seq + 1}`);
             if (preview) return preview;
@@ -218,20 +252,20 @@ export class TranscriptCacheStorage {
   turn(threadId: string, turnId: string) { return this.database().prepare("SELECT turn_seq FROM opencraft_turn_offset_index WHERE thread_id=? AND turn_id=?").get(threadId,turnId) as Row | undefined; }
   maximum(threadId: string) { return this.database().prepare("SELECT max(turn_seq) AS seq FROM opencraft_turn_offset_index WHERE thread_id=?").get(threadId) as Row; }
   exists(threadId: string) { return existsSync(this.paths(threadId).turns); }
-  batch(threadId: string, turns: Array<{turn: AppServerTurn; seq: number}>) { transaction(this.database(),()=>{ for(const value of turns)this.storeTurn(threadId,value.turn,value.seq); }); }
-  hydrate(threadId: string, turns: AppServerTurn[]) { transaction(this.database(),()=>{for(const turn of turns){const row=this.turn(threadId,turn.id);if(!row)throw new Error("Transcript Turn disappeared during hydration");this.storeTurn(threadId,turn,Number(row.turn_seq));}}); }
-  append(threadId: string, turns: AppServerTurn[], next: number) { transaction(this.database(),()=>{for(const turn of turns){const row=this.turn(threadId,turn.id);this.storeTurn(threadId,turn,row?Number(row.turn_seq):next++);}}); }
+  batch(threadId: string, turns: Array<{turn: AppServerTurn; seq: number}>, resources: ImageResources = {}) { transaction(this.database(),()=>{ for(const value of turns)this.storeTurn(threadId,value.turn,value.seq,encodeTurn(value.turn,resources)); }); }
+  hydrate(threadId: string, turns: AppServerTurn[], resources: ImageResources = {}) { transaction(this.database(),()=>{for(const turn of turns){const row=this.turn(threadId,turn.id);if(!row)throw new Error("Transcript Turn disappeared during hydration");this.storeTurn(threadId,turn,Number(row.turn_seq),encodeTurn(turn,resources));}}); }
+  append(threadId: string, turns: AppServerTurn[], next: number, resources: ImageResources = {}) { transaction(this.database(),()=>{for(const turn of turns){const row=this.turn(threadId,turn.id);this.storeTurn(threadId,turn,row?Number(row.turn_seq):next++,encodeTurn(turn,resources));}}); }
   finish(threadId: string, watermark: string, cursor: number, identity: string, path: string, epoch: string) {
     const db=this.database();
     if(!existsSync(this.paths(threadId).turns))writeFileSync(this.paths(threadId).turns,"",{mode:0o600});
     const total=db.prepare("SELECT count(*) AS n FROM opencraft_turn_offset_index WHERE thread_id=?").get(threadId) as Row;
     db.prepare("INSERT OR REPLACE INTO opencraft_cache_meta VALUES(?,?,?,?,?,?,?,?,?)").run(threadId,this.schema,watermark,cursor,identity,path,epoch,total.n,Date.now());
   }
-  snapshot(threadId: string, turns: AppServerTurn[], source: {position:number;identity:string;path:string}, watermark: string, meta: Row|undefined, rebuild: boolean): {kind:"rebuild"|"increment";nativeBytes:number} {
+  snapshot(threadId: string, turns: AppServerTurn[], source: {position:number;identity:string;path:string}, watermark: string, meta: Row|undefined, rebuild: boolean, resources: ImageResources = {}): {kind:"rebuild"|"increment";nativeBytes:number} {
     const db = this.database();
     turns.reverse();
     if (new Set(turns.map(turn => turn.id)).size !== turns.length) throw new Error("Native transcript repeated Turn");
-    const encoded = turns.map(encodeTurn);
+    const encoded = turns.map(turn => encodeTurn(turn, resources));
     const prior = db.prepare("SELECT turn_seq,turn_id,content_sha256,status FROM opencraft_turn_offset_index WHERE thread_id=? ORDER BY turn_seq").all(threadId) as Row[];
     if (!rebuild) {
       if (prior.length !== Number(meta!.total_turns) || turns.length < prior.length) rebuild = true;

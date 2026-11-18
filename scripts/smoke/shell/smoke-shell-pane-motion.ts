@@ -43,8 +43,8 @@ try{
       assert.ok(sample.frame>=sample.viewport-2,name+" frame covers its aperture");
       assert.equal(sample.queryContainer,"app-shell-main-content");
       assert.equal(sample.composers,1);
-      if(sample.full==="true")assert.ok(Math.abs(sample.toolContent-sample.workspace)<2,
-        `${name}: maximized tool layout must use its destination width during the aperture transition: ${JSON.stringify(sample)}`);
+      if(name!=="hide-from-full" && name!=="reopen")assert.ok(Math.abs(sample.toolContent-sample.panel)<2,
+        `${name}: tool layout must follow its live pane boundary throughout resizing: ${JSON.stringify(sample)}`);
       if(name==="reduced-motion")assert.ok(sample.viewport<=2||Math.abs(sample.viewport-initial)<=2,"reduced motion uses endpoint geometry");
     }
     await writeFile(join(root,name+".json"),JSON.stringify(samples,null,2));

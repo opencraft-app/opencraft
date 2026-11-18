@@ -12,14 +12,15 @@ const runtime = `
 import {useSyncExternalStore} from 'react';
 const listeners=new Set();
 let snapshot={hostId:'tree-fixture',conversation:{execution:{cwd:'/fixture',runtimeWorkspaceRoots:['/fixture']}}};
-const reads=[];let lateResolve;let entries=[{fileName:'a-nested',isDirectory:true,isFile:false},{fileName:'b-error',isDirectory:true,isFile:false},{fileName:'c-late',isDirectory:true,isFile:false},{fileName:'draft.ts',isDirectory:false,isFile:true},...Array.from({length:5000},(_,i)=>({fileName:'report-'+String(i).padStart(4,'0')+'.html',isDirectory:false,isFile:true}))];
-const runtime={resources:{host:{canRequest:method=>method==='fuzzyFileSearch/sessionStart'},fileSystem:{
-async getMetadata(path){return {isFile:path!=='/fixture',isDirectory:path==='/fixture',modifiedAtMs:0,size:100}},
-async readFile(path){return {dataBase64:btoa(path.endsWith('.ts')?'const original = 1;':'<html><body><h1>Persistent preview</h1></body></html>')}},
+const files = new Map(); let saveResolve; let holdSave=false; let failRead=false; const reads=[];let lateResolve;let entries=[{fileName:'a-nested',isDirectory:true,isFile:false},{fileName:'b-error',isDirectory:true,isFile:false},{fileName:'c-late',isDirectory:true,isFile:false},{fileName:'draft.ts',isDirectory:false,isFile:true},...Array.from({length:5000},(_,i)=>({fileName:'report-'+String(i).padStart(4,'0')+'.html',isDirectory:false,isFile:true}))];
+const runtime={resources:{host:{canRequest:method=>method==='fuzzyFileSearch/sessionStart'||method==='fs/writeFile'},fileSystem:{
+async getMetadata(path){if(failRead)throw Error('fixture offline');return {isFile:path!=='/fixture',isDirectory:path==='/fixture',modifiedAtMs:0,size:100}},
+async writeFile(path,content){if(holdSave)await new Promise(resolve=>saveResolve=resolve);files.set(path,atob(content));},
+async readFile(path){if(failRead)throw Error('fixture offline');return {dataBase64:btoa(files.get(path)??(path.endsWith('.ts')?'const original = 1;':'<html><body><h1>Persistent preview</h1></body></html>'))}},
 async readDirectory(path){reads.push(path);if(path.endsWith('b-error'))throw new Error('fixture directory error');if(path.endsWith('c-late'))return new Promise(resolve=>lateResolve=resolve);return {entries:path==='/fixture'?entries:[{fileName:'child.html',isDirectory:false,isFile:true}]}},
-async createFuzzyFileSearchSession(options){return {update:async()=>{options.onUpdated({files:[{root:'/fixture',path:'a-nested/child.html',file_name:'child.html',match_type:'file'}]});options.onCompleted()},stop:async()=>{}}}
+async createFuzzyFileSearchSession(options){return {update:async(query)=>{options.onUpdated({query,files:[{root:'/fixture',path:'a-nested/child.html',file_name:'child.html',match_type:'file'}]});options.onCompleted()},stop:async()=>{}}}
 }}};
-window.fixtureRuntime={reads,listeners,tick(){snapshot={...snapshot};for(const listener of listeners)listener()},resolveLate(){lateResolve({entries:[{fileName:'late.html',isDirectory:false,isFile:true}]})},shrink(){entries=[{fileName:'remaining.html',isDirectory:false,isFile:true}]}};
+window.fixtureRuntime={reads,listeners,hold(){holdSave=true},release(){holdSave=false;saveResolve?.()},fail(value){failRead=value},tick(){snapshot={...snapshot};for(const listener of listeners)listener()},resolveLate(){lateResolve({entries:[{fileName:'late.html',isDirectory:false,isFile:true}]})},shrink(){entries=[{fileName:'remaining.html',isDirectory:false,isFile:true}]}};
 export const useAppServerRuntime=()=>runtime;
 export const useBlobResources=()=>window.fixtureBlobs;
 export const useAppServerSnapshot=()=>useSyncExternalStore(listener=>{listeners.add(listener);return()=>listeners.delete(listener)},()=>snapshot);`;
@@ -40,9 +41,9 @@ const panel=<div style={{height:'100%',width:'100%'}}><WorkspaceResourcePanel ta
 return <AppShell layoutScope='fixture' header={<span>Workspace</span>} floatingSidebarHeader={()=>null} leftPanel={<div>Sidebar</div>} sidebarOpen={sidebar} sidebarWidth={260} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanel={panel} rightPanelOpen={panelOpen} rightPanelFullWidth={true} onRightPanelOpenChange={setPanelOpen}><p>Conversation</p></AppShell>}
 createIntlTestRoot(document.getElementById('root')).render(<QueryClientProvider client={client}><App/></QueryClientProvider>);`;
 const vite = await createServer({
-  configFile: false, root: process.cwd(), logLevel: "error",
-  resolve: { dedupe: ["react", "react-dom", "react-intl"] },
-  optimizeDeps: { include: ["@codemirror/lang-javascript", "@codemirror/lang-css", "codemirror", "@codemirror/language", "@codemirror/state", "@codemirror/view", "@lezer/highlight"] },
+  cacheDir: join(output, "vite"), configFile: false, root: process.cwd(), logLevel: "error",
+  resolve: { dedupe: ["react", "react-dom", "react-intl", "@codemirror/state", "@codemirror/view"] },
+  optimizeDeps: { include: ["@codemirror/search", "@codemirror/lang-javascript", "@codemirror/lang-css", "codemirror", "@codemirror/language", "@codemirror/state", "@codemirror/view", "@lezer/highlight"] },
   server: { host: "127.0.0.1", port: 0, hmr: false },
   plugins: [react(), {
     name: "workspace-tree-fixture", enforce: "pre",
@@ -67,7 +68,7 @@ try {
   const evidence = [];
   for (const width of [1440, 390]) for (const theme of ["light", "dark"]) {
     console.log(JSON.stringify({ phase: "start", width, theme, output }));
-    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: width === 390, isMobile: width === 390 });
     const errors: string[] = [];
     page.on("pageerror", (error: Error) => errors.push(error.message));
     await page.addInitScript(() => {
@@ -102,7 +103,7 @@ try {
     assert.equal(await page.evaluate(() => (window as any).comparisons), sorted, "chat/Shell updates must not sort directory data");
     await page.evaluate(() => (window as any).fixture.setSidebar(false));
     await item("a-nested").click(); await item("child.html").waitFor();
-    await item("b-error").click(); await tree.getByText("Directory unavailable").waitFor();
+    await item("b-error").click(); await tree.getByText("Directory unavailable. Retry").waitFor();
     await item("b-error").click();
     await item("c-late").click(); await tree.getByText("Loading…").waitFor(); await item("c-late").click();
     await page.evaluate(() => (window as any).fixtureRuntime.resolveLate());
@@ -129,8 +130,8 @@ try {
     assert.equal(await tree.getAttribute("aria-activedescendant"), await item("a-nested").getAttribute("id"));
     await tree.press("ArrowRight"); await tree.press("ArrowLeft");
     assert.equal(await item("a-nested").getAttribute("aria-expanded"), "true");
-    await item("draft.ts").click(); await page.locator(".cm-editor").waitFor();
-    await page.getByTitle("Edit file", { exact: true }).click();
+    if (width === 390) { await item("draft.ts").tap(); assert.ok((await item("draft.ts").boundingBox())!.height >= 44); } else await item("draft.ts").click(); await page.locator(".cm-editor").waitFor();
+    await page.getByTitle("Edit", { exact: true }).click();
     const editor = page.locator(".cm-content"); await editor.press("Control+End"); await editor.pressSequentially(" // unsaved");
     await page.evaluate(() => (window as any).savedEditor = document.querySelector(".cm-editor"));
     await page.getByRole("button", { name: "Hide file tree", exact: true }).click();
@@ -139,6 +140,32 @@ try {
     await page.getByRole("button", { name: "Show file tree", exact: true }).click();
     assert.equal(await page.evaluate(() => (window as any).savedEditor === document.querySelector(".cm-editor")), true);
     assert.match(await editor.innerText(), /unsaved/);
+    // Browsing away preserves document, selection and undo history.
+    await item("child.html").click(); await page.locator("iframe").waitFor();
+    await item("draft.ts").click(); await editor.waitFor();
+    assert.match(await editor.innerText(), /unsaved/);
+    await editor.press("Control+z");
+    assert.doesNotMatch(await editor.innerText(), /unsaved/);
+    await editor.press("Control+End"); await editor.pressSequentially(" // unsaved");
+    await page.evaluate(() => (window as any).fixtureRuntime.hold());
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await editor.press("Control+End"); await editor.pressSequentially(" newer");
+    await page.evaluate(() => (window as any).fixtureRuntime.release());
+    await page.waitForFunction(() => !document.querySelector('button[title="Save"]')?.hasAttribute('disabled'));
+    assert.match(await editor.innerText(), /newer/);
+    await page.evaluate(() => (window as any).savedEditor = document.querySelector(".cm-editor"));
+    await page.evaluate(async () => { (window as any).fixtureRuntime.fail(true); await (window as any).fixture.client.invalidateQueries({queryKey:["appserver-fs", "tree-fixture", "resource", "/fixture/draft.ts"]}); });
+    await page.getByRole("button", { name: "Refresh failed. Retry", exact: true }).waitFor();
+    assert.equal(await page.evaluate(() => (window as any).savedEditor === document.querySelector(".cm-editor")), true);
+    await page.evaluate(() => (window as any).fixtureRuntime.fail(false));
+    await page.getByRole("button", { name: "Refresh failed. Retry", exact: true }).click();
+    const actions = page.getByRole("button", {name: "File actions", exact: true});
+    if (width === 390) await actions.tap(); else await actions.click();
+    await page.getByRole("menuitem", {name: "Copy path", exact: true}).waitFor();
+    await page.screenshot({path: join(output, width + "-" + theme + "-menu.png")});
+    await page.keyboard.press("Escape");
+    await page.getByRole("menuitem", {name: "Copy path", exact: true}).waitFor({state: "hidden"});
+    assert.ok(await page.getByRole("button", {name: "Save", exact: true}).isVisible());
     await page.screenshot({ path: join(output, `${width}-${theme}.png`) });
     await tree.focus(); await tree.press("End");
     await page.evaluate(async () => { (window as any).fixtureRuntime.shrink(); await (window as any).fixture.client.invalidateQueries({ queryKey: ["appserver-fs", "tree-fixture", "directory", "/fixture"] }); });

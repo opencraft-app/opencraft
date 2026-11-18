@@ -5,6 +5,15 @@ import { BROWSER_TOOL_CATALOG, BrowserToolError, executeBrowserTool, type Browse
 const context = { hostId: "host", threadId: "thread", turnId: "execution", callId: "call" };
 const tool = { namespace: "opencraft_browser", name: "browser_use" };
 
+test('cancelled trusted request cannot dispatch a new browser effect', async () => {
+  const controller = new AbortController(); controller.abort();
+  const dispatch = () => assert.fail('cancelled tool must not dispatch');
+  const result = await executeBrowserTool({ open: dispatch, getTabContext: dispatch, browserUse: dispatch },
+    { ...context, signal: controller.signal }, tool, { action: 'click' });
+  assert.equal(result?.success, false);
+  assert.equal(JSON.parse((result!.content[0] as { text: string }).text).outcome, 'not-dispatched');
+});
+
 test('native outcome remains unknown through neutral tool dispatch', async () => {
   const host: BrowserToolHost = { open() {}, getTabContext() {}, browserUse() {
     throw new BrowserToolError('CDP_TIMEOUT', 'Input result was not confirmed', false, 'unknown');

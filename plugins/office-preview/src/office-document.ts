@@ -1,7 +1,6 @@
 import { bindPreviewLinks, FilePreviewError, type WebPreviewDocument } from "@opencraft/file-preview-web";
 import { createPaperViewport } from "./paper-viewport";
 import { validateOfficeArchive } from "./archive";
-import "./preview.web.scss";
 
 export async function openOfficeDocument(input: { blob: Blob; name: string; signal: AbortSignal }): Promise<WebPreviewDocument> {
   const buffer = await input.blob.arrayBuffer();

@@ -813,8 +813,8 @@ test('Actor collaboration survives Headless overlay restart while native Core re
     await headless.close(); headless = await startHeadlessServer(options);
     assert.deepEqual(await f.control.health(), healthBefore);
     await inspector.rpc('inspect', 'fixture/complete', { threadId: thread.id });
-    for (let i = 0; i < 150; i++) { request = (await (await call('requests?id=' + sent.requestId)).json() as any).request; if (request.state === 'submitted') break; await delay(20); }
-    assert.equal(request.state, 'submitted');
+    for (let i = 0; i < 150; i++) { request = (await (await call('requests?id=' + sent.requestId)).json() as any).request; if (request.state === 'injected') break; await delay(20); }
+    assert.equal(request.state, 'injected');
     const history = await inspector.rpc('inspect', 'thread/read', { threadId: thread.id, includeTurns: true });
     assert.equal(history.thread.turns.length, 2); assert.equal(history.thread.turns[1].items[0].clientId, 'actor-input:' + sent.requestId);
   } finally { await headless?.close(); await f.close(); }
@@ -1100,4 +1100,14 @@ for (const state of ["created", "active-peer", "persisted", "attempted", "unload
       if (state === "persisted") assert.equal(store.get("new")?.phase, "persisted");
     }
   } finally { store.close(); await rm(root, {recursive:true,force:true}); }
+});
+
+for (const [optIn,delivery] of [[false,true],[true,false],[true,true]]) test(`history image resources require candidate opt-in and delivery (${optIn},${delivery})`, async () => {
+  const f = await fixture();
+  try {
+    const a = await f.adapter(true,()=>{}, { historyImageResources:optIn,
+      ...(delivery ? { prepareArtifact:async artifact=>artifact } : {}) });
+    const initialized = await a.rpc("reader","initialize");
+    assert.equal(initialized.capabilities.extensions["opencraft/read-history"].imageResources,optIn&&delivery);
+  } finally { await f.close(); }
 });

@@ -16,7 +16,6 @@ test("selection capabilities are owned by shells and content renderers", async (
     ["apps/workbench-web/src/components/settings-page.tsx", "chrome"],
     ["apps/workbench-web/src/components/conversation.tsx", "text"],
     ["packages/chat-render-web/src/web-chat-document.tsx", "text"],
-    ["plugins/bot-chat/src/bot-chat-view.tsx", "text"],
     ["plugins/terminal/src/index.tsx", "text"],
   ]) assert.ok((await read(path)).includes(`data-selection="${policy}"`), path);
   assert.match(await read("apps/workbench-web/src/styles/app.scss"), /@use "@opencraft\/design-system\/selection.web"/);

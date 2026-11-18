@@ -10,6 +10,7 @@
     "./human-auth": "./src/human-auth.ts",
     "./human-accounts": "./src/human-accounts.ts",
     "./account-management": "./src/account-management.ts",
+    "./actor-policy": "./src/actor-policy.ts",
     "./server-spaces": "./src/server-spaces-runtime.ts",
     "./server-spaces-session": "./src/server-spaces-session.ts",
     "./collaboration": "./src/collaboration.ts"

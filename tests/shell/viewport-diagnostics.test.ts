@@ -1,8 +1,11 @@
+import { setLocalDiagnosticsEnabled } from "../../apps/workbench-web/src/runtime/local-diagnostics";
+import { captureViewportHistory } from "../../apps/workbench-web/src/runtime/viewport-history";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createViewportDiagnostics } from "../../apps/workbench-web/src/runtime/viewport-diagnostics";
 
 function fixture(t: test.TestContext) {
+  setLocalDiagnosticsEnabled(false); setLocalDiagnosticsEnabled(true);
   let now = 0;
   let top = 0;
   let revision = "a".repeat(40);
@@ -24,6 +27,7 @@ function fixture(t: test.TestContext) {
     body: new Element(), activeElement: shell,
     elementFromPoint(_x: number, _y: number): unknown { reads.hit++; return null; },
     querySelector(selector: string) {
+      if (selector === "[data-timeline-fixed-reference]") return null;
       if (selector === "#opencraft-host-edge-color") return edgeSampler;
       return selector.startsWith("meta") ? { content: revision } : shell;
     },
@@ -47,7 +51,7 @@ function fixture(t: test.TestContext) {
     reports.push(JSON.parse(String(init.body)));
     return new Response("{}", { status: 202 });
   });
-  return { reports, doc, reads, sampler(visible: boolean) { edgeSampler = new Element(); edgeSampler.display = visible ? "block" : "none"; }, top(value: number) { top = value; }, advance(ms: number) { now += ms; top++; }, revision(value: string) { revision = value; } };
+  return { get reports() { return captureViewportHistory().samples.map(sample => ({ ...sample.geometry } as Record<string, number | string>)); }, doc, reads, sampler(visible: boolean) { edgeSampler = new Element(); edgeSampler.display = visible ? "block" : "none"; }, top(value: number) { top = value; }, advance(ms: number) { now += ms; top++; }, revision(value: string) { revision = value; } };
 }
 
 test("long-lived pages retain evidence after the first 64 keyboard observations", t => {
@@ -55,7 +59,7 @@ test("long-lived pages retain evidence after the first 64 keyboard observations"
   for (let i = 0; i < 96; i++) { f.advance(1_000); report(); }
   assert.equal(f.reports.length, 96, "Later keyboard cycles must not become permanently invisible");
   const last = f.reports.at(-1)!;
-  assert.equal(last.sourceRevision, "a".repeat(40));
+  assert.ok(!("sourceRevision" in last));
   assert.equal(last.cssTop, 294);
   assert.equal(last.clientHeight, 688);
   assert.equal(last.shellTop, 96);
@@ -108,22 +112,22 @@ test("sustained geometry changes stay rate bounded and observation recovers afte
   for (let i = 0; i < 1_000; i++) { f.advance(80); report(); }
   assert.ok(f.reports.length > 64);
   assert.ok(f.reports.length <= 64 + 8 * 80, "At most the burst allowance plus eight reports per second");
-  const before = f.reports.length;
+  const before = f.reports.at(-1)!.shellTop;
   f.advance(10_000); report();
-  assert.equal(f.reports.length, before + 1);
-  report();
-  assert.equal(f.reports.length, before + 1, "Identical observations are not transmitted twice");
+  assert.notEqual(f.reports.at(-1)!.shellTop, before);
+  const retained = f.reports.length; report();
+  assert.equal(f.reports.length, retained, "Identical observations are not recorded twice");
 });
 
-test("hidden pages and missing client revisions cannot consume later valid observations", t => {
+test("local capture supports unversioned previews and skips hidden pages", t => {
   const f = fixture(t), report = createViewportDiagnostics();
   f.revision("");
   for (let i = 0; i < 80; i++) { f.advance(80); report(); }
-  assert.equal(f.reports.length, 0);
+  assert.equal(f.reports.length, 80);
   f.revision("a".repeat(40)); f.doc.visibilityState = "hidden"; report();
-  assert.equal(f.reports.length, 0);
-  f.doc.visibilityState = "visible"; report();
-  assert.equal(f.reports.length, 1);
+  assert.equal(f.reports.length, 80);
+  f.doc.visibilityState = "visible"; f.advance(100); report();
+  assert.equal(f.reports.length, 81);
 });
 
 
@@ -139,14 +143,14 @@ test("rate-limited frames retain excursion evidence without detailed geometry or
   };
   f.doc.activeElement.closest = selector => selector === ".opencraft-composer-shell" ? composer : null;
   report();
-  assert.deepEqual(f.reads, { rect: 7, style: 1, hit: 1 });
+  assert.deepEqual(f.reads, { rect: 6, style: 1, hit: 1 });
   const before = { ...f.reads };
   f.advance(16); f.top(-294); report();
   f.advance(16); f.top(0); report();
   assert.deepEqual(f.reads, { rect: before.rect + 4, style: before.style, hit: before.hit },
     "Only Shell and focused editor are measured on ineligible frames");
   f.advance(80); f.top(0); report();
-  assert.deepEqual(f.reads, { rect: before.rect + 11, style: before.style + 1, hit: before.hit + 1 });
+  assert.deepEqual(f.reads, { rect: before.rect + 10, style: before.style + 1, hit: before.hit + 1 });
   assert.equal(f.reports.at(-1)!.editorMinTop, -294);
   assert.equal(f.reports.at(-1)!.shellMinTop, -294);
   assert.equal(f.reports.at(-1)!.observedSamples, 3);

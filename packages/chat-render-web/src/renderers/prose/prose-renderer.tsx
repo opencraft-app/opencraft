@@ -138,7 +138,7 @@ export function ProseRenderer(props: ChatNodeRendererProps): ReactNode {
         {children(props)}
       </li>
     );
-    case "text": return <SegmentedText node={node} props={props} />;
+    case "text": return props.context.renderText ? <>{props.context.renderText(node)}</> : <SegmentedText node={node} props={props} />;
     case "color-swatch": return <><SegmentedText node={node} props={props} /><span aria-hidden className="chat-color-swatch" data-hex-color-swatch={node.color} style={{ backgroundColor: node.color }} /></>;
     case "inline-code": return <code className="chat-inline-code">{node.code}</code>;
     case "unknown": return <span data-chat-unknown-token={node.tokenType}>{node.raw}</span>;

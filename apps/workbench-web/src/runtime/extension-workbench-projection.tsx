@@ -1,10 +1,8 @@
 import { useIntl } from "@opencraft/i18n/react";
-import type {
-  AppServerBotDirectory,
-} from "@opencraft/bot-conversation-appserver";
 import type { BotContribution, ExtensionPlatform, ViewContribution } from "@opencraft/extension-contract";
 import type { ExtensionContributionStore } from "@opencraft/extension-runtime";
 import type {
+  ExtensionSettingsViewProps,
   PlatformAccountContribution,
   PlatformAccountSnapshot,
   PlatformViewHost,
@@ -13,18 +11,13 @@ import type {
 import {
   createSidebarEntityKey,
   type SidebarEntity,
-  type SidebarEntityCreationCommand,
 } from "@opencraft/sidebar-layout";
-import { useCallback, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { useCallback, useMemo, useSyncExternalStore, type ComponentType, type ReactNode } from "react";
 
 import type {
   SidebarActionItem,
   SidebarCatalogItem,
 } from "../components/sidebar";
-import {
-  createAppServerBotCreationCommand,
-  projectAppServerBotSidebarEntity,
-} from "./appserver-bot-sidebar-adapter";
 import type { ApplicationRoute } from "./workbench-navigation";
 import type { PlatformAccountContributionRegistry } from "./platform-account-contributions";
 import { isInternalAudienceVisible } from "../internal-developer-mode";
@@ -32,6 +25,7 @@ import { isInternalAudienceVisible } from "../internal-developer-mode";
 import { createConnectorManagementAction } from "./connector-management-action";
 
 import { useOptionalAsyncNotices } from "../components/async-notices";
+import { useDismissSidebarAfterSelection } from "../components/shell-presentation";
 
 const EMPTY_ACCOUNT_SNAPSHOT: PlatformAccountSnapshot = Object.freeze({
   revision: 0,
@@ -59,8 +53,8 @@ export interface ExtensionWorkbenchProjection {
   readonly footerActions: readonly SidebarActionItem[];
   readonly catalogs: readonly SidebarCatalogItem[];
   readonly bots: readonly SidebarEntity[];
-  readonly botCreation: SidebarEntityCreationCommand | null;
   readonly activeView: ViewContribution | null;
+  readonly routeFamilies: ReadonlyMap<string, string>;
   readonly activeViewNode: ReactNode;
   readonly emptyWorkbenchNode: ReactNode;
   readonly connectionInterventions: readonly {
@@ -75,8 +69,8 @@ export interface ExtensionWorkbenchProjectionOptions {
   readonly contributions: ExtensionContributionStore;
   readonly renderers: PlatformViewRendererRegistry;
   readonly accounts: PlatformAccountContributionRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly host: PlatformViewHost;
+  readonly regions?: ExtensionSettingsViewProps["regions"];
   readonly applicationRoute: ApplicationRoute;
   readonly internalDeveloperMode: boolean;
   readonly openSettings: (pageId: string) => void;
@@ -97,6 +91,20 @@ function byOrderThenId(
   return (left.order ?? 0) - (right.order ?? 0) || left.id.localeCompare(right.id);
 }
 
+function SidebarExtensionView({ component: Component, ...props }: ExtensionSettingsViewProps & {
+  component: ComponentType<ExtensionSettingsViewProps>;
+}) {
+  const dismiss = useDismissSidebarAfterSelection();
+  const host = useMemo<PlatformViewHost>(() => ({
+    ...props.host,
+    openView(viewId, resourceUri) {
+      props.host.openView(viewId, resourceUri);
+      dismiss?.();
+    },
+  }), [dismiss, props.host]);
+  return <Component {...props} host={host} />;
+}
+
 /**
  * Projects framework-free extension declarations into host-owned React
  * surfaces. Public and renderer registries are observed independently, while
@@ -107,8 +115,8 @@ export function useExtensionWorkbenchProjection({
   contributions,
   renderers,
   accounts,
-  botDirectory,
   host,
+  regions,
   applicationRoute,
   internalDeveloperMode,
   openSettings,
@@ -138,15 +146,11 @@ export function useExtensionWorkbenchProjection({
     accountProvider?.getSnapshot ?? readEmptyAccount,
     accountProvider?.getSnapshot ?? readEmptyAccount,
   );
-  const botDirectorySnapshot = useSyncExternalStore(
-    botDirectory.subscribe,
-    botDirectory.getSnapshot,
-    botDirectory.getSnapshot,
-  );
 
   return useMemo(() => {
     const identity = accountSnapshot.phase === "authenticated" ? accountSnapshot.identity : null;
-    const viewHost: PlatformViewHost = { ...host, currentUser: accountProvider && identity
+    const viewHost: PlatformViewHost = { ...host, activeView: applicationRoute.kind === "extension-view" ? applicationRoute : undefined,
+      currentUser: accountProvider && identity
       ? { providerId: accountProvider.id, id: identity.id, handle: identity.handle } : null };
     const views = new Map(
       contributionSnapshot.views
@@ -156,32 +160,25 @@ export function useExtensionWorkbenchProjection({
           && isInternalAudienceVisible(view.audience, internalDeveloperMode))
         .map((view) => [view.id, view] as const),
     );
-    const renderView = (viewId: string, resourceUri: string | null = null, onDismiss?: () => void, authenticationFlowId?: string): ReactNode => {
+    const renderView = (viewId: string, {
+      resourceUri = null, onDismiss, authenticationFlowId, sidebar = false, route = false,
+    }: {
+      resourceUri?: string | null;
+      onDismiss?: () => void;
+      authenticationFlowId?: string;
+      sidebar?: boolean;
+      route?: boolean;
+    } = {}): ReactNode => {
       const view = views.get(viewId);
       if (view === undefined) return null;
       const Component = renderers.resolve(view.viewType);
-      return Component === null ? null : (
-        <Component
-          activation={{ viewId, resourceUri }}
-          contribution={view}
-          host={viewHost}
-          reportError={reportError}
-          onDismiss={onDismiss}
-          authenticationFlowId={authenticationFlowId}
-        />
-      );
+      if (Component === null) return null;
+      const props: ExtensionSettingsViewProps = {
+        activation: { viewId, resourceUri }, contribution: view, host: viewHost,
+        reportError, onDismiss, authenticationFlowId, regions: route ? regions : undefined,
+      };
+      return sidebar ? <SidebarExtensionView {...props} component={Component} /> : <Component {...props} />;
     };
-    const botConversationViews = [...views.values()]
-      .filter((view) => view.role === "bot-conversation")
-      .sort((left, right) => left.id.localeCompare(right.id));
-    if (botConversationViews.length > 1) {
-      throw new Error(
-        `Multiple views own the bot-conversation role: ${botConversationViews
-          .map((view) => view.id)
-          .join(", ")}`,
-      );
-    }
-    const botConversationViewId = botConversationViews[0]?.id ?? null;
     const invokeTarget = (
       target: (typeof contributionSnapshot.navigation)[number]["contribution"]["target"],
     ) => {
@@ -229,10 +226,6 @@ export function useExtensionWorkbenchProjection({
             invoke: () => invokeBot(bot),
           });
         }),
-      ...(botConversationViewId === null
-        ? []
-        : botDirectorySnapshot.entries.map((entry) =>
-          projectAppServerBotSidebarEntity(entry, botConversationViewId, openView))),
     ] : [];
     bots.sort((left, right) =>
       (left.order ?? 0) - (right.order ?? 0)
@@ -264,12 +257,14 @@ export function useExtensionWorkbenchProjection({
       .filter((catalog) => supportsPlatform(catalog, host.platform))
       .sort(byOrderThenId)
       .flatMap((catalog): readonly SidebarCatalogItem[] => {
-        const content = renderView(catalog.viewId);
+        const content = renderView(catalog.viewId, { sidebar: true });
         return content === null ? [] : [{
           id: catalog.id,
-          title: catalog.title,
+          title: catalog.titleMessage ? intl.formatMessage(catalog.titleMessage) : catalog.title,
           icon: catalog.icon,
           initiallyCollapsed: catalog.initiallyCollapsed,
+          presentation: catalog.presentation,
+          action: catalog.actionViewId ? renderView(catalog.actionViewId, { sidebar: true }) : null,
           content,
         }];
       });
@@ -310,36 +305,27 @@ export function useExtensionWorkbenchProjection({
         .map(actionFor),
       catalogs,
       bots,
-      botCreation: !internalDeveloperMode || botConversationViewId === null
-        ? null
-        : createAppServerBotCreationCommand(
-          botDirectory,
-          botDirectorySnapshot.hosts,
-          botConversationViewId,
-          openView,
-        ),
       activeView,
+      routeFamilies: new Map([...views.values()].filter(view => view.routeFamily !== undefined)
+        .map(view => [view.id, JSON.stringify([view.routeFamily, view.viewType])])),
       activeViewNode: activeView === null
         ? null
         : renderView(
             activeView.id,
-            applicationRoute.kind === "extension-view"
-              ? applicationRoute.resourceUri
-              : null,
+            { resourceUri: applicationRoute.kind === "extension-view" ? applicationRoute.resourceUri : null, route: true },
           ),
       emptyWorkbenchNode: emptySurface === null ? null : renderView(emptySurface.viewId),
       connectionInterventions,
       account: accountProvider === null || accountContent === null
         ? null
         : { provider: accountProvider, snapshot: accountSnapshot, content: accountContent,
-          renderSignIn: flowId => accountProvider.signInViewId ? renderView(accountProvider.signInViewId, null, undefined, flowId) : null,
-          renderEnvironmentCreation: onDismiss => accountProvider.environmentCreation ? renderView(accountProvider.environmentCreation.viewId, null, onDismiss) : null },
+          renderSignIn: flowId => accountProvider.signInViewId ? renderView(accountProvider.signInViewId, { authenticationFlowId: flowId }) : null,
+          renderEnvironmentCreation: onDismiss => accountProvider.environmentCreation ? renderView(accountProvider.environmentCreation.viewId, { onDismiss }) : null },
     };
   }, [
     applicationRoute,
     accountProvider,
     accountSnapshot,
-    botDirectorySnapshot,
     contributionSnapshot,
     contributions,
     host,
@@ -348,6 +334,7 @@ export function useExtensionWorkbenchProjection({
     openSettings,
     openView,
     reportError,
+    regions,
     rendererSnapshot,
     renderers,
   ]);

@@ -718,3 +718,22 @@ test("explicit conversation selection rechecks an expired connection before susp
     assert.deepEqual(coordinator.getSnapshot().location, createWorkbenchThreadLocation("local", "next"));
   } finally { owner.dispose(); coordinator.dispose(); await registry.dispose(); }
 });
+
+test("local View restoration borrows its resident Thread before releasing the previous View", async () => {
+  const local = new FakeHostRuntime("local");
+  const events: string[] = [];
+  const resident = {threadId: "resident", release() {events.push("release");}};
+  Object.assign(local, {tryAcquireThread(id: string) { events.push("borrow:" + id); return id === resident.threadId ? resident : null; }});
+  const registry = new HostRuntimeRegistry([registration("local", local)]);
+  const coordinator = createWorkbenchCoordinator(registry, createWorkbenchDraftLocation("local", "initial"));
+  const observed: (string | null)[] = [];
+  const stop = coordinator.subscribe(() => observed.push(coordinator.getActiveThreadLease()?.threadId ?? null));
+  try {
+    coordinator.presentLocalView(createWorkbenchThreadLocation("local", "resident"), "view:resident");
+    assert.equal(coordinator.getActiveThreadLease(), resident);
+    assert.deepEqual(observed, ["resident"]);
+    coordinator.presentLocalView(createWorkbenchThreadLocation("local", "cold"), "view:cold");
+    assert.deepEqual(events, ["borrow:resident", "borrow:cold", "release"]);
+    assert.equal(coordinator.getActiveThreadLease(), null);
+  } finally { stop(); coordinator.dispose(); await registry.dispose(); }
+});

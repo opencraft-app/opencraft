@@ -51,7 +51,7 @@ async function assertReleaseProfile(release, current) {
     throw new Error('Release execution profile differs from this website; select the matching npm update channel');
 }
 async function startWorker(release, environment) {
-  const plugins = await loadUserPlugins(environment.OPENCRAFT_USER_PLUGIN_DIRECTORY);
+  const plugins = await loadUserPlugins(environment.OPENCRAFT_USER_PLUGIN_DIRECTORY, { isolate: true });
   await assertUserPluginCompatibility(release, plugins);
   const child = fork(join(release.releaseRoot, 'runtime/worker.mjs'), [], {
     env: { ...process.env, ...environment, OPENCRAFT_RELEASE_ROOT: release.releaseRoot },

@@ -60,16 +60,18 @@ test("Turn-scoped identity reconciliation finds recent summaries and stops at th
 });
 
 test("submission attribution comes from exact persisted identity rather than a forged native field", () => {
-  const project = (thread: string, input: string, value: Record<string, unknown>) => ({...value, sender: thread === "t" && input === "message" ? employee("contributor-a") : null});
+  const project = (thread: string, input: string, value: Record<string, unknown>) => ({...value, sender: thread === "t" && input === "message" ? employee("skipzhang") : null});
   for (const method of ["turn/start", "turn/steer", "thread/queue/add"]) {
-    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}, { trustedSubmissionSender: true }) as any;
-    assert.deepEqual(result.__opencraftSubmissionSender, {clientMessageId: "message", sender: employee("contributor-a")});
+    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}) as any;
+    assert.deepEqual(result.__opencraftSubmissionSender, {clientMessageId: "message", sender: employee("skipzhang")});
     const enriched = projectThreadAttachmentResult({list: () => []}, method, {threadId: "t", clientUserMessageId: "message"}, result) as any;
     assert.deepEqual(enriched.__opencraftSubmissionSender, result.__opencraftSubmissionSender, "attachment projection must not erase verified identity");
   }
-  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}, { trustedSubmissionSender: true }) as any;
+  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}) as any;
   assert.equal(result.__opencraftSubmissionSender.sender, null);
 });
+
+
 
 
 test("native submission markers are stripped without a trusted identity owner or consistent Thread", () => {
@@ -86,6 +88,7 @@ test("native submission markers are stripped without a trusted identity owner or
     {trustedSubmissionSender:true}) as object;
   assert.equal(Object.hasOwn(read,"__opencraftSubmissionSender"),false,"history RPC cannot manufacture acceptance proof");
 });
+
 
 
 test("Host receipt proof survives a database reopen and never uses caller or native sender", async t => {

@@ -1,20 +1,21 @@
 import type { AppServerClient } from "@opencraft/appserver-client";
 import type { ThreadStatus, ThreadStatusChangedNotification, TurnStartedNotification } from "@opencraft/appserver-protocol/generated/v2";
 import type { QueryClient } from "@tanstack/react-query";
+import { turnStartedRecency } from "./thread-catalog-recency";
 import { changesThreadCatalog } from "./thread-catalog-query";
 import { parseThreadCatalogChange, THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
-import { receiveThreadCatalogChange } from "./thread-catalog-updates";
+import { receiveThreadCatalogTurnStart, receiveThreadCatalogChange } from "./thread-catalog-updates";
 
 /** The threads prefix also contains non-page projections (e.g. the archived
  * settings array). Status facts patch catalog pages only; other projections
  * retain their identity and reconcile through the common invalidation below. */
-function updateStatus(data: unknown, threadId: string, status: ThreadStatus): unknown {
+function updateStatus(data: unknown, threadId: string, status: ThreadStatus, recency?: number): unknown {
   if (!data || typeof data !== "object" || Array.isArray(data)) return data;
   if ("pages" in data && Array.isArray(data.pages)) {
-    return { ...data, pages: data.pages.map(page => updateStatus(page, threadId, status)) };
+    return { ...data, pages: data.pages.map(page => updateStatus(page, threadId, status, recency)) };
   }
   if (!("data" in data) || !Array.isArray(data.data)) return data;
-  return { ...data, data: data.data.map(row => row && typeof row === "object" && row.id === threadId ? { ...row, status } : row) };
+  return { ...data, data: data.data.map(row => row && typeof row === "object" && row.id === threadId ? { ...row, status, ...(recency === undefined ? {} : { recencyAt: Math.max(row.recencyAt ?? row.updatedAt, recency) }) } : row) };
 }
 
 /** Live lifecycle facts supersede catalog reads started before the fact.
@@ -59,6 +60,9 @@ export function bindThreadCatalogNotifications(client: Pick<AppServerClient, "su
       }
     }
     if (!changesThreadCatalog(notification.method)) return;
+    const activity = notification.method === "turn/started"
+      ? turnStartedRecency((notification.params as TurnStartedNotification).turn) : undefined;
+    if (activity !== undefined) receiveThreadCatalogTurnStart(queryClient, hostId, (notification.params as TurnStartedNotification).threadId, activity);
     pending = pending.then(async () => {
       if (disposed || !isCurrent()) return;
       await queryClient.cancelQueries(filter);
@@ -68,7 +72,7 @@ export function bindThreadCatalogNotifications(client: Pick<AppServerClient, "su
         queryClient.setQueriesData<unknown>(filter, (data: unknown) => updateStatus(data, threadId, status));
       } else if (notification.method === "turn/started") {
         const { threadId } = notification.params as TurnStartedNotification;
-        queryClient.setQueriesData<unknown>(filter, (data: unknown) => updateStatus(data, threadId, { type: "active", activeFlags: [] }));
+        queryClient.setQueriesData<unknown>(filter, (data: unknown) => updateStatus(data, threadId, { type: "active", activeFlags: [] }, activity));
       }
       // Do not serialize on network latency; the next event must be able to
       // cancel this read too. Query errors remain owned by the catalog UI.

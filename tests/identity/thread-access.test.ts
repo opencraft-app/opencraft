@@ -26,7 +26,7 @@ async function fixture(t: any) {
     }, result(id: number,result: unknown) { const frame = session.project(JSON.stringify({id,result})); return frame === null ? null : JSON.parse(frame); }};
   };
   t.after(async () => { for(const s of sessions)s.close();store.close();actors.close();await rm(dir,{recursive:true,force:true}); });
-  return {actors,alice,bob,lane,get store(){return store;},restart(){store.close();store=new ThreadAccessStore(join(dir,'policy.sqlite'),actors);}};
+  return {dir,actors,alice,bob,lane,get store(){return store;},restart(){store.close();store=new ThreadAccessStore(join(dir,'policy.sqlite'),actors);}};
 }
 
 test('only immutable creator can change policy; unknown historical and anonymous conversations cannot be claimed',async t => {
@@ -106,7 +106,7 @@ test('task links and participant batches cannot expose private metadata; another
 test('cross-conversation tools obey private policy even with an existing explicit grant',async t=>{
   const f=await fixture(t);f.store.created('server','secret',f.alice);f.store.set('server','secret','private',1,f.alice);
   const execution:any={hostId:'h',serverId:'server'};
-  const service=new Collaboration(join(tmpdir(),`thread-access-collab-${crypto.randomUUID()}.sqlite`),f.actors,execution,Date.now,()=>true,undefined,(context,ref)=>f.store.allows(ref.serverId,ref.threadId,context));
+  const service=new Collaboration(join(f.dir,"collaboration.sqlite"),f.actors,execution,Date.now,()=>true,undefined,(context,ref)=>f.store.allows(ref.serverId,ref.threadId,context));
   t.after(()=>service.close());
   assert.equal(service.conversationAllowed(f.alice,{serverId:'server',threadId:'secret'},'conversation.read'),true);
   assert.equal(service.conversationAllowed(f.bob,{serverId:'server',threadId:'secret'},'conversation.read'),false);

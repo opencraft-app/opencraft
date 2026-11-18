@@ -47,3 +47,12 @@ export function TouchContactScope({ children }: { children: ReactNode }) {
 export function useTouchContactScope(): TouchContactCoordinator | null {
   return useContext(TouchContactContext);
 }
+
+/** Shared direction lock for native readers nested inside Shell navigation. */
+export const TOUCH_PAN_DEADZONE = 8;
+export function touchPanAxis(dx: number, dy: number): "pending" | "horizontal" | "vertical" {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < TOUCH_PAN_DEADZONE) return "pending";
+  if (Math.abs(dx) > Math.abs(dy) * 1.25) return "horizontal";
+  if (Math.abs(dy) > Math.abs(dx) * 1.25) return "vertical";
+  return "pending";
+}

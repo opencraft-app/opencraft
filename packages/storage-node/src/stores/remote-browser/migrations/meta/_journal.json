@@ -15,6 +15,13 @@
       "when": 1794878033575,
       "tag": "0001_tearful_wild_child",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795014514621,
+      "tag": "0002_typical_the_executioner",
+      "breakpoints": true
     }
   ]
 }

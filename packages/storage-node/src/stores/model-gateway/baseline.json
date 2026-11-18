@@ -1,0 +1,76 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "model-gateway",
+      "checksum": "880dea7637d5efc08d7c77f32804556003d3ddd81af4adf0b81e22737856744b"
+    },
+    {
+      "version": 2,
+      "name": "personal-keys",
+      "checksum": "6228bea02d9e70bb43f03b8baacc057709fbd21366dbe0be49baf6f8a871674b"
+    },
+    {
+      "version": 3,
+      "name": "execution-authority",
+      "checksum": "e8063653a20cda634375f8ca782bbe01fa23917e74faebb8d978ade1021c5827"
+    },
+    {
+      "version": 4,
+      "name": "conversation-model-binding",
+      "checksum": "e05ead924b37c153add82e639d622470ff594825a5f004f880ee129bcc65af48"
+    }
+  ],
+  "tableOptions": {
+    "gateway_audit": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_contributions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_execution_heads": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_execution_turns": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_executions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_limits": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_personal_limits": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_private_threads": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_requests": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_sponsors": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_thread_humans": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "gateway_thread_models": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "67cbb5bb8199b01fffd72e0c939ca4d6298ad05885d742eaf97bdc24cb82ae35",
+  "baselineSnapshotChecksum": "bf9b2a40218e35ed97a34a3b4c66cd34f95eea048900cc147615d5633d2d7f37"
+}

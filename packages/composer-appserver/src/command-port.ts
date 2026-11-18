@@ -1,3 +1,4 @@
+import { parseInputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { AppServerClientError, AppServerRpcError, type AppServerClient, type AppServerClientRequestOptions } from "@opencraft/appserver-client";
 import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
 import type {
@@ -21,12 +22,12 @@ import type {
 } from "@opencraft/chat-runtime";
 import type { ModelSelectionPolicy, SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 
-import {
+import type {
   compileSubmitIntent,
-  SubmitCompileError,
-  type SubmitCompileDiagnostic,
-  type SubmitCompilerOptions,
+  SubmitCompileDiagnostic,
+  SubmitCompilerOptions,
 } from "./compiler";
+import { SubmitCompileError } from "./compile-error";
 
 export interface InteractionResponsePort {
   respond(key: ConversationKey, response: InteractionResponse): Promise<void>;
@@ -147,6 +148,7 @@ export function createAppServerConversationCommandPort(
       const { serviceTier: _serviceTier, ...selections } = intent.selections;
       intent = { ...intent, selections };
     }
+    const { compileSubmitIntent } = await import("./compiler");
     return compileSubmitIntent(intent, { ...config.compiler, ...resolved });
   };
   const now = config.now ?? Date.now;
@@ -228,6 +230,7 @@ export function createAppServerConversationCommandPort(
     let queuedSubmissionId: string | undefined;
     let disposition: SubmissionReceipt["disposition"];
     let sender: SubmissionReceipt["sender"];
+    let inputDelivery: SubmissionReceipt["inputDelivery"];
     const observeSender = (response: unknown) => {
       const proof = (response as { __opencraftSubmissionSender?: {clientMessageId?: unknown; sender?: unknown} })?.__opencraftSubmissionSender;
       if (proof?.clientMessageId !== intent.clientMessageId) return;
@@ -319,6 +322,7 @@ export function createAppServerConversationCommandPort(
           requestOptions,
         );
         observeSender(turn);
+        inputDelivery = parseInputDeliveryReceipt(turn.delivery);
         disposition = turn.disposition === "queued" ? "queue" : undefined;
         turnId = disposition === "queue" ? null : turn.turnId;
         break;
@@ -341,6 +345,7 @@ export function createAppServerConversationCommandPort(
 
     const receipt: SubmissionReceipt = {
       ...(sender === undefined ? {} : { sender }),
+      ...(inputDelivery === undefined ? {} : { inputDelivery }),
       ...(queuedSubmissionId === undefined ? {} : { queuedSubmissionId }),
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,

@@ -12,6 +12,7 @@ import { UnifiedDiffPreview } from "../conversation-renderers/unified-diff-previ
 import { useActivityOpen } from "../conversation-renderers/activity/activity-disclosure";
 import { Button } from "../ui/button";
 import { useDisclosureReflow } from "../use-disclosure-reflow";
+import { useShellPresentation } from "../shell-presentation";
 import { ConversationDocumentContext, type ConversationDocumentContextValue } from "./document-context";
 import { ConversationEntryMotionContext } from "./entry-motion";
 import { indexReviewFileDiffs } from "./turn-diff-review";
@@ -20,7 +21,7 @@ const COLLAPSED_FILE_COUNT = 3;
 const INLINE_DIFF_MAX_LINES = 5_000;
 const DIGITS = Array.from({ length: 10 }, (_, digit) => digit);
 
-/** One live entry follows the actual Composer, including its floating placement.
+/** One live entry follows the chat Composer; full-width tools suppress it.
  * Transcript and mini-transcript consumers suppress this exact Turn's duplicate.
  */
 export function ComposerTurnChangeSummary({ timeline, turnId, documentContext }: {
@@ -28,6 +29,8 @@ export function ComposerTurnChangeSummary({ timeline, turnId, documentContext }:
   readonly turnId: string | null;
   readonly documentContext: ConversationDocumentContextValue;
 }) {
+  const shell = useShellPresentation();
+  if (shell?.rightPanelOpen && shell.rightPanelFullWidth) return null;
   const block = turnId === null ? null : timeline?.frames.find((frame) => frame.turnId === turnId && frame.changeSummary != null)?.changeSummary;
   if (block == null || block.files.length === 0 || (block.status !== "pending" && block.status !== "running")) return null;
   return <ConversationDocumentContext.Provider value={documentContext}>
@@ -58,11 +61,12 @@ function DiffNumber({ value, animated }: { readonly value: number; readonly anim
   ))}</span>;
 }
 
-function DiffStats({ additions, deletions, animated = false }: {
-  readonly additions: number; readonly deletions: number; readonly animated?: boolean;
+function DiffStats({ additions, deletions, animated = false, available = true }: {
+  readonly additions: number; readonly deletions: number; readonly animated?: boolean; readonly available?: boolean;
 }) {
   const intl = useIntl();
   return <span className="thread-turn-diff__stats" data-thread-find-skip="true"
+    aria-hidden={!available || undefined} style={available ? undefined : { visibility: "hidden" }}
     aria-label={intl.formatMessage({ id: "chat.changes.counts", defaultMessage: "{added} lines added, {removed} lines removed" }, { added: additions, removed: deletions })}>
     <b>+<DiffNumber value={additions} animated={animated} /></b>
     <i>-<DiffNumber value={deletions} animated={animated} /></i>
@@ -100,12 +104,19 @@ export function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock
   const reducedMotion = useReducedMotion();
   const allowEntryMotion = useContext(ConversationEntryMotionContext);
   useLayoutEffect(() => reflow.complete(), [expanded, reflow.complete]);
+  useLayoutEffect(() => {
+    if ((globalThis as { __OPENCRAFT_TRACE_CHANGE_STATS__?: boolean }).__OPENCRAFT_TRACE_CHANGE_STATS__ !== true) return;
+    console.debug("[change-stats]", { stage: "ui-committed", at: Date.now(),
+      files: block.files.length, additions: block.additions, deletions: block.deletions,
+      available: block.statsAvailable !== false });
+  }, [block.files.length, block.additions, block.deletions, block.statsAvailable]);
   const inProgress = block.status === "pending" || block.status === "running";
   const files = expanded ? block.files : block.files.slice(0, COLLAPSED_FILE_COUNT);
   const fileDiffs = useMemo(() => inProgress ? new Map<string, string>() : indexReviewFileDiffs(block.unifiedDiff), [inProgress, block.unifiedDiff]);
   const viewChanges = intl.formatMessage({ id: "chat.changes.view", defaultMessage: "View changes" });
-  const canReview = document.onReviewTurnDiff !== undefined;
-  const canOpenFile = canReview || document.onOpenResource !== undefined;
+  const showReview = document.turnActions?.reviewDiff ?? document.onReviewTurnDiff !== undefined;
+  const canReview = (block.contentAvailable !== false || (block.detailItemIds?.length ?? 0) > 0) && document.onReviewTurnDiff !== undefined;
+  const canOpenFile = canReview || (block.contentAvailable !== false && document.onOpenResource !== undefined);
   const open = (event: MouseEvent<HTMLButtonElement>, path?: string) => {
     if (path !== undefined && (!canReview || ((event.metaKey || event.ctrlKey) && document.onOpenResource !== undefined))) {
       const decision = resolveStandardChatResource(path, { cwd: document.cwd, externalResourcePolicy: "allow" });
@@ -125,7 +136,7 @@ export function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock
       onBlur={(event) => { if (event.relatedTarget instanceof Node && liveListRef.current?.contains(event.relatedTarget)) event.preventDefault(); }}
       onClick={(event) => { setLivePreviewOpen(false); open(event); }} type="button">
       <span>{intl.formatMessage({ id: "chat.changes.live", defaultMessage: "{count, plural, one {# file changed} other {# files changed}}" }, { count: block.files.length })}</span>
-      <DiffStats additions={block.additions} deletions={block.deletions} animated />
+      <DiffStats available={block.statsAvailable !== false} additions={block.additions} deletions={block.deletions} animated />
     </motion.button></Tooltip.Trigger>
     <Tooltip.Portal><Tooltip.Content aria-label={intl.formatMessage({ id: "chat.changes.viewFiles", defaultMessage: "View changed files" })}
       className="thread-turn-diff-file-list" side="top" sideOffset={4} ref={liveListRef}
@@ -133,7 +144,7 @@ export function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock
       <ul>{block.files.map((file) => <li key={file.path}><button disabled={!canOpenFile} type="button"
         aria-label={intl.formatMessage({ id: "chat.changes.openFile", defaultMessage: "Open {path}" }, { path: file.path })}
         onClick={(event) => { setLivePreviewOpen(false); open(event, file.path); }}>
-        <span>{displayPath(file.path).basename}</span><DiffStats additions={file.additions} deletions={file.deletions} />
+        <span>{displayPath(file.path).basename}</span><DiffStats available={block.statsAvailable !== false} additions={file.additions} deletions={file.deletions} />
       </button></li>)}</ul>
     </Tooltip.Content></Tooltip.Portal>
   </Tooltip.Root></Tooltip.Provider>;
@@ -141,29 +152,29 @@ export function TurnDiffBlock({ block }: { readonly block: TurnDiffTimelineBlock
   const single = block.files.length === 1 ? block.files[0]! : null;
   const headerTarget = <button aria-label={intl.formatMessage({ id: "chat.changes.viewFiles", defaultMessage: "View changed files" })}
     className="thread-turn-diff__header-target" disabled={!canReview} onClick={(event) => open(event, single?.path)} type="button" />;
-  return <Tooltip.Provider><section className="thread-turn-diff" data-status={block.status}>
+  return <Tooltip.Provider><section className="thread-turn-diff" data-status={block.status} aria-busy={block.contentAvailable === false || undefined}>
     <div className="thread-turn-diff__header">
-      {single === null ? headerTarget : <DiffHover path={single.path} diff={block.unifiedDiff} additions={single.additions} deletions={single.deletions}>{headerTarget}</DiffHover>}
+      {single === null ? headerTarget : <DiffHover path={single.path} diff={block.contentAvailable === false ? "" : block.unifiedDiff} additions={single.additions} deletions={single.deletions}>{headerTarget}</DiffHover>}
       <span className="thread-turn-diff__icon"><ChangeResourceIcon aria-hidden="true" /></span>
       <span className="thread-turn-diff__copy"><strong>{single === null
         ? intl.formatMessage({ id: "chat.changes.editedFiles", defaultMessage: "{count, plural, one {Edited a file} other {Edited # files}}" }, { count: block.files.length })
         : intl.formatMessage({ id: "chat.changes.editedFile", defaultMessage: "Edited {filename}" }, { filename: displayPath(single.path).basename })}</strong>
         <span className="thread-turn-diff__subtitle">
-          <span className="thread-turn-diff__default-subtitle"><DiffStats additions={block.additions} deletions={block.deletions} /></span>
+          <span className="thread-turn-diff__default-subtitle"><DiffStats available={block.statsAvailable !== false} additions={block.additions} deletions={block.deletions} /></span>
           <span className="thread-turn-diff__hover-subtitle">{viewChanges}<ArrowRight aria-hidden="true" size={12} /></span>
         </span>
       </span>
-      <span className="thread-turn-diff__actions">{canReview ? <Button size="toolbar" variant="outline" onClick={(event) => open(event, single?.path)}>{viewChanges}</Button> : null}</span>
+      <span className="thread-turn-diff__actions">{showReview ? <Button disabled={!canReview} size="toolbar" variant="outline" onClick={(event) => open(event, single?.path)}>{viewChanges}</Button> : null}</span>
     </div>
     {block.files.length > 1 ? <div className="thread-turn-diff__files">{files.map((file) => {
       const path = displayPath(file.path);
-      const diff = fileDiffs.get(file.path) ?? block.unifiedDiff;
-      const oversized = Math.max(diff.split("\n").length, file.additions + file.deletions) > INLINE_DIFF_MAX_LINES;
+      const diff = block.contentAvailable === false ? "" : fileDiffs.get(file.path) ?? block.unifiedDiff;
+      const oversized = Math.max(file.inlinePreviewLineCount ?? diff.split("\n").length, file.additions + file.deletions) > INLINE_DIFF_MAX_LINES;
       return <DiffHover key={file.path} path={file.path} diff={diff} additions={file.additions} deletions={file.deletions}>
         <button aria-label={intl.formatMessage({ id: "chat.changes.openFile", defaultMessage: "Open {path}" }, { path: file.path })}
           disabled={!canOpenFile} onClick={(event) => open(event, file.path)} type="button">
           <span className="thread-turn-diff__path"><span>{path.directory}</span><b>{path.basename}</b></span>
-          <DiffStats additions={file.additions} deletions={file.deletions} />
+          <DiffStats available={block.statsAvailable !== false} additions={file.additions} deletions={file.deletions} />
           {oversized ? <span className="thread-turn-diff__large">{intl.formatMessage({ id: "chat.changes.inlineLarge", defaultMessage: "Too large to render inline" })}</span> : null}
         </button>
       </DiffHover>;

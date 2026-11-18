@@ -1,3 +1,4 @@
+import { prepareLiteralSpans } from "./literal-spans";
 import {
   Marked,
   Tokenizer,
@@ -25,6 +26,7 @@ type MarkdownToken = Record<string, unknown>;
 export interface ChatDocumentCompilerOptions {
   readonly streaming?: boolean;
   readonly dialect?: ChatDocumentDialect;
+  readonly literalSpans?: readonly ChatDocumentSourceRange[];
 }
 
 export interface ParsedChatDocument {
@@ -202,6 +204,11 @@ function mapInlineTokens(
     const sourceRange = range(sourceStart + relativeOffset, raw);
     relativeOffset += raw.length;
     switch (type) {
+      case "literalSpan": {
+        const literalSourceRange={start:Number(token.literalStart),end:Number(token.literalEnd)};
+        nodes.push({...emptyBase("text",literalSourceRange),literalSourceRange,text:string(token.text),segments:[]});
+        break;
+      }
       case "text": {
         const childTokens = tokens(token.tokens);
         if (childTokens.length > 0) {
@@ -490,7 +497,7 @@ export function findMarkdownLink(text: string, startIndex: number): MarkdownLink
 }
 
 function unescapeMarkdownLabel(input: string): string {
-  return input.replaceAll("\\](", "](").replaceAll("\\]", "]").replaceAll("\\\\", "\\");
+  return input.replace(/\\([!"#$%&'()*+,\-./:;<=>?@[\]\\^_`{|}~])/gu, "$1");
 }
 
 function unescapeBackslashPairs(input: string): string {
@@ -646,7 +653,12 @@ const userMessageMarked = new Marked({
   extensions: [mathBlockTokenizer, mathInlineTokenizer, userMessageImageTokenizer, composerLinkTokenizer, jsonBlockTokenizer],
 });
 
-function lex(markdown: string, dialect: ChatDocumentDialect): readonly MarkdownToken[] {
+function lex(markdown: string, dialect: ChatDocumentDialect, literal?:TokenizerExtension): readonly MarkdownToken[] {
+  if(literal){
+    const parser=new Marked({gfm:true,breaks:true,tokenizer:hanEmphasisTokenizer,
+      extensions:dialect==="user-message"?[mathBlockTokenizer,mathInlineTokenizer,userMessageImageTokenizer,composerLinkTokenizer,jsonBlockTokenizer,literal]:[mathBlockTokenizer,mathInlineTokenizer,jsonBlockTokenizer,visualizationTokenizer,literal]});
+    return parser.lexer(markdown) as unknown as readonly MarkdownToken[];
+  }
   const result = dialect === "user-message"
     // Passing a fresh MarkedOptions object here replaces instance extension
     // state in Marked 18. The dialect instance already owns gfm/breaks.
@@ -672,7 +684,7 @@ export class ChatDocumentCompiler {
 
   compile(source: string, options: ChatDocumentCompilerOptions = {}): ParsedChatDocument {
     const dialect = options.dialect ?? "assistant";
-    const completedKey = options.streaming !== true && source.length <= 1_000_000
+    const completedKey = !options.literalSpans?.length && options.streaming !== true && source.length <= 1_000_000
       ? `${dialect}\0${source}` : null;
     if (completedKey !== null) {
       const cached = this.completedCache.get(completedKey);
@@ -681,6 +693,12 @@ export class ChatDocumentCompiler {
         this.completedCache.set(completedKey, cached);
         return cached;
       }
+    }
+    if(options.literalSpans?.length){
+      const literals=prepareLiteralSpans(source,options.literalSpans);
+      const normalized=dialect==="user-message"?preprocessUserMessageMarkdown(literals.masked):literals.masked;
+      const processed=preprocessChatMarkdown(normalized,{streaming:options.streaming});
+      return {source,nodes:literals.restore(mapBlockTokens(lex(processed.markdown,dialect,literals.extension),processed.markdown,0))};
     }
     const dialectSource = dialect === "user-message"
       ? preprocessUserMessageMarkdown(source)

@@ -1,3 +1,4 @@
+import { SERVER_MIGRATIONS } from './migrations.generated.js';
 import type { Migration } from "@opencraft/sqlite-node";
 import { createMissingLegacyObjects } from "@opencraft/sqlite-node";
 
@@ -140,6 +141,43 @@ const EXECUTION_CAPABILITIES_SCHEMA = `CREATE TABLE execution_capability_binding
  session_json TEXT, UNIQUE(server_id,thread_id)
 ) STRICT;`;
 
+const NATIVE_CHANNEL_SCHEMA = `
+ALTER TABLE actor_messages ADD COLUMN author_display_name TEXT;
+CREATE TABLE actor_channel_identity(epoch TEXT NOT NULL) STRICT;
+INSERT INTO actor_channel_identity VALUES(lower(hex(randomblob(16))));
+CREATE TABLE actor_channels (
+  id TEXT PRIMARY KEY, owner_id TEXT NOT NULL, peer_id TEXT, title TEXT,
+  create_key TEXT, create_fingerprint TEXT, UNIQUE(owner_id,create_key)
+) STRICT;
+INSERT INTO actor_channels(id,owner_id,peer_id)
+  SELECT DISTINCT channel_id,min(author_id,target_id),max(author_id,target_id)
+  FROM actor_messages WHERE target_kind='actor';
+CREATE INDEX actor_channels_peer ON actor_channels(peer_id);
+CREATE TABLE actor_channel_members (
+  channel_id TEXT NOT NULL REFERENCES actor_channels(id), actor_id TEXT NOT NULL,
+  epoch TEXT NOT NULL, PRIMARY KEY(channel_id,actor_id)
+) STRICT;
+CREATE INDEX actor_channel_members_actor ON actor_channel_members(actor_id,channel_id);
+CREATE TABLE actor_channel_execution_membership (
+  request_id TEXT NOT NULL REFERENCES actor_execution_requests(id), channel_id TEXT NOT NULL REFERENCES actor_channels(id),
+  requester_epoch TEXT NOT NULL, target_epoch TEXT NOT NULL, PRIMARY KEY(request_id,channel_id)
+) STRICT;
+CREATE TABLE actor_channel_changes (
+  revision INTEGER PRIMARY KEY AUTOINCREMENT, channel_id TEXT NOT NULL,
+  message_id TEXT NOT NULL UNIQUE REFERENCES actor_messages(id)
+) STRICT;
+CREATE INDEX actor_channel_changes_by_channel ON actor_channel_changes(channel_id,revision);
+INSERT INTO actor_channel_changes(channel_id,message_id)
+  SELECT channel_id,id FROM actor_messages WHERE target_kind='actor' ORDER BY seq;
+CREATE TRIGGER actor_channel_message_inserted AFTER INSERT ON actor_messages
+  WHEN new.target_kind IN ('actor','channel') BEGIN
+    INSERT INTO actor_channel_changes(channel_id,message_id) VALUES(new.channel_id,new.id);
+END;
+CREATE TRIGGER actor_channel_request_linked AFTER INSERT ON actor_execution_inputs BEGIN
+    INSERT OR REPLACE INTO actor_channel_changes(channel_id,message_id)
+      SELECT channel_id,id FROM actor_messages WHERE id=new.message_id AND target_kind IN ('actor','channel');
+END;
+`;
 const THREAD_ACCESS_SCHEMA = `CREATE TABLE thread_access (
  server_id TEXT NOT NULL, thread_id TEXT NOT NULL, creator_actor_id TEXT,
  access_mode TEXT NOT NULL CHECK(access_mode IN ('shared','private')),
@@ -179,6 +217,9 @@ export const SERVER_LEGACY_MIGRATIONS = {
     { version: 3, name: "thread-orchestration", sql: ORCHESTRATION_SCHEMA },
     { version: 4, name: "thread-orchestration-authority", sql: ORCHESTRATION_AUTHORITY_SCHEMA },
     { version: 5, name: "thread-orchestration-views", sql: ORCHESTRATION_VIEW_SCHEMA },
+    { version: 6, name: "native-channels", sql: NATIVE_CHANNEL_SCHEMA },
+    { version: 7, name: "actor-inbox", sql: SERVER_MIGRATIONS[3]!.sql },
+    { version: 8, name: "native-channel-sync", sql: SERVER_MIGRATIONS[4]!.sql },
   ],
 
   "session-capabilities": [

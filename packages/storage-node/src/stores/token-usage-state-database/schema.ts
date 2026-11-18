@@ -118,6 +118,7 @@ export const table_token_usage_gaps = sqliteTable("token_usage_gaps", {
   "ends_ms": integer("ends_ms"),
 }, table => [
   primaryKey({ columns: [table["server_id"], table["gap_key"]] }),
+  index("token_usage_gaps_open_thread").on(table["server_id"],table["thread_id"]).where(sql`ends_ms IS NULL`),
 ]);
 
 export const table_token_usage_input_conflicts = sqliteTable("token_usage_input_conflicts", {

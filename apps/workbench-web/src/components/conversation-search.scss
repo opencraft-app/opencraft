@@ -113,9 +113,8 @@
     .conversation-search__results > button { gap: 12px; min-height: 64px; }
   }
 }
-// Match existing narrow modal adaptation, with the touch density preference also
-// opting in on tablets. CSS keeps the focused input and query node continuous.
-@media (max-width: 640px) { @include mobile-search-page; }
+// The resolved preference, not narrow desktop capacity, selects the full-page
+// touch presentation. Keep the same focused query/input tree on every resize.
 :root[data-ui-density="touch"] { @include mobile-search-page; }
 // Keyboard/zoom geometry has one writer: the existing Web timeline viewport port.
 :root[data-timeline-tracks-visual-viewport="true"] .modal-surface.conversation-search[data-appearance="utility"] {

@@ -11,6 +11,8 @@ OpenCraft 是多端 Agent Workbench 核心，包含 Chat Runtime、Web Workbench
 - 平台与插件架构：[平台架构专题索引](platform-architecture.md)、[插件架构](plugin-architecture.md)。
 - 运行观测平台：[定位、服务与数据/CLI/Skill 规格 V1](observability-platform.md)、[功能与非功能验收矩阵](observability-acceptance.md)；当前为待实现规格，最终以真实部署验收为准。
 - 主体与协作设计纲领：[原生主体、Hub、Channel 与授权](architecture/actor-collaboration.md)；人类与 Agent/Bot/Session 具备原生主体性，权限独立授予；属于目标设计，不代表多租户已实现。
+- Human 工作台与 Portal：[以一个当前身份组织跨端、跨 Hub 资源入口](architecture/human-workbench.md)；租户是可选管理作用域，身份、路由和执行隔离分别建模，属于目标设计。
+- 单 Server 多 Human：[核心／插件边界与实施覆盖账本](multi-human-server.md)；区分已验证请求隔离、共享协作与未完成的执行隔离。
 - 存量会话的 Skills 目录刷新：[实现边界与验收标准](session-capability-refresh.md)；正文版本更新与 Hermes 自动热刷新已取消，Connector 按下列独立文档推进。
 - 平台级 Connector：[机制、已实现链路与剩余范围](platform-connectors.md)；由平台运行时持有连接与授权状态。
 - 跨端存储生命周期：[SQLite / IndexedDB 升级与恢复](sqlite-lifecycle.md)、[插件持久化契约](plugin-persistence.md)、[Host 通用文档 API](host-document-storage.md)；九个自有 Node SQLite 库已接入账本/备份/旧库处置，Host 五库启动期门控并投影健康摘要；回退只回退代码，不自动恢复备份，不承诺 N-1 兼容，不引入 Drizzle。

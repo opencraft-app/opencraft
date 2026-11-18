@@ -15,7 +15,7 @@ test("Electron consumes the shared narrow-window geometry instead of a platform-
     new URL("../../apps/desktop/src/main.ts", import.meta.url),
     "utf8",
   );
-  assert.equal(workbenchWindowMetrics.minimumWidth, 480);
+  assert.equal(workbenchWindowMetrics.minimumWidth, 352);
   assert.match(desktopMain, /@opencraft\/workbench-runtime\/window-metrics/u);
   assert.match(desktopMain, /minWidth:\s*workbenchWindowMetrics\.minimumWidth/u);
   assert.match(desktopMain, /minHeight:\s*workbenchWindowMetrics\.minimumHeight/u);
@@ -111,9 +111,13 @@ test("persistent browser and Electron headers keep Write behind floating sidebar
   );
   assert.match(header, /hostRole !== "persistent" \|\| sidebarDocked/u);
   assert.match(header, /action === "sidebar-toggle"[\s\S]*?"new-task" as const/u);
-  assert.match(header, /aria-label=\{intl\.formatMessage\(\{ id: "navigation\.newTask", defaultMessage: "Start new task" \}\)\}/u);
-  assert.match(header, /data-app-shell-new-task-trigger="true"/u);
-  assert.match(header, /onClick=\{onHome\}/u);
+  // The shared rail resolves one descriptor for both its title and aria label;
+  // preserving the action does not require a separately inlined JSX branch.
+  assert.match(header, /"new-task": \{ id: "navigation\.newTask", defaultMessage: "Start new task" \}/u);
+  assert.match(header, /const label = intl\.formatMessage\(labels\[action\]\)/u);
+  assert.match(header, /aria-label=\{label\} title=\{label\}/u);
+  assert.match(header, /data-app-shell-new-task-trigger=\{action === "new-task" \|\| undefined\}/u);
+  assert.match(header, /onClick=\{action === "home" \|\| action === "new-task" \? onHome/u);
   assert.doesNotMatch(header, /data-app-shell-home-trigger|app-shell-wordmark|OpenCraft · Home/u);
 });
 

@@ -1,3 +1,6 @@
+import { WorkspaceSessions, workspaceLocationResource } from "./workspace-sessions";
+import { workspaceResourceBasename, parseWorkspaceResource } from "./workspace-resource-model";
+import type { PanelRendererProps } from "@opencraft/workbench-panels-react";
 import { FilePreviewService } from "@opencraft/file-preview-web";
 import { OfficePreviewPlugin } from "@opencraft/plugin-office-preview";
 import { StructuredPreviewPlugin } from "@opencraft/plugin-structured-preview";
@@ -43,10 +46,23 @@ function resourceTitle(resource: string): string {
 }
 
 export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinWorkbenchPanelPlugin(ctx: Context) {
+  const sessions = new WorkspaceSessions();
+  ctx.effect(() => () => sessions.dispose());
   await ctx.plugin(FilePreviewService);
   await ctx.inject(["filePreviews", "workbenchPanels", "workbenchPanelRenderers"], async (ctx) => {
     await ctx.plugin(OfficePreviewPlugin);
     await ctx.plugin(StructuredPreviewPlugin);
+    const ResourcePanel = (props: PanelRendererProps) => <WorkspaceResourcePanel {...props} sessions={sessions}
+      onSessionChange={(location, dirty) => {
+        const current = ctx.workbenchPanels.getOwnerSnapshot(props.ownerId)[props.tab.region].tabs.find(tab => tab.id === props.tab.id);
+        if (!current) return;
+        const resource = workspaceLocationResource(location);
+        const title = workspaceResourceBasename(location.path) + (dirty ? " •" : "");
+        if (current.title === title && current.closable === !dirty && current.durableRoute?.params.location === resource) return;
+        ctx.workbenchPanels.dispatch(props.ownerId, { type: "update-tab", region: props.tab.region, tabId: props.tab.id,
+          patch: { title, closable: !dirty, preview: dirty ? false : current.preview,
+            durableRoute: { kind: "workspace-resource", payloadVersion: 1, params: { resource: props.tab.resource, location: resource } } } });
+      }} />;
     const remove = [
       ctx.workbenchPanels.register({
         kind: "changes",
@@ -62,13 +78,13 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
           durableRoute: { kind: "changes", params: {}, payloadVersion: 1 },
         }),
       }),
-      ctx.workbenchPanels.register<{ readonly resource: string; readonly preview?: boolean }>({
+      ctx.workbenchPanels.register<{ readonly resource: string; readonly preview?: boolean; readonly location?: string }>({
         kind: "resource",
-        createTab: ({ resource, preview = true }) => ({
+        createTab: ({ resource, preview = true, location }) => ({
           id: `resource:${resource}`,
           kind: "resource",
           region: "right",
-          title: resourceTitle(resource),
+          title: workspaceResourceBasename(parseWorkspaceResource(location ?? resource).path),
           icon: "file",
           showTabIcon: true,
           resource,
@@ -76,11 +92,11 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
           preview,
           durableRoute: {
             kind: "workspace-resource",
-            params: { resource },
+            params: { resource, ...(location ? { location } : {}) },
             payloadVersion: 1,
           },
         }),
-        disposeTab: (tab, ownerId) => ctx.filePreviews.releaseTab(ownerId, tab.id),
+        disposeTab: (tab, ownerId) => { sessions.releaseTab(ownerId, tab.id); ctx.filePreviews.releaseTab(ownerId, tab.id); },
       }),
       ctx.workbenchPanels.registerToolbarAction({
         id: "workspace.files.open",
@@ -99,7 +115,7 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
         },
       }),
       ctx.workbenchPanelRenderers.register({ kind: "changes", Component: ChangesPanel }),
-      ctx.workbenchPanelRenderers.register({ kind: "resource", Component: WorkspaceResourcePanel }),
+      ctx.workbenchPanelRenderers.register({ kind: "resource", Component: ResourcePanel, residency: "while-tab-open", previewPresentation: "retained-view", previewAnchor: "start" }),
     ];
     ctx.effect(() => () => remove.reverse().forEach((dispose) => dispose()));
   });

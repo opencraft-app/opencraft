@@ -396,7 +396,8 @@ test('a request whose receipt read keeps throwing is backed off as well',async t
  let reads=0;native.receipt=async(_binding:any,id:string)=>{if(id===request.id)reads++;throw Error('Receipt lane unavailable');};
  for(let i=0;i<400;i++){f.advance(500);await f.service.pump(true);}
  reads=0;for(let i=0;i<240;i++){f.advance(500);await f.service.pump(true);}
- assert.ok(reads>=3&&reads<=5,`throwing receipt read ${reads} times in 120 s`);
+ assert.ok(reads<=1,`recovery-required observations must not hammer the receipt lane: ${reads} reads in 120 s`);
+ f.advance(300_000);const beforeProbe=reads;await f.service.pump(true);assert.equal(reads,beforeProbe+1,'recovery still permits a bounded later observation');
  const after=f.service.database.prepare('SELECT state,reason FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string;reason:string};
  assert.deepEqual({...after},{state:'unknown',reason:request.reason});
 });

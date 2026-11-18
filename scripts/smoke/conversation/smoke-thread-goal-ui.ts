@@ -29,6 +29,7 @@ import {TurnDiffBlock} from '/apps/workbench-web/src/components/conversation/tur
 import {queuedSubmissionPresentation} from '/apps/workbench-web/src/queued-submission-presentation.ts';
 import {ThreadGoalSurface} from '/apps/workbench-web/src/components/thread-goal-surface.tsx';
 import {ThreadGoalResource} from '/packages/workbench-runtime/src/thread-goal-resource.ts';
+import {AppServerRpcError,AppServerClientError} from '@opencraft/appserver-client';
 import {buildOpenCraftThemeCssProperties,opencraftCanvasThemePalette,lavenderThemePalette} from '/packages/design-system/src/theme-engine.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 import '@fontsource-variable/noto-sans-sc';
@@ -36,18 +37,19 @@ Object.entries(buildOpenCraftThemeCssProperties('light',opencraftCanvasThemePale
 const queued=queuedSubmissionPresentation({commandId:'queue',clientMessageId:'client',serverSubmissionId:'server',input:[],preview:'检查并保留这份排队输入',operation:'idle',createdAt:100,pausedReason:null,error:null,state:'queued'},true);
 const diff={id:'diff',type:'turn-diff',sourceItemIds:['diff'],status:'running',unifiedDiff:'',additions:36,deletions:8,files:[{path:'goal-ui.tsx',additions:36,deletions:8}]};
 const initialGoal={threadId:'one',objective:'完成移动端目标体验，验证离开页面后仍能持续推进。',status:new URLSearchParams(location.search).has('completed')?'complete':'active',tokenBudget:null,tokensUsed:312,timeUsedSeconds:1139760,createdAt:Math.floor(Date.now()/1000)-82,updatedAt:Math.floor(Date.now()/1000)};
+let getCalls=0,writeFailure=null;
 let composerRenders=0,accounting=true,goal=initialGoal,write=true,setCalls=0,clearCalls=0,lastChange=null,submitted=0;
-const goals=new ThreadGoalResource({capability:()=>({version:1,read:true,write,...(!accounting?{usageAccounting:false}:{})}),get:async()=>({goal}),set:async(id,change)=>{setCalls++;lastChange=change;if(failWrite)throw Error('synthetic failure');goal=goal?{...goal,...change,threadId:id,updatedAt:Math.floor(Date.now()/1000)}:{...initialGoal,...change,threadId:id,tokensUsed:0,timeUsedSeconds:0,createdAt:Math.floor(Date.now()/1000),updatedAt:Math.floor(Date.now()/1000)};return {goal}},clear:async()=>{clearCalls++;goal=null;return {cleared:true}}});
+const goals=new ThreadGoalResource({capability:()=>({version:1,read:true,write,...(!accounting?{usageAccounting:false}:{})}),get:async()=>{getCalls++;return {goal}},set:async(id,change)=>{setCalls++;lastChange=change;if(writeFailure==='server')throw new AppServerRpcError({code:-32001,message:'SECRET /private/socket',data:{secret:'DO_NOT_RENDER'}});if(writeFailure==='rejected')throw new AppServerClientError('NOT_CONNECTED','SECRET');if(writeFailure==='lost'){goal={...goal,...change};throw new AppServerClientError('TIMEOUT','SECRET')}if(failWrite)throw Error('synthetic failure');goal=goal?{...goal,...change,threadId:id,updatedAt:Math.floor(Date.now()/1000)}:{...initialGoal,...change,threadId:id,tokensUsed:0,timeUsedSeconds:0,createdAt:Math.floor(Date.now()/1000),updatedAt:Math.floor(Date.now()/1000)};return {goal}},clear:async()=>{clearCalls++;goal=null;return {cleared:true}}});
 const controller=createComposerController({type:'existing-thread',key:{hostId:'fixture',threadId:'one'}},{now:Date.now,createId:()=>crypto.randomUUID()});
 const scopes=createConversationScopeRegistry();
 const draft=scopes.openDraft({draftId:'new-goal-draft',execution:{hostId:'fixture',workspace:{cwd:'/project',runtimeWorkspaceRoots:['/project']}}});
 const draftController=createComposerController(draft.target,{now:Date.now,createId:()=>crypto.randomUUID()});
 const floatingRegistry=new FloatingComposerRegistry();
 let creates=0,opens=0,failWrite=false,releaseCreate=null,holdCreate=false,connection='ready';
-const newGoals=new ThreadGoalResource({capability:()=>({version:1,read:true,write,...(!accounting?{usageAccounting:false}:{})}),get:async()=>({goal}),set:async(id,change)=>{setCalls++;if(failWrite)throw Error('synthetic failure');goal={...initialGoal,...change,threadId:id};return {goal}},clear:async()=>({cleared:true})});
+const newGoals=new ThreadGoalResource({capability:()=>({version:1,read:true,write,...(!accounting?{usageAccounting:false}:{})}),get:async()=>({goal}),set:async(id,change)=>{setCalls++;if(failWrite)throw new AppServerClientError('NOT_CONNECTED','synthetic before dispatch');goal={...initialGoal,...change,threadId:id};return {goal}},clear:async()=>({cleared:true})});
 function App(){const[threadId,setThreadId]=useState('one');const[newDraft,setNewDraft]=useState(false);const[tick,setTick]=useState(0);const[extras,setExtras]=useState(false);
 const startGoal=React.useMemo(()=>createNewThreadGoalFlow({createThread:async()=>{creates++;if(holdCreate)await new Promise(resolve=>releaseCreate=resolve);return {hostId:'fixture',threadId:'created',turnId:null}},goals:()=>newGoals,openThread:async()=>{opens++;setThreadId('created');setNewDraft(false)}}),[]);
-window.fixture={composerRenders:()=>composerRenders,accounting:value=>{accounting=value;goals.observe(threadId,goal)},setExtras:setExtras,setCapacity:width=>document.documentElement.style.setProperty('--probe-capacity',width+'px'),setPalette:(mode,palette)=>Object.entries(buildOpenCraftThemeCssProperties(mode,(palette==='lavender'?lavenderThemePalette:opencraftCanvasThemePalette)[mode])).forEach(([key,value])=>document.documentElement.style.setProperty(key,value)),setLocale:value=>preferences.set('locale.override',value),localeOverride:()=>preferences.get('locale.override'),setGoal:change=>{goal={...initialGoal,...change};goals.observe(threadId,goal)},beginDraft:()=>{goal=null;connection='ready';write=true;setNewDraft(true)},creates:()=>creates,opens:()=>opens,failWrite:value=>failWrite=value,holdCreate:()=>holdCreate=true,releaseCreate:()=>{holdCreate=false;releaseCreate?.()},connection:value=>{connection=value;setTick(value=>value+1)},draftReadonly:value=>{write=!value;setTick(value=>value+1)},draftText:()=>draftController.getSnapshot().draft.document.blocks,setTheme:mode=>Object.entries(buildOpenCraftThemeCssProperties(mode,opencraftCanvasThemePalette[mode])).forEach(([key,value])=>document.documentElement.style.setProperty(key,value)),clear:()=>{goal=null;goals.observe(threadId,null)},readonly:value=>{write=!value;goals.observe(threadId,goal)},switchThread:value=>setThreadId(value),threadId:()=>threadId,goalPhase:()=>goals.getSnapshot(threadId).phase,setCalls:()=>setCalls,clearCalls:()=>clearCalls,lastChange:()=>lastChange,status:()=>goal?.status,submitted:()=>submitted,objective:()=>goal?.objective,completedObjective:()=>goals.getSnapshot(threadId).completedGoal?.objective,goalUsage:()=>({tokensUsed:goal?.tokensUsed,timeUsedSeconds:goal?.timeUsedSeconds})};
+window.fixture={writeFailure:value=>writeFailure=value,getCalls:()=>getCalls,composerRenders:()=>composerRenders,accounting:value=>{accounting=value;goals.observe(threadId,goal)},setExtras:setExtras,setCapacity:width=>document.documentElement.style.setProperty('--probe-capacity',width+'px'),setPalette:(mode,palette)=>Object.entries(buildOpenCraftThemeCssProperties(mode,(palette==='lavender'?lavenderThemePalette:opencraftCanvasThemePalette)[mode])).forEach(([key,value])=>document.documentElement.style.setProperty(key,value)),setLocale:value=>preferences.set('locale.override',value),localeOverride:()=>preferences.get('locale.override'),setGoal:change=>{goal={...initialGoal,...change};goals.observe(threadId,goal)},beginDraft:()=>{goal=null;connection='ready';write=true;setNewDraft(true)},creates:()=>creates,opens:()=>opens,failWrite:value=>failWrite=value,holdCreate:()=>holdCreate=true,releaseCreate:()=>{holdCreate=false;releaseCreate?.()},connection:value=>{connection=value;setTick(value=>value+1)},draftReadonly:value=>{write=!value;setTick(value=>value+1)},draftText:()=>draftController.getSnapshot().draft.document.blocks,setTheme:mode=>Object.entries(buildOpenCraftThemeCssProperties(mode,opencraftCanvasThemePalette[mode])).forEach(([key,value])=>document.documentElement.style.setProperty(key,value)),clear:()=>{goal=null;goals.observe(threadId,null)},readonly:value=>{write=!value;goals.observe(threadId,goal)},switchThread:value=>setThreadId(value),threadId:()=>threadId,goalPhase:()=>goals.getSnapshot(threadId).phase,setCalls:()=>setCalls,clearCalls:()=>clearCalls,lastChange:()=>lastChange,status:()=>goal?.status,submitted:()=>submitted,objective:()=>goal?.objective,completedObjective:()=>goals.getSnapshot(threadId).completedGoal?.objective,goalUsage:()=>({tokensUsed:goal?.tokensUsed,timeUsedSeconds:goal?.timeUsedSeconds})};
 if(newDraft)return <FloatingComposerRegistryContext.Provider value={floatingRegistry}><NewThreadDraftPage draft={draft} controller={draftController} goals={newGoals} onCreateGoal={objective=>{const content=draftController.getSnapshot().draft;return startGoal({...content,target:draft.target,commandId:crypto.randomUUID(),clientMessageId:crypto.randomUUID(),createdAt:Date.now(),document:{version:1,blocks:[{type:'paragraph',children:[{type:'text',text:objective}]}]}},objective,()=>true)}} showExecutionControls={false} workspaceOptions={[]} activeHostId='fixture' hostOptions={[]} connectionPhase={connection} onSelectHost={()=>{}} onSelectWorkspace={()=>{}} onBrowseWorkspace={()=>{}} selectionCatalog={{models:[{id:'model',value:'model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} catalog={{}} onSubmit={()=>{throw Error('Goal must not send ordinary input')}} /></FloatingComposerRegistryContext.Provider>;
 return <div style={{height:'100dvh',display:'flex',flexDirection:'column',justifyContent:'flex-end',width:'min(100%,var(--probe-capacity,100%))',marginInline:'auto',padding:'20px 16px 32px',background:'var(--color-background-surface)'}}><ThreadGoalSurface threadId={threadId} goals={goals}>{(goalMenuItem,_busy,goalContent)=>(composerRenders++,<OpenCraftComposer attachedContent={goalContent} floatingContent={extras?<div className='thread-live-changes'><TurnDiffBlock block={diff}/></div>:null} queuedSubmissions={extras?[queued]:[]} controller={controller} selectionCatalog={{models:[{id:'model',value:'model',label:'Model',description:null,isDefault:true,defaultEffort:null,efforts:[]}],permissionProfiles:[]}} onSubmit={async()=>{submitted++}} onCancel={()=>{}} addMenuContent={closeMenu=><><DropdownMenu.Item className='opencraft-composer-selection-menu__item opencraft-composer-add-menu__item'><FormattedMessage id='connector.title' defaultMessage='Connectors'/></DropdownMenu.Item>{goalMenuItem?.(closeMenu)}</>}/>)}</ThreadGoalSurface></div>}
 createRoot(document.getElementById('root')).render(<UiPreferencesProvider runtime={preferences}><WorkbenchIntlProvider controller={locale} target={document.documentElement}><App/></WorkbenchIntlProvider></UiPreferencesProvider>);
@@ -77,6 +79,38 @@ try {
   const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
   const { chromium } = playwright.default ?? playwright;
   browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE });
+  // Actual Goal surface + Composer, injected only at the RPC boundary.
+  for (const touch of [false,true]) {
+    const failurePage=await browser.newPage({viewport:{width:touch?390:1280,height:844},locale:touch?'zh-CN':'en-US',hasTouch:touch,isMobile:touch});
+    await failurePage.addInitScript("window.__name = value => value");
+    await failurePage.goto(`http://127.0.0.1:${(vite.httpServer!.address() as {port:number}).port}`);
+    await failurePage.locator('.thread-goal').waitFor();
+    await failurePage.evaluate((touch)=>{const f=(window as any).fixture;f.setLocale(touch?'zh-CN':'en-US');f.setGoal({status:'blocked'});if(touch)f.setPalette('dark','canvas')},touch);
+    const resumeName=touch?'继续':'Resume';
+    for(const mode of ['server','rejected','lost']){
+      await failurePage.evaluate((mode)=>{const f=(window as any).fixture;f.setGoal({status:'blocked'});f.writeFailure(mode)},mode);
+      const before=await failurePage.evaluate(()=>{const f=(window as any).fixture;return {writes:f.setCalls(),reads:f.getCalls()}});
+      const resume=failurePage.getByRole('button',{name:resumeName,exact:true});
+      if(touch)await resume.tap();else await resume.click();
+      const alert=failurePage.getByRole('alert');await alert.waitFor();
+      const text=await alert.innerText();assert.ok(!/SECRET|DO_NOT_RENDER|private/.test(text));
+      if(mode==='server'){assert.match(text,/RPC -32001/);assert.ok(!text.includes(touch?'可能已经保存':'may already have been saved'));}
+      if(mode==='rejected')assert.match(text,/NOT_CONNECTED/);
+      if(mode==='lost')assert.match(text,/TIMEOUT/);
+      assert.equal(await failurePage.locator('.thread-goal').getAttribute('data-goal-status'),mode==='lost'?'active':'blocked');
+      assert.deepEqual(await failurePage.evaluate(()=>{const f=(window as any).fixture;return {writes:f.setCalls(),reads:f.getCalls()}}),{writes:before.writes+1,reads:before.reads+1});
+      if(mode==='server')await failurePage.screenshot({path:join(output,touch?'goal-error-dark-touch.png':'goal-error-light-desktop.png')});
+    }
+    // No automatic retry, and the error does not replace the user's draft.
+    await failurePage.evaluate(()=>{const f=(window as any).fixture;f.setGoal({status:'blocked'});f.writeFailure(null)});
+    await failurePage.getByRole('button',{name:resumeName,exact:true}).click();
+    await failurePage.getByRole('button',{name:touch?'暂停':'Pause',exact:true}).waitFor();
+    assert.equal(await failurePage.getByRole('alert').count(),0);
+    await failurePage.close();
+  }
+  console.log('Goal write error classifications, reconciliation, no replay, safe diagnostics, and explicit retry passed');
+
+  if (!process.argv.includes("--write-diagnostics-only")) {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, locale: "zh-CN" });
   page.setDefaultTimeout(10000);
   page.setDefaultNavigationTimeout(60000);
@@ -231,9 +265,9 @@ try {
   await page.evaluate(() => (window as any).fixture.releaseCreate());
   await createDialog.getByRole('alert').waitFor();
   await page.evaluate(() => (window as any).fixture.setLocale('en-US'));
-  await page.getByRole('dialog', {name:'Set a goal',exact:true}).getByRole('alert').filter({hasText:'The action could not be completed. Please try again.'}).waitFor();
+  await page.getByRole('dialog', {name:'Set a goal',exact:true}).getByRole('alert').filter({hasText:'The goal request was not accepted.'}).waitFor();
   await page.evaluate(() => (window as any).fixture.setLocale(''));
-  await createDialog.getByRole('alert').filter({hasText:'操作未完成，请重试。'}).waitFor();
+  await createDialog.getByRole('alert').filter({hasText:'目标操作请求未被接受。'}).waitFor();
   assert.equal(await createDialog.getByRole('textbox', { name: '目标内容' }).inputValue(), '新会话直接开启目标');
   await page.evaluate(() => (window as any).fixture.failWrite(false));
   console.log('retrying new Goal');
@@ -655,6 +689,7 @@ try {
   console.log("goal clock precision, accounting and Composer render isolation passed");
   assert.equal(adaptiveCases,32);
   console.log(JSON.stringify({ output, passed: true, adaptiveCases, evidence: ["DSH disarmed Resume and absent usage metrics", "real automatic system locale and persisted override; live dialog language switching retains input/DOM/focus; English fallback and locale numbers; all Goal status messages", "existing goal light/dark", "touch Add menu, cancel and draft preservation", "keyboard create and confirmed goal", "read-only and missing Thread hide creation", "Thread switch closes draft without remounting Composer", "real new Draft light/dark at 390/1280: cancel, readonly, offline", "new Goal without ordinary submit; busy and failed write retry keep Thread and input"] }));
+  } else console.log(JSON.stringify({output,passed:true,scope:"Goal write diagnostics only"}));
 } finally {
   await browser?.close();
   await vite.close();

@@ -4,10 +4,13 @@ import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { syntaxHighlighting, HighlightStyle, foldGutter } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { useEffect, useRef } from "react";
+import type { WorkspaceResourceLocation } from "./workspace-resource-model";
+import { useEffect, useLayoutEffect, useRef } from "react";
 
+const wrappingCompartment = new Compartment();
 const languageCompartment = new Compartment();
 const editabilityCompartment = new Compartment();
+const callbackCompartment = new Compartment();
 
 const codeColors = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--color-accent-purple)" },
@@ -34,15 +37,17 @@ async function languageExtension(language: string | null): Promise<Extension> {
 }
 
 export function WorkspaceCodeEditor({
-  editable,
-  hasDraft,
+  wrapLines = false, editable, viewStates, documentKey, location,
   language,
   label,
   onChange,
   value,
 }: {
+  readonly wrapLines?: boolean;
+  readonly viewStates?: Map<string, unknown>;
+  readonly documentKey?: string;
+  readonly location?: WorkspaceResourceLocation;
   readonly editable: boolean;
-  readonly hasDraft: boolean;
   readonly language: string | null;
   readonly label: string;
   readonly onChange: (value: string) => void;
@@ -54,11 +59,12 @@ export function WorkspaceCodeEditor({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (container.current === null) return;
+    const saved = documentKey ? viewStates?.get(documentKey) as { state: EditorState; top: number; left: number } | undefined : undefined;
     const editor = new EditorView({
       parent: container.current,
-      state: EditorState.create({
+      state: saved?.state ?? EditorState.create({
         doc: value,
         extensions: [
           basicSetup,
@@ -70,26 +76,40 @@ export function WorkspaceCodeEditor({
             marker.setAttribute("aria-hidden", "true");
             return marker;
           } }),
-          EditorView.lineWrapping,
+          wrappingCompartment.of(wrapLines ? EditorView.lineWrapping : []),
           syntaxHighlighting(codeColors),
           languageCompartment.of([]),
           editabilityCompartment.of(editability(editable)),
           EditorView.contentAttributes.of({ "aria-label": label }),
-          EditorView.updateListener.of((update) => {
+          callbackCompartment.of(EditorView.updateListener.of((update) => {
             if (update.docChanged && !synchronizing.current) onChangeRef.current(update.state.doc.toString());
-          }),
+          })),
         ],
       }),
     });
+    editor.dispatch({ effects: callbackCompartment.reconfigure(EditorView.updateListener.of(update => { if (update.docChanged && !synchronizing.current) onChangeRef.current(update.state.doc.toString()); })) });
     view.current = editor;
-    return () => { view.current = null; editor.destroy(); };
+    if (saved) { editor.scrollDOM.scrollTop = saved.top; editor.scrollDOM.scrollLeft = saved.left ?? 0; }
+    return () => {
+      if (documentKey && viewStates) {
+        viewStates.delete(documentKey);
+        viewStates.set(documentKey, { state: editor.state, top: editor.scrollDOM.scrollTop, left: editor.scrollDOM.scrollLeft });
+        while (viewStates.size > 16) viewStates.delete(viewStates.keys().next().value!);
+      }
+      view.current = null;
+      editor.destroy();
+    };
     // A file identity change remounts this component from its parent.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     view.current?.dispatch({ effects: editabilityCompartment.reconfigure(editability(editable)) });
   }, [editable]);
+
+  useLayoutEffect(() => {
+    view.current?.dispatch({ effects: wrappingCompartment.reconfigure(wrapLines ? EditorView.lineWrapping : []) });
+  }, [wrapLines]);
 
   useEffect(() => {
     let active = true;
@@ -99,19 +119,24 @@ export function WorkspaceCodeEditor({
     return () => { active = false; };
   }, [language]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const editor = view.current;
-    // While a draft exists, CodeMirror is the immediate document owner. React
-    // may commit an earlier keystroke after a newer one; do not replay it over
-    // the editor. Clean server refreshes and explicit reverts still sync.
-    if (hasDraft || editor === null || editor.state.doc.toString() === value) return;
+    // Synchronize shared document updates without replacing this editor instance.
+    if (editor === null || editor.state.doc.toString() === value) return;
     synchronizing.current = true;
     try {
       editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: value } });
     } finally {
       synchronizing.current = false;
     }
-  }, [hasDraft, value]);
+  }, [value]);
+
+  useEffect(() => {
+    const editor = view.current; if (!editor || !location?.line) return;
+    const line = editor.state.doc.line(Math.max(1, Math.min(location.line, editor.state.doc.lines)));
+    const anchor = Math.min(line.to, line.from + Math.max(0, (location.column ?? 1) - 1));
+    editor.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: "center" }) });
+  }, [location]);
 
   return <div className="workspace-code-editor" ref={container} />;
 }

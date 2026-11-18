@@ -522,6 +522,14 @@ export class ThreadDirectory {
     this.#put(current, archived);
 
   }
+  /** Drop transient executor observations while retaining readable directory metadata. */
+  resetExecution(): void {
+    if (this.#closed) return;
+    this.#liveStatus.clear();
+    ++this.#observation;
+    this.#lastAttempt = -Infinity;
+    this.port.changed();
+  }
   close(): void {
     this.#snapshots.clear();
     this.#snapshotReader?.close();

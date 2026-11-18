@@ -6,16 +6,21 @@ import { useInternalDeveloperMode } from "../../internal-developer-mode";
 import { Button } from "../ui/button";
 import { ConfirmationModalSurface } from "../modal/confirmation-modal-surface";
 import { useWorkbenchPresentationRoot } from "../workbench-presentation-root";
+import type { PlatformViewHost, PlatformViewRendererRegistry, ExtensionSettingsViewProps } from '@opencraft/extension-react';
 import "./extension-library.scss";
+
+const emptySubscribe = () => () => {};
+const emptySnapshot = () => null;
 
 const statusLabels: Record<string, string> = { active: "运行中", disabled: "已停用", loading: "正在加载", activating: "正在启动", deactivating: "正在停止", incompatible: "需要兼容版本", failed: "运行失败" };
 
-export function ExtensionLibrary({ supervisor, manager }: { supervisor: Pick<ExtensionSupervisor, "subscribe" | "getSnapshot" | "contributions">; manager: ExtensionManager }) {
+export function ExtensionLibrary({ supervisor, manager, settingsHost, renderers, reportError }: { settingsHost?: PlatformViewHost; renderers?: PlatformViewRendererRegistry; reportError?: ExtensionSettingsViewProps["reportError"]; supervisor: Pick<ExtensionSupervisor, "subscribe" | "getSnapshot" | "contributions">; manager: ExtensionManager }) {
   const intl = useIntl();
   const sameLanguage = (text: string) => !intl.locale.toLowerCase().startsWith("zh") || /[\u4e00-\u9fff]/u.test(text);
   const runtime = useSyncExternalStore(supervisor.subscribe, supervisor.getSnapshot, supervisor.getSnapshot);
   const installations = useSyncExternalStore(manager.subscribe, manager.getSnapshot, manager.getSnapshot);
   const contributions = useSyncExternalStore(supervisor.contributions.subscribe, supervisor.contributions.getSnapshot, supervisor.contributions.getSnapshot);
+  useSyncExternalStore<unknown>(renderers?.subscribe ?? emptySubscribe, renderers?.getSnapshot ?? emptySnapshot, renderers?.getSnapshot ?? emptySnapshot);
   const catalog = useMemo(() => projectExtensionCatalog(runtime, installations, contributions), [runtime, installations, contributions]);
   const developer = useInternalDeveloperMode();
   const portal = useWorkbenchPresentationRoot();
@@ -59,6 +64,16 @@ export function ExtensionLibrary({ supervisor, manager }: { supervisor: Pick<Ext
         {detail.canRemove ? <Button disabled={pending.has(detail.id)} onClick={() => setRemove(detail.id)}>移除扩展</Button> : null}
       </div> : <p>内建扩展随应用更新，暂不支持单独停用或移除。</p>}
       {errors[detail.id] ? <SettingsNotice tone="error">{errors[detail.id]}</SettingsNotice> : null}
+      {settingsHost && renderers ? contributions.settingsPages.filter(entry => entry.owner.extensionId === detail.id
+        && entry.contribution.placement === 'extension'
+        && (entry.contribution.audience !== 'internal' || developer)
+        && (entry.contribution.platforms?.includes(settingsHost.platform) ?? true)).map(entry => {
+          const view = contributions.views.find(candidate => candidate.owner.extensionId === entry.owner.extensionId
+            && candidate.contribution.id === entry.contribution.viewId)?.contribution;
+          const Component = view ? renderers.resolve(view.viewType) : null;
+          return view && Component ? <Component key={entry.contribution.id} host={settingsHost} contribution={view}
+            activation={{viewId:view.id,resourceUri:null}} reportError={reportError} /> : null;
+        }) : null}
     </> : <>
       <SettingsControlPair className="extension-library__toolbar"
         primary={<SettingsTextInput aria-label="搜索扩展" placeholder="搜索扩展" value={query} onChange={event => setQuery(event.target.value)} />}

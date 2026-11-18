@@ -81,3 +81,20 @@ test('CLI help and invalid arguments return one versioned JSON value with stable
     });
   }
 });
+
+
+test('a 24 MiB conversation reads through bounded pages without requesting full turns',async()=>{
+ const ref={serverId:'s',threadId:'large'}, body='x'.repeat(1024*1024), count=24;
+ let itemReads=0;
+ const invoke=async(method:string,params:any)=>{
+  if(method==='thread/read'){assert.equal(params.includeTurns,false);return {thread:{id:ref.threadId,updatedAt:1}};}
+  assert.equal(method,'thread/items/list');assert.equal(params.limit,1);itemReads++;
+  const index=params.sortDirection==='desc'?count-1:Number(params.cursor??0);
+  return {data:[{turnId:'turn',item:{id:String(index),type:index===0?'commandExecution':'agentMessage',text:body}}],nextCursor:index<count-1?String(index+1):null};
+ };
+ const first=await readConversationPage(invoke,ref,null);
+ assert.deepEqual(first.entries,[]);assert.ok(first.nextCursor);
+ const second=await readConversationPage(invoke,ref,first.nextCursor);
+ assert.equal(second.entries[0].text.length,2000);assert.ok(second.nextCursor);
+ assert.ok(Buffer.byteLength(JSON.stringify(second))<10000);assert.equal(itemReads,6);
+});

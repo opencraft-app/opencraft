@@ -9,11 +9,13 @@
 
 @mixin surface($role: panel) {
   background: var(--material-background-panel);
+  @if $role == tool-overview { background: var(--material-background-tool-overview); }
   @if $role == menu { background: var(--material-background-menu); }
   // Standard last: Lightning CSS otherwise retains only the WebKit alias.
   -webkit-backdrop-filter: var(--material-backdrop-filter);
   backdrop-filter: var(--material-backdrop-filter);
   box-shadow: var(--material-shadow);
+  @if $role == menu { box-shadow: var(--material-menu-shadow); }
   @media (forced-colors: active) {
     color: CanvasText;
     outline: 1px solid CanvasText;

@@ -5,6 +5,7 @@
 | 专题 | 范围 |
 | --- | --- |
 | [Architecture and topology](architecture/platform/architecture-and-topology.md) | 应用监督器、运行时拓扑、平台与产品装配边界 |
+| [Human workbench and Portal](architecture/human-workbench.md) | 当前 Human、跨 Hub 资源入口、账号切换与可选租户作用域（目标设计） |
 | [Identity and access](architecture/platform/identity-and-access.md) | 主体、认证、Relay 入口与账号数据权限 |
 | [Connections and routing](architecture/platform/connections-and-routing.md) | SSH、远程目录、Host 配置、机器与连接诊断 |
 | [Execution and models](architecture/platform/execution-and-models.md) | Provider 账号、Bot、模型服务、能力与执行边界 |
@@ -47,7 +48,6 @@
 ### Execution and models
 
 - <a id="host-side-provider-account-pooling"></a>[Host-side provider account pooling](architecture/platform/execution-and-models.md#host-side-provider-account-pooling)
-- <a id="bot-management-ownership"></a>[Bot management ownership](architecture/platform/execution-and-models.md#bot-management-ownership)
 - <a id="settings-owned-local-model-services"></a>[Settings-owned local Model Services](architecture/platform/execution-and-models.md#settings-owned-local-model-services)
 - <a id="embedded-console-model-authority"></a>[Embedded console model authority](architecture/platform/execution-and-models.md#embedded-console-model-authority)
 - <a id="host-owned-automatic-codex-conversation-titles"></a>[Host-owned automatic Codex conversation titles](architecture/platform/execution-and-models.md#host-owned-automatic-codex-conversation-titles)
@@ -89,6 +89,8 @@
 - <a id="host-composer-command-adapters"></a>[Host Composer command adapters](architecture/platform/presentation-and-input.md#host-composer-command-adapters)
 
 ### Lifecycle and resources
+
+- [统一制品库：上传、AIGC 与资源回收（目标设计）](architecture/artifact-library.md)
 
 - <a id="client-cache-and-presentation-resource-policy"></a>[Client cache and presentation resource policy](architecture/platform/lifecycle-and-resources.md#client-cache-and-presentation-resource-policy)
 - <a id="thread-lifecycle-ownership"></a>[Thread lifecycle ownership](architecture/platform/lifecycle-and-resources.md#thread-lifecycle-ownership)

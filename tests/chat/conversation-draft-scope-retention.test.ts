@@ -188,6 +188,30 @@ test("the 51st nonempty New-chat owner leaves discardable metadata while the oth
   assert.equal(app.getThreadAcquisitions(), 0);
 });
 
+test("leaving an empty editor preserves its View checkpoint until the View budget evicts it", () => {
+  const leases = createConversationScopeLeaseRegistry({});
+  const disposed: string[] = [];
+  let sequence = 0;
+  const views = createConversationViewRegistry({scopeLeases: leases, maxInactiveViews: 1,
+    composerServices: {now: Date.now, createId: () => "view-test-" + ++sequence},
+    onDisposeView: id => disposed.push(id)});
+  try {
+    const a = "scope:a" as ConversationScopeId, b = "scope:b" as ConversationScopeId;
+    const targetA = {type: "new-thread" as const, draftId: "a", execution};
+    const targetB = {type: "new-thread" as const, draftId: "b", execution};
+    leases.ensure(a, hostId, targetA); leases.ensure(b, hostId, targetB);
+    const composer = views.ensure("view:a", a, hostId, targetA).composer;
+    views.retain("view:a", "active-route")();
+    assert.deepEqual(disposed, [], "empty input cleanup must not erase the reading checkpoint");
+    assert.equal(views.get("view:a")?.composer, composer);
+    views.ensure("view:b", b, hostId, targetB);
+    assert.deepEqual(disposed, ["view:a"], "only the bounded View owner evicts presentation state");
+    assert.equal(views.getDraftOwner("view:a"), null);
+  } finally { views.dispose(); leases.dispose(); }
+});
+
+
+
 
 test("a retained draft keeps its Server audience when its workspace changes and rejects another audience at submit", () => {
   const scopes = createConversationScopeRegistry({ initialDraft: null });

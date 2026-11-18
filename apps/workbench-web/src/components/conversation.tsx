@@ -1,3 +1,7 @@
+import { historyPresentationAttributes } from "@opencraft/chat-render-web/history-presentation";
+import type { ConversationRecoveryPresentation } from "@opencraft/chat-core";
+// Keep question geometry available with the first transcript paint.
+import AsyncQuestionCard from "./conversation/async-question-card-view";
 import { ConversationSearchTargetContext, blockItemIds, useRevealSearchItem } from "./conversation/search-target";
 import { observeChatMediaDiagnostic } from "../runtime/media-diagnostics";
 import { LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
@@ -19,7 +23,7 @@ import {
   activeTimelineTurnTodo,
   ReasoningPresentationCache,
   deriveAsyncQuestionPresentation,
-  groupTimelineFramesByTurn,
+  createTimelineTurnGrouper,
   presentAutomationUpdate,
   type AssistantTurnPresentationPlan,
   type AutomationUpdateTimelineBlock,
@@ -36,6 +40,8 @@ import type { ConversationNavigationSource } from "@opencraft/chat-navigation";
 import {
   WebChatDocument,
   ChatReadingPositionContext,
+  ChatMediaLayoutContext,
+  type ChatMediaLayout,
   type ChatReadingPosition,
   resolveStandardChatResource,
 } from "@opencraft/chat-render-web";
@@ -51,11 +57,12 @@ import {
   type VirtualizedTurnRestoreState,
   type VirtualizedTurnListApi,
   type TurnHistoryBackfillDiagnostic,
+  type TurnHistoryPagination,
 } from "@opencraft/timeline-virtualizer";
 import {
   createWebConversationViewportOwner,
 } from "@opencraft/timeline-host-web";
-import { useStableEvent } from "@opencraft/react-runtime";
+import { usePresentationActive, useStableEvent } from "@opencraft/react-runtime";
 import { useTurnHistoryBackfill } from "@opencraft/timeline-react";
 import type { TimelineBlockRendererProps } from "@opencraft/timeline-render-react";
 import { UserMessageNavigationRail } from "./user-message-navigation-rail";
@@ -89,6 +96,7 @@ import { ActivitySummaryRow } from "./conversation-renderers/activity/activity-s
 import { PlanBlock, TodoBlock, CompactionBlock } from "./conversation-renderers/plan-and-compaction";
 
 import { TurnRenderErrorBoundary } from "./turn-render-error-boundary";
+import { ConversationTurnAuthority } from "./conversation/turn-authority";
 import { ScrollToBottomButton } from "./scroll-to-bottom-button";
 import {
   ConversationDocumentContext,
@@ -96,7 +104,6 @@ import {
 } from "./conversation/document-context";
 import { UserMessageBlock } from "./conversation/user-message";
 import { TurnDiffBlock } from "./conversation/turn-diff-resource";
-const AsyncQuestionCard = lazy(() => import("./conversation/async-question-card-view"));
 import { DiffReadingPositionContext, UnifiedDiffPreview, type DiffReadingPosition } from "./conversation-renderers/unified-diff-preview";
 import {
   ActivityDisclosure,
@@ -293,8 +300,8 @@ function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
       />
       : <p>{block.text}</p>)}
     {block.asyncQuestions?.map((question) => (
-      <Suspense key={question.id} fallback={<p aria-busy="true">{question.title}</p>}>
-      <Suspense key={question.id} fallback={<p aria-busy="true">{question.title}</p>}><AsyncQuestionCard
+      <AsyncQuestionCard
+        key={question.id}
         question={question}
         title={<WebChatDocument
           conversationId={documentContext.conversationId}
@@ -307,8 +314,7 @@ function TextTimelineRenderer({ block, richText }: TimelineBlockRendererProps) {
           source={question.title}
           theme={documentContext.theme}
         />}
-      /></Suspense>
-      </Suspense>
+      />
     ))}
   </>;
 }
@@ -455,7 +461,7 @@ function Frame({
     }
   });
   const visibleFrame = frame;
-  if (visibleFrame.blocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null) return null;
+  if (visibleFrame.blocks.length === 0 && thinkingId === null && assistantPlan?.changeSummary == null && visibleFrame.hookStats === null) return null;
   if (visibleFrame.type === "user") {
     const itemId = getTimelineUserMessageTargetKey(visibleFrame) ?? visibleFrame.id;
     return (
@@ -480,7 +486,8 @@ function Frame({
   const units = assistantPlan?.slots ?? [];
   const actions = visibleFrame.type === "assistant" ? assistantMessageActions(visibleFrame) : null;
   const assistantCopyText = actions?.completed ? actions.copyText : "";
-  const hasMessageActions = onFork !== undefined || assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
+  const showFork = documentContext.turnActions?.fork ?? documentContext.onForkTurn !== undefined;
+  const hasMessageActions = showFork || assistantCopyText.length > 0 || onRetry !== undefined || visibleFrame.hookStats !== null;
   if (visibleFrame.type === "assistant"
     && units.length === 0
     && assistantPlan?.changeSummary == null
@@ -555,16 +562,20 @@ function Frame({
             : thinkingLabel}</CadencedShimmer>
         </div>
       )}
-      {visibleFrame.type === "assistant" && showActions && (hasMessageActions || actions?.sentAtMs != null) ? (
-        <div className="thread-message-actions">
+      {visibleFrame.type === "assistant" && (hasMessageActions || actions !== null) ? (
+        // Reserve the same action lane while the answer streams. Completing a
+        // Turn reveals its affordances without adding height below the text.
+        <div className="thread-message-actions" aria-hidden={!showActions || undefined}>
+          {showActions ? <>
           {assistantCopyText.length > 0 ? <AssistantCopyButton value={assistantCopyText} getHtml={() => {
             const nodes = frameRef.current?.querySelectorAll<HTMLElement>("[data-assistant-copy-content] .opencraft-chat-document");
             return nodes?.length ? Array.from(nodes).map((node) => extractMarkdownElement(node).htmlText).join("\n") : null;
           }} /> : null}
-          {onFork === undefined ? null : <ForkTurnButton fork={onFork} />}
+          {showFork ? <ForkTurnButton fork={onFork} /> : null}
           {onRetry === undefined ? null : <button onClick={onRetry} type="button" title={intl.formatMessage({ id: "common.retry", defaultMessage: "Try again" })}><RotateCcw size={13} /></button>}
           {visibleFrame.hookStats == null ? null : <HookStatsButton detailLevel={threadDetailLevel} stats={visibleFrame.hookStats} />}
           <MessageTimestamp assistant sentAtMs={actions?.sentAtMs} />
+          </> : null}
         </div>
       ) : null}
     </div>
@@ -607,7 +618,7 @@ function Turn({
     : null;
   const virtualizeSingleSlot = presentation.topLevelSlotCount === 1;
   return (
-    <section className="thread-turn" data-selection="text" data-turn-key={turn.turnKey} data-turn-status={turn.status}>
+    <section className="thread-turn" data-retained-preview-content="true" data-selection="text" data-turn-key={turn.turnKey} data-turn-status={turn.status}>
       {(startAfterTurnIntro ? [] : presentation.userFrames).map((frame) => (
         <Frame
           allowSingleSlotVirtualization={virtualizeSingleSlot}
@@ -667,9 +678,11 @@ function Turn({
 }
 
 export interface ConversationRestoreSnapshot {
+  readonly activityContentMeasurements?: Readonly<Record<string, import("@opencraft/timeline-host-web").ConversationContentMeasurement>>;
   readonly activityContentHeights?: Readonly<Record<string, number>>;
   readonly agentActivityCollapsedById?: Readonly<Record<string, boolean>>;
   readonly chatReadingPositions?: Readonly<Record<string, ChatReadingPosition>>;
+  readonly chatMediaLayouts?: Readonly<Record<string, ChatMediaLayout>>;
   readonly activityDisclosures?: Readonly<Record<string, ActivityDisclosureState>>;
   readonly diffReadingPositions?: Readonly<Record<string, DiffReadingPosition>>;
   readonly commandViews?: Readonly<Record<string, CommandViewState>>;
@@ -680,11 +693,18 @@ export interface ConversationRestoreSnapshot {
 }
 
 export interface ConversationProps {
+  readonly historyPresentation?: ConversationRecoveryPresentation;
+  /** Presentation-only history outside the current authoritative window. */
+  readonly readOnlyTurnIds?: ReadonlySet<string>;
+  /** Parked reading surfaces retain state but do not request more history. */
+  readonly active?: boolean;
   /** The host selects the policy; content growth must never select one implicitly. */
   readonly scrollPolicy: ConversationScrollPolicy;
   readonly timeline: TimelineSnapshot | null;
   /** Only shown when the timeline has no visible rows; never replaces retained history. */
   readonly emptyState?: ReactNode;
+  /** The empty timeline slot already contains a locally submitted first Turn. */
+  readonly hasPendingSubmission?: boolean;
   /** Protocol-neutral prompt index. V3 cursors and V4 epochs remain behind this port. */
   readonly navigationSource?: ConversationNavigationSource | null;
   readonly searchTarget?: import("./conversation-search").ConversationSearchTarget | null;
@@ -697,7 +717,7 @@ export interface ConversationProps {
   readonly onLoadOlder?: () => void | "stop" | Promise<void | "stop">;
   /** Internal, sampled history/viewport diagnostics; never contains message text. */
   readonly onHistoryViewportDiagnostic?: (event: ConversationHistoryViewportDiagnostic) => void;
-  readonly loadingOlder?: boolean;
+  readonly history?: TurnHistoryPagination | null;
   readonly onContinueTurn?: (turnId: TurnId) => void;
   readonly continuableTurnId?: TurnId | null;
   /** Opens a child/background-agent thread when the host exposes it. */
@@ -769,20 +789,24 @@ function AnimatedTurn({
 export type ConversationScrollPolicy = "natural" | "response-placement";
 
 export function Conversation({
+  historyPresentation = "none",
+  readOnlyTurnIds,
+  active = true,
   timeline,
   emptyState,
+  hasPendingSubmission = false,
   scrollPolicy,
   navigationSource = null,
   searchTarget = null,
   footer,
   onAddSelectionToChat,
   documentContext = { conversationId: null, cwd: null, hostId: null, theme: "light" },
-  initialRestoreSnapshot = null,
+  initialRestoreSnapshot: restoreSnapshotSeed = null,
   onRestoreSnapshotChange,
   onLoadOlder,
   onHistoryViewportDiagnostic,
   onLoadItemDetails,
-  loadingOlder = false,
+  history = null,
   onOpenSubagent,
   onContinueTurn,
   continuableTurnId = null,
@@ -801,9 +825,15 @@ export function Conversation({
   surfaceCapabilities = DEFAULT_TIMELINE_SURFACE_CAPABILITIES,
   threadDetailLevel = "STEPS_COMMANDS",
 }: ConversationProps) {
+  // The keyed View owns its live reading state. A parent checkpoint update is
+  // input for the next View, never a scroll command for this mounted reader.
+  const [initialRestoreSnapshot] = useState(() => restoreSnapshotSeed);
+  const presentationActive = usePresentationActive();
+  active = active && presentationActive;
   const intl = useIntl();
   const allowEntryMotion = useConversationEntryMotion(timeline);
-  const entries = useMemo(() => timeline === null ? [] : groupTimelineFramesByTurn(timeline), [timeline]);
+  const groupTurns = useMemo(() => createTimelineTurnGrouper(), []);
+  const entries = useMemo(() => groupTurns(timeline), [groupTurns, timeline]);
   const latestTurn = entries.length === 0 ? null : entries[entries.length - 1] ?? null;
   const isLatestTurnInProgress = latestTurn?.status === "pending" || latestTurn?.status === "streaming";
   const activeTodo = useMemo(
@@ -818,6 +848,7 @@ export function Conversation({
   const activityCollapsedByIdRef = useRef(activityCollapsedById);
   activityCollapsedByIdRef.current = activityCollapsedById;
   const [chatReadingPositions] = useState(() => new Map(Object.entries(initialRestoreSnapshot?.chatReadingPositions ?? {})));
+  const [chatMediaLayouts] = useState(() => new Map(Object.entries(initialRestoreSnapshot?.chatMediaLayouts ?? {})));
   const [activityDisclosures] = useState(() => new Map(Object.entries(initialRestoreSnapshot?.activityDisclosures ?? {})));
   const [diffReadingPositions] = useState(() => new Map(Object.entries(initialRestoreSnapshot?.diffReadingPositions ?? {})));
   const [commandViews] = useState(() => new Map(Object.entries(initialRestoreSnapshot?.commandViews ?? {})));
@@ -875,6 +906,7 @@ export function Conversation({
     viewportOwnerRef.current = createWebConversationViewportOwner(
       normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx),
       initialRestoreSnapshot?.activityContentHeights,
+      initialRestoreSnapshot?.activityContentMeasurements,
     );
   }
   const viewportOwner = viewportOwnerRef.current;
@@ -914,6 +946,7 @@ export function Conversation({
   const cancelPendingTargetPosition = useCallback(() => {
     virtualizerApiRef.current?.cancelPositioning();
   }, []);
+  const loadingOlder = history?.loading === true;
   const reportHistoryViewportDiagnostic = useStableEvent((event: TurnHistoryBackfillDiagnostic) => {
     onHistoryViewportDiagnostic?.({
       ...event,
@@ -923,11 +956,27 @@ export function Conversation({
       loadingOlder,
     });
   });
+  const pendingHistoryCoverageKey = readOnlyTurnIds === undefined ? null : JSON.stringify([...readOnlyTurnIds]);
   const historyBackfill = useTurnHistoryBackfill({
     historyKey: timeline === null
       ? null
       : JSON.stringify([timeline.key.hostId, timeline.key.threadId]),
-    loadPage: onLoadOlder,
+    loadPage: active ? onLoadOlder : undefined,
+    pagination: history,
+    readVisibleHistoryGap: () => {
+      const element = scrollRef.current;
+      if (element === null || readOnlyTurnIds === undefined) return null;
+      const viewport = element.getBoundingClientRect();
+      const bottom = viewport.bottom - viewportOwner.getFooterHeight();
+      for (const turn of entries) {
+        if (!readOnlyTurnIds.has(turn.turnId)) continue;
+        const row = viewportOwner.turnElementsRef.current.get(turn.turnKey);
+        if (row === undefined) continue;
+        const rect = row.getBoundingClientRect();
+        if (rect.bottom > viewport.top && rect.top < bottom) return pendingHistoryCoverageKey;
+      }
+      return null;
+    },
     readMetrics: () => {
       const element = scrollRef.current;
       return element === null
@@ -986,17 +1035,22 @@ export function Conversation({
   const showScrollToBottom = useSyncExternalStore(
     subscribeScrollToBottomVisibility, getScrollToBottomVisibility, getScrollToBottomVisibility,
   );
-  useEffect(() => viewportOwner.bindScrollBehavior({
+  useEffect(() => active ? viewportOwner.bindScrollBehavior({
     onUserInput: cancelPendingTargetPosition,
-    onUserScrollToTop: () => { void loadOlderUntilScrollable(); },
-  }), [cancelPendingTargetPosition, loadOlderUntilScrollable, viewportOwner]);
+    onUserScrollToTop: () => { void historyBackfill.retry(); },
+  }) : undefined, [active, cancelPendingTargetPosition, historyBackfill, viewportOwner]);
   useEffect(() => {
     historyBackfill.invalidate();
+    if (!active) return;
     const release = viewportOwner.observeViewportGeometry(() => {
       void loadOlderUntilScrollable();
     });
     return () => { historyBackfill.invalidate(); release(); };
-  }, [historyBackfill, loadOlderUntilScrollable, viewportOwner]);
+  }, [active, historyBackfill, loadOlderUntilScrollable, viewportOwner]);
+  useEffect(() => {
+    if (!active || pendingHistoryCoverageKey === null) return;
+    return scrollController.subscribe(() => { void loadOlderUntilScrollable(); });
+  }, [active, pendingHistoryCoverageKey, loadOlderUntilScrollable, scrollController]);
 
   const restoreCallbackRef = useRef(onRestoreSnapshotChange);
   restoreCallbackRef.current = onRestoreSnapshotChange;
@@ -1012,7 +1066,9 @@ export function Conversation({
     restoreCallbackRef.current?.({
       agentActivityCollapsedById: activityCollapsedByIdRef.current,
       activityContentHeights: viewportOwner.contentWindow.capture(),
+      activityContentMeasurements: viewportOwner.contentWindow.captureMeasurements(),
       chatReadingPositions: Object.fromEntries(chatReadingPositions),
+      chatMediaLayouts: Object.fromEntries(chatMediaLayouts),
       activityDisclosures: Object.fromEntries(activityDisclosures),
       diffReadingPositions: Object.fromEntries(diffReadingPositions),
       commandViews: Object.fromEntries(commandViews),
@@ -1024,21 +1080,23 @@ export function Conversation({
       turnFollow: responseRestore?.turnFollow ?? null,
     });
     viewportOwner.dispose();
-  }, [activityDisclosures, cancelPendingTargetPosition, chatReadingPositions, commandViews, diffReadingPositions, scrollController, viewportOwner]);
+  }, [activityDisclosures, cancelPendingTargetPosition, chatReadingPositions, chatMediaLayouts, commandViews, diffReadingPositions, scrollController, viewportOwner]);
 
   const renderTurn = (turn: TimelineTurnView, isLatest: boolean, offset?: MotionValue<number> | null) => (
     <TurnRenderErrorBoundary resetKey={turn.turnKey}>
-      {scrollPolicy === "response-placement" ? (
-        <AnimatedTurn activityCollapsedById={activityCollapsedById} isMostRecentTurn={isLatest}
-          offset={offset ?? null} onActivityCollapsedChange={handleActivityCollapsedChange}
-          onRetry={onContinueTurn === undefined || continuableTurnId !== turn.turnId ? undefined : () => onContinueTurn(turn.turnId)}
-          threadDetailLevel={threadDetailLevel} turn={turn} />
-      ) : (
-        <Turn activityCollapsedById={activityCollapsedById} isMostRecentTurn={isLatest}
-          onActivityCollapsedChange={handleActivityCollapsedChange}
-          onRetry={onContinueTurn === undefined || continuableTurnId !== turn.turnId ? undefined : () => onContinueTurn(turn.turnId)}
-          threadDetailLevel={threadDetailLevel} turn={turn} />
-      )}
+      <ConversationTurnAuthority readOnly={readOnlyTurnIds?.has(turn.turnId) === true}>
+        {scrollPolicy === "response-placement" ? (
+          <AnimatedTurn activityCollapsedById={activityCollapsedById} isMostRecentTurn={isLatest}
+            offset={offset ?? null} onActivityCollapsedChange={handleActivityCollapsedChange}
+            onRetry={readOnlyTurnIds?.has(turn.turnId) || onContinueTurn === undefined || continuableTurnId !== turn.turnId ? undefined : () => onContinueTurn(turn.turnId)}
+            threadDetailLevel={threadDetailLevel} turn={turn} />
+        ) : (
+          <Turn activityCollapsedById={activityCollapsedById} isMostRecentTurn={isLatest}
+            onActivityCollapsedChange={handleActivityCollapsedChange}
+            onRetry={readOnlyTurnIds?.has(turn.turnId) || onContinueTurn === undefined || continuableTurnId !== turn.turnId ? undefined : () => onContinueTurn(turn.turnId)}
+            threadDetailLevel={threadDetailLevel} turn={turn} />
+        )}
+      </ConversationTurnAuthority>
     </TurnRenderErrorBoundary>
   );
   const interactionContext = useMemo<ConversationInteractionContextValue>(() => ({
@@ -1057,14 +1115,13 @@ export function Conversation({
       data-thread-scroll-footer="true"
       ref={viewportOwner.attachFooterElement}
     >
-      <div aria-hidden="true" className="thread-scroll-footer__gradient" />
       <div
         className="thread-scroll-footer__content thread-layout-width"
         data-pip-obstacle="thread-footer"
       >
         <div className="thread-scroll-to-bottom-anchor">
           <ScrollToBottomButton
-            label="Scroll to bottom"
+            label={intl.formatMessage({ id: 'chat.backToLatest', defaultMessage: 'Back to latest' })}
             onClick={conversationScrollApi.scrollToBottom}
             show={showScrollToBottom}
             showWorkingDots={showScrollToBottom && isLatestTurnInProgress}
@@ -1081,6 +1138,7 @@ export function Conversation({
   );
   return (
     <ChatReadingPositionContext.Provider value={chatReadingPositions}>
+    <ChatMediaLayoutContext.Provider value={chatMediaLayouts}>
     <ConversationContentWindowContext.Provider value={viewportOwner.contentWindow}>
     <ActivityDisclosureStateContext.Provider value={activityDisclosures}>
     <DiffReadingPositionContext.Provider value={diffReadingPositions}>
@@ -1102,66 +1160,71 @@ export function Conversation({
                   data-live-embedded-surface={surfaceCapabilities.hasLiveEmbeddedSurface || undefined}
                 >
                   <div
-                    className="thread-scroll"
-                    data-app-action-timeline-scroll=""
-                    data-pip-anchor-host={surfaceCapabilities.pipAnchorHostId ?? undefined}
-                    data-thread-find-target="conversation"
-                    onClickCapture={handleReflowAnchorCapture}
-                    ref={attachScrollElement}
-                    tabIndex={0}
+                    className="thread-scroll-plane"
+                    data-has-footer={footerElement !== null || undefined}
+                    style={{
+                      "--thread-content-inline-offset": `${surfaceCapabilities.wideContentOffsetPx}px`,
+                      "--thread-wide-block-inline-shift": `${Math.abs(surfaceCapabilities.wideContentOffsetPx)}px`,
+                    } as CSSProperties}
                   >
-                    <motion.div
-                      className="thread-scroll-surface"
-                      style={{
-                        x: surfaceCapabilities.wideContentOffsetPx,
-                        "--thread-wide-block-inline-shift": `${Math.abs(surfaceCapabilities.wideContentOffsetPx)}px`,
-                      } as CSSProperties}
+                    <div
+                      className="thread-scroll"
+                      data-app-action-timeline-scroll=""
+                      data-pip-anchor-host={surfaceCapabilities.pipAnchorHostId ?? undefined}
+                      data-thread-find-target="conversation"
+                      onClickCapture={handleReflowAnchorCapture}
+                      ref={attachScrollElement}
+                      tabIndex={0}
                     >
-                      <div className="thread-history-status" role="status" aria-label={loadingOlder ? intl.formatMessage({ id: "chat.restore.loading", defaultMessage: "Loading conversation history…" }) : undefined}>
-                        {loadingOlder ? <LoadingRingIcon aria-hidden="true" className="is-spinning" size={20} /> : null}
-                      </div>
-                      <div
-                        className="thread-content thread-layout-width"
-                        data-mcp-app-portal-target={surfaceCapabilities.embeddedPortalTarget || undefined}
-                        data-thread-user-message-navigation-content="true"
-                      >
+                      <div className="thread-scroll-surface">
+                        <div className="thread-history-status" role="status" aria-label={loadingOlder ? intl.formatMessage({ id: "chat.restore.loading", defaultMessage: "Loading conversation history…" }) : undefined}>
+                          {loadingOlder ? <LoadingRingIcon aria-hidden="true" className="is-spinning" size={20} /> : null}
+                        </div>
+                        <div
+                          className="thread-content thread-layout-width"
+                          {...historyPresentationAttributes(historyPresentation)}
+                          data-thread-follow-tail-layout={scrollPolicy === "natural" && (entries.length > 0 || hasPendingSubmission) || undefined}
+                          data-mcp-app-portal-target={surfaceCapabilities.embeddedPortalTarget || undefined}
+                          data-thread-user-message-navigation-content="true"
+                        >
 
-                        {entries.length === 0 ? emptyState : null}
+                          {entries.length === 0 ? emptyState : null}
 
-                        {scrollPolicy === "response-placement" ? (
-                          <ResponsePositionedTurns
-                            entries={entries}
-                            timelineRevision={timeline?.revision ?? -1}
-                            viewportOwner={viewportOwner}
-                            scrollElement={scrollElement}
-                            initialRestoreSnapshot={initialRestoreSnapshot}
-                            consumePendingLatestTurnSubmitPlacement={consumePendingLatestTurnSubmitPlacement}
-                            onVisibleContentReady={onVisibleContentReady}
-                            visibleContentReadyKey={visibleContentReadyKey}
-                            onContentLayoutCommitted={loadOlderUntilScrollable}
-                            onApiChange={handleVirtualizerApiChange}
-                            onResponseApiChange={handleResponseApiChange}
-                            renderTurn={renderTurn}
-                          />
-                        ) : (
-                          <VirtualizedConversationTurns
-                            entries={entries}
-                            timelineRevision={timeline?.revision ?? -1}
-                            viewportOwner={viewportOwner}
-                            initialRestoreState={initialRestoreSnapshot?.virtualizedTurnList ?? null}
-                            initialDistanceFromBottomPx={normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx)}
-                            preserveMeasuredTurnViewport
-                            expandToMountedContent
-                            onApiChange={handleVirtualizerApiChange}
-                            onVisibleContentReady={onVisibleContentReady}
-                            visibleContentReadyKey={visibleContentReadyKey}
-                            onContentLayoutCommitted={loadOlderUntilScrollable}
-                            renderTurn={renderTurn}
-                          />
-                        )}
+                          {scrollPolicy === "response-placement" ? (
+                            <ResponsePositionedTurns
+                              entries={entries}
+                              timelineRevision={timeline?.revision ?? -1}
+                              viewportOwner={viewportOwner}
+                              scrollElement={scrollElement}
+                              initialRestoreSnapshot={initialRestoreSnapshot}
+                              consumePendingLatestTurnSubmitPlacement={consumePendingLatestTurnSubmitPlacement}
+                              onVisibleContentReady={onVisibleContentReady}
+                              visibleContentReadyKey={visibleContentReadyKey}
+                              onContentLayoutCommitted={active ? loadOlderUntilScrollable : undefined}
+                              onApiChange={handleVirtualizerApiChange}
+                              onResponseApiChange={handleResponseApiChange}
+                              renderTurn={renderTurn}
+                            />
+                          ) : (
+                            <VirtualizedConversationTurns
+                              entries={entries}
+                              timelineRevision={timeline?.revision ?? -1}
+                              viewportOwner={viewportOwner}
+                              initialRestoreState={initialRestoreSnapshot?.virtualizedTurnList ?? null}
+                              initialDistanceFromBottomPx={normalizeInitialScrollDistance(initialRestoreSnapshot?.distanceFromBottomPx)}
+                              preserveMeasuredTurnViewport
+                              expandToMountedContent
+                              onApiChange={handleVirtualizerApiChange}
+                              onVisibleContentReady={onVisibleContentReady}
+                              visibleContentReadyKey={visibleContentReadyKey}
+                              onContentLayoutCommitted={active ? loadOlderUntilScrollable : undefined}
+                              renderTurn={renderTurn}
+                            />
+                          )}
+                        </div>
                       </div>
-                      {footerElement}
-                    </motion.div>
+                    </div>
+                    {footerElement}
                   </div>
                   <ConversationSelectionMenu root={scrollElement} onAddToChat={onAddSelectionToChat} />
                   {navigationSource !== null && virtualizedTurnListApi !== null ? (
@@ -1190,6 +1253,7 @@ export function Conversation({
     </DiffReadingPositionContext.Provider>
     </ActivityDisclosureStateContext.Provider>
     </ConversationContentWindowContext.Provider>
+    </ChatMediaLayoutContext.Provider>
     </ChatReadingPositionContext.Provider>
   );
 }

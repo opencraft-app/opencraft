@@ -3,8 +3,12 @@ import type { PanelTabDescriptor } from '@opencraft/workbench-panels';
 
 /** A projection of the existing panel owner, not a second tab directory. */
 export const PanelNavigationContext = createContext<{
+  readonly ownerId: string;
+  readonly previews: import("@opencraft/workbench-panels").PanelPreviewCache;
+  readonly renderers: readonly import("@opencraft/workbench-panels-react").PanelRendererRegistration[];
   readonly tabs: readonly PanelTabDescriptor[];
   readonly activeTabId: string | null;
+  openPrimaryChat(): void;
   activate(tabId: string): void;
   close(tab: PanelTabDescriptor): void;
   readonly creationActions: readonly {

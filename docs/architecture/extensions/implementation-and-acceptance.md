@@ -25,7 +25,12 @@
   diff/skill 语义色，应用根统一派生完整 Token；选择被持久化，卸载时原子回退到内建中性主题；
 - Theme palette 现在还可选择性声明 `surfaces`（window/sidebar/panel/input/popover 的
   `#RRGGBB` 色值）、`material.window`（translucent/opaque）和
-  `material.elevation`（soft/flat，主工作区表面阴影）。没有覆盖的值继续由原算法生成。
+  `material.elevation`（soft/flat，主工作区表面阴影），以及 `material.finish`
+  （standard/frosted，共享光学材质，默认 standard）。frosted 让阅读面、卡片、
+  输入与触控表面消费共享材质角色；它不改变几何、焦点、滚动或输入所有权。
+  Web/Electron Renderer 统一投影不支持模糊、减少透明度和强制颜色的降级；
+  桌面窗口是否透明仍由 `material.window` 独立控制。See 是该材质的内置消费者。
+  没有覆盖的值继续由原算法生成，主题切换必须重置整组材质 token。
   注册层拒绝 CSS/URL、未知选项和不完整的明暗色板，并冻结嵌套数据。
   Web/Electron 已消费这些字段；Expo 动态主题不在本轮范围。完整链路见
   [Theme surfaces and native appearance](../platform/presentation-and-input.md#theme-surfaces-and-native-appearance)。

@@ -174,6 +174,19 @@ export function accumulatePreservedWheelDelta(
   };
 }
 
+/** Movement confirmed before any layout change is the user's. Wheel input it
+ * already delivered is consumed; movement in other forms carries no wheel. */
+export function rebasePreservedScrollLayout(
+  snapshot: PreservedScrollLayout,
+  physicalDistanceFromBottomPx: number,
+): PreservedScrollLayout {
+  const moved = clampScrollDistance(physicalDistanceFromBottomPx) - snapshot.distanceFromBottomPx;
+  const wheel = snapshot.wheelDistanceFromBottomPx;
+  const remaining = wheel > 0 ? Math.max(0, wheel - Math.max(0, moved))
+    : wheel < 0 ? Math.min(0, wheel - Math.min(0, moved)) : 0;
+  return { ...snapshot, distanceFromBottomPx: clampScrollDistance(physicalDistanceFromBottomPx), wheelDistanceFromBottomPx: remaining };
+}
+
 export function restoredDistanceAfterLayout(
   snapshot: PreservedScrollLayout,
   nextScrollHeightPx: number,

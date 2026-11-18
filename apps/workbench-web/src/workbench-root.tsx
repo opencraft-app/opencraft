@@ -1,3 +1,5 @@
+import { useSyncExternalStore } from 'react';
+import { IdentityAvatarContext } from '@opencraft/extension-react';
 import { TimelineBlockRendererProvider } from "@opencraft/timeline-render-react";
 import { WebChatRenderRuntimeProvider } from "@opencraft/chat-render-web";
 
@@ -54,7 +56,9 @@ function WorkbenchContent({
 }
 
 export function WorkbenchRoot({ application }: { readonly application: WebWorkbenchApplication }) {
-  return <AsyncNoticesProvider><BrowserInputNotices pages={application.browserPages} /><ApplicationDesktopProvider navigation={application.supervisor.navigation}>
+  const avatars = application.supervisor.identityAvatars;
+  const identityAvatar = useSyncExternalStore(avatars.subscribe, avatars.getSnapshot).contribution;
+  return <IdentityAvatarContext.Provider value={identityAvatar}><AsyncNoticesProvider><BrowserInputNotices pages={application.browserPages} /><ApplicationDesktopProvider navigation={application.supervisor.navigation}>
     <WorkbenchContent application={application} />
-  </ApplicationDesktopProvider></AsyncNoticesProvider>;
+  </ApplicationDesktopProvider></AsyncNoticesProvider></IdentityAvatarContext.Provider>;
 }

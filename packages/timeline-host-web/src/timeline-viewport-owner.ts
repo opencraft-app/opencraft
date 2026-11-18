@@ -35,6 +35,7 @@ export interface TimelineScrollController {
     origin?: "system" | "user",
   ): void;
   compensateScrollToDistanceFromBottomPx(distanceFromBottomPx: number): void;
+  compensateLayoutToDistanceFromBottomPx(distanceFromBottomPx: number, baseDistanceFromBottomPx: number): boolean;
   scrollToBottom(): void;
   preserveScrollPositionForNextLayout(): void;
   recordWheelDelta(deltaPx: number): void;
@@ -60,6 +61,14 @@ export class WebTimelineViewportOwner {
     this.native.attachScrollElement(element);
   };
 
+  // Message timelines include the measured dock in their own layout transaction.
+  readonly attachFooterElement = (element: HTMLElement | null): void => {
+    this.native.setFooterResizeViewportPreserveDisabled(true);
+    this.native.attachFooterElement(element);
+  };
+  readonly getFooterHeight = (): number => this.native.getFooterHeight();
+  readonly subscribeFooterHeight = (listener: () => void): (() => void) => this.native.subscribeFooterHeight(listener);
+
   setMeasurementListener(
     listener: ((batch: WebTimelineMeasurementBatch) => void) | null,
   ): void {
@@ -76,6 +85,11 @@ export class WebTimelineViewportOwner {
 
   observeEntry(timelineKey: string, element: HTMLDivElement | null): void {
     this.native.observeTurn(timelineKey, element);
+  }
+
+  /** Measure newly mounted rows before their estimated geometry can paint. */
+  measureNewlyMountedEntries(): readonly WebTimelineMeasurement[] {
+    return this.native.measureNewlyMountedTurns().map(({ turnKey, heightPx }) => ({ timelineKey: turnKey, heightPx }));
   }
 
   bindScrollBehavior(callbacks: WebConversationScrollBehavior): () => void {

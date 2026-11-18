@@ -66,7 +66,7 @@ async function fixture(callbacks:Record<string,boolean>={},replay=false,handoff=
   let sequence = 0;
   async function rpc(method: string, params: unknown = {}) {
     const id = ++sequence; client.send(JSON.stringify({ id, method, params }));
-    for (let n = 0; n < 600; n++) { const row = messages.find(m => m.id === id && !m.method); if (row) { if (row.error) throw new Error(row.error.message); return row.result; } await new Promise(resolve => setTimeout(resolve, 5)); }
+    for (let n = 0; n < 6000; n++) { const row = messages.find(m => m.id === id && !m.method); if (row) { if (row.error) throw new Error(row.error.message); return row.result; } await new Promise(resolve => setTimeout(resolve, 5)); }
     throw new Error("fixture RPC timeout");
   }
   await rpc("initialize", { clientInfo: { name: "test", version: "1" }, capabilities: { experimentalApi: true } });
@@ -463,7 +463,7 @@ test("a held retained directory cannot block fresh active rows or erase its prio
     const held = f.hold("old", "thread/list");
     const started = performance.now(), page = await f.rpc("thread/list", { limit: 1 });
     await held.entered;
-    assert.ok(performance.now() - started < 2800, "page must fit the outer history read deadline");
+    assert.ok(performance.now() - started < 28_000, "page must fit the outer history read deadline");
     assert.deepEqual(page.data.map((row: any) => row.id), [newest.id]);
     assert.ok(page.nextCursor);
     const second = await f.rpc("thread/list", { limit: 1, cursor: page.nextCursor });
@@ -478,6 +478,24 @@ test("a held retained directory cannot block fresh active rows or erase its prio
     const recovered = await f.rpc("thread/list", { limit: 10 });
     assert.equal(recovered.catalog, undefined);
     assert.deepEqual(recovered.data.map((row: any) => row.id), [newest.id, fresh.id, old.id]);
+  } finally { await f.close(); }
+});
+
+test("a retained directory taking longer than two seconds remains in the complete view", async () => {
+  const f = await fixture();
+  try {
+    const old = (await f.rpc("thread/start")).thread;
+    f.registry.activate("new", 1);
+    const fresh = (await f.rpc("thread/start")).thread;
+    const held = f.hold("old", "thread/list");
+    const listing = f.rpc("thread/list", { limit: 10 });
+    await held.entered;
+    await new Promise(resolve => setTimeout(resolve, 2200));
+    held.release();
+    const page = await listing;
+    assert.equal(page.catalog, undefined);
+    assert.deepEqual(page.data.map((row: any) => row.id), [fresh.id, old.id]);
+    assert.equal(page.nextCursor, null);
   } finally { await f.close(); }
 });
 

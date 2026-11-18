@@ -1,0 +1,586 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
+@use "@opencraft/design-system/controls.web" as controls;
+@use "@opencraft/design-system/menu.web" as menu;
+@use "@opencraft/design-system/empty-state.web" as empty-state;
+.workspace-resource-panel {
+  display: grid;
+  grid-template-columns: clamp(150px, 28%, 260px) minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--color-background-surface);
+  container: workspace-resource / inline-size;
+}
+
+.workspace-resource-panel[data-preview-only],
+.workspace-resource-panel[data-tree-collapsed] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workspace-file-browser {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border-subtle);
+  background: var(--color-background-elevated-secondary);
+}
+
+// Keep the tree mounted so closing it preserves directory/search/scroll state.
+.workspace-file-browser[hidden] {
+  display: none;
+}
+
+.workspace-file-tree-toggle {
+  flex: 0 0 auto;
+}
+
+.workspace-file-search {
+  display: flex;
+  height: 30px;
+  min-height: 30px;
+  margin: 7px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: 8px;
+  background: var(--color-background-surface);
+  color: var(--color-icon-tertiary);
+
+  input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-text);
+    font: var(--typography-metadata-font);
+    letter-spacing: var(--typography-metadata-tracking);
+  }
+}
+
+.workspace-file-tree {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0 4px 8px;
+  overflow: auto;
+}
+
+.workspace-file-tree[hidden] {
+  display: none;
+}
+
+.workspace-file-tree__canvas {
+  position: relative;
+}
+
+.workspace-file-tree__virtual-row {
+  position: absolute;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+}
+
+:root:not([data-touch-interaction]):not([data-pointer-focus]) .workspace-file-tree:focus-visible .workspace-file-tree__row[data-active] {
+  outline: 1px solid var(--color-ring, var(--focus-ring));
+  outline-offset: -1px;
+}
+
+.workspace-file-tree__virtual-row.workspace-file-tree__status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-block: 0;
+}
+
+.workspace-file-tree__row,
+.workspace-file-search-result {
+  width: 100%;
+  color: var(--color-text-secondary);
+  cursor: default;
+  text-align: left;
+  border: 0;
+  background: transparent;
+
+  &[data-selected="true"] {
+    background: var(--color-background-primary-ghost-hover);
+    color: var(--color-text);
+  }
+  @include controls.hover-capable {
+    &:hover {
+      background: var(--color-background-primary-ghost-hover);
+      color: var(--color-text);
+    }
+  }
+}
+
+.workspace-file-tree__row {
+  display: flex;
+  height: 25px;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding-block: 0;
+  padding-inline-end: 6px;
+  border-radius: 6px;
+  font: var(--typography-metadata-font);
+
+  > svg {
+    flex: 0 0 auto;
+  }
+
+  > span:not(.workspace-file-icon) {
+    overflow: hidden;
+    min-width: 0;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  letter-spacing: var(--typography-metadata-tracking)
+}
+
+.workspace-file-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  font: var(--typography-label-font);
+  letter-spacing: var(--font-tracking-normal);
+}
+.workspace-file-icon--css { background: var(--color-accent-blue); color: var(--color-text-on-accent); }
+.workspace-file-icon--javascript { background: var(--color-accent-purple); color: var(--color-text-on-accent); }
+.workspace-file-icon--typescript { background: var(--color-accent-blue); color: var(--color-text-on-accent); }
+
+.workspace-file-tree__status,
+.workspace-file-tree__empty {
+  display: flex;
+  min-height: 25px;
+  align-items: center;
+  gap: 5px;
+  color: var(--color-text-tertiary);
+  font: var(--typography-metadata-font);
+
+  &.is-error {
+    color: var(--color-text-danger, #b42318);
+  }
+
+  letter-spacing: var(--typography-metadata-tracking)
+}
+
+.workspace-file-tree__empty {
+  justify-content: center;
+  padding: 20px 8px;
+  text-align: center;
+}
+
+.workspace-file-search-result {
+  display: flex;
+  min-width: 0;
+  min-height: 42px;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 7px;
+  border-radius: 7px;
+
+  > svg {
+    flex: 0 0 auto;
+  }
+
+  > span:not(.workspace-file-icon) {
+    display: grid;
+    min-width: 0;
+  }
+
+  strong,
+  small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    font: var(--typography-metadata-font);
+    letter-spacing: var(--typography-metadata-tracking);
+  }
+
+  small {
+    color: var(--color-text-tertiary);
+    font: var(--typography-label-font);
+    letter-spacing: var(--typography-label-tracking);
+  }
+}
+
+.workspace-file-viewer {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--color-background-surface);
+  position: relative;
+}
+
+.workspace-file-viewer__header {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  height: auto;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  border-bottom: 1px solid var(--color-border-subtle);
+  color: var(--color-icon-secondary);
+
+  > span:not(.workspace-file-icon) {
+    display: grid;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  strong,
+  small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    color: var(--color-text);
+    font: var(--typography-label-font);
+    letter-spacing: var(--typography-label-tracking);
+  }
+
+  small {
+    color: var(--color-text-tertiary);
+    font: var(--typography-code-font);
+  }
+}
+
+.workspace-file-viewer__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+
+  a {
+    @include controls.density-target(26px, 26px);
+    display: inline-flex;
+    height: 26px;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--color-text-secondary);
+    font: var(--typography-label-font);
+    text-decoration: none;
+
+    @include controls.hover-capable {
+      &:hover:not(:disabled):not([aria-disabled="true"]) {
+        background: var(--color-background-button-tertiary-hover);
+        color: var(--color-text);
+      }
+    }
+
+    &:disabled,
+    &[aria-disabled="true"] {
+      opacity: 0.35;
+    }
+
+    letter-spacing: var(--typography-label-tracking)
+  }
+}
+
+.workspace-file-markdown {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  overflow-wrap: anywhere;
+}
+
+.workspace-file-html {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.workspace-file-viewer__state {
+  display: flex;
+  width: min(280px, calc(100% - 32px));
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  gap: 8px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  font: var(--typography-metadata-font);
+
+  &.is-error {
+    color: var(--color-text-danger, #b42318);
+  }
+
+  letter-spacing: var(--typography-metadata-tracking)
+}
+
+.workspace-file-source {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  margin: 0;
+  overflow: auto;
+  padding: 16px 18px 28px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text);
+  font: var(--typography-prose-code-font);
+
+  code { font: inherit; }
+  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
+}
+
+.workspace-code-editor {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  background: var(--color-background-surface);
+  color: var(--color-text);
+  overflow: hidden;
+
+  .cm-editor {
+    height: 100%;
+    background: transparent;
+    color: inherit;
+    font: var(--typography-prose-code-font);
+  }
+
+  .cm-editor.cm-focused { outline: none; }
+  .cm-scroller { padding: 10px 0 28px; }
+  .cm-content { padding: 0 12px 0 4px; caret-color: var(--color-text); }
+  .cm-line { padding: 0; }
+  .cm-gutters {
+    border-right: 1px solid var(--color-border-subtle);
+    background: var(--color-background-elevated-secondary);
+    color: var(--color-text-tertiary);
+  }
+  .cm-activeLine,
+  .cm-activeLineGutter { background: var(--color-background-primary-ghost-hover); }
+  .cm-selectionBackground { background: color-mix(in srgb, var(--color-accent-blue) 24%, transparent); }
+}
+
+.workspace-file-viewer__image {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  place-items: center;
+  padding: 18px;
+  overflow: auto;
+
+  > .opencraft-zoomable-image { width: 100%; height: 100%; max-height: 100%; }
+
+  img {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+
+  small {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--color-text-tertiary);
+    font: var(--typography-label-font);
+    letter-spacing: var(--typography-label-tracking);
+  }
+}
+
+.workspace-file-save-error {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  padding: 7px 9px;
+  border: 1px solid
+    color-mix(in srgb, var(--color-text-danger, #b42318) 35%, transparent);
+  border-radius: 7px;
+  background: var(--color-background-elevated-primary-opaque);
+  color: var(--color-text-danger, #b42318);
+  font: var(--typography-label-font);
+  box-shadow: var(--shadow-300);
+  letter-spacing: var(--typography-label-tracking);
+}
+
+.workspace-media-preview {
+  @include typography.role("body", secondary);
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  overflow: auto;
+  padding: 16px;
+  text-align: center;
+  video { max-width: 100%; max-height: calc(100% - 48px); }
+  audio { width: min(100%, 400px); }
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--color-border-subtle);
+    border-radius: 6px;
+    background: var(--color-background-surface);
+    color: var(--color-text);
+    font: inherit;
+    @include controls.hover-capable { &:hover { background: var(--color-background-button-tertiary-hover); } }
+  }
+}
+
+// Join file navigation. Geometry and state paint come from the shared
+// navigation/control tokens so files read like the sidebar, not a local skin.
+.workspace-file-tree { position: relative; }
+.workspace-file-tree__ruler {
+  position: absolute;
+  width: 0;
+  height: max(25px, var(--size-control-hit-min, 25px));
+  visibility: hidden;
+  pointer-events: none;
+}
+.workspace-file-feedback {
+  flex: 0 0 auto;
+  min-height: 28px;
+  max-height: 72px;
+  overflow: auto;
+  padding-inline: var(--padding-navigation-row-inline);
+  @include typography.role(metadata, secondary);
+}
+.workspace-file-drafts {
+  display: flex;
+  flex-wrap: wrap;
+  max-height: 120px;
+  overflow: auto;
+}
+
+// One search field for the tree and the folder filter, matching the sidebar search.
+.workspace-file-search {
+  box-sizing: border-box;
+  height: auto;
+  @include controls.density-target(0px, 30px);
+  gap: calc(var(--spacing) * 1.5);
+  padding: 0 calc(var(--spacing) * 2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: var(--color-background-control);
+  color: var(--color-text-tertiary);
+  > svg { flex: 0 0 auto; }
+  input { @include typography.role(navigation-label, primary); padding: 0; }
+  input::placeholder { color: var(--color-text-tertiary); }
+  &:focus-within { border-color: var(--color-border-focus); }
+}
+.workspace-file-search-result { min-height: var(--size-control-hit-min); }
+.workspace-file-viewer__actions { flex-wrap: wrap; }
+
+.workspace-file-menu { @include menu.surface; @include menu.list; z-index: var(--layer-menu, 90); }
+.workspace-file-menu__item { @include menu.item; text-decoration: none; }
+
+// The file surface owns navigation geometry; Shell retains the bottom dock.
+.workspace-resource-panel {
+  --workspace-folder-base: color-mix(in srgb, var(--color-accent-blue) 64%, var(--color-background-surface));
+  --workspace-folder-back: color-mix(in srgb, var(--color-accent-blue) 72%, var(--color-background-surface));
+  --workspace-folder-light: color-mix(in srgb, var(--color-accent-blue) 44%, var(--color-background-surface));
+  --workspace-directory-icon: 20px;
+}
+.workspace-folder-icon { flex: 0 0 auto; }
+.workspace-resource-panel .workspace-file-viewer__header {
+  flex-wrap: nowrap;
+  > span:not(.workspace-file-icon) { flex: 1 1 0; }
+  .workspace-file-viewer__actions { flex-wrap: nowrap; }
+}
+.workspace-resource-panel .workspace-file-feedback { min-height: 20px; }
+.workspace-resource-panel .workspace-file-back { display: none; }
+
+// Ancestors only: the current folder is the header title. One line, truncating.
+.workspace-resource-panel .workspace-file-path {
+  display: flex; align-items: center; flex: 0 0 auto; min-width: 0; overflow: hidden;
+  gap: calc(var(--spacing) * 0.5); padding-inline: calc(var(--spacing) * 3); white-space: nowrap;
+  > .ui-button { min-width: 0; flex: 0 1 auto; padding-inline: var(--spacing); @include typography.role(metadata, secondary); }
+  > .workspace-file-path__overflow { flex: 0 0 auto; color: var(--color-text-secondary); }
+  .ui-button__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .workspace-file-path__separator { flex: 0 0 auto; color: var(--color-text-tertiary); }
+}
+
+.workspace-directory { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.workspace-directory > .workspace-file-search { margin: calc(var(--spacing) * 2) calc(var(--spacing) * 3) var(--spacing); }
+.workspace-directory__list {
+  display: flex; flex-direction: column; gap: var(--gap-navigation-rows);
+  flex: 1; min-height: 0; overflow: auto;
+  padding: var(--spacing) calc(var(--spacing) * 3) calc(var(--spacing) * 4);
+}
+// Desktop rows are sidebar navigation rows: same height, type, hover/press/focus.
+.workspace-directory__row {
+  @include controls.navigation-control;
+  position: relative; flex: 0 0 auto;
+  min-height: max(var(--height-navigation-row), var(--size-control-hit-min));
+  padding: 0 var(--padding-navigation-row-inline);
+  &:active:not(:disabled) { background: var(--color-background-navigation-pressed); }
+  > .workspace-directory__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  > .workspace-directory__chevron { margin-inline-start: auto; flex: 0 0 auto; color: var(--color-text-tertiary); }
+}
+// Folder and file artwork share one box at every density.
+.workspace-directory__icon {
+  display: block; flex: 0 0 auto; overflow: visible;
+  width: var(--workspace-directory-icon); height: var(--workspace-directory-icon);
+  > * { display: block; width: 24px; height: 24px; transform: scale(var(--workspace-directory-icon-scale, .8333)); transform-origin: top left; }
+}
+.workspace-directory__state { @include empty-state.compact; flex: 1 1 auto; }
+
+.workspace-directory__tools { display: none; }
+@container workspace-resource (min-width: 641px) {
+  .workspace-resource-panel:not([data-tree-collapsed]) .workspace-directory__tools {
+    display: flex; justify-content: flex-end; padding: var(--spacing) calc(var(--spacing) * 3) 0;
+  }
+  .workspace-resource-panel:not([data-tree-collapsed]) .workspace-directory:not([data-filter-open]) > .workspace-file-search { display: none; }
+}
+
+// Phone: grouped list rhythm — full-height rows with inset hairlines, no pills.
+@container workspace-resource (max-width: 640px) {
+  .workspace-resource-panel { --workspace-directory-icon: 24px; --workspace-directory-icon-scale: 1; }
+  .workspace-directory__list { gap: 0; padding-inline: calc(var(--spacing) * 4); }
+  .workspace-directory > .workspace-file-search { margin-inline: calc(var(--spacing) * 4); }
+  .workspace-directory__row {
+    min-height: max(52px, var(--size-control-hit-min));
+    padding: 0;
+    gap: calc(var(--spacing) * 3);
+    border-radius: 0;
+    @include typography.role(body, primary);
+    &::after { content: ""; position: absolute; inset-inline: calc(var(--workspace-directory-icon) + var(--spacing) * 3) 0; bottom: 0; height: 1px; background: var(--color-border-subtle); }
+    &:last-child::after { display: none; }
+  }
+  .workspace-resource-panel > .workspace-file-browser { display: none; }
+  .workspace-resource-panel > .workspace-file-viewer { grid-column: 1 / -1; }
+  .workspace-resource-panel .workspace-file-tree-toggle { display: none; }
+  .workspace-resource-panel .workspace-file-back { display: inline-flex; }
+  .workspace-resource-panel .workspace-file-viewer__header { min-height: 48px; gap: var(--spacing); }
+  .workspace-resource-panel .workspace-file-path { max-height: 44px; padding-inline: calc(var(--spacing) * 4); }
+  .workspace-resource-panel .workspace-file-download { display: none; }
+}
+.workspace-resource-panel .workspace-file-viewer__header strong {
+  @include typography.role(body, primary);
+}
+
+.workspace-file-viewer:has(> .workspace-directory) > .workspace-file-feedback:empty { display: none; }

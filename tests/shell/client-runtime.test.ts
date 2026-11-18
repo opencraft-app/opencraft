@@ -12,7 +12,7 @@ function fixture(options: { apple?: boolean; cssStandalone?: boolean; electron?:
     opencraftDesktop: options.electron ? { kind: "electron", getWindowFullscreen: () => fullscreen,
       onWindowFullscreenChanged: (next: (value: boolean) => void) => { subscriptions++; listener = next; return () => { releases++; listener = undefined; }; } } : undefined });
   view.top = options.embedded ? {} : view;
-  const document = Object.assign(target, { defaultView: view, documentElement: { dataset: {}, clientWidth: 390 } }) as unknown as Document;
+  const document = Object.assign(target, { defaultView: view, getElementById: () => null, documentElement: { dataset: {}, clientWidth: 390 } }) as unknown as Document;
   const runtime = createClientRuntime(document);
   const touch = (clientX: number) => {
     const event = new Event("touchstart", { cancelable: true });
@@ -61,4 +61,33 @@ test("ElectronRuntime owns subscribe-before-read fullscreen state and releases t
   assert.deepEqual(f.counts(), { subscriptions: 1, releases: 0 });
   f.fullscreen(false); assert.equal(f.document.documentElement.dataset.opencraftWindowFullscreen, "false");
   f.runtime.dispose(); assert.deepEqual(f.counts(), { subscriptions: 1, releases: 1 });
+});
+
+
+test("document lifetime reserves pinch without consuming ordinary scroll, keyboard or component events", () => {
+  for (const options of [{}, { apple: true }, { electron: true }]) {
+    const f = fixture(options);
+    const send = (type: string, ctrlKey = false) => {
+      const event = new Event(type, { cancelable: true });
+      Object.defineProperty(event, "ctrlKey", { value: ctrlKey });
+      f.document.dispatchEvent(event); return event.defaultPrevented;
+    };
+    assert.equal(send("wheel", true), false);
+    f.runtime.start(); f.runtime.start();
+    assert.equal(send("wheel", true), true);
+    assert.equal(send("wheel"), false);
+    assert.equal(send("keydown", true), false);
+    assert.equal(send("gesturestart"), true);
+    assert.equal(send("gesturechange"), true);
+    let delivered = false;
+    const component = () => { delivered = true; };
+    f.document.addEventListener("wheel", component);
+    send("wheel", true);
+    assert.equal(delivered, true, "the component keeps receiving the gesture");
+    f.document.removeEventListener("wheel", component);
+    f.runtime.dispose(); f.runtime.dispose();
+    assert.equal(send("wheel", true), false);
+    assert.equal(send("gesturestart"), false);
+    assert.equal(send("gesturechange"), false);
+  }
 });

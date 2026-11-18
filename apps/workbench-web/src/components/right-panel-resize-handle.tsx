@@ -15,6 +15,7 @@ interface RightPanelResizeHandleProps {
   getMaximumSize(): number;
   onResize(size: number): void;
   onResizeEnd(size: number): void;
+  onResetSize?(): void;
   onResizingChange(resizing: boolean): void;
 }
 
@@ -36,6 +37,7 @@ export function RightPanelResizeHandle({
   getMaximumSize,
   onResize,
   onResizeEnd,
+  onResetSize,
   onResizingChange,
 }: RightPanelResizeHandleProps) {
   const intl = useIntl();
@@ -122,7 +124,8 @@ export function RightPanelResizeHandle({
     setResizing(false);
     onResizingChange(false);
     onResize(size);
-    onResizeEnd(size);
+    if (onResetSize) onResetSize();
+    else onResizeEnd(size);
   };
 
   const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {

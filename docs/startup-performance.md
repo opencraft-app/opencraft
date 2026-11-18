@@ -182,3 +182,21 @@ error annotation naming the scenario, metric, quantile, baseline, actual,
 percentage/millisecond change and budget; a measurement or behavior failure also
 emits an error and blocks publication. The baseline is never updated by release
 CI. Daily deployment and normal build gates remain outside this full suite.
+
+## Shared portrait and footer correction (2026-11-16)
+
+The required shared avatar owner settles native complete images before paint;
+there is no extra application readiness cache, request or optional dependency.
+The footer consumes the existing application-navigation gap at every width.
+The complete Join static graph measured 1,215,058 B gzip, 58 B above the prior
+cap. Reserve 500 B (cap 1,215,500 B) for these corrections and content-hash
+variance. Raw JS/CSS limits, 120 critical-JS requests and demand-only exclusions
+are unchanged; all budget negative controls remain enabled.
+
+Same-scenario loopback Chromium samples compared deployed ccdb12988 and the
+corrected full bundle at 390/1280px, gzip transport, fresh contexts and an
+unconnected Host. Both rendered without page errors or missing JS/CSS. Observed
+JS/CSS encoded bodies were 1,375,928/1,376,131 B before and
+1,366,084/1,364,442 B after. These visible-Shell samples include asynchronous
+activation, not just the conservative static closure, and are not latency/p95,
+physical-phone or authenticated end-to-end performance claims.

@@ -244,7 +244,10 @@ class RoutingSession {
       if (this.registry.valid(pending.ticket)) { pending.answered = true; const peer = (await pending.operation).peer; await lease?.sent(); peer.notify({ ...message, id: pending.nativeId }); }
       return;
     }
-    if (method === "opencraft/orchestration/ack") {
+    if (method === "opencraft/orchestration/private-capability") {
+      const {peer}=await this.peer(this.registry.current().generation.id);this.emit({id,result:await peer.call(method,params)});return;
+    }
+    if (method === "opencraft/orchestration/ack" || method === "opencraft/orchestration/publish") {
       const operationId = text(params.operationId), creationId = text(params.creationOperationId) || operationId;
       if (operationId !== creationId && operationId !== `${creationId}:title`) throw error("Invalid orchestration acknowledgement");
       let ticket:GenerationTicket|null;try{ticket = this.registry.creationTicket(creationId,true);}catch{this.emit({id,result:{acknowledged:true}});return;}

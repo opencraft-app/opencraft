@@ -1,4 +1,4 @@
-import { AttachmentChunkDeadline, type TransportSendProgressObserver } from "@opencraft/appserver-client/transport";
+import type { TransportSendProgressObserver } from "@opencraft/appserver-client/transport";
 import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { OPENCRAFT_STEER_EVIDENCE_EXTENSION, OPENCRAFT_STEER_EVIDENCE_NOTIFICATION, parseSteerStatusResult, parseSteerEvidenceCapability } from "@opencraft/appserver-protocol";
 import { supportsUnconfirmedDeliveryRetry, SHARED_INTERACTIONS_EXTENSION, humanInteractionWaitReason } from "@opencraft/appserver-protocol";
@@ -11,6 +11,7 @@ import type { HostComposerCommandPort } from "./host-composer-commands";
 import { MCP_APPS_NAMESPACE } from "@opencraft/appserver-protocol/mcp-apps";
 import type { ConversationOutboxStorage } from "@opencraft/chat-runtime";
 import { ConnectionLifecycleOwner, type ConnectionAttempt } from "./connection-lifecycle";
+import { AttachmentChunkDeadline } from "./attachment-upload";
 import { recoveryNow } from "./recovery-clock";
 import { ConversationRecoveryOwner, type RecoveryDemand } from "./recovery-policy";
 import {
@@ -111,6 +112,9 @@ import {
 import {
   asHostId,
   createConversationKey,
+  belongsInOrdinaryConversationCatalog,
+  independentConversationOwnership,
+  type ConversationOwnership,
   type HostId,
   type TurnId,
 } from "@opencraft/chat-core";
@@ -133,7 +137,7 @@ import {
   createAppServerConversationCommandPort,
   type FuzzyFileSearchSession,
   type FuzzyFileSearchSessionOptions,
-} from "@opencraft/composer-appserver";
+} from "@opencraft/composer-appserver/runtime";
 import type { ModelSelectionPolicy, SubmissionReceipt, SubmitIntent } from "@opencraft/composer-core";
 import {
   ConversationNavigationController,
@@ -295,9 +299,12 @@ export interface AppServerThreadResourcePort {
   unarchive?(threadId: string): Promise<ProtocolThread>;
   injectItems?(threadId: string, items: ThreadInjectItemsParams["items"]): Promise<void>;
   supportsSideChat?(threadId?: string): boolean;
+  configureSideChat?(threadId: string, instructions: string): Promise<void>;
+  sideChatBoundary?(threadId?: string): "inject-items" | "thread-settings" | null;
   list(params?: Partial<ThreadListParams>): Promise<ThreadListResponse>;
   start(options: StartThreadOptions): Promise<ProtocolThread>;
-  fork?(params: ThreadForkParams): Promise<ProtocolThread>;
+  /** Native provenance is in params; product ownership is a separate concern. */
+  fork?(params: ThreadForkParams, options?: { readonly deduplicate?: boolean; readonly ownership?: ConversationOwnership }): Promise<ProtocolThread>;
   unsubscribe?(threadId: string): Promise<void>;
 }
 
@@ -417,6 +424,8 @@ export interface AppServerWorkbenchRuntime {
   connect(): Promise<void>;
   reconnect(): Promise<void>;
   acquireThread(threadId: string): Promise<AppServerThreadRuntimeLease>;
+  /** Borrow an already resident body synchronously, without connecting or admitting I/O. */
+  tryAcquireThread(threadId: string): AppServerThreadRuntimeLease | null;
   /** Local input only; this creates no Client, Thread lease or execution authority. */
   localOutbox?(threadId: string): ConversationOutbox | null;
   /**
@@ -448,6 +457,8 @@ export interface AppServerThreadRuntimeLease {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  abandonUnknownSubmission(commandId: string): Promise<void>;
+  retryQueuedSubmission(commandId: string): Promise<void>;
   retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
@@ -620,7 +631,7 @@ export function createAppServerWorkbenchRuntime(
     capability: threadId => parseThreadGoalCapability(executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_GOAL_EXTENSION)),
     get: (threadId) => requireClient().request("thread/goal/get", { threadId }),
     set: (threadId, change) => requireClient().request("thread/goal/set", { threadId, ...change }),
-    clear: (threadId) => requireClient().request("thread/goal/clear", { threadId }),
+    clear: (threadId, change) => requireClient().request("thread/goal/clear", { threadId, ...change }),
   });
   const turnRecovery = new ThreadRecoveryResource({
     supported: threadId => executionEngineExtension(client?.initializeResult?.capabilities?.extensions, threadId, TURN_RECOVERY_EXTENSION)?.version === 1,
@@ -1279,11 +1290,18 @@ export function createAppServerWorkbenchRuntime(
         });
       });
       let previousActivity = bindingActivity(binding);
+      let receiptScope = "";
       binding.removeRuntimeListener = conversation.subscribe(() => {
         if (binding.disposed) return;
         const previousAcceptedCount = binding.acceptedTurnIds.size;
         const previousPhase = binding.phase;
         const currentSnapshot = binding.runtime.getSnapshot();
+        const receiptFrames=currentSnapshot.timeline.frames;
+        const nextScope=`${receiptFrames.length}:${receiptFrames[0]?.turnId??''}:${receiptFrames.at(-1)?.turnId??''}:${currentSnapshot.history.loading}`;
+        if (currentSnapshot.authoritative && nextScope!==receiptScope) {
+          receiptScope=nextScope;
+          queueMicrotask(()=>{if(!binding.disposed) void binding.refreshQueue?.().catch(()=>undefined);});
+        }
         for (const turnId of binding.acceptedTurnIds) {
           const frame = currentSnapshot.timeline.frames.find(
             (candidate) => candidate.turnId === turnId,
@@ -1334,6 +1352,7 @@ export function createAppServerWorkbenchRuntime(
                   threadId,
                   cursor,
                   limit: 100,
+                  receiptTurnIds: [...new Set(conversation!.getSnapshot().timeline.frames.map(frame => String(frame.turnId)))],
                 },
                 { priority: "background" },
               );
@@ -1557,7 +1576,7 @@ export function createAppServerWorkbenchRuntime(
         stopPreview = currentSession.views.subscribeThread(binding.threadId, () => {
           const view = currentSession.views.get(binding.threadId);
           if (current() && view?.resumeState === "resuming" && view.historySource === "message-window") {
-            binding.replica.reportPreview(binding.threadId, projectThreadViewForReplica(view));
+            binding.replica.reportPreview(binding.threadId, projectThreadViewForReplica(view), { preserveExisting: true });
           }
         });
         const extensions = requireClient().initializeResult?.capabilities?.extensions;
@@ -1582,8 +1601,10 @@ export function createAppServerWorkbenchRuntime(
           }
           if (!current()) throw new AppServerClientError("ABORTED", "Thread recovery was superseded");
           if (legacyWindow) void recovery.span("capability-ready", () => ensureBindingCapabilities(binding)).catch(() => undefined);
-          // Passive snapshots recover independently of any further model/tool activity.
-          if (interactions) await interactions.sync(binding.threadId);
+          // Passive approvals have their own source/connection revision fences. Their
+          // network read must not hold up a verified history replica or turn an
+          // interaction-only failure into a transcript recovery failure.
+          if (interactions) void recovery.span("interaction-ready", () => interactions!.sync(binding.threadId)).catch(() => undefined);
         } finally { stopPreview?.(); }
         const source = createThreadViewReplicaSource(
           currentSession.views,
@@ -1821,8 +1842,12 @@ export function createAppServerWorkbenchRuntime(
         if (attempt && !attempt.signal.aborted) {
           // Observers never throw into the shared socket's frame dispatcher.
           try {
-            if (status.state === "connecting" && status.connectionStage)
-              attempt.progress(status.connectionStage, status.connectionStage === "bridge" ? 15_000 : 35_000);
+            // The bridge stage covers DNS, TCP, TLS, WebSocket upgrade and the App Host
+            // ready frame. Keep it longer than that handshake on high-latency links.
+            if (status.state === "connecting" && status.connectionStage === "retry")
+              attempt.waitForRetry(status.retryAfterMs ?? 0);
+            else if (status.state === "connecting" && status.connectionStage)
+              attempt.progress(status.connectionStage, status.connectionStage === "bridge" ? 25_000 : 35_000);
             if (status.state === "open" && observedClient.initializeResult === null)
               attempt.progress("initialize", Math.max(30_000, config.requestTimeoutMs ?? 30_000) + 5_000);
           } catch { return; }
@@ -2033,6 +2058,178 @@ export function createAppServerWorkbenchRuntime(
     }
     return owner;
   };
+  const leaseBinding = (binding: ConversationBinding, recover: boolean): AppServerThreadRuntimeLease => {
+    const threadId = binding.threadId;
+    binding.retainCount += 1;
+    touchBinding(binding);
+    binding.phase =
+      binding.hydrationOperation === null ? "resident" : binding.phase;
+    publish();
+    if (recover && !binding.runtime.getSnapshot().authoritative) {
+      // A retained Timeline remains readable while recovery runs. Only Resume
+      // plus canonical history can restore authority; local borrowing does not.
+      if (client?.status.state === "open") void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
+        run: signal => hydrateBinding(binding, false, true, undefined, signal), retryable: retryableHistoryFailure,
+      }).catch(() => undefined);
+    }
+    let released = false;
+    let visible = false;
+    const runCommand = <T>(operation: () => Promise<T>): Promise<T> => {
+      if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+      return runBindingCommand(binding, operation);
+    };
+    return {
+      threadId,
+      setRecoveryVisibility(next: boolean) {
+        if (released || visible === next) return;
+        visible = next; binding.visibleCount += next ? 1 : -1;
+        if (next && phase === "ready" && !binding.runtime.getSnapshot().authoritative) {
+          // Promote this binding's pending recovery without revalidating peer
+          // Threads or restoring Host resources on ordinary navigation.
+          void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
+            run: signal => hydrateBinding(binding, false, true, undefined, signal), retryable: retryableHistoryFailure,
+          }).catch(() => undefined);
+        }
+      },
+      getSnapshot: binding.runtime.getSnapshot,
+      retryRestore() {
+        if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+        const checkpoint = captureHistoryCheckpoint(binding);
+        binding.replica.reportSyncStarted();
+        recovery.begin("revalidate");
+        return recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
+          run: signal => recovery.span("history-authoritative", () => hydrateBinding(binding, true, true, checkpoint, signal)),
+          retryable: retryableHistoryFailure, propagateFailure: true,
+        }, true);
+      },
+      async refreshHistory(signal) {
+        if (released || binding.disposed || signal?.aborted) return false;
+        const snapshot = binding.runtime.getSnapshot();
+        if (phase !== "ready" || !snapshot.authoritative || snapshot.activeTurn !== null || binding.pendingCommandCount > 0 || binding.acceptedTurnIds.size > 0) return false;
+        return requireSession().resume.refreshHistory(threadId, signal);
+      },
+      subscribe(listener) {
+        if (released || binding.disposed)
+          throw new Error(`Thread ${threadId} lease is released`);
+        binding.subscriberCount += 1;
+        touchBinding(binding);
+        publish();
+        const remove = binding.runtime.subscribe(listener);
+        let removed = false;
+        return () => {
+          if (removed) return;
+          removed = true;
+          remove();
+          binding.subscriberCount = Math.max(0, binding.subscriberCount - 1);
+          retireUnobservedHistory(binding);
+          touchBinding(binding);
+          pruneInactiveBindings();
+          publish();
+        };
+      },
+      submit: (intent) =>
+        runCommand(async () => {
+          if (executionStatusForThread(snapshot.transport, threadId) !== "ready" && (intent.target.type === "existing-thread" || intent.target.type === "steer-active-turn")) {
+            intent = {...intent, target: {type: "enqueue-follow-up", key: intent.target.key}};
+          }
+          // Refuse before Conversation adopts the immutable draft/optimistic
+          // queue. Transport failure after adoption is a different boundary.
+          if (!config.outbox || (phase === "ready" && binding.runtime.getSnapshot().authoritative && !binding.runtime.getSnapshot().queuedSubmissions.some(item => item.local))) assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
+            : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start");
+          // Online first inputs can own ready asset/context references while
+          // the new Thread is still hydrating. Keep that custody on this
+          // command; the offline text outbox cannot persist these handles.
+          if (phase === "ready" && !binding.runtime.getSnapshot().authoritative
+            && (intent.attachments.length > 0 || intent.context.length > 0)) {
+            assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
+              : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start");
+            await hydrateBinding(binding, false);
+            if (released || binding.disposed) throw new Error(`Thread ${threadId} lease is released`);
+          }
+          const invalidateQueueRead = () => {
+            if (intent.target.type === "enqueue-follow-up" && binding.queueRefreshOperation !== null)
+              binding.queueRefreshRequested = true;
+          };
+          // A read started before local admission cannot remove its pending
+          // row, even when the Host's change notification has not arrived yet.
+          invalidateQueueRead();
+          try {
+            const receipt = await binding.runtime.submit(intent);
+            if (receipt.turnId !== null)
+              retainAcceptedTurn(binding, receipt.turnId);
+            return receipt;
+          } finally {
+            invalidateQueueRead();
+          }
+        }),
+      interrupt: (turnId, provenance) =>
+        runCommand(() => binding.runtime.interrupt(turnId, provenance)),
+      continueTurn: (turnId) =>
+        runCommand(async () => {
+          const receipt = await binding.runtime.continueTurn(turnId);
+          if (receipt.turnId !== null)
+            retainAcceptedTurn(binding, receipt.turnId);
+          return receipt;
+        }),
+      respond: (response) =>
+        runCommand(() => binding.runtime.respond(response)),
+      updateQueuedSubmission: (queuedSubmissionId, input) =>
+        runCommand(() =>
+          binding.runtime.updateQueuedSubmission(queuedSubmissionId, input),
+        ),
+      abandonUnknownSubmission: commandId => runCommand(() => binding.runtime.abandonUnknownSubmission(commandId)),
+      retryQueuedSubmission: commandId => runCommand(() => binding.runtime.retryQueuedSubmission(commandId)),
+      deleteQueuedSubmission: (queuedSubmissionId) =>
+        runCommand(() =>
+          binding.runtime.deleteQueuedSubmission(queuedSubmissionId),
+        ),
+      retryUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
+        runCommand(() => binding.runtime.retryUnconfirmedSteer(queuedSubmissionId, expectedTurnId)),
+      discardUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
+        runCommand(() =>
+          binding.runtime.discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId),
+        ),
+      reorderQueuedSubmissions: (queuedSubmissionIds) =>
+        runCommand(() =>
+          binding.runtime.reorderQueuedSubmissions(queuedSubmissionIds),
+        ),
+      startQueuedSubmission: (queuedSubmissionId) =>
+        runCommand(async () => {
+          const turnId =
+            await binding.runtime.startQueuedSubmission(queuedSubmissionId);
+          retainAcceptedTurn(binding, turnId);
+          return turnId;
+        }),
+      steerQueuedSubmission: (queuedSubmissionId) =>
+        runCommand(async () => {
+          const turnId =
+            await binding.runtime.steerQueuedSubmission(queuedSubmissionId);
+          retainAcceptedTurn(binding, turnId);
+          return turnId;
+        }),
+      loadOlder: () => {
+        if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+        return binding.runtime.loadOlder();
+      },
+      loadItemDetails: (itemIds, signal) => {
+        if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
+        return requireSession().resume.loadItemDetails(threadId, itemIds, signal);
+      },
+      getNavigation: () => binding.navigation,
+      release() {
+        if (released) return;
+        released = true;
+        if (visible) binding.visibleCount = Math.max(0, binding.visibleCount - 1);
+        binding.retainCount = Math.max(0, binding.retainCount - 1);
+        retireUnobservedHistory(binding);
+        if (recoveryDemand(binding) === "cache") { recovery.remove(binding); binding.cancelHydration?.(); }
+        touchBinding(binding);
+        pruneInactiveBindings();
+        publish();
+      },
+    } satisfies AppServerThreadRuntimeLease;
+  };
+
   const runtime: AppServerWorkbenchRuntime = {
     resources: {
       protocol: {
@@ -2108,14 +2305,32 @@ export function createAppServerWorkbenchRuntime(
         },
         supportsSideChat(threadId) {
           const capability = parseThreadLifecycleCapability(executionEngineExtension(requireClient().initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION));
-          return (capability?.fork === true || capability?.ephemeralFork === true) && capability.ephemeral === true && capability.injectItems === true && capability.unsubscribe === true;
+          return capability?.fork === true && (capability.injectItems === true || capability.sideChatSettings === true) && capability.unsubscribe === true;
+        },
+        sideChatBoundary(threadId) {
+          const capability = parseThreadLifecycleCapability(executionEngineExtension(requireClient().initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION));
+          if (!capability?.fork || !capability.unsubscribe) return null;
+          return capability.injectItems ? "inject-items" : capability.sideChatSettings ? "thread-settings" : null;
+        },
+        async configureSideChat(threadId, instructions) {
+          const current = requireClient();
+          const capability = parseThreadLifecycleCapability(executionEngineExtension(current.initializeResult?.capabilities?.extensions, threadId, OPENCRAFT_THREAD_LIFECYCLE_EXTENSION));
+          if (!capability?.sideChatSettings) throw new Error("This host cannot apply side chat instructions");
+          const source = await current.request("thread/resume", { threadId, excludeTurns: true });
+          if (client !== current) throw new Error("Side chat Host changed during preparation");
+          await current.request("thread/settings/update", { threadId, collaborationMode: {
+            mode: "default", settings: { model: source.model, reasoning_effort: typeof source.reasoningEffort === "string" ? source.reasoningEffort : null, developer_instructions: instructions },
+          } });
         },
         async injectItems(threadId, items) {
           await requireClient().request("thread/inject_items", { threadId, items: [...items] });
         },
-        async fork(params) {
-          const forkKey = JSON.stringify(params);
-          const existing = params.ephemeral === true ? undefined : forkOperations.get(forkKey);
+        async fork(params, options) {
+          const ownership = options?.ownership ?? independentConversationOwnership;
+          if (ownership.kind === 'side-chat' && ownership.owner.hostId !== hostId) throw new Error('Side chat owner must belong to this Host');
+          const forkKey = JSON.stringify([params, ownership]);
+          const deduplicate = params.ephemeral !== true && options?.deduplicate !== false;
+          const existing = deduplicate ? forkOperations.get(forkKey) : undefined;
           if (existing) return existing;
           const operation = (async () => {
             const currentClient = requireClient();
@@ -2129,12 +2344,12 @@ export function createAppServerWorkbenchRuntime(
             requireSession().resume.adoptFork(response, generation);
             if (params.ephemeral === true) {
               ephemeralThreadIds.add(response.thread.id);
-            } else {
+            } else if (belongsInOrdinaryConversationCatalog(ownership)) {
               unlistedForks.set(response.thread.id, { ...response.thread, turns: [] });
             }
             return response.thread;
           })();
-          if (params.ephemeral !== true) {
+          if (deduplicate) {
             forkOperations.set(forkKey, operation);
             const clear = () => { if (forkOperations.get(forkKey) === operation) forkOperations.delete(forkKey); };
             void operation.then(clear, clear);
@@ -2461,15 +2676,15 @@ export function createAppServerWorkbenchRuntime(
         },
       },
       terminal: {
-        attach(processId) {
+        attach(processId, scope) {
           assertMethodAccess("process/attach");
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
-          return terminalController.attach(processId);
+          return terminalController.attach(processId, scope);
         },
-        list() {
-          if (!canRequest("process/list")) return Promise.resolve({ processes: [] });
+        list(scope) {
+          if (!canRequest("process/list")) return Promise.reject(new Error("Terminal directory is unavailable for this Host"));
           if (phase !== "ready" || terminalController === null) throw new Error("Terminal Host is not ready");
-          return terminalController.list();
+          return terminalController.list(scope);
         },
         open(options) {
           assertMethodAccess("process/spawn");
@@ -2502,174 +2717,19 @@ export function createAppServerWorkbenchRuntime(
         await runtime.connect();
         binding = await createBinding(threadId);
         if (disposed || binding.disposed) throw new Error(`Thread ${threadId} is disposed`);
-        binding.retainCount += 1;
       } finally {
         const remaining = (pendingViewAcquires.get(threadId) ?? 1) - 1;
         if (remaining > 0) pendingViewAcquires.set(threadId, remaining);
         else pendingViewAcquires.delete(threadId);
       }
-      touchBinding(binding);
-      binding.phase =
-        binding.hydrationOperation === null ? "resident" : binding.phase;
-      publish();
-      if (!binding.runtime.getSnapshot().authoritative) {
-        // Acquisition does not wait on the network waterfall, but the V3 View
-        // adapter must publish no persisted Timeline before Resume. The single
-        // authoritative promotion happens after Resume + history settle.
-        if (client?.status.state === "open") void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-          run: signal => hydrateBinding(binding, false, true, undefined, signal), retryable: retryableHistoryFailure,
-        }).catch(() => undefined);
-      }
-      let released = false;
-      let visible = false;
-      return {
-        threadId,
-        setRecoveryVisibility(next: boolean) {
-          if (released || visible === next) return;
-          visible = next; binding.visibleCount += next ? 1 : -1;
-          if (next && phase === "ready" && !binding.runtime.getSnapshot().authoritative) {
-            // Promote this binding's pending recovery without revalidating peer
-            // Threads or restoring Host resources on ordinary navigation.
-            void recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-              run: signal => hydrateBinding(binding, false, true, undefined, signal), retryable: retryableHistoryFailure,
-            }).catch(() => undefined);
-          }
-        },
-        getSnapshot: binding.runtime.getSnapshot,
-        retryRestore() {
-          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
-          const checkpoint = captureHistoryCheckpoint(binding);
-          binding.replica.reportSyncStarted();
-          recovery.begin("revalidate");
-          return recovery.recover({ key: binding, demand: () => recoveryDemand(binding),
-            run: signal => recovery.span("history-authoritative", () => hydrateBinding(binding, true, true, checkpoint, signal)),
-            retryable: retryableHistoryFailure, propagateFailure: true,
-          }, true);
-        },
-        async refreshHistory(signal) {
-          if (released || binding.disposed || signal?.aborted) return false;
-          const snapshot = binding.runtime.getSnapshot();
-          if (phase !== "ready" || !snapshot.authoritative || snapshot.activeTurn !== null || binding.pendingCommandCount > 0 || binding.acceptedTurnIds.size > 0) return false;
-          return requireSession().resume.refreshHistory(threadId, signal);
-        },
-        subscribe(listener) {
-          if (released || binding.disposed)
-            throw new Error(`Thread ${threadId} lease is released`);
-          binding.subscriberCount += 1;
-          touchBinding(binding);
-          publish();
-          const remove = binding.runtime.subscribe(listener);
-          let removed = false;
-          return () => {
-            if (removed) return;
-            removed = true;
-            remove();
-            binding.subscriberCount = Math.max(0, binding.subscriberCount - 1);
-            retireUnobservedHistory(binding);
-            touchBinding(binding);
-            pruneInactiveBindings();
-            publish();
-          };
-        },
-        submit: (intent) =>
-          runBindingCommand(binding, async () => {
-            if (executionStatusForThread(snapshot.transport, threadId) !== "ready" && (intent.target.type === "existing-thread" || intent.target.type === "steer-active-turn")) {
-              intent = {...intent, target: {type: "enqueue-follow-up", key: intent.target.key}};
-            }
-            // Refuse before Conversation adopts the immutable draft/optimistic
-            // queue. Transport failure after adoption is a different boundary.
-            if (!config.outbox || (phase === "ready" && binding.runtime.getSnapshot().authoritative && !binding.runtime.getSnapshot().queuedSubmissions.some(item => item.local))) assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
-              : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start");
-            // Online first inputs can own ready asset/context references while
-            // the new Thread is still hydrating. Keep that custody on this
-            // command; the offline text outbox cannot persist these handles.
-            if (phase === "ready" && !binding.runtime.getSnapshot().authoritative
-              && (intent.attachments.length > 0 || intent.context.length > 0)) {
-              assertMethodAccess(intent.target.type === "enqueue-follow-up" ? "thread/queue/add"
-                : intent.target.type === "steer-active-turn" ? "turn/steer" : "turn/start");
-              await hydrateBinding(binding, false);
-              if (released || binding.disposed) throw new Error(`Thread ${threadId} lease is released`);
-            }
-            const invalidateQueueRead = () => {
-              if (intent.target.type === "enqueue-follow-up" && binding.queueRefreshOperation !== null)
-                binding.queueRefreshRequested = true;
-            };
-            // A read started before local admission cannot remove its pending
-            // row, even when the Host's change notification has not arrived yet.
-            invalidateQueueRead();
-            try {
-              const receipt = await binding.runtime.submit(intent);
-              if (receipt.turnId !== null)
-                retainAcceptedTurn(binding, receipt.turnId);
-              return receipt;
-            } finally {
-              invalidateQueueRead();
-            }
-          }),
-        interrupt: (turnId, provenance) =>
-          runBindingCommand(binding, () => binding.runtime.interrupt(turnId, provenance)),
-        continueTurn: (turnId) =>
-          runBindingCommand(binding, async () => {
-            const receipt = await binding.runtime.continueTurn(turnId);
-            if (receipt.turnId !== null)
-              retainAcceptedTurn(binding, receipt.turnId);
-            return receipt;
-          }),
-        respond: (response) =>
-          runBindingCommand(binding, () => binding.runtime.respond(response)),
-        updateQueuedSubmission: (queuedSubmissionId, input) =>
-          runBindingCommand(binding, () =>
-            binding.runtime.updateQueuedSubmission(queuedSubmissionId, input),
-          ),
-        deleteQueuedSubmission: (queuedSubmissionId) =>
-          runBindingCommand(binding, () =>
-            binding.runtime.deleteQueuedSubmission(queuedSubmissionId),
-          ),
-        retryUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
-          runBindingCommand(binding, () => binding.runtime.retryUnconfirmedSteer(queuedSubmissionId, expectedTurnId)),
-        discardUnconfirmedSteer: (queuedSubmissionId, expectedTurnId) =>
-          runBindingCommand(binding, () =>
-            binding.runtime.discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId),
-          ),
-        reorderQueuedSubmissions: (queuedSubmissionIds) =>
-          runBindingCommand(binding, () =>
-            binding.runtime.reorderQueuedSubmissions(queuedSubmissionIds),
-          ),
-        startQueuedSubmission: (queuedSubmissionId) =>
-          runBindingCommand(binding, async () => {
-            const turnId =
-              await binding.runtime.startQueuedSubmission(queuedSubmissionId);
-            retainAcceptedTurn(binding, turnId);
-            return turnId;
-          }),
-        steerQueuedSubmission: (queuedSubmissionId) =>
-          runBindingCommand(binding, async () => {
-            const turnId =
-              await binding.runtime.steerQueuedSubmission(queuedSubmissionId);
-            retainAcceptedTurn(binding, turnId);
-            return turnId;
-          }),
-        loadOlder: () => {
-          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
-          return binding.runtime.loadOlder();
-        },
-        loadItemDetails: (itemIds, signal) => {
-          if (released || binding.disposed) return Promise.reject(new Error(`Thread ${threadId} lease is released`));
-          return requireSession().resume.loadItemDetails(threadId, itemIds, signal);
-        },
-        getNavigation: () => binding.navigation,
-        release() {
-          if (released) return;
-          released = true;
-          if (visible) binding.visibleCount = Math.max(0, binding.visibleCount - 1);
-          binding.retainCount = Math.max(0, binding.retainCount - 1);
-          retireUnobservedHistory(binding);
-          if (recoveryDemand(binding) === "cache") { recovery.remove(binding); binding.cancelHydration?.(); }
-          touchBinding(binding);
-          pruneInactiveBindings();
-          publish();
-        },
-      } satisfies AppServerThreadRuntimeLease;
+      return leaseBinding(binding, true);
+    },
+    tryAcquireThread(nextThreadId) {
+      const threadId = requireThreadId(nextThreadId);
+      const binding = bindings.get(threadId);
+      if (disposed || !binding || binding.disposed || unavailableThreads.has(threadId)
+        || detachOperations.has(threadId)) return null;
+      return leaseBinding(binding, false);
     },
     async createThread(intent) {
       if (intent.target.type !== "new-thread") {

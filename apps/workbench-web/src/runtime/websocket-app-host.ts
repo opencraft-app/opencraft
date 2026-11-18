@@ -2,7 +2,8 @@ import { WebSocketSendProgress } from "@opencraft/appserver-transport-websocket"
 import { AppHostAdmissionError } from './app-host-admission';
 import type { TransportSendProgressOptions } from "@opencraft/appserver-client/transport";
 import { createPagePauseDiagnostics, type PagePauseDiagnostic } from "./page-pause-diagnostics";
-import { serverFetch, serverUrl } from "./server-context";
+import { serverUrl } from "./server-context";
+import { isLocalDiagnosticsEnabled } from "./local-diagnostics";
 import { observeEvent } from "./observability";
 import { exponentialBackoffMs, retryDelayMs, wasEstablished } from "@opencraft/workbench-runtime/retry-schedule";
 import {
@@ -105,7 +106,8 @@ interface AppHostConnectionDiagnostic extends PagePauseDiagnostic {
 }
 
 function reportAppHostConnectionFailure(diagnostic: AppHostConnectionDiagnostic): void {
-  // The queued observation survives temporary disconnection and is attributable
+  if (!isLocalDiagnosticsEnabled()) return;
+  // The local observation survives temporary disconnection and is attributable
   // to the same producer/physical attempt as recovery events. No error text/URL.
   observeEvent({ kind: "client_signal", clientSignal: "transport_failure", outcome: "failed",
     attemptId: diagnostic.attemptId, at: diagnostic.eventAtMs,
@@ -124,16 +126,7 @@ function reportAppHostConnectionFailure(diagnostic: AppHostConnectionDiagnostic)
     ...(diagnostic.pageResumeAgoMs === undefined ? {} : { pageResumeAgoMs: diagnostic.pageResumeAgoMs }),
     ...(diagnostic.pageHiddenForMs === undefined ? {} : { pageHiddenForMs: diagnostic.pageHiddenForMs }),
     measurementScope: "connection" });
-  console.info("[opencraft apphost failure]", diagnostic);
-  if (typeof globalThis.fetch !== "function") return;
-  try {
-    void serverFetch("/__opencraft_apphost_diagnostic", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(diagnostic),
-      keepalive: true,
-    }).catch(() => undefined);
-  } catch { /* Diagnostics must never alter transport behavior. */ }
+
 }
 
 class WebSocketAppHostPort {

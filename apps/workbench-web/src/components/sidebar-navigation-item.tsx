@@ -19,8 +19,8 @@ export function SidebarNavigationItem({
       aria-current={active ? "page" : undefined}
       onClick={onInvoke}
     >
-      <span className="sidebar-navigation-item__icon" aria-hidden="true">{icon}</span>
-      <span>{title}</span>
+      <span className="sidebar-navigation-item__icon" data-navigation-leading="" aria-hidden="true">{icon}</span>
+      <span data-navigation-label="">{title}</span>
     </NavigationItem>
   );
 }

@@ -10,8 +10,16 @@
 }
 
 // The list owns the Shell surface inset; consumers must not add a second gutter.
-.ui-navigation-list[data-navigation-inset="sidebar"] {
+.ui-navigation-list:is([data-navigation-inset="sidebar"], [data-navigation-inset="contained"]) {
   padding-inline: var(--padding-sidebar-content-inline);
+  --height-navigation-row: var(--height-sidebar-navigation-row);
+  --gap-navigation-rows: var(--gap-sidebar-navigation-rows);
+  gap: var(--gap-sidebar-navigation-rows);
+  --size-icon-navigation: var(--size-sidebar-navigation-icon);
+  --stroke-icon-navigation: var(--stroke-sidebar-navigation-icon);
+  --size-navigation-leading-slot: var(--size-sidebar-navigation-leading-slot);
+  --gap-navigation-row-content: var(--gap-sidebar-navigation-icon-label);
+  --padding-navigation-row-inline: var(--padding-sidebar-navigation-row-inline);
   // Evaluate row geometry in the current density/presentation, not at :root.
   --offset-navigation-content-inline: var(--padding-navigation-row-inline);
   // Artwork may retain its semantic size; labels still start in one column.
@@ -19,7 +27,19 @@
     display: grid;
     text-align: start;
     grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
-    > svg.ui-action-glyph { margin-inline: 0; justify-self: start; }
+    > svg.ui-action-glyph, > [data-navigation-leading] > svg.ui-action-glyph {
+      margin-inline: 0;
+      justify-self: start;
+      color: var(--color-sidebar-navigation-icon);
+      stroke-width: var(--stroke-sidebar-navigation-icon);
+    }
+  }
+}
+
+.ui-navigation-list[data-navigation-inset="contained"] {
+  padding-inline: 0;
+  .ui-navigation-item[data-content-layout="row"] {
+    padding-inline: var(--padding-sidebar-navigation-row-inline);
   }
 }
 
@@ -60,3 +80,55 @@
 }
 
 .ui-navigation-list[data-navigation-compact="true"] { padding-inline: 0; }
+
+// A leading wrapper is part of the NavigationItem contract, not an app selector.
+.ui-button.ui-navigation-item > [data-navigation-leading] {
+  width: var(--size-navigation-leading-slot);
+  height: var(--size-navigation-leading-slot);
+  flex-basis: var(--size-navigation-leading-slot);
+}
+
+// Explicit row slots never match Button's decorative glass layer.
+.ui-button.ui-navigation-item > [data-navigation-label] {
+  grid-column: 2;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ui-button.ui-navigation-item > [data-navigation-trailing] {
+  grid-column: 3;
+  justify-self: end;
+  flex-shrink: 0;
+}
+.ui-button.ui-navigation-item > [data-navigation-leading] {
+  grid-column: 1;
+  display: grid;
+  place-items: center;
+  > svg { display: block; @include icons.navigation-icon; }
+}
+
+.ui-navigation-empty {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--height-sidebar-navigation-row);
+  gap: var(--gap-sidebar-navigation-icon-label);
+  padding: var(--padding-sidebar-empty-block) var(--padding-sidebar-navigation-row-inline);
+  margin: 0;
+  overflow-wrap: anywhere;
+  > svg { flex: 0 0 auto; }
+}
+.ui-navigation-count {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-inline-size: var(--size-count-badge);
+  min-block-size: var(--size-count-badge);
+  padding-inline: var(--padding-count-badge-inline);
+  font-variant-numeric: tabular-nums;
+}

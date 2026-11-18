@@ -1,3 +1,4 @@
+import { IconButton } from "@opencraft/design-system-web/button";
 import { ChevronDownIcon, RotateIcon as RotateCcw, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import { useEffect, useRef, useState, type RefObject, type PointerEvent } from "react";
 
@@ -41,16 +42,16 @@ export function BrowserDeviceToolbar({mode,onChange,onClose,zoom,onZoom}:{
         <span aria-hidden="true">×</span>
         <DimensionInput label="Viewport height" value={mode.height} min={160} onChange={value => editDimension("height", value)}/>
       </div>
-      <button type="button" aria-label="Rotate viewport" title="Rotate viewport" onClick={() => {
+      <IconButton size="toolbar" type="button" aria-label="Rotate viewport" title="Rotate viewport" onClick={() => {
         onChange({...mode, width: mode.height, height: mode.width});
-      }}><RotateCcw size={16}/></button>
+      }}><RotateCcw size={16}/></IconButton>
       {onZoom ? <span className="browser-device-toolbar__select browser-device-toolbar__zoom"><select aria-label="Browser zoom" value={zoom} onChange={event => {
         onZoom(Number(event.currentTarget.value));
         event.currentTarget.blur();
       }}>
         {[50,75,100,125,150,200].map(percent => <option key={percent} value={percent}>{percent}%</option>)}
       </select><ChevronDownIcon size={14} /></span> : null}
-      <button type="button" className="browser-device-toolbar__close" aria-label="Close device toolbar" title="Close device toolbar" onClick={onClose}><X size={14}/></button>
+      <IconButton size="toolbar" type="button" className="browser-device-toolbar__close" aria-label="Close device toolbar" title="Close device toolbar" onClick={onClose}><X size={14}/></IconButton>
     </div>
   );
 }

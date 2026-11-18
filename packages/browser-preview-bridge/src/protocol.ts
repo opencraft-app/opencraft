@@ -1,4 +1,9 @@
 import type {
+  BrowserAnnotationPick,
+  BrowserAnnotationAnchor,
+  BrowserAnnotationDragRequest,
+  BrowserAnnotationPreviewRequest,
+  BrowserAnnotationPickRequest,
   BrowserAutomationInspection,
   BrowserAutomationPageContext,
 } from "@opencraft/browser-core";
@@ -13,7 +18,13 @@ export type PreviewBridgeMethod =
   | "fill"
   | "press"
   | "scroll"
-  | "wait";
+  | "wait"
+  | "annotate-pick"
+  | "annotate-region"
+  | "annotate-text"
+  | "annotate-styles"
+  | "annotate-preview"
+  | "annotate-clear-preview";
 
 export interface PreviewBridgeIdentity {
   readonly source: typeof PREVIEW_BRIDGE_SOURCE;
@@ -41,7 +52,9 @@ export type PreviewBridgeChildMessage = PreviewBridgeIdentity & (
         readonly domInspection: true;
         readonly semanticInput: true;
         readonly trustedInput: false;
-        readonly networkObservation: "fetch-xhr";
+        /** Legacy children advertised fetch-xhr; this adapter exposes only
+         * implemented observation and does not upgrade on that declaration. */
+        readonly networkObservation: "none" | "fetch-xhr";
       };
     }
   | {
@@ -62,6 +75,15 @@ export type PreviewBridgeChildMessage = PreviewBridgeIdentity & (
 );
 
 export interface PreviewBridgeCallMap {
+  readonly "annotate-region": { readonly params: BrowserAnnotationDragRequest; readonly result: BrowserAnnotationPick };
+  readonly "annotate-text": { readonly params: BrowserAnnotationDragRequest; readonly result: BrowserAnnotationPick };
+  readonly "annotate-styles": { readonly params: { readonly anchor: BrowserAnnotationAnchor }; readonly result: Readonly<Record<string, string>> };
+  readonly "annotate-preview": { readonly params: BrowserAnnotationPreviewRequest; readonly result: null };
+  readonly "annotate-clear-preview": { readonly params: Readonly<Record<string, never>>; readonly result: null };
+  readonly "annotate-pick": {
+    readonly params: BrowserAnnotationPickRequest;
+    readonly result: BrowserAnnotationPick;
+  };
   readonly "read-context": {
     readonly params: { readonly includeSelection?: boolean; readonly maxInlineChars?: number };
     readonly result: BrowserAutomationPageContext;

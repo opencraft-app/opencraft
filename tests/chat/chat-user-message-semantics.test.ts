@@ -6,7 +6,7 @@ import { deriveUserMessageSemantics as derive,
 test("last request supplies text while only pre-first-request context supplies flags", () => {
   const raw = "## Prior conversation with Codex: old\n## My request: first\n## Code review guidelines: ignored\n## My request for Codex:  /goal final  ";
   assert.deepEqual(derive(raw), { message: "final", goal: true, referencesPriorConversation: true,
-    reviewMode: false, pullRequestFixMode: false, autoResolveSync: false });
+    reviewMode: false, pullRequestFixMode: false, autoResolveSync: false, commentCount: 0 });
   assert.equal(extract(raw), "/goal final");
   assert.equal(extract("  untouched  "), "  untouched  ");
   assert.equal(extract("## My request:   "), "");
@@ -26,7 +26,7 @@ test("all independent header combinations preserve the prior-context suppression
     const reviewMode = Boolean(mask & 1), pullRequestFixMode = Boolean(mask & 2);
     const prefix = headers.filter((_, bit) => mask & (1 << bit)).join(" ");
     assert.deepEqual(derive(`${prefix}\n## My request: value`), { message: "value", goal: false,
-      reviewMode, pullRequestFixMode, autoResolveSync: Boolean(mask & 4),
+      reviewMode, pullRequestFixMode, autoResolveSync: Boolean(mask & 4), commentCount: 0,
       referencesPriorConversation: Boolean(mask & 8) && !reviewMode && !pullRequestFixMode });
   }
 });

@@ -7,6 +7,8 @@ import type { LocaleCatalog } from "@opencraft/i18n";
 /** Trusted build/application composition, never a deployment JSON module URL. */
 export interface ServerWorkbenchExtension {
   readonly id: string;
+  /** Prepare public code only; never construct services, read account data or activate. */
+  readonly preload?: () => Promise<unknown>;
   /** Product-owned messages for the application's existing language choices. */
   readonly localeCatalogs?: readonly LocaleCatalog[];
   load(context: {
@@ -18,6 +20,6 @@ export interface ServerWorkbenchExtension {
 // A generic Headless connection does not imply any enterprise identity source.
 // The build owner can explicitly replace this entry with a product assembly.
 export const serverWorkbenchExtensions: readonly ServerWorkbenchExtension[] = [
-  {id:'opencraft.account',async load({fetcher}) { return (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(fetcher, serverUrl('/__opencraft_account/')); }},
+  {id:'opencraft.account',preload:()=>import('@opencraft/plugin-local-account/client'),async load({fetcher}) { return (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(fetcher, serverUrl('/__opencraft_account/')); }},
   {id:'opencraft.observability',load:()=>createObservabilityExtension()},
 ];

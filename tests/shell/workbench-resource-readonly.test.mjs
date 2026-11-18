@@ -3,12 +3,12 @@ import test from "node:test";
 import { build } from "esbuild";
 import { createRequire } from "node:module";
 
-// Render the real panel and capture its mutation at the Query boundary. This
-// exercises a direct save attempt even though the preview hides its buttons.
+// Render the real panel across the Query/Host boundary. Also exercise the
+// read-only write helper directly; browser smoke covers editable save transactions.
 const require = createRequire(import.meta.url);
 const { outputFiles } = await build({
   stdin: {
-    contents: `export { WorkspaceResourcePreviewPanel, WorkspaceResourcePanel } from './apps/workbench-web/src/panels/workspace-resource-panel';`,
+    contents: `export { writeWorkspaceResource } from './apps/workbench-web/src/panels/workspace-resource-model'; export { WorkspaceResourcePreviewPanel, WorkspaceResourcePanel } from './apps/workbench-web/src/panels/workspace-resource-panel';`,
     resolveDir: new URL("../..", import.meta.url).pathname,
   },
   bundle: true, write: false, platform: "node", format: "cjs", jsx: "automatic",
@@ -19,7 +19,7 @@ const { outputFiles } = await build({
     const modules = {
       "@tanstack/react-query": `export const useQueries = () => []; export const useQuery = () => globalThis.__panelTest.query ?? ({data:globalThis.__panelTest.resourceData ?? {text:'# Hello',blob:null}}); export const useQueryClient = () => ({invalidateQueries:async()=>{}}); export const useMutation = options => {globalThis.__panelTest.mutation=options.mutationFn;return {}};`,
       "../runtime/appserver-runtime-context": `export const useAppServerRuntime=()=>globalThis.__panelTest.runtime;export const useAppServerSnapshot=()=>({hostId:globalThis.__panelTest.hostId??'bot-a',conversation:null});export const useBlobResources=()=>globalThis.__panelTest.blobs;`,
-      "../runtime/blob-files": `import {BlobUrlManager} from '${new URL("../../packages/blob-resources/src/browser.ts", import.meta.url).pathname}';export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls=new BlobUrlManager();export const acquireFileBlob=()=>{};export const fileDownloadUrl=()=>null;export const fileDownloadSize=()=>Promise.resolve(0);`,
+      "../runtime/blob-files": `import {BlobUrlManager} from '${new URL("../../packages/blob-resources/src/browser.ts", import.meta.url).pathname}';export const fileBlobResource=(_runtime,hostId,path)=>({scope:hostId,path});export const fileBlobUrls=new BlobUrlManager();export const acquireFileBlob=()=>{};export const fileDownloadUrl=()=>null;export const fileDownloadSize=async()=>0;`,
       "../appearance-theme": `export const useAppearanceTheme=()=>({resolvedTheme:'light'});`,
       "../runtime/appserver-media-loader": `export const createAppServerMediaSourceLoader=()=>()=>{};`,
       "@opencraft/i18n/react": `export const useIntl=()=>({formatMessage:m=>m.defaultMessage});`,
@@ -50,12 +50,12 @@ test("preview rejects direct writes; editable panel saves the captured target", 
     const html = renderToString(createElement(exports.WorkspaceResourcePreviewPanel, props));
     assert.doesNotMatch(html, /Save file|Edit file|Search workspace files/);
     const target = {hostId:"bot-a",path:"/workspace/original.md",key:"original",text:"你好"};
-    await assert.rejects(globalThis.__panelTest.mutation(target), /read-only/);
+    await assert.rejects(exports.writeWorkspaceResource(true, target, globalThis.__panelTest.runtime.resources.fileSystem.writeFile, async()=>{}), /read-only/);
     assert.deepEqual(writes, []);
     assert.deepEqual(invalidations, []);
     const editableHtml = renderToString(createElement(exports.WorkspaceResourcePanel, props));
     assert.match(editableHtml, /aria-label="Search workspace files" disabled=""/);
-    await globalThis.__panelTest.mutation(target);
+    await exports.writeWorkspaceResource(false, target, globalThis.__panelTest.runtime.resources.fileSystem.writeFile, async(hostId,path)=>globalThis.__panelTest.blobs.refresh({scope:hostId,path}));
     assert.deepEqual(writes, [[target.path, Buffer.from(target.text).toString("base64")]]);
     assert.deepEqual(invalidations, [{scope:"bot-a",path:target.path}]);
   } finally { delete globalThis.__panelTest; }

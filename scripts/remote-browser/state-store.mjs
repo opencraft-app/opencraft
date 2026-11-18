@@ -73,6 +73,27 @@ export class BrowserStateStore {
   hasRetirement(key) {
     return this.enqueue(() => this.call('has', { key }));
   }
+  transactOperation(owner, id, reduce) {
+    return this.enqueue(async () => {
+      const existing = (await this.call('operation-receipts', { owner, ids: [id] }))[0];
+      const reduced = reduce(structuredClone(existing));
+      if (reduced && typeof reduced.then === 'function') throw Error('Browser receipt reducer must be synchronous');
+      const { receipt, result } = reduced;
+      if (receipt && (receipt.ownerId !== owner || receipt.id !== id)) throw Error('Operation receipt crossed owner scope');
+      if (receipt && JSON.stringify(receipt) !== JSON.stringify(existing)) {
+        const operationReceipts = structuredClone([receipt]);
+        const changes = Object.fromEntries(Object.keys(tables).map(field => [field, { put: [], remove: [] }]));
+        await this.call('commit', { changes, facts: [], operationReceipts });
+      }
+      return result;
+    });
+  }
+  readOperation(owner, id) {
+    return this.enqueue(async () => (await this.call('operation-receipts', { owner, ids: [id] }))[0]);
+  }
+  readPresentation(owner, id) {
+    return this.enqueue(async () => (await this.call('presentation-receipts', { owner, ids: [id] }))[0]);
+  }
   readRetirements(owner, references) {
     return this.enqueue(async () => {
       const state = this.account(owner).states[0]?.[1] ?? { revision: 0, values: {} };
@@ -123,6 +144,7 @@ export class BrowserStateStore {
     });
   }
   transact(reduce, options) {
+    if (options?.presentationKeys) options = { ...options, presentationKeys: [...options.presentationKeys] };
     if (options?.resourcesOnly) return this.transactResources(reduce, options);
     if (this.sealed || this.failure) return Promise.reject(this.failure ?? Error('Browser storage closing'));
     const operation = this.tail.then(async () => {
@@ -133,6 +155,15 @@ export class BrowserStateStore {
       const { retired: _, retiredResources: __, ...small } = source;
       const draft = structuredClone(small), history = this.index.draft();
       draft.retired = history.retired; draft.retiredResources = history.retiredResources;
+      const presentationKeys = [...new Set([...(options?.presentationKeys ?? []), ...(source.states ?? []).flatMap(([, state]) =>
+        (state.presentationRequests ?? []).filter(row => ['pending', 'claimed'].includes(row.status)).map(row => row.id))])];
+      const presentationRows = presentationKeys.length ? await this.call('presentation-receipts', { owner: ownerId, ids: presentationKeys }) : [];
+      const presentationChanges = new Map(), presentationOriginal = new Map(presentationRows.map(row => [row.id, row]));
+      const presentationView = {
+        get(id) { if (!presentationKeys.includes(id)) throw Error('Presentation receipt was not prefetched'); return presentationChanges.get(id) ?? structuredClone(presentationOriginal.get(id)); },
+        put(row) { if (!presentationKeys.includes(row.id) || row.ownerId !== ownerId) throw Error('Presentation receipt crossed owner scope'); presentationChanges.set(row.id, row); },
+      };
+      Object.defineProperty(draft, 'presentationReceipts', { value: presentationView, enumerable: false });
       Object.defineProperty(draft, 'capacityUsed', { value: this.accounts.used, enumerable: false });
       const result = reduce(draft);
       if (result && typeof result.then === 'function') throw Error('Browser state reducer must be synchronous');
@@ -158,8 +189,9 @@ export class BrowserStateStore {
         });
       }
       const facts = structuredClone(history.finish());
-      if (facts.length || Object.values(changes).some(change => change.put.length || change.remove.length))
-        await this.call('commit', { changes, facts });
+      const presentationReceipts = structuredClone([...presentationChanges.values()]);
+      if (presentationReceipts.length || facts.length || Object.values(changes).some(change => change.put.length || change.remove.length))
+        await this.call('commit', { changes, facts, ...(presentationReceipts.length ? { presentationReceipts } : {}) });
       this.index.apply(facts);
       const views = facts.length ? this.index.views() : { retired: this.current.retired, retiredResources: this.current.retiredResources };
       if (ownerId === undefined) { this.current = { schemaVersion: this.current.schemaVersion, ...published, ...views }; this.reindexAccounts(); }

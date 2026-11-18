@@ -1,0 +1,14 @@
+.page-stack {
+  position: absolute;
+  inset: 0;
+  isolation: isolate;
+  overflow: clip;
+  // Fixed page descendants use this coordinate basis at rest as well as in
+  // flight; adding/removing transform must never switch their containing block.
+  &__live, &__preview { position: absolute; inset: 0; contain: layout; background: var(--color-background-surface); }
+  &__live { display: flex; flex-direction: column; }
+  &__preview { pointer-events: none; }
+}
+
+.nested-navigation { position: relative; flex: 1; min-block-size: 0; min-inline-size: 0; }
+.nested-navigation__content { display: flex; flex-direction: column; flex: 1; min-block-size: 0; outline: none; }

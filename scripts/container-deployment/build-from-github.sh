@@ -5,9 +5,10 @@ repository=${OPENCRAFT_BUILD_REPOSITORY:?Set OPENCRAFT_BUILD_REPOSITORY to the G
 state_directory=${OPENCRAFT_BUILD_STATE_DIR:-/var/lib/opencraft-github-build}
 image=${OPENCRAFT_BUILD_IMAGE:-opencraft}
 branch=${OPENCRAFT_BUILD_BRANCH:-main}
+distribution=${OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION:?Set OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION to a verified owned browser directory}
 
-[[ $repository = /* && $state_directory = /* ]] || {
-  echo 'Repository and build state paths must be absolute' >&2
+[[ $repository = /* && $state_directory = /* && $distribution = /* ]] || {
+  echo 'Repository, build state and owned browser paths must be absolute' >&2
   exit 2
 }
 [[ $branch =~ ^[A-Za-z0-9._/-]+$ && $branch != -* && $branch != *..* ]] || {
@@ -61,11 +62,12 @@ git -C "$repository" worktree add --detach "$checkout" "$revision"
 
 echo "Building $immutable_tag from origin/$branch"
 docker build --pull --target runtime \
+  --build-context "owned-electron=$distribution" \
   --build-arg "OPENCRAFT_BUILD_ID=git-$revision" \
   --build-arg "OPENCRAFT_SOURCE_REVISION=$revision" \
   --build-arg "SOURCE_DATE_EPOCH=$source_date_epoch" \
   --tag "$immutable_tag" --tag "$moving_tag" \
-  --file "$checkout/docker/Dockerfile" "$checkout"
+  --file "$checkout/docker/Dockerfile.owned-electron" "$checkout"
 
 temporary_success="$state_directory/last-successful-revision.$$.tmp"
 printf '%s\n' "$revision" >"$temporary_success"

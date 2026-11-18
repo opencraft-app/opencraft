@@ -12,7 +12,7 @@ import type {
 export const OPENCRAFT_TURN_VIRTUALIZER_CONFIG: Readonly<TurnVirtualizerConfig> = Object.freeze({
   estimatedTurnHeightPx: 280,
   gapPx: 12,
-  overscanTurnCount: 2,
+  overscanTurnCount: 4,
   fallbackViewportHeightPx: 800,
   topAlignmentInsetPx: 10,
 });
@@ -394,6 +394,9 @@ export function createTurnWindowSlice<TEntry extends VirtualizedTurnEntry>(
     entries: entries.slice(range.startIndex, range.endIndex),
     range,
     marginTopPx: layout.topOffsetsPx[range.startIndex] ?? 0,
+    paddingBottomPx: range.endIndex > range.startIndex
+      ? layout.bottomOffsetsPx[range.endIndex - 1] ?? 0
+      : layout.totalHeightPx,
     totalHeightPx: layout.totalHeightPx,
     gapPx,
   };

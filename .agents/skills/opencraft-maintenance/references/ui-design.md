@@ -15,7 +15,7 @@
 | 界面部分 | 去哪里确认 | 需要判断的结果 |
 |---|---|---|
 | 页面与列表 | `apps/workbench-web/src/components/settings-page.tsx`、`packages/extension-react/src/settings-controls.tsx` 及当前路由样式 | 内容宽度、页边距、章节节奏由谁投影；标题、说明和操作在窄容器如何排列。单个 Header/Row 不拥有整页布局 |
-| 工具弹窗与表单 | `packages/extension-react/src/settings-panel.tsx`、`apps/workbench-web/src/components/modal/modal-surface.tsx` 及其样式；可参考 `apps/workbench-web/src/components/bot-management.tsx` 的实际消费 | Radix 管行为，宿主 modal surface 管呈现，SettingsPanel 管内容组合；表单 label、输入和校验槽的关系及密度应适合容器 |
+| 工具弹窗与表单 | `packages/extension-react/src/settings-panel.tsx`、`apps/workbench-web/src/components/modal/modal-surface.tsx` 及其样式 | Radix 管行为，宿主 modal surface 管呈现，SettingsPanel 管内容组合；表单 label、输入和校验槽的关系及密度应适合容器 |
 | 空态及辅助文字 | `design/ui/typography.md`、当前共享排版和容器 | 语义层级与章节一致，heading/p 的浏览器 margin 不叠加出意外空白；提示和次动作不会压过主任务 |
 | 状态、主题与平台输入 | `design/ui/README.md` 命中的主题、当前共享控件 | 原位反馈、文本/背景配对、触控与键盘状态、草稿和焦点连续性 |
 

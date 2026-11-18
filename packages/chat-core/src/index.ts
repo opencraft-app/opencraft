@@ -10,6 +10,7 @@ export * from "./automatic-approval-review";
 export * from "./async-questions";
 export * from "./automation-update";
 export * from "./identity";
+export * from "./conversation-ownership";
 export * from "./hook-stats";
 export * from "./mcp-elicitation";
 export * from "./projection";
@@ -28,3 +29,6 @@ export * from "./user-message";
 export * from "./user-message-collapse";
 
 export { applyThreadOrchestrationView } from "./thread-orchestration-view";
+export * from "./conversation-preview";
+
+export * from "./conversation-recovery";

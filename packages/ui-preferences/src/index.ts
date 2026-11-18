@@ -1,9 +1,13 @@
+import { parseConversationAppearances, type ConversationAppearances } from "./conversation-appearance";
+export * from "./conversation-appearance";
 export type UiPreferenceScope = "installation" | "account" | "workspace";
 export type ShellNavigationDetent = "expanded" | "compact" | "hidden";
 export type ShellNavigationVisibleDetent = Exclude<ShellNavigationDetent, "hidden">;
 
 export interface UiPreferenceValues {
+  readonly "chat.conversationAppearances": ConversationAppearances;
   readonly "interface.touchFriendly": "auto" | "on" | "off";
+  readonly "interface.keyboardClearance": boolean;
   readonly "voice.inputProvider": "auto" | "system" | "hunyuan";
   readonly "locale.override": string;
   readonly "chat.agentAvailability": Readonly<Record<string, Readonly<Record<string, boolean>>>>;
@@ -17,6 +21,8 @@ export interface UiPreferenceValues {
   readonly "shell.lastVisibleNavigationDetent": ShellNavigationVisibleDetent;
   readonly "shell.navigationWidth": number;
   readonly "shell.contextSidebarWidth": number;
+  readonly "shell.rightPanelWidth": { readonly ratio: number | null };
+  readonly "sidebar.scheduledCollapsed": boolean;
   readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
   readonly "sidebar.serverFilter": { readonly serverId: string; readonly label: string };
 }
@@ -40,6 +46,10 @@ const widthValue = (value: unknown): number | null =>
   typeof value === "number" && Number.isFinite(value) ? value : null;
 
 export const uiPreferenceDefinitions = Object.freeze({
+  "chat.conversationAppearances": {
+    key: "chat.conversationAppearances", scope: "installation", defaultValue: {},
+    parse: parseConversationAppearances,
+  },
   "sidebar.collaborationServers": {
     key:"sidebar.collaborationServers",scope:"installation",defaultValue:{},
     parse:(value:unknown):Readonly<Record<string,string>>|null=>{
@@ -89,6 +99,9 @@ export const uiPreferenceDefinitions = Object.freeze({
       return Object.fromEntries(entries);
     },
   },
+  "sidebar.scheduledCollapsed": {
+    key: "sidebar.scheduledCollapsed", scope: "installation", defaultValue: true, parse: booleanValue,
+  },
   "sidebar.serverFilter": {
     key: "sidebar.serverFilter", scope: "installation", defaultValue: { serverId: "", label: "" },
     parse: (value: unknown): UiPreferenceValues["sidebar.serverFilter"] | null => {
@@ -102,6 +115,10 @@ export const uiPreferenceDefinitions = Object.freeze({
     key: "interface.touchFriendly", scope: "installation", defaultValue: "auto",
     parse: (value: unknown): "auto" | "on" | "off" | null =>
       value === "auto" || value === "on" || value === "off" ? value : null,
+  },
+  "interface.keyboardClearance": {
+    key: "interface.keyboardClearance", scope: "installation", defaultValue: false,
+    parse: booleanValue,
   },
   "chat.turnNotifications": {
     key: "chat.turnNotifications", scope: "installation", defaultValue: false,
@@ -158,6 +175,17 @@ export const uiPreferenceDefinitions = Object.freeze({
     scope: "installation",
     defaultValue: 137,
     parse: widthValue,
+  },
+  "shell.rightPanelWidth": {
+    key: "shell.rightPanelWidth",
+    scope: "installation",
+    defaultValue: { ratio: null },
+    parse(value: unknown) {
+      if (!value || typeof value !== "object" || !("ratio" in value)) return null;
+      const ratio = value.ratio;
+      return ratio === null || (typeof ratio === "number" && Number.isFinite(ratio) && ratio >= 0 && ratio <= 1)
+        ? { ratio } : null;
+    },
   },
   "shell.contextSidebarWidth": {
     key: "shell.contextSidebarWidth",
@@ -306,36 +334,37 @@ export class UiPreferencesRuntime {
     return tail;
   }
 
-  /** Apply a pure edit to the latest durable value, re-evaluating after CAS conflicts.
-   * Consumers use this for independent entries in a shared preference map. */
-  update<Key extends UiPreferenceKey>(key: Key, edit: (value: UiPreferenceValue<Key>) => UiPreferenceValue<Key>): Promise<void> {
-    this.#ensureOpen();
-    const definition = definitionFor(key);
-    const store = this.#stores[definition.scope]!;
-    const previous = this.#tails.get(key) ?? Promise.resolve();
-    const tail = previous.catch(() => undefined).then(async () => {
-      let current = parseRecord(key, await store.load(key), this.#defaults[key]);
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const changed = edit(current.value);
-        if (Object.is(changed, current.value)) return;
-        const parsed = definition.parse(changed);
-        if (parsed === null) throw new TypeError(`Invalid UI preference value for ${key}`);
-        const result = await store.compareAndSet(key, current.revision, JSON.stringify(parsed));
-        if (result.outcome === "updated") {
-          this.#publishStoredRevision(key, result.record.revision);
-          if (this.#tails.get(key) === tail) this.#publishValue(key, parsed);
-          return;
-        }
-        current = parseRecord(key, await store.load(key), this.#defaults[key]);
-      }
-      throw new Error(`UI preference conflict for ${key}`);
-    }).finally(() => { if (this.#tails.get(key) === tail) this.#tails.delete(key); });
-    this.#tails.set(key, tail);
-    return tail;
-  }
-
   reset<Key extends UiPreferenceKey>(key: Key): Promise<void> {
     return this.set(key, this.#defaults[key]);
+  }
+
+  /** Rebase an entity edit on the latest persisted map after a concurrent writer. */
+  update<Key extends UiPreferenceKey>(key: Key, change: (current: UiPreferenceValue<Key>) => UiPreferenceValue<Key>): Promise<void> {
+    this.#ensureOpen();
+    const previous = this.#tails.get(key) ?? Promise.resolve();
+    const tail = previous.catch(() => undefined).then(async () => {
+      const definition = definitionFor(key);
+      const store = this.#stores[definition.scope]!;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        this.#ensureOpen();
+        const current = parseRecord(key, await store.load(key), this.#defaults[key]);
+        const next = definition.parse(change(current.value));
+        if (next === null) throw new TypeError(`Invalid UI preference value for ${key}`);
+        const result = await store.compareAndSet(key, current.revision, JSON.stringify(next));
+        if (result.outcome === "updated") {
+          this.#publish(key, next, result.record.revision);
+          return;
+        }
+      }
+      throw new Error(`UI preference conflict for ${key}`);
+    }).finally(async () => {
+      if (this.#tails.get(key) !== tail) return;
+      this.#tails.delete(key);
+      // Store notifications may arrive while this key has an in-flight write.
+      await this.#refresh(key).catch(() => undefined);
+    });
+    this.#tails.set(key, tail);
+    return tail;
   }
 
   async flush(): Promise<void> {

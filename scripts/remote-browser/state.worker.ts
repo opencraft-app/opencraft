@@ -35,8 +35,8 @@ function open() {
   const source = existsSync(sourcePath) ? readFileSync(sourcePath, 'utf8') : null;
   const digest = source === null ? 'absent' : createHash('sha256').update(source).digest('hex');
   if (meta('import-complete') === undefined) {
-    if (identity !== null || Object.values(names).some(table => db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())
-      || db.prepare('SELECT 1 FROM browser_retirements LIMIT 1').get()) throw Error('Browser import receipt missing');
+    if (identity !== null || [...Object.values(names), 'browser_retirements', 'browser_presentations', 'browser_operations']
+      .some(table => db.prepare(`SELECT 1 FROM ${table} LIMIT 1`).get())) throw Error('Browser import receipt missing');
     const saved = validateBrowserState(source === null ? { schemaVersion: 1, pages: [], retired: [], states: [] } : JSON.parse(source));
     sqliteTransaction(db, () => {
       for (const [field, table] of Object.entries(names)) {
@@ -67,13 +67,42 @@ function snapshot() {
   result.retiredResources = []; result.retired = [];
   return validateBrowserState(result);
 }
-function commit({ changes, facts }: any) {
+function commit({ changes, facts, presentationReceipts = [], operationReceipts = [] }: any) {
   const db = database!;
   sqliteTransaction(db, () => {
     for (const [field, table] of Object.entries(names)) {
       const remove = db.prepare(`DELETE FROM ${table} WHERE key=?`), put = db.prepare(`INSERT INTO ${table} (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`);
       for (const key of changes[field].remove) remove.run(key);
       for (const [key, value] of changes[field].put) put.run(key, value);
+    }
+    const presentationGet = db.prepare('SELECT owner,value FROM browser_presentations WHERE key=?');
+    const presentationPut = db.prepare('INSERT INTO browser_presentations (key,owner,value) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    for (const receipt of presentationReceipts) {
+      if (!receipt || typeof receipt.ownerId !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.id)
+        || !['pending', 'claimed', 'visible', 'failed', 'cancelled', 'expired'].includes(receipt.status)) throw Error('Invalid browser presentation receipt');
+      const row = presentationGet.get(receipt.id) as { owner: string; value: string } | undefined;
+      if (row) {
+        const old = JSON.parse(row.value);
+        if (row.owner !== receipt.ownerId || ['tabId', 'hostId', 'threadId', 'createdAt', 'expiresAt'].some(key => old[key] !== receipt[key])
+          || old.clientId && old.clientId !== receipt.clientId || old.status === 'claimed' && receipt.status === 'pending'
+          || ['visible', 'failed', 'cancelled', 'expired'].includes(old.status) && JSON.stringify(old) !== JSON.stringify(receipt))
+          throw Error('Browser presentation receipt cannot be replayed or reassigned');
+      }
+      presentationPut.run(receipt.id, receipt.ownerId, JSON.stringify(receipt));
+    }
+    const operationGet = db.prepare('SELECT owner,value FROM browser_operations WHERE key=?');
+    const operationPut = db.prepare('INSERT INTO browser_operations (key,owner,value) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    for (const receipt of operationReceipts) {
+      if (!receipt || typeof receipt.ownerId !== 'string' || !/^[0-9a-f]{64}$/.test(receipt.id)
+        || !['admitted', 'completed', 'failed', 'unknown'].includes(receipt.status)) throw Error('Invalid browser operation receipt');
+      const row = operationGet.get(receipt.id) as { owner: string; value: string } | undefined;
+      if (row) {
+        const old = JSON.parse(row.value);
+        if (row.owner !== receipt.ownerId || old.fingerprint !== receipt.fingerprint || old.method !== receipt.method
+          || old.key !== receipt.key || old.status !== 'admitted' && JSON.stringify(old) !== JSON.stringify(receipt))
+          throw Error('Browser operation receipt cannot be replayed or reassigned');
+      }
+      operationPut.run(receipt.id, receipt.ownerId, JSON.stringify(receipt));
     }
     const previous = db.prepare('SELECT value FROM browser_retirements WHERE key=?');
     const put = db.prepare('INSERT INTO browser_retirements (key,owner,value) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
@@ -122,6 +151,11 @@ parentPort!.on('message', ({ id, op, args }) => {
     if (op === 'open') value = open();
     else if (op === 'has' && database) value = !!database.prepare('SELECT 1 FROM browser_retirements WHERE key=?').get(args.key);
     else if (op === 'select' && database) value = select(args);
+    else if ((op === 'presentation-receipts' || op === 'operation-receipts') && database) {
+      const table = op === 'presentation-receipts' ? 'browser_presentations' : 'browser_operations';
+      const get = database.prepare(`SELECT value FROM ${table} WHERE key=? AND owner=?`);
+      value = args.ids.flatMap((id: string) => { const row = get.get(id, args.owner) as { value: string } | undefined; return row ? [JSON.parse(row.value)] : []; });
+    }
     else if (op === 'retirements' && database) value = retirements(args);
     else if (op === 'commit' && database) value = commit(args);
     else if (op === 'close') { database?.close(); database = undefined; value = null; }

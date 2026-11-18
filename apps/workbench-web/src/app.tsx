@@ -1,3 +1,8 @@
+import { recordQueueError } from "./runtime/queue-error-history";
+import { routeStackPresentation } from "./components/route-stack-motion";
+import { RouteViewStack } from "./components/route-view-stack";
+import { channelSearchSource } from './runtime/channel-search-contribution';
+import { ConversationAppearanceProvider, ConversationAppearanceButton } from "./components/conversation-appearance";
 import type { AttachmentProgress } from "@opencraft/composer-editor";
 import { useServerSpaces } from "./runtime/use-server-spaces";
 import { agentIdForHostLabel, filterModelsForNewDraft, newDraftAgentsDisabled } from "./runtime/agent-availability";
@@ -8,6 +13,7 @@ import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-r
 import { composerCapabilitiesKey, composerCapabilitiesOptions } from "./runtime/composer-capabilities-query";
 import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
 import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
+import { submissionRecoveryPresentation } from "./submission-recovery-presentation";
 import { completeConversationComposerSubmission } from "./runtime/composer-submission-admission";
 import { configureDesktopServer } from './runtime/configure-desktop-server';
 import { desktopServerPort } from './runtime/desktop-server-connections';
@@ -24,10 +30,12 @@ import { displayTimingCounts } from "./runtime/display-timing-diagnostics";
 import { canReportDisplayEvent } from "./runtime/recovery-diagnostics";
 import { reportDisplayPaint } from "./runtime/display-paint-diagnostics";
 import { serverFetch } from "./runtime/server-context";
+import { queueFailureFields, withQueueFailureFeedback } from "./queue-operation-feedback";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
 import { ExecutionRecoveryNotice } from "./components/execution-recovery-notice";
 import { useAsyncNotices } from "./components/async-notices";
+const SubmissionRecoveryNotice = createDeferredView(async () => (await import("./components/submission-recovery-notice")).SubmissionRecoveryNotice);
 import { ContinuationFailureNotice } from "./components/continuation-failure-notice";
 import { useObservedReadiness } from './runtime/observability-react';
 import { observeEvent } from './runtime/observability';
@@ -40,14 +48,13 @@ import { useConversationHistoryRefresh } from "./components/conversation-history
 import { createMcpAppOwner } from "./mcp-apps/owner";
 import type { McpAppWidgetStateStore } from "./mcp-apps/contract";
 import { canHandleWorkbenchShortcut, matchesWorkbenchShortcut, shortcutLabel } from "./workbench-shortcuts";
-import { WorkbenchShortcutHelp } from "./components/workbench-shortcut-help";
+const WorkbenchShortcutHelp = createDeferredView(async () => (await import("./components/workbench-shortcut-help")).WorkbenchShortcutHelp);
 import { WorkbenchPresentationActivityProvider } from "./components/workbench-presentation-activity";
 import { ConversationSearch, type ConversationSearchTarget } from "./components/conversation-search";
 import { projectMiniApps, OVERHOME_VIEW_ID } from "./runtime/mini-apps";
 import { ApplicationsSidebarFrame } from "./components/applications-sidebar";
 import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./components/application-desktop-motion";
 import { ImageEditorContext } from "@opencraft/extension-react";
-import { IdentityAvatarContext } from "@opencraft/extension-react";
 import { submitEmbeddedPrompt } from "./embedded-chat/embedded-prompt-submission";
 import { isEmbeddedConversationPainted } from "./embedded-chat/embedded-paint";
 import { createDeferredView } from "@opencraft/extension-react";
@@ -71,12 +78,11 @@ import {
   type SubmitIntent,
 } from "@opencraft/composer-core";
 import {
-  compileSubmitIntent,
   restoreQueuedInput,
-} from "@opencraft/composer-appserver";
-import { queuedSubmissionPresentation, queueSenderPresentation, visibleQueuedSubmissions } from "./queued-submission-presentation";
+} from "@opencraft/composer-appserver/runtime";
+import { createQueuedImageLoader, queuedSubmissionPresentation, queueSenderPresentation, visibleQueuedSubmissions } from "./queued-submission-presentation";
 import {
-  OpenCraftComposer,
+  type OpenCraftComposerHandle,
   type ComposerSelectionCatalog,
 } from "@opencraft/composer-editor";
 import { asHostId, asTurnId, deriveAsyncQuestionStates, findPendingInteraction, parseAsyncQuestionReply, renderAsyncQuestionReply, type AsyncQuestion, type TimelineSnapshot, type TurnDiffTimelineBlock } from "@opencraft/chat-core";
@@ -93,6 +99,7 @@ import { readCachedThreadName, writeCachedThreadName } from "./runtime/thread-ti
 import { AgentUsage } from "./components/agent-usage";
 import { archiveThread } from "./runtime/thread-archive";
 import { forkAndOpenThread } from "./runtime/thread-fork-navigation";
+import { useOrdinaryConversationCatalog } from "./runtime/use-ordinary-conversation-catalog";
 import { formatDocumentTitle } from "./runtime/document-title";
 import {
   canInvokeHostPanelCommand,
@@ -137,6 +144,7 @@ import {
 import {
   AppShellRouteRegionsProvider,
   appShellPlatformViewRegions,
+  useAppShellViewRegions,
   useAppShellRouteHeader,
 } from "./components/app-shell-route-regions";
 import {
@@ -160,10 +168,14 @@ import { ConversationPendingInteractionPanel } from "./components/conversation-r
 import { InteractionDraftStore } from "./components/conversation-renderers/interaction/interaction-drafts";
 import { useConversationRecoveryDiagnostic } from "./runtime/conversation-recovery-diagnostic";
 import { RightPanel } from "./components/right-panel";
+import { BrowserAnnotationSinkProvider } from "./browser-annotation/composer-sink";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
+import { WorkbenchComposer, WorkbenchComposerProvider, type WorkbenchComposerEnvironment } from "./components/workbench-composer";
+import { ComposerPanelToggle } from "./components/composer-panel-toggle";
+import { shouldPresentMainComposerOverlay } from "./components/thread-composer-presentation-model";
 import { ThreadGoalSurface } from "./components/thread-goal-surface";
 import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
-import { TurnDiffReviewDialog } from "./components/conversation/turn-diff-review-dialog";
+const TurnDiffReviewDialog = lazy(() => import("./components/conversation/turn-diff-review-dialog").then(module => ({ default: module.TurnDiffReviewDialog })));
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
 import { HostAgentOnboarding } from "./components/agent-management";
@@ -181,6 +193,7 @@ import {
   useAnnouncementModalRequests,
 } from "./components/modal";
 import { PendingConversationPage } from "./components/pending-conversation-page";
+import { sideChatCloseRequest } from "./components/side-chat-close-request";
 import { Sidebar } from "./components/sidebar";
 import { useSidebarCommands } from "./components/use-sidebar-commands";
 import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
@@ -363,6 +376,7 @@ export function App({
           (candidate) => candidate.id === draftSnapshot.activeDraftId,
         ) ?? null);
   const composerController = useRootComposerController();
+  const composerHandle = useRef<OpenCraftComposerHandle>(null);
   const defaultFollowUpAction = useDefaultFollowUpAction();
   const hostCatalog = useAppServerHosts();
   const selectSearchedThread = useCallback((hostId: string, id: string, target?: ConversationSearchTarget) => {
@@ -524,6 +538,12 @@ export function App({
   const localOutboxRevision = useSyncExternalStore(subscribeLocalOutbox, localOutbox?.getRevision ?? (() => 0));
   const localQueuedSubmissions = useMemo(() => localOutbox?.project() ?? [], [localOutbox, localOutboxRevision]);
   const workbenchNavigation = hostCatalog.navigation;
+  const pendingConversationLocation = useSyncExternalStore(
+    workbenchNavigation.subscribePendingLocation,
+    workbenchNavigation.getPendingLocation,
+    workbenchNavigation.getPendingLocation,
+  );
+  const navigationTransition = useSyncExternalStore(workbenchNavigation.subscribeTransition, workbenchNavigation.getTransition, workbenchNavigation.getTransition);
   const workbenchNavigationSnapshot = useSyncExternalStore(
     workbenchNavigation.subscribe,
     workbenchNavigation.getSnapshot,
@@ -533,7 +553,9 @@ export function App({
     workbenchNavigationSnapshot.routeScopeId,
   );
   const desktopBackdrop = useApplicationDesktopBackdrop(workbenchNavigationSnapshot.applicationRoute);
-  const canGoBack = workbenchNavigationSnapshot.canGoBack;
+  const canReturn = workbenchNavigationSnapshot.canReturn === true && !routeHeader.suppressReturn;
+  const returnToParent = canReturn ? workbenchNavigation.returnToParent : workbenchNavigation.back;
+  const canGoBack = canReturn || workbenchNavigationSnapshot.canGoBack;
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
     presentation.machineManagement && workbenchNavigationSnapshot.applicationRoute.kind === "settings";
@@ -577,7 +599,7 @@ export function App({
   const shellSidebarOpen = presentation.contextSidebar ? sidebarOpen : false;
   const openConversationSidebar = useCallback(() => {
     setSidebarDestination("context");
-    workbenchNavigation.openChat();
+    void workbenchNavigation.openChat({ sidebar: 'preserve' });
   }, [workbenchNavigation]);
   useEffect(() => { if (routeSettingsOpen) setSidebarDestination("context"); }, [routeSettingsOpen]);
   const openSettingsFromConversation = useCallback((slug?: string) => {
@@ -608,6 +630,7 @@ export function App({
       await workbenchNavigation.selectConversation(createWorkbenchThreadLocation(profile.hostId, threadId));
     },
     openSettings: (section: string) => { setAccountOpen(false); workbenchNavigation.openSettings(section); },
+    registerNavigationGuard: workbenchNavigation.registerNavigationGuard,
     pushViewResource: workbenchNavigation.pushExtensionViewResource,
     replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
     prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
@@ -620,12 +643,15 @@ export function App({
     if (embedded !== undefined || extensionPlatform !== "web") return;
     return applyApplicationBranding(document, branding);
   }, [branding, embedded, extensionPlatform]);
+  const nativeSearch = useSyncExternalStore(hostCatalog.channelSearch.subscribe,hostCatalog.channelSearch.getSnapshot).contribution;
+  const searchSources=useMemo(()=>nativeSearch?[...multiHostCatalog.searchSources,channelSearchSource(nativeSearch,intl.formatMessage({id:'im.search.source',defaultMessage:'Group messages'}))]:multiHostCatalog.searchSources,[multiHostCatalog.searchSources,nativeSearch,intl]);
   const threadBadge = useSyncExternalStore(hostCatalog.threadBadges.subscribe, hostCatalog.threadBadges.getSnapshot).contribution;
+  const extensionViewRegions = useAppShellViewRegions(hostCatalog.composerActionRenderers, presentation.composerActions, extensionViewHost);
   const extensionProjection = useExtensionWorkbenchProjection({
+    regions: extensionViewRegions,
     contributions: hostCatalog.extensionContributions,
     renderers: hostCatalog.platformViewRenderers,
     accounts: hostCatalog.platformAccounts,
-    botDirectory: hostCatalog.botDirectory,
     host: extensionViewHost,
     applicationRoute: workbenchNavigationSnapshot.applicationRoute,
     internalDeveloperMode,
@@ -658,6 +684,13 @@ export function App({
   const hostConnectionIntervention = findHostConnectionInterventionError(
     conversationViewActivation.error,
   );
+  useEffect(() => {
+    if (activeThreadLease === null || conversationViewActivation.phase !== "error"
+      || conversationViewActivation.error === null || hostConnectionIntervention !== null) return;
+    notices.error({ key: "conversation-open", message: intl.formatMessage({
+      id: "chat.openFailed", defaultMessage: "Could not open this conversation. Try again.",
+    }) });
+  }, [activeThreadLease, conversationViewActivation.phase, conversationViewActivation.error, hostConnectionIntervention, intl, notices]);
   const activeHostProviderId = hostCatalog.profiles.find(
     (profile) => profile.hostId === activeHost.hostId,
   )?.providerId ?? null;
@@ -722,6 +755,7 @@ export function App({
   const panelOwnerId = conversationResourceOwnerId;
   const panelPresentationId = conversationViewIdentity.viewId;
   const panelRuntime = useWorkbenchPanelRuntime();
+  const ordinaryThreads = useOrdinaryConversationCatalog(multiHostCatalog.threads, panelRuntime.context.sideChats);
   const browserWorkbench = useBrowserWorkbench();
   const panelState = useConversationPanelState(panelOwnerId);
   const panelRenderers = usePanelRendererSnapshot();
@@ -786,10 +820,17 @@ export function App({
       allowEmpty: panelState.right.tabs.length === 0,
     });
   }, [dispatchPanel, panelState.right.open, panelState.right.tabs.length]);
+  const activeThread = catalog.threads.find(thread => thread.id === activeThreadId);
+  const displayCatalogThread = displayKey === null ? undefined : multiHostCatalog.threads.find(thread =>
+    thread.id === displayKey.threadId && thread.connectionHostId === displayKey.hostId);
+  const titleSource = displayKey?.hostId === snapshot.hostId && displayKey?.threadId === activeThreadId
+    ? activeThread ?? displayCatalogThread : displayCatalogThread;
   const timeline = snapshot.conversation?.timeline ?? null;
   // The committed View has a display identity before network lease acquisition.
   // This local binding never grants execution or authoritative history access.
-  const { selection: display, scope: displayScope, hasSubmission } = useConversationDisplay(hostCatalog.displayContinuity, displayKey, timeline);
+  const { selection: display, scope: displayScope, hasSubmission, header: cachedHeader } = useConversationDisplay(hostCatalog.displayContinuity, displayKey, timeline, snapshot.conversation?.history.hasOlder,
+    titleSource ? { title: titleSource.title, project: titleSource.project } : undefined);
+  const displayHeader = titleSource ?? cachedHeader;
   const displayHostId = displayKey?.hostId ?? null;
   const displayThreadId = displayKey?.threadId ?? null;
   const unavailableHostId = displayHostId ?? snapshot.hostId;
@@ -803,7 +844,23 @@ export function App({
     archivePresentation.showHistory ? display.timeline : null, runtime.resources.orchestration,
     unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open");
   const showingDisplayCache = unavailableThreadReason === null
-    && display.source !== "history" && display.source !== "empty";
+    && display.source !== "history" && display.source !== "mixed" && display.source !== "empty";
+  const deliveryRecovery = submissionRecoveryPresentation(
+    showingDisplayCache ? [] : snapshot.conversation?.pendingSubmissions ?? [],
+    showingDisplayCache ? [] : snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
+    visibleTimeline);
+  const deliveryRecoveryActions = {
+    byClientId: deliveryRecovery.byClientId,
+    onAbandon: async (id: string) => {
+      if (activeThreadLease) await activeThreadLease.abandonUnknownSubmission(id);
+      else if (localOutbox) await localOutbox.abandon(id);
+      else throw new Error('No local submission owner');
+    },
+    onRetry: async (id: string) => {
+      if (activeThreadLease) await activeThreadLease.retryQueuedSubmission(id);
+      else if (!localOutbox || !await localOutbox.retry(id)) throw new Error('No failed local submission');
+    },
+  };
   const historyPaintObserver = workbenchNavigation.historyFirstPaint;
   const historyPaintAttempt = useSyncExternalStore(historyPaintObserver.subscribe, historyPaintObserver.getSnapshot, historyPaintObserver.getSnapshot);
   useEffect(() => {
@@ -812,22 +869,34 @@ export function App({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [historyPaintObserver]);
   const historyPaintOwnsView = historyPaintAttempt?.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
-  const historyPaintTurns = historyPaintOwnsView ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size : 0;
+  const transitionOwnsView = navigationTransition?.phase === 'committed' && navigationTransition.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
+  const historyPaintTurns = historyPaintOwnsView || transitionOwnsView ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size : 0;
   const historyPaintLength = historyLengthBucket(historyPaintTurns,
     !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false, visibleTimeline?.historyTurnCount);
   const historyPaintEngine = historyEngine(engineExtensions, displayThreadId);
   const historyPaintReady = historyPaintOwnsView && (visibleTimeline?.frames.length ?? 0) > 0;
+  const visibleContentReady = (historyPaintOwnsView || transitionOwnsView) && (visibleTimeline?.frames.length ?? 0) > 0;
+  useLayoutEffect(() => {
+    if (navigationTransition?.phase !== 'committed' || navigationTransition.location.kind !== 'draft'
+      || !conversationRouteOpen || navigationTransition.viewId !== conversationViewIdentity.viewId) return;
+    workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+  }, [navigationTransition, conversationRouteOpen, conversationViewIdentity.viewId, workbenchNavigation]);
   const onHistoryVisibleContentReady = useCallback(() => {
-    if (historyPaintAttempt && historyPaintReady) historyPaintObserver.settle(historyPaintAttempt, "ok", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine]);
-  useEffect(() => {
-    if (!historyPaintAttempt || !historyPaintOwnsView) return;
-    if ((unavailableThreadReason !== null && archivePresentation.banner !== "alongside") || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
-      historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
-    } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
-      historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+    if (historyPaintAttempt && historyPaintReady) {
+      historyPaintObserver.settle(historyPaintAttempt, "ok", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
     }
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, unavailableThreadReason, archivePresentation.banner]);
+    if (transitionOwnsView && navigationTransition) workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition, transitionOwnsView]);
+  useEffect(() => {
+    if (!historyPaintOwnsView && !transitionOwnsView) return;
+    if ((unavailableThreadReason !== null && archivePresentation.banner !== "alongside") || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
+      if (historyPaintAttempt && historyPaintOwnsView) historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+      if (navigationTransition?.phase === 'committed') workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+    } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
+      if (historyPaintAttempt && historyPaintOwnsView) historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+      if (navigationTransition?.phase === 'committed') workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+    }
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, unavailableThreadReason, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, archivePresentation.banner, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition]);
 
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
@@ -841,17 +910,21 @@ export function App({
 
   const [turnDiffReview, setTurnDiffReview] = useState<{
     readonly block: TurnDiffTimelineBlock;
+    readonly hostId: string | null;
     readonly path: string | null;
     readonly threadId: string;
   } | null>(null);
   const openTurnDiffReview = useCallback((block: TurnDiffTimelineBlock, path?: string) => {
-    if (activeThreadId !== null) setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId });
-  }, [activeThreadId]);
-  const reviewedBlock = turnDiffReview?.threadId === activeThreadId
+    if (activeThreadId !== null) setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId, hostId: snapshot.hostId });
+  }, [activeThreadId, snapshot.hostId]);
+  const reviewedBlock = turnDiffReview?.hostId === snapshot.hostId && turnDiffReview?.threadId === activeThreadId
     ? timeline?.frames.flatMap((frame) => frame.changeSummary == null ? frame.blocks : [frame.changeSummary, ...frame.blocks]).find((block): block is TurnDiffTimelineBlock =>
       block.type === "turn-diff" && block.id === turnDiffReview.block.id) ?? turnDiffReview.block
     : null;
   const recoveryRequiresUpdate = snapshot.transport.failure?.code === "APP_HOST_PROTOCOL_MISMATCH";
+  const recoveryAccessFailure = snapshot.transport.failure?.code === 'APP_HOST_AUTH_REQUIRED' ? 'authentication'
+    : snapshot.transport.failure?.code === 'APP_HOST_ACCESS_DENIED' ? 'permission' : null;
+  const retryConnectionAdmission = () => { void runtime.reconnect().catch(() => undefined); };
   const recoveryPresentation = conversationRecoveryPresentation({
     authoritative: snapshot.conversation?.authoritative === true,
     hasVisibleHistory: (visibleTimeline?.frames.length ?? 0) > 0,
@@ -873,10 +946,12 @@ export function App({
     transport: snapshot.transport,
   });
   const conversationRecovering = activeThreadId !== null
-    && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate);
-  const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate);
+    && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate || recoveryAccessFailure !== null);
+  const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate || recoveryAccessFailure !== null);
   const recoveryPlaceholder = connectionRecovering
-    ? intl.formatMessage({ id: "chat.composer.reconnecting", defaultMessage: "Reconnecting…" })
+    ? snapshot.phase === "connecting"
+      ? intl.formatMessage({ id: "settings.connection.connecting", defaultMessage: "Connecting" })
+      : intl.formatMessage({ id: "chat.composer.reconnecting", defaultMessage: "Reconnecting…" })
     : conversationRecovering
       ? intl.formatMessage({ id: "chat.composer.loading", defaultMessage: "Loading…" })
       : undefined;
@@ -915,10 +990,16 @@ export function App({
         message: intl.formatMessage({ id: "chat.stop.failed", defaultMessage: "Could not stop the response. Try again." }) });
     });
   }, [activeThreadLease, notices, intl, snapshot.hostId, activeThreadId]);
+  const queueOperation = useCallback((action: string, id: string, operation: () => Promise<void>) => withQueueFailureFeedback(operation, (error) => {
+    recordQueueError({ action, hostId: snapshot.hostId, threadId: activeThreadId, queueId: id, ...queueFailureFields(error) });
+    notices.error({ key: `queue:${snapshot.hostId}:${activeThreadId}:${id}`,
+      message: intl.formatMessage({ id: "chat.queue.operationFailed", defaultMessage: "Could not change this queued message. Refresh the conversation and try again." }) });
+  }), [notices, intl, snapshot.hostId, activeThreadId]);
   const updateQueuedSubmission = useCallback(
     async (id: string, intent: SubmitIntent) => {
       if (activeThreadLease === null)
         throw new Error("No active Thread owns this queue");
+      const { compileSubmitIntent } = await import("@opencraft/composer-appserver/compiler");
       await activeThreadLease.updateQueuedSubmission(
         id,
         compileSubmitIntent(intent).input,
@@ -1071,7 +1152,6 @@ export function App({
 
       if (intent.target.type !== "new-thread") {
         return completeConversationComposerSubmission(submittedIntent, submission,
-          activeThreadLease?.getSnapshot() ?? null,
           () => clearLatestTurnPlacement(submittedPlacement));
       }
 
@@ -1324,12 +1404,13 @@ export function App({
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
   const expandSidebar = useCallback(() => setSidebarOpen(true), []);
 
-  const activeThread = catalog.threads.find(
-    (thread) => thread.id === activeThreadId,
-  );
   const activeProtocolThread = catalog.protocolThreads.find(
     (thread) => thread.id === activeThreadId,
   );
+  const queueImageCwd = snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? null;
+  const loadQueuedImage = useMemo(() => createQueuedImageLoader(loadMediaSource, {
+    conversationId: activeThreadId, hostId: snapshot.hostId, cwd: queueImageCwd,
+  }), [loadMediaSource, activeThreadId, snapshot.hostId, queueImageCwd]);
   const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
     () => composerController.getSnapshot().draft.selections.model,
     () => composerController.getSnapshot().draft.selections.model);
@@ -1375,10 +1456,7 @@ export function App({
     : null;
   const onboardingFinishEpoch = useRef(0);
   useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
-  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | "history" | null>(() => {
-    try { return localStorage.getItem("opencraft.onboarding.completedAt") === null ? "gate" : null; }
-    catch { return null; }
-  });
+  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | "history" | null>(null);
   const finishOnboarding = async (modelId?: string) => {
     const epoch = ++onboardingFinishEpoch.current;
     if (modelId) {
@@ -1412,8 +1490,8 @@ export function App({
     window.addEventListener("opencraft:replay-agent-onboarding", replay);
     return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
   }, []);
-  const visibleOnboardingOverlay = (onboardingOverlay === "sheet" || onboardingOverlay === "history") || conversationRouteOpen ? onboardingOverlay : null;
-  const draftSetupNotice = draftSetupKind === null || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
+  const visibleOnboardingOverlay = recoveryAccessFailure === null && (onboardingOverlay === "sheet" || onboardingOverlay === "history" || conversationRouteOpen) ? onboardingOverlay : null;
+  const draftSetupNotice = draftSetupKind === null || draftSetupKind === "models" || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
     kind={draftSetupKind} hostName={activeHost.label}
     onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
     onConnectionSettings={() => openSettingsFromConversation("machines")}
@@ -1496,6 +1574,7 @@ export function App({
       }),
       isFetching: composerCatalog.isFetching,
       modelError: composerCatalog.modelError?.message ?? null,
+      modelErrorKind: composerCatalog.modelErrorKind,
       onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
       onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
@@ -1509,6 +1588,7 @@ export function App({
           : filterModelsForNewDraft([model], group.hostId, snapshot.hostId, agentAvailability.enabled, hostGroupAgentId(group.hostId)).length > 0)),
         loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
         error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
+        errorKind: group.hostId === snapshot.hostId ? composerCatalog.modelErrorKind : undefined,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
         select: async (model) => {
           if (canContinueWithAgent && model.agentId === conversationAgent) composerController.dispatch({ type: "cancel-agent-handoff" });
@@ -1540,6 +1620,7 @@ export function App({
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
+      composerCatalog.modelErrorKind,
       composerCatalog.onModelMenuOpen,
       composerCatalog.rememberModelDefaults,
       composerCatalog.newThreadDefaults,
@@ -1810,18 +1891,12 @@ export function App({
     </section>
   ) : null;
   const modalRequests: ModalRequest[] = [];
-  if (closingSideChat) modalRequests.push({
-    id: "close-side-chat", label: "Close side chat?", layer: "confirmation", size: "compact", appearance: "utility",
-    onDismiss: () => setClosingSideChat(null),
-    content: <div><p>This temporary conversation will be discarded. It cannot be recovered.</p>
-      <Button variant="secondary" onClick={() => setClosingSideChat(null)}>Keep chatting</Button>
-      <Button variant="destructive" onClick={() => {
-        const current = panelRuntime.panels.getOwnerSnapshot(closingSideChat.ownerId);
-        const tab = [...current.right.tabs, ...current.bottom.tabs].find(entry => entry.id === closingSideChat.tab.id);
-        if (tab) panelRuntime.panels.close(closingSideChat.ownerId, tab.region, tab.id);
-        setClosingSideChat(null);
-      }}>Close side chat</Button></div>,
-  });
+  if (closingSideChat) modalRequests.push(sideChatCloseRequest(intl, () => {
+    const current = panelRuntime.panels.getOwnerSnapshot(closingSideChat.ownerId);
+    const tab = [...current.right.tabs, ...current.bottom.tabs].find(entry => entry.id === closingSideChat.tab.id);
+    if (tab) panelRuntime.panels.close(closingSideChat.ownerId, tab.region, tab.id);
+    setClosingSideChat(null);
+  }, () => setClosingSideChat(null)));
   const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
   if (managementSettingsOpen && !standaloneManagementOpen) {
     modalRequests.push({
@@ -1936,13 +2011,15 @@ export function App({
     ? headerNavigationActions.map(action => applicationDesktopOpen && action === "sidebar-toggle" ? "home" as const : action)
     : [];
   const invokeHeaderHome = applicationDesktopOpen ? workbenchNavigation.openChat : navigateToHome;
+  const viewTitleMessage = extensionProjection.activeView?.titleMessage;
+  const viewTitle = viewTitleMessage ? intl.formatMessage(viewTitleMessage) : extensionProjection.activeView?.title;
   const pageTitle = routeSettingsOpen
     ? null
     : extensionViewOpen
       ? (workbenchNavigationSnapshot.applicationRoute.kind === "extension-view" && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID
-        ? intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }) : extensionProjection.activeView?.title ?? null)
+        ? intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }) : viewTitle ?? null)
       : draft === null
-        ? (activeThread?.title ?? "Untitled task")
+        ? (displayHeader?.title ?? null)
         : null;
   const applicationName = branding.name;
   const documentTitle = formatDocumentTitle(settingsOpen ? null : pageTitle, applicationName);
@@ -1963,8 +2040,7 @@ export function App({
     retry: false,
   });
   const schedulesAvailable = scheduleCapability?.version === 1 && runtime.resources.host.canRequest?.("opencraft/schedules/read") === true;
-  const conversationMenuAvailable = conversationSurfaceVisible && draft === null && activeThreadId !== null
-        && (schedulesAvailable || hostCatalog.tasks || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).pin || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).archive || hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork || activeThread?.project || snapshot.conversation?.execution.cwd || activeProtocolThread?.cwd);
+  const conversationMenuAvailable = conversationSurfaceVisible && draft === null && activeThreadId !== null;
   const refreshConversationCatalog = useCallback(() => queryClient.invalidateQueries({
     queryKey: ["appserver", snapshot.hostId, "threads"],
   }), [queryClient, snapshot.hostId]);
@@ -1987,6 +2063,7 @@ export function App({
     conversationContribution?.refreshHistory === true && snapshot.phase === "ready", refreshConversationCatalog);
   const headerThreadId = activeThreadId ?? "";
   const conversationToolbarProps: import("./components/conversation-task-menu").ConversationTaskMenuProps = {
+    appearanceHostId: snapshot.hostId,
     access: headerThreadId ? {
       read:() => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/read",{threadId:headerThreadId}),
       set:(accessMode,expectedRevision) => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/set",{threadId:headerThreadId,accessMode,expectedRevision}),
@@ -2057,14 +2134,13 @@ export function App({
     return port;
   }, [hostCatalog, summaryScopeKey, noteAccountKey, summaryNoteSupported, summaryNotePorts]);
   const conversationMenuSizing = <ConversationToolbarSizing scope={displayScope} actionIds={conversationToolbarActionIds(conversationToolbarProps)} />;
-  const conversationActionSizing = <span className="conversation-header-actions">{summary.enabled ? <ButtonPlaceholder className="chrome-button" /> : null}{conversationMenuSizing}</span>;
   const header = (
     <AppShellHeader
       conversationHeader={conversationSurfaceVisible}
       subtitle={conversationContribution?.subtitle}
+      primaryActionFixedSlots={(summary.enabled ? 1 : 0) + (conversationMenuAvailable ? 1 : 0)}
       navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
-      headerActionSizing={conversationActionSizing}
-      headerAction={<span className="conversation-header-actions"><ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
+      primaryAction={<span className="conversation-header-actions"><ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
         <Suspense fallback={conversationMenuSizing}>
           <ConversationTaskMenu
             key={JSON.stringify([displayScope, snapshot.hostId, activeThreadId])}
@@ -2075,32 +2151,38 @@ export function App({
           />
         </Suspense>
       ) : null}</span>}
-      titleContent={conversationSurfaceVisible && draft === null && activeThread !== undefined && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename ? (
-        <EditableThreadTitle
+      titleContent={conversationSurfaceVisible && draft === null && activeThread !== undefined
+        && displayKey?.hostId === snapshot.hostId && displayKey?.threadId === activeThread.id ? (
+        <span className="conversation-appearance-heading"><ConversationAppearanceButton hostId={snapshot.hostId} threadId={activeThread.id} title={activeThread.title} />{hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename ? <EditableThreadTitle
           key={JSON.stringify([snapshot.hostId, activeThread.id])}
           title={activeThread.title}
           project={embedded === undefined ? (activeThread.project ?? "OpenCraft") : undefined}
           onRename={title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThread.id }, title)}
-        />
+        /> : <span className="thread-header-copy"><strong>{activeThread.title}</strong>{embedded === undefined ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: activeThread.project ?? "OpenCraft", branch: "main" })}</small> : null}</span>}</span>
+      ) : conversationSurfaceVisible && draft === null && displayHeader && displayKey ? (
+        <span className="conversation-appearance-heading"><ConversationAppearanceButton readOnly hostId={displayKey.hostId} threadId={displayKey.threadId} title={displayHeader.title} /><span className="thread-header-copy"><strong>{displayHeader.title}</strong>{embedded === undefined
+          ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: displayHeader.project || "OpenCraft", branch: "main" })}</small> : null}</span></span>
       ) : undefined}
       title={standaloneManagementOpen || extensionViewOpen ? null : pageTitle}
       project={
         embedded !== undefined || routeSettingsOpen || extensionViewOpen
           ? null
           : draft === null
-            ? (activeThread?.project ?? "OpenCraft")
+            ? (displayHeader?.project ?? "OpenCraft")
             : null
       }
       sidebarOpen={shellSidebarOpen}
       rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
       rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
       showRightPanelAction={!panelHost && conversationRightPanelAvailable && presentation.rightPanel}
+      rightPanelActionInComposer={conversationRouteOpen && connectionInterventionNode === null && pendingInteraction === null}
       canGoBack={canGoBack}
+              canReturn={canReturn}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
       onToggleRightPanel={toggleRightPanel}
       onHome={invokeHeaderHome}
-      onBack={workbenchNavigation.back}
+      onBack={returnToParent}
 
       onForward={workbenchNavigation.forward}
       navigationActions={presentedHeaderNavigationActions}
@@ -2108,6 +2190,16 @@ export function App({
       routeHeaderHostRef={routeHeader.hostRef}
     />
   );
+
+  const beginConversationImageEdit = conversationRouteOpen && activeThreadId !== null ? () => {
+    const target = composerController.getSnapshot().draft.target;
+    if (target.type !== "existing-thread" || target.key.hostId !== snapshot.hostId || target.key.threadId !== activeThreadId) return null;
+    const session = composerHandle.current?.beginImageEdit();
+    if (!session) return null;
+    const routeScopeId = workbenchNavigationSnapshot.routeScopeId;
+    const current = () => workbenchNavigation.getSnapshot().routeScopeId === routeScopeId;
+    return { complete: (file: File) => current() && session.complete(file), focus: () => { if (current()) session.focus(); } };
+  } : undefined;
 
   const composerChangeSummary = (
     <ComposerTurnChangeSummary
@@ -2126,8 +2218,9 @@ export function App({
 
   const sidebarCommands = useSidebarCommands({
     onSelectThread: (hostId, id) => {
-      void hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, id)).catch((error) => {
+      return hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, id)).catch((error) => {
         console.error("Failed to activate selected Thread", error);
+        return false;
       });
     },
     onNewTask: navigateToHome,
@@ -2184,9 +2277,17 @@ export function App({
   [presentation.shellNavigation, conversationRouteOpen, standaloneManagementOpen, settingsSection,
     hostCatalog.extensionContributions, selectSettingsSection]);
 
+  const composerEnvironment = useMemo<WorkbenchComposerEnvironment>(() => ({
+    actionIds: presentation.composerActions,
+    registry: hostCatalog.composerActionRenderers,
+    platform: extensionPlatform,
+    navigationEnabled: !panelHost && conversationRightPanelAvailable && presentation.rightPanel,
+  }), [presentation.composerActions, hostCatalog.composerActionRenderers, extensionPlatform, panelHost, conversationRightPanelAvailable, presentation.rightPanel]);
   return (
+    <WorkbenchComposerProvider value={composerEnvironment}>
+    <BrowserAnnotationSinkProvider controller={composerController}>
+    <ConversationAppearanceProvider scope={displayScope} routeKey={workbenchNavigationSnapshot.routeScopeId}>
     <ImageEditorContext.Provider value={imageEditor}>
-    <IdentityAvatarContext.Provider value={identityAvatar}>
     <ScheduledTaskCatalogContext.Provider value={{ ...multiHostCatalog,
       openConversation: (hostId, threadId) => hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, threadId)),
     }}>
@@ -2197,6 +2298,13 @@ export function App({
         target={routeHeader.target}
       >
         <AppShell
+          navigationPresentation={workbenchNavigation}
+          routeStack={routeStackPresentation(workbenchNavigationSnapshot, JSON.stringify([extensionProjection.account?.provider.id ?? null, extensionProjection.account?.snapshot.readStateScope ?? extensionProjection.account?.snapshot.identity?.id ?? null]), extensionProjection.routeFamilies)}
+          navigationReturn={canReturn ? { key: workbenchNavigationSnapshot.navigationPath?.at(-1)?.historyKey ?? workbenchNavigationSnapshot.url, invoke: workbenchNavigation.returnToParent } : undefined}
+          navigationFailure={navigationTransition?.phase === 'failed' ? <>
+            <span>{intl.formatMessage({ id: "navigation.conversationFailed", defaultMessage: "Could not open the conversation. Your previous conversation is still available." })}</span>
+            <Button size="sm" variant="ghost" onClick={() => { void workbenchNavigation.selectConversation(navigationTransition.location).catch(() => undefined); }}>{intl.formatMessage({ id: "sidebar.search.retry", defaultMessage: "Retry" })}</Button>
+          </> : null}
           serverDrawer={serverSpaces.unavailable ? undefined : {
             open:serverDrawerOpen,onOpenChange:setServerDrawerOpen,
             label:intl.formatMessage({id:'serverSpaces.title',defaultMessage:'Servers'}),
@@ -2236,6 +2344,7 @@ export function App({
           }}
           layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
           mainContentLayout={conversationSurfaceVisible ? "thread-edge-scroll" : "default"}
+          primaryReading={conversationSurfaceVisible && connectionInterventionNode === null && !(draft !== null && draft.submission === null)}
           sidebarOpen={shellSidebarOpen}
           sidebarSuppressed={applicationDesktopOpen}
           sidebarWidth={presentation.contextSidebar ? sidebarWidth : 0}
@@ -2246,11 +2355,14 @@ export function App({
           onSidebarCollapse={collapseSidebar}
           onSidebarExpand={expandSidebar}
           onSidebarResizeEnd={commitSidebarWidth}
+          sceneOwnerId={panelOwnerId}
+          foreground={panelState.foreground}
+          onForegroundChange={foreground => dispatchPanel({ type: 'select-foreground', foreground })}
           rightPanelOpen={!panelHost && conversationRightPanelAvailable && presentedRightPanelOpen}
           rightPanelKeepMounted={!panelHost && presentation.rightPanel && panelState.right.tabs.some(tab =>
             presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
           rightPanelFullWidth={!panelHost && conversationRightPanelAvailable && presentedRightPanelFullWidth}
-          rightPanelDefaultSize={embedded === undefined && extensionPlatform === "web" ? "compact" : presentation.rightPanelDefaultSize}
+          rightPanelDefaultSize={presentation.rightPanelDefaultSize}
           onRightPanelOpenChange={(open) =>
             dispatchPanel({
               type: "set-region-open",
@@ -2267,10 +2379,11 @@ export function App({
               hostRole="transient"
               sidebarOpen={false}
               canGoBack={canGoBack}
+              canReturn={canReturn}
               canGoForward={canGoForward}
               onToggleSidebar={onDock}
               onHome={invokeHeaderHome}
-              onBack={workbenchNavigation.back}
+              onBack={returnToParent}
 
               onForward={workbenchNavigation.forward}
               actions={presentedHeaderNavigationActions}
@@ -2280,9 +2393,9 @@ export function App({
             selected={applicationsSelected} actions={extensionProjection.primaryActions}
             contributions={hostCatalog.extensionContributions} renderers={hostCatalog.platformViewRenderers}
             host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
-            {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen) ? <Sidebar
+            {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen || extensionProjection.activeView?.keepConversationSidebar) ? <Sidebar
               searchInDialog={presentation.shellNavigation}
-              threads={serverSpaces.filter(multiHostCatalog.threads)}
+              threads={serverSpaces.filter(ordinaryThreads)}
               threadCatalogs={multiHostCatalog.catalogs}
               threadCatalogDiscovery={multiHostCatalog.discovery}
               {...sidebarCommands}
@@ -2299,17 +2412,18 @@ export function App({
               catalogs={extensionProjection.catalogs}
               bots={extensionProjection.bots}
               sidebarLayout={hostCatalog.sidebarLayout}
-              botCreation={extensionProjection.botCreation}
-              activeHostId={snapshot.hostId}
-              activeThreadId={draft === null ? activeThreadId ?? "" : ""}
+              activeHostId={workbenchNavigationSnapshot.location?.kind === "thread"
+                ? workbenchNavigationSnapshot.location.key.hostId : snapshot.hostId}
+              activeThreadId={conversationSurfaceVisible && workbenchNavigationSnapshot.location?.kind === "thread"
+                ? workbenchNavigationSnapshot.location.key.threadId : ""}
               pendingHostId={
-                hostCatalog.pendingLocation?.kind === "thread"
-                  ? hostCatalog.pendingLocation.key.hostId
+                pendingConversationLocation?.kind === "thread"
+                  ? pendingConversationLocation.key.hostId
                   : null
               }
               pendingThreadId={
-                hostCatalog.pendingLocation?.kind === "thread"
-                  ? hostCatalog.pendingLocation.key.threadId
+                pendingConversationLocation?.kind === "thread"
+                  ? pendingConversationLocation.key.threadId
                   : null
               }
 
@@ -2342,8 +2456,9 @@ export function App({
         ) : draft !== null && draft.submission === null ? (
           <NewThreadDraftPage
             key={draft.id}
-            setupNotice={draftSetupNotice}
-            setupBlocksSubmission={draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
+            setupNotice={recoveryAccessFailure !== null ? <div className="thread-layout-width new-thread-draft-composer-width"><ConversationRecoveryNotice
+              failed accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission} /></div> : draftSetupNotice}
+            setupBlocksSubmission={recoveryAccessFailure !== null || draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
             activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
             composerPresentationEnabled={conversationRouteOpen}
             draft={draft}
@@ -2405,6 +2520,7 @@ export function App({
               }, objective);
             }}
             composerAddMenuContent={composerAddMenuContent}
+            composerTrailingActions={!panelHost && conversationRightPanelAvailable && presentation.rightPanel ? <ComposerPanelToggle /> : null}
             composerEndActions={composerEndActions}
             shortcutCommands={hostShortcutCommands}
             onSubmit={sendMessage}
@@ -2414,8 +2530,13 @@ export function App({
             <ConversationSummaryLayout controller={summary}>
             <div className="conversation-summary-reading">
                 <Conversation
-                  onVisibleContentReady={historyPaintReady ? onHistoryVisibleContentReady : undefined}
-                  visibleContentReadyKey={historyPaintAttempt ?? undefined}
+                  historyPresentation={recoveryPresentation}
+                  active={!shouldPresentMainComposerOverlay(
+                    conversationRouteOpen && presentedRightPanelOpen && presentedRightPanelFullWidth,
+                    panelState.right.activeTabId,
+                  )}
+                  onVisibleContentReady={visibleContentReady ? onHistoryVisibleContentReady : undefined}
+                  visibleContentReadyKey={transitionOwnsView ? navigationTransition ?? undefined : historyPaintAttempt ?? undefined}
                   scrollPolicy="natural"
                   onAddSelectionToChat={conversationRouteOpen && activeThreadId !== null ? (text) => {
                     const target = composerController.getSnapshot().draft.target;
@@ -2427,6 +2548,7 @@ export function App({
                     if (activeThreadId !== null) hostCatalog.threadAttention.acknowledge(
                       attentionScope, snapshot.hostId, activeThreadId, turnId);
                   }}
+                  hasPendingSubmission={unavailableThreadReason === null && draft !== null}
                   emptyState={archivePresentation.banner === "replace" ? <ConversationUnavailableState
                       reason={unavailableThreadReason === "not-found" ? "not-found" : "archived"}
                       onRestore={unavailableThreadReason === "archived" ? restoreUnavailableThread : undefined}
@@ -2442,11 +2564,14 @@ export function App({
                     ? <ConversationRecoveryEmptyState
                         failed={recoveryPresentation === "cold-error"}
                         requiresUpdate={recoveryRequiresUpdate}
+                        accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission}
                       />
                     : undefined}
                   key={activeConversationRestoreKey ?? "empty"}
                   documentContext={{
                     conversationId: activeThreadId,
+                    submissionRecovery: showingDisplayCache ? undefined : deliveryRecoveryActions,
+                    beginImageEdit: beginConversationImageEdit,
                     mcpApps: mcpAppOwner ?? undefined,
                     cwd: activeProtocolThread?.cwd ?? null,
                     hostId: snapshot.hostId,
@@ -2454,6 +2579,7 @@ export function App({
                     onOpenResource: openChatResource,
                     onReviewTurnDiff: openTurnDiffReview,
                     composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
+                    turnActions: { fork: activeThreadId !== null && hostCatalog.threadManagement.capabilities(snapshot.hostId).fork, reviewDiff: true },
                     onForkConversation: !showingDisplayCache && nativeSession.data?.fork ? conversationToolbarProps.onFork : undefined,
                     onForkTurn: !showingDisplayCache && snapshot.conversation?.authoritative === true
                       && activeThreadId !== null && !activeThreadId.startsWith("codex_") && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
@@ -2466,13 +2592,12 @@ export function App({
                     theme: appearanceTheme.resolvedTheme,
                   }}
                   timeline={draft === null && archivePresentation.showHistory ? visibleTimeline : null}
+                  readOnlyTurnIds={display.source === "mixed" ? display.cachedTurnIds : undefined}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                   navigationSource={showingDisplayCache ? null : navigationSource}
                   searchTarget={conversationSearchTarget?.hostId === snapshot.hostId && conversationSearchTarget.threadId === snapshot.activeThreadId ? conversationSearchTarget : null}
                   initialRestoreSnapshot={
-                    activeThreadId === null
-                      ? null
-                      : routeRestoreCheckpoints.get(activeConversationRestoreKey!)
+                    routeRestoreCheckpoints.get(activeConversationRestoreKey)
                   }
                   onRestoreSnapshotChange={(restoreSnapshot) => {
                     if (activeConversationRestoreKey !== null)
@@ -2513,9 +2638,7 @@ export function App({
                       }),
                     });
                   }}
-                  loadingOlder={!showingDisplayCache
-                    && snapshot.conversation?.history.loading === true
-                    && snapshot.conversation.history.hasOlder === true}
+                  history={!showingDisplayCache ? snapshot.conversation?.history : null}
                   onOpenSubagent={showingDisplayCache ? undefined : (threadId) => {
                     void hostCatalog.navigate(
                       createWorkbenchThreadLocation(snapshot.hostId, threadId),
@@ -2551,19 +2674,47 @@ export function App({
                       controller={composerController}
                       activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
                       enabled={conversationRouteOpen}
-                      timeline={timeline}
-                      documentContext={{ conversationId: activeThreadId, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
+                      timeline={draft === null ? visibleTimeline : null}
+                      conversationProps={{
+                        readOnlyTurnIds: display.source === "mixed" ? display.cachedTurnIds : undefined,
+                        onLoadItemDetails: showingDisplayCache ? undefined : loadItemDetails,
+                        onLoadOlder: !showingDisplayCache && snapshot.conversation?.history.hasOlder ? loadOlderConversation : undefined,
+                        history: !showingDisplayCache ? snapshot.conversation?.history : null,
+                        onRespondInteraction: showingDisplayCache ? undefined : respondToInteraction,
+                        onAnswerAsyncQuestion: !showingDisplayCache && snapshot.phase === 'ready' ? answerAsyncQuestion : undefined,
+                        queuedAsyncQuestionIds,
+                        onOpenSubagent: showingDisplayCache ? undefined : threadId => {
+                          void hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, threadId));
+                        },
+                        continuableTurnId: showingDisplayCache ? null : snapshot.conversation?.continuation.turnId,
+                        onContinueTurn: showingDisplayCache ? undefined : turnId => {
+                          void activeThreadLease?.continueTurn(turnId).catch(() => {});
+                        },
+                        onAddSelectionToChat: conversationRouteOpen && activeThreadId !== null ? text => {
+                          const target = composerController.getSnapshot().draft.target;
+                          if (target.type === 'new-thread' || target.key.hostId !== snapshot.hostId || target.key.threadId !== activeThreadId) return false;
+                          return composerController.appendQuote(text);
+                        } : undefined,
+                      }}
+                      documentContext={{ conversationId: activeThreadId, beginImageEdit: beginConversationImageEdit, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
                     >
                     <div
                       className="thread-composer-region"
                       data-thread-find-composer="true"
                     >
-                    {draft === null && recoveryPresentation === "warm-error" ? <ConversationRecoveryNotice
+                    {(draft === null && recoveryPresentation === "warm-error") || (recoveryAccessFailure !== null && (draft !== null || recoveryPresentation !== 'cold-error')) ? <ConversationRecoveryNotice
                       failed requiresUpdate={recoveryRequiresUpdate}
+                      accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission}
                     /> : null}
                     {conversationContribution?.beforeComposer}
                     <ContinuationFailureNotice scope={JSON.stringify([snapshot.hostId, activeThreadId])}
                       error={snapshot.conversation?.continuation.error} />
+                    {deliveryRecovery.detached.map(item => (
+                      <div className="submission-recovery-detached thread-layout-width" key={JSON.stringify([snapshot.hostId, activeThreadId, item.commandId])}>
+                        <span>{item.preview}</span>
+                        <SubmissionRecoveryNotice submission={item} onAbandon={deliveryRecoveryActions.onAbandon} onRetry={deliveryRecoveryActions.onRetry} />
+                      </div>
+                    ))}
                     {pendingInteraction === null ? (
                       <ThreadGoalSurface
                         threadId={snapshot.phase === "ready" ? activeThreadId : null}
@@ -2571,7 +2722,8 @@ export function App({
                         portalContainer={portalContainer}
                       >{(goalMenuItem, _goalBusy, goalContent) => (
                       <ThreadRecoveryNotice threadId={snapshot.phase === "ready" ? activeThreadId : null} resource={runtime.resources.turnRecovery}>{recoveryContent => (
-                      <OpenCraftComposer
+                      <WorkbenchComposer
+                        ref={composerHandle}
                         attachedContent={goalContent || recoveryContent ? <>{goalContent}{recoveryContent}</> : null}
                         floatingContent={composerChangeSummary}
                         controller={composerController}
@@ -2588,9 +2740,10 @@ export function App({
                         isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
                         awaitSubmission
                         submissionDisabled={draft !== null || (activeThreadLease === null && localOutbox === null)}
+                        loadQueuedImage={loadQueuedImage}
                         queuedSubmissions={[
                           ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
-                            visibleTimeline).map((submission) =>
+                            visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)).map((submission) =>
                             queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
                           ...(snapshot.conversation?.unconfirmedSteers ?? []).map((claim) => ({
                             id: claim.id,
@@ -2607,13 +2760,13 @@ export function App({
                             retryable: claim.retryable === true,
                           })),
                         ]}
-                        onUpdateQueuedSubmission={updateQueuedSubmission}
-                        onDeleteQueuedSubmission={deleteQueuedSubmission}
+                        onUpdateQueuedSubmission={(id, intent) => queueOperation("update", id, () => updateQueuedSubmission(id, intent))}
+                        onDeleteQueuedSubmission={(id) => queueOperation("delete", id, () => deleteQueuedSubmission(id))}
+                        onReorderQueuedSubmissions={(ids) => queueOperation("reorder", "order", () => reorderQueuedSubmissions(ids))}
+                        onSteerQueuedSubmission={(id) => queueOperation("steer", id, () => steerQueuedSubmission(id))}
                         onRetryUnconfirmedSteer={queueUnconfirmedDeliveryRetry ? retryUnconfirmedSteer : undefined}
-                        onReorderQueuedSubmissions={reorderQueuedSubmissions}
-                        onSteerQueuedSubmission={steerQueuedSubmission}
                         supportsQueuedSteer={queueAtomicSteer}
-                        onResumeQueuedSubmissions={resumeQueuedSubmissions}
+                        onResumeQueuedSubmissions={() => queueOperation("resume", "resume", () => resumeQueuedSubmissions())}
                         onResolveAttachment={resolveActiveHostAttachment}
                         onRemoveAttachment={removeActiveHostAttachment}
                         addMenuContent={goalMenuItem === null ? composerAddMenuContent : (closeMenu) => <>
@@ -2622,7 +2775,8 @@ export function App({
                         </>}
                         shortcutCommands={threadShortcutCommands}
                         entryActions={composerDesktopEntry}
-                        endActions={composerEndActions}
+                        endActions={presentation.connectorLauncher ? connectorPresentation.launcher : null}
+                        actionsDisabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
                         modelSelectionPolicy={modelSelectionPolicy}
                         placeholderPending={recoveryPlaceholder !== undefined}
                         placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
@@ -2680,27 +2834,28 @@ export function App({
           ) : null}
           {settingsRoute}
           {extensionViewOpen ? (
-            <section className="extension-view-route" aria-label={extensionProjection.activeView?.title}>
+            <RouteViewStack key={JSON.stringify([extensionProjection.account?.provider.id ?? null, extensionProjection.account?.snapshot.readStateScope ?? extensionProjection.account?.snapshot.identity?.id ?? null])} navigation={workbenchNavigationSnapshot} routeFamilies={extensionProjection.routeFamilies}>
               {extensionProjection.activeViewNode}
-            </section>
+            </RouteViewStack>
           ) : null}
           </ApplicationRouteMotion>
         </div>
         {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
         <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}
-          sources={multiHostCatalog.searchSources}
+          sources={searchSources} onSelectView={workbenchNavigation.openExtensionView}
           incomplete={multiHostCatalog.discovery === "error" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "error" || catalog.phase === "unavailable" || catalog.partial)}
-          threads={multiHostCatalog.threads} loading={multiHostCatalog.discovery === "loading" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "loading")}
+          threads={ordinaryThreads} loading={multiHostCatalog.discovery === "loading" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "loading")}
           onSelectThread={selectSearchedThread} />
         </AppShell>
       </AppShellRouteRegionsProvider>
         <ModalHost requests={modalRequests} />
-      {reviewedBlock === null ? null : <TurnDiffReviewDialog
+      {reviewedBlock === null ? null : <Suspense fallback={null}><TurnDiffReviewDialog
         block={reviewedBlock}
+        onLoadItemDetails={loadItemDetails}
         initialPath={turnDiffReview?.path ?? null}
-        key={`${turnDiffReview?.threadId}:${reviewedBlock.id}:${turnDiffReview?.path ?? "all"}`}
+        key={`${turnDiffReview?.hostId}:${turnDiffReview?.threadId}:${reviewedBlock.id}:${turnDiffReview?.path ?? "all"}`}
         onClose={() => setTurnDiffReview(null)}
-      />}
+      /></Suspense>}
       <WorkspaceDirectoryPicker
           open={
             !settingsOpen &&
@@ -2718,7 +2873,9 @@ export function App({
         />
     </ConversationReferenceSurface>
     </ScheduledTaskCatalogContext.Provider>
-    </IdentityAvatarContext.Provider>
     </ImageEditorContext.Provider>
+    </ConversationAppearanceProvider>
+    </BrowserAnnotationSinkProvider>
+    </WorkbenchComposerProvider>
   );
 }

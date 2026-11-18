@@ -18,6 +18,12 @@ export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unk
   restoreTabs?(ownerId: string): readonly PanelTabDescriptor[];
   /** Restore Host resources after connection without selecting or opening a panel. */
   hydrateTabs?(ownerId: string): Promise<readonly PanelTabDescriptor[]>;
+  /** Complete, synchronous directory of this owner's panel attachments, not all
+   * background resources. Missing entries detach chrome without disposing resources. */
+  readonly tabDirectory?: {
+    read(ownerId: string): readonly PanelTabDescriptor[];
+    subscribe(ownerId: string, changed: () => void): () => void;
+  };
   createTab(params: TParams): PanelTabDescriptor;
   /** Releases the logical resource represented by a tab. Renderers never own it. */
   disposeTab?(tab: PanelTabDescriptor, ownerId: string, reason: PanelDisposeReason): void;
@@ -64,6 +70,8 @@ export class WorkbenchPanelService extends Service {
   private readonly ownerListeners = new Map<string, Set<() => void>>();
   private readonly initializedOwners = new Set<string>();
   private readonly hydrationTokens = new Map<string, object>();
+  private readonly directorySubscriptions = new Map<string, Map<string, () => void>>();
+  private readonly closedTabs = new Map<string, Set<string>>();
   private readonly registryListeners = new Set<() => void>();
   private registrySnapshot: readonly PanelTypeDefinition[] = [];
   private toolbarActionSnapshot: readonly PanelToolbarActionDefinition[] = [];
@@ -79,6 +87,9 @@ export class WorkbenchPanelService extends Service {
       this.ownerListeners.clear();
       this.initializedOwners.clear();
       this.hydrationTokens.clear();
+      for (const subscriptions of this.directorySubscriptions.values()) for (const stop of subscriptions.values()) stop();
+      this.directorySubscriptions.clear();
+      this.closedTabs.clear();
       this.registryListeners.clear();
     });
   }
@@ -104,12 +115,17 @@ export class WorkbenchPanelService extends Service {
     if (this.definitions.has(definition.kind)) throw new Error(`Panel kind ${definition.kind} is already registered`);
     this.definitions.set(definition.kind, definition as PanelTypeDefinition);
     this.publishRegistry();
+    for (const ownerId of this.initializedOwners) this.observeDirectory(ownerId, definition as PanelTypeDefinition);
     if (definition.hydrateTabs) for (const ownerId of this.initializedOwners) {
       this.hydrationTokens.delete(ownerId);
       this.hydrateOwner(ownerId);
     }
     return () => {
       if (this.definitions.get(definition.kind) !== definition) return;
+      for (const subscriptions of this.directorySubscriptions.values()) {
+        subscriptions.get(definition.kind)?.();
+        subscriptions.delete(definition.kind);
+      }
       for (const [ownerId, state] of this.ownerStates) {
         for (const region of ["right", "bottom"] as const) {
           for (const tab of state[region].tabs) {
@@ -141,12 +157,12 @@ export class WorkbenchPanelService extends Service {
       && (
         existing.kind !== tab.kind
         || existing.resource !== tab.resource
-        || JSON.stringify(existing.durableRoute) !== JSON.stringify(tab.durableRoute)
+        || (kind !== "resource" && JSON.stringify(existing.durableRoute) !== JSON.stringify(tab.durableRoute))
       )
     ) {
       throw new Error(`Panel tab ${tab.id} cannot replace its logical resource identity`);
     }
-    const placed = existing ? { ...tab, region: existing.region } : tab;
+    const placed = existing ? kind === "resource" ? { ...existing, preview: existing.preview && tab.preview } : { ...tab, region: existing.region } : tab;
     this.dispatch(ownerId, { type: "open-tab", tab: placed, activate: options.activate });
     return placed;
   }
@@ -155,6 +171,10 @@ export class WorkbenchPanelService extends Service {
     const current = this.ensureOwner(ownerId);
     const next = reduceConversationPanelState(current, action);
     if (next === current) return current;
+    if (action.type === "close-tab") {
+      const closed = this.closedTabs.get(ownerId) ?? new Set<string>();
+      closed.add(action.tabId); this.closedTabs.set(ownerId, closed);
+    } else if (action.type === "open-tab") this.closedTabs.get(ownerId)?.delete(action.tab.id);
     this.disposeRemovedTabs(
       current,
       next,
@@ -216,6 +236,7 @@ export class WorkbenchPanelService extends Service {
     });
     this.initializedOwners.add(ownerId);
     this.ownerStates.set(ownerId, initialized);
+    for (const definition of this.definitions.values()) this.observeDirectory(ownerId, definition);
     this.hydrateOwner(ownerId);
     for (const listener of this.ownerListeners.get(ownerId) ?? []) listener();
     return initialized;
@@ -224,6 +245,7 @@ export class WorkbenchPanelService extends Service {
   /** Host readiness can retry pending resource recovery without recreating panel chrome. */
   refreshOwnerResources(ownerId: string): void {
     if (!this.initializedOwners.has(ownerId)) return;
+    for (const definition of this.definitions.values()) if (definition.tabDirectory) this.reconcileDirectory(ownerId, definition);
     this.hydrationTokens.delete(ownerId);
     this.hydrateOwner(ownerId);
   }
@@ -236,9 +258,13 @@ export class WorkbenchPanelService extends Service {
       if (!definition.hydrateTabs) continue;
       void Promise.resolve().then(() => definition.hydrateTabs!(ownerId)).then(tabs => {
         if (this.hydrationTokens.get(ownerId) !== token || this.definitions.get(definition.kind) !== definition) return;
+        if (definition.tabDirectory) {
+          this.reconcileDirectory(ownerId, definition);
+          return;
+        }
         for (const tab of tabs) {
           const state = this.ownerStates.get(ownerId);
-          if (!state || tab.kind !== definition.kind || [...state.right.tabs, ...state.bottom.tabs].some(existing => existing.id === tab.id)) continue;
+          if (!state || this.closedTabs.get(ownerId)?.has(tab.id) || tab.kind !== definition.kind || [...state.right.tabs, ...state.bottom.tabs].some(existing => existing.id === tab.id)) continue;
           this.dispatch(ownerId, { type: "open-tab", tab, activate: false });
         }
       }).catch(() => {
@@ -258,12 +284,67 @@ export class WorkbenchPanelService extends Service {
     };
   };
 
+  private observeDirectory(ownerId: string, definition: PanelTypeDefinition): void {
+    const directory = definition.tabDirectory;
+    if (!directory) return;
+    const subscriptions = this.directorySubscriptions.get(ownerId) ?? new Map<string, () => void>();
+    if (subscriptions.has(definition.kind)) return;
+    this.directorySubscriptions.set(ownerId, subscriptions);
+    let disposed = false, queued = false;
+    const changed = () => {
+      if (queued || disposed) return;
+      queued = true;
+      queueMicrotask(() => {
+        queued = false;
+        if (!disposed && this.definitions.get(definition.kind) === definition && this.initializedOwners.has(ownerId))
+          this.reconcileDirectory(ownerId, definition);
+      });
+    };
+    const stop = directory.subscribe(ownerId, changed);
+    subscriptions.set(definition.kind, () => { disposed = true; stop(); });
+    changed(); // Subscribe first, then read: a change during setup cannot be lost.
+  }
+
+  private reconcileDirectory(ownerId: string, definition: PanelTypeDefinition): void {
+    let tabs: readonly PanelTabDescriptor[];
+    try { tabs = definition.tabDirectory!.read(ownerId); } catch { return; } // Unavailable is not empty.
+    const current = this.ownerStates.get(ownerId);
+    if (!current) return;
+    const existingById = new Map([...current.right.tabs, ...current.bottom.tabs].map(tab => [tab.id, tab]));
+    const incoming = new Map<string, PanelTabDescriptor>();
+    for (const tab of tabs) {
+      if (tab.kind !== definition.kind || incoming.has(tab.id)) return;
+      const existing = existingById.get(tab.id);
+      if (existing && (existing.kind !== tab.kind || existing.resource !== tab.resource)) return;
+      incoming.set(tab.id, tab);
+    }
+    let next = current;
+    for (const region of ["right", "bottom"] as const) for (const tab of current[region].tabs) {
+      if (tab.kind === definition.kind && !incoming.has(tab.id))
+        next = reduceConversationPanelState(next, { type: "force-close-tab", region, tabId: tab.id });
+    }
+    for (const tab of incoming.values()) {
+      if (this.closedTabs.get(ownerId)?.has(tab.id)) continue;
+      const existing = existingById.get(tab.id);
+      next = existing ? reduceConversationPanelState(next, { type: "update-tab", region: existing.region, tabId: tab.id,
+        patch: { title: tab.title, icon: tab.icon, closable: tab.closable } })
+        : reduceConversationPanelState(next, { type: "open-tab", tab, activate: false });
+    }
+    if (next === current) return;
+    this.ownerStates.set(ownerId, next);
+    // Reconciliation is projection only. Never call disposeTab or feed a resource close back to its owner.
+    for (const listener of this.ownerListeners.get(ownerId) ?? []) listener();
+  }
+
   /** Forget a logical panel owner, not a navigation entry. Not a user close. */
   releaseOwner(ownerId: string): void {
+    for (const stop of this.directorySubscriptions.get(ownerId)?.values() ?? []) stop();
+    this.directorySubscriptions.delete(ownerId);
     const state = this.ownerStates.get(ownerId);
     if (state !== undefined) this.disposeOwnerTabs(state, "owner-release");
     this.ownerStates.delete(ownerId);
     this.hydrationTokens.delete(ownerId);
+    this.closedTabs.delete(ownerId);
     this.initializedOwners.delete(ownerId);
     this.ownerListeners.delete(ownerId);
   }

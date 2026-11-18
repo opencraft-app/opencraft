@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "dsh-consumer-receipts",
+      "checksum": "4864f24f7efc229e4076605b3bea304ce83b2764393551d2f862731fa57da5b5"
+    }
+  ],
+  "tableOptions": {
+    "dsh_consumer_receipt_metadata": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "dsh_consumer_receipts": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "b5906ec6e6b5556534e3ca8fb9189b59773373f88280aacfd8adee4341d5e14c",
+  "baselineSnapshotChecksum": "3676115516bd849844bd71daf13adfb87096b6ec29581c855b5660fafff2d0e9"
+}

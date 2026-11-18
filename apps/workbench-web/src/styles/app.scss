@@ -1,4 +1,5 @@
-@use "../../../../packages/chat-render-web/src/zoomable-image";
+@use "@opencraft/design-system/segmented-control.web";
+@use "@opencraft/chat-render-web/timeline-dock.web";
 @use "../../../../packages/composer-editor/src/recovery-scan";
 @use "../../../../packages/composer-editor/src/model-catalog-status";
 @use "@opencraft/design-system/icons.web" as icons;
@@ -209,76 +210,6 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   overflow-wrap: anywhere;
 }
 
-.conversation-unavailable-state {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  box-sizing: border-box;
-  min-height: 92px;
-  padding: 20px 4px;
-  color: var(--color-text-secondary);
-
-  &__icon {
-    display: grid;
-    width: 36px;
-    height: 36px;
-    place-items: center;
-    border-radius: var(--radius-full);
-    background: var(--color-background-button-secondary);
-    color: var(--color-text-tertiary);
-  }
-
-  &__copy {
-    min-width: 0;
-
-    strong {
-      display: block;
-      color: var(--color-text);
-      font: var(--typography-body-font);
-      font-weight: var(--typography-primary-action-weight);
-    }
-
-    p {
-      margin: 4px 0 0;
-      font: var(--typography-metadata-font);
-      letter-spacing: var(--typography-metadata-tracking);
-      line-height: var(--typography-metadata-line-height);
-      overflow-wrap: anywhere;
-    }
-  }
-
-  &__restore {
-    display: inline-flex;
-    min-height: var(--size-control-hit-min);
-    align-items: center;
-    gap: 6px;
-    padding: 0 11px;
-    border: 1px solid var(--color-border-default);
-    border-radius: var(--radius-md);
-    background: var(--color-background-button-secondary);
-    color: var(--color-text-button-secondary);
-    font: var(--typography-control-compact-font);
-    cursor: pointer;
-
-    @include controls.hover-capable {
-      &:hover { background: var(--color-background-button-secondary-hover); }
-    }
-
-    &:active { background: var(--color-background-button-secondary-active); }
-    &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
-    &:disabled { cursor: default; opacity: var(--opacity-control-disabled); }
-  }
-
-  @media (max-width: 520px) {
-    grid-template-columns: auto minmax(0, 1fr);
-    padding-inline: 0;
-
-    &__restore { grid-column: 2; justify-self: start; }
-  }
-}
-
 body {
   @include typography.role(body, primary);
   @include typography.rendering-policy;
@@ -349,7 +280,7 @@ button {
   .app-shell-row { background: var(--app-shell-page-paint); }
   .main-content-surface, .main-content-frame, .main-content-viewport, .main-content-slot, .extension-view-route { background: transparent; }
   .main-content-top-fade { display: none; }
-  .app-shell-header { --color-icon-primary: var(--desktop-foreground); --color-icon-secondary: var(--desktop-foreground); --color-text: var(--desktop-foreground); --color-text-secondary: var(--desktop-foreground); --color-text-tertiary: var(--desktop-foreground); color: var(--desktop-foreground); background: transparent; }
+  :is(.app-shell-header, .shell-chrome) { --color-icon-primary: var(--desktop-foreground); --color-icon-secondary: var(--desktop-foreground); --color-text: var(--desktop-foreground); --color-text-secondary: var(--desktop-foreground); --color-text-tertiary: var(--desktop-foreground); color: var(--desktop-foreground); background: transparent; }
   .app-shell-header::after { opacity: 0; }
   @media (forced-colors: active) { --app-shell-page-paint: Canvas; background: Canvas; .app-shell-header { color: CanvasText; } }
 }
@@ -434,7 +365,7 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   .app-shell-right-panel__surface { border-left: 0; }
   .app-shell-header::before { box-shadow: none; }
   .main-content-surface { background: transparent; box-shadow: none; }
-  .main-content-frame { background: var(--color-surface); }
+  .main-content-frame { background: var(--material-reading-background); }
   &:not(.has-unified-sidebar) { --opencraft-content-depth-elevation: var(--opencraft-main-surface-elevation); }
   .right-panel-divider {
     box-sizing: border-box;
@@ -482,6 +413,18 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
 
 .app-shell-header-motion-host {
   display: contents;
+}
+
+// Persistent navigation has a Shell-local home, outside route snapshots and
+// translations. Page chrome reserves only the part protruding into its pane.
+.shell-chrome-host { display: contents; }
+.app-shell-header__window-controls.shell-chrome {
+  position: absolute;
+  z-index: var(--layer-shell-sidebar-control);
+  top: var(--shell-mobile-safe-top, 0px);
+  left: 0;
+  height: var(--height-toolbar);
+  -webkit-app-region: drag;
 }
 
 .app-shell-root[data-sidebar-mounted="false"]
@@ -609,7 +552,7 @@ html[data-window-host="browser"][data-window-edge-strategy="legacy-overlay-reque
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  background: var(--color-surface);
+  background: var(--material-main-background);
   box-shadow: var(--opencraft-main-surface-elevation);
   overflow: clip;
 }
@@ -740,6 +683,14 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   user-select: none;
   -webkit-app-region: drag;
 
+  &[data-app-shell-chrome="page"] {
+    position: absolute;
+    // The row already allocates safe top. Only scroll-under pages bleed back
+    // through it; consume that exact allocation, not another viewport offset.
+    top: var(--shell-conversation-top-bleed, 0px);
+    &[data-navigation-detached] { padding-left: var(--app-shell-header-left-slot-width); }
+  }
+
   &[data-app-shell-header-edge-scroll="true"] {
     background: transparent;
   }
@@ -830,21 +781,18 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 
 .application-brand {
   --application-brand-mark-size: 26px;
-  display: inline-flex; align-items: center; gap: 7px;
   white-space: nowrap; user-select: none;
-  &:is(button) {
-    appearance: none; padding: 0; border: 0; background: transparent;
-    color: inherit; font: inherit; text-align: start; cursor: pointer;
-    border-radius: var(--radius-sm); pointer-events: auto;
-  }
+  &:not(button) { display: inline-flex; align-items: center; gap: 7px; }
+  &:is(button) { pointer-events: auto; }
   .application-brand__mark { width: var(--application-brand-mark-size); height: var(--application-brand-mark-size); flex: 0 0 auto; object-fit: contain; }
   .application-brand__wordmark { @include typography.role(navigation-title, primary); }
+  .application-brand__switch-icon { flex: 0 0 auto; color: var(--color-text-tertiary); }
 }
 
 // Brand and collapse control form one stable header across application routes.
 .app-shell-header__window-controls-rail[data-navigation-brand] {
   width: max-content;
-  > .application-brand { flex: 0 0 auto; padding-inline: 6px; }
+  > .application-brand { flex: 0 0 auto; }
 }
 // Shared header surface removes the empty material band above application pages.
 .has-unified-sidebar {
@@ -880,7 +828,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     border-start-start-radius: var(--opencraft-content-corner-radius, 0px);
   }
   .main-content-frame {
-    background: var(--color-surface);
+    background: var(--material-reading-background);
     overflow: clip;
   }
   &[data-opencraft-window-type="browser"]:not(.has-mobile-sidebar-gestures):not(.has-application-desktop) {
@@ -891,7 +839,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
     }
     // One full-height reading plane also backs transparent preview toolbars.
     // Header slots retain their geometry and hit testing without separate paint.
-    .main-content-surface { background: var(--color-surface); }
+    .main-content-surface { background: var(--material-main-background); }
     .app-shell-header { background: transparent; }
     .app-shell-header__content-edge { display: none; }
     [data-app-shell-content-plane="main"] { border-start-start-radius: 0; }
@@ -926,17 +874,19 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   -webkit-app-region: no-drag;
 }
 
-.app-shell-header__window-controls-measure
+[data-navigation-scope="page"] {
+  &.app-shell-header__window-controls { width: max-content; }
   .app-shell-header__window-controls-rail {
-  width: max-content;
-  min-width: max-content;
+    // Native-window reservation belongs to Shell, not the page's return slot.
+    --window-controls-padding-start: calc(var(--spacing) * 2);
+  }
 }
 
 // Touch density and a space-constrained browser page both give the leading
 // header space to navigation and the conversation title. The floating drawer
 // keeps its own brand. Match the measurement twin as well as the visible rail.
-:root[data-ui-density="touch"] .app-shell-header .app-shell-header__window-controls-rail[data-navigation-brand],
-.app-shell-root.has-mobile-sidebar-gestures .app-shell-header .app-shell-header__window-controls-rail[data-navigation-brand] {
+:root[data-ui-density="touch"] :is(.app-shell-header, .shell-chrome) .app-shell-header__window-controls-rail[data-navigation-brand]:not([data-sidebar-brand]),
+.app-shell-root.has-mobile-sidebar-gestures .app-shell-header .app-shell-header__window-controls-rail[data-navigation-brand]:not([data-sidebar-brand]) {
   width: max-content;
   > .application-brand { display: none; }
 }
@@ -967,6 +917,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 .app-shell-header__context-surface {
   display: flex;
   min-width: 0;
+  overflow: hidden;
   height: 100%;
   flex: 1;
   align-items: center;
@@ -1192,7 +1143,7 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
 
   // History remains in the expanded navigation; reserve the narrow header
   // for the title and primary actions. Its measurement copy follows suit.
-  .app-shell-root.has-shell-navigation .app-shell-header [data-app-shell-window-action="back"],
+  .app-shell-root.has-shell-navigation .app-shell-header [data-app-shell-window-action="back"]:not([data-navigation-return]),
   .app-shell-root.has-shell-navigation .app-shell-header [data-app-shell-window-action="forward"] {
     display: none;
   }
@@ -1226,6 +1177,17 @@ html[data-opencraft-window-type="browser"] .main-content-top-fade {
   display: flex;
   align-items: center;
   height: 100%;
+}
+
+// Primary-route actions share the title's pane; only workspace controls own the end slot.
+.app-shell-header__primary-actions {
+  display: flex;
+  flex: 0 0 auto;
+  height: 100%;
+  align-items: center;
+  margin-inline-start: auto;
+  padding-inline-end: var(--gap-control-group);
+  .chrome-button { pointer-events: auto; }
 }
 
 .app-shell-header__end-actions {
@@ -1395,60 +1357,6 @@ svg[data-sidebar-toggle-icon-state] {
   padding-right: 3px;
 }
 
-.sidebar-mode-switcher {
-  display: flex;
-  min-width: 0;
-  height: 32px;
-  flex: 1;
-  align-items: center;
-  gap: 5px;
-  margin-left: -8px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--radius-xl);
-  background: transparent;
-  color: var(--color-text);
-  text-align: left;
-
-  strong {
-    overflow: hidden;
-    font: var(--typography-panel-title-font);
-    letter-spacing: var(--font-tracking-normal);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    letter-spacing: var(--typography-panel-title-tracking);
-  }
-
-  svg {
-    color: var(--color-icon-tertiary);
-  }
-  @include controls.hover-capable {
-    &:hover {
-      background: var(--color-background-button-tertiary-hover);
-    }
-  }
-}
-
-.sidebar-icon-button {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  flex: 0 0 auto;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-md);
-  place-items: center;
-  background: transparent;
-  color: var(--color-icon-secondary);
-
-  @include controls.hover-capable {
-    &:hover {
-      background: var(--color-background-button-tertiary-hover);
-      color: var(--color-icon-primary);
-    }
-  }
-}
-
 .sidebar-navigation {
   display: grid;
   gap: var(--gap-navigation-rows);
@@ -1460,7 +1368,24 @@ svg[data-sidebar-toggle-icon-state] {
   margin-top: 8px;
 }
 
-.sidebar-extension-catalog__heading {
+.sidebar-catalog-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+
+  > .sidebar-catalog-heading {
+    min-inline-size: 0;
+    flex: 1;
+
+    > span {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+  }
+}
+
+.sidebar-section-heading.sidebar-catalog-heading {
   width: 100%;
   justify-content: flex-start;
   gap: 5px;
@@ -1500,19 +1425,12 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-section-heading button,
-.sidebar-extension-catalog__heading {
+.sidebar-catalog-heading {
   @include controls.quiet-control;
 }
 
 .sidebar-navigation-item {
 
-  > span:not(.sidebar-navigation-item__icon) {
-    min-width: 0;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   small {
     display: grid;
@@ -1535,18 +1453,6 @@ svg[data-sidebar-toggle-icon-state] {
 
 }
 
-.sidebar-navigation-item__icon {
-  display: grid;
-  width: var(--size-navigation-leading-slot);
-  height: var(--size-navigation-leading-slot);
-  flex: 0 0 var(--size-navigation-leading-slot);
-  place-items: center;
-
-  > svg {
-    display: block;
-    @include icons.navigation-icon;
-  }
-}
 
 .sidebar-content-scroll {
   --sidebar-edge-fade-distance: calc(var(--spacing) * 10);
@@ -1593,6 +1499,11 @@ svg[data-sidebar-toggle-icon-state] {
 .sidebar-bots + .sidebar-tasks,
 .sidebar-extension-catalog + .sidebar-tasks {
   margin-top: var(--gap-navigation-groups);
+}
+
+// Entry-only catalogs share the conversation list rhythm, without a group-sized spacer.
+.sidebar-extension-catalog[data-catalog-presentation="entry"] + .sidebar-tasks {
+  margin-top: var(--gap-navigation-sections);
 }
 
 .sidebar-section-heading {
@@ -1649,13 +1560,27 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-thread-tree,
-.sidebar-thread-tree__children {
+.sidebar-thread-tree__children,
+.sidebar-thread-tree__earlier-items {
   display: grid;
   min-width: 0;
   gap: var(--gap-navigation-rows);
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.sidebar-thread-tree__earlier-items[hidden] {
+  display: none;
+}
+
+.sidebar-thread-tree__child-toggle {
+  width: 100%;
+  justify-content: flex-start;
+}
+
+.sidebar-thread-tree__child-toggle .is-collapsed {
+  transform: rotate(-90deg);
 }
 
 .sidebar-thread-tree__node {
@@ -1714,7 +1639,7 @@ svg[data-sidebar-toggle-icon-state] {
 @media (hover: hover) and (pointer: fine) {
   .sidebar-activity-row:not(:focus-within):not(:has([data-state="open"])):has(.sidebar-activity-item-container[data-row-lines="one"]):not(:has(.sidebar-activity-item__badge-slot:not(:empty))) {
     content-visibility: auto;
-    contain-intrinsic-block-size: auto max(32px, var(--size-control-hit-min), calc(var(--typography-thread-list-title-line-height) + 8px));
+    contain-intrinsic-block-size: auto max(var(--height-sidebar-activity-title-row), calc(var(--typography-thread-list-title-line-height) + 2 * var(--padding-sidebar-activity-single-row-block)));
   }
 }
 
@@ -1908,12 +1833,12 @@ svg[data-sidebar-toggle-icon-state] {
   .sidebar-activity-pagination .is-spinning { animation: none; }
 }
 
-.sidebar-activity-more,
-.sidebar-activity-empty {
+.sidebar-activity-empty { @include typography.role(metadata, tertiary); }
+.sidebar-activity-more {
   @include typography.role(metadata, tertiary);
   min-height: var(--height-navigation-row);
-  padding: 7px var(--padding-sidebar-activity-row-inline);
-  text-align: left;
+  padding: var(--padding-sidebar-empty-block) var(--padding-sidebar-activity-row-inline);
+  text-align: start;
 }
 
 .sidebar-activity-more {
@@ -1926,23 +1851,6 @@ svg[data-sidebar-toggle-icon-state] {
   border-radius: var(--radius-lg);
 
   @include controls.hover-capable { &:hover { color: var(--color-text); } }
-}
-
-.sidebar-catalog-progress {
-  display: inline-flex;
-  margin-inline-start: var(--gap-control-group);
-  vertical-align: middle;
-
-  > svg { display: block; }
-  &__label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
-  @media (prefers-reduced-motion: reduce) { > svg { animation: none; } }
 }
 
 .sidebar-catalog-feedback {
@@ -2044,7 +1952,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .new-thread-draft-layout {
-  --draft-block-start: 24px;
+  --draft-block-start: calc(24px + var(--shell-conversation-top-bleed, 0px));
   --draft-block-end: 16px;
   --draft-composer-gap: 6px;
   // The route owns these insets; the shared Composer consumes its remaining
@@ -2220,7 +2128,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .new-thread-project-menu {
-  z-index: 80;
+  z-index: var(--layer-floating-control);
   box-sizing: border-box;
   display: flex;
   width: min(360px, calc(100vw - 32px));
@@ -2230,7 +2138,7 @@ svg[data-sidebar-toggle-icon-state] {
   padding: var(--menu-surface-padding);
   overflow: hidden;
   border: 1px solid var(--color-border-subtle);
-  border-radius: 12px;
+  border-radius: var(--menu-surface-radius);
   background: var(--color-background-elevated-primary-opaque);
   box-shadow: 0 14px 40px -18px rgb(0 0 0 / 34%);
   color: var(--color-text);
@@ -2246,20 +2154,16 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .new-thread-project-menu__heading {
-  padding: 5px 8px 3px;
+  padding: var(--padding-menu-item-block) var(--padding-menu-item-inline) var(--menu-item-gap);
   color: var(--color-text-tertiary);
   font: var(--typography-label-font);
   letter-spacing: var(--typography-label-tracking);
 }
 
 .new-thread-project-menu__search {
-  display: flex;
-  height: 34px;
+  @include controls.search-field-geometry(var(--height-search-field-compact), var(--padding-menu-item-inline));
   flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 3px;
-  padding: 0 8px;
+  margin-bottom: var(--menu-item-gap);
   border-radius: var(--menu-item-radius);
   background: var(--color-background-secondary);
   color: var(--color-icon-secondary);
@@ -2282,10 +2186,12 @@ svg[data-sidebar-toggle-icon-state] {
   width: 100%;
   min-width: 0;
   align-items: center;
-  gap: 12px;
-  padding: 8px 9px;
+  gap: var(--gap-menu-item-content);
+  min-height: max(var(--height-menu-item), var(--size-control-hit-min));
+  box-sizing: border-box;
+  padding: var(--padding-menu-item-block) var(--padding-menu-item-inline);
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--menu-item-radius);
   outline: 0;
   background: transparent;
   color: inherit;
@@ -2316,8 +2222,8 @@ svg[data-sidebar-toggle-icon-state] {
   }
 
   strong {
-    font: var(--typography-metadata-font);
-    letter-spacing: var(--typography-metadata-tracking);
+    font: var(--menu-item-font);
+    letter-spacing: var(--menu-item-tracking);
   }
 
   small {
@@ -2368,10 +2274,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .new-thread-project-menu__separator {
-  display: block;
-  height: 1px;
-  margin: 4px 3px;
-  background: var(--color-border-subtle);
+  @include menu.separator;
 }
 
 .workbench-route-stage,
@@ -2527,7 +2430,7 @@ svg[data-sidebar-toggle-icon-state] {
 .settings-page__navigation--management {
 
   .settings-page__back {
-    margin-bottom: 16px;
+    margin-bottom: var(--gap-sidebar-navigation-back-after);
   }
 }
 
@@ -2540,7 +2443,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .management-navigation__dialog-title {
-  margin: 0 10px 20px;
+  margin: 0 var(--padding-sidebar-navigation-row-inline) var(--gap-sidebar-search-after);
   overflow: hidden;
   color: var(--color-text);
   font: var(--typography-sidebar-section-font);
@@ -2550,15 +2453,11 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .management-navigation__search {
-  display: flex;
-  height: 38px;
+  @include controls.search-field-geometry;
   flex: 0 0 auto;
-  align-items: center;
-  gap: 8px;
-  margin: 0 2px 20px;
+  margin: 0 0 var(--gap-sidebar-search-after);
   border: 1px solid var(--color-border-subtle);
-  border-radius: 10px;
-  padding: 0 10px;
+  border-radius: var(--radius-lg);
   background: var(--color-background-surface);
   color: var(--color-text-tertiary);
 
@@ -2587,7 +2486,6 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .management-navigation__empty {
-  margin: 4px 12px;
   color: var(--color-text-tertiary);
   font: var(--typography-metadata-font);
   letter-spacing: var(--typography-metadata-tracking);
@@ -2660,7 +2558,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .management-navigation__group {
-  margin-bottom: 18px;
+  margin-bottom: var(--gap-sidebar-navigation-groups);
 }
 
 .settings-page__left-panel {
@@ -2672,12 +2570,12 @@ svg[data-sidebar-toggle-icon-state] {
 
 .settings-page__back {
   flex: 0 0 auto;
-  margin-bottom: 28px;
+  margin-bottom: var(--gap-sidebar-navigation-back-after);
 }
 
 .settings-page__navigation-heading {
   flex: 0 0 auto;
-  padding: 0 12px 9px;
+  padding: 0 var(--padding-sidebar-navigation-row-inline) var(--gap-sidebar-navigation-heading-after);
   color: var(--color-text-tertiary);
   font: var(--typography-label-font);
   letter-spacing: var(--typography-label-tracking);
@@ -2689,7 +2587,7 @@ svg[data-sidebar-toggle-icon-state] {
 
 .settings-page__navigation .ui-navigation-group > .settings-page__navigation-heading,
 .settings-page__navigation .ui-navigation-group > div > .settings-page__navigation-heading {
-  padding-top: 18px;
+  padding-top: var(--gap-sidebar-navigation-groups);
 }
 
 .settings-page__viewport {
@@ -2880,6 +2778,7 @@ svg[data-sidebar-toggle-icon-state] {
 
 .settings-control-section__heading {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
@@ -2889,7 +2788,9 @@ svg[data-sidebar-toggle-icon-state] {
 .settings-control-section--center-action > .settings-control-section__heading { align-items: center; }
 
 .settings-control-section__copy {
+  flex: 1 1 12em;
   min-width: 0;
+  overflow-wrap: anywhere;
 
   h3 {
     @include typography.role(settings-section-title);
@@ -2908,6 +2809,7 @@ svg[data-sidebar-toggle-icon-state] {
 
 .settings-control-section__action {
   flex: 0 0 auto;
+  max-width: 100%;
 }
 
 .settings-control-group {
@@ -2916,7 +2818,9 @@ svg[data-sidebar-toggle-icon-state] {
   flex-direction: column;
   border: 0.5px solid var(--color-border-default);
   border-radius: var(--radius-token-settings-card);
-  background: var(--color-background-panel, var(--color-background-surface));
+  background: var(--material-settings-background);
+  -webkit-backdrop-filter: var(--material-card-filter);
+  backdrop-filter: var(--material-card-filter);
   box-shadow: 0 1px 2px rgb(0 0 0 / 2%);
 
   // The panel owns list rhythm and separators. Rows supplied by the core or
@@ -2949,6 +2853,44 @@ svg[data-sidebar-toggle-icon-state] {
   gap: 8px 24px;
   padding: 12px var(--padding-token-settings-row-inline);
 
+}
+
+// Navigation rows reuse the Settings row; only the button reset and trailing
+// value/chevron are added here.
+.settings-control-row.settings-navigation-row {
+  @include controls.quiet-control($hover: false);
+  // Utility panels lay Settings rows out as a label/value grid; a navigation
+  // row is always one line, so it owns its flex layout explicitly.
+  display: flex;
+  align-items: center;
+  width: 100%;
+  flex-wrap: nowrap;
+  gap: var(--gap-token-settings-navigation-value);
+  border-radius: 0;
+  text-align: start;
+  color: var(--color-text);
+  @include controls.hover-capable { &:hover:not(:disabled) { background: var(--color-background-navigation-hover); } }
+  &:active:not(:disabled) { background: var(--color-background-navigation-pressed); }
+  > .settings-control-row__label { flex: 0 0 auto; @include typography.role(body, primary); }
+  &[data-tone="danger"] { justify-content: center; > .settings-control-row__label { color: var(--color-text-danger, #e5484d); } }
+}
+.settings-navigation-row__value {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing);
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-end;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  @include typography.role(body, secondary);
+}
+.settings-navigation-row__chevron {
+  flex: 0 0 auto;
+  width: var(--size-token-settings-navigation-chevron);
+  height: var(--size-token-settings-navigation-chevron);
+  color: var(--color-text-tertiary);
 }
 
 .settings-control-row--stacked {
@@ -3065,6 +3007,29 @@ svg[data-sidebar-toggle-icon-state] {
   padding: 0 10px;
 }
 
+.settings-control-input--subtle {
+  background: var(--color-background-input-subtle);
+  box-shadow: none;
+}
+.settings-control-input-shell {
+  position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  flex: none;
+  > .settings-control-input { padding-inline-start: var(--padding-input-with-icon); }
+  &__icon {
+    position: absolute;
+    inset-inline-start: var(--padding-input-icon);
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    pointer-events: none;
+    color: var(--color-text-secondary);
+    > svg { width: var(--size-input-leading-icon); height: var(--size-input-leading-icon); }
+  }
+}
+
 .settings-control-select-shell {
   position: relative;
   display: block;
@@ -3103,158 +3068,6 @@ svg[data-sidebar-toggle-icon-state] {
   cursor: pointer;
 
   &:disabled { cursor: default; }
-}
-
-.segmented-control {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-
-  button {
-    display: inline-flex;
-    height: max(32px, var(--size-control-hit-min));
-    min-width: 0;
-    align-items: center;
-    justify-content: center;
-    border: 0;
-    border-radius: var(--radius-lg);
-    outline: none;
-    padding: 0 12px;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font: inherit;
-    font-size: var(--font-text-sm-size);
-    font-weight: var(--font-weight-medium);
-    line-height: var(--typography-chat-line-height);
-    white-space: nowrap;
-    cursor: pointer;
-    transition:
-      background-color var(--transition-duration-basic) var(--ease-standard),
-      color var(--transition-duration-basic) var(--ease-standard);
-
-    @include controls.hover-capable {
-      &:hover:not(:disabled) {
-        background: var(--color-background-button-tertiary-hover);
-        color: var(--color-text);
-      }
-    }
-
-    &[aria-checked="true"] {
-      background: var(--color-background-button-secondary);
-      color: var(--color-text);
-    }
-
-    &:focus-visible {
-      position: relative;
-      z-index: 1;
-      box-shadow: 0 0 0 2px var(--focus-ring);
-    }
-
-    &:disabled {
-      opacity: 0.45;
-      cursor: default;
-    }
-  }
-}
-
-.segmented-control[data-appearance="inset"] {
-  --height-segmented-face: 28px;
-  position: relative;
-  isolation: isolate;
-  display: inline-grid;
-  align-items: stretch;
-  width: max-content;
-  max-width: 100%;
-  grid-auto-columns: minmax(0, 1fr);
-  grid-auto-flow: column;
-  gap: 4px;
-  border: 0.5px solid transparent;
-  border-radius: 10px;
-  padding: 4px;
-  background: transparent;
-
-  // Paint stays compact; the real buttons retain the shared touch-hit floor.
-  &::before {
-    content: "";
-    position: absolute;
-    z-index: -1;
-    inset-inline: -0.5px;
-    top: 50%;
-    height: calc(var(--height-segmented-face) + 5px);
-    transform: translateY(-50%);
-    box-sizing: border-box;
-    border: 0.5px solid color-mix(in srgb, var(--color-border-default) 58%, transparent);
-    border-radius: inherit;
-    background: color-mix(in srgb, var(--color-surface-secondary) 90%, transparent);
-    pointer-events: none;
-  }
-
-  button {
-    position: relative;
-    isolation: isolate;
-    min-height: max(var(--height-segmented-face), var(--size-control-hit-min));
-    height: auto;
-    border: 0;
-    border-radius: 8px;
-    outline: none;
-    padding: 4px 12px;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font: inherit;
-    font: var(--typography-control-compact-font);
-    cursor: pointer;
-    transition:
-      background-color var(--transition-duration-basic) var(--ease-standard),
-      box-shadow var(--transition-duration-basic) var(--ease-standard),
-      color var(--transition-duration-basic) var(--ease-standard);
-
-    @include controls.hover-capable {
-      &:hover:not(:disabled) {
-        background: transparent;
-        color: var(--color-text);
-      }
-    }
-
-    &::before {
-      content: "";
-      position: absolute;
-      z-index: -1;
-      inset-inline: 0;
-      top: 50%;
-      height: var(--height-segmented-face);
-      transform: translateY(-50%);
-      border-radius: inherit;
-      background: transparent;
-      pointer-events: none;
-      transition:
-        background-color var(--transition-duration-basic) var(--ease-standard),
-        box-shadow var(--transition-duration-basic) var(--ease-standard);
-    }
-
-    &[aria-checked="true"] {
-      background: transparent;
-      box-shadow: none;
-      color: var(--color-text);
-      font-weight: var(--typography-primary-action-weight);
-      &::before {
-        background: var(--color-background-elevated-primary-opaque);
-        box-shadow: 0 0 0 0.5px var(--color-border-default), 0 1px 2px rgb(0 0 0 / 8%);
-      }
-    }
-
-    &:focus-visible {
-      position: relative;
-      z-index: 1;
-      box-shadow: none;
-      &::before { box-shadow: 0 0 0 2px var(--focus-ring); }
-    }
-
-    letter-spacing: var(--typography-control-compact-tracking)
-
-  }
 }
 
 .settings-control-switch {
@@ -3462,6 +3275,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .settings-control-list-item__copy {
+  overflow-wrap: anywhere;
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -3502,7 +3316,7 @@ svg[data-sidebar-toggle-icon-state] {
 
   > button:not(.settings-control-button):not(.settings-control-switch) {
     display: grid;
-    min-width: 28px;
+    @include controls.density-target(28px, 28px);
     height: 28px;
     place-items: center;
     border: 0;
@@ -3539,6 +3353,7 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .settings-control-list-item__danger-action {
+  @include controls.density-target(28px, 28px);
   display: grid;
   width: 28px;
   height: 28px;
@@ -3678,18 +3493,11 @@ svg[data-sidebar-toggle-icon-state] {
     grid-template-columns: minmax(0, 1fr) auto;
     &[data-has-icon="true"] { grid-template-columns: auto minmax(0, 1fr) auto; }
   }
-  .settings-page .settings-control-list-item__actions > button:not(.settings-control-switch) {
-    min-width: 44px;
-    min-height: 44px;
-    height: auto;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .settings-control-input,
   .settings-control-select-shell,
-  .settings-control-segmented button,
-  .segmented-control[data-appearance="inset"] button::before,
   .settings-control-switch,
   .settings-control-switch::before,
   .settings-control-switch span,
@@ -3758,6 +3566,47 @@ svg[data-sidebar-toggle-icon-state] {
   min-width: 0;
   min-height: 0;
   flex: 1;
+}
+
+.thread-scroll-plane {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+
+  > .thread-scroll > .thread-scroll-surface,
+  > .thread-scroll-footer {
+    transform: translateX(var(--thread-content-inline-offset, 0px));
+  }
+
+  &[data-has-footer] {
+    // Desktop keeps the lower reading strip quiet. Touch layouts deliberately
+    // let history pass behind and below the floating glass composer. Scope paint
+    // only: footer reservation, native scrolling and keyboard geometry are shared.
+    // No density attribute yet means no clipping during capability bootstrap.
+    :root[data-ui-density="compact"] & > .thread-scroll {
+      isolation: isolate;
+      clip-path: polygon(
+        0 0, 100% 0, 100% 100%,
+        calc(100% - var(--thread-reading-clip-right, 0px)) 100%,
+        calc(100% - var(--thread-reading-clip-right, 0px)) calc(100% - var(--thread-reading-bottom-inset, 0px)),
+        var(--thread-reading-clip-left, 0px) calc(100% - var(--thread-reading-bottom-inset, 0px)),
+        var(--thread-reading-clip-left, 0px) 100%, 0 100%
+      );
+    }
+    > .thread-scroll > .thread-scroll-surface::after {
+      content: "";
+      flex: 0 0 var(--thread-footer-height, 0px);
+      margin-block-start: auto;
+    }
+    > .thread-scroll-footer {
+      position: absolute;
+      // The viewport owner projects native scrollbar insets onto this dock.
+      inset-inline: 0;
+      width: auto;
+      bottom: 0;
+    }
+  }
 }
 
 .thread-scroll {
@@ -4185,6 +4034,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   flex: 1 0 auto;
   flex-direction: column;
   padding-block-end: 32px;
+
+  // A short tail and an overflowing history share the same bottom edge.
+  // Prepending history must not move a tail first painted at the page top.
+  // Empty states and response-placement retain their own layout policy.
+  &[data-thread-follow-tail-layout] {
+    justify-content: flex-end;
+  }
 }
 
 .thread-virtualizer-spacer {
@@ -4213,124 +4069,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   flex: 0 0 auto;
 }
 
-.thread-scroll-footer {
-  position: sticky;
-  z-index: 10;
-  bottom: 0;
-  width: 100%;
-  flex: 0 0 auto;
-  margin-top: auto;
-  padding-bottom: 16px;
-
-  // Desktop cuts off transcript paint before the shell's lower corner arcs.
-  // Touch keeps the Composer floating, including its surrounding safe area.
-  &::after {
-    content: "";
-    position: absolute;
-    z-index: 0;
-    inset-inline: 0;
-    bottom: 0;
-    height: calc(16px + var(--radius-composer-shell));
-    background: var(--color-surface);
-    pointer-events: none;
-  }
-}
-
-:root[data-ui-density="touch"] .thread-scroll-footer::after {
-  content: none;
-}
-
-// Shell allocates the device inset once; routes keep their ordinary gap.
-.thread-scroll-footer__gradient {
-  position: absolute;
-  z-index: 0;
-  inset-inline-start: 0;
-  inset-inline-end: 0;
-  bottom: 0;
-  height: 100%;
-  pointer-events: none;
-  background: none;
-}
-
-.thread-scroll-footer__content {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.thread-scroll-to-bottom-anchor {
-  position: relative;
-  height: 0;
-}
-
-.thread-scroll-to-bottom-button {
-  position: absolute;
-  z-index: 30;
-  inset-inline-end: 50%;
-  bottom: calc(100% + 6 * var(--spacing));
-  transform: translateX(50%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-duration-basic) ease-in-out;
-  &[data-visible="true"] { opacity: 1; pointer-events: auto; }
-}
-
-.thread-scroll-to-bottom-button__icon {
-  display: block;
-  color: var(--color-text);
-  transform: rotate(180deg);
-}
-
-.thread-scroll-to-bottom-button__working {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.thread-scroll-to-bottom-button__dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 9999px;
-  background: color-mix(in srgb, var(--color-text) 70%, transparent);
-}
-
-@keyframes thread-scroll-to-bottom-working-dot-wave {
-  0%,
-  10%,
-  100% {
-    transform: translateY(0);
-  }
-  25% {
-    transform: translateY(1.2px);
-  }
-  55% {
-    transform: translateY(-2px);
-  }
-  70% {
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .thread-scroll-to-bottom-button__dot {
-    animation: thread-scroll-to-bottom-working-dot-wave 1s ease-in-out infinite;
-
-    &:nth-child(2) {
-      animation-delay: 100ms;
-    }
-    &:nth-child(3) {
-      animation-delay: 200ms;
-    }
-  }
-}
-
-@media print {
-  .thread-scroll-to-bottom-button {
-    display: none;
-  }
-}
-
 .thread-user-message-anchor {
   // The content-search wrapper is the scroll target; its child bubble remains
   // the highlight and measurement target.
@@ -4351,6 +4089,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .thread-turn {
+  position: relative; // The visibility receipt measures this tail without adding a flex row.
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -4749,7 +4488,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-.modal-surface:is(.thread-user-image-lightbox, .thread-generated-image-lightbox__dialog, .opencraft-composer-image-preview) {
+.modal-surface.opencraft-composer-image-preview {
   display: grid;
   width: 100vw;
   height: 100dvh;
@@ -4764,7 +4503,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   > .opencraft-zoomable-image { width: 100%; height: 100%; max-height: none; }
 
-  > .opencraft-zoomable-image > img {
+  > .opencraft-zoomable-image img {
     max-width: calc(100vw - 48px);
     max-height: calc(100dvh - 48px);
     border-radius: 12px;
@@ -4779,44 +4518,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     color: #fff;
     background: rgb(0 0 0 / 55%);
   }
-}
-
-.thread-user-image-lightbox__unavailable {
-  display: grid;
-  min-width: 220px;
-  min-height: 180px;
-  place-items: center;
-  border-radius: 12px;
-  background: var(--color-background-elevated-primary-opaque);
-  color: var(--color-text-secondary);
-}
-
-.thread-user-image-lightbox__navigation {
-  position: absolute;
-  z-index: 1;
-  bottom: max(16px, env(safe-area-inset-bottom));
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-top: 10px;
-  padding: 4px 8px;
-  border-radius: 20px;
-  background: rgb(0 0 0 / 60%);
-  color: #fff;
-
-  button {
-    display: grid;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    place-items: center;
-    background: transparent;
-    color: inherit;
-  }
-
-  @include controls.hover-capable { button:hover { background: rgb(255 255 255 / 18%); } }
 }
 
 .thread-response {
@@ -6365,6 +6066,16 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   width: min(calc((100% - 24px) / 4), 174px);
   aspect-ratio: 1;
 }
+.thread-generated-image-gallery--sized,
+.thread-generated-image-gallery--sized.thread-generated-image-gallery--pending {
+  width: min(100%, 400px, var(--generated-image-width), calc(560px * var(--generated-image-ratio)));
+  aspect-ratio: var(--generated-image-ratio);
+}
+.thread-generated-image-gallery--sized {
+  .thread-generated-image-preview-wrap,
+  .thread-generated-image-preview,
+  .thread-generated-image-preview img { width: 100%; height: 100%; }
+}
 .thread-generated-image-placeholder {
   width: 100%;
   height: 100%;
@@ -6384,7 +6095,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   position: absolute;
   inset-inline-start: 8px;
   bottom: 8px;
-  height: 24px;
+  height: var(--height-generated-image-action);
+  min-width: var(--size-control-hit-min);
   padding: 0 8px;
   border: 0;
   border-radius: 7px;
@@ -6408,29 +6120,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     background: rgba(0, 0, 0, 0.6);
   }
 }
-.thread-generated-image-lightbox__toolbar {
-  position: absolute;
-  z-index: 1;
-  inset-inline-end: max(64px, calc(env(safe-area-inset-right) + 56px));
-  top: max(12px, env(safe-area-inset-top));
-  display: flex;
-  gap: 6px;
-}
-.thread-generated-image-lightbox__toolbar button,
-.thread-generated-image-lightbox__toolbar a {
-  display: inline-flex;
-  min-width: 32px;
-  height: 32px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 9px;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.48);
-  text-decoration: none;
-}
-
 .thread-assistant-message {
   position: relative;
   color: var(--color-text);
@@ -6497,7 +6186,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .thread-message-actions {
   display: flex;
-  height: 20px;
+  height: var(--height-message-action-row);
   gap: 2px;
   margin: 6px 0 0;
   opacity: 0;
@@ -6513,8 +6202,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   button {
     display: grid;
-    width: 25px;
-    height: 25px;
+    width: var(--size-message-action);
+    height: var(--size-message-action);
+    flex: 0 0 var(--size-message-action);
     padding: 0;
     border: 0;
     border-radius: 6px;
@@ -7999,7 +7689,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     min-width: 0;
     align-items: flex-start;
     gap: 8px;
-    padding: 8px 30px 4px 8px;
+    min-height: calc(var(--size-transcript-utility-action) + var(--spacing) * 2);
+    padding: 8px calc(var(--size-transcript-utility-action) + var(--spacing) * 2) 4px 8px;
     color: var(--color-text-tertiary);
 
     code {
@@ -8020,13 +7711,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   &__output {
     position: relative;
-    min-height: 20px;
+    min-height: calc(var(--size-transcript-utility-action) + var(--spacing) * 2);
 
     > pre {
       max-height: 144px;
       min-height: 20px;
       margin: 0;
-      padding: 8px;
+      padding: 8px calc(var(--size-transcript-utility-action) + var(--spacing) * 3) 8px 8px;
       overflow: auto;
       color: var(--color-text-secondary);
       font-weight: var(--typography-primary-action-weight);
@@ -8040,8 +7731,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     top: 4px;
     right: 6px;
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: var(--size-transcript-utility-action);
+    height: var(--size-transcript-utility-action);
     padding: 0;
     border: 0;
     border-radius: 5px;
@@ -8619,154 +8310,35 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .thread-subagent-avatar {
-  position: relative;
   display: grid;
   width: 16px;
   height: 16px;
   flex: 0 0 16px;
-  border: 1px solid
-    color-mix(
-      in srgb,
-      hsl(var(--agent-hue) 58% 44%) 24%,
-      var(--color-border-default)
-    );
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   place-items: center;
-  background: linear-gradient(
-    145deg,
-    hsl(var(--agent-hue) 74% 93%),
-    hsl(calc(var(--agent-hue) + 26deg) 62% 82%)
-  );
-  color: hsl(var(--agent-hue) 42% 30%);
+  background: linear-gradient(145deg, hsl(var(--agent-hue) 55% 88%), hsl(calc(var(--agent-hue) + 26deg) 48% 72%));
+  color: hsl(var(--agent-hue) 35% 24%);
   font: var(--typography-label-font);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 55%);
-
-  &::after {
-    position: absolute;
-    right: -1px;
-    bottom: -1px;
-    width: 5px;
-    height: 5px;
-    border: 1.5px solid var(--color-background-primary);
-    border-radius: 50%;
-    background: var(--color-text-tertiary);
-    content: "";
-  }
-
-  &[data-status="working"]::after {
-    background: var(--color-decoration-added);
-    animation: subagent-status-pulse 1.5s ease-in-out infinite;
-  }
-  &[data-status="waiting"]::after {
-    background: var(--color-accent);
-  }
-  &[data-status="failed"]::after {
-    background: var(--color-decoration-deleted);
-  }
 }
 
-.thread-subagent-chip {
+.thread-subagent-avatars {
   display: inline-flex;
-  max-width: 192px;
-  height: 28px;
-  min-width: 0;
   align-items: center;
   gap: 6px;
-  padding: 0 8px 0 6px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--color-text-secondary);
-  font: var(--typography-control-compact-font);
-
-  > span:not(.thread-subagent-avatar) {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  small {
-    color: var(--color-text-tertiary);
-    font: var(--typography-label-font);
-    white-space: nowrap;
-    letter-spacing: var(--typography-label-tracking);
-  }
-  @include controls.hover-capable {
-    &:not(:disabled):hover {
-      border-color: var(--color-border-default);
-      background: var(--color-background-button-tertiary-hover);
-      color: var(--color-text);
-    }
-  }
-  &:disabled {
-    cursor: default;
-  }
-  &:focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 1px;
-  }
+  flex: 0 0 auto;
 }
 
-.thread-subagent-chips {
-  display: flex;
-  flex-wrap: wrap;
-  min-width: 0;
-  align-items: center;
-
-  .thread-subagent-chip + .thread-subagent-chip {
-    margin-left: -4px;
-  }
-
-  &__more {
-    flex-shrink: 0;
-    white-space: nowrap;
-    height: 24px;
-    padding: 0 4px;
-    border: 0;
-    background: transparent;
-    color: var(--color-text-tertiary);
-    font: var(--typography-metadata-font);
-    text-decoration: underline;
-    text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-    text-underline-offset: 2px;
-
-    @include controls.hover-capable {
-      &:hover {
-        color: var(--color-text);
-      }
-    }
-    &:focus-visible {
-      border-radius: 4px;
-      outline: 2px solid var(--color-focus-ring);
-    }
-  }
-}
-
-.thread-subagent-inline {
+.thread-subagent-avatar-entry {
   display: inline-flex;
-  max-width: 100%;
-  min-height: 28px;
-  align-items: center;
-  gap: 7px;
-  padding: 3px 5px 3px 1px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: color-mix(in srgb, var(--color-text-tertiary) 90%, transparent);
-  font: var(--typography-control-compact-font);
-  text-align: left;
+  transform-origin: left center;
+  @media (prefers-reduced-motion: no-preference) {
+    animation: subagent-avatar-enter 280ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
 
-  @include controls.hover-capable {
-    &:not(:disabled):hover {
-      color: var(--color-text);
-    }
-  }
-  &:disabled {
-    cursor: default;
-  }
-  &:focus-visible {
-    outline: 2px solid var(--color-focus-ring);
-    outline-offset: 1px;
-  }
+@keyframes subagent-avatar-enter {
+  from { opacity: 0; transform: translate(-6px, 3px) scale(0.94); }
+  to { opacity: 1; transform: translate(0, 0) scale(1); }
 }
 
 .thread-subagent-trigger {
@@ -8779,45 +8351,38 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .thread-subagent-activity {
   min-width: 0;
-  color: var(--color-text-secondary);
-  font-size: var(--opencraft-chat-font-size);
 
   &__header {
     display: flex;
     flex-wrap: nowrap;
     min-width: 0;
-    min-height: 32px;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
   }
-
-  &__status {
-    overflow: hidden;
-    color: color-mix(in srgb, var(--color-text) 40%, transparent);
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  &__summary {
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
-
-  &__chevron {
+  &__toggle {
     flex: 0 0 auto;
-    margin-left: auto;
-    color: var(--color-icon-tertiary);
-    opacity: 1;
-    transition:
-      transform 300ms var(--ease-standard),
-      opacity 160ms ease;
+    opacity: 0;
   }
-
-  &[data-open] &__chevron {
-    opacity: 1;
-  }
+  &:focus-within &__toggle,
+  &[data-open] &__toggle { opacity: 1; }
   @include controls.hover-capable {
-    &:hover &__chevron {
-      opacity: 1;
-    }
+    &:hover &__toggle { opacity: 1; }
   }
-  &[data-open] &__chevron {
-    transform: rotate(90deg);
+  @media (hover: none), (pointer: coarse) {
+    &__toggle { opacity: 1; }
+  }
+  &__chevron {
+    transition: transform 200ms var(--ease-standard);
+  }
+  &[data-open] &__chevron { transform: rotate(90deg); }
+  &[data-status="failed"] &__summary { color: var(--color-text-danger); }
+  &[data-status="attention"] &__summary { color: var(--color-text-warning); }
+  @media (prefers-reduced-motion: reduce) {
+    &__chevron { transition: none; }
   }
 }
 
@@ -8859,6 +8424,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 
   &__name.ui-button {
+    min-height: 0;
+    padding: 0;
     white-space: normal;
     text-align: start;
     overflow-wrap: anywhere;
@@ -8878,17 +8445,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-@keyframes subagent-status-pulse {
-  0%,
-  100% {
-    opacity: 0.55;
-    transform: scale(0.86);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
+
 
 .is-shimmering {
   --shimmer-text-secondary: currentColor;
@@ -8977,19 +8534,18 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .opencraft-composer-shell {
-  --composer-surface-filter: none;
+  --composer-surface-filter: var(--material-composer-filter);
   position: relative;
   z-index: 1;
   min-width: 0;
   overflow: visible;
   border: 0.5px solid
-    color-mix(in srgb, var(--color-border-default) 88%, transparent);
+    var(--color-border-composer-desktop);
   border-radius: var(--radius-composer-shell);
-  --composer-surface-background: var(--color-background-elevated-primary-opaque);
+  --composer-surface-background: var(--material-composer-background);
   background: transparent;
   box-shadow:
-    0 1px 1px rgb(0 0 0 / 4%),
-    0 9px 30px -14px rgb(0 0 0 / 34%),
+    var(--shadow-composer-desktop),
     inset 0 1px 0 var(--composer-seam-highlight, color-mix(in srgb, white 38%, transparent));
 
   // Keep native editable text/caret outside the glass filter's compositing subtree.
@@ -9018,50 +8574,27 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   z-index: 1;
 }
 
-// Shared material rules keep routine loading quieter than reconnect/failure.
-.opencraft-composer-shell[data-loading]::before {
-  --recovery-start: 1%;
-  --recovery-end: 2.5%;
-  --recovery-rim: 7%;
-  --recovery-glow: 0%;
-}
-.opencraft-composer-shell:is([data-loading], [data-warning])::before {
+// Routine loading retains the neutral composer material; red signals recovery/failure.
+.opencraft-composer-shell[data-warning]::before {
   background:
     linear-gradient(
       180deg,
-      color-mix(in srgb, var(--color-text-danger) var(--recovery-start, 2.5%), transparent),
-      color-mix(in srgb, var(--color-text-danger) var(--recovery-end, 6.5%), transparent)
+      color-mix(in srgb, var(--color-text-danger) 2.5%, transparent),
+      color-mix(in srgb, var(--color-text-danger) 6.5%, transparent)
     ),
     var(--composer-surface-background);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--color-text-danger) var(--recovery-rim, 17%), transparent),
-    0 6px 24px color-mix(in srgb, var(--color-text-danger) var(--recovery-glow, 4%), transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--color-text-danger) 17%, transparent),
+    0 6px 24px color-mix(in srgb, var(--color-text-danger) 4%, transparent);
 }
 
 @media (forced-colors: active) {
-  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell:is([data-loading], [data-warning])::before {
+  :where(:root[data-ui-density="touch"]) .opencraft-composer-shell[data-warning]::before {
     background: Canvas;
     box-shadow: none;
     outline: 1px solid CanvasText;
     outline-offset: -1px;
   }
-}
-
-:root[data-ui-density="touch"] .opencraft-composer-shell {
-  --composer-surface-filter: blur(18px) saturate(145%);
-  --composer-surface-background: linear-gradient(
-    180deg,
-    color-mix(
-      in srgb,
-      var(--color-background-elevated-primary-opaque) 88%,
-      transparent
-    ),
-    color-mix(
-      in srgb,
-      var(--color-background-elevated-primary-opaque) 76%,
-      transparent
-    )
-  );
 }
 
 // One border/material owns all above-composer items. The editor covers the tuck.
@@ -9138,7 +8671,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .opencraft-composer-queue-tray__resume {
   display: inline-flex;
-  height: 22px;
+  min-height: var(--height-composer-queue-resume);
+  min-width: var(--size-control-hit-min);
   align-items: center;
   gap: 4px;
   margin-left: auto;
@@ -9169,7 +8703,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .opencraft-composer-queue-item {
-  --width-composer-queue-handle: calc(var(--spacing) * 6);
+  --width-composer-queue-handle: var(--width-composer-queue-drag);
   display: grid;
   min-width: 0;
   min-height: var(--height-composer-queue-row);
@@ -9287,15 +8821,14 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   background: var(--color-background-elevated-primary-opaque);
 }
 
-@media (pointer: coarse) {
-  .opencraft-composer-queue-item {
-    padding-block: 0;
-    --width-composer-queue-handle: calc(var(--spacing) * 11);
-  }
 
-  .opencraft-composer-queue-item__drag {
-    height: var(--height-composer-queue-row);
-  }
+.opencraft-composer-queue-item__message {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  align-items: center;
+  margin-inline-start: calc(var(--spacing) * 3);
+  gap: var(--spacing);
 }
 
 .opencraft-composer-queue-item__preview-trigger {
@@ -9312,11 +8845,33 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .opencraft-composer-queue-item__preview {
   min-width: 0;
-  margin-inline-start: calc(var(--spacing) * 2);
   overflow: hidden;
   color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.opencraft-composer-queue-images {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--spacing);
+  vertical-align: middle;
+}
+
+.opencraft-composer-queue-image {
+  display: inline-grid;
+  flex: 0 0 20px;
+  inline-size: 20px;
+  block-size: 20px;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 3px;
+  background: var(--color-background-control);
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+
+  > img { inline-size: 100%; block-size: 100%; object-fit: cover; }
 }
 
 .opencraft-composer-queue-action-trigger {
@@ -9359,8 +8914,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   button {
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: var(--size-composer-utility-action);
+    height: var(--size-composer-utility-action);
+    min-width: var(--size-composer-utility-action);
+    min-height: var(--size-composer-utility-action);
     padding: 0;
     border: 0;
     border-radius: 6px;
@@ -9458,8 +9015,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
   button {
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: var(--size-composer-utility-action);
+    height: var(--size-composer-utility-action);
+    min-width: var(--size-composer-utility-action);
+    min-height: var(--size-composer-utility-action);
     flex: 0 0 auto;
     padding: 0;
     border: 0;
@@ -9608,6 +9167,24 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   padding: var(--composer-footer-padding-top) var(--composer-footer-padding-inline) var(--composer-footer-padding-bottom);
   user-select: none;
   container: composer-footer / inline-size;
+}
+
+.opencraft-composer-navigation { display: none; }
+.opencraft-composer-floating-content { display: flow-root; min-width: 0; }
+.opencraft-composer-stack:has(> .opencraft-composer-navigation > *) {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: max(var(--gap-toolbar-dock), var(--gap-control-density-min));
+  align-items: end;
+  > .opencraft-composer-floating-content { grid-column: 1; grid-row: 1; }
+  > .opencraft-composer-attached-rail { grid-column: 1; grid-row: 2; }
+  > .opencraft-composer-shell { grid-column: 1; grid-row: 3; }
+  > .opencraft-composer-navigation {
+    display: flex;
+    grid-column: 2;
+    grid-row: 3;
+    align-self: end;
+  }
 }
 
 // Composer action buttons are native tap targets.  Keep browser click
@@ -9856,7 +9433,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 
 .opencraft-composer-selection-menu {
-  z-index: 90;
+  z-index: var(--layer-floating-control);
   width: min(260px, calc(100vw - 16px));
   @include menu.surface;
 
@@ -9881,7 +9458,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     @include menu.item;
 
     &.has-leading {
-      gap: 12px;
+      gap: var(--gap-menu-item-content);
     }
 
     &[data-disabled] {
@@ -9904,9 +9481,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .opencraft-composer-add-menu__item {
   > svg {
-    flex: 0 0 15px;
-    width: 15px;
-    height: 15px;
+    flex: 0 0 var(--size-menu-item-icon);
+    width: var(--size-menu-item-icon);
+    height: var(--size-menu-item-icon);
     color: var(--color-icon-secondary);
   }
 }
@@ -9989,8 +9566,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   color: var(--color-text);
   text-overflow: ellipsis;
   white-space: nowrap;
-  font: var(--typography-control-compact-font);
-  letter-spacing: var(--typography-control-compact-tracking);
+  font: var(--menu-item-font);
+  letter-spacing: var(--menu-item-tracking);
 }
 
 .opencraft-composer-selection-menu__description {
@@ -10218,6 +9795,57 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &::-webkit-scrollbar { display: none; }
 }
 
+.opencraft-composer-context-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 10px 0;
+}
+
+.opencraft-composer-context-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  padding: 3px 4px 3px 4px;
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--color-background-elevated-secondary);
+  color: var(--color-text-foreground);
+  font: var(--typography-metadata-font);
+
+  &__badge {
+    display: grid;
+    flex: none;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    place-items: center;
+    background: var(--color-text-accent);
+    color: var(--color-text-on-accent);
+    font: var(--typography-label-font);
+  }
+
+  &__title { min-width: 0; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  button {
+    display: grid;
+    flex: none;
+    width: var(--size-composer-context-dismiss);
+    height: var(--size-composer-context-dismiss);
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    place-items: center;
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    &:hover { background: var(--color-background-control-hover, rgba(127, 127, 127, 0.12)); }
+  }
+}
+
 .opencraft-composer-image-attachment {
   grid-template: minmax(0, 1fr) / minmax(0, 1fr);
   position: relative;
@@ -10231,34 +9859,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   place-items: center;
   background: var(--color-background-elevated-secondary);
   color: var(--color-icon-secondary);
-
-  &[data-state="failed"] {
-    flex-basis: 260px;
-    width: 260px;
-    grid-template-columns: 80px minmax(0, 1fr);
-
-    > .opencraft-composer-image-attachment__preview {
-      grid-column: 1;
-      grid-row: 1;
-      width: 80px;
-      height: 80px;
-    }
-
-    > .opencraft-composer-image-attachment__fallback {
-      grid-column: 1;
-      grid-row: 1;
-    }
-
-    > .opencraft-composer-image-attachment__status {
-      inset: 0 auto 0 0;
-      width: 80px;
-    }
-
-    > .opencraft-composer-image-attachment__remove {
-      right: auto;
-      left: 44px;
-    }
-  }
 
   &__preview {
     display: grid;
@@ -10283,15 +9883,13 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     background: rgb(0 0 0 / 28%);
     color: white;
 
-    > svg { animation: opencraft-composer-image-spin 1s linear infinite; }
-
     &.is-failed { background: rgb(0 0 0 / 55%); }
 
     button {
       pointer-events: auto;
       display: grid;
-      width: 40px;
-      height: 40px;
+      width: var(--size-composer-image-retry);
+      height: var(--size-composer-image-retry);
       padding: 0;
       border-radius: 50%;
       place-items: center;
@@ -10306,8 +9904,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     top: 2px;
     right: 2px;
     display: grid;
-    width: 36px;
-    height: 36px;
+    width: var(--size-composer-image-dismiss);
+    height: var(--size-composer-image-dismiss);
     padding: 0;
     border: 0;
     border-radius: 50%;
@@ -10333,18 +9931,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 
   &__error {
-    display: -webkit-box;
-    grid-column: 2;
-    grid-row: 1;
-    min-width: 0;
-    padding: 7px 9px;
+    position: absolute;
+    width: 1px;
+    height: 1px;
     overflow: hidden;
-    color: var(--color-text-danger);
-    font: var(--typography-metadata-font);
-    overflow-wrap: anywhere;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
-    letter-spacing: var(--typography-metadata-tracking);
+    clip-path: inset(50%);
   }
 
   button:focus-visible { outline: 2px solid var(--color-border-strong); outline-offset: -2px; }
@@ -10358,9 +9949,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   .opencraft-composer-image-attachment__status > svg { animation: none; }
 }
 
-.opencraft-composer-attachment,
-.opencraft-composer-context {
+.opencraft-composer-attachment {
   display: grid;
+  flex: 0 0 210px;
+  width: 210px;
   min-width: 172px;
   max-width: 230px;
   min-height: 48px;
@@ -10380,8 +9972,9 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     min-width: var(--size-control-hit-min, 0px);
     min-height: var(--size-control-hit-min, 0px);
     display: grid;
-    width: 22px;
-    height: 22px;
+    width: var(--size-composer-utility-action);
+    height: var(--size-composer-utility-action);
+    flex: 0 0 var(--size-composer-utility-action);
     padding: 0;
     border-radius: 6px;
     place-items: center;
@@ -10824,7 +10417,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .right-panel-creation-menu {
   @include menu.surface;
-  z-index: 90;
+  z-index: var(--layer-floating-control);
   width: 280px;
 }
 
@@ -10869,7 +10462,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden auto;
-  background: var(--color-background-surface);
+  background: var(--material-reading-background);
 
   &:has(.browser-panel),
   &:has(.right-panel-resident:not([hidden]) .cloud-desktop-panel),
@@ -10960,7 +10553,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   flex-direction: row;
 }
 
-.terminal-panel__clipboard-status[data-touch-toolbar] {
+.terminal-panel__status[data-touch-toolbar] {
   bottom: calc(var(--right-panel-composer-overlay-reserve, 0px) + 10px);
 }
 
@@ -10985,6 +10578,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   text-overflow: ellipsis;
   white-space: nowrap;
   letter-spacing: var(--typography-metadata-tracking);
+
+  &[data-terminal-status="exited"] {
+    white-space: normal;
+  }
 }
 
 .terminal-panel__recovery {
@@ -11042,12 +10639,15 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 
 .browser-device-toolbar {
   display: flex;
-  flex: 0 0 34px;
-  height: 34px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  height: auto;
+  flex-wrap: wrap;
+  row-gap: var(--spacing);
   min-width: 0;
   align-items: center;
   gap: 8px;
-  padding: 0 10px;
+  padding: 2px 10px;
   border-bottom: 1px solid var(--color-border-subtle);
   background: var(--color-background-elevated-secondary);
   color: var(--color-text);
@@ -11058,7 +10658,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 .browser-device-toolbar__dimensions { display: flex; align-items: center; gap: 4px; flex: none; color: var(--color-text-secondary); }
 .browser-device-toolbar .browser-device-toolbar__input {
   width: 72px;
-  height: 24px;
+  height: max(var(--height-browser-device-input), var(--size-control-hit-min));
   min-width: 0;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -11076,7 +10676,7 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &:focus { border-color: var(--color-text-secondary); background: var(--color-background-surface); }
 }
 .browser-device-toolbar select {
-  height: 28px; min-width: 100px; max-width: 176px;
+  height: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-width: 100px; max-width: 176px;
   border: 1px solid transparent; border-radius: 6px;
   appearance: none;
   padding: 0 22px 0 4px; background: transparent; color: var(--color-text-secondary);
@@ -11084,8 +10684,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &:focus-visible { background: var(--color-background-button-tertiary-hover); }
   @include controls.hover-capable { &:hover { background: var(--color-background-button-tertiary-hover); } }
 }
-.browser-device-toolbar button {
-  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+.browser-device-toolbar .ui-button[data-size="toolbar"] {
+  display: grid; place-items: center; width: max(var(--size-browser-device-control), var(--size-control-hit-min)); height: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-width: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-height: max(var(--size-browser-device-control), var(--size-control-hit-min)); flex: none;
   color: var(--color-text-secondary);
   background: transparent;
   border: 0;
@@ -11424,473 +11024,10 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-.workspace-resource-panel {
-  display: grid;
-  grid-template-columns: minmax(150px, 32%) minmax(0, 1fr);
-  width: 100%;
-  height: 100%;
-  min-width: 0;
-  min-height: 0;
-  background: var(--color-background-surface);
-  container: workspace-resource / inline-size;
-}
-
-.workspace-resource-panel[data-preview-only],
-.workspace-resource-panel[data-tree-collapsed] {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.workspace-file-browser {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  border-right: 1px solid var(--color-border-subtle);
-  background: var(--color-background-elevated-secondary);
-}
-
-// Keep the tree mounted so closing it preserves directory/search/scroll state.
-.workspace-file-browser[hidden] {
-  display: none;
-}
-
-.workspace-file-tree-toggle {
-  flex: 0 0 auto;
-}
-
-.workspace-file-search {
-  display: flex;
-  height: 30px;
-  min-height: 30px;
-  margin: 7px;
-  align-items: center;
-  gap: 6px;
-  padding: 0 8px;
-  border: 1px solid var(--color-border-subtle);
-  border-radius: 8px;
-  background: var(--color-background-surface);
-  color: var(--color-icon-tertiary);
-
-  input {
-    width: 100%;
-    min-width: 0;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    color: var(--color-text);
-    font: var(--typography-metadata-font);
-    letter-spacing: var(--typography-metadata-tracking);
-  }
-}
-
-.workspace-file-tree {
-  min-height: 0;
-  flex: 1 1 auto;
-  padding: 0 4px 8px;
-  overflow: auto;
-}
-
-.workspace-file-tree[hidden] {
-  display: none;
-}
-
-.workspace-file-tree__canvas {
-  position: relative;
-}
-
-.workspace-file-tree__virtual-row {
-  position: absolute;
-  left: 0;
-  right: 0;
-  box-sizing: border-box;
-}
-
-.workspace-file-tree:focus-visible .workspace-file-tree__row[data-active] {
-  outline: 1px solid var(--color-ring, var(--focus-ring));
-  outline-offset: -1px;
-}
-
-.workspace-file-tree__virtual-row.workspace-file-tree__status {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-block: 0;
-}
-
-.workspace-file-tree__row,
-.workspace-file-search-result {
-  width: 100%;
-  color: var(--color-text-secondary);
-  cursor: default;
-  text-align: left;
-  border: 0;
-  background: transparent;
-
-  &[data-selected="true"] {
-    background: var(--color-background-primary-ghost-hover);
-    color: var(--color-text);
-  }
-  @include controls.hover-capable {
-    &:hover {
-      background: var(--color-background-primary-ghost-hover);
-      color: var(--color-text);
-    }
-  }
-}
-
-.workspace-file-tree__row {
-  display: flex;
-  height: 25px;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-  padding-block: 0;
-  padding-inline-end: 6px;
-  border-radius: 6px;
-  font: var(--typography-metadata-font);
-
-  > svg {
-    flex: 0 0 auto;
-  }
-
-  > span:not(.workspace-file-icon) {
-    overflow: hidden;
-    min-width: 0;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  letter-spacing: var(--typography-metadata-tracking)
-}
-
-.workspace-file-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  border-radius: 2px;
-  font: var(--typography-label-font);
-  letter-spacing: var(--font-tracking-normal);
-}
-.workspace-file-icon--css { background: var(--color-accent-blue); color: var(--color-text-on-accent); }
-.workspace-file-icon--javascript { background: var(--color-accent-purple); color: var(--color-text-on-accent); }
-.workspace-file-icon--typescript { background: var(--color-accent-blue); color: var(--color-text-on-accent); }
-
-.workspace-file-tree__status,
-.workspace-file-tree__empty {
-  display: flex;
-  min-height: 25px;
-  align-items: center;
-  gap: 5px;
-  color: var(--color-text-tertiary);
-  font: var(--typography-metadata-font);
-
-  &.is-error {
-    color: var(--color-text-danger, #b42318);
-  }
-
-  letter-spacing: var(--typography-metadata-tracking)
-}
-
-.workspace-file-tree__empty {
-  justify-content: center;
-  padding: 20px 8px;
-  text-align: center;
-}
-
-.workspace-file-search-result {
-  display: flex;
-  min-width: 0;
-  min-height: 42px;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 7px;
-  border-radius: 7px;
-
-  > svg {
-    flex: 0 0 auto;
-  }
-
-  > span:not(.workspace-file-icon) {
-    display: grid;
-    min-width: 0;
-  }
-
-  strong,
-  small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  strong {
-    font: var(--typography-metadata-font);
-    letter-spacing: var(--typography-metadata-tracking);
-  }
-
-  small {
-    color: var(--color-text-tertiary);
-    font: var(--typography-label-font);
-    letter-spacing: var(--typography-label-tracking);
-  }
-}
-
-.workspace-file-viewer {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  background: var(--color-background-surface);
-  position: relative;
-}
-
-.workspace-file-viewer__header {
-  display: flex;
-  height: 42px;
-  min-height: 42px;
-  align-items: center;
-  gap: 8px;
-  padding: 0 9px;
-  border-bottom: 1px solid var(--color-border-subtle);
-  color: var(--color-icon-secondary);
-
-  > span:not(.workspace-file-icon) {
-    display: grid;
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-
-  strong,
-  small {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  strong {
-    color: var(--color-text);
-    font: var(--typography-label-font);
-    letter-spacing: var(--typography-label-tracking);
-  }
-
-  small {
-    color: var(--color-text-tertiary);
-    font: var(--typography-code-font);
-  }
-}
-
-.workspace-file-viewer__actions {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 3px;
-
-  button,
-  a {
-    display: inline-flex;
-    height: 26px;
-    align-items: center;
-    gap: 5px;
-    padding: 0 7px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font: var(--typography-label-font);
-    text-decoration: none;
-
-    @include controls.hover-capable {
-      &:hover:not(:disabled):not([aria-disabled="true"]) {
-        background: var(--color-background-button-tertiary-hover);
-        color: var(--color-text);
-      }
-    }
-
-    &:disabled,
-    &[aria-disabled="true"] {
-      opacity: 0.35;
-    }
-
-    letter-spacing: var(--typography-label-tracking)
-  }
-}
-
-.workspace-file-viewer__actions button[aria-pressed="true"] {
-  background: var(--color-background-button-tertiary-hover);
-  color: var(--color-text);
-}
-
-.workspace-file-markdown {
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  overflow: auto;
-  padding: 16px 18px 28px;
-  overflow-wrap: anywhere;
-}
-
-.workspace-file-html {
-  flex: 1 1 auto;
-  width: 100%;
-  min-height: 0;
-  border: 0;
-  background: #fff;
-}
-
-.workspace-file-viewer__state {
-  display: flex;
-  width: min(280px, calc(100% - 32px));
-  min-height: 100%;
-  align-items: center;
-  justify-content: center;
-  align-self: center;
-  gap: 8px;
-  color: var(--color-text-tertiary);
-  text-align: center;
-  font: var(--typography-metadata-font);
-
-  &.is-error {
-    color: var(--color-text-danger, #b42318);
-  }
-
-  letter-spacing: var(--typography-metadata-tracking)
-}
-
-.workspace-file-source {
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  margin: 0;
-  overflow: auto;
-  padding: 16px 18px 28px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  color: var(--color-text);
-  font: var(--typography-prose-code-font);
-
-  code { font: inherit; }
-  &:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
-}
-
-.workspace-code-editor {
-  width: 100%;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  background: var(--color-background-surface);
-  color: var(--color-text);
-  overflow: hidden;
-
-  .cm-editor {
-    height: 100%;
-    background: transparent;
-    color: inherit;
-    font: var(--typography-prose-code-font);
-  }
-
-  .cm-editor.cm-focused { outline: none; }
-  .cm-scroller { padding: 10px 0 28px; }
-  .cm-content { padding: 0 12px 0 4px; caret-color: var(--color-text); }
-  .cm-line { padding: 0; }
-  .cm-gutters {
-    border-right: 1px solid var(--color-border-subtle);
-    background: var(--color-background-elevated-secondary);
-    color: var(--color-text-tertiary);
-  }
-  .cm-activeLine,
-  .cm-activeLineGutter { background: var(--color-background-primary-ghost-hover); }
-  .cm-selectionBackground { background: color-mix(in srgb, var(--color-accent-blue) 24%, transparent); }
-}
-
-.workspace-file-viewer__image {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 auto;
-  place-items: center;
-  padding: 18px;
-  overflow: auto;
-
-  > .opencraft-zoomable-image { width: 100%; height: 100%; max-height: 100%; }
-
-  img {
-    display: block;
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  small {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--color-text-tertiary);
-    font: var(--typography-label-font);
-    letter-spacing: var(--typography-label-tracking);
-  }
-}
-
-.workspace-file-save-error {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  left: 8px;
-  padding: 7px 9px;
-  border: 1px solid
-    color-mix(in srgb, var(--color-text-danger, #b42318) 35%, transparent);
-  border-radius: 7px;
-  background: var(--color-background-elevated-primary-opaque);
-  color: var(--color-text-danger, #b42318);
-  font: var(--typography-label-font);
-  box-shadow: var(--shadow-300);
-  letter-spacing: var(--typography-label-tracking);
-}
-
-.workspace-media-preview {
-  @include typography.role("body", secondary);
-  display: flex;
-  flex: 1 1 auto;
-  min-width: 0;
-  min-height: 0;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 12px;
-  overflow: auto;
-  padding: 16px;
-  text-align: center;
-  video { max-width: 100%; max-height: calc(100% - 48px); }
-  audio { width: min(100%, 400px); }
-  button {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
-    border: 1px solid var(--color-border-subtle);
-    border-radius: 6px;
-    background: var(--color-background-surface);
-    color: var(--color-text);
-    font: inherit;
-    @include controls.hover-capable { &:hover { background: var(--color-background-button-tertiary-hover); } }
-  }
-}
-
 .is-spinning {
   animation: browser-spinner 0.72s linear infinite;
 }
 
-@container workspace-resource (width < 430px) {
-  .workspace-resource-panel:not([data-preview-only]):not([data-tree-collapsed]) {
-    grid-template-columns: 128px minmax(0, 1fr);
-  }
-
-  .workspace-file-viewer__actions button {
-    span {
-      display: none;
-    }
-  }
-}
 
 .runtime-error {
   display: flex;
@@ -12014,24 +11151,17 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-// iPhone in-app browsers zoom focused editable content below 16px. Keep the
-// desktop control scale, but give phone input targets a readable minimum.
+// Low-specificity fallback for otherwise unstyled editables. Semantic Input and
+// Composer roles own their font floor; never replace larger sizes with16px.
 @media (max-width: 767px) and (any-pointer: coarse) {
-  :is(
+  :where(
     input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
     select,
     textarea:not(.xterm-helper-textarea),
     [contenteditable="true"]
   ) {
-    font-size: max(var(--typography-mobile-input-size), 1rem) !important;
-  }
-
-  .opencraft-composer-editor,
-  .new-thread-draft-composer-zone .opencraft-composer-editor {
-    line-height: var(--typography-mobile-input-line-height);
-
-    p { min-height: 24px; }
-    pre { font-size: var(--typography-mobile-input-size); line-height: var(--typography-mobile-input-line-height); }
+    font-size: max(1em, var(--size-editable-font-min));
+    line-height: max(1.2em, var(--height-editable-line-min));
   }
 }
 
@@ -12040,7 +11170,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   *::before,
   *::after {
     scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
+    // A nonzero global duration invents transitions on otherwise static
+    // elements (whose default transition-property is all), including SVG
+    // backdrop references. Reduced motion must not create new animations.
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
@@ -12064,7 +11198,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     .sidebar-activity-item__body { grid-column: 1; }
   }
   &[data-row-lines="one"] .sidebar-activity-item {
-    min-height: max(32px, var(--size-control-hit-min)); padding-block: 4px;
+    min-height: var(--height-sidebar-activity-title-row);
+    padding-block: var(--padding-sidebar-activity-single-row-block);
   }
   &[data-row-lines="two"] .sidebar-activity-item { min-height: max(48px, calc(var(--size-control-hit-min) + 12px)); }
 }
@@ -12129,13 +11264,34 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 }
 .sidebar-browser-resources-menu {
   max-width: min(320px, calc(100vw - 24px));
-  [role="menuitem"] { display: flex; align-items: center; gap: 8px; }
-  [role="menuitem"] > svg { flex: 0 0 auto; margin: 0; }
 }
 .sidebar-activity-item__state-label { flex: 0 0 auto; }
-.sidebar-new-chat {
-  margin: 0 0 calc(var(--spacing) * 2);
-  > svg { flex-shrink: 0; }
+// Standalone creation shares row metrics, but floating creation remains an action.
+.ui-button.sidebar-new-chat:not(.shell-sidebar-primary-action)[data-content-layout="row"] {
+  display: grid;
+  grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: max(var(--height-sidebar-navigation-row), var(--size-control-hit-min));
+  column-gap: var(--gap-sidebar-navigation-icon-label);
+  padding-inline: var(--padding-sidebar-navigation-row-inline);
+  padding-block: 0;
+  justify-content: stretch;
+  text-align: start;
+  margin: var(--gap-sidebar-navigation-rows) 0 var(--gap-sidebar-navigation-heading-after);
+  > svg, > .ui-button__label > svg {
+    width: var(--size-sidebar-navigation-icon);
+    height: var(--size-sidebar-navigation-icon);
+    color: var(--color-sidebar-navigation-icon);
+    stroke-width: var(--stroke-sidebar-navigation-icon);
+  }
+  > .ui-button__label { display: contents; }
+  [data-navigation-label] {
+    grid-column: 2;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 .sidebar-list-search {
   display: flex; align-items: center; gap: 6px; min-width: 0; margin: 4px 0 6px; padding: 6px 8px;
@@ -12200,7 +11356,15 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 html[data-ui-density="touch"][data-timeline-keyboard-open="true"] {
   --shell-content-safe-bottom: 0px;
 }
-.app-shell-root.has-browser-safe-layout > .app-shell-row {
+// User-selected clearance for browser chrome that overlays its reported visual
+// viewport. This is a reversible preference, never an inferred keyboard height.
+// Keep at least 240px of the reported viewport for the header and input on short
+// landscape screens. Normal layout and device safe areas retain their owners.
+html[data-window-host="browser"][data-ui-density="touch"][data-keyboard-clearance="true"][data-timeline-editing-viewport-reduced="true"] {
+  --thread-keyboard-clearance: clamp(0px, calc(var(--timeline-available-viewport-height) - 240px), calc(var(--spacing) * 12));
+}
+.app-shell-root.has-browser-safe-layout > .app-shell-row,
+.panel-overview-host__body {
   // SafeLayout allocates the device inset once inside the measured canvas.
   // Sidebar action surfaces are outside this row and retain their own edge.
   --safe-layout-inset-top: var(--shell-mobile-safe-top);
@@ -12211,7 +11375,7 @@ html[data-window-host="browser"] body {
   // Document fallback behind Shell paint; native system pixels remain host-owned.
   background-color: var(--shell-window-edge-background, var(--color-surface));
 }
-.app-shell-root.has-browser-safe-layout .app-shell-header { top: var(--shell-mobile-safe-top); }
+.app-shell-root.has-browser-safe-layout .app-shell-header:not([data-app-shell-chrome="page"]) { top: var(--shell-mobile-safe-top); }
 .app-shell-root.has-mobile-sidebar-gestures {
   // Floating touch controls share the page plane; a recessed desktop lip
   // would leave a horizontal shadow beneath the transparent header.
@@ -12228,7 +11392,7 @@ html[data-window-host="browser"] body {
     overflow: clip;
     // The moving page, including gaps around floating chrome, must occlude
     // the stationary drawer throughout a swipe and its settling frames.
-    background: var(--app-shell-page-paint, var(--color-surface));
+    background: var(--app-shell-page-paint, var(--material-canvas-background));
     // MotionValues own direct manipulation. The global reduced-motion duration
     // must not create a CSS transition for every transform write.
     transition-property: none;
@@ -12270,7 +11434,7 @@ html[data-window-host="browser"] body {
   // revoke input but still paint, so hide the retained surface in this same
   // DOM commit, before Motion's next render or the portal's final removal.
   .app-shell-floating-left-panel {
-    // Even the global reduced-motion 0.01ms duration would defer visibility
+    // Any nonzero transition duration would defer visibility
     // until another frame. Mobile MotionValues own movement; CSS owns hiding.
     transition-property: none;
     &[aria-hidden="true"] { visibility: hidden; }
@@ -12355,38 +11519,64 @@ html[data-window-host="browser"] body {
   background: var(--color-background-elevated-primary-opaque);
   will-change: opacity;
 }
+.main-content-body { opacity: var(--navigation-content-opacity, 1); }
+// Motion is the only opacity owner, including arrival and reduced motion.
+// The global reduced-motion duration must not create a second CSS transition.
+.main-content-body, .app-shell-page-overlays { transition-property: none; }
+.app-shell-navigation-error {
+  position: absolute; z-index: 2;
+  top: calc(var(--height-toolbar) + var(--shell-mobile-safe-top, 0px));
+  inset-inline: var(--padding-sidebar-content-inline);
+  display: flex; align-items: center; gap: var(--gap-control-group);
+  padding: var(--padding-sidebar-content-inline); color: var(--color-text-secondary);
+  background: var(--color-background-elevated-primary-opaque); border-radius: var(--radius-control);
+  > span { min-width: 0; flex: 1; }
+  > button { flex: none; }
+}
 .app-shell-mobile-page-dismiss {
   position: absolute; inset: var(--shell-mobile-safe-top) 0 0; z-index: 3;
   border: 0; padding: 0; background: transparent; cursor: pointer;
 }
 
 .sidebar-list-toolbar {
-  @include typography.role(navigation-title, primary);
+  @include typography.role(toolbar-title, secondary);
   display: flex; align-items: center; justify-content: space-between;
-  padding: var(--gap-navigation-sections) var(--padding-sidebar-activity-row-inline);
+  padding: var(--spacing) var(--padding-sidebar-activity-row-inline);
 }
 .sidebar-list-mode-trigger { @include controls.quiet-control; display: grid; place-items: center; width: 28px; height: 28px; color: var(--color-text-secondary); }
-.sidebar-display-mode-label { @include typography.role(metadata, tertiary); padding: 5px 10px; }
-.workbench-context-menu :is([role="menuitemradio"], [role="menuitemcheckbox"]) { position: relative; padding-inline-start: 28px; }
-.workbench-context-menu :is([role="menuitemradio"], [role="menuitemcheckbox"]) > span[data-state] { position: absolute; inset-inline-start: 8px; }
-.sidebar-thread-group-heading { padding: 0; }
+.sidebar-display-mode-label { @include typography.role(metadata, tertiary); padding: var(--padding-menu-item-block) var(--padding-menu-item-inline); }
+.sidebar-thread-group-heading { margin: 0; padding: 0; }
 .sidebar-thread-group-toggle {
   @include controls.quiet-control;
   @include typography.role(sidebar-section, primary);
-  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: 30px;
-  padding: 3px var(--padding-sidebar-activity-row-inline); border: 0; border-radius: var(--radius-control);
+  // Expandable destinations share Inbox/Assistant navigation emphasis.
+  // Keep section sizing and geometry; do not weaken headings elsewhere.
+  font-weight: var(--typography-navigation-action-weight);
+  display: flex; align-items: center; gap: var(--gap-sidebar-navigation-icon-label); width: 100%; min-width: 0; min-height: max(var(--height-sidebar-group-heading), var(--size-control-hit-min));
+  padding: 0 var(--padding-sidebar-navigation-row-inline); border: 0; border-radius: var(--radius-control);
   background: transparent; cursor: pointer; text-align: start;
-  > svg { flex: 0 0 auto; transform: rotate(0deg); }
-  > svg.is-collapsed { transform: rotate(-90deg); }
+  > svg[data-group-disclosure] { flex: 0 0 auto; transform: rotate(0deg); }
+  > svg[data-group-disclosure].is-collapsed { transform: rotate(-90deg); }
   // hover-policy: coupled-visibility — both hiding and revealing apply only to mouse presentation; other inputs keep the default visible arrow.
   @include controls.hover-capable {
-    > svg { opacity: 0; }
-    &:hover > svg, &:focus-visible > svg { opacity: 1; }
+    > svg[data-group-disclosure] { opacity: 0; }
+    &:hover > svg[data-group-disclosure], &:focus-visible > svg[data-group-disclosure] { opacity: 1; }
   }
 }
 .sidebar-list-mode-trigger { width: max(28px, var(--size-control-hit-min)); height: max(28px, var(--size-control-hit-min)); }
-.sidebar-thread-group-toggle { min-height: max(30px, var(--size-control-hit-min)); }
 .sidebar-thread-group-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sidebar-activity-summary {
+  @include typography.role(metadata, secondary);
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: calc(var(--spacing) * 1.5);
+  margin-inline-start: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  &__count { display: inline-flex; align-items: center; gap: var(--spacing); }
+  &__marker { display: grid; place-items: center; width: 14px; height: 14px; }
+}
 .sidebar-thread-group-avatar { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: 0 0 20px; overflow: hidden; border-radius: 50%; color: var(--color-text-secondary); background: var(--color-background-control); img { width: 100%; height: 100%; object-fit: cover; } }
 .sidebar-activity-group__items[hidden] { display: none; }
 
@@ -12396,9 +11586,13 @@ html[data-window-host="browser"] body {
 @media (max-width: 767px) and (any-pointer: coarse) {
   html[data-timeline-tracks-visual-viewport="true"] {
     .opencraft-composer-stack {
-      --composer-platform-block-size: max(120px, calc(var(--timeline-available-viewport-height) - var(--height-toolbar) - 24px));
+      --composer-platform-block-size: max(120px, calc(var(--timeline-available-viewport-height) - var(--height-toolbar) - 24px - var(--thread-keyboard-clearance, 0px)));
       display: flex;
       flex-direction: column;
+      &:has(> .opencraft-composer-navigation > *) {
+        display: grid;
+        grid-template-rows: minmax(0, auto) minmax(0, 1fr);
+      }
       max-height: min(var(--composer-available-block-size, var(--composer-platform-block-size)), var(--composer-platform-block-size));
     }
     .opencraft-composer-attached-rail {
@@ -12445,9 +11639,21 @@ html[data-window-host="browser"] body {
 
 // Composer consumes the same interaction density as navigation, menus and Settings.
 .opencraft-composer-footer {
-  --composer-control-size: max(28px, var(--size-control-hit-min));
-  --composer-primary-size: max(30px, var(--size-control-hit-min));
+  --size-control-hit-min: 32px;
+  --height-accessory-control: 32px;
+  --padding-accessory-control-inline: 6px;
+  --size-icon-composer-input: 20px;
+  --composer-control-size: 32px;
+  --composer-primary-size: 32px;
   --composer-footer-gap: max(5px, var(--gap-control-density-min));
+
+  .opencraft-composer-icon-button,
+  .opencraft-composer-submit {
+    svg {
+      width: var(--size-icon-composer-input);
+      height: var(--size-icon-composer-input);
+    }
+  }
 }
 
 .sidebar-list-mode-trigger[data-filter-active="true"] { color: var(--color-text); }
@@ -12474,16 +11680,6 @@ html[data-window-host="browser"] body {
   > img { width: 100%; height: 100%; object-fit: cover; }
 }
 
-// Unified chrome owns one stationary sidebar action above the drawer, below dialogs.
-// Its measured placeholder reserves the same header slot in every visibility state.
-.app-shell-touch-sidebar-toggle {
-  position: fixed;
-  z-index: var(--layer-shell-sidebar-control);
-  pointer-events: auto;
-  > .chrome-button {
-    width: 100%;
-  }
-}
 :root[data-ui-density="touch"] {
   .app-shell-root.has-mobile-sidebar-gestures .app-shell-header {
     // The rails own edge clearance, including safe areas, without a second inset.
@@ -12519,8 +11715,6 @@ html[data-window-host="browser"] body {
     background: var(--color-text);
   }
   .opencraft-composer-stack { isolation: auto; --radius-composer-shell: var(--radius-composer-newera); }
-  // The sticky footer used to paint an opaque veil behind the glass.
-  .thread-scroll-footer__gradient { background: none; }
   .opencraft-composer-submit {
     border-radius: var(--radius-composer-newera-icon);
     clip-path: circle(50%); // Match pointer hit testing to the visible circle.
@@ -12533,7 +11727,7 @@ html[data-window-host="browser"] body {
   .opencraft-composer-shell {
     border: var(--width-composer-rail-border) solid var(--color-border-composer-newera);
     border-radius: var(--radius-composer-shell);
-    --composer-surface-background: var(--color-background-composer-newera);
+    --composer-surface-background: var(--material-optics-composer-touch, var(--color-background-composer-newera));
     --composer-surface-filter: blur(var(--blur-composer-newera)) saturate(var(--saturation-composer-newera));
     box-shadow: var(--shadow-composer-newera), inset 0 1px 0 var(--composer-seam-highlight, var(--color-highlight-composer-newera));
   }
@@ -12541,7 +11735,7 @@ html[data-window-host="browser"] body {
     border-top-color: transparent;
     --composer-seam-highlight: transparent;
   }
-  .opencraft-composer-stack[data-composer-layout="auto-single-line"][data-composer-empty="true"][data-composer-editing="false"] {
+  .opencraft-composer-stack[data-composer-idle-inline] {
     .opencraft-composer-shell {
       --newera-input-row: 1;
       display: grid;
@@ -12665,6 +11859,15 @@ html[data-window-host="browser"] body {
 }
 
 .deferred-view { min-height: 120px; display: grid; place-items: center; color: var(--color-text-secondary); }
+// Chunk loads are usually instant; only a slow one earns a visible status.
+@keyframes deferred-view-reveal { from { opacity: 0; } }
+.deferred-view__indicator {
+  display: inline-flex;
+  color: var(--color-text-tertiary);
+  animation: deferred-view-reveal 150ms ease-out 500ms backwards;
+}
+.deferred-view__indicator .ui-progress-indicator,
+.deferred-view__indicator svg { width: 16px; height: 16px; }
 
 // Floating conversation chrome shares control owners with ordinary chrome.
 :root[data-ui-density="touch"] {
@@ -12672,18 +11875,22 @@ html[data-window-host="browser"] body {
     --height-toolbar: var(--height-shell-header-mobile);
   }
 
-  // Wide touch layouts portal this existing control above drawer motion.
-  .app-shell-touch-sidebar-toggle .app-shell-conversation-sidebar-toggle {
+  // Wide touch navigation keeps the same shared floating-control geometry.
+  :is(.shell-chrome, .app-shell-root .app-shell-header)[data-app-shell-conversation-header="true"] {
     --size-chrome-action: var(--size-material-liquid-control);
+    .app-shell-header__window-controls-rail {
+      --window-controls-padding-start: max(var(--spacing-token-safe-header-left), var(--shell-mobile-safe-left, 0px), calc(var(--spacing) * 3));
+    }
+    .app-shell-conversation-sidebar-toggle {
+      width: var(--size-material-liquid-control);
+      height: var(--size-material-liquid-control);
+    }
   }
 
   .app-shell-root .app-shell-header[data-app-shell-conversation-header="true"] {
     background: none;
     &::before, &::after { display: none; }
     .app-shell-header__context { justify-content: flex-end; }
-    .app-shell-header__window-controls-rail {
-      --window-controls-padding-start: max(var(--spacing-token-safe-header-left), var(--shell-mobile-safe-left, 0px), calc(var(--spacing) * 3));
-    }
     .app-shell-header__end-actions {
       padding-right: max(var(--spacing-token-safe-header-right), var(--shell-mobile-safe-right, 0px), calc(var(--spacing) * 3));
     }
@@ -12692,17 +11899,13 @@ html[data-window-host="browser"] body {
       gap: var(--gap-material-liquid-group);
       padding: var(--padding-material-liquid-group);
     }
-    .app-shell-header__context-surface,
+    .app-shell-header__route,
+    .thread-header-title,
     .application-brand,
-    [data-app-shell-window-action]:not([data-app-shell-window-action="sidebar-toggle"]) {
+    [data-app-shell-window-action]:not([data-app-shell-window-action="sidebar-toggle"]):not([data-navigation-return]) {
       display: none;
     }
     .app-shell-header__window-controls-rail[data-navigation-brand] { width: max-content; }
-    --size-chrome-action: var(--size-material-liquid-control);
-    .app-shell-conversation-sidebar-toggle {
-      width: var(--size-material-liquid-control);
-      height: var(--size-material-liquid-control);
-    }
   }
 
   // The floating header has no separate toolbar band. Keep the same viewport
@@ -12728,14 +11931,11 @@ html[data-window-host="browser"] body {
       margin-block-start: var(--shell-conversation-top-bleed);
       height: calc(100% - var(--shell-conversation-top-bleed));
     }
-    .new-thread-draft-layout {
-      --draft-block-start: calc(var(--spacing) * 6 + var(--shell-conversation-top-bleed));
-    }
 
     // Reading continues behind the floating Composer through the bottom edge.
     // Preserve the body's protected rectangle: it is the single overlay anchor,
     // including browser portals. Only the reading viewport stretches beyond it.
-    &:has(.thread-scroll[data-thread-find-target="conversation"]) {
+    &[data-primary-reading="true"] {
       --shell-conversation-bottom-bleed: var(--shell-content-safe-bottom);
       margin-block-end: calc(0px - var(--shell-conversation-bottom-bleed));
       .main-content-body {
@@ -12745,10 +11945,13 @@ html[data-window-host="browser"] body {
       .main-content-viewport {
         margin-block-end: calc(0px - var(--shell-conversation-bottom-bleed));
       }
-      .thread-scroll-footer {
-        padding-block-end: calc(16px + var(--shell-conversation-bottom-bleed));
-      }
     }
+  }
+
+  // The footer belongs to the retained reading view, not its physical Shell
+  // ancestry. The same reservation applies while borrowed into an overview.
+  [data-retained-view="primary-chat"] .thread-scroll-footer {
+    padding-block-end: calc(var(--inset-scene-dock) + var(--shell-conversation-bottom-bleed, 0px) + var(--thread-keyboard-clearance, 0px));
   }
 
   // Keep the reading plane clear between the floating controls. Device status
@@ -12861,6 +12064,90 @@ html[data-window-host="browser"] body {
   padding-inline: 0;
 }
 
+.opencraft-composer-model-quick {
+  @include menu.surface;
+  z-index: var(--layer-floating-control);
+  box-sizing: border-box;
+  width: min(288px, calc(100vw - 24px));
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-2xl);
+  outline: none;
+}
+.opencraft-composer-model-quick__header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--spacing);
+}
+.opencraft-composer-model-quick__action-slot { width: max(32px, var(--size-control-hit-min)); }
+.opencraft-composer-model-quick__labels { min-width: 0; }
+.opencraft-composer-model-quick__placeholder {
+  height: var(--height-discrete-slider-hit);
+  margin-block-start: calc(var(--spacing) * 2);
+  display: flex;
+  align-items: center;
+  &::before { content: ""; width: 100%; height: var(--height-discrete-slider-track); border-radius: var(--radius-full); background: var(--color-discrete-slider-track); }
+}
+.opencraft-composer-model-quick__effort {
+  @include typography.role(control, null);
+  color: var(--color-text-accent);
+  min-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.opencraft-composer-model-quick__title {
+  @include typography.role(control-compact, secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing);
+  min-height: max(24px, var(--size-control-hit-min));
+  padding: 0 var(--spacing);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
+  > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  > svg { flex: none; }
+}
+.opencraft-composer-model-quick__action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: max(32px, var(--size-control-hit-min));
+  height: max(32px, var(--size-control-hit-min));
+  border-radius: var(--radius-full);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  &[data-state="checked"] { color: var(--color-icon-accent); }
+  &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
+  &[data-disabled] { opacity: var(--opacity-control-disabled); cursor: default; }
+  @media (prefers-reduced-motion: no-preference) {
+    transition: color 140ms ease, background-color 140ms ease;
+    > svg { transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+    &:active:not([data-disabled]) > svg { transform: scale(0.9); }
+    &.opencraft-composer-model-quick__reset:active:not([data-disabled]) > svg { transform: rotate(-35deg); }
+  }
+}
+.opencraft-composer-model-quick__fast[data-state="checked"] {
+  background: color-mix(in srgb, var(--color-icon-accent) 10%, transparent);
+  @media (prefers-reduced-motion: no-preference) {
+    > svg { animation: composer-fast-enable 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .opencraft-composer-model-quick__value { display: inline-block; animation: composer-effort-change 140ms ease-out; }
+}
+@keyframes composer-effort-change {
+  from { opacity: 0.45; transform: translateY(2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes composer-fast-enable {
+  from { transform: scale(0.84); }
+  60% { transform: scale(1.08); }
+  to { transform: scale(1); }
+}
 .opencraft-composer-mode__fast { flex: none; color: var(--color-icon-accent); }
 .opencraft-composer-selection-menu--model-select {
   box-sizing: border-box;
@@ -12899,8 +12186,8 @@ html[data-window-host="browser"] body {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: min(340px, calc(100vw - 24px));
-  max-height: min(600px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(720px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
   padding: 0;
   overflow: hidden;
 }
@@ -12914,7 +12201,10 @@ html[data-window-host="browser"] body {
 .opencraft-composer-model-browser {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   &__sources {
     display: flex;
     flex-wrap: nowrap;
@@ -12964,15 +12254,51 @@ html[data-window-host="browser"] body {
     }
   }
   &__models {
-    min-height: 0;
+    // Keep three choices usable; unusually short viewports scroll the whole
+    // browser instead of collapsing the list beneath fixed detail controls.
+    flex: 1 0 calc(var(--height-accessory-control) * 3 + var(--height-menu-item) + var(--spacing) * 2);
+    min-height: calc(var(--height-accessory-control) * 3 + var(--height-menu-item) + var(--spacing) * 2);
     max-height: 320px;
     padding: calc(var(--spacing) * 2);
     overflow-y: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
+  &__reasoning {
+    flex: none;
+    padding: calc(var(--spacing) * 2);
+    border-top: .5px solid var(--color-border-subtle);
+  }
+  &__section-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    @include typography.role(metadata, secondary);
+    padding: var(--spacing) calc(var(--spacing) * 2);
+  }
+  &__efforts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing); }
+  &__fast,
   &__configure { flex: none; margin: calc(var(--spacing) * 2); }
 }
+// Layout density follows the available space, while shared controls retain
+// their touch target and typography tokens. Search stays at least 16px on iOS.
+@media (max-width: 560px) {
+  .opencraft-composer-model-browser-surface {
+    width: calc(100vw - 24px);
+  }
+  .opencraft-composer-model-browser {
+    &__sources { padding-block: var(--spacing); }
+    &__search {
+      padding-block: 0;
+      input { min-height: max(44px, var(--size-control-hit-min)); }
+    }
+    &__models { padding-block: var(--spacing); }
+    &__reasoning { padding-block: var(--spacing); }
+    &__section-label { padding-block: 0; }
+    &__fast { margin-block: var(--spacing); padding-block: 0; }
+  }
+}
+
 .opencraft-composer-footer[data-footer-density="minimal"] .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: block; }
 
 // Empty idle touch drafts use a single row without a model entrance. Editor
@@ -13029,6 +12355,42 @@ html[data-window-host="browser"] body {
   flex: 1 1 auto;
   flex-direction: column;
   p { margin: 0; }
+}
+
+// Allocation must exist before a lazy dock module can finish loading.
+.right-panel-content[data-mobile-panel='true'],
+.browser-panel[data-mobile-browser='true'],
+.thread-composer-overlay-host[data-mobile-panel='true'] {
+  --panel-mobile-control: var(--size-chrome-action);
+  // One control row, its padding/border, bottom gap and separation above it.
+  // The guest and the body-level Composer consume the same dock allocation.
+  --panel-mobile-dock-height: calc(var(--panel-mobile-control) + var(--padding-material-liquid-group) * 2 + var(--spacing) * 4);
+}
+
+
+// Panel presentation belongs to the outlet, including cold empty entry. Never
+// depend on the lazy tool dock loading before hiding the conversation header.
+.app-shell-root:has(.right-panel-content[data-mobile-panel='true']) {
+  .app-shell-header-motion-host { display: none; }
+}
+.right-panel-content[data-mobile-panel='true'] {
+  position: relative;
+  &:not([data-mobile-browser='true']):not([data-mobile-conversation='true']):not([data-tool-overview='true']) > .right-panel-view { margin-bottom: var(--panel-mobile-dock-height); }
+}
+
+// The visible full-width overview is a single Shell canvas. SafeLayout's
+// padding is inside this painted row, including both device insets. Retained
+// hidden panels do not select the paint; cards remain the only elevated layer.
+.app-shell-root:has(.right-panel-content[data-mobile-panel='true'][data-tool-overview='true']) {
+  --app-shell-page-paint: var(--background-tool-overview-canvas);
+  --opencraft-panel-chassis-background: transparent;
+  background: transparent;
+  > .app-shell-row { background: var(--app-shell-page-paint); }
+  .app-shell-header { background: transparent; }
+  .app-shell-header::before, .app-shell-header::after, .app-shell-header__content-edge, .app-shell-content-depth { display: none; }
+  .main-content-surface { background: transparent; box-shadow: none; }
+  // Persistent Shell navigation stays reachable above the first card row.
+  .right-panel-view { background: transparent; padding-block-start: var(--height-toolbar); box-sizing: border-box; }
 }
 
 .has-server-drawer .shell-sidebar__context.sidecar-content-slot,

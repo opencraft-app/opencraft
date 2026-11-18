@@ -14,12 +14,12 @@ test('catalog quota round-trips 1200 bindings and local quota rejection preserve
  try{
   const initial=await service.metadata('fixture',undefined,()=>{});
   storage.initialized=true;storage.fresh=true;storage.socket={readyState:WebSocket.OPEN,close(){}};storage.scope=initial.scope;storage.connect=async()=>{};
-  storage.call=async(input:any)=>service.metadata('fixture',input,()=>{});
+  storage.call=async(input:any,method='state')=>method==='metadata-digest'?service.metadataDigest('fixture',input,()=>{}):service.metadata('fixture',input,()=>{});
   const value=JSON.stringify(Array.from({length:1200},(_,i)=>({scopeId:`scope-${i}`,hostId:'host',threadId:'t'+i+'访'.repeat(40)})));
   assert(value.length>64*1024);
   storage.setItem('opencraft.conversation-bindings.v1',value);await storage.flush();
   assert.equal((await service.metadata('fixture',undefined,()=>{})).values.bindings,value);
-  const restored:any=new RemoteBrowserStorage();restored.connect=async()=>{};restored.call=async()=>service.metadata('fixture',undefined,()=>{});
+  const restored:any=new RemoteBrowserStorage();restored.socket={readyState:WebSocket.OPEN,close(){}};restored.connect=async()=>{};restored.call=async()=>service.metadata('fixture',undefined,()=>{});
   await restored.initialize();assert.equal(restored.getItem('opencraft.conversation-bindings.v1'),value);restored.dispose();
   assert.throws(()=>storage.setItem('opencraft.conversation-bindings.v1','x'.repeat(browserMetadataValueLimit('bindings')+1)),{code:'STATE_TOO_LARGE'});
   assert.equal(storage.getItem('opencraft.conversation-bindings.v1'),value);assert.equal(storage.failure,null);

@@ -5,15 +5,15 @@ import type { ThreadBadgeContribution, ThreadBadgeProps } from "@opencraft/exten
 import { ThreadRowMenu } from "./thread-management";
 import { SidebarThreadMenuStore, type OpenSidebarThreadMenu } from "./sidebar-thread-menu-state";
 
-type Target = Pick<OpenSidebarThreadMenu, "hostId" | "threadId">;
-export function useSidebarRowMenu(store: SidebarThreadMenuStore, { hostId, threadId }: Target) {
-  const subscribe = useCallback((listener: () => void) => store.subscribe({ hostId, threadId }, listener), [store, hostId, threadId]);
-  const snapshot = useCallback(() => store.getKind({ hostId, threadId }), [store, hostId, threadId]);
+type Target = Pick<OpenSidebarThreadMenu, "hostId" | "threadId" | "rowId">;
+export function useSidebarRowMenu(store: SidebarThreadMenuStore, { hostId, threadId, rowId }: Target) {
+  const subscribe = useCallback((listener: () => void) => store.subscribe({ hostId, threadId, rowId }, listener), [store, hostId, threadId, rowId]);
+  const snapshot = useCallback(() => store.getKind({ hostId, threadId, rowId }), [store, hostId, threadId, rowId]);
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
-export function SidebarThreadRowMenu({ store, ...props }: Omit<ComponentProps<typeof ThreadRowMenu>, "openMenuKind"> & { store: SidebarThreadMenuStore }) {
-  const kind = useSidebarRowMenu(store, props.target);
+export function SidebarThreadRowMenu({ store, rowId, ...props }: Omit<ComponentProps<typeof ThreadRowMenu>, "openMenuKind"> & { store: SidebarThreadMenuStore; rowId?: string }) {
+  const kind = useSidebarRowMenu(store, { ...props.target, rowId });
   return <ThreadRowMenu {...props} openMenuKind={kind === "context" || kind === "dropdown" ? kind : null} onPointerDown={event => {
     props.onPointerDown?.(event);
     // The nearest row trigger owns the native long press, rather than the list trigger.
@@ -21,8 +21,8 @@ export function SidebarThreadRowMenu({ store, ...props }: Omit<ComponentProps<ty
   }} />;
 }
 
-export function SidebarThreadBadge({ store, contribution, ...props }: Omit<ThreadBadgeProps, "open"> & { store: SidebarThreadMenuStore; contribution: ThreadBadgeContribution }) {
-  const kind = useSidebarRowMenu(store, props);
+export function SidebarThreadBadge({ store, contribution, rowId, ...props }: Omit<ThreadBadgeProps, "open"> & { store: SidebarThreadMenuStore; contribution: ThreadBadgeContribution; rowId?: string }) {
+  const kind = useSidebarRowMenu(store, { ...props, rowId });
   return <contribution.Component {...props} open={kind === "badge"} />;
 }
 

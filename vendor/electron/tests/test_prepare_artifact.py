@@ -42,7 +42,7 @@ class ArtifactProvenance(unittest.TestCase):
                     value = {'nativeCopyProbePassed': True, 'cases': [{'passed': True}], 'versions': {'electron': '44.8.0', 'chrome': '152.0.7977.167'}}
                 else:
                     focus = argv[-1].endswith('probe-native-ime-focus-identity.cjs')
-                    value = {'passed': True, 'readOnlyFocusQueryProved': True, 'mouseDownPhaseProved': True, 'cases': [{'passed': True}] * (20 if focus else 27)}
+                    value = {'passed': True, 'readOnlyFocusQueryProved': True, 'mouseDownPhaseProved': True, 'inputFocusSynchronizationProved': True, 'cases': [{'passed': True}] * (21 if focus else 27)}
                 return subprocess.CompletedProcess(argv, 0, json.dumps(value), '')
 
             argv = ['prepare-artifact.py', '--distribution', str(distribution), '--source-root', str(root), '--evidence', str(root / 'evidence')]

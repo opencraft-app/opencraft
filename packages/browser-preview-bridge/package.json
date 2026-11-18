@@ -4,7 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./annotation-overlay": "./src/annotation-overlay.ts",
+    "./adapter": "./src/adapter.ts",
+    "./runtime": "./src/runtime.ts"
   },
   "scripts": {
     "build": "vite build",

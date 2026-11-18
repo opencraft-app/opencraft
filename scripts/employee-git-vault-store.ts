@@ -1,3 +1,4 @@
+import { gitGrantAuthority, sealGitGrant, type GitGrantScope } from './personal-git-protocol.js';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -123,6 +124,8 @@ export class EmployeeGitVaultStore {
   }
   /** Authenticated private execution metadata, using the same key and AAD owner.
    * The envelope carries identity/scope only, never environment values. */
+  personalGitAuthority(): string { return gitGrantAuthority(this.key); }
+  sealPersonalGitGrant(scope: GitGrantScope): string { return sealGitGrant(this.key, scope); }
   sealExecutionContext(document: unknown): string {
     return this.encrypt('platform', 'document-execution-context', document).toString('base64url');
   }

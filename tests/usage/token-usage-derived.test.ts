@@ -326,3 +326,4 @@ for (const rejected of [false, true]) {
   }finally{release();try{d.close();}catch{}}
  }));
 }
+

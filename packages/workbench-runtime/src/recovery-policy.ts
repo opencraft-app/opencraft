@@ -1,5 +1,6 @@
 import { advanceRecoveryProgress, type RecoveryProgress, type RecoveryStage } from "./recovery-observation";
 import { recoveryNow } from "./recovery-clock";
+import { retryDelayMs } from "./retry-schedule";
 
 /** Recovery scheduling only. Session/Replica keep data and authority ownership. */
 export type RecoveryDemand = "visible" | "open" | "cache";
@@ -20,7 +21,6 @@ export interface RecoveryTask {
 }
 interface Work { controller?: AbortController; task: RecoveryTask; queued: boolean; attempt: number; retryTicket: number; propagateFailure: boolean; resolve(error?: unknown): void; promise: Promise<void> }
 const rank = { visible: 0, open: 1, cache: 2 } as const;
-const delays = [500, 1_000, 2_000, 5_000, 15_000, 30_000, 60_000];
 let episodeSequence = 0;
 
 /** One owner per Host, independent of DOM retention and physical transport. */
@@ -222,10 +222,7 @@ export class ConversationRecoveryOwner {
         const retryable = work.task.retryable(error);
         if (!current() || runTicket !== work.retryTicket) return;
         if (retryable) {
-          const schedule = this.input.delaysMs;
-          const values = schedule ?? delays;
-          const base = values[Math.min(work.attempt++, values.length - 1)] ?? 5_000;
-          const delayMs = this.jitteredDelay(base, schedule === undefined);
+          const delayMs = retryDelayMs(work.attempt++, { schedule: this.input.delaysMs, jitter: this.input.jitter, random: this.input.random });
           const ticket = ++work.retryTicket;
           this.observe("backoff", key, { retryAt: this.now() + delayMs });
           if (!current() || ticket !== work.retryTicket) return;
@@ -247,11 +244,6 @@ export class ConversationRecoveryOwner {
       this.stage("history-started", { demand, attempt: this.getProgress(key)!.attempt });
       if (current() && demand !== "visible" && this.episode) this.episode.extraConversations.add(key);
     }
-  }
-  private jitteredDelay(delayMs: number, useDefaultSchedule: boolean): number {
-    if (!useDefaultSchedule || this.input.jitter === false) return delayMs;
-    const random = Math.min(1, Math.max(0, this.input.random?.() ?? Math.random()));
-    return Math.max(1, Math.round(delayMs * (0.8 + random * 0.4)));
   }
   dispose() { this.disposed = true; this.invalidate(); }
 }

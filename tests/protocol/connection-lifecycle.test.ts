@@ -117,3 +117,41 @@ test("default reconnect backoff adds bounded jitter while explicit test schedule
     assert.equal(scheduled.filter(delay => delay < 1_000).at(-1), 600);
   } finally { upper.dispose(); }
 });
+
+test("shared cooldown has a bounded separate allowance, not a spent connection deadline",async t=>{
+  t.mock.timers.enable({apis:["setTimeout","Date"],now:100000});
+  let attempt!:import("../../packages/workbench-runtime/src/connection-lifecycle").ConnectionAttempt;
+  let resolve!:(value:object)=>void;
+  const owner=new ConnectionLifecycleOwner<object>({
+    clock:{now:()=>Date.now(),setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id as ReturnType<typeof setTimeout>)},
+    run:a=>{attempt=a;return new Promise(done=>{resolve=done;});},
+    valid:()=>true,invalidate(){},changed(){},usable(){},backoff(){},manual:()=>false,
+  });
+  try{
+    const pending=owner.connect();await tick();
+    attempt.waitForRetry(60_000);attempt.waitForRetry(60_000);
+    t.mock.timers.tick(60_000);
+    assert.equal(owner.snapshot.phase,"attempting");
+    attempt.progress("bridge",25_000);
+    t.mock.timers.tick(20_000);
+    resolve({});await pending;
+    assert.equal(owner.snapshot.phase,"usable");
+  }finally{owner.dispose();}
+});
+
+test("repeated cooldown reports cannot extend the total budget indefinitely",async t=>{
+  t.mock.timers.enable({apis:["setTimeout","Date"],now:100000});
+  let attempt!:import("../../packages/workbench-runtime/src/connection-lifecycle").ConnectionAttempt;
+  const owner=new ConnectionLifecycleOwner<object>({
+    clock:{now:()=>Date.now(),setTimeout:(fn,ms)=>setTimeout(fn,ms),clearTimeout:id=>clearTimeout(id as ReturnType<typeof setTimeout>)},
+    run:a=>{attempt=a;return new Promise(()=>{});},
+    valid:()=>true,invalidate(){},changed(){},usable(){},backoff(){},manual:()=>false,
+  });
+  try{
+    const pending=owner.connect();const rejected=assert.rejects(pending,/timed out/);await tick();
+    attempt.waitForRetry(600_000);
+    t.mock.timers.tick(100_000);attempt.waitForRetry(600_000);
+    t.mock.timers.tick(5_000);await rejected;
+    assert.equal(attempt.signal.aborted,true);
+  }finally{owner.dispose();}
+});

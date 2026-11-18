@@ -13,9 +13,15 @@
     "./host-storage": "./src/host-storage.ts",
     "./desktop": "./src/desktop.ts",
     "./mcp-apps": "./src/mcp-apps.ts",
+    "./assistant-work": "./src/assistant-work.mjs",
     "./collaboration": "./src/collaboration.ts",
     "./token-usage": "./src/token-usage.ts",
     "./host-inputs": "./src/host-inputs.ts",
+    "./thread-command": {
+      "types": "./src/thread-command.d.mts",
+      "import": "./src/thread-command.mjs"
+    },
+    "./input-completion": "./src/input-completion.mjs",
     "./server-spaces": "./src/server-spaces.ts"
   },
   "dependencies": {

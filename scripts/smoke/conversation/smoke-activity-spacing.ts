@@ -147,7 +147,15 @@ try {
       expandableGroups++;
       if (await toggle.getAttribute("aria-expanded") === "true") { await activate(toggle); await page.waitForTimeout(450); }
       await start(toggle); await activate(toggle); await finish("open-tool-group", "grow");
-      const command = group.locator('.thread-agent-activity__rows > .thread-activity-item > .thread-activity-item__header > button').first();
+      const innerGaps = await group.locator('.thread-agent-activity__rows').evaluateAll(lists => lists.flatMap(list => {
+        const rows = [...list.children];
+        return rows.slice(1).map((row, i) => ({ gap: row.getBoundingClientRect().top - rows[i]!.getBoundingClientRect().bottom,
+          activity: row.matches('[data-conversation-row="activity"]') && rows[i]!.matches('[data-conversation-row="activity"]') }));
+      }));
+      assert.ok(innerGaps.length > 0, 'group has adjacent real tool rows');
+      for (const boundary of innerGaps) assert.ok(Math.abs(boundary.gap - (boundary.activity ? 4 : 16)) < 0.5,
+        'search and content-window wrappers preserve the grouped row rhythm');
+      const command = group.locator('.thread-agent-activity__rows > .thread-activity-window-row > [data-content-search-unit-keys] > .thread-activity-item > .thread-activity-item__header > button').first();
       await command.waitFor();
       if (await command.getAttribute("aria-expanded") === "true") { await activate(command); await page.waitForTimeout(450); }
       await start(command); await activate(command); await finish("open-nested-command", "grow");
@@ -156,6 +164,30 @@ try {
     }
     assert.ok(expandableGroups > 0, "fixture exercises an actual collapsible tool group");
     await page.screenshot({ path: join(output, `${theme}-${mode}.png`), fullPage: true });
+    if (theme === "light" && mode === "mouse") {
+      await page.evaluate(() => (window as any).update("spacing-many-79"));
+      const groupToggle = page.locator('.thread-agent-activity__group-disclosure > .thread-activity-item__header > button').first();
+      await groupToggle.waitFor();
+      if (await groupToggle.getAttribute('aria-expanded') !== 'true') await groupToggle.click();
+      const first = page.locator('.thread-activity-window-row').first();
+      const firstToggle = first.locator('.thread-activity-item__header > button').first();
+      await firstToggle.click();
+      await page.waitForTimeout(450);
+      await first.evaluate(node => { (window as any).__firstActivityRow = node; });
+      for (const count of [80, 79]) {
+        await page.evaluate(count => (window as any).update(`spacing-many-${count}`), count);
+        await page.waitForTimeout(450);
+        assert.equal(await page.locator('.thread-activity-window-row').count(), count);
+        assert.ok(await first.evaluate(node => node === (window as any).__firstActivityRow), 'threshold keeps the same row instance');
+        assert.equal(await firstToggle.getAttribute('aria-expanded'), 'true', 'threshold preserves disclosure choice');
+        const gaps = await page.locator('.thread-agent-activity__rows').evaluateAll(lists => lists.flatMap(list => {
+          const rows = [...list.children];
+          return rows.slice(1).map((row, i) => row.getBoundingClientRect().top - rows[i]!.getBoundingClientRect().bottom);
+        }));
+        for (const gap of gaps) assert.ok(Math.abs(gap - 4) < 0.5, 'long list keeps compact spacing');
+      }
+      results.push({ name: '79-80-79 continuity and spacing' });
+    }
     assert.deepEqual(errors, []);
     await page.close();
   }

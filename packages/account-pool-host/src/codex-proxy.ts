@@ -1,7 +1,9 @@
-import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
-import { decodeResponsesRequestBody, forwardConfiguredResponses } from "./configured-forward.js";
-import { responsesPayloadForOpenAI } from "./foreign-history.js";
-import { ExternalCodexCredentialError } from "./store.js";
+import { CodexAccountOperationError } from "./account-diagnostics.js";
+import { requiresModelGateway } from "./model-gateway-connection.js";
+import { bindModelGatewaySponsor } from "./model-gateway-sponsor.js";
+import { configuredModelGatewayPath, ModelGatewayError } from "./model-gateway-store.js";
+import { meteredModelRequest } from "./model-gateway-meter.js";
+import { creditBalanceText, ExternalCodexCredentialError } from "./store.js";
 import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file.js";
 import type {
   AccountPoolAccount,
@@ -13,8 +15,16 @@ import type {
 import type { AccountCredentialRefreshReason } from "./oauth-refresh.js";
 import { ACCOUNT_POOL_MAX_REQUEST_BYTES } from "./request-limits.js";
 import { Agent, fetch as undiciFetch } from "undici";
+import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
+import { responsesPayloadForOpenAI } from "./foreign-history.js";
+import { decodeResponsesRequestBody, forwardConfiguredResponses, forwardedResponseHeaders } from "./configured-forward.js";
 
 const HOST_TOKEN_HEADER = "x-opencraft-account-pool-token";
+/** Host-token identities for non-Codex model callers. They may only use provider passthrough. */
+export const PROXY_CALLER_PREFIX = "caller:";
+export const PROXY_CALLERS = Object.freeze(["caller:pi", "caller:dsh", "caller:assistant"]);
+// SDKs join base URLs differently (Anthropic appends /v1/messages, OpenAI /responses); accept up to two /v1 prefixes.
+const PROVIDER_ROUTE = /^\/providers\/([^/]{1,256})(?:\/v1){0,2}\/(messages|responses)$/u;
 const FORWARDED_REQUEST_HEADERS = new Set([
   "accept",
   "content-encoding",
@@ -98,17 +108,7 @@ function requestHeaders(inbound: Headers, accessToken: string, upstreamAccountId
   return headers;
 }
 
-function responseHeaders(upstream: Headers): Headers {
-  const headers = new Headers();
-  // Fetch decodes upstream compression before exposing the response body.
-  for (const [name, value] of upstream) {
-    const lower = name.toLowerCase();
-    if (["content-type", "cache-control", "retry-after", "mcp-session-id", "mcp-protocol-version"].includes(lower) || lower.startsWith("x-codex-")) {
-      headers.set(lower, value);
-    }
-  }
-  return headers;
-}
+const responseHeaders = forwardedResponseHeaders;
 
 function quotaFromHeaders(headers: Headers, now: number, status: number): AccountPoolQuotaObservation | null {
   const credits = headers.get("x-codex-credits-has-credits"), unlimited = headers.get("x-codex-credits-unlimited");
@@ -141,7 +141,11 @@ function quotaFromHeaders(headers: Headers, now: number, status: number): Accoun
       status: overLimit || utilization === 1 ? "rejected" : null,
       observedAt: now,
       source: "header",
-      ...(creditsAvailable === undefined ? {} : { creditsAvailable }),
+      ...(creditsAvailable === undefined ? {} : {
+        creditsAvailable,
+        creditsUnlimited: unlimited?.toLowerCase() === "true",
+        creditBalance: creditBalanceText(headers.get("x-codex-credits-balance")),
+      }),
     }];
   });
   if (windows.length === 0) return null;
@@ -188,7 +192,7 @@ function createUpstreamFetch(override?: typeof fetch): typeof fetch {
     connections: 16,
     pipelining: 1,
     allowH2: false,
-    headersTimeout: 60_000,
+    headersTimeout: 120_000,
     bodyTimeout: 180_000,
     keepAliveTimeout: 10_000,
     keepAliveMaxTimeout: 30_000,
@@ -198,7 +202,7 @@ function createUpstreamFetch(override?: typeof fetch): typeof fetch {
     protocol: "http/1.1",
     maxConnections: 16,
     pipelining: 1,
-    headersTimeoutMs: 60_000,
+    headersTimeoutMs: 120_000,
     bodyTimeoutMs: 180_000,
   }));
   return ((input, init) => undiciFetch(input instanceof Request ? input.url : input, {
@@ -219,6 +223,8 @@ export class CodexAccountPoolProxy {
   }
   private readonly imageTurns = new Map<string, { affinityId: string; expiresAt: number }>();
   private readonly store: AccountPoolStore;
+  private readonly privateHostId?: string;
+  private readonly personalRoute?: (request: Request) => Promise<Response | null>;
   private readonly upstreamBaseUrl: string;
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
@@ -230,6 +236,8 @@ export class CodexAccountPoolProxy {
   ) => Promise<AccountPoolSecret>;
 
   constructor(options: {
+    readonly privateHostId?: string;
+    readonly personalRoute?: (request: Request) => Promise<Response | null>;
     readonly store: AccountPoolStore;
     readonly upstreamBaseUrl: string;
     readonly fetch?: typeof fetch;
@@ -242,6 +250,9 @@ export class CodexAccountPoolProxy {
     ) => Promise<AccountPoolSecret>;
   }) {
     this.store = options.store;
+    this.privateHostId = options.privateHostId;
+    this.personalRoute = options.personalRoute;
+    this.configuredResponses = options.configuredResponses;
     this.upstreamBaseUrl = options.upstreamBaseUrl;
     this.fetch = createUpstreamFetch(options.fetch);
     this.now = options.now ?? Date.now;
@@ -250,6 +261,91 @@ export class CodexAccountPoolProxy {
   }
 
   async handle(request: Request, onDispatch?: () => void): Promise<Response> {
+    if (new URL(request.url).pathname.startsWith("/providers/")) return this.handleProvider(request, onDispatch);
+    const personal = await this.personalRoute?.(request);
+    if (personal) return personal;
+    const path = configuredModelGatewayPath();
+    if (!path) return this.handleUnmetered(request, onDispatch);
+    const route = new URL(request.url).pathname;
+    if (route !== "/v1/responses" || request.method !== "POST") {
+      return this.handleUnmetered(request, onDispatch);
+    }
+    if (this.store.authenticateHostToken(request.headers.get(HOST_TOKEN_HEADER) ?? "") === null)
+      return new Response(null, {status:401});
+    try {
+      const bytes = new Uint8Array(await request.clone().arrayBuffer());
+      if (bytes.byteLength > ACCOUNT_POOL_MAX_REQUEST_BYTES) return new Response(null,{status:413});
+      const decoded = await decodeResponsesRequestBody(request.headers.get("content-encoding"), bytes);
+      if (decoded instanceof Response) return decoded;
+      const payload = parseJson(decoded), identity = affinity(request, decoded);
+      if (!requiresModelGateway(payload?.model, path)) return this.handleUnmetered(request, onDispatch);
+      if (identity.affinityId === "catalog" || typeof payload?.model !== "string")
+        throw new ModelGatewayError("gateway_human_sponsor_required",403);
+      if (identity.parentAffinityId) bindModelGatewaySponsor(identity.affinityId,null,
+        id => id === identity.affinityId ? identity.parentAffinityId : null,path);
+      let turn: string | null = null;
+      try {turn=text(object(JSON.parse(request.headers.get("x-codex-turn-metadata")??"null"))?.turn_id);}catch{/* Modern execution admission fails closed below. */}
+      return await meteredModelRequest({path,thread:identity.affinityId,turn,model:payload.model,signal:request.signal,
+        send: dispatch => this.handleUnmetered(request, credential => {dispatch(credential);onDispatch?.();})});
+    } catch (error) {
+      const known = error instanceof ModelGatewayError;
+      const code = known ? error.kind : "gateway_unavailable";
+      return Response.json({error:{message:code,code}},{status:known ? error.status : 503});
+    }
+  }
+
+  /** Native-protocol passthrough to an installation-configured provider for non-Codex callers. The caller presents
+   * only its proxy token; the provider credential is resolved here and never returned. No retry, no conversion. */
+  private async handleProvider(request: Request, onDispatch?: () => void): Promise<Response> {
+    const url = new URL(request.url), match = PROVIDER_ROUTE.exec(url.pathname);
+    // Anthropic SDKs add ?beta=true; query parameters are not forwarded.
+    if (!match || request.method !== "POST" || [...url.searchParams.keys()].some(key => key !== "beta")) return Response.json({ error: { message: "Proxy provider route not found" } }, { status: 404 });
+    if (this.privateHostId) return new Response(null, { status: 401 });
+    const presented = request.headers.get("x-api-key") ?? request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? request.headers.get(HOST_TOKEN_HEADER) ?? "";
+    const caller = this.store.authenticateHostToken(presented);
+    if (caller === null || !caller.startsWith(PROXY_CALLER_PREFIX)) return new Response(null, { status: 401 });
+    let providerId: string;
+    try { providerId = decodeURIComponent(match[1]!); } catch { return Response.json({ error: { message: "Invalid provider" } }, { status: 404 }); }
+    const protocol = match[2] === "messages" ? "anthropic-messages" : "openai-responses";
+    const body = new Uint8Array(await request.arrayBuffer());
+    if (body.byteLength > ACCOUNT_POOL_MAX_REQUEST_BYTES) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
+    const payload = parseJson(body), model = text(payload?.model);
+    if (!payload || !model) return Response.json({ error: { message: "A model is required" } }, { status: 400 });
+    const publicModel = CONFIGURED_CODEX_MODEL_PREFIX + encodeURIComponent(providerId) + "/" + encodeURIComponent(model);
+    const meteredPath = configuredModelGatewayPath();
+    if (meteredPath && requiresModelGateway(publicModel, meteredPath))
+      return Response.json({ error: { message: "gateway_human_sponsor_required", code: "gateway_human_sponsor_required" } }, { status: 403 });
+    let configured;
+    try { configured = await this.configuredResponses?.resolve(publicModel); }
+    catch { return Response.json({ error: { message: "Configured model connection is unavailable" } }, { status: 503 }); }
+    if (!configured) return Response.json({ error: { message: "Configured model is disabled or unavailable" } }, { status: 404 });
+    if ((configured.protocol ?? "openai-responses") !== protocol) return Response.json({ error: { message: "Provider protocol mismatch" } }, { status: 400 });
+    const endpoint = new URL(configured.baseUrl);
+    if (!["http:", "https:"].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.search || endpoint.hash)
+      return Response.json({ error: { message: "Invalid configured model endpoint" } }, { status: 503 });
+    const anthropic = protocol === "anthropic-messages";
+    endpoint.pathname = endpoint.pathname.replace(/\/+$/u, "") + (anthropic ? "/messages" : "/responses");
+    const headers = new Headers({ "content-type": "application/json" });
+    for (const name of ["accept", ...(anthropic ? ["anthropic-version", "anthropic-beta"] : [])]) {
+      const value = request.headers.get(name); if (value) headers.set(name, value);
+    }
+    if (anthropic && !headers.has("anthropic-version")) headers.set("anthropic-version", "2023-06-01");
+    if (configured.apiKey) headers.set(anthropic ? "x-api-key" : "authorization", anthropic ? configured.apiKey : `Bearer ${configured.apiKey}`);
+    request.signal.throwIfAborted();
+    onDispatch?.();
+    const startedAt = this.now();
+    let upstream: Response;
+    try {
+      upstream = await this.fetch(endpoint, { method: "POST", headers, body: JSON.stringify({ ...payload, model: configured.model }), signal: request.signal, redirect: "error" });
+    } catch (error) {
+      console.warn(JSON.stringify({ event: "proxy-provider-failure", caller, provider: providerId, model, durationMs: this.now() - startedAt }));
+      throw error;
+    }
+    console.info(JSON.stringify({ event: "proxy-provider-forward", caller, provider: providerId, model, status: upstream.status, headersMs: this.now() - startedAt }));
+    return new Response(upstream.body, { status: upstream.status, headers: forwardedResponseHeaders(upstream.headers) });
+  }
+
+  private async handleUnmetered(request: Request, onDispatch?: (credential?: string) => void): Promise<Response> {
     const route = new URL(request.url).pathname;
     const imageRequest = request.method === "POST" && ["/v1/images/generations", "/v1/images/edits"].includes(route);
     const mcpRequest = route === "/api/codex/ps/mcp" && ["GET", "POST", "DELETE"].includes(request.method);
@@ -259,7 +355,8 @@ export class CodexAccountPoolProxy {
     const hostId = mcpRequest
       ? this.store.authenticateHostToken(request.headers.get("authorization")?.replace(/^Bearer /u, "") ?? "", new URL(request.url).origin)
       : this.store.authenticateHostToken(request.headers.get(HOST_TOKEN_HEADER) ?? "");
-    if (hostId === null) return new Response(null, { status: 401 });
+    if (hostId === null || hostId.startsWith(PROXY_CALLER_PREFIX)
+      || (this.privateHostId ? hostId !== this.privateHostId : hostId.startsWith("personal-subscription:"))) return new Response(null, { status: 401 });
     const body = request.method === "GET" ? new Uint8Array() : new Uint8Array(await request.arrayBuffer());
     if (body.byteLength > ACCOUNT_POOL_MAX_REQUEST_BYTES) return Response.json({ error: { message: "Request too large" } }, { status: 413 });
     // Resolve configured models before touching OAuth account affinity, quotas or credentials.
@@ -277,7 +374,7 @@ export class CodexAccountPoolProxy {
       if (!configured) return Response.json({ error: { message: "Configured Codex model is disabled or unavailable" } }, { status: 404 });
       // Never forward local Host/OAuth headers; never retry or fall back across providers.
       return forwardConfiguredResponses({ configured, payload, publicModel: payload.model, accept: request.headers.get("accept"),
-        signal: request.signal, fetch: this.fetch, onDispatch });
+        signal: request.signal, fetch: this.fetch, onDispatch: () => onDispatch?.(payload.model as string) });
     }
     // After a switch away from a configured Anthropic model, its bridge-only history must not reach OpenAI.
     const sanitized = payload ? responsesPayloadForOpenAI(payload) : null;
@@ -357,8 +454,16 @@ export class CodexAccountPoolProxy {
       if (this.resolveCredential !== undefined && secret.expiresAt !== null && secret.expiresAt <= this.now() + 60_000) {
         try {
           secret = await this.resolveCredential(selection.account, secret, "expired");
-          if (!secret.external) this.store.replaceCredential(selection.account.id, secret);
-        } catch {
+          if (!secret.external) this.store.replaceCredential(selection.account.id, secret, { preserveAuthorizationError: true });
+        } catch (error) {
+          if (error instanceof CodexAccountOperationError && error.diagnostic.retryable) {
+            // Retryability describes renewal, not eligibility for this request.
+            // No usable credential: exclude only this request's candidate without
+            // disabling the account or claiming permanent authorization failure.
+            lastFailure = { status: 503, message: error.message };
+            attempted.add(selection.account.id);
+            continue;
+          }
           lastFailure = { status: 401, message: secret.external ? EXTERNAL_CODEX_REAUTH_MESSAGE : "Codex account authentication failed" };
           this.store.markAccountError(selection.account.id, "authorization-rejected");
           attempted.add(selection.account.id);
@@ -370,9 +475,9 @@ export class CodexAccountPoolProxy {
       try {
         const target = upstreamUrl(this.upstreamBaseUrl, request.url);
         const headers = requestHeaders(request.headers, secret.accessToken, selection.account.upstreamAccountId);
-        if (sanitized) headers.delete("content-encoding");
+        if (sanitized) headers.delete("content-encoding"); // The rewritten body is sent decoded.
         request.signal.throwIfAborted();
-        onDispatch?.();
+        onDispatch?.(selection.account.id);
         upstream = await this.fetch(target, {
           method: request.method,
           headers,
@@ -421,10 +526,18 @@ export class CodexAccountPoolProxy {
           await upstream.body?.cancel().catch(() => undefined);
           try {
             const refreshed = await this.resolveCredential(selection.account, secret, "unauthorized");
-            if (!refreshed.external) this.store.replaceCredential(selection.account.id, refreshed);
+            if (!refreshed.external) this.store.replaceCredential(selection.account.id, refreshed, { preserveAuthorizationError: true });
             continue;
-          } catch {
-            // The allow-listed terminal classification below owns failure state.
+          } catch (error) {
+            if (error instanceof CodexAccountOperationError && error.diagnostic.retryable) {
+              // Retryability describes renewal, not eligibility for this request.
+            // No usable credential: exclude only this request's candidate without
+            // disabling the account or claiming permanent authorization failure.
+            lastFailure = { status: 503, message: error.message };
+            attempted.add(selection.account.id);
+            continue;
+            }
+            // Only explicit terminal rejection below marks authorization failed.
           }
         }
         lastFailure = { status: upstream.status, message: secret.external ? EXTERNAL_CODEX_REAUTH_MESSAGE : "Codex account authentication failed" };
@@ -433,7 +546,10 @@ export class CodexAccountPoolProxy {
         await upstream.body?.cancel().catch(() => undefined);
         continue;
       }
-      if (upstream.ok) selection.accept();
+      if (upstream.ok) {
+        if (this.store.readCredential(selection.account.id).accessToken === secret.accessToken) this.store.clearAuthorizationError(selection.account.id);
+        selection.accept();
+      }
       return catalogResponse(new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,

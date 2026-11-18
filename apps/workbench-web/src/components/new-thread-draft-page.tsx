@@ -1,3 +1,4 @@
+import type { AttachmentResolver } from "@opencraft/composer-editor";
 import { DisclosureButton } from "@opencraft/design-system-web/button";
 import { CheckIcon as Check, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, FolderIcon as Folder, LoadingRingIcon as LoaderCircle, SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import { useObservedReadiness } from '../runtime/observability-react';
@@ -106,16 +107,13 @@ export interface NewThreadDraftPageProps {
   readonly onSelectHost: (hostId: string) => void | Promise<void>;
   readonly onSelectWorkspace: (workspace: DraftWorkspaceOption) => void;
   readonly onBrowseWorkspace: () => void | Promise<void>;
-  readonly onResolveAttachment?: (
-    file: File,
-    pending: ComposerAttachment,
-    signal?: AbortSignal,
-  ) => ComposerAttachment | Promise<ComposerAttachment>;
+  readonly onResolveAttachment?: AttachmentResolver;
   readonly onRemoveAttachment?: (
     attachment: ComposerAttachment,
   ) => void | Promise<void>;
   readonly composerAddMenuContent?: ReactNode | ((closeMenu: () => void) => ReactNode);
   readonly composerEndActions?: ReactNode;
+  readonly composerTrailingActions?: ReactNode;
   readonly shortcutCommands?: readonly ComposerShortcutCommand[];
   readonly onSubmit: (
     intent: SubmitIntent,
@@ -478,6 +476,7 @@ export function NewThreadDraftPage({
   onRemoveAttachment,
   composerAddMenuContent,
   composerEndActions,
+  composerTrailingActions,
   shortcutCommands,
   resolveAgentCycleShortcut,
   personalDefaultsPending = false,
@@ -535,6 +534,7 @@ export function NewThreadDraftPage({
       {goalMenuItem(closeMenu)}
     </>}
     shortcutCommands={shortcutCommands}
+    navigationActions={composerTrailingActions}
     endActions={composerEndActions}
     selectionCatalog={selectionCatalog}
     resolveAgentCycleShortcut={resolveAgentCycleShortcut}

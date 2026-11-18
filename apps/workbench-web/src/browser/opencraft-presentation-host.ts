@@ -4,6 +4,8 @@ export interface PresentationHostPort {
   readonly container: HTMLElement;
   readonly guest: HTMLElement;
   readonly ready: Promise<void>;
+  /** Media-backed surfaces wait for a drawable frame, separately from attachment. */
+  whenPainted?(signal: AbortSignal): Promise<void>;
   commit(layout: BrowserViewportLayout, visible: boolean): void;
   park(): void;
   close(): void;
@@ -40,6 +42,7 @@ export class OpenCraftPresentationHost {
   setBrowserUseCaptureSurfaceSize(size: { width: number; height: number } | null) { this.captureViewport = size; this.resync(); }
   releaseBrowserUse() { this.browserUseActive = false; this.browserViewport = null; this.captureViewport = null; this.resync(); }
   whenReady() { return this.port.ready; }
+  whenPresented(signal: AbortSignal) { return this.port.whenPainted?.(signal) ?? Promise.resolve(); }
   isConnected() { return !this.disposed && this.port.container.isConnected; }
   isPainted() { return this.isConnected() && this.registered && this.state.isVisible; }
   setHostKind(value: string) { this.options.hostKind = value; }

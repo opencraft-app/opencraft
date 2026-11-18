@@ -348,3 +348,39 @@ test('an unavailable response without retry permission remains terminal', async 
  t.mock.timers.tick(30000); await tick();
  assert.equal(f.messages.filter(message => message.input).length, 1); assert.equal(storage.isReady, false);
 });
+
+test('a stalled page write does not block sidechat persistence or its confirmation', async t => {
+ let release!: () => void;
+ const f = startupWire(t, { respond(message, socket) {
+   if (message.input?.key === 'pages') { release = () => socket.result(message, {revision: 3, keyRevision: 2}); return; }
+   if (message.input?.key === 'sideChats') {
+     Object.assign(f.state, {revision: 2, keyRevisions: {pages: 1, sideChats: 1}, values: {...f.state.values, sideChats: message.input.value}});
+     socket.result(message, {revision: 2, keyRevision: 1}); return;
+   }
+   socket.result(message);
+ }});
+ const storage = await f.start(); await storage.flush();
+ storage.setItem(key, '["pending page"]');
+ const sideKey = 'opencraft.side-chats.v1';
+ storage.setSideChatDirectory('[]');
+ await storage.flushKey(sideKey);
+ assert.equal(storage.getCommittedSideChatDirectory(), '[]');
+ assert.equal(typeof release, 'function');
+ release(); await storage.flush();
+});
+
+test('a rejected sidechat mutation does not permanently poison subsequent saves', async t => {
+ let fail = true;
+ const f = startupWire(t, {respond(message, socket) {
+   if (message.input && fail) { socket.error(message, 'STATE_CONFLICT'); return; }
+   if (message.input) { Object.assign(f.state,{revision:2,keyRevisions:{pages:1,sideChats:1},values:{...f.state.values,sideChats:message.input.value}}); socket.result(message,{revision:2,keyRevision:1}); return; }
+   socket.result(message);
+ }});
+ const storage = await f.start(); await storage.flush();
+ storage.setSideChatDirectory('[]');
+ await assert.rejects(storage.flushKey('opencraft.side-chats.v1'), /STATE_CONFLICT/);
+ assert.equal(storage.isReady,true);
+ fail = false; storage.setSideChatDirectory('[]');
+ await storage.flushKey('opencraft.side-chats.v1');
+ assert.equal(storage.getCommittedSideChatDirectory(),'[]');
+});

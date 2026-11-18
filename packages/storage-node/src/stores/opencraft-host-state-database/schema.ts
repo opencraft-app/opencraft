@@ -147,11 +147,12 @@ export const table_opencraft_host_queue = sqliteTable("opencraft_host_queue", {
   "target_turn_id": text("target_turn_id"),
   "paused_reason": text("paused_reason"),
 }, table => [
+  index("opencraft_host_queue_turn").on(table["thread_id"],table["target_turn_id"],table["state"]),
   primaryKey({ columns: [table["id"]] }),
   index("opencraft_host_queue_state").on(table["state"], table["thread_id"]),
   index("opencraft_host_queue_order").on(table["thread_id"], table["position"], table["created_at_ms"]),
   unique("legacy_unique_opencraft_host_queue_2").on(table["thread_id"], table["client_id"]),
-  check("opencraft_host_queue_check_0", sql`state IN ('queued','dispatching','steering','unknown','delivered','discarded')`),
+  check("opencraft_host_queue_check_0", sql`state IN ('queued','dispatching','steering','unknown','delivered','discarded','closed')`),
 ]);
 
 export const table_opencraft_thread_catalog = sqliteTable("opencraft_thread_catalog", {
@@ -455,3 +456,14 @@ export const table_token_usage_turns = sqliteTable("token_usage_turns", {
   check("token_usage_turns_check_6", sql`allocation_state IN ('settled','provisional','pending','system','unknown')`),
   check("token_usage_turns_check_7", sql`unknown_model IN (0,1)`),
 ]);
+
+export const inputDelivery = sqliteTable("opencraft_input_delivery", {
+  threadId: text("thread_id").notNull(), clientId: text("client_id").notNull(),
+  nativeAdmission: text("native_admission").notNull(), contextState: text("context_state").notNull(), revision: integer("revision").notNull(),
+}, table => [primaryKey({columns:[table.threadId,table.clientId]}),
+  foreignKey({columns:[table.threadId,table.clientId],foreignColumns:[table_opencraft_host_queue.thread_id,table_opencraft_host_queue.client_id]}),
+  check("opencraft_input_delivery_check_0", sql`native_admission IN ('pending','accepted','unknown','rejected')`),
+  check("opencraft_input_delivery_check_1", sql`context_state IN ('unobserved','recorded')`)]);
+export const turnDelivery = sqliteTable("opencraft_turn_delivery", {
+  threadId: text("thread_id").notNull(), turnId: text("turn_id").notNull(), outcome: text("outcome").notNull(), observedAtMs: integer("observed_at_ms").notNull(),
+},table=>[primaryKey({columns:[table.threadId,table.turnId]}),check("opencraft_turn_delivery_check_0",sql`outcome IN ('completed','interrupted','failed')`)]);

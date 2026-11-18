@@ -1,0 +1,1 @@
+ALTER TABLE pool_accounts ADD COLUMN owner_actor TEXT; CREATE INDEX pool_account_owner ON pool_accounts(owner_actor);

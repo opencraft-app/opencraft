@@ -426,6 +426,16 @@ test("The user-message dialect preserves Composer link semantics", () => {
   assert.ok(nodes.some((node) => node.kind === "text" && node.text === "!"));
 });
 
+test("Composer link labels unescape punctuation once without interpreting it as markup", () => {
+  const compiler = new ChatDocumentCompiler();
+  const source = '[title \\[复查\\] \\`code\\` \\*bold\\* C:\\\\work\\]\\(x](file:///work/readme.md)';
+  const link = flatten(compiler.compile(source, { dialect: "user-message" }).nodes).find(node => node.kind === "link");
+  assert.equal(link?.kind, "link");
+  if (link?.kind !== "link") return;
+  assert.equal(link.href, "file:///work/readme.md");
+  assert.equal(link.children.map(node => node.kind === "text" ? node.text : "").join(""), 'title [复查] `code` *bold* C:\\work](x');
+});
+
 test("The Markdown-link scanner rejects empty, multiline, and incomplete targets", () => {
   assert.deepEqual(findMarkdownLink("x [label](file:///opencraft/a.ts) y", 0), {
     start: 2,

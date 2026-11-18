@@ -1,6 +1,9 @@
 import {
   BrowserAutomationError,
   browserControlAttributesAreSensitive,
+  type BrowserAnnotationAnchor,
+  type BrowserAnnotationDragRequest,
+  type BrowserAnnotationPreviewRequest,
 } from "@opencraft/browser-core";
 
 import {
@@ -10,11 +13,16 @@ import {
   type PreviewBridgeChildMessage,
   type PreviewBridgeParentMessage,
 } from "./protocol";
+import { ANNOTATION_OVERLAY_HOST_ID, createAnnotationPicker, annotationElementIsSensitive } from "./annotation-picker";
+import { createAnnotationSelectionRuntime } from "./annotation-selection";
+
+export { ANNOTATION_OVERLAY_HOST_ID };
 
 export interface PreviewBridgeRuntimeOptions {
   readonly window: Window;
   /** Exact parent origin. Defaults to the embedding document's referrer origin. */
   readonly parentOrigin?: string;
+  readonly authorizeAnnotationPreview?: () => boolean;
 }
 
 type BrowserWindow = Window & typeof globalThis;
@@ -26,7 +34,7 @@ type ChildMessageBody =
         readonly domInspection: true;
         readonly semanticInput: true;
         readonly trustedInput: false;
-        readonly networkObservation: "fetch-xhr";
+        readonly networkObservation: "none";
       };
     }
   | { readonly type: "preview:call-result"; readonly callId: string; readonly ok: true; readonly result: unknown }
@@ -55,10 +63,16 @@ function errorShape(error: unknown): { code: string; message: string; retryable:
   return error instanceof BrowserAutomationError
     ? { code: error.code, message: error.message, retryable: error.retryable }
     : {
-        code: "PREVIEW_OPERATION_FAILED",
+        code: typeof (error as { code?: unknown })?.code === "string" ? (error as { code: string }).code : "PREVIEW_OPERATION_FAILED",
         message: error instanceof Error ? error.message : String(error),
         retryable: false,
       };
+}
+
+/** The overlay host is ours: automation never reports it and mounting it keeps refs. */
+
+function isAnnotationOverlay(node: Node | null): boolean {
+  return node instanceof Element && node.id === ANNOTATION_OVERLAY_HOST_ID;
 }
 
 function parentOriginFrom(windowValue: Window): string | null {
@@ -81,6 +95,15 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
   let refSequence = 0;
   const refs = new Map<string, Element>();
   const cancelled = new Set<string>();
+  const picker = createAnnotationPicker(windowValue, annotationElementIsSensitive);
+  const annotationRef = (element: Element) => {
+    for (const [ref, known] of refs) if (known === element) return ref;
+    const ref = `e${++refSequence}`; refs.set(ref, element); return ref;
+  };
+  const selections = createAnnotationSelectionRuntime(documentValue, {
+    picker, revision: () => revision, ref: annotationRef,
+    authorizePreview: options.authorizeAnnotationPreview,
+  });
 
   const post = (body: ChildMessageBody) => {
     if (identity === null) return;
@@ -97,8 +120,16 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
     refs.clear();
     post({ type: "preview:document-updated", revision });
   };
-  const observer = new windowValue.MutationObserver(bumpRevision);
+  const observer = new windowValue.MutationObserver((records) => {
+    const ours = records.every((record) => isAnnotationOverlay(record.target) ||
+      (record.type === "childList" &&
+        [...record.addedNodes, ...record.removedNodes].every((node) => isAnnotationOverlay(node))));
+    if (!ours) bumpRevision();
+  });
   observer.observe(documentValue, { subtree: true, childList: true, attributes: true, characterData: true });
+  const flushMutations = () => {
+    if (observer.takeRecords().length > 0) bumpRevision();
+  };
 
   const visible = (element: HTMLElement) => {
     const style = windowValue.getComputedStyle(element);
@@ -107,6 +138,7 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
   };
 
   const requireElement = (ref: unknown, expectedRevision: unknown) => {
+    flushMutations();
     if (typeof ref !== "string" || typeof expectedRevision !== "number") {
       throw new BrowserAutomationError("INVALID_ARGUMENT", "ref and expectedRevision are required");
     }
@@ -118,7 +150,7 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
       );
     }
     const element = refs.get(ref);
-    if (element === undefined || !element.isConnected) {
+    if (element === undefined || !element.isConnected || element.ownerDocument !== documentValue) {
       throw new BrowserAutomationError("STALE_ELEMENT_REFERENCE", `Element ref ${ref} is unavailable`, true);
     }
     return element;
@@ -150,6 +182,7 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
   };
 
   const inspect = () => {
+    flushMutations();
     refs.clear();
     const selector = [
       "a[href]", "button", "input", "textarea", "select", "summary",
@@ -158,6 +191,7 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
     ].join(",");
     const elements = [...documentValue.querySelectorAll(selector)].flatMap((element) => {
       if (!(element instanceof windowValue.HTMLElement) || !visible(element)) return [];
+      if (element.closest(`#${ANNOTATION_OVERLAY_HOST_ID}`) !== null) return [];
       const ref = `e${++refSequence}`;
       refs.set(ref, element);
       const value = isSensitiveControl(element)
@@ -184,18 +218,26 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
     else setter.call(element, value);
   };
 
-  const execute = async (message: Extract<PreviewBridgeParentMessage, { type: "platform:call" }>) => {
+  const execute = async (message: Extract<PreviewBridgeParentMessage, { type: "platform:call" }>, connection: NonNullable<typeof identity>) => {
     const params = message.params;
     switch (message.method) {
       case "read-context": return readContext(params);
       case "inspect": return inspect();
+      case "annotate-pick": return picker.pick(params, { revision, ref: annotationRef });
+      case "annotate-region": return selections.pickRegion(params as unknown as BrowserAnnotationDragRequest);
+      case "annotate-text": return selections.pickText(params as unknown as BrowserAnnotationDragRequest);
+      case "annotate-styles": return selections.readStyles(params.anchor as BrowserAnnotationAnchor);
+      case "annotate-preview": selections.preview(params as unknown as BrowserAnnotationPreviewRequest); return null;
+      case "annotate-clear-preview": selections.clearPreview(); return null;
       case "click": {
         const element = requireElement(params.ref, params.expectedRevision);
         if (!(element instanceof windowValue.HTMLElement)) {
           throw new BrowserAutomationError("ELEMENT_NOT_ACTIONABLE", "Element cannot be clicked");
         }
         element.scrollIntoView({ block: "center", inline: "nearest" });
+        requireElement(params.ref, params.expectedRevision);
         element.focus();
+        requireElement(params.ref, params.expectedRevision);
         element.click();
         return null;
       }
@@ -241,7 +283,7 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
         ));
         const deadline = Date.now() + timeoutMs;
         while (!(documentValue.body?.innerText ?? "").includes(text)) {
-          if (cancelled.has(message.callId)) {
+          if (identity !== connection || cancelled.has(message.callId)) {
             throw new BrowserAutomationError("CANCELLED", "Preview operation was cancelled", true);
           }
           if (Date.now() >= deadline) {
@@ -263,18 +305,21 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
     if (!isPreviewBridgeParentMessage(event.data)) return;
     const message = event.data;
     if (message.type === "platform:connect") {
-      identity = {
-        previewId: message.previewId,
-        generation: message.generation,
-        nonce: message.nonce,
-      };
+      if (identity === null || identity.previewId !== message.previewId ||
+        identity.generation !== message.generation || identity.nonce !== message.nonce) {
+        selections.clearPreview();
+        const replacing = identity !== null;
+        identity = { previewId: message.previewId, generation: message.generation, nonce: message.nonce };
+        refs.clear(); cancelled.clear();
+        if (replacing) bumpRevision();
+      }
       post({
         type: "preview:ready",
         capabilities: {
           domInspection: true,
           semanticInput: true,
           trustedInput: false,
-          networkObservation: "fetch-xhr",
+          networkObservation: "none",
         },
       });
       post({ type: "preview:url-changed", url: windowValue.location.href, title: documentValue.title });
@@ -286,13 +331,16 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
       cancelled.add(message.callId);
       return;
     }
-    void execute(message).then(
+    const connection = identity;
+    void execute(message, connection).then(
       (result) => {
+        if (identity !== connection) return;
         if (!cancelled.delete(message.callId)) {
           post({ type: "preview:call-result", callId: message.callId, ok: true, result });
         }
       },
       (error: unknown) => {
+        if (identity !== connection) return;
         cancelled.delete(message.callId);
         post({ type: "preview:call-result", callId: message.callId, ok: false, error: errorShape(error) });
       },
@@ -300,14 +348,18 @@ export function installPreviewBridgeRuntime(options: PreviewBridgeRuntimeOptions
   };
 
   windowValue.addEventListener("message", onMessage);
-  const onNavigation = () => post({
-    type: "preview:url-changed",
-    url: windowValue.location.href,
-    title: documentValue.title,
-  });
+  const onNavigation = () => {
+    bumpRevision();
+    post({ type: "preview:url-changed", url: windowValue.location.href, title: documentValue.title });
+  };
   windowValue.addEventListener("hashchange", onNavigation);
   windowValue.addEventListener("popstate", onNavigation);
+  const onPageHide = () => selections.clearPreview();
+  windowValue.addEventListener("pagehide", onPageHide);
   return () => {
+    selections.dispose();
+    picker.dispose();
+    windowValue.removeEventListener("pagehide", onPageHide);
     observer.disconnect();
     windowValue.removeEventListener("message", onMessage);
     windowValue.removeEventListener("hashchange", onNavigation);

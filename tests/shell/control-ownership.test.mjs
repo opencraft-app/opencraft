@@ -6,6 +6,7 @@ test("raw controls cannot bypass the owner through conditional or composed class
   for (const source of [
     '<button className="chrome-button" />',
     '<button className="ui-disclosure-button" />',
+    '<button className="ui-inline-action" />',
     '<nav className="ui-navigation-list" />',
     '<button className="ui-navigation-item" />',
     '<button className={expanded ? "chrome-button" : "other"} />',

@@ -16,6 +16,7 @@ import {
   createCodexAccountPoolLaunch,
   startCodexAccountPoolServer,
   readCodexAuthFile,
+  accountCreditStatus,
 } from "../../packages/account-pool-host/src/index.js";
 
 test("shared auth references follow atomic owner rotation without copying or refreshing tokens", async () => {
@@ -1490,7 +1491,7 @@ test("known pre-ledger AccountPool tables retain account metadata, affinity, act
       });
       assert.equal(reader.prepare("SELECT account_id FROM pool_active_account WHERE provider='codex'").get()?.account_id, "account-a");
       assert.equal(reader.prepare("SELECT limit_windows_json FROM pool_quota").get()?.limit_windows_json, "[]");
-      assert.equal(reader.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 3);
+      assert.equal(reader.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 4);
     } finally { reader.close(); }
     const again = new AccountPoolStore({ databasePath, secretsDirectory, now: () => 2_000 });
     try {
@@ -1578,7 +1579,7 @@ test("legacy account-pool database with v2 schema migrates without ledger and ac
         limitWindows: [], status: "ready",
       });
       const files = await readdir(root);
-      assert.ok(files.some(name => name.includes(".pre-v3-")));
+      assert.ok(files.some(name => name.includes(".pre-v4-")));
       assert.equal(files.some(name => name.includes(".legacy-")), false);
     } finally {
       pool.close();
@@ -1732,6 +1733,43 @@ test("subscription exhaustion can use verified extra credits and persists across
   } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+
+test("credit balance and unlimited status follow usage and response headers and survive restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-credit-balance-"));
+  const options = { databasePath: join(root, "pool.sqlite"), secretsDirectory: join(root, "secrets"), now: () => 3_000_000 };
+  let pool = new AccountPoolStore(options);
+  try {
+    pool.addAccount({ id: "paid", provider: "codex", label: "Paid", upstreamAccountId: "paid", priority: 1, enabled: true, allowCredits: true },
+      { accessToken: "private", refreshToken: null, expiresAt: null });
+    const credits = () => accountCreditStatus(pool.listAccountStates()[0]!.limitWindows);
+    assert.equal(credits(), null, "no report yet");
+    let payload: unknown = { has_credits: true, unlimited: false, balance: "1234.5" };
+    const usage = () => new CodexSubscriptionService({ store: pool, now: options.now, resolveCredential: async (_account, secret) => secret, fetch: async () => Response.json({
+      rate_limit: { primary_window: { used_percent: 20, reset_after_seconds: 600, limit_window_seconds: 604800 } }, credits: payload,
+    }) });
+    let service = usage(); await service.refreshAccount("paid"); await service.dispose();
+    assert.deepEqual(credits(), { available: true, unlimited: false, balance: "1234.5", observedAt: 3_000_000 });
+    pool.close(); pool = new AccountPoolStore(options);
+    assert.equal(credits()?.balance, "1234.5", "persisted with the limit window");
+    const token = pool.issueHostToken("local"); let calls = 0;
+    const proxy = new CodexAccountPoolProxy({ store: pool, now: options.now, upstreamBaseUrl: "https://codex.example.test", fetch: async () => {
+      calls++;
+      return new Response(null, { status: 200, headers: { "x-codex-primary-used-percent": "21",
+        ...(calls === 2 ? { "x-codex-credits-has-credits": "true", "x-codex-credits-unlimited": "false", "x-codex-credits-balance": " 99 " } : {}) } });
+    } });
+    const request = () => new Request("http://localhost/v1/responses", { method: "POST", body: "{}", headers: { "x-opencraft-account-pool-token": token } });
+    assert.equal((await proxy.handle(request())).status, 200);
+    assert.equal(credits()?.balance, "1234.5", "headers without credits keep the last reported balance");
+    assert.equal((await proxy.handle(request())).status, 200);
+    assert.equal(credits()?.balance, "99");
+    payload = { has_credits: false, unlimited: true };
+    service = usage(); await service.refreshAccount("paid"); await service.dispose();
+    assert.deepEqual(credits(), { available: true, unlimited: true, balance: null, observedAt: 3_000_000 });
+    payload = { has_credits: false, unlimited: false, balance: "0" };
+    service = usage(); await service.refreshAccount("paid"); await service.dispose();
+    assert.equal(credits()?.available, false);
+  } finally { pool.close(); await rm(root, { recursive: true, force: true }); }
+});
 
 test("loopback bridge preserves compressed native request bytes and encoding", async () => {
   const root = await mkdtemp(join(tmpdir(), "oc-image-binary-"));

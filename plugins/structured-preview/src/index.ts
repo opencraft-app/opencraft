@@ -8,11 +8,15 @@ export const StructuredPreviewPlugin = Object.assign(function StructuredPreviewP
       if (/\.(csv|tsv)$/iu.test(input.name)) {
         const { openDelimited } = await import("./delimited");
         input.signal.throwIfAborted();
-        return openDelimited(input);
+        const styles = await import("./preview.web.scss?inline");
+        input.signal.throwIfAborted();
+        return { ...await openDelimited(input), styles: styles.default };
       }
       const { openDiagram } = await import("./diagram");
       input.signal.throwIfAborted();
-      return openDiagram(input);
+      const styles = await import("./preview.web.scss?inline");
+      input.signal.throwIfAborted();
+      return { ...await openDiagram(input), styles: styles.default };
     },
   });
   ctx.effect(() => remove);

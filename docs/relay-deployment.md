@@ -38,6 +38,16 @@ Set `serverSelection: true` on an authenticated relay whose approved authenticat
 origin is also an explicitly configured entry route. It is opt-in; existing
 per-origin deployments keep their behavior. A document visit to `/` lists only
 servers whose own `/__opencraft_access/session` admits the verified principal.
+A transport error, timeout, interrupted response or target 5xx is unresolved
+admission, rather than a membership denial. The authenticated chooser silently
+rechecks unresolved discovery for up to 30 seconds, 1.5 seconds after each response.
+A successful fresh check inserts only admitted targets without reloading the page
+or replacing retained links and their focus. Explicit 401/403 denials are not
+retried. Login redirects and identity changes do not import another principal's
+list. Recovery does not reuse cached grants, grant membership, update the saved
+choice or change an explicit chooser into automatic navigation. A root entry may
+continue to its original saved/default target once that target admits the user.
+No unavailable target names or routes are exposed by the recovery state.
 Static routes can set an optional `name` (up to 128 characters); discovered routes
 use their peer name or enrolled hostname. The explicit chooser is `/servers`; a selected Workbench runs at
 `/servers/<instanceId>/`. Static routes and discovered Hub routes use
@@ -237,6 +247,99 @@ The instance connection configuration contains only:
 Start the instance with `--relay-connect-file /private/connection.json`. This enables core membership without requiring the relay's identity-provider credentials on that instance. The local target defaults to the instance listener. For an installation with a separate managed static entry, an operator may pin `targetPort` to that entry's loopback port. A relay cannot choose the target, tunnel to arbitrary services, or export the managed update endpoints. Keep updater access on a protected management route; membership admin is separate from software deployment authority.
 
 `allowLoopbackInsecure: true` permits only an explicit `http://127.0.0.1:PORT` relay for local tests or a relay on the same machine. Network connections require HTTPS and normal certificate verification; optional absolute `caFile` adds a private company CA bundle without disabling verification. Enrollment is administrator maintained in the relay's configuration; adding/removing a route or rotating its credential requires restarting the relay. Run one connector per instance credential. Relay restart drops sessions/tunnels and requires employee sign-in again, with no application database changes.
+
+## Redis-backed replicas
+
+Single-process deployments retain their existing file-owned Hub and in-memory
+login behavior. To run several replicas behind the same ingress, set
+`clusterFile` to an absolute owner-only JSON file and configure `hubNetwork` with
+an initial Hub identity file and the existing operator credential file. Every
+replica must use the same gateway configuration, assertion authority, enrollment
+credentials, initial Hub identity and Redis namespace. Do not mount one writable
+Hub state volume into several processes.
+
+The private cluster file has this shape:
+
+```json
+{
+  "host": "redis.internal.example",
+  "port": 6379,
+  "mode": "cluster",
+  "password": "<Redis password>",
+  "namespace": "department-relay",
+  "credential": "<independent 43-character base64url internal credential>",
+  "internalPort": 18091
+}
+```
+
+`mode` explicitly selects `cluster` or `standalone`. Optional `username` supplies
+a Redis ACL user. Optional `tlsCaFile` enables Redis TLS using that private CA
+and normal hostname verification. The namespace is isolated with a Redis hash
+tag so each multi-key script runs within one Cluster slot. The Redis account
+must permit the relay's scoped keys and its atomic Lua operations. Use a private
+network, deployment-specific credentials and a Redis persistence/backup policy
+appropriate for node identities, enrollment and revocation data. Redis replica
+count alone does not promise lossless recovery of acknowledged writes.
+
+Each replica requires `OPENCRAFT_RELAY_NODE_ID` (unique for that process
+incarnation) and `OPENCRAFT_RELAY_ADVERTISE_HOST` (its directly reachable private
+IP). Kubernetes can supply Pod UID and Pod IP through the Downward API. The
+internal listener binds that IP and port; expose only the ordinary gateway
+listener through the ingress. Restrict the internal port to relay replicas. Its
+independent credential is required even on the private network. Internal
+forwarding headers from public requests never grant this access.
+
+Sessions, login starts and one-use handoff tickets use Redis TTLs and atomic
+consumption. Ordinary instance connections have expiring owner records. A
+request arriving at another replica opens a bounded private duplex directly to
+the connection owner; HTTP bodies, uploads, SSE and WebSocket frames do not pass
+through Redis. Data-stream upgrades arriving at another replica are forwarded
+to the owner of that particular pending stream. Old disconnect callbacks cannot
+delete a newer owner's record.
+
+One expiring Redis lease owns the logical Hub's peer runtime at a time. Hub
+configuration, identity and invitation redemptions persist to Redis under that
+lease before acknowledgement. An in-memory Hub store avoids synchronous file
+writes and filesystem locks in this mode. Other replicas route Hub control/data
+upgrades and administrative changes to the current owner. On takeover the new
+owner restores the same identity and redeemed invitations; peers reconnect.
+Existing streams belonging to a failed replica end and must reconnect normally.
+Interrupted mutations are not replayed automatically.
+
+Redis or lease failures reject new work and retire affected connections; there
+is no fallback to independent per-replica sessions or identities. Use
+`/__opencraft_relay/health` for readiness and `/__opencraft_relay/live` for process liveness, so an unavailable Redis dependency does
+not restart every replica repeatedly.
+
+For migration, drain/stop the old single owner, retain a private copy of its
+latest Hub JSON as the initial identity, and start replicas against an unused
+namespace. The initial file seeds Redis only when no state exists; thereafter
+Redis owns changes and the file is an identity check, not an overwrite source.
+Mismatched replica configuration or another Hub's identity in that namespace
+fails closed. Configuration changes require a coordinated stop and an explicit
+update of the namespace's `configuration` guard to the new configuration digest;
+never clear `hub-state`, enrollment or revocation records to bypass the guard.
+The bundled owner tool prints a credential-free status and performs this guarded
+change after the replicas stop:
+
+```sh
+node /absolute/relay/relay-cluster-admin.mjs /private/cluster.json status
+node /absolute/relay/relay-cluster-admin.mjs /private/cluster.json configure /private/new-relay.json EXPECTED_DIGEST
+node /absolute/relay/relay-cluster-admin.mjs /private/cluster.json export /private/new-backup.json
+```
+
+Export creates a new mode-0600 file and refuses to overwrite an existing file.
+Retain the prior artifact/configuration for rollback, and export the latest
+Redis Hub state before returning to file mode. An old seed is not a rollback of
+current permissions or enrollment.
+
+`npm run test:relay` includes local storage/durability tests.
+`OPENCRAFT_REDIS_TEST_FILE=/absolute/private/redis-test.json npm run test:relay:cluster`
+also runs five real replicas with isolated keys against the provided Redis.
+The test file contains `host`, `port`, `password` and optional `mode`. It covers
+cross-replica login and ticket replay, distributed HTTP/WS/streaming, Hub
+enrollment/revocation, ownership takeover, session survival and Redis failure.
+The multi-replica fixture uses separate loopback addresses and is run on Linux.
 
 ## Core entry and product composition
 
@@ -527,3 +630,69 @@ expired preview must keep its 403 rather than redirect to the server chooser.
 Other Workbench HTML keeps its existing rewrite behavior and bound.
 Regression: `tests/protocol/relay-html-preview.test.ts` exercises the full selected
 Relay/tunnel/instance/ticket path with a report larger than the rewrite limit.
+
+### Transport draining during rolling updates
+
+The CLI handles SIGTERM/SIGINT through `drainAndClose()`: readiness fails
+immediately, the process continues serving during a 5-second endpoint propagation
+window, then public HTTP/control admission stops. Already admitted HTTP requests,
+one-time data upgrades and internal/Hub transport remain available for up to
+45 more seconds. Liveness stays healthy. The application keeps the identity
+adapter, Redis and Hub alive until consumers finish or that deadline expires.
+`close()` remains the immediate, idempotent teardown used for startup rollback
+and explicit forced cleanup; trusted compositions can call `drainAndClose()`
+with bounded `propagationMs` / `timeoutMs` options.
+
+When no local HTTP request or pending tunnel acquisition remains, the relay can
+release an ordinary connector's routing claim and close its control with 1012.
+Established byte streams remain on the old replica and count toward its drain
+budget. The new control connection claims the route for new work. Retained
+streams cannot create new channels or mutate a retired route. Redis/configuration
+failure and loss of an active owner lease still retire affected streams.
+
+Ordinary connectors negotiate `x-opencraft-relay-drain: streams-v1` through the
+control upgrade request and response. No new v1 control message is sent. New
+connectors retain established data on an abnormal control loss or 1012 only when
+the server acknowledged this capability; an old server or connector keeps the
+previous close behavior. Protocol/policy rejection, authentication rejection and
+explicit connector stop terminate the applicable streams. All generations share
+the existing stream budget and bounded lifetime. Hub links similarly retain
+established data after transient control transport loss, while authorization
+revocation includes detached links. A new Hub owner still requires peer reconnect;
+this does not provide cross-process socket migration.
+
+Relay buffers contain bounded transport bytes, not business events. This change
+does not persist or replay requests, interpret Chat/Thread messages, or guarantee
+that an interrupted mutation did not execute. A business WebSocket is a raw
+upgraded tunnel: the internal control's 1012 is not forwarded as a business
+WebSocket close frame. Clients continue to own reconnection and business state
+synchronization.
+
+For the five-replica Deployment, use the following rollout settings together
+with the new CLI. Ensure spare capacity for the extra replica. This is a deployment
+configuration example, not an assertion that an existing cluster was updated:
+
+```yaml
+spec:
+  replicas: 5
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    spec:
+      terminationGracePeriodSeconds: 75
+```
+
+Keep readiness at `/__opencraft_relay/health` and liveness at
+`/__opencraft_relay/live`. The 75-second grace budget leaves room beyond the
+application's 5+45-second sequence for final resource cleanup; any additional
+`preStop` time also consumes that budget. No publicly accessible drain endpoint
+is introduced. Endpoint propagation must be measured for the actual ingress;
+the default delay is not proof that every load balancer has stopped routing.
+Long-lived WebSockets/SSE can reach the deadline and reconnect. Legacy peers may
+still drop their streams on control loss. Test slow HTTP upload/download,
+pending data upgrades, mixed peers, control loss, owner replacement and revocation
+before describing a rollout as seamless.

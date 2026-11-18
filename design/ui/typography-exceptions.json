@@ -2,7 +2,7 @@
   "version": 1,
   "exceptions": [
     {
-      "file": "apps/workbench-web/src/panels/workspace-pdf-preview.scss",
+      "file": "packages/file-preview-web/src/pdf.scss",
       "selector": ".workspace-pdf-preview__text",
       "property": "line-height",
       "value": "1",
@@ -11,7 +11,7 @@
       "reviewWhen": "When this renderer or its sizing contract changes; remove stale entries automatically."
     },
     {
-      "file": "apps/workbench-web/src/panels/workspace-pdf-preview.scss",
+      "file": "packages/file-preview-web/src/pdf.scss",
       "selector": ".workspace-pdf-preview__text > :not(.markedContent), .markedContent span:not(.markedContent)",
       "property": "font-size",
       "value": "calc(var(--text-scale-factor) * var(--font-height))",

@@ -37,15 +37,27 @@ Web/Electron 不把云端 Bot 创建作为工作区前置条件。账号状态�
 
 ## Side Chat
 
-发起 `thread/fork`，携带源 threadId/cwd、`ephemeral:true`、`excludeTurns:true` 和侧聊指令。创建期间在右侧展示不可关闭的占位 tab，完成后换成右侧子会话 tab。失败清除占位并显示错误，不退化为无历史的新会话。
+主聊天与侧聊共享 `WorkbenchComposer` 的扩展动作（含语音）和面板切换入口；provider 只传能力配置，不传父 controller。侧聊在触控全宽布局中由 Conversation footer 承载唯一一行输入区，不再叠加通用工具底栏或预留其高度；顶部保留侧聊标识和返回入口。面板总览从侧聊打开时以 tools 为动画源，不能因按钮采用 Composer 外观而误回主聊天。发送、停止、语音写入始终绑定子 controller/lease，隐藏或未就绪侧聊不接受新提交/语音；暂不展示不支持的 queue 操作。
+
+发起 `thread/fork`，携带源 threadId/cwd、`ephemeral:false`、`excludeTurns:true` 和侧聊指令。创建期间在右侧展示不可关闭的占位 tab，完成后换成右侧子会话 tab。失败清除占位并显示错误，不退化为无历史的新会话。
 
 子会话使用自身 host/thread 的 lease 和 controller 提交、停止和响应交互；不是把子问题发送给父任务。取消/服务退出后的晚到 fork 不能挂入界面，必须释放订阅。
 
-标准 AppServer 实测证明 ephemeral fork 没有持久 rollout，因此 **必须采用 fork 返回结果作为权威 baseline，不能再执行普通 thread/resume**。Session 的 `adoptFork` 校验连接代次、复用 metadata projector 和 live notification；Replica 从这一 baseline 同步。临时 thread 不请求持久队列，活跃时采用 steer。断连后失去临时流的视图显示过期，不能自动伪造一个持久恢复。
+侧聊是可恢复的持久子会话。创建时仍以 fork ACK 为权威 baseline，通过 `adoptFork` 保留原生继承设置，并在获取 view 前只注入一次指令边界；恢复时按同一 Host/child Thread ID 读取原生历史，绝不重新 fork 或注入边界。同一部署、同一账号的服务端资源目录保存父子身份引用，不镜像历史；Web 客户端通过账号隔离的元数据通道接收新增/关闭推送、重连补读，实现跨浏览器设备恢复。它不依赖浏览器媒体启动或 VideoDecoder，也不宣称未发送 Composer 草稿同步。原浏览器的旧引用只有在当前账号成功读取原生子会话历史后才迁移。恢复失败保留明确错误及重试入口，不用空白新会话替代。旧 ephemeral 侧聊无法事后迁移为持久历史。侧聊暂不提供队列跟进，活跃时采用 steer。
 
 ### 明确的平台适配与尚未等价项
 
-- 关闭临时侧聊时释放本地 lease，并调用 OpenCraft AppServer 的 `thread/unsubscribe`。服务器负责 ephemeral 会话的回收；取消订阅不代表立即物理销毁。
-- 本机 DSH/远端 Hermes 若不支持 ephemeral fork，呈现明确错误，不能伪造成功。标准 Codex AppServer 的真实 WebSocket 创建/父子运行/关闭已验证，推理边界仅使用本地合成 Responses 服务，未调用外部模型。
+- 显式关闭侧聊时先提交服务端关闭标记（tombstone），收到确认后再按既有策略停止当前 Turn、释放 lease 和 `thread/unsubscribe`；不删除服务器历史。刷新/应用卸载只释放本地消费者，不停止工作、不删除恢复引用。
+- Host 必须声明持久 fork、injectItems、unsubscribe；仅支持 ephemeralFork 的 Host 不满足可恢复侧聊，明确报错，不能伪造成功。先前真实 Codex WebSocket 创建/关闭证据仅覆盖旧临时模型；持久侧聊的真实引擎验收需重新验证，不能复用旧结论。Pi 当前仅声明 ephemeralFork，因此明确拒绝可恢复侧聊，不偷偷回退为临时会话。
 - 精细浏览器 peek/手势显隐、完整编辑器选择/撤销的切换连续性仍需对照验证，不因初步输入框可见就宣布整体体验完成。下方面板已按用户要求移除，不再作为待办。
 - 不迁移 owner/follower 协议到 UI；已有 AppHost/HostRuntime 的执行权限保持权威。
+
+### 触控标签概览与轻量预览
+
+触控全屏工具的标签入口展示同一 owner 的卡片概览；类型筛选从已打开标签派生，新建动作从已注册且可用的 creationActions 派生。主聊天仍是工具栏的返回目的地，不伪造成工具标签。完成只收起概览；激活、关闭仍调用既有面板 owner，关闭侧聊的确认及终端释放策略不变。新建使用嵌套 ModalSurface，取消返回概览，成功进入新资源。
+
+Renderer registration 可选提供只读 preview 与本地化类型 label；未提供时显示图标和标题。PanelPreviewCache 随右侧面板 scope 创建，在 scope 释放和注册表更换时清理，关闭标签移除记录；只存内存，最多 32 项、每图 360 KB、文本 1800 字符、并发 2，15 秒内复用。异步完成须校验 entry、代次和取消状态，不能复活已关闭资源。可见卡片才申请预览，不挂载活体工具作为缩略图。
+
+远程网页预览读取已有 canvas/video，桌面网页捕获已就绪 guest；均不 prepare/resume 页面。终端读取已有输出并移除控制序列，侧聊读取已有 timeline，文件当前显示名称/路径摘要；普通 iframe 或未提供预览的插件使用类型占位。网页图像保持原色，文本摘要和壳层随既有主题变化。缓存不持久化，不新增推理或历史请求。
+
+实现证据：`tests/shell/panel-preview-cache.test.ts`；实际 AppShell 源码呈现：`scripts/smoke/shell/smoke-tab-overview.ts`。覆盖浅深/自定义主题、搜索/筛选、新建/关闭、草稿保留、键盘关闭及触控呈现；物理手机未验证。

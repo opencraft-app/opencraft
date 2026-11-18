@@ -7,6 +7,7 @@ export interface CodexThreadTitlePort {
   serialize<T>(threadId: string, work: () => Promise<T>): Promise<T>;
   changed(threadId: string, name: string): void;
   failed(): void;
+  sponsor?(temporaryThread: string, sourceThread: string): void;
 }
 interface Job {
   threadId: string;
@@ -126,6 +127,7 @@ export class CodexThreadTitles {
       job.temporaryId = text(record(started.thread).id);
       if (!job.temporaryId || job.temporaryId === job.threadId) throw new Error("Invalid title Thread");
       this.internal.set(job.temporaryId, job);
+      this.port.sponsor?.(job.temporaryId, job.threadId);
       if (signal.aborted) return;
       const completed = new Promise<boolean>(resolve => { job.finish = resolve; });
       const turn = record(await this.port.request("turn/start", {

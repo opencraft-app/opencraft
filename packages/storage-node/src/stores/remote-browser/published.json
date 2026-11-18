@@ -14,5 +14,13 @@
     "sqlChecksum": "02a88792b1a5a6eb06f991b9181c46f63b930e7678bd1d191ba78dce20f59794",
     "snapshotChecksum": "9fb24e94f3268027ba9154acd8e9d09ec0e7f15866b1b48ebf3a63e5740f8e30",
     "compiledChecksum": "e20da633325cf80675d78fc43918ba285ba9a3ef7d2dac19da08b6df08827bd6"
+  },
+  {
+    "tag": "0002_typical_the_executioner",
+    "when": 1795014514621,
+    "version": 3,
+    "sqlChecksum": "f076b78c6ed5befa4ecd284972ee41d5f5ecf451ab071fec7223cca15c42aef0",
+    "snapshotChecksum": "33cd2a257b90a0635f9bc2bdaa044c3f165d39ae5032902085ba1d032af5a643",
+    "compiledChecksum": "57d1ac0f49fd8e06209f375407a9b4c554d96d8f8808a86d740062c30cfb8c0b"
   }
 ]

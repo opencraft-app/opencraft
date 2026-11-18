@@ -31,6 +31,7 @@ import {
   formatAutomaticApprovalReviewTitle,
   findPendingInteraction,
   groupTimelineFramesByTurn,
+  createTimelineTurnGrouper,
   indexAttachedInteractions,
   isCodexAppThreadTool,
   isVisibleAgentActivityRow,
@@ -61,6 +62,7 @@ import {
   visibleThreadHandoffSteps,
   type TimelineProjectionSource,
   type TimelineBlock,
+  type TimelineFrame,
   type AssistantTurnPresentationPlan,
   type ReasoningRenderUnit,
 } from "@opencraft/chat-core";
@@ -3757,4 +3759,125 @@ test("Turn grouping preserves interleaved order, last status and invocation isol
   assert.notEqual(second[0], first[0]);
   assert.notEqual(second[0]?.frames, first[0]?.frames);
   assert.deepEqual(groupTimelineFramesByTurn({ ...input, frames: [] }), []);
+});
+
+
+test("View-owned Turn grouping reuses only unchanged frames in the same conversation", () => {
+  const timeline = projectTimeline(source([
+    { id: "stable-old", status: "complete", items: [{ id: "old-answer", type: "agentMessage", payload: { text: "old" } }] },
+    { id: "stable-live", status: "streaming", items: [{ id: "live-answer", type: "agentMessage", payload: { text: "live" } }] },
+  ]), createDefaultTimelineProjectorRegistry());
+  const group = createTimelineTurnGrouper();
+  const first = group(timeline);
+  assert.equal(group({ ...timeline, revision: timeline.revision + 1 }), first);
+  const liveFrame = timeline.frames.at(-1)!;
+  const changedFrame = { ...liveFrame, blocks: [...liveFrame.blocks] };
+  const nextTimeline = { ...timeline, frames: [...timeline.frames.slice(0, -1), changedFrame] };
+  const next = group(nextTimeline);
+  assert.equal(next[0], first[0]);
+  assert.notEqual(next[1], first[1]);
+  assert.equal(first[1]?.frames[0], liveFrame);
+  const reordered = group({ ...nextTimeline, frames: [...nextTimeline.frames].reverse() });
+  assert.equal(reordered[0], next[1]);
+  assert.equal(reordered[1], next[0]);
+  const switched = group({ ...timeline, key: createConversationKey("another-host", timeline.key.threadId) });
+  assert.notEqual(switched[0], first[0]);
+  assert.deepEqual(group(null), []);
+  assert.notEqual(group(timeline)[0], switched[0]);
+  const independent = createTimelineTurnGrouper()(timeline);
+  assert.notEqual(independent[0], group(timeline)[0]);
+  group({ ...timeline, frames: [] });
+  assert.notEqual(group(timeline)[0], first[0]);
+});
+
+
+test("Turn grouping invalidates wait transitions and never mutates a frozen prior projection", () => {
+  const timeline = projectTimeline(source([
+    { id: "wait-a", status: "streaming", items: [{ id: "wait-a-answer", type: "agentMessage", payload: { text: "a" } }] },
+    { id: "wait-b", status: "complete", items: [{ id: "wait-b-answer", type: "agentMessage", payload: { text: "b" } }] },
+  ]), createDefaultTimelineProjectorRegistry());
+  const group = createTimelineTurnGrouper();
+  const first = group(timeline);
+  for (const turn of first) { Object.freeze(turn.frames); Object.freeze(turn); }
+  Object.freeze(first);
+  const wait = { turnId: timeline.frames[0]!.turnId, reason: "approval" as const, recovery: "recovering" as const };
+  const waiting = group({ ...timeline, interactionWait: wait });
+  assert.notEqual(waiting[0], first[0]);
+  assert.equal(waiting[1], first[1]);
+  assert.equal(group({ ...timeline, interactionWait: { ...wait } }), waiting);
+  const unavailable = group({ ...timeline, interactionWait: { ...wait, recovery: "unavailable" } });
+  assert.notEqual(unavailable[0], waiting[0]);
+  const input = group({ ...timeline, interactionWait: { ...wait, reason: "input" } });
+  assert.notEqual(input[0], unavailable[0]);
+  const moved = group({ ...timeline, interactionWait: { ...wait, turnId: timeline.frames[1]!.turnId } });
+  assert.notEqual(moved[0], input[0]);
+  assert.notEqual(moved[1], input[1]);
+  assert.equal(moved[0]?.interactionWait, undefined);
+  assert.equal(moved[1]?.interactionWait?.reason, "approval");
+  const removed = group(timeline);
+  assert.equal(removed[0], moved[0]);
+  assert.notEqual(removed[1], moved[1]);
+  assert.equal(first[0]?.interactionWait, undefined);
+  const oldFirst = removed[0];
+  group({ ...timeline, frames: timeline.frames.slice(1) });
+  assert.notEqual(group(timeline)[0], oldFirst);
+});
+
+
+test("text-only projections reuse immutable locator indexes; topology changes rebuild exact cold maps", () => {
+  const input = source([{ id: "locator-turn", status: "streaming", items: [
+    { id: "locator-user", type: "userMessage", payload: { clientId: "client", content: [{ type: "text", text: "question" }] } },
+    { id: "locator-answer", type: "agentMessage", payload: { text: "answer" } },
+  ] }]);
+  const initial = projectTimeline(input, createDefaultTimelineProjectorRegistry());
+  let frames: readonly TimelineFrame[] = initial.frames;
+  const registry = createDefaultTimelineProjectorRegistry();
+  registry.projectTurn = () => frames;
+  const project = () => projectTimeline(input, registry);
+  const cold = () => {
+    const registry = createDefaultTimelineProjectorRegistry(); registry.projectTurn = () => frames;
+    return projectTimeline(input, registry);
+  };
+  const verify = () => {
+    const next = project(); assert.deepEqual([...next.anchorFrameIds], [...cold().anchorFrameIds]); return next;
+  };
+  const first = verify();
+  frames = frames.map(frame => ({ ...frame, durationMs: 5, anchors: frame.anchors.map(anchor => ({ ...anchor })) }));
+  const textOnly = verify();
+  assert.notEqual(textOnly.frames, first.frames);
+  assert.equal(textOnly.anchorFrameIds, first.anchorFrameIds);
+  assert.equal(project().frames, textOnly.frames, "the latest frames are retained even while their locator index is reused");
+  const originalEntries = [...first.anchorFrameIds];
+  const mutate = (next: readonly TimelineFrame[]) => {
+    const old = project(); frames = next;
+    const changed = verify(); assert.notEqual(changed.anchorFrameIds, old.anchorFrameIds);
+    assert.deepEqual([...first.anchorFrameIds], originalEntries, "old indexes are never mutated");
+    return changed;
+  };
+  mutate(frames.map((frame, i) => i ? { ...frame, id: frame.id + ":ack" } : frame));
+  mutate(frames.map((frame, i) => i ? { ...frame, anchors: [...frame.anchors, {type: "item", id: asItemId("late-anchor")}] } : frame));
+  mutate([...frames].reverse());
+  mutate(frames.map((frame, i) => i ? { ...frame, anchors: [...frame.anchors].reverse() } : frame));
+  const duplicate = { type: "item" as const, id: asItemId("duplicate") };
+  mutate(frames.map(frame => ({ ...frame, anchors: [duplicate, ...frame.anchors] })));
+  const winner = frames.at(-1)!.id;
+  assert.equal(project().anchorFrameIds.get("item:duplicate"), winner);
+  mutate(frames.slice(0, -1));
+  assert.equal(project().anchorFrameIds.get("item:duplicate"), frames[0]!.id);
+  mutate([]);
+  assert.equal(project().anchorFrameIds.size, 0);
+});
+
+test("resource images retain the host path and only trusted-shaped bounded dimensions", () => {
+  for (const dimensions of [{ width: 1536, height: 1024 }, { width: 0, height: 10 }, { width: 1.1, height: 10 }, { width: 32768, height: 32768 }, { width: "48", height: 32 }]) {
+    const snapshot = projectTimeline(source([{ id: "images", status: "complete", items: [{ id: "image", type: "imageGeneration", payload: {
+      result: null, src: "/delivered/immutable-resource", savedPath: "/native/original.png", status: "completed", imageDimensions: dimensions,
+      historyDetail: { cursor: "transcript:epoch:1" },
+    } }] }]), createDefaultTimelineProjectorRegistry());
+    const block = snapshot.frames.flatMap(f=>f.blocks).find(b=>b.type==="image");
+    assert.equal(block?.type,"image"); if (block?.type!=="image") throw Error("Image missing");
+    assert.equal(block.uri,"/delivered/immutable-resource"); assert.equal(block.savedPath,"/native/original.png");
+    assert.deepEqual(block.dimensions, dimensions.width===1536?dimensions:undefined);
+    assert.equal(JSON.parse(block.historyDetail!).cursor,"transcript:epoch:1");
+  }
 });

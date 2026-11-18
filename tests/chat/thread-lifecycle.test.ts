@@ -223,6 +223,19 @@ test("disconnect retries an active temporary thread after release is deferred", 
     assert.equal(attempts, 2); assert.equal(catalog.get("child"), null);
   } finally { await service.close(); }
 });
+
+test('archive waits for native release; refusal leaves the conversation open', async () => {
+  const catalog = new ThreadCatalog(); let released = false; const events: string[]=[];
+  const service = new ThreadLifecycle(catalog, async () => ({released}), name => events.push(name));
+  const delegate = async () => ({thread:{id:'t',turns:[]}});
+  try {
+    await assert.rejects(service.dispatch('thread/archive',{threadId:'t'},'c',delegate), /Stop the active turn/);
+    assert.equal(catalog.isArchived('t'),false); assert.deepEqual(events,[]);
+    released=true; await service.dispatch('thread/archive',{threadId:'t'},'c',delegate);
+    assert.equal(catalog.isArchived('t'),true); assert.deepEqual(events,['thread/archived']);
+  } finally { await service.close(); }
+});
+
 test("catalog notifications read manual title precedence from memory and native refresh preserves it", () => {
   const catalog = new ThreadCatalog();
   try {

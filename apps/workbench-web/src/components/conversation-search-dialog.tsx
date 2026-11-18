@@ -1,3 +1,5 @@
+import { workbenchIconMetrics } from "@opencraft/design-system/tokens";
+import { ConversationAppearanceIcon } from "./conversation-appearance";
 import { SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { MessageIcon as MessageSquare } from "@opencraft/design-system-web/action-icons";
@@ -30,19 +32,20 @@ const ConversationSearchResult = memo(function ConversationSearchResult({ thread
   return <button type="button" role="option" tabIndex={-1} id={`${listId}-${index}`}
     aria-selected={selected} disabled={thread.interactionAvailable === false}
     onPointerMove={event => { if (event.pointerType !== "mouse") return; if (selectableIndex >= 0) onActivate(selectableIndex); }} onClick={() => { if (!selecting) void select(thread); }}>
-    <span className="conversation-search__result-icon" aria-hidden="true"><MessageSquare size={20} /></span>
+    <span className="conversation-search__result-icon" aria-hidden="true">{thread.viewTarget ? <MessageSquare size={20} /> : <ConversationAppearanceIcon hostId={thread.connectionHostId} threadId={thread.id} size={workbenchIconMetrics.overview.heading} fallback={<MessageSquare size={20} />} />}</span>
     <span className="conversation-search__text"><span className="conversation-search__title">{thread.title}</span>
       {thread.snippet ? <SearchSnippet text={thread.snippet} term={thread.searchTerm ?? ""} /> : null}</span>
     <span className="conversation-search__server">{thread.serverOrigin.label}</span>
   </button>;
 });
 
-export function ConversationSearchDialogContent({ threads, loading, incomplete, sources, onClose, onSelectThread }: {
+export function ConversationSearchDialogContent({ threads, loading, incomplete, sources, onClose, onSelectView, onSelectThread }: {
   threads: readonly SidebarThread[];
   loading: boolean;
   incomplete: boolean;
   onClose(): void;
   sources: readonly ConversationSearchSource[];
+  onSelectView?(viewId:string,resourceUri:string):void;
   onSelectThread(hostId: string, threadId: string, target?: ConversationSearchTarget): void;
 }) {
   const intl = useIntl();
@@ -78,6 +81,11 @@ export function ConversationSearchDialogContent({ threads, loading, incomplete, 
     setSelectionError(false);
     setSelecting(true);
     try {
+      if(thread.viewTarget){
+        if(!onSelectView)throw Error('View navigation unavailable');
+        onSelectView(thread.viewTarget.viewId,thread.viewTarget.resourceUri);
+        dismissSidebarAfterSelection?.();onClose();return;
+      }
       let target: ConversationSearchTarget | undefined;
       if (thread.searchTerm) {
         const source = sources.find(value => value.hostId === thread.connectionHostId);
@@ -100,7 +108,7 @@ export function ConversationSearchDialogContent({ threads, loading, incomplete, 
     } finally {
       if (selection.current === abort) setSelecting(false);
     }
-  }, [sources, onSelectThread, dismissSidebarAfterSelection, onClose]);
+  }, [sources, onSelectView, onSelectThread, dismissSidebarAfterSelection, onClose]);
   return <>
     <div className="conversation-search__input">
       <Search size={18} aria-hidden="true" />
@@ -142,7 +150,7 @@ export function ConversationSearchDialogContent({ threads, loading, incomplete, 
       {selectionError ? intl.formatMessage({ id: "sidebar.search.locateError", defaultMessage: "Could not locate this message. Try again." })
         : selecting ? intl.formatMessage({ id: "sidebar.search.locating", defaultMessage: "Opening matching message…" })
         : busy ? intl.formatMessage({ id: "sidebar.search.loading", defaultMessage: "Loading conversations…" })
-        : results.length ? intl.formatMessage({ id: "sidebar.search.count", defaultMessage: "{count} conversations" }, { count: results.length })
+        : results.length ? intl.formatMessage({ id: "sidebar.search.resultCount", defaultMessage: "{count} results" }, { count: results.length })
         : incomplete ? intl.formatMessage({ id: "sidebar.catalog.searchIncomplete", defaultMessage: "No matches yet · conversation list is incomplete" })
         : intl.formatMessage(content.rows.some(row => row.phase === "error" || row.phase === "unavailable" || row.phase === "loading" || row.cursor !== null)
           ? { id: "sidebar.search.incomplete", defaultMessage: "No matches yet · message search is incomplete" }

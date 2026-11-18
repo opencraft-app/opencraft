@@ -1,5 +1,6 @@
 import {
   createTurnMeasurementTransaction,
+  reconcileTurnLayoutViewport,
   type TurnHeightMeasurement,
   type TurnMeasurementTransaction,
 } from "./measurement";
@@ -72,6 +73,7 @@ export interface TimelineWindowSlice<TEntry extends VirtualizedTimelineEntry> {
   readonly entries: readonly TEntry[];
   readonly range: TimelineRange;
   readonly marginTopPx: number;
+  readonly paddingBottomPx: number;
   readonly totalHeightPx: number;
   readonly gapPx: number;
 }
@@ -205,6 +207,7 @@ export function createTimelineMeasurementTransaction<
   preserveMeasuredViewport,
   getPendingRestoreScrollDistanceFromBottomPx,
   config = TIMELINE_VIRTUALIZER_CONFIG,
+  measuredContentFlowsNaturally = false,
 }: {
   readonly entries: readonly TEntry[];
   readonly measurements: readonly TimelineHeightMeasurement[];
@@ -214,6 +217,7 @@ export function createTimelineMeasurementTransaction<
   readonly currentDistanceFromBottomPx: number;
   readonly bottomPaddingPx: number;
   readonly preserveMeasuredViewport: boolean;
+  readonly measuredContentFlowsNaturally?: boolean;
   readonly getPendingRestoreScrollDistanceFromBottomPx: (() => number | null) | null;
   readonly config?: Readonly<TimelineVirtualizerConfig>;
 }): TimelineMeasurementTransaction | null {
@@ -229,6 +233,7 @@ export function createTimelineMeasurementTransaction<
     currentDistanceFromBottomPx,
     bottomPaddingPx,
     preserveMeasuredTurnViewport: preserveMeasuredViewport,
+    measuredContentFlowsNaturally,
     getPendingRestoreScrollDistanceFromBottomPx,
     config: toTurnConfig(config),
   });
@@ -261,7 +266,20 @@ export function createTimelineWindowSlice<TEntry extends VirtualizedTimelineEntr
     entries: native.entries.map(({ entry }) => entry),
     range: native.range,
     marginTopPx: native.marginTopPx,
+    paddingBottomPx: native.paddingBottomPx,
     totalHeightPx: native.totalHeightPx,
     gapPx: native.gapPx,
   };
+}
+
+/** Apply the existing measured-anchor policy without exposing execution Turn identity. */
+export function reconcileTimelineLayoutViewport(options: {
+  previousLayout: TimelineLayout; nextLayout: TimelineLayout;
+  measuredHeightsByKey: Readonly<Record<string, number>>;
+  currentDistanceFromBottomPx: number; viewportHeightPx: number;
+}): number | null {
+  return reconcileTurnLayoutViewport({ ...options,
+    previousLayout: unwrapLayout(options.previousLayout), nextLayout: unwrapLayout(options.nextLayout),
+    bottomPaddingPx: 0, preserveViewport: true, layoutOwnedByMeasurement: false, restorePending: false,
+  });
 }

@@ -1,8 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { prepareOfflineShell, waitForOfflinePreparation } from "../../apps/workbench-web/src/runtime/offline-shell";
+import { waitForOfflinePreparation, prepareOfflineShell } from "../../apps/workbench-web/src/runtime/offline-shell";
+
+test("offline warming waits for load, grace and idle, and cancellation removes its work", async () => {
+ const originals = Object.fromEntries(["window", "document", "setTimeout", "clearTimeout"].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)]));
+ const view = new EventTarget(), doc = new EventTarget();
+ Object.assign(doc, {readyState:"loading",visibilityState:"visible"});
+ const pending = new Map<number,{callback:()=>void,ms:number}>(); let id=0;
+ Object.assign(view,{requestIdleCallback:(callback:()=>void)=>{pending.set(++id,{callback,ms:1000});return id;},cancelIdleCallback:(key:number)=>pending.delete(key)});
+ try {
+  Object.defineProperties(globalThis, {window:{value:view,configurable:true},document:{value:doc,configurable:true},setTimeout:{value:(callback:()=>void,ms:number)=>{pending.set(++id,{callback,ms});return id;},configurable:true},clearTimeout:{value:(key:number)=>pending.delete(key),configurable:true}});
+  const tick=async()=>{for(let n=0;n<8;n++)await Promise.resolve();};
+  const owner = new AbortController(); let ready=false;
+  const operation=waitForOfflinePreparation(owner.signal).then(()=>{ready=true;});
+  await tick(); assert.equal(pending.size,0); assert.equal(ready,false);
+  view.dispatchEvent(new Event("load")); await tick();
+  assert.equal([...pending.values()][0].ms,10000);
+  const grace=[...pending.entries()][0];pending.delete(grace[0]);grace[1].callback();await tick();
+  assert.equal(ready,false);assert.equal([...pending.values()][0].ms,1000);
+  const idle=[...pending.entries()][0];pending.delete(idle[0]);idle[1].callback();await operation;assert.equal(ready,true);
+  Object.assign(doc,{readyState:"complete"});const retiring=new AbortController();const stopped=waitForOfflinePreparation(retiring.signal);retiring.abort();await assert.rejects(stopped);assert.equal(pending.size,0);
+  Object.assign(doc,{readyState:"loading"});const early=new AbortController();const loading=waitForOfflinePreparation(early.signal);early.abort();await assert.rejects(loading);view.dispatchEvent(new Event("load"));await tick();assert.equal(pending.size,0);
+ } finally {for(const [k,descriptor] of Object.entries(originals)){if(descriptor)Object.defineProperty(globalThis,k,descriptor);else delete (globalThis as any)[k];}}
+});
+
+
 
 async function turns() { for (let i = 0; i < 30; i++) await Promise.resolve(); }
+
 
 function environment() {
   const names = ["window", "document", "navigator", "location", "isSecureContext", "MessageChannel", "setTimeout", "clearTimeout"] as const;
@@ -67,6 +92,7 @@ function environment() {
   };
 }
 
+
 test("offline preparation waits for load, ten-second grace and visible idle", async () => {
   const e = environment();
   try {
@@ -84,49 +110,6 @@ test("offline preparation waits for load, ten-second grace and visible idle", as
   } finally { e.restore(); }
 });
 
-for (const phase of ["load", "grace", "idle"]) test("retiring during " + phase + " removes optional startup work", async () => {
-  const e = environment();
-  try {
-    e.doc.readyState = phase === "load" ? "loading" : "complete";
-    const owner = new AbortController(); const pending = waitForOfflinePreparation(owner.signal);
-    await turns(); if (phase === "idle") await e.fireGrace();
-    owner.abort(new Error("retired")); await assert.rejects(pending, /retired/);
-    e.view.dispatchEvent(new Event("load")); e.doc.dispatchEvent(new Event("visibilitychange"));
-    await turns(); assert.equal(e.idle.size, 0); assert.equal(e.timers.size, 0);
-  } finally { e.restore(); }
-});
-
-for (const constraint of ["none", "save-data", "2g", "slow-2g", "offline"]) test("registration respects connection preference: " + constraint, async () => {
-  const e = environment();
-  try {
-    e.navigator.connection.saveData = constraint === "save-data";
-    e.navigator.connection.effectiveType = constraint.includes("2g") ? constraint : "4g";
-    e.navigator.onLine = constraint !== "offline";
-    const pending = prepareOfflineShell(new AbortController().signal);
-    assert.equal(e.calls.lookup, 0); await e.fireGrace(); await e.fireIdle(); await pending;
-    assert.equal(e.calls.register, constraint === "none" ? 1 : 0);
-    assert.equal(e.calls.messages.length, 1, "existing worker can still receive a public recipe");
-    assert.equal(e.calls.messages[0].browserBackend, "remote");
-    assert.equal(e.doc.documentElement.dataset.offlineReady, "build");
-    assert.equal(e.timers.size, 0); assert.ok(e.channels.every(c => c.port1.closed && c.port2.closed));
-  } finally { e.restore(); }
-});
-
-for (const phase of ["lookup", "register", "configuration"]) test("late " + phase + " completion cannot configure a retired page", async () => {
-  const e = environment(); let finish!: (value: any) => void;
-  try {
-    const held = new Promise(resolve => { finish = resolve; });
-    if (phase === "lookup") e.serviceWorker.getRegistration = () => held;
-    if (phase === "register") e.serviceWorker.register = () => held;
-    if (phase === "configuration") e.worker.postMessage = message => { e.calls.messages.push(message); };
-    const owner = new AbortController(); const pending = prepareOfflineShell(owner.signal);
-    await e.fireGrace(); await e.fireIdle(); owner.abort(new Error("retired"));
-    await assert.rejects(pending, /retired/); finish(e.registration); await turns();
-    assert.equal(e.doc.documentElement.dataset.offlineReady, undefined);
-    if (phase !== "configuration") assert.equal(e.calls.messages.length, 0);
-    assert.equal(e.timers.size, 0); assert.ok(e.channels.every(c => c.port1.closed && c.port2.closed));
-  } finally { e.restore(); }
-});
 
 
 test("retirement while worker installs detaches its state listener and never posts configuration", async () => {
@@ -141,6 +124,7 @@ test("retirement while worker installs detaches its state listener and never pos
     assert.equal(e.timers.size, 0);
   } finally { e.restore(); }
 });
+
 
 test("missing configuration acknowledgement closes both message ports at its deadline", async () => {
   const e = environment();

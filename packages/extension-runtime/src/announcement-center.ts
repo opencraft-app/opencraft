@@ -26,6 +26,13 @@ function requireText(value: unknown, label: string): asserts value is string {
   if (value.trim().length === 0) throw new RangeError(`${label} must not be empty`);
 }
 
+function validateMessage(value: unknown): void {
+  if (value === undefined) return;
+  if (!value || typeof value !== 'object') throw new TypeError('Announcement message must be an object');
+  requireText((value as {id?: unknown}).id, 'Announcement message id');
+  requireText((value as {defaultMessage?: unknown}).defaultMessage, 'Announcement default message');
+}
+
 function isSupportedMediaUrl(url: string): boolean {
   return url.startsWith("/")
     || /^https?:\/\//iu.test(url)
@@ -42,6 +49,19 @@ function validateAnnouncement(
   }
   requireText(contribution.id, "Announcement id");
   assertOwnedContributionId(owner.extensionId, contribution.id);
+  if (contribution.anchorNavigationId !== undefined) {
+    requireText(contribution.anchorNavigationId, "Announcement navigation anchor");
+    assertOwnedContributionId(owner.extensionId, contribution.anchorNavigationId);
+  }
+  if (contribution.preview !== undefined) {
+    const path = contribution.preview?.path;
+    requireText(path, 'Announcement preview path');
+    const url = new URL(path, 'https://announcement.invalid');
+    if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')
+      || url.origin !== 'https://announcement.invalid' || url.hash
+      || url.pathname.startsWith('/__'))
+      throw new RangeError('Announcement preview must be a same-origin document path');
+  }
   requireText(contribution.title, `Announcement ${contribution.id} title`);
   if (contribution.body !== undefined) requireText(contribution.body, `Announcement ${contribution.id} body`);
   if (
@@ -57,6 +77,8 @@ function validateAnnouncement(
   ) {
     throw new TypeError(`Announcement ${contribution.id} dismissOnOutsidePress must be a boolean`);
   }
+  validateMessage(contribution.titleMessage);
+  validateMessage(contribution.bodyMessage);
   const actionIds = new Set<string>();
   for (const action of [contribution.primaryAction, contribution.secondaryAction]) {
     if (action === undefined) continue;
@@ -68,6 +90,7 @@ function validateAnnouncement(
     if (actionIds.has(action.id)) {
       throw new Error(`Announcement ${contribution.id} contains duplicate action ${action.id}`);
     }
+    validateMessage(action.labelMessage);
     actionIds.add(action.id);
   }
   if (contribution.media !== undefined) {
@@ -91,13 +114,16 @@ function validateAnnouncement(
 function freezeAnnouncement(contribution: AnnouncementContribution): AnnouncementContribution {
   return Object.freeze({
     ...contribution,
+    ...(contribution.titleMessage ? { titleMessage: Object.freeze({ ...contribution.titleMessage }) } : {}),
+    ...(contribution.bodyMessage ? { bodyMessage: Object.freeze({ ...contribution.bodyMessage }) } : {}),
     ...(contribution.media === undefined ? {} : { media: Object.freeze({ ...contribution.media }) }),
+    ...(contribution.preview === undefined ? {} : { preview: Object.freeze({ ...contribution.preview }) }),
     ...(contribution.primaryAction === undefined
       ? {}
-      : { primaryAction: Object.freeze({ ...contribution.primaryAction }) }),
+      : { primaryAction: Object.freeze({ ...contribution.primaryAction, ...(contribution.primaryAction.labelMessage ? { labelMessage: Object.freeze({ ...contribution.primaryAction.labelMessage }) } : {}) }) }),
     ...(contribution.secondaryAction === undefined
       ? {}
-      : { secondaryAction: Object.freeze({ ...contribution.secondaryAction }) }),
+      : { secondaryAction: Object.freeze({ ...contribution.secondaryAction, ...(contribution.secondaryAction.labelMessage ? { labelMessage: Object.freeze({ ...contribution.secondaryAction.labelMessage }) } : {}) }) }),
   });
 }
 

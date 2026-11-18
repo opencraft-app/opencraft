@@ -1,3 +1,4 @@
+import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
@@ -21,9 +22,6 @@ import {
   type TasksRequestPort
 } from "@opencraft/appserver-protocol";
 import { BlobResourceService } from "@opencraft/blob-resources";
-import {
-  AppServerBotDirectory
-} from "@opencraft/bot-conversation-appserver";
 import {
   asHostId,
   createConversationKey,
@@ -131,12 +129,12 @@ export interface AppServerHostCatalog {
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   /**
    * Navigation intent being hydrated. The presented Conversation remains the
@@ -451,12 +449,12 @@ export interface WebWorkbenchApplicationBase {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   readonly hostProfiles: HostConnectionProfileStore;
   readonly hostProfileStorageError?: BrowserStorageError | null;

@@ -24,6 +24,11 @@ async function writeHeadlessVersion(webRoot) {
   }));
 }
 
+test('headless rejects relative or root execution CLI paths before opening storage', async () => {
+  await assert.rejects(startHeadlessServer({ threadCliDirectory: 'cli' }), /absolute non-root execution path/);
+  await assert.rejects(startHeadlessServer({ threadCliDirectory: '/' }), /absolute non-root execution path/);
+});
+
 test('running headless gateway resolves a new Host address on reconnect and rejects unavailable attachments', { timeout: 10_000 }, async (context) => {
   const root = await mkdtemp(join(tmpdir(), 'opencraft-host-reconnect-'));
   const webRoot = join(root, 'web'); await mkdir(webRoot);
@@ -40,7 +45,7 @@ test('running headless gateway resolves a new Host address on reconnect and reje
     let selected = 0;
     let unavailable = false;
     const target = () => `ws://127.0.0.1:${backends[selected].address().port}/rpc`;
-    server = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), port: 0, machineName: 'join服务器', isolateBrowserStorage: true,
+    server = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), threadCliDirectory: join(root, 'execution', 'cli'), port: 0, isolateBrowserStorage: true, machineName: 'join服务器',
       startAgentHost: async options => { assert.equal(options.machineIdentity.name, 'join服务器'); return { websocketUrl: target(),
         resolveWebsocketUrl: async () => { if (unavailable) throw new Error('private attachment failure'); return target(); },
         async close() {} }; } });
@@ -191,7 +196,7 @@ test("public SSH can explicitly allow changing addresses without removing authen
   const argv = ["--host", "0.0.0.0", "--allow-unauthenticated-public", "--ssh-public-access", "--ssh-servers", "/private/ssh.json", "--data-dir", "/tmp/private"];
   assert.equal(parseHeadlessArguments(argv, {}).sshPublicAccess, true);
   assert.equal(parseHeadlessArguments([...argv, "--ssh-require-access-key"], {}).sshRequireAccessKey, true);
-  assert.throws(() => parseHeadlessArguments([...argv, "--ssh-public-origin", "https://fixture.invalid"], {}), /Choose either/u);
+  assert.throws(() => parseHeadlessArguments([...argv, "--ssh-public-origin", "https://fixture.invalid"], {}), /Unknown option/u);
 });
 
 test("public headless mode requires explicit acknowledgement and keeps one HTTP and WebSocket server", async (context) => {

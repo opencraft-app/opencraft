@@ -1,8 +1,12 @@
+import type { AppServerBotMethodMap } from "./bot-conversations";
+import type { PersonalAssistantMethodMap } from "./personal-assistant";
 import type { ServerSpaceCommand } from "./server-spaces";
 import type { ThreadAccessMethodMap } from "./thread-access";
 import type { AgentOnboardingMethodMap } from "./agent-onboarding";
 import type { AgentUsageMethodMap } from "./agent-usage";
 import type { ThreadNoteMethodMap } from "./thread-note";
+import type { ChannelsMethodMap } from "./channels";
+
 import type { SharedInteractionMethodMap } from "./shared-interactions";
 import type { TurnRecoveryMethodMap } from "./turn-recovery";
 import type { ConversationSchedulesMethodMap } from "./conversation-schedules";
@@ -104,7 +108,6 @@ import type {
   FuzzyFileSearchSessionUpdateParams,
   FuzzyFileSearchSessionUpdateResponse,
 } from "./generated";
-import type { AppServerBotMethodMap } from "./bot-conversations";
 import type { AppServerCodexAccountMethodMap } from "./codex-accounts";
 import type { ProfileSkillsMethodMap } from "./profile-skills";
 import type {
@@ -272,6 +275,7 @@ export type TurnStartParams = GeneratedTurnStartParams;
 export type TurnStartResponse = GeneratedTurnStartResponse;
 export type TurnSteerParams = GeneratedTurnSteerParams;
 export type TurnSteerResponse = GeneratedTurnSteerResponse & {
+  readonly delivery?: import("./input-delivery").InputDeliveryReceipt;
   /**
    * Extension used by Hosts that preserve a steer racing Turn completion.
    * When omitted, the accepted input is treated as `steered`, so a queued
@@ -287,7 +291,17 @@ export type TurnSteerResponse = GeneratedTurnSteerResponse & {
 export type TurnInterruptParams = GeneratedTurnInterruptParams;
 export type TurnInterruptResponse = GeneratedTurnInterruptResponse;
 export type ThreadQueueAddParams = GeneratedThreadQueueAddParams;
+/** Host-projected queue permissions. Omission preserves older Host behavior. */
+export interface QueuedSubmissionActions {
+  readonly edit: boolean;
+  readonly delete: boolean;
+  readonly start: boolean;
+  readonly reorder: boolean;
+}
 export interface QueuedSubmission {
+  /** Durable Host receipt; engine/context/execution facts never replace custody. */
+  readonly delivery?: import("./input-delivery").InputDeliveryReceipt;
+  readonly actions?: QueuedSubmissionActions;
   readonly sender?: MessageSender | null;
   readonly id: string;
   readonly input: readonly UserInput[];
@@ -295,7 +309,7 @@ export interface QueuedSubmission {
   readonly createdAt: number;
   readonly pausedReason: string | null;
 }
-/** Host-accepted user input waiting for the active Turn's next step boundary. */
+/** Host-owned follow-up receipt. The bound execution may be active or terminal. */
 export interface SteeringSubmission extends QueuedSubmission {
   /** Host presentation hint; retry still revalidates authority and execution state. */
   readonly retryable?: boolean;
@@ -304,7 +318,10 @@ export interface SteeringSubmission extends QueuedSubmission {
 export interface ThreadQueueAddResponse {
   readonly queuedSubmission: QueuedSubmission;
 }
-export type ThreadQueueListParams = GeneratedThreadQueueListParams;
+export type ThreadQueueListParams = GeneratedThreadQueueListParams & {
+  /** Closed Host receipts for loaded timeline Turns only; active queue is unfiltered. */
+  readonly receiptTurnIds?: readonly string[];
+};
 export interface ThreadQueueListResponse {
   readonly data: readonly QueuedSubmission[];
   readonly nextCursor: string | null;
@@ -367,7 +384,7 @@ import type {
   McpServerToolCallResponse, ListMcpServerStatusParams, ListMcpServerStatusResponse,
 } from "./generated/v2";
 
-export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerBotMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap {
+export interface AppServerMethodMap extends AppServerBotMethodMap, ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap, ChannelsMethodMap, PersonalAssistantMethodMap {
   "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
   "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
   /** Additive per-input steer evidence status; only served to declaring clients. */
@@ -526,6 +543,10 @@ export interface AppServerMethodMap extends ThreadAccessMethodMap, AgentUsageMet
   "thread/unsubscribe": {
     params: ThreadUnsubscribeParams;
     result: ThreadUnsubscribeResponse;
+  };
+  "thread/settings/update": {
+    params: import("./generated/v2").ThreadSettingsUpdateParams;
+    result: import("./generated/v2").ThreadSettingsUpdateResponse;
   };
   "thread/inject_items": {
     params: import("./generated/v2").ThreadInjectItemsParams;

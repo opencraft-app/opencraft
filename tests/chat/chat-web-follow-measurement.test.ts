@@ -1,6 +1,53 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { WebConversationViewportOwner } from "@opencraft/timeline-host-web";
+import { WebConversationViewportOwner, setTimelineDiagnosticObserver } from "@opencraft/timeline-host-web";
+
+test("diagnostic row registrations never force layout during a React window replacement", t => {
+  const originalObserver = globalThis.ResizeObserver;
+  const observed = new Set<Element>();
+  globalThis.ResizeObserver = class {
+    observe(element: Element) { observed.add(element); }
+    unobserve(element: Element) { observed.delete(element); }
+    disconnect() { observed.clear(); }
+  } as typeof ResizeObserver;
+  const events: { kind: string; row: unknown }[] = [];
+  setTimelineDiagnosticObserver((kind, fields) => events.push({ kind, row: fields.row }));
+  const owner = new WebConversationViewportOwner(0);
+  t.after(() => { owner.dispose(); setTimelineDiagnosticObserver(undefined); globalThis.ResizeObserver = originalObserver; });
+  let committed = false, reads = 0;
+  const row = (height: number) => ({
+    dataset: {},
+    get offsetHeight() {
+      assert.ok(committed, "ref callbacks must not flush an incomplete DOM commit");
+      reads++; return height;
+    },
+    getBoundingClientRect() { assert.fail("registrations must not measure bounds either"); },
+  }) as unknown as HTMLDivElement;
+  const first = row(500), replacement = row(600);
+  owner.observeTurn("turn", first);
+  assert.equal(reads, 0);
+  committed = true;
+  assert.deepEqual(owner.measureNewlyMountedTurns(), [{ turnKey: "turn", heightPx: 500 }]);
+  const firstMeasurementReads = reads;
+  assert.ok(firstMeasurementReads > 0);
+  committed = false;
+  owner.observeTurn("turn", replacement);
+  assert.equal(observed.has(first), false);
+  assert.equal(observed.has(replacement), true);
+  assert.equal(reads, firstMeasurementReads);
+  committed = true;
+  assert.deepEqual(owner.measureNewlyMountedTurns(), [{ turnKey: "turn", heightPx: 600 }]);
+  const committedReads = reads;
+  assert.ok(committedReads > firstMeasurementReads);
+  committed = false;
+  owner.observeTurn("turn", null);
+  assert.equal(reads, committedReads);
+  assert.equal(observed.size, 0);
+  assert.deepEqual(events.map(event => event.kind), ["turn-mount", "turn-unmount", "turn-mount", "turn-unmount"]);
+  assert.equal(events[0]!.row, events[1]!.row);
+  assert.equal(events[2]!.row, events[3]!.row);
+  assert.notEqual(events[0]!.row, events[2]!.row);
+});
 
 test("viewport observer owns only the scrollport, initializes once, coalesces and cancels frames", () => {
   const originalObserver = globalThis.ResizeObserver;

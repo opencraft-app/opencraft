@@ -157,3 +157,4 @@ test("real loopback HTTP ingress decodes native requests, isolates credentials a
   const removed = await fetch(ingress.url + "/v1/responses", { method: "POST", headers, body });
   assert.equal(removed.status, 404); await removed.text(); assert.equal(seen.length, 1);
 });
+

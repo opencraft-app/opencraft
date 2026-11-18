@@ -25,7 +25,7 @@ export function ConversationReferenceSurface({catalog,hostId,children}:{catalog:
   const command=useCallback((id:string,body:Record<string,unknown>)=>catalog.agentRuntimes.request(id,"opencraft/collaboration",body),[catalog.agentRuntimes]);
   const load=async (t:Target,cursor?:string)=>{
     const generation=++epoch.current; setLoading(true);
-    try {const result=await command(t.hostId,{action:"read",reference:t.reference,...(cursor?{cursor}:{})});
+    try {const result=await command(t.hostId,{action:"read",bounded:true,reference:t.reference,...(cursor?{cursor}:{})});
       if(!mounted.current||generation!==epoch.current)return;
       const page=result.history as unknown as History;
       setHistory(previous=>cursor&&previous?{...page,entries:[...previous.entries,...page.entries]}:page);
@@ -36,13 +36,13 @@ export function ConversationReferenceSurface({catalog,hostId,children}:{catalog:
     if(!parseConversationRef(reference))return;
     const t={reference,hostId};activeTarget.current=t;setTarget(t);setDraft("");setHistory(null);setRequestId(null);setDelivery(null);sendKey.current=crypto.randomUUID();void load(t);
   },[hostId,command,intl,notices]);
-  const port=useMemo<ConversationReferencePort>(()=>({open,async search(query,signal){
-    const source=query.target.type==="new-thread"?query.target.execution.hostId:query.target.key.hostId;
-    if(!catalog.threadManagement.capabilities(source).reference)return [];
-    const r=await command(source,{action:"discover",search:query.query});
-    if(signal?.aborted)return [];
-    return ((r.conversations??[]) as {ref:ConversationRef;title:string}[]).slice(0,query.limit).map(c=>({id:encodeConversationRef(c.ref),kind:"mention",label:c.title,detail:text("conversation.reference.label","Conversation"),uri:encodeConversationRef(c.ref),metadata:{mentionKind:"thread"}}));
-  }}),[open,command,catalog.threadManagement,intl]);
+  const port=useMemo<ConversationReferencePort>(()=>{
+    let search: Promise<ConversationReferencePort["search"]> | undefined;
+    return {open,async search(query,signal){
+      const run=await (search ??= import("./conversation-reference-search").then(module=>module.createConversationSearch(command,catalog,intl)));
+      return run(query,signal);
+    }};
+  },[open,command,catalog,intl]);
   const navigate=async(reference:string,source:string)=>{
     const ref=parseConversationRef(reference);if(!ref)return;
     // A route/host hint never overrides resource identity.

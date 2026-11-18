@@ -34,7 +34,14 @@
     "./icons.web": "./src/icons.web.scss",
     "./typography-mixins.web": "./src/typography-mixins.web.scss",
     "./interaction-mixins.web": "./src/interaction-mixins.web.scss",
-    "./action-artwork": "./src/action-artwork.ts"
+    "./action-artwork": "./src/action-artwork.ts",
+    "./companion-artwork": "./src/companion-artwork.ts",
+    "./channel-chat.web": "./src/channel-chat.web.scss",
+    "./progress-bar.web": "./src/progress-bar.web.scss",
+    "./segmented-control.web": "./src/segmented-control.web.scss",
+    "./overview.web": "./src/overview.web.scss",
+    "./frame-budget": "./src/frame-budget.ts",
+    "./companion-motion": "./src/companion-motion.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

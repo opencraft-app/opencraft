@@ -14,6 +14,8 @@ export type ChaosEvent =
   | { type: "stale-timer" | "heal" };
 export class ChaosViolation extends Error {
   cleanupFailure?:string;
+  /** Bounded, synthetic fixture observations saved alongside the replay trace. */
+  evidence?: unknown;
   constructor(readonly rule: string, detail: string) { super(`${rule}: ${detail}`); }
 }
 export function requireThat(ok: unknown, rule: string, detail: string): asserts ok {

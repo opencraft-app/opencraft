@@ -23,11 +23,10 @@ export function ConversationRenameDialog({ value, pending, onChange, onSubmit, o
       if (!pending && value.trim()) onSubmit(value.trim());
     }}>
       <h2 id={titleId}>{title}</h2>
-      <SettingsTextInput autoFocus aria-label={intl.formatMessage({ id: "chat.rename.name", defaultMessage: "Conversation name" })}
+      <SettingsTextInput aria-label={intl.formatMessage({ id: "chat.rename.name", defaultMessage: "Conversation name" })}
         onKeyDown={event => { if (event.key === "Enter" && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault(); }}
         maxLength={60} autoCapitalize="sentences" autoComplete="off" spellCheck={false}
-        value={value} disabled={pending} onChange={event => onChange(event.target.value)}
-        onFocus={event => { if (!matchMedia("(pointer: coarse)").matches) event.currentTarget.select(); }} />
+        value={value} disabled={pending} onChange={event => onChange(event.target.value)} />
       <div className="conversation-rename-dialog__actions">
         <SettingsButton type="button" disabled={pending} onClick={onDismiss}>
           {intl.formatMessage({ id: "common.cancel", defaultMessage: "Cancel" })}

@@ -375,3 +375,14 @@
     > input[type="radio"] { appearance: auto; &:checked::after { display: none; } }
   }
 }
+
+// Native labels/inputs keep focus, query and IME ownership; share only geometry.
+@mixin search-field-geometry($height: var(--height-search-field), $inset: var(--padding-search-field-inline)) {
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  min-height: max(#{$height}, var(--size-control-hit-min));
+  align-items: center;
+  gap: var(--gap-search-field-content);
+  padding: 0 $inset;
+}

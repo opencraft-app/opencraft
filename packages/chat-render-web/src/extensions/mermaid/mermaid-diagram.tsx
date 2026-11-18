@@ -1,3 +1,7 @@
+import { ZoomableImage } from "../../zoomable-image";
+import { PendingPreview } from "@opencraft/design-system-web/preview-activation";
+import { IconButton } from "@opencraft/design-system-web/button";
+import { downloadBlob } from "@opencraft/design-system-web/download";
 import { ExpandIcon as SharedExpandIcon, CopyIcon as SharedCopyIcon, DownloadIcon as SharedDownloadIcon, CloseIcon as SharedCloseIcon } from "@opencraft/design-system-web/action-icons";
 import type {
   ChatNodeRendererProps,
@@ -5,6 +9,7 @@ import type {
   ChatRenderTheme,
 } from "@opencraft/chat-render-react";
 import {
+  lazy, Suspense,
   useCallback,
   useEffect,
   useId,
@@ -244,12 +249,7 @@ function DownloadIcon() { return <SharedDownloadIcon size={16} />; }
 function CloseIcon() { return <SharedCloseIcon size={16} />; }
 
 function downloadSvg(svg: string): void {
-  const url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
-  const anchor = document.createElement("a");
-  anchor.download = "mermaid-diagram.svg";
-  anchor.href = url;
-  anchor.click();
-  window.setTimeout(() => URL.revokeObjectURL(url), 0);
+  downloadBlob(new Blob([svg], { type: "image/svg+xml" }), "mermaid-diagram.svg");
 }
 
 function serializeSvgForPreview(
@@ -285,55 +285,45 @@ function serializeSvgForPreview(
   return clone.outerHTML;
 }
 
+const MermaidPreviewSurface=lazy(()=>import("./mermaid-preview-surface"));
+
 function MermaidPreview({
   svg,
+  returnFocus,
   onClose,
   openedByPointer,
   onKeyboardNavigation,
 }: {
   readonly svg: string;
+  readonly returnFocus?:()=>HTMLElement|null;
   readonly onClose: () => void;
   readonly openedByPointer: boolean;
   readonly onKeyboardNavigation: ReturnType<typeof usePreviewFocusOrigin>["onPreviewKeyDown"];
 }) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog === null) return;
-    dialog.showModal();
-    return () => dialog.close();
-  }, []);
   return (
-    <dialog
-      aria-label="Mermaid diagram preview"
-      className="chat-mermaid-preview"
-      data-opened-by-pointer={openedByPointer || undefined}
-      onCancel={onClose}
-      onClose={onClose}
-      onKeyDown={onKeyboardNavigation}
-      ref={dialogRef}
-    >
-      <div
-        className="chat-mermaid-preview__diagram"
-        dangerouslySetInnerHTML={{ __html: svg }}
-      />
+    <Suspense fallback={<PendingPreview onClose={onClose}/>}><MermaidPreviewSurface returnFocus={returnFocus} label="Mermaid diagram preview" className="chat-mermaid-preview" openedByPointer={openedByPointer} onClose={onClose} onKeyDown={onKeyboardNavigation}>
+      {close => <>
+      <div className="chat-mermaid-preview__diagram">
+        <ZoomableImage src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} alt="Mermaid diagram" fitToContainer />
+      </div>
       <div className="chat-mermaid-preview__actions">
-        <button
+        <IconButton
           aria-label="Download Mermaid diagram"
           onClick={() => downloadSvg(svg)}
           type="button"
         >
           <DownloadIcon />
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           aria-label="Close Mermaid preview"
-          onClick={onClose}
+          onClick={close}
           type="button"
         >
           <CloseIcon />
-        </button>
+        </IconButton>
       </div>
-    </dialog>
+      </>}
+    </MermaidPreviewSurface></Suspense>
   );
 }
 
@@ -494,7 +484,7 @@ function MermaidDiagram({
       <span className="sr-only">Mermaid source code</span>
       <pre className="sr-only">{code}</pre>
       {previewSvg === null ? null : (
-        <MermaidPreview onClose={() => setPreviewSvg(null)} onKeyboardNavigation={previewFocus.onPreviewKeyDown} openedByPointer={previewFocus.openedByPointer} svg={previewSvg} />
+        <MermaidPreview returnFocus={previewFocus.returnFocus} onClose={() => setPreviewSvg(null)} onKeyboardNavigation={previewFocus.onPreviewKeyDown} openedByPointer={previewFocus.openedByPointer} svg={previewSvg} />
       )}
     </div>
   );

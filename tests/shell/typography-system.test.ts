@@ -76,8 +76,16 @@ test("iPhone Web keeps editable text legible without focus zoom and locks app vi
   assert.match(app, /\.opencraft-composer-editor\s*\{[\s\S]*?font: var\(--typography-composer-font\)/u,
     "desktop Composer typography remains unchanged");
   assert.match(app, /@media\s*\(max-width:\s*767px\)\s*and\s*\(any-pointer:\s*coarse\)/u);
-  assert.match(app, /\[contenteditable="true"\][\s\S]*?font-size:\s*max\(var\(--typography-mobile-input-size\),\s*1rem\)\s*!important/u);
-  assert.match(app, /pre\s*\{\s*font-size:\s*var\(--typography-mobile-input-size\)/u);
+  const generated = read("../packages/design-system/src/typography/_generated.web.scss");
+  const tokens = read("../packages/design-system/src/tokens.web.scss");
+  assert.match(app, /:where\([\s\S]*?\[contenteditable="true"\][\s\S]*?font-size: max\(1em, var\(--size-editable-font-min\)\)/u);
+  assert.doesNotMatch(app, /font-size:\s*max\(var\(--typography-mobile-input-size\),\s*1rem\)\s*!important/u);
+  assert.match(tokens, /--size-editable-font-min: max\(var\(--typography-mobile-input-size\), 1rem\)/u);
+  for (const role of ["input", "composer"]) {
+    assert.ok(generated.includes(`--typography-${role}-editable-size: max(var(--typography-${role}-size), var(--size-editable-font-min, 0px))`));
+    assert.ok(generated.includes(`var(--typography-${role}-editable-size)/var(--typography-${role}-editable-line-height)`));
+  }
+
 });
 
 test("shared filter controls retain their authored dimensions", () => {

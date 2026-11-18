@@ -20,7 +20,8 @@
     "@opencraft/i18n": "*",
     "@opencraft/client-product": "*",
     "@opencraft/workbench-runtime": "*",
-    "react": "19.3.1"
+    "react": "19.3.1",
+    "@opencraft/storage-node": "*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

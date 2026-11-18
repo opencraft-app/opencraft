@@ -52,7 +52,7 @@ test("probe failure captures delayed timers, recent traffic and buffer without m
   const socket = new FakeSocket(), events = new RecoveryEvents();
   const diagnostics: Array<Record<string, unknown>> = [];
   const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
-    retryDelaysMs: [0], recoveryEvents: events, reportFailure: diagnostic => diagnostics.push({ ...diagnostic }),
+    recoveryEvents: events, retryDelaysMs: [0], reportFailure: diagnostic => diagnostics.push({ ...diagnostic }),
   });
   try {
     const transport = client.createTransport("private-host"), connected = transport.connect();
@@ -96,7 +96,7 @@ test("a visible mobile route is probed without browser wake events, once per sha
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const events = new RecoveryEvents(), socket = new FakeSocket();
-  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined });
   const accept = async (initial: boolean) => {
     await flush();
     if (initial) {
@@ -138,7 +138,7 @@ test("visible route checks wake the existing Workbench retry owner before a long
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const events = new RecoveryEvents(), sockets: FakeSocket[] = [];
   const client = connectWebSocketAppHost(() => { const socket = new FakeSocket(); sockets.push(socket); return socket as unknown as WebSocket; }, {
-    retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined,
+    recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined,
   });
   const runtime = createAppServerWorkbenchRuntime({ hostId: "mobile", autoReconnect: true, reconnectDelaysMs: [60_000],
     createTransport: () => client.createTransport("mobile"),
@@ -169,7 +169,7 @@ test("periodic recovery checks stop while hidden and when the last Host releases
   context.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
   const events = new RecoveryEvents();
   const client = connectWebSocketAppHost(() => { throw new Error("a recovery observation cannot allocate a socket"); }, {
-    retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined,
+    recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined,
   });
   try {
     const a = client.createTransport("a"), b = client.createTransport("b");
@@ -182,6 +182,29 @@ test("periodic recovery checks stop while hidden and when the last Host releases
     context.mock.timers.tick(5_000); assert.equal(hints, 5);
     await b.close();
     context.mock.timers.tick(60_000); assert.equal(hints, 5);
+  } finally { client.close(); }
+});
+
+test("periodic route checks probe every five seconds but space their recovery hints", async context => {
+  context.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const events = new RecoveryEvents();
+  const client = connectWebSocketAppHost(() => { throw new Error("a recovery observation cannot allocate a socket"); }, {
+    recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined,
+  });
+  try {
+    const transport = client.createTransport("weak-route");
+    let hints = 0;
+    transport.subscribeRecoveryHint?.(() => { hints++; });
+    context.mock.timers.tick(5_000);
+    assert.equal(hints, 1, "the first periodic observation may validate the route");
+    context.mock.timers.tick(25_000);
+    assert.equal(hints, 1, "later five-second checks cannot bypass the Host retry backoff");
+    events.fire();
+    assert.equal(hints, 2, "an explicit online/foreground event is still delivered immediately");
+    context.mock.timers.tick(5_000);
+    assert.equal(hints, 3, "a silent mobile route is revalidated at the spaced cadence");
+    for (let elapsed = 0; elapsed < 270_000; elapsed += 5_000) context.mock.timers.tick(5_000);
+    assert.equal(hints, 12, "five minutes produce about ten periodic hints instead of sixty");
   } finally { client.close(); }
 });
 
@@ -215,7 +238,7 @@ test("foreground probes share the socket, pause in background, and cannot affect
   const first = new FakeSocket(), next = new FakeSocket();
   const sockets = [first, next];
   const client = connectWebSocketAppHost(() => sockets.shift() as unknown as WebSocket, {
-    retryDelaysMs: [0], recoveryEvents: events, probeTimeoutMs: 5_000, reportFailure: () => undefined,
+    recoveryEvents: events, probeTimeoutMs: 5_000, retryDelaysMs: [0], reportFailure: () => undefined,
   });
   const accept = async (socket: FakeSocket, initial: boolean) => {
     await flush();
@@ -267,7 +290,7 @@ test("legacy AppHost gets no unknown probe, while foreground wakes the retry own
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const events = new RecoveryEvents(), socket = new FakeSocket();
-  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined });
   try {
     const transport = client.createTransport("local");
     let hints = 0;
@@ -281,7 +304,7 @@ test("legacy AppHost gets no unknown probe, while foreground wakes the retry own
     assert.equal(hints, 1);
     assert.equal(socket.sent.length, 2);
     socket.fail(); events.fire();
-    assert.equal(hints, 1, "a burst of foreground hints shares the cooldown");
+    assert.equal(hints, 1, "duplicate wake events share one recovery hint window");
   } finally {
     client.close();
     if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow); else delete (globalThis as { window?: unknown }).window;
@@ -387,7 +410,7 @@ test("browser AppHost transport fails a stalled handshake so Workbench can retry
   const diagnostics: Array<{ failure: string; phase: string }> = [];
   const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
     handshakeTimeoutMs: 10,
-    reportFailure: diagnostic => diagnostics.push(diagnostic),
+    retryDelaysMs: [0], reportFailure: diagnostic => diagnostics.push(diagnostic),
   });
   try {
     const transport = client.createTransport("fixture-host");
@@ -413,7 +436,7 @@ test("browser AppHost reports a pre-upgrade WebSocket error without exposing the
   const socket = new FakeSocket();
   const diagnostics: Array<Record<string, unknown>> = [];
   const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, {
-    reportFailure: diagnostic => diagnostics.push({ ...diagnostic }),
+    retryDelaysMs: [0], reportFailure: diagnostic => diagnostics.push({ ...diagnostic }),
   });
   try {
     const connection = client.createTransport("fixture-host").connect();
@@ -436,7 +459,7 @@ test("version-1 AppHost cannot silently downgrade lease isolation", async () => 
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const socket = new FakeSocket();
-  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { retryDelaysMs: [0], reportFailure: () => undefined });
   try {
     const transport = client.createTransport("local");
     const rejected = assert.rejects(transport.connect(), /versions are incompatible/i);
@@ -456,7 +479,7 @@ test("protocol fatal survives Workbench cleanup and foreground hints without sch
   const events = new RecoveryEvents(), socket = new FakeSocket();
   let sockets = 0;
   const client = connectWebSocketAppHost(() => { sockets++; return socket as unknown as WebSocket; }, {
-    retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined,
+    recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined,
   });
   const timers = new Set<() => void>();
   const runtime = createAppServerWorkbenchRuntime({ hostId: "local", autoReconnect: true,
@@ -484,7 +507,7 @@ test("a generic policy close stays recoverable instead of being guessed to be a 
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const socket = new FakeSocket();
-  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { retryDelaysMs: [0], reportFailure: () => undefined });
   try {
     const transport = client.createTransport("local");
     const rejected = assert.rejects(transport.connect(), /connection closed/);
@@ -507,7 +530,7 @@ test("failed leases retain the exact server diagnostic attempt, successors clear
   const reports: any[] = [];
   const client = connectWebSocketAppHost(url => {
     urls.push(url); const socket = new FakeSocket(); sockets.push(socket); return socket as unknown as WebSocket;
-  }, { retryDelaysMs: [0], recoveryEvents: new RecoveryEvents(), reportFailure: report => reports.push(report) });
+  }, { recoveryEvents: new RecoveryEvents(), retryDelaysMs: [0], reportFailure: report => reports.push(report) });
   try {
     const a = client.createTransport("a"), b = client.createTransport("b");
     const ca = a.connect().catch(() => undefined), cb = b.connect().catch(() => undefined);
@@ -548,7 +571,7 @@ test("Workbench preserves initial connection diagnostic after factory cleanup an
   const sockets: FakeSocket[] = [];
   const client = connectWebSocketAppHost(() => {
     const socket = new FakeSocket(); sockets.push(socket); return socket as unknown as WebSocket;
-  }, { retryDelaysMs: [0], recoveryEvents: new RecoveryEvents(), reportFailure: () => undefined });
+  }, { recoveryEvents: new RecoveryEvents(), retryDelaysMs: [0], reportFailure: () => undefined });
   const runtime = createAppServerWorkbenchRuntime({ hostId: "local", autoReconnect: false,
     createTransport: () => client.createTransport("local"),
   });
@@ -578,7 +601,7 @@ test("expired claim saturation renews the shared browser socket and lets its pee
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/chat" } } });
   const first = new FakeSocket(true), successor = new FakeSocket(true), sockets = [first, successor];
   const events = new RecoveryEvents(); let created = 0;
-  const client = connectWebSocketAppHost(() => { created++; return sockets.shift() as unknown as WebSocket; }, { retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => { created++; return sockets.shift() as unknown as WebSocket; }, { recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined });
   const slow = client.createTransport("slow"), peer = client.createTransport("healthy");
   const accept = async (socket: FakeSocket, initial: boolean) => {
     await flush();
@@ -618,7 +641,7 @@ test("private recovery awaits admission and never opens a socket after cancellat
       let release!: () => void, reads = 0, sockets = 0;
       const gate = new Promise<void>(resolve => { release = resolve; });
       const client = connectWebSocketAppHost(() => { sockets++; return new FakeSocket() as unknown as WebSocket; }, {
-        path: "/ssh-apphost", reportFailure: () => undefined,
+        path: "/ssh-apphost", retryDelaysMs: [0], reportFailure: () => undefined,
         beforeConnect: async () => { reads++; await gate; if (stop === "deny") throw new Error("locked"); },
       });
       const transport = client.createTransport("ssh:fixture"), abort = new AbortController();
@@ -643,7 +666,7 @@ test("RECOVERY-GAP-04: revoked local admission must settle without waiting for o
   let release!: () => void, settled = false, sockets = 0;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const client = connectWebSocketAppHost(() => { sockets++; return new FakeSocket() as unknown as WebSocket; }, {
-    reportFailure: () => undefined, beforeConnect: () => gate,
+    retryDelaysMs: [0], reportFailure: () => undefined, beforeConnect: () => gate,
   });
   const abort = new AbortController();
   const pending = client.createTransport("a").connect(abort.signal);
@@ -664,7 +687,7 @@ test("RECOVERY-GAP-05: a successor cannot join a revoked renewable transport ope
   let release!: () => void, reads = 0;
   const gate = new Promise<void>(resolve => { release = resolve; });
   const client = connectWebSocketAppHost(() => new FakeSocket() as unknown as WebSocket, {
-    reportFailure: () => undefined, beforeConnect: async () => { if (++reads === 1) await gate; },
+    retryDelaysMs: [0], reportFailure: () => undefined, beforeConnect: async () => { if (++reads === 1) await gate; },
   });
   const transport = client.createTransport("a"), abort = new AbortController();
   const old = transport.connect(abort.signal); void old.catch(() => undefined);
@@ -685,7 +708,7 @@ test("formal trace replay: a failed Host lease and its late frames cannot revoke
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const socket = new FakeSocket(); let sockets = 0;
-  const client = connectWebSocketAppHost(() => { sockets++; return (sockets === 1 ? socket : new FakeSocket()) as unknown as WebSocket; }, { reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => { sockets++; return socket as unknown as WebSocket; }, { retryDelaysMs: [0], reportFailure: () => undefined });
   const frames: string[] = [];
   const messages = (type: string) => socket.sent.map(frame => JSON.parse(frame)).filter(message => message.type === type);
   const acknowledge = (message: { requestId: string }, result?: unknown) => socket.receive({ type: "response", requestId: message.requestId, ok: true, result });
@@ -726,7 +749,7 @@ test("expired claim saturation renews the shared browser socket and lets its pee
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test/chat" } } });
   const first = new FakeSocket(true), successor = new FakeSocket(true), sockets = [first, successor];
   const events = new RecoveryEvents(); let created = 0;
-  const client = connectWebSocketAppHost(() => { created++; return sockets.shift() as unknown as WebSocket; }, { retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => { created++; return sockets.shift() as unknown as WebSocket; }, { recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined });
   const slow = client.createTransport("slow"), peer = client.createTransport("healthy");
   const accept = async (socket: FakeSocket, initial: boolean) => {
     await flush();
@@ -764,7 +787,7 @@ for (const late of ["resolve", "reject"] as const) test(`retired admission ${lat
   const gate = new Promise<void>((resolve, reject) => { release = resolve; fail = reject; });
   const socket = new FakeSocket();
   const client = connectWebSocketAppHost(() => { sockets++; return socket as unknown as WebSocket; }, {
-    reportFailure: () => undefined, beforeConnect: () => ++reads === 1 ? gate : Promise.resolve(),
+    retryDelaysMs: [0], reportFailure: () => undefined, beforeConnect: () => ++reads === 1 ? gate : Promise.resolve(),
   });
   try {
     const transport = client.createTransport("a"), abort = new AbortController();
@@ -788,7 +811,7 @@ test("local cancellation releases callers but successors still wait for the phys
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const socket = new FakeSocket();
-  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { retryDelaysMs: [0], reportFailure: () => undefined });
   const messages = (type: string) => socket.sent.map(frame => JSON.parse(frame)).filter(message => message.type === type);
   const acknowledge = (message: { requestId: string }, result?: unknown) => socket.receive({ type: "response", requestId: message.requestId, ok: true, result });
   try {
@@ -816,7 +839,7 @@ test("synchronous connecting observer can revoke before admission or socket allo
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   let reads = 0, sockets = 0;
   const client = connectWebSocketAppHost(() => { sockets++; return new FakeSocket() as unknown as WebSocket; }, {
-    reportFailure: () => undefined, beforeConnect: async () => { reads++; },
+    retryDelaysMs: [0], reportFailure: () => undefined, beforeConnect: async () => { reads++; },
   });
   try {
     const transport = client.createTransport("a"), abort = new AbortController(); let shared: Promise<void> | undefined;
@@ -843,7 +866,7 @@ test("mobile pause context survives two socket owners and a cache restore before
   const sockets = [new FakeSocket(), new FakeSocket()];
   const reports: Array<Record<string, unknown>> = [];
   const owners = sockets.map(socket => connectWebSocketAppHost(() => socket as unknown as WebSocket, {
-    reportFailure: diagnostic => reports.push({ ...diagnostic }),
+    retryDelaysMs: [0], reportFailure: diagnostic => reports.push({ ...diagnostic }),
   }));
   try {
     const transports = owners.map(owner => owner.createTransport("local"));
@@ -877,7 +900,7 @@ test("recent application progress preserves a slow probe, with a bounded missing
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const socket = new FakeSocket(), events = new RecoveryEvents();
-  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { retryDelaysMs: [0], recoveryEvents: events, reportFailure: () => undefined });
+  const client = connectWebSocketAppHost(() => socket as unknown as WebSocket, { recoveryEvents: events, retryDelaysMs: [0], reportFailure: () => undefined });
   try {
     const transport = client.createTransport("host"), connected = transport.connect();
     await flush(); socket.open();
@@ -1055,7 +1078,7 @@ test("canceling a handshake waiter preserves a peer's shared physical attempt", 
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
   Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { href: "https://example.test" } } });
   const socket = new FakeSocket(); let sockets = 0;
-  const client = connectWebSocketAppHost(() => { sockets++; return (sockets === 1 ? socket : new FakeSocket()) as unknown as WebSocket; }, { recoveryEvents: new RecoveryEvents() });
+  const client = connectWebSocketAppHost(() => { sockets++; return socket as unknown as WebSocket; }, { recoveryEvents: new RecoveryEvents() });
   try {
     const abort = new AbortController();
     const canceled = client.createTransport("im").connect(abort.signal);
@@ -1251,3 +1274,4 @@ test("resume handshakes share a strict thirty-second total deadline", async t =>
   const attempts = f.sockets(); t.mock.timers.tick(60000); await flush();
   assert.equal(f.sockets(), attempts, "retired resume timers cannot allocate another carrier");
 });
+

@@ -624,3 +624,4 @@ test("a committed but empty visible answer is failed rather than successful", as
     assert.equal(result.error.source_reason, "empty_response");
   }
 });
+

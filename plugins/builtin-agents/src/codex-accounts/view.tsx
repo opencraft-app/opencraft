@@ -1,3 +1,4 @@
+import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { useIntl } from "@opencraft/i18n/react";
 import { CheckIcon as Check, ChevronDownIcon as ChevronDown, ChevronRightIcon as ChevronRight, MoreIcon as MoreHorizontal, AddIcon as Plus, RefreshIcon as RefreshCw, DeleteIcon as Trash2, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import * as AlertDialog from "@radix-ui/react-alert-dialog";
@@ -17,11 +18,14 @@ import {
   SettingsSwitch,
   type ExtensionSettingsViewProps,
 } from "@opencraft/extension-react";
-import type { CodexAccountView, CodexDeviceLoginView } from "@opencraft/appserver-protocol";
+import type { CodexAccountFailure, CodexAccountView, CodexDeviceLoginView } from "@opencraft/appserver-protocol";
 
-import type { CodexAccountsService } from "./service.js";
+import { CODEX_ACCOUNTS_ADMIN_REQUIRED, isCodexAccountsAdminRequired, type CodexAccountsService } from "./service.js";
+import { accountFailureFromRpc, accountFailureMessages, accountFeedbackStatus, refreshFailureResolved, type AccountActionFailure } from "./diagnostics.js";
 import { maskAccountDisplayIdentity } from "./identity.js";
 import { ResetCredits } from "./reset-credits.js";
+
+const ADMIN_REQUIRED_TEXT = "需要管理员权限才能管理 Codex 账户。";
 
 function accountStatusLabel(status: CodexAccountView["status"]): string {
   switch (status) {
@@ -79,6 +83,21 @@ function relativeDate(value: number | null): string {
   return `${Math.floor(hours / 24)} 天前使用`;
 }
 
+type CreditStatus = NonNullable<CodexAccountView["credits"]>;
+
+function formatCreditBalance(raw: string): string {
+  const value = Number(raw);
+  return Number.isFinite(value) ? Math.round(value).toLocaleString("zh-CN") : raw;
+}
+
+/** Service-reported extra credits: value plus a short qualifier, mirroring the quota slots. */
+function creditSummary(credits: CreditStatus | null): { readonly value: string; readonly note: string } {
+  if (credits === null) return { value: "—", note: "未报告" };
+  if (credits.unlimited) return { value: "不限量", note: "可用" };
+  if (!credits.available) return { value: credits.balance === null ? "无" : formatCreditBalance(credits.balance), note: "不可用" };
+  return credits.balance === null ? { value: "可用", note: "余额未报告" } : { value: formatCreditBalance(credits.balance), note: "余额" };
+}
+
 function QuotaSlot({ window }: { readonly window: CodexAccountView["limitWindows"][number] }) {
   const percentage = window.utilization === null ? null : Math.round(window.utilization * 100);
   const tone = percentage === null ? "unknown" : percentage >= 90 ? "danger" : percentage >= 75 ? "warning" : "neutral";
@@ -131,10 +150,25 @@ function AccountActionsMenu({ account, index, total, pending, onMove, onRefresh,
   </DropdownMenu.Root>;
 }
 
-function AccountRow({ account, index, total, service, credentialLocation, reportError }: {
+function AccountDiagnostic({ failure }: { readonly failure: CodexAccountFailure }) {
+  const intl = useIntl();
+  return <div className="engine-account__diagnostic" data-tone={failure.retryable ? "warning" : "error"} role="status">
+    <span>{intl.formatMessage(accountFailureMessages[failure.code])}</span>
+    <span className="engine-account__diagnostic-meta">
+      <time dateTime={new Date(failure.occurredAt).toISOString()}>{formatDate(failure.occurredAt)}</time>
+      <code>{failure.code}{failure.reason ? ` · ${failure.reason}` : ""}{failure.httpStatus ? ` · HTTP ${failure.httpStatus}` : ""}</code>
+      <SettingsCopyButton value={failure.diagnosticId}
+        label={intl.formatMessage({ id: "codexAccounts.diagnostic.copy", defaultMessage: "Copy diagnostic ID" })}
+        successLabel={intl.formatMessage({ id: "codexAccounts.diagnostic.copied", defaultMessage: "Diagnostic ID copied" })} />
+    </span>
+  </div>;
+}
+
+function AccountRow({ account, index, total, service, credentialLocation, reportError, unavailable }: {
   readonly account: CodexAccountView;
   readonly index: number;
   readonly total: number;
+  readonly unavailable: boolean;
   readonly service: CodexAccountsService;
   readonly credentialLocation: string;
   readonly reportError?: ExtensionSettingsViewProps["reportError"];
@@ -143,16 +177,24 @@ function AccountRow({ account, index, total, service, credentialLocation, report
   const detailsId = useId();
   const [expanded, setExpanded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AccountActionFailure | null>(null);
   const [confirming, setConfirming] = useState(false);
   const resetCredits = account.resetCredits ?? null;
+  const credits = account.credits ?? null;
+  const creditText = creditSummary(credits);
+  useEffect(() => {
+    setError(previous => previous && refreshFailureResolved(previous, account) ? null : previous);
+  }, [account.maintenance?.lastSuccessAt, account.maintenance?.state]);
   const run = (key: string, action: () => Promise<void>) => {
+    const baselineSuccessAt = account.maintenance?.lastSuccessAt ?? 0;
     setPending(key);
     setError(null);
     void action()
-      .catch(cause => setError(account.credentialSource === "external-file"
-        ? intl.formatMessage({ id: "codexAccounts.external.actionFailed", defaultMessage: "The action failed. For sign-in problems, run codex login on the host or remove this account and use device-code login." })
-        : cause instanceof Error ? cause.message : "操作失败"))
+      .catch(cause => {
+        setError({ action: key, failure: accountFailureFromRpc(cause), baselineSuccessAt, adminRequired: isCodexAccountsAdminRequired(cause) });
+        // Refresh reads state only. Do not replay this or any failed mutation.
+        void service.refresh();
+      })
       .finally(() => setPending(null));
   };
   const move = (offset: number) => {
@@ -164,7 +206,7 @@ function AccountRow({ account, index, total, service, credentialLocation, report
     run("order", () => service.reorder(order));
   };
   return <>
-    <article className="engine-account" data-enabled={account.enabled} data-status={account.status} aria-busy={pending !== null}>
+    <article className="engine-account" data-enabled={account.enabled} data-status={unavailable && account.enabled ? "held" : accountFeedbackStatus(account)} aria-busy={pending !== null}>
       <div className="engine-account__row">
         <button className="engine-account__disclosure" type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded(value => !value)}>
           <span className="engine-account__status-dot" aria-hidden="true" />
@@ -174,7 +216,15 @@ function AccountRow({ account, index, total, service, credentialLocation, report
               <span className="engine-account__plan">{planLabel(account)}</span>
             </span>
             <span className="engine-account__status-copy">
-              {account.credentialConfigured ? accountStatusLabel(account.status) : "凭据不可用"}
+              {!account.credentialConfigured ? "凭据不可用" : !account.enabled ? accountStatusLabel("disabled") : unavailable
+                ? intl.formatMessage({ id: "codexAccounts.diagnostic.unconfirmed", defaultMessage: "Status not confirmed" })
+                : account.maintenance?.state === "checking"
+                ? intl.formatMessage({ id: "codexAccounts.diagnostic.checking", defaultMessage: "Checking account" })
+                : account.maintenance?.state === "unverified"
+                  ? intl.formatMessage({ id: "codexAccounts.diagnostic.unverified", defaultMessage: "Renewal awaiting verification" })
+                : account.maintenance?.state === "error" && account.maintenance.failure?.retryable
+                  ? intl.formatMessage({ id: "codexAccounts.diagnostic.checkFailed", defaultMessage: "Account check failed" })
+                  : accountStatusLabel(accountFeedbackStatus(account))}
               <span aria-hidden="true">·</span>
               {relativeDate(account.lastUsedAt)}
               {pending === "refresh" ? <><span aria-hidden="true">·</span>正在刷新…</> : null}
@@ -196,6 +246,12 @@ function AccountRow({ account, index, total, service, credentialLocation, report
               <strong>{resetCredits === null ? "—" : `${resetCredits.availableCount} 张`}</strong>
               <span className="engine-account__reset">{resetCredits === null ? "未报告" : "剩余"}</span>
             </span>
+            <span className="engine-account__quota engine-account__credits" data-tone={credits === null ? "unknown" : credits.available ? "normal" : "warning"}
+              title={credits === null ? "服务端尚未报告积分" : `上次确认：${formatDate(credits.observedAt)}`}>
+              <small>积分</small>
+              <strong>{creditText.value}</strong>
+              <span className="engine-account__reset">{creditText.note}</span>
+            </span>
           </span>
           <ChevronRight className="engine-account__chevron" size={16} aria-hidden="true" />
         </button>
@@ -211,7 +267,12 @@ function AccountRow({ account, index, total, service, credentialLocation, report
         />
       </div>
       {account.credentialSource === "external-file" && account.status === "error" ? <div className="engine-account__error" role="alert">{intl.formatMessage({ id: "codexAccounts.external.renew", defaultMessage: "Run codex login on the host, or remove this account and sign in with a device code." })}</div> : null}
-      {error ? <div className="engine-account__error" role="alert">{maskAccountDisplayIdentity(error)}</div> : null}
+      {account.maintenance?.state === "error" && account.maintenance.failure ? <AccountDiagnostic failure={account.maintenance.failure} /> : null}
+      {error && !(account.maintenance?.state === "error" && error.action === "refresh" && error.failure?.diagnosticId === account.maintenance.failure?.diagnosticId) ? <div className="engine-account__action-error" role="alert">
+        <span>{error.adminRequired ? ADMIN_REQUIRED_TEXT : intl.formatMessage({ id: "codexAccounts.diagnostic.previousActionFailed", defaultMessage: "The previous operation did not finish. Account availability does not confirm its result." })}</span>
+        {error.failure ? <AccountDiagnostic failure={error.failure} /> : null}
+        <SettingsButton variant="quiet" onClick={() => setError(null)}>{intl.formatMessage({ id: "codexAccounts.diagnostic.dismiss", defaultMessage: "Dismiss message" })}</SettingsButton>
+      </div> : null}
       {expanded ? <div className="engine-account__details" id={detailsId}>
         <SettingsRow className="engine-account__credit-policy" label="允许使用积分" description={account.allowCredits === undefined
           ? "当前服务端不支持设置积分使用策略。"
@@ -224,8 +285,14 @@ function AccountRow({ account, index, total, service, credentialLocation, report
           <div><dt>登录身份</dt><dd>{maskAccountDisplayIdentity(account.email ?? account.label)}</dd></div>
           <div><dt>使用顺序</dt><dd>第 {index + 1} 位</dd></div>
           <div><dt>最近同步</dt><dd>{formatDate(account.observedAt)}</dd></div>
+          {account.maintenance ? <>
+            <div><dt>{intl.formatMessage({ id: "codexAccounts.diagnostic.lastCheck", defaultMessage: "Last account check" })}</dt><dd>{formatDate(account.maintenance.checkedAt)}</dd></div>
+            <div><dt>{intl.formatMessage({ id: "codexAccounts.diagnostic.lastSuccess", defaultMessage: "Last successful check" })}</dt><dd>{formatDate(account.maintenance.lastSuccessAt)}</dd></div>
+          </> : null}
           <div><dt>可用重置券</dt><dd>{resetCredits === null ? "未报告" : `${resetCredits.availableCount} 张`}</dd></div>
           {resetCredits === null ? null : <div><dt>重置券最近确认</dt><dd>{formatDate(resetCredits.observedAt)}</dd></div>}
+          <div><dt>积分</dt><dd>{credits === null ? "未报告" : `${creditText.value}（${creditText.note}）`}</dd></div>
+          {credits === null ? null : <div><dt>积分最近确认</dt><dd>{formatDate(credits.observedAt)}</dd></div>}
           {account.limitWindows.map(window => <div key={window.slot}><dt>{windowLabel(window.windowMinutes, window.slot)} 额度重置</dt><dd>{window.resetAt === null ? "未报告" : formatDate(window.resetAt)}</dd></div>)}
           <div><dt>最近使用环境</dt><dd>{account.lastUsedHostId ?? "—"}</dd></div>
           {account.heldUntil === null ? null : <div><dt>限制解除</dt><dd>{formatDate(account.heldUntil)}</dd></div>}
@@ -317,12 +384,9 @@ function DeviceLoginDialog({ login, service }: { readonly login: CodexDeviceLogi
     void service.cancelDeviceLogin().catch(() => undefined).finally(() => setCanceling(false));
   };
   return <Dialog.Root open={login !== null} onOpenChange={open => { if (!open && login !== null) cancel(); }}>
-    <Dialog.Portal>
-      <Dialog.Overlay className="engine-account-dialog__overlay" />
-      {login === null ? null : <Dialog.Content className="engine-account-dialog" onEscapeKeyDown={event => { if (canceling) event.preventDefault(); }}>
+    {login === null ? null : <ModalContent overlayClassName="engine-account-dialog__overlay" className="engine-account-dialog" onEscapeKeyDown={event => { if (canceling) event.preventDefault(); }}>
         <CodexDeviceLoginContent login={login} canceling={canceling} onCancel={cancel} />
-      </Dialog.Content>}
-    </Dialog.Portal>
+      </ModalContent>}
   </Dialog.Root>;
 }
 
@@ -370,8 +434,8 @@ export function createCodexAccountsView(service: CodexAccountsService, options: 
       actions={<SettingsIconButton label="刷新账户" disabled={snapshot.phase === "loading"} onClick={() => void service.refresh()}><RefreshCw size={16} /></SettingsIconButton>}
     >
       <div className="engine-accounts-page">
-        {snapshot.error ? <SettingsNotice tone="error">{snapshot.error === "local-codex-login-unavailable" ? intl.formatMessage({ id: "codexAccounts.external.failed", defaultMessage: "Could not use the local Codex login. If this account is already listed, remove it first. Otherwise, run codex login on the host or sign in with a device code." }) : snapshot.phase === "error" ? `账户读取失败：${maskAccountDisplayIdentity(snapshot.error)}。请点击右上角刷新重试。` : maskAccountDisplayIdentity(snapshot.error)}</SettingsNotice> : null}
-        <SettingsSection
+        {snapshot.errorDiagnostic ? <AccountDiagnostic failure={snapshot.errorDiagnostic} /> : snapshot.error ? <SettingsNotice tone="error">{snapshot.error === CODEX_ACCOUNTS_ADMIN_REQUIRED ? ADMIN_REQUIRED_TEXT : snapshot.error === "local-codex-login-unavailable" ? intl.formatMessage({ id: "codexAccounts.external.failed", defaultMessage: "Could not use the local Codex login. If this account is already listed, remove it first. Otherwise, run codex login on the host or sign in with a device code." }) : snapshot.phase === "error" ? `账户读取失败：${maskAccountDisplayIdentity(snapshot.error)}。请点击右上角刷新重试。` : maskAccountDisplayIdentity(snapshot.error)}</SettingsNotice> : null}
+        {snapshot.error === CODEX_ACCOUNTS_ADMIN_REQUIRED ? null : <SettingsSection
           title="ChatGPT 账户"
           description="多个账户按顺序使用；已有会话在账户可用时保持绑定。"
           action={snapshot.accounts.length === 0 ? undefined : <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} allowImport={allowImport} />}
@@ -383,9 +447,9 @@ export function createCodexAccountsView(service: CodexAccountsService, options: 
               <div><strong>还没有 Codex 账户</strong><p>添加 ChatGPT 账户后，Codex 会按可用额度自动选择并保持会话绑定。</p></div>
               <AddAccountMenu disabled={busy} starting={starting} importing={importing} onSignIn={start} onImport={importLocal} allowImport={allowImport} />
             </div> : null}
-            {snapshot.accounts.map((account, index) => <AccountRow key={account.id} account={account} index={index} total={snapshot.accounts.length} service={service} credentialLocation={credentialLocation} reportError={_props.reportError} />)}
+            {snapshot.accounts.map((account, index) => <AccountRow key={account.id} account={account} index={index} total={snapshot.accounts.length} unavailable={snapshot.phase === "error"} service={service} credentialLocation={credentialLocation} reportError={_props.reportError} />)}
           </SettingsGroup>
-        </SettingsSection>
+        </SettingsSection>}
       </div>
       <DeviceLoginDialog login={snapshot.login} service={service} />
     </SettingsPanel>;

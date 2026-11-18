@@ -241,3 +241,4 @@ test("clearing a query and replacing it do not publish stale session results", a
   await session.stop();
   controller.dispose();
 });
+

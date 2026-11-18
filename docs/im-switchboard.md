@@ -309,3 +309,9 @@ WeCom通过现有长连接的`aibot_send_msg`主动发送Markdown（chat_type=1�
 用户须先给机器人发过消息；errcode=0仅代表平台受理，不表示用户已读。发送前持久化claim，
 同incident/kind去重；明确未发送或平台明确拒绝允许同ID重试，ACK未知保留unknown，不自动重发。此能力不开放通用主动发信工具。
 业务进程整体不可用时该通道也不可用，部署者应保留本地事件并另规划独立兜底。
+
+### Native group synchronization
+
+WeCom group synchronization uses the native channel identity, history, unread and
+permission model. The connector owns provider binding and I/O only. Provider-specific synchronization contracts remain with the downstream connector.
+The old independent shadow timeline and HTTP history fallback are removed.

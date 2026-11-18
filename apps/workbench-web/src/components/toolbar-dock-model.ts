@@ -31,6 +31,7 @@ export interface ConversationToolbarAvailability {
   readonly port?: unknown;
   readonly shareUrl?: unknown;
   readonly onRename?: unknown;
+  readonly appearanceHostId?: unknown;
   readonly onSetPinned?: unknown;
   readonly onFork?: unknown;
   readonly onArchive?: unknown;
@@ -40,7 +41,7 @@ export interface ConversationToolbarAvailability {
   readonly workspaceDirectory?: unknown;
 }
 export function conversationToolbarActionIds(source: ConversationToolbarAvailability): string[] {
-  return [source.access && "access", source.port && "link-tasks", source.shareUrl && "share-link", source.onRename && "rename", source.onSetPinned && "pin",
+  return [source.access && "access", source.port && "link-tasks", source.shareUrl && "share-link", source.onRename && "rename", source.appearanceHostId && "appearance", source.onSetPinned && "pin",
     source.onFork && "fork", source.onArchive && "archive", source.schedules && "schedules",
     source.im && "im-sources", (source.project || source.workspaceDirectory) && "information"]
     .filter((id): id is string => typeof id === "string");

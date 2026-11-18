@@ -69,3 +69,11 @@ test("real Git paths select only the corresponding file for review", () => {
     assert.equal(reviewDiffForFile(combined, path).trimEnd(), entry.diff.trimEnd(), path);
   }
 });
+
+test("review and Hook detail implementations are demand-loaded without deferring resource slots", () => {
+  const app = readFileSync(new URL("../../apps/workbench-web/src/app.tsx", import.meta.url), "utf8");
+  const activity = readFileSync(new URL("../../apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx", import.meta.url), "utf8");
+  assert.match(app, /lazy\(\(\) => import\("\.\/components\/conversation\/turn-diff-review-dialog"\)/u);
+  assert.match(activity, /lazy\(\(\) => import\("\.\/hook-stats-content"\)/u);
+  assert.match(activity, /className="thread-hook-stats__trigger"/u);
+});

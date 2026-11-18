@@ -3,7 +3,7 @@
 .opencraft-chat-document a[data-chat-resource-kind="file"]:not(.chat-file-citation),
 .opencraft-chat-document a[data-chat-resource-kind="workspace-file"]:not(.chat-file-citation),
 .opencraft-chat-document a[data-chat-resource-kind="resource"]:not(.chat-file-citation),
-.opencraft-chat-document a[data-chat-resource-kind="app-route"]:not(.chat-file-citation) {
+.opencraft-chat-document a[data-chat-resource-kind="app-route"]:not(.chat-file-citation):not(.chat-conversation-mention) {
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
   padding: 1px 4px;
@@ -14,6 +14,25 @@
   font-size: var(--typography-inline-code-size);
   text-decoration: none;
   overflow-wrap: anywhere;
+}
+
+.opencraft-chat-document a.chat-conversation-mention {
+  padding: 1px 3px;
+  border-radius: 4px;
+  color: var(--color-text-accent);
+  background: var(--color-background-accent);
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: var(--typography-primary-action-weight);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+}
+
+.opencraft-chat-document a.chat-conversation-mention:focus-visible {
+  outline: 2px solid var(--focus-ring, var(--color-focus-ring));
+  outline-offset: 2px;
 }
 
 .opencraft-chat-document a[aria-disabled="true"] {
@@ -83,7 +102,6 @@
   flex: 0 0 auto;
   overflow: hidden;
   place-items: center;
-  border-radius: 50%;
   color: color-mix(in srgb, currentColor 56%, transparent);
   transform: translateY(0.14em);
 }
@@ -97,6 +115,7 @@
 }
 
 .chat-external-link__icon-fallback {
+  border-radius: 50%;
   display: grid;
   place-items: center;
   background: color-mix(in srgb, currentColor 10%, transparent);

@@ -41,23 +41,44 @@ export function resolveThreadId(value: unknown): string | null {
 
 export class ResumeNotificationBufferService extends Service {
   private readonly buffers = new Map<string, BufferedAction[]>();
+  private readonly snapshotOnly = new Set<string>();
 
   constructor(ctx: Context, _config?: ResumeNotificationBufferConfig) {
     super(ctx, "resumeNotificationBuffer");
-    ctx.effect(() => () => { this.buffers.clear(); });
+    ctx.effect(() => () => { this.buffers.clear(); this.snapshotOnly.clear(); });
   }
 
   /** Only the owning Session's projection subscription enters this buffer.
    * next is a guarded consumer continuation, never the shared Client lane. */
   interceptProjection(notification: AppServerNotification, next: () => void): void {
+    const trace = (globalThis as { __OPENCRAFT_TRACE_CHANGE_STATS__?: boolean }).__OPENCRAFT_TRACE_CHANGE_STATS__ === true
+      && notification.method === "item/fileChange/patchUpdated";
+    const receivedAt = performance.now();
+    const originalNext = next;
+    if (trace) {
+      console.debug("[change-stats]", { stage: "client-received", at: Date.now() });
+      next = () => {
+        console.debug("[change-stats]", { stage: "projection-dispatched", at: Date.now(), bufferedMs: performance.now() - receivedAt });
+        originalNext();
+      };
+    }
     const threadId = resolveThreadId(notification.params);
     const buffer = threadId === null ? undefined : this.buffers.get(threadId);
     if (buffer === undefined || ["thread/history/preview", "thread/settings/updated", "serverRequest/resolved"].includes(notification.method)) next();
-    else buffer.push({ method: notification.method, replay: next });
+    else if (this.snapshotOnly.has(threadId!) && isSnapshotHistoryNotification(notification.method)) {
+      // A canonical follower needs an invalidation bit, not retained delta text.
+      if (!buffer.some(action => isSnapshotHistoryNotification(action.method)))
+        buffer.push({ method: notification.method, replay() {} });
+    } else buffer.push({ method: notification.method, replay: next });
   }
 
   begin(threadId: string): void {
     if (!this.buffers.has(threadId)) this.buffers.set(threadId, []);
+  }
+
+  followSnapshots(threadId: string): void {
+    this.snapshotOnly.add(threadId);
+    this.supersedeNotifications(threadId);
   }
 
   isBuffering(threadId: string): boolean {
@@ -83,6 +104,7 @@ export class ResumeNotificationBufferService extends Service {
   release(threadId: string): number {
     const actions = this.buffers.get(threadId) ?? [];
     this.buffers.delete(threadId);
+    this.snapshotOnly.delete(threadId);
     for (const action of actions) action.replay();
     return actions.length;
   }
@@ -90,6 +112,7 @@ export class ResumeNotificationBufferService extends Service {
   discard(threadId: string, _error?: Error): number {
     const actions = this.buffers.get(threadId) ?? [];
     this.buffers.delete(threadId);
+    this.snapshotOnly.delete(threadId);
     return actions.length;
   }
 

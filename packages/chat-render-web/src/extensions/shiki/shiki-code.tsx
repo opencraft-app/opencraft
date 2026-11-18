@@ -1,5 +1,5 @@
 import type { ChatNodeRendererProps } from "@opencraft/chat-render-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useLayoutEffect, useRef, useState } from "react";
 
 import {
   CodeBlockSurface,
@@ -13,6 +13,8 @@ import { loadShikiEngine } from "./loader";
 interface HighlightedPrefix {
   readonly code: string;
   readonly html: string;
+  readonly theme: string;
+  readonly language: string | null;
 }
 
 export interface ShikiCodeRendererProps extends ChatNodeRendererProps {
@@ -42,14 +44,26 @@ export function ShikiCodeRenderer({
   const code = isCodeFence ? node.code : "";
   const language = isCodeFence ? node.language : null;
   const complete = isCodeFence && node.completeness === "complete";
+  const cacheKey = `shiki:${context.theme}:${language ?? "text"}:${code}`;
+  const cached = complete ? enhancements.peek<string>(cacheKey) : undefined;
+  const reportMeasurement = useEffectEvent(() => context.requestMeasurement?.({
+    geometryChanged: false, reason: "code-highlight",
+  }));
+  // Cache eviction affects future consumers, not output this mounted surface
+  // has already presented. Capture the borrowed result before browser paint.
+  useLayoutEffect(() => {
+    if (cached !== undefined) setHighlighted(previous => previous?.html === cached
+      && previous.code === code && previous.theme === context.theme && previous.language === language
+      ? previous : { code, html: cached, theme: context.theme, language });
+  }, [cached, code, context.theme, language]);
 
   useEffect(() => {
-    if (!enhancement.granted || !complete) return;
+    if (cached !== undefined || !enhancement.granted || !complete) return;
     let active = true;
     const controller = new AbortController();
     const currentGeneration = ++generation.current;
     setHighlighted((previous) =>
-      previous !== null && code.startsWith(previous.code)
+      previous !== null && previous.theme === context.theme && previous.language === language && code.startsWith(previous.code)
         ? previous
         : null,
     );
@@ -61,7 +75,7 @@ export function ShikiCodeRenderer({
     const timeout = window.setTimeout(() => {
       lastHighlightStartedAt.current = performance.now();
       void enhancements.run({
-          cacheKey: `shiki:${context.theme}:${language ?? "text"}:${code}`,
+          cacheKey,
           lane: "highlight",
           signal: controller.signal,
           run: async (signal) => {
@@ -73,11 +87,8 @@ export function ShikiCodeRenderer({
         })
         .then((html) => {
           if (!active || currentGeneration !== generation.current) return;
-          setHighlighted({ code, html });
-          context.requestMeasurement?.({
-            geometryChanged: false,
-            reason: "code-highlight",
-          });
+          setHighlighted({ code, html, theme: context.theme, language });
+          reportMeasurement();
         })
         .catch(() => {
           if (active && currentGeneration === generation.current) {
@@ -91,13 +102,14 @@ export function ShikiCodeRenderer({
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [code, complete, context.requestMeasurement, context.theme, enhancement.granted, enhancements, language]);
+  }, [cached, cacheKey, code, complete, context.theme, enhancement.granted, enhancements, language]);
 
   if (!isCodeFence) return null;
 
-  const highlightedHtml = !complete || highlighted === null || !code.startsWith(highlighted.code)
+  const highlightedHtml = cached ?? (!complete || highlighted === null || highlighted.theme !== context.theme
+    || highlighted.language !== language || !code.startsWith(highlighted.code)
     ? null
-    : appendUnhighlightedCodeTail(highlighted.code, highlighted.html, code);
+    : appendUnhighlightedCodeTail(highlighted.code, highlighted.html, code));
 
   return (
     <CodeBlockSurface
@@ -106,7 +118,7 @@ export function ShikiCodeRenderer({
       highlightedHtml={highlightedHtml}
       language={language}
       open={!complete}
-      pending={complete && enhancement.granted && highlighted?.code !== code}
+      pending={complete && cached === undefined && enhancement.granted && highlighted?.code !== code}
       policy={surfaceProps?.policy}
       rootRef={enhancement.frameRef}
       showActions={surfaceProps?.showActions}

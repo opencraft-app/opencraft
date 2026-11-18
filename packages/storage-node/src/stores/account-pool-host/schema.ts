@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 
 export const table_pool_accounts = sqliteTable("pool_accounts", {
   "id": text("id").notNull(),
+  "owner_actor": text("owner_actor"),
   "provider": text("provider").notNull(),
   "label": text("label").notNull(),
   "upstream_account_id": text("upstream_account_id").notNull(),
@@ -19,6 +20,7 @@ export const table_pool_accounts = sqliteTable("pool_accounts", {
   "allow_credits": integer("allow_credits").notNull().default(sql`1`),
 }, table => [
   primaryKey({ columns: [table["id"]] }),
+  index("pool_account_owner").on(table["owner_actor"]),
   check("pool_accounts_check_0", sql`reset_credit_count >= 0`),
   check("pool_accounts_check_1", sql`allow_credits IN (0,1)`),
 ]);

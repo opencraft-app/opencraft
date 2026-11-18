@@ -56,7 +56,7 @@ the resolved colors of the current Web theme.
 | Secondary / quiet action | Corresponding `--color-background-button-secondary*` / `--color-background-button-tertiary*` and `--color-text-button-secondary` / `--color-text-button-tertiary` |
 | Navigation state | `--color-background-navigation-hover`, `--color-background-navigation-current`, `--color-background-navigation-pressed` |
 | Feedback | `--color-text-accent`, `--color-text-warning`, `--color-text-danger`, `--color-status-success` |
-| Category badge | Paired `--color-badge-{tone}-foreground` / `--color-badge-{tone}-background`; tones: blue, cyan, red, indigo, green, purple, orange, neutral |
+| Category badge | Paired `--color-badge-{tone}-foreground` / `--color-badge-{tone}-background`; tones: blue, cyan, red, indigo, green, purple, orange, yellow, pink, neutral |
 | Spacing / corners | Multiples of `--spacing`; `--radius-xs`, `--radius-sm`, `--radius-md`, `--radius-lg`, `--radius-xl`, `--radius-2xl`, `--radius-full`; prefer an existing control-specific role |
 | Navigation geometry | `--height-navigation-row`, `--size-navigation-leading-slot`, `--gap-navigation-row-content`, `--gap-navigation-sections`, `--gap-navigation-groups` |
 | Settings layout | `--height-token-settings-row`, `--padding-token-settings-panel`, `--gap-token-settings-sections`, `--radius-token-settings-card` through Settings components |

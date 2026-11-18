@@ -20,9 +20,9 @@ function harness(host: BrowserDynamicToolHost, hostId = "host-1") {
     },
   }, host, { hostId });
   return {
-    async call(request: AppServerServerRequest, fallback: unknown = "fallback") {
+    async call(request: AppServerServerRequest, fallback: unknown = "fallback", signal?: AbortSignal) {
       assert.notEqual(interceptor, null);
-      return interceptor!(request, async () => fallback);
+      return interceptor!(request, async () => fallback, signal ? { signal, delivered: Promise.resolve(), retirement: null } : undefined as any);
     },
     dispose() {
       dispose();
@@ -30,6 +30,33 @@ function harness(host: BrowserDynamicToolHost, hostId = "host-1") {
     },
   };
 }
+
+test('browser adapter forwards the exact trusted request lifetime signal', async () => {
+  const controller = new AbortController(); let signal: AbortSignal | undefined;
+  const h = harness({ open() {}, getTabContext() {}, async browserUse(context) {
+    signal = context.signal;
+    await new Promise<void>(resolve => context.signal!.addEventListener('abort', () => resolve(), { once: true }));
+    return { cancelled: true };
+  } });
+  const waiting = h.call({ id: 'native', method: 'item/tool/call', params: {
+    namespace: 'opencraft_browser', tool: 'browser_use', threadId: 'thread', turnId: 'turn', callId: 'call',
+    arguments: { action: 'wait', text: 'never' },
+  } }, undefined, controller.signal);
+  assert.equal(signal, controller.signal);
+  controller.abort(); await waiting; h.dispose();
+});
+
+test('ACP flat browser tool names map to the neutral catalog without overriding an explicit namespace', async () => {
+  let calls = 0;
+  const h = harness({ open() {}, getTabContext() {}, browserUse(context, args) {
+    calls++; assert.equal(context.threadId, 'thread'); assert.equal(args.action, 'inspect'); return { inspected: true };
+  } });
+  const params = { threadId: 'thread', turnId: 'turn', callId: 'call', tool: 'opencraft_browser_browser_use', arguments: { action: 'inspect' } };
+  const result = await h.call({ id: 'flat', method: 'item/tool/call', params });
+  assert.equal((result as any).success, true);
+  assert.equal(await h.call({ id: 'foreign', method: 'item/tool/call', params: { ...params, namespace: 'other' } }), 'fallback');
+  assert.equal(calls, 1); h.dispose();
+});
 
 test("OpenCraft browser tools are stable namespaced DynamicTool specs", () => {
   assert.equal(OPENCRAFT_BROWSER_EXTENSION, "opencraft/browser-use");

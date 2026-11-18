@@ -134,3 +134,14 @@ Later opacity, visibility, display or geometry changes therefore remain visible
 to the next batch. The measurement entrance rechecks the reporting budget after
 its scheduled frame starts; an exhausted episode must not scan the DOM merely
 to produce an observation the reporter will discard.
+
+## Thread catalog consistency and ownership
+
+A shared Thread remains one Server-owned resource across independent authorized device replicas.
+Commit publication/catch-up is owned by Server fanout, not a source-tab cache invalidation.
+The catalog's page membership, native metadata, pin evidence, execution facts and temporary command
+intent have distinct owners. All clients must share their merge/acknowledgement contract rather
+than let list position or materialization overwrite entity facts. See
+[Thread catalog consistency](thread-catalog-consistency.md) for the ownership table, implementation
+gaps, bounded TLA+ models and deterministic actual-cache replay. This is verification/design tooling;
+its green model checks do not claim the shipping catalog implementation has been repaired.

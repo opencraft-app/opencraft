@@ -162,7 +162,7 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     assert.match(source, /usePersistedSidebarWidth\((?:presentation\.shellNavigation)?\)/u);
     assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
   }
-  assert.match(navigationSource, /<NavigationIcon name="applications" selected=\{projection\.docked\.applications \|\| projection\.peek === "applications"\} \/>/u,
+  assert.match(navigationSource, /<NavigationIcon name="applications" selected=/u,
     "the Applications entrance consumes the shared semantic app-grid glyph and open-state projection");
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);

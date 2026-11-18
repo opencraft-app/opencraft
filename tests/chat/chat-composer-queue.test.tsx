@@ -3,7 +3,7 @@ import test from "node:test";
 import { registerHooks } from "node:module";
 
 import React from "react";
-import { renderToStaticMarkup as renderMarkup } from "react-dom/server";
+import { renderToStaticMarkup as renderMarkup, renderToReadableStream } from "react-dom/server";
 import { LocaleRuntime } from "@opencraft/i18n";
 import { IntlRuntimeProvider } from "@opencraft/i18n/react";
 import zh from "../../apps/workbench-web/src/i18n/locales/zh-CN.json";
@@ -80,7 +80,7 @@ test("failed local queue entries can be deleted while unaccepted entries stay di
   assert.match(submitting, /aria-label="Delete queued message"[^>]*disabled=""/);
 });
 
-test("Workbench queue projection keeps uncertain delivery non-deletable through the Composer", () => {
+test("Workbench queue projection keeps uncertain delivery non-deletable through the Composer", async () => {
   const submission = {
     commandId: "local-follow-up",
     clientMessageId: "client-follow-up",
@@ -96,18 +96,21 @@ test("Workbench queue projection keeps uncertain delivery non-deletable through 
     { type: "existing-thread", key: createConversationKey("local", "thread-one") },
     { now: () => 100, createId: () => "composer-id" },
   );
-  const renderState = (state: "submitting" | "failed" | "unknown") => renderToStaticMarkup(
+  const renderState = async (state: "submitting" | "failed" | "unknown") => {
+    const stream = await renderToReadableStream(<IntlRuntimeProvider runtime={locale}>
     <OpenCraftComposer
       controller={controller}
       isStreaming
       queuedSubmissions={[queuedSubmissionPresentation({ ...submission, state }, true)]}
       onSubmit={() => false}
       onCancel={() => {}}
-    />,
-  );
-  assert.match(renderState("failed"), /aria-label="Delete queued message"(?![^>]*disabled="")/u);
-  assert.match(renderState("submitting"), /aria-label="Delete queued message"[^>]*disabled=""/u);
-  const unknown = renderState("unknown");
+    /></IntlRuntimeProvider>);
+    await stream.allReady;
+    return new Response(stream).text();
+  };
+  assert.match(await renderState("failed"), /aria-label="Delete queued message"(?![^>]*disabled="")/u);
+  assert.match(await renderState("submitting"), /aria-label="Delete queued message"[^>]*disabled=""/u);
+  const unknown = await renderState("unknown");
   assert.match(unknown, /data-state="unknown"/u);
   assert.match(unknown, /aria-label="Delete queued message"[^>]*disabled=""/u);
 });
@@ -150,7 +153,7 @@ test("unconfirmed delivery offers only its status and retry, without a discard d
   assert.doesNotMatch(markup, /Start queued message|Resume|Edit queued message|Delete queued message/);
 });
 
-test("unconfirmed delivery does not block sending or reordering later messages", () => {
+test("unconfirmed delivery blocks sending into the unresolved turn while queued intent remains reorderable", () => {
   const markup = renderToStaticMarkup(
     <ComposerQueueTray items={[
       { ...pendingItem, state: "queued", actionable: true },
@@ -158,7 +161,7 @@ test("unconfirmed delivery does not block sending or reordering later messages",
     ]} isResponseInProgress atomicSteer onRetryUnconfirmed={async () => {}} />,
   );
   assert.match(markup, /Delivery unconfirmed/);
-  assert.doesNotMatch(markup, /aria-label="Steer with queued message"[^>]*disabled=""/);
+  assert.match(markup, /aria-label="Steer with queued message"[^>]*disabled=""/);
   assert.doesNotMatch(markup, /aria-label="Reorder queued message"[^>]*disabled=""/);
   assert.doesNotMatch(markup, /alertdialog|Review &amp; discard/);
 });
@@ -256,6 +259,41 @@ test("pending queue accepts Steer independently of edit and delete custody", () 
   assert.match(render("starting"), /aria-label="Steer with queued message"[^>]*disabled=""/u);
 });
 
+test('Host queue permissions distinguish cancellation from editing and preserve older Hosts', () => {
+  const submission = {
+    commandId: 'managed', clientMessageId: 'actor-input:request', serverSubmissionId: 'managed',
+    input: [], preview: 'External message', state: 'queued' as const, operation: 'idle' as const,
+    createdAt: 1, pausedReason: null, error: null,
+    actions: { edit: false, delete: true, start: false, reorder: false }, steerable: false,
+  };
+  const item = queuedSubmissionPresentation(submission, true);
+  assert.equal(item.actionable, false);
+  assert.equal(item.deletable, true);
+  assert.equal(item.reorderable, false);
+  assert.equal(item.steerable, false);
+  const markup = renderToStaticMarkup(<ComposerQueueTray items={[{ ...item, editing: false }]} isResponseInProgress={false} />);
+  const buttons = [...markup.matchAll(/<button\b[^>]*>/g)].map(match => match[0]);
+  assert.ok(buttons.some(button => button.includes('Delete queued message') && !button.includes('disabled')));
+  assert.ok(buttons.some(button => button.includes('Edit queued message') && button.includes('disabled')));
+  const denied = queuedSubmissionPresentation({ ...submission, actions: { ...submission.actions, delete: false } }, true);
+  const deniedMarkup = renderToStaticMarkup(<ComposerQueueTray items={[{ ...denied, editing: false }]} isResponseInProgress={false} />);
+  assert.match(deniedMarkup, /<button[^>]*aria-label="Delete queued message"[^>]*disabled/);
+  const { actions: _actions, ...legacy } = submission;
+  assert.equal(queuedSubmissionPresentation(legacy, true).actionable, true);
+  assert.equal(queuedSubmissionPresentation(legacy, true).deletable, true);
+});
+
+
+test("queue labels project Markdown to visible single-line text", () => {
+  const markdown = "1. **邀请群成员**\n2. 查看 [文档](https://example.com/private-path) 和 `a_b`\n\n| 名称 | 状态 |\n| --- | --- |\n| 服务 | 正常 |";
+  const markup = renderToStaticMarkup(<ComposerQueueTray items={[{ ...pendingItem, preview: markdown }]} isResponseInProgress />);
+  const label = markup.match(/class="opencraft-composer-queue-item__preview">([^<]*)<\/span>/)?.[1];
+  assert.equal(label, "邀请群成员 查看 文档 和 a_b 名称 状态 服务 正常");
+  assert.doesNotMatch(markup, /private-path|\*\*|\| ---/);
+});
+
+
+
 
 test("externally managed delivery has no unsupported human retry action", () => {
   const markup = renderToStaticMarkup(<ComposerQueueTray items={[{
@@ -264,6 +302,7 @@ test("externally managed delivery has no unsupported human retry action", () => 
   assert.match(markup, /Delivery unconfirmed/);
   assert.ok(!markup.includes(">Retry</button>"));
 });
+
 
 
 test("older Hosts present unconfirmed status without an unsupported retry action", () => {

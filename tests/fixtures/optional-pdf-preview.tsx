@@ -1,7 +1,11 @@
+import { Context } from "@deepseek-ai/cordis";
+import { FilePreviewProvider, FilePreviewService } from "@opencraft/file-preview-web";
 import { useState } from 'react';
 import { WorkspacePdfPreviewLoader } from '../../apps/workbench-web/src/panels/workspace-pdf-preview-loader';
 import { createIntlTestRoot } from './intl-root';
 
+const context = new Context();
+await context.plugin(FilePreviewService);
 function Fixture() {
   const [pdf, setPdf] = useState<Blob | null>(null);
   return <>
@@ -10,4 +14,4 @@ function Fixture() {
     <div style={{ height: 600 }}>{pdf ? <WorkspacePdfPreviewLoader blob={pdf} name="fixture.pdf" /> : null}</div>
   </>;
 }
-createIntlTestRoot(document.getElementById('host')!).render(<Fixture />);
+createIntlTestRoot(document.getElementById('host')!).render(<FilePreviewProvider service={context.filePreviews}><Fixture /></FilePreviewProvider>);

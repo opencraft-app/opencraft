@@ -121,6 +121,7 @@ export interface UserMessageTimelineBlock extends TimelineBlockBase<"user-messag
   /** Host-authored hidden provenance, independent of message text and Turn owner. */
   readonly sender?: { readonly kind: "employee"; readonly loginName: string } | null;
   readonly steerEvidence?: import("@opencraft/appserver-protocol").SteerInputStatus;
+  readonly inputDelivery?: import("@opencraft/appserver-protocol").InputDeliveryReceipt;
   readonly steeringStatus: "pending" | "accepted" | "declined" | "cancelled" | null;
   /** Turn start time for the leading message; steering/hook messages may be timeless. */
   readonly sentAtMs: number | null;
@@ -182,7 +183,14 @@ export interface AutomaticApprovalReview {
   readonly decisionSource: "agent" | null;
 }
 
+/** Bounded, inert presentation retained across reload. Never a detail/action grant. */
+export interface ActivityDisplayPreview {
+  readonly presentation: import("./tool-activity").ToolActivityPresentation;
+  readonly commandSummary?: string;
+}
+
 export interface CommandExecutionTimelineBlock extends TimelineBlockBase<"command-execution"> {
+  readonly displayPreview?: ActivityDisplayPreview;
   readonly resultMissing?: boolean;
   readonly callId: string | null;
   readonly command: string;
@@ -234,6 +242,7 @@ export interface FileChange {
 }
 
 export interface PatchTimelineBlock extends TimelineBlockBase<"patch"> {
+  readonly displayPreview?: ActivityDisplayPreview;
   readonly title: string;
   readonly changes: readonly FileChange[];
   readonly automaticApprovalReviews: readonly AutomaticApprovalReview[];
@@ -241,17 +250,25 @@ export interface PatchTimelineBlock extends TimelineBlockBase<"patch"> {
 }
 
 export interface TurnDiffFileSummary {
+  /** Retained preview geometry input when unified-diff bodies are omitted. */
+  readonly inlinePreviewLineCount?: number;
   readonly path: string;
   readonly additions: number;
   readonly deletions: number;
 }
 
 /**
- * Aggregated diff for the complete Turn. This is deliberately separate from a
+ * Aggregate diff or recovered file-operation summary for the Turn, separate from a
  * fileChange Item: render live patch activity in the Activity group and
  * the Turn aggregate as a trailing resource card.
  */
 export interface TurnDiffTimelineBlock extends TimelineBlockBase<"turn-diff"> {
+  /** Header/files are present; review bytes may still be unavailable in display cache. */
+  readonly contentAvailable?: boolean;
+  /** Missing historical bodies must not appear as zero-count changes. */
+  readonly statsAvailable?: boolean;
+  /** Detail-load targets only; not transcript anchors or resource owners. */
+  readonly detailItemIds?: readonly string[];
   readonly unifiedDiff: string;
   readonly files: readonly TurnDiffFileSummary[];
   readonly additions: number;
@@ -277,6 +294,7 @@ export interface WebMcpToolSurfaceCall {
 }
 
 export interface ToolCallTimelineBlock extends TimelineBlockBase<"tool-call"> {
+  readonly displayPreview?: ActivityDisplayPreview;
   readonly resultMissing?: boolean;
   readonly activityPresentation?: {
     readonly operation: "read" | "search" | "other";
@@ -403,7 +421,7 @@ export interface SubagentTimelineBlock extends TimelineBlockBase<"subagent"> {
   readonly model: string | null;
   readonly reasoningEffort: string | null;
   readonly agentStates: unknown;
-  readonly activityKind: "started" | "interacted" | "interrupted" | null;
+  readonly activityKind: "started" | "interacted" | "interrupted" | "completed" | null;
   readonly agentPath: string | null;
   readonly status: TimelineExecutionStatus;
 }
@@ -552,6 +570,8 @@ export interface CompactionTimelineBlock extends TimelineBlockBase<"compaction">
 }
 
 export interface ImageTimelineBlock extends TimelineBlockBase<"image"> {
+  /** Trusted intrinsic layout metadata; independent of image fetch/decode timing. */
+  readonly dimensions?: { readonly width: number; readonly height: number };
   readonly uri: string | null;
   readonly alt: string | null;
   readonly generated: boolean;
@@ -598,7 +618,22 @@ export type TimelineBlock =
   | ImageTimelineBlock
   | UnknownTimelineBlock;
 
+/** Paint-only region descriptors preserve presentation when bodies are omitted.
+ * They describe structure, never authority, executable payloads or pixel sizes.
+ * Add future omitted regions here and handle them in the shared presenter. */
+export type TimelinePresentationRegion = {
+  readonly type: "activity";
+  readonly id: string;
+  readonly beforeBlockId: string | null;
+  readonly count: number;
+  readonly durationMs: number | null;
+  readonly workStatus: WorkStatusItem | null;
+};
+
 interface TimelineFrameBase<TType extends string> {
+  /** Undefined permits legacy clock-only fallback. An explicit list (including
+   * empty after trimming) owns omitted-region placement and forbids that guess. */
+  readonly presentationRegions?: readonly TimelinePresentationRegion[];
   readonly type: TType;
   readonly id: string;
   readonly turnId: TurnId;
@@ -634,7 +669,14 @@ export interface InteractionWaitPresentation {
   readonly recovery: "recovering" | "unavailable";
 }
 
+export interface ConversationDisplayHeader {
+  readonly title: string;
+  readonly project: string;
+}
+
 export interface TimelineSnapshot {
+  /** Account-scoped paint metadata, never a catalog or rename capability. */
+  readonly displayHeader?: ConversationDisplayHeader;
   /** Complete source count, not the number of Turns retained in this page. */
   readonly historyTurnCount?: number;
   readonly interactionWait?: InteractionWaitPresentation;

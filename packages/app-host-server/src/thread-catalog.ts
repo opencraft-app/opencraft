@@ -27,17 +27,28 @@ export class ThreadCatalogPublisher {
     // Directory observers cannot turn a committed native mutation into a failed RPC.
     try { this.notify(THREAD_CATALOG_CHANGED, event); } catch { /* Reconnect reconciles the directory snapshot. */ }
   }
+  /** Add committed creations only to the client view of the first native or cached page. */
+  projectList(params: unknown, result: unknown): unknown {
+    const input = object(params), output = object(result);
+    if (!this.unindexed.size || !Array.isArray(output.data) || output.catalogSnapshot
+      || input.cursor != null || input.archived === true || input.sortDirection === "asc"
+      || (input.sortKey != null && input.sortKey !== "updated_at")
+      || !Object.keys(input).every(key => ["cursor", "limit", "archived", "sortKey", "sortDirection", "useStateDbOnly"].includes(key))) return result;
+
+    const present = new Set(output.data.map(value => object(value).id));
+    const missing = [...this.unindexed.values()].filter(row => !present.has(row.id));
+    if (!missing.length) return result;
+    const data = [...missing, ...output.data]
+      .sort((a, b) => Number(object(b).recencyAt ?? object(b).updatedAt ?? 0) - Number(object(a).recencyAt ?? object(a).updatedAt ?? 0));
+    return { ...output, data };
+  }
+
   observeResult(method: string, params: unknown, result: unknown): void {
     const input = object(params), output = object(result), raw = object(output.thread);
     if (method === "thread/list" && Array.isArray(output.data)) {
       // Native persistence and its discovery index need not become visible together.
       // Retire a committed creation only when the native directory observes it.
       for (const value of output.data) { const id = object(value).id; if (typeof id === "string") this.unindexed.delete(id); }
-      const firstPage = input.cursor == null && input.archived !== true && input.sortDirection !== "asc"
-        && (input.sortKey == null || input.sortKey === "updated_at")
-        && Object.keys(input).every(key => ["cursor", "limit", "archived", "sortKey", "sortDirection", "useStateDbOnly"].includes(key));
-      if (firstPage && this.unindexed.size) output.data = [...this.unindexed.values(), ...output.data]
-        .sort((a, b) => Number(object(b).recencyAt ?? object(b).updatedAt ?? 0) - Number(object(a).recencyAt ?? object(a).updatedAt ?? 0));
       return;
     }
     if (method === "thread/unsubscribe" && typeof input.threadId === "string") { this.temporary.delete(input.threadId); }
@@ -72,7 +83,11 @@ export class ThreadCatalogPublisher {
       if (!row) return;
       if (this.firstTurnDurable) { if (this.allocations.has(key)) this.allocations.set(key, row); }
       else this.publish({ type: "upsert", thread: row });
-    } else if (method === "turn/started") this.commit(key);
+    } else if (method === "turn/started" && typeof object(input.turn).id === "string") {
+      this.commit(key);
+      this.publish({ type: "patch", threadId: key, status: { type: "active", activeFlags: [] } });
+    }
+    else if (method === "turn/completed") this.publish({ type: "invalidate" });
     else if (method === "thread/archived" || method === "thread/deleted") {
       this.allocations.delete(key); this.publish({ type: "remove", threadId: key });
     } else if (method === "thread/unarchived") this.publish({ type: "invalidate" });

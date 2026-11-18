@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { createComposerController } from "@opencraft/composer-core";
 import { createConversationKey } from "@opencraft/chat-core";
-import { OpenCraftComposer } from "@opencraft/composer-editor";
+import { OpenCraftComposer, type OpenCraftComposerHandle } from "@opencraft/composer-editor";
 import { ImageEditorContext } from "@opencraft/extension-react";
 import ImageEditor from "../../plugins/image-editor/src/editor";
 import editorStyles from "../../plugins/image-editor/src/editor.web.scss?inline";
@@ -24,12 +24,14 @@ presentationRoot.className = "opencraft-embedded-workbench-root";
 shadow.append(presentationRoot);
 
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="#2876c7"/><text x="60" y="260" fill="white" font-size="54">Sent image</text></svg>')}`;
+const gallery = new URLSearchParams(location.search).has("gallery");
 const block: UserMessageTimelineBlock = {
   type: "user-message",
   id: "sent-image",
   sourceItemIds: [],
   message: "",
-  content: [{ type: "image", source: image, detail: null }],
+  content: (gallery ? [image, image.replace("2876c7", "c77628"), image.replace("2876c7", "28a76c")] : [image])
+    .map(source => ({ type: "image" as const, source, detail: null })),
   attachments: [],
   messageKind: "user",
   clientId: null,
@@ -84,13 +86,17 @@ presentationRoot.style.minHeight = "100dvh";
 presentationRoot.style.background = "var(--color-background-primary)";
 const controller = createComposerController({ type: "existing-thread", key: createConversationKey("local", "images") }, { now: () => Date.now(), createId: () => crypto.randomUUID() });
 const completions: (() => void)[] = [];
+const composer = React.createRef<OpenCraftComposerHandle>();
 Object.assign(window, { imagePreviewFixture: { controller, switchThread: (id: string) => controller.dispatch({ type: "switch-target", target: { type: "existing-thread", key: createConversationKey("local", id) } }), complete: () => completions.splice(0).forEach(complete => complete()), submissions: 0, files: [] as File[] } });
 createIntlTestRoot(presentationRoot).render(
   <WorkbenchPresentationRootProvider target={presentationRoot}>
     <ImageEditorContext.Provider value={{ id: "opencraft.image-editor", Component: ImageEditor, styles: editorStyles }}>
+    <ConversationDocumentContext.Provider value={{ hostId: "local", conversationId: "images", cwd: null, theme: mode,
+      beginImageEdit: () => composer.current?.beginImageEdit() ?? null }}>
     {metadataOnly ? <ConversationDocumentContext.Provider value={metadataMedia}><SentImageMessage /></ConversationDocumentContext.Provider> : <SentImageMessage />}
+    </ConversationDocumentContext.Provider>
     <div style={{ position: "relative", maxWidth: 760, margin: "24px auto", padding: 12 }}>
-      <OpenCraftComposer isStreaming={false} controller={controller} portalContainer={presentationRoot} mentionSuggestionsEnabled={false} onCancel={() => {}}
+      <OpenCraftComposer isStreaming={false} ref={composer} controller={controller} portalContainer={presentationRoot} mentionSuggestionsEnabled={false} onCancel={() => {}}
         onSubmit={() => { (window as any).imagePreviewFixture.submissions++; return false; }}
         onResolveAttachment={(file, pending) => { (window as any).imagePreviewFixture.files.push(file); return new Promise(resolve => completions.push(() => resolve({ ...pending, lifecycle: "ready", uri: "file:///synthetic/" + pending.name, error: null }))); }} />
     </div>

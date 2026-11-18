@@ -26,7 +26,7 @@ test('real desktop static entry uses Main-held HttpOnly proof, shares one Human 
   const anonymous = await (await fetch(origin + '/__opencraft_account/status')).json() as any;
   assert.equal(anonymous.actor, null); assert.equal(anonymous.native, false);
   assert.equal((await fetch(origin + '/__opencraft_account/native', { method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: '{}' })).status, 403);
-  const daemonAuthority = await createDesktopAccountHost(join(root, 'account'), () => ''); t.after(() => daemonAuthority.close());
+  const daemonAuthority = await createDesktopAccountHost(join(root, 'account'), () => '', {storageRole:'borrower'}); t.after(() => daemonAuthority.close());
   const context = daemonAuthority.authenticateSession(host.createNativeSession());
   assert.equal(context?.actorContext?.actorId, state.actor.id); context?.resourceOwner?.assertCurrent();
   assert.equal(daemonAuthority.authenticateSession('arbitrary-renderer-actor'), null);
@@ -52,7 +52,7 @@ test('real desktop static entry uses Main-held HttpOnly proof, shares one Human 
   const anonymousDaemon = await handshake(); assert.equal(anonymousDaemon.ready.type, 'daemon/fatal'); anonymousDaemon.channel.close();
   const trusted = await handshake(host.createNativeSession()); assert.equal(trusted.ready.type, 'daemon/ready');
   const closed = new Promise<void>(resolve => trusted.channel.subscribeClose(() => resolve()));
-  const memberships = new MembershipStore(join(root, 'account', 'memberships.sqlite'));
+  const memberships = new MembershipStore(host.storage);
   memberships.setActor(state.actor.id, 'admin', false, 'test-revocation'); memberships.close();
   assert.throws(() => context?.resourceOwner?.assertCurrent(), /revoked/);
   assert.equal(daemonAuthority.authenticateSession(host.createNativeSession()), null);

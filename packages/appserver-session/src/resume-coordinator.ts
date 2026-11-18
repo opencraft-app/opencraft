@@ -158,6 +158,7 @@ export class ThreadResumeCoordinatorService extends Service {
   private executionNotificationRevision = 0;
   private readonly executionFieldRevisions = new Map<string, Map<keyof ThreadExecutionProjection, number>>();
   private readonly reads = new Map<string, HistoryOperation>();
+  private readonly snapshotFollowers = new Map<string, HistoryOperation<void>>();
   private readonly readContexts = new Map<string, DerivedReadContext>();
   private readonly rejectedResumes = new Map<string, { generation: number; error: AppServerRpcError }>();
   private readonly historyContexts = new Map<string, ResumeHistoryContext>();
@@ -235,6 +236,8 @@ export class ThreadResumeCoordinatorService extends Service {
       this.activations.clear();
       this.activatedGenerations.clear();
       this.executionFieldRevisions.clear();
+      for (const follower of [...this.snapshotFollowers.values()]) follower.cancel();
+      this.snapshotFollowers.clear();
       this.readContexts.clear();
       this.rejectedResumes.clear();
       this.historyContexts.clear();
@@ -257,6 +260,7 @@ export class ThreadResumeCoordinatorService extends Service {
   }
 
   private retireHistoryContext(threadId: string): void {
+    this.snapshotFollowers.get(threadId)?.cancel();
     this.readContexts.delete(threadId);
     this.historyContexts.delete(threadId);
     const retired = [this.backgroundHistory.get(threadId), this.olderPageRequests.get(threadId), this.historyRefreshes.get(threadId), ...(this.itemDetailRequests.get(threadId) ?? [])];
@@ -452,16 +456,20 @@ export class ThreadResumeCoordinatorService extends Service {
       const deadline = this.readClock.now() + this.requestTimeoutMs;
       try {
         let view = await this.readOnce(threadId, options, operation);
-        // History notifications and native snapshots lack a shared sequence: obtain a quiet
-        // canonical cut, preserving admitted requests across rereads.
         operation.assertCurrent();
-        while (this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
+        // Try one immediate quiet cut for short overlaps. Continuous output must
+        // not hold the baseline hostage: publish snapshots, never ambiguous deltas.
+        if (this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
           if (this.requestTimeoutMs > 0 && Number.isFinite(this.requestTimeoutMs)) operation.limitUntil(deadline,
-            new AppServerClientError("TIMEOUT", `History loading timed out after ${this.requestTimeoutMs} ms; retry the read`));
+            new AppServerClientError("TIMEOUT", "History loading timed out; retry the read"));
           operation.assertCurrent();
           this.ctx.resumeNotificationBuffer.supersedeNotifications(threadId);
           view = await this.readOnce(threadId, { ...options, historyCheckpoint: null }, operation, true);
           operation.assertCurrent();
+          if (this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
+            this.followSnapshots(threadId, options.unresolvedTurnIds);
+            return view;
+          }
         }
         this.ctx.resumeNotificationBuffer.release(threadId);
         operation.assertCurrent();
@@ -473,7 +481,48 @@ export class ThreadResumeCoordinatorService extends Service {
     }, true);
   }
 
-  private async readOnce(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds">, operation: HistoryOperation, reread = false): Promise<ThreadView> {
+  /** Unsequenced providers fall back to canonical snapshots while streaming.
+   * One reader per retained Thread; each RPC remains bounded. Connection loss,
+   * release and a new baseline revoke the reader before admitting a successor. */
+  private followSnapshots(threadId: string, unresolvedTurnIds?: readonly string[]): void {
+    this.ctx.resumeNotificationBuffer.followSnapshots(threadId);
+    void this.startHistoryOperation(this.snapshotFollowers, threadId, undefined, async operation => {
+      operation.onCancel = () => this.ctx.resumeNotificationBuffer.discard(threadId);
+      let failures = 0;
+      while (operation.current()) {
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { this.readClock.clearTimeout(timer); reject(historyAborted()); };
+          const timer = this.readClock.setTimeout(() => {
+            operation.signal.removeEventListener('abort', abort); resolve();
+          }, Math.min(30_000, 1_000 * 2 ** Math.min(failures, 5)));
+          operation.signal.addEventListener('abort', abort, { once: true });
+          if (operation.signal.aborted) abort();
+        });
+        operation.assertCurrent();
+        this.ctx.resumeNotificationBuffer.supersedeNotifications(threadId);
+        try {
+          await this.readOnce(threadId, { historyCheckpoint: null, unresolvedTurnIds }, operation, true, true);
+          operation.assertCurrent();
+          failures = 0;
+          if (!this.ctx.resumeNotificationBuffer.hasSnapshotOverlap(threadId)) {
+            this.ctx.resumeNotificationBuffer.release(threadId);
+            return;
+          }
+        } catch (error) {
+          operation.assertCurrent();
+          this.ctx.threadViews.update(threadId, view => ({ ...view,
+            historyError: error instanceof Error ? error : new Error('History refresh failed') }));
+          operation.assertCurrent();
+          // Permanent failures remain fenced until an explicit fresh baseline.
+          if (error instanceof AppServerRpcError && !isRetryableAppServerRpcError(error)
+            && ![-32000, -32603].includes(error.code)) return;
+          failures++;
+        }
+      }
+    }).catch(() => { /* Cancellation belongs to the history owner. */ });
+  }
+
+  private async readOnce(threadId: string, options: Pick<ResumeThreadOptions, "historyCheckpoint" | "unresolvedTurnIds">, operation: Pick<HistoryOperation, "signal" | "assertCurrent">, reread = false, following = false): Promise<ThreadView> {
     operation.assertCurrent();
     const initial = this.ctx.threadViews.getOrCreate(threadId);
     operation.assertCurrent();
@@ -483,7 +532,7 @@ export class ThreadResumeCoordinatorService extends Service {
     const supportsWindow = readCapability?.version === 1 && readCapability.initialTurnsPage !== false;
     const requestRead = (window: boolean) => this.client.request("thread/read", { threadId, includeTurns: false,
       ...(readCapability?.version === 1 ? { watch: true } : {}),
-      ...(window ? { initialTurnsPage: { limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
+      ...(window ? { initialTurnsPage: { ...(readCapability?.imageResources === true ? { imageResources: true } : {}), limit: readCapability?.itemDetails === true ? 1 : 10, itemsView: readCapability?.itemDetails === true ? "presentation" as const : "full" as const, sortDirection: "desc" as const } } : {}),
       ...(readCapability?.boundedRecovery === true && options.historyCheckpoint ? { historyCheckpoint: options.historyCheckpoint } : {}),
     }, { timeoutMs: this.requestTimeoutMs, priority: "user-visible", signal: operation.signal, historySource: reread ? "snapshot-reread" : "open" });
     let result;
@@ -510,22 +559,35 @@ export class ThreadResumeCoordinatorService extends Service {
     operation.assertCurrent();
     if (this.disposed) throw new Error("Thread reader was disposed");
     const detailGeneration = ++historyDetailReadGeneration;
-    this.readContexts.set(threadId, { generation, hydrateItems: !supportsWindow });
-    return this.ctx.threadViews.update(threadId, current => ({
-      ...current, thread: { ...metadata, historyTurnCount: page?.totalTurnCount ?? metadata.historyTurnCount }, connectionGeneration: generation,
-      resumeState: current.connectionGeneration === generation ? current.resumeState : "needs_resume",
-      turns: tagHistoryDetails(recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
-        ? reconcileHistoryTurns(current.turns, turns, "latest", { baselineTurns: initial.turns })
-        : reconcileRecoveryWindow(current.turns, turns, initial.turns, options.unresolvedTurnIds), detailGeneration),
-      historyMode: mode ?? "legacy",
-      ...(recovery ? { historyCheckpoint: recovery.checkpoint } : { historyCheckpoint: undefined }),
-      historySource: paginated ? "paginated" : "thread-read-fallback",
-      tailHydrationComplete: recovery && recovery.mode !== "replace" ? initial.tailHydrationComplete : page?.nextCursor == null,
-      turnsPagination: recovery && recovery.mode !== "replace" ? initial.turnsPagination : { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: turns[0]?.id ?? null,
-        hasLoadedOldest: page?.nextCursor == null, isLoadingOlder: false },
-      execution: this.executionFromRead(threadId, generation, metadata, current.execution),
-      resumeError: null, historyError: null,
-    }));
+    return this.ctx.threadViews.update(threadId, current => {
+      // A follower refreshes the tail, not the user's loaded historical range.
+      // Preserve a prefix only with a shared boundary and a partial page. A
+      // disjoint/full snapshot or changed epoch still replaces the baseline.
+      const anchor = turns.length ? current.turns.findIndex(turn => turn.id === turns[0]!.id) : -1;
+      const sameEpoch = !recovery || !current.historyCheckpoint || recovery.checkpoint.epoch === current.historyCheckpoint.epoch;
+      const preservePrefix = following && page?.nextCursor != null && anchor >= 0 && sameEpoch;
+      const prefix = preservePrefix ? current.turns.slice(0, anchor) : [];
+      const tail = preservePrefix ? current.turns.slice(anchor) : current.turns;
+      // In-flight older/detail reads belong to this same source, not a new
+      // source per polling tick. Fresh baselines still retire their ownership.
+      if (!preservePrefix || !this.readContexts.has(threadId))
+        this.readContexts.set(threadId, { generation, hydrateItems: !supportsWindow });
+      return {
+        ...current, thread: { ...metadata, historyTurnCount: page?.totalTurnCount ?? metadata.historyTurnCount }, connectionGeneration: generation,
+        resumeState: current.connectionGeneration === generation ? current.resumeState : "needs_resume",
+        turns: recovery?.mode === "unchanged" ? current.turns : recovery?.mode === "append"
+          ? tagHistoryDetails(reconcileHistoryTurns(current.turns, turns, "latest", { baselineTurns: initial.turns }), detailGeneration)
+          : [...prefix, ...tagHistoryDetails(reconcileRecoveryWindow(tail, turns, initial.turns, options.unresolvedTurnIds), detailGeneration)],
+        historyMode: mode ?? "legacy",
+        ...(recovery ? { historyCheckpoint: recovery.checkpoint } : { historyCheckpoint: undefined }),
+        historySource: paginated ? "paginated" : "thread-read-fallback",
+        tailHydrationComplete: preservePrefix ? current.tailHydrationComplete : recovery && recovery.mode !== "replace" ? initial.tailHydrationComplete : page?.nextCursor == null,
+        turnsPagination: preservePrefix ? current.turnsPagination : recovery && recovery.mode !== "replace" ? initial.turnsPagination : { olderCursor: page?.nextCursor ?? null, oldestLoadedTurnId: turns[0]?.id ?? null,
+          hasLoadedOldest: page?.nextCursor == null, isLoadingOlder: false },
+        execution: this.executionFromRead(threadId, generation, metadata, current.execution),
+        resumeError: null, historyError: null,
+      };
+    });
   }
 
   /** A successful fork already owns a live stream; an ephemeral fork has no rollout to Resume. */

@@ -58,6 +58,22 @@ test("archived conversations render one read-only restore state instead of a ret
   } finally { runtime.dispose(); }
 });
 
+test('authentication and permission failures have distinct recovery actions without refreshing the chat', () => {
+  const runtime = new LocaleRuntime([]);
+  try {
+    for (const Component of [ConversationRecoveryNotice, ConversationRecoveryEmptyState]) {
+      for (const accessFailure of ['authentication', 'permission'] as const) {
+        const markup = renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime,
+          children: createElement(Component, { failed: true, accessFailure, onRetry() {} }) }));
+        assert.match(markup, /Retry connection/);
+        if (accessFailure === 'authentication') { assert.match(markup, /Open sign-in/); assert.match(markup, /This chat will stay open/); }
+        else { assert.match(markup, /administrator/); assert.doesNotMatch(markup, /Open sign-in/); }
+        assert.doesNotMatch(markup, /Reconnecting/);
+      }
+    }
+  } finally { runtime.dispose(); }
+});
+
 test("technical details distinguish history errors and never copy remote text or payloads", async () => {
   const { createConversationRecoveryDiagnostic, conversationRecoveryDiagnosticText } = await import("../../apps/workbench-web/src/runtime/conversation-recovery-diagnostic");
   const diagnostic = createConversationRecoveryDiagnostic({

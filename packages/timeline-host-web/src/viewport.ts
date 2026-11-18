@@ -118,6 +118,10 @@ function applyTimelineViewportDocumentExtent(
     timelineElasticEffect: String(policy.localElasticEffect),
     timelineTracksVisualViewport: String(policy.tracksVisualViewport),
     timelineViewportOccluded: String(layout.occludedBottomPx > 0),
+    // Capacity reduction is observable even when native pan cancels the inferred
+    // bottom inset. Do not reinterpret it as a measured keyboard rectangle.
+    timelineEditingViewportReduced: String(policy.tracksVisualViewport && snapshot.editableFocused
+      && Math.abs(snapshot.scale - 1) <= 0.01 && layout.occludedBottomPx > 0),
     timelineKeyboardOpen: String(snapshot.keyboardInsetBottomPx > 0),
   };
   for (const [key, value] of Object.entries(attributes)) {

@@ -86,6 +86,32 @@ class ForkSourceTests(unittest.TestCase):
             self.fork().checkout()
         self.assertEqual(self.native.read_text(), 'local investigation\n')
 
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux container tool resolution')
+    def test_build_children_use_synced_gn_instead_of_depot_wrapper(self):
+        fork = self.fork()
+        fork.checkout()
+        (self.root / 'src/DEPS').write_text('# synchronized fixture\n')
+        (self.directory / 'args.gn').write_text('# fixture\n')
+        gn = self.root / 'src/buildtools/linux64/gn'
+        ninja = self.root / 'src/third_party/ninja/ninja'
+        shadow = Path(self.temp.name) / 'depot-wrapper/gn'
+        scripts = {
+            gn: 'import sys\nif sys.argv[1] != "gen": print("synced-gn")\n',
+            shadow: 'raise SystemExit("uninitialized depot wrapper selected")\n',
+            ninja: ('import subprocess\nfrom pathlib import Path\n'
+                    'assert subprocess.check_output(["gn", "args"], text=True).strip() == "synced-gn"\n'
+                    'out = Path("out/OpenCraft")\nout.mkdir(parents=True, exist_ok=True)\n'
+                    '(out / "electron").write_bytes(b"fixture executable")\n'
+                    '(out / "dist.zip").write_bytes(b"fixture distribution")\n'),
+        }
+        for path, body in scripts.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text('#!' + sys.executable + '\n' + body)
+            path.chmod(0o755)
+        with patch.dict(module.os.environ, {'PATH': str(shadow.parent) + module.os.pathsep + module.os.environ.get('PATH', '')}):
+            result = fork.build(6)
+        self.assertTrue(result['compiled'])
+
     def test_clean_unregistered_change_is_rejected(self):
         fork = self.fork()
         fork.checkout()

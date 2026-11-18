@@ -36,9 +36,22 @@ export function createThreadOrchestrationExecution(getAppHost, { prepared = () =
     },
     create: (operationId, threadId, settings, canAdmit) => invoke(settings.orchestrationDriver ?? target(settings.driver ?? 'codex'),
       'opencraft/orchestration/create', threadId, operationId, { settings }, canAdmit),
+    createRoot: (operationId, settings, canAdmit) => invoke('codex', 'opencraft/orchestration/create', '', operationId, { settings: {...settings,orchestrationRoot:true} }, canAdmit),
+    publishRoot: async operationId => { await invoke('codex','opencraft/orchestration/publish','',operationId); },
+    finalizeRoot: async (operationId, threadId, settings, canAdmit) => {
+      await invoke('codex','opencraft/orchestration/finalize',threadId,operationId,{settings},canAdmit);
+    },
     acknowledge: async operationId => {
       const settings = prepared(operationId);
       return (await invoke(settings?.orchestrationDriver ?? target(settings?.driver ?? 'codex'), 'opencraft/orchestration/ack', '', operationId)).acknowledged === true;
+    },
+    interrupt: async(threadId,turnId,canAdmit)=>{
+      if(!canAdmit())throw Error('Task authority revoked');
+      const driver=requireDriver(driverForThread(threadId));
+      if(driver==='codex')return invoke(driver,'opencraft/orchestration/interrupt',threadId,'stop:'+randomUUID(),{turnId},canAdmit);
+      const host=getAppHost();if(!host)throw Error('Orchestration Host unavailable');
+      return callConversationHost(host,{hostId:'opencraft-server',threadId},'stop:'+randomUUID(),
+        'turn/interrupt',{turnId},{sender:null,orchestrationCanAdmit:canAdmit});
     },
     snapshot: threadId => invoke(driverForThread(threadId), 'opencraft/orchestration/status', threadId, `status:${randomUUID()}`),
     inspect: (threadId, limit) => invoke(driverForThread(threadId), 'opencraft/orchestration/inspect', threadId, `inspect:${randomUUID()}`, { limit }),
