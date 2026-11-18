@@ -7,8 +7,9 @@ import { hasLedger, LEDGER_SQL, prepareMigrations, validateHistory, type Migrati
 // SQLite removes IF NOT EXISTS when persisting CREATE TABLE. Ignore layout, not
 // quoted literals or identifiers; reject alternate ledger constraints and columns.
 function normalizeLedgerDefinition(sql: string): string {
-  return sql.replace(/^CREATE TABLE IF NOT EXISTS /i, "CREATE TABLE ")
-    .replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\s+/g, token => /^\s/.test(token) ? "" : token);
+  return sql
+    .replace(/^CREATE TABLE IF NOT EXISTS /i, "CREATE TABLE ")
+    .replace(/'(?:''|[^'])*'|"(?:""|[^"])*"|\s+/g, (token) => (/^\s/.test(token) ? "" : token));
 }
 
 export interface MigrationHistory {
@@ -33,29 +34,42 @@ export function selectMigrationHistory(
   histories: readonly MigrationHistory[],
   preferredId?: string,
 ): { readonly history: MigrationHistory; readonly appliedVersion: number } {
-  if (!histories.length || new Set(histories.map(history => history.id)).size !== histories.length
-    || histories.some(history => !history.id)) {
+  if (
+    !histories.length ||
+    new Set(histories.map((history) => history.id)).size !== histories.length ||
+    histories.some((history) => !history.id)
+  ) {
     throw new SqliteLifecycleError("history-mismatch", "Invalid migration histories");
   }
   // Validate every owner manifest before observing a match; an invalid unused
   // alternative must not silently turn an ambiguous configuration into a match.
-  const prepared = histories.map(history => ({ history, migrations: prepareMigrations(history.migrations) }));
+  const prepared = histories.map((history) => ({ history, migrations: prepareMigrations(history.migrations) }));
   if (!hasLedger(database)) throw new SqliteLifecycleError("history-mismatch", "Database migration ledger is missing");
-  const ledger = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get()?.sql;
+  const ledger = database
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='schema_migrations'")
+    .get()?.sql;
   if (typeof ledger !== "string" || normalizeLedgerDefinition(ledger) !== normalizeLedgerDefinition(LEDGER_SQL)) {
     throw new SqliteLifecycleError("history-mismatch", "Database migration ledger schema is invalid");
   }
   const matches: Array<{ history: MigrationHistory; appliedVersion: number }> = [];
   for (const { history, migrations } of prepared) {
     let applied: number;
-    try { applied = validateHistory(database, migrations); }
-    catch (error) {
-      if (error instanceof SqliteLifecycleError && (error.kind === "history-mismatch" || error.kind === "newer-schema")) continue;
+    try {
+      applied = validateHistory(database, migrations);
+    } catch (error) {
+      if (error instanceof SqliteLifecycleError && (error.kind === "history-mismatch" || error.kind === "newer-schema"))
+        continue;
       throw error;
     }
     if (applied === 0) continue;
-    try { createSchemaValidator(migrations.slice(0, applied).map(migration => migration.sql).join(";\n"))(database); }
-    catch (error) {
+    try {
+      createSchemaValidator(
+        migrations
+          .slice(0, applied)
+          .map((migration) => migration.sql)
+          .join(";\n"),
+      )(database);
+    } catch (error) {
       if (error instanceof SqliteLifecycleError && error.kind === "history-mismatch") continue;
       throw error;
     }
@@ -63,8 +77,11 @@ export function selectMigrationHistory(
   }
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1 && preferredId !== undefined) {
-    const preferred = matches.find(match => match.history.id === preferredId);
+    const preferred = matches.find((match) => match.history.id === preferredId);
     if (preferred) return preferred;
   }
-  throw new SqliteLifecycleError("history-mismatch", matches.length ? "Migration history is ambiguous" : "Unknown migration history or schema");
+  throw new SqliteLifecycleError(
+    "history-mismatch",
+    matches.length ? "Migration history is ambiguous" : "Unknown migration history or schema",
+  );
 }
