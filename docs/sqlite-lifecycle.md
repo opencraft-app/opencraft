@@ -931,3 +931,21 @@ Legacy clients explicitly retain full-history reads. Tests cover bounded cold
 startup and real cold-client responses with 20,000 facts, indexed query plans,
 owner isolation, offline drafts, and v1 backfill. Global active/account projection
 cost remains separate; permanent anti-resurrection facts are never expired.
+
+
+### 既有追加迁移的 ledger identity 采纳
+
+独立 owner 转入 Drizzle 时，如果冻结基线之后已经存在带账本的增量，不能仅把旧 SQL 改名成 `0001_*` 后重放：账本同时校验 version、name 和 SQL 的 SHA-256。受管执行器和数据库账本不做改写。
+
+这类已发布增量可以在 owner 的 schema 目录添加 `adopted-identities.json`，用源码清单为**新增** journal 条目绑定其原有身份，例如：
+
+```json
+[{"tag":"0001_adopt_note","version":2,"name":"published-retry-note","checksum":"<原始执行 SQL 的 64 位小写 SHA-256>"}]
+```
+
+- 原 `baseline.json`、`0000` SQL/snapshot 及其 `published.json` 冻结前缀保持不变；版本必须等于基线长度加 journal 序号，不能挪到其他位置或覆盖基线。
+- 将原执行 SQL **逐字节**保存到对应 `.sql`，并用 Drizzle schema/snapshot 描述其真实结构；此路径不重新格式化 index 表达式。STRICT/table-options 保护仍执行，若导致 SQL 身份变化则拒绝采纳，不能以新 hash 冒充原有账本。
+- `compile`/`generate` 仍检查已有冻结记录，`check` 要求追加记录已经审查并 `freeze`。新的 publication 额外冻结 `ledgerName`；SQL、版本、tag、时间、snapshot 与编译 checksum 也继续锁定。移除或改写采纳映射不能重冻洗白旧记录。
+- 后续正常生成的迁移继续以 journal tag 为 name，不需要这个文件。运行时仍消费生成的契约并严格验证全部历史；采纳清单不从线上数据库或客户端请求读取，也不允许任意新版/未知结构。
+
+采纳前必须核实原 SQL/name/version 与既有账本来源，审查 schema，并验证旧基线、既有增量、空库、重复打开及后续追加迁移的数据/备份行为。此工具不自动认领分叉版本，不允许两个不同 SQL 共用同一版本。测试见 [published ledger adoption](../tests/storage/published-ledger-adoption.test.ts)。

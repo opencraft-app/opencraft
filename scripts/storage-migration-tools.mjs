@@ -41,7 +41,10 @@ export function migrationPublications(directory, journal, migrations, baseline =
     return { tag: entry.tag, when: entry.when, version: migration?.version ?? 0,
       sqlChecksum: digest(readFileSync(join(directory, 'migrations', entry.tag + '.sql'))),
       snapshotChecksum: digest(readFileSync(join(directory, 'migrations/meta', String(index).padStart(4, '0') + '_snapshot.json'))),
-      compiledChecksum: migration ? digest(migration.sql) : null };
+      compiledChecksum: migration ? digest(migration.sql) : null,
+      // Existing manifests remain byte-for-byte compatible. An adopted ledger
+      // name is independently frozen: equal SQL is not equal migration history.
+      ...(migration && migration.name !== entry.tag ? { ledgerName: migration.name } : {}) };
   });
 }
 
@@ -74,16 +77,45 @@ export function compileStore(directory, { requirePublished = false } = {}) {
   const journal = readJournal(folder);
   if (digest(readFileSync(join(folder, '0000_legacy_baseline.sql'))) !== baseline.baselineSqlChecksum
     || digest(readFileSync(join(folder, 'meta/0000_snapshot.json'))) !== baseline.baselineSnapshotChecksum) throw new Error('Published schema baseline changed');
+  const adopted = readAdoptedIdentities(directory, journal, baseline.legacy.length);
   const migrations = journal.entries.slice(1).map((entry, index) => {
     const original = readFileSync(join(folder, entry.tag + '.sql'), 'utf8');
+    const identity = adopted.get(entry.tag);
     const snapshot = JSON.parse(readFileSync(join(folder, 'meta', String(entry.idx).padStart(4, '0') + '_snapshot.json'), 'utf8'));
-    const sql = restoreIndexExpressions(original, snapshot);
+    // A previously executed ledger hashes its original SQL, not Drizzle's
+    // normalized index spelling. Never silently rewrite that published identity.
+    const sql = identity ? original : restoreIndexExpressions(original, snapshot);
     if (/\bDROP\s+INDEX\s+[`"]?legacy_unique_/i.test(sql)) throw new Error('Changing an adopted SQLite UNIQUE constraint requires a transactional table rebuild');
     if (/\bPRAGMA\s+(?:foreign_keys|journal_mode)\s*=/i.test(sql)) throw new Error('SQLite rebuild must use transactional SQL; foreign_keys cannot toggle inside a managed migration');
-    return { version: baseline.legacy.length + index + 1, name: entry.tag, sql: retainTableOptions(sql, baseline.tableOptions) };
+    const compiledSql = retainTableOptions(sql, baseline.tableOptions);
+    if (identity && digest(compiledSql) !== identity.checksum) throw new Error(`Adopted migration SQL differs: ${entry.tag}`);
+    return { version: baseline.legacy.length + index + 1, name: identity?.name ?? entry.tag, sql: compiledSql };
   });
   verifyPublishedMigrations(directory, journal, migrations, { baseline: true, requirePublished });
   return { baseline: baseline.legacy, migrations };
+}
+
+/** Optional source-only adoption map. It cannot change versions or execute SQL;
+ * every entry must describe an appended journal item and its exact old ledger. */
+function readAdoptedIdentities(directory, journal, prefixLength) {
+  let entries;
+  try { entries = JSON.parse(readFileSync(join(directory, 'adopted-identities.json'), 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return new Map(); throw error; }
+  if (!Array.isArray(entries)) throw new Error('Invalid adopted migration identities');
+  const appended = new Map(journal.entries.slice(1).map((entry, index) => [entry.tag, prefixLength + index + 1]));
+  const adopted = new Map();
+  for (const entry of entries) {
+    if (!entry || typeof entry !== 'object' || Object.keys(entry).sort().join(',') !== 'checksum,name,tag,version'
+      || typeof entry.tag !== 'string' || adopted.has(entry.tag) || !appended.has(entry.tag)
+      || entry.version !== appended.get(entry.tag)
+      || typeof entry.name !== 'string' || !entry.name.trim() || entry.name.trim() !== entry.name
+      || entry.name === entry.tag || entry.name.length > 128 || /[\u0000-\u001f\u007f]/.test(entry.name)
+      || typeof entry.checksum !== 'string' || !/^[a-f0-9]{64}$/.test(entry.checksum)) {
+      throw new Error('Invalid adopted migration identity');
+    }
+    adopted.set(entry.tag, entry);
+  }
+  return adopted;
 }
 
 /** Drizzle Kit's SQLite index squash format splits expression commas. Recover
