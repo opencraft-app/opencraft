@@ -8769,6 +8769,14 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
+.thread-subagent-trigger {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  text-align: start;
+}
+
 .thread-subagent-activity {
   min-width: 0;
   color: var(--color-text-secondary);
@@ -8781,38 +8789,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
     min-height: 32px;
     align-items: center;
     gap: 7px;
-  }
-
-  &__toggle {
-    display: inline-flex;
-    min-width: 0;
-    min-height: 32px;
-    width: 100%;
-    justify-content: flex-start;
-    text-align: start;
-    flex: 1 1 auto;
-    align-items: center;
-    padding: 0 2px 0 0;
-    border: 0;
-    background: transparent;
-    color: color-mix(in srgb, var(--color-text-tertiary) 90%, transparent);
-
-    svg {
-      color: var(--color-icon-tertiary);
-    }
-    @include controls.hover-capable {
-      &:not(:disabled):hover {
-        color: var(--color-text);
-      }
-    }
-    &:disabled {
-      cursor: default;
-    }
-    &:focus-visible {
-      border-radius: 4px;
-      outline: 2px solid var(--color-focus-ring);
-      outline-offset: 1px;
-    }
   }
 
   &__status {
@@ -8883,8 +8859,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 
   &__name.ui-button {
-    min-height: 0;
-    padding: 0;
     white-space: normal;
     text-align: start;
     overflow-wrap: anywhere;

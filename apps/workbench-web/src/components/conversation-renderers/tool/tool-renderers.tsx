@@ -409,7 +409,7 @@ function Agents({ blocks, grouped, restoreKey, renderToggle }: {
 
 export function SubagentBlock({ block }: { block: AgentBlock }) {
   return <Agents blocks={[block]} grouped={false} restoreKey={JSON.stringify(["subagent", block.id])} renderToggle={props =>
-    <Button variant="ghost" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-activity-item__header"
+    <Button variant="link" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-subagent-trigger"
       aria-expanded={props.open} disabled={props.disabled} onClick={props.onClick}>
       <ActivityIcon><AgentActivityIcon /></ActivityIcon><span className="thread-activity-item__summary">{props.label}</span>
       <ChevronRight size={12} aria-hidden className="thread-subagent-activity__chevron" />
@@ -419,7 +419,7 @@ export function SubagentBlock({ block }: { block: AgentBlock }) {
 export function SubagentActivityGroup({ unit }: { readonly unit: SubagentActivityRenderUnit }) {
   return unit.blocks.length > 0 ? <Agents blocks={unit.blocks} grouped={unit.blocks.length > 1}
     restoreKey={JSON.stringify(["subagent-group", unit.id])} renderToggle={props =>
-    <Button variant="ghost" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-activity-item__header"
+    <Button variant="link" size="sm" contentLayout="row" className="thread-subagent-activity__toggle thread-subagent-trigger"
       aria-expanded={props.open} disabled={props.disabled} onClick={props.onClick}>
       <ActivityIcon><AgentActivityIcon /></ActivityIcon><span className="thread-activity-item__summary">{props.label}</span>
       <ChevronRight size={12} aria-hidden className="thread-subagent-activity__chevron" />

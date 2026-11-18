@@ -56,7 +56,8 @@ export function inspectActivityJsx(source, file = "fixture.tsx") {
       const find = child => {
         if ((ts.isJsxOpeningElement(child) || ts.isJsxSelfClosingElement(child)) && ["ActivityIcon", "ActivityRowContent"].includes(child.tagName.getText(tree))) rail = true;
         if (ts.isJsxAttribute(child) && child.name.getText(tree) === "className" && child.initializer
-          && /\bthread-activity-item__header\b/.test(child.initializer.getText(tree))) header = true;
+          && (/\bthread-activity-item__header\b/.test(child.initializer.getText(tree))
+            || (node.name.text === "SubagentBlock" && /\bthread-subagent-trigger\b/.test(child.initializer.getText(tree))))) header = true;
         ts.forEachChild(child, find);
       };
       find(node);
