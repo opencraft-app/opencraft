@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
@@ -84,9 +86,34 @@ test('core tests run the full typecheck and every npm test suite as independent 
   assert.match(core, /run: npm run check:format -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
   assert.match(core, /run: npm run lint:changed -- --base HEAD\^1\n\s+if: always\(\) && steps\.dependencies\.outcome == 'success' && github\.event_name == 'pull_request'/);
   // Test files run with a private HOME/TMPDIR and fail on processes they leave behind.
-  // Set through GITHUB_ENV after npm ci: checkout and setup-node run on Node before the file exists.
-  assert.doesNotMatch(core, /^    env:[\s\S]*?NODE_OPTIONS/m);
-  assert.match(core, /run: npm ci --no-audit --no-fund\n\s+#[^\n]*\n(?:\s+#[^\n]*\n)*\s+- name: Enable test isolation\n\s+run: echo "NODE_OPTIONS=--import \$GITHUB_WORKSPACE\/tests\/support\/test-isolation\.mjs --test-global-setup=\$GITHUB_WORKSPACE\/tests\/support\/test-isolation-global\.mjs" >> "\$GITHUB_ENV"/);
+  // The runner forbids NODE_OPTIONS in GITHUB_ENV; source it in subsequent Bash steps instead.
+  for (const isolatedJob of [core, job('gate-tests')]) {
+    assert.doesNotMatch(isolatedJob, /^    env:[\s\S]*?NODE_OPTIONS/m);
+    assert.doesNotMatch(isolatedJob, /echo "NODE_OPTIONS=.*\$GITHUB_ENV/);
+    assert.match(isolatedJob, /isolation_env="\$\(mktemp "\$RUNNER_TEMP\/opencraft-isolation\.XXXXXX"\)"/);
+    assert.match(isolatedJob, /printf 'export NODE_OPTIONS=%q\\n'.*test-isolation\.mjs.*test-isolation-global\.mjs/);
+    assert.match(isolatedJob, /echo "BASH_ENV=\$isolation_env" >> "\$GITHUB_ENV"/);
+  }
+});
+
+test('isolation setup supplies NODE_OPTIONS to subsequent Bash steps', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'opencraft-ci-isolation-'));
+  try {
+    const script = job('core-tests').match(/- name: Enable test isolation\n        run: \|\n((?:          [^\n]*\n)+)/)[1].replace(/^          /gm, '');
+    const envFile = join(dir, 'github-env');
+    const env = { ...process.env, GITHUB_WORKSPACE: process.cwd(), RUNNER_TEMP: dir, GITHUB_ENV: envFile };
+    delete env.BASH_ENV;
+    delete env.NODE_OPTIONS;
+    const setup = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script], { env, encoding: 'utf8' });
+    assert.equal(setup.status, 0, setup.stderr);
+    const match = readFileSync(envFile, 'utf8').match(/^BASH_ENV=(.+)$/m);
+    assert.ok(match);
+    const next = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', 'printf "%s" "$NODE_OPTIONS"'], { env: { ...env, BASH_ENV: match[1] }, encoding: 'utf8' });
+    assert.equal(next.status, 0, next.stderr);
+    assert.equal(next.stdout, `--import ${process.cwd()}/tests/support/test-isolation.mjs --test-global-setup=${process.cwd()}/tests/support/test-isolation-global.mjs`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('every main commit runs build-matrix in its own run', () => {
@@ -141,7 +168,7 @@ test('CI and Claude Code cloud sessions share one Linux toolchain setup', () => 
   // The hook enables exactly the test isolation CI enables.
   const hook = readFileSync(new URL('../../.claude/hooks/session-start.sh', import.meta.url), 'utf8');
   assert.match(hook, /setup-toolchain\.sh" all/);
-  const ci = workflow.match(/echo "NODE_OPTIONS=([^"]+)" >> "\$GITHUB_ENV"/)[1].replaceAll('$GITHUB_WORKSPACE', '$root');
+  const ci = workflow.match(/printf 'export NODE_OPTIONS=%q\\n' "([^"]+)"/)[1].replaceAll('$GITHUB_WORKSPACE', '$root');
   assert.ok(hook.includes(`export NODE_OPTIONS=\\"${ci}\\"`), 'session-start.sh NODE_OPTIONS differs from CI');
 });
 
