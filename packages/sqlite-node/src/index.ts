@@ -9,3 +9,4 @@ export { resolveStoreMigrations, resolveMigrationContract, type StorageMigration
 export { captureSqliteReadGuard } from "./read-guard.js";
 
 export { selectMigrationHistory, type MigrationHistory } from "./history-selection.js";
+export { assertAppendOnlyMigrationHistories } from "./history-append-only.js";

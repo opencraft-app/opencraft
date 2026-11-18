@@ -235,3 +235,41 @@ test("data-dependent migrations are rejected rather than guessed from an empty s
     database.close();
   }
 });
+
+test("append-only release checks preserve every published branch and exact SQL", async () => {
+  const { assertAppendOnlyMigrationHistories } = await import("../../packages/sqlite-node/src/index.js");
+  const previous = [{ id: "left", migrations: left }, { id: "right", migrations: right }];
+  const future = previous.map((history) => ({
+    ...history,
+    migrations: [...history.migrations, { version: 4, name: "future", sql: "CREATE TABLE future(id INTEGER) STRICT" }],
+  }));
+  assert.doesNotThrow(() => assertAppendOnlyMigrationHistories(previous, future));
+  assert.doesNotThrow(() => assertAppendOnlyMigrationHistories(previous, previous));
+  const reject = (histories: typeof future) => assert.throws(() => assertAppendOnlyMigrationHistories(previous, histories), { kind: "history-mismatch" });
+  reject(future.slice(0, 1));
+  reject(future.map((h) => h.id === "left" ? { ...h, migrations: h.migrations.slice(0, 2) } : h));
+  reject(future.map((h) => h.id === "left" ? { ...h, migrations: h.migrations.map((m) => m.version === 2 ? { ...m, sql: m.sql + " " } : m) } : h));
+  reject(future.map((h) => h.id === "left" ? { ...h, migrations: h.migrations.map((m) => m.version === 2 ? { ...m, name: "renamed" } : m) } : h));
+  reject(future.map((h) => h.id === "left" ? { ...h, migrations: h.migrations.map((m) => m.version === 2 ? { ...m, version: 7 } : m) } : h));
+  reject([...future, future[0]!]);
+  const added = [...future, { id: "third", migrations: [common] }];
+  reject(added);
+  assert.doesNotThrow(() => assertAppendOnlyMigrationHistories(previous, added, { allowNewHistories: true }));
+  assert.throws(() => assertAppendOnlyMigrationHistories(previous, added, { allowNewHistories: "true" as unknown as boolean }), { kind: "history-mismatch" });
+  assert.throws(() => assertAppendOnlyMigrationHistories([], future), { kind: "history-mismatch" });
+  assert.throws(() => assertAppendOnlyMigrationHistories(previous, [{ id: "left", migrations: [] }]), { kind: "history-mismatch" });
+});
+
+test("release checks do not mutate histories or reveal SQL on rejection", async () => {
+  const { assertAppendOnlyMigrationHistories } = await import("../../packages/sqlite-node/src/index.js");
+  const secret = "CREATE TABLE private_fixture (id INTEGER) STRICT";
+  const previous = [{ id: "owner", migrations: [{ version: 1, name: "initial", sql: secret }] }];
+  const candidate = [{ id: "owner", migrations: [{ version: 1, name: "initial", sql: secret + " " }] }];
+  const snapshot = structuredClone({ previous, candidate });
+  assert.throws(() => assertAppendOnlyMigrationHistories(previous, candidate), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.ok(!error.message.includes(secret));
+    return true;
+  });
+  assert.deepEqual({ previous, candidate }, snapshot);
+});
