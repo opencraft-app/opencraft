@@ -83,7 +83,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { VirtualizedConversationTurns, type WebVirtualizedTurnListApi } from "./conversation/virtualized-conversation-turns";
-import { assistantMessageActions, getTimelineUserMessageTargetKey } from "@opencraft/chat-core";
+import { assistantMessageActions, getTimelineUserMessageTargetKey, isTimelineTurnSettled } from "@opencraft/chat-core";
 import { extractMarkdownElement } from "@opencraft/chat-render-web";
 import { ActivitySummaryRow } from "./conversation-renderers/activity/activity-summary-row";
 import { PlanBlock, TodoBlock, CompactionBlock } from "./conversation-renderers/plan-and-compaction";
@@ -631,8 +631,10 @@ function Turn({
           key={presentation.assistantFrame.id}
           onActivityCollapsedChange={onActivityCollapsedChange}
           onRetry={onRetry}
-          showActions
-          onFork={forkTurn !== undefined && ["complete", "failed", "interrupted"].includes(turn.status)
+          // Copy/time are completed-message affordances. While the turn still
+          // runs, an interim answer must not look like the final response.
+          showActions={isTimelineTurnSettled(turn.status)}
+          onFork={forkTurn !== undefined && isTimelineTurnSettled(turn.status)
             ? () => forkTurn(turn.turnId) : undefined}
           thinkingId={turnThinking?.placeholderId ?? null}
           thinkingLabel={turnThinking?.label}
