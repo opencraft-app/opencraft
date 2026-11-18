@@ -132,7 +132,8 @@ test("dynamic gateway reads shared config, refuses missing/stale binding before 
       ...(binding ? { "x-opencraft-speech-binding": binding } : {}) } });
   assert.equal((await post()).status, 400); assert.equal((await post("a".repeat(64))).status, 409); assert.equal(calls, 0);
   const pending = post(initial.binding!);
-  for (let tries = 0; tries < 50 && calls === 0; tries++) await new Promise(resolve => setImmediate(resolve));
+  // The request crosses a real HTTP server; wait on time, not a fixed number of event-loop turns.
+  for (const deadline = Date.now() + 5_000; calls === 0 && Date.now() < deadline;) await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(calls, 1); assert.equal((await post(initial.binding!)).status, 409); assert.equal(calls, 1);
   release!(); assert.equal((await pending).status, 200); assert.equal((await post(initial.binding!)).status, 200); assert.equal(calls, 1);
   assert.equal((await post("b".repeat(64))).status, 409); assert.equal(calls, 1);
