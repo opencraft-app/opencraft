@@ -221,7 +221,7 @@
     "test:appserver:lab": "tsx --test tests/protocol/appserver-lab*.test.ts",
     "smoke:conversation-history-refresh": "tsx scripts/smoke/conversation/smoke-conversation-history-refresh.ts",
     "test:chat": "tsx --test tests/chat/shared-interaction-broker.test.ts tests/chat/conversation-outbox.test.ts tests/shell/workbench-presentation-activity.test.tsx tests/chat/chat-*.test.ts tests/chat/thread-attention.test.ts tests/chat/thread-read-receipt-*.test.ts tests/chat/conversation-history-order.test.ts tests/composer/composer-core.test.ts tests/composer/opencraft-composer-codec.test.ts tests/composer/opencraft-composer-attachment-focus.test.ts tests/composer/opencraft-composer-attachment-preview.test.ts",
-    "typecheck": "npm run typecheck --workspaces --if-present && npm run typecheck:git-identity && npm run typecheck:browser-state",
+    "typecheck": "node scripts/typecheck-workspaces.mjs && npm run typecheck:git-identity && npm run typecheck:browser-state",
     "check:hover": "node scripts/check-hover-policy.mjs",
     "test:hover": "node --test tests/tooling/hover-policy.test.mjs && tsx scripts/smoke/shell/smoke-touch-hover.ts",
     "check:boundaries": "npm run check:typography && npm run check:hover && npm run check:controls && node scripts/check-platform-boundaries.mjs && node scripts/check-source-text-tests.mjs",
