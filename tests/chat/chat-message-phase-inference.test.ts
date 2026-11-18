@@ -83,9 +83,8 @@ test("failed and interrupted phase-less turns retain structural work boundaries"
 });
 
 test("timeline projection applies inferred phases without mutating persisted items", async () => {
-  const { createConversationKey, createDefaultTimelineProjectorRegistry, projectTimeline } = await import(
-    "../../packages/chat-core/src/index"
-  );
+  const { createConversationKey, createDefaultTimelineProjectorRegistry, projectTimeline } =
+    await import("../../packages/chat-core/src/index");
   const input = turn("complete", [
     item("u", "userMessage", { text: "hello" }),
     item("a", "agentMessage", { text: "working", completed: true }),
