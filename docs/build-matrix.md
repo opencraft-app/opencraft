@@ -195,6 +195,12 @@ rest. It prepares the locked DSH runtime first. Documentation-only changes skip
 it. `tests/tooling/ci-workflows.test.mjs` fails if a suite is added to `npm test`
 without a matching CI step.
 
+On pull requests `core-tests` also formats and lints the source files the PR
+adds (`check:format`, `lint:changed`). Its suites run with
+`tests/support/test-isolation.mjs`: each test file gets a private HOME/TMPDIR,
+and the global teardown stops and reports any process a test file left running,
+which fails the step.
+
 The server job installs dependencies once and always runs selected server tests;
 archive building, archive smoke and upload are separately conditional. Shared
 runtime or ordinary lockfile changes do not generate an installation archive.
