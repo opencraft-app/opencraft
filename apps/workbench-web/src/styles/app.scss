@@ -12665,6 +12665,16 @@ html[data-window-host="browser"] body {
 }
 
 .deferred-view { min-height: 120px; display: grid; place-items: center; color: var(--color-text-secondary); }
+// Chunk loads are usually instant; only a slow one earns a visible status.
+@keyframes deferred-view-reveal { from { opacity: 0; } }
+.deferred-view__indicator {
+  display: inline-flex;
+  color: var(--color-text-tertiary);
+  animation: deferred-view-reveal 150ms ease-out 500ms backwards;
+}
+.deferred-view__indicator .ui-progress-indicator,
+.deferred-view__indicator svg { width: 16px; height: 16px; }
+@media (prefers-reduced-motion: reduce) { .deferred-view__indicator { animation: none; } }
 
 // Floating conversation chrome shares control owners with ordinary chrome.
 :root[data-ui-density="touch"] {

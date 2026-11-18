@@ -1,3 +1,4 @@
+import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { Button } from "@opencraft/design-system-web/button";
 import React, { useEffect, useState, type ComponentType } from "react";
 
@@ -25,8 +26,8 @@ export function createDeferredView<Props extends object>(load: () => Promise<Com
       return () => { active = false; };
     }, [Loaded, attempt]);
     if (Loaded) return <Loaded {...props} />;
-    return <div className="deferred-view" role="status" aria-live="polite">
-      {failed ? <Button type="button" className="ui-button" density="compact" variant="outline" onClick={() => retry(value => value + 1)}>重试</Button> : <span>正在加载…</span>}
+    return <div className="deferred-view" role="status" aria-live="polite" aria-label={failed ? undefined : "正在加载"}>
+      {failed ? <Button type="button" className="ui-button" density="compact" variant="outline" onClick={() => retry(value => value + 1)}>重试</Button> : <span className="deferred-view__indicator" aria-hidden="true"><ProgressIndicator /></span>}
     </div>;
   };
 }
