@@ -292,7 +292,7 @@
     "test:turn-recovery": "tsx --test tests/execution/provider-turn-retry.test.ts tests/execution/interrupted-turn-recovery.test.ts tests/chat/thread-recovery-resource.test.ts",
     "smoke:safe-layout": "tsx scripts/smoke/shell/smoke-safe-layout.ts",
     "smoke:safe-layout-host": "OPENCRAFT_GESTURE_SAFE_LAYOUT_ONLY=1 tsx scripts/smoke/shell/smoke-mobile-sidebar-gesture.ts",
-    "test:web-push": "node --import tsx --test tests/server/web-push.test.ts tests/server/notification-destinations.test.ts tests/server/web-push-historical-adoption.test.ts tests/server/notification-worker-packaging.test.mjs tests/shell/pwa-turn-push.test.ts tests/shell/turn-notification-controller.test.ts",
+    "test:web-push": "node --import tsx --test tests/server/web-push.test.ts tests/server/notification-destinations.test.ts tests/server/web-push-historical-adoption.test.ts tests/server/notification-worker-packaging.test.mjs tests/shell/notification-destinations.test.ts tests/shell/pwa-turn-push.test.ts tests/shell/turn-notification-controller.test.ts",
     "smoke:derived-history": "node --import tsx scripts/smoke/conversation/smoke-derived-history.ts",
     "test:attachment-upload": "node scripts/test-attachment-upload.mjs",
     "smoke:attachment-upload-recovery": "tsx scripts/smoke/composer/smoke-attachment-upload-recovery.ts",

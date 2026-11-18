@@ -16,6 +16,7 @@ export interface ModalSurfaceProps extends ModalDescriptor {
   readonly stackIndex?: number;
   readonly returnFocus?: () => HTMLElement | null;
   readonly closeLabel?: string;
+  readonly initialFocus?: "surface";
 }
 
 type ModalLayerStyle = CSSProperties & {
@@ -40,8 +41,10 @@ export function ModalSurface({
   showCloseButton = true,
   size = "default",
   returnFocus,
+  initialFocus,
   stackIndex = 0,
 }: ModalSurfaceProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
   const presentationRoot = useWorkbenchPresentationRoot();
   const dismissReason = useRef<ModalDismissReason>("system");
   const opener = useRef(document.activeElement instanceof HTMLElement ? document.activeElement : null);
@@ -69,6 +72,13 @@ export function ModalSurface({
           style={layerStyle}
         />
         <Dialog.Content
+          ref={contentRef}
+          onOpenAutoFocus={event => {
+            if (initialFocus === "surface") {
+              event.preventDefault();
+              contentRef.current?.focus({ preventScroll: true });
+            }
+          }}
           aria-label={label}
           aria-describedby={undefined}
           className={surfaceClassName}

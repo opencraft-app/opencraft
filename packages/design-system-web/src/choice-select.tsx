@@ -10,7 +10,7 @@ export interface ChoiceSelectOption<Value extends string = string> {
 }
 
 /** A themed single choice. The shared Radix menu owns focus, keys and touch dismissal. */
-export function ChoiceSelect<Value extends string>({ id, label, value, options, onValueChange, disabled = false, placeholder }: {
+export function ChoiceSelect<Value extends string>({ id, label, value, options, onValueChange, disabled = false, placeholder, portalContainer }: {
   readonly id?: string;
   readonly label: string;
   readonly value: Value;
@@ -18,6 +18,7 @@ export function ChoiceSelect<Value extends string>({ id, label, value, options, 
   readonly onValueChange: (value: Value) => void;
   readonly disabled?: boolean;
   readonly placeholder?: string;
+  readonly portalContainer?: HTMLElement | null;
 }) {
   const [open, setOpen] = useState(false);
   const unavailable = disabled || options.length === 0;
@@ -30,7 +31,7 @@ export function ChoiceSelect<Value extends string>({ id, label, value, options, 
         <ChevronDownIcon size={16} aria-hidden="true" />
       </Button>
     </Menu.Trigger>
-    <Menu.Portal>
+    <Menu.Portal container={portalContainer ?? undefined}>
       <Menu.Content className="ui-choice-select__menu" align="end" sideOffset={6} collisionPadding={8} aria-label={label}>
         <Menu.RadioGroup className="ui-choice-select__list" value={value} onValueChange={next => {
           const option = options.find(option => option.value === next && !option.disabled);
