@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RemoteBrowserSurfaceHost } from '../../apps/workbench-web/src/browser/remote-browser-surface-host';
+import { AdaptiveInputWindow } from '@opencraft/remote-interaction';
 import type { BrowserPageId } from '@opencraft/browser-core';
 
 test('transferred viewer stops retries and implicit navigation; explicit reload takes over', async t => {
@@ -25,7 +26,7 @@ test('transferred viewer stops retries and implicit navigation; explicit reload 
   const errors: string[] = [], events = { onError: (value: string) => errors.push(value), onLoaded() {}, onNavigation() {} };
   const host: any = new RemoteBrowserSurfaceHost({ getItem: () => null, setItem() {} }, 'proof');
   const id = 'page-owned' as BrowserPageId;
-  const p: any = { control: {epoch:0,active:false,controller:false,kind:null}, controlGeneration:0, lease: 'browser-12345678901234567890', connection: 0, closed: false, displaced: false,
+  const p: any = { inputPolicy: new AdaptiveInputWindow(), control: {epoch:0,active:false,controller:false,kind:null}, controlGeneration:0, lease: 'browser-12345678901234567890', connection: 0, closed: false, displaced: false,
     viewportMeasured: false, pending: new Map(), retries: 0, events, visible: true,
     navigation: 0, url: 'https://example.test/live' };
   // Exercise real connection and navigation; media/DOM teardown is independent.
@@ -101,8 +102,9 @@ test('native connection waits for durable metadata and a failed or abandoned flu
   let finish!: () => void, attempts = 0;
   host.storage = { flush: () => new Promise<void>(resolve => finish = resolve) };
   host.inputFailed = false;
+  host.admitted = () => true;
   host.connectTransport = async () => { attempts++; };
-  const page: any = { closed: false };
+  const page: any = { closed: false, connection: 0 };
   const pending = host.connect(page); assert.equal(attempts, 0);
   finish(); await pending; assert.equal(attempts, 1);
   const abandoned = host.connect(page); page.closed = true; finish();

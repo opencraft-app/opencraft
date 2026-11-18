@@ -54,3 +54,37 @@ test('authentication failure stays on the browser surface without throwing durin
   await assert.rejects(port.ready, /Authorization expired/); await tick();
   assert.deepEqual(f.connections, []); assert(f.errors.includes('Authorization expired'));
 });
+
+test('retry during metadata flush cannot attach a superseded viewer after the replacement', async t => {
+  const f = fixture(t);
+  f.admit();
+  const flushes: Array<() => void> = [];
+  f.host.storage.flush = () => new Promise<void>(resolve => flushes.push(resolve));
+  f.host.navigate(f.id, '', null, f.events);
+  const p = f.host.pages.get(f.id);
+  const first = p.ready;
+  // The transport is already down; only its durable metadata barrier is pending.
+  f.host.resetTransport = () => {};
+  f.host.reconnect(p);
+  assert.equal(flushes.length, 2);
+  flushes[1](); await p.ready;
+  assert.equal(f.connections.length, 1);
+  flushes[0]();
+  await assert.rejects(first, /superseded/);
+  await tick();
+  assert.equal(f.connections.length, 1, 'late metadata completion must not open a second viewer');
+  assert.deepEqual(f.errors, [], 'retired connection errors must not replace the recovered page');
+});
+
+test('retry before admission resumes only the newest attempt with the retained lease', async t => {
+  const f = fixture(t);
+  f.host.navigate(f.id, '', null, f.events);
+  const p = f.host.pages.get(f.id), first = p.ready;
+  f.host.resetTransport = () => {};
+  f.host.reconnect(p);
+  const retired = assert.rejects(first, /superseded/);
+  f.admit(); await Promise.all([retired, p.ready]); await tick();
+  assert.deepEqual(f.connections, ['browser-retained']);
+  assert.equal(f.writes.length, 1);
+  assert.deepEqual(f.errors, []);
+});

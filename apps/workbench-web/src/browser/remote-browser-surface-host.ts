@@ -179,8 +179,9 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     if (reconnecting) this.reconnect(p);
     // Capture the requested URL; replacement before connection must not issue
     // an obsolete navigation after the latest one.
-    void p.ready.then(() => { if (!p.closed && p.navigation === navigation && !(absent && p.restored && !force) && !(force && reconnecting && !p.resumed)) return absent && p.serverInitialNavigation && !force ? undefined : this.humanCall(p, force ? 'reload' : 'navigate', { url }); })
-      .catch(error => { if (!p.closed && p.navigation === navigation) this.operationError(p, error); });
+    const ready = p.ready;
+    void ready.then(() => { if (!p.closed && p.ready === ready && p.navigation === navigation && !(absent && p.restored && !force) && !(force && reconnecting && !p.resumed)) return absent && p.serverInitialNavigation && !force ? undefined : this.humanCall(p, force ? 'reload' : 'navigate', { url }); })
+      .catch(error => { if (!p.closed && p.ready === ready && p.navigation === navigation) this.operationError(p, error); });
     return true;
   }
   stop(id: BrowserPageId) { this.run(this.require(id), 'stop'); }
@@ -337,11 +338,18 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     p.ready = this.connect(p); this.watchConnection(p);
   }
   private connect(p: Page): Promise<void> {
+    // Own the attempt before either asynchronous barrier. A reload can replace
+    // a connection while admission or metadata persistence is still pending.
+    const generation = ++p.connection;
+    const checkCurrent = () => {
+      if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
+      if (p.connection !== generation) throw new Error('Browser connection superseded');
+    };
     // Restored panels may mount while the offline shell is still authenticating.
     // Give them a presentation port immediately; only admit physical resources
     // after the authoritative metadata has loaded.
     if (!this.admitted()) return (this.whenAdmitted?.() ?? Promise.reject(new Error('Remote browser awaits authenticated initialization'))).then(() => {
-      if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
+      checkCurrent();
       if (!this.admitted()) throw new Error('Remote browser awaits authenticated initialization');
       this.restoreStorage();
       p.lease = (this.storageIds.get(p.id) ?? p.lease).replace(':', '-');
@@ -350,16 +358,15 @@ export class RemoteBrowserSurfaceHost implements BrowserSurfaceHost {
     });
     // Native creation must follow the metadata commit, including reconnect.
     if (this.storage.flush) return this.storage.flush().then(() => {
-      if (p.closed || this.inputFailed) throw this.storageError ?? new Error('Browser tab closed');
-      return this.connectTransport(p);
+      checkCurrent();
+      return this.connectTransport(p, generation);
     });
-    return this.connectTransport(p);
+    return this.connectTransport(p, generation);
   }
-  private connectTransport(p: Page): Promise<void> {
+  private connectTransport(p: Page, generation: number): Promise<void> {
     p.disconnected = false;
     p.inputCredits = new CreditWindow({ maxItems: 12, maxBytes: 65536 });
     p.inputPolicy.reset(); p.adaptiveInput = false;
-    const generation = ++p.connection;
     return new Promise((resolve, reject) => {
       const url = new URL(serverUrl('/__opencraft_browser/stream'), location.href); url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = new WebSocket(url); ws.binaryType = 'arraybuffer'; p.socket = ws;

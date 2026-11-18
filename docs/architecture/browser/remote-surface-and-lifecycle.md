@@ -282,6 +282,9 @@ errors. Generic clean WebSocket closure is not a logical Tab retirement. The
 explicit `1000 / Browser tab closed` reason, authorization `1008`, legacy transfer
 `4009` and permanent open/admission errors stop retries. The permanent error
 remains visible rather than being overwritten by a generic close message.
+Connection generations begin before admission and metadata persistence, so a
+superseded attempt cannot create a viewer when either barrier finishes late.
+Navigation continuations and errors also belong to their captured connection.
 Late retry timers belong to their connection generation. Recovery opens only the
 same lease, never navigates, replays input or acquires control; an authoritative
 non-loading snapshot emits loaded; the shared page runtime clears its previous
