@@ -15,7 +15,8 @@ export interface CodexOrchestrationControlPort {
   request(method:string,params:Record<string,unknown>,admit?:()=>boolean):Promise<unknown>;
   read(threadId:string,limit:number):Promise<{thread:AppServerThread}>;
   recovery(threadId:string):Readonly<RecoveryTurn>|null;
-  pendingInput(threadId:string):'pending'|'unknown'|false;
+  /** 'paused': the queue head needs a human Resume (non-retryable); 'abandoned': every input was discarded and none delivered. */
+  pendingInput(threadId:string):'pending'|'unknown'|'paused'|'abandoned'|false;
 }
 /** Trusted Hub lane; independent of logical clients and their per-thread locks. */
 export class CodexOrchestrationControl {
@@ -110,6 +111,11 @@ export class CodexOrchestrationControl {
     const {thread}=await this.port.read(threadId,1),turn=thread.turns.at(-1),status=object(thread.status);
     const input=this.port.pendingInput(threadId);
     if(input==='unknown')return {...base,state:'unconfirmed'};
+    // A hidden child has no human to press Resume, and discarded input never comes back:
+    // report the failure so the parent wait settles instead of seeing "starting" forever.
+    const running=recovery?.state==='running'||status.type==='active'||turn?.status==='inProgress';
+    if(input==='paused'&&!running)return {threadId,turnId:turn?.id??base.turnId,rootTurnId:base.rootTurnId??turn?.id??null,state:'failed',summary:'The message to this conversation was not sent because its queue is paused. It stays paused until someone resumes it.'};
+    if(input==='abandoned'&&!turn)return {...base,state:'failed',summary:'This conversation never started: its queued input was discarded before delivery.'};
     if(input==='pending')return {...base,state:'starting'};
     if(recovery?.state==='running'||status.type==='active')return {...base,state:'active'};
     const current={threadId,turnId:turn?.id??base.turnId,rootTurnId:recovery?.rootTurnId??turn?.id??null};

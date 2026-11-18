@@ -136,3 +136,21 @@ test("explicit retry survives restart while managed delivery keeps its authority
     } finally { restored.close(); }
   } finally { await rm(root, {recursive:true,force:true}); }
 });
+
+test("input outcomes distinguish a thread whose every input was discarded from one that ever delivered", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-host-queue-outcomes-"));
+  try {
+    const queue = new OpenCraftHostQueue(root);
+    assert.deepEqual(queue.inputOutcomes("thread-1"), { delivered: 0, discarded: 0 });
+    const a = queue.add("thread-1", "message-a", [{ type: "text", text: "a" }]);
+    queue.claim("thread-1", a.id, "turn-0");
+    queue.settle("thread-1", a.id, "discarded");
+    assert.deepEqual(queue.inputOutcomes("thread-1"), { delivered: 0, discarded: 1 });
+    const b = queue.add("thread-1", "message-b", [{ type: "text", text: "b" }]);
+    queue.claim("thread-1", b.id, "turn-1");
+    queue.settle("thread-1", b.id, "delivered", null, "turn-1");
+    assert.deepEqual(queue.inputOutcomes("thread-1"), { delivered: 1, discarded: 1 });
+    assert.deepEqual(queue.inputOutcomes("thread-2"), { delivered: 0, discarded: 0 });
+    queue.close();
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

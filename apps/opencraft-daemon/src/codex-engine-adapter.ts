@@ -557,7 +557,15 @@ export class CodexEngineAdapter implements DuplexTransport {
       return { thread: { ...cached.thread, turns: [...cached.initialTurnsPage.data].reverse() } };
     },
     recovery: threadId => this.recovery?.snapshot(threadId) ?? null,
-    pendingInput: threadId => { const rows = this.queue?.list(threadId) ?? []; return rows.some(row => row.state === "unknown") ? "unknown" : rows.some(row => ["queued", "dispatching", "steering"].includes(row.state)) ? "pending" : false; },
+    pendingInput: threadId => {
+      const rows = this.queue?.list(threadId) ?? [];
+      if (rows.some(row => row.state === "unknown")) return "unknown";
+      const head = rows.find(row => ["queued", "dispatching", "steering"].includes(row.state));
+      // maintainQueue never admits a head paused for a human Resume, so nothing behind it moves either.
+      if (head) return head.state === "queued" && ["session-tools-unavailable", "model-restricted"].includes(head.pausedReason ?? "") ? "paused" : "pending";
+      const outcomes = this.queue?.inputOutcomes(threadId);
+      return outcomes && outcomes.discarded > 0 && outcomes.delivered === 0 ? "abandoned" : false;
+    },
   });
 
   private get physicalAvailable(): boolean {

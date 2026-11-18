@@ -86,6 +86,17 @@ test('recovery lifecycle is authoritative while notices omit active recovery sta
   f.port.pendingInput=()=> 'unknown';assert.equal((await f.invoke('status')).state,'unconfirmed');
 });
 
+test('a child whose input needs a human Resume or was discarded reports failed instead of starting forever',async()=>{
+  const f=fixture();f.port.read=async()=>({thread:thread([])});
+  assert.equal((await f.invoke('status')).state,'starting');
+  f.port.pendingInput=()=> 'paused';let status=await f.invoke('status');assert.equal(status.state,'failed');assert.match(status.summary,/queue is paused/);
+  f.port.pendingInput=()=> 'abandoned';status=await f.invoke('status');assert.equal(status.state,'failed');assert.match(status.summary,/never started/);
+  // A paused follow-up behind a running turn is not a failure of that turn.
+  f.port.pendingInput=()=> 'paused';f.port.read=async()=>({thread:thread([{id:'live',status:'inProgress',items:[]}],'active')});assert.equal((await f.invoke('status')).state,'active');
+  // Discarded later input after a real turn keeps that turn's outcome.
+  f.port.pendingInput=()=> 'abandoned';f.port.read=async()=>({thread:thread([{id:'done',status:'completed',items:[{type:'agentMessage',text:'Finished'}]}])});assert.equal((await f.invoke('status')).state,'completed');
+});
+
 test('inspect reads only recent user and assistant text, prioritizes the newest text and bounds UTF-8',async()=>{
   const f=fixture();let reads=0;
   f.port.read=async()=>{reads++;return {thread:thread([{id:'turn',items:[{type:'userMessage',content:[{type:'text',text:'旧'.repeat(40_000)}]},{type:'commandExecution',aggregatedOutput:'SECRET TOOL OUTPUT'},{type:'agentMessage',text:'Latest answer'}]}])};};

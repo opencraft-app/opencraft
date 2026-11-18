@@ -118,6 +118,12 @@ export class OpenCraftHostQueue {
       .all().map(row => requiredText(row.thread_id, "thread id"));
   }
 
+  /** Settled input history for one thread (delivered vs discarded rows). */
+  inputOutcomes(threadId: string): { delivered: number; discarded: number } {
+    const row = this.db.prepare("SELECT coalesce(sum(state='delivered'),0) AS delivered, coalesce(sum(state='discarded'),0) AS discarded FROM opencraft_host_queue WHERE thread_id=?").get(threadId)!;
+    return { delivered: Number(row.delivered), discarded: Number(row.discarded) };
+  }
+
   firstUnsettled(threadId: string): HostQueuedSubmission | null { return this.list(threadId)[0] ?? null; }
 
   firstAwaitingAdmission(threadId: string): HostQueuedSubmission | null {

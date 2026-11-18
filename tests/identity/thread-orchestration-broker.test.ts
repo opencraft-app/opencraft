@@ -357,3 +357,18 @@ test('a transient paced snapshot failure is retried on the next tick without cac
  assert.equal(f.service.orchestration.wait(waited.waitTicketId)?.state,'active');
  f.advance(500);await f.broker.reconcile(true);assert.equal(reads,2);
 });
+
+test('timer pumps back off an engine receipt that stays queued; explicit pumps and changes read at once',async t=>{
+ const f=await fixture(t);
+ await f.invoke('tell-paced','thread_tell',{threadId:'parent',message:'Queued behind a paused head'}).catch(()=>{});
+ f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});await f.service.pump();
+ const request=f.service.database.prepare("SELECT id FROM actor_execution_requests WHERE thread_id='recipient' AND state='queued'").get() as {id:string}|undefined;
+ assert.ok(request,'the recipient input is queued in the engine');
+ const native=f.native as any,receipt=native.receipt;let reads=0;native.receipt=async(binding:any,id:string)=>{if(id===request!.id)reads++;return receipt(binding,id);};
+ for(let i=0;i<20;i++){f.advance(500);await f.service.pump(true);}
+ assert.ok(reads>=8&&reads<=12,`unchanged queued receipt read ${reads} times in 10 s`);
+ for(let i=0;i<60;i++){f.advance(500);await f.service.pump(true);}
+ reads=0;for(let i=0;i<40;i++){f.advance(500);await f.service.pump(true);}assert.ok(reads>=3&&reads<=5,`capped at one per 5 s, read ${reads} in 20 s`);
+ reads=0;await f.service.pump();assert.equal(reads,1,'explicit pump reads immediately');
+});
