@@ -386,3 +386,17 @@ test('an unconfirmed handoff stays unknown for review and is re-read at most eve
  assert.equal((f.service.database.prepare('SELECT state FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string}).state,'unknown');
  reads=0;await f.service.pump();assert.equal(reads,1,'explicit pump reads immediately');
 });
+
+test('a request whose receipt read keeps throwing is backed off as well',async t=>{
+ const f=await fixture(t);f.service.authorizeExecution(f.b,'recipient','human-b');f.service.executionStarted('recipient','human-b','recipient-original');
+ const native=f.native as any;native.add=async()=>{throw Error('Engine restarted during reconciliation');};
+ await f.invoke('recipient-tell','thread_tell',{threadId:'recipient',message:'Please inspect'});await f.service.pump();
+ const request=f.service.database.prepare("SELECT id,state,reason FROM actor_execution_requests WHERE thread_id='recipient'").get() as {id:string;state:string;reason:string};
+ assert.equal(request.state,'unknown');
+ let reads=0;native.receipt=async(_binding:any,id:string)=>{if(id===request.id)reads++;throw Error('Receipt lane unavailable');};
+ for(let i=0;i<400;i++){f.advance(500);await f.service.pump(true);}
+ reads=0;for(let i=0;i<240;i++){f.advance(500);await f.service.pump(true);}
+ assert.ok(reads>=3&&reads<=5,`throwing receipt read ${reads} times in 120 s`);
+ const after=f.service.database.prepare('SELECT state,reason FROM actor_execution_requests WHERE id=?').get(request.id) as {state:string;reason:string};
+ assert.deepEqual({...after},{state:'unknown',reason:request.reason});
+});

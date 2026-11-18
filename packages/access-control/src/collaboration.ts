@@ -675,6 +675,14 @@ export class Collaboration {
     if (this.#closed) return Promise.resolve();
     this.#pump = this.#serial(() => this.#drain(paced)).finally(() => { this.#pump = null; }); return this.#pump;
   }
+  /** Back off a request whose pump pass left it "queued" or "unknown" with nothing changed,
+   * whether its receipt read succeeded or threw; any change reads again at the next tick. */
+  #pace(id: string, observed: Record<string, unknown>): void {
+    if (observed.state !== 'queued' && observed.state !== 'unknown') { this.#receiptPacing.delete(id); return; }
+    const key = JSON.stringify([observed.state, observed.reason ?? null, observed.queue_id ?? null, observed.turn_id ?? null]), prior = this.#receiptPacing.get(id);
+    const unchanged = prior?.key === key ? prior.unchanged + 1 : 0, cap = observed.state === 'unknown' ? 30_000 : 5_000;
+    this.#receiptPacing.set(id, { key, unchanged, dueAt: this.now() + Math.min(cap, 500 * 2 ** Math.floor(unchanged / 4)) });
+  }
   async #drain(paced = false) {
     if (this.#receiptPacing.size > 4096) this.#receiptPacing.clear();
     const storage = await this.#runtimeStorage();
@@ -691,14 +699,9 @@ export class Collaboration {
         await storage.updateExecution({id:requestId,state,reason,queueId:receipt?.id??null,turnId:receipt?.targetTurnId??null,now:this.now()});
         observed = {...observed,state,reason,queue_id:queueId,turn_id:turnId};
       };
-      try {
+      try { try {
         let receipt = await this.execution.receipt(binding, id);
         if (this.#closed) return;
-        if ((snapshot.state === 'queued' && receipt?.state === 'queued') || snapshot.state === 'unknown') {
-          const key = JSON.stringify([snapshot.state, snapshot.reason ?? null, receipt?.id ?? null, receipt?.state ?? null, receipt?.targetTurnId ?? null]), prior = this.#receiptPacing.get(id);
-          const unchanged = prior?.key === key ? prior.unchanged + 1 : 0, cap = snapshot.state === 'unknown' ? 30_000 : 5_000;
-          this.#receiptPacing.set(id, { key, unchanged, dueAt: this.now() + Math.min(cap, 500 * 2 ** Math.floor(unchanged / 4)) });
-        } else this.#receiptPacing.delete(id);
         // An engine receipt remains factual after revocation. Never relabel committed input as unexecuted.
         if (receipt?.state === 'delivered' || receipt?.state === 'steering') {
           await update(id, receipt.state === 'delivered' ? (snapshot.mode === 'queue' ? 'submitted' : 'injected') : 'unknown', null, receipt); continue;
@@ -743,6 +746,7 @@ export class Collaboration {
           } catch { await update(id, 'unknown', 'engine_outcome_unknown'); }
         } else await update(id, 'unknown', 'engine_outcome_unknown');
       }
+      } finally { this.#pace(id, observed); }
     }
   }
 }
