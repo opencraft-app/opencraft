@@ -50,6 +50,33 @@ test("Codex reset credits render authoritative totals, zero, and unknown for old
   }
 });
 
+test("Codex credits render balance, unlimited, unavailable and unknown states", async () => {
+  Object.assign(globalThis, { React });
+  for (const [credits, value, note] of [
+    [undefined, "—", "Not reported"],
+    [null, "—", "Not reported"],
+    [{ available: true, unlimited: false, balance: "1234.6", observedAt: 1_000 }, "1,235", "Balance"],
+    [{ available: true, unlimited: false, balance: null, observedAt: 1_000 }, "Available", "Balance not reported"],
+    [{ available: true, unlimited: true, balance: null, observedAt: 1_000 }, "Unlimited", "Available"],
+    [{ available: false, unlimited: false, balance: "0", observedAt: 1_000 }, "0", "Unavailable"],
+  ] as const) {
+    const account: CodexAccountView = {
+      id: "a", label: "person@example.test", priority: 1, enabled: true, credentialConfigured: true,
+      email: null, subscriptionType: "pro", rateLimitTier: null, status: "ready", observedAt: null,
+      heldUntil: null, lastUsedAt: null, lastUsedHostId: null, limitWindows: [],
+      ...(credits === undefined ? {} : { credits }),
+    };
+    const service = new CodexAccountsService((async () => ({ accounts: [account] })) as HostProtocolRequest, "local-codex");
+    try {
+      await service.refresh();
+      const View = createCodexAccountsView(service);
+      const markup = renderToStaticMarkup(createElement(View, {} as any));
+      assert.ok(markup.includes(`<small>Credits</small><strong>${value}</strong><span class="engine-account__reset">${note}</span>`), markup);
+      assert.match(markup, credits ? /Last confirmed:/ : /The server has not reported credits/);
+    } finally { service.dispose(); }
+  }
+});
+
 test("Codex account row shares touch-safe hover and a reachable actions target", () => {
   const styles = readFileSync(new URL("../../apps/workbench-web/src/styles/engine-accounts.scss", import.meta.url), "utf8");
   const settings = readFileSync(new URL("../../packages/extension-react/src/settings-panel.tsx", import.meta.url), "utf8");

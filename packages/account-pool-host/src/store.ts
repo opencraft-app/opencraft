@@ -169,6 +169,32 @@ export interface AccountPoolLimitWindow {
   readonly source: "header" | "usage";
   /** Server-confirmed extra credits; percentages still describe subscription usage. */
   readonly creditsAvailable?: boolean;
+  /** Recorded together with creditsAvailable when the service reports them. */
+  readonly creditsUnlimited?: boolean;
+  /** Raw balance text from the service; null when it reported credits without a balance. */
+  readonly creditBalance?: string | null;
+}
+
+export interface AccountPoolCreditStatus {
+  readonly available: boolean;
+  readonly unlimited: boolean;
+  readonly balance: string | null;
+  readonly observedAt: number;
+}
+
+/** Latest service-reported credit fact across the account's limit windows, or null before any report. */
+export function accountCreditStatus(windows: readonly AccountPoolLimitWindow[]): AccountPoolCreditStatus | null {
+  let latest: AccountPoolLimitWindow | null = null;
+  for (const window of windows) {
+    if (window.creditsAvailable === undefined) continue;
+    if (latest === null || window.observedAt > latest.observedAt) latest = window;
+  }
+  return latest === null || latest.creditsAvailable === undefined ? null : {
+    available: latest.creditsAvailable,
+    unlimited: latest.creditsUnlimited === true,
+    balance: latest.creditBalance ?? null,
+    observedAt: latest.observedAt,
+  };
 }
 
 export interface AccountPoolAccountState {
@@ -223,6 +249,11 @@ function nullableText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+export function creditBalanceText(value: unknown): string | null {
+  const text = typeof value === "number" && Number.isFinite(value) ? String(value) : typeof value === "string" ? value.trim() : "";
+  return text && text.length <= 64 ? text : null;
+}
+
 function parseLimitWindows(value: unknown): AccountPoolLimitWindow[] {
   if (typeof value !== "string") return [];
   let parsed: unknown;
@@ -251,6 +282,8 @@ function parseLimitWindows(value: unknown): AccountPoolLimitWindow[] {
       observedAt,
       source: candidate.source as "header" | "usage",
       ...(typeof candidate.creditsAvailable === "boolean" ? { creditsAvailable: candidate.creditsAvailable } : {}),
+      ...(typeof candidate.creditsAvailable === "boolean" && typeof candidate.creditsUnlimited === "boolean" ? { creditsUnlimited: candidate.creditsUnlimited } : {}),
+      ...(typeof candidate.creditsAvailable === "boolean" && candidate.creditBalance !== undefined ? { creditBalance: creditBalanceText(candidate.creditBalance) } : {}),
     });
   }
   return windows;
@@ -628,7 +661,10 @@ export class AccountPoolStore {
             // Successful response headers may omit credits. A real rejection
             // explicitly records false; a later usage refresh replaces the fact.
             return window.creditsAvailable === undefined && window.source === "header" && previous?.creditsAvailable !== undefined
-              ? { ...window, creditsAvailable: previous.creditsAvailable } : { ...window };
+              ? { ...window, creditsAvailable: previous.creditsAvailable,
+                ...(previous.creditsUnlimited === undefined ? {} : { creditsUnlimited: previous.creditsUnlimited }),
+                ...(previous.creditBalance === undefined ? {} : { creditBalance: previous.creditBalance }) }
+              : { ...window };
           }),
         ].sort((left, right) => left.slot.localeCompare(right.slot));
     parseLimitWindows(JSON.stringify(limitWindows));

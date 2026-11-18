@@ -1517,5 +1517,16 @@
   "onboard.history.projects": "Original project groups are preserved.",
   "composer.attachment.uploading": "Uploading {name}",
   "composer.attachment.confirming": "Processing…",
-  "composer.attachment.preparing": "Preparing…"
+  "composer.attachment.preparing": "Preparing…",
+  "codexAccounts.credits.notReported": "Not reported",
+  "codexAccounts.credits.unlimited": "Unlimited",
+  "codexAccounts.credits.available": "Available",
+  "codexAccounts.credits.none": "None",
+  "codexAccounts.credits.unavailable": "Unavailable",
+  "codexAccounts.credits.balanceMissing": "Balance not reported",
+  "codexAccounts.credits.balance": "Balance",
+  "codexAccounts.credits.serverMissing": "The server has not reported credits",
+  "codexAccounts.credits.lastConfirmed": "Last confirmed: {date}",
+  "codexAccounts.credits.title": "Credits",
+  "codexAccounts.credits.lastConfirmedLabel": "Credits last confirmed"
 }

@@ -79,6 +79,18 @@ function relativeDate(value: number | null): string {
   return `${Math.floor(hours / 24)} 天前使用`;
 }
 
+type CreditStatus = NonNullable<CodexAccountView["credits"]>;
+
+/** Service-reported extra credits, localized in the active account view. */
+function creditSummary(credits: CreditStatus | null, intl: ReturnType<typeof useIntl>): { readonly value: string; readonly note: string } {
+  const t = (id: string, defaultMessage: string) => intl.formatMessage({ id, defaultMessage });
+  const balance = (raw: string) => { const value = Number(raw); return Number.isFinite(value) ? intl.formatNumber(Math.round(value)) : raw; };
+  if (credits === null) return { value: "—", note: t("codexAccounts.credits.notReported", "Not reported") };
+  if (credits.unlimited) return { value: t("codexAccounts.credits.unlimited", "Unlimited"), note: t("codexAccounts.credits.available", "Available") };
+  if (!credits.available) return { value: credits.balance === null ? t("codexAccounts.credits.none", "None") : balance(credits.balance), note: t("codexAccounts.credits.unavailable", "Unavailable") };
+  return credits.balance === null ? { value: t("codexAccounts.credits.available", "Available"), note: t("codexAccounts.credits.balanceMissing", "Balance not reported") } : { value: balance(credits.balance), note: t("codexAccounts.credits.balance", "Balance") };
+}
+
 function QuotaSlot({ window }: { readonly window: CodexAccountView["limitWindows"][number] }) {
   const percentage = window.utilization === null ? null : Math.round(window.utilization * 100);
   const tone = percentage === null ? "unknown" : percentage >= 90 ? "danger" : percentage >= 75 ? "warning" : "neutral";
@@ -146,6 +158,8 @@ function AccountRow({ account, index, total, service, credentialLocation, report
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const resetCredits = account.resetCredits ?? null;
+  const credits = account.credits ?? null;
+  const creditText = creditSummary(credits, intl);
   const run = (key: string, action: () => Promise<void>) => {
     setPending(key);
     setError(null);
@@ -196,6 +210,12 @@ function AccountRow({ account, index, total, service, credentialLocation, report
               <strong>{resetCredits === null ? "—" : `${resetCredits.availableCount} 张`}</strong>
               <span className="engine-account__reset">{resetCredits === null ? "未报告" : "剩余"}</span>
             </span>
+            <span className="engine-account__quota engine-account__credits" data-tone={credits === null ? "unknown" : credits.available ? "normal" : "warning"}
+              title={credits === null ? intl.formatMessage({ id: "codexAccounts.credits.serverMissing", defaultMessage: "The server has not reported credits" }) : intl.formatMessage({ id: "codexAccounts.credits.lastConfirmed", defaultMessage: "Last confirmed: {date}" }, { date: formatDate(credits.observedAt) })}>
+              <small>{intl.formatMessage({ id: "codexAccounts.credits.title", defaultMessage: "Credits" })}</small>
+              <strong>{creditText.value}</strong>
+              <span className="engine-account__reset">{creditText.note}</span>
+            </span>
           </span>
           <ChevronRight className="engine-account__chevron" size={16} aria-hidden="true" />
         </button>
@@ -226,6 +246,8 @@ function AccountRow({ account, index, total, service, credentialLocation, report
           <div><dt>最近同步</dt><dd>{formatDate(account.observedAt)}</dd></div>
           <div><dt>可用重置券</dt><dd>{resetCredits === null ? "未报告" : `${resetCredits.availableCount} 张`}</dd></div>
           {resetCredits === null ? null : <div><dt>重置券最近确认</dt><dd>{formatDate(resetCredits.observedAt)}</dd></div>}
+          <div><dt>{intl.formatMessage({ id: "codexAccounts.credits.title", defaultMessage: "Credits" })}</dt><dd>{credits === null ? intl.formatMessage({ id: "codexAccounts.credits.notReported", defaultMessage: "Not reported" }) : `${creditText.value} (${creditText.note})`}</dd></div>
+          {credits === null ? null : <div><dt>{intl.formatMessage({ id: "codexAccounts.credits.lastConfirmedLabel", defaultMessage: "Credits last confirmed" })}</dt><dd>{formatDate(credits.observedAt)}</dd></div>}
           {account.limitWindows.map(window => <div key={window.slot}><dt>{windowLabel(window.windowMinutes, window.slot)} 额度重置</dt><dd>{window.resetAt === null ? "未报告" : formatDate(window.resetAt)}</dd></div>)}
           <div><dt>最近使用环境</dt><dd>{account.lastUsedHostId ?? "—"}</dd></div>
           {account.heldUntil === null ? null : <div><dt>限制解除</dt><dd>{formatDate(account.heldUntil)}</dd></div>}

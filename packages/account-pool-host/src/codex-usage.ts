@@ -1,4 +1,5 @@
 import type { AccountCredentialRefreshReason } from "./oauth-refresh.js";
+import { creditBalanceText } from "./store.js";
 import type {
   AccountPoolAccount,
   AccountPoolLimitWindow,
@@ -74,7 +75,9 @@ export function parseCodexUsage(value: unknown, now = Date.now()): ParsedCodexUs
   const count = finite(resetCredits?.available_count);
   return {
     subscriptionType: plan,
-    limitWindows: windows.map(window => credits === null ? window : { ...window, creditsAvailable }),
+    limitWindows: windows.map(window => credits === null ? window : {
+      ...window, creditsAvailable, creditsUnlimited: credits.unlimited === true, creditBalance: creditBalanceText(credits.balance),
+    }),
     resetCreditCount: count !== null && Number.isSafeInteger(count) && count >= 0 ? count : null,
   };
 }

@@ -1,7 +1,7 @@
 import { CONFIGURED_CODEX_MODEL_PREFIX, type ConfiguredCodexResponses } from "./configured-responses.js";
 import { decodeResponsesRequestBody, forwardConfiguredResponses } from "./configured-forward.js";
 import { responsesPayloadForOpenAI } from "./foreign-history.js";
-import { ExternalCodexCredentialError } from "./store.js";
+import { creditBalanceText, ExternalCodexCredentialError } from "./store.js";
 import { EXTERNAL_CODEX_REAUTH_MESSAGE } from "./codex-auth-file.js";
 import type {
   AccountPoolAccount,
@@ -141,7 +141,11 @@ function quotaFromHeaders(headers: Headers, now: number, status: number): Accoun
       status: overLimit || utilization === 1 ? "rejected" : null,
       observedAt: now,
       source: "header",
-      ...(creditsAvailable === undefined ? {} : { creditsAvailable }),
+      ...(creditsAvailable === undefined ? {} : {
+        creditsAvailable,
+        creditsUnlimited: unlimited?.toLowerCase() === "true",
+        creditBalance: creditBalanceText(headers.get("x-codex-credits-balance")),
+      }),
     }];
   });
   if (windows.length === 0) return null;

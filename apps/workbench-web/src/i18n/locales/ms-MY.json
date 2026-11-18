@@ -1519,5 +1519,16 @@
   "onboard.history.projects": "Kumpulan projek asal dikekalkan.",
   "composer.attachment.uploading": "Memuat naik {name}",
   "composer.attachment.confirming": "Memproses…",
-  "composer.attachment.preparing": "Menyediakan…"
+  "composer.attachment.preparing": "Menyediakan…",
+  "codexAccounts.credits.notReported": "Tidak dilaporkan",
+  "codexAccounts.credits.unlimited": "Tanpa had",
+  "codexAccounts.credits.available": "Tersedia",
+  "codexAccounts.credits.none": "Tiada",
+  "codexAccounts.credits.unavailable": "Tidak tersedia",
+  "codexAccounts.credits.balanceMissing": "Baki tidak dilaporkan",
+  "codexAccounts.credits.balance": "Baki",
+  "codexAccounts.credits.serverMissing": "Pelayan belum melaporkan kredit",
+  "codexAccounts.credits.lastConfirmed": "Disahkan terakhir: {date}",
+  "codexAccounts.credits.title": "Kredit",
+  "codexAccounts.credits.lastConfirmedLabel": "Kredit terakhir disahkan"
 }

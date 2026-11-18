@@ -21,6 +21,8 @@ export interface CodexAccountView {
   readonly rateLimitTier: string | null;
   /** Absent on older Hosts; null when the service has not reported a count. */
   readonly resetCredits?: { readonly availableCount: number; readonly observedAt: number } | null;
+  /** Absent on older Hosts; null until the service reports extra credit status. balance is the service's raw text. */
+  readonly credits?: { readonly available: boolean; readonly unlimited: boolean; readonly balance: string | null; readonly observedAt: number } | null;
   /** Only present when the account owner implements both explicit credit methods. */
   readonly resetCreditActions?: boolean;
   readonly status: "disabled" | "ready" | "held" | "exhausted" | "error";

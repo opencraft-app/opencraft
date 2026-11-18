@@ -176,7 +176,8 @@
   transition: transform var(--transition-duration-basic) var(--ease-standard);
 }
 
-.engine-account__reset-credits { min-width: 56px; }
+.engine-account__reset-credits,
+.engine-account__credits { min-width: 56px; }
 
 .settings-icon-button.engine-account__menu-trigger {
   opacity: 0;
@@ -343,7 +344,7 @@
   .engine-account__quotas {
     display: grid;
     grid-column: 1 / -1;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(44px, 0.6fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(44px, 0.6fr) minmax(44px, 0.6fr);
     justify-self: stretch;
     margin-left: 16px;
   }

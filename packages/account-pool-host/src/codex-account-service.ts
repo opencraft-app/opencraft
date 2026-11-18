@@ -2,7 +2,7 @@ import type { ConfiguredCodexResponses } from "./configured-responses.js";
 import { join } from "node:path";
 import { deviceLoginMaintenanceReason } from "./device-login-maintenance.js";
 import type { CodexAccountView } from "@opencraft/appserver-protocol";
-import { AccountPoolStore } from "./store.js";
+import { AccountPoolStore, accountCreditStatus } from "./store.js";
 import { CodexAccountPoolProxy } from "./codex-proxy.js";
 import { AccountCredentialRefreshManager } from "./oauth-refresh.js";
 import { CodexDeviceLoginService, createManagedCodexRefresh, type CodexMaintenanceClientFactory } from "./codex-auth.js";
@@ -254,6 +254,7 @@ export class CodexAccountService {
         rateLimitTier: state.rateLimitTier,
         resetCredits: state.resetCredits,
         resetCreditActions: true,
+        credits: accountCreditStatus(state.limitWindows),
         status: state.status,
         observedAt: state.observedAt,
         heldUntil: state.heldUntil,

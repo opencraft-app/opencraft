@@ -95,6 +95,7 @@ import {
   startCodexAccountPoolServer,
   acquireCodexWriter,
   type CodexMaintenanceClientFactory,
+  accountCreditStatus,
 } from "@opencraft/account-pool-host";
 
 function nativeHistoryTooLarge(error: unknown): boolean {
@@ -2771,6 +2772,7 @@ export class CodexEngineAdapter implements DuplexTransport {
         rateLimitTier: state.rateLimitTier,
         resetCredits: state.resetCredits,
         resetCreditActions: true,
+        credits: accountCreditStatus(state.limitWindows),
         status: state.status,
         observedAt: state.observedAt,
         heldUntil: state.heldUntil,
