@@ -3047,3 +3047,74 @@ test("retry keeps the unconfirmed input until authoritative queue reconciliation
   assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 0);
   runtime.dispose();
 });
+
+
+
+test("Guardian history preserves projection identity until its source or ordered reviews change", () => {
+  const old = { id: "review-history", status: "completed", items: [
+    { id: "review-command", type: "commandExecution", command: "git status", status: "completed" },
+  ] };
+  const tail = { id: "review-tail", status: "inProgress", items: [{ id: "tail-answer", type: "agentMessage", text: "tail" }] };
+  const review = { reviewId: "review-one", turnId: old.id, targetItemId: "review-command", status: "denied",
+    startedAtMs: 1, completedAtMs: 2, riskLevel: "high", userAuthorization: "low", rationale: "Review required",
+    action: { type: "command", source: "shell", command: "git status", cwd: "/workspace" }, decisionSource: "agent" };
+  let entity = threadView({ turns: [old, tail], pendingInteractions: [], guardianApprovalReviews: [review] });
+  const replica = new FakeReplica(entity), projectors = createDefaultTimelineProjectorRegistry();
+  let projected = 0;
+  const originalProject = projectors.project.bind(projectors);
+  projectors.project = (...args) => { projected++; return originalProject(...args); };
+  const create = (reader: FakeReplica, registry = createDefaultTimelineProjectorRegistry()) => createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica: reader, projectors: registry, commands: commands(), history: { async loadOlder() {} },
+  });
+  const runtime = create(replica, projectors);
+  const update = (overrides: Record<string, ReplicaJsonValue>) => {
+    entity = { ...(entity as Record<string, ReplicaJsonValue>), ...overrides };
+    replica.setEntity(entity);
+    const cold = create(new FakeReplica(entity));
+    try { assert.deepEqual(runtime.getSnapshot().timeline.frames, cold.getSnapshot().timeline.frames); }
+    finally { cold.dispose(); }
+  };
+  try {
+    const before = runtime.getSnapshot().timeline;
+    Object.freeze(before.frames[0]);
+    const changedTail = { ...tail, items: [{ ...tail.items[0]!, text: "tail updated" }] };
+    projected = 0;
+    update({ turns: [old, changedTail] });
+    assert.equal(projected, 1, "only the changed tail is projected");
+    assert.equal(runtime.getSnapshot().timeline.frames[0], before.frames[0]);
+    const after = runtime.getSnapshot().timeline;
+    projected = 0;
+    update({ guardianApprovalReviews: [review], notificationRevision: 2 });
+    assert.equal(projected, 0, "a new review array with the same immutable entries is unchanged");
+    assert.equal(runtime.getSnapshot().timeline.frames, after.frames);
+    update({ guardianApprovalReviews: [{ ...review, status: "approved", rationale: "Now allowed" }] });
+    assert.notEqual(runtime.getSnapshot().timeline.frames[0], before.frames[0]);
+    assert.equal(runtime.getSnapshot().timeline.frames[1], after.frames[1]);
+    update({ turns: [{ ...old, items: [] }, changedTail] });
+    update({ guardianApprovalReviews: [review] });
+    update({ turns: [old, changedTail], guardianApprovalReviews: [review, { ...review, reviewId: "second", rationale: "second" }] });
+    update({ guardianApprovalReviews: [{ ...review, reviewId: "second", rationale: "second" }, review] });
+    update({ guardianApprovalReviews: [] });
+    update({ guardianApprovalReviews: [review] });
+    assert.notEqual(runtime.getSnapshot().timeline.frames[0], before.frames[0], "removed entries do not remain resident");
+  } finally { runtime.dispose(); }
+});
+
+test("missing Guardian Turns retain first non-approved order and stable standalone identities", () => {
+  const reviews = [
+    { reviewId: "a-approved", turnId: "missing-a", targetItemId: null, status: "approved" },
+    { reviewId: "b-failed", turnId: "missing-b", targetItemId: null, status: "denied" },
+    { reviewId: "a-failed", turnId: "missing-a", targetItemId: null, status: "timedOut" },
+    { reviewId: "only-approved", turnId: "invisible", targetItemId: null, status: "approved" },
+  ];
+  const entity = threadView({ turns: [], pendingInteractions: [], guardianApprovalReviews: reviews });
+  const replica = new FakeReplica(entity), runtime = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica, commands: commands(), history: { async loadOlder() {} } });
+  try {
+    const before = runtime.getSnapshot().timeline;
+    assert.deepEqual(groupTimelineFramesByTurn(before).map(turn => turn.turnId), ["missing-b", "missing-a"]);
+    replica.setEntity(threadView({ turns: [], pendingInteractions: [], guardianApprovalReviews: [...reviews], notificationRevision: 2 }));
+    assert.equal(runtime.getSnapshot().timeline.frames, before.frames);
+    replica.setEntity(threadView({ turns: [], pendingInteractions: [], guardianApprovalReviews: [] }));
+    assert.equal(runtime.getSnapshot().timeline.frames.length, 0);
+  } finally { runtime.dispose(); }
+});

@@ -327,6 +327,55 @@ function attachGuardianApprovalReviews(
   return turns;
 }
 
+/** Keep immutable reviewed Turns stable across unrelated Replica updates.
+ * This cache belongs to one runtime and retains only the current review groups. */
+function createGuardianApprovalReviewProjector(): typeof attachGuardianApprovalReviews {
+  interface Entry {
+    readonly source: TimelineSourceTurn | undefined;
+    readonly reviews: readonly SourceGuardianApprovalReview[];
+    readonly turn: TimelineSourceTurn | undefined;
+  }
+  let previous = new Map<string, Entry>();
+  return (source, reviews) => {
+    if (reviews.length === 0) { previous.clear(); return source; }
+    const byTurn = new Map<string, SourceGuardianApprovalReview[]>();
+    for (const review of reviews) {
+      const group = byTurn.get(review.turnId);
+      if (group) group.push(review);
+      else byTurn.set(review.turnId, [review]);
+    }
+    const next = new Map<string, Entry>();
+    const project = (id: string, original: TimelineSourceTurn | undefined) => {
+      const group = byTurn.get(id)!;
+      const old = previous.get(id);
+      const entry = old !== undefined && old.source === original
+        && old.reviews.length === group.length
+        && old.reviews.every((review, index) => review.payload === group[index]!.payload)
+        ? old : { source: original, reviews: group,
+          turn: attachGuardianApprovalReviews(original ? [original] : [], group)[0] };
+      next.set(id, entry);
+      return entry.turn;
+    };
+    const seen = new Set<string>();
+    const turns = source.map(turn => {
+      // As in the stateless attachment, the first source Turn owns its ID.
+      if (seen.has(turn.id)) return turn;
+      seen.add(turn.id);
+      return byTurn.has(turn.id) ? project(turn.id, turn)! : turn;
+    });
+    // A missing Turn is created at its first non-approved review, not its
+    // first review: approved observations before that point stay invisible.
+    for (const review of reviews) {
+      if (seen.has(review.turnId) || review.status === "approved") continue;
+      seen.add(review.turnId);
+      const turn = project(review.turnId, undefined);
+      if (turn) turns.push(turn);
+    }
+    previous = next;
+    return turns;
+  };
+}
+
 /**
  * Project every parsed command action as its own exec activity. The
  * synthetic call id is stable while the original Item id remains the source
@@ -1260,6 +1309,7 @@ export function createReplicaConversationRuntime(
   const projectors =
     config.projectors ?? createDefaultTimelineProjectorRegistry();
   const sourceTurnCache = new WeakMap<object, TimelineSourceTurn>();
+  const projectReviews = createGuardianApprovalReviewProjector();
   const actionTurnCache = new WeakMap<TimelineSourceTurn, TimelineSourceTurn>();
   const senderTurnCache = new WeakMap<TimelineSourceTurn, { revision: number; turn: TimelineSourceTurn }>();
   let senderRevision = 0;
@@ -1455,7 +1505,7 @@ export function createReplicaConversationRuntime(
         : source.find((turn) => String(turn.id) === String(submission.targetTurnId));
       return target === undefined || steeringAcknowledgementIndex(target, submission) < 0;
     });
-    const reviewedTurns = attachGuardianApprovalReviews(
+    const reviewedTurns = projectReviews(
       projectSenders(mergeOptimisticSubmissions(source, [
         ...confirmedSteers.values(),
         ...pendingSubmissions.values(),
