@@ -381,8 +381,14 @@ function createGuardianApprovalReviewProjector(): typeof attachGuardianApprovalR
  * synthetic call id is stable while the original Item id remains the source
  * identity so approvals, Guardian reviews and navigation still attach.
  */
+type CommandActionProjectionCache = WeakMap<object, {
+  readonly id: string;
+  readonly items: readonly TimelineSourceItem[];
+}>;
+
 function splitCommandExecutionActions(
   source: readonly TimelineSourceTurn[],
+  cache?: CommandActionProjectionCache,
 ): readonly TimelineSourceTurn[] {
   return source.map((turn) => ({
     ...turn,
@@ -392,10 +398,15 @@ function splitCommandExecutionActions(
         !isRecord(item.payload as ReplicaJsonValue)
       )
         return [item];
+      // Source wrappers are rebuilt when a live Turn changes, but unchanged
+      // Replica payloads retain identity. Expansion depends only on this
+      // payload and source Item id, never on Turn status or Item position.
+      const cached = cache?.get(item.payload as JsonRecord);
+      if (cached?.id === item.id) return cached.items;
       const { __velaSourceItemId: _legacySourceItemId, ...payload } = item.payload as JsonRecord;
       const actions = array(payload.commandActions);
       if (actions.length === 0) return [item];
-      return actions.map((action, index) => {
+      const expanded = actions.map((action, index) => {
         const actionRecord = isRecord(action) ? action : {};
         const callId = actions.length === 1 ? item.id : `${item.id}:${index}`;
         return {
@@ -412,6 +423,8 @@ function splitCommandExecutionActions(
           },
         };
       });
+      cache?.set(item.payload as JsonRecord, { id: item.id, items: expanded });
+      return expanded;
     }),
   }));
 }
@@ -1311,6 +1324,7 @@ export function createReplicaConversationRuntime(
   const sourceTurnCache = new WeakMap<object, TimelineSourceTurn>();
   const projectReviews = createGuardianApprovalReviewProjector();
   const actionTurnCache = new WeakMap<TimelineSourceTurn, TimelineSourceTurn>();
+  const commandActionCache: CommandActionProjectionCache = new WeakMap();
   const senderTurnCache = new WeakMap<TimelineSourceTurn, { revision: number; turn: TimelineSourceTurn }>();
   let senderRevision = 0;
   const projectSenders = (source: readonly TimelineSourceTurn[]) => source.map(turn => {
@@ -1323,7 +1337,7 @@ export function createReplicaConversationRuntime(
   const projectActions = (source: readonly TimelineSourceTurn[]) => source.map(turn => {
     const cached = actionTurnCache.get(turn);
     if (cached !== undefined) return cached;
-    const projected = splitCommandExecutionActions([turn])[0]!;
+    const projected = splitCommandExecutionActions([turn], commandActionCache)[0]!;
     actionTurnCache.set(turn, projected);
     return projected;
   });

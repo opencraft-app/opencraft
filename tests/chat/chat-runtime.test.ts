@@ -3118,3 +3118,47 @@ test("missing Guardian Turns retain first non-approved order and stable standalo
     assert.equal(runtime.getSnapshot().timeline.frames.length, 0);
   } finally { runtime.dispose(); }
 });
+
+
+
+test("stable command payloads are expanded once across live tail updates, but new payloads invalidate", () => {
+  const actions = [{type: "read", command: "cat a", name: "a", path: "a"}, {type: "read", command: "cat b", name: "b", path: "b"}];
+  const base = {id: "stable-command", type: "commandExecution", command: "cat a && cat b", status: "completed", aggregatedOutput: "output"};
+  let reads = 0, rejectReads = false;
+  const command = { ...base };
+  Object.defineProperty(command, "commandActions", { enumerable: true, get() {
+    reads++; if (rejectReads) throw Error("stable command expanded again"); return actions;
+  } });
+  let currentCommand: ReplicaJsonValue = command;
+  const entity = (text: string) => threadView({pendingInteractions: [], turns: [{id: "long-turn", status: "inProgress", items: [
+    currentCommand, {id: "tail", type: "agentMessage", text},
+  ]}]});
+  const replica = new FakeReplica(entity("tail"));
+  const create = (reader: FakeReplica) => createReplicaConversationRuntime({key: createConversationKey("local", "thread-one"), replica: reader, commands: commands(), history: {async loadOlder() {}}});
+  const runtime = create(replica);
+  try {
+    assert.ok(reads > 0);
+    const initialReads = reads;
+    rejectReads = true;
+    replica.setEntity(entity("tail updated"));
+    replica.setEntity(entity("tail updated again"));
+    assert.equal(reads, initialReads);
+    const plain = new FakeReplica(threadView({pendingInteractions: [], turns: [{id: "long-turn", status: "inProgress", items: [
+      {...base, commandActions: actions}, {id: "tail", type: "agentMessage", text: "tail updated again"},
+    ]}]}));
+    const cold = create(plain);
+    try { assert.deepEqual(runtime.getSnapshot().timeline.frames, cold.getSnapshot().timeline.frames); }
+    finally { cold.dispose(); }
+    const before = runtime.getSnapshot().timeline;
+    assert.equal(before.frames.flatMap(frame => frame.blocks).filter(block => block.type === "command-execution").length, 2);
+    currentCommand = {...base, commandActions: [{type: "read", command: "cat c", name: "c", path: "c"}], aggregatedOutput: "new output"};
+    replica.setEntity(entity("new payload"));
+    const commandsNow = runtime.getSnapshot().timeline.frames.flatMap(frame => frame.blocks).filter(block => block.type === "command-execution");
+    assert.equal(commandsNow.length, 1, "multi-action to single-action change is not cached by Item id");
+    assert.notDeepEqual(runtime.getSnapshot().timeline.frames, before.frames);
+    rejectReads = false;
+    const independent = create(new FakeReplica(threadView({pendingInteractions: [], turns: [{id: "long-turn", status: "inProgress", items: [command]}]})));
+    try { assert.ok(reads > initialReads, "another runtime owns its own expansion cache"); }
+    finally { independent.dispose(); }
+  } finally { runtime.dispose(); }
+});
