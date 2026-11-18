@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node ../../scripts/patch-novnc-desktop-events.mjs && vite build && node ../../scripts/check-browser-compatibility.mjs",
+    "build": "node ../../scripts/patch-novnc-desktop-events.mjs && vite build && node --max-old-space-size=4096 ../../scripts/check-browser-compatibility.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

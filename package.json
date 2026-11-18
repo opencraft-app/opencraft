@@ -258,7 +258,7 @@
     "test:startup": "tsx --test tests/mobile/mobile-workbench-container.test.ts tests/mobile/mobile-packaged-resources.test.mjs tests/mobile/mobile-packaged-modules.test.mjs tests/protocol/deferred-transport.test.ts tests/server/web-asset-encoding.test.mjs tests/server/web-asset-cache.test.ts tests/server/startup-resource-hints.test.ts tests/server/startup-resource-policy.test.ts tests/server/startup-resource-composition.test.ts tests/shell/developer-tool-inputs.test.ts tests/mobile/embedded-product-build.test.mjs tests/mobile/expo-product-entry.test.cjs tests/mobile/expo-native-build.test.cjs tests/mobile/native-intl-polyfills.test.cjs tests/mobile/metro-asset-registry.test.cjs tests/browser/browser-process-env.test.ts",
     "smoke:tasks:v1": "tsx scripts/smoke/tasks/smoke-tasks-v1.ts",
     "smoke:browser-bootstrap": "tsx scripts/smoke/browser/smoke-browser-bootstrap.ts",
-    "lint:browser": "node scripts/check-browser-compatibility.mjs",
+    "lint:browser": "node --max-old-space-size=4096 scripts/check-browser-compatibility.mjs",
     "test:browser-compatibility": "node --test tests/tooling/browser-compatibility-lint.test.mjs tests/tooling/browser-compatibility-graph.test.mjs tests/tooling/product-module-resolution.test.mjs && tsx --test tests/shell/workbench-browser-runtime.test.ts",
     "smoke:browser-todo": "tsx scripts/smoke/browser/smoke-browser-todo.ts",
     "build:relay": "node scripts/package-relay.mjs",
