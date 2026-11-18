@@ -46,7 +46,7 @@ export class WebConversationContentWindow {
         entry.visible = record.isIntersecting;
         entry.update(entry.visible || this.protected(element));
       }
-    }, { root, rootMargin: "1000px 0px", threshold: 0 });
+    }, { root, rootMargin: "2400px 0px", threshold: 0 });
     this.intersection = observer;
     for (const element of this.registrations.keys()) observer.observe(element);
   }

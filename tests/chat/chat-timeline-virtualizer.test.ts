@@ -603,7 +603,11 @@ test("ten thousand Turns retain a bounded mounted window", () => {
   const layout = buildTurnLayout(entries);
   const viewport = createTurnViewportState(layout, 400_000, 900);
   const slice = createTurnWindowSlice(entries, layout, viewport.renderedRange);
-  assert.ok(slice.entries.length <= 16, `mounted ${slice.entries.length} Turns`);
+  // At most one partial row per edge, plus the configured pre-render buffer.
+  const maxVisibleTurns = Math.ceil(900 / (96 + OPENCRAFT_TURN_VIRTUALIZER_CONFIG.gapPx)) + 1;
+  const maxMountedTurns = maxVisibleTurns + 2 * OPENCRAFT_TURN_VIRTUALIZER_CONFIG.overscanTurnCount;
+  assert.ok(slice.entries.length <= maxMountedTurns, `mounted ${slice.entries.length} Turns`);
+  assert.ok(slice.entries.length <= 20, "default overscan must remain bounded");
   assert.equal(slice.totalHeightPx, 10_000 * 96 + 9_999 * OPENCRAFT_TURN_VIRTUALIZER_CONFIG.gapPx);
 });
 

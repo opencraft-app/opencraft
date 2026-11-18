@@ -12,7 +12,7 @@ import type {
 export const OPENCRAFT_TURN_VIRTUALIZER_CONFIG: Readonly<TurnVirtualizerConfig> = Object.freeze({
   estimatedTurnHeightPx: 280,
   gapPx: 12,
-  overscanTurnCount: 2,
+  overscanTurnCount: 4,
   fallbackViewportHeightPx: 800,
   topAlignmentInsetPx: 10,
 });
