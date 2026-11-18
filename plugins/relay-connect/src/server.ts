@@ -1,6 +1,6 @@
 import { createConnection } from "node:net";
 import WebSocket from "ws";
-import { relayDuplex } from '@opencraft/relay-protocol/node';
+import { closeWhenDone, relayDuplex } from '@opencraft/relay-protocol/node';
 import { AssertionProvider, readPrivateJson, type AssertionProviderOptions } from '@opencraft/identity-core/node';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
@@ -47,7 +47,7 @@ export function connectRelay(options: RelayConnectOptions) {
           if (stopped || control !== ws) { data.terminate(); return; }
           const stream = relayDuplex(data); const target = createConnection({ host: '127.0.0.1', port: options.targetPort });
           stream.on('error', () => target.destroy()); target.on('error', () => stream.destroy());
-          stream.once('close', () => { target.destroy(); data.terminate(); }); target.once('close', () => stream.destroy());
+          stream.once('close', () => data.terminate()); closeWhenDone(stream, target); closeWhenDone(target, stream);
           stream.pipe(target); target.pipe(stream);
         });
       } catch { ws.close(1008, 'Invalid relay control message'); }

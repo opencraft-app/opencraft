@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Duplex } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import WebSocket, { WebSocketServer } from 'ws';
-import { relayDuplex } from "@opencraft/relay-protocol/node";
+import { closeWhenDone, relayDuplex } from "@opencraft/relay-protocol/node";
 import { AssertionProvider, type IdentityProvider, type IdentityRequest } from "@opencraft/identity-core/node";
 import { MAX_STREAMS } from "@opencraft/relay-protocol";
 import { HUB_CONTROL_PATH, HUB_DATA_PATH, HUB_PROTOCOL, MAX_HOPS, publicOrigin, transportEndpoint, validHubId,
@@ -288,7 +288,7 @@ export class HubNetwork implements IdentityProvider {
       next = await this.open(target, [...path, this.store.id]);
       if (this.links.get(link.id) !== link || stream.destroyed) { next.destroy(); stream.destroy(); return; }
       next.on('error', () => stream.destroy()); stream.on('error', () => next?.destroy());
-      next.once('close', () => stream.destroy()); stream.once('close', () => next?.destroy()); stream.pipe(next); next.pipe(stream);
+      closeWhenDone(next, stream); closeWhenDone(stream, next); stream.pipe(next); next.pipe(stream);
     } catch { next?.destroy(); stream.destroy(); }
   }
   async open(target: string, path = [this.store.id], signal?: AbortSignal): Promise<Duplex> {
