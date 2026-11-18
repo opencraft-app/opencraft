@@ -137,6 +137,9 @@ try {
     // resubmission retains the native image ID rather than treating the locator as a URL.
     await reset();
     await page.evaluate(() => (window as any).fixture.nativeImage());
+    // The fixture replaces the two default rows through React state; wait for that render
+    // before addressing the single image row.
+    await page.waitForFunction(() => document.querySelectorAll(".opencraft-composer-queue-item").length === 1);
     await page.locator(".opencraft-composer-queue-item").getByRole("button", { name: "Edit queued message", exact: true }).click();
     await page.getByRole("button", { name: "Cancel editing queued message", exact: true }).waitFor();
     assert.equal(await page.evaluate(() => (window as any).fixture.controller.getSnapshot().draft.attachments[0].name), "uploaded-image-1");
