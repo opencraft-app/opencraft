@@ -178,6 +178,19 @@ jobs:
           shutil.copy2(Path(os.environ['BUILD_ROOT']) / 'src/out/OpenCraft/dist.zip', out / 'dist.zip')
           shutil.copy2(Path(os.environ['DISTRIBUTION']) / 'opencraft-electron-desktop-artifact.json', out)
           PY
+      - name: Probe the Linux server browser distribution
+        if: matrix.id == 'linux-x64' && steps.native-cache.outputs.cache-hit != 'true'
+        run: |
+          python3 - <<'PYBROWSER'
+          import os, runpy
+          from pathlib import Path
+          extract = runpy.run_path('vendor/electron/prepare-desktop-artifact.py')['extract_archive']
+          extract(Path(os.environ['EVIDENCE']) / 'dist.zip', Path(os.environ['DISTRIBUTION'] + '-browser'))
+          PYBROWSER
+          python3 vendor/electron/prepare-artifact.py \
+            --distribution "$DISTRIBUTION-browser" --source-root "$BUILD_ROOT" \
+            --evidence "$EVIDENCE/browser"
+          cp "$DISTRIBUTION-browser/opencraft-electron-artifact.json" "$EVIDENCE/"
       - name: Save verified Linux fork runtime
         if: matrix.id == 'linux-x64' && steps.native-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

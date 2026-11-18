@@ -70,3 +70,15 @@ class RestoreArtifactTests(unittest.TestCase):
                 self.module.restore(root, root / 'browser', 'browser')
             self.assertFalse((root / 'browser').exists())
             self.assertFalse((root / 'escaped').exists())
+
+    def test_linux_browser_proof_is_created_before_the_native_cache_is_saved(self):
+        workflow = (Path(__file__).parents[3] / '.github/workflows/electron-native-artifacts.yml').read_text()
+        start = workflow.index('      - name: Probe the Linux server browser distribution')
+        save = workflow.index('      - name: Save verified Linux fork runtime')
+        probe = workflow[start:save]
+        self.assertLess(start, save)
+        self.assertIn("matrix.id == 'linux-x64' && steps.native-cache.outputs.cache-hit != 'true'", probe)
+        self.assertIn("Path(os.environ['EVIDENCE']) / 'dist.zip'", probe)
+        self.assertIn('python3 vendor/electron/prepare-artifact.py', probe)
+        self.assertIn('opencraft-electron-artifact.json', probe)
+        self.assertIn("hashFiles('vendor/electron/**', '.github/workflows/electron-native-artifacts.yml')", workflow)
