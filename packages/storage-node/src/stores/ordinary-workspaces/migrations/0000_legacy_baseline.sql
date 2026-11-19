@@ -1,15 +1,15 @@
 CREATE TABLE `workspace_journal_meta` (
-	`key` text PRIMARY KEY NOT NULL,
+	`key` text PRIMARY KEY,
 	`value` text NOT NULL
 );
 
 CREATE TABLE `ordinary_workspace_selections` (
-	`workspace_id` text PRIMARY KEY NOT NULL,
+	`workspace_id` text PRIMARY KEY,
 	`selection_json` text NOT NULL
 );
 
 CREATE TABLE `ordinary_workspace_thread_starts` (
-	`workspace_id` text PRIMARY KEY NOT NULL,
+	`workspace_id` text PRIMARY KEY,
 	`generation` integer NOT NULL,
 	`phase` text NOT NULL,
 	CONSTRAINT "ordinary_workspace_thread_starts_phase" CHECK(phase IN ('dispatched','confirmed'))
@@ -31,5 +31,5 @@ CREATE TABLE `ordinary_workspaces` (
 	CONSTRAINT "ordinary_workspaces_phase" CHECK(phase IN ('idle','creating','live','releasing','uncertain'))
 );
 
-CREATE UNIQUE INDEX `ordinary_workspaces_workspace_id_unique` ON `ordinary_workspaces` (`workspace_id`);
-CREATE UNIQUE INDEX `ordinary_workspaces_host_id_thread_id_unique` ON `ordinary_workspaces` (`host_id`,`thread_id`);
+CREATE UNIQUE INDEX `legacy_unique_ordinary_workspaces_workspace_id` ON `ordinary_workspaces` (`workspace_id`);
+CREATE UNIQUE INDEX `legacy_unique_ordinary_workspaces_host_thread` ON `ordinary_workspaces` (`host_id`,`thread_id`);

@@ -9,7 +9,7 @@
           "name": "key",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "value": {
@@ -33,7 +33,7 @@
           "name": "workspace_id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "selection_json": {
@@ -57,7 +57,7 @@
           "name": "workspace_id",
           "type": "text",
           "primaryKey": true,
-          "notNull": true,
+          "notNull": false,
           "autoincrement": false
         },
         "generation": {
@@ -170,15 +170,15 @@
         }
       },
       "indexes": {
-        "ordinary_workspaces_workspace_id_unique": {
-          "name": "ordinary_workspaces_workspace_id_unique",
+        "legacy_unique_ordinary_workspaces_workspace_id": {
+          "name": "legacy_unique_ordinary_workspaces_workspace_id",
           "columns": [
             "workspace_id"
           ],
           "isUnique": true
         },
-        "ordinary_workspaces_host_id_thread_id_unique": {
-          "name": "ordinary_workspaces_host_id_thread_id_unique",
+        "legacy_unique_ordinary_workspaces_host_thread": {
+          "name": "legacy_unique_ordinary_workspaces_host_thread",
           "columns": [
             "host_id",
             "thread_id"

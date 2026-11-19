@@ -80,9 +80,9 @@ class ForkSourceTests(unittest.TestCase):
         # A fresh build produces precisely the same commits and tree.
         fresh = Path(self.temp.name) / 'fresh'
         (fresh / 'src').mkdir(parents=True)
-        subprocess.run(['git', 'clone', '--no-local', str(self.source),
+        subprocess.run(['git', '-c', 'core.autocrlf=false', 'clone', '--no-local', str(self.source),
                         str(fresh / 'src/electron')], check=True, capture_output=True)
-        subprocess.run(['git', '-C', str(fresh / 'src/electron'), 'checkout',
+        subprocess.run(['git', '-c', 'core.autocrlf=false', '-C', str(fresh / 'src/electron'), 'checkout',
                         '--detach', self.lock['revision']], check=True, capture_output=True)
         # The fixture clone already contains the branch; remove only that fixture ref.
         subprocess.run(['git', '-C', str(fresh / 'src/electron'), 'branch', '-D',
