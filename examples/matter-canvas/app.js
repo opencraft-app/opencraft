@@ -1,4 +1,5 @@
 /* 老板的办公室。上面是三维办公室（scene.js），下面是一张面板：点谁，就打开谁。
+   首屏是老板自己的手机：直属下属的对话列表，招募新员工也从手机发起。
    每个人四个页签：对话（对他说要办什么）、手机（他在联系谁 / 他能联系谁）、电脑（他在做什么 / 他能做什么）、岗位。
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
@@ -54,7 +55,7 @@
     return { nodes: nodes, links: links, boss: boss };
   }
   function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? reachOf(ui.sel) : []); } }
-  function pick(id) { if (id && !P(id) && !O(id) && id !== 'me') id = null; ui.sel = id; ui.sub = null; if (id && !P(id)) ui.tab = 'talk'; if (has3d) window.Office.select(id, id ? reachOf(id) : []); draw(); }
+  function pick(id) { if (id && !P(id) && !O(id)) id = null; /* 点「你」自己，就是回到你的手机 */ ui.sel = id; ui.sub = null; if (id && !P(id)) ui.tab = 'talk'; if (has3d) window.Office.select(id, id ? reachOf(id) : []); draw(); }
 
   /* ---------- 面板 ---------- */
   function sec(cls, title, body) { return '<section class="sec ' + cls + '"><h3>' + title + '</h3>' + body + '</section>'; }
@@ -62,10 +63,14 @@
   function bubble(m, self) { return '<div class="msg' + (m.who === self ? ' out' : '') + '"><div class="bub">' + esc(m.text) + (m.file ? '<details class="file"><summary>' + esc(m.file) + '</summary><pre>' + esc(m.body) + '</pre></details>' : '') + '</div><time>' + (m.who !== self && self !== 'me' ? esc(N(m.who)) + ' · ' : '') + hhmm(m.ts) + '</time>' +
     (m.ask === 'open' && self === 'me' ? '<div class="ask"><button class="btn ok" data-do="accept" data-id="' + m.id + '">可以</button><button class="btn" data-do="reject" data-id="' + m.id + '">不行，退回</button></div>' : m.ask && self === 'me' ? '<div class="asked">' + (m.ask === 'ok' ? '你说了可以' : '你退回了') + '</div>' : '') + '</div>'; }
 
-  function home() {
-    var a = asks(), h = '<header class="head"><div><h2>我的办公室</h2><p>点一个小家伙，看他的手机和电脑，或者对他说要办什么。</p></div><button class="btn" data-do="new">新员工</button></header><div class="body">';
-    h += sec('warm', '等你处理', a.length ? a.map(function (m) { return '<button class="row" data-do="open" data-id="' + m.who + '"><b>' + esc(N(m.who)) + '</b><span>' + esc(m.text) + '</span></button>'; }).join('') : none('现在没有要你看的东西。'));
-    h += sec('', '所有人', db.people.length ? '<div class="chips">' + db.people.map(function (p) { return '<button class="chip" data-do="open" data-id="' + p.id + '">' + esc(p.name) + '<i>' + esc(p.role || '未填岗位') + '</i></button>'; }).join('') + '</div>' : none('办公室还是空的。先加一位员工。'));
+  function home() { /* 首屏是老板自己的手机：直属下属的对话列表，招募也从这里发起 */
+    var mine = db.people.filter(function (p) { return p.boss === 'me'; }), rest = db.people.filter(function (p) { return p.boss !== 'me'; });
+    function last(p) { var l = thread('me', p.id).pop(); return l ? l.ts : 0; }
+    mine.sort(function (a, b) { return (asks(b.id).length - asks(a.id).length) || (last(b) - last(a)); });
+    var h = '<header class="head"><div><h2>我的手机</h2><p>直接归你管的人都在这里。点一个人，对他说要办什么。</p></div><button class="btn ok" data-do="new">招募</button></header><div class="body">';
+    h += mine.length ? '<div class="list">' + mine.map(function (p) { var l = thread('me', p.id).pop(), n = asks(p.id).length;
+      return '<button class="row chatrow" data-do="open" data-id="' + p.id + '"><b>' + esc(p.name) + '<em>' + esc(p.role || '未填岗位') + '</em><time>' + (l ? hhmm(l.ts) : '') + '</time></b><span>' + (n ? '<i class="dot">' + n + '</i>' : '') + esc(l ? (l.who === 'me' ? '你：' : '') + l.text : '还没有说过话') + '</span></button>'; }).join('') + '</div>' : sec('', '还没有人', none('手机里还没有人。点右上角「招募」，招第一位员工。'));
+    if (rest.length) h += sec('', '不归你直接管的人', '<div class="chips">' + rest.map(function (p) { return '<button class="chip" data-do="open" data-id="' + p.id + '">' + esc(p.name) + '<i>归' + esc(N(p.boss)) + '管</i></button>'; }).join('') + '</div><p class="cap">你不直接对他们说话，但可以看他们的手机和电脑。</p>');
     return h + '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="' + (db.sample ? 'clear">清空示例' : 'sample">放回示例') + '</button></p></div>';
   }
   function talk(p) {
@@ -92,17 +97,16 @@
   }
   function person(p) {
     var n = asks(p.id).length;
-    return '<header class="head"><div><h2>' + esc(p.name) + '</h2><p>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</p></div><button class="btn x" data-do="open" data-id="" aria-label="关闭">关闭</button></header><div class="tabs" role="tablist">' +
+    return '<header class="head"><div><h2>' + esc(p.name) + '</h2><p>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</p></div><button class="btn x" data-do="open" data-id="" aria-label="返回我的手机">我的手机</button></header><div class="tabs" role="tablist">' +
       TABS.map(function (t) { return '<button role="tab" aria-selected="' + (ui.tab === t[0]) + '" data-tab="' + t[0] + '">' + t[1] + (t[0] === 'talk' && n ? '<i>' + n + '</i>' : '') + '</button>'; }).join('') + '</div>' + ({ talk: talk, phone: phone, pc: pc, role: role })[ui.tab](p);
   }
   function outside(o) { var who = db.people.filter(function (p) { return p.reach.indexOf(o.id) >= 0; });
-    return '<header class="head"><div><h2>' + esc(o.name) + '</h2><p>公司外的人</p></div><button class="btn x" data-do="open" data-id="">关闭</button></header><div class="body">' + sec('mint', '谁能联系他', who.length ? '<div class="chips">' + who.map(function (p) { return '<button class="chip" data-do="open" data-id="' + p.id + '">' + esc(p.name) + '</button>'; }).join('') + '</div>' : none('现在没有人能联系他。')) + '<p><button class="btn danger" data-do="dropout" data-id="' + o.id + '">从门外移走</button></p></div>'; }
-  function me() { return '<header class="head"><div><h2>你</h2><p>这间办公室的老板</p></div><button class="btn x" data-do="open" data-id="">关闭</button></header><div class="body">' + sec('', '直接归你管的人', reachOf('me').length ? '<div class="chips">' + reachOf('me').map(function (j) { return '<button class="chip" data-do="open" data-id="' + j + '">' + esc(N(j)) + '</button>'; }).join('') + '</div>' : none('还没有人直接归你管。')) + '</div>'; }
-  function create() { return '<header class="head"><div><h2>新员工</h2><p>先给个名字和岗位，其余的进去再配。</p></div><button class="btn x" data-do="open" data-id="">取消</button></header><form class="body" data-do="add"><label class="fld"><span>名字</span><input id="nname" autocomplete="off" placeholder="例如：青柚"></label><label class="fld"><span>岗位</span><input id="nrole" autocomplete="off" placeholder="例如：客服"></label><label class="fld"><span>归谁管</span><select id="nboss"><option value="me">你</option>' + db.people.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></label><div class="acts"><button class="btn ok">让他入职</button></div></form>'; }
+    return '<header class="head"><div><h2>' + esc(o.name) + '</h2><p>公司外的人</p></div><button class="btn x" data-do="open" data-id="">我的手机</button></header><div class="body">' + sec('mint', '谁能联系他', who.length ? '<div class="chips">' + who.map(function (p) { return '<button class="chip" data-do="open" data-id="' + p.id + '">' + esc(p.name) + '</button>'; }).join('') + '</div>' : none('现在没有人能联系他。')) + '<p><button class="btn danger" data-do="dropout" data-id="' + o.id + '">从门外移走</button></p></div>'; }
+  function create() { return '<header class="head"><div><h2>招募新员工</h2><p>先给个名字和岗位。入职后他会出现在办公室里，其余的进去再配。</p></div><button class="btn x" data-do="open" data-id="">返回手机</button></header><form class="body" data-do="add"><label class="fld"><span>名字</span><input id="nname" autocomplete="off" placeholder="例如：青柚"></label><label class="fld"><span>岗位</span><input id="nrole" autocomplete="off" placeholder="例如：客服"></label><label class="fld"><span>归谁管</span><select id="nboss"><option value="me">你</option>' + db.people.map(function (x) { return '<option value="' + x.id + '">' + esc(x.name) + '</option>'; }).join('') + '</select></label><div class="acts"><button class="btn ok">让他入职</button></div></form>'; }
 
   function draw() {
     var sheet = $('sheet'), b = sheet.querySelector('.body'), keep = b ? b.scrollTop : 0, sameView = sheet.getAttribute('data-view') === (ui.sel + '/' + ui.tab + '/' + ui.sub), p = P(ui.sel);
-    sheet.innerHTML = ui.sel === '+' ? create() : p ? person(p) : O(ui.sel) ? outside(O(ui.sel)) : ui.sel === 'me' ? me() : home();
+    sheet.innerHTML = ui.sel === '+' ? create() : p ? person(p) : O(ui.sel) ? outside(O(ui.sel)) : home();
     sheet.setAttribute('data-view', ui.sel + '/' + ui.tab + '/' + ui.sub); document.body.classList.toggle('open', !!ui.sel);
     var nb = sheet.querySelector('.body'); if (nb) { if (sameView) nb.scrollTop = keep; var c = $('chat'); if (c && !sameView) c.scrollTop = c.scrollHeight; }
     if (has3d) window.Office.resize();
