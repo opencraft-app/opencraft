@@ -142,6 +142,7 @@ import { createPlatformViewRendererContributionAdapter } from "./platform-view-r
 
 import { connectAppearanceThemeContributions } from "../appearance-theme";
 import { workbenchProductId } from "../workbench-product";
+import { BrowserDraftRecovery } from "./browser-draft-recovery";
 import { createBrowserConversationDraftStorage } from "./browser-conversation-drafts";
 import { bindHostQueryRecovery } from "./host-query-recovery";
 import {
@@ -730,15 +731,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     requestedBootstrapLocation,
     { hasHost: hostId => profiles.some(profile => profile.hostId === hostId), bindings: conversationBindings, scopes: null },
   );
-  const savedNewTarget = normalizedBootstrapLocation?.kind !== "thread" && requestedBootstrapLocation?.kind === "draft"
-    ? await browserDraftStore.loadNewTarget(requestedBootstrapLocation.draftId) : null;
-  const restoredNewTarget = savedNewTarget && requestedBootstrapLocation?.kind === "draft"
-    && savedNewTarget.execution.hostId === requestedBootstrapLocation.hostId
-    && profiles.some(profile => profile.hostId === savedNewTarget.execution.hostId && profile.enabled)
-    ? savedNewTarget : null;
-  const bootstrapLocation = restoredNewTarget
-    ? createWorkbenchDraftLocation(restoredNewTarget.execution.hostId, restoredNewTarget.draftId)
-    : normalizedBootstrapLocation;
+  const requestedDraft = requestedBootstrapLocation?.kind === "draft"
+    && profiles.some(profile => profile.hostId === requestedBootstrapLocation.hostId)
+    ? requestedBootstrapLocation : null;
+  const bootstrapLocation = normalizedBootstrapLocation ?? requestedDraft;
   const persistedHostId = readLocalPreference(currentProductStorageKey("opencraft.active-host-id"));
   const requestedHostId = bootstrapLocation?.kind === "thread"
     ? bootstrapLocation.key.hostId
@@ -1043,8 +1039,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     initialDraft: initialThreadLocation === null
       ? {
           entrypoint: "home",
-          ...(restoredNewTarget ? { draftId: restoredNewTarget.draftId } : {}),
-          execution: restoredNewTarget?.execution ?? {
+          ...(bootstrapLocation?.kind === "draft" ? { draftId: bootstrapLocation.draftId } : {}),
+          execution: {
             hostId: active.hostId,
             workspace: {
               cwd: initialWorkspaceRoot,
@@ -1099,20 +1095,27 @@ export async function createWebWorkbenchApplicationSupervisor(
     getScope: () => draftCredentialScope,
     subscribe(listener) { displayListeners.add(listener); return () => displayListeners.delete(listener); },
   };
+  const draftRecovery = new BrowserDraftRecovery();
+  const draftContinuity = () => draftRecovery.bind(createConversationDraftContinuity({
+    namespace: `${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`,
+    storage: browserDraftStore.storage,
+    delayMs: 0,
+  }), browserDraftStore.loadViewId, saved => {
+    const draft = conversationScopes.getDraft(saved.draftId);
+    if (draft?.phase === "editing" && draft.target.execution.hostId === saved.execution.hostId)
+      conversationActivation.retargetDraft(saved.draftId, saved.execution);
+  });
   const conversationViews = createConversationViewRegistry({
     maxInactiveViews: resourcePolicy.maxInactiveViews,
     scopeLeases: conversationLeases,
     composerServices: { now: Date.now, createId: createClientId },
-    draftContinuity: createConversationDraftContinuity({
-      namespace: `${serverStorageKey(workbenchProductId)}.${draftCredentialScope}`,
-      storage: browserDraftStore.storage,
-      delayMs: 0,
-    }),
+    draftContinuity: draftContinuity(),
     onDisposeView(viewId) {
       disposeViewResources(viewId);
       routeCheckpoints.delete(viewId);
     },
     onEvictDraft(viewId) {
+      draftRecovery.forget(viewId);
       navigation.forgetView(viewId);
     },
   });
@@ -1136,11 +1139,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     });
     for (const listener of displayListeners) listener();
     navigation.clearPreferredViews();
-    conversationViews.replaceDraftContinuity(createConversationDraftContinuity({
-      namespace: `${serverStorageKey(workbenchProductId)}.${nextScope}`,
-      storage: browserDraftStore.storage,
-      delayMs: 0,
-    }));
+    conversationViews.replaceDraftContinuity(draftContinuity());
   });
   startupRollback.push(stopDraftScope);
   const conversationActivation = createConversationActivationCoordinator(
@@ -1151,23 +1150,13 @@ export async function createWebWorkbenchApplicationSupervisor(
     conversationViews,
   );
   startupRollback.push(() => conversationActivation.dispose());
-  const restoreDraftViewId = async (location: WorkbenchLocation) => {
-    const target = location.kind === "thread"
-      ? { type: "existing-thread" as const, key: location.key }
-      : conversationScopes.getDraft(location.draftId)?.target;
-    if (!target) return undefined;
-    const id = await browserDraftStore.loadViewId(target);
-    return id === null ? undefined : asRouteScopeId(id);
-  };
-  const restoredInitialView = await restoreDraftViewId(initialLocation);
   const navigation = createWorkbenchNavigationTransaction(
     initialLocation,
     conversationActivation,
     conversationScopes,
     {
       ...routerOptions,
-      initialRouteScopeId: restoredInitialView,
-      restoreViewId: restoreDraftViewId,
+      recoverInputAfterMount: draftRecovery.markCold,
       resolveLocation: resolveWebsiteLocation,
       resolveCanonicalLocation(location) {
         return resolveRetainedWorkbenchLocation(location, {
@@ -1199,12 +1188,14 @@ export async function createWebWorkbenchApplicationSupervisor(
   startupRollback.push(() => navigation.dispose());
   // Browser startup owns only local identity construction. Physical Host
   // connection and Thread hydration continue after the shell can render.
+  if (initialThreadLocation || requestedDraft) draftRecovery.markCold(navigation.getSnapshot().routeScopeId);
   const initialActivation = conversationActivation.presentInitial(
     initialLocation,
     navigation.getSnapshot().routeScopeId,
   );
   const commands = createWebWorkbenchCommands({
     displayContinuity,
+    isDraftRecovering: () => draftRecovery.isPending(navigation.getSnapshot().routeScopeId),
     presentation: options.presentation,
     threadMemoryScope,
     registry,
@@ -1313,6 +1304,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     blobs,
     images,
     mode: "active",
+    draftRecovery,
     clientResources,
     managedHostCatalog: sshManagement,
     cordis,

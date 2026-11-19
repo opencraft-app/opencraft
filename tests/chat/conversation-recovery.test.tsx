@@ -1,3 +1,4 @@
+import {ConversationUnavailableState} from "../../apps/workbench-web/src/components/conversation-archived-state";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement, type ReactElement } from "react";
@@ -8,7 +9,6 @@ import {
   connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
-  ConversationUnavailableState,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
 } from "../../apps/workbench-web/src/components/conversation-recovery";
@@ -42,8 +42,8 @@ test("archived conversations render one read-only restore state instead of a ret
   try {
     const markup = renderToStaticMarkup(createElement(IntlRuntimeProvider, { runtime,
       children: createElement(ConversationUnavailableState, { reason: "archived", onRestore: () => undefined }) }));
-    assert.match(markup, /Conversation archived/);
-    assert.match(markup, /read-only until you restore it/);
+    assert.match(markup, /This conversation is archived/);
+    assert.match(markup, /You can still view the history/);
     assert.match(markup, /Restore conversation/);
     assert.doesNotMatch(markup, /Continue/);
     assert.match(markup, /data-reason="archived"/);

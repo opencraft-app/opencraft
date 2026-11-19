@@ -264,6 +264,7 @@ export function AppServerRuntimeProvider({
     };
   }, [registry]);
   const applicationContextValue = useMemo<AppServerApplicationContextValue>(() => ({
+    draftRecovery: supervisor.draftRecovery,
     setConversationPresentationActive: supervisor.setConversationPresentationActive,
     tasks: supervisor.tasks,
     threadAttention: supervisor.threadAttention,

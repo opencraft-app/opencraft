@@ -155,3 +155,29 @@ test("fence rejection happens before a remote projection is published or a local
   assert.equal(localResource.getSnapshot().value, null);
   await resources.close();
 });
+
+test("device diagnostics distinguish a pending request from a delivered callback awaiting completion", async t => {
+  const { setLocalDiagnosticsEnabled, captureLocalDiagnostics } = await import("../../apps/workbench-web/src/runtime/local-diagnostics");
+  const factory = new IDBFactory();
+  const storage = await openIndexedDbClientResources("private-db-name", factory);
+  const samples = () => captureLocalDiagnostics().samples.filter(s => s.kind === "browser-storage").map(s => s.fields);
+  try {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    setLocalDiagnosticsEnabled(true);
+    const pending = storage.compareAndSet(key, 0, record("unsent private content"));
+    t.mock.timers.tick(2000);
+    assert.equal(await pending, true);
+    const events = samples();
+    assert.deepEqual(events.map(s => [s.event, s.phase]), [
+      ["waiting", "awaiting-first-callback"], ["progress", "first-callback-delivered"], ["complete", "first-callback-delivered"],
+    ]);
+    assert.ok(events.every(s => s.id === events[0].id && s.contextId === events[0].contextId && s.mode === "readwrite"));
+    assert.doesNotMatch(JSON.stringify(events), /account-a|thread-1|private/);
+    setLocalDiagnosticsEnabled(false);
+    await storage.read(key);
+    assert.equal(samples().length, events.length);
+  } finally {
+    setLocalDiagnosticsEnabled(false);
+    storage.close();
+  }
+});

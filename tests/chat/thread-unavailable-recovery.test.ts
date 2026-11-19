@@ -101,7 +101,7 @@ for (const failure of [{ code: -32071, message: "Thread is archived" }, { code: 
     } finally { stop(); await f.runtime.dispose(); }
   });
 }
-test("archive acknowledgement stops restoration without notification; unarchive allows explicit reopening", async () => {
+test("archive acknowledgement allows passive history reconnect; execution remains archived until restore", async () => {
   const f = fixture();
   try {
     await f.runtime.connect(); const lease = await f.runtime.acquireThread("old"); await settle();
@@ -110,10 +110,10 @@ test("archive acknowledgement stops restoration without notification; unarchive 
     assert.equal(f.runtime.resources.threads.getUnavailableReason!("old"), "archived");
     assert.equal(lease.getSnapshot().authoritative, false);
     f.disconnect(); await f.runtime.reconnect(); await settle();
-    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 1);
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 2);
     await f.runtime.resources.threads.unarchive!("old"); await lease.retryRestore(); await settle();
     assert.equal(lease.getSnapshot().authoritative, true);
-    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 2);
+    assert.equal(f.requests.filter(r => r.method === "thread/read").length, 3);
     lease.release();
   } finally { await f.runtime.dispose(); }
 });
@@ -141,4 +141,35 @@ test("confirmed unarchive clears a cached rejection before ordinary acquire in t
     assert.equal(f.requests.filter(r => r.method === "thread/read").length, 2);
     reopened.release(); lease.release();
   } finally { await f.runtime.dispose(); }
+});
+
+test("fresh archived routes discover lifecycle and read history without activating execution", async () => {
+  const methods: string[] = [];
+  let archived = true;
+  const transport = new MemoryTransport({ receive(frame, peer) {
+    const request = JSON.parse(frame); if (request.id === undefined) return;
+    methods.push(request.method);
+    const send = (result: unknown) => peer.send(JSON.stringify({ id: request.id, result }));
+    if (request.method === "initialize") send({ codexHome: "/tmp", platformFamily: "unix", platformOs: "linux", userAgent: "archive-read-test",
+      capabilities: { extensions: { "opencraft/thread-lifecycle": { version: 1, archive: true }, "opencraft/read-history": { version: 1 } } } });
+    else if (request.method === "thread/list") send({ data: request.params.archived && archived ? [thread("saved")] : [], nextCursor: null });
+    else if (request.method === "thread/read") send({ thread: thread("saved"), initialTurnsPage: { data: [{ id: "answer-turn", status: "completed", error: null,
+      items: [{ id: "answer", type: "agentMessage", text: "Archived history from server", phase: "final_answer" }] }], nextCursor: null } });
+    else if (request.method === "thread/unarchive") { archived = false; send({ thread: thread("saved") }); }
+    else if (request.method.endsWith("/list")) send({ data: [], nextCursor: null });
+    else send({});
+  } });
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "fresh-archive", transport, autoReconnect: false, requestTimeoutMs: 1000 });
+  try {
+    const lease = await runtime.acquireThread("saved"); lease.setRecoveryVisibility(true); await settle();
+    assert.equal(runtime.resources.threads.getUnavailableReason!("saved"), "archived");
+    assert.equal(lease.getSnapshot().authoritative, true, "the read-only transcript is canonical");
+    assert.ok(JSON.stringify(lease.getSnapshot()).includes("Archived history from server"));
+    await assert.rejects(lease.startQueuedSubmission(), /archived/);
+    const borrowed = runtime.tryAcquireThread("saved"); assert.ok(borrowed); borrowed.release();
+    assert.ok(!methods.some(method => ["thread/resume", "turn/start", "thread/queue/start", "turn/steer"].includes(method)));
+    await runtime.resources.threads.unarchive!("saved"); await settle();
+    assert.equal(runtime.resources.threads.getUnavailableReason!("saved"), null);
+    lease.release();
+  } finally { await runtime.dispose(); }
 });

@@ -114,11 +114,17 @@ export function ordinaryNativeRouting(options: {
           assert();const message=JSON.parse(frame),params=message?.params;
           if(params&&typeof params==='object'){
             if(message.method!=='thread/start'&&Object.hasOwn(params,field))throw Error('Placement is creation-only');
-            // History/path can override threadId in Native. This entry point
-            // accepts durable IDs, never an alternate rollout chosen by a caller.
-            if(['thread/resume','thread/fork'].includes(message.method)
-              && (!id(params.threadId)||params.history!=null||(params.path!=null&&params.path!=='')))
-              throw Error('Workspace routing requires a durable thread ID');
+            // Older clients send a cached rollout path with the durable ID.
+            // Resolve resumes by ID alone so the path cannot select another rollout.
+            if (message.method === 'thread/resume' || message.method === 'thread/fork') {
+              if (!id(params.threadId) || params.history != null
+                || (message.method === 'thread/fork' && params.path != null && params.path !== ''))
+                throw Error('Workspace routing requires a durable thread ID');
+              if (message.method === 'thread/resume' && Object.hasOwn(params, 'path')) {
+                delete params.path;
+                frame = JSON.stringify(message);
+              }
+            }
             if(Array.isArray(params.environments)&&params.environments.some((env:unknown)=>
               env&&typeof env==='object'&&typeof (env as {environmentId?:unknown}).environmentId==='string'
               && (env as {environmentId:string}).environmentId.startsWith('workspace-'))

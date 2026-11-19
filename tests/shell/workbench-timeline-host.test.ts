@@ -166,7 +166,7 @@ test("the first submit atomically hands presentation from Draft to Conversation 
   );
   assert.match(
     workbenchApp,
-    /emptyState=\{unavailableThreadReason !== null \? <ConversationUnavailableState[\s\S]*?: draft !== null \? <PendingConversationPage/u,
+    /emptyState=\{unavailableThreadReason === "not-found" \? <ConversationUnavailableState[\s\S]*?: draft !== null \? <PendingConversationPage/u,
   );
   assert.doesNotMatch(newThreadDraftSource, /Starting task/u);
   assert.match(pendingConversationSource, /contains no Draft[\s\S]*Composer/u);

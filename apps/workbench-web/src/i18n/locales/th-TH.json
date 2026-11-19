@@ -1,4 +1,5 @@
 {
+  "chat.restoringLocalDraft": "กำลังกู้คืนฉบับร่าง…",
   "im.channels.imageTooLarge": "แชทภายนอกนี้รองรับรูปภาพขนาดไม่เกิน 2 MB โปรดเลือกสำเนาที่เล็กลง รูปภาพยังอยู่ในฉบับร่าง",
   "im.channels.imageInvalid": "ไม่สามารถอ่านรูปภาพนี้ได้ โปรดเลือกรูปภาพ PNG หรือ JPEG ที่ถูกต้อง",
   "im.channels.imageFormatUnavailable": "แชทภายนอกนี้รองรับรูปภาพ PNG และ JPEG โปรดแปลงรูปแบบแล้วลองอีกครั้ง รูปภาพยังอยู่ในฉบับร่าง",
@@ -1486,9 +1487,9 @@
   "terminal.disconnected": "เทอร์มินัลขาดการเชื่อมต่อ กำลังรอเซิร์ฟเวอร์เชื่อมต่ออีกครั้ง",
   "terminal.unavailable": "เทอร์มินัลไม่พร้อมใช้งาน ลองเปิดเทอร์มินัลใหม่",
   "terminal.new": "เทอร์มินัลใหม่",
-  "chat.archived.title": "เก็บการสนทนาแล้ว",
+  "chat.archived.title": "การสนทนานี้ถูกเก็บถาวรแล้ว",
   "chat.unavailable.title": "การสนทนาไม่พร้อมใช้งาน",
-  "chat.archived.description": "การสนทนานี้ถูกเก็บถาวรและอ่านได้อย่างเดียวจนกว่าจะกู้คืน",
+  "chat.archived.description": "ยังดูประวัติข้อความได้ กู้คืนเพื่อสนทนาต่อ",
   "chat.unavailable.description": "การสนทนานี้ไม่พร้อมใช้งานอีกต่อไป",
   "onboard.agent.codex": "Codex",
   "onboard.agent.cursor": "Cursor",
@@ -1963,5 +1964,7 @@
   "composer.context.retry": "ลองค้นหาการสนทนาอีกครั้ง",
   "composer.context.empty": "ไม่พบการสนทนา",
   "composer.context.conversations": "การสนทนา",
-  "composer.context.files": "ไฟล์"
+  "composer.context.files": "ไฟล์",
+  "chat.archived.badge": "เก็บถาวรแล้ว",
+  "chat.archived.restoreFailed": "กู้คืนการสนทนานี้ไม่สำเร็จ โปรดลองอีกครั้ง"
 }
