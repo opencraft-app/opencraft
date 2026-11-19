@@ -7,18 +7,20 @@
 :root[data-theme="dark"] { --bg: #111111; --stage: #1d1936; --floor: #3a3360; --card: #191919; --soft: #202020; --ink: #d5d5d5; --ink-2: #7d7d7d; --line: #2a2a2a; --accent: #07c160; --accent-ink: #3eb575; --on-accent: #ffffff; --link: #7d90a9; --warn: #fa5151; --mine: #3eb575; --on-mine: #0f0f0f; --theirs: #2c2c2c; --chat: #111111; --btn2: #2c2c2c; color-scheme: dark; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
-html, body { height: 100%; }
+/* 安全区只在最外层留一次：发布外壳在 :root 上留的是同一个值，不会叠加；直接打开文件时靠这里 */
+html { height: 100%; background: linear-gradient(var(--bg) 50%, var(--soft) 50%); padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
+body { height: 100%; }
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); -webkit-text-size-adjust: 100%; overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--ink-2); outline-offset: 2px; }
 
-#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; max-width: 100%; }
+#app { display: flex; flex-direction: column; height: 100%; max-width: 100%; }
 #view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg); width: 100%; max-width: 620px; margin: 0 auto; }
 #office { flex: 1; min-height: 0; position: relative; }
 .stage { position: absolute; inset: 0; background: var(--stage); overflow: hidden; }
 #stage { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
-#whole { z-index: 1; position: absolute; left: 50%; top: calc(14px + env(safe-area-inset-top, 0px)); background: var(--card); border-radius: 18px; transform: translateX(-50%); box-shadow: 0 4px 16px rgba(80, 60, 160, .16); }
-.turn { position: absolute; right: 12px; top: calc(14px + env(safe-area-inset-top, 0px)); display: flex; gap: 8px; z-index: 1; }
+#whole { z-index: 1; position: absolute; left: 50%; top: 14px; background: var(--card); border-radius: 18px; transform: translateX(-50%); box-shadow: 0 4px 16px rgba(80, 60, 160, .16); }
+.turn { position: absolute; right: 12px; top: 14px; display: flex; gap: 8px; z-index: 1; }
 .turn .btn { width: 40px; height: 40px; min-height: 0; padding: 0; display: grid; place-items: center; border-radius: 20px; background: var(--card); color: var(--ink); box-shadow: 0 4px 16px rgba(80, 60, 160, .16); } .turn svg { width: 20px; height: 20px; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 #labels span { position: absolute; transform: translate(-50%, -100%); padding: 2px 9px; border-radius: 11px; background: rgba(255, 255, 255, .92); color: #241f3a; font-size: 12px; font-weight: 700; white-space: nowrap; box-shadow: 0 2px 8px rgba(80, 60, 160, .12); transition: opacity .3s; }
@@ -36,14 +38,14 @@ button, input, select, textarea { font: inherit; color: inherit; }
 
 .pcard .av { width: 44px; height: 44px; }
 
-#tabbar { display: flex; background: var(--soft); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+#tabbar { display: flex; background: var(--soft); border-top: 1px solid var(--line); }
 #tabbar button { flex: 1; position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-height: 56px; padding: 6px 0 4px; border: 0; background: none; color: var(--ink); font-size: 11px; cursor: pointer; }
 #tabbar svg { width: 27px; height: 27px; }
 #tabbar button[aria-current="page"] { color: var(--accent); }
 #tabbar .badge { top: 2px; left: calc(50% + 6px); right: auto; }
 
 /* 导航栏：灰底，标题居中，左边返回，右边图标 */
-.nav { display: flex; align-items: center; min-height: 48px; padding: env(safe-area-inset-top, 0px) 4px 0; flex: none; background: var(--bg); }
+.nav { display: flex; align-items: center; min-height: 48px; padding: 0 4px; flex: none; background: var(--bg); }
 .nav h1 { flex: 1; margin: 0; font-size: 17px; font-weight: 600; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav .back, .nav .r { flex: none; width: 56px; display: flex; align-items: center; } .nav .r { justify-content: flex-end; }
 .nav .back, .ic { width: 44px; height: 44px; display: grid; place-items: center; border: 0; background: none; color: var(--ink); cursor: pointer; padding: 0; }
@@ -146,9 +148,9 @@ form.body > .cap { padding: 12px 16px; }
 .file pre { margin: 0; padding: 10px 12px 12px; border-top: 1px solid var(--line); white-space: pre-wrap; font: 14px/1.6 var(--font); }
 .fs { display: flex; align-items: center; gap: 10px; padding: 12px; } .fs > span:first-child { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .fxrow { display: flex; gap: 12px; align-items: flex-start; padding: 8px 16px; } .fxrow time { flex: none; width: 3em; padding-top: 12px; font-size: 13px; color: var(--ink-2); } .fxrow .file { flex: 1; width: auto; background: var(--soft); }
-.say { display: flex; align-items: center; gap: 8px; flex: none; margin: 0; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)); background: var(--soft); border-top: 1px solid var(--line); }
+.say { display: flex; align-items: center; gap: 8px; flex: none; margin: 0; padding: 8px 10px; background: var(--soft); border-top: 1px solid var(--line); }
 .say input { padding: 8px 10px; border-radius: 6px; background: var(--card); font-size: 16px; }
-p.say { padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); text-align: center; }
+p.say { padding: 12px 16px; text-align: center; }
 
 @media (min-width: 860px) { body { background: var(--bg); } #view { box-shadow: 0 0 0 1px var(--line); } #tabbar { justify-content: center; } #tabbar button { flex: 0 0 140px; } }
 /* 宽屏：左边列表，右边当前页 */
