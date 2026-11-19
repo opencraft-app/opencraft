@@ -70,3 +70,25 @@ textarea { display: block; width: 100%; min-height: 180px; padding: 14px 16px; b
 .newt button { padding: 0 14px; border-radius: 8px; background: var(--green); color: #fff; font-weight: 600; }
 .cell time { font-size: 12px; color: var(--ink-3); align-self: flex-start; padding-top: 3px; font-variant-numeric: tabular-nums; }
 .cell .t span.wrap { white-space: normal; }
+/* 电脑：Codex 式的任务页 */
+.codex { background: var(--cell); display: flex; flex-direction: column; }
+.mono { font: 12.5px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.tools { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); overflow-x: auto; flex: none; }
+.tools button { padding: 6px 12px; border-radius: 8px; font-size: 14px; color: var(--ink-2); white-space: nowrap; } .tools button[aria-current="true"] { background: var(--bg); color: var(--ink); font-weight: 600; }
+.thread { flex: 1; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.ask { align-self: flex-end; max-width: 86%; padding: 9px 13px; border-radius: 16px 16px 4px 16px; background: var(--bg); } .ask small { display: block; font-size: 12px; color: var(--ink-2); }
+.work { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; } .work summary { cursor: pointer; list-style: none; padding: 8px 12px; color: var(--ink-2); font-size: 13px; display: flex; gap: 8px; } .work summary::-webkit-details-marker { display: none; } .work summary::before { content: "›"; } .work[open] summary::before { content: "⌄"; }
+.work div { padding: 2px 12px 10px; color: var(--ink-2); } .work div p { margin: 0; } .work div p::before { content: "$ "; color: var(--ink-3); } .work .ok { color: var(--green); } .work .ok::before { content: "✓ "; color: var(--green); }
+.diff { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; } .diff b { flex: 1; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .diff span { color: var(--green); }
+.doc { padding: 16px; display: flex; flex-direction: column; gap: 10px; } .doc h2 { margin: 0; font-size: 18px; } .doc p { margin: 0; line-height: 1.6; }
+.doc table { border-collapse: collapse; width: 100%; } .doc td { padding: 8px 0; border-top: 1px solid var(--line); } .doc td:last-child { text-align: right; color: var(--ink-2); }
+.frame { margin: 16px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.bar { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: var(--cell); border-bottom: 1px solid var(--line); } .bar i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); } .bar span { flex: 1; margin-left: 6px; padding: 4px 10px; border-radius: 6px; background: var(--bg); color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.blank { min-height: 220px; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+.desk { aspect-ratio: 16 / 10; position: relative; background: linear-gradient(160deg, #3b5b7a, #23364d); } .desk .winx { position: absolute; left: 10%; top: 12%; width: 62%; border-radius: 6px; background: var(--cell); overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,.3); } .desk .winx p { margin: 0; padding: 10px 12px; font-size: 13px; }
+.desk .dockx { position: absolute; left: 0; right: 0; bottom: 0; height: 9%; background: rgba(0,0,0,.35); }
+.composer { flex: none; display: flex; gap: 8px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--line); background: var(--cell); }
+.composer input { flex: 1; min-width: 0; height: 42px; padding: 0 14px; border: 1px solid var(--line); border-radius: 21px; background: var(--cell); font: inherit; color: var(--ink); } .composer input:focus { outline: none; border-color: var(--ink-2); }
+.composer button { width: 42px; height: 42px; border-radius: 50%; background: var(--ink); color: var(--cell); font-size: 18px; text-align: center; }
+.tk { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 16px; position: relative; } .tk + .tk::before { content: ""; position: absolute; top: 0; left: 16px; right: 0; height: 1px; background: var(--line); }
+.tk .t { flex: 1; min-width: 0; } .tk b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .tk .t span { font-size: 13px; color: var(--ink-2); } .tk em { font-style: normal; font-size: 12px; color: var(--green); }

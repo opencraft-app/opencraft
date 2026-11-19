@@ -52,7 +52,8 @@
   function castOf(c) { var s = worlds[c.id].state, ids = ownerOf(c) ? [ownerOf(c)] : []; s.log.forEach(function (ev) { [ev.from, ev.to, ev.bot, ev.operator].forEach(function (x) { if (x && x !== 'user' && ids.indexOf(x) < 0) ids.push(x); }); }); return ids; }
   function msgsOf(a, b) { var o = []; each(function (c, w, s) { s.messages.forEach(function (m) { if ((m.from === a && m.to === b) || (m.from === b && m.to === a)) o.push(m); }); }); return o; }
   function chatsOf(id) { var o = []; each(function (c, w, s) { s.messages.forEach(function (m) { var x = m.from === id ? m.to : m.to === id ? m.from : null; if (x && o.indexOf(x) < 0) o.push(x); }); }); return o; }
-  function jobsOf(id) { var o = []; each(function (c, w, s) { s.files.forEach(function (f) { if (f.owner === id && f.kind !== 'submission') o.push({ c: c, f: f }); }); }); return o; }
+  function jobsOf(id) { var o = []; each(function (c, w, s) { s.files.forEach(function (f) { if (f.owner === id) o.push({ c: c, f: f }); }); }); return o; }
+  function did(c, f) { var sb = E.nodeOf(c, 'sandbox'); return f.kind === 'submission' ? (sb ? sb.text.replace(/。$/, '') : f.name) : c.steps[f.step].reaction; }
   function ownsOf(id) { return dsl.cases.filter(function (c) { return ownerOf(c) === id; }); }
   function onDuty(id) { return E.comp(W0, id).work; }
   function busyIn(id) { return dsl.cases.some(function (c) { return castOf(c).indexOf(id) >= 0; }); }
@@ -164,15 +165,25 @@
     chat: function (g) {
       return nav(N(g.o)) + '<div class="body"><div class="chat">' + msgsOf(g.id, g.o).map(function (m) { return '<div class="line' + (m.from === g.id ? ' me' : '') + '">' + av(m.from) + '<div class="msg">' + esc(m.text) + '</div></div>'; }).join('') + '</div><p class="foot">这是' + esc(N(g.id)) + '的手机，绿色是' + esc(N(g.id)) + '发的。</p></div>';
     },
-    pc: function (g) {
+    pc: function (g) { /* Codex 式：任务列表 + 底部派任务 */
       var list = jobsOf(g.id);
-      return nav(N(g.id) + '的电脑') + '<div class="body">' + (list.length ? '<div class="cells">' + list.slice().reverse().map(function (j) { return cell({ p: 'job', c: j.c.id, f: j.f.id }, '', j.c.steps[j.f.step].reaction, j.c.title + ' · ' + N(j.f.from) + '交办', '已完成'); }).join('') + '</div>' : '<p class="none">还没有做过事</p>') + '</div>';
+      return nav(N(g.id) + '的电脑') + '<div class="body codex"><div class="sec mono">Codex · ' + list.length + ' 个任务</div>' +
+        (list.length ? list.slice().reverse().map(function (j) { return '<button class="tk"' + go({ p: 'job', c: j.c.id, f: j.f.id }) + '><span class="t"><b>' + esc(did(j.c, j.f)) + '</b><span>' + esc(j.c.title) + '</span></span><em>✓ 完成</em></button>'; }).join('') : '<p class="none">这台电脑还没有接到任务</p>') +
+        '</div><div class="composer"><input id="task" placeholder="交给' + esc(N(g.id)) + '一件事…" aria-label="派一个任务"><button data-do="task" data-id="' + g.id + '" aria-label="发送">↑</button></div>';
     },
-    job: function (g) {
-      var c = dsl.cases.find(function (x) { return x.id === g.c; }), f = worlds[c.id].state.files.find(function (x) { return x.id === g.f; }), st = c.steps[f.step], vals = Object.keys(f.values || {});
-      return nav(st.reaction) + '<div class="body"><div class="cells">' + cell({ p: 'thing', c: c.id }, '', c.title, '这件事', '') + cell({ p: 'one', id: f.owner }, av(f.owner), N(f.owner), '做这一步的人', '') + '</div><div class="gap"></div>' +
-        '<div class="cells"><div class="cell text"><small>' + esc(N(f.from)) + '说</small>' + esc(st.message) + '</div></div><div class="gap"></div>' +
-        '<div class="cells"><div class="cell text"><small>交出的材料</small><b>' + esc(f.name) + '</b>' + esc(f.body) + '</div>' + vals.map(function (k) { return '<div class="cell"><span class="t"><b>' + esc(k) + '</b></span><span class="r">' + esc(E.show(f.values[k])) + '</span></div>'; }).join('') + '</div></div>';
+    job: function (g) { /* 一个任务：对话、文件、浏览器、云电脑 */
+      var c = dsl.cases.find(function (x) { return x.id === g.c; }), w = worlds[c.id], s = w.state, f = s.files.find(function (x) { return x.id === g.f; }), st = c.steps[f.step], t = g.t || 'chat', sub = f.kind === 'submission', body;
+      var from = sub ? c.owner : f.from, askText = sub ? (c.steps.find(function (x) { return x.kind === 'hire'; }) || st).message : st.message, vals = Object.keys(f.values || {});
+      var lines = sub ? ['run sandbox  # 本地模拟'].concat(vals.map(function (k) { return 'check ' + k + ' = ' + E.show(f.values[k]); })) : ['read 「' + f.input + '」'].concat(f.kind === 'artifact' ? ['read ' + N(f.submitter) + ' 的提交件 ' + f.version] : []);
+      if (t === 'chat') body = '<div class="thread"><div class="ask"><small>' + esc(N(from)) + '</small>' + esc(askText) + '</div>' +
+        '<details class="work mono" open><summary>处理了 ' + (lines.length + 1) + ' 步</summary><div>' + lines.map(function (x) { return '<p>' + esc(x) + '</p>'; }).join('') + '<p class="ok">write ' + esc(f.name) + '</p></div></details>' +
+        '<p style="margin:0">' + esc(did(c, f)) + '，已完成。' + (sub ? '核对通过，结果交回给' + esc(N(c.owner)) + '。' : '') + '</p>' +
+        '<button class="diff" data-t="file"><span class="mono">+ 新文件</span><b>' + esc(f.name) + '</b>' + GO.replace('<svg', '<svg width="16" height="16"') + '</button></div>';
+      else if (t === 'file') body = '<div class="doc"><h2>' + esc(f.name) + '</h2><p>' + esc(f.body) + '</p>' + (vals.length ? '<table>' + vals.map(function (k) { return '<tr><td>' + esc(k) + '</td><td>' + esc(E.show(f.values[k])) + '</td></tr>'; }).join('') + '</table>' : '') + '</div>';
+      else if (t === 'web') body = '<div class="frame"><div class="bar"><i></i><i></i><i></i><span class="mono">about:blank</span></div><div class="blank">这个任务没有用到浏览器。<br>接通后，他打开过的网页会显示在这里。</div></div>';
+      else body = '<div class="frame"><div class="desk"><div class="winx"><div class="bar"><i></i><i></i><i></i><span class="mono">' + esc(f.name) + '</span></div><p>' + esc(f.body) + '</p></div><div class="dockx"></div></div></div><p class="foot">示意画面：云电脑还没有接通。接通后可以在这里看他的屏幕。</p>';
+      return nav(did(c, f)) + '<div class="body codex"><div class="tools">' + [['chat', '对话'], ['file', '文件'], ['web', '浏览器'], ['cloud', '云电脑']].map(function (x) { return '<button data-t="' + x[0] + '" aria-current="' + (t === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>' + body +
+        '<div class="cells" style="margin-top:auto;border-top:1px solid var(--line)">' + cell({ p: 'thing', c: c.id }, '', c.title, '这件事', '') + '</div></div>';
     }
   };
   function draw() {
@@ -183,6 +194,10 @@
   var DO = {
     next: function (d) { var w = worlds[d.c], c = E.caseOf(w), k = c.steps[w.state.idx].kind; E.act(w, { bot: c.market[0] }); while (E.advance(w)); stamp(w); if (k === 'confirm' && !w.state.halt) note('user', '验收了这件事', c.id); },
     assign: function (d) { var c = dsl.cases.find(function (x) { return x.id === d.c; }); reassign(c, d.id); owners[c.id] = d.id; note('user', '把这件事交给了' + N(d.id), c.id); stack.pop(); },
+    task: function (d) {
+      var el = document.getElementById('task'), title = el.value.trim(); if (!title) { el.focus(); return; }
+      var x = { id: 't' + Date.now().toString(36), title: title }; custom.push(x); var c = makeCase(x.id, x.title); dsl.cases.push(c); boot(c, 9); reassign(c, d.id); owners[c.id] = d.id; note('user', '交给' + N(d.id) + '一件事', c.id); DO.next({ c: c.id });
+    },
     newthing: function () {
       var el = document.getElementById('nt'), title = el.value.trim(); if (!title) { el.focus(); return; }
       var x = { id: 't' + Date.now().toString(36), title: title }; custom.push(x); var c = makeCase(x.id, x.title); dsl.cases.push(c); owners[c.id] = null; boot(c, 9); note('user', '加了一件事', c.id);
@@ -198,14 +213,15 @@
     addc: function (d) { book.contacts.push(E.pairKey(d.id, d.b)); book.grants[d.id + '>' + d.b] = true; book.grants[d.b + '>' + d.id] = true; stack.pop(); }
   };
   document.addEventListener('click', function (e) {
-    var el = e.target.closest('[data-go],[data-tab],[data-do]'); if (!el) return;
+    var el = e.target.closest('[data-go],[data-tab],[data-do],[data-t]'); if (!el) return;
+    if (el.dataset.t) { stack[stack.length - 1].t = el.dataset.t; draw(); return; }
     if (el.dataset.do) { DO[el.dataset.do](el.dataset); save(); }
     else if (el.dataset.tab) { tab = el.dataset.tab; saved.tab = tab; }
     else if (el.dataset.go === 'back') stack.pop();
     else stack.push(JSON.parse(el.dataset.go));
     draw();
   });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'nt') { DO.newthing(); save(); draw(); } });
+  document.addEventListener('keydown', function (e) { if (e.key !== 'Enter') return; if (e.target.id === 'nt') { DO.newthing(); save(); draw(); } else if (e.target.id === 'task') { DO.task({ id: stack[stack.length - 1].id }); save(); draw(); } });
   document.addEventListener('change', function (e) {
     var d = e.target.dataset; if (!d.sw) return;
     if (d.sw === 'grant') book.grants[d.id + '>' + d.b] = e.target.checked;
