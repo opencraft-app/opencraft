@@ -22,10 +22,9 @@ export class ProvisionalThreads {
   // owner was offline. Recover only after fresh native creation metadata.
   private readonly catalogObserved = new Set<string>();
   constructor(directory: string) {
-    this.managed = openManagedDatabase({ path: join(directory, "thread-creations.sqlite"), legacyPolicy: "reject",
+    this.managed = openManagedDatabase({ schemaId: "provisional-threads", path: join(directory, "thread-creations.sqlite"), legacyPolicy: "reject",
       migrations: [{ version: 1, name: "thread-creation-lifecycle", sql: schemaV1 },
-        { version: 2, name: "creation-environment-owner", sql: environmentOwnerMigration },
-        { version: 3, name: "creation-catalog-evidence", sql: catalogStateMigration }], validateSchema: createSchemaValidator(schemaV1 + environmentOwnerMigration + catalogStateMigration) });
+        { version: 2, name: "creation-environment-owner", sql: environmentOwnerMigration }], validateSchema: createSchemaValidator(schemaV1 + environmentOwnerMigration + catalogStateMigration) });
   }
   get outcome() { return this.managed.outcome; }
   created(threadId: string, result: RecordValue, environmentOwner?: string): void {

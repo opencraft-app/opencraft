@@ -70,12 +70,17 @@ test("viewport observer owns only the scrollport, initializes once, coalesces an
   } as unknown as Window & typeof globalThis;
   const owner = new WebConversationViewportOwner(0);
   const content = {} as Element;
-  const scrollport = { firstElementChild: content } as HTMLDivElement;
+  const properties = new Map<string, string>();
+  const scrollport = { firstElementChild: content, clientWidth: 100, offsetWidth: 100, clientLeft: 0,
+    style: { setProperty(name: string, value: string) { properties.set(name, value); } },
+  } as unknown as HTMLDivElement;
   let changes = 0;
   try {
     owner.scrollElementRef.current = scrollport;
     const release = owner.observeViewportGeometry(() => changes++);
     assert.equal(changes, 1, "initial update does not wait for observer delivery");
+    assert.equal(properties.get("--thread-reading-clip-left"), "0px");
+    assert.equal(properties.get("--thread-reading-clip-right"), "0px");
     assert.deepEqual([...observed], [scrollport], "content ancestors must never join the viewport observer");
     callback!([], {} as ResizeObserver);
     callback!([], {} as ResizeObserver);

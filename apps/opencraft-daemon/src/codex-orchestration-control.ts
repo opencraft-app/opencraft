@@ -141,7 +141,7 @@ export class CodexOrchestrationControl {
     // A hidden child has no human to press Resume, and discarded input never comes back:
     // report the failure so the parent wait settles instead of seeing "starting" forever.
     const running=recovery?.state==='running'||status.type==='active'||turn?.status==='inProgress';
-    if(input==='paused'&&!running)return {threadId,turnId:turn?.id??base.turnId,rootTurnId:base.rootTurnId??turn?.id??null,state:'failed',summary:'The message to this conversation was not sent: its session tools could not be prepared. It stays paused until someone resumes it.'};
+    if(input==='paused'&&!running)return {threadId,turnId:turn?.id??base.turnId,rootTurnId:base.rootTurnId??turn?.id??null,state:'failed',summary:'The message to this conversation was not sent because its queue is paused. It stays paused until someone resumes it.'};
     if(input==='abandoned'&&!turn)return {...base,state:'failed',summary:'This conversation never started: its queued input was discarded before delivery.'};
     if(input==='pending')return {...base,state:'starting'};
     if(recovery?.state==='running'||status.type==='active')return {...base,state:'active'};

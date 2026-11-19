@@ -6,6 +6,8 @@ export type PiQueuedInput = {
   id: string;
   clientId: string;
   executionAdmission?: string;
+  /** Private native queue custody; never included in queue/history projections. */
+  executionCliCredential?: string;
   input: Value[];
   content: Value[];
   additionalContext: Value | null;

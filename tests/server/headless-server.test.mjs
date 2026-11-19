@@ -45,10 +45,12 @@ test('running headless gateway resolves a new Host address on reconnect and reje
     let selected = 0;
     let unavailable = false;
     const target = () => `ws://127.0.0.1:${backends[selected].address().port}/rpc`;
-    server = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), threadCliDirectory: join(root, 'execution', 'cli'), port: 0, machineName: 'join服务器',
+    server = await startHeadlessServer({ root, webRoot, dataDirectory: join(root, 'data'), threadCliDirectory: join(root, 'execution', 'cli'), port: 0, machineName: 'join服务器', isolateBrowserStorage: true,
       startAgentHost: async options => { assert.equal(options.machineIdentity.name, 'join服务器'); return { websocketUrl: target(),
         resolveWebsocketUrl: async () => { if (unavailable) throw new Error('private attachment failure'); return target(); },
         async close() {} }; } });
+    const html = await fetch(server.url).then(response => response.text());
+    assert.match(html, /id="opencraft-instance-id"/);
     const reconnect = () => new Promise((accept, reject) => {
       const socket = new WebSocket(`${server.url.replace('http:', 'ws:')}/appserver`, { origin: server.url });
       socket.once('message', value => { socket.terminate(); accept(JSON.parse(value.toString()).params.identity); });

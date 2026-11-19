@@ -1,49 +1,38 @@
+import { exportConversationContext } from "./conversation-context-export.js";
+import { CodexHistorySources, codexHistoryRecords, containedNativeHistoryPath, type CodexHistoryRange } from "./codex-history-sources.js";
+import { codexProjectGroups } from "./codex-project-groups.js";
 import { parentPort, workerData } from "node:worker_threads";
-import { open, readdir, realpath, stat } from "node:fs/promises";
+import { open, readFile, readdir, stat } from "node:fs/promises";
 import { createInterface } from "node:readline";
-import { join, relative, isAbsolute } from "node:path";
+import { join, isAbsolute } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { projectedItemsPage, projectedTurnsPage } from "./hypernode/thread-history.js";
+import { threadCliFreeText } from "@opencraft/session-capabilities/thread-cli-instruction";
 
 type Value = Record<string, any>;
 type Turn = Value & { id: string; items: Value[] };
 const port = parentPort!;
-const { provider, home } = workerData as { provider: "codex" | "cursor"; home: string };
-const paths = new Map<string, string>();
+const { provider, home, contextDirectory } = workerData as { provider: "codex" | "cursor" | "codebuddy" | "claude-code"; home: string; contextDirectory?: string };
+const codexSources = new CodexHistorySources(home);
 const cache = new Map<string, { stamp: string; turns: Turn[] }>();
-async function contained(path: string): Promise<string> {
-  const root = await realpath(home), source = await realpath(path), child = relative(root, source);
-  if (!child || child === ".." || child.startsWith("../") || isAbsolute(child)) throw new Error("Native history source outside configured home");
-  return source;
-}
-async function rollout(nativeId: string): Promise<string> {
-  const known = paths.get(nativeId);
-  if (known) {
-    try { return await contained(known); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; paths.delete(nativeId); }
-  }
-  for (const directory of ["sessions", "archived_sessions"]) {
-    const visit = async (path: string): Promise<string | null> => {
-      let entries;
-      try { entries = await readdir(path, { withFileTypes: true }); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
-      for (const entry of entries) {
-        const child = join(path, entry.name);
-        if (entry.isDirectory()) { const found = await visit(child); if (found) return found; }
-        else if (entry.isFile() && entry.name.endsWith(`-${nativeId}.jsonl`)) return child;
-      }
-      return null;
-    };
-    const found = await visit(join(home, directory));
-    if (found) { paths.set(nativeId, found); return contained(found); }
-  }
-  throw new Error("Native conversation history is unavailable");
-}
+const contained = (path: string) => containedNativeHistoryPath(home, path);
 const text = (content: any): string => typeof content === "string" ? content : Array.isArray(content)
   ? content.filter(block => block && ["text", "Text", "input_text", "output_text"].includes(block.type)).map(block => block.text ?? "").join("") : "";
+/** Native CLIs persist the execution-scoped CLI note as ordinary user content.
+ * Drop only complete generated blocks; every other block is user content. */
+const userText = (value: unknown): string | null => typeof value === "string" ? threadCliFreeText(value) : null;
+const userContent = (content: any): Value[] => {
+  const blocks = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
+  return blocks.flatMap((block: Value) => {
+    if (!block || !["text", "Text", "input_text", "output_text"].includes(block.type) || typeof block.text !== "string") return block ? [block] : [];
+    const value = threadCliFreeText(block.text);
+    return value === null ? [] : [{ ...block, text: value }];
+  });
+};
 function codexItem(item: Value): Value {
   const camel = (value: string) => value.replace(/_([a-z])/gu, (_, letter) => letter.toUpperCase()).replace(/^[A-Z]/u, letter => letter.toLowerCase());
   const type = item.type[0].toLowerCase() + item.type.slice(1);
-  if (type === "userMessage") return { ...item, type, content: item.content };
+  if (type === "userMessage") return { ...item, type, content: userContent(item.content) };
   if (type === "agentMessage") return { id: item.id, type, text: text(item.content), phase: item.phase ?? null };
   if (type === "reasoning") return { id: item.id, type, summary: (item.summary ?? []).map((part: any) => typeof part === "string" ? part : part.text ?? ""), content: (item.content ?? []).map((part: any) => typeof part === "string" ? part : part.text ?? "") };
   const converted: Value = Object.fromEntries(Object.entries(item).map(([key, value]) => [key.replace(/_([a-z])/gu, (_, letter) => letter.toUpperCase()), value]));
@@ -56,47 +45,36 @@ function codexItem(item: Value): Value {
   }
   return converted;
 }
-async function readCodex(path: string, nativeId: string): Promise<Turn[]> {
-  const file = await open(path, "r"), turns: Turn[] = [];
-  let current: Turn | undefined, verified = false, invalid = false;
+async function readCodex(ranges: readonly CodexHistoryRange[]): Promise<Turn[]> {
+  const turns: Turn[] = [];
+  let current: Turn | undefined;
   const upsert = (item: Value) => {
     if (!current) return;
     const index = current.items.findIndex((old: Value) => old.id === item.id);
     if (index < 0) current.items.push(item); else current.items[index] = item;
   };
-  try {
-    const lines = createInterface({ input: file.createReadStream({ autoClose: false }), crlfDelay: Infinity });
-    for await (const line of lines) {
-      if (Buffer.byteLength(line) > 64 * 1024 * 1024) throw new Error("Native history record is too large");
-      // A writer's unfinished final line is retried on the next source stamp.
-      if (invalid) throw new Error("Invalid native history record");
-      let record: Value; try { record = JSON.parse(line); } catch { invalid = true; continue; }
-      const p = record.payload ?? {};
-      if (record.type === "session_meta") { if ((p.id ?? p.session_id) !== nativeId) throw new Error("Native history identity mismatch"); verified = true; }
-      if (record.type !== "event_msg") continue;
-      if (p.type === "task_started") {
-        if (typeof p.turn_id !== "string" || !p.turn_id) throw new Error("Native history turn identity missing");
-        current = turns.find(turn => turn.id === p.turn_id);
-        if (!current) { current = { id: p.turn_id, items: [], status: "inProgress", startedAtMs: Date.parse(typeof p.started_at === "string" ? p.started_at : record.timestamp) }; turns.push(current); }
-      } else if (p.type === "item_completed" && p.item?.type) {
-        if (!current || p.turn_id && current.id !== p.turn_id) current = turns.find(turn => turn.id === p.turn_id);
-        upsert(codexItem(p.item));
-      } else if (["user_message", "agent_message", "agent_reasoning"].includes(p.type) && current) {
-        const kind = p.type === "user_message" ? "userMessage" : p.type === "agent_message" ? "agentMessage" : "reasoning";
-        const item = kind === "userMessage" ? { type: kind, content: [{ type: "text", text: p.message ?? "", text_elements: [] }] }
-          : kind === "reasoning" ? { type: kind, summary: [], content: [p.text ?? ""] } : { type: kind, text: p.message ?? "" };
-        if (!current.items.some((old: Value) => old.type === kind && (kind === "userMessage" ? text(old.content) === p.message : old.text === p.message))) upsert({ id: `${current.id}:${kind}:${current.items.length}`, ...item });
-      } else if (["task_complete", "turn_aborted"].includes(p.type)) {
-        const turn = turns.find(turn => turn.id === p.turn_id) ?? current;
-        if (turn) { turn.status = p.type === "turn_aborted" ? "interrupted" : "completed"; turn.completedAtMs = Date.parse(typeof p.completed_at === "string" ? p.completed_at : record.timestamp); }
-      } else if (p.type === "thread_rolled_back") turns.splice(Math.max(0, turns.length - Number(p.num_turns ?? 0)));
-    }
-    if (invalid) {
-      const size = (await file.stat()).size, last = Buffer.alloc(1);
-      if (size && (await file.read(last, 0, 1, size - 1)).bytesRead && last[0] === 10) throw new Error("Invalid native history record");
-    }
-  } finally { await file.close(); }
-  if (!verified) throw new Error("Native history identity missing");
+  for await (const record of codexHistoryRecords(ranges)) {
+    const p = record.payload ?? {};
+    if (record.type !== "event_msg") continue;
+    if (p.type === "task_started") {
+      if (typeof p.turn_id !== "string" || !p.turn_id) throw new Error("Native history turn identity missing");
+      current = turns.find(turn => turn.id === p.turn_id);
+      if (!current) { current = { id: p.turn_id, items: [], status: "inProgress", startedAtMs: Date.parse(typeof p.started_at === "string" ? p.started_at : record.timestamp) }; turns.push(current); }
+    } else if (p.type === "item_completed" && p.item?.type) {
+      if (!current || p.turn_id && current.id !== p.turn_id) current = turns.find(turn => turn.id === p.turn_id);
+      upsert(codexItem(p.item));
+    } else if (["user_message", "agent_message", "agent_reasoning"].includes(p.type) && current) {
+      const kind = p.type === "user_message" ? "userMessage" : p.type === "agent_message" ? "agentMessage" : "reasoning";
+      const message = kind === "userMessage" ? userText(p.message) : null;
+      if (kind === "userMessage" && message === null) continue;
+      const item = kind === "userMessage" ? { type: kind, content: [{ type: "text", text: message!, text_elements: [] }] }
+        : kind === "reasoning" ? { type: kind, summary: [], content: [p.text ?? ""] } : { type: kind, text: p.message ?? "" };
+      if (!current.items.some((old: Value) => old.type === kind && (kind === "userMessage" ? text(old.content) === message : old.text === p.message))) upsert({ id: `${current.id}:${kind}:${current.items.length}`, ...item });
+    } else if (["task_complete", "turn_aborted"].includes(p.type)) {
+      const turn = turns.find(turn => turn.id === p.turn_id) ?? current;
+      if (turn) { turn.status = p.type === "turn_aborted" ? "interrupted" : "completed"; turn.completedAtMs = Date.parse(typeof p.completed_at === "string" ? p.completed_at : record.timestamp); }
+    } else if (p.type === "thread_rolled_back") turns.splice(Math.max(0, turns.length - Number(p.num_turns ?? 0)));
+  }
   return turns.filter(turn => turn.items.length);
 }
 
@@ -183,15 +161,157 @@ function readCursor(path: string, nativeId: string): Turn[] {
     db.exec("COMMIT"); return turns;
   } finally { db.close(); }
 }
+let projectState: { stamp: string; data: unknown } | undefined;
+const cliProvider = provider === "codebuddy" || provider === "claude-code";
+/** CodeBuddy drops a leading separator; Claude keeps it. Both collapse repeated dashes. */
+function projectDirectory(cwd: string): string {
+  const replaced = cwd.replace(provider === "codebuddy" ? /[\\/:]+/gu : /[^a-zA-Z0-9]+/gu, "-");
+  return provider === "codebuddy" ? replaced.replace(/^-+|-+$/gu, "") : replaced;
+}
+async function locateCliTranscript(nativeId: string, cwd: unknown): Promise<string | null> {
+  const fileName = `${nativeId}.jsonl`;
+  if (typeof cwd === "string" && isAbsolute(cwd)) {
+    const direct = join(home, "projects", projectDirectory(cwd), fileName);
+    try {
+      const found = await contained(direct);
+      if ((await stat(found)).isFile()) return found;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") throw error;
+    }
+  }
+  const root = join(home, "projects");
+  let seen = 0;
+  const visit = async (directory: string, depth: number): Promise<string | null> => {
+    if (depth > 3) return null;
+    const entries = await readdir(directory, { withFileTypes: true }).catch(error => { if (error.code === "ENOENT") return []; throw error; });
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue;
+      if (++seen > 5000) throw new Error("Native transcript search exceeded its bound");
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "subagents") continue;
+        const found = await visit(path, depth + 1);
+        if (found) return found;
+      } else if (entry.isFile() && entry.name === fileName) return contained(path);
+    }
+    return null;
+  };
+  return visit(root, 0);
+}
+function cliBlocks(content: unknown): Value[] {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  return Array.isArray(content) ? content.filter(block => block && typeof block === "object") : [];
+}
+function cliText(block: Value): string {
+  if (typeof block.text === "string") return block.text;
+  if (typeof block.thinking === "string") return block.thinking;
+  if (typeof block.content === "string") return block.content;
+  return Array.isArray(block.content) ? block.content.map((part: Value) => cliText(part ?? {})).join("") : "";
+}
+async function readCliTranscript(path: string, nativeId: string): Promise<Turn[]> {
+  const file = await open(path, "r"), turns: Turn[] = [];
+  let current: Turn | undefined, verified = false, invalid = false;
+  const tools = new Map<string, Value>();
+  const start = (id: string, at: unknown) => {
+    current = { id, items: [], status: "inProgress", startedAtMs: typeof at === "number" ? at : Date.parse(String(at ?? "")) };
+    if (!Number.isFinite(current.startedAtMs)) current.startedAtMs = null;
+    turns.push(current);
+  };
+  try {
+    const lines = createInterface({ input: file.createReadStream({ autoClose: false }), crlfDelay: Infinity });
+    for await (const line of lines) {
+      if (Buffer.byteLength(line) > 8 * 1024 * 1024) throw new Error("Native history record is too large");
+      if (!line.trim()) continue;
+      if (invalid) throw new Error("Invalid native history record");
+      let record: Value; try { record = JSON.parse(line); } catch { invalid = true; continue; }
+      if (typeof record.sessionId === "string") {
+        if (record.sessionId !== nativeId) throw new Error("Native history identity mismatch");
+        verified = true;
+      }
+      if (record.isSidechain === true) continue;
+      if (provider === "codebuddy") {
+        if (record.type !== "message") continue;
+        const blocks = cliBlocks(record.content);
+        if (record.role === "user") {
+          const prompts = blocks.filter(block => ["text", "input_text"].includes(block.type)).flatMap(block => {
+            const value = threadCliFreeText(cliText(block)); return value === null ? [] : [{ type: "text", text: value, text_elements: [] }];
+          });
+          if (!prompts.length) continue;
+          start(String(record.id || turns.length + 1), record.timestamp);
+          current!.items.push({ id: `${current!.id}:user`, type: "userMessage", content: prompts });
+        } else if (record.role === "assistant" && current) {
+          for (const [index, block] of blocks.entries()) {
+            if (block.type === "output_text" || block.type === "text") current.items.push({ id: `${record.id || current.id}:${index}`, type: "agentMessage", text: cliText(block) });
+            else if (block.type === "tool_use" && typeof block.id === "string") {
+              const tool = { id: `tool-${block.id}`, type: "dynamicToolCall", namespace: "codebuddy", tool: String(block.name ?? block.id), arguments: block.input ?? {}, status: "inProgress", success: null, contentItems: [] };
+              tools.set(block.id, tool); current.items.push(tool);
+            }
+          }
+          if (current.items.some(item => item.type === "agentMessage")) current.status = "completed";
+        }
+      } else if (record.type === "user" || record.type === "assistant") {
+        const blocks = cliBlocks(record.message?.content);
+        const results = blocks.filter(block => block.type === "tool_result");
+        const prompts = blocks.filter(block => block.type === "text" || block.type === "input_text").flatMap(block => {
+          const value = threadCliFreeText(cliText(block)); return value === null ? [] : [{ type: "text", text: value, text_elements: [] }];
+        });
+        if (record.type === "user" && prompts.length) start(String(record.uuid || turns.length + 1), record.timestamp);
+        if (!current) continue;
+        if (record.type === "user" && prompts.length) current.items.push({ id: `${current.id}:user`, type: "userMessage", content: prompts });
+        for (const block of results) {
+          const tool = typeof block.tool_use_id === "string" ? tools.get(block.tool_use_id) : undefined;
+          if (!tool) continue;
+          tool.status = block.is_error === true ? "failed" : "completed";
+          tool.success = block.is_error !== true;
+          const output = cliText(block);
+          if (output) tool.contentItems = [{ type: "inputText", text: output }];
+        }
+        if (record.type === "assistant") {
+          for (const [index, block] of blocks.entries()) {
+            if (block.type === "thinking") current.items.push({ id: `${record.uuid}:${index}`, type: "reasoning", summary: [cliText(block)], content: [] });
+            else if (block.type === "text") current.items.push({ id: `${record.uuid}:${index}`, type: "agentMessage", text: cliText(block) });
+            else if (block.type === "tool_use" && typeof block.id === "string") {
+              const tool = { id: `tool-${block.id}`, type: "dynamicToolCall", namespace: "claude", tool: String(block.name ?? block.id), arguments: block.input ?? {}, status: "inProgress", success: null, contentItems: [] };
+              tools.set(block.id, tool); current.items.push(tool);
+            }
+          }
+          if (current.items.some(item => item.type === "agentMessage")) current.status = "completed";
+        }
+      }
+    }
+    if (invalid) throw new Error("Invalid native history record");
+    if (!verified) throw new Error("Native history identity missing");
+    return turns;
+  } finally { await file.close(); }
+}
 async function read(nativeId: string, params: Value, kind: string): Promise<any> {
+  if (kind === "projects") {
+    if (provider !== "codex") return { available: false, groups: {} };
+    const path = join(home, ".codex-global-state.json");
+    const source = await stat(path).catch(error => { if (error.code === "ENOENT") return null; throw error; });
+    if (!source) return { available: false, groups: {} };
+    if (source.size > 20 * 1024 * 1024 || !Array.isArray(params.threads) || params.threads.length > 10000 || params.threads.some((t: Value) => typeof t.id !== "string" || typeof t.cwd !== "string" || !isAbsolute(t.cwd))) throw new Error("Invalid native project source");
+    const stamp = JSON.stringify([source.ino, source.size, source.mtimeMs]);
+    if (projectState?.stamp !== stamp) projectState = { stamp, data: JSON.parse(await readFile(path, "utf8")) };
+    const data = projectState.data as Record<string, unknown>;
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid native project metadata");
+    const hasLocal = data["local-projects"] !== undefined;
+    const hasLegacy = Array.isArray(data["electron-saved-workspace-roots"]);
+    if (hasLocal && (!data["local-projects"] || typeof data["local-projects"] !== "object" || Array.isArray(data["local-projects"]))) throw new Error("Invalid native project metadata");
+    if (!hasLocal && !hasLegacy) return { available: false, groups: {} };
+    return { available: true, groups: codexProjectGroups(data, params.threads) };
+  }
   if (!/^[a-f0-9-]{32,64}$/u.test(nativeId)) throw new Error("Invalid native conversation identity");
-  const path = provider === "codex" ? await rollout(nativeId) : await contained(join(home, "acp-sessions", nativeId, "store.db"));
-  const source = await stat(path), wal = provider === "cursor" ? await stat(`${path}-wal`).catch(() => null) : null;
-  if (kind === "usage") return provider === "codex" ? readCodexUsage(path, nativeId) : readCursorUsage(path, nativeId, Math.max(source.mtimeMs, wal?.mtimeMs ?? 0));
-  const stamp = JSON.stringify([source.dev, source.ino, source.size, source.mtimeMs, wal?.size, wal?.mtimeMs]);
+  const ranges = provider === "codex" ? await codexSources.resolve(nativeId) : undefined;
+  const cliPath = cliProvider ? await locateCliTranscript(nativeId, params.cwd) : undefined;
+  const transcript = cliProvider ? cliPath ?? undefined : ranges ? ranges.at(-1)!.path : await contained(join(home, "acp-sessions", nativeId, "store.db"));
+  const source = transcript ? await stat(transcript) : undefined, wal = provider === "cursor" && transcript ? await stat(`${transcript}-wal`).catch(() => null) : null;
+  if (kind === "usage") return !transcript ? null : provider === "codex" ? readCodexUsage(transcript, nativeId) : cliProvider ? null : readCursorUsage(transcript, nativeId, Math.max(source!.mtimeMs, wal?.mtimeMs ?? 0));
+  const stamp = !transcript ? "missing" : ranges ? JSON.stringify(ranges.map(range => range.stamp)) : JSON.stringify([source!.dev, source!.ino, source!.size, source!.mtimeMs, wal?.size, wal?.mtimeMs]);
   let stored = cache.get(nativeId);
   if (!stored || stored.stamp !== stamp) {
-    stored = { stamp, turns: provider === "codex" ? await readCodex(path, nativeId) : readCursor(path, nativeId) };
+    stored = { stamp, turns: !transcript ? [] : provider === "codex" ? await readCodex(ranges!) : cliProvider ? await readCliTranscript(transcript, nativeId) : readCursor(transcript, nativeId) };
     cache.set(nativeId, stored); if (cache.size > 8) cache.delete(cache.keys().next().value!);
   }
   let turns = stored.turns;
@@ -201,6 +321,10 @@ async function read(nativeId: string, params: Value, kind: string): Promise<any>
     const same = tail && Number(tail.startedAtMs) >= Math.floor(Number(active.startedAtMs) / 1000) * 1000
       && text(tail.items.find((item: Value) => item.type === "userMessage")?.content) === text(user?.content);
     turns = [...(same ? turns.slice(0, -1) : turns), active as Turn];
+  }
+  if (kind === "export") {
+    if (!contextDirectory || typeof params.threadId !== "string" || typeof params.cwd !== "string" || params.title !== null && typeof params.title !== "string") throw new Error("Conversation context export is unavailable");
+    return exportConversationContext(contextDirectory, params.threadId, params.title, params.cwd, turns);
   }
   const thread = { id: params.threadId ?? nativeId, turns };
   if (kind === "snapshot") return turns;

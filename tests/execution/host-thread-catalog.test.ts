@@ -314,7 +314,7 @@ test("connection preconditions do not enter the query retry backoff", () => {
 
 test("unreadable preconditions emit no catalog operation and a later-page failure preserves first-page success", async () => {
   const catalogUrl = new URL("../../apps/workbench-web/src/runtime/host-thread-catalog.ts", import.meta.url).href;
-  const observabilityUrl = new URL("../../apps/workbench-web/src/runtime/observability.ts", import.meta.url).href;
+  const diagnosticsUrl = new URL("../../apps/workbench-web/src/runtime/local-diagnostics.ts", import.meta.url).href;
   const source = `
     const document = Object.assign(new EventTarget(), { visibilityState: "visible", querySelector: () => null });
     const window = new EventTarget();
@@ -322,17 +322,11 @@ test("unreadable preconditions emit no catalog operation and a later-page failur
     Object.defineProperty(globalThis, "performance", { configurable: true, value: {
       now: () => 10, timeOrigin: Date.now() - 10, getEntriesByType: () => [{ startTime: 0, type: "navigate" }],
     } });
-    const events = [];
-    globalThis.fetch = async (url, options) => {
-      if (String(url).endsWith("/capabilities")) return { ok: true, json: async () => ({ telemetry: true, available: false }) };
-      for (const event of JSON.parse(options.body).events) events.push(event);
-      return { ok: true };
-    };
-    const observation = await import(${JSON.stringify(observabilityUrl)});
-    const controller = new AbortController();
-    await observation.createObservabilityExtension().activate({ signal: controller.signal });
-    await new Promise(resolve => setTimeout(resolve, 25));
-    events.length = 0;
+    let uploads = 0;
+    globalThis.fetch = async () => { uploads++; throw new Error("local diagnostics must not upload"); };
+    const diagnostics = await import(${JSON.stringify(diagnosticsUrl)});
+    diagnostics.setLocalDiagnosticsEnabled(true);
+    const events = () => diagnostics.captureLocalDiagnostics().samples.map(sample => sample.fields);
     const catalog = await import(${JSON.stringify(catalogUrl)});
     const profile = { hostId: "fixture", displayName: "Fixture", providerId: "fixture", providerConfig: {}, providerConfigVersion: 1,
       hostKind: "local", enabled: true, autoConnect: true, includeInSidebar: true, revision: 1, credentialRef: null,
@@ -341,7 +335,7 @@ test("unreadable preconditions emit no catalog operation and a later-page failur
       registry: { peekRuntime: () => null, ensureConnected: async () => { throw new Error("must not connect"); } } })
       .then(() => { throw new Error("expected a precondition failure"); }, () => {});
     await new Promise(resolve => setTimeout(resolve, 25));
-    const precondition = events.filter(event => event.kind === "operation" && String(event.operationType).startsWith("catalog_"));
+    const precondition = events().filter(event => event.kind === "operation" && String(event.operationType).startsWith("catalog_"));
     if (precondition.length !== 0) throw new Error("precondition emitted catalog operations: " + JSON.stringify(precondition));
     let page = 0;
     const runtime = { getSnapshot: () => ({ phase: "ready" }), resources: { threads: { list: async () => {
@@ -352,11 +346,12 @@ test("unreadable preconditions emit no catalog operation and a later-page failur
       registry: { peekRuntime: () => runtime, ensureConnected: async () => runtime } })
       .then(() => { throw new Error("expected a later page failure"); }, () => {});
     await new Promise(resolve => setTimeout(resolve, 100));
-    const first = events.filter(event => event.operationType === "catalog_first").map(event => event.outcome);
-    const complete = events.filter(event => event.operationType === "catalog_complete").map(event => event.outcome);
+    const first = events().filter(event => event.operationType === "catalog_first").map(event => event.outcome);
+    const complete = events().filter(event => event.operationType === "catalog_complete").map(event => event.outcome);
     if (JSON.stringify(first) !== JSON.stringify(["started", "ok"])) throw new Error("catalog_first outcomes: " + JSON.stringify(first));
     if (JSON.stringify(complete) !== JSON.stringify(["started", "failed"])) throw new Error("catalog_complete outcomes: " + JSON.stringify(complete));
-    controller.abort();
+    if (uploads !== 0) throw new Error("diagnostics attempted network upload");
+    diagnostics.setLocalDiagnosticsEnabled(false);
     console.log("catalog observation policy passed");
   `;
   const stdout = await new Promise<string>((resolve, reject) => execFile(process.execPath,

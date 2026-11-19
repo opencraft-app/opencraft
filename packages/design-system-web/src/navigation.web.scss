@@ -132,3 +132,17 @@
   padding-inline: var(--padding-count-badge-inline);
   font-variant-numeric: tabular-nums;
 }
+
+
+// Standalone sidebar actions share the list row's layout and reading axis,
+// without introducing a second navigation landmark or a second outer gutter.
+.ui-button.ui-navigation-item[data-navigation-inset="sidebar"][data-content-layout="row"] {
+  display: grid;
+  grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: max(var(--height-sidebar-navigation-row), var(--size-control-hit-min));
+  column-gap: var(--gap-sidebar-navigation-icon-label);
+  padding: 0 var(--padding-sidebar-navigation-row-inline);
+  justify-content: stretch;
+  text-align: start;
+}

@@ -430,6 +430,7 @@ async function harness(): Promise<Harness> {
         case "thread/queue/delete":
           result = { deleted: true };
           break;
+        case "thread/queue/retry":
         case "thread/queue/reorder":
           result = {};
           break;
@@ -475,6 +476,7 @@ function commandPort(
     interactions: { respond: async () => undefined },
     queueAtomicSteer: true,
     queueUnconfirmedSteerDiscard: true,
+    queueUnconfirmedDeliveryRetry: true,
     compiler: { historyMode: "paginated" },
     dynamicTools,
     now: () => 1_000 + retryId,
@@ -1658,10 +1660,26 @@ test("steering never becomes a queued retry after a tool rejection", async () =>
   } finally { await h.close(); }
 });
 
+test("handoff creation carries explicit execution selection, source reference, user text and attachment", () => {
+  const source = "opencraft://conversation/v1/server/source";
+  const compiled = compileSubmitIntent(intent({type:"new-thread",draftId:"handoff",execution:{hostId,workspace:{cwd:"/workspace",runtimeWorkspaceRoots:["/workspace"]}}}, {
+    handoff:{sourceThreadId:"source",reference:source,originalSelections:{model:"old-model"}},
+    document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"Continue the implementation"}]}]},
+    selections:{agentId:"codex",model:"codex:luna[low]",effort:"low",permissionProfile:"opencraft:permission-mode:full"},
+    attachments:[{id:"file",name:"notes.txt",mimeType:"text/plain",size:5,uri:"file:///workspace/notes.txt",lifecycle:"ready",error:null}],
+  }));
+  assert.equal(compiled.threadOptions.agentId,"codex");assert.equal(compiled.threadOptions.model,"codex:luna[low]");
+  assert.equal(compiled.threadOptions.permissions,"opencraft:permission-mode:full");
+  assert.deepEqual(compiled.threadOptions.handoffSource,{threadId:"source"});
+  const text=compiled.input.flatMap(part=>part.type==='text'?[part.text]:[]).join('\n');
+  assert.match(text,/@thread:source/);assert.ok(text.includes(source));assert.match(text,/Continue the implementation/);
+  assert.ok(compiled.input.some(part=>part.type==='mention'&&part.path==='/workspace/notes.txt'));
+});
+
 test("submission receipts retain exact Host sender proof and ignore a different message", async () => {
   const h = await harness();
   const original = h.client.request.bind(h.client);
-  let proofId = "message-1", sender: unknown = {kind: "employee", loginName: "skipzhang"};
+  let proofId = "message-1", sender: unknown = {kind: "employee", loginName: "contributor-a"};
   h.client.request = (async (method: any, params: any, options: any) => {
     const result = await original(method, params, options);
     return ["turn/start", "turn/steer", "thread/queue/add"].includes(method)
@@ -1675,4 +1693,21 @@ test("submission receipts retain exact Host sender proof and ignore a different 
   proofId = "message-1"; sender = null;
   assert.equal((await port.submit(intent({type: "existing-thread", key: existingKey}))).sender, null);
   await h.close();
+});
+
+
+test("manual delivery retry uses the retry capability and never the discard operation", async () => {
+  const h = await harness();
+  try {
+    const port = commandPort(h);
+    await port.retryUnconfirmedSteer!(existingKey, "claim", asTurnId("original-turn"));
+    assert.deepEqual(h.requests.map(request => request.method), ["thread/queue/retry"]);
+    assert.deepEqual(h.requests[0]?.params, { threadId: "thread-existing", queuedSubmissionId: "claim", expectedTurnId: "original-turn" });
+    const legacy = createAppServerConversationCommandPort({ hostId, client: h.client, interactions: { respond: async () => undefined } });
+    await assert.rejects(legacy.retryUnconfirmedSteer!(existingKey, "claim", asTurnId("original-turn")), /unavailable/);
+    const restricted = createAppServerConversationCommandPort({ hostId, client: h.client, queueUnconfirmedDeliveryRetry: true,
+      canRequest: () => false, interactions: { respond: async () => undefined } });
+    await assert.rejects(restricted.retryUnconfirmedSteer!(existingKey, "claim", asTurnId("original-turn")), /unavailable/);
+    assert.equal(h.requests.length, 1);
+  } finally { await h.close(); }
 });

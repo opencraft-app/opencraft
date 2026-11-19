@@ -1,3 +1,4 @@
+@use "@opencraft/design-system/interaction-mixins.web" as controls;
 @use '@opencraft/design-system/channel-chat.web';
 @use '@opencraft/design-system/overview.web' as overview;
 @use '@opencraft/design-system/material.web' as material;
@@ -13,6 +14,7 @@
   display: flex;
   inline-size: fit-content;
   max-inline-size: min(20rem, 100%);
+  border-radius: var(--radius-channel-chat-bubble);
 }
 
 .im-channel-chat__picture-placeholder {
@@ -28,21 +30,7 @@
   text-align: center;
 }
 
-.im-channel-chat__picture.ui-button {
-  display: grid;
-  place-items: center;
-  inline-size: fit-content;
-  min-inline-size: var(--size-control-hit-min);
-  min-block-size: var(--size-control-hit-min);
-  block-size: auto;
-  max-inline-size: 100%;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-channel-chat-bubble);
-  overflow: hidden;
-  background: transparent;
-  cursor: zoom-in;
-
+.im-channel-chat__picture {
   img {
     display: block;
     inline-size: auto;
@@ -314,9 +302,9 @@
 .im-chat-overview > .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 
 .im-channel-mentions { white-space: pre-wrap; overflow-wrap: anywhere; }
-.im-channel-mention { color: var(--color-text-accent); font-weight: 600; }
+.im-channel-mention { color: var(--color-text-accent); font-weight: var(--font-weight-semibold); }
 .im-channel-mention[data-self] { background: color-mix(in srgb, var(--color-text-accent) 16%, transparent); border-radius: var(--radius-xs); padding-inline: .12em; }
-.im-channel-mention-unread { font: var(--typography-metadata-font); font-weight: 600; color: var(--color-text-accent); white-space: nowrap; }
+.im-channel-mention-unread { font: var(--typography-metadata-font); font-weight: var(--font-weight-semibold); color: var(--color-text-accent); white-space: nowrap; }
 
 // Group details compose the shared inspector, with one document scroll owner.
 .im-channel-group-dialog[data-presentation="inspector"] {
@@ -416,7 +404,7 @@
   border: 1.5px dashed var(--color-border-default);
   background: transparent; color: var(--color-text-tertiary);
   > svg { inline-size: 45%; block-size: 45%; border-radius: 0; }
-  &:hover:not(:disabled) { color: var(--color-text-secondary); border-color: var(--color-text-tertiary); }
+  @include controls.hover-capable { &:hover:not(:disabled) { color: var(--color-text-secondary); border-color: var(--color-text-tertiary); } }
   &[aria-pressed="true"] { border-style: solid; color: var(--color-text); }
   &:focus-visible { outline: var(--width-control-focus-ring) solid var(--color-border-focus); outline-offset: 2px; }
 }

@@ -1,21 +1,18 @@
-/** Parse argv only: no shell expansion, process, transport or authority. */
-export function parseThreadCommand(input) {
-  return parse(input);
-}
-
 /** Change only the parsed option value, never a matching literal argument. */
 export function replaceThreadCommandIdempotencyKey(input, key) {
   if (typeof key !== "string" || !key || key.length > 16384)
     throw Error("Invalid thread idempotency key");
   let index;
-  parse(input, valueIndex => { index = valueIndex; });
+  parseThreadCommand(input, valueIndex => { index = valueIndex; });
   if (index === undefined) throw Error("Platform intent has no idempotency key");
   const argv = [...input];
   argv[index] = key;
   return argv;
 }
 
-function parse(input, onKey) {
+/** Parse argv only: no shell expansion, process, transport or authority.
+ * Self-contained: the materialized execution CLI embeds this function verbatim. */
+export function parseThreadCommand(input, onKey) {
   if (
     !Array.isArray(input) ||
     input.length > 64 ||

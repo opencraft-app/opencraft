@@ -56,7 +56,7 @@ function openCache(path: string): DatabaseSync {
     }finally{probe.close();}
     if(incompatible)for(const suffix of ["","-wal","-shm"])rmSync(path+suffix,{force:true});
   }
-  const options = { path, legacyPolicy: "reject-unknown" as const, migrations: CACHE_MIGRATIONS,
+  const options = { schemaId: "token-usage-cache" as const, path, legacyPolicy: "reject-unknown" as const, migrations: CACHE_MIGRATIONS,
     validateSchema: createSchemaValidator(CACHE_MIGRATIONS.map(m => m.sql).join("\n")) };
   try {
     const db = openManagedDatabase(options).database;
@@ -102,7 +102,7 @@ export class RolloutDerivedTokenUsage {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     this.source = new DatabaseSync(options.databasePath, { readOnly: true });
     this.source.exec("PRAGMA query_only=ON; PRAGMA busy_timeout=0");
-    this.retained = openManagedDatabase({ path: join(directory, "token-usage-retained.sqlite"), legacyPolicy: "reject-unknown",
+    this.retained = openManagedDatabase({ schemaId: "token-usage-retained", path: join(directory, "token-usage-retained.sqlite"), legacyPolicy: "reject-unknown",
       migrations: [{ version: 1, name: "retained-native-usage-evidence", sql: RETAINED_SQL }], validateSchema: createSchemaValidator(RETAINED_SQL) }).database;
     this.database = openCache(join(directory, "token-usage-derived.sqlite"));
     this.hadCache=!!this.statement(this.database,"SELECT 1 FROM token_usage_turns LIMIT 1").get();
@@ -317,18 +317,20 @@ export class RolloutDerivedTokenUsage {
       if (!file) { this.fileAfter = "";const more=this.roundProgress||this.dirty.size>0||!!this.statement(this.database,"SELECT 1 FROM usage_reproject LIMIT 1").get();this.roundProgress=false;if(!more){this.clearGap("building");this.clearGap("refresh-failed");}return more; }
       const thread = String(file.thread_id); this.fileAfter = thread;
       try {
-        // A complete file whose bytes and owner are unchanged has nothing to read.
+        // A complete file with unchanged size and inode has no new bytes to read.
         // Paths are re-resolved per read, which asks Codex Core for its directory
         // (and health without generations), so polling every file each second was
         // a steady request loop. Shrinking or replaced files still take the full path.
         if (file.complete === 1 && file.error === null && file.identity !== null) {
           const current = await stat8(String(file.path)).catch(() => null);
+          if (this.closed) return false;
           if (current && current.size === Number(file.cursor) && `${current.dev}:${current.ino}` === file.identity) {
             this.clearGap(`file:${thread}`);
             return true;
           }
         }
         const source = await this.options.resolveSource?.(thread, String(file.path));
+        if (this.closed) return false;
         const result = await readUsageIncrement({ path: String(file.path), nativeHome: this.options.nativeHome, source, threadId: thread, cursor: Number(file.cursor), identity: file.identity as string | null });
         if (this.closed) return false;
         if(result.events.some(row=>row.event.kind==="session"&&row.event.data[0]!==thread))throw new Error("Usage session identity mismatch");
@@ -353,6 +355,7 @@ export class RolloutDerivedTokenUsage {
         });
         if (result.events.length || result.cursor > Number(file.cursor)) { this.roundProgress=true;return true; }
       } catch {
+        if (this.closed) return false;
         this.statement(this.retained, "UPDATE usage_files SET error='source-replaced',complete=1 WHERE thread_id=?").run(thread);
         this.gap(`file:${thread}`, thread, "source-replaced");
         this.ledger.commitReplayBatch(() => {

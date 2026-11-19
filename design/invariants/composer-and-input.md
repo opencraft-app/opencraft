@@ -543,9 +543,11 @@ website management or an extension view does not show the initial setup gate or
 mark setup as completed. Returning to the conversation retains pending setup;
 an explicitly opened connection sheet may still be presented from model settings.
 
-Standalone Composer opens one model browser: source tabs, search, a bounded
-model list, then the selected model's supported reasoning choices and optional
-Fast action. Source browsing and search are local presentation state; neither
+Standalone Composer opens one model browser. A new thread's first open shows
+source tabs, search and a bounded model list. Choosing a model with declared
+reasoning moves to the shared DiscreteSlider; later opens and existing threads
+start there, and the model title returns to the tabs. Models without declared
+reasoning stay on the list. Optional Fast stays on the slider when declared. Source browsing and search are local presentation state; neither
 changes the active Host, model, draft or remembered defaults. Selecting a model
 commits through the existing Composer/Host owner. Same-named models on different
 Hosts/providers stay distinct. Long catalogs scroll inside their list while
@@ -609,9 +611,24 @@ without replacing the editor, moving Selection or drawing a substitute caret.
 
 ### Engine identity in model selection
 
-Both standalone and session model lists preserve catalog engine/provider groups
-inside their Agent group. Identical model labels cannot erase the engine boundary;
-selection continues to submit the catalog model ID and keeps native thread binding.
+New-conversation menus use the Host's explicit `agentId/agentLabel` model metadata
+for icon-only Agent tabs with accessible names and a visible selected-Agent label,
+followed by only that Agent's models. Model vendor groups and
+model-name suffixes cannot establish Agent identity. Older Hosts without metadata
+retain one Host-level group. Selecting a tab browses; choosing a model commits the
+catalog ID. The editor and native selection survive both operations; pointer-opened
+model menus return to the existing editor on dismissal, while keyboard opening keeps
+normal menu/trigger focus and navigating to another surface revokes the return.
+
+`chat.agentAvailability` filters only new conversations, with the same scoped
+preference consumed by Chat settings and onboarding. The new-draft menu applies
+the active settings host's switches to every host's models, so an agent turned
+off there cannot be chosen from another host. All-off is valid and offers
+Manage agents; a populated model list does not repeat that action. A host-level
+catalog is omitted when an Agent tab already uses that same product name.
+Unavailable selections disable both the send button and submission.
+Existing conversations retain their engine and unfiltered model catalog. See the
+[Agent picker design](../agent-picker.md) for authority, onboarding and empty states.
 
 Pi Side Chat uses the same WSP-07/WSP-12 lifecycle and inline `/side` surface.
 Its explicit ephemeralFork flag does not enable persistent Fork menus. Capability

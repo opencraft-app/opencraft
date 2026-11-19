@@ -1,5 +1,6 @@
 """CI artifact extraction preserves native archives and rejects ambiguous input."""
 import importlib.util
+import os
 from pathlib import Path
 import stat
 import tempfile
@@ -31,7 +32,8 @@ class RestoreArtifactTests(unittest.TestCase):
             source = self.fixture(root)
             self.module.restore(root, root / 'browser', 'browser')
             self.assertEqual((root / 'browser/electron').read_bytes(), b'fixture native binary')
-            self.assertTrue((root / 'browser/electron').stat().st_mode & 0o111)
+            if os.name != 'nt':
+                self.assertTrue((root / 'browser/electron').stat().st_mode & 0o111)
             self.assertEqual((root / 'browser/opencraft-electron-artifact.json').read_bytes(),
                              (source / 'opencraft-electron-artifact.json').read_bytes())
 
@@ -45,3 +47,38 @@ class RestoreArtifactTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'exactly one'):
                 self.module.restore(root, root / 'browser', 'browser')
             self.assertFalse((root / 'browser').exists())
+
+    def test_desktop_marker_is_distinct_and_invalid_kind_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self.fixture(root)
+            browser = source / 'opencraft-electron-artifact.json'
+            browser.rename(source / 'opencraft-electron-desktop-artifact.json')
+            self.module.restore(root, root / 'desktop', 'desktop')
+            self.assertTrue((root / 'desktop/opencraft-electron-desktop-artifact.json').is_file())
+            with self.assertRaisesRegex(ValueError, 'Unsupported'):
+                self.module.restore(root, root / 'invalid', 'other')
+            self.assertFalse((root / 'invalid').exists())
+
+    def test_rejects_escaping_archive_without_leaving_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = self.fixture(root)
+            with zipfile.ZipFile(source / 'dist.zip', 'w') as archive:
+                archive.writestr('../escaped', 'bad')
+            with self.assertRaises(ValueError):
+                self.module.restore(root, root / 'browser', 'browser')
+            self.assertFalse((root / 'browser').exists())
+            self.assertFalse((root / 'escaped').exists())
+
+    def test_linux_browser_proof_is_created_before_the_native_cache_is_saved(self):
+        workflow = (Path(__file__).parents[3] / '.github/workflows/electron-native-artifacts.yml').read_text()
+        start = workflow.index('      - name: Probe the Linux server browser distribution')
+        save = workflow.index('      - name: Save verified Linux fork runtime')
+        probe = workflow[start:save]
+        self.assertLess(start, save)
+        self.assertIn("matrix.id == 'linux-x64' && steps.native-cache.outputs.cache-hit != 'true'", probe)
+        self.assertIn("Path(os.environ['EVIDENCE']) / 'dist.zip'", probe)
+        self.assertIn('python3 vendor/electron/prepare-artifact.py', probe)
+        self.assertIn('opencraft-electron-artifact.json', probe)
+        self.assertIn("hashFiles('vendor/electron/**', '.github/workflows/electron-native-artifacts.yml')", workflow)

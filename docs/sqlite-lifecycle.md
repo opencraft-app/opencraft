@@ -4,6 +4,10 @@
 
 Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管理命令与服务器互斥；正常退出先关闭全部消费者和数据库，再释放锁。新增执行凭据绑定表通过核心迁移 v2 接入，导入同时识别旧 `session-capabilities.sqlite` 的 v1/v2 并保留执行绑定，历史 SQL/checksum 不变。
 
+## 已发布分支历史的选择
+
+若同一 owner 已存在多套不可改写的迁移账本，可信 owner 可以在其存储 Worker 内持有写入围栏的期间调用 `selectMigrationHistory`：它只读取规范账本、校验每条名称和 SQL 哈希，并严格校验当前结构；因此要求每个历史前缀的 SQL 均可在空内存库重放，依赖真实业务数据才能执行的迁移不适用；未知、空账本或异常结构均拒绝。共享前缀必须由 owner 显式指定匹配的首选分支，已分叉前缀只匹配对应分支。选择后仍须在同一围栏内使用该链调用 `openManagedDatabase`；选择器不迁移、不改写账本、不创建备份，也不保证不同分支最终结构或业务语义等价。各链最终状态、追加迁移、回退及版本兼容由 owner 验证；不得从数据库内容或不可信输入构造迁移链。
+
 ## 1. 设计结论
 
 同一 Server 进程的核心元数据合库，领域 repository 保留独立业务语义并借用 owner 的连接。独立进程、Host、执行日志、计量与缓存保持各自隔离；ORM 类型不穿透协议。
@@ -25,8 +29,8 @@ Server 存储入口复用 Headless 的 `server.lock` 内核进程锁，离线管
 | `thread-identity.sqlite` | Headless Hub：[ThreadIdentityDatabase](../apps/opencraft-daemon/src/thread-identity-database.ts) / AppServerIdentityOverlay | Headless `thread-identities/opencraft-server` | DSH trusted sender/creator, fork origins and derived 企业身份 presence/completion; no native messages or execution state |
 | `thread-read-receipts.sqlite` | Headless installation：[ThreadReadReceiptStore](../scripts/thread-read-receipt-store.ts) | Headless server data directory | Verified-account exact read receipts; existing document-store migrations/CAS, independent of selected Host |
 | `opencraft-client-resources.sqlite` | Electron Main：[client resource store](../packages/document-storage/src/client-resources-sqlite.ts) | Electron `userDataDirectory` | 跨端客户端资源；本地原件 CAS，远端展示副本可清理；lazy open，独立 schema v1 |
-| `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/workbench-electron/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
-| `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../apps/workbench-electron/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
+| `opencraft-ui.sqlite` | Electron Main：[ui-preferences-store](../apps/desktop/src/ui-preferences-store.ts) | Electron `userDataDirectory` | UI 偏好与 CAS |
+| `opencraft-connectors.sqlite` | Electron Main：[connector-configuration-store](../apps/desktop/src/connector-configuration-store.ts) | Electron `userDataDirectory` | 连接选择意图，不含凭据 |
 | `opencraft-extensions.sqlite` | Electron Main：[document-storage/sqlite](../packages/document-storage/src/sqlite.ts) | Electron `userDataDirectory` | client-local 插件文档、设置与安装记录 |
 | `opencraft-session-routing.sqlite` | daemon 内 Local Agent Host：[dsh-session-routing](../apps/local-agent-host/src/dsh-session-routing.ts) | Host `dataDirectory` | 逻辑/原生身份、generation、水位与 intent |
 | `opencraft-threads.sqlite` | daemon 内 Local Agent Host：[thread-catalog](../apps/local-agent-host/src/thread-catalog.ts) | Host `dataDirectory` | 人工标题、归档、关系与配置 |
@@ -148,6 +152,57 @@ journal 后关闭连接，确认没有 sidecar，制作并校验 SHA-256 恢复�
 `opencraft_server_imports` 和 `opencraft_server_installation` 是迁移创建的内部表。提交前崩溃回滚，提交后崩溃以完成回执为准，不重复导入。重启对仍存在的退休来源校验逻辑摘要，不以旧库作为业务读取 fallback；发现旧程序修改原库则拒绝启动，避免数据分叉。完成迁入后，当前核心库的一致备份可独立恢复，缺失的退休源不要求重新找回；退休源存在孤立 sidecar 时仍拒绝。存储 owner 保留 `.server-import` 目录作为安装身份，已有该目录而核心库或账本缺失时拒绝重建。核心库备份只覆盖这八类数据，整个部署仍需保全其他 owner、密钥和附件。
 
 Server schema 在 `storage-node/src/server/schema.ts`，明文迁移与 Drizzle snapshots 在同目录 `migrations/`。`npm run generate:storage` 生成 SQL、保留所有核心表的 SQLite STRICT 约束并编译随包 TS；`npm run check:storage` 检查源码 SQL 与随包内容一致。迁移测试还检查 schema 与 snapshot 无差异。运行时不读取仓库相对路径、不需要 Drizzle Kit、libsql 或另一个迁移账本。
+
+### 独立 SQLite owner 的 Drizzle 开发流程
+
+Drizzle 管理 schema 不要求物理合库。`packages/storage-node/stores.json` 注册31组
+OpenCraft 自有独立 SQLite：Host 状态/附件/身份/路由/执行/计量、Agent Bridge 命令托管、客户端偏好/文档/资源、
+Tasks/IM、连接/模型策略/MCP Apps/定时/恢复、Web push、Git vault、观测及
+OpenCraft 自有 generation registry/account pool 元数据。各声明位于
+`storage-node/src/stores/<id>/schema.ts`，沿现有 owner、文件、独占锁和生命周期执行。
+这不管理 Codex/Pi/DSH 的原生私有数据库，也不将 IndexedDB 转为 SQLite。
+退休六域旧库只作已冻结导入源，不能重新注册成业务写 owner。
+
+既有完整迁移前缀在每库 `baseline.json` 固定 version/name/SHA-256；该库
+`migrations/0000_legacy_baseline.sql` 和 snapshot 表示当前结构，**不作为新迁移执行**。
+运行时 `openManagedDatabase({schemaId, migrations: legacy, ...})` 在打开文件前核对
+冻结前缀，再追加随包生成增量；仍使用同一个 `schema_migrations` 账本。
+初次注册无新增DDL、不重建/重命名文件、不改变已有账本。完整链推导最终结构校验，
+避免旧的固定目标validator在下次生成后仍拒绝新增表/列。
+
+修改步骤：
+
+1. 修改该库 `schema.ts`，运行 `npm run generate:storage -- --store <id>`。
+   不带store时仍走Server迁移的现有生成流程；`storage-migrations.mjs compile` 可编译已审核SQL。
+2. 审查明文SQL及数据变换，提交SQL、snapshot、journal和随包生成清单。
+   独立库增量的journal索引1对应旧链的N+1，而不是重置已安装迁移版本。
+3. 审查后运行 `npm run freeze:storage -- --store <id>`（Server迁移链的发布冻结不在本流程内），
+   将新条目追加到该库 `published.json`，与迁移一起提交。generate/compile可处理尚未冻结
+   的新草稿；check要求全部条目已冻结。新owner的发布清单从 `[]` 开始，基线也需冻结。
+4. 运行 `npm run check:storage`、`npm run test:sqlite-node` 及该owner的升级保留数据测试。
+   检查覆盖所有owner的前缀身份、schema漂移、连续编号/时间顺序、snapshot链和孤立产物。
+   Join完整测试/历史审计仍按现有后置规则，不新增部署审批或前置门禁。
+
+发布清单逐项固定tag、时间、执行版本、SQL原文/snapshot与实际编译SQL的SHA-256。
+结构描述基线的执行版本为0，不写进数据库账本。generate/compile/freeze都会先核对已有
+冻结前缀；freeze只能追加，不能接受既有条目改写或删除，编译器变化也不能改变已经
+应用的SQL。Server与独立库、下游私有库使用同一检查原语；清单不是第二份运行时账本。
+
+编译器保留原表STRICT/WITHOUT ROWID选项，新表默认STRICT；运行时无Drizzle Kit依赖。
+SQLite未命名UNIQUE约束以稳定`legacy_unique_*`别名描述；它们与旧sqlite_autoindex
+在开发期按约束语义核对，不能把别名当作已安装索引执行DROP INDEX。
+Drizzle Kit当前SQLite表达式索引的SQL序列化会拆开表达式内逗号；编译器从生成snapshot
+的结构化columns/internal表达式元信息重建CREATE INDEX，回归覆盖json_extract复合索引。
+含`foreign_keys=OFF`的自动重建不能在当前逐迁移事务里直接执行；应改为符合owner事务及
+外键约束的明确迁移，并验证数据保留，不以关闭外键或修改已发布历史绕过执行器。
+
+下游私有SQLite使用同一通用`resolveMigrationContract(id, legacy, contract)`连接冻结前缀和
+生成增量，schema/SQL/snapshot和生成清单留在产品目录。核心不认识产品schema ID；
+下游复用`storage-migration-tools`与`storage-owner-source`做产物、结构和覆盖检查。
+
+源码注册和运行升级分开：本批主服受管包可启用其包含的owner代码，但不会重启
+独立Core/router/Engine，不能据此声称它们运行中的进程已换代码。以后它们按自己的
+受管维护契约消费同一机制；接入schema不授予生命周期交接权限。
 
 ### openManagedDatabase
 
@@ -880,3 +935,39 @@ Legacy clients explicitly retain full-history reads. Tests cover bounded cold
 startup and real cold-client responses with 20,000 facts, indexed query plans,
 owner isolation, offline drafts, and v1 backfill. Global active/account projection
 cost remains separate; permanent anti-resurrection facts are never expired.
+
+
+### 既有追加迁移的 ledger identity 采纳
+
+独立 owner 转入 Drizzle 时，如果冻结基线之后已经存在带账本的增量，不能仅把旧 SQL 改名成 `0001_*` 后重放：账本同时校验 version、name 和 SQL 的 SHA-256。受管执行器和数据库账本不做改写。
+
+这类已发布增量可以在 owner 的 schema 目录添加 `adopted-identities.json`，用源码清单为**新增** journal 条目绑定其原有身份，例如：
+
+```json
+[{"tag":"0001_adopt_note","version":2,"name":"published-retry-note","checksum":"<原始执行 SQL 的 64 位小写 SHA-256>"}]
+```
+
+- 原 `baseline.json`、`0000` SQL/snapshot 及其 `published.json` 冻结前缀保持不变；版本必须等于基线长度加 journal 序号，不能挪到其他位置或覆盖基线。
+- 将原执行 SQL **逐字节**保存到对应 `.sql`，并用 Drizzle schema/snapshot 描述其真实结构；此路径不重新格式化 index 表达式。STRICT/table-options 保护仍执行，若导致 SQL 身份变化则拒绝采纳，不能以新 hash 冒充原有账本。
+- `compile`/`generate` 仍检查已有冻结记录，`check` 要求追加记录已经审查并 `freeze`。新的 publication 额外冻结 `ledgerName`；SQL、版本、tag、时间、snapshot 与编译 checksum 也继续锁定。移除或改写采纳映射不能重冻洗白旧记录。
+- 后续正常生成的迁移继续以 journal tag 为 name，不需要这个文件。运行时仍消费生成的契约并严格验证全部历史；采纳清单不从线上数据库或客户端请求读取，也不允许任意新版/未知结构。
+
+采纳前必须核实原 SQL/name/version 与既有账本来源，审查 schema，并验证旧基线、既有增量、空库、重复打开及后续追加迁移的数据/备份行为。此工具不自动认领分叉版本，不允许两个不同 SQL 共用同一版本。测试见 [published ledger adoption](../tests/storage/published-ledger-adoption.test.ts)。
+
+
+### 多源声明模型检查
+
+Server 的 `check:storage` 与生成器读取同一份 `packages/storage-node/drizzle.config.ts` 中的 `schema` 配置：支持单个具体文件路径或非空路径数组，路径相对该包解析。产品消费者可在自己的配置中组合独立声明模块，不需要把产品表复制进核心 schema。检查不读取运行中数据库，不接受 glob，缺失文件、重复源、重复导出名或跨源重复表 owner 均失败；完整声明模型仍须与最后的冻结 snapshot 一致。其他独立 owner 默认继续检查各自的 `schema.ts`。
+
+
+### Server 已发布历史分叉的收敛
+
+Server 的 `migration-lineages.json` 只声明源码中已审查的有限历史，不从运行中数据库推导新迁移。已有内部账本与上游账本如果在相同 version 使用了不同 name/SQL，不能重排已执行记录，也不能把同内容 SQL 在不同位置的账本当成同一身份。
+
+- 默认新建库沿 canonical journal；编译器冻结其 name、version、SQL 与 snapshot 校验值。已有库在安装级 writer fence 内以只读方式核对完整账本，只能选择一个精确声明的前缀；之后仍由通用 managed opener 完成校验、备份、恢复与追加。未知、篡改、混合和更新版本的历史拒绝打开，不编辑旧记录。
+- alternate 的已发布 SQL 必须逐字节对应 canonical 中唯一的已审查 SQL。编译器只追加该路径尚未执行的 SQL，跳过已经执行过的同内容迁移；两条路径必须在测试中得到相同最终结构，并保留业务行、原账本时间戳与身份。
+- 不只冻结 alternate 的原始 published 前缀，也冻结其完整 `convergencePublished`。以后 canonical 增加迁移，可在各路径末尾追加并审查 `--freeze`；若上游发布了一个新的分叉前缀，必须增加新的 alternate ID，不能扩展或改写旧 ID 的 published 前缀而重排已经收敛的数据库。
+- `SERVER_DATA_CONTRACT.hash` 描述完整有限迁移族，而不是声称所有库都被改写成 canonical 账本。旧来源导入凭据及其摘要仍独立核验，不能用新 hash 洗白旧来源。
+- Drizzle 生成、schema 检查和物理结构验证必须使用同一份配置中的全部声明源，包括产品拥有的独立 schema。旧迁移的等价内联 FK/CHECK、列顺序和 identifier quoting 不是改写已发布 SQL 的理由；测试对明确列出的旧表示验证列/default/PK/FK/CHECK/index/STRICT，再保留其余对象和 trigger 的严格校验，并用反例验证没有放宽约束。
+
+相关验证：`tests/storage/server-history-convergence.test.ts`、`server-migration-compiler.test.mjs`、`server-schema-assertion.test.ts` 和 `server-storage.test.ts`。完整 `check:storage` 与干净依赖安装仍是交付门槛，单独 Server 编译检查不能替代所有 owner 的验收。

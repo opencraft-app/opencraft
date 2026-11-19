@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { buildServerSpacesRuntime } from './package-server-spaces-runtime.mjs';
+import { buildConnectedAgentHistoryRuntime } from './package-connected-agent-history-runtime.mjs';
 import { buildDshRoutingRuntime } from './package-dsh-routing-runtime.mjs';
 import { buildTranscriptCacheRuntime } from './package-transcript-cache-runtime.mjs';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
@@ -51,10 +53,13 @@ export async function buildHeadlessBundle(output, { headlessEntry = join(reposit
   await build({ entryPoints: [join(repositoryRoot, "scripts/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
   await build({entryPoints:[fileURLToPath(new URL('../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
+  await buildServerSpacesRuntime(dirname(output));
   await buildDshRoutingRuntime(dirname(output));
+  await buildConnectedAgentHistoryRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,'scripts/server-deployment/dsh-consumer-receipts.worker.ts')],outfile:join(dirname(output),'dsh-consumer-receipts-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
+  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/execution-fault.worker.ts")],outfile:join(dirname(output),"execution-fault-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   await buildTerminalOwnerRuntime(dirname(output));
   await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning",
     // The collector role reaches CJS dependencies (undici) through the core control client.
@@ -102,8 +107,8 @@ function run(command, args, options = {}) {
 async function copyRuntimeModules(stageRoot) {
   await copySshRuntime(join(stageRoot, "node_modules"));
   await copyAllServerRuntime(join(stageRoot, "node_modules"));
-  const desktop = JSON.parse(await readFile(join(repositoryRoot, "apps/workbench-electron/package.json"), "utf8"));
-  const sourceBase = join(repositoryRoot, "apps/workbench-electron");
+  const desktop = JSON.parse(await readFile(join(repositoryRoot, "apps/desktop/package.json"), "utf8"));
+  const sourceBase = join(repositoryRoot, "apps/desktop");
   const modules = desktop.build.extraResources.filter((entry) =>
     entry.to.startsWith("runtime/dsh/") && entry.from.startsWith("../local-agent-host/src/"));
   if (modules.length < 10) throw new Error("Desktop DSH capability module inventory is incomplete");
@@ -184,7 +189,12 @@ export async function packageHeadlessLinux(composition = {}) {
   const version = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8")).version;
   const output = outputOverride
     ?? join(repositoryRoot, "release", `OpenCraft-server-${version}-linux-${architecture}.tar.gz`);
-  const temporary = await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
+  // stageInto: lay the tree out at <stageInto>/opencraft-server and return that
+  // directory instead of an archive. The container build copies the tree into
+  // its image, so compressing it only to extract it again cost about 75s.
+  const stageInto = composition.stageInto;
+  if (stageInto !== undefined && !isAbsolute(stageInto)) throw new Error("stageInto must be absolute");
+  const temporary = stageInto ?? await mkdtemp(join(tmpdir(), "opencraft-server-package-"));
   const stage = join(temporary, "opencraft-server");
   try {
     await mkdir(join(stage, "bin"), { recursive: true });
@@ -221,13 +231,14 @@ export async function packageHeadlessLinux(composition = {}) {
       ...(productPlugins ? { productPlugins } : {}),
       files,
     }, null, 2)}\n`);
+    if (stageInto !== undefined) return stage;
     await mkdir(dirname(output), { recursive: true });
     await run("tar", ["--sort=name", "--mtime=@0", "--owner=0", "--group=0", "--numeric-owner",
       "-czf", output, "-C", temporary, "opencraft-server"]);
     await stat(output);
     return output;
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    if (stageInto === undefined) await rm(temporary, { recursive: true, force: true });
   }
 }
 

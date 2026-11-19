@@ -20,6 +20,8 @@ runs:
     - shell: bash
       env:
         NATIVE_RUN_ID: ${{ inputs.run-id }}
+        ARTIFACT_KIND: ${{ inputs.kind }}
+        ARTIFACT_TARGET: ${{ inputs.target }}
         GH_TOKEN: ${{ github.token }}
         GH_REPOSITORY: ${{ github.repository }}
         GH_API_URL: ${{ github.api_url }}
@@ -28,13 +30,18 @@ runs:
           echo 'Set repository variable OPENCRAFT_ELECTRON_ARTIFACT_RUN_ID to a successful native artifact build run.' >&2
           exit 1
         fi
+        if ! [[ "$ARTIFACT_KIND" =~ ^(browser|desktop)$ && "$ARTIFACT_TARGET" =~ ^(linux-x64|windows-x64|macos-arm64|macos-x64)$ ]]; then
+          echo 'Unsupported native artifact kind or target.' >&2
+          exit 1
+        fi
         node --input-type=module - <<'JS'
         const response = await fetch(`${process.env.GH_API_URL}/repos/${process.env.GH_REPOSITORY}/actions/runs/${process.env.NATIVE_RUN_ID}`, {
           headers: { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json' },
         });
         if (!response.ok) throw new Error(`Cannot read selected native build run (${response.status})`);
         const run = await response.json();
-        if (run.name !== 'Electron fork native artifacts' || run.conclusion !== 'success')
+        if (run.path !== '.github/workflows/electron-native-artifacts.yml' || run.conclusion !== 'success'
+          || run.head_repository?.full_name !== process.env.GH_REPOSITORY)
           throw new Error('Select a successful Electron fork native artifacts run');
         JS
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -53,11 +60,10 @@ runs:
         python3 vendor/electron/restore-artifact.py \
           --directory "$RUNNER_TEMP/owned-electron-download-$ARTIFACT_KIND-$ARTIFACT_TARGET" \
           --distribution "$distribution" --kind "$ARTIFACT_KIND"
+        node scripts/verify-owned-electron-artifact.mjs "$ARTIFACT_KIND" "$ARTIFACT_TARGET" "$distribution" vendor/electron/fork.json
         if test "$ARTIFACT_KIND" = browser; then
-          node scripts/remote-browser-artifact.mjs "$distribution" vendor/electron/fork.json
           echo "OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=$distribution" >> "$GITHUB_ENV"
         else
-          node scripts/electron-distribution.mjs "$distribution" vendor/electron/fork.json
           echo "OPENCRAFT_ELECTRON_DISTRIBUTION=$distribution" >> "$GITHUB_ENV"
         fi
         echo "distribution=$distribution" >> "$GITHUB_OUTPUT"

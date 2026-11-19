@@ -3,6 +3,9 @@ import {
   assertComposerPlacement,
   isComposerDocumentEmpty,
   type ComposerController,
+  type ComposerContextReference,
+  type ComposerSelections,
+  type ComposerDraft,
   type ComposerDocument,
   type ComposerTarget,
 } from "@opencraft/composer-core";
@@ -52,7 +55,7 @@ function block(value: unknown, depth: number): boolean {
 }
 
 export function parseConversationDraftDocument(value: string | null): ComposerDocument | null {
-  if (value === null || value.length > MAX_CHARACTERS) return null;
+  if (typeof value !== "string" || value.length > MAX_CHARACTERS) return null;
   try {
     const envelope: unknown = JSON.parse(value);
     if (!record(envelope) || envelope.version !== VERSION || !record(envelope.document)) return null;
@@ -62,9 +65,34 @@ export function parseConversationDraftDocument(value: string | null): ComposerDo
   } catch { return null; }
 }
 
-export function serializeConversationDraftDocument(document: ComposerDocument, target?: ComposerTarget): string | null {
-  if (isComposerDocumentEmpty(document)) return null;
-  const value = JSON.stringify({ version: VERSION, document, ...(target?.type === "new-thread" ? { target } : {}) });
+type SavedModelSelection = Pick<ComposerSelections, "model" | "effort" | "serviceTier">;
+function historyReference(value: unknown): value is ComposerContextReference {
+  return record(value) && value.kind === "file" && typeof value.id === "string" && value.id.length <= 512
+    && typeof value.title === "string" && value.title.length <= 1024 && typeof value.uri === "string" && value.uri.startsWith("file:")
+    && typeof value.visible === "boolean" && record(value.metadata)
+    && typeof value.metadata.conversationSourceThreadId === "string" && value.metadata.conversationSourceThreadId.length <= 256
+    && value.metadata.additionalContextKind === "untrusted" && typeof value.metadata.value === "string" && value.metadata.value.length <= 16384;
+}
+function modelSelection(value: unknown): SavedModelSelection {
+  if (!record(value)) return {};
+  return {
+    ...(typeof value.model === "string" && value.model.length <= 8192 ? { model: value.model } : {}),
+    ...(typeof value.effort === "string" && value.effort.length <= 128 ? { effort: value.effort } : {}),
+    ...(value.serviceTier === null || typeof value.serviceTier === "string" && value.serviceTier.length <= 128 ? { serviceTier: value.serviceTier } : {}),
+  };
+}
+function draftReferences(value: unknown): ComposerContextReference[] {
+  return Array.isArray(value) && value.length <= 32 ? value.filter(historyReference).map(reference => ({
+    id: reference.id, kind: "file", title: reference.title, uri: reference.uri, visible: reference.visible,
+    metadata: { conversationSourceThreadId: reference.metadata!.conversationSourceThreadId, additionalContextKind: "untrusted", value: reference.metadata!.value },
+  })) : [];
+}
+export function serializeConversationDraftDocument(document: ComposerDocument, target?: ComposerTarget,
+  extras?: Pick<ComposerDraft, "context" | "selections">): string | null {
+  const context = draftReferences(extras?.context), selections = modelSelection(extras?.selections);
+  if (isComposerDocumentEmpty(document) && !context.length && !Object.keys(selections).length) return null;
+  const value = JSON.stringify({ version: VERSION, document, ...(target?.type === "new-thread" ? { target } : {}),
+    ...(context.length ? { context } : {}), ...(Object.keys(selections).length ? { modelSelection: selections } : {}) });
   return value.length <= MAX_CHARACTERS ? value : null;
 }
 
@@ -76,6 +104,8 @@ export function parseConversationDraftTarget(value: string | null): Extract<Comp
     if (!record(target) || target.type !== "new-thread" || typeof target.draftId !== "string" || !target.draftId
       || !record(target.execution) || typeof target.execution.hostId !== "string" || !target.execution.hostId
       || !record(target.execution.workspace)) return null;
+    const spaceId=target.execution.collaborationSpaceId;
+    if(spaceId!==undefined&&(typeof spaceId!=="string"||!spaceId||spaceId.length>256))return null;
     const workspace = target.execution.workspace;
     if (!(workspace.cwd === null || typeof workspace.cwd === "string")
       || !Array.isArray(workspace.runtimeWorkspaceRoots) || !workspace.runtimeWorkspaceRoots.every(root => typeof root === "string")
@@ -111,8 +141,8 @@ export function createConversationDraftContinuity(input: {
     if (timer !== undefined) clearTimeout(timer);
     timers.delete(key);
   };
-  const write = (key: string, document: ComposerDocument, target: ComposerTarget) => {
-    const value = serializeConversationDraftDocument(document, target);
+  const write = (key: string, draft: ComposerDraft) => {
+    const value = serializeConversationDraftDocument(draft.document, draft.target, draft);
     enqueue(key, () => value === null ? input.storage.remove(key) : input.storage.save(key, value));
   };
   return {
@@ -121,17 +151,23 @@ export function createConversationDraftContinuity(input: {
       const key = keyFor(viewId, initial.target);
       let live = true;
       let hydrated = false;
+      let loaded = false;
       let previousDocument = initial.document;
       let previousTarget = initial.target;
+      let previousContext = initial.context;
+      let previousSelections = initial.selections;
       const persist = () => {
         if (!hydrated || !live) return;
         const current = controller.getSnapshot().draft;
         if (keyFor(viewId, current.target) !== key) return;
-        if (current.document === previousDocument && (current.target === previousTarget || isComposerDocumentEmpty(current.document))) return;
+        if (current.document === previousDocument && current.context === previousContext && current.selections === previousSelections
+          && (current.target === previousTarget || isComposerDocumentEmpty(current.document))) return;
         previousDocument = current.document;
         previousTarget = current.target;
+        previousContext = current.context;
+        previousSelections = current.selections;
         cancelTimer(key);
-        const value = serializeConversationDraftDocument(current.document, current.target);
+        const value = serializeConversationDraftDocument(current.document, current.target, current);
         if (value === null) {
           enqueue(key, () => input.storage.remove(key));
         } else if (input.delayMs === 0) {
@@ -148,6 +184,7 @@ export function createConversationDraftContinuity(input: {
         try {
           await (pending.get(key) ?? Promise.resolve()).catch(() => undefined);
           const value = await input.storage.load(key);
+          loaded = true;
           if (!live) return;
           recovery?.loaded(value);
           if (!live) return;
@@ -155,17 +192,23 @@ export function createConversationDraftContinuity(input: {
           const current = controller.getSnapshot().draft;
           if (document !== null && isComposerDocumentEmpty(initial.document) && current.document === initial.document
             && keyFor(viewId, current.target) === key && current.attachments.length === 0 && current.context.length === 0) {
-            controller.dispatch({ type: "replace-content", document, attachments: [], context: [] });
+            const envelope: unknown = value === null ? null : JSON.parse(value);
+            controller.dispatch({ type: "replace-content", document, attachments: [], context: record(envelope) ? draftReferences(envelope.context) : [] });
+            if (record(envelope) && current.selections.model === initial.selections.model
+              && current.selections.effort === initial.selections.effort && current.selections.serviceTier === initial.selections.serviceTier)
+              controller.dispatch({ type: "set-selections", patch: modelSelection(envelope.modelSelection) });
             previousDocument = controller.getSnapshot().draft.document;
             previousTarget = controller.getSnapshot().draft.target;
+            previousContext = controller.getSnapshot().draft.context;
+            previousSelections = controller.getSnapshot().draft.selections;
           }
           hydrated = true;
-          if (current.document !== initial.document) persist();
+          persist();
         } catch {
           // Resume explicit edits. An untouched editor is never a reason to
           // erase data that the adapter could not read.
           hydrated = true;
-          if (live && controller.getSnapshot().draft.document !== initial.document) persist();
+          if (live) persist();
         } finally { recovery?.settled(); }
       })();
       return () => {
@@ -175,8 +218,9 @@ export function createConversationDraftContinuity(input: {
         const needsFlush = timers.has(key);
         cancelTimer(key);
         const current = controller.getSnapshot().draft;
-        const hasUnhydratedInput = !hydrated && current.document !== initial.document && !isComposerDocumentEmpty(current.document);
-        if (keyFor(viewId, current.target) === key && (needsFlush || hasUnhydratedInput)) write(key, current.document, current.target);
+        const hasUnhydratedInput = !hydrated && (current.document !== initial.document || current.context !== initial.context || current.selections !== initial.selections);
+        const hasLoadedInput = loaded && (!isComposerDocumentEmpty(current.document) || current.context.length > 0 || Object.keys(modelSelection(current.selections)).length > 0);
+        if (keyFor(viewId, current.target) === key && (needsFlush || hasUnhydratedInput || hasLoadedInput)) write(key, current);
       };
     },
     discard(viewId, target) {

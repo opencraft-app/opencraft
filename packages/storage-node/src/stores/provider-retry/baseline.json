@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "provider-turn-retry",
+      "checksum": "009a66f59f96168ca85b1c64ad6f6be3933db8ed1c2649ac4ed43c3c2a7cb195"
+    }
+  ],
+  "tableOptions": {
+    "provider_retries": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "b9e1f40f371eaa176d26e4a6a3dd0fc164174084c5267d340745b3f6df0b53bf",
+  "baselineSnapshotChecksum": "3205c1cd04cbecc8e8a35d7b854692742ef141bb4732beb1bc6e82cee18b832e"
+}

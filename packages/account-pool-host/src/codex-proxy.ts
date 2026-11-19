@@ -238,11 +238,11 @@ export class CodexAccountPoolProxy {
   constructor(options: {
     readonly privateHostId?: string;
     readonly personalRoute?: (request: Request) => Promise<Response | null>;
-    readonly configuredResponses?: ConfiguredCodexResponses;
     readonly store: AccountPoolStore;
     readonly upstreamBaseUrl: string;
     readonly fetch?: typeof fetch;
     readonly now?: () => number;
+    readonly configuredResponses?: ConfiguredCodexResponses;
     readonly resolveCredential?: (
       account: AccountPoolAccount,
       secret: AccountPoolSecret,
@@ -257,6 +257,7 @@ export class CodexAccountPoolProxy {
     this.fetch = createUpstreamFetch(options.fetch);
     this.now = options.now ?? Date.now;
     this.resolveCredential = options.resolveCredential;
+    this.configuredResponses = options.configuredResponses;
   }
 
   async handle(request: Request, onDispatch?: () => void): Promise<Response> {
@@ -390,7 +391,7 @@ export class CodexAccountPoolProxy {
       const ids = new Set(catalog.models.map(model => object(model)?.slug));
       return Response.json({ ...catalog, models: [...catalog.models, ...extraModels.filter(model => !ids.has(model.slug))] });
     };
-    let identity = affinity(request, body);
+    let identity = affinity(request, decoded);
     if (mcpRequest) {
       const metadata = object(object(parseJson(body)?.params)?._meta);
       identity = { affinityId: text(metadata?.threadId) ?? "catalog", parentAffinityId: null };

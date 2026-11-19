@@ -54,16 +54,25 @@ export interface TransportFailureDisposition {
 }
 
 export interface TransportStatus {
+  /** Execution availability is independent of a readable, open connection. */
+  readonly execution?: "ready" | "recovering" | "unavailable";
+  /** When present, scopes execution recovery to these existing conversations. */
+  readonly executionUnavailableThreadIds?: readonly string[];
   /** Locally generated physical connection correlation; no remote identity. */
   readonly attemptId?: string;
   /** Local connect boundary, never a claim of Host or Thread readiness. */
   readonly connectionStage?: "admission" | "release" | "retry" | "bridge" | "host";
-  /** Bounded local retry admission, not network work. */
+  /** Local retry admission, not a network or execution receipt. */
   readonly retryAfterMs?: number;
   state: TransportState;
   reason?: string;
   /** Omitted by legacy transports, which remain automatically recoverable. */
   failure?: TransportFailureDisposition;
+}
+
+export function executionStatusForThread(status: TransportStatus, threadId?: string | null): NonNullable<TransportStatus["execution"]> {
+  if (threadId && status.executionUnavailableThreadIds) return status.executionUnavailableThreadIds.includes(threadId) ? "recovering" : "ready";
+  return status.execution ?? "ready";
 }
 
 /** Client-local queue-drain feedback. Not peer receipt or operation completion. */

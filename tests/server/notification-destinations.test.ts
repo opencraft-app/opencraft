@@ -31,7 +31,7 @@ test('public destinations reject private, mapped, transition and reserved networ
 test('version 1 upgrade retains Web Push keys, devices and queued deliveries',()=>{
   const f=fixture();try{
     // The immutable, previously shipped version-1 SQL remains the migration input.
-    const original=readFileSync(new URL('../../packages/web-push-node/src/store.ts',import.meta.url),'utf8').match(/const SCHEMA = `([\s\S]*?)`\.trim\(\);/)![1]!.trim();
+    const original=readFileSync(new URL('../fixtures/web-push-v1.sql',import.meta.url),'utf8').trim();
     const legacy=openManagedDatabase({path:f.path,migrations:[{version:1,name:'web-push-subscriptions-and-outbox',sql:original}]});
     legacy.database.exec("INSERT INTO push_keys VALUES(1,'public','private')");
     legacy.database.prepare('INSERT INTO push_devices VALUES(?,?,?,?,?,?,?,?,?)').run('device','human-a','binding',JSON.stringify(binding),JSON.stringify({endpoint:'https://web.push.apple.com/example',keys:{p256dh:'a',auth:'b'}}),'https://workbench.example','','en-US',JSON.stringify(messages));
@@ -226,4 +226,16 @@ test('plugin method labels are server-selected and survive storage; ended Turns 
   store.watch('human-a','server','local-codex','thread','input');store.bindTurn(store.watches()[0]!.id,'turn');await service.tick();await service.tick();
   assert.equal(sent.length,3);assert.equal(sent[2].message.event,'turn.ended');assert.match(sent[2].message.title,/Test conversation/);assert.equal(sent[2].message.status,'completed');assert.equal(sent[2].target.senderId,'self');assert.equal(store.due().length,0);
  }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));await service.close();f.remove();}
+});
+
+test("worker rejects an uncloneable request without losing later requests", async () => {
+  const f = fixture();
+  const store = await openPushStore(f.path);
+  try {
+    await assert.rejects(Reflect.apply(store.get, store, [() => {}]), /notification_storage_unavailable/);
+    assert.equal(await store.get("missing"), null);
+  } finally {
+    await store.close();
+    f.remove();
+  }
 });

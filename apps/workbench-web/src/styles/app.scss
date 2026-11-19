@@ -1589,7 +1589,9 @@ svg[data-sidebar-toggle-icon-state] {
 }
 
 .sidebar-thread-tree__children {
-  padding-inline-start: calc(var(--spacing) * 3);
+  margin-inline-start: calc(var(--spacing) * 2);
+  padding-inline-start: calc(var(--spacing) * 2);
+  border-inline-start: 1px solid var(--color-border-default);
   margin-block-start: var(--gap-navigation-rows);
 }
 
@@ -2783,6 +2785,8 @@ svg[data-sidebar-toggle-icon-state] {
   gap: 24px;
   margin-bottom: 12px;
 }
+
+.settings-control-section--center-action > .settings-control-section__heading { align-items: center; }
 
 .settings-control-section__copy {
   flex: 1 1 12em;
@@ -5884,6 +5888,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   overflow-wrap: anywhere;
 }
 
+.thread-system-error--native-session {
+  flex-wrap: wrap;
+  > .thread-system-error__message { flex-basis: calc(100% - 28px); }
+  > button { margin-inline-start: 28px; }
+}
+
 .thread-system-error {
   position: relative;
   isolation: isolate;
@@ -8332,11 +8342,20 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   to { opacity: 1; transform: translate(0, 0) scale(1); }
 }
 
+.thread-subagent-trigger {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  text-align: start;
+}
+
 .thread-subagent-activity {
   min-width: 0;
 
   &__header {
     display: flex;
+    flex-wrap: nowrap;
     min-width: 0;
     align-items: center;
     gap: 6px;
@@ -8348,6 +8367,27 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &__toggle {
     flex: 0 0 auto;
     opacity: 0;
+  }
+
+  &__status {
+    overflow: hidden;
+    color: color-mix(in srgb, var(--color-text) 40%, transparent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__chevron {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--color-icon-tertiary);
+    opacity: 1;
+    transition:
+      transform 300ms var(--ease-standard),
+      opacity 160ms ease;
+  }
+
+  &[data-open] &__chevron {
+    opacity: 1;
   }
   &:focus-within &__toggle,
   &[data-open] &__toggle { opacity: 1; }
@@ -8406,8 +8446,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 
   &__name.ui-button {
-    min-height: 0;
-    padding: 0;
     white-space: normal;
     text-align: start;
     overflow-wrap: anywhere;
@@ -8813,6 +8851,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   gap: var(--spacing);
 }
 
+.opencraft-composer-queue-item__preview-trigger {
+  display: block;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
 .opencraft-composer-queue-item__preview {
   min-width: 0;
   overflow: hidden;
@@ -8911,6 +8955,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
       outline-offset: 2px;
     }
 
+    &.is-retry {
+      min-width: var(--size-control-hit-min);
+      min-height: var(--size-control-hit-min);
+    }
+
     &.is-labelled {
       width: auto;
       grid-auto-flow: column;
@@ -8923,12 +8972,11 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   }
 }
 
-.opencraft-composer-steer-discard-dialog__body {
-  display: grid;
-  gap: 12px;
-  padding: 24px;
-
-  [role="alert"] { color: var(--color-text-error, #cf222e); }
+.opencraft-composer-queue-item__delivery-status {
+  color: var(--color-text-secondary);
+  font: var(--typography-metadata-font);
+  letter-spacing: var(--typography-metadata-tracking);
+  white-space: nowrap;
 }
 
 @keyframes opencraft-composer-tray-enter {
@@ -9907,7 +9955,16 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   button:focus-visible { outline: 2px solid var(--color-border-strong); outline-offset: -2px; }
 }
 
-.opencraft-composer-attachment {
+@keyframes opencraft-composer-image-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .opencraft-composer-image-attachment__status > svg { animation: none; }
+}
+
+.opencraft-composer-attachment,
+.opencraft-composer-context {
   display: grid;
   flex: 0 0 210px;
   width: 210px;
@@ -9923,8 +9980,12 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   background: var(--color-background-elevated-secondary);
 
   &[data-state="failed"] { border-color: var(--color-border-danger, var(--color-border-default)); }
+}
 
+.opencraft-composer-attachment {
   button {
+    min-width: var(--size-control-hit-min, 0px);
+    min-height: var(--size-control-hit-min, 0px);
     display: grid;
     width: var(--size-composer-utility-action);
     height: var(--size-composer-utility-action);
@@ -10638,16 +10699,8 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
   &:focus-visible { background: var(--color-background-button-tertiary-hover); }
   @include controls.hover-capable { &:hover { background: var(--color-background-button-tertiary-hover); } }
 }
-.browser-device-toolbar .ui-button[data-size="toolbar"] {
-  display: grid; place-items: center; width: max(var(--size-browser-device-control), var(--size-control-hit-min)); height: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-width: max(var(--size-browser-device-control), var(--size-control-hit-min)); min-height: max(var(--size-browser-device-control), var(--size-control-hit-min)); flex: none;
-  color: var(--color-text-secondary);
-  background: transparent;
-  border: 0;
-  border-radius: 6px; padding: 0;
-  cursor: pointer;
-  &:focus-visible { color: var(--color-text); background: var(--color-background-button-tertiary-hover); }
-  @include controls.hover-capable { &:hover { color: var(--color-text); background: var(--color-background-button-tertiary-hover); } }
-}
+// Toolbar IconButton owns size, hit target, focus and interaction paint.
+
 .browser-device-toolbar .browser-device-toolbar__zoom { min-width: 58px; max-width: 74px; flex: none; }
 .browser-device-toolbar__select { position: relative; display: inline-flex; min-width: 0; flex: none;
   > svg { position: absolute; right: 5px; top: 50%; transform: translateY(-50%); pointer-events: none; color: var(--color-text-secondary); }
@@ -11222,15 +11275,6 @@ html[data-opencraft-window-type="electron"] .thread-scroll {
 .sidebar-activity-item__state-label { flex: 0 0 auto; }
 // Standalone creation shares row metrics, but floating creation remains an action.
 .ui-button.sidebar-new-chat:not(.shell-sidebar-primary-action)[data-content-layout="row"] {
-  display: grid;
-  grid-template-columns: var(--size-sidebar-navigation-leading-slot) minmax(0, 1fr) auto;
-  align-items: center;
-  min-height: max(var(--height-sidebar-navigation-row), var(--size-control-hit-min));
-  column-gap: var(--gap-sidebar-navigation-icon-label);
-  padding-inline: var(--padding-sidebar-navigation-row-inline);
-  padding-block: 0;
-  justify-content: stretch;
-  text-align: start;
   margin: var(--gap-sidebar-navigation-rows) 0 var(--gap-sidebar-navigation-heading-after);
   > svg, > .ui-button__label > svg {
     width: var(--size-sidebar-navigation-icon);
@@ -11441,6 +11485,30 @@ html[data-window-host="browser"] body {
     border-end-start-radius: var(--radius-lg);
   }
 }
+.app-shell-server-drawer {
+  position:absolute; inset-block:0; inset-inline-start:0; z-index:0;
+  display:flex; flex-direction:column; min-height:0; overflow:hidden;
+  padding-block:env(safe-area-inset-top) env(safe-area-inset-bottom);
+  background:var(--color-background-shell-underlay); color:var(--color-text-shell-underlay); box-shadow:var(--elevation-sidebar);
+  visibility:hidden; pointer-events:none;
+  &[data-present] {visibility:visible;pointer-events:auto;}
+}
+.app-shell-root > .app-shell-row[data-server-drawer-present] {
+  position:relative; z-index:1; overflow:clip; will-change:transform;
+  border-start-start-radius:var(--radius-lg);border-end-start-radius:var(--radius-lg);
+  background:var(--app-shell-page-paint,var(--color-background-surface));
+  box-shadow:var(--elevation-sidebar); transition-property:none;
+}
+.app-shell-page-presentation[data-server-drawer-present] {
+  z-index:var(--layer-shell-page-foreground);
+  border-start-start-radius:var(--radius-lg);border-end-start-radius:var(--radius-lg);
+}
+.app-shell-server-edge-frame {
+  position:absolute; inset-inline-start:0; top:50%;
+  z-index:var(--layer-shell-sidebar-control); transform-origin:left center;
+  pointer-events:auto;
+}
+.app-shell-server-edge {touch-action:pan-y;}
 .app-shell-page-overlays {
   position: absolute; z-index: 0; pointer-events: none; overflow: clip;
 }
@@ -11798,6 +11866,7 @@ html[data-window-host="browser"] body {
 }
 .deferred-view__indicator .ui-progress-indicator,
 .deferred-view__indicator svg { width: 16px; height: 16px; }
+@media (prefers-reduced-motion: reduce) { .deferred-view__indicator { animation: none; } }
 
 // Floating conversation chrome shares control owners with ordinary chrome.
 :root[data-ui-density="touch"] {
@@ -11994,90 +12063,6 @@ html[data-window-host="browser"] body {
   padding-inline: 0;
 }
 
-.opencraft-composer-model-quick {
-  @include menu.surface;
-  z-index: var(--layer-floating-control);
-  box-sizing: border-box;
-  width: min(288px, calc(100vw - 24px));
-  padding: calc(var(--spacing) * 3);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-2xl);
-  outline: none;
-}
-.opencraft-composer-model-quick__header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: start;
-  gap: var(--spacing);
-}
-.opencraft-composer-model-quick__action-slot { width: max(32px, var(--size-control-hit-min)); }
-.opencraft-composer-model-quick__labels { min-width: 0; }
-.opencraft-composer-model-quick__placeholder {
-  height: var(--height-discrete-slider-hit);
-  margin-block-start: calc(var(--spacing) * 2);
-  display: flex;
-  align-items: center;
-  &::before { content: ""; width: 100%; height: var(--height-discrete-slider-track); border-radius: var(--radius-full); background: var(--color-discrete-slider-track); }
-}
-.opencraft-composer-model-quick__effort {
-  @include typography.role(control, null);
-  color: var(--color-text-accent);
-  min-height: 20px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.opencraft-composer-model-quick__title {
-  @include typography.role(control-compact, secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing);
-  min-height: max(24px, var(--size-control-hit-min));
-  padding: 0 var(--spacing);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-  &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
-  > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  > svg { flex: none; }
-}
-.opencraft-composer-model-quick__action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: max(32px, var(--size-control-hit-min));
-  height: max(32px, var(--size-control-hit-min));
-  border-radius: var(--radius-full);
-  color: var(--color-text-secondary);
-  cursor: pointer;
-  &[data-state="checked"] { color: var(--color-icon-accent); }
-  &[data-highlighted] { background: var(--color-background-primary-ghost-hover); }
-  &[data-disabled] { opacity: var(--opacity-control-disabled); cursor: default; }
-  @media (prefers-reduced-motion: no-preference) {
-    transition: color 140ms ease, background-color 140ms ease;
-    > svg { transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-    &:active:not([data-disabled]) > svg { transform: scale(0.9); }
-    &.opencraft-composer-model-quick__reset:active:not([data-disabled]) > svg { transform: rotate(-35deg); }
-  }
-}
-.opencraft-composer-model-quick__fast[data-state="checked"] {
-  background: color-mix(in srgb, var(--color-icon-accent) 10%, transparent);
-  @media (prefers-reduced-motion: no-preference) {
-    > svg { animation: composer-fast-enable 240ms cubic-bezier(0.2, 0.8, 0.2, 1); }
-  }
-}
-@media (prefers-reduced-motion: no-preference) {
-  .opencraft-composer-model-quick__value { display: inline-block; animation: composer-effort-change 140ms ease-out; }
-}
-@keyframes composer-effort-change {
-  from { opacity: 0.45; transform: translateY(2px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes composer-fast-enable {
-  from { transform: scale(0.84); }
-  60% { transform: scale(1.08); }
-  to { transform: scale(1); }
-}
 .opencraft-composer-mode__fast { flex: none; color: var(--color-icon-accent); }
 .opencraft-composer-selection-menu--model-select {
   box-sizing: border-box;
@@ -12098,14 +12083,35 @@ html[data-window-host="browser"] body {
 }
 
 .opencraft-composer-mode--depth .opencraft-composer-mode__model-icon { display: none; }
+.opencraft-composer-effort { padding: calc(var(--spacing) * 3);
+  &__header { display: grid; grid-template-columns: auto minmax(0,1fr) auto; align-items: start; gap: var(--spacing); text-align: initial; }
+  &__side { display: flex; width: max(32px, var(--size-control-hit-min)); justify-content: center; }
+  &__titles { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+  &__name {
+    @include typography.role(control, null);
+    min-height: 20px;
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--color-text-accent);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 .opencraft-composer-model-browser-surface {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  width: min(360px, calc(100vw - 24px));
-  max-height: min(720px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
+  width: min(340px, calc(100vw - 24px));
+  max-height: min(600px, var(--radix-dropdown-menu-content-available-height), calc(100dvh - 24px));
   padding: 0;
   overflow: hidden;
+}
+// The effort layer keeps the former compact quick-picker footprint: the shared
+// slider tokens are unchanged, only this consumer narrows the surface.
+.opencraft-composer-model-browser-surface:has(> .opencraft-composer-model-browser[data-layer="effort"]) {
+  width: min(288px, calc(100vw - 24px));
+  border: 1px solid var(--color-border-default);
+  border-radius: var(--radius-2xl);
 }
 .opencraft-composer-model-browser {
   display: flex;
@@ -12116,15 +12122,27 @@ html[data-window-host="browser"] body {
   overscroll-behavior: contain;
   &__sources {
     display: flex;
+    flex-wrap: nowrap;
     flex: none;
     align-items: center;
-    gap: var(--spacing);
+    gap: calc(var(--spacing) * 2);
     padding: calc(var(--spacing) * 2);
-    overflow-x: auto;
     border-bottom: .5px solid var(--color-border-subtle);
   }
+  &__tabs {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-items: center;
+    gap: var(--spacing);
+    overflow-x: auto;
+    [role="tab"] { flex: none; }
+    [aria-selected="true"] { border-radius: 0; box-shadow: inset 0 -2px 0 var(--color-text); }
+  }
   &__source-name {
-    @include typography.role(metadata, secondary);
+    @include typography.role(control-compact, secondary);
+    flex: 0 1 auto;
+    max-width: 55%;
     min-width: 0;
     margin-left: auto;
     overflow: hidden;
@@ -12161,30 +12179,7 @@ html[data-window-host="browser"] body {
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
   }
-  &__reasoning {
-    flex: none;
-    padding: calc(var(--spacing) * 2);
-    border-top: .5px solid var(--color-border-subtle);
-  }
-  &__section-label {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    @include typography.role(metadata, secondary);
-    padding: var(--spacing) calc(var(--spacing) * 2);
-  }
-  &__efforts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--spacing); }
-  &__fast,
   &__configure { flex: none; margin: calc(var(--spacing) * 2); }
-  &__fast {
-    display: flex;
-    align-items: center;
-    gap: calc(var(--spacing) * 2);
-    padding: calc(var(--spacing) * 2);
-    border-top: .5px solid var(--color-border-subtle);
-    @include typography.role(control, primary);
-    > span { flex: 1; }
-  }
 }
 // Layout density follows the available space, while shared controls retain
 // their touch target and typography tokens. Search stays at least 16px on iOS.
@@ -12297,4 +12292,20 @@ html[data-window-host="browser"] body {
   .main-content-surface { background: transparent; box-shadow: none; }
   // Persistent Shell navigation stays reachable above the first card row.
   .right-panel-view { background: transparent; padding-block-start: var(--height-toolbar); box-sizing: border-box; }
+}
+
+.has-server-drawer .shell-sidebar__context.sidecar-content-slot,
+.app-shell-floating-overlay-root[data-server-edge-present] .shell-sidebar__context.sidecar-content-slot {
+  padding-inline-start: var(--spacing-shell-server-edge-gutter);
+  box-sizing: border-box;
+}
+
+.sidebar-native-projects {
+  display: flex; flex-direction: column; gap: var(--gap-navigation-rows);
+  .sidebar-thread-group-heading { margin: 0; }
+  .sidebar-native-project-icon { display: inline-flex; flex: 0 0 auto; }
+  .sidebar-activity-group[data-collapsed="false"] + .sidebar-activity-group { margin-block-start: calc(var(--spacing) * 2); }
+  &__title { margin: 0; padding: calc(var(--spacing) * 3) var(--padding-sidebar-activity-row-inline); @include typography.role(body, secondary); }
+  [data-native-project] .sidebar-thread-group-toggle { gap: calc(var(--spacing) * 2); }
+  [data-native-project] .sidebar-activity-group__items { padding-inline-start: calc(var(--spacing) * 4); }
 }

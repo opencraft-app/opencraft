@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { BridgeHost, attachGateway } from '../../apps/agent-bridge-host/src/index';
 import { localTestBackend } from '../agent-bridge/fixtures/local-backend';
 import type { CapabilitySession } from '../../packages/session-capabilities/src/index';
+import { ThreadAccessStore } from '../../packages/access-control/src/thread-access';
 import { ActorStore } from '../../packages/access-control/src/actors';
 import { Collaboration, type ConversationExecutionPort } from '../../packages/access-control/src/collaboration';
 import { OrchestrationRuntimeWorker } from '../../packages/access-control/src/orchestration-runtime-store';
@@ -32,8 +33,9 @@ async function fixture(t:any) {
     async steer(){},async cancel(){return false;},async read(){return {entries:[{turnId:'t',role:'assistant',text:'Child result'}],nextCursor:null};}};
   const execution:OrchestrationExecutionPort={async create(id){if(!created.has(id))created.set(id,{threadId:'child-'+created.size});return created.get(id)!;},
     async snapshot(threadId){return {threadId,turnId:'child-turn',rootTurnId:'child-root',state:'completed'};}};
+  const policy = new ThreadAccessStore(join(root,'access.sqlite'),actors);
   let resourceAllowed=true;
-  let service=new Collaboration(join(root,'collaboration.sqlite'),actors,native,Date.now,()=>true,undefined,()=>resourceAllowed);
+  let service=new Collaboration(join(root,'collaboration.sqlite'),actors,native,Date.now,()=>true,undefined,(context,ref)=>resourceAllowed&&policy.allows(ref.serverId,ref.threadId,context));
   let runtimeStorage=new OrchestrationRuntimeWorker(join(root,'collaboration.sqlite'));await runtimeStorage.start();
   let broker=new ThreadOrchestrationBroker(service,execution,Date.now,runtimeStorage);
   service.authorizeExecution(owner,'parent','human-input');service.executionStarted('parent','human-input','human-turn');
@@ -47,16 +49,16 @@ async function fixture(t:any) {
     policy:{id:'cli-fixture',capacity:{cpuMillis:4000,memoryBytes:8*1024**3}},executionCli:port});
   gateway=await attachGateway(host,key.toString('hex'));
   const leases:{revoke():Promise<void>}[]=[];
-  t.after(async()=>{await Promise.all(leases.map(lease=>lease.revoke()));await gateway.close();await host.close();await mcp.close();await broker.close();await runtimeStorage.close();await service.close();actors.close();await rm(root,{recursive:true,force:true});});
+  t.after(async()=>{await Promise.all(leases.map(lease=>lease.revoke()));await gateway.close();await host.close();await mcp.close();await broker.close();await runtimeStorage.close();await service.close();policy.close();actors.close();await rm(root,{recursive:true,force:true});});
   const child=(threadId:string,ownerActorId=owner.actorId,driverKind='pi'):ThreadRelation=>({threadId,ownerActorId,driverKind,serverId:'server',parentThreadId:'parent',lifecycleOwnerThreadId:'parent',forkedFromId:null,visibility:'hidden',engineHostGeneration:null,nativeSessionId:threadId,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:1,hasDirectUserInput:false,userInputExcerpt:null});
-  return {root,actors,owner,other,created,session,capabilities,child,key,execution,port,revokeResources(){resourceAllowed=false;},get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
+  return {root,actors,owner,other,created,session,capabilities,child,key,execution,port,policy,revokeResources(){resourceAllowed=false;},get broker(){return broker;},get service(){return service;},get mcp(){return mcp;},
     async open(scope:CapabilitySession=session){
       const issued=await port.issue({serverId:scope.serverId,threadId:scope.threadId,credential:executionCliSourceToken(key,scope)});
       leases.push(issued);
       const context=JSON.parse((await exec(issued.launcher,['context','--json'])).stdout);
       return {...issued,context};
     },
-    async restart(){await mcp.close();await broker.close();await runtimeStorage.close();await service.close();service=new Collaboration(join(root,'collaboration.sqlite'),actors,native,Date.now,()=>true,undefined,()=>resourceAllowed);
+    async restart(){await mcp.close();await broker.close();await runtimeStorage.close();await service.close();service=new Collaboration(join(root,'collaboration.sqlite'),actors,native,Date.now,()=>true,undefined,(context,ref)=>resourceAllowed&&policy.allows(ref.serverId,ref.threadId,context));
       runtimeStorage=new OrchestrationRuntimeWorker(join(root,'collaboration.sqlite'));await runtimeStorage.start();broker=new ThreadOrchestrationBroker(service,execution,Date.now,runtimeStorage);
       mcp=new SessionCapabilityMcp(capabilities,key,undefined,{descriptorPath:join(root,'capability-endpoint.json'),retainEndpoint:true,authorizeExecution:async scope=>{await service.admittedExecution(scope.threadId,scope.execution!.inputId!);},threadCli:async(scope,request)=>{await waitForExecutionCliBinding(()=>service.admittedExecution(scope.threadId,scope.execution!.inputId!));return broker.cli(scope,request);}});await mcp.listen();},
     async run(launcher:string,...args:string[]){return JSON.parse((await exec(launcher,['thread',...args])).stdout);}};
@@ -275,4 +277,50 @@ test('a confirmed pre-start refusal can rearm the initial namespace without reta
   f.service.executionStarted(threadId,'second','second-turn');
   assert.equal(JSON.parse((await exec(second.launcher,['context'])).stdout).reference,ref(threadId));
   assert.notEqual(JSON.parse(await readFile(second.connectionFile,'utf8')).token,old.token);
+});
+
+
+test('new Agent CLI output uses its input delegator for private reads and rechecks revocation', async t=>{
+  const f=await fixture(t), opened=await f.open();
+  f.policy.created('server','old-pi',f.owner);
+  f.policy.set('server','old-pi','private',1,f.owner);
+  f.policy.created('server','someone-else',f.other);
+  f.policy.set('server','someone-else','private',1,f.other);
+  assert.equal((await f.run(opened.launcher,'output',ref('old-pi'))).history.entries[0].text,'Child result');
+  await assert.rejects(f.run(opened.launcher,'output',ref('someone-else')),
+    (error:any)=>JSON.parse(error.stdout).error==='conversation_action_denied');
+  f.actors.setEnabled(f.owner.actorId,false,'operator');
+  await assert.rejects(f.run(opened.launcher,'output',ref('old-pi')));
+});
+
+test('connected Host uses P7a admission and forwarding; a revoked launcher cannot be reused', async t=>{
+  const f=await fixture(t);
+  const {localExecutionCli}=await import('../../packages/session-capabilities/src/execution-cli');
+  const port=await localExecutionCli({directory:join(f.root,'connected-cli'),endpoint:f.mcp.cliEndpoint,key:f.key});
+  t.after(()=>port.close());
+  assert.equal(await port.issue('parent','anonymous'),null);
+  await assert.rejects(port.issue('parent','forged','forged'));
+  await assert.rejects(port.issue('parent','forged',executionCliSourceToken(f.key,f.session)));
+  f.policy.created('server','source-pi',f.owner);f.policy.set('server','source-pi','private',1,f.owner);
+  const lease=await port.issue('parent','human-input',executionCliSourceToken(f.key,f.session)),launcher=lease!.environment.OPENCRAFT_THREAD_CLI;
+  assert.equal((await f.run(launcher,'output',ref('source-pi'))).history.entries[0].text,'Child result');
+  await lease!.revoke();
+  await assert.rejects(f.run(launcher,'output',ref('source-pi')));
+});
+
+test('connected execution CLI becomes readable only after the native start receipt binds its input',async t=>{
+  const f=await fixture(t);
+  const {AgentDriverSession}=await import('../../apps/opencraft-daemon/src/agent-driver-transport');
+  const {localExecutionCli}=await import('../../packages/session-capabilities/src/execution-cli');
+  const port=await localExecutionCli({directory:join(f.root,'receipt-cli'),endpoint:f.mcp.cliEndpoint,key:f.key});
+  t.after(()=>port.close());
+  const driver=new AgentDriverSession(f.service,()=> 'server',()=>{},scope=>executionCliSourceToken(f.key,scope));
+  t.after(()=>driver.close());
+  f.policy.created('server','old-private',f.owner,'private');
+  const prepared=JSON.parse((await driver.prepare(JSON.stringify({id:'start',method:'turn/start',params:{threadId:'parent',clientUserMessageId:'new-input',input:[]}}),{sender:null,actorContext:f.owner}))!);
+  const lease=await port.issue('parent','new-input',prepared.params.__opencraftExecutionCli);
+  assert.deepEqual(await f.service.admittedExecution('parent','new-input'),{turnId:null});
+  driver.project(JSON.stringify({id:'start',result:{turn:{id:'native-turn',items:[]}}}));
+  assert.equal((await f.run(lease!.environment.OPENCRAFT_THREAD_CLI,'output',ref('old-private'))).history.entries[0].text,'Child result');
+  await lease!.revoke();
 });

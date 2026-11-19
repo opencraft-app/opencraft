@@ -4,7 +4,7 @@ import { AppHostServer, type AppHostServerConnection } from '../../packages/app-
 import { ThreadAccessSession, type ThreadAccessStore } from '../../packages/access-control/src/thread-access';
 import type { AppHostToRendererMessage } from '../../packages/app-host-protocol/src/index';
 
-async function fixture() {
+async function fixture(prepare?: (id: string) => Promise<void>) {
   const listeners = new Set<(frame: string) => void>();
   const native: Record<string, unknown>[] = [];
   const owners = new Map<string, ReturnType<typeof state>>();
@@ -19,9 +19,10 @@ async function fixture() {
       const owner = owners.get(context.resourceOwner!.id)!;
       owner.emit = emit;
       const store = { subscribe: () => () => { if (owner.failCleanup) throw Error('cleanup failed'); owner.cleaned++; } } as unknown as ThreadAccessStore;
-      return new ThreadAccessSession(store, () => 'server', undefined, emit, undefined, () => {
+      const session = new ThreadAccessSession(store, () => 'server', undefined, emit, undefined, () => {
         if (owner.revoked) throw Error('App resource authority revoked');
       });
+      return prepare ? Object.assign(session, { prepare: () => prepare(context.resourceOwner!.id) }) : session;
     },
   });
   async function page(id: string) {
@@ -45,7 +46,7 @@ async function fixture() {
   const stale = await page('stale'), healthy = await page('healthy');
   const emit = (packet: object) => { for (const listener of listeners) listener(JSON.stringify(packet)); };
   const broadcast = () => emit({method:'diagnostic/test',params:{}});
-  broadcast(); assert.equal(healthy.count(), 1); assert.equal(stale.count(), 1);
+  broadcast(); if(prepare)await new Promise(r=>setImmediate(r)); assert.equal(healthy.count(), 1); assert.equal(stale.count(), 1);
   return { server, stale, healthy, emit, broadcast, native, physicalCloses: () => physicalCloses };
 }
 
@@ -93,4 +94,33 @@ for (const failure of ['failCleanup','failPortClose'] as const) test(`delivery r
   f.stale.owner[failure]=false;
   await f.server.close();
   assert.equal(f.stale.owner.cleaned,1);
+});
+
+
+for (const failure of ['prepare', 'wire-and-cleanup'] as const) test(`async ${failure} failure isolates its connection and keeps cleanup retryable`, async () => {
+  let fail=false;
+  const f=await fixture(async id=>{if(fail&&id==='stale'&&failure==='prepare')throw Error('preparation failed');});
+  fail=true;
+  if(failure==='wire-and-cleanup'){f.stale.owner.failWire=true;f.stale.owner.failCleanup=true;}
+  try{
+    f.broadcast();
+    for(let i=0;i<100&&!f.stale.connection.isClosed;i++)await new Promise(r=>setImmediate(r));
+    assert.equal(f.stale.connection.isClosed,true);assert.equal(f.physicalCloses(),0);
+    assert.equal(f.stale.count(),1);assert.equal(f.healthy.count(),2);
+    f.broadcast();await new Promise(r=>setImmediate(r));assert.equal(f.healthy.count(),3);
+    if(failure==='wire-and-cleanup')await assert.rejects(f.server.close());
+  }finally{f.stale.owner.failCleanup=false;await f.server.close();}
+  assert.equal(f.stale.owner.cleaned,1);
+});
+
+test('late async preparation cannot project or deliver after connection close',async()=>{
+ let pause=false,release!:()=>void,reached!:()=>void;
+ const gate=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{reached=resolve;});
+ const f=await fixture(async id=>{if(pause&&id==='stale'){reached();await gate;}});
+ try{
+  pause=true;f.broadcast();await started;f.stale.connection.close();f.stale.owner.revoked=true;
+  release();await new Promise(r=>setImmediate(r));
+  assert.equal(f.stale.count(),1);assert.equal(f.healthy.count(),2);assert.equal(f.physicalCloses(),0);
+  assert.equal(f.stale.owner.cleaned,1);
+ }finally{release();await f.server.close();}
 });

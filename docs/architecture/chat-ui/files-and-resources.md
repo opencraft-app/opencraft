@@ -693,11 +693,14 @@ users can identify a decode, size or encoder failure without a hover tooltip;
 retry still uses the original selected `File`.
 
 After acceptance, image presentation is derived from the authoritative
-Timeline. When file attachment metadata already includes an image locator, the Web
-message starts its thumbnail read immediately. Image MIME types take priority;
-missing or generic MIME types use the shared extension hints. Non-image MIME
-types, source line citations and absent locators retain file actions. Matching
-late image content reuses the thumbnail and its in-flight read.
+Timeline. When history already supplies a file attachment's locator and image
+MIME type, the Web message starts its thumbnail read immediately without waiting
+for the engine's image content. Missing or generic MIME types use the existing
+media extension hints; explicit non-image MIME types, source line citations and
+attachments without locators retain file actions. Matching late image content
+reuses the thumbnail rather than adding a second image or file card. Locator-based
+presentation identity keeps in-flight reads, keyboard focus and an open gallery
+selection attached to the same image if authoritative content changes the order.
 Sent-image thumbnails resolve direct image data or Host-backed media
 through the existing media source boundary; their click opens a modal image
 viewer rather than generic link navigation, which deliberately rejects `data:`

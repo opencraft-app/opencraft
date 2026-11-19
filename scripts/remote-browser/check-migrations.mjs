@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { migrations } from './state-migrations.ts';
+import { migrations as legacy } from './state-migrations.ts';
+import { resolveStoreMigrations } from '@opencraft/sqlite-node';
+const migrations = resolveStoreMigrations('remote-browser', legacy);
 const directory = new URL('../../packages/storage-node/src/stores/remote-browser/', import.meta.url);
 const read = path => readFileSync(new URL(path, directory));
 const json = path => JSON.parse(read(path));

@@ -48,3 +48,46 @@ test("execution context crosses the authorized port once and rejected admission 
   assert.equal(forwarded[0][1],context); assert.ok(forwarded[0][0].params.clientUserMessageId);
   assert.equal(JSON.stringify(forwarded[0][0]).includes('"subject"'),false);
 });
+
+test("execution CLI credentials come from authenticated admission and Renderer/anonymous fields are stripped", async () => {
+  const frames:any[]=[], signed:any[]=[];
+  const inner:any={status:{state:'open'},subscribeMessage:()=>()=>{},async send(frame:string){frames.push(JSON.parse(frame));}};
+  const transport=new AgentDriverTransport(inner,{authorizeExecution(){}} as any,()=> 'server',session=>{signed.push(session);return 'signed-execution';});
+  const frame=JSON.stringify({id:1,method:'turn/start',params:{threadId:'thread',clientUserMessageId:'input',input:[],__opencraftExecutionCli:'forged'}});
+  await transport.send(frame);
+  assert.equal(frames[0].params.__opencraftExecutionCli,undefined);assert.equal(signed.length,0);
+  await transport.sendWithContext(frame,{sender:null,actorContext:{actorId:'owner',generation:1,expiresAt:Date.now()+10000,credentialId:null}});
+  assert.equal(frames[1].params.__opencraftExecutionCli,'signed-execution');
+  assert.equal(signed[0].threadId,'thread');assert.equal(signed[0].execution.inputId,'input');assert.ok(signed[0].execution.executionId);
+});
+
+test('connected Host reference RPC uses authenticated collaboration authority instead of the native engine',async()=>{
+  let receive!:(frame:string)=>void;const native:any[]=[],responses:any[]=[],actors:any[]=[];
+  const inner:any={status:{state:'open'},subscribeMessage(listener:(frame:string)=>void){receive=listener;return()=>{};},async send(frame:string){native.push(JSON.parse(frame));}};
+  const service:any={async command(actor:unknown,params:any){actors.push(actor);assert.equal(params.action,'reference');return {reference:'opencraft://conversation/v1/server/private-source'};}};
+  const transport=new AgentDriverTransport(inner,service,()=> 'server');transport.subscribeMessage(frame=>responses.push(JSON.parse(frame)));
+  await transport.send(JSON.stringify({id:1,method:'initialize',params:{}}));receive(JSON.stringify({id:1,result:{capabilities:{extensions:{'opencraft/method-access':{methods:['initialize']}}}}}));
+  assert.equal(responses[0].result.capabilities.extensions['opencraft/collaboration'].read,true);
+  const message=JSON.stringify({id:2,method:'opencraft/collaboration',params:{action:'reference',threadId:'private-source'}});
+  await transport.send(message);assert.equal(responses.at(-1).error.data.code,'actor_authentication_required');
+  const actor={actorId:'owner',generation:1,expiresAt:Date.now()+1000,credentialId:null};
+  await transport.sendWithContext(message,{sender:null,actorContext:actor});
+  assert.equal(responses.at(-1).result.reference,'opencraft://conversation/v1/server/private-source');
+  assert.deepEqual(actors,[actor]);assert.equal(native.length,1,'reference RPC is not forwarded to an unrelated native protocol');
+});
+
+
+test('only the native started event binds the admitted input to its actual Turn for CLI access',async()=>{
+  let receive!:(frame:string)=>void;const starts:unknown[][]=[];
+  const inner:any={status:{state:'open'},subscribeMessage(listener:(frame:string)=>void){receive=listener;return()=>{};},async send(){}};
+  const transport=new AgentDriverTransport(inner,{authorizeExecution(){},executionStarted(...args:unknown[]){starts.push(args);}} as any,()=> 'server');
+  await transport.sendWithContext(JSON.stringify({id:1,method:'turn/start',params:{threadId:'target',clientUserMessageId:'input',turnId:'forged',input:[]}}),
+    {sender:null,actorContext:{actorId:'owner',generation:1,expiresAt:Date.now()+10000,credentialId:null}});
+  assert.deepEqual(starts,[]);
+  receive(JSON.stringify({method:'turn/started',params:{threadId:'target',turn:{id:'actual-turn',items:[{type:'userMessage',clientId:'input'}]}}}));
+  assert.deepEqual(starts,[['target','input','actual-turn']]);
+  receive(JSON.stringify({id:1,result:{turn:{id:'actual-turn'}}}));
+  assert.equal(starts.length,1,'response and notification bind once');
+  receive(JSON.stringify({method:'turn/started',params:{threadId:'queue',clientMessageId:'original-queued-input',turn:{id:'queued-turn',items:[]}}}));
+  assert.deepEqual(starts.at(-1),['queue','original-queued-input','queued-turn']);
+});

@@ -202,13 +202,22 @@ Codex queued messages in its Host-state database (`opencraft-host-state.sqlite`
 for new stores; existing `codex-host-queue.sqlite` remains in place); its physical AppServer is
 only the execution target for standard `turn/start` and `turn/steer`. The Host
 serializes queue dispatch per Thread, persists a claim before sending, and
-advertises `atomicSteer` and `unconfirmedSteerDiscard` from this Host-owned
-implementation, independently of a patched Codex binary. An interrupted or
-timed-out dispatch stays delivery-unconfirmed and blocks later auto-dispatch;
-it is never blindly retried. The Host checks paged Codex user-message history
-by client ID before settling a claim. Explicit discard requires an idle Thread,
-the original target Turn and a successful history check; discard acknowledges
-uncertainty, not proof that the model never saw the input.
+advertises `atomicSteer` and `unconfirmedDeliveryRetry` from this Host-owned
+implementation, independently of a patched Codex binary. Interrupted or timed-out
+ordinary user dispatch remains delivery-unconfirmed without blocking subsequent queued input;
+it is never automatically resent. Execution-fault quarantine still blocks admission
+until the existing recovery owner confirms the source exit; retry cannot erase it. The Host checks paged Codex user-message history
+by client ID before settling a claim. The Composer shows only a localized status
+and Retry, without a discard dialog or a second global failure notice.
+`thread/queue/retry` records an explicit retry on the same queue row and client
+message ID. While the original Turn is active it remains pending. After observing
+idle, reconciliation checks history again: an existing message settles as delivered;
+otherwise the input re-enters the queue once. Duplicate retry requests do not create
+new rows or replay delivered input. Managed Actor inputs retain their authority ordering
+and cannot be retried through this human action. A retry whose own acknowledgement is lost
+returns to unconfirmed and requires a new user decision. The legacy target-bound
+discard protocol remains for older clients and still requires an idle Thread and
+successful history check; its UI is no longer exposed.
 Before starting the physical AppServer, the Host migrates any legacy native
 queued rows into its own store and removes the old rows. Migration is
 idempotent and fails closed on malformed or conflicting rows. The single
@@ -797,3 +806,30 @@ enable a missing planning tool. Definitive prompt failures and lost connections
 produce controlled localized error items after failure persistence. Explicit
 Continue translates empty input to a native continuation only for known failed
 or interrupted outcomes; unknown native outcomes remain fenced from replay.
+
+## Default local Agent discovery
+
+The local Host discovers installed Codex, Claude Code, Cursor and CodeBuddy with
+the operating-system user's environment. A separate OpenCraft data directory does
+not imply a separate HOME or a second CLI login. GUI/service discovery also checks
+the user's NVM installations and supplies their interpreter paths to native peers.
+Explicitly disabled Agents remain disabled in UI preferences.
+
+CodeBuddy has no read-only `auth status` subcommand. Readiness uses the native
+`_codebuddy.ai/getUserInfo` account lookup, which starts the peer once and does
+not create a session or write the model cache. A missing account remains signed
+out; a transport or service error remains unknown. Saved model metadata is not
+authentication evidence, and discovery never sends a model prompt.
+
+When native Pi is installed, the local Host exposes its configured model catalog
+through the existing Pi owner. Authentication and models are referenced from
+`PI_CODING_AGENT_DIR` or `~/.pi/agent`; the initial native model/thinking preference
+is preserved in the new Host's own defaults. Credentials and native transcripts
+are not copied or imported. New sessions, defaults and model-cache files remain
+under the OpenCraft data root. Explicit standalone Pi composition retains its own
+model-configuration authority and does not add a duplicate native Pi owner.
+
+Discovery uses the OS user's existing home as an operational cwd. Actual new
+conversations share the Host's existing Project/Projectless workspace resolver,
+so a blank Draft allocates its own workspace rather than executing in a package
+or shared discovery directory.

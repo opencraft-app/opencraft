@@ -39,8 +39,8 @@ function parseConfiguredCodexModelId(id: string): { providerId: string; modelId:
 }
 
 /** Codex projection of the shared engine model source used by every engine adapter. */
-export function createConfiguredCodexResponses(directory: string): ConfiguredCodexResponses {
-  const source = createEngineModelSource(directory, { protocols: ["openai-responses", "anthropic-messages"], meteredContributions: true });
+export function createConfiguredCodexResponses(directory: string, options: { readonly allowInsecureLocalNetwork?: boolean } = {}): ConfiguredCodexResponses {
+  const source = createEngineModelSource(directory, { protocols: ["openai-responses", "anthropic-messages"], allowInsecureLocalNetwork: options.allowInsecureLocalNetwork, meteredContributions: true });
   return {
     async catalog() {
       return (await source.list()).map(route => metadata(route.provider, route.model, route.defaultReasoningEffort));

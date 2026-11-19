@@ -26,7 +26,10 @@ export function createPiTranscriptCache(options: {
     async observeSnapshotSource(threadId) {
       snapshots.delete(threadId);
       const file = join(options.directory, `${threadId}.sqlite`);
-      return observeNativeTranscriptFiles(options.directory, [file, `${file}-wal`], JSON.stringify(["pi", options.directory, threadId]));
+      // Earlier projections wrote the unsupported wire value "complete".
+      // Rebuild only the derived cache, including sessions whose native file
+      // has not changed since that projection was stored.
+      return observeNativeTranscriptFiles(options.directory, [file, `${file}-wal`], JSON.stringify(["pi", "full-items-v2", options.directory, threadId]));
     },
     async listTurns(threadId, cursor, limit, signal, sortDirection = "desc") {
       let snapshot = snapshots.get(threadId);

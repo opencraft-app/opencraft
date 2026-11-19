@@ -963,6 +963,7 @@ test("TurnDiff stays distinct from patch Activity and aggregates renamed files",
   const snapshot = projectTimeline(source([{
     id: "turn-diff",
     status: "complete",
+    unifiedDiff: diff,
     items: [
       { id: "patch-item", type: "fileChange", payload: { status: "completed", changes: [{ path: "src/new.ts", kind: "modify" }] } },
       { id: "turn-diff:aggregate", type: "turnDiff", payload: { diff } },

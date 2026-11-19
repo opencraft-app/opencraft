@@ -26,18 +26,6 @@ CREATE TABLE push_deliveries (id TEXT PRIMARY KEY, device_id TEXT NOT NULL, bind
 CREATE INDEX push_deliveries_due ON push_deliveries(state,next_at);
 `.trim();
 
-const DESTINATIONS_SCHEMA = `
-ALTER TABLE push_devices ADD COLUMN target TEXT;
-ALTER TABLE push_devices ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
-CREATE TABLE push_preferences (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL) STRICT;
-`.trim();
-
-const DEFAULTS_SCHEMA = `
-ALTER TABLE push_preferences ADD COLUMN defaults_blocked INTEGER NOT NULL DEFAULT 0;
-UPDATE push_preferences SET defaults_blocked=1 WHERE enabled=0;
-CREATE TABLE push_default_decisions (actor_id TEXT NOT NULL, policy_id TEXT NOT NULL, PRIMARY KEY(actor_id,policy_id)) STRICT;
-CREATE TABLE push_target_opt_outs (actor_id TEXT NOT NULL, target_key TEXT NOT NULL, PRIMARY KEY(actor_id,target_key)) STRICT;
-`.trim();
 const targetKey = (target: NotificationTarget) => hash(target.kind==='im' ? ['im',target.channelId,target.senderId] : target);
 
 /** One server process owns this private store. No browser credentials are stored. */
@@ -45,7 +33,7 @@ export class PushStore {
   readonly outcome: DatabaseOutcome;
   private readonly db: DatabaseSync;
   constructor(path: string, private readonly now = Date.now) {
-    const managed = openManagedDatabase({path, migrations:[{version:1,name:'web-push-subscriptions-and-outbox',sql:SCHEMA},{version:2,name:'notification-destinations',sql:DESTINATIONS_SCHEMA},{version:3,name:'notification-default-decisions',sql:DEFAULTS_SCHEMA}]});
+    const managed = openManagedDatabase({schemaId:"web-push-node",path, migrations:[{version:1,name:'web-push-subscriptions-and-outbox',sql:SCHEMA}]});
     this.db = managed.database; this.outcome = managed.outcome;
   }
   private transaction<T>(work: () => T): T {

@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -66,7 +67,7 @@ class ForkSourceTests(unittest.TestCase):
         def run(args, **kwargs):
             if str(args[0]) == '/fixture/gclient':
                 calls.append(args)
-                self.assertEqual(kwargs['cwd'], self.root)
+                self.assertEqual(Path(kwargs['cwd']).resolve(), self.root.resolve())
                 self.assertTrue((self.root / '.gclient').is_file())
                 return ''
             return original_run(args, **kwargs)
@@ -160,6 +161,45 @@ class ForkSourceTests(unittest.TestCase):
             self.fork().checkout()
         self.assertEqual(self.git('rev-parse', 'HEAD'), before)
         self.assertEqual(self.git('status', '--porcelain'), '')
+
+
+class OperationLockTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.path = self.root / '.opencraft-operation.lock'
+
+    def exited_pid(self):
+        process = subprocess.Popen([sys.executable, '-c', 'pass'])
+        process.wait()
+        return process.pid
+
+    def test_lock_is_released_after_operation(self):
+        with module.operation_lock(self.root):
+            self.assertEqual(self.path.read_text().strip(), str(os.getpid()))
+        self.assertFalse(self.path.exists())
+
+    def test_live_owner_is_respected(self):
+        self.path.write_text(f'{os.getppid()}\n')
+        with self.assertRaisesRegex(ValueError, 'another operation owns'):
+            with module.operation_lock(self.root):
+                pass
+        self.assertEqual(self.path.read_text().strip(), str(os.getppid()))
+
+    def test_unreadable_owner_is_respected(self):
+        self.path.write_text('')
+        with self.assertRaisesRegex(ValueError, 'another operation owns'):
+            with module.operation_lock(self.root):
+                pass
+        self.assertTrue(self.path.exists())
+
+    def test_lock_left_by_exited_process_is_taken_over(self):
+        self.path.write_text(f'{self.exited_pid()}\n')
+        with module.operation_lock(self.root):
+            self.assertEqual(self.path.read_text().strip(), str(os.getpid()))
+        self.assertFalse(self.path.exists())
+        self.assertEqual(list(self.root.iterdir()), [])
 
 
 class NativeTargetTests(unittest.TestCase):

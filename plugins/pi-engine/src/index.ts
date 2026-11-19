@@ -1,8 +1,10 @@
+import { executionCliInstructions, type ExecutionCliLease, type ScopedExecutionCliPort } from "@opencraft/session-capabilities/execution-cli";
+import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { queueProjection, type PiQueuedInput } from "./queue.js";
 import type { ExecutionEnvironmentRuntime } from '../../../scripts/execution-environment.js';
 import { createPiTranscriptCache, readPiSnapshot } from "./read-history.js";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { InterruptedTurnRecovery } from "@opencraft/host-recovery";
 import { TURN_RECOVERY_EXTENSION, SHARED_INTERACTIONS_READ } from "@opencraft/appserver-protocol";
 import type { SessionCapabilityPort } from "@opencraft/session-capabilities";
@@ -116,7 +118,8 @@ export class PiEngine {
   private readonly modelsRuntime: ReturnType<typeof createPiModels>;
   private resolvedModels?: Awaited<ReturnType<typeof createPiModels>>;
   private readonly transcriptCache: ReturnType<typeof createPiTranscriptCache>;
-  constructor(private readonly options: { modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
+  private readonly cliLeases = new Map<string, ExecutionCliLease>();
+  constructor(private readonly options: { executionCli?: ScopedExecutionCliPort; modelPolicyPath?: string; dataDirectory?: string; directory: string; cwd: string; executionEnvironment?: ExecutionEnvironmentRuntime; modelDirectory?: string; models?: Awaited<ReturnType<typeof createPiModels>>; configuration?: PiModelConfiguration; sessionCapabilities?: SessionCapabilityPort; attachmentDirectory?: string; prepareAttachmentInput?: (threadId: string, input: Value[]) => Promise<Value[]>; admission?: { open(): boolean; run<T>(operation: () => Promise<T>, reconciliation?: boolean): Promise<T> } }) {
     nodeObserver("pi", { processResources: false });
     this.modelsRuntime = (options.models ? Promise.resolve(options.models) : createPiModels(options.modelDirectory ?? options.directory))
       .then(models => { this.resolvedModels = models; return models; });
@@ -146,6 +149,10 @@ export class PiEngine {
         try {
           const record = JSON.parse(await readFile(join(this.options.directory, file), "utf8"));
           if (record.format !== "pi-durable-1" || `${record.id}.json` !== file || !Array.isArray(record.tools)) throw new Error("Invalid Pi session index");
+          const name = threadCliLabel(record.name);
+          const preview = threadCliLabel(record.preview ?? "") ?? "";
+          if (name !== record.name) record.name = name;
+          if (preview !== record.preview) record.preview = preview;
           this.sessions.set(record.id, record);
           record.needsResume = record.pendingRecovery === true;
         } catch {
@@ -332,6 +339,10 @@ export class PiEngine {
     session.turns = turns;
     if (!awaitingAdmission) session.active = [...turns].reverse().find(turn => turn.status === "inProgress");
     for (const turn of turns) {
+      if (turn.status !== "inProgress") {
+        const key = `${session.id}:${turn.id}`, cli = this.cliLeases.get(key);
+        if (cli) { this.cliLeases.delete(key); void cli.revoke().catch(() => { session.failed = true; }); }
+      }
       const before = oldTurns.get(turn.id);
       if (!before && turn.status === "inProgress" && (oldActive?.id !== turn.id || oldActive?._queueAdmission)) this.notify("turn/started", { threadId: session.id, turn });
       if (!before && turn.status !== "inProgress") continue; // Hydration does not replay completed user turns.
@@ -413,7 +424,8 @@ export class PiEngine {
       if(!model)throw new Error('Pi model is unavailable');
       const preparedContent=await this.compileInput(item.input,item.additionalContext,session.cwd,model,session.id);
       if(!this.admissionOpen())throw new Error('Pi admission is fenced');
-      await native.submit(preparedContent, { turnId: item.id, clientId: item.clientId, input: item.input,
+      const content = await this.withCli(session.id, item.id, item.clientId ?? "", preparedContent, item.executionCliCredential);
+      await native.submit(content, { turnId: item.id, clientId: item.clientId, input: item.input,
         additionalContext: item.additionalContext, createdAtMs: item.createdAtMs,
         ...(item.executionAdmission ? {executionAdmission:item.executionAdmission} : {}) }, item.id);
       await native.settleQueue(item.id);
@@ -430,10 +442,25 @@ export class PiEngine {
       await this.refresh(session); throw error;
     }
   }
+  private async withCli(threadId: string, turnId: string, inputId: string, content: Value[], credential?: string): Promise<Value[]> {
+    if (!this.options.executionCli) return content;
+    const key = `${threadId}:${turnId}`;
+    let lease = this.cliLeases.get(key);
+    if (!lease) {
+      const issued = await this.options.executionCli.issue(threadId, inputId, credential);
+      if (!issued) return content;
+      lease = issued;
+      if (this.closed) { await lease.revoke(); throw new Error("Pi admission is closed"); }
+      this.cliLeases.set(key, lease);
+    }
+    return [...content, { type: "text", text: executionCliInstructions(lease) }];
+  }
   private fail(session: Session, message: string) {
     const active = session.active;
     session.failed = true; session.active = undefined;
     if (active) {
+      const key = `${session.id}:${active.id}`, cli = this.cliLeases.get(key);
+      if (cli) { this.cliLeases.delete(key); void cli.revoke().catch(() => { session.failed = true; }); }
       const turn = { ...active, status: "failed", error: { message, codexErrorInfo: null, additionalDetails: null }, completedAt: null, durationMs: null };
       session.turns = (session.turns ?? [active]).map(old => old.id === active.id ? turn : old);
       this.notify("turn/completed", { threadId: session.id, turn });
@@ -455,7 +482,8 @@ export class PiEngine {
     });
   }
   private thread(session: Session, turns: PiTurn[] = []) {
-    return { id: session.id, sessionId: session.id, forkedFromId: session.forkedFromId ?? null, parentThreadId: null, name: session.name, preview: session.preview,
+    const name = threadCliLabel(session.name), preview = threadCliLabel(session.preview ?? "") ?? "";
+    return { id: session.id, sessionId: session.id, forkedFromId: session.forkedFromId ?? null, parentThreadId: null, name, preview,
       ephemeral: session.ephemeral === true, projectId: session.projectId ?? null, historyMode: "paginated", modelProvider: "pi", model: session.model, reasoningEffort: session.effort ?? null,
       createdAt: session.createdAt, updatedAt: session.updatedAt, recencyAt: session.updatedAt,
       status: session.failed ? { type: "systemError" } : session.active ? { type: "active", activeFlags: [] } : { type: "idle" },
@@ -916,7 +944,8 @@ export class PiEngine {
         const additionalContext = queued?.additionalContext ?? params.additionalContext ?? null;
       const content = await this.compileInput(params.input, additionalContext, session.cwd, model, session.id);
         const executionAdmission = queued ? queued.executionAdmission : (typeof params.__opencraftExecutionAdmission === "string" && params.__opencraftExecutionAdmission.length <= 128 ? params.__opencraftExecutionAdmission : undefined);
-        const item: PiQueuedInput = { ...(executionAdmission ? {executionAdmission} : {}), id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
+        const executionCliCredential = queued ? queued.executionCliCredential : (typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
+        const item: PiQueuedInput = { ...(executionCliCredential ? {executionCliCredential} : {}), ...(executionAdmission ? {executionAdmission} : {}), id: queued?.id ?? `${session.id}:turn:client:${clientId}`, clientId,
           input: params.input, content, additionalContext, createdAtMs: queued?.createdAtMs ?? Date.now(), state: "queued" };
         session.pendingRecovery = true; await this.save(session);
         const result = method === "thread/queue/add" ? await native.enqueue(item) : await native.changeQueue("update", item.id, item);
@@ -970,16 +999,19 @@ export class PiEngine {
       if (!model) throw new Error("Pi model is unavailable");
       const cwd = await workspace(params, session.cwd);
       if (Array.isArray(params.input)) validatePiSkillInput(params.input, cwd, this.options.modelDirectory ?? this.options.directory);
-      const content = await this.compileInput(params.input, params.additionalContext, cwd, model, session.id);
+      let content = await this.compileInput(params.input, params.additionalContext, cwd, model, session.id);
       const { native } = await this.configure(session, params, false, true);
       const createdAtMs = Date.now();
-      const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "complete", status: "inProgress", error: null,
+      const turn: PiTurn = { id: turnId, items: [{ type: "userMessage", id: `${turnId}:user`, clientId, content: params.input }], itemsView: "full", status: "inProgress", error: null,
         startedAt: Math.floor(createdAtMs / 1000), completedAt: null, durationMs: null };
       if (canAdmit && !await canAdmit()) throw new ScheduleAdmissionDeferred();
       if (!this.admissionOpen()) throw new ScheduleAdmissionDeferred();
+      // The preview is user input, not the execution-scoped CLI note appended below.
+      const previewText = textOf(content).slice(0, 200);
+      content = await this.withCli(session.id, turnId, clientId ?? "", content, typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
       session.active = turn; session.pendingRecovery = true;
       const previousPreview = session.preview, previousUpdated = session.updatedAt;
-      session.preview ||= textOf(content).slice(0, 200); session.updatedAt = seconds();
+      session.preview ||= previewText; session.updatedAt = seconds();
       try {
         await this.save(session);
         if (!this.admissionOpen() || canAdmit && !await canAdmit()) {
@@ -1082,6 +1114,7 @@ export class PiEngine {
   }
   async close() {
     this.closed = true;
+    await Promise.all([...this.cliLeases.values()].map(lease => lease.revoke())); this.cliLeases.clear();
     for (const readers of this.historyReaders.values()) for (const reader of readers) reader.abort(new Error("Pi engine is closed"));
     this.historyReaders.clear();
     await this.recovery?.close();

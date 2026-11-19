@@ -523,16 +523,32 @@ export function createWorkbenchWebConfig(
           // Isolate stable third-party runtime from application/plugin hash churn.
           codeSplitting: { groups: [
             ...startupLeafGroups,
+            // These already-required control/context leaves otherwise become
+            // many sub-1KB requests whose raw-byte accounting and import headers
+            // exceed their content. Share one stable chunk; do not add lazy UI.
+            { name: "workbench-control-leaves", test: /(?:\/apps\/workbench-web\/src\/(?:components\/(?:ui\/button|modal\/modal-surface|shell-navigation\/navigation-button|workbench-presentation-activity|ui\/workbench-icon|async-notices-context|workbench-presentation-root|conversation\/document-context)|panels\/prepare-preview-resources|runtime\/(?:panel-runtime-context|restore-right-panel-tabs)|workbench-shortcuts)\.tsx?$|\/apps\/workbench-web\/src\/(?:browser-annotation\/composer-sink|runtime\/scheduled-task-catalog-context)\.tsx?$|\/plugins\/cloud-desktop\/src\/contract\.ts$|\/viewport-presets\.js$)/, includeDependenciesRecursively: false },
+            // Settings-only connection/welcome surfaces share tiny branding
+            // helpers with Sidebar. Do not hoist the surfaces with those helpers.
+            { name: "connection-settings-presentation", test: /\/apps\/workbench-web\/src\/components\/mobile-connection-settings\.tsx$/, includeDependenciesRecursively: false },
+            { name: "right-panel-presentation", test: /\/apps\/workbench-web\/src\/components\/right-panel\.tsx$/, includeDependenciesRecursively: false },
+            // Agent setup and history import are requested presentations, not
+            // bootstrap owners. Shared Sidebar helpers must not hoist their UI.
+            { name: "agent-onboarding", test: /\/apps\/workbench-web\/src\/components\/(?:agent-management|agent-onboarding|agent-history-import)\.(?:tsx|scss)$/, includeDependenciesRecursively: false },
             { name: "side-chat-policy", test: /\/packages\/workbench-runtime\/src\/side-chat\/policy\.ts$/, includeDependenciesRecursively: false },
             // Submission validation is loaded on send, not on every cold open.
             { name: "submit-compiler", test: /\/packages\/composer-appserver\/src\/compiler\.ts$/, includeDependenciesRecursively: false },
             { name: "mermaid-preview-surface", test: /\/packages\/chat-render-web\/src\/extensions\/mermaid\/mermaid-preview-surface\.tsx$/, includeDependenciesRecursively: false },
             { name: "preview-surface", test: /\/packages\/design-system-web\/src\/preview-surface\.tsx$/, includeDependenciesRecursively: false },
+            // Keep the deferred dialog owner out of tiny shared startup groups.
+            // Protocol helpers shared with Main must not pull its PreviewSurface
+            // (and its imports) into the cold-open graph.
+            { name: "file-preview-dialog", test: /\/packages\/file-preview-web\/src\/file-preview-dialog-view\.tsx$/, includeDependenciesRecursively: false },
             { name: "file-preview-view", test: /\/packages\/file-preview-web\/src\/file-preview-view\.tsx$/, includeDependenciesRecursively: false },
             { name: "table-preview", test: /\/packages\/chat-render-web\/src\/renderers\/table\/table-preview\.tsx$/, includeDependenciesRecursively: false },
             // Shared context leaves are already required at startup. New lazy
             // consumers should not turn each small context into another request.
             { name: "workbench-context", test: /\/apps\/workbench-web\/src\/(?:browser-annotation\/composer-sink|runtime\/scheduled-task-catalog-context|components\/(?:async-notices-context|conversation\/document-context|workbench-presentation-root))\.tsx?$/, includeDependenciesRecursively: false },
+            { name: "workbench-context", test: /(?:\/runtime\/(?:appserver-runtime-context\.tsx|workbench-application-services\.ts)|\/components\/conversation-appearance\.(?:tsx|scss)|\/packages\/ui-preferences\/src\/(?:index|conversation-appearance)\.ts)$/, includeDependenciesRecursively: false },
             // Keep the injected page implementation separate from the startup
             // transport protocol, even when they share dynamic consumers.
             { name: "browser-page-runtime", test: /\/packages\/browser-preview-bridge\/src\/(?:runtime|annotation-picker)\.ts$/, includeDependenciesRecursively: false },
@@ -543,8 +559,8 @@ export function createWorkbenchWebConfig(
             { name: "liquid-glass-optics", test: /\/packages\/design-system-web\/src\/liquid-glass-map\.tsx$/, includeDependenciesRecursively: false },
             // Optional document engines also import server rendering helpers; keep those
             // with their lazy consumers instead of the startup React runtime.
-            { name: "react-runtime", test: id => /\/node_modules\/(?:react|react-dom|scheduler)\//.test(id) && !/\/react-dom\/(?:server(?:[./-])|cjs\/react-dom-server)/.test(id), includeDependenciesRecursively: false },
-            { name: "startup-composition", test: /\/runtime\/(?:web-workbench-supervisor|web-workbench-application)\.ts$/, includeDependenciesRecursively: false },
+            { name: "react-runtime", test: id => (/\/node_modules\/(?:react|react-dom|scheduler)\//.test(id) && !/\/react-dom\/(?:server(?:[./-])|cjs\/react-dom-server)/.test(id)) || id.includes("__vite-optional-peer-dep:@emotion/is-prop-valid:framer-motion"), includeDependenciesRecursively: false },
+            { name: "startup-composition", test: /\/runtime\/(?:web-workbench-supervisor|web-workbench-application|token-usage-builtin)\.ts$/, includeDependenciesRecursively: false },
             // Keep the shared dynamic-import helper separate from entry-only
             // modulepreload side effects and their application hash references.
             { name: "vite-preload-runtime", test: /\0vite\/preload-helper\.js$/, includeDependenciesRecursively: false },
@@ -555,14 +571,13 @@ export function createWorkbenchWebConfig(
             // Notices and rename dialogs share generated typography. Keep their
             // styles together when another lazy management page shares a Modal,
             // so the common typography sheet is emitted once at startup.
-            { name: "workbench-feedback-styles", test: /\/components\/(?:async-notices|conversation-rename-dialog)\.scss$/, includeDependenciesRecursively: false },
+            { name: "workbench-feedback-styles", test: /(?:\/components\/(?:async-notices|conversation-rename-dialog)\.scss$|\/styles\/context-menu\.scss$|\/node_modules\/@fontsource-variable\/(?:inter|jetbrains-mono)\/wght(?:-italic)?\.css$)/, includeDependenciesRecursively: false },
             // These small shared primitives are needed by entry controls and
             // deferred management pages. Keep one request instead of splitting
             // every new consumer set into its own tiny startup chunk.
             { name: "management-shared", test: id => /\/(?:apps\/workbench-web\/src\/components\/(?:modal\/(?:index|modal-controller|modal-host|confirmation-modal-surface|announcement-dialog|announcement-modal-projection|announcement-lab|announcement-media-url|management-settings-content)\.tsx?|connectors\/connector-icon\.tsx)|packages\/connector-core\/src\/(?:index|catalog)\.ts)$/.test(id) || /\/apps\/workbench-web\/src\/assets\/announcement-lab\.svg\?/.test(id), includeDependenciesRecursively: false },
             // Conversation appearance and preferences are shared startup context;
             // lazy picker consumers must not create extra tiny startup requests.
-            { name: "workbench-context", test: /(?:\/runtime\/(?:appserver-runtime-context\.tsx|workbench-application-services\.ts)|\/components\/conversation-appearance\.(?:tsx|scss)|\/packages\/ui-preferences\/src\/(?:index|conversation-appearance)\.ts)$/, includeDependenciesRecursively: false },
             // Keep the native color control and its shared Sass output with the
             // picker. The small-module merge heuristic otherwise hoists its CSS.
             // Companion paint belongs to the deferred member directory, not bootstrap.

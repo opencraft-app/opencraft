@@ -61,7 +61,9 @@ try {
  const touch=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});const mobile=await touch.newPage();mobile.on('pageerror',(e:Error)=>errors.push(e.message));
  await mobile.goto(origin+'/settings/models');await mobile.getByRole('heading',{name:'我的编程模型',exact:true}).waitFor();
  await mobile.getByRole('button',{name:'更改',exact:true}).first().tap();await mobile.getByLabel('使用范围',{exact:true}).selectOption('team');await mobile.getByRole('switch',{name:'允许其他人使用',exact:true}).tap();
+ await mobile.waitForFunction(()=>document.querySelector('[role="switch"]')?.getAttribute('aria-checked')==='true');
  await mobile.setViewportSize({width:430,height:844});assert.equal(await mobile.getByLabel('使用范围',{exact:true}).inputValue(),'team');
+ assert.equal(await mobile.getByRole('switch',{name:'允许其他人使用',exact:true}).getAttribute('aria-checked'),'true');assert.equal(await mobile.getByRole('button',{name:'保存',exact:true}).isEnabled(),true);assert.equal(ledger.contributions('alice')[0]!.scope,'personal');
  await mobile.screenshot({path:join(out,'touch-scope.png'),fullPage:true});await mobile.keyboard.press('Escape');
  assert.equal(await mobile.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
  await mobile.screenshot({path:join(out,'touch.png'),fullPage:true});

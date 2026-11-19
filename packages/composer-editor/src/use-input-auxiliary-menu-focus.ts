@@ -14,12 +14,14 @@ export function useInputAuxiliaryMenuFocus(options: {
   open: boolean;
   onOpenChange(open: boolean): void;
   getEditor(): HTMLElement | null;
+  restoreEditorOnClose?: boolean;
   /** Lets the containing presentation check focus after Radix close cleanup. */
   onCloseFocusSettling?(): void;
 }) {
   const latest = useRef(options);
   latest.current = options;
   const preserve = useRef(false);
+  const returnEditor = useRef<HTMLElement | null>(null);
   const content = useRef<HTMLElement | null>(null);
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -30,6 +32,7 @@ export function useInputAuxiliaryMenuFocus(options: {
     if (!editor) return;
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (!preserve.current || !editorHasFocus(editor) || event.isComposing || event.keyCode === 229) return;
+      if (event.target instanceof Node && content.current?.contains(event.target)) return;
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         const items = content.current?.querySelectorAll<HTMLElement>(':is([role^="menuitem"], [role="slider"]):not([aria-disabled="true"])');
         const target = event.key === "ArrowUp" ? items?.[items.length - 1] : items?.[0];
@@ -56,6 +59,7 @@ export function useInputAuxiliaryMenuFocus(options: {
       onPointerDown(event: PointerEvent<HTMLButtonElement>) {
         const editor = latest.current.getEditor();
         const editing = editorHasFocus(editor);
+        returnEditor.current = editing && latest.current.restoreEditorOnClose ? editor : null;
         if ((event.pointerType === "touch" || event.pointerType === "pen") && editing && event.isPrimary && event.button === 0) {
           preserve.current = true;
           // The shared trigger retains native scrolling and opens on a completed tap.
@@ -64,7 +68,7 @@ export function useInputAuxiliaryMenuFocus(options: {
           preserve.current = false;
         }
       },
-      onKeyDown(_event: KeyboardEvent<HTMLButtonElement>) { preserve.current = false; },
+      onKeyDown(_event: KeyboardEvent<HTMLButtonElement>) { preserve.current = false; returnEditor.current = null; },
       onMouseDown(event: MouseEvent<HTMLButtonElement>) {
         if (preserve.current && editorHasFocus(latest.current.getEditor())) event.preventDefault();
       },
@@ -100,6 +104,16 @@ export function useInputAuxiliaryMenuFocus(options: {
         // That cleanup no longer owns focus or the current presentation lease.
         if (latest.current.open) { event.preventDefault(); return; }
         latest.current.onCloseFocusSettling?.();
+        const editor = returnEditor.current;
+        returnEditor.current = null;
+        if (mounted.current && editor === latest.current.getEditor() && editor?.isConnected && editor.getClientRects().length > 0) {
+          const active = editor.ownerDocument.activeElement;
+          // A navigation or another surface may have acquired focus while closing.
+          if (active === editor.ownerDocument.body || editor.contains(active) || content.current?.contains(active)
+            || active?.closest(".opencraft-composer-picker")) {
+            event.preventDefault(); editor.focus({ preventScroll: true });
+          }
+        }
         if (preserve.current || !mounted.current) event.preventDefault();
         preserve.current = false;
       },

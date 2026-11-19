@@ -1,0 +1,30 @@
+.ui-button.ui-object-card-button {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: start;
+  white-space: normal;
+  height: auto;
+  padding: calc(var(--spacing) * 3);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--color-background-surface);
+  color: var(--color-text);
+  box-shadow: none;
+}
+
+
+.ui-button.ui-media-action-button {
+  display: grid;
+  place-items: center;
+  width: fit-content;
+  max-width: 100%;
+  height: auto;
+  min-width: var(--size-control-hit-min);
+  min-height: var(--size-control-hit-min);
+  padding: 0;
+  border: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  &[data-media-action="preview"]:not(:disabled) { cursor: zoom-in; }
+}

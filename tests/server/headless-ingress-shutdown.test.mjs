@@ -5,7 +5,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import ssh2 from 'ssh2';
 import { WebSocket } from 'ws';
 import { generateKeyPairSync, randomBytes } from 'node:crypto';
 import { AssertionSigner } from '../../packages/identity-core/src/node.ts';
@@ -13,6 +12,7 @@ import { createRelayServer } from '../../apps/relay-server/src/server.ts';
 import { HubNetwork } from '../../packages/hub-network/src/node.ts';
 import { startHeadlessServer } from '../../scripts/headless-application.mjs';
 import { createWorkbenchWebServer } from '../../scripts/serve-workbench-web.mjs';
+import { generateEd25519KeyPair } from '../support/ssh-ed25519.mjs';
 
 async function fixture() {
   const root=await mkdtemp(join(tmpdir(),'oc-ingress-shutdown-')),webRoot=join(root,'web');await mkdir(webRoot);
@@ -43,7 +43,7 @@ test('a real admitted Hub peer cannot hold Headless HTTP shutdown open', {timeou
 test('planned restart reaches a browser through the real SSH/HTTP ingress as 1012', {timeout:15000}, async()=>{
   const f=await fixture();let app,socket;
   try {
-    const host=ssh2.utils.generateKeyPairSync('ed25519'),user=ssh2.utils.generateKeyPairSync('ed25519');
+    const host=generateEd25519KeyPair(),user=generateEd25519KeyPair();
     const hostKeyFile=join(f.root,'host-key'),config=join(f.root,'ssh.json');
     await writeFile(hostKeyFile,host.private,{mode:0o600});await writeFile(config,JSON.stringify({hostKeyFile,authorizedKeys:{fixture:[user.public]}}),{mode:0o600});
     app=await startHeadlessServer({...f.options,sshConfig:config});

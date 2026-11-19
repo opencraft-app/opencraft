@@ -3,6 +3,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog';
 import { ModalContent } from '@opencraft/design-system-web/modal-content';
 import { Button, IconButton } from '@opencraft/design-system-web/button';
+import { ObjectCardButton } from '@opencraft/design-system-web/object-controls';
+import '@opencraft/design-system-web/object-controls.web';
 import {
   CloseIcon,
   ChevronRightIcon,
@@ -215,9 +217,7 @@ export function ForwardedRecordCard({
   return (
     <Dialog.Root open={open && active} onOpenChange={setOpen}>
       <Dialog.Trigger asChild>
-        <Button
-          variant="ghost"
-          contentLayout="row"
+        <ObjectCardButton
           className="im-record-card"
           disabled={!active}
           aria-label={title || intl.formatMessage(labels.record)}
@@ -230,7 +230,7 @@ export function ForwardedRecordCard({
             {intl.formatMessage(labels.record)}
             <ChevronRightIcon />
           </span>
-        </Button>
+        </ObjectCardButton>
       </Dialog.Trigger>
       {open && active && (
         <ModalContent

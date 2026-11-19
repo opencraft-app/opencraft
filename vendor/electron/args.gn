@@ -1,4 +1,9 @@
-import("//electron/build/args/testing.gn")
+# Release configuration used for shipped desktop builds: optimized, no DCHECKs,
+# ThinLTO and Electron's bundled PGO profiles. release.gn defaults to full debug
+# info (symbol_level = 2), which makes the Linux executable about 2.4 GB, so
+# ship without symbols.
+import("//electron/build/args/release.gn")
 
+symbol_level = 0
 use_remoteexec = false
 use_siso = false

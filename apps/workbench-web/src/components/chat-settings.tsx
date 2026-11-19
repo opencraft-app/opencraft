@@ -1,3 +1,4 @@
+import { AgentManagement } from "./agent-management";
 import { useState } from "react";
 import { useIntl } from "@opencraft/i18n/react";
 import { SettingsGroup, SettingsNotice, SettingsPageHeader, SettingsRow, SettingsSwitch } from "@opencraft/extension-react";
@@ -30,6 +31,7 @@ export function ChatSettings({onOpenImSettings}: {onOpenImSettings?:()=>void} = 
         }} />
       </SettingsRow>
     </SettingsGroup>
+    <AgentManagement />
     <TurnNotificationSettings onOpenImSettings={onOpenImSettings} />
     {saveError ? <SettingsNotice tone="error">{intl.formatMessage({ id: "settings.chat.saveError", defaultMessage: "Could not save your preference. Please try again." })}</SettingsNotice> : null}
   </>;

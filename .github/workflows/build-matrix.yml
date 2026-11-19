@@ -2,6 +2,10 @@ name: build-matrix
 
 on:
   pull_request:
+  # Each merge is tested again on main: PRs that each passed against an older
+  # main are only tested together here, right after they land.
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       validation:
@@ -19,7 +23,9 @@ permissions:
   actions: read
 
 concurrency:
-  group: build-matrix-${{ github.event.pull_request.number || github.ref }}
+  # A newer PR commit replaces the old run; each main commit keeps its own run,
+  # so a regression points at the merge that introduced it.
+  group: build-matrix-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -34,6 +40,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -44,7 +52,7 @@ jobs:
       - run: npm run test:hover-policy
         if: always() && steps.dependencies.outcome == 'success'
       - id: browser
-        run: npx playwright install --with-deps chromium
+        run: bash scripts/ci/install-playwright-chromium.sh
         if: always() && steps.dependencies.outcome == 'success'
       - run: npm run smoke:touch-hover
         if: always() && steps.browser.outcome == 'success'
@@ -60,6 +68,8 @@ jobs:
         target: ${{ fromJSON(needs.plan.outputs.targets) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -73,12 +83,16 @@ jobs:
       - run: npm run typecheck --workspace @opencraft/workbench-web
         if: matrix.target == 'web-browser'
       - run: npm run matrix:check
-      - run: npm run matrix:build -- ${{ matrix.target }}
+      - run: npm run matrix:build -- "$MATRIX_TARGET"
+        env:
+          MATRIX_TARGET: ${{ matrix.target }}
       - name: Browser bootstrap regression (current engine)
         if: matrix.target == 'web-browser'
         run: |
-          npx playwright install --with-deps chromium
+          bash scripts/ci/install-playwright-chromium.sh
           npm run smoke:browser-bootstrap
+          npm run smoke:subagent-activity
+          npm run smoke:queue-markdown
       - name: Browser bootstrap regression (Chrome 116)
         if: matrix.target == 'web-browser'
         env:
@@ -118,6 +132,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -137,6 +153,8 @@ jobs:
       OPENCRAFT_SOURCE_REVISION: ${{ github.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -157,17 +175,17 @@ jobs:
       - name: Verify and launch the app from the final DMG
         env:
           OPENCRAFT_SMOKE_OUTPUT: ${{ runner.temp }}/opencraft-macos-smoke
-        run: node scripts/smoke/desktop/smoke-macos-dmg.mjs apps/workbench-electron/release/OpenCraft-*.dmg
+        run: node scripts/smoke/desktop/smoke-macos-dmg.mjs apps/desktop/release/OpenCraft-*.dmg
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: electron-macos-smoke
           path: ${{ runner.temp }}/opencraft-macos-smoke
           retention-days: 3
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: electron-macos-native
-          path: apps/workbench-electron/release/OpenCraft-*
+          path: apps/desktop/release/OpenCraft-*
           retention-days: 3
 
   linux-headless:
@@ -176,8 +194,10 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -187,6 +207,8 @@ jobs:
         run: npm run test:appserver-client
       - name: DSH routing Worker persistence and network liveness
         run: npx tsx --test tests/execution/dsh-session-routing-worker.test.ts
+      - name: Codex Router storage Worker and lifecycle
+        run: npx tsx --test --test-concurrency=3 tests/execution/codex-generation-*.test.ts tests/execution/codex-router-*.test.ts tests/execution/fence-operator-lease.test.ts
       - run: npm run test:headless-server
       - uses: ./.github/actions/owned-electron
         if: needs.plan.outputs.headless-package == 'true'
@@ -200,16 +222,211 @@ jobs:
         if: needs.plan.outputs.headless-package == 'true'
       - run: npm run smoke:headless:linux
         if: needs.plan.outputs.headless-package == 'true'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: needs.plan.outputs.headless-package == 'true'
         with:
           name: headless-linux-amd64-tar
           path: release/OpenCraft-server-*-linux-amd64.tar.gz
           retention-days: 3
 
+  # Every product change runs the full typecheck and each `npm test` suite.
+  # Suites are separate steps so one failure cannot hide the others.
+  core-tests:
+    needs: plan
+    if: needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true'
+    name: core-tests (${{ matrix.part }})
+    runs-on: ubuntu-latest
+    # Two halves run side by side: static checks (typecheck alone is ~2.5 min)
+    # and the test suites. build-checks reads their combined result.
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [static, tests]
+    # Each suite has its own limit so a hang fails that step with its log kept,
+    # instead of cancelling the job and losing every log.
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The PR merge commit's first parent is the base the format check compares against.
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      # From here on every test file gets a private HOME/TMPDIR, and processes a
+      # test leaves running fail the run (tests/support/test-isolation.mjs). It is
+      # set after checkout because the actions themselves run on Node.
+      - name: Enable test isolation
+        run: |
+          isolation_env="$(mktemp "$RUNNER_TEMP/opencraft-isolation.XXXXXX")"
+          printf 'export NODE_OPTIONS=%q\n' "--import $GITHUB_WORKSPACE/tests/support/test-isolation.mjs --test-global-setup=$GITHUB_WORKSPACE/tests/support/test-isolation-global.mjs" > "$isolation_env"
+          echo "BASH_ENV=$isolation_env" >> "$GITHUB_ENV"
+      - name: Format files this pull request adds
+        run: npm run check:format -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success' && github.event_name == 'pull_request' && matrix.part == 'static'
+      - name: Lint files this pull request adds
+        run: npm run lint:changed -- --base HEAD^1
+        if: always() && steps.dependencies.outcome == 'success' && github.event_name == 'pull_request' && matrix.part == 'static'
+      # Same system packages as Claude Code cloud sessions (.claude/hooks/session-start.sh).
+      - name: Ensure system packages for Git identity and token tests
+        run: bash scripts/ci/setup-toolchain.sh system
+        if: matrix.part == 'tests'
+      - id: dsh
+        run: npm run prepare:dsh-runtime
+        if: always() && steps.dependencies.outcome == 'success'
+      - run: npm run typecheck
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'static'
+        timeout-minutes: 15
+      - run: npm run check:boundaries
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'static'
+        timeout-minutes: 10
+      - run: npm run test:cli
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:sqlite-node
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:local-agent-storage
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:control-standards
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:identity
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:extensions
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:connectors
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:appserver
+        if: always() && steps.dsh.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:dsh-bridge
+        if: always() && steps.dsh.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:chat
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:adaptive-navigation
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:text-selection
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+      - run: npm run test:workbench:unit
+        if: always() && steps.dependencies.outcome == 'success' && matrix.part == 'tests'
+        timeout-minutes: 10
+
+  # Suites that npm run gate requires but npm test does not include. They run
+  # in parallel with core-tests so neither job grows; each step keeps its log.
+  gate-tests:
+    needs: plan
+    if: needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
+      # Same isolation as core-tests: private HOME/TMPDIR, leaked processes fail.
+      - name: Enable test isolation
+        run: |
+          isolation_env="$(mktemp "$RUNNER_TEMP/opencraft-isolation.XXXXXX")"
+          printf 'export NODE_OPTIONS=%q\n' "--import $GITHUB_WORKSPACE/tests/support/test-isolation.mjs --test-global-setup=$GITHUB_WORKSPACE/tests/support/test-isolation-global.mjs" > "$isolation_env"
+          echo "BASH_ENV=$isolation_env" >> "$GITHUB_ENV"
+      # Same system packages as Claude Code cloud sessions (.claude/hooks/session-start.sh).
+      - name: Ensure system packages for Git identity and token tests
+        run: bash scripts/ci/setup-toolchain.sh system
+      - run: npm run test:controls
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:typography
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:sandbox
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:cloud-desktop
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:electron-launch
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:file-preview
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:projects
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:tasks
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:schedules
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:thread-lifecycle
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:hunyuan-speech
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:appserver:lab
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:mcp-apps
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:shell-space
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:workspace-presentation
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:environments
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:desktop-login
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:relay
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:hub-network
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:identity-storage
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:actors
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:human-auth
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - run: npm run test:codex-core
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+      - name: Startup cache evidence
+        run: npm run build:preview-bridge && npm run check:startup:cache
+        if: always() && steps.dependencies.outcome == 'success'
+        timeout-minutes: 10
+
   build-checks:
     if: always()
-    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, hover-policy]
+    needs: [plan, portable, extensions, macos-native, macos-electron, linux-headless, core-tests, gate-tests, hover-policy]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -227,6 +444,9 @@ jobs:
           NATIVE_SELECTED: ${{ needs.plan.outputs.native == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.package_macos) }}
           PACKAGE_SELECTED: ${{ github.event_name == 'workflow_dispatch' && inputs.package_macos }}
           HEADLESS_SELECTED: ${{ needs.plan.outputs.headless-tests }}
+          CORE_RESULT: ${{ needs.core-tests.result }}
+          CORE_SELECTED: ${{ needs.plan.outputs.has-builds == 'true' || needs.plan.outputs.headless-tests == 'true' }}
+          GATE_RESULT: ${{ needs.gate-tests.result }}
         run: |
           test "$PLAN_RESULT" = success
           test "$HOVER_RESULT" = success
@@ -242,3 +462,5 @@ jobs:
           require_selected "$NATIVE_SELECTED" "$NATIVE_RESULT"
           require_selected "$PACKAGE_SELECTED" "$PACKAGE_RESULT"
           require_selected "$HEADLESS_SELECTED" "$HEADLESS_RESULT"
+          require_selected "$CORE_SELECTED" "$CORE_RESULT"
+          require_selected "$CORE_SELECTED" "$GATE_RESULT"

@@ -4,9 +4,11 @@ import { access, readFile, mkdtemp, writeFile, rm } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import type { SandboxLifecycleEvent } from "./lifecycle.js";
 import { SandboxCreationFault, SandboxFault, type SandboxBackend, type SandboxCommand, type SandboxEnvironment, type SandboxExit, type SandboxIdentity, type SandboxOutput, type SandboxPoolPolicy, type SandboxProcess, type SandboxResources } from "@opencraft/sandbox";
 const execute = promisify(execFile);
 export interface SystemdSandboxOptions {
+  readonly lifecycle?: (event: SandboxLifecycleEvent) => void;
   readonly scope: "system" | "user";
   readonly uid: number;
   readonly gid: number;
@@ -42,7 +44,7 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
     try { return (await execute("/usr/bin/systemctl", [...scope, ...args], { env: managementEnv, timeout: 10_000, maxBuffer: 64 * 1024 })).stdout; }
     catch { throw fault("SANDBOX_UNAVAILABLE", "Sandbox systemd control failed"); }
   };
-  const state = async (unit: string) => Object.fromEntries((await control(["show", "--property=LoadState,ActiveState,MainPID,ControlGroup,Description,Transient,FragmentPath,DropInPaths,PrivateTmp", "--", unit])).trim().split("\n").map(l => {
+  const state = async (unit: string) => Object.fromEntries((await control(["show", "--property=LoadState,ActiveState,MainPID,ControlGroup,Description,Transient,FragmentPath,DropInPaths,PrivateTmp,ExecMainCode,ExecMainStatus,Result", "--", unit])).trim().split("\n").map(l => {
     const i = l.indexOf("="); return [l.slice(0, i), l.slice(i + 1)];
   }));
   const stop = async (unit: string) => {
@@ -172,7 +174,15 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
         };
         const finish = (code: number | null, signal?: string) => {
           finished = true;
-          void terminate().then(() => {
+          void (async () => {
+            try {
+              const actual = await state(unit), kind = Number(actual.ExecMainCode), value = Number(actual.ExecMainStatus);
+              options.lifecycle?.({event: "unit-exited", sandboxId: identity.id, unit,
+                ...(actual.Result === "oom-kill" || actual.Result === "resources" ? {resourceFailure: actual.Result} : {}),
+                ...(kind === 1 ? {code: value} : kind === 2 || kind === 3 ? {exitSignal: value} : {status: "unknown"})});
+            } catch { options.lifecycle?.({event: "unit-exited", sandboxId: identity.id, unit, status: "unknown"}); }
+            await terminate();
+          })().then(() => {
             running.delete(id);
             if (observerFailed) reject(fault("SANDBOX_START", "Sandbox output consumer failed"));
             else resolve({ code, ...(signal ? { signal } : {}) });
@@ -219,6 +229,7 @@ export function systemdSandboxBackend(options: SystemdSandboxOptions): SandboxBa
           throw fault("SANDBOX_START", "Sandbox command creation is unconfirmed; environment retained");
         }
         ready = true;
+        options.lifecycle?.({event: "unit-start", sandboxId: identity.id, unit});
         await rm(directory, { recursive: true }); privateFiles.delete(directory);
         if (launchFailed || closing || observerFailed) { await terminate(); throw fault("SANDBOX_START", "Sandbox command could not start or was cancelled"); }
         const common = { id, exited, writeStdin, terminate };

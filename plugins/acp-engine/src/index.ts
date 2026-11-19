@@ -1,3 +1,5 @@
+import { executionCliInstructions, type ScopedExecutionCliPort } from "@opencraft/session-capabilities/execution-cli";
+import { threadCliLabel } from "@opencraft/session-capabilities/thread-cli-instruction";
 import { capabilityResultToMcp } from "@opencraft/session-capabilities/content";
 import { assertModelPolicy, ModelPolicyError } from '@opencraft/model-usage-policy/native';
 import { EXECUTION_ENVIRONMENT_FIELD, type ExecutionEnvironmentRuntime, type ExecutionEnvironmentSnapshot, type EnvironmentExecutionScope } from "../../../scripts/execution-environment.js";
@@ -9,12 +11,13 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AgentOrchestrationPort, ExecutionEngineClient, ExecutionEngineProvider } from "@opencraft/appserver-client";
 import { AppServerRpcError } from "@opencraft/appserver-client";
-import { permissionModeProfileId } from "@opencraft/appserver-protocol";
+import { permissionModeProfileId, type NativeConversationProject } from "@opencraft/appserver-protocol";
 import type { HostInputPort, HostInputReceipt } from "@opencraft/appserver-protocol/host-inputs";
 import { AcpStdioTransport, AcpProtocolError, type AcpObject as Value } from "./transport.js";
 import { codexBaseModelId, splitModelVariant } from "./model-variant.js";
 
 export interface AcpEngineOptions {
+  executionCli?: ScopedExecutionCliPort;
   executionEnvironment?: ExecutionEnvironmentRuntime;
   id?: "acp" | "dsh-acp" | "claude-code" | "cursor" | "codebuddy" | "codex";
   timeoutMs?: number;
@@ -31,6 +34,8 @@ export interface AcpEngineOptions {
     items?(nativeSessionId: string, params: Value): Promise<Value>;
     snapshot?(nativeSessionId: string, params: Value): Promise<any[]>;
     usage?(nativeSessionId: string): Promise<Value | null>;
+    projects?(threads: readonly { id: string; cwd: string }[]): Promise<{ available: boolean; groups: Record<string, NativeConversationProject | null> }>;
+    export?(nativeSessionId: string, params: Value): Promise<import("@opencraft/appserver-protocol").AgentConversationContinuation>;
     close?(): Promise<void>;
   };
   permission?: "allow-once" | "reject";
@@ -40,6 +45,12 @@ interface Session {
   schemaVersion: 1; id: string; nativeId: string; cwd: string; model: string | null; name: string | null;
   createdAt: number; updatedAt: number; tools: Value[]; archived: boolean;
   preview?: string;
+  nativeImport?: true;
+  /** Explicit user selection, restored through the native ACP mode API. */
+  codexFullAccess?: true;
+  codexMode?: string;
+  forkedFromId?: string;
+  nativeProject?: NativeConversationProject;
   nameOrigin?: "input" | "agent" | "manual";
   contextUsage?: { usedTokens: number; limitTokens: number; observedAt: number };
   modelConfigId?: string;
@@ -121,11 +132,12 @@ export class AcpEngine implements ExecutionEngineProvider {
   constructor(private readonly options: AcpEngineOptions) {
     if (!isAbsolute(options.cwd) || !isAbsolute(options.dataDirectory) || !options.command.trim()) throw new Error("ACP requires explicit absolute workspace and data paths and an installed command");
     this.id = options.id ?? "acp";
-    this.label = options.label ?? (this.id === "claude-code" ? "Claude" : this.id === "dsh-acp" ? "DeepSeek Harness (ACP)" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "ACP Agent");
+    this.label = options.label ?? (this.id === "claude-code" ? "Claude Code" : this.id === "dsh-acp" ? "DSH" : this.id === "cursor" ? "Cursor" : this.id === "codebuddy" ? "CodeBuddy" : this.id === "codex" ? "Codex" : "Agent");
     this.threadPrefix = this.id === "claude-code" ? "claude_" : this.id.replaceAll("-", "_") + "_";
     this.modelPrefix = this.id + ":";
     this.baseExtensions = Object.freeze({
       "opencraft/thread-lifecycle": { version: 1, rename: true, archive: true, unsubscribe: true },
+      "opencraft/thread-follow-up": { version: 1, queue: false, steer: false },
       ...(options.history ? { "opencraft/read-history": { version: 1, initialTurnsPage: true } } : {}),
       "opencraft/agent-driver": { version: 1, kind: this.id === "claude-code" ? "claude-code" : "acp", incarnation: this.incarnation, callbackReplay: true },
     });
@@ -167,8 +179,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     void pending.finally(() => { if (this.inputCalls.get(key) === pending) this.inputCalls.delete(key); }).catch(() => {});
     return pending;
   }
-  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string): AcpStdioTransport {
-    return new AcpStdioTransport({ ...this.options,
+  private createTransport(environment?: ExecutionEnvironmentSnapshot, threadId?: string, cwd = this.options.cwd): AcpStdioTransport {
+    return new AcpStdioTransport({ ...this.options, cwd,
       parameterizedModelPicker: this.id === "cursor",
       env: environment?.apply({ ...process.env, ...this.options.env }) ?? this.options.env,
       redactError: environment ? message => environment.redact(message) : undefined,
@@ -176,7 +188,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       onRequest: async (method, params) => {
         if (method !== "session/request_permission") return fault("Unsupported ACP client request", -32601);
         const choices = Array.isArray(params.options) ? params.options : [];
-        const choice = this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
+        const session = [...this.sessions.values()].find(session => session.nativeId === params.sessionId);
+        const mayAllow = this.id !== "codex" || session?.codexMode === "agent-full-access";
+        const choice = mayAllow && this.options.permission === "allow-once" && choices.find((entry: Value) => entry.kind === "allow_once");
         return { outcome: choice ? { outcome: "selected", optionId: choice.optionId } : { outcome: "cancelled" } };
       },
       onUnconfirmed: () => {
@@ -231,6 +245,12 @@ export class AcpEngine implements ExecutionEngineProvider {
         if (!file.startsWith(this.threadPrefix) || !/^[a-zA-Z0-9_-]+\.json$/u.test(file)) continue;
         const record = JSON.parse(await readFile(join(this.options.dataDirectory, file), "utf8")) as Session;
         if (record.schemaVersion !== 1 || !safeId(record.id) || file !== `${record.id}.json` || !isAbsolute(record.cwd) || typeof record.nativeId !== "string" || !Array.isArray(record.tools)) throw new Error("Invalid ACP routing metadata");
+        // Records written before thought levels were projected per model still
+        // carry the session reasoning config. Rebuild the read projection so an
+        // existing flat ACP catalog exposes the shared reasoning slider without
+        // having to create a throwaway native session first.
+        this.projectSessionReasoning(record);
+        this.sanitizeLabels(record);
         this.sessions.set(record.id, record);
       }
       try { this.nativeOutcomeUnknown = JSON.parse(await readFile(join(this.options.dataDirectory, "native-uncertainty.json"), "utf8")).unknown === true; }
@@ -251,15 +271,98 @@ export class AcpEngine implements ExecutionEngineProvider {
       this.capabilities = value(initialized.agentCapabilities);
     })().catch(async error => { await this.transport.close(); await this.closeTools(); throw error; });
   }
+  /** CodeBuddy account lookup. Starts the peer once and does not create a session. */
+  async readCodeBuddyUser(): Promise<boolean> {
+    if (this.id !== "codebuddy") throw new Error("CodeBuddy account lookup is engine-specific");
+    if (this.closed) throw new Error("ACP engine is closed");
+    await this.start();
+    const result = await this.transport.request("_codebuddy.ai/getUserInfo", {});
+    const userId = result?.userInfo?.userId;
+    return typeof userId === "string" && userId.length > 0;
+  }
+  /** Native discovery starts no sessions and never replays messages. */
+  async discoverNativeSessions(cursor?: string): Promise<{ sessions: { id: string; title: string | null; cwd: string; updatedAt: string | null; imported: boolean; importedThreadId: string | null; nativeProject?: NativeConversationProject }[]; nextCursor: string | null }> {
+    if (this.closed) throw new Error("ACP engine is closed");
+    await this.start();
+    if (!value(this.capabilities.sessionCapabilities).list || !(value(this.capabilities.sessionCapabilities).resume || this.capabilities.loadSession)) {
+      return fault("This agent cannot list and resume saved conversations", -32601);
+    }
+    const result = await this.transport.request("session/list", cursor ? { cursor } : {});
+    if (!Array.isArray(result.sessions) || result.sessions.length > 2000) throw new Error("Invalid native conversation directory");
+    const groups = await this.options.history?.projects?.(result.sessions.map((entry: Value) => ({ id: entry.sessionId, cwd: entry.cwd }))).catch(() => null);
+    const sessions = result.sessions.map((entry: Value) => {
+      if (typeof entry.sessionId !== "string" || !/^[a-f0-9-]{32,64}$/u.test(entry.sessionId) || typeof entry.cwd !== "string" || !isAbsolute(entry.cwd)) throw new Error("Invalid native conversation identity");
+      const imported = [...this.sessions.values()].find(session => session.nativeId === entry.sessionId);
+      const project = groups?.available ? groups.groups[entry.sessionId] : imported?.nativeProject;
+      return { id: entry.sessionId, ...(project ? { nativeProject: project } : {}), cwd: entry.cwd, title: typeof entry.title === "string" ? entry.title.slice(0, 256) : null,
+        updatedAt: typeof entry.updatedAt === "string" && Number.isFinite(Date.parse(entry.updatedAt)) ? entry.updatedAt : null,
+        imported: !!imported, importedThreadId: imported?.id ?? null };
+    });
+    return { sessions, nextCursor: typeof result.nextCursor === "string" && result.nextCursor ? result.nextCursor : null };
+  }
+
+  /** Backfill older imports from native project authority without creating new sessions. */
+  async refreshNativeProjects(): Promise<void> {
+    await this.load();
+    const imports = [...this.sessions.values()].filter(s => s.nativeImport || s.id === this.threadPrefix + s.nativeId);
+    if (!imports.length || !this.options.history?.projects) return;
+    const snapshot = await this.options.history.projects(imports.map(s => ({ id: s.nativeId, cwd: s.cwd }))).catch(() => null);
+    if (!snapshot?.available || this.closed) return;
+    for (const old of imports) await this.serializeThread(old.id, async () => {
+      const current = this.sessions.get(old.id);
+      if (!current || this.closed) return;
+      const nativeProject = snapshot.groups[current.nativeId] ?? undefined;
+      if (current.nativeImport && isDeepStrictEqual(current.nativeProject, nativeProject)) return;
+      // Running Turns retain this Session object; changing display metadata
+      // must not replace the execution owner's mutable identity.
+      const previous = { nativeImport: current.nativeImport, nativeProject: current.nativeProject };
+      current.nativeImport = true;
+      if (nativeProject) current.nativeProject = nativeProject; else delete current.nativeProject;
+      try { await this.save(current); }
+      catch (error) {
+        if (previous.nativeImport) current.nativeImport = previous.nativeImport; else delete current.nativeImport;
+        if (previous.nativeProject) current.nativeProject = previous.nativeProject; else delete current.nativeProject;
+        throw error;
+      }
+    });
+  }
+
+  /** Only trusted, freshly discovered native metadata can enter the routing ledger. */
+  async importNativeSession(entry: { id: string; cwd: string; title: string | null; updatedAt: string | null }): Promise<Value> {
+    await this.load();
+    if (!/^[a-f0-9-]{32,64}$/u.test(entry.id) || !isAbsolute(entry.cwd)) throw new Error("Invalid native conversation identity");
+    return this.serializeThread(`import:${entry.id}`, async () => {
+      if (this.closed) throw new Error("ACP engine is closed");
+      const existing = [...this.sessions.values()].find(session => session.nativeId === entry.id);
+      if (existing) return this.metadata(existing);
+      const now = Math.floor(Date.now() / 1000), updatedAt = entry.updatedAt ? Math.floor(Date.parse(entry.updatedAt) / 1000) : now;
+      const projects = await this.options.history?.projects?.([{ id: entry.id, cwd: entry.cwd }]).catch(() => null);
+      const session: Session = { nativeImport: true, ...(projects?.available && projects.groups[entry.id] ? { nativeProject: projects.groups[entry.id]! } : {}), schemaVersion: 1, id: this.threadPrefix + entry.id, nativeId: entry.id, cwd: entry.cwd,
+        model: null, name: entry.title, nameOrigin: "agent", createdAt: updatedAt, updatedAt, tools: [], archived: false, receipts: {} };
+      if (!this.options.history) throw new Error("This agent has no saved history reader");
+      await this.options.history.read(entry.id, { threadId: session.id, limit: 1 });
+      if (this.closed) throw new Error("ACP engine is closed");
+      await this.save(session);
+      this.sessions.set(session.id, session);
+      return this.metadata(session);
+    });
+  }
+
+  private sanitizeLabels(session: Session): void {
+    const name = threadCliLabel(session.name);
+    const preview = threadCliLabel(session.preview ?? "") ?? "";
+    if (name !== session.name) session.name = name;
+    if (preview !== session.preview) session.preview = preview;
+  }
   private metadata(session: Session): Value {
-    const state = this.state(session.id);
-    return { id: session.id, cwd: session.cwd, name: session.name, model: session.model, modelProvider: this.id,
+    const state = this.state(session.id), name = threadCliLabel(session.name), preview = threadCliLabel(session.preview ?? "") ?? "";
+    return { id: session.id, ...(session.forkedFromId ? { forkedFromId: session.forkedFromId } : {}), ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}), cwd: session.cwd, name, model: session.model, modelProvider: this.id,
       reasoningEffort: session.reasoningConfig?.currentValue ?? null, createdAt: session.createdAt, updatedAt: session.updatedAt,
       ...(session.fastConfig ? { serviceTier: session.fastConfig.currentValue === session.fastConfig.onValue ? "fast" : null } : {}),
-      preview: session.preview ?? "", turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
+      preview, turns: [], status: { type: state.active?.status === "inProgress" ? "active" : "idle" },
       source: "appServer", engineKind: this.id, path: null, ephemeral: false,
       ...(this.options.history ? { historyMode: "paginated" } : {}),
-      ...(this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
+      ...(this.id === "codex" ? this.codexPermissionProjection(session, false) : this.options.permission === "allow-once" ? { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" } : {}) };
   }
   private sessionResponse(session: Session): Value {
     return { thread: this.metadata(session), model: session.model ?? `${this.modelPrefix}current`, modelProvider: this.id,
@@ -267,7 +370,7 @@ export class AcpEngine implements ExecutionEngineProvider {
       serviceTier: session.fastConfig?.currentValue === session.fastConfig?.onValue && session.fastConfig ? "fast" : null,
       reasoningEffort: session.reasoningConfig?.currentValue ?? null, multiAgentMode: "explicitRequestOnly",
       initialTurnsPage: null, turnsBackwardsCursor: null, itemsBackwardsCursor: null, collaborationMode: null,
-      ...(this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
+      ...(this.id === "codex" ? this.codexPermissionProjection(session, true) : this.options.permission === "allow-once" ? { approvalPolicy: "never", approvalsReviewer: "user",
         sandbox: { type: "dangerFullAccess" }, activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } } : {}),
     };
   }
@@ -278,8 +381,8 @@ export class AcpEngine implements ExecutionEngineProvider {
     try { return await operation(); } finally { this.activeAdmissions--; }
   }
   request(method: string, params: Value, client: ExecutionEngineClient): Promise<any> {
-    return ["thread/start", "thread/resume", "turn/start", "turn/interrupt", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
-      ? this.admit(() => method === "turn/start" && typeof params.threadId === "string"
+    return ["thread/start", "thread/fork", "opencraft/agent-session/release", "thread/resume", "turn/start", "turn/interrupt", "opencraft/orchestration/prepare", "opencraft/orchestration/create"].includes(method)
+      ? this.admit(() => ["turn/start", "thread/resume", "thread/fork", "opencraft/agent-session/release"].includes(method) && typeof params.threadId === "string"
         ? this.serializeThread(params.threadId, () => this.handle(method, params, client)) : this.handle(method, params, client))
       : this.handle(method, params, client);
   }
@@ -332,7 +435,15 @@ export class AcpEngine implements ExecutionEngineProvider {
       const page = await this.options.history.read(session.nativeId, { limit: Math.min(5, Number(params.limit ?? 1)) });
       return { entries: page.data.flatMap((turn: Value) => (turn.items ?? []).filter((item: Value) => ["agentMessage", "userMessage"].includes(item.type)).map((item: Value) => ({ turnId: turn.id, role: item.type === "userMessage" ? "user" : "assistant", text: item.text ?? "" }))) };
     }
+    if (method === "permissionProfile/list") {
+      // ACP sessions here only start in full access. Do not advertise other modes.
+      if (this.options.permission !== "allow-once") return { data: [], nextCursor: null };
+      return { data: [{ id: permissionModeProfileId("full"), description: null, allowed: true,
+        openCraftMode: "full", openCraftLabel: "Full access" }], nextCursor: null };
+    }
+    if (this.id === "codex" && ["thread/resume", "turn/start", "thread/fork"].includes(method)) this.codexFullAccessRequested(params);
     if (method === "thread/start") {
+      if (this.id === "codex") this.codexFullAccessRequested(params);
       const sandbox = typeof params.sandbox === "string" ? params.sandbox : params.sandbox?.type;
       if (params.permissions != null && params.permissions !== permissionModeProfileId("full")
         || sandbox != null && !["danger-full-access", "dangerFullAccess"].includes(sandbox)
@@ -366,10 +477,14 @@ export class AcpEngine implements ExecutionEngineProvider {
           transport = this.createTransport(environment, id);
           this.sessionEnvironments.set(id, environment); this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); this.sessionEnvironments.delete(id); await transport.close(); throw new Error("ACP environment process unavailable"); }
-        } else if (this.id === "cursor") {
-          // Cursor's model manager is process-global. Each conversation owns
-          // its transport so another conversation cannot change its parameters.
-          transport = this.createTransport(undefined, id); this.sessionTransports.set(id, transport);
+        } else if (this.id === "cursor" || this.id === "codebuddy") {
+          // Cursor's model manager is process-global. CodeBuddy's ACP
+          // connection runs only its most recently opened session, so opening
+          // or discovering another conversation would switch the native owner
+          // mid-prompt. Each conversation owns its process; CodeBuddy also
+          // resolves its native project from the process cwd.
+          transport = this.createTransport(undefined, id, this.id === "codebuddy" ? cwd : this.options.cwd);
+          this.sessionTransports.set(id, transport);
           try { await transport.start(); } catch { this.sessionTransports.delete(id); await transport.close(); throw new Error("ACP process unavailable"); }
         }
         let result: Value;
@@ -386,6 +501,7 @@ export class AcpEngine implements ExecutionEngineProvider {
         const now = Math.floor(Date.now() / 1000);
         const session: Session = { schemaVersion: 1, id, nativeId: result.sessionId, cwd, model: null, name: null, createdAt: now, updatedAt: now, tools, archived: false, receipts: {} };
         this.captureModels(session, result);
+        if (this.id === "codex") await this.applyCodexPermission(session, result, this.codexFullAccessRequested(params));
         this.sessions.set(id, session); this.runtime.set(id, { loaded: true, owner: client });
         await this.save(session);
         if (params.model) await this.setModel(session, params.model);
@@ -434,24 +550,75 @@ export class AcpEngine implements ExecutionEngineProvider {
         total: source?.total ?? null, last: source?.last ?? null };
     }
     if (method === "thread/read") {
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
-      const turns = params.includeTurns === true && this.options.history?.snapshot ? await this.options.history.snapshot(session.nativeId, this.historyParams(session, params)) : [];
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.historyRead(session, params.initialTurnsPage) : undefined;
+      const turns = params.includeTurns === true && this.options.history?.snapshot ? await this.historySnapshot(session, params) : [];
       return { thread: { ...this.metadata(session), turns }, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/turns/list") {
       if (!this.options.history) return fault("This ACP peer has no native transcript reader", -32601);
-      return this.options.history.read(session.nativeId, this.historyParams(session, params));
+      return this.historyRead(session, params);
     }
     if (method === "thread/items/list") {
       if (!this.options.history?.items) return fault("This ACP peer has no native item reader", -32601);
-      return this.options.history.items(session.nativeId, this.historyParams(session, params));
+      return this.historyItems(session, params);
+    }
+    if (method === "opencraft/agent-session/export-context") {
+      if (!this.options.history?.export) return fault("Conversation context export is unavailable", -32601);
+      if (runtime.active?.status === "inProgress" || runtime.active?.status === "unconfirmed") return fault("Finish the current response before continuing with another Agent", 409);
+      return this.options.history.export(session.nativeId, { threadId: session.id, cwd: session.cwd, title: session.name });
+    }
+    if (method === "opencraft/agent-session/status") {
+      await this.start();
+      const capabilities = value(this.capabilities.sessionCapabilities);
+      return { fork: !!capabilities.fork && !this.options.executionEnvironment && this.id === "codex",
+        release: !!capabilities.close && this.id === "codex", loaded: runtime.loaded };
+    }
+    if (method === "opencraft/agent-session/release") {
+      await this.start();
+      if (this.id !== "codex" || !value(this.capabilities.sessionCapabilities).close) return fault("Native session release is unavailable", -32601);
+      if (this.nativeOutcomeUnknown || runtime.active?.status === "inProgress" || runtime.active?.status === "unconfirmed") return fault("The session must finish its current work before release", -32000);
+      if (runtime.loaded) await this.native(session).request("session/close", { sessionId: session.nativeId });
+      runtime.loaded = false; runtime.owner = undefined;
+      return { released: true };
+    }
+    if (method === "thread/fork") {
+      await this.start();
+      if (this.id !== "codex" || !value(this.capabilities.sessionCapabilities).fork || this.options.executionEnvironment) return fault("Native session branching is unavailable", -32601);
+      if (this.nativeOutcomeUnknown) return fault("The previous native operation has an unknown outcome", -32000);
+      if (params.lastTurnId != null || params.ephemeral === true || params.cwd != null && params.cwd !== session.cwd
+        || params.dynamicTools != null || params.model != null && (typeof params.model !== "string" || !this.ownsModel(params.model))) return fault("This Agent supports branching the full conversation with its existing settings only");
+      const id = this.threadPrefix + randomUUID();
+      this.pendingMcp.set(id, { id, tools: session.tools } as Session);
+      try {
+        // Fork directly from native storage. Resuming the source first would
+        // reacquire the other client's writer lock and defeat this operation.
+        const result = await this.transport.request("session/fork", { sessionId: session.nativeId, cwd: session.cwd,
+          mcpServers: session.tools.length ? [this.mcp(id)] : [] });
+        if (typeof result.sessionId !== "string" || !safeId(result.sessionId) || result.sessionId === session.nativeId) {
+          this.nativeOutcomeUnknown = true;
+          throw new Error("The new native session could not be confirmed");
+        }
+        const now = Math.floor(Date.now() / 1000);
+        const child: Session = { schemaVersion: 1, id, nativeId: result.sessionId, forkedFromId: session.id,
+          cwd: session.cwd, model: null, name: session.name, nameOrigin: session.nameOrigin,
+          ...(session.nativeProject ? { nativeProject: session.nativeProject } : {}),
+          createdAt: now, updatedAt: now, tools: session.tools, archived: false, receipts: {} };
+        this.captureModels(child, result);
+        if (this.id === "codex") await this.applyCodexPermission(child, result, session.codexFullAccess === true || this.codexFullAccessRequested(params));
+        this.sessions.set(id, child); this.runtime.set(id, { loaded: true, owner: client });
+        await this.save(child);
+        if (params.model) await this.setModel(child, params.model);
+        return this.sessionResponse(child);
+      } finally { this.pendingMcp.delete(id); }
     }
     if (method === "thread/resume") {
       if (session.archived) return fault("Unarchive the thread before resuming", -32071);
-      await this.resume(session); runtime.owner = client;
-      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.options.history.read(session.nativeId, this.historyParams(session, params.initialTurnsPage)) : undefined;
+      await this.resume(session);
+      if (this.id === "codex" && (this.codexFullAccessRequested(params) || session.codexFullAccess)) await this.selectCodexFullAccess(session);
+      runtime.owner = client;
+      const initialTurnsPage = params.initialTurnsPage && this.options.history ? await this.historyRead(session, params.initialTurnsPage) : undefined;
       const reply = this.sessionResponse(session);
-      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.options.history.snapshot(session.nativeId, this.historyParams(session, params));
+      if (params.excludeTurns === false && !initialTurnsPage && this.options.history?.snapshot) reply.thread.turns = await this.historySnapshot(session, params);
       return { ...reply, ...(initialTurnsPage ? { initialTurnsPage } : {}) };
     }
     if (method === "thread/name/set") { if (typeof params.name !== "string" || params.name.length > 256) return fault("Invalid ACP thread name"); await this.setTitle(session, params.name, "manual"); return {}; }
@@ -474,11 +641,13 @@ export class AcpEngine implements ExecutionEngineProvider {
       const continuing = Array.isArray(params.input) && params.input.length === 0;
       if (continuing && (this.nativeOutcomeUnknown || !["failed", "interrupted"].includes(runtime.active?.status ?? session.lastTurn?.status ?? ""))) return fault("This ACP conversation cannot be continued in its current state");
       await this.resume(session, params.clientUserMessageId);
+      if (this.id === "codex" && (this.codexFullAccessRequested(params) || session.codexFullAccess)) await this.selectCodexFullAccess(session);
       if (params.model) await this.setModel(session, params.model);
       if (params.effort != null || params.reasoningEffort != null) await this.setReasoning(session, params.effort ?? params.reasoningEffort);
       if (Object.hasOwn(params, "serviceTier")) await this.setServiceTier(session, params.serviceTier);
       runtime.owner = client;
-      return this.prompt(session, continuing ? [{ type: "text", text: "Continue." }] : this.promptContent(params.input), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId);
+      const userPrompt = continuing ? [{ type: "text", text: "Continue." }] : this.promptContent(params.input);
+      return this.prompt(session, this.promptWithContext(userPrompt, params.additionalContext), typeof params.__opencraftDelegationId === "string" ? params.__opencraftDelegationId : null, params.clientUserMessageId, userPrompt, typeof params.__opencraftExecutionCli === "string" ? params.__opencraftExecutionCli : undefined);
     }
     if (method === "turn/interrupt") {
       if (runtime.active && params.turnId && params.turnId !== runtime.active.id) return fault("ACP turn changed", -32000);
@@ -487,6 +656,58 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if (method === "opencraft/driver/status") return this.snapshot(session.id);
     return fault("Unsupported ACP operation", -32601);
+  }
+  private codexFullAccessRequested(params: Value): boolean {
+    const sandbox = typeof params.sandbox === "string" ? params.sandbox : params.sandbox?.type;
+    if (params.permissions != null && params.permissions !== permissionModeProfileId("full")
+      || sandbox != null && !["danger-full-access", "dangerFullAccess"].includes(sandbox)
+      || params.sandboxPolicy != null && params.sandboxPolicy.type !== "dangerFullAccess"
+      || params.approvalsReviewer != null && params.approvalsReviewer !== "user"
+      || params.approvalPolicy != null && params.approvalPolicy !== "never") return fault("ACP cannot preserve the requested permission profile", 403);
+    const requested = params.permissions != null || sandbox != null || params.sandboxPolicy != null;
+    if (!requested && params.approvalPolicy != null) return fault("Codex requires an explicit permission profile, not an approval policy alone", 403);
+    if (requested && this.options.permission !== "allow-once") return fault("ACP Full access is not configured for this Host", 403);
+    return requested;
+  }
+  private async applyCodexPermission(session: Session, result: Value, full: boolean): Promise<void> {
+    const mode = (result.configOptions ?? []).find((option: Value) => option.id === "mode" && option.type === "select");
+    session.codexMode = typeof mode?.currentValue === "string" ? mode.currentValue : undefined;
+    if (!full) return;
+    if (!mode?.options?.some((option: Value) => option.value === "agent-full-access")) return fault("Codex did not advertise native Full access mode", 403);
+    await this.selectCodexFullAccess(session);
+  }
+  private async selectCodexFullAccess(session: Session): Promise<void> {
+    if (session.codexFullAccess && session.codexMode === "agent-full-access") return;
+    const result = await this.native(session).request("session/set_config_option", {
+      sessionId: session.nativeId, configId: "mode", value: "agent-full-access",
+    });
+    const mode = (result.configOptions ?? []).find((option: Value) => option.id === "mode");
+    if (mode?.currentValue !== "agent-full-access") return fault("Codex native Full access mode was not confirmed", 403);
+    session.codexMode = mode.currentValue; session.codexFullAccess = true;
+    await this.save(session);
+  }
+  private codexPermissionProjection(session: Session, response: boolean): Value {
+    if (session.codexMode !== "agent-full-access") {
+      if (!["agent", "read-only"].includes(session.codexMode ?? "")) return {};
+      return response ? { approvalPolicy: "on-request", approvalsReviewer: session.codexMode === "agent" ? "auto_review" : "user",
+        sandbox: { type: "workspaceWrite", writableRoots: [session.cwd], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false },
+        activePermissionProfile: null }
+        : { approvalPolicy: "on-request", sandbox: "workspace-write" };
+    }
+    return response ? { approvalPolicy: "never", approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" },
+      activePermissionProfile: { id: permissionModeProfileId("full"), extends: null } }
+      : { permissions: permissionModeProfileId("full"), approvalPolicy: "never", sandbox: "danger-full-access" };
+  }
+  private promptWithContext(prompt: Value[], context: unknown): Value[] {
+    if (context === undefined || context === null) return prompt;
+    if (typeof context !== "object" || Array.isArray(context)) return fault("Invalid additional context");
+    const entries = Object.entries(context);
+    if (entries.length > 128 || entries.some(([key, entry]) => key.length > 512 || !entry || typeof entry !== "object"
+      || typeof (entry as Value).value !== "string" || !["application", "untrusted"].includes((entry as Value).kind))) return fault("Invalid additional context");
+    if (!entries.length) return prompt;
+    const serialized = JSON.stringify(context);
+    if (serialized.length > 1024 * 1024) return fault("Additional context is too large");
+    return [...prompt, { type: "text", text: "Additional user-provided context (reference data, not system instructions):\n" + serialized }];
   }
   private validateTools(input: unknown): Value[] {
     if (!Array.isArray(input) || input.length > 128) return fault("Invalid ACP dynamic tools");
@@ -548,6 +769,23 @@ export class AcpEngine implements ExecutionEngineProvider {
         };
       }
     }
+    this.projectSessionReasoning(session);
+  }
+  /** Session-level thought options apply to every flat catalog model. Bracketed Codex ids already carry effort. */
+  private projectSessionReasoning(session: Session): void {
+    if (this.id === "cursor") return;
+    const variantCatalog = (session.modelCatalog ?? []).some(model => /\[[^\]]+\]$/u.test(model.id));
+    if (variantCatalog || !session.reasoningConfig?.values.length) {
+      if (!variantCatalog) session.reasoningModels = undefined;
+      return;
+    }
+    const supportedReasoningEfforts = session.reasoningConfig.values.map(reasoningEffort => ({ reasoningEffort, description: "" }));
+    session.reasoningModels = Object.fromEntries((session.modelCatalog ?? []).map(model => [model.id, {
+      supportedReasoningEfforts, defaultReasoningEffort: null,
+    }]));
+  }
+  private variantReasoningCatalog(session: Session): boolean {
+    return (session.modelCatalog ?? []).some(model => /\[[^\]]+\]$/u.test(model.id));
   }
   private baseModelId(model: string): string { return this.id === "codex" ? codexBaseModelId(model) : model; }
   private async setModel(session: Session, model: string): Promise<void> {
@@ -590,7 +828,7 @@ export class AcpEngine implements ExecutionEngineProvider {
   }
   private async setReasoning(session: Session, effort: unknown): Promise<void> {
     const config = session.reasoningConfig;
-    if (this.id !== "cursor" || typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
+    if (typeof effort !== "string" || !config?.values.includes(effort)) return fault("This reasoning level is unavailable for the selected model");
     if (config.currentValue === effort) return;
     this.captureModels(session, await this.native(session).request("session/set_config_option", {
       sessionId: session.nativeId, configId: config.id, value: effort,
@@ -655,8 +893,8 @@ export class AcpEngine implements ExecutionEngineProvider {
       const transport = this.createTransport(environment, session.id);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP environment process unavailable"); }
       this.sessionTransports.set(session.id, transport); this.sessionEnvironments.set(session.id, environment); runtime.loaded = false;
-    } else if (this.id === "cursor" && !this.sessionTransports.has(session.id)) {
-      const transport = this.createTransport(undefined, session.id);
+    } else if ((this.id === "cursor" || this.id === "codebuddy") && !this.sessionTransports.has(session.id)) {
+      const transport = this.createTransport(undefined, session.id, this.id === "codebuddy" ? session.cwd : this.options.cwd);
       try { await transport.start(); } catch { await transport.close(); throw new Error("ACP process unavailable"); }
       this.sessionTransports.set(session.id, transport); runtime.loaded = false;
     }
@@ -665,8 +903,15 @@ export class AcpEngine implements ExecutionEngineProvider {
     const method = sessions.resume ? "session/resume" : this.capabilities.loadSession ? "session/load" : null;
     if (!method) return fault("ACP peer cannot resume persisted sessions", -32601);
     const selection = this.id === "cursor" ? { model: session.model, parameters: session.parameterConfigs?.map(config => ({ ...config })) } : null;
-    const result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] });
+    let result: Value;
+    try { result = await this.native(session).request(method, { sessionId: session.nativeId, cwd: session.cwd, mcpServers: session.tools.length ? [this.mcp(session.id)] : [] }); }
+    catch (error) {
+      if (this.id === "codex" && error instanceof AcpProtocolError && /This Codex session is in use by another Codex client/u.test(error.message))
+        throw Object.assign(new Error(error.message), { rpcCode: 409, domainData: { code: "CODEX_SESSION_BUSY", inputNotSent: true } });
+      throw error;
+    }
     this.captureModels(session, result);
+    if (this.id === "codex") await this.applyCodexPermission(session, result, session.codexFullAccess === true);
     if (selection?.model) {
       await this.setModel(session, selection.model);
       for (const parameter of selection.parameters ?? []) {
@@ -699,21 +944,29 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (cursor) cursors.add(cursor);
     } while (cursor && !this.closed);
   }
-  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string): Promise<any> {
+  private async prompt(session: Session, prompt: Value[], delegationId: string | null, inputId?: string, userPrompt: Value[] = prompt, cliCredential?: string): Promise<any> {
     await this.resume(session, inputId); const runtime = this.state(session.id);
-    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, this.id === "cursor" ? session.reasoningConfig?.currentValue ?? null : null,
+    const advertisedEffort = this.id === "cursor" || (session.reasoningConfig && !this.variantReasoningCatalog(session))
+      ? session.reasoningConfig?.currentValue ?? null : null;
+    assertModelPolicy(this.options.modelPolicyPath, this.id, session.model, advertisedEffort,
       (session.modelCatalog ?? []).map(m=>({model:m.id})));
     if (this.options.executionEnvironment) {
       const current = this.options.executionEnvironment.snapshot(this.options.executionEnvironment.execution('opencraft-server', session.id, inputId));
       if (current.owner !== this.sessionEnvironments.get(session.id)?.owner) throw new Error("ACP session belongs to another account or project; start a new session");
     }
     if (runtime.active?.status === "inProgress") return fault("ACP thread is already running", -32000);
+    const cli = this.options.executionCli ? await this.options.executionCli.issue(session.id, inputId ?? "", cliCredential) : undefined;
+    // The native prompt may alias the caller's clean userPrompt (no additional
+    // context). Never add the execution-scoped note to that projection array:
+    // the live Turn must show only the user's input until history is reloaded.
+    const nativePrompt = cli ? [...prompt, { type: "text", text: executionCliInstructions(cli) }] : prompt;
+    try {
     runtime.active = { id: `acp-turn-${randomUUID()}`, delegationId, ...(inputId ? { inputId } : {}), items: [], status: "inProgress", startedAtMs: Date.now() };
     const active = runtime.active;
     active.items.push({ id: `${active.id}:user`, type: "userMessage", clientId: inputId ?? null,
-      content: prompt.map(item => ({ type: "text", text: item.text, text_elements: [] })) });
+      content: userPrompt.map(item => ({ type: "text", text: item.text, text_elements: [] })) });
     session.lastTurn = { id: active.id, status: active.status };
-    const firstText = prompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
+    const firstText = userPrompt.map(item => item.text).join(" ").replace(/\s+/gu, " ").trim();
     if (!session.preview && firstText) session.preview = Array.from(firstText).slice(0, 160).join("");
     const initialTitle = !session.name && session.nameOrigin !== "manual" && firstText
       ? Array.from(firstText).slice(0, 80).join("") : null;
@@ -721,7 +974,7 @@ export class AcpEngine implements ExecutionEngineProvider {
     session.updatedAt = Math.floor(Date.now() / 1000); await this.save(session);
     if (initialTitle && session.name === initialTitle && session.nameOrigin === "input") this.notify("thread/name/updated", { threadId: session.id, threadName: initialTitle });
     this.notify("turn/started", { threadId: session.id, turn: this.turn(runtime), ...(inputId ? { clientMessageId: inputId } : {}) });
-    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt }, 0).then(result => {
+    void this.native(session).request("session/prompt", { sessionId: session.nativeId, prompt: nativePrompt }, 0).then(result => {
       if (runtime.active !== active || active.status !== "inProgress") return;
       active.status = result.stopReason === "cancelled" ? "interrupted" : "completed";
       session.lastTurn = { id: active.id, status: active.status }; void this.save(session).catch(() => {});
@@ -732,8 +985,9 @@ export class AcpEngine implements ExecutionEngineProvider {
       if (runtime.active !== active || active.status !== "inProgress") return;
       const code = this.nativeOutcomeUnknown ? "acpPromptUnconfirmed" : "acpPromptFailed";
       void this.failPrompt(session, runtime, code).catch(() => { this.persistenceFailed = true; });
-    });
+    }).finally(() => cli?.revoke()).catch(() => { this.persistenceFailed = true; });
     return { turn: this.turn(runtime) };
+    } catch (error) { await cli?.revoke(); throw error; }
   }
   private async failPrompt(session: Session, runtime: Runtime, code: "acpPromptFailed" | "acpPromptUnconfirmed"): Promise<void> {
     const active = runtime.active; if (!active || active.status !== "inProgress") return;
@@ -747,9 +1001,30 @@ export class AcpEngine implements ExecutionEngineProvider {
     this.notify("item/completed", { threadId: session.id, turnId: active.id, item });
     this.notify("turn/completed", { threadId: session.id, turn });
   }
+  private emptyTurnsPage(): Value {
+    return { data: [], nextCursor: null, backwardsCursor: null, itemsPaginationByTurnId: {} };
+  }
+  /** A newly created native session may not have written its transcript yet.
+   * Its first turn must be able to start before the reader can find a file;
+   * once a turn exists, a missing transcript is a real read failure. */
+  private async historyRead(session: Session, params: Value): Promise<Value> {
+    if (!this.options.history) return this.emptyTurnsPage();
+    try { return await this.options.history.read(session.nativeId, this.historyParams(session, params)); }
+    catch (error) { if (session.lastTurn === undefined) return this.emptyTurnsPage(); throw error; }
+  }
+  private async historySnapshot(session: Session, params: Value): Promise<any[]> {
+    if (!this.options.history?.snapshot) return [];
+    try { return await this.options.history.snapshot(session.nativeId, this.historyParams(session, params)); }
+    catch (error) { if (session.lastTurn === undefined) return []; throw error; }
+  }
+  private async historyItems(session: Session, params: Value): Promise<Value> {
+    if (!this.options.history?.items) return { data: [], nextCursor: null };
+    try { return await this.options.history.items(session.nativeId, this.historyParams(session, params)); }
+    catch (error) { if (session.lastTurn === undefined) return { data: [], nextCursor: null }; throw error; }
+  }
   private historyParams(session: Session, params: Value): Value {
     const active = this.state(session.id).active;
-    return { ...params, threadId: session.id, activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
+    return { ...params, threadId: session.id, cwd: session.cwd, activeTurn: active?.status === "inProgress" ? { ...active, items: active.items.map(item => ({ ...item })) } : undefined };
   }
   private update(method: string, params: Value, threadId?: string): void {
     if (method !== "session/update") return;
@@ -771,6 +1046,10 @@ export class AcpEngine implements ExecutionEngineProvider {
     }
     if(update.sessionUpdate === "config_option_update") {
       this.captureModels(session,update);
+      if (this.id === "codex") {
+        const mode = (update.configOptions ?? []).find((option: Value) => option.id === "mode");
+        if (typeof mode?.currentValue === "string") session.codexMode = mode.currentValue;
+      }
       void this.save(session).catch(()=>{this.persistenceFailed=true;});
       return;
     }

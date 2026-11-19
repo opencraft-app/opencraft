@@ -6,9 +6,9 @@ import WebSocket, { WebSocketServer } from 'ws';
 import { bridgeRelayDuplex, relayDuplex } from '@opencraft/relay-protocol/node';
 import { DATA_PATH, STREAM_HEADER } from '@opencraft/relay-protocol';
 import { readPrivateJson } from '@opencraft/identity-core/node';
-import { HubNetwork } from '../../../packages/hub-network/src/node.js';
-import { HUB_CONTROL_PATH, HUB_DATA_PATH, type HubNetworkSnapshot, type HubRoute, type IdentityAuthority } from '../../../packages/hub-network/src/contract.js';
-import { validService, MemoryHubStore, parseHubState, type State } from '../../../packages/hub-network/src/store.js';
+import { HubNetwork } from '@opencraft/hub-network/node';
+import { HUB_CONTROL_PATH, HUB_DATA_PATH, type HubNetworkSnapshot, type HubRoute, type IdentityAuthority } from '@opencraft/hub-network';
+import { validService, MemoryHubStore, parseHubState, type State } from '@opencraft/hub-network/store';
 import { RelayRedis } from './redis.js';
 import type { RelayClusterPort, RelayHub } from './cluster-port.js';
 

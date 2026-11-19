@@ -1,6 +1,9 @@
 export type { AttachmentResolver, AttachmentProgress, ComposerImageEditSession } from "./attachment-preview-session";
+export { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families";
+export { modelEffortLabel } from "./model-choice-labels";
 export { ComposerAttachedRail } from "./attached-rail";
 export { OpenCraftComposer, composerSchema } from "./composer-editor";
+export { composerAgentBrand, omitDuplicateHostAgents } from "./agent-menu-sources";
 export type {
   OpenCraftComposerHandle,
   OpenCraftComposerProps,
@@ -8,6 +11,8 @@ export type {
   ComposerQueuedSubmissionPresentation,
   ComposerEffectiveSelections,
   ComposerExecutionTarget,
+  ComposerAgentContinuation,
+  ComposerAgentCycleDirection,
   ComposerModelOption,
   ComposerPermissionOption,
   ComposerReasoningEffortOption,

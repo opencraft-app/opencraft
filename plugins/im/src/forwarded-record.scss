@@ -1,50 +1,37 @@
 @use '@opencraft/design-system/typography-mixins.web' as typography;
-.ui-button.im-record-card[data-content-layout='row'] {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  text-align: start;
+.im-record-card {
   gap: calc(var(--spacing) * 2);
   inline-size: 19rem;
   max-inline-size: 100%;
   min-inline-size: 0;
-  block-size: auto;
-  white-space: normal;
-  padding: calc(var(--spacing) * 3);
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--color-background-surface);
-  color: var(--color-text);
-  box-shadow: none;
 }
-.im-record-card {
-  &__title {
-    @include typography.role(body);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  &__preview {
-    @include typography.role(metadata, secondary);
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
-    overflow: hidden;
-    white-space: pre-line;
-    overflow-wrap: anywhere;
-    min-block-size: 1lh;
-  }
-  &__footer {
-    @include typography.role(metadata, tertiary);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    border-block-start: 1px solid var(--color-border-subtle);
-    padding-block-start: calc(var(--spacing) * 2);
-    svg {
-      inline-size: 1em;
-      block-size: 1em;
-    }
+
+.im-record-card__title {
+  @include typography.role(body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.im-record-card__preview {
+  @include typography.role(metadata, secondary);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  min-block-size: 1lh;
+}
+.im-record-card__footer {
+  @include typography.role(metadata, tertiary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-block-start: 1px solid var(--color-border-subtle);
+  padding-block-start: calc(var(--spacing) * 2);
+  svg {
+    inline-size: 1em;
+    block-size: 1em;
   }
 }
 .modal-surface.im-record {
@@ -117,14 +104,14 @@
   &__text,
   &__legacy {
     @include typography.role(body);
-    font-weight: 400;
+    font-weight: var(--font-weight-regular);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     margin: var(--spacing) 0 0;
   }
   &__legacy {
     font-family: inherit;
-    line-height: 1.7;
+    line-height: var(--typography-chat-line-height);
   }
   &__url {
     color: var(--color-text-secondary);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, mkdir, writeFile, appendFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, appendFile, rm, symlink, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -9,7 +9,7 @@ import { ConnectedAgentHistory } from "../../apps/local-agent-host/src/connected
 import { AcpEngine } from "../../plugins/acp-engine/src/index.js";
 
 const id = "11111111-2222-3333-4444-555555555555";
-async function fixture(t: test.TestContext, provider: "codex" | "cursor") {
+async function fixture(t: test.TestContext, provider: "codex" | "cursor" | "codebuddy" | "claude-code") {
   const home = await mkdtemp(join(tmpdir(), "connected-history-")), history = new ConnectedAgentHistory(provider, home);
   t.after(async () => { await history.close(); await rm(home, { recursive: true, force: true }); });
   return { home, history };
@@ -127,4 +127,164 @@ test("history rejects missing identities and escaping sources instead of inventi
   const source = await codexSource(outside); await mkdir(join(f.home, "sessions"));
   await symlink(source, join(f.home, "sessions", `rollout-test-${id}.jsonl`));
   await assert.rejects(f.history.snapshot(id, {}));
+  await indexHead(f.home, id, source);
+  await assert.rejects(f.history.snapshot(id, {}), "index paths cannot escape configured native storage");
+});
+
+
+test("Codex project membership is read in the history Worker and recovers after malformed source metadata", async t => {
+  const f = await fixture(t, "codex");
+  assert.equal((await f.history.projects([{ id, cwd: "/workspace" }])).available, false);
+  const source = join(f.home, ".codex-global-state.json");
+  await writeFile(source, "invalid");
+  await assert.rejects(f.history.projects([{ id, cwd: "/workspace" }]));
+  await writeFile(source, JSON.stringify({ "local-projects": { project: { id: "project", name: "Source group", rootPaths: ["/workspace"] } }, "project-order": ["project"], "thread-project-assignments": { [id]: { projectKind: "local", projectId: "project" } } }));
+  const result = await f.history.projects([{ id, cwd: "/somewhere/else" }]);
+  assert.equal(result.available, true); assert.equal(result.groups[id]?.name, "Source group");
+});
+
+// Mirror only Codex's native index contract; these are not OpenCraft tables.
+async function indexHead(home: string, nativeId: string, path: string) {
+  const db = new DatabaseSync(join(home, "state_5.sqlite"));
+  try { db.exec("CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, rollout_path TEXT NOT NULL)"); db.prepare("INSERT INTO threads VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET rollout_path=excluded.rollout_path").run(nativeId, path); }
+  finally { db.close(); }
+}
+const ordinalLines = (input: string, first = 0) => input.trimEnd().split("\n").map((line, index) => JSON.stringify({ ...JSON.parse(line), ordinal: first + index }) + "\n").join("");
+
+test("Codex follows the current same-thread segment, retains its exact inherited prefix, and invalidates a cached old head", async t => {
+  const f = await fixture(t, "codex"); await mkdir(join(f.home, "sessions"));
+  const parent = join(f.home, "sessions", `rollout-original-${id}.jsonl`);
+  const prefix = ordinalLines(JSON.stringify({ type: "session_meta", payload: { id, history_mode: "paginated" } }) + "\n" + records("first", "中文旧问题", "Original answer"));
+  const cutoff = prefix.trimEnd().split("\n").length;
+  const abandoned = ordinalLines(records("abandoned", "Old branch question", "Discarded branch answer"), cutoff);
+  await writeFile(parent, prefix + abandoned); await indexHead(f.home, id, parent);
+  assert.deepEqual((await f.history.snapshot(id, {})).map(turn => turn.id), ["first", "abandoned"]);
+  const physical = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const head = join(f.home, "sessions", `rollout-new-${id}_${physical}.jsonl`);
+  const header = JSON.stringify({ type: "session_meta", payload: { id, session_id: id, history_mode: "paginated", history_base: { thread_id: id, end_byte_offset: Buffer.byteLength(prefix), end_ordinal_exclusive: cutoff } } }) + "\n";
+  const continuation = ordinalLines(header + records("latest", "New question", "Friday answer", 2000), cutoff);
+  await writeFile(head, continuation); await indexHead(f.home, id, head);
+  const complete = await f.history.snapshot(id, {});
+  assert.deepEqual(complete.map(turn => turn.id), ["first", "latest"]);
+  assert.equal(JSON.stringify(complete).includes("Discarded branch answer"), false);
+  const latest = await f.history.read(id, { threadId: "public", limit: 1, sortDirection: "desc" });
+  assert.equal(latest.data[0].id, "latest"); assert.ok(latest.nextCursor);
+  assert.equal((await f.history.read(id, { threadId: "public", limit: 1, sortDirection: "desc", cursor: latest.nextCursor })).data[0].id, "first");
+  // The index is the head authority even if a newer-looking branch file exists.
+  await indexHead(f.home, id, parent);
+  assert.equal((await f.history.snapshot(id, {})).at(-1)?.id, "abandoned");
+  await indexHead(f.home, id, head);
+  await rm(head); await assert.rejects(f.history.snapshot(id, {}));
+  await writeFile(head, continuation);
+  assert.equal((await f.history.snapshot(id, {})).at(-1)?.id, "latest");
+  // Without an index, an unambiguous lineage tip is used, never the first filename.
+  await rm(join(f.home, "state_5.sqlite"));
+  assert.deepEqual((await f.history.snapshot(id, {})).map(turn => turn.id), ["first", "latest"]);
+});
+
+test("Codex rejects split-record/ordinal cutoffs and ancestry cycles rather than silently returning old history", async t => {
+  const f = await fixture(t, "codex"); await mkdir(join(f.home, "sessions"));
+  const root = join(f.home, "sessions", `rollout-root-${id}.jsonl`);
+  const prefix = ordinalLines(JSON.stringify({ type: "session_meta", payload: { id } }) + "\n" + records("first", "before", "answer"));
+  await writeFile(root, prefix);
+  const ordinal = prefix.trimEnd().split("\n").length, physical = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const head = join(f.home, "sessions", `rollout-head-${id}_${physical}.jsonl`);
+  const writeHead = (bytes: number, count: number) => writeFile(head, ordinalLines(JSON.stringify({ type: "session_meta", payload: { id, history_base: { thread_id: id, end_byte_offset: bytes, end_ordinal_exclusive: count } } }) + "\n" + records("next", "after", "answer"), count));
+  await writeHead(Buffer.byteLength(prefix) - 1, ordinal); await indexHead(f.home, id, head);
+  await assert.rejects(f.history.snapshot(id, {}));
+  await writeHead(Buffer.byteLength(prefix), ordinal + 1); await assert.rejects(f.history.snapshot(id, {}));
+  await writeHead(Buffer.byteLength(prefix), ordinal);
+  await appendFile(root, "discarded-invalid-tail\n");
+  assert.deepEqual((await f.history.snapshot(id, {})).map(turn => turn.id), ["first", "next"]);
+  const last = JSON.stringify({ timestamp: new Date(3000).toISOString(), ordinal: ordinal + 6, type: "event_msg", payload: { type: "task_complete", turn_id: "next" } }) + "\n";
+  await appendFile(head, last.slice(0, 12));
+  assert.deepEqual((await f.history.snapshot(id, {})).map(turn => turn.id), ["first", "next"], "uncommitted final record is not projected");
+  await appendFile(head, last.slice(12));
+  assert.equal((await f.history.snapshot(id, {})).at(-1)?.completedAtMs, 3000);
+  // A self-reference must not hang, recurse forever, or substitute another file.
+  await writeFile(head, ordinalLines(JSON.stringify({ type: "session_meta", payload: { id, history_base: { thread_id: physical, end_byte_offset: 1, end_ordinal_exclusive: 1 } } }) + "\n", 1));
+  await assert.rejects(f.history.snapshot(id, {}));
+});
+
+test("a Turn can cross multiple Codex segments without losing its input or duplicating replayed Items", async t => {
+  const f = await fixture(t, "codex"); await mkdir(join(f.home, "sessions"));
+  const line = (payload: unknown) => JSON.stringify({ timestamp: new Date(1000).toISOString(), type: "event_msg", payload }) + "\n";
+  const input = { type: "UserMessage", id: "one-u", content: [{ type: "text", text: "original input" }] };
+  const root = join(f.home, "sessions", `rollout-root-${id}.jsonl`);
+  const prefix = ordinalLines(JSON.stringify({ type: "session_meta", payload: { id } }) + "\n" + line({ type: "task_started", turn_id: "one" }) + line({ type: "item_completed", turn_id: "one", item: input }));
+  await writeFile(root, prefix);
+  const midId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", endId = "bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee";
+  const mid = join(f.home, "sessions", `rollout-mid-${id}_${midId}.jsonl`);
+  const header = (physical: string, bytes: number, ordinal: number) => JSON.stringify({ type: "session_meta", payload: { id, history_base: { thread_id: physical, end_byte_offset: bytes, end_ordinal_exclusive: ordinal } } }) + "\n";
+  const suffix = ordinalLines(header(id, Buffer.byteLength(prefix), 3) + line({ type: "item_completed", turn_id: "one", item: input })
+    + line({ type: "item_completed", turn_id: "one", item: { type: "AgentMessage", id: "one-a", content: [{ type: "text", text: "continued answer" }] } }) + line({ type: "task_complete", turn_id: "one" }), 3);
+  await writeFile(mid, suffix);
+  const head = join(f.home, "sessions", `rollout-head-${id}_${endId}.jsonl`);
+  await writeFile(head, ordinalLines(header(midId, Buffer.byteLength(suffix), 7) + records("two", "next input", "latest answer", 2000), 7));
+  await indexHead(f.home, id, head);
+  const turns = await f.history.snapshot(id, {});
+  assert.deepEqual(turns.map(turn => turn.id), ["one", "two"]);
+  assert.deepEqual(turns[0].items.map((item: any) => item.id), ["one-u", "one-a"]);
+  assert.equal(turns[0].status, "completed"); assert.equal(turns[0].items[1].text, "continued answer");
+});
+
+
+for (const provider of ["codex", "cursor"] as const) test(`${provider} context export runs in the history Worker, retains ordered text and structured tools without modifying the native source`, async t => {
+  const { home } = await fixture(t, provider);
+  const source = provider === "codex" ? await codexSource(home) : await cursorSource(home);
+  const output = join(home, "private-context");
+  const reader = new ConnectedAgentHistory(provider, home, output);
+  t.after(() => reader.close());
+  const original = provider === "codex" ? await readFile(source!, "utf8") : null;
+  const exported = await reader.export(id, { threadId: provider + "_source", title: "Project continuation", cwd: "/workspace" });
+  assert.equal(exported.sourceThreadId, provider + "_source");
+  assert.ok(exported.turnCount > 0);
+  const text = await readFile(exported.transcriptPath, "utf8");
+  const archive = (await readFile(exported.archivePath, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+  assert.equal(archive.length, exported.turnCount);
+  assert.match(text, /Project continuation/); assert.match(text, /### User/); assert.match(text, /### Assistant/);
+  assert.doesNotMatch(text, /hidden instructions/);
+  assert.ok(archive.some(turn => turn.items.some((item: any) => ["commandExecution", "dynamicToolCall"].includes(item.type))));
+  if (process.platform !== "win32") assert.equal((await stat(exported.transcriptPath)).mode & 0o777, 0o600);
+  if (provider === "codex") assert.equal(await readFile(source!, "utf8"), original);
+  const untitled = await reader.export(id, { threadId: provider + "_source", title: null, cwd: "/workspace" });
+  assert.equal(untitled.title, null, "missing native titles remain missing for the client's localized fallback");
+});
+
+test("CodeBuddy and Claude reopen from their own project transcripts and stay empty before the CLI writes one", async t => {
+  const buddy = "01a1df41-6ae7-7bec-81df-93138cca7a50", claude = "53d49b27-0f9b-473f-b797-a58ff3812e55";
+  const codebuddy = await fixture(t, "codebuddy"), claudeHome = await fixture(t, "claude-code");
+  const cwd = "/data/code/workspace";
+  assert.deepEqual(await codebuddy.history.read(buddy, { threadId: "public", cwd }), { data: [], nextCursor: null, backwardsCursor: null, itemsPaginationByTurnId: {} });
+  const buddyFile = join(codebuddy.home, "projects", "data-code-workspace", `${buddy}.jsonl`);
+  await mkdir(join(codebuddy.home, "projects", "data-code-workspace"), { recursive: true });
+  const line = (value: unknown) => JSON.stringify(value) + "\n";
+  await writeFile(buddyFile, line({ type: "file-history-snapshot", cwd, id: "snap" })
+    + line({ type: "message", role: "user", id: "u1", sessionId: buddy, timestamp: 1000, content: [{ type: "input_text", text: "你好" }] })
+    + line({ type: "message", role: "assistant", id: "a1", sessionId: buddy, timestamp: 1100, content: [{ type: "output_text", text: "在的" }] }));
+  const page = await codebuddy.history.read(buddy, { threadId: "public", cwd, limit: 10, itemsView: "full", sortDirection: "desc" });
+  assert.equal(page.data[0].id, "u1"); assert.equal(page.data[0].items[0].content[0].text, "你好");
+  assert.equal(page.data[0].items[1].text, "在的"); assert.equal(page.data[0].status, "completed");
+  await writeFile(buddyFile, line({ type: "message", role: "user", id: "other", sessionId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", content: [{ type: "input_text", text: "wrong" }] }));
+  await assert.rejects(codebuddy.history.read(buddy, { cwd }), /Could not read the saved agent conversation/);
+  const claudeFile = join(claudeHome.home, "projects", "-data-code-workspace", `${claude}.jsonl`);
+  await mkdir(join(claudeHome.home, "projects", "-data-code-workspace", `${claude}`, "subagents"), { recursive: true });
+  await writeFile(join(claudeHome.home, "projects", "-data-code-workspace", `${claude}`, "subagents", `${claude}.jsonl`), line({ type: "user", sessionId: claude, message: { content: "hidden sidechain" } }));
+  await writeFile(claudeFile, [
+    { type: "user", uuid: "turn-1", sessionId: claude, timestamp: "2026-11-15T00:00:01.000Z", cwd, message: { content: [{ type: "text", text: "查一下" }] } },
+    { type: "assistant", uuid: "think-1", sessionId: claude, message: { content: [{ type: "thinking", thinking: "先看目录" }] } },
+    { type: "assistant", uuid: "call-1", sessionId: claude, message: { content: [{ type: "tool_use", id: "tool-1", name: "Bash", input: { command: "ls" } }] } },
+    { type: "user", uuid: "result-1", sessionId: claude, message: { content: [{ type: "tool_result", tool_use_id: "tool-1", content: "file.txt" }] } },
+    { type: "assistant", uuid: "answer-1", sessionId: claude, isSidechain: true, message: { content: [{ type: "text", text: "sidechain" }] } },
+    { type: "assistant", uuid: "answer-2", sessionId: claude, message: { content: [{ type: "text", text: "只有 file.txt" }] } },
+  ].map(line).join(""));
+  const turns = await claudeHome.history.snapshot(claude, { cwd });
+  assert.equal(turns.length, 1); assert.equal(turns[0].items[0].content[0].text, "查一下");
+  assert.equal(turns[0].items[1].type, "reasoning"); assert.equal(turns[0].items[2].tool, "Bash");
+  assert.equal(turns[0].items[2].contentItems[0].text, "file.txt"); assert.equal(turns[0].items.at(-1).text, "只有 file.txt");
+  assert.equal(JSON.stringify(turns).includes("sidechain"), false);
+  const outside = await mkdtemp(join(tmpdir(), "outside-cli-")); t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(join(outside, `${buddy}.jsonl`), line({ type: "message", role: "user", sessionId: buddy, content: [{ type: "input_text", text: "escaped" }] }));
+  await symlink(outside, join(codebuddy.home, "projects", "linked"));
+  await assert.rejects(codebuddy.history.read(buddy, { cwd: "/linked" }), /Could not read the saved agent conversation/);
 });

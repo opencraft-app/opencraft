@@ -3,7 +3,7 @@ import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 
-function fixture({ scope = 'https://example.test/', failAsset = false, files = ['assets/a.js', 'opencraft-icon.svg', 'opencraft-offline.html'] } = {}) {
+function fixture({ scope = 'https://example.test/', failAsset = false, files = ['assets/a.js', 'opencraft-icon.svg', 'opencraft-offline.html'], navigation = null, timers: navigationTimers = null, stalledCacheWrite = false } = {}) {
   const cachesByName = new Map(), handlers = new Map(), fetched = [];
   const timers = new Map();
   let timerId = 0, delayed = null;
@@ -12,12 +12,13 @@ function fixture({ scope = 'https://example.test/', failAsset = false, files = [
   const cacheApi = { async open(name) {
     if (!cachesByName.has(name)) cachesByName.set(name, new Map());
     const rows = cachesByName.get(name);
-    return { async put(key, response) { rows.set(String(key), response.clone()); }, async match(key) { return rows.get(String(key))?.clone(); } };
+    return { async put(key, response) { if (stalledCacheWrite && String(key).endsWith("a.js")) return new Promise(() => {}); rows.set(String(key), response.clone()); }, async match(key) { return rows.get(String(key))?.clone(); } };
   }, async keys() { return [...cachesByName.keys()]; }, async delete(name) { return cachesByName.delete(name); } };
   const fetcher = async (request, options) => {
     const url = typeof request === 'string' ? request : request.url;
     fetched.push({ url, options });
-    if (delayed && !options?.credentials) return delayed;
+    if (navigation && typeof request !== "string") return navigation(request, options);
+    if (delayed && typeof request !== "string") return delayed;
     if (!network || (failure && url.endsWith('a.js'))) throw new Error('offline');
     return new Response(url.endsWith('.html') ? '<html><head></head><body>Application shell</body></html>' : 'static', { status: responseStatus,
       headers: { 'content-type': url.endsWith('.html') ? 'text/html' : 'text/javascript' } });
@@ -26,9 +27,9 @@ function fixture({ scope = 'https://example.test/', failAsset = false, files = [
     clients: { get: async id => ({ id, url: scope }), claim: async () => {} }, skipWaiting: () => assert.fail('must preserve the old document build') };
   const source = readFileSync(new URL('../../apps/workbench-web/offline-shell-worker.js', import.meta.url), 'utf8')
     .replace('"__OPENCRAFT_BUILD__"', '"new"').replace('"__OPENCRAFT_FILES__"', JSON.stringify(files));
-  runInNewContext(source, { self, caches: cacheApi, fetch: fetcher, URL, Response, Headers, Set, Promise, Error, AbortController,
-    setTimeout: (callback, ms) => { const id = ++timerId; if (ms === 500 || ms === 1000) { setTimeout(callback, 10); return id; } timers.set(id, { callback, ms }); return id; },
-    clearTimeout: id => timers.delete(id) });
+  runInNewContext(source, { self, caches: cacheApi, fetch: fetcher, URL, Response, Headers, Uint8Array, Set, Promise, Error, AbortController,
+    setTimeout: (callback, ms) => { if (navigationTimers && ms === 8000) return navigationTimers.set(callback); const id = ++timerId; if (ms === 500 || ms === 1000) { setTimeout(callback, 10); return id; } timers.set(id, { callback, ms }); return id; },
+    clearTimeout: id => { if (!navigationTimers?.delete(id)) timers.delete(id); } });
   const emit = async (type, event = {}) => {
     let pending; handlers.get(type)({ ...event, waitUntil: value => { pending = value; } }); await pending;
   };
@@ -195,5 +196,90 @@ for (const status of [401, 403, 404]) test('permanent denial stops the entire in
   assert.ok(f.fetched.length <= 2, 'no remaining queued downloads');
   assert.ok(f.fetched.every(row => row.options.signal.aborted), 'sibling downloads are cancelled');
   assert.equal(f.timers.size, 0);
+  await assert.rejects(f.emit('activate'), /incomplete/);
+});
+
+function navigationClock() {
+  const pending = new Map();
+  return {
+    set(callback) { const id = {}; pending.set(id, callback); return id; },
+    delete(id) { return pending.delete(id); },
+    async expire() { for (const [id, callback] of [...pending]) { pending.delete(id); await callback(); } },
+    get size() { return pending.size; },
+  };
+}
+
+async function turns() { for (let i = 0; i < 30; i++) await Promise.resolve(); }
+
+test('navigation deadline covers a stalled HTML body and keeps browser backend sanitized', async () => {
+  const timers = navigationClock(); let stream, signal;
+  const f = fixture({ timers, navigation: (_request, options) => {
+    signal = options.signal;
+    return new Response(new ReadableStream({ start(value) { stream = value; value.enqueue(new TextEncoder().encode('<html>')); } }), { headers: { 'content-type': 'text/html' } });
+  } });
+  await f.emit('install'); await f.configure({ browserBackend: 'remote' });
+  const pending = f.request('threads/example'); await turns(); await timers.expire();
+  const response = await pending;
+  assert.equal(response.headers.get('x-opencraft-offline-build'), 'new');
+  assert.match(await response.text(), /name="opencraft-browser-backend" content="remote"/);
+  assert.equal(signal.aborted, true); assert.equal(timers.size, 0);
+  stream.close();
+});
+
+test('a deadline without a configured shell keeps waiting for the same network request', async () => {
+  const timers = navigationClock(); let finish, signal, settled = false;
+  const f = fixture({ timers, navigation: (_request, options) => { signal = options.signal; return new Promise(resolve => { finish = resolve; }); } });
+  await f.emit('install');
+  const pending = f.request('').then(value => { settled = true; return value; });
+  await turns(); await timers.expire(); await turns();
+  assert.equal(settled, false); assert.equal(signal.aborted, false);
+  finish(new Response('online', { headers: { 'content-type': 'text/html' } }));
+  assert.equal(await (await pending).text(), 'online'); assert.equal(timers.size, 0);
+});
+
+for (const status of [401, 403, 404]) test('explicit navigation refusal is preserved: ' + status, async () => {
+  const timers = navigationClock();
+  const f = fixture({ timers, navigation: () => new Response('refused', { status, headers: { 'content-type': 'text/html' } }) });
+  await f.emit('install'); await f.configure();
+  const response = await f.request('settings');
+  assert.equal(response.status, status); assert.equal(await response.text(), 'refused');
+  assert.equal(timers.size, 0);
+});
+
+test('complete HTML is buffered within budget; oversized or broken bodies fall back', async () => {
+  for (const kind of ['complete', 'oversized', 'broken']) {
+    const timers = navigationClock();
+    const f = fixture({ timers, navigation: () => {
+      if (kind === 'broken') return new Response(new ReadableStream({ start(stream) { stream.error(new Error('broken')); } }), { headers: { 'content-type': 'text/html' } });
+      return new Response(kind === 'complete' ? '<html>complete</html>' : 'x'.repeat(2 * 1024 * 1024 + 1), { headers: { 'content-type': 'text/html', 'content-encoding': 'gzip', 'content-length': '999' } });
+    } });
+    await f.emit('install'); await f.configure({ browserBackend: '<untrusted>' });
+    const response = await f.request('');
+    if (kind === 'complete') {
+      assert.equal(await response.text(), '<html>complete</html>');
+      assert.equal(response.headers.get('content-encoding'), null);
+      assert.equal(response.headers.get('content-length'), null);
+    } else {
+      assert.equal(response.headers.get('x-opencraft-offline-build'), 'new');
+      assert.doesNotMatch(await response.text(), /untrusted/);
+    }
+    assert.equal(timers.size, 0);
+  }
+});
+
+test('resource deadline retires a stalled cache write after bounded retries', {timeout: 5000}, async () => {
+  const f = fixture({ stalledCacheWrite: true });
+  const refused = assert.rejects(f.emit('install'), /deadline/);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    // Preserve the install's bounded transient retry policy; advance each new
+    // resource deadline after the fixture's accelerated retry pacing.
+    await new Promise(resolve => setTimeout(resolve, 30));
+    const deadlines = [...f.timers.values()].filter(value => value.ms === 30000);
+    assert.ok(deadlines.length > 0, 'cache commit remains under resource deadline');
+    for (const timer of deadlines) timer.callback();
+    await turns();
+  }
+  await refused;
+  assert.equal(f.timers.size, 0, 'retired install releases all timers');
   await assert.rejects(f.emit('activate'), /incomplete/);
 });

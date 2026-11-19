@@ -23,10 +23,12 @@ export const NavigationGroup = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDiv
 export type NavigationItemProps = Omit<ButtonProps, "size" | "variant" | "surface" | "contentLayout"> & {
   /** Compact destination rails retain the same state owner as labeled rows. */
   readonly compact?: boolean;
+  /** Standalone rows can share sidebar geometry without adding a nested nav. */
+  readonly inset?: "default" | "sidebar";
 };
-export const NavigationItem = forwardRef<HTMLButtonElement, NavigationItemProps>(function NavigationItem({ className, compact = false, ...props }, ref) {
+export const NavigationItem = forwardRef<HTMLButtonElement, NavigationItemProps>(function NavigationItem({ className, compact = false, inset = "default", ...props }, ref) {
   return <Button {...props} ref={ref} className={["ui-navigation-item", className].filter(Boolean).join(" ")}
-    size="navigation" variant="ghost" surface="integrated" contentLayout={compact ? "icon" : "row"} />;
+    size="navigation" variant="ghost" surface="integrated" data-navigation-inset={inset === "default" ? undefined : inset} contentLayout={compact ? "icon" : "row"} />;
 });
 
 /** Non-interactive list feedback; callers retain copy, typography and tone. */

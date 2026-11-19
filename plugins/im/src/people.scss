@@ -169,7 +169,7 @@
   @include typography.role(body);
   h3, h4, p { margin: 0; overflow-wrap: anywhere; }
   h3 { @include typography.role(settings-title); }
-  h4 { @include typography.role(body); font-weight: 600; }
+  h4 { @include typography.role(body); font-weight: var(--font-weight-semibold); }
   button, input, select, textarea { min-inline-size: 0; }
   button:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--color-text-accent); outline-offset: 3px; }
   .assistant-memory-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-block-end: 12px; }
@@ -182,7 +182,7 @@
       appearance: none; border: 0; border-block-end: 2px solid transparent; border-radius: 0;
       color: var(--color-text-secondary); background: transparent; font: inherit; cursor: pointer;
       padding: 10px 0; min-block-size: 44px; margin-block-end: -1px;
-      &[aria-pressed="true"] { color: var(--color-text); border-block-end-color: currentColor; font-weight: 600; }
+      &[aria-pressed="true"] { color: var(--color-text); border-block-end-color: currentColor; font-weight: var(--font-weight-semibold); }
       &:disabled { opacity: .5; cursor: default; }
     }
   }
@@ -199,7 +199,7 @@
   .assistant-memory-count { display: flex; justify-content: space-between; gap: 12px; margin-block: 0 8px; @include typography.role(metadata, secondary); }
   .assistant-memory-about { order: 2; margin-block-start: 20px; @include typography.role(metadata, secondary); }
   .assistant-memory-about summary { cursor: pointer; padding-block: 10px; inline-size: fit-content; }
-  .assistant-memory-about p { margin-block: 6px; line-height: 1.7; }
+  .assistant-memory-about p { margin-block: 6px; line-height: var(--typography-chat-line-height); }
   .assistant-memory-layout { display: grid; grid-template-columns: minmax(0, 1fr); min-inline-size: 0; }
   &[data-detail] .assistant-memory-layout { grid-template-columns: minmax(0, .85fr) minmax(0, 1.15fr); gap: 24px; }
   .assistant-memory-empty { display: grid; justify-items: center; gap: 12px; padding: 44px 12px; text-align: center; color: var(--color-text-secondary); }
@@ -217,26 +217,26 @@
   }
   .assistant-memory-row-kind { display: flex; align-items: center; gap: 6px; @include typography.role(metadata, secondary); }
   .assistant-memory-row-kind svg { inline-size: 16px; block-size: 16px; }
-  .assistant-memory-row-value { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: 1.75; }
+  .assistant-memory-row-value { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; line-height: var(--typography-chat-line-height); }
   .assistant-memory-row-arrow { position: absolute; inset-inline-end: 6px; inset-block-start: 50%; inline-size: 16px; block-size: 16px; color: var(--color-text-secondary); transform: translateY(-50%); }
   small { display: block; overflow-wrap: anywhere; @include typography.role(metadata, secondary); }
   .assistant-memory-item small { opacity: .85; }
   .assistant-memory-detail { min-inline-size: 0; border-inline-start: 1px solid var(--color-border-subtle); padding-inline-start: 24px; outline: none; }
   .assistant-memory-detail > * + * { margin-block-start: 16px; }
   .assistant-memory-detail-nav { display: flex; justify-content: start; margin-block-end: 16px; }
-  .assistant-memory-detail-value { line-height: 1.85; white-space: pre-wrap; }
+  .assistant-memory-detail-value { line-height: var(--typography-chat-line-height); white-space: pre-wrap; }
   .assistant-memory-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block: 16px; }
   .assistant-memory-actions svg { inline-size: 16px; block-size: 16px; }
   .assistant-memory-edit { padding-block-start: 8px; }
   .assistant-memory-edit label { display: grid; gap: 8px; }
-  textarea { display: block; inline-size: 100%; box-sizing: border-box; min-block-size: 160px; resize: vertical; line-height: 1.8; }
-  pre { white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 50dvh; overflow: auto; padding: 16px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); line-height: 1.8; }
+  textarea { display: block; inline-size: 100%; box-sizing: border-box; min-block-size: 160px; resize: vertical; @include typography.role(composer); }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; max-block-size: 50dvh; overflow: auto; padding: 16px; border: 1px solid var(--color-border-subtle); border-radius: var(--radius-md); @include typography.role(code); }
   blockquote { margin-inline: 0; padding-inline-start: 12px; border-inline-start: 2px solid var(--color-border-subtle); }
-  .assistant-memory-hint, [role="status"], [role="alert"] { margin-block: 8px; @include typography.role(metadata, secondary); line-height: 1.7; }
+  .assistant-memory-hint, [role="status"], [role="alert"] { margin-block: 8px; @include typography.role(metadata, secondary); line-height: var(--typography-chat-line-height); }
   [role="alert"] { color: var(--color-status-danger); }
   .assistant-memory-latest { padding: 16px; border: 1px solid var(--color-border-default); border-radius: var(--radius-md); margin-block: 12px; }
 }
-@media (hover: hover) { .assistant-memory-item:not(:disabled):hover { background: var(--color-bg-hover); border-radius: var(--radius-md); } }
+@include interaction.hover-capable { .assistant-memory-item:not(:disabled):hover { background: var(--color-bg-hover); border-radius: var(--radius-md); } }
 // Container size controls allocation, not touch capability. Shared controls own hit targets.
 @container assistant-card (max-width: 660px) {
   .people-assistant--memory > .people-assistant-summary { padding: 12px; gap: 4px; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; }
@@ -270,13 +270,13 @@
   .people-group-content { gap: var(--inbox-gap); padding-block: calc(3 * var(--spacing)); }
   .people-member-copy { gap: 3px; }
   .people-member-copy strong {
-    @include typography.role(body, primary); font-size: 16px; line-height: 22px; font-weight: var(--font-weight-regular, 400);
+    @include typography.role(control-large, primary);
   }
-  .people-member-copy small { @include typography.role(metadata, secondary); font-size: 14px; line-height: 20px; color: var(--color-text-tertiary); }
+  .people-member-copy small { @include typography.role(body, tertiary); }
   .people-mention { color: var(--color-badge-red-foreground, #e5484d); }
   .people-group-meta {
     align-self: flex-start; padding-block-start: 2px;
-    @include typography.role(metadata, secondary); font-size: 12px; color: var(--color-text-tertiary);
+    @include typography.role(metadata, tertiary);
   }
   .people-group-badge-anchor { position: relative; flex-shrink: 0; display: grid; }
   .people-group-badge-anchor > .ui-companion-avatar { inline-size: var(--inbox-avatar); block-size: var(--inbox-avatar); }
@@ -285,7 +285,7 @@
     min-inline-size: var(--size-count-badge); block-size: var(--size-count-badge); padding-inline: var(--padding-count-badge-inline); box-sizing: border-box;
     display: grid; place-items: center; border-radius: var(--radius-full);
     background: var(--color-badge-red-solid, #f5484d); color: #fff;
-    font-size: 11px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums;
+    @include typography.role(count-badge, null); font-variant-numeric: tabular-nums;
     box-shadow: 0 0 0 2px var(--color-background-surface);
   }
   // Member mosaic: fill the tile for 1, halves for 2, a centred top for 3, 2x2 for 4.
@@ -332,7 +332,8 @@
   // ObjectRowButton's quiet hover has :not(:disabled):not(:active) specificity.
   // Keep route selection above that shared reset, even when lazy CSS loads later.
   .people-stream .people-group.ui-object-row-button[aria-current="page"] {
-    &, &:hover:not(:disabled):not(:active) { background: var(--color-background-navigation-current); }
+    & { background: var(--color-background-navigation-current); }
+    @include interaction.hover-capable { &:hover:not(:disabled):not(:active) { background: var(--color-background-navigation-current); } }
     &:active:not(:disabled):not([data-touch-press="false"]) { background: var(--color-background-navigation-pressed); }
   }
 }

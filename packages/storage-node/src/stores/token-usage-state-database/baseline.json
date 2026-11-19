@@ -1,0 +1,115 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "isolated-token-usage",
+      "checksum": "224bd7af38e011b293519749a61f185ce93d2a03fe77691c841944318234f70d"
+    },
+    {
+      "version": 2,
+      "name": "token-usage-thread-query-index",
+      "checksum": "51ce0b2f051cafdd1a70034d7e6048aaa02d837756b3361b3268cd41ebba34b0"
+    },
+    {
+      "version": 3,
+      "name": "token-usage-source-recency-index",
+      "checksum": "ea28856874066a436c2a486d7711847aedf7b84f5a04e1a69965ddd35f8d1bf1"
+    }
+  ],
+  "tableOptions": {
+    "token_usage_actor_daily": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_admissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_allocations": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_attempts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_buckets": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_checkpoints": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_coverage": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_daily": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_gaps": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_input_conflicts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_inputs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_legacy_import": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_metadata_scans": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_native_counters": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_native_terminals": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_projection_state": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_rollouts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_scopes": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_sources": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_submissions": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turn_actor_projections": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turn_projections": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "token_usage_turns": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "fb71306eb94e3dfcaa57218344a6a4fa399f4da1493fa754a730b8ad1c7386f7",
+  "baselineSnapshotChecksum": "ddeca1a4bcbccae318c57472b2fae5ca0a68d629474cb3ba903f302a4435986c"
+}

@@ -10,7 +10,7 @@ export type PostReceipt = { fingerprint: string; state: "sending" | "delivered" 
 export class ImPostReceipts {
   private readonly managed;
   constructor(path: string) {
-    this.managed = openManagedDatabase({ path, legacyPolicy: "reject",
+    this.managed = openManagedDatabase({ schemaId: "post-receipts", path, legacyPolicy: "reject",
       migrations: [{ version: 1, name: "im-channel-post-receipts", sql: schema }],
       validateSchema: createSchemaValidator(schema) });
     // An interrupted write cannot be proved absent from the provider.

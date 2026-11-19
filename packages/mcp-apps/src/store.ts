@@ -35,7 +35,7 @@ export class AppStore {
   readonly outcome;
   constructor(path: string) {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-    const opened = openManagedDatabase({
+    const opened = openManagedDatabase({ schemaId: "mcp-apps",
       path,
       legacyPolicy: "reject",
       validateSchema: createSchemaValidator(schema),

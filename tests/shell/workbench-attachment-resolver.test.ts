@@ -447,10 +447,10 @@ test("shared media never reuses a source across connection generations", async (
   try {
     const first = (await load(request))!; first.release?.();
     generation++;
-    // A loader owns one subscription generation; reconnect creates its replacement.
-    const reconnected = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "host");
-    assert.equal(reconnected.getSnapshot!(request).status, "loading");
-    const second = (await reconnected(request))!; assert.notEqual(second.source, first.source); second.release?.();
+    assert.equal(load.getSnapshot!(request).status, "ready", "a consumer keeps its bound generation");
+    const rebound = createAppServerMediaSourceLoader(runtime, ctx.blobResources, "host");
+    assert.equal(rebound.getSnapshot!(request).status, "loading");
+    const second = (await rebound(request))!; assert.notEqual(second.source, first.source); second.release?.();
     assert.equal(reads, 2);
   } finally { await fiber.dispose(); }
 });

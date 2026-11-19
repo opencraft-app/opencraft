@@ -180,7 +180,12 @@ behavioral tests; optional preview/media errors must not break those flows.
 
 ## Pull-request CI selection
 
-`build-matrix` runs on every PR, but `scripts/ci-plan.mjs` chooses its jobs from
+`build-matrix` runs on every PR and again on every commit pushed to `main`. A PR
+is tested against the `main` it saw; when several merge close together, the
+push run is what tests their combination, and it reports a break right after
+the merge rather than preventing it. Each `main` commit keeps its own run and is
+never cancelled, so a failure names the merge that caused it; a push run selects
+jobs from the pushed range. `scripts/ci-plan.mjs` chooses its jobs from
 Git's full merge-base diff. It includes deleted paths and both sides of a rename;
 it does not use GitHub's limited workflow path filter or a paginated file API.
 The reusable `ci-plan.yml` tests the selector and aggregate check without
@@ -201,6 +206,27 @@ platforms, including for lockfiles, CI changes or an unreadable diff.
 | Web update UI, Vite/static inputs, update/deployment scripts and tests | Managed Web regression and applicable Web/server checks |
 | Root manifests/lockfile/toolchain or CI/selector changes | Web build, all installation-root audits, managed Web and Linux server regressions |
 | Server archive/installer/deployment inputs or build artifact contract | Linux server regressions plus archive build and smoke test |
+
+Any change that selects a Web build or Linux server regressions also runs
+`core-tests`: the full `npm run typecheck`, `check:boundaries` and every suite
+listed in `npm test`, each as a separate step so one failure cannot hide the
+rest. It prepares the locked DSH runtime first. Documentation-only changes skip
+it. `tests/tooling/ci-workflows.test.mjs` fails if a suite is added to `npm test`
+without a matching CI step.
+
+`gate-tests` runs in parallel with `core-tests`, under the same selection and
+test isolation, for the suites `npm run gate` requires beyond `npm test`
+(sandbox, identity and actor authorization, relay, hub network, Codex core and
+others), plus the startup cache evidence. `tests/tooling/ci-workflows.test.mjs`
+fails when a `gate` script runs in no workflow and is not a recorded exception;
+`test:startup` is excluded until its Expo native-module version mismatch is
+resolved.
+
+On pull requests `core-tests` also formats and lints the source files the PR
+adds (`check:format`, `lint:changed`). Its suites run with
+`tests/support/test-isolation.mjs`: each test file gets a private HOME/TMPDIR,
+and the global teardown stops and reports any process a test file left running,
+which fails the step.
 
 The server job installs dependencies once and always runs selected server tests;
 archive building, archive smoke and upload are separately conditional. Shared
@@ -349,7 +375,7 @@ artifact and separately compiled Electron host.
 
 The explicit macOS preview command is a local QA contract, not a distribution
 artifact. It writes below `release/preview`, uses product name `OpenCraft
-Preview`, Bundle ID `dev.opencraft.workbench.preview`, and the independent
+Preview`, Bundle ID `app.opencraft.desktop.preview`, and the independent
 `OpenCraft Preview` application-state profile. It disables certificate discovery,
 prunes foreign-platform `node-pty` prebuilds from both packaged runtime trees,
 and applies one consistent ad-hoc hardened-runtime signature and entitlements
@@ -545,7 +571,7 @@ rtk proxy uname -m
 rtk proxy npm run build:electron
 ```
 
-以下例子在 `opencraft/apps/workbench-electron/` 执行。先将 `signing_identity` 替换为本次已验证的
+以下例子在 `opencraft/apps/desktop/` 执行。先将 `signing_identity` 替换为本次已验证的
 Developer ID 身份名称（electron-builder 的 identity 选项使用姓名/团队部分，不加证书类型前缀）。
 `arm64` 只适用于 Apple Silicon 原生构建机；Intel 目标在原生 Intel 构建机上使用 `x64`。
 
@@ -687,7 +713,8 @@ profile 和截图路径保留在本次 Task receipt；结束后恢复本次启�
 `web-browser` and packs `@opencraft-app/opencraft` with the static site, bundled
 Node runtime, a systemd template and installation instructions. The package has
 no install lifecycle scripts or runtime npm dependencies. It does not package or
-manage DSH/Codex. Build output defaults to ignored `.local/web-packages`. This
+manage DSH/Codex. Build output defaults to an OS temporary directory outside the
+checkout. This
 command never publishes; validate the tgz before publishing to the public npm
 registry. Run `npm run test:web-updates` for registry/package/worker update and
 rollback behavior, alongside `npm run test:web-release`.
@@ -820,3 +847,31 @@ are always processed. External or broken links disable reuse, and a damaged cach
 causes a fresh scan. No npm/minimatch prototypes or matching rules are modified.
 `[package-selection]` reports reuse and elapsed time. Removing the cache restores
 cold selection; this cache never replaces signing or independent archive checks.
+
+
+### Public Linux x64 AppImage
+
+The **Electron fork native artifacts** workflow builds on a version tag or via
+`workflow_dispatch` with `mode=build` and `target=linux-x64`. The repository variable
+`ELECTRON_BUILD_RUNNER_LINUX_X64` selects the provisioned self-hosted runner by
+JSON labels. Source validation runs on a hosted runner. The native build caches
+the probed fork archive and its inventory by target and build inputs. Every
+package verifies the extracted distribution against the checked-out fork.
+
+On Debian or Ubuntu x64, run `vendor/electron/ensure-linux-build-deps.sh --install`
+to provision a build host, or select `install_linux_deps` in the manual build.
+The default `--check` mode reports missing packages and tests pkg-config and
+Xvfb. Xvfb also needs a writable `/tmp` inside the build environment. On
+dedicated systemd-managed runners dispatch `mode=prepare-linux-runner` to
+install the versioned `PrivateTmp=yes` drop-in. It restarts the runner service
+after the maintenance job exits and other active workers finish. Once the runner
+is online, dispatch the normal Linux build. Repeating preparation on a service
+with a working private temporary directory skips the restart. A
+provisioned host skips apt and sudo on subsequent invocations. Node and
+Python versions are selected separately by the workflow. The fork sync supplies
+the pinned GN, Ninja, Clang and target sysroot.
+
+The workflow launches the final AppImage under Xvfb, checks the renderer and
+desktop preload, and uploads the AppImage and SHA-256 checksum as
+`OpenCraft-AppImage-linux-x64-<commit>`. Download that Actions artifact for the
+tested commit. An Actions build does not publish a GitHub Release.

@@ -91,7 +91,7 @@ test('recovery lifecycle is authoritative while notices omit active recovery sta
 test('a child whose input needs a human Resume or was discarded reports failed instead of starting forever',async()=>{
   const f=fixture();f.port.read=async()=>({thread:thread([])});
   assert.equal((await f.invoke('status')).state,'starting');
-  f.port.pendingInput=()=> 'paused';let status=await f.invoke('status');assert.equal(status.state,'failed');assert.match(status.summary,/session tools/);
+  f.port.pendingInput=()=> 'paused';let status=await f.invoke('status');assert.equal(status.state,'failed');assert.match(status.summary,/queue is paused/);
   f.port.pendingInput=()=> 'abandoned';status=await f.invoke('status');assert.equal(status.state,'failed');assert.match(status.summary,/never started/);
   // A paused follow-up behind a running turn is not a failure of that turn.
   f.port.pendingInput=()=> 'paused';f.port.read=async()=>({thread:thread([{id:'live',status:'inProgress',items:[]}],'active')});assert.equal((await f.invoke('status')).state,'active');

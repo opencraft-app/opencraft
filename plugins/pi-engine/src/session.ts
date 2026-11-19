@@ -625,7 +625,7 @@ export class PiDurableSession {
         // A dispatched input is historical native custody, not a new enqueue.
         // Never echo the replaying caller's nonce into an old receipt. Older
         // native records without an admission proof remain unproven.
-        const {executionAdmission:_replayed,...projection}=item;
+        const {executionAdmission:_replayed,executionCliCredential:_replayedCli,...projection}=item;
         return {...projection, ...(previous?.executionAdmission ? {executionAdmission:previous.executionAdmission} : {})};
       }
       if (queue.items.length >= 50) throw new Error("The Pi message queue is full");

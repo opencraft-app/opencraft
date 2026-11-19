@@ -253,8 +253,8 @@ function projectTurnFrames(
     const turn = inferSettledMessagePhases(normalizeTurnUserMessages(normalizeCommandCompletionOrder(sourceTurn)));
     const workStatus = deriveTurnWorkStatus(turn);
     // Compatibility Items are lowered once here, not allowed to participate
-    // in transcript topology. Empty native aggregates recover from durable patches;
-    // an explicit Turn value still suppresses stale compatibility Items.
+    // in transcript topology. Empty native aggregates recover from durable patches
+    // before legacy Items. An explicit Turn value suppresses compatibility Items.
     const legacyDiff = turn.items.filter(item => item.type === "turnDiff").at(-1);
     const legacyBlock = legacyDiff === undefined ? null
       : registry.project(legacyDiff, { turn, itemIndex: turn.items.indexOf(legacyDiff) }).block;

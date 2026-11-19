@@ -1,0 +1,500 @@
+{
+  "version": "6",
+  "dialect": "sqlite",
+  "id": "8a89f6f7-8f7d-4e9e-8520-8b142b40273f",
+  "prevId": "00000000-0000-0000-0000-000000000000",
+  "tables": {
+    "task_conversations": {
+      "name": "task_conversations",
+      "columns": {
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "server_id": {
+          "name": "server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "conversations_by_thread": {
+          "name": "conversations_by_thread",
+          "columns": [
+            "server_id",
+            "thread_id",
+            "task_id"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "task_conversations_task_id_tasks_id_fk": {
+          "name": "task_conversations_task_id_tasks_id_fk",
+          "tableFrom": "task_conversations",
+          "tableTo": "tasks",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "task_conversations_task_id_server_id_thread_id_pk": {
+          "columns": [
+            "task_id",
+            "server_id",
+            "thread_id"
+          ],
+          "name": "task_conversations_task_id_server_id_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
+    "task_events": {
+      "name": "task_events",
+      "columns": {
+        "seq": {
+          "name": "seq",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_id": {
+          "name": "task_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "task_revision": {
+          "name": "task_revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "actor": {
+          "name": "actor",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "payload": {
+          "name": "payload",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "task_progress_by_task": {
+          "name": "task_progress_by_task",
+          "columns": [
+            "task_id",
+            "seq DESC"
+          ],
+          "isUnique": false,
+          "where": "type='progress'"
+        },
+        "task_events_by_task": {
+          "name": "task_events_by_task",
+          "columns": [
+            "task_id",
+            "seq DESC"
+          ],
+          "isUnique": false
+        },
+        "legacy_unique_task_events_1": {
+          "name": "legacy_unique_task_events_1",
+          "columns": [
+            "event_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "task_events_task_id_tasks_id_fk": {
+          "name": "task_events_task_id_tasks_id_fk",
+          "tableFrom": "task_events",
+          "tableTo": "tasks",
+          "columnsFrom": [
+            "task_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "task_events_check_0": {
+          "name": "task_events_check_0",
+          "value": "type IN ('created','updated','status_changed','linked','unlinked','deleted','restored','progress')"
+        },
+        "task_events_check_1": {
+          "name": "task_events_check_1",
+          "value": "task_revision>0"
+        }
+      }
+    },
+    "task_members": {
+      "name": "task_members",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "identity_kind": {
+          "name": "identity_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "identity_id": {
+          "name": "identity_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "task_members_check_0": {
+          "name": "task_members_check_0",
+          "value": "length(trim(name))>0"
+        },
+        "task_members_check_1": {
+          "name": "task_members_check_1",
+          "value": "revision>0"
+        },
+        "task_members_check_2": {
+          "name": "task_members_check_2",
+          "value": "\n (identity_kind IS NULL AND identity_id IS NULL) OR\n (identity_kind IS NOT NULL AND identity_id IS NOT NULL AND length(trim(identity_kind)) BETWEEN 1 AND 64 AND length(trim(identity_id)) BETWEEN 1 AND 256)\n"
+        }
+      }
+    },
+    "tasks": {
+      "name": "tasks",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "project_server_id": {
+          "name": "project_server_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "revision": {
+          "name": "revision",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "assignee_id": {
+          "name": "assignee_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "priority": {
+          "name": "priority",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'none'"
+        },
+        "due_date": {
+          "name": "due_date",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'unclassified'"
+        },
+        "acceptance_criteria": {
+          "name": "acceptance_criteria",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "''"
+        },
+        "archived_at": {
+          "name": "archived_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "tasks_active_order": {
+          "name": "tasks_active_order",
+          "columns": [
+            "status",
+            "sort_order",
+            "id"
+          ],
+          "isUnique": false,
+          "where": "archived_at IS NULL AND deleted_at IS NULL"
+        },
+        "tasks_archive_page": {
+          "name": "tasks_archive_page",
+          "columns": [
+            "archived_at DESC",
+            "id DESC"
+          ],
+          "isUnique": false,
+          "where": "archived_at IS NOT NULL AND deleted_at IS NULL"
+        },
+        "tasks_by_assignee": {
+          "name": "tasks_by_assignee",
+          "columns": [
+            "assignee_id",
+            "status",
+            "sort_order"
+          ],
+          "isUnique": false,
+          "where": "deleted_at IS NULL"
+        },
+        "tasks_by_status": {
+          "name": "tasks_by_status",
+          "columns": [
+            "status",
+            "sort_order",
+            "id"
+          ],
+          "isUnique": false,
+          "where": "deleted_at IS NULL"
+        }
+      },
+      "foreignKeys": {
+        "tasks_assignee_id_task_members_id_fk": {
+          "name": "tasks_assignee_id_task_members_id_fk",
+          "tableFrom": "tasks",
+          "tableTo": "task_members",
+          "columnsFrom": [
+            "assignee_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "tasks_check_0": {
+          "name": "tasks_check_0",
+          "value": "length(trim(title))>0"
+        },
+        "tasks_check_1": {
+          "name": "tasks_check_1",
+          "value": "status IN ('backlog','todo','in_progress','in_review','done','canceled')"
+        },
+        "tasks_check_2": {
+          "name": "tasks_check_2",
+          "value": "revision>0"
+        },
+        "tasks_check_3": {
+          "name": "tasks_check_3",
+          "value": "priority IN ('none','low','normal','high','urgent')"
+        },
+        "tasks_check_4": {
+          "name": "tasks_check_4",
+          "value": "(project_server_id IS NULL AND project_id IS NULL) OR (project_server_id IS NOT NULL AND project_id IS NOT NULL)"
+        }
+      }
+    }
+  },
+  "views": {},
+  "enums": {},
+  "_meta": {
+    "schemas": {},
+    "tables": {},
+    "columns": {}
+  },
+  "internal": {
+    "indexes": {
+      "task_progress_by_task": {
+        "columns": {
+          "seq DESC": {
+            "isExpression": true
+          }
+        }
+      },
+      "task_events_by_task": {
+        "columns": {
+          "seq DESC": {
+            "isExpression": true
+          }
+        }
+      },
+      "tasks_archive_page": {
+        "columns": {
+          "archived_at DESC": {
+            "isExpression": true
+          },
+          "id DESC": {
+            "isExpression": true
+          }
+        }
+      }
+    }
+  }
+}

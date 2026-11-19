@@ -16,6 +16,21 @@ test("common app commands use exact OS modifiers and preserve old aliases", () =
   assert.equal(shortcutLabel('sidebar','Win32',1),'Ctrl+B');
   assert.equal(shortcutAria('composer','Win32'),'Control+Shift+C');
 });
+test("Agent cycling uses Alt-only bindings and normalizes Option layouts", () => {
+  const mac = { key: "p", code: "KeyP", shiftKey: false, ctrlKey: false, metaKey: false, altKey: true, isComposing: false };
+  assert.equal(matchesWorkbenchShortcut(mac, "agentNext", "MacIntel"), true);
+  assert.equal(matchesWorkbenchShortcut({ ...mac, key: "π" }, "agentNext", "MacIntel"), true, "Option+P may report the composed character");
+  assert.equal(matchesWorkbenchShortcut({ ...mac, key: "x" }, "agentNext", "MacIntel"), true, "the physical key wins over a layout-mapped character");
+  assert.equal(matchesWorkbenchShortcut({ ...mac, key: "p", shiftKey: true }, "agentPrevious", "MacIntel"), true);
+  assert.equal(matchesWorkbenchShortcut({ ...mac, shiftKey: true }, "agentNext", "MacIntel"), false);
+  assert.equal(matchesWorkbenchShortcut({ ...mac, metaKey: true, altKey: false }, "agentNext", "MacIntel"), false);
+  const windows = { ...mac, metaKey: false, ctrlKey: false };
+  assert.equal(matchesWorkbenchShortcut(windows, "agentNext", "Win32"), true);
+  assert.equal(matchesWorkbenchShortcut({ ...windows, ctrlKey: true }, "agentNext", "Win32"), false);
+  assert.equal(shortcutLabel("agentNext", "MacIntel"), "⌥P");
+  assert.equal(shortcutLabel("agentPrevious", "Win32"), "Alt+Shift+P");
+  assert.equal(shortcutAria("agentNext", "Win32"), "Alt+P");
+});
 test("composed input ownership preserves overlays, remote input and handled/IME/repeat events", () => {
   const dom = new JSDOM('<body><textarea></textarea></body>');
   const previous = Object.getOwnPropertyDescriptor(globalThis,'Element');

@@ -27,7 +27,7 @@ export class ThreadIdentityDatabase {
   readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(directory: string) {
-    const opened = openManagedDatabase({ path: join(directory, "thread-identity.sqlite"), legacyPolicy: "reject-unknown",
+    const opened = openManagedDatabase({ schemaId: "thread-identity-database", path: join(directory, "thread-identity.sqlite"), legacyPolicy: "reject-unknown",
       validateSchema: createSchemaValidator(THREAD_IDENTITY_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK),
       migrations: [{ version: 1, name: "thread-identity", sql: THREAD_IDENTITY_SCHEMA },
         { version: 2, name: "immutable-execution-leases", sql: OPENCRAFT_HOST_EXECUTION_LEASES },

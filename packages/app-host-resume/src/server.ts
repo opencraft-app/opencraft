@@ -1,11 +1,18 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import {
-  RESUME_DETACH_MS, RESUME_GLOBAL_MAX_BYTES, RESUME_PROTOCOL_VERSION, RESUME_SESSION_MAX_BYTES,
+  RESUME_DETACH_MS, RESUME_GLOBAL_MAX_BYTES, RESUME_GLOBAL_MAX_FRAMES, RESUME_PROTOCOL_VERSION, RESUME_SESSION_MAX_BYTES,
   ResumeLink, type ResumeAttempt, type ResumeFailureReason, type ResumeGrant,
-} from "./index.js";
+} from "@opencraft/app-host-resume";
+
+export class ResumeSessionCapacityError extends Error {
+  constructor() { super("Resume session capacity exhausted"); }
+}
 
 export interface ResumeRegistryOptions {
   readonly maxBytes?: number;
+  /** Bounds payload owners and empty sessions independently of retained bytes. */
+  readonly maxSessions?: number;
+  readonly maxFrames?: number;
   readonly sessionMaxBytes?: number;
   readonly detachMs?: number;
   readonly now?: () => number;
@@ -27,16 +34,25 @@ export class ResumeSession<P> {
   private evictedWhileDetached = false;
   detachedAt: number | null = null;
 
+  private readonly registry: ResumeRegistry<P>;
+  readonly id: string;
+  private readonly token: Buffer;
+  readonly identity: string;
+  readonly payload: P;
+  private readonly onEnd: (reason: string) => void;
+
   constructor(
-    private readonly registry: ResumeRegistry<P>,
-    readonly id: string,
-    private readonly token: Buffer,
-    readonly identity: string,
-    readonly payload: P,
-    private readonly onEnd: (reason: string) => void,
+    registry: ResumeRegistry<P>,
+    id: string,
+    token: Buffer,
+    identity: string,
+    payload: P,
+    onEnd: (reason: string) => void,
     maxBytes: number,
   ) {
-    this.link = new ResumeLink<RetainedFrame>({ maxBytes, onBytes: delta => registry.account(this, delta), onEvict: () => this.noteEviction() });
+    this.registry = registry; this.id = id; this.token = token;
+    this.identity = identity; this.payload = payload; this.onEnd = onEnd;
+    this.link = new ResumeLink<RetainedFrame>({ maxBytes, onAccounting: (bytes, frames) => registry.account(this, bytes, frames), onEvict: () => this.noteEviction() });
   }
 
   get isEnded(): boolean { return this.ended; }
@@ -81,7 +97,7 @@ export class ResumeSession<P> {
     this.ended = true;
     if (this.detachTimer !== null) this.registry.timers.clearTimeout(this.detachTimer);
     this.detachTimer = null;
-    this.link.clear();
+    this.link.dispose();
     this.registry.forget(this);
     try { this.onEnd(reason); } catch { /* The integration's cleanup cannot strand the registry. */ }
   }
@@ -91,14 +107,19 @@ export interface ResumeRegistryStats {
   readonly sessions: number;
   readonly detached: number;
   readonly bytes: number;
+  readonly frames: number;
 }
 
 /** Process-wide owner of resumable sessions and their shared memory budget. */
 export class ResumeRegistry<P> {
   private readonly sessions = new Map<string, ResumeSession<P>>();
   private total = 0;
+  private frames = 0;
+  private closed = false;
   private evicting = false;
   readonly maxBytes: number;
+  readonly maxSessions: number;
+  readonly maxFrames: number;
   readonly sessionMaxBytes: number;
   readonly detachMs: number;
   readonly clock: () => number;
@@ -106,8 +127,15 @@ export class ResumeRegistry<P> {
 
   constructor(options: ResumeRegistryOptions = {}) {
     this.maxBytes = options.maxBytes ?? RESUME_GLOBAL_MAX_BYTES;
+    this.maxSessions = options.maxSessions ?? 4_096;
+    this.maxFrames = options.maxFrames ?? RESUME_GLOBAL_MAX_FRAMES;
     this.sessionMaxBytes = options.sessionMaxBytes ?? RESUME_SESSION_MAX_BYTES;
     this.detachMs = options.detachMs ?? RESUME_DETACH_MS;
+    if (!Number.isSafeInteger(this.maxBytes) || this.maxBytes < 0
+      || !Number.isSafeInteger(this.sessionMaxBytes) || this.sessionMaxBytes < 0
+      || !Number.isSafeInteger(this.maxSessions) || this.maxSessions < 1
+      || !Number.isSafeInteger(this.maxFrames) || this.maxFrames < 1
+      || !Number.isFinite(this.detachMs) || this.detachMs < 0) throw new RangeError("Invalid resume registry limits");
     this.clock = options.now ?? Date.now;
     this.timers = {
       setTimeout: options.setTimeout ?? ((run, ms) => setTimeout(run, ms)),
@@ -118,10 +146,12 @@ export class ResumeRegistry<P> {
   get stats(): ResumeRegistryStats {
     let detached = 0;
     for (const session of this.sessions.values()) if (session.isDetached) detached++;
-    return { sessions: this.sessions.size, detached, bytes: this.total };
+    return { sessions: this.sessions.size, detached, bytes: this.total, frames: this.frames };
   }
 
   create(identity: string, payload: P, onEnd: (reason: string) => void): ResumeSession<P> {
+    if (this.closed) throw new Error("Resume registry is closed");
+    if (this.sessions.size >= this.maxSessions) throw new ResumeSessionCapacityError();
     let id: string;
     do id = randomBytes(16).toString("hex"); while (this.sessions.has(id));
     const session = new ResumeSession(this, id, randomBytes(32), identity, payload, onEnd, this.sessionMaxBytes);
@@ -138,6 +168,8 @@ export class ResumeRegistry<P> {
   }
 
   close(): void {
+    if (this.closed) return;
+    this.closed = true;
     for (const session of [...this.sessions.values()]) session.end("server-closed");
   }
 
@@ -147,15 +179,21 @@ export class ResumeRegistry<P> {
   }
 
   /** @internal Global budget: over it, the largest sessions lose their oldest frames. */
-  account(_session: ResumeSession<P>, delta: number): void {
-    this.total += delta;
-    if (this.total <= this.maxBytes || this.evicting) return;
+  account(_session: ResumeSession<P>, bytes: number, frames: number): void {
+    this.total += bytes;
+    this.frames += frames;
+    if ((this.total <= this.maxBytes && this.frames <= this.maxFrames) || this.evicting) return;
     this.evicting = true;
     try {
-      while (this.total > this.maxBytes) {
+      while (this.total > this.maxBytes || this.frames > this.maxFrames) {
         let largest: ResumeSession<P> | null = null;
-        for (const candidate of this.sessions.values()) if (!largest || candidate.link.bytes > largest.link.bytes) largest = candidate;
-        if (!largest || !largest.link.evictOldest()) break;
+        for (const candidate of this.sessions.values()) {
+          const size = this.total > this.maxBytes ? candidate.link.bytes : candidate.link.frames;
+          const prior = largest ? (this.total > this.maxBytes ? largest.link.bytes : largest.link.frames) : -1;
+          if (size > prior) largest = candidate;
+        }
+        if (!largest || !largest.link.frames) break;
+        largest.link.evictOldest();
       }
     } finally { this.evicting = false; }
   }

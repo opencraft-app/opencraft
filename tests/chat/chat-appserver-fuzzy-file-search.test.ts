@@ -199,3 +199,45 @@ test("a search starting after disposal is stopped without sending its query", as
     "fuzzyFileSearch/sessionStart", "fuzzyFileSearch/sessionStop",
   ]);
 });
+
+test("a transient index-start failure permits a later explicit query to retry", async () => {
+  const requests: RecordedRequest[] = [];
+  let failStart = true;
+  const { client } = createClient(async (method, params) => {
+    requests.push({ method, params });
+    if (method === "fuzzyFileSearch/sessionStart" && failStart) {
+      failStart = false;
+      throw new Error("synthetic transport failure");
+    }
+    return {};
+  });
+  const controller = new AppServerFuzzyFileSearchController(client);
+  const session = await controller.createSession({ roots: ["/repo"] });
+  await assert.rejects(session.update("first"), /synthetic transport failure/u);
+  await session.update("retry");
+  assert.deepEqual(requests.map(request => request.method), [
+    "fuzzyFileSearch/sessionStart", "fuzzyFileSearch/sessionStart", "fuzzyFileSearch/sessionUpdate",
+  ]);
+  await session.stop();
+  controller.dispose();
+});
+
+test("clearing a query and replacing it do not publish stale session results", async () => {
+  const { client, emit } = createClient(async () => ({}));
+  const updates: string[] = [];
+  let completed = 0;
+  const controller = new AppServerFuzzyFileSearchController(client, { createSessionId: () => "query-owner" });
+  const session = await controller.createSession({ roots: ["/repo"], onUpdated: update => updates.push(update.query), onCompleted: () => { completed++; } });
+  await session.update("old");
+  await session.update("");
+  emit({ method: "fuzzyFileSearch/sessionUpdated", params: { sessionId: "query-owner", query: "old", files: [] } });
+  emit({ method: "fuzzyFileSearch/sessionCompleted", params: { sessionId: "query-owner" } });
+  assert.deepEqual(updates, []);
+  assert.equal(completed, 0);
+  await session.update("new");
+  emit({ method: "fuzzyFileSearch/sessionUpdated", params: { sessionId: "query-owner", query: "old", files: [] } });
+  emit({ method: "fuzzyFileSearch/sessionUpdated", params: { sessionId: "query-owner", query: "new", files: [] } });
+  assert.deepEqual(updates, ["new"]);
+  await session.stop();
+  controller.dispose();
+});

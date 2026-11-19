@@ -29,9 +29,9 @@ export const polishMessages = defineMessages({
   color: { id: "browserAnnotation.polish.color", defaultMessage: "Text color" },
   background: { id: "browserAnnotation.polish.background", defaultMessage: "Background" },
   radius: { id: "browserAnnotation.polish.radius", defaultMessage: "Corner radius" },
-  fontSize: { id: "browserAnnotation.polish.fontSize", defaultMessage: "Font size" },
+  fontSizeLabel: { id: "browserAnnotation.polish.fontSize", defaultMessage: "Font size" },
   weight: { id: "browserAnnotation.polish.weight", defaultMessage: "Font weight" },
-  lineHeight: { id: "browserAnnotation.polish.lineHeight", defaultMessage: "Line height" },
+  lineHeightLabel: { id: "browserAnnotation.polish.lineHeight", defaultMessage: "Line height" },
   top: { id: "browserAnnotation.polish.top", defaultMessage: "Top padding" },
   right: { id: "browserAnnotation.polish.right", defaultMessage: "Right padding" },
   bottom: { id: "browserAnnotation.polish.bottom", defaultMessage: "Bottom padding" },
@@ -41,7 +41,8 @@ export const polishMessages = defineMessages({
   width: { id: "browserAnnotation.polish.width", defaultMessage: "Width" },
   height: { id: "browserAnnotation.polish.height", defaultMessage: "Height" },
 });
-const names = { color: "color", "background-color": "background", "border-radius": "radius", "font-size": "fontSize", "font-weight": "weight", "line-height": "lineHeight", "padding-top": "top", "padding-right": "right", "padding-bottom": "bottom", "padding-left": "left", "row-gap": "row", "column-gap": "column", width: "width", height: "height" } as const;
+const propertyNames = [["color", "color"], ["background-color", "background"], ["border-radius", "radius"], ["font-size", "fontSizeLabel"], ["font-weight", "weight"], ["line-height", "lineHeightLabel"], ["padding-top", "top"], ["padding-right", "right"], ["padding-bottom", "bottom"], ["padding-left", "left"], ["row-gap", "row"], ["column-gap", "column"], ["width", "width"], ["height", "height"]] as const;
+const names = Object.fromEntries(propertyNames) as Record<(typeof propertyNames)[number][0], (typeof propertyNames)[number][1]>;
 const groups: { key: "appearance" | "typography" | "spacing" | "dimensions"; properties: (keyof typeof names)[] }[] = [
   { key: "appearance", properties: ["color", "background-color", "border-radius"] },
   { key: "typography", properties: ["font-size", "font-weight", "line-height"] },
@@ -52,7 +53,7 @@ function StyleField({ property, value, observed, disabled, onChange }: { propert
   const intl = useIntl(), label = intl.formatMessage(polishMessages[names[property]]);
   const [draft, setDraft] = useState(value), [invalid, setInvalid] = useState(false);
   const suppressClick = useRef(false);
-  const dragging = useRef<{ id: number; x: number; value: string; next: string } | null>(null);
+  const dragging = useRef<{ pointerId: number; x: number; value: string; next: string } | null>(null);
   useEffect(() => { if (!dragging.current) { setDraft(value); setInvalid(false); } }, [value]);
   const commit = (next: string) => { if (!next.trim() || !CSS.supports(property, next) || /[;{}<>]|url\s*\(|!important/i.test(next)) { setInvalid(true); return; } setInvalid(false); onChange(next); };
   const numeric = parseStyleNumber(draft) !== null;
@@ -72,9 +73,9 @@ function StyleField({ property, value, observed, disabled, onChange }: { propert
         onKeyDown={e => { if (e.nativeEvent.isComposing) return; if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); commit(draft); } else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setDraft(value); setInvalid(false); } else if (numeric && (e.key === "ArrowUp" || e.key === "ArrowDown")) { e.preventDefault(); changeStep((e.key === "ArrowUp" ? 1 : -1) * (e.shiftKey ? 10 : 1)); } }} />
       {numeric ? <><Button type="button" size="sm" variant="ghost" disabled={disabled} aria-label={intl.formatMessage(polishMessages.decrease, {property: label})} onClick={() => changeStep(-1)}>−</Button>
         <Button type="button" size="sm" variant="ghost" disabled={disabled} aria-label={intl.formatMessage(polishMessages.increase, {property: label})} onClick={() => { if (suppressClick.current) { suppressClick.current = false; return; } changeStep(1); }}
-          onPointerDown={e => { if (e.pointerType !== "mouse" || e.button !== 0) return; suppressClick.current = false; dragging.current = {id: e.pointerId, x: e.clientX, value: draft, next: draft}; e.currentTarget.setPointerCapture(e.pointerId); }}
-          onPointerMove={e => { const d = dragging.current; if (!d || d.id !== e.pointerId) return; const delta = Math.trunc((e.clientX - d.x) / 5); d.next = stepStyleNumber(d.value, property === "font-weight" ? delta * 100 : delta) ?? d.value; setDraft(d.next); }}
-          onPointerUp={e => { const d = dragging.current; if (!d || d.id !== e.pointerId) return; dragging.current = null; if (Math.abs(e.clientX - d.x) >= 5) { e.preventDefault(); suppressClick.current = true; commit(d.next); } }} onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag}>+</Button></> : null}
+          onPointerDown={e => { if (e.pointerType !== "mouse" || e.button !== 0) return; suppressClick.current = false; dragging.current = {pointerId: e.pointerId, x: e.clientX, value: draft, next: draft}; e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerMove={e => { const d = dragging.current; if (!d || d.pointerId !== e.pointerId) return; const delta = Math.trunc((e.clientX - d.x) / 5); d.next = stepStyleNumber(d.value, property === "font-weight" ? delta * 100 : delta) ?? d.value; setDraft(d.next); }}
+          onPointerUp={e => { const d = dragging.current; if (!d || d.pointerId !== e.pointerId) return; dragging.current = null; if (Math.abs(e.clientX - d.x) >= 5) { e.preventDefault(); suppressClick.current = true; commit(d.next); } }} onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag}>+</Button></> : null}
       <Button type="button" size="sm" variant="ghost" disabled={disabled || value === observed} aria-label={intl.formatMessage(polishMessages.reset, {property: label})} onClick={() => { setDraft(observed); onChange(null); }}><ResetIcon size={14} /></Button>
     </div>
     {invalid ? <small id={`annotation-style-${property}-error`} role="alert">{intl.formatMessage(polishMessages.invalid)}</small> : null}

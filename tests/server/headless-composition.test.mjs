@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { WebSocket, WebSocketServer } from 'ws';
 import { once } from 'node:events';
+import { Worker } from 'node:worker_threads';
 
 async function fixture(t) {
   const runtime = fileURLToPath(new URL('../../.runtime/', import.meta.url));
@@ -31,6 +32,18 @@ async function fixture(t) {
 test('public Headless artifact has no enterprise implementation and its CLI rejects private configuration', async t => {
   const f = await fixture(t), bundle = join(f.root, 'server.mjs');
   const result = await buildHeadlessBundle(bundle);
+  const workerPath = join(f.root, 'connected-agent-history-worker.mjs');
+  assert.equal((await stat(workerPath)).isFile(), true, 'the packaged Host ships its native history worker');
+  assert.ok(!(await readFile(workerPath, 'utf8')).includes('tsx/esm/api'), 'the packaged worker must not require a TypeScript loader');
+  const worker = new Worker(workerPath, { workerData: { provider: 'codex', home: join(f.root, 'native-home') } });
+  const reply = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('native history worker did not start')), 5_000);
+    worker.once('message', message => { clearTimeout(timer); resolve(message); });
+    worker.once('error', error => { clearTimeout(timer); reject(error); });
+    worker.postMessage({ id: 1, nativeId: '11111111-2222-3333-4444-555555555555', params: {}, kind: 'turns' });
+  });
+  await worker.terminate();
+  assert.deepEqual(reply, { id: 1, error: 'Could not read the saved agent conversation' });
   const inputs = Object.keys(result.metafile.inputs);
   assert.ok(inputs.length > 100, 'inspect the real transitive graph');
   assert.deepEqual(inputs.filter(path => path.includes('/enterprise-identity/') || path.includes('products/join/')), []);
@@ -162,4 +175,67 @@ test('a disposal failure settles other resources but retains the writer until pr
   const first = app.close(), second = app.close(); assert.equal(first, second);
   await assert.rejects(first, AggregateError); assert.equal(closes, 1);
   await assert.rejects(startHeadlessServer(f.options), { code: 'ELOCKED' });
+});
+
+test('anonymous handoff is selected by deployment configuration on both real RPC ingress paths', async t => {
+  for (const identityConfigured of [false,true]) {
+    await t.test(identityConfigured ? 'identity adapter with anonymous request' : 'anonymous installation', async t => {
+      const f = await fixture(t), sourceId='pi_source';
+      const backend = new WebSocketServer({host:'127.0.0.1',port:0});await once(backend,'listening');
+      backend.on('connection',socket=>socket.on('message',raw=>{
+        const message = JSON.parse(String(raw));
+        socket.send(JSON.stringify({id:message.id,...(message.__opencraftClient===undefined?{}:{__opencraftClient:message.__opencraftClient}),result:message.method==='initialize'?{capabilities:{}}:{thread:{id:message.method==='thread/read'?message.params.threadId:'target',cwd:f.root,status:{type:'idle'}}}}));
+      }));
+      const app = await startHeadlessServer({...f.options,
+        startAgentHost:async()=>({websocketUrl:`ws://127.0.0.1:${backend.address().port}`,close:async()=>{}}),
+      },identityConfigured ? {createIdentity:async()=>({providers:[],close(){}})} : {});
+      t.after(async()=>{await app.close();await new Promise(resolve=>backend.close(resolve));});
+      assert.equal((await fetch(app.url+'/__opencraft_actors/me')).status,401);
+      for (const path of ['/appserver','/apphost']) {
+        const socket = new WebSocket(app.url.replace('http:','ws:')+path,{origin:app.url});await once(socket,'open');
+        let generation;
+        const exchange = async frame => {
+          const response = once(socket,'message',{signal:AbortSignal.timeout(5000)});socket.send(JSON.stringify(frame));
+          return JSON.parse(String((await response)[0]));
+        };
+        if(path==='/apphost') {
+          await exchange({type:'hello',protocolVersion:2,rendererId:'fixture'});
+          generation=(await exchange({type:'host/connect',requestId:'connect',hostId:'opencraft-server',leaseId:'lease'})).result.generation;
+        }
+        const frames=[];socket.on('message',raw=>frames.push(JSON.parse(String(raw))));
+        const rpc = async (id,method,params={}) => {
+          const frame={id,method,params};
+          socket.send(JSON.stringify(path==='/appserver'?frame:{type:'host/send',requestId:'send-'+id,hostId:'opencraft-server',leaseId:'lease',generation,frame:JSON.stringify(frame)}));
+          const until=Date.now()+5000;
+          while(Date.now()<until){for(const row of frames){const reply=path==='/appserver'?row:row.type==='host/frame'?JSON.parse(row.frame):{};if(reply.id===id)return reply;}await new Promise(resolve=>setTimeout(resolve,5));}
+          throw Error('RPC timed out');
+        };
+        const initialized=await rpc(1,'initialize');
+        assert.equal(initialized.result.capabilities.extensions['opencraft/thread-access'].agentHandoff,!identityConfigured);
+        const reference=await rpc(2,'opencraft/collaboration',{action:'reference',threadId:sourceId});
+        if(identityConfigured)assert.equal(reference.error.data.code,'actor_authentication_required');
+        else assert.match(reference.result.reference,/pi_source$/);
+        const metadata=await rpc(4,'opencraft/collaboration',{action:'metadata',reference:identityConfigured?{serverId:'server',threadId:sourceId}:reference.result.ref});
+        if(identityConfigured)assert.equal(metadata.error.data.code,'actor_authentication_required');
+        else assert.equal(metadata.result?.cwd,f.root,JSON.stringify(metadata));
+        const start=await rpc(3,'thread/start',{handoffSource:{threadId:sourceId}});
+        if(identityConfigured)assert.equal(start.error.code,-32004);
+        else assert.equal(start.result.thread.id,'target');
+        socket.close();await once(socket,'close');
+      }
+    });
+  }
+});
+
+test('anonymous installation can subsequently initialize its first real administrator', async t => {
+  const f = await fixture(t);
+  const anonymous = await startHeadlessServer(f.options);await anonymous.close();
+  const proof=randomBytes(32).toString('base64url');
+  const proofPath=join(f.root,'setup-token'),configPath=join(f.root,'human-auth.json');
+  await writeFile(proofPath,JSON.stringify({token:proof}),{mode:0o600});
+  await writeFile(configPath,JSON.stringify({origin:anonymous.url,local:true,oidc:[],setupTokenFile:proofPath}),{mode:0o600});
+  const app=await startHeadlessServer({...f.options,port:Number(new URL(anonymous.url).port),humanAuthConfig:configPath});t.after(()=>app.close());
+  assert.equal((await fetch(app.url+'/setup')).status,200);
+  const setup=await fetch(app.url+'/__opencraft_account/setup',{method:'POST',headers:{origin:anonymous.url,'content-type':'application/json'},body:JSON.stringify({proof,mode:'web',username:'owner',password:'Fixture-account-password-42'})});
+  assert.equal(setup.status,200,await setup.text());
 });

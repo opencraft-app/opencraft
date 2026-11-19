@@ -1,4 +1,5 @@
-import { animate, useMotionValue, useReducedMotion, type MotionValue } from "motion/react";
+import { useMotionReduction } from "@opencraft/design-system-web/motion-reduction";
+import { animate, useMotionValue, type MotionValue } from "motion/react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { PANEL_SPRING_TRANSITION, PANEL_CONTINUOUS_SPRING_TRANSITION } from "./use-panel-animation";
 import { readEdgeGestureHandoff } from "../runtime/edge-gesture-bridge";
@@ -17,16 +18,16 @@ interface HorizontalScroll {
 interface Gesture {
   id: number; x: number; y: number; width: number; start: number; initiallyOpen: boolean;
   owner: MobileGestureOwner; sidebarAllowed: boolean; horizontal: HorizontalScroll | null; scrollports: HorizontalScroll[];
-  motionStartedAt: number | null; samples: GestureSample[]; nativeReader: boolean;
+  motionStartedAt: number | null; samples: GestureSample[]; nativeReader: boolean; initialFocus?:HTMLElement|null;
 }
 
 const foregroundInputSelector = 'dialog[open],[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
-function hasForegroundInputOwner(shell: HTMLElement, path: EventTarget[] = [], withinModal = false): boolean {
+function hasForegroundInputOwner(shell: HTMLElement, path: EventTarget[] = [], withinModal = false, ownedSurface?:HTMLElement|null): boolean {
   const ownDialog = withinModal ? shell.closest('[role="dialog"],[role="alertdialog"],dialog') : null;
   // Only the enclosing modal is exempt. Nested dialogs, menus and listboxes
   // still revoke this local navigation gesture, as they do for the Shell.
-  const foreign = (node: Element) => !ownDialog || !node.contains(ownDialog);
+  const foreign = (node: Element) => node !== ownedSurface && (!ownDialog || !node.contains(ownDialog));
   if (path.some(node => node instanceof Element && node.matches(foregroundInputSelector) && foreign(node))) return true;
   // Portals live in the presentation's own DOM root. Document queries cannot
   // see embedded dialogs; a retargeted event.target cannot identify their input.
@@ -59,7 +60,7 @@ function horizontalInput(path: EventTarget[], boundary: HTMLElement): Horizontal
 }
 
 /** One visibility writer above the shared portal. Vertical/native input stays owned by its view. */
-export function useMobileSidebarGesture({ enabled, open, width, root, overlay, foreground, emulateMouse = false, withinModal = false, intent = "sidebar", scopeKey, presentation, onOpenChange }: {
+export function useMobileSidebarGesture({ enabled, open, width, root, overlay, foreground, emulateMouse = false, withinModal = false, intent = "sidebar", scopeKey, presentation, onOpenChange, leftEdgeOnly=false, excludeLeftEdge=false, edgeWidth=36, edgeHandle, onInteractionStart }: {
   /** Explicit interactive phone preview only; ordinary desktop mouse input stays native. */
   emulateMouse?: boolean;
   /** Local navigation may consume contacts inside its enclosing modal only. */
@@ -73,13 +74,15 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
   root: RefObject<HTMLElement | null>; overlay: RefObject<HTMLElement | null>;
   foreground?: RefObject<HTMLElement | null>;
   onOpenChange(open: boolean): boolean | void;
+  onInteractionStart?(focused:HTMLElement|null):void;
+  leftEdgeOnly?:boolean; excludeLeftEdge?:boolean; edgeWidth?:number; edgeHandle?:RefObject<HTMLElement|null>;
 }) {
-  const reducedMotion = useReducedMotion() === true;
+  const reducedMotion = useMotionReduction();
   const progress = useMotionValue(enabled && open ? 1 : 0);
   const [present, setPresent] = useState(enabled && open);
   const [dragging, setDragging] = useState(false);
-  const latest = useRef({ open, onOpenChange, reducedMotion, intent });
-  latest.current = { open, onOpenChange, reducedMotion, intent };
+  const latest = useRef({ open, onOpenChange, reducedMotion, intent,onInteractionStart });
+  latest.current = { open, onOpenChange, reducedMotion, intent,onInteractionStart };
   const gesture = useRef<Gesture | null>(null);
   const generation = useRef(0);
   const target = useRef<boolean | null>(null);
@@ -152,7 +155,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
     };
     const foregroundOwnsInput = (event?: Event) => {
       const shell = root.current;
-      if (!shell || !hasForegroundInputOwner(shell, event?.composedPath(), withinModal)) return false;
+      if (!shell || !hasForegroundInputOwner(shell, event?.composedPath(), withinModal,overlay.current)) return false;
       cancel(true);
       // Native showModal may dispatch touchcancel before its open mutation is
       // observed. Revoke that already-settling background animation as well.
@@ -191,8 +194,12 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
       const viewport = shell.getBoundingClientRect();
       // Host adapters may hand their reserved contact to this existing owner.
       // Unclaimed screen edges remain native; no host detection belongs here.
+      if(!latest.current.open) {
+        if(leftEdgeOnly&&touch.clientX>viewport.left+edgeWidth)return;
+        if(excludeLeftEdge&&touch.clientX<=viewport.left+edgeWidth)return;
+      }
       const inside = touch.clientX >= viewport.left && touch.clientX <= viewport.right;
-      let sidebarAllowed = inside && (readEdgeGestureHandoff(event) !== undefined
+      let sidebarAllowed = inside && ((edgeHandle?.current && path.includes(edgeHandle.current)) || readEdgeGestureHandoff(event) !== undefined
         || (touch.clientX >= viewport.left + MOBILE_SIDEBAR_EDGE_RESERVE && touch.clientX <= viewport.right - MOBILE_SIDEBAR_EDGE_RESERVE));
       if (!sidebarAllowed && !horizontal) { cancel(); return; }
       if (sidebarAllowed && latest.current.intent === "back" && presentation?.current) {
@@ -203,7 +210,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
           progress.jump(position); setPresent(position > 0);
         }
       }
-      gesture.current = { id: touch.identifier, x: touch.clientX, y: touch.clientY, width: width.get(), start: progress.get(), initiallyOpen: latest.current.open, owner: "pending", sidebarAllowed, horizontal, scrollports, motionStartedAt: null, samples: [{ x: touch.clientX, time: event.timeStamp }], nativeReader: path.some(node => node instanceof Element && node.getAttribute('data-sidebar-gesture') === 'vertical-pan') };
+      gesture.current = { initialFocus:document.activeElement instanceof HTMLElement?document.activeElement:null, id: touch.identifier, x: touch.clientX, y: touch.clientY, width: width.get(), start: progress.get(), initiallyOpen: latest.current.open, owner: "pending", sidebarAllowed, horizontal, scrollports, motionStartedAt: null, samples: [{ x: touch.clientX, time: event.timeStamp }], nativeReader: path.some(node => node instanceof Element && node.getAttribute('data-sidebar-gesture') === 'vertical-pan') };
       // Native contacts keep their original target even if a live reader
       // redraws that node. Continue the same transaction when its event path
       // no longer reaches document; connected paths still have exactly one owner.
@@ -282,6 +289,7 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
         // Stop the old animation before reading its current position.
         progress.stop(); ++generation.current; target.current = null;
         transaction.start = progress.get(); transaction.owner = "sidebar";
+        latest.current.onInteractionStart?.(transaction.initialFocus??null);
         setPresent(true); setDragging(true);
       }
       progress.set(sidebarGestureProgress(transaction.start, dx, transaction.width));
@@ -405,7 +413,53 @@ export function useMobileSidebarGesture({ enabled, open, width, root, overlay, f
       document.removeEventListener("visibilitychange", visibilityChanged);
       gesture.current = null;
     };
-  }, [enabled, emulateMouse, withinModal, overlay, foreground, root, progress, width, intent, scopeKey, presentation]);
+  }, [enabled, emulateMouse, withinModal, overlay, foreground, root, progress, width, intent, scopeKey, presentation,leftEdgeOnly,excludeLeftEdge,edgeWidth,edgeHandle]);
+  useLayoutEffect(()=>{
+    const handle=edgeHandle?.current;if(!enabled||!handle||emulateMouse)return;
+    let contact:{pointerId:number;x:number;start:number;open:boolean;moving:boolean;samples:GestureSample[];initialFocus:HTMLElement|null}|null=null;
+    const end=(cancel=false,event?:PointerEvent)=>{
+      const current=contact;if(!current)return;contact=null;setDragging(false);
+      if(current.moving)suppressClick.current=true;
+      const next=cancel||!current.moving?current.open:sidebarGestureTarget(progress.get(),sidebarReleaseVelocity(current.samples,event?.clientX??current.x,event?.timeStamp??performance.now()),(event?.clientX??current.x)-current.x,current.open);
+      settleRef.current(next);
+      if(!cancel&&current.moving&&next!==latest.current.open&&latest.current.onOpenChange(next)===false)settleRef.current(latest.current.open);
+    };
+    const down=(event:PointerEvent)=>{
+      if(event.pointerType==='touch'||!event.isPrimary||event.button!==0)return;
+      const shell=root.current;
+      if(!shell||hasForegroundInputOwner(shell,event.composedPath(),withinModal,overlay.current))return;
+      if(contact)end(true);
+      ++generation.current;progress.stop();
+      contact={initialFocus:document.activeElement instanceof HTMLElement?document.activeElement:null,pointerId:event.pointerId,x:event.clientX,start:progress.get(),open:latest.current.open,moving:false,samples:[{x:event.clientX,time:event.timeStamp}]};
+      suppressClick.current=false;handle.setPointerCapture(event.pointerId);
+    };
+    const move=(event:PointerEvent)=>{
+      if(!contact||event.pointerId!==contact.pointerId)return;
+      const shell=root.current;
+      if(!shell||hasForegroundInputOwner(shell,event.composedPath(),withinModal,overlay.current)){end(true);return;}
+      const dx=event.clientX-contact.x;
+      if(!contact.moving&&Math.abs(dx)<MOBILE_GESTURE_DEADZONE)return;
+      if(!contact.moving)latest.current.onInteractionStart?.(contact.initialFocus);
+      contact.moving=true;setDragging(true);setPresent(true);
+      contact.samples.push({x:event.clientX,time:event.timeStamp});
+      while(contact.samples.length>2&&contact.samples[1]!.time<event.timeStamp-100)contact.samples.shift();
+      progress.set(Math.max(0,Math.min(1,contact.start+dx/Math.max(1,width.get()))));
+      event.preventDefault();
+    };
+    const up=(event:PointerEvent)=>{if(contact&&event.pointerId===contact.pointerId){const shell=root.current;end(!shell||hasForegroundInputOwner(shell,event.composedPath(),withinModal,overlay.current),event);}};
+    const cancel=()=>end(true);
+    const visibility=()=>{if(document.visibilityState!=='visible'&&contact){end(true);progress.jump(latest.current.open?1:0);setPresent(latest.current.open);}};
+    const pointerForeground=new MutationObserver(()=>{const shell=root.current;if(contact&&(!shell||hasForegroundInputOwner(shell,[],withinModal,overlay.current)))cancel();});
+    const pointerScope=root.current?.getRootNode();
+    const observation={childList:true,subtree:true,attributes:true,attributeFilter:['open','aria-modal','role','hidden','aria-hidden']};
+    if(pointerScope)pointerForeground.observe(pointerScope,observation);
+    if(pointerScope!==document)pointerForeground.observe(document,observation);
+    document.addEventListener('visibilitychange',visibility);
+    handle.addEventListener('pointerdown',down);handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',up);
+    handle.addEventListener('pointercancel',cancel);handle.addEventListener('lostpointercapture',cancel);
+    window.addEventListener('blur',cancel);window.addEventListener('resize',cancel);
+    return()=>{pointerForeground.disconnect();document.removeEventListener('visibilitychange',visibility);if(contact){contact=null;setDragging(false);progress.jump(latest.current.open?1:0);setPresent(latest.current.open);}handle.removeEventListener('pointerdown',down);handle.removeEventListener('pointermove',move);handle.removeEventListener('pointerup',up);handle.removeEventListener('pointercancel',cancel);handle.removeEventListener('lostpointercapture',cancel);window.removeEventListener('blur',cancel);window.removeEventListener('resize',cancel);};
+  },[enabled,edgeHandle,progress,width,root,overlay,withinModal,scopeKey,emulateMouse]);
   useLayoutEffect(() => () => { ++generation.current; progress.stop(); }, [progress]);
   return { progress, present, dragging };
 }

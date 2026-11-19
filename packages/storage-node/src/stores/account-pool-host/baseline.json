@@ -1,0 +1,39 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "account-pool",
+      "checksum": "5f9f2441b9b1eacd659433ccab4aca8280d8c705def3331ab5cb5f96caf40306"
+    },
+    {
+      "version": 2,
+      "name": "codex-reset-credit-count",
+      "checksum": "efa5915505be9cb222c51a6f8a21f525a487709d6ef06c13cfb48e7ca35748fa"
+    },
+    {
+      "version": 3,
+      "name": "codex-account-credit-policy",
+      "checksum": "cfce61648b03c24768cf6266631c8236302727405f66ee3a2b3c974321d2755f"
+    }
+  ],
+  "tableOptions": {
+    "pool_accounts": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "pool_active_account": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "pool_affinity": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "pool_quota": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "a14f35b5869f1ff51dd58f32b4ec5ed4d87de646b74ced9c1e901575888eab54",
+  "baselineSnapshotChecksum": "74c23a2d1421750978eff82762c362e913184be88b0019bb94143dff5f6878df"
+}

@@ -19,7 +19,7 @@ try {
     const source = name => fileURLToPath(new URL(name, import.meta.url));
     await Promise.all([
       build({ entryPoints: [source('./desktop-cdp-main.ts')], outfile: join(profile, 'probe.cjs'), bundle: true, platform: 'node', format: 'cjs', external: ['electron'] }),
-      build({ entryPoints: [source('../../../apps/workbench-electron/src/preload.ts')], outfile: join(profile, 'preload.cjs'), bundle: true, platform: 'browser', format: 'cjs', external: ['electron'] }),
+      build({ entryPoints: [source('../../../apps/desktop/src/preload.ts')], outfile: join(profile, 'preload.cjs'), bundle: true, platform: 'browser', format: 'cjs', external: ['electron'] }),
       build({ entryPoints: [source('./desktop-cdp-client.ts')], outfile: join(profile, 'client.js'), bundle: true, platform: 'browser' }),
       build({ entryPoints: [source('./desktop-cdp-guest.tsx')], outfile: join(profile, 'guest.js'), bundle: true, platform: 'browser' }),
     ]);

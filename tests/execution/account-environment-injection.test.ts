@@ -245,7 +245,7 @@ test('Pi durable tools follow the admitted input across employees and register e
   } finally { await native.close(); }
 });
 
-test('a gateway preserves ordinary turns on a legacy Codex router and refuses configured variables before owner handoff', async t => {
+test('a legacy Codex router admits an initial empty creation but fences later turns without an attested environment handoff', async t => {
   const f = await fixture(t);
   const { createServer } = await import('node:http'); const { WebSocketServer } = await import('ws');
   const { startControlServer } = await import('../../apps/codex-core/src/control-server.js');
@@ -284,8 +284,10 @@ test('a gateway preserves ordinary turns on a legacy Codex router and refuses co
     const created = await call('thread/start', {});
     await call('turn/start', { threadId: created.thread.id, clientUserMessageId: 'one', input: [{ type: 'text', text: 'first' }] });
     await call('fixture/complete', {});
-    await call('turn/start', { threadId: created.thread.id, clientUserMessageId: 'two', input: [{ type: 'text', text: 'next' }] });
-    assert.equal(methods.filter(method => method === 'turn/start').length, 2);
+    // Empty desired variables cannot attest that an independent legacy owner
+    // cleared a previous execution's credentials. Do not bypass this fence.
+    await assert.rejects(call('turn/start', { threadId: created.thread.id, clientUserMessageId: 'two', input: [{ type: 'text', text: 'next' }] }), /owner.*environment|environment.*handoff/i);
+    assert.equal(methods.filter(method => method === 'turn/start').length, 1, 'refused input never reaches Native');
     assert.equal(methods.includes('opencraft/environment/capability'), false, 'an old router must not receive an unsupported capability request');
     await assert.rejects(call('thread/start', {}, 'alice'), /owner handoff/);
   } finally {

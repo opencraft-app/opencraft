@@ -3,12 +3,15 @@ import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { constants } from "node:fs";
 import { access, readdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
+
+export const ONBOARDING_AGENT_ENGINES = { codex: "codex", cursor: "cursor", claude: "claude-code", codebuddy: "codebuddy" } as const;
 
 /** Local CLIs the first-run agent step can see. Commands and packages are fixed. */
 export const ONBOARDING_AGENTS = [
   {
     id: "codex",
+    name: "Codex",
     commands: ["codex"],
     versionArgs: ["--version"],
     statusArgs: ["login", "status"],
@@ -19,6 +22,7 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "cursor",
+    name: "Cursor",
     commands: ["cursor-agent"],
     versionArgs: ["--version"],
     statusArgs: ["status"],
@@ -29,6 +33,7 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "claude",
+    name: "Claude Code",
     commands: ["claude"],
     versionArgs: ["--version"],
     statusArgs: ["auth", "status"],
@@ -39,9 +44,10 @@ export const ONBOARDING_AGENTS = [
   },
   {
     id: "codebuddy",
+    name: "CodeBuddy",
     commands: ["codebuddy", "cbc"],
     versionArgs: ["--version"],
-    statusArgs: ["auth", "status"],
+    statusArgs: ["--version"],
     signInArgs: ["auth", "login"],
     signInEnv: {},
     installPackage: "@tencent-ai/codebuddy-code",
@@ -68,6 +74,7 @@ export interface OnboardingDeps {
   homedir: string;
   exists(file: string): Promise<boolean>;
   cursorVersions(): Promise<readonly string[]>;
+  nodeBinDirectories?(): Promise<readonly string[]>;
   exec(command: string, args: readonly string[], timeoutMs: number, env: NodeJS.ProcessEnv): Promise<CommandResult>;
   spawn(command: string, args: readonly string[], env: NodeJS.ProcessEnv): ManagedProcess;
 }
@@ -125,10 +132,16 @@ export function firstVersionLine(stdout: string): string | null {
   return line ? line.slice(0, 80) : null;
 }
 
-export async function resolveExecutable(commands: readonly string[], deps: Pick<OnboardingDeps, "env" | "homedir" | "exists" | "cursorVersions">): Promise<string | null> {
+export async function resolveExecutable(commands: readonly string[], deps: Pick<OnboardingDeps, "env" | "homedir" | "exists" | "cursorVersions" | "nodeBinDirectories">): Promise<string | null> {
   const dirs = [...new Set([...(deps.env.PATH ?? "").split(delimiter), join(deps.homedir, ".local", "bin"), "/opt/homebrew/bin", "/usr/local/bin"].filter(Boolean))];
   for (const command of commands) {
     for (const dir of dirs) {
+      const candidate = join(dir, command);
+      if (await deps.exists(candidate)) return candidate;
+    }
+  }
+  for (const dir of await deps.nodeBinDirectories?.() ?? []) {
+    for (const command of commands) {
       const candidate = join(dir, command);
       if (await deps.exists(candidate)) return candidate;
     }
@@ -226,7 +239,7 @@ export class AgentOnboardingService {
       : await resolveExecutable(agent.commands, this.deps);
     if (!executable) throw new Error(kind === "install" ? "npm is not available" : "Agent is not installed");
     const args = kind === "install" ? ["install", "-g", agent.installPackage!] : agent.signInArgs;
-    const env = { ...this.deps.env, ...agent.signInEnv, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
+    const env = { ...await localAgentEnvironment(this.deps, executable), ...agent.signInEnv };
     const child = this.deps.spawn(executable, args, env);
     const task: LiveTask = { kind, phase: "running", message: null, log: `$ ${args.join(" ")}\n`, process: child, timer: null };
     this.tasks.set(agent.id, task);
@@ -257,6 +270,8 @@ export class AgentOnboardingService {
     const executable = await resolveExecutable(agent.commands, this.deps);
     const base = {
       id: agent.id,
+      engineId: ONBOARDING_AGENT_ENGINES[agent.id],
+      displayName: agent.name,
       installUrl: agent.installUrl,
       canInstallPackage: agent.installPackage !== null,
       activity: activityOf(this.tasks.get(agent.id)),
@@ -268,7 +283,7 @@ export class AgentOnboardingService {
     if (runningSignIn?.phase === "running" && runningSignIn.kind === "sign-in") {
       return { ...base, installed: true, version: null, authenticated: null, account: null };
     }
-    const env = { ...this.deps.env, PATH: augmentedPath(this.deps.env, this.deps.homedir) };
+    const env = await localAgentEnvironment(this.deps, executable);
     const [version, status] = await Promise.all([
       this.deps.exec(executable, agent.versionArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
       this.deps.exec(executable, agent.statusArgs, STATUS_TIMEOUT_MS, env).catch(() => ({ stdout: "", stderr: "", code: 1 })),
@@ -291,8 +306,14 @@ function augmentedPath(env: NodeJS.ProcessEnv, home: string): string {
   return parts.join(delimiter);
 }
 
+/** GUI and service PATHs can omit the Node installation that owns an agent. */
+export async function localAgentEnvironment(deps: Pick<OnboardingDeps,'env'|'homedir'|'nodeBinDirectories'>, executable: string): Promise<NodeJS.ProcessEnv> {
+  const bins = await deps.nodeBinDirectories?.() ?? [];
+  return {...deps.env, PATH:[...new Set([dirname(executable), ...augmentedPath(deps.env,deps.homedir).split(delimiter), ...bins])].join(delimiter)};
+}
+
 export function createOnboardingDeps(env: NodeJS.ProcessEnv = process.env): OnboardingDeps {
-  const home = homedir();
+  const home = env.HOME || env.USERPROFILE || homedir();
   return {
     env,
     homedir: home,
@@ -302,6 +323,14 @@ export function createOnboardingDeps(env: NodeJS.ProcessEnv = process.env): Onbo
     async cursorVersions() {
       try { return await readdir(join(home, ".local", "share", "cursor-agent", "versions")); }
       catch { return []; }
+    },
+    async nodeBinDirectories() {
+      const root = join(env.NVM_DIR || join(home, '.nvm'), 'versions', 'node');
+      try {
+        return (await readdir(root, {withFileTypes:true})).filter(entry => entry.isDirectory())
+          .map(entry => entry.name).sort((a,b) => b.localeCompare(a, undefined, {numeric:true}))
+          .map(version => join(root, version, 'bin'));
+      } catch { return []; }
     },
     exec(command, args, timeoutMs, commandEnv) {
       return new Promise((resolve, reject) => {

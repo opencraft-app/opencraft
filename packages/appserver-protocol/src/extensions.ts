@@ -54,6 +54,8 @@ export interface OpenCraftThreadQueueCapability {
   readonly atomicSteer: true;
   /** Host-owned acknowledgement for a target-bound discard of an unresolved claim. */
   readonly unconfirmedSteerDiscard?: true;
+  /** Explicit, history-checked retry of an unconfirmed input. */
+  readonly unconfirmedDeliveryRetry?: true;
   /** Whether pause reasons are durable queue-item state rather than UI state. */
   readonly perItemPause: boolean;
 }
@@ -68,6 +70,11 @@ export function supportsUnconfirmedSteerDiscard(value: unknown): boolean {
   return supportsAtomicQueuedSteer(value)
     && "unconfirmedSteerDiscard" in value
     && value.unconfirmedSteerDiscard === true;
+}
+
+export function supportsUnconfirmedDeliveryRetry(value: unknown): boolean {
+  return supportsAtomicQueuedSteer(value)
+    && value.unconfirmedDeliveryRetry === true;
 }
 
 /** Host-owned Thread lifecycle operations; missing flags never imply support. */

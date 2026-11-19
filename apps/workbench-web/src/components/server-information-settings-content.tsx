@@ -55,7 +55,7 @@ function ServerInformationContent({ scope }: { scope: string }) {
           <SettingsGroup>
             <SettingsRow layout="stacked" label={t('address', 'Public access URL')} htmlFor="server-public-url"
               description={t('hint', 'Include HTTPS and any Hub/server path prefix. Leave empty to use the address saved when each notification destination was registered.')}>
-              <SettingsTextInput id="server-public-url" type="url" value={value} placeholder="https://example.com/servers/server-id" autoComplete="off" spellCheck={false}
+              <SettingsTextInput id="server-public-url" type="url" value={value} placeholder={intl.formatMessage({"id": "settings.serverInformation.addressExample", "defaultMessage": "https://example.com/servers/server-id"})} autoComplete="off" spellCheck={false}
                 readOnly={!editable} disabled={!state.information} onChange={event => { setDraft(event.currentTarget.value); setSaved(false); }} />
             </SettingsRow>
           </SettingsGroup>

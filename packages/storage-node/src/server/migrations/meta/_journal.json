@@ -141,6 +141,13 @@
       "when": 1794813097063,
       "tag": "0019_native_group_lifecycle",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795102021455,
+      "tag": "0020_collaboration_spaces",
+      "breakpoints": true
     }
   ]
 }

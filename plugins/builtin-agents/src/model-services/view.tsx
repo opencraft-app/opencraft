@@ -268,7 +268,7 @@ function ProviderDetail({ controller, provider }: { controller: ModelServicesCon
     </section>
     {provider.provider === "openai-codex" ? <SettingsNotice>此适配器需要 OAuth 授权，API Key 不能启用它。</SettingsNotice> : null}
     {draft.probe ? <SettingsNotice tone={draft.probe.ok ? "neutral" : "error"}>{draft.probe.ok ? "已收到文本响应；不代表工具、图像或流式能力均已验证。" : draft.probe.error}</SettingsNotice> : null}
-    {service.hostId === "local" && provider.provider !== "openai-codex" ? <div className="model-services__row"><div><label>可供使用</label><p>保存在本机，供你和帮你办事的助手使用。</p></div><span className="model-services__row-end">仅自己</span></div> : null}
+    {service.hostId === "local" && provider.provider !== "openai-codex" ? <div className="model-services__row"><div><label>{intl.formatMessage({"id": "modelServices.local.availableTo", "defaultMessage": "Available to"})}</label><p>{intl.formatMessage({"id": "modelServices.local.privateDescription", "defaultMessage": "Stored on this device for you and your assistants."})}</p></div><span className="model-services__row-end">{intl.formatMessage({"id": "modelServices.local.onlyMe", "defaultMessage": "Only me"})}</span></div> : null}
     <section className="model-services__models" aria-label="模型列表">
       <div className="model-services__model-heading"><h3>模型</h3><div>{searchVisible || controller.modelQuery ? <SettingsTextInput autoFocus aria-label="搜索模型" placeholder="搜索模型" value={controller.modelQuery} onChange={event => { controller.modelQuery = event.target.value; controller.notify(); }} /> : <SettingsIconButton label="搜索模型" onClick={() => setSearchVisible(true)}><Search size={16} /></SettingsIconButton>}
         {!speech && !image ? <SettingsButton disabled={!editable || draft.dirty} onClick={() => { if (provider.configuration?.modelDeclarations) void controller.fetchModels(provider); else void controller.run(async () => { await service.refresh(); controller.message = "模型目录已刷新"; }); }}><RefreshCw size={14} />{provider.configuration?.modelDeclarations ? "获取模型" : "刷新模型"}</SettingsButton> : null}
@@ -300,7 +300,10 @@ export function createModelServicesView(controller: ModelServicesController) {
       <SettingsPageHeader title={intl.formatMessage({ id: "settings.contributions.modelServices", defaultMessage: "Model services" })} />
       <div className="model-services__agent-entry">
         <p><FormattedMessage id="onboard.agent.reopen" defaultMessage="Set up Codex, Cursor, Claude, or CodeBuddy on this computer." /></p>
-        <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet" } }))}><FormattedMessage id="onboard.agent.reopenAction" defaultMessage="Open agent setup" /></SettingsButton>
+        <div className="model-services__agent-actions">
+          <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet", intent: "history" } }))}><FormattedMessage id="onboard.history.open" defaultMessage="Import local conversations" /></SettingsButton>
+          <SettingsButton onClick={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "sheet" } }))}><FormattedMessage id="onboard.agent.reopenAction" defaultMessage="Open agent setup" /></SettingsButton>
+        </div>
       </div>
       <aside className="model-services__navigation" aria-label="提供商列表">
         <div className="model-services__search"><Search size={16} aria-hidden="true" /><SettingsTextInput aria-label="搜索提供商" placeholder="搜索提供商" value={controller.query} onChange={event => { controller.query = event.target.value; controller.notify(); }} />

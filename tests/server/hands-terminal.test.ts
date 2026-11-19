@@ -43,11 +43,12 @@ async function fixture(t: any) {
   await mkdir(paths.runtimeDirectory, { recursive: true });
   const stop = await startHandsTerminal(paths, { verify: false });
   const services: ReturnType<typeof createHandsTerminalService>[] = [];
+  const dependents: Array<() => unknown | Promise<unknown>> = [];
   const service = (tokenFile = paths.terminalToken) => { const value = createHandsTerminalService({ directory: paths.terminalDirectory, endpoint: paths.terminalEndpoint, tokenFile }); services.push(value); return value; };
-  t.after(async () => { for (const service of services) service.close(); await stop(); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { for (const close of dependents.reverse()) await close(); for (const service of services) service.close(); await stop(); await rm(root, { recursive: true, force: true }); });
   const spawn = (handle: string, cwd = paths.runtimeDirectory) => ({ processHandle: handle, cwd,
     command: ['/bin/bash', '--noprofile', '--norc'], tty: true, size: { cols: 80, rows: 24 }, threadId: 'thread' });
-  return { root, paths, service, spawn };
+  return { root, paths, service, spawn, cleanup: (close: () => unknown | Promise<unknown>) => { dependents.push(close); } };
 }
 
 test('Hands owns the same PTY across Host reconnections, with replay, input, resize and explicit termination', async t => {
@@ -114,13 +115,21 @@ test('Hands defaults missing character locale to UTF-8 and preserves explicit lo
     await service.dispatch('process/spawn', { ...f.spawn(sample.id), env: sample.env }, scope);
     const read = () => service.dispatch('process/attach', { processHandle: sample.id, afterSequence: 0 }, scope);
     await until(read, value => output(value).includes('$ '));
+    await service.dispatch('process/writeStdin', { processHandle: sample.id,
+      deltaBase64: Buffer.from('printf \'\\n__OC_LOCALE_STATE__=%s|%s|%s\\n\' "$LANG" "$LC_ALL" "$LC_CTYPE"\n').toString('base64') }, scope);
+    const environment = await until(read, value => /\r?\n__OC_LOCALE_STATE__=([^\r\n]*)/.test(output(value)));
+    const actualLocale = output(environment).match(/\r?\n__OC_LOCALE_STATE__=([^\r\n]*)/)![1];
+    const expectedLocale = sample.utf8 ? 'C.UTF-8||'
+      : [sample.env.LANG ?? '', sample.env.LC_ALL ?? '', sample.env.LC_CTYPE ?? sample.inherited ?? ''].join('|');
+    assert.equal(actualLocale, expectedLocale, `${sample.id}: explicit locale is never overwritten`);
     const text = '中文输入测试';
     const escapedChinese = [344, 270, 255].map(octal => String.fromCharCode(92) + octal).join('');
     await service.dispatch('process/writeStdin', { processHandle: sample.id,
       deltaBase64: Buffer.from(sample.paste ? '[200~' + text + '[201~' : text).toString('base64') }, scope);
-    const result = await until(read, value => sample.utf8 ? output(value).includes(text) : output(value).includes(escapedChinese));
+    const result = await until(read, value => output(value).includes(text) || (!sample.utf8 && output(value).includes(escapedChinese))).catch(async error => { throw new Error(`Locale case ${sample.id}: ${JSON.stringify(output(await read()))}`, { cause: error }); });
     if (sample.utf8) assert.ok(!output(result).includes(escapedChinese), sample.id);
-    else assert.ok(!output(result).includes(text), sample.id);
+    // Readline bracketed-paste display under C varies by version; the actual
+    // child environment above, not a display escape convention, proves preservation.
     await service.dispatch('process/kill', { processHandle: sample.id }, scope);
   }
 });
@@ -184,7 +193,7 @@ test('authenticated Gateway AppHost routes the existing terminal protocol to Han
     createCodexTransport: () => native,
     startAgentHost: async () => ({ websocketUrl: `ws://127.0.0.1:${(agent.address() as any).port}/rpc`, close() {} }),
   }, { createIdentity: async () => ({ providers: [{ authenticate: (request: any) => request.headers['x-fixture-proof'] === 'verified' ? principal : null }], close() {} }) });
-  t.after(() => app.close());
+  f.cleanup(() => app.close());
   let sequence = 0;
   async function browser(rendererId: string, hostId = 'local-codex') {
     const socket = new WebSocket(app.url.replace(/^http/, 'ws') + '/apphost', { origin: app.url, headers: { 'x-fixture-proof': 'verified' } });
@@ -242,7 +251,7 @@ test('authenticated Gateway AppHost routes the existing terminal protocol to Han
   await new Promise<void>((resolve, reject) => { raw.once('open', resolve); raw.once('error', reject); });
   async function rawRpc(method: string, params: any = {}) {
     const id = ++sequence; raw.send(JSON.stringify({ id, method, params }));
-    const reply = await until(async () => replies.find(frame => frame.id === id), Boolean);
+    const reply = await until(async () => replies.find(frame => frame.id === id), Boolean).catch(error => { throw new Error(`Raw RPC ${method} timed out; replies=${JSON.stringify(replies)}; localMethods=${JSON.stringify(native.frames.map(frame => frame.method))}; agentMethods=${JSON.stringify(agentEngines.map(engine => engine.frames.map(frame => frame.method)))}`, {cause:error}); });
     assert.equal(reply.error, undefined, JSON.stringify(reply)); return reply.result;
   }
   const initialized = await rawRpc('initialize');

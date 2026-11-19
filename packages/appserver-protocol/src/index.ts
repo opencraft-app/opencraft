@@ -47,3 +47,8 @@ export * from "./forwarded-record";
 export * from "./bot-conversations";
 
 export * from "./workspace-catalog";
+
+export * from "./catalog-merkle";
+export * from "./catalog-merkle-pages";
+
+export * from "./native-conversation-project";

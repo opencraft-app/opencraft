@@ -10,11 +10,29 @@ import { createSshHttpIngress, classifyIngress } from '../../plugins/ssh-http-in
 import { createProtocolIngress, classifyProtocol } from '../../scripts/web-deployment/protocol-ingress.mjs';
 import { createSshNativeRpcGateway } from '../../scripts/ssh-native-rpc-gateway.mjs';
 import { AppHostServer } from '../../packages/app-host-server/src/index.ts';
+import { generateEd25519KeyPair } from '../support/ssh-ed25519.mjs';
 
 const identity = () => {
   const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048, privateKeyEncoding: { type: 'pkcs1', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } });
   return { privateKey, publicKey: 'ssh-rsa ' + ssh2.utils.parseKey(privateKey).getPublicSSH().toString('base64') };
 };
+test('Node-generated Ed25519 OpenSSH keys remain valid across repeated generations', { timeout: 30_000 }, () => {
+  // The old ssh2 generator failed about 1/256 times. 2,000 unretried Node
+  // generations would have exposed roughly seven failures in that regime.
+  for (let index = 0; index < 2_000; index++) {
+    const pair = generateEd25519KeyPair();
+    const privateKey = ssh2.utils.parseKey(pair.private);
+    assert.ok(!(privateKey instanceof Error), `private key ${index}: ${privateKey instanceof Error ? privateKey.message : ''}`);
+    assert.equal(privateKey.type, 'ssh-ed25519');
+    const publicKey = ssh2.utils.parseKey(pair.public);
+    assert.ok(!(publicKey instanceof Error), `public key ${index}: ${publicKey instanceof Error ? publicKey.message : ''}`);
+    assert.equal(publicKey.type, 'ssh-ed25519');
+    assert.ok(privateKey.getPublicSSH().equals(publicKey.getPublicSSH()), `public key ${index} must match its private key`);
+  }
+  const server = new ssh2.Server({ hostKeys: [generateEd25519KeyPair().private] });
+  server.close();
+});
+
 const listen = server => new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server.address().port)));
 const get = (port, path) => new Promise((resolve, reject) => {
   const req = request({ hostname: '127.0.0.1', port, path }, res => { let body = ''; res.on('data', data => body += data); res.on('end', () => resolve({ code: res.statusCode, body })); });
@@ -22,7 +40,7 @@ const get = (port, path) => new Promise((resolve, reject) => {
 });
 
 test('dynamic SSH keys retain trusted submission context and retire when their authority is revoked', { timeout: 15_000 }, async () => {
-  const host = ssh2.utils.generateKeyPairSync('ed25519'), user = ssh2.utils.generateKeyPairSync('ed25519');
+  const host = generateEd25519KeyPair(), user = generateEd25519KeyPair();
   const contexts = [], listeners = new Set(); let allowed = true;
   const adapter = {
     get status() { return { state: 'open' }; },

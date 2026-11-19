@@ -22,6 +22,7 @@ export async function runIsolatedTest(command, args, { root = repository, loader
   for (const name of ['home', 'data', 'workspace']) mkdirSync(join(temporary, name), { mode: 0o700 });
   const env = {};
   for (const key of ['PATH', 'LANG', 'LC_ALL', 'TZ', 'SystemRoot', 'COMSPEC', 'PATHEXT',
+    'PLAYWRIGHT_BROWSERS_PATH',
     'LD_LIBRARY_PATH', 'DYLD_LIBRARY_PATH', 'GCC_EXEC_PREFIX', 'COMPILER_PATH', 'C_INCLUDE_PATH', 'CPLUS_INCLUDE_PATH', 'LIBRARY_PATH'])
     if (parent[key] !== undefined) env[key] = parent[key];
   Object.assign(env, {

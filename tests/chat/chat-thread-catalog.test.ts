@@ -43,3 +43,25 @@ test("catalog preserves native creation and recency separately for active orderi
   assert.equal(projected.updatedAt, 200);
   assert.equal(projectAppServerThread(thread({ updatedAt: 300 })).updatedAt, 300);
 });
+
+test("unnamed children use native identity instead of indistinguishable New chat rows", () => {
+  const child = { parentThreadId: "parent", name: null, preview: "", agentNickname: "Atlas", agentRole: "reviewer" };
+  assert.equal(projectAppServerThread(thread(child)).title, "Atlas");
+  assert.equal(projectAppServerThread(thread({ ...child, name: "任务审查" })).title, "任务审查");
+  assert.equal(projectAppServerThread(thread({ ...child, name: "  ", preview: "检查侧栏层级" })).title, "检查侧栏层级");
+  assert.equal(projectAppServerThread(thread({ ...child, agentNickname: " " })).title, "reviewer · #b84deb09");
+  assert.equal(projectAppServerThread(thread({ ...child, agentNickname: null, agentRole: null })).title, "#b84deb09");
+  assert.equal(projectAppServerThread(thread({ ...child, id: "child-00000002", agentNickname: null, agentRole: null })).title, "#00000002");
+  assert.equal(projectAppServerThread(thread({ name: null, preview: "", parentThreadId: null })).title, "New chat");
+});
+
+test("a workspace that is only a thread id is not shown as the conversation's place", () => {
+  const id = "thread-52be165e-a18a-4217-9a11-111111111111";
+  const projected = projectAppServerThread(thread({
+    id, name: null, preview: "", cwd: `/tmp/${id}`, modelProvider: "codex", parentThreadId: null,
+  }));
+  assert.equal(projected.title, "New chat");
+  assert.equal(projected.project, "");
+  assert.equal(projected.agentLabel, "Codex");
+  assert.equal(projectAppServerThread(thread({ cwd: "/data/opencraft", modelProvider: "unknown-engine" })).agentLabel, undefined);
+});

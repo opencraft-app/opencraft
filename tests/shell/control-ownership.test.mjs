@@ -65,3 +65,15 @@ test("nested and functional selectors cannot repaint shared controls", () => {
   assert.deepEqual(check("apps/workbench-web/src/styles/example.scss", '.row:has(.ui-button) { background: white; } .row > button:not(.ui-button) { padding: 8px; }'), []);
   assert.deepEqual(check("packages/design-system-web/src/button.web.scss", '.ui-button { background: var(--color-background-button-primary); }'), []);
 });
+
+
+test("rich card and media primitives retain shared paint ownership", () => {
+  for (const name of ["ObjectCardButton", "MediaActionButton"]) {
+    const path = "plugins/example/src/view.tsx";
+    const source = `import { ${name} as Action } from "@opencraft/design-system-web/button"; <Action className="feature-action" style={{padding: 0}} />`;
+    assert.ok(check(path, source).length, name);
+    const classes = new Set(sharedControlClassNames(path, source));
+    assert.ok(classes.has("feature-action"), name);
+    assert.ok(check("plugins/example/src/view.scss", ".feature-action { background: red; }", classes).length, name);
+  }
+});

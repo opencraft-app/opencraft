@@ -49,6 +49,11 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   let retryCommandId: string | null = null;
   let retryFailures = 0;
   let retryFailureCommandId: string | null = null;
+  const resetRetry = () => {
+    if (retryTimer !== null) clearTimeout(retryTimer);
+    retryTimer = null; retryNotBefore = 0; retryCommandId = null;
+    retryFailures = 0; retryFailureCommandId = null;
+  };
   let hydrated = false;
   const read = (): Promise<void> => {
     const owner = generation;
@@ -181,9 +186,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
   };
   const wake = () => { void drain(); };
   const stop = config.storage.subscribe(() => {
-    generation++;
-    retryNotBefore = 0; retryCommandId = null;
-    retryFailures = 0; retryFailureCommandId = null;
+    generation++; resetRetry();
     dispatch?.retire(entries.map(entry => entry.intent.commandId));
     // Account replacement retires every old asynchronous result.
     entries = [];
@@ -196,13 +199,11 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
     subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     attach(next: ConversationOutboxDispatch): () => void {
       if (disposed) throw new Error("Conversation outbox is disposed");
-      generation++; dispatch = next;
-      retryNotBefore = 0; retryCommandId = null;
-      retryFailures = 0; retryFailureCommandId = null;
+      generation++; resetRetry(); dispatch = next;
       hydration = read(); notify(); wake();
       return () => {
         if (dispatch !== next) return;
-        generation++; dispatch = null;
+        generation++; resetRetry(); dispatch = null;
         entries = entries.map(entry => entry.state === "sending" ? { ...entry, state: "unknown" as const } : entry);
         notify();
       };
@@ -321,7 +322,7 @@ export function createConversationOutbox(config: ConversationOutboxDispatch & {
       } catch (error) { if (!disposed && owner === generation) storageError = error instanceof Error ? error : new Error(String(error)); }
     },
     dispose() {
-      disposed = true; generation++; dispatch = null;
+      disposed = true; generation++; resetRetry(); dispatch = null;
       if (retryTimer !== null) clearTimeout(retryTimer);
       retryTimer = null; stop(); listeners.clear();
     },

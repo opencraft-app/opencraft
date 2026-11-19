@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useIntl } from '@opencraft/i18n/react';
-import { LiquidGlassBackdrop } from '@opencraft/design-system-web/liquid-glass';
+import { MaterialSurface } from '@opencraft/design-system-web/material-surface';
 import { Button } from '../ui/button';
 import { useAppearanceTheme } from '../../appearance-theme';
 import type { AnnouncementDialogContentProps } from './announcement-dialog';
@@ -34,8 +34,7 @@ export function AnnouncementExperience({ announcement, onAction }: AnnouncementD
     return () => window.removeEventListener('message', receive);
   }, []);
   return <article className="announcement-experience">
-    <section className="announcement-experience__details">
-      <LiquidGlassBackdrop shape="rounded-rectangle" />
+    <MaterialSurface className="announcement-experience__details">
       <header>
         <span className="announcement-experience__eyebrow">{text('showCode', 'Scan on phone')}</span>
         <h2>{title}</h2>
@@ -52,9 +51,8 @@ export function AnnouncementExperience({ announcement, onAction }: AnnouncementD
           {announcement.secondaryAction.labelMessage ? intl.formatMessage(announcement.secondaryAction.labelMessage) : announcement.secondaryAction.label}
         </Button> : null}
       </div>
-    </section>
-    <section className="announcement-experience__stage" aria-label={text('backToPreview', 'Phone preview')}>
-      <LiquidGlassBackdrop shape="rounded-rectangle" />
+    </MaterialSurface>
+    <MaterialSurface className="announcement-experience__stage" aria-label={text('backToPreview', 'Phone preview')}>
       <header className="announcement-experience__preview-heading">
         <span>{text('backToPreview', 'Phone preview')}</span>
         <p>{text('gestureHint', 'Drag left or right to use the sidebar.')}</p>
@@ -66,6 +64,6 @@ export function AnnouncementExperience({ announcement, onAction }: AnnouncementD
           onLoad={() => { setLoaded(true); sendCurrent.current(); }} />
       </div>
       <p className="announcement-experience__caption">{text('previewHint', 'Try the mobile layout here. Actions affect your current workspace.')}</p>
-    </section>
+    </MaterialSurface>
   </article>;
 }

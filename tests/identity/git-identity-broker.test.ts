@@ -80,6 +80,24 @@ test('an unbound host answers before a stalled execution origin lookup', async t
   assert.equal((await queryGitIdentityBroker(socket, { op: 'open', threadId: 'existing-session', host: 'github.com' }, 250)).status, 'unconfigured');
   assert.equal(lookups, 0);
 });
+test('credential helper accepts repeated Git array keys but rejects a repeated scalar key', async t => {
+  const f = await fixture(t);
+  f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Synthetic', email: 'synthetic@example.test' }, token: 'synthetic-only', signing: null });
+  const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' });
+  assert.equal(session.status, 'configured');
+  const wrapper = join(f.root, 'credential-helper.mjs');
+  await build({ entryPoints: [resolve('scripts/git-identity-wrapper.ts')], outfile: wrapper, bundle: true, platform: 'node', format: 'esm', logLevel: 'silent' });
+  const env = { ...process.env, OPENCRAFT_GIT_BROKER_SOCKET: f.socket, OPENCRAFT_GIT_COMMAND_SESSION: session.sessionId };
+  const helper = (input: string) => child(process.execPath, [wrapper, '--opencraft-credential-helper', 'get'], env, f.root, input);
+  // Git 2.46+ announces capabilities and may pass several WWW-Authenticate values.
+  const modern = await helper('capability[]=authtype\ncapability[]=state\nprotocol=https\nhost=github.com\nwwwauth[]=Basic realm="a"\nwwwauth[]=Bearer\n\n');
+  assert.equal(modern.code, 0, modern.err);
+  assert.equal(modern.out, 'username=synthetic\npassword=synthetic-only');
+  const repeated = await helper('protocol=https\nhost=github.com\nhost=evil.example.test\n\n');
+  assert.equal(repeated.code, 1);
+  assert.equal(repeated.out, 'quit=true');
+});
+
 async function child(command: string, args: string[], env: NodeJS.ProcessEnv, cwd: string, input?: string) {
   const p = spawn(command, args, { env, cwd, stdio: ['pipe', 'pipe', 'pipe'] }); const out: Buffer[] = [], err: Buffer[] = [];
   p.stdout.on('data', b => out.push(b)); p.stderr.on('data', b => err.push(b)); p.stdin.end(input);
@@ -513,7 +531,10 @@ test('broker fence includes pending admission, drains existing signer, and cold 
   f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Synthetic', email: 'synthetic@example.test' }, token: 'synthetic-only', signing: generateGitSigningKey() });
   const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' });
   const call = (input: any) => queryGitIdentityBroker(f.socket, { op: 'owner-handoff', ...input });
-  const initial = (await call({ action: 'snapshot' })).handoff;
+  // Owner handoff is a root operator action; an unprivileged peer is refused outright.
+  const snapshot = await call({ action: 'snapshot' });
+  if (process.getuid?.() !== 0) { assert.deepEqual(snapshot, { status: 'denied' }); return; }
+  const initial = snapshot.handoff;
   const stat = await readFile(`/proc/${process.pid}/stat`, 'utf8');
   const claim = { version: 1, id: 'broker-test-lease', ttlMs: 15000, controller: { pid: process.pid, startTime: stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\s+/u)[19], bootId: (await readFile('/proc/sys/kernel/random/boot_id', 'utf8')).trim() } };
   const input = { expectedOwner: initial.owner, expectedEpoch: initial.epoch, operationId: 'broker-test', fence: 'broker-test-fence', operatorLease: claim };

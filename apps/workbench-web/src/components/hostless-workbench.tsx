@@ -11,7 +11,7 @@ import { ApplicationRouteMotion, useApplicationDesktopBackdrop } from "./applica
 import { ScheduledTaskCatalogContext, type ScheduledTaskCatalog } from "../runtime/scheduled-task-catalog-context";
 import { useIntl } from "@opencraft/i18n/react";
 import { mobileContainer, reloadMobileWorkbench } from "../runtime/mobile-container";
-import { mobileConnectionMessages } from "./mobile-connection-settings";
+import { mobileConnectionMessages } from "./mobile-connection-messages";
 import { groupWorkInMachines } from "../runtime/work-in-presentation";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { PlatformViewHost } from "@opencraft/extension-react";

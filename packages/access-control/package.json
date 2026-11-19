@@ -10,7 +10,16 @@
     "./human-auth": "./src/human-auth.ts",
     "./human-accounts": "./src/human-accounts.ts",
     "./account-management": "./src/account-management.ts",
-    "./actor-policy": "./src/actor-policy.ts"
+    "./actor-policy": "./src/actor-policy.ts",
+    "./server-spaces": "./src/server-spaces-runtime.ts",
+    "./server-spaces-session": "./src/server-spaces-session.ts",
+    "./collaboration": "./src/collaboration.ts",
+    "./assistant-thread-commands": "./src/assistant-thread-commands.ts",
+    "./thread-access": "./src/thread-access.ts",
+    "./conversation-execution": "./src/runtime/conversation-execution.mjs",
+    "./conversation-projections": "./src/runtime/conversation-projections.mjs",
+    "./thread-orchestration-execution": "./src/runtime/thread-orchestration-execution.mjs",
+    "./im-channels-appserver": "./src/runtime/im-channels-appserver.mjs"
   },
   "dependencies": {
     "@opencraft/identity-core": "*",
@@ -18,7 +27,9 @@
     "openid-client": "6.8.8",
     "@opencraft/appserver-protocol": "0.1.0",
     "@opencraft/appserver-client": "0.1.0",
-    "@opencraft/storage-node": "0.1.0"
+    "@opencraft/storage-node": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/app-host-server": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

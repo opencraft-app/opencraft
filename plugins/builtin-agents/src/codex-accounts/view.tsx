@@ -85,17 +85,14 @@ function relativeDate(value: number | null): string {
 
 type CreditStatus = NonNullable<CodexAccountView["credits"]>;
 
-function formatCreditBalance(raw: string): string {
-  const value = Number(raw);
-  return Number.isFinite(value) ? Math.round(value).toLocaleString("zh-CN") : raw;
-}
-
-/** Service-reported extra credits: value plus a short qualifier, mirroring the quota slots. */
-function creditSummary(credits: CreditStatus | null): { readonly value: string; readonly note: string } {
-  if (credits === null) return { value: "—", note: "未报告" };
-  if (credits.unlimited) return { value: "不限量", note: "可用" };
-  if (!credits.available) return { value: credits.balance === null ? "无" : formatCreditBalance(credits.balance), note: "不可用" };
-  return credits.balance === null ? { value: "可用", note: "余额未报告" } : { value: formatCreditBalance(credits.balance), note: "余额" };
+/** Service-reported extra credits, localized in the active account view. */
+function creditSummary(credits: CreditStatus | null, intl: ReturnType<typeof useIntl>): { readonly value: string; readonly note: string } {
+  const t = (id: string, defaultMessage: string) => intl.formatMessage({ id, defaultMessage });
+  const balance = (raw: string) => { const value = Number(raw); return Number.isFinite(value) ? intl.formatNumber(Math.round(value)) : raw; };
+  if (credits === null) return { value: "—", note: t("codexAccounts.credits.notReported", "Not reported") };
+  if (credits.unlimited) return { value: t("codexAccounts.credits.unlimited", "Unlimited"), note: t("codexAccounts.credits.available", "Available") };
+  if (!credits.available) return { value: credits.balance === null ? t("codexAccounts.credits.none", "None") : balance(credits.balance), note: t("codexAccounts.credits.unavailable", "Unavailable") };
+  return credits.balance === null ? { value: t("codexAccounts.credits.available", "Available"), note: t("codexAccounts.credits.balanceMissing", "Balance not reported") } : { value: balance(credits.balance), note: t("codexAccounts.credits.balance", "Balance") };
 }
 
 function QuotaSlot({ window }: { readonly window: CodexAccountView["limitWindows"][number] }) {
@@ -156,7 +153,7 @@ function AccountDiagnostic({ failure }: { readonly failure: CodexAccountFailure 
     <span>{intl.formatMessage(accountFailureMessages[failure.code])}</span>
     <span className="engine-account__diagnostic-meta">
       <time dateTime={new Date(failure.occurredAt).toISOString()}>{formatDate(failure.occurredAt)}</time>
-      <code>{failure.code}{failure.reason ? ` · ${failure.reason}` : ""}{failure.httpStatus ? ` · HTTP ${failure.httpStatus}` : ""}</code>
+      <code>{failure.code}{failure.reason ? ` · ${failure.reason}` : ""}{failure.httpStatus ? intl.formatMessage({"id": "codexAccounts.diagnostic.httpStatus", "defaultMessage": " · HTTP {status}"}, { status: failure.httpStatus }) : ""}</code>
       <SettingsCopyButton value={failure.diagnosticId}
         label={intl.formatMessage({ id: "codexAccounts.diagnostic.copy", defaultMessage: "Copy diagnostic ID" })}
         successLabel={intl.formatMessage({ id: "codexAccounts.diagnostic.copied", defaultMessage: "Diagnostic ID copied" })} />
@@ -181,7 +178,7 @@ function AccountRow({ account, index, total, service, credentialLocation, report
   const [confirming, setConfirming] = useState(false);
   const resetCredits = account.resetCredits ?? null;
   const credits = account.credits ?? null;
-  const creditText = creditSummary(credits);
+  const creditText = creditSummary(credits, intl);
   useEffect(() => {
     setError(previous => previous && refreshFailureResolved(previous, account) ? null : previous);
   }, [account.maintenance?.lastSuccessAt, account.maintenance?.state]);
@@ -247,8 +244,8 @@ function AccountRow({ account, index, total, service, credentialLocation, report
               <span className="engine-account__reset">{resetCredits === null ? "未报告" : "剩余"}</span>
             </span>
             <span className="engine-account__quota engine-account__credits" data-tone={credits === null ? "unknown" : credits.available ? "normal" : "warning"}
-              title={credits === null ? "服务端尚未报告积分" : `上次确认：${formatDate(credits.observedAt)}`}>
-              <small>积分</small>
+              title={credits === null ? intl.formatMessage({ id: "codexAccounts.credits.serverMissing", defaultMessage: "The server has not reported credits" }) : intl.formatMessage({ id: "codexAccounts.credits.lastConfirmed", defaultMessage: "Last confirmed: {date}" }, { date: formatDate(credits.observedAt) })}>
+              <small>{intl.formatMessage({ id: "codexAccounts.credits.title", defaultMessage: "Credits" })}</small>
               <strong>{creditText.value}</strong>
               <span className="engine-account__reset">{creditText.note}</span>
             </span>
@@ -291,8 +288,8 @@ function AccountRow({ account, index, total, service, credentialLocation, report
           </> : null}
           <div><dt>可用重置券</dt><dd>{resetCredits === null ? "未报告" : `${resetCredits.availableCount} 张`}</dd></div>
           {resetCredits === null ? null : <div><dt>重置券最近确认</dt><dd>{formatDate(resetCredits.observedAt)}</dd></div>}
-          <div><dt>积分</dt><dd>{credits === null ? "未报告" : `${creditText.value}（${creditText.note}）`}</dd></div>
-          {credits === null ? null : <div><dt>积分最近确认</dt><dd>{formatDate(credits.observedAt)}</dd></div>}
+          <div><dt>{intl.formatMessage({ id: "codexAccounts.credits.title", defaultMessage: "Credits" })}</dt><dd>{credits === null ? intl.formatMessage({ id: "codexAccounts.credits.notReported", defaultMessage: "Not reported" }) : `${creditText.value} (${creditText.note})`}</dd></div>
+          {credits === null ? null : <div><dt>{intl.formatMessage({ id: "codexAccounts.credits.lastConfirmedLabel", defaultMessage: "Credits last confirmed" })}</dt><dd>{formatDate(credits.observedAt)}</dd></div>}
           {account.limitWindows.map(window => <div key={window.slot}><dt>{windowLabel(window.windowMinutes, window.slot)} 额度重置</dt><dd>{window.resetAt === null ? "未报告" : formatDate(window.resetAt)}</dd></div>)}
           <div><dt>最近使用环境</dt><dd>{account.lastUsedHostId ?? "—"}</dd></div>
           {account.heldUntil === null ? null : <div><dt>限制解除</dt><dd>{formatDate(account.heldUntil)}</dd></div>}

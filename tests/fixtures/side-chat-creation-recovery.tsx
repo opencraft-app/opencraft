@@ -1,5 +1,5 @@
 import React from 'react';
-import {createRoot} from 'react-dom/client';
+import {createIntlTestRoot} from './intl-root';
 import {Context} from '@deepseek-ai/cordis';
 import {SideChatService} from '@opencraft/workbench-runtime';
 import {createConversationKey} from '@opencraft/chat-core';
@@ -15,4 +15,4 @@ let Component:any;
 const noop=()=>()=>{};
 createSideChatPanelPlugin(ctx.sideChats,{resolve:()=>({conversationKey:parent})} as any,()=>null)({workbenchPanels:{register:noop,registerToolbarAction:noop},workbenchPanelRenderers:{register:(value:any)=>{Component=value.Component;return()=>{}}},effect:()=>{}} as any);
 (window as any).recovery={allow:()=>{unavailable=false},forks:()=>forks,success:()=>!!ctx.sideChats.get('attempt')};
-createRoot(document.getElementById('root')!).render(<Component tab={{resource:'attempt'}} active ownerId="owner"/>);
+createIntlTestRoot(document.getElementById('root')!).render(<Component tab={{resource:'attempt'}} active ownerId="owner"/>);

@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createSandboxPool, DEFAULT_SANDBOX_RESOURCES, SandboxFault, type SandboxBackend, type SandboxPool, type SandboxPoolPolicy } from "@opencraft/sandbox";
 import { systemdSandboxBackend, type SystemdSandboxOptions } from "./systemd.js";
 import { handsUnixSandboxBackend } from "./hands-unix.js";
+import type { SandboxLifecycleEvent } from "./lifecycle.js";
 
 const invalid = () => new SandboxFault("SANDBOX_POLICY", "Execution sandbox configuration is invalid");
 function record(value: unknown): Record<string, unknown> {
@@ -15,7 +16,7 @@ export interface SandboxRuntimeConfiguration {
   readonly pool: { readonly idPrefix: string; readonly capacity?: SandboxPoolPolicy["capacity"]; readonly defaults?: SandboxPoolPolicy["defaults"] };
   readonly environment: { readonly mode: "selected"; readonly names: readonly string[] } | { readonly mode: "local-inherit" };
 }
-export type SandboxBackendFactory = (options: unknown) => SandboxBackend | Promise<SandboxBackend>;
+export type SandboxBackendFactory = (options: unknown, lifecycle?: (event: SandboxLifecycleEvent) => void) => SandboxBackend | Promise<SandboxBackend>;
 
 /** The assembly selects a provider. Engine consumers only use SandboxPool. */
 export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>> = Object.freeze({
@@ -25,7 +26,7 @@ export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>
       || ![value.endpoint, value.tokenFile].every(path => typeof path === "string" && path.startsWith("/"))) throw invalid();
     return handsUnixSandboxBackend(value as unknown as { endpoint: string; tokenFile: string });
   },
-  "linux-systemd": async raw => {
+  "linux-systemd": async (raw, lifecycle) => {
     const value = record(raw);
     const accepted = ["scope", "uid", "gid", "inheritHostIdentity", "userNamespaceMapping", "parentSlice", "ownerUnit", "tasksMax", "poolTasksMax", "fileDescriptorsPerProcess"];
     if (Object.keys(value).some(key => !accepted.includes(key)) || !["system", "user"].includes(String(value.scope))) throw invalid();
@@ -45,7 +46,7 @@ export const nodeSandboxBackends: Readonly<Record<string, SandboxBackendFactory>
       if (!ownerUnit) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Execution owner service is unavailable");
     }
     if (ownerUnit !== undefined && typeof ownerUnit !== "string") throw invalid();
-    return systemdSandboxBackend({ ...value, uid, gid, ownerUnit } as unknown as SystemdSandboxOptions);
+    return systemdSandboxBackend({ ...value, uid, gid, ownerUnit, lifecycle } as unknown as SystemdSandboxOptions);
   },
 });
 
@@ -75,10 +76,10 @@ export async function readSandboxRuntimeConfiguration(path: string): Promise<San
   } catch { throw invalid(); }
 }
 
-export async function configuredSandboxPool(config: SandboxRuntimeConfiguration, factories: Readonly<Record<string, SandboxBackendFactory>> = nodeSandboxBackends): Promise<SandboxPool> {
+export async function configuredSandboxPool(config: SandboxRuntimeConfiguration, factories: Readonly<Record<string, SandboxBackendFactory>> = nodeSandboxBackends, lifecycle?: (event: SandboxLifecycleEvent) => void): Promise<SandboxPool> {
   const selected = parseSandboxRuntimeConfiguration(config), factory = Object.hasOwn(factories, selected.backend.id) ? factories[selected.backend.id] : undefined;
   if (!factory) throw new SandboxFault("SANDBOX_UNAVAILABLE", "Selected sandbox provider is not installed");
-  const backend = await factory(selected.backend.options);
+  const backend = await factory(selected.backend.options, lifecycle);
   return createSandboxPool({ id: selected.pool.idPrefix + "-" + randomUUID().replaceAll("-", "").slice(0, 10),
     capacity: selected.pool.capacity ?? DEFAULT_SANDBOX_RESOURCES, defaults: selected.pool.defaults }, backend);
 }

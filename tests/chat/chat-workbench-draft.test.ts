@@ -159,17 +159,28 @@ test("a consumer acquired during unsubscribe keeps its view and reestablishes se
 
 
 test("Draft creation resolves only a declared default and checks its input before RPC", async () => {
-  for (const models of [[], [{ id: "text", model: "text", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [], defaultReasoningEffort: null }]]) {
-    const harness = createHarness(false, false, [], false, models);
-    const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
-    try {
-      await runtime.connect();
-      const request = intent({ type: "new-thread", draftId: "input-check", execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } });
-      const submission = models.length ? { ...request, attachments: [{ id: "image", name: "Image", mimeType: "image/png", size: 1, lifecycle: "ready", uri: "file:///tmp/never-read.png" } as any] } : request;
-      await assert.rejects(runtime.createThread(submission), models.length ? /不支持 image 输入/ : /请先选择模型/);
-      assert.equal(harness.requests.some(message => message.method === "thread/start"), false);
-    } finally { await runtime.dispose(); }
-  }
+  const harness = createHarness(false, false, [], false, [{ id: "text", model: "text", isDefault: true, inputModalities: ["text"], supportedReasoningEfforts: [], defaultReasoningEffort: null }]);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    const request = intent({ type: "new-thread", draftId: "input-check", execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } });
+    const submission = { ...request, attachments: [{ id: "image", name: "Image", mimeType: "image/png", size: 1, lifecycle: "ready", uri: "file:///tmp/never-read.png" } as any] };
+    await assert.rejects(runtime.createThread(submission), /不支持 image 输入/);
+    assert.equal(harness.requests.some(message => message.method === "thread/start"), false);
+  } finally { await runtime.dispose(); }
+});
+
+test("an empty model catalog declares nothing and leaves model choice to the Host", async () => {
+  // Hosts such as the Hermes bridge publish no catalog; the client must not block them.
+  const harness = createHarness(false, false, [], false, []);
+  const runtime = createAppServerWorkbenchRuntime({ hostId: "local", transport: harness.transport, autoReconnect: false });
+  try {
+    await runtime.connect();
+    await runtime.createThread(intent({ type: "new-thread", draftId: "empty-catalog", execution: { hostId: "local", workspace: { cwd: "/workspace", runtimeWorkspaceRoots: ["/workspace"] } } }));
+    const start = harness.requests.find(message => message.method === "thread/start");
+    assert.ok(start);
+    assert.equal(Object.hasOwn(start.params!, "model"), false);
+  } finally { await runtime.dispose(); }
 });
 
 

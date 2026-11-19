@@ -158,7 +158,10 @@ test("large routed history reads generation once and retains views and image att
     const client = new DshRoutedClient(`http://127.0.0.1:${(server.address() as any).port}`, routing);
     const result: any = await client.call("session.history", { sessionId: "s" });
     assert.equal(result.events.length, 8001);
-    assert.equal(statements, 0, "routing snapshot serves history without SQLite reads, independent of event count");
+    assert.equal(statements, 0, "routed history reads the owned Worker projection without main-thread SQLite prepares");
+    // Prove the instrumentation is live: a control prepare would be observed.
+    database.prepare("SELECT 1").get();
+    assert.equal(statements, 1, "the prepare probe observes a control statement");
     assert.deepEqual(result.events[0].view, { preserved: true });
     assert.equal(result.events.at(-1).event.data.content[0].data, "fixture-image-data");
     assert.equal(result.events.at(-1).event.data.content[0].mediaType, "image/png");

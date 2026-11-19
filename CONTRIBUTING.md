@@ -68,6 +68,19 @@ Choose checks for the change instead of running every platform for every PR:
 | Cross-package contract or dependency boundary | Both consumers' typechecks/tests and `npm run check:boundaries` |
 | Web presentation or build integration | `npm run typecheck --workspace @opencraft/workbench-web` and `npm run matrix:build -- web-browser`, plus the actual affected interaction |
 | CI selection or aggregate gate | `node --test tests/tooling/ci-plan.test.mjs tests/tooling/ci-workflows.test.mjs` |
+| New source files | `npm run format:changed` and `npm run lint:changed` (Prettier and ESLint on added files only; existing files are left as they are) |
+
+Every product PR also runs the full `npm run typecheck`, `npm run check:boundaries`
+and each suite in `npm test` in CI (`core-tests`). Import another workspace package
+by its package name; `check:boundaries` rejects new relative imports that leave a
+package's `src`.
+
+Tests check behavior, not source text. `check:boundaries` rejects a new test that
+regex-matches product source; a deliberate static contract says why with
+`// source-contract: <reason>`. In CI every test file runs with a private HOME and
+TMPDIR, and a process a test leaves running fails the run. To reproduce that
+locally, set `NODE_OPTIONS="--import $PWD/tests/support/test-isolation.mjs
+--test-global-setup=$PWD/tests/support/test-isolation-global.mjs"`.
 
 The [build matrix](docs/build-matrix.md) describes explicit Electron/Expo/native
 validation. A browser build does not prove those platforms work. Extension CI
@@ -85,7 +98,7 @@ must preserve existing behavior; incompatible changes need a new API version and
 an explicit migration proposal. Current host compatibility is API **1**, not a
 version-range resolver.
 
-Original contributions use Apache-2.0. Preserve third-party notices and record
+Original contributions use MIT-0. Preserve third-party notices and record
 source provenance for imported/adapted material in the owning integration's
 source records and license notices. Describe imported material, its license and
 any notice changes in the pull request; repository publication does not establish

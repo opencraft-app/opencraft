@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
+import { resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS, OPENCRAFT_HOST_STATE_BASELINE, OPENCRAFT_HOST_BOT_STATE, OPENCRAFT_HOST_IOA_CREATORS, OPENCRAFT_HOST_SENDER_ORIGINS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database";
 import { DurableThreadCatalog } from "../../apps/opencraft-daemon/src/durable-thread-catalog";
 
@@ -39,7 +40,7 @@ test("v4 to v5 migration preserves every existing row and checksum history; tamp
     assert.equal(owner.outcome.status, "migrated"); assert.ok(owner.outcome.backupPath); assert.deepEqual(owner.outcome.movedAsidePaths, []);
     assert.deepEqual(tables.map(table => owner.database.prepare(`SELECT * FROM ${table}`).all()), before);
     assert.deepEqual(owner.database.prepare("SELECT * FROM schema_migrations WHERE version<=4 ORDER BY version").all(), history);
-    assert.equal(owner.database.prepare("SELECT MAX(version) AS n FROM schema_migrations").get()?.n, OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version);
+    assert.equal(owner.database.prepare("SELECT MAX(version) AS n FROM schema_migrations").get()?.n, resolveStoreMigrations("opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS).at(-1)!.version);
     owner.close(); owner = new OpenCraftHostStateDatabase(root); assert.equal(owner.outcome.status, "up-to-date"); owner.close();
     const tamper = new DatabaseSync(path); tamper.exec("UPDATE schema_migrations SET checksum='tampered' WHERE version=4"); tamper.close();
     assert.throws(() => new OpenCraftHostStateDatabase(root), e => e instanceof SqliteLifecycleError && e.kind === "history-mismatch");
@@ -210,4 +211,24 @@ test("turn start fences deletion by an older full-directory snapshot", async t=>
  t.after(()=>catalog.close());await catalog.refresh();at+=3_600_001;hold=true;const refresh=catalog.refresh();
  catalog.observe("turn/started",{threadId:"a",turn:{id:"new"}});release!({data:[],nextCursor:null});await refresh;
  assert.equal((await catalog.list(query)).data[0]!.status.type,"active");
+});
+
+
+test("volatile snapshots agree with current execution and reset retires prior captures without rewriting metadata",async t=>{
+ const {owner}=await fixture(t);let status:any={type:"idle"};const events:any[]=[];
+ const catalog=new DurableThreadCatalog(owner.database,{list:async p=>({data:p.archived?[]:[{...row("a",10),status}],nextCursor:null}),changed:event=>{if(event)events.push(event);}});
+ t.after(()=>catalog.close());await catalog.refresh();const initial=events.length;
+ status={type:"active",activeFlags:[]};await catalog.refresh();
+ assert.ok(events.length>initial,"changed native observation publishes despite identical durable metadata");
+ catalog.observe("turn/started",{threadId:"a",turn:{id:"live"}});
+ const {SNAPSHOT_START}=await import("../../packages/app-host-server/src/thread-directory/snapshots.js");
+ const snapshot=await catalog.list({...query,cursor:SNAPSHOT_START});
+ assert.equal(snapshot.data[0]!.status.type,"active");
+ const stored=String(owner.database.prepare("SELECT metadata_json FROM opencraft_thread_catalog WHERE thread_id='a'").get()!.metadata_json);
+ assert.equal(JSON.parse(stored).status.type,"notLoaded");
+ catalog.resetExecution();
+ assert.equal(String(owner.database.prepare("SELECT metadata_json FROM opencraft_thread_catalog WHERE thread_id='a'").get()!.metadata_json),stored,"disconnect never rewrites durable metadata");
+ // Freeze the source so the new snapshot cannot acquire another connection's facts.
+ status={type:"notLoaded"};
+ assert.equal((await catalog.list({...query,cursor:SNAPSHOT_START})).data[0]!.status.type,"notLoaded");
 });

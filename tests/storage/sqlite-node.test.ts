@@ -372,3 +372,81 @@ test("backup failure prevents mutation, and SQL failure restores original busine
   assert.equal(check.prepare("SELECT count(*) AS n FROM schema_migrations").get()?.n, 1);
   assert.equal(check.prepare("PRAGMA table_info(items)").all().length, 2); check.close();
 });
+
+test('an explicit unledgered boundary adopts only the known complete prefix and applies its tail', t => {
+  for (const complete of [false, true]) {
+    const path = fixture(t), raw = new DatabaseSync(path);
+    for (const migration of complete ? chain : chain.slice(0, 1)) raw.exec(migration.sql);
+    raw.exec("INSERT INTO items(value) VALUES('preserved')"); raw.close();
+    const opened = openManagedDatabase({ path, migrations: chain, legacyVersion: 1 });
+    try {
+      assert.equal(opened.outcome.status, complete ? 'adopted' : 'migrated');
+      assert.equal(opened.outcome.appliedVersion, chain.length);
+      assert.equal(opened.database.prepare('SELECT value FROM items').get()?.value, 'preserved');
+      assert.equal(opened.database.prepare('SELECT count(*) AS n FROM schema_migrations').get()?.n, chain.length);
+    } finally { opened.database.close(); }
+  }
+  const path = fixture(t), raw = new DatabaseSync(path);
+  raw.exec(chain[0]!.sql + '; CREATE TRIGGER discard AFTER INSERT ON items BEGIN DELETE FROM items WHERE id=new.id; END'); raw.close();
+  assert.throws(() => openManagedDatabase({ path, migrations: chain, legacyVersion: 1 }), rejects('history-mismatch'));
+  const rejected = fixture(t), unknown = new DatabaseSync(rejected);
+  unknown.exec(chain[0]!.sql); unknown.close();
+  assert.throws(() => openManagedDatabase({ path: rejected, migrations: chain, legacyVersion: 1, legacyPolicy: 'reject' }), rejects('unsupported-legacy'));
+});
+
+test('legacy conversion and generated tail roll back together and retries retain the first recovery point', t => {
+  const path = fixture(t), raw = new DatabaseSync(path);
+  raw.exec("CREATE TABLE items(id INTEGER PRIMARY KEY, value TEXT NOT NULL) STRICT; INSERT INTO items(value) VALUES('original')"); raw.close();
+  const boundary = 2;
+  const legacyMigration = {
+    accepts: (fingerprint: string) => fingerprint.includes('"name":"items"') && !fingerprint.includes('"name":"label"'),
+    migrate: (database: DatabaseSync) => database.exec("ALTER TABLE items ADD COLUMN label TEXT; UPDATE items SET label='converted'"),
+  };
+  // Empty schema replay succeeds; real records violate this appended constraint.
+  const complete = [...chain.slice(0, boundary), { version: 3, name: 'guard-label', sql: "CREATE UNIQUE INDEX one_label ON items(label); INSERT INTO items(value,label) SELECT 'duplicate',label FROM items LIMIT 1" }];
+  let backup: string | undefined;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    assert.throws(() => openManagedDatabase({ path, migrations: complete, legacyVersion: boundary, legacyMigration }), rejects('migration-failed'));
+    const inspect = new DatabaseSync(path, { readOnly: true });
+    try {
+      assert.equal(inspect.prepare('SELECT value FROM items').get()?.value, 'original');
+      assert.equal(inspect.prepare('PRAGMA table_info(items)').all().length, 2, 'conversion also rolls back');
+      assert.equal(inspect.prepare("SELECT 1 FROM sqlite_master WHERE name='schema_migrations'").get(), undefined);
+    } finally { inspect.close(); }
+    const pending = JSON.parse(readFileSync(path + '.pending-migration.json', 'utf8'));
+    backup ??= pending.backup; assert.equal(pending.backup, backup);
+    assert.equal(readdirSync(join(path, '..')).filter(name => name.includes('.pre-v')).length, 1);
+  }
+  const repaired = openManagedDatabase({ path, migrations: complete, legacyVersion: boundary,
+    legacyMigration: { ...legacyMigration, migrate(database) { legacyMigration.migrate(database); database.exec('UPDATE items SET label=NULL'); } } });
+  try {
+    assert.equal(repaired.outcome.status, 'migrated');
+    assert.equal(repaired.outcome.backupPath, join(path, '..', backup!));
+    assert.equal(repaired.database.prepare('SELECT count(*) AS n FROM items').get()?.n, 2);
+    assert.equal(repaired.database.prepare('SELECT value FROM items WHERE id=1').get()?.value, 'original');
+    assert.equal(existsSync(path + '.pending-migration.json'), false);
+  } finally { repaired.database.close(); }
+});
+
+test('legacy targets with unchanged table_info still use strict versioned schema validation', t => {
+  const path = fixture(t);
+  const migrations = [
+    { version: 1, name: 'positive', sql: 'CREATE TABLE items(value INTEGER CHECK(value>0)) STRICT' },
+    { version: 2, name: 'nonnegative', sql: 'ALTER TABLE items RENAME TO old; CREATE TABLE items(value INTEGER CHECK(value>=0)) STRICT; INSERT INTO items SELECT * FROM old; DROP TABLE old;' },
+  ];
+  const raw = new DatabaseSync(path); raw.exec(migrations[0]!.sql + '; INSERT INTO items VALUES(1)'); raw.close();
+  const opened = openManagedDatabase({ path, migrations, legacyVersion: 1 });
+  try {
+    assert.equal(opened.outcome.status, 'migrated');
+    assert.equal(opened.database.prepare('SELECT value FROM items').get()?.value, 1);
+    opened.database.exec('INSERT INTO items VALUES(0)');
+  } finally { opened.database.close(); }
+});
+
+test('invalid unledgered boundaries reject before creating files', t => {
+  for (const legacyVersion of [0, -1, 1.5, NaN, Infinity, chain.length + 1]) {
+    const path = fixture(t);
+    assert.throws(() => openManagedDatabase({ path, migrations: chain, legacyVersion }), rejects('history-mismatch'));
+    assert.equal(existsSync(path), false);
+  }
+});

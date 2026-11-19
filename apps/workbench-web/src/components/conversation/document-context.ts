@@ -41,6 +41,7 @@ export interface ConversationDocumentContextValue {
   /** Fork through a completed native Turn, inclusive; omitted for cached/read-only views. */
   /** Host-supported action shape survives authority changes. */
   readonly turnActions?: { readonly fork: boolean; readonly reviewDiff?: boolean };
+  readonly onForkConversation?: () => Promise<void>;
   readonly onForkTurn?: (turnId: string) => Promise<void>;
   /** The main Composer is the sole live-resource presenter for this Turn. */
   readonly composerChangeSummaryTurnId?: string | null;

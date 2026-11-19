@@ -5,10 +5,8 @@ export function canSteerQueueItem(
   item: Pick<ComposerQueueTrayItem, "actionable" | "steerable" | "operation" | "pausedReason">,
   isResponseInProgress: boolean,
   atomicSteer: boolean,
-  blockedByUnconfirmedDelivery: boolean,
 ): boolean {
   return (item.steerable ?? item.actionable) && item.operation === "idle"
     && item.pausedReason !== "restored-after-host-restart"
-    && !blockedByUnconfirmedDelivery
     && (!isResponseInProgress || atomicSteer);
 }

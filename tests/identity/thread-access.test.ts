@@ -158,3 +158,28 @@ test('directory creation relation is per authenticated reader and overrides prov
   f.store.set('server','new','private',1,f.alice);
   assert.equal(bob.session.project(JSON.stringify({method:'opencraft/thread-catalog/changed',params:{change:{type:'upsert',thread:row}}})),null,'relationship never grants access');
 });
+
+test('handoff rejects another human private source before native creation and inherits owner visibility',async t=>{
+  const f=await fixture(t),alice=f.lane(f.alice),bob=f.lane(f.bob);
+  f.store.created('server','private-source',f.alice);f.store.set('server','private-source','private',1,f.alice);
+  const params={agentId:'codex',handoffSource:{threadId:'private-source'}};
+  const refused=await bob.request('thread/start',params);
+  assert.equal(refused.consumed,true);assert.equal(refused.response.error.code,-32004);
+  assert.equal((await f.lane(undefined).request('thread/start',params)).consumed,true);
+  assert.equal((await alice.request('thread/start',params)).consumed,false);
+  assert.equal(alice.result(1,{thread:{id:'new-codex'}}).result.thread.id,'new-codex');
+  assert.equal(f.store.read('server','new-codex').accessMode,'private');
+  assert.equal(f.store.read('server','new-codex').creatorActorId,f.alice.actorId);
+  assert.equal((await bob.request('thread/read',{threadId:'new-codex'},2)).consumed,true);
+  f.restart();assert.equal(f.store.allows('server','new-codex',f.bob),false);
+});
+
+test('handoff rechecks the source at receipt delivery and never copies source content to another user',async t=>{
+  const f=await fixture(t),alice=f.lane(f.alice),bob=f.lane(f.bob);
+  f.store.created('server','source',f.alice);
+  assert.equal((await bob.request('thread/start',{handoffSource:{threadId:'source'}})).consumed,false);
+  f.store.set('server','source','private',1,f.alice);
+  assert.equal(bob.result(1,{thread:{id:'new-thread',preview:'secret'}}).error.code,-32004);
+  assert.equal(JSON.stringify(bob.out).includes('secret'),false);
+  assert.equal((await alice.request('thread/start',{handoffSource:{threadId:'source',serverId:'foreign'}},3)).consumed,true);
+});

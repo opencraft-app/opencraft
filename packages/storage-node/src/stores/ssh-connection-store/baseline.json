@@ -1,0 +1,22 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "ssh-connections",
+      "checksum": "2091ea6f5cc14b80a8db76d4a9d021505e69e6aed6526c0ff86a71232b82f748"
+    },
+    {
+      "version": 2,
+      "name": "ssh-user-version",
+      "checksum": "d86967e3ba34da3f15719715cf04107d932f595348ceb23ab5e9dde97bbd5882"
+    }
+  ],
+  "tableOptions": {
+    "ssh_connections": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "70a4cbf878141809b93deef9e25e9ddaee7c52d42a4b2b8bbfefc917ab9e445a",
+  "baselineSnapshotChecksum": "f55f40d74d905df43dddb1c24f81d4c884fec11a318e2b819fc00e6c9e038714"
+}

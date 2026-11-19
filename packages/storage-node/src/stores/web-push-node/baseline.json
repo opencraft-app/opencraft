@@ -1,0 +1,29 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "web-push-subscriptions-and-outbox",
+      "checksum": "678e3b48103d62bfc63ffa780e43c2c493256de50db5375a62b296d5af89b59e"
+    }
+  ],
+  "tableOptions": {
+    "push_deliveries": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "push_devices": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "push_keys": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "push_watches": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "c94ffea3fb2e04b849c40eae0956e6920d885ceb0c193a4e34a389e4fa995b35",
+  "baselineSnapshotChecksum": "7aa33b84e040a9266eb6ddd70bacbd0baf2879b454388dbfce7d0ebefe440061"
+}

@@ -360,4 +360,36 @@ and the [Workbench design language](../docs/workbench-design-language.md#shared-
 
 Personal conversation icons and colors follow [会话图标](conversation-appearance.md).
 UiPreferences owns persistence by account scope, Host and Thread; presentation never replaces execution status or Agent identity.
+
+## Execution recovery
+
+- Codex execution recovery preserves the existing Conversation and Composer. The
+  shared queue shows automatic waiting without a manual Resume action, and the
+  Workbench notice owner reports execution failure/recovery without changing the
+  reading layout. Unknown old work stays distinct from newly queued inputs. See
+  [execution recovery](../docs/specs/codex-execution-health-and-recovery.md).
+
 PWA sidebar and page capacity share the dynamic viewport bound, including the stationary drawer portal and page overlays; the mobile reading column leaves a reachable page dismiss strip independently of desktop width. See [PWA capacity](invariants/shell-and-layout.md#pwa-sidebar-and-page-capacity).
+
+## Server drawer under the page
+
+The Server selector is a closed-by-default left-edge underlay below the complete
+Workbench page, not a persistent Sidebar row. Shell owns gesture arbitration,
+foreground displacement, shadows, portal coordinates, focus and input blocking.
+A Server switch changes collaboration scope, not the Native engine Server or
+human identity. Chat, its drafts and runtime remain mounted. See
+[Server drawer task](server-spaces/task_plan.md) and [scope contract](../docs/server-spaces.md).
+
+
+Imported Codex lock recovery retains the original Conversation, unsent input and
+reading layout. A negotiated native full-history branch is an explicit alternative;
+its acknowledged identity is opened only while the originating route intent remains
+current. Writer release is explicit and explains its background-task impact. See
+[Codex client handoff](../docs/local-agent-custom-providers.md#continuing-imported-codex-conversations-across-clients).
+
+
+The imported-conversation model chooser retains other Agent tabs. Same-Agent
+selection stays in the current View; cross-Agent continuation creates a draft with
+a visible, removable history reference and preserves the source View's selection,
+text and navigation entry. The destination owns its selection; an acknowledged
+transition cannot write that model into the old Composer. See [Agent continuation](../docs/local-agent-custom-providers.md#switching-agents-from-an-imported-conversation).

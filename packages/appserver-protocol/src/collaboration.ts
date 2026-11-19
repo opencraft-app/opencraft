@@ -128,3 +128,5 @@ export function parseThreadOrchestrationView(value: unknown): ThreadOrchestratio
 }
 
 export * from './actor-inbox.js';
+export * from './thread-count';
+export * from './thread-search';

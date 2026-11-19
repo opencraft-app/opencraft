@@ -1,4 +1,4 @@
-@use "@opencraft/design-system/material.web" as material;
+@use "@opencraft/design-system-web/material-surface.web";
 .modal-surface.announcement-modal-surface.announcement-experience-surface {
   width: min(840px, calc(100vw - 32px));
   max-height: calc(100dvh - 32px);
@@ -19,7 +19,6 @@
   color: var(--color-text);
 }
 .announcement-experience__details {
-  @include material.liquid;
   border-radius: 20px 0 0 20px;
   position: relative;
   z-index: 1;
@@ -61,7 +60,6 @@
   padding: 48px 28px 24px;
   // The same optical owner as the left lens, with stronger scattering.
   // Only the backdrop is filtered; the live preview and text remain sharp.
-  @include material.liquid;
   border-radius: 0 20px 20px 0;
   &::after {
     content: "";

@@ -1,8 +1,9 @@
+import {installAssistantHostExtension} from "../../../apps/personal-assistant/src/runtime/host-extension.mjs";
 import { AssistantThreadCommands } from "../../../packages/access-control/src/assistant-thread-commands";
 import { ThreadAccessStore } from "../../../packages/access-control/src/thread-access";
 import { createAssistantModelSource } from "../../../apps/local-agent-host/src/model-config/assistant";
 import { ModelConfigurationRepository } from "../../../apps/local-agent-host/src/model-config/repository";
-import { createPersonalAssistantHost } from "../../../apps/personal-assistant/src/runtime/host-supervisor.mjs";
+import { createPersonalAssistantHost, spawnAssistant } from "../../../apps/personal-assistant/src/runtime/host-supervisor.mjs";
 import { ImChannelService } from "../../im-channel-service.mjs";
 import { AppHostServer } from "@opencraft/app-host-server";
 import { ImChannelsAppServer } from "../../im-channels-appserver.mjs";
@@ -118,7 +119,14 @@ const claimed = await service.personalAssistant(
   "opencraft/personal-assistant/claim",
 );
 let runtimeEnabled = true;
+const startupFailures:string[]=[];
+installAssistantHostExtension({reportFailure(error){startupFailures.push(error instanceof Error?error.message:String(error));}});
 const assistantHost = await createPersonalAssistantHost({
+  spawn(options){
+    const handle=spawnAssistant(options);
+    void handle.ready.catch(error=>startupFailures.push(error instanceof Error?error.message:String(error)));
+    return handle;
+  },
   directory: root,
   service,
   readConfig: async () =>
@@ -134,7 +142,11 @@ for (
   assistantHost.state(claimed.assistant.binding.botId).phase !== "running";
   i++
 ) {
-  if (i > 300) throw Error("Host not ready");
+  if (i > 300) {
+    const state=assistantHost.state(claimed.assistant.binding.botId);
+    await assistantHost.close();
+    throw Error("Host not ready: "+JSON.stringify({state,startupFailures}));
+  }
   await new Promise((r) => setTimeout(r, 20));
 }
 const memoryFolder = join(

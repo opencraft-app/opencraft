@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
 import { ThreadLifecycle } from "../../apps/local-agent-host/src/thread-lifecycle.js";
@@ -73,6 +76,29 @@ test("archive/unarchive is persistent catalog state, not engine deletion or stal
   assert.equal((await service.dispatch("thread/unarchive", { threadId: "thread" }, "client", delegate)).thread.id, "thread");
   await service.close();
 });
+test("archived state survives a fresh catalog and stays beside readable metadata", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "opencraft-thread-archive-"));
+  const path = join(directory, "threads.sqlite");
+  const delegate = async () => ({ thread: { id: "thread", name: "Generated", turns: [] } });
+  const firstCatalog = new ThreadCatalog(path);
+  const first = new ThreadLifecycle(firstCatalog, async () => ({ released: true }), () => {});
+  try {
+    await first.dispatch("thread/archive", { threadId: "thread" }, "client", delegate);
+    assert.equal((await first.dispatch("thread/read", { threadId: "thread" }, "client", delegate)).thread.archived, true);
+    await assert.rejects(first.dispatch("thread/resume", { threadId: "thread" }, "client", delegate), /Unarchive the thread before allocating execution/);
+  } finally { await first.close(); }
+  const secondCatalog = new ThreadCatalog(path);
+  const second = new ThreadLifecycle(secondCatalog, async () => ({ released: true }), () => {});
+  try {
+    assert.equal((await second.dispatch("thread/read", { threadId: "thread" }, "client", delegate)).thread.archived, true);
+    await second.dispatch("thread/unarchive", { threadId: "thread" }, "client", delegate);
+    assert.equal((await second.dispatch("thread/read", { threadId: "thread" }, "client", delegate)).thread.archived, false);
+  } finally {
+    await second.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("a temporary thread is released only after its final logical subscriber leaves", async () => {
   const catalog = new ThreadCatalog(); let releases = 0;
   const service = new ThreadLifecycle(catalog, async () => { releases++; return { released: true }; }, () => {});

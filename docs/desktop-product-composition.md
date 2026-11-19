@@ -27,7 +27,7 @@ installed application IDs and legacy profile migration inputs. Core provides an
 independent OpenCraft default. Main exports
 `createDesktopProduct: DesktopProductFactory`; Preload exports
 `createDesktopPreload: DesktopPreloadFactory`. The typed contract is
-`apps/workbench-electron/src/product-contract.ts`. A trusted product receives its
+`apps/desktop/src/product-contract.ts`. A trusted product receives its
 resolved profile directory, application-owned private file storage, system-browser
 and window actions, protocol registration and a narrow IPC handler registrar.
 Every invocation is checked against the current Main window's top-level frame.

@@ -133,6 +133,13 @@ test('managed Web forwards push enrollment to Headless with authentication and b
   assert.deepEqual(requests[1], { path: '/__opencraft_push', method: 'POST', cookie: 'fixture-session=synthetic', origin: 'https://workbench.test', body });
   assert.equal((await fetch(base + '/__opencraft_push-extra')).status, 404);
   assert.equal(requests.length, 2, 'similarly named static paths never reach Headless');
+  const destinationBody = JSON.stringify({ operation: 'master', enabled: false, expectedActorId: 'fixture-human' });
+  const destinationResponse = await fetch(base + '/__opencraft_notifications', { method: 'POST',
+    headers: { cookie: 'fixture-session=synthetic', origin: 'https://workbench.test', 'content-type': 'application/json' }, body: destinationBody });
+  assert.equal(destinationResponse.status, 200);
+  assert.deepEqual(requests[2], { path: '/__opencraft_notifications', method: 'POST', cookie: 'fixture-session=synthetic', origin: 'https://workbench.test', body: destinationBody });
+  assert.equal((await fetch(base + '/__opencraft_notifications-extra')).status, 404);
+  assert.equal(requests.length, 3, 'similarly named notification paths never reach Headless');
 });
 
 

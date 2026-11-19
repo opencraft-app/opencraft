@@ -138,6 +138,9 @@ try {
   await page.waitForFunction(() =>
     document.body.textContent?.includes("Running command"),
   );
+  await page.evaluate(() => (window as any).scenario("streaming-answer"));
+  await page.locator("[data-assistant-copy-content] strong").waitFor();
+  assert.equal(await page.locator(".thread-message-actions").count(), 0, "interim answer has no completed-message actions");
   await page.evaluate(() => (window as any).scenario("answer"));
   const copy = page
     .locator(".thread-message-actions")
@@ -169,6 +172,7 @@ try {
   await hook.hover();
   const hookTooltip = page.getByRole("tooltip").filter({ hasText: "UserPromptSubmit" });
   await hookTooltip.waitFor();
+  await hookTooltip.getByText("Project · 2 runs", { exact: false }).waitFor();
   assert.match(await hookTooltip.innerText(), /Project · 2 runs/);
   assert.match(await hookTooltip.innerText(), /Audit failed/);
   assert.doesNotMatch(await hookTooltip.innerText(), /hidden context/);

@@ -85,7 +85,7 @@ const legacyAccountPoolMigration = {
   migrate(database: DatabaseSync): void {
     database.exec(BASELINE.replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS "));
     for (const [table, additions] of [
-      ["pool_accounts", ["email TEXT", "subscription_type TEXT", "rate_limit_tier TEXT", "last_used_at INTEGER", "last_used_host_id TEXT", "reset_credit_count INTEGER CHECK(reset_credit_count >= 0)", "reset_credits_observed_at INTEGER", "allow_credits INTEGER NOT NULL DEFAULT 1 CHECK(allow_credits IN (0,1))", "owner_actor TEXT"]],
+      ["pool_accounts", ["email TEXT", "subscription_type TEXT", "rate_limit_tier TEXT", "last_used_at INTEGER", "last_used_host_id TEXT", "reset_credit_count INTEGER CHECK(reset_credit_count >= 0)", "reset_credits_observed_at INTEGER", "allow_credits INTEGER NOT NULL DEFAULT 1 CHECK(allow_credits IN (0,1))"]],
       ["pool_quota", ["limit_windows_json TEXT NOT NULL DEFAULT '[]'"]],
     ] as const) {
       const columns = new Set(database.prepare(`PRAGMA table_info(${table})`).all().map(column => column.name));
@@ -93,7 +93,6 @@ const legacyAccountPoolMigration = {
         if (!columns.has(definition.split(" ")[0]!)) database.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
       }
     }
-    database.exec("CREATE INDEX IF NOT EXISTS pool_account_owner ON pool_accounts(owner_actor)");
   },
 };
 
@@ -318,6 +317,12 @@ export class AccountPoolStore {
   // Local record ownership changes only through this exclusive store. Listing
   // consumes this projection without rereading credential files on every poll.
   private readonly credentialSources = new Map<string, AccountPoolAccountSummary["credentialSource"]>();
+  // For an external credential rejected in this process: the shared file's
+  // digest at that moment (null when it was unreadable). A rejection lifts as
+  // soon as the file holds a different valid credential, e.g. after `codex
+  // login` or when a briefly missing file returns. An unchanged file stays
+  // rejected, so a token the provider refused is not retried on every request.
+  private readonly externalRejections = new Map<string, string | null>();
   private readonly now: () => number;
   private readonly switchThreshold: number;
   private readonly affinityIdleTtlMs: number;
@@ -345,13 +350,12 @@ export class AccountPoolStore {
     if (!(this.switchThreshold > 0 && this.switchThreshold <= 1)) throw new RangeError("Invalid switch threshold");
     if (!Number.isSafeInteger(this.affinityIdleTtlMs) || this.affinityIdleTtlMs <= 0) throw new RangeError("Invalid affinity idle TTL");
     if (!Number.isSafeInteger(this.maxAffinityBindings) || this.maxAffinityBindings <= 0) throw new RangeError("Invalid affinity binding limit");
-    const managed = openManagedDatabase({
+    const managed = openManagedDatabase({ schemaId: "account-pool-host",
       path: options.databasePath,
       migrations: [
         { version: 1, name: "account-pool", sql: BASELINE },
         { version: 2, name: "codex-reset-credit-count", sql: RESET_CREDITS_SQL },
         { version: 3, name: "codex-account-credit-policy", sql: CREDIT_POLICY_SQL },
-        { version: 4, name: "codex-account-human-owner", sql: "ALTER TABLE pool_accounts ADD COLUMN owner_actor TEXT; CREATE INDEX pool_account_owner ON pool_accounts(owner_actor);" },
       ],
       legacyMigration: legacyAccountPoolMigration,
     });
@@ -583,6 +587,10 @@ export class AccountPoolStore {
       error: row.error == null ? null : String(row.error),
       limitWindows: parseLimitWindows(row.limit_windows_json),
     }));
+    for (const candidate of orderedAccounts) {
+      if (candidate.error === "authorization-rejected" && candidate.account.enabled
+        && this.recoverExternalCredential(candidate.account.id)) candidate.error = null;
+    }
     const available = orderedAccounts.filter(candidate => candidate.account.enabled
       && candidate.error === null
       && !this.quotaExhausted(candidate, now, candidate.account.allowCredits));
@@ -700,6 +708,10 @@ export class AccountPoolStore {
   }
 
   markAccountError(id: string, code: "authorization-rejected"): void {
+    const normalizedId = accountId(id);
+    if (this.credentialSources.get(normalizedId) === "external-file") {
+      this.externalRejections.set(normalizedId, this.externalCredentialDigest(normalizedId));
+    }
     this.observeQuota(id, { utilization: null, resetAt: null, error: code });
   }
 
@@ -717,7 +729,28 @@ export class AccountPoolStore {
     this.getAccount(id);
     const normalizedId = accountId(id);
     if (this.credentialSources.get(normalizedId) !== "external-file") return;
+    this.externalRejections.delete(normalizedId);
     this.database.prepare("UPDATE pool_quota SET error=NULL WHERE account_id=? AND error='authorization-rejected'").run(normalizedId);
+  }
+
+  /** Digest of the shared auth file a reference names, or null when it is unreadable. */
+  private externalCredentialDigest(id: string): string | null {
+    try {
+      const reference = parseCodexAuthFileReference(JSON.parse(readFileSync(this.secretPath(id), "utf8")));
+      return reference ? createHash("sha256").update(readFileSync(reference.path)).digest("hex") : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Lift a rejection recorded in this process once the shared file holds a different valid credential. */
+  private recoverExternalCredential(id: string): boolean {
+    if (!this.externalRejections.has(id)) return false;
+    const digest = this.externalCredentialDigest(id);
+    if (digest === null || digest === this.externalRejections.get(id)) return false;
+    try { this.readSecret(id); } catch { return false; }
+    this.clearExternalAuthorizationError(id);
+    return true;
   }
 
   issueHostToken(hostId: string): string {

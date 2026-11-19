@@ -44,6 +44,7 @@ export interface AppServerConversationCommandPortConfig {
   readonly queueUnconfirmedSteerDiscard?: boolean;
   /** Read current authenticated Host capability; absent is unsupported. */
   readonly supportsWorkspacePlacement?: () => boolean;
+  readonly queueUnconfirmedDeliveryRetry?: boolean;
   readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
   /** Host defaults supersede persisted Composer model and effort choices. */
@@ -267,6 +268,7 @@ export function createAppServerConversationCommandPort(
         const started = await config.client.request("thread/start", {
           ...compiled.threadOptions,
           ...(placement ? {workspacePlacement:placement} : {}),
+          ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
           ...(config.dynamicTools === undefined
             ? {}
             : { dynamicTools: [...config.dynamicTools] }),
@@ -399,6 +401,7 @@ export function createAppServerConversationCommandPort(
     const started = await config.client.request("thread/start", {
       ...compiled.threadOptions,
       ...(placement ? {workspacePlacement:placement} : {}),
+          ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
       ...(config.dynamicTools === undefined
         ? {}
         : { dynamicTools: [...config.dynamicTools] }),
@@ -525,6 +528,11 @@ export function createAppServerConversationCommandPort(
         queuedSubmissionId,
       });
       return response.deleted;
+    },
+    async retryUnconfirmedSteer(key, queuedSubmissionId, expectedTurnId) {
+      assertConversationHost(key);
+      if (config.queueUnconfirmedDeliveryRetry !== true || config.canRequest?.("thread/queue/retry") === false) throw new Error("Message retry is unavailable on this Host");
+      await config.client.request("thread/queue/retry", { threadId: key.threadId, queuedSubmissionId, expectedTurnId });
     },
     async discardUnconfirmedSteer(key, queuedSubmissionId, expectedTurnId) {
       assertConversationHost(key);

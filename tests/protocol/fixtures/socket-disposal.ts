@@ -71,7 +71,8 @@ export function socketDisposalFixture(options: { Factory?: typeof connectWebSock
   let onEventUnsubscribe: (() => void) | undefined;
   const factory = (options.Factory ?? connectWebSocketAppHost)(() => {
     const socket = new DisposalSocket(sockets.length + 1); sockets.push(socket); queueMicrotask(() => socket.open()); return socket as unknown as WebSocket;
-  }, { reportFailure: () => {}, recoveryEvents: { isVisible: () => true,
+  // The model checks ownership, not timing: physical admission retries immediately.
+  }, { reportFailure: () => {}, retryDelaysMs: [0], recoveryEvents: { isVisible: () => true,
     subscribe(listener) { recoveryListeners.add(listener); return () => {
       eventCalls++; const action = onEventUnsubscribe; onEventUnsubscribe = undefined; action?.();
       if (eventFault) throw eventError;

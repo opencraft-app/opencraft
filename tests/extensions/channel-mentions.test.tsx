@@ -503,12 +503,14 @@ test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempo
 test("mention-read migration preserves the old read watermark but not unseen alerts", async (t) => {
   const { openManagedDatabase } = await import("@opencraft/sqlite-node");
   const { SERVER_MIGRATIONS } = await import("@opencraft/storage-node/server");
+  const mentionReadIndex = SERVER_MIGRATIONS.findIndex(migration => migration.name === "0016_visible_mention_reads");
+  assert.ok(mentionReadIndex > 0, "fixture must start before the named visible-mention-read migration");
   const dir = await mkdtemp(join(tmpdir(), "mention-read-upgrade-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, "old.sqlite"),
     old = openManagedDatabase({
       path,
-      migrations: SERVER_MIGRATIONS.slice(0, -1),
+      migrations: SERVER_MIGRATIONS.slice(0, mentionReadIndex),
     }),
     actors = new ActorStore(old);
   const human = (subject: string) =>
@@ -583,7 +585,7 @@ test("mention-read migration preserves the old read watermark but not unseen ale
         .prepare(
           "SELECT * FROM schema_migrations WHERE version<? ORDER BY version",
         )
-        .all(SERVER_MIGRATIONS.at(-1)!.version),
+        .all(SERVER_MIGRATIONS[mentionReadIndex]!.version),
       ledger,
     );
   } finally {

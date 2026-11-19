@@ -68,7 +68,7 @@ test('sandbox preparation failures log their distinct causes without exposing in
   gateway.send({id, method:'turn/start', params:{...params, clientUserMessageId, input:[{text:'private message'}]}});
   await until(() => gateway.messages.some(message => message.id === id));
   assert.deepEqual(gateway.messages.find(message => message.id === id).error,
-    {code:-32084, message:'Execution environment unavailable'});
+    {code:-32084, message:'Execution environment unavailable', data:{notSubmitted:true}});
   const [label, payload] = warnings.mock.calls[index]!.arguments as unknown as [string, string];
   assert.equal(label, '[opencraft-execution-preparation]');
   const event = JSON.parse(payload);
@@ -221,6 +221,28 @@ test('an unconfirmed native creation error keeps the private publication barrier
  assert.equal(viewer.messages.some(m=>m.method==='thread/started'),false);
 });
 
+test('model catalog restores absent configured defaults without inventing or hiding reasoning choices', async t => {
+ const f=await fixture(t),gateway=await f.connect();
+ const model={id:'configured/provider/model',model:'configured/provider/model',defaultReasoningEffort:'none',supportedReasoningEfforts:[{reasoningEffort:'high'}]};
+ const data=[model,{...model,id:'builtin',model:'builtin'},
+  {...model,id:'explicit-none',supportedReasoningEfforts:[{reasoningEffort:'none'}]},
+  {...model,id:'invalid-default',defaultReasoningEffort:'medium'}];
+ gateway.send({id:'catalog',method:'model/list',params:{cursor:null,limit:100}});
+ await until(()=>f.requests.some(m=>m.method==='model/list'));
+ const request=f.requests.find(m=>m.method==='model/list');
+ f.nativeSockets[0]!.send(JSON.stringify({id:request.id,result:{data,nextCursor:'next'}}));
+ await until(()=>gateway.messages.some(m=>m.id==='catalog'));
+ const page=gateway.messages.find(m=>m.id==='catalog').result;
+ assert.equal(page.nextCursor,'next');
+ assert.deepEqual(page.data,[{...model,defaultReasoningEffort:null},...data.slice(1)]);
+ gateway.send({id:'other',method:'thread/read',params:{threadId:'thread'}});
+ await until(()=>f.requests.some(m=>m.method==='thread/read'));
+ const other=f.requests.find(m=>m.method==='thread/read');
+ f.nativeSockets[0]!.send(JSON.stringify({id:other.id,result:{data}}));
+ await until(()=>gateway.messages.some(m=>m.id==='other'));
+ assert.deepEqual(gateway.messages.find(m=>m.id==='other').result,{data});
+});
+
 for (const fails of [false,true]) test(`operation owns preparation after reconnect: ${fails?'failure':'success'}`,async t=>{
  let release!:(value?:unknown)=>void,entered=false;
  const held=new Promise((resolve,reject)=>{release=fails?reject:resolve;});
@@ -230,7 +252,7 @@ for (const fails of [false,true]) test(`operation owns preparation after reconne
  first.socket.terminate();await until(()=>first.socket.readyState===WebSocket.CLOSED);
  const second=await f.connect();second.send({id:'retry',...request});
  // A protocol barrier ensures the retry has joined before preparation resolves.
- second.send({id:'barrier',method:'opencraft/orchestration/private-capability'});
+ second.send({id:'barrier',method:'opencraft/orchestration/ack',params:{operationId:'barrier-not-an-operation'}});
  await until(()=>second.messages.some(m=>m.id==='barrier'));release(fails?Error('synthetic failure'):undefined);
  if(!fails){await until(()=>f.requests.some(m=>m.method==='thread/start'));const r=f.requests.find(m=>m.method==='thread/start');f.nativeSockets[0]!.send(JSON.stringify({id:r.id,result:{thread:{id:'created'}}}));}
  await until(()=>second.messages.some(m=>m.id==='retry'));
@@ -250,6 +272,7 @@ test('expired preparation cannot forward late and does not release its resource 
  const g=await f.connect();g.send({id:'held',method:'turn/start',params:{threadId:'t'}});await until(()=>entered);
  await until(()=>g.messages.some(m=>m.id==='held'));
  assert.equal(g.messages.find(m=>m.id==='held').error.data.forwarded,false);
+ assert.equal(g.messages.find(m=>m.id==='held').error.data.notSubmitted,true);
  g.send({id:'overflow',method:'thread/read',params:{threadId:'t'}});await until(()=>g.messages.some(m=>m.id==='overflow'));
  assert.equal(g.messages.find(m=>m.id==='overflow').error.code,-32085);
  release();await delay(20);assert.equal(f.requests.some(m=>m.method==='turn/start'),false);
@@ -376,7 +399,7 @@ test('native loss during preparation releases unused barrier, rejects late forwa
  f.nativeSockets[0]!.terminate();await until(()=>first.socket.readyState===WebSocket.CLOSED);
  const next=await f.connect('owner');next.send({id:'retry',...op});
  await until(()=>next.messages.some(m=>m.id==='retry'));
- assert.deepEqual(next.messages.find(m=>m.id==='retry').error.data,{forwarded:false,resultUnknown:false,orchestrationRejected:true});
+ assert.deepEqual(next.messages.find(m=>m.id==='retry').error.data,{notSubmitted:true,forwarded:false,resultUnknown:false,orchestrationRejected:true});
  next.send({id:'read',method:'thread/read',params:{threadId:'unrelated'}});
  await until(()=>f.requests.some(m=>m.method==='thread/read'));
  next.send({id:'capacity',method:'model/list',params:{}});
@@ -485,6 +508,39 @@ test('bound execution reaches native unchanged and a lost binding never forwards
  active=false;
  gateway.send({id:'lost-turn',method:'turn/start',params:{threadId:'remote-thread',input:[]}});
  await until(()=>gateway.messages.some(m=>m.id==='lost-turn'));
- assert.deepEqual(gateway.messages.find(m=>m.id==='lost-turn').error,{code:-32084,message:'Execution environment unavailable'});
+ assert.deepEqual(gateway.messages.find(m=>m.id==='lost-turn').error,{code:-32084,message:'Execution environment unavailable',data:{notSubmitted:true}});
  assert.equal(f.requests.filter(m=>m.method==='turn/start').length,1);
+});
+
+test('a caller fingerprint cannot hide argument reuse, while object key order preserves the same operation', async t => {
+ const f=await fixture(t),g=await f.connect();
+ const params={__opencraftOrchestrationOperation:'same-identity',__opencraftOrchestrationFingerprint:'caller-identity',cwd:'/synthetic/work',config:{a:1,b:2}};
+ g.send({id:'first',method:'thread/start',params});await until(()=>f.requests.some(m=>m.method==='thread/start'));
+ g.send({id:'changed',method:'thread/start',params:{...params,cwd:'/synthetic/other'}});
+ await until(()=>g.messages.some(m=>m.id==='changed'));assert.equal(g.messages.find(m=>m.id==='changed').error.code,-32600);
+ g.send({id:'equivalent',method:'thread/start',params:{...params,config:{b:2,a:1}}});
+ g.send({id:'barrier',method:'opencraft/orchestration/ack',params:{operationId:'not-an-operation'}});
+ await until(()=>g.messages.some(m=>m.id==='barrier'));
+ const native=f.requests.find(m=>m.method==='thread/start');f.nativeSockets[0]!.send(JSON.stringify({id:native.id,result:{thread:{id:'created'}}}));
+ await until(()=>g.messages.some(m=>m.id==='equivalent'));
+ assert.equal(g.messages.find(m=>m.id==='equivalent').result.thread.id,'created');
+ assert.equal(f.requests.filter(m=>m.method==='thread/start').length,1);
+});
+
+test('native loss during preparation rejects late forwarding and retains promise capacity',async t=>{
+ let release!:()=>void,entered=false;const held=new Promise<void>(resolve=>release=resolve);
+ const f=await fixture(t,1000,async(method,params)=>{if(method==='thread/start'){entered=true;await held;}return params;},{maxPendingRequests:2});
+ const first=await f.connect('owner');
+ const op={method:'thread/start',params:{__opencraftOrchestrationOperation:'preparing'}};
+ first.send({id:'first',...op});await until(()=>entered);
+ f.nativeSockets[0]!.terminate();await until(()=>first.socket.readyState===WebSocket.CLOSED);
+ const next=await f.connect('owner');next.send({id:'retry',...op});
+ await until(()=>next.messages.some(m=>m.id==='retry'));
+ assert.deepEqual(next.messages.find(m=>m.id==='retry').error.data,{notSubmitted:true,forwarded:false,resultUnknown:false,orchestrationRejected:true});
+ next.send({id:'read',method:'thread/read',params:{threadId:'unrelated'}});
+ await until(()=>f.requests.some(m=>m.method==='thread/read'));
+ next.send({id:'capacity',method:'model/list',params:{}});
+ await until(()=>next.messages.some(m=>m.id==='capacity'));assert.equal(next.messages.find(m=>m.id==='capacity').error.code,-32085);
+ release();await delay(20);
+ assert.equal(f.requests.some(m=>m.method==='thread/start'),false);
 });

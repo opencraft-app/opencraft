@@ -1,5 +1,7 @@
 import type { BrowserDraftRecovery } from "./browser-draft-recovery";
 import type { ChannelSearchRegistry } from './channel-search-contribution';
+import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
+import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
 import type { ClientResources } from "@opencraft/document-storage/client-resources";
 import { serverStorageKey, serverUrl, serverEndpointNeedsRefresh } from "./server-context";
@@ -143,6 +145,7 @@ export interface AppServerHostCatalog {
    */
   readonly pendingLocation: WorkbenchLocation | null;
   readonly currentLocation: WorkbenchLocation;
+  continueWithAgent(target: { hostId: string; threadId: string; historyTitle: string; agentId: string; permissionProfile: string | null; model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
   selectHost(hostId: string, selection?: { model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
   selectConversation(location: WorkbenchLocation): Promise<boolean>;
@@ -169,6 +172,7 @@ export interface AppServerHostCatalog {
 
 export interface WebWorkbenchCommands {
   forgetThread(hostId: string, threadId: string): void;
+  continueWithAgent(target: { hostId: string; threadId: string; historyTitle: string; agentId: string; permissionProfile: string | null; model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
   selectHost(hostId: string, selection?: { model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
   selectConversation(location: WorkbenchLocation): Promise<boolean>;
@@ -644,7 +648,9 @@ export function createWebWorkbenchCommands(input: {
     if (presentation.executionSelection === "fixed" && input.hostProfiles.getSnapshot().profiles[0]?.hostId !== hostId) throw new Error("The embedding product owns the execution target");
   };
   let commands: WebWorkbenchCommands;
+  const handoffDrafts = new Map<string, { draftId: string; origin: number; scope: unknown }>();
   let submissionPipeline: ReturnType<typeof createWorkbenchSubmissionPipeline>;
+  const nativeTransfers = new Map<string, Promise<SubmissionReceipt>>();
   let hostSelectionEpoch = 0;
   const navigateAndRemember = async (location: WorkbenchLocation, action: () => Promise<boolean>) => {
     assertTarget(location.kind === "thread" ? location.key.hostId : location.hostId);
@@ -709,6 +715,23 @@ export function createWebWorkbenchCommands(input: {
       return startGoal(intent, objective, () => origin === input.navigation.getSnapshot().revision
         && memoryScope === input.threadMemoryScope?.()
         && input.scopes.getActiveDraft()?.target === target);
+    },
+    async continueWithAgent(target) {
+      target = { ...target };
+      assertSelectable(); assertTarget(target.hostId);
+      const epoch = ++hostSelectionEpoch, origin = input.navigation.getSnapshot().revision;
+      const scope = input.displayContinuity.getScope();
+      const viewId = input.coordinator.getSnapshot().viewId;
+      const previous = viewId === null ? null : input.views.get(viewId)?.composer;
+      const location = input.navigation.getSnapshot().location;
+      if (!previous || location.kind !== "thread" || location.key.hostId !== target.hostId || location.key.threadId !== target.threadId) throw new Error("Source conversation is no longer current");
+      const runtime = input.registry.getRuntime(target.hostId);
+      const source = await runtime.resources.protocol.request("opencraft/collaboration", { action: "reference", threadId: target.threadId });
+      if (epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision || scope !== input.displayContinuity.getScope()) return;
+      if (typeof source.reference !== "string" || !parseConversationRef(source.reference)) throw new Error("Invalid source conversation reference");
+      const original = previous.getSnapshot().draft;
+      previous.dispatch({ type: "begin-agent-handoff", sourceThreadId: target.threadId, reference: source.reference,
+        selections: { ...original.selections, agentId: target.agentId, permissionProfile: original.selections.permissionProfile ?? target.permissionProfile, model: target.model, effort: target.effort ?? undefined, serviceTier: target.serviceTier ?? null } });
     },
     async selectHost(hostId, selection) {
       assertSelectable();
@@ -850,6 +873,31 @@ export function createWebWorkbenchCommands(input: {
     async submit(intent) {
       requireRestoredDraft();
       assertTarget(intent.target.type === "new-thread" ? intent.target.execution.hostId : intent.target.key.hostId);
+      if (intent.handoff && intent.target.type !== "new-thread") {
+        if (intent.target.key.threadId !== intent.handoff.sourceThreadId) throw new Error("Handoff source changed");
+        let continuation = handoffDrafts.get(intent.commandId);
+        if (!continuation) {
+          const origin = input.navigation.getSnapshot().revision, scope = input.displayContinuity.getScope();
+          const ref = parseConversationRef(intent.handoff.reference);
+          if (!ref || ref.threadId !== intent.handoff.sourceThreadId) throw new Error("Invalid source conversation reference");
+          const metadata = await input.registry.getRuntime(intent.target.key.hostId).resources.protocol.request("opencraft/collaboration", { action: "metadata", reference: ref });
+          if (origin !== input.navigation.getSnapshot().revision || scope !== input.displayContinuity.getScope()) throw new Error("Handoff navigation was superseded");
+          if (typeof metadata.cwd !== "string") throw new Error("Source workspace unavailable");
+          const draft = input.scopes.openDraft({ activate: false, execution: { hostId: intent.target.key.hostId,
+            workspace: { cwd: metadata.cwd, runtimeWorkspaceRoots: [metadata.cwd], projectId: typeof metadata.projectId === "string" ? metadata.projectId : null } } });
+          continuation = { draftId: draft.id, origin, scope };
+          handoffDrafts.set(intent.commandId, continuation);
+        }
+        const current = input.navigation.getSnapshot();
+        if (current.location.kind !== "thread" || current.location.key.hostId !== intent.target.key.hostId
+          || current.location.key.threadId !== intent.handoff.sourceThreadId || continuation.scope !== input.displayContinuity.getScope()) throw new Error("Handoff source is no longer current");
+        // An explicit retry from the source owns a new navigation intention,
+        // while an already accepted receipt still owns the one destination.
+        continuation.origin = current.revision;
+        const draft = input.scopes.getDraft(continuation.draftId);
+        if (!draft) throw new Error("Handoff draft unavailable");
+        return submissionPipeline.submit({ ...intent, target: draft.target });
+      }
       return submissionPipeline.submit(intent);
     },
     async provisionHost(host, options) {
@@ -954,10 +1002,38 @@ export function createWebWorkbenchCommands(input: {
       try { void input.onThreadCreated?.(intent, receipt).catch(() => {}); } catch {}
       return receipt;
     },
-    submitExistingThread(intent) {
+    async submitExistingThread(intent) {
       const lease = input.coordinator.getActiveThreadLease();
-      if (lease === null) return Promise.reject(new Error("No active Thread View is available"));
-      return lease.submit(intent);
+      if (lease === null) throw new Error("No active Thread View is available");
+      const origin = input.navigation.getSnapshot().revision;
+      const displayScope = input.displayContinuity.getScope();
+      try { return await lease.submit(intent); }
+      catch (error) {
+        if (!nativeSessionBusyBeforeInput(error) || intent.target.type !== "existing-thread") throw error;
+        const key = JSON.stringify([intent.target.key, intent.commandId]);
+        const previous = nativeTransfers.get(key); if (previous) return previous;
+        const target = intent.target;
+        const runtime = input.registry.getRuntime(target.key.hostId);
+        const operation = continueNativeSessionInBranch({ intent,
+          current: () => origin === input.navigation.getSnapshot().revision && displayScope === input.displayContinuity.getScope(),
+          supportsFork: async () => (await runtime.resources.protocol.request("opencraft/agent-session/status", { threadId: target.key.threadId })).fork,
+          fork: async () => {
+            const child = await runtime.resources.threads.fork!({ threadId: target.key.threadId, excludeTurns: true });
+            void input.queryClient.invalidateQueries({ queryKey: ["appserver", target.key.hostId, "threads"] });
+            return child.id;
+          },
+          open: childId => commands.navigate(createWorkbenchThreadLocation(target.key.hostId, childId)),
+          submit: next => {
+            const childLease = input.coordinator.getActiveThreadLease();
+            if (!childLease || next.target.type === "new-thread" || childLease.threadId !== next.target.key.threadId) throw new Error("New conversation is not ready");
+            return childLease.submit(next);
+          },
+        });
+        // Retain a failed transfer too: an unknown fork result must not create
+        // another native branch on a retry of the same immutable command.
+        nativeTransfers.set(key, operation);
+        return operation;
+      }
     },
     submitFirstTurn(intent, threadReceipt) {
       const lease = input.coordinator.getActiveThreadLease();
@@ -973,6 +1049,13 @@ export function createWebWorkbenchCommands(input: {
       });
     },
     async promoteDraft(draftId, receipt) {
+      const submission = input.scopes.getDraft(draftId)?.submission;
+      if (submission?.handoff) {
+        const continuation = handoffDrafts.get(submission.commandId);
+        if (!continuation || continuation.origin !== input.navigation.getSnapshot().revision || continuation.scope !== input.displayContinuity.getScope()) throw new Error("Handoff navigation was superseded");
+        if (!await commands.navigate(createWorkbenchDraftLocation(receipt.hostId, draftId))) throw new Error("Handoff navigation was superseded");
+        continuation.origin = input.navigation.getSnapshot().revision;
+      }
       await commands.promoteDraft(draftId, receipt);
     },
     async afterAccepted(receipt) {

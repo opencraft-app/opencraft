@@ -8,8 +8,14 @@ import { placementProblem } from './runtime/workspace-placement-model';
 import { channelSearchSource } from './runtime/channel-search-contribution';
 import { ConversationAppearanceProvider, ConversationAppearanceButton } from "./components/conversation-appearance";
 import type { AttachmentProgress } from "@opencraft/composer-editor";
+import { useServerSpaces } from "./runtime/use-server-spaces";
+import { agentIdForHostLabel, filterModelsForNewDraft, newDraftAgentsDisabled } from "./runtime/agent-availability";
+import { useAgentAvailability } from "./runtime/use-agent-availability";
+import { onboardingNewThreadSelection } from "./runtime/onboarding-selection";
+import { executionStatusForThread } from "@opencraft/appserver-client/transport";
 import { readHostModelReadiness } from "@opencraft/plugin-builtin-agents/model-readiness";
-import { composerCapabilitiesKey } from "./runtime/composer-capabilities-query";
+import { composerCapabilitiesKey, composerCapabilitiesOptions } from "./runtime/composer-capabilities-query";
+import { ButtonPlaceholder } from "@opencraft/design-system-web/button";
 import { historyLengthBucket, historyEngine } from "./runtime/thread-history-first-paint";
 import { submissionRecoveryPresentation } from "./submission-recovery-presentation";
 import { completeConversationComposerSubmission } from "./runtime/composer-submission-admission";
@@ -31,6 +37,7 @@ import { serverFetch } from "./runtime/server-context";
 import { queueFailureFields, withQueueFailureFeedback } from "./queue-operation-feedback";
 import { ConversationReferenceSurface } from "./components/conversation-reference-surface";
 import { copyConversationReference } from "./runtime/conversation-reference-actions";
+import { ExecutionRecoveryNotice } from "./components/execution-recovery-notice";
 import { useAsyncNotices } from "./components/async-notices";
 const SubmissionRecoveryNotice = createDeferredView(async () => (await import("./components/submission-recovery-notice")).SubmissionRecoveryNotice);
 import { ContinuationFailureNotice } from "./components/continuation-failure-notice";
@@ -115,7 +122,7 @@ import {
   findHostConnectionInterventionError,
   projectComposerModelChoices,
 } from "@opencraft/workbench-runtime";
-import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedSteerDiscard, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
+import { OPENCRAFT_THREAD_QUEUE_EXTENSION, OPENCRAFT_PERMISSION_MODES_EXTENSION, supportsAtomicQueuedSteer, supportsUnconfirmedDeliveryRetry, type OpenCraftPermissionProfile } from "@opencraft/appserver-protocol";
 import {
   lazy,
   Suspense,
@@ -155,6 +162,7 @@ import {
   connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
+  conversationArchivePresentation,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
   conversationRecoveryIsUnstable,
@@ -162,7 +170,8 @@ import {
 import { ConversationPendingInteractionPanel } from "./components/conversation-renderers/interaction/interaction-renderers";
 import { InteractionDraftStore } from "./components/conversation-renderers/interaction/interaction-drafts";
 import { useConversationRecoveryDiagnostic } from "./runtime/conversation-recovery-diagnostic";
-import { RightPanel } from "./components/right-panel";
+import { retainRightPanelPresentation } from "./components/panel-presentation-admission";
+const RightPanel = lazy(() => import("./components/right-panel").then(module => ({ default: module.RightPanel })));
 import { BrowserAnnotationSinkProvider } from "./browser-annotation/composer-sink";
 import { ThreadComposerPresentation } from "./components/thread-composer-presentation";
 import { WorkbenchComposer, WorkbenchComposerProvider, type WorkbenchComposerEnvironment } from "./components/workbench-composer";
@@ -173,7 +182,7 @@ import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
 const TurnDiffReviewDialog = lazy(() => import("./components/conversation/turn-diff-review-dialog").then(module => ({ default: module.TurnDiffReviewDialog })));
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
-const AgentOnboarding = lazy(() => import("./components/agent-onboarding").then(module => ({ default: module.AgentOnboarding })));
+const HostAgentOnboarding = lazy(() => import("./components/agent-management").then(module => ({ default: module.HostAgentOnboarding })));
 import { DraftSetupNotice } from "./components/draft-setup-notice";
 import { NewThreadDraftPage } from "./components/new-thread-draft-page";
 import { isWorkbenchToolPage } from "./runtime/workbench-tool-pages";
@@ -247,6 +256,16 @@ import {
   type WorkbenchPresentationPolicy,
 } from "./workbench-presentation-policy";
 
+/** The app owns shortcut registration; the Composer picker owns the interaction. */
+function resolveAgentCycleShortcut(event: KeyboardEvent): -1 | 0 | 1 {
+  if (matchesWorkbenchShortcut(event, "agentPrevious", navigator.platform)) return -1;
+  return matchesWorkbenchShortcut(event, "agentNext", navigator.platform) ? 1 : 0;
+}
+
+const ServerSpacesContent = lazy(async () => {
+  const module = await import("./components/server-spaces-sidebar");
+  return { default: module.ServerSpacesContent };
+});
 const SettingsContent = lazy(async () => {
   const module = await import("./components/settings-page");
   return { default: module.SettingsContent };
@@ -387,6 +406,10 @@ export function App({
     : "web";
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
+  const serverSpaces = useServerSpaces(snapshot.hostId);
+  const [serverDrawerOpen,setServerDrawerOpen]=useState(()=>typeof window!=="undefined"&&new URL(window.location.href).searchParams.has("serverInvite"));
+  const [serverDrawerVisited,setServerDrawerVisited]=useState(serverDrawerOpen);
+  useEffect(()=>{if(serverDrawerOpen)setServerDrawerVisited(true);},[serverDrawerOpen]);
   useEffect(() => {
     setConversationSearchTarget(current => current
       && (current.hostId !== snapshot.hostId || current.threadId !== snapshot.activeThreadId) ? null : current);
@@ -406,7 +429,8 @@ export function App({
     && "version" in permissionModesExtension
     && permissionModesExtension.version === 1;
   const queueAtomicSteer = supportsAtomicQueuedSteer(queueExtension);
-  const queueUnconfirmedSteerDiscard = supportsUnconfirmedSteerDiscard(queueExtension);
+  const queueUnconfirmedDeliveryRetry = supportsUnconfirmedDeliveryRetry(queueExtension)
+    && runtime.resources.host.canRequest?.("thread/queue/retry") !== false;
   const queueReorderable = !(
     typeof queueExtension === "object" &&
     queueExtension !== null &&
@@ -429,7 +453,7 @@ export function App({
     cloud: machine.cloud,
     connectable: machine.hosts.some(host => host.enabled),
   })), [newConversationMachines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId);
+  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId, draft === null);
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
@@ -832,8 +856,10 @@ export function App({
   const unavailableThreadReason = unavailableHostId === snapshot.hostId && unavailableThreadId !== null
     ? runtime.resources.threads.getUnavailableReason?.(unavailableThreadId) ?? null
     : null;
+  const archivePresentation = conversationArchivePresentation(
+    unavailableThreadReason, (display.timeline?.frames.length ?? 0) > 0);
   const visibleTimeline = useThreadOrchestrationTimeline(
-    unavailableThreadReason !== "not-found" ? display.timeline : null, runtime.resources.orchestration,
+    archivePresentation.showHistory ? display.timeline : null, runtime.resources.orchestration,
     unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open");
   const showingDisplayCache = unavailableThreadReason !== null
     || (display.source !== "history" && display.source !== "mixed" && display.source !== "empty");
@@ -882,17 +908,17 @@ export function App({
       historyPaintObserver.settle(historyPaintAttempt, "ok", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
     }
     if (transitionOwnsView && navigationTransition) workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition, transitionOwnsView]);
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition, transitionOwnsView, archivePresentation.banner]);
   useEffect(() => {
     if (!historyPaintOwnsView && !transitionOwnsView) return;
-    if (unavailableThreadReason !== null || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
+    if ((unavailableThreadReason !== null && archivePresentation.banner !== "alongside") || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
       if (historyPaintAttempt && historyPaintOwnsView) historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
       if (navigationTransition?.phase === 'committed') workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
     } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
       if (historyPaintAttempt && historyPaintOwnsView) historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
       if (navigationTransition?.phase === 'committed') workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
     }
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, unavailableThreadReason, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition]);
+  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, unavailableThreadReason, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition, archivePresentation.banner]);
 
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
@@ -1013,11 +1039,11 @@ export function App({
     },
     [activeThreadLease, localOutbox],
   );
-  const discardUnconfirmedSteer = useCallback(
+  const retryUnconfirmedSteer = useCallback(
     async (id: string, expectedTurnId: string) => {
       if (activeThreadLease === null)
         throw new Error("No active Thread owns this steering claim");
-      await activeThreadLease.discardUnconfirmedSteer(id, asTurnId(expectedTurnId));
+      await activeThreadLease.retryUnconfirmedSteer(id, asTurnId(expectedTurnId));
     },
     [activeThreadLease],
   );
@@ -1048,6 +1074,10 @@ export function App({
       intent: SubmitIntent,
       context: { readonly followUpAction: ComposerFollowUpAction | null },
     ): boolean | Promise<boolean> => {
+      if (intent.handoff) return hostCatalog.submit(intent).then(() => true, () => {
+        notices.error({ key: `agent-handoff:${intent.commandId}`, message: intl.formatMessage({ id: "chat.agentHandoff.failed", defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again." }) });
+        throw new Error(intl.formatMessage({ id: "chat.agentHandoff.failed", defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again." }));
+      });
       const sideChatSnapshot = activeThreadLease?.getSnapshot() ?? null;
       const sideChatCommand = runSideChatComposerCommand(intent, {
         key: sideChatSnapshot?.key ?? null,
@@ -1098,6 +1128,15 @@ export function App({
         return invoking.then(() => true);
       }
       let submittedIntent = intent;
+      if(intent.target.type==='new-thread'&&intent.target.execution.hostId===serverSpaces.hostId) {
+        const spaceId=intent.target.execution.collaborationSpaceId??'myself';
+        const supported=runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.['opencraft/server-spaces'];
+        if((!supported&&spaceId!=='myself')||(serverSpaces.directory&&!serverSpaces.directory.spaces.some(space=>space.id===spaceId))){
+          composerController.dispatch({type:'set-lifecycle',phase:'failed',error:intl.formatMessage({id:'serverSpaces.scopeUnavailable',defaultMessage:'This Server is unavailable. Start a new conversation in an available Server.'})});return false;
+        }
+        const {collaborationSpaceId:ignored,...placement}=intent.target.execution;
+        submittedIntent={...intent,target:{...intent.target,execution:{...placement,...(supported?{collaborationSpaceId:spaceId}:{})}}};
+      }
       let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
       const followsActiveTurn =
         context.followUpAction !== null &&
@@ -1148,10 +1187,12 @@ export function App({
       return true;
     },
     [
+      notices, intl,
       conversationScopes,
       sideChatAction,
       panelToolbarContext,
       hostCatalog,
+      serverSpaces.hostId,serverSpaces.directory,
       queryClient,
       activeThreadLease,
       localThreadId,
@@ -1247,7 +1288,7 @@ export function App({
     },
     [activeThreadLease],
   );
-  const navigateToHome = useCallback(() => {
+  const navigateToHomeForSpace = useCallback((collaborationSpaceId:string) => {
     const activeProtocolThread = catalog.protocolThreads.find(
       (thread) => thread.id === activeThreadLease?.threadId,
     );
@@ -1281,7 +1322,7 @@ export function App({
     const hostId = asHostId(hostCatalog.selectedHostId);
     try {
       hostCatalog.navigateToHome({
-        execution: { hostId, workspace },
+        execution: { hostId, workspace,collaborationSpaceId },
         entrypoint: "new-chat",
       });
     } catch (error) {
@@ -1296,6 +1337,20 @@ export function App({
     setSidebarOpen,
     snapshot.hostId,
   ]);
+
+  const navigateToHome=useCallback(()=>navigateToHomeForSpace(serverSpaces.unavailable?'myself':serverSpaces.selected),[navigateToHomeForSpace,serverSpaces.selected,serverSpaces.unavailable]);
+  const serverViewKey=conversationRouteOpen?JSON.stringify([serverSpaces.ownerKey,draft?.id??activeThreadId]):null;
+  useEffect(()=>{
+    if(!serverViewKey||serverSpaces.unavailable)return;
+    let active=true;const expected=serverSpaces.selectionGeneration();
+    void serverSpaces.refresh().then(result=>{
+      if(!active||result.isError||!result.data)return;
+      const scope=draft?draft.target.execution.collaborationSpaceId??'myself'
+        :result.data.assignments.find(row=>row.threadId===activeThreadId)?.spaceId??'myself';
+      if(result.data.spaces.some(space=>space.id===scope))void serverSpaces.select(scope,expected).catch(()=>{});
+    });
+    return()=>{active=false;};
+  },[serverViewKey,serverSpaces.unavailable]);
 
   const openBrowserTab = useCallback(
     (initialUrl?: string, background = false) => {
@@ -1378,6 +1433,9 @@ export function App({
   const loadQueuedImage = useMemo(() => createQueuedImageLoader(loadMediaSource, {
     conversationId: activeThreadId, hostId: snapshot.hostId, cwd: queueImageCwd,
   }), [loadMediaSource, activeThreadId, snapshot.hostId, queueImageCwd]);
+  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.model,
+    () => composerController.getSnapshot().draft.selections.model);
   const composerCatalog = useComposerCatalog(
     snapshot.conversation?.execution.cwd ??
       activeProtocolThread?.cwd ??
@@ -1386,6 +1444,7 @@ export function App({
       null,
     draft === null ? activeThreadId : null,
     presentation.runtimeHostConfiguration,
+    explicitSetupModel ?? snapshot.conversation?.execution.model ?? null,
   );
   const setupModelPage = resolveHostModelSettingsPage(
     settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
@@ -1398,9 +1457,6 @@ export function App({
   }, [activeHostConnectionPhase, snapshot.hostId]);
   const initialConnectionFailed = snapshot.error !== null && !draftConnectionObservation.current.wasReady;
   const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
-  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
-    () => composerController.getSnapshot().draft.selections.model,
-    () => composerController.getSnapshot().draft.selections.model);
   const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
     ?? composerCatalog.models.find(model => model.isDefault)?.model ?? null;
   const modelReadiness = useQuery({
@@ -1420,24 +1476,45 @@ export function App({
       : activeHostConnectionPhase === "ready" && ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error) ? "catalog-error" as const
         : activeHostConnectionPhase === "ready" && noUsableModels && !composerCatalog.modelError && !modelReadiness.error ? "models" as const : null
     : null;
-  // First-use guidance is opt-in for now; Settings can still replay it.
-  const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | null>(null);
-  const finishOnboarding = (modelId?: string) => {
+  const onboardingFinishEpoch = useRef(0);
+  useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
+  // Internal first-use entry remains explicit; shared Settings can replay guidance.
+  const [onboardingOverlay,setOnboardingOverlay]=useState<"gate"|"sheet"|"history"|null>(null);
+  const finishOnboarding = async (modelId?: string) => {
+    const epoch = ++onboardingFinishEpoch.current;
+    if (modelId) {
+      const revision = hostCatalog.navigation.getSnapshot().revision;
+      const account = hostCatalog.threadAttention.getScope();
+      const display = hostCatalog.displayContinuity.getScope();
+      const latest = await queryClient.fetchQuery({ ...composerCapabilitiesOptions(snapshot.hostId, null, runtime.resources.composerCatalog), staleTime: 0 });
+      if (epoch !== onboardingFinishEpoch.current) return;
+      if (revision !== hostCatalog.navigation.getSnapshot().revision || account !== hostCatalog.threadAttention.getScope()
+        || display !== hostCatalog.displayContinuity.getScope()) throw new Error("Onboarding selection scope changed");
+      if (!latest.models.some(model => model.id === modelId || model.model === modelId)) throw new Error("Selected agent model is unavailable");
+    }
+    if (modelId && draft === null) {
+      hostCatalog.navigateToHome({ execution: { collaborationSpaceId:serverSpaces.selected,hostId: asHostId(snapshot.hostId), workspace: { cwd: activeHost.workspaceBrowseRoots[0] ?? null, runtimeWorkspaceRoots: activeHost.workspaceBrowseRoots } }, entrypoint: "new-chat" });
+      await hostCatalog.selectHost(snapshot.hostId, { model: modelId, effort: null, serviceTier: null });
+      if (epoch !== onboardingFinishEpoch.current) return;
+    }
     try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
     catch { /* The gate can still close when storage is unavailable. */ }
-    if (modelId) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
+    const remembered = onboardingNewThreadSelection(modelId);
+    if (remembered) composerCatalog.rememberModelDefaults?.(remembered);
+    if (modelId && draft !== null) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
     setOnboardingOverlay(null);
   };
   useEffect(() => {
     const replay = (event: Event) => {
-      const presentation = event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
+      onboardingFinishEpoch.current += 1;
+      const presentation = event instanceof CustomEvent && event.detail?.intent === "history" ? "history" : event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
       setOnboardingOverlay(presentation);
     };
     window.addEventListener("opencraft:replay-agent-onboarding", replay);
     return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
   }, []);
-  const visibleOnboardingOverlay = recoveryAccessFailure === null && (onboardingOverlay === "sheet" || conversationRouteOpen) ? onboardingOverlay : null;
-  const draftSetupNotice = draftSetupKind === null || draftSetupKind === "models" || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
+  const visibleOnboardingOverlay = recoveryAccessFailure === null && ((onboardingOverlay === "sheet" || onboardingOverlay === "history") || conversationRouteOpen) ? onboardingOverlay : null;
+  const draftSetupNotice = draftSetupKind === null || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
     kind={draftSetupKind} hostName={activeHost.label}
     onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
     onConnectionSettings={() => openSettingsFromConversation("machines")}
@@ -1465,10 +1542,43 @@ export function App({
   const composerSuggestionCatalog = useAppServerComposerCatalog(
     composerWorkspaceRoots,
   );
+  const agentAvailability = useAgentAvailability();
+  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-access"] as { agentHandoff?: boolean } | undefined;
+  const executionEngines = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/execution-engines"] as { defaultEngine?: string; providers?: readonly { id: string; threadPrefix?: string; modelPrefix?: string }[] } | undefined;
+  const conversationAgent = activeThreadId === null ? null : executionEngines?.providers?.find(engine =>
+    (engine.threadPrefix && activeThreadId.startsWith(engine.threadPrefix)) || (engine.modelPrefix && activeThreadId.startsWith(engine.modelPrefix)))?.id
+    ?? [...composerCatalog.models, ...composerCatalog.displayModels, ...engineCatalog.groups.flatMap(group => group.hostId === snapshot.hostId ? group.models : [])].find(model => model.id === snapshot.conversation?.execution.model || model.model === snapshot.conversation?.execution.model)?.agentId
+    ?? executionEngines?.defaultEngine ?? null;
+  const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
+    && continuationCapability?.agentHandoff === true && presentation.executionSelection !== "fixed";
+  const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
+  // Existing conversations always identify their Agent; cross-Agent continuation
+  // is a separate Host capability and must not gate the identity marker.
+  const currentThreadAgent = useMemo(() => {
+    if (draft !== null || activeThreadId === null) return null;
+    const modelValue = snapshot.conversation?.execution.model;
+    const hostModels = engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? [];
+    const model = modelValue == null ? undefined
+      : [...composerCatalog.models, ...composerCatalog.displayModels, ...hostModels].find(candidate => candidate.model === modelValue || candidate.id === modelValue);
+    const agentId = conversationAgent ?? model?.agentId ?? null;
+    return agentId === null ? null : { id: agentId, label: model?.agentLabel ?? null };
+  }, [draft, activeThreadId, conversationAgent, composerCatalog.models, composerCatalog.displayModels, engineCatalog.groups, snapshot.hostId, snapshot.conversation?.execution.model]);
+  const hostGroupLabel = useCallback((hostId: string) =>
+    hostCatalog.profiles.find(host => host.hostId === hostId)?.agent
+    ?? hostCatalog.hosts.find(host => host.hostId === hostId)?.label
+    ?? hostId, [hostCatalog]);
+  const hostGroupAgentId = useCallback((hostId: string) => agentIdForHostLabel(hostGroupLabel(hostId)), [hostGroupLabel]);
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
+      currentAgentId: currentThreadAgent?.id ?? null,
+      currentAgentLabel: currentThreadAgent?.label ?? null,
+      agentContinuation: canContinueWithAgent ? { startsNewThread: true } : undefined,
+      agentsDisabled: filterNewAgents && newDraftAgentsDisabled(
+        engineCatalog.groups.map(group => ({ hostId: group.hostId, agentId: hostGroupAgentId(group.hostId), models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models })),
+        snapshot.hostId, agentAvailability.enabled,
+      ),
       policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectComposerModelChoices(composerCatalog.models),
+      models: projectComposerModelChoices((canContinueWithAgent ? engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? composerCatalog.models : composerCatalog.models).filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? hostGroupAgentId(snapshot.hostId) ?? "host"))),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
       permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
         const profile = rawProfile as OpenCraftPermissionProfile;
@@ -1490,17 +1600,29 @@ export function App({
       modelErrorKind: composerCatalog.modelErrorKind,
       onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
+      onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
       onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
-      agentGroups: modelSelectionPolicy !== "user" || draft === null || presentation.executionSelection === "fixed" ? undefined : engineCatalog.groups.map(group => ({
+      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
         id: group.hostId,
-        label: hostCatalog.profiles.find(host => host.hostId === group.hostId)?.agent ?? hostCatalog.hosts.find(host => host.hostId === group.hostId)?.label ?? group.hostId,
+        label: hostGroupLabel(group.hostId),
         active: group.hostId === snapshot.hostId,
-        models: projectComposerModelChoices(group.hostId === snapshot.hostId ? composerCatalog.models : group.models),
-        loading: group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
-        error: group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
+        models: projectComposerModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => canContinueWithAgent
+          ? model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? hostGroupAgentId(group.hostId) ?? "host")
+          : filterModelsForNewDraft([model], group.hostId, snapshot.hostId, agentAvailability.enabled, hostGroupAgentId(group.hostId)).length > 0)),
+        loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
+        error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
         errorKind: group.hostId === snapshot.hostId ? composerCatalog.modelErrorKind : undefined,
         retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
         select: async (model) => {
+          if (canContinueWithAgent && model.agentId === conversationAgent) composerController.dispatch({ type: "cancel-agent-handoff" });
+          if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
+            try {
+              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), agentId: model.agentId!, model: model.value, effort: model.defaultEffort, permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null, serviceTier: null });
+            } catch (error) {
+              throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
+            }
+            return { selection: "handled" as const };
+          }
           const currentTier = composerController.getSnapshot().draft.selections.serviceTier;
           const requestedTier = currentTier !== undefined ? currentTier : composerCatalog.newThreadDefaults?.serviceTier;
           const serviceTier = model.serviceTiers?.some(tier => tier.id === requestedTier) ? requestedTier ?? null : null;
@@ -1517,7 +1639,7 @@ export function App({
         composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId,
+      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId, hostGroupLabel, hostGroupAgentId,
       settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
@@ -1534,6 +1656,17 @@ export function App({
       supportsPermissionModes,
     ],
   );
+  const selectedPermissionProfile = useSyncExternalStore(composerController.subscribe,
+    () => composerController.getSnapshot().draft.selections.permissionProfile,
+    () => composerController.getSnapshot().draft.selections.permissionProfile);
+  useEffect(() => {
+    if (draft?.target.type !== "new-thread" || selectedPermissionProfile == null) return;
+    const profiles = composerSelectionCatalog.permissionProfiles;
+    if (profiles.length === 0 || profiles.some(profile => profile.value === selectedPermissionProfile || profile.nativeProfileId === selectedPermissionProfile)) return;
+    const fallback = profiles.find(profile => profile.mode === "full" && !profile.disabled) ?? profiles.find(profile => !profile.disabled);
+    if (!fallback) return;
+    composerController.dispatch({ type: "set-selections", patch: { permissionProfile: fallback.value } });
+  }, [composerController, composerSelectionCatalog.permissionProfiles, draft?.target.type, selectedPermissionProfile]);
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
@@ -1756,7 +1889,7 @@ export function App({
         onConnectDesktopServer={desktopServerPort() ? async (origin, signal) => {
           const profile = await configureDesktopServer({ origin, signal, port: desktopServerPort()!, profiles: hostCatalog.profiles, provision: hostCatalog.provisionHost });
           signal.throwIfAborted();
-          hostCatalog.navigateToHome({ execution: { hostId: profile.hostId as import('@opencraft/chat-core').HostId, workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
+          hostCatalog.navigateToHome({ execution: { collaborationSpaceId:serverSpaces.selected,hostId: profile.hostId as import('@opencraft/chat-core').HostId, workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
         } : undefined}
         onOpenView={workbenchNavigation.openExtensionView}
         onPushViewResource={workbenchNavigation.pushExtensionViewResource}
@@ -1892,12 +2025,19 @@ export function App({
     }
   });
   useEffect(() => panelHost?.bind(invokeHostPanel), [panelHost, invokeHostPanel]);
-  const rightPanelView = !presentation.rightPanel ? null : <WorkbenchPresentationActivityProvider active={conversationRouteOpen}><RightPanel
+  // Data, tab ownership and native residency stay with their existing owners.
+  // An empty, never-opened panel needs no renderer or drag implementation.
+  // After first demand keep the presentation mounted through close/empty states.
+  const rightPanelPresentationVisited = useRef(false);
+  rightPanelPresentationVisited.current = retainRightPanelPresentation(rightPanelPresentationVisited.current, { open: panelState.right.open, tabCount: panelState.right.tabs.length, hostActive: Boolean(panelHost && hostPanelActive) });
+  const rightPanelView = !presentation.rightPanel || !rightPanelPresentationVisited.current ? null : <WorkbenchPresentationActivityProvider active={conversationRouteOpen}><Suspense fallback={
+    <div className="right-panel-empty" role="status">{intl.formatMessage({ id: "common.loading", defaultMessage: "Loading…" })}</div>
+  }><RightPanel
     hostPresentationActive={panelHost ? conversationRightPanelAvailable && (panelState.right.open || hostPanelActive) : undefined}
     emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
     state={panelState} presentationId={panelPresentationId} renderers={presentedPanelRenderers}
     toolbarActions={conversationRouteOpen ? panelToolbarActions : []} toolbarActionContext={panelToolbarContext}
-    onAction={dispatchPanel} onCloseTab={requestClosePanel} portalContainer={portalContainer} /></WorkbenchPresentationActivityProvider>;
+    onAction={dispatchPanel} onCloseTab={requestClosePanel} portalContainer={portalContainer} /></Suspense></WorkbenchPresentationActivityProvider>;
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
@@ -1928,6 +2068,13 @@ export function App({
     return () => { document.title = applicationName; };
   }, [embedded, applicationName]);
   const scheduleCapability = executionEngineExtension(runtime.resources.host.getInitializeResult()?.capabilities?.extensions, activeThreadId, "opencraft/conversation-schedules") as { version?: number } | undefined;
+  const nativeSessionCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { version?: number } | undefined;
+  const nativeSession = useQuery({
+    queryKey: ["appserver", snapshot.hostId, "native-session", activeThreadId],
+    enabled: nativeSessionCapability?.version === 1 && activeThreadId?.startsWith("codex_") === true && snapshot.phase === "ready",
+    queryFn: () => hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/status", { threadId: activeThreadId! }),
+    retry: false,
+  });
   const schedulesAvailable = scheduleCapability?.version === 1 && runtime.resources.host.canRequest?.("opencraft/schedules/read") === true;
   const conversationMenuAvailable = conversationSurfaceVisible && draft === null && activeThreadId !== null;
   const refreshConversationCatalog = useCallback(() => queryClient.invalidateQueries({
@@ -1979,7 +2126,11 @@ export function App({
                 archive: () => hostCatalog.threadManagement.archive(snapshot.hostId, headerThreadId),
                 refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }),
               }) : undefined,
-    onFork: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork
+    onReleaseNativeSession: nativeSession.data?.release ? async () => {
+      await hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/release", { threadId: headerThreadId });
+      await nativeSession.refetch();
+    } : undefined,
+    onFork: (activeThreadId?.startsWith("codex_") ? nativeSession.data?.fork === true : hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork)
               ? () => forkAndOpenThread({
                 routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
                 fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, headerThreadId),
@@ -2190,6 +2341,13 @@ export function App({
             <span>{intl.formatMessage({ id: "navigation.conversationFailed", defaultMessage: "Could not open the conversation. Your previous conversation is still available." })}</span>
             <Button size="sm" variant="ghost" onClick={() => { void workbenchNavigation.selectConversation(navigationTransition.location).catch(() => undefined); }}>{intl.formatMessage({ id: "sidebar.search.retry", defaultMessage: "Retry" })}</Button>
           </> : null}
+          serverDrawer={serverSpaces.unavailable ? undefined : {
+            open:serverDrawerOpen,onOpenChange:setServerDrawerOpen,
+            label:intl.formatMessage({id:'serverSpaces.title',defaultMessage:'Servers'}),
+            closeLabel:intl.formatMessage({id:'serverSpaces.closeDrawer',defaultMessage:'Close Servers'}),
+            openLabel:intl.formatMessage({id:'serverSpaces.openDrawer',defaultMessage:'Open Servers'}),
+            content:(serverDrawerOpen||serverDrawerVisited)?<Suspense fallback={null}><ServerSpacesContent key={serverSpaces.ownerKey} controller={serverSpaces} open={serverDrawerOpen} onClose={()=>setServerDrawerOpen(false)} onSelected={spaceId=>{setServerDrawerOpen(false);navigateToHomeForSpace(spaceId);}}/></Suspense>:null,
+          }}
           surface={desktopBackdrop ? "application-desktop" : "default"}
           navigation={!presentation.shellNavigation ? undefined : {
             layout: "unified",
@@ -2273,7 +2431,7 @@ export function App({
             host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
             {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen || extensionProjection.activeView?.keepConversationSidebar) ? <Sidebar
               searchInDialog={presentation.shellNavigation}
-              threads={ordinaryThreads}
+              threads={serverSpaces.filter(ordinaryThreads)}
               threadCatalogs={multiHostCatalog.catalogs}
               threadCatalogDiscovery={multiHostCatalog.discovery}
               {...sidebarCommands}
@@ -2311,14 +2469,21 @@ export function App({
         >
         {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
         <div className="workbench-route-stage">
-          {!embedded && visibleOnboardingOverlay !== null ? <Suspense fallback={null}><AgentOnboarding
-            hostId={snapshot.hostId}
-            hostName={activeHost.label}
+          {!embedded && visibleOnboardingOverlay !== null ? <Suspense fallback={
+            <div className="hostless-workbench__empty-stage" role="dialog" aria-modal={visibleOnboardingOverlay === "gate"}
+              aria-label={intl.formatMessage({ id: "common.loading", defaultMessage: "Loading…" })}>
+              <p role="status">{intl.formatMessage({ id: "common.loading", defaultMessage: "Loading…" })}</p>
+              {visibleOnboardingOverlay !== "gate" ? <Button onClick={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}>
+                {intl.formatMessage({ id: "common.cancel", defaultMessage: "Cancel" })}
+              </Button> : null}
+            </div>
+          }><HostAgentOnboarding
+            key={snapshot.hostId}
             presentation={visibleOnboardingOverlay}
-            request={(method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params)}
+            onImported={async () => { await serverSpaces.select("myself"); }}
             onFinish={finishOnboarding}
             onUseModels={() => finishOnboarding()}
-            onClose={() => setOnboardingOverlay(null)}
+            onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}
           /></Suspense> : null}
           <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
           <div
@@ -2327,6 +2492,7 @@ export function App({
             hidden={!conversationSurfaceVisible}
             inert={!conversationRouteOpen || undefined}
           >
+        <ExecutionRecoveryNotice hostId={snapshot.hostId} execution={executionStatusForThread(snapshot.transport, snapshot.activeThreadId)} />
         {connectionInterventionNode !== null ? (
           <div className="hostless-workbench__empty-stage">
             {connectionInterventionNode}
@@ -2355,6 +2521,7 @@ export function App({
             selectionCatalog={composerSelectionCatalog}
             catalog={composerSuggestionCatalog}
             effectiveSelections={modelSelectionPolicy === "session" ? undefined : composerCatalog.newThreadDefaults ?? undefined}
+            resolveAgentCycleShortcut={resolveAgentCycleShortcut}
             personalDefaultsPending={composerCatalog.personalDefaultsPending}
             placement={workspaceCatalog.available || draft.target.execution.environment || draft.target.execution.workspace.source ? {
               catalog: workspaceCatalog.data, available: workspaceCatalog.available, selectable: workspaceCatalog.selectable,
@@ -2432,7 +2599,11 @@ export function App({
                       attentionScope, snapshot.hostId, activeThreadId, turnId);
                   }}
                   hasPendingSubmission={unavailableThreadReason === null && draft !== null}
-                  emptyState={unavailableThreadReason === "not-found" ? <ConversationUnavailableState reason="not-found" /> : unavailableThreadReason === "archived" ? undefined : draft !== null ? <PendingConversationPage
+                  emptyState={archivePresentation.banner === "replace" ? <ConversationUnavailableState
+                      reason={unavailableThreadReason === "not-found" ? "not-found" : "archived"}
+                      onRestore={unavailableThreadReason === "archived" ? restoreUnavailableThread : undefined}
+                      restoring={restoringArchivedThread}
+                    /> : draft !== null ? <PendingConversationPage
                       embedded
                       conversation={draft}
                       documentContext={{ conversationId: null, cwd: draft.target.execution.workspace.cwd,
@@ -2459,8 +2630,9 @@ export function App({
                     onReviewTurnDiff: openTurnDiffReview,
                     composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
                     turnActions: { fork: activeThreadId !== null && hostCatalog.threadManagement.capabilities(snapshot.hostId).fork, reviewDiff: true },
+                    onForkConversation: !showingDisplayCache && nativeSession.data?.fork ? conversationToolbarProps.onFork : undefined,
                     onForkTurn: !showingDisplayCache && snapshot.conversation?.authoritative === true
-                      && activeThreadId !== null && hostCatalog.threadManagement.capabilities(snapshot.hostId).fork
+                      && activeThreadId !== null && !activeThreadId.startsWith("codex_") && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
                       ? turnId => forkAndOpenThread({
                           routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
                           fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, activeThreadId, turnId),
@@ -2469,7 +2641,7 @@ export function App({
                         }) : undefined,
                     theme: appearanceTheme.resolvedTheme,
                   }}
-                  timeline={draft === null ? visibleTimeline : null}
+                  timeline={draft === null && archivePresentation.showHistory ? visibleTimeline : null}
                   readOnlyTurnIds={archivedReadOnlyTurnIds ?? (display.source === "mixed" ? display.cachedTurnIds : undefined)}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                   navigationSource={showingDisplayCache ? null : navigationSource}
@@ -2536,9 +2708,15 @@ export function App({
                     conversationScrollApiRef.current = api;
                   }}
                   surfaceCapabilities={timelineSurfaceCapabilities}
-                  footer={unavailableThreadReason === "archived" ? <ConversationUnavailableState
-                    reason="archived" onRestore={restoreUnavailableThread} restoring={restoringArchivedThread}
-                  /> : unavailableThreadReason !== null ? null : (
+                  footer={archivePresentation.banner === "alongside" ? (
+                    <div className="thread-composer-region">
+                      <ConversationUnavailableState
+                        reason="archived"
+                        onRestore={restoreUnavailableThread}
+                        restoring={restoringArchivedThread}
+                      />
+                    </div>
+                  ) : unavailableThreadReason !== null ? null : (
                     <ThreadComposerPresentation
                       key={panelOwnerId}
                       scopeId={panelOwnerId}
@@ -2617,23 +2795,24 @@ export function App({
                           ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
                             visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)).map((submission) =>
                             queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
-                          ...(queueUnconfirmedSteerDiscard ? snapshot.conversation?.unconfirmedSteers ?? [] : []).map((claim) => ({
+                          ...(snapshot.conversation?.unconfirmedSteers ?? []).map((claim) => ({
                             id: claim.id,
                             sender: queueSenderPresentation(claim.sender, identityAvatar),
                             preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",
-                            state: "queued" as const,
-                            operation: "idle" as const,
+                            state: "unknown" as const,
+                            operation: claim.pausedReason === "delivery-retry-requested" ? "starting" as const : "idle" as const,
                             actionable: false,
                             reorderable: false,
                             editableContent: restoreQueuedInput(claim.input),
-                            pausedReason: "Delivery unconfirmed",
+                            pausedReason: null,
                             error: null,
                             unconfirmedTargetTurnId: claim.targetTurnId,
+                            retryable: claim.retryable === true,
                           })),
                         ]}
                         onUpdateQueuedSubmission={(id, intent) => queueOperation("update", id, () => updateQueuedSubmission(id, intent))}
                         onDeleteQueuedSubmission={(id) => queueOperation("delete", id, () => deleteQueuedSubmission(id))}
-                        onDiscardUnconfirmedSteer={(id, turnId) => queueOperation("discard-unconfirmed-steer", id, () => discardUnconfirmedSteer(id, turnId))}
+                        onRetryUnconfirmedSteer={queueUnconfirmedDeliveryRetry ? (id,turnId)=>queueOperation("retry-unconfirmed-steer",id,()=>retryUnconfirmedSteer(id,turnId)) : undefined}
                         onReorderQueuedSubmissions={(ids) => queueOperation("reorder", "order", () => reorderQueuedSubmissions(ids))}
                         onSteerQueuedSubmission={(id) => queueOperation("steer", id, () => steerQueuedSubmission(id))}
                         supportsQueuedSteer={queueAtomicSteer}
@@ -2656,6 +2835,8 @@ export function App({
                         }) : undefined)}
                         selectionCatalog={composerSelectionCatalog}
                         catalog={composerSuggestionCatalog}
+                        resolveAgentCycleShortcut={resolveAgentCycleShortcut}
+                        mentionSuggestionsEnabled={false}
                         effectiveSelections={{
                           model: snapshot.conversation?.execution.model,
                           effort: snapshot.conversation?.execution.effort,

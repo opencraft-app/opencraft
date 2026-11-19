@@ -26,8 +26,9 @@ test('browser packaging with an invalid explicit owned distribution fails before
 test('desktop packaging rejects the former stock override and replaces arbitrary electronDist flags', async t => {
   await assert.rejects(packageBuilderArguments([], {}), /only verified repository-owned/);
   await assert.rejects(packageBuilderArguments([], { OPENCRAFT_ELECTRON_ALLOW_STOCK: '1' }), /only verified repository-owned/);
+  await assert.rejects(packageBuilderArguments(['--linux', 'AppImage'], { OPENCRAFT_ELECTRON_ALLOW_STOCK: '1' }), /requires the verified fork/);
   const distribution = await ownedDesktopFixture(t);
   const args = await packageBuilderArguments(['--config.electronDist=/unverified'], { OPENCRAFT_ELECTRON_DISTRIBUTION: distribution });
-  assert.equal(args.at(-1), '--config.electronDist=' + distribution);
-  assert.match(args.at(-2), /^--config\.electronVersion=\d+\.\d+\.\d+$/);
+  assert.equal(args.at(-2), '--config.electronDist=' + distribution);
+  assert.match(args.at(-1), /^--config\.electronVersion=\d+\.\d+\.\d+$/);
 });

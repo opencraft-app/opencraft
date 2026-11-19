@@ -128,7 +128,7 @@ export async function resolveBrowserAttachmentForHost(
     try {
       const attachments = host.resources.attachments;
       const capability = attachments.capabilities();
-      return await resolveBrowserAttachment(file, pending, {
+      const resolved = await resolveBrowserAttachment(file, pending, {
         maxBytes: capability?.maxBytes,
         chunkBytes: capability?.chunkBytes,
         uploadRetry: capability?.uploadRetry,
@@ -136,6 +136,17 @@ export async function resolveBrowserAttachmentForHost(
         uploadCancel: capability?.chunkBytes ? id => attachments.uploadCancel(id) : undefined,
         stage: capability?.sources.includes("client-bytes") ? (params, requestSignal) => attachments.stage(params, requestSignal) : null,
       }, images, signal, onProgress);
+      if (signal?.aborted) {
+        // Final receipt is still awaited even when the Draft is removed. Retire
+        // only that proved ref, and never issue cleanup through a successor Host.
+        const ref = resolved.metadata?.attachmentRef;
+        if (typeof ref === "object" && ref !== null && "id" in ref && typeof ref.id === "string"
+          && hostReady(host) && host.getSnapshot().connectionGeneration === generation) {
+          await attachments.remove(ref.id).catch(() => undefined);
+        }
+        signal.throwIfAborted();
+      }
+      return { ...resolved, metadata: { ...resolved.metadata, attachmentHostId: host.getSnapshot().hostId } };
     } catch (error) {
       signal?.throwIfAborted();
       // Staging is idempotent by clientAttachmentId and content. Restart a lost

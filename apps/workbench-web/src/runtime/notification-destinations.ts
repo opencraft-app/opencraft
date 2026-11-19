@@ -60,9 +60,46 @@ export class NotificationDestinationsController {
     }catch{if(!this.disposed && generation===this.generation){if(this.snapshot.configuration?.defaultsAvailable)this.scheduleRetry();if(!this.snapshot.configuration)this.publish({phase:'error'});}}finally{clearTimeout(timer);}
   };
   private scheduleRetry(){clearTimeout(this.retry);this.retry=setTimeout(()=>{void this.refresh();},30000);}
-  private parse(value:any):NotificationConfiguration {
-    if(typeof value?.actorId!=='string' || typeof value.enabled!=='boolean' || !Array.isArray(value.destinations) || !Array.isArray(value.imTargets)||!Array.isArray(value.hosts))throw Error('invalid_notifications');
-    return value;
+  private parse(value: unknown): NotificationConfiguration {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw Error("invalid_notifications");
+    const item = value as Record<string, unknown>;
+    const record = (candidate: unknown): candidate is Record<string, unknown> =>
+      !!candidate && typeof candidate === "object" && !Array.isArray(candidate);
+    if (
+      typeof item.actorId !== "string" ||
+      typeof item.enabled !== "boolean" ||
+      !Array.isArray(item.hosts) ||
+      item.hosts.some((host: unknown) => typeof host !== "string") ||
+      !Array.isArray(item.destinations) ||
+      item.destinations.some(
+        (destination: unknown) =>
+          !record(destination) ||
+          typeof destination.id !== "string" ||
+          !["bark", "webhook", "im"].includes(String(destination.kind)) ||
+          typeof destination.label !== "string" ||
+          typeof destination.enabled !== "boolean" ||
+          typeof destination.authorized !== "boolean" ||
+          (destination.channelId !== undefined && typeof destination.channelId !== "string") ||
+          (destination.senderId !== undefined && typeof destination.senderId !== "string") ||
+          (destination.methodId !== undefined && typeof destination.methodId !== "string") ||
+          (destination.methodLabel !== undefined && typeof destination.methodLabel !== "string"),
+      ) ||
+      !Array.isArray(item.imTargets) ||
+      item.imTargets.some(
+        (target: unknown) =>
+          !record(target) ||
+          typeof target.channelId !== "string" ||
+          typeof target.senderId !== "string" ||
+          typeof target.label !== "string" ||
+          (target.methodId !== undefined && typeof target.methodId !== "string") ||
+          (target.methodLabel !== undefined && typeof target.methodLabel !== "string"),
+      ) ||
+      (item.savedId !== undefined && typeof item.savedId !== "string") ||
+      (item.defaultsAvailable !== undefined && typeof item.defaultsAvailable !== "boolean") ||
+      (item.defaultsStatus !== undefined && !["complete","deferred","ineligible"].includes(String(item.defaultsStatus)))
+    )
+      throw Error("invalid_notifications");
+    return item as unknown as NotificationConfiguration;
   }
   async operation(operation:string,fields:Record<string,unknown>={}):Promise<NotificationConfiguration|{sent:boolean}> {
     if(this.disposed || this.snapshot.busy || !this.snapshot.configuration || !this.messages)throw Error('notifications_unavailable');

@@ -5,7 +5,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { updateLocalServer, observeLocalUpdate } from '../../scripts/update-server-local.mjs';
+import { updateLocalServer, observeLocalUpdate, shouldCleanupTemporaryOutput } from '../../scripts/update-server-local.mjs';
 
 for (const transport of ['slow headers', 'slow body', 'disconnected status']) test(`local updater observes ${transport} without a second installation`, { timeout: 5000 }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'update-observation-'));
@@ -56,6 +56,14 @@ const completed = () => ({ current: { version: '1.1.0', buildId: 'target' },
   job: { id: 'accepted-job', version: '1.1.0', phase: 'completed' }, execution: { ready: true } });
 const observing = overrides => ({ jobId: 'accepted-job', version: '1.1.0', buildId: 'target', ...overrides });
 
+test('temporary update output is retained when submission outcome is unknown', () => {
+  assert.equal(shouldCleanupTemporaryOutput({ submission: 'not-started', terminal: false }), true);
+  assert.equal(shouldCleanupTemporaryOutput({ submission: 'rejected', terminal: false }), true);
+  assert.equal(shouldCleanupTemporaryOutput({ submission: 'accepted', terminal: true }), true);
+  assert.equal(shouldCleanupTemporaryOutput({ submission: 'unknown', terminal: false }), false);
+  assert.equal(shouldCleanupTemporaryOutput({ submission: 'accepted', terminal: false }), false);
+});
+
 test('job observation covers ninety seconds of verification and keeps one total deadline', async t => {
   let elapsed = 0; let reads = 0; const budgets = [];
   const timeout = AbortSignal.timeout.bind(AbortSignal);
@@ -75,7 +83,7 @@ test('terminal failure is reported immediately instead of waiting out the budget
   await assert.rejects(observeLocalUpdate(observing({ deadline: 900_000, now: () => 0,
     sleep: async () => { waits++; }, status: async () => {
       reads++; return { job: { id: 'accepted-job', version: '1.1.0', phase: 'failed', error: 'verification rejected' } };
-    } })), /verification rejected/);
+    } })), error => /verification rejected/.test(error.message) && error.updateTerminal === true);
   assert.equal(reads, 1); assert.equal(waits, 0);
 });
 

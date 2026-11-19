@@ -31,14 +31,10 @@ CREATE INDEX token_usage_sources_observed_query ON token_usage_sources(server_id
 const OPEN_GAP_THREAD_INDEX = `
 CREATE INDEX token_usage_gaps_open_thread ON token_usage_gaps(server_id,thread_id) WHERE ends_ms IS NULL;
 `;
-const OPEN_GAP_MIGRATION = OPEN_GAP_THREAD_INDEX + `
-DELETE FROM token_usage_gaps WHERE ends_ms IS NOT NULL;
-`;
 export const TOKEN_USAGE_STATE_MIGRATIONS = [
   { version: 1, name: "isolated-token-usage", sql: SCHEMA },
   { version: 2, name: "token-usage-thread-query-index", sql: THREAD_QUERY_INDEX },
   { version: 3, name: "token-usage-source-recency-index", sql: TOKEN_USAGE_RECENCY_INDEX },
-  { version: 4, name: "token-usage-open-gap-thread-index", sql: OPEN_GAP_MIGRATION },
 ] as const;
 
 /** One physical metering store per Host, independent of queue/identity locks.
@@ -50,7 +46,7 @@ export class TokenUsageStateDatabase {
   readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(directory: string, legacyPath?: string) {
-    const managed = openManagedDatabase({ path: join(directory, "token-usage.sqlite"),
+    const managed = openManagedDatabase({ schemaId: "token-usage-state-database", path: join(directory, "token-usage.sqlite"),
       legacyPolicy: "reject-unknown", migrations: TOKEN_USAGE_STATE_MIGRATIONS, validateSchema: createSchemaValidator(SCHEMA + THREAD_QUERY_INDEX + TOKEN_USAGE_RECENCY_INDEX + OPEN_GAP_THREAD_INDEX) });
     this.database = managed.database;
     this.outcome = managed.outcome;

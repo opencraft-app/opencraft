@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { DesktopUiPreferenceStore } from "../../apps/workbench-electron/src/ui-preferences-store.ts";
+import { DesktopUiPreferenceStore } from "../../apps/desktop/src/ui-preferences-store.ts";
 
 test("Electron UI preferences persist with revision conflicts and a fixed key registry", () => {
   const root = mkdtempSync(join(tmpdir(), "opencraft-ui-preferences-"));

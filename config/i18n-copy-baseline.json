@@ -610,37 +610,37 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Hooks summary",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Ran",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Blocked",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Errors",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-text",
       "text": "Hooks",
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/activity/agent-activity-renderers.tsx",
+      "file": "apps/workbench-web/src/components/conversation-renderers/activity/hook-stats-content.tsx",
       "kind": "jsx-expression",
       "text": "· ${…} runs",
       "count": 1
@@ -1222,12 +1222,6 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/conversation-renderers/tool/tool-renderers.tsx",
-      "kind": "aria-label",
-      "text": "Close generated image 1",
-      "count": 1
-    },
-    {
       "file": "apps/workbench-web/src/components/conversation-renderers/unified-diff-preview.tsx",
       "kind": "aria-label",
       "text": "File changes",
@@ -1546,27 +1540,9 @@
       "count": 1
     },
     {
-      "file": "apps/workbench-web/src/components/modal/modal-surface.tsx",
+      "file": "packages/design-system-web/src/modal-surface.tsx",
       "kind": "aria-label",
       "text": "Close ${…}",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
-      "kind": "jsx-text",
-      "text": "Could not start this task",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
-      "kind": "jsx-expression",
-      "text": "The execution host rejected the request.",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/pending-conversation-page.tsx",
-      "kind": "jsx-text",
-      "text": "Try again",
       "count": 1
     },
     {
@@ -1693,12 +1669,6 @@
       "file": "apps/workbench-web/src/components/settings-page.tsx",
       "kind": "jsx-text",
       "text": "Manage",
-      "count": 1
-    },
-    {
-      "file": "apps/workbench-web/src/components/settings-page.tsx",
-      "kind": "jsx-text",
-      "text": "Search agent settings",
       "count": 1
     },
     {
@@ -2298,12 +2268,6 @@
     {
       "file": "packages/chat-render-web/src/extensions/mermaid/mermaid-diagram.tsx",
       "kind": "aria-label",
-      "text": "Mermaid diagram preview",
-      "count": 1
-    },
-    {
-      "file": "packages/chat-render-web/src/extensions/mermaid/mermaid-diagram.tsx",
-      "kind": "aria-label",
       "text": "Download Mermaid diagram",
       "count": 1
     },
@@ -2424,12 +2388,6 @@
     {
       "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "aria-label",
-      "text": "Attachments",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "aria-label",
       "text": "Retry ${…}: ${…}",
       "count": 1
     },
@@ -2477,30 +2435,6 @@
     },
     {
       "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "Files and context",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-text",
-      "text": "Type to search for files",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "Searching files…",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
-      "kind": "jsx-expression",
-      "text": "File search unavailable",
-      "count": 1
-    },
-    {
-      "file": "packages/composer-editor/src/composer-editor.tsx",
       "kind": "title",
       "text": "Execution node: ${…}",
       "count": 1
@@ -2515,18 +2449,6 @@
       "file": "packages/extension-react/src/adaptive-panel.tsx",
       "kind": "aria-label",
       "text": "Panel navigation",
-      "count": 1
-    },
-    {
-      "file": "packages/extension-react/src/deferred-view.tsx",
-      "kind": "jsx-text",
-      "text": "重试",
-      "count": 1
-    },
-    {
-      "file": "packages/extension-react/src/deferred-view.tsx",
-      "kind": "jsx-text",
-      "text": "正在加载…",
       "count": 1
     },
     {

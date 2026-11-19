@@ -66,6 +66,8 @@ export interface StartupResourcePolicy {
   readonly demandOnlyModules?: readonly RegExp[];
 }
 const demandOnlyPatterns = [
+  // Desktop capability/attachment owners start synchronously; media is connect-only.
+  /\/plugins\/cloud-desktop\/src\/(?:rfb|rfb-client|pointer-input|trackpad-input|text-input|clipboard-input|frame-preview)\.ts$/,
   /\/packages\/workbench-runtime\/src\/side-chat\/policy\.ts$/,
   /\/packages\/timeline-host-web\/src\/scroll-frame-diagnostics\.ts$/,
   /\/apps\/workbench-web\/src\/runtime-diagnostic-snapshot\.ts$/,

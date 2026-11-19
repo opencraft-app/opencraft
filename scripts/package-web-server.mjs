@@ -5,7 +5,8 @@ import { packageBrowserRuntime } from './package-browser-runtime.mjs';
 import { optimizeWebImages } from './optimize-web-images.mjs';
 import { packageWebResources, copyPdfLicenses } from './package-web-resources.mjs';
 import { splitProductPluginPacks } from './web-deployment/product-plugin-packs.mjs';
-import { mkdir, readFile, writeFile, cp, rm, chmod } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, cp, rm, chmod, mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -27,6 +28,7 @@ import { normalizeFullRuntimeEngines, packageFullRuntime } from './full-release/
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+export const temporaryWebPackagePrefix = () => join(tmpdir(), 'opencraft-web-package-');
 
 export function executionModuleOptions(format) {
   return format === 'esm'
@@ -41,7 +43,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   if (!['daemon', 'headless'].includes(executionProfile) || (!execution && executionProfile !== 'daemon')) throw new Error('Invalid execution profile');
   if (executionProfile === 'headless') await assertHeadlessWebRelease(webRoot);
   if (!semver.valid(version)) throw new Error('Set OPENCRAFT_RELEASE_VERSION to an exact npm version');
-  const directory = resolve(output);
+  const directory = resolve(output ?? await mkdtemp(temporaryWebPackagePrefix()));
   const packageRoot = join(directory, 'package');
   await mkdir(directory, { recursive: true });
   await rm(packageRoot, { recursive: true, force: true });
@@ -126,6 +128,8 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       [executionProfile === 'headless' ? headlessGatewayEntry : 'scripts/server-deployment/gateway.mjs', 'gateway.mjs', 'esm'],
       ['apps/opencraft-daemon/src/bin.ts', 'daemon.cjs', 'cjs'],
       ['scripts/remote-browser/state.worker.ts', 'browser-state-worker.mjs', 'esm'],
+      ['apps/codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
+      ['apps/opencraft-daemon/src/execution-fault.worker.ts', 'execution-fault-worker.mjs', 'esm'],
       ['apps/codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-session-routing.worker.ts', 'dsh-session-routing-worker.mjs', 'esm'],
       ['scripts/server-deployment/dsh-consumer-receipts.worker.ts', 'dsh-consumer-receipts-worker.mjs', 'esm'],
@@ -133,6 +137,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       ['apps/personal-assistant/src/runtime/assistant-server.mjs', 'assistant-server.mjs', 'esm'],
       ['packages/access-control/src/orchestration-runtime.worker.ts', 'orchestration-runtime-worker.mjs', 'esm'],
       ['packages/web-push-node/src/store.worker.ts', 'push-storage-worker.mjs', 'esm'],
+      ['packages/access-control/src/server-spaces.worker.ts', 'server-spaces-worker.mjs', 'esm'],
       ['packages/native-history-node/src/transcript-cache-storage.worker.ts', 'transcript-cache-storage-worker.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-capability-plugin.mjs', 'dsh-capability-plugin.mjs', 'esm'],
       ['apps/local-agent-host/src/dsh-acp-execution-environment.mjs', 'dsh-acp-execution-environment.mjs', 'esm'],
@@ -163,11 +168,11 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
       manifest.bundleDependencies = [...(manifest.bundleDependencies || []), ...Object.keys(appRuntime)];
     }
     // Both standalone and daemon Hosts mount these persistence/projection patches.
-    const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/workbench-electron/package.json'), 'utf8'));
+    const desktop = JSON.parse(await readFile(join(repositoryRoot, 'apps/desktop/package.json'), 'utf8'));
     for (const entry of desktop.build.extraResources.filter(entry => entry.to.startsWith('runtime/dsh/') && entry.from.startsWith('../local-agent-host/src/'))) {
       const destination = join(packageRoot, 'execution', relative('runtime/dsh', entry.to));
       await mkdir(dirname(destination), { recursive: true });
-      await cp(resolve(repositoryRoot, 'apps/workbench-electron', entry.from), destination);
+      await cp(resolve(repositoryRoot, 'apps/desktop', entry.from), destination);
     }
     const ptyRoot = join(repositoryRoot, 'node_modules/node-pty');
     const prebuild = `prebuilds/${process.platform}-${process.arch}`;
@@ -205,7 +210,7 @@ export async function packageWebServer({ version, webRoot = join(repositoryRoot,
   const complete = completeRuntime || (fullRelease && !fullRelease.template.updater.bridge);
   if (complete) {
     if (!execution || executionProfile !== 'headless' || splitResources || (fullRelease && fullRelease.template.updater.bridge)) throw new Error('Full release requires an unsplit Headless package and non-bridge metadata');
-    manifest.files.push('full/'); manifest.license = 'Apache-2.0';
+    manifest.files.push('full/'); manifest.license = 'MIT-0';
     await writeFile(join(packageRoot, 'package.json'), JSON.stringify(manifest, null, 2));
     await packageFullRuntime({ repositoryRoot, packageRoot, sourceRevision: web.sourceRevision, buildId: web.buildId, engines: fullRuntimeEngines });
     await prepareFullMetadata(packageRoot);
@@ -239,7 +244,7 @@ export async function packageWebServerFromEnvironment(composition = {}) {
     completeRuntime: process.env.OPENCRAFT_PACKAGE_FULL_RELEASE === '1',
     fullRuntimeEngines: process.env.OPENCRAFT_FULL_RUNTIME_ENGINES?.split(',').map(value => value.trim()).filter(Boolean),
     dryRun: process.env.OPENCRAFT_PACKAGE_DRY_RUN === '1',
-    output: process.env.OPENCRAFT_WEB_PACKAGE_OUTPUT || join(repositoryRoot, '.local/web-packages'), ...composition });
+    output: process.env.OPENCRAFT_WEB_PACKAGE_OUTPUT, ...composition });
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   console.log(JSON.stringify(await packageWebServerFromEnvironment(), null, 2));

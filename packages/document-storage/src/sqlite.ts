@@ -12,7 +12,7 @@ export class SqliteDocumentStore {
   private readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    const managed = openManagedDatabase({ path, migrations: [{ version: 1, name: "extension-records", sql: BASELINE }] });
+    const managed = openManagedDatabase({ schemaId: "document-storage", path, migrations: [{ version: 1, name: "extension-records", sql: BASELINE }] });
     this.database = managed.database;
     this.outcome = managed.outcome;
     try {

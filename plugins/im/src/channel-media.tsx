@@ -21,7 +21,7 @@ export function ChannelMedia({resources,target,name,kind,active=true}:{
   return <div className="im-channel-media">
     {!requested?<Button variant="secondary" onClick={()=>setRequested(true)}>{intl.formatMessage({id:'im.media.play',defaultMessage:'Load media'})}</Button>
       :unavailable?<><small role="status">{intl.formatMessage({id:'media.unavailable',defaultMessage:'Preview unavailable. Download this file to open it.'})}</small>
-        <Button variant="ghost" onClick={()=>void load().catch(()=>setFailed(true))}>{intl.formatMessage({id:'common.retry',defaultMessage:'Retry'})}</Button></>
+        <Button variant="ghost" onClick={()=>void load().catch(()=>setFailed(true))}>{intl.formatMessage({id:'common.retry',defaultMessage:'Try again'})}</Button></>
       :ready?<MediaPlayer blob={blob} kind={kind} label={name} active={active} onError={()=>setFailed(true)} />
       :<small role="status">{intl.formatMessage({id:'im.media.loading',defaultMessage:'Loading media…'})}</small>}
   </div>;

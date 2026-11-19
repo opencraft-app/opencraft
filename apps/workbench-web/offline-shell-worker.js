@@ -12,8 +12,27 @@ const brandingAliases = new Map(Array.isArray(FILES) ? FILES
   .filter(name => name === "opencraft-icon.svg" || name.startsWith("plugin-assets/"))
   .map(name => [new URL("/" + name, scope).href, url(name)]) : []);
 const configurationUrl = url("opencraft-offline-configuration");
+
 const installationUrl = url("opencraft-offline-installation");
 const installationState = value => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+
+// Cache.put is atomic but cannot itself be cancelled. Fence the install result
+// even if a browser cache write fails to settle after its response is aborted.
+async function withResourceDeadline(work, active) {
+  const controller = new AbortController();
+  active.add(controller);
+  let rejectAbort;
+  const aborted = new Promise((_, reject) => { rejectAbort = reject; });
+  const abort = () => rejectAbort(controller.signal.reason ?? new Error("Offline resource aborted"));
+  controller.signal.addEventListener("abort", abort, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error("Offline resource deadline exceeded")), 30_000);
+  try { return await Promise.race([Promise.resolve().then(() => work(controller.signal)), aborted]); }
+  finally {
+    clearTimeout(timer);
+    controller.signal.removeEventListener("abort", abort);
+    active.delete(controller);
+  }
+}
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
@@ -52,27 +71,30 @@ self.addEventListener("install", event => {
             }
           }
           if (failure) return;
-          if (response) { await cache.put(url(name), response); continue; }
+          if (response) {
+            try { await withResourceDeadline(() => cache.put(url(name), response), active); }
+            catch (error) { stop(error); throw failure; }
+            continue;
+          }
           for (let attempt = 0; ; attempt++) {
-            const controller = new AbortController();
-            active.add(controller);
-            const timer = setTimeout(() => controller.abort(), 30_000);
             try {
-              response = await fetch(url(name), { credentials: "same-origin", cache: "default", priority: "low", redirect: "error", signal: controller.signal });
-              if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
-                const error = new Error("Offline resource denied: " + response.status);
-                stop(error); throw error;
-              }
-              if (!response.ok || (name !== "opencraft-offline.html" && response.headers.get("content-type")?.includes("text/html"))) throw new Error("Offline resource unavailable");
-              // The bound includes body download and the atomic cache write.
-              await cache.put(url(name), response);
+              await withResourceDeadline(async signal => {
+                response = await fetch(url(name), { credentials: "same-origin", cache: "default", priority: "low", redirect: "error", signal });
+                if (response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429) {
+                  const error = new Error("Offline resource denied: " + response.status);
+                  stop(error); throw error;
+                }
+                if (!response.ok || (name !== "opencraft-offline.html" && response.headers.get("content-type")?.includes("text/html"))) throw new Error("Offline resource unavailable");
+                // The bound includes body download and the atomic cache write.
+                await cache.put(url(name), response);
+              }, active);
               break;
             } catch (error) {
               if (failure || attempt >= 2 || error?.name === "QuotaExceededError") { stop(error); throw failure; }
               // Only transient failures retry, with bounded pacing rather than a hot loop.
               await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
               if (failure) throw failure;
-            } finally { clearTimeout(timer); active.delete(controller); }
+            }
           }
         }
       }));

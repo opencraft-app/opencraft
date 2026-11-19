@@ -1,3 +1,4 @@
+import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { DisclosureButton, IconButton } from "@opencraft/design-system-web/button";
 import { TouchContactScope } from "@opencraft/design-system-web/touch-contact";
 import { parseConversationRef, encodeConversationRef } from "@opencraft/appserver-protocol/collaboration";
@@ -20,7 +21,6 @@ import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { DictationFooter } from "./dictation-footer";
 import type { ComposerPreviewImage } from "./image-attachment-preview";
 const ImageAttachmentPreview = lazy(() => import("./image-attachment-preview").then(module => ({ default: module.ImageAttachmentPreview })));
-import { ProgressIndicator } from "@opencraft/design-system-web/progress";
 import { attachmentPreviewSession, type AttachmentResolver, type ComposerImageEditSession } from "./attachment-preview-session";
 import { SkillIcon } from "./skill-icon";
 import { resolveDictationKeyAction } from "./dictation-keyboard";
@@ -69,8 +69,8 @@ import {
 import {
   createClientId,
   encodeComposerTarget,
+  composerTrailingControls,
   invertComposerFollowUpAction,
-  resolveComposerPrimaryAction,
   resolveComposerFollowUpAction,
   shouldSearchComposerCatalog,
   type ComposerAttachment,
@@ -130,6 +130,8 @@ export interface ComposerModelOption {
   /** Concrete AppServer `model` override, which is distinct from catalog id. */
   readonly value: string;
   readonly label: string;
+  readonly agentId?: string | null;
+  readonly agentLabel?: string | null;
   readonly groupKey?: string | null;
   readonly groupLabel?: string | null;
   readonly configuredRole?: "primary" | "fallback" | null;
@@ -172,13 +174,26 @@ export interface ComposerAgentModelGroup {
   readonly error?: string | null;
   readonly errorKind?: 'catalog' | 'preferences';
   readonly retry?: () => void;
-  readonly select: (model: ComposerModelOption) => void | Promise<void>;
+  /** A handled destination transition must not rewrite this View's selection. */
+  readonly select: (model: ComposerModelOption) => void | { selection: "handled" } | Promise<void | { selection: "handled" }>;
   readonly manage?: () => void;
+}
+
+export type ComposerAgentCycleDirection = -1 | 1;
+
+/** Host-declared behavior when an existing conversation is handed to another Agent. */
+export interface ComposerAgentContinuation {
+  readonly startsNewThread: boolean;
 }
 
 export interface ComposerSelectionCatalog {
   readonly policyRestricted?: boolean;
   readonly agentGroups?: readonly ComposerAgentModelGroup[];
+  /** Existing conversation's Agent identity; present even without cross-Agent continuation. */
+  readonly currentAgentId?: string | null;
+  readonly currentAgentLabel?: string | null;
+  readonly agentContinuation?: ComposerAgentContinuation;
+  readonly agentsDisabled?: boolean;
   readonly models: readonly ComposerModelOption[];
   /** Cached names/capabilities for the selected model only; never selectable choices. */
   readonly displayModels?: readonly ComposerModelOption[];
@@ -189,6 +204,7 @@ export interface ComposerSelectionCatalog {
   readonly permissionProfileError?: string | null;
   readonly onModelMenuOpen?: () => void;
   readonly onConfigureModels?: () => void;
+  readonly onConfigureAgents?: () => void;
   readonly onRememberModelDefaults?: (defaults: {
     readonly model: string;
     readonly effort: string | null;
@@ -212,10 +228,24 @@ export interface ComposerExecutionTarget {
 
 type SelectionPicker = "intelligence" | "permissions";
 
-function modelIdentifierLabel(value: string): string {
-  return value.replace(/^:/, "").split(/[-_\s]+/u).filter(Boolean)
-    .map(part => /^gpt$/iu.test(part) ? "GPT" : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)
+function readableModelIdentifier(value: string): string | null {
+  const body = value.replace(/^:/, "");
+  const colon = body.lastIndexOf(":");
+  const rest = (colon >= 0 ? body.slice(colon + 1) : body).replace(/\[[^\]]+\]$/u, "");
+  if (!/[A-Za-z]/u.test(rest)) return null;
+  const label = rest.split(/[-_\s]+/u).filter(Boolean)
+    .map(part => /^gpt$/iu.test(part) ? "GPT" : /^\d/u.test(part) ? part : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)
     .join(" ");
+  return label || null;
+}
+
+function permissionModeFromStoredValue(value: string): "read-only" | "accept-edits" | "auto" | "full" | null {
+  const token = value.toLowerCase().replaceAll("_", "-");
+  if (/(?:^|[-:])full$/u.test(token) || token.endsWith("full-access") || token.endsWith("dangerfullaccess")) return "full";
+  if (/(?:^|[-:])read-only$/u.test(token) || token.endsWith("readonly")) return "read-only";
+  if (/(?:^|[-:])accept-edits$/u.test(token)) return "accept-edits";
+  if (/(?:^|[-:])auto$/u.test(token) || token.endsWith("auto-review")) return "auto";
+  return null;
 }
 
 function compactModelLabel(label: string): string {
@@ -716,9 +746,12 @@ export interface ComposerQueuedSubmissionPresentation {
   /** Whether this runtime permits changing authoritative queue order. */
   readonly reorderable?: boolean;
   readonly editableContent: ComposerQueuedSubmissionContent;
+  /** Automatic recovery waits do not require a manual Resume action. */
+  readonly resumable?: boolean;
   readonly pausedReason?: string | null;
   readonly error?: string | null;
   readonly unconfirmedTargetTurnId?: string;
+  readonly retryable?: boolean;
 }
 
 export interface ComposerQueuedSubmissionContent {
@@ -799,6 +832,8 @@ export interface OpenCraftComposerProps {
   /** Accessible label for submitting this conversation's draft. */
   sendLabel?: string;
   selectionCatalog?: ComposerSelectionCatalog;
+  /** Routes the app's registered Agent-cycle shortcut to this Composer's picker. */
+  resolveAgentCycleShortcut?: (event: KeyboardEvent) => ComposerAgentCycleDirection | 0;
   /** user remembers defaults; session overrides only this conversation; host-default offers no override. */
   modelSelectionPolicy?: import("@opencraft/composer-core").ModelSelectionPolicy;
   /** Show inherited execution settings without offering or submitting model overrides. */
@@ -819,7 +854,7 @@ export interface OpenCraftComposerProps {
     intent: SubmitIntent,
   ) => Promise<void>;
   onDeleteQueuedSubmission?: (id: string) => Promise<void>;
-  onDiscardUnconfirmedSteer?: (id: string, expectedTurnId: string) => Promise<void>;
+  onRetryUnconfirmedSteer?: (id: string, expectedTurnId: string) => Promise<void>;
   onReorderQueuedSubmissions?: (ids: readonly string[]) => Promise<void>;
   onSteerQueuedSubmission?: (id: string) => Promise<void>;
   onResumeQueuedSubmissions?: () => Promise<void>;
@@ -865,7 +900,7 @@ export const OpenCraftComposer = forwardRef<
     catalog,
     mentionSuggestionsEnabled = true,
     mentionTarget,
-    isStreaming,
+    isStreaming: sourceIsStreaming,
     isRecovering = false,
     isUnstable = false,
     isStopping = false,
@@ -876,6 +911,7 @@ export const OpenCraftComposer = forwardRef<
     placeholderPending = false,
     sendLabel,
     selectionCatalog,
+    resolveAgentCycleShortcut,
     modelSelectionPolicy = "user",
     modelDisplayOnly = false,
     effectiveSelections,
@@ -888,7 +924,7 @@ export const OpenCraftComposer = forwardRef<
     supportsQueuedSteer = false,
     onUpdateQueuedSubmission,
     onDeleteQueuedSubmission,
-    onDiscardUnconfirmedSteer,
+    onRetryUnconfirmedSteer,
     onReorderQueuedSubmissions,
     onSteerQueuedSubmission,
     onResumeQueuedSubmissions,
@@ -902,6 +938,8 @@ export const OpenCraftComposer = forwardRef<
 ) {
   const admittedFollowUpAction = resolveComposerFollowUpAction(preferredFollowUpAction, availableFollowUpActions);
   const defaultFollowUpAction = admittedFollowUpAction ?? preferredFollowUpAction;
+  const handoffActive = useSyncExternalStore(controller.subscribe, () => controller.getSnapshot().draft.handoff !== undefined, () => false);
+  const isStreaming = sourceIsStreaming && !handoffActive;
   const intl = useIntl();
   const placeholder = suppliedPlaceholder ?? intl.formatMessage({ id: "chat.companionFollowupPlaceholder", defaultMessage: "Tell me what you'd like to do next", description: "Follow-up composer placeholder" });
   const placeholderPendingRef = useRef(placeholderPending);
@@ -973,6 +1011,7 @@ export const OpenCraftComposer = forwardRef<
     readonly error: string | null;
   } | null>(null);
   const [openPicker, setOpenPicker] = useState<SelectionPicker | null>(null);
+  const [agentCycleRequest, setAgentCycleRequest] = useState<{ direction: -1 | 1; nonce: number } | null>(null);
   const changePicker = (picker: SelectionPicker) => (open: boolean) => {
     if (open) setAddMenuOpen(false);
     if (open && picker === "intelligence") selectionCatalog?.onModelMenuOpen?.();
@@ -989,7 +1028,7 @@ export const OpenCraftComposer = forwardRef<
       settleEditingFocusRef.current();
     });
   };
-  const intelligenceFocus = useInputAuxiliaryMenuFocus({ open: openPicker === "intelligence", onOpenChange: changePicker("intelligence"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
+  const intelligenceFocus = useInputAuxiliaryMenuFocus({ restoreEditorOnClose: true, open: openPicker === "intelligence", onOpenChange: changePicker("intelligence"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
   const permissionsFocus = useInputAuxiliaryMenuFocus({ open: openPicker === "permissions", onOpenChange: changePicker("permissions"), getEditor: () => editorViewRef.current?.dom ?? null, onCloseFocusSettling: afterMenuCloseFocus });
   const agentSelectionEpoch = useRef(0);
   const [switchingAgentId, setSwitchingAgentId] = useState<string | null>(null);
@@ -998,7 +1037,10 @@ export const OpenCraftComposer = forwardRef<
     const epoch = ++agentSelectionEpoch.current;
     setSwitchingAgentId(group.id);
     setAgentSelectionError(null);
-    try { await group.select(model); }
+    try {
+      const result = await group.select(model);
+      if (epoch === agentSelectionEpoch.current && editorControllerRef.current === controller && result?.selection !== "handled" && group.active) selectModel(model);
+    }
     catch (error) { if (epoch === agentSelectionEpoch.current) setAgentSelectionError({ id: group.id, message: error instanceof Error ? error.message : String(error) }); }
     finally { if (epoch === agentSelectionEpoch.current) setSwitchingAgentId(null); }
   };
@@ -1017,6 +1059,39 @@ export const OpenCraftComposer = forwardRef<
   const [editingController, setEditingController] = useState<ComposerController | null>(null);
   const editingActive = editingController === controller;
   const auxiliaryMenuOpen = openPicker !== null || addMenuOpen;
+  useEffect(() => {
+    if (openPicker !== "intelligence") setAgentCycleRequest(null);
+  }, [openPicker]);
+  useEffect(() => {
+    if (!resolveAgentCycleShortcut || disabled || modelDisplayOnly || modelSelectionPolicy !== "user") return;
+    const handleAgentCycle = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || event.keyCode === 229) return;
+      const direction = resolveAgentCycleShortcut(event);
+      if (direction === 0) return;
+      const path = event.composedPath();
+      if (path.some(target => target instanceof Element && target.closest('[role="dialog"], [role="alertdialog"]'))) return;
+      if (voiceActiveRef.current
+        || (document.activeElement instanceof Element && document.activeElement.closest('[inert]') !== null)) return;
+      if (openPicker !== "intelligence") {
+        if (openPicker !== null || addMenuOpen) return;
+        const stack = stackRef.current;
+        if (!stack || document.activeElement === null || !stack.contains(document.activeElement)) return;
+        if (path.some(target => target instanceof Element && target.closest(
+          '[role="menu"], [role="listbox"], .terminal-panel, .cloud-desktop-panel, [data-disable-workbench-shortcuts="true"]',
+        ))) return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      // A held Option chord must not type the composed character. Repeat only
+      // suppresses insertion; it does not queue another Agent cycle.
+      if (event.repeat) return;
+      if (openPicker !== "intelligence") selectionCatalog?.onModelMenuOpen?.();
+      setOpenPicker("intelligence");
+      setAgentCycleRequest(current => ({ direction, nonce: (current?.nonce ?? 0) + 1 }));
+    };
+    window.addEventListener("keydown", handleAgentCycle, true);
+    return () => window.removeEventListener("keydown", handleAgentCycle, true);
+  }, [resolveAgentCycleShortcut, openPicker, addMenuOpen, disabled, modelDisplayOnly, modelSelectionPolicy, selectionCatalog]);
   useLayoutEffect(() => {
     if (auxiliaryMenuOpen) { menuFocusPending.current = true; return; }
     if (!editingActive) return;
@@ -1096,6 +1171,8 @@ export const OpenCraftComposer = forwardRef<
   const [imagePreview, setImagePreview] = useState<{ draftId: string; attachmentId: string; returnFocus: HTMLElement | null } | null>(null);
   const previewFocusRef = useRef<HTMLElement | null>(null);
   useEffect(() => { setImagePreview(null); }, [controller, draftId]);
+  const [effortLayerArmed, setEffortLayerArmed] = useState(false);
+  useEffect(() => { setEffortLayerArmed(false); }, [draftId]);
   const previewImages: ComposerPreviewImage[] = attachments.flatMap(attachment => {
     if (!attachment.mimeType.startsWith("image/")) return [];
     const source = attachmentSession.previewUrl(draftId, attachment.id)
@@ -1121,12 +1198,14 @@ export const OpenCraftComposer = forwardRef<
     });
   }, [controller, composerSnapshot.draft.id, composerSnapshot.draft.target.type, newThreadDefaultPermission]);
   const catalogDefaultModel = resolveModelSelection(catalogModels, undefined);
-  const existingConversation = composerSnapshot.draft.target.type !== "new-thread";
+  const existingConversation = composerSnapshot.draft.target.type !== "new-thread" && !composerSnapshot.draft.handoff;
   const selectedModelValue = modelDisplayOnly ? effectiveSelections?.model ?? null : modelSelectionPolicy === "host-default" ? catalogDefaultModel?.value ?? null :
     composerSnapshot.draft.selections.model ??
     effectiveSelections?.model ??
     (existingConversation ? null : catalogDefaultModel?.value) ??
     null;
+  const modelUnavailable = !existingConversation && selectedModelValue !== null && !catalogModels.some(model => model.value === selectedModelValue || model.id === selectedModelValue);
+  const modelSelectionBlocked = !existingConversation && selectionCatalog !== undefined && !modelDisplayOnly && modelSelectionPolicy === "user" && (selectedModelValue === null || modelUnavailable);
   const selectedModel = selectedModelValue === null && existingConversation ? null : resolveModelSelection(catalogModels, selectedModelValue);
   // Execution snapshots and retained Composer intent paint without waiting for
   // the complete selectable catalog. Cached metadata cannot grant capabilities.
@@ -1418,7 +1497,7 @@ export const OpenCraftComposer = forwardRef<
       const view = editorViewRef.current;
       const dictation = controller.getInputInteractionSnapshot();
       if (!dictationFinished && dictation !== null) {
-        if (dictation.phase !== "listening" || disabled || submissionDisabled || (!modelDisplayOnly && modelSelectionPolicy === "user" && selectedModelValue === null) || composerSnapshot.hasProcessingAssets) return;
+        if (dictation.phase !== "listening" || disabled || submissionDisabled || modelSelectionBlocked || composerSnapshot.hasProcessingAssets) return;
         const draftId = controller.getSnapshot().draft.id;
         const committed = await dictation.finish();
         if (committed && editorViewRef.current === view && editorControllerRef.current === controller
@@ -1433,6 +1512,7 @@ export const OpenCraftComposer = forwardRef<
         editorControllerRef.current !== controller ||
         disabled ||
         submissionDisabled ||
+        modelSelectionBlocked ||
         !controller.getSnapshot().canSubmit ||
         (pendingSubmissionRef.current?.controller === controller && pendingSubmissionRef.current.draftId === controller.getSnapshot().draft.id)
       )
@@ -1441,7 +1521,7 @@ export const OpenCraftComposer = forwardRef<
         type: "set-document",
         document: proseMirrorToComposerDocument(view.state.doc),
       });
-      if (isStreaming && (admittedFollowUpAction === null
+      if (isStreaming && !controller.getSnapshot().draft.handoff && (admittedFollowUpAction === null
         || (followUpActionOverride !== undefined && availableFollowUpActions?.includes(followUpActionOverride) === false))) return;
       let intent: SubmitIntent;
       try {
@@ -1493,7 +1573,7 @@ export const OpenCraftComposer = forwardRef<
         ) {
           throw new Error("Queued message editing is unavailable");
         }
-        const followUpAction = isStreaming
+        const followUpAction = isStreaming && !intent.handoff
           ? (followUpActionOverride ?? defaultFollowUpAction)
           : null;
         const submission =
@@ -1605,6 +1685,7 @@ export const OpenCraftComposer = forwardRef<
       editingQueuedSubmissionId,
       selectedModel,
       selectedModelValue,
+      modelSelectionBlocked,
       requestedServiceTier,
       requestedEffort,
       effectiveEffort,
@@ -1645,8 +1726,7 @@ export const OpenCraftComposer = forwardRef<
     if (defaultFollowUpAction !== "queue" || disabled || submissionDisabled || !head
       || !onSteerQueuedSubmission || editorControllerRef.current !== controller
       || (pendingSubmissionRef.current?.controller === controller && pendingSubmissionRef.current.draftId === controller.getSnapshot().draft.id)
-      || !canSteerQueueItem(head, isStreaming, supportsQueuedSteer,
-        queuedSubmissions.some(item => item.unconfirmedTargetTurnId !== undefined))) return;
+      || !canSteerQueueItem(head, isStreaming, supportsQueuedSteer)) return;
     // Never skip a blocked head, clear a draft, or replay a failed queue action.
     void steerQueueItem(head.id).catch(() => undefined);
   };
@@ -2242,15 +2322,19 @@ export const OpenCraftComposer = forwardRef<
 
   const displayFamily = modelSelectionPolicy === "user" && displayModel ? modelChoiceFamilies([displayModel])[0] : undefined;
   const encodedEffort = displayFamily?.variants[0]?.effort;
+  const fallbackModelLabel = selectedModelValue === null ? null : readableModelIdentifier(selectedModelValue);
   const modelLabel =
     displayFamily?.label ?? displayModel?.label ??
     (selectedModelValue === null
       ? intl.formatMessage({ id: "chat.model", defaultMessage: "Model" })
-      : modelIdentifierLabel(selectedModelValue));
-  const compactSelectedModelLabel = compactModelLabel(modelLabel);
+      : fallbackModelLabel ?? intl.formatMessage({ id: "composer.model.unconfirmed", defaultMessage: "Model not confirmed" }));
+  const compactSelectedModelLabel = displayModel?.agentLabel && !existingConversation
+    ? `${displayModel.agentLabel} · ${compactModelLabel(modelLabel)}` : compactModelLabel(modelLabel);
   const manageModels = selectionCatalog?.agentGroups?.find(group => group.active)?.manage ?? selectionCatalog?.onConfigureModels;
-  const visibleEffortValue = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
+  const candidateEffort = encodedEffort ?? (modelDisplayOnly ? effectiveSelections?.effort ?? null
     : existingConversation ? displayEffortValue : selectedEffortValue);
+  const effortIsDeclared = encodedEffort != null || (candidateEffort != null && (displayModel?.efforts.some(option => option.value === candidateEffort) ?? false));
+  const visibleEffortValue = modelDisplayOnly ? candidateEffort : effortIsDeclared ? candidateEffort : null;
   const selectedEffort = displayModel?.efforts.find(effort => effort.value === visibleEffortValue)
     ?? (visibleEffortValue == null ? null : { value: visibleEffortValue, label: formatSelectionLabel(visibleEffortValue), description: null });
   const effortLabel =
@@ -2266,13 +2350,17 @@ export const OpenCraftComposer = forwardRef<
     id: "chat.reasoning",
     defaultMessage: "Reasoning",
   });
+  const namedModelLabel = displayModel?.agentLabel && !existingConversation ? `${displayModel.agentLabel} · ${modelLabel}` : modelLabel;
   const intelligenceLabel = visibleEffortValue != null
-    ? `${modelLabel}, ${reasoningLabel}: ${effortLabel}`
-    : modelLabel;
+    ? `${namedModelLabel}, ${reasoningLabel}: ${effortLabel}`
+    : namedModelLabel;
   const permissionsLabel = intl.formatMessage({ id: "composer.permissions", defaultMessage: "Permissions" });
+  const storedPermissionMode = selectedPermissionValue === null ? null : permissionModeFromStoredValue(selectedPermissionValue);
+  const permissionUnconfirmed = intl.formatMessage({ id: "composer.permissions.unconfirmed", defaultMessage: "Permission not confirmed" });
   const permissionSelectionLabel = selectedPermission != null
     ? displayPermissionLabel(selectedPermission, intl)
-    : selectedPermissionValue === null ? permissionsLabel : formatSelectionLabel(selectedPermissionValue);
+    : storedPermissionMode !== null ? intl.formatMessage(permissionModeMessages[storedPermissionMode])
+    : selectedPermissionValue === null && !existingConversation ? permissionsLabel : permissionUnconfirmed;
   const permissionChangePending = composerSnapshot.draft.selections.permissionProfile != null
     && selectedPermissionValue !== effectiveDisplayPermissionValue;
   const permissionTriggerTitle = permissionChangePending
@@ -2281,12 +2369,14 @@ export const OpenCraftComposer = forwardRef<
       : { id: "composer.permissions.nextTurn", defaultMessage: "{profile} · next turn" }, { profile: permissionSelectionLabel })
     : permissionSelectionLabel;
 
-  const primaryAction = resolveComposerPrimaryAction({
+  const trailingControls = composerTrailingControls({
     isResponseInProgress: isStreaming,
-    canSubmit: !disabled && !submissionDisabled && composerSnapshot.canSubmit,
+    canSubmit: !disabled && !submissionDisabled && !modelSelectionBlocked && composerSnapshot.canSubmit,
     defaultFollowUpAction,
     availableFollowUpActions,
   });
+  const primaryAction = trailingControls.primary ?? "stop";
+  const stopLabel = intl.formatMessage(isStopping ? { id: "chat.stop.pending", defaultMessage: "Stopping response…" } : { id: "chat.stopResponse", defaultMessage: "Stop response" });
   const primaryActionLabel =
     editingQueuedSubmissionId !== null
       ? intl.formatMessage({ id: "chat.saveQueuedMessage", defaultMessage: "Save queued message" })
@@ -2369,7 +2459,7 @@ export const OpenCraftComposer = forwardRef<
             await onDeleteQueuedSubmission?.(id);
             if (id === editingQueuedSubmissionId) cancelQueueEdit();
           }}
-          onDiscardUnconfirmed={onDiscardUnconfirmedSteer}
+          onRetryUnconfirmed={onRetryUnconfirmedSteer}
           onReorder={onReorderQueuedSubmissions}
           onSteer={steerQueueItem}
           onResume={onResumeQueuedSubmissions}
@@ -2414,8 +2504,8 @@ export const OpenCraftComposer = forwardRef<
             ))}
           </div>
         )}
-        {attachments.length > 0 && (
-          <div className="opencraft-composer-attachments" aria-label="Attachments" inert={voiceActive ? true : undefined}>
+        {(attachments.length > 0 || composerSnapshot.draft.handoff || composerSnapshot.draft.context.some(reference => reference.visible && reference.metadata?.chip !== true)) && (
+          <div className="opencraft-composer-attachments" aria-label={intl.formatMessage({ id: "composer.attachmentsAndContext", defaultMessage: "Attachments and context" })} inert={voiceActive ? true : undefined}>
             {attachments.map((attachment) => {
               const image = attachment.mimeType.startsWith("image/");
               const workInError = attachment.metadata?.workInAttachmentError === "interrupted"
@@ -2498,6 +2588,25 @@ export const OpenCraftComposer = forwardRef<
                 </div>
               );
             })}
+            {composerSnapshot.draft.handoff && <div className="opencraft-composer-context">
+              <span className="opencraft-composer-attachment__icon"><FileText aria-hidden="true" size={15} /></span>
+              <span className="opencraft-composer-attachment__copy"><strong>{intl.formatMessage({ id: "composer.agentHandoff.reference", defaultMessage: "Continue from {thread}" }, { thread: `@thread:${composerSnapshot.draft.handoff.sourceThreadId}` })}</strong>
+                <small>{intl.formatMessage({ id: "composer.agentHandoff.description", defaultMessage: "Your next message starts a new conversation with the selected Agent." })}</small>
+              </span>
+              <span className="opencraft-composer-attachment__actions"><IconButton variant="ghost" size="accessory"
+                disabled={composerSnapshot.draft.lifecycle.phase === "submitting"}
+                aria-label={intl.formatMessage({ id: "composer.agentHandoff.cancel", defaultMessage: "Cancel Agent handoff" })}
+                onClick={() => controller.dispatch({ type: "cancel-agent-handoff" })}><X aria-hidden="true" size={13} /></IconButton></span>
+            </div>}
+            {composerSnapshot.draft.context.filter(reference => reference.visible && reference.metadata?.chip !== true).map(reference => <div className="opencraft-composer-context" key={`context:${reference.id}`}>
+              <span className="opencraft-composer-attachment__icon"><FileText aria-hidden="true" size={15} /></span>
+              <span className="opencraft-composer-attachment__copy"><strong>{reference.title}</strong>
+                <small>{intl.formatMessage({ id: "composer.context.reference", defaultMessage: "Reference context" })}</small>
+              </span>
+              <span className="opencraft-composer-attachment__actions"><IconButton variant="ghost" size="accessory"
+                aria-label={intl.formatMessage({ id: "composer.context.remove", defaultMessage: "Remove context: {title}" }, { title: reference.title })}
+                onClick={() => controller.dispatch({ type: "remove-context", id: reference.id })}><X aria-hidden="true" size={13} /></IconButton></span>
+            </div>)}
           </div>
         )}
 
@@ -2661,7 +2770,7 @@ export const OpenCraftComposer = forwardRef<
           data-input-mode={voiceActive ? "dictation" : "standard"}
         >
           {inputInteraction === null ? null : <DictationFooter interaction={inputInteraction}
-            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && (modelDisplayOnly || modelSelectionPolicy !== "user" || selectedModelValue !== null)}
+            canSend={!disabled && !submissionDisabled && !composerSnapshot.hasUnavailableAssets && (modelDisplayOnly || modelSelectionPolicy !== "user" || selectedModelValue !== null && !modelUnavailable)}
             onSend={() => { void submit(); }} onCancel={cancelInputInteraction} />}
           {attachmentsEnabled || entryActions != null || leadingEntryActions != null ? <div
             ref={footerLayout.attachmentRef}
@@ -2771,10 +2880,12 @@ export const OpenCraftComposer = forwardRef<
                 label={compactSelectedModelLabel} fullLabel={intelligenceLabel} effortLabel={visibleEffortValue != null ? effortLabel : undefined}
                 disabled={disabled} open={openPicker === "intelligence"} onOpenChange={changePicker("intelligence")}
                 portalContainer={portalContainer} focus={intelligenceFocus} displayFast={displayFast}>
-                <ComposerModelMenu catalog={selectionCatalog} selected={selectedModelValue}
+                <ComposerModelMenu key={draftId} catalog={selectionCatalog} selected={selectedModelValue}
+                  agentCycleRequest={openPicker === "intelligence" ? agentCycleRequest : null}
+                  preferEffortLayer={existingConversation || effortLayerArmed} onEffortLayerArmed={() => setEffortLayerArmed(true)}
                   switchingAgentId={switchingAgentId} agentSelectionError={agentSelectionError} onConfigure={manageModels}
                   onSelect={(model, group) => {
-                    if (group) { void selectAgentModel(group, model); if (group.active) selectModel(model); }
+                    if (group) { void selectAgentModel(group, model); }
                     else selectModel(model);
                   }}
                   effort={existingConversation ? displayEffortValue ?? null : selectedEffortValue} onEffortChange={value => {
@@ -2904,6 +3015,27 @@ export const OpenCraftComposer = forwardRef<
                 <Paperclip size={15} />
               </IconButton>
             ) : null}
+            {trailingControls.stop && trailingControls.primary ? (
+              <button
+                className="opencraft-composer-submit is-stop"
+                type="button"
+                disabled={isStopping}
+                aria-busy={isStopping || undefined}
+                aria-label={stopLabel}
+                title={stopLabel}
+                data-composer-stop="true"
+                onMouseDown={(event) => {
+                  if (event.button === 0) event.preventDefault();
+                }}
+                onClick={(event) => onCancel({
+                  trigger: event.detail === 0 ? "keyboard" : "pointer",
+                  isTrusted: event.isTrusted,
+                  occurredAt: Date.now(),
+                })}
+              >
+                {isStopping ? <LoadingRingIcon className="opencraft-composer-stop-spinner" size={17} /> : <StopCircleIcon size={17} />}
+              </button>
+            ) : null}
             {primaryAction === "stop" ? (
               <button
                 className="opencraft-composer-submit is-stop"
@@ -2932,7 +3064,7 @@ export const OpenCraftComposer = forwardRef<
                 aria-label={primaryActionLabel}
                 title={primaryActionTitle}
                 data-composer-primary-action={primaryAction}
-                disabled={disabled || submissionDisabled || !composerSnapshot.canSubmit}
+                disabled={disabled || submissionDisabled || modelSelectionBlocked || !composerSnapshot.canSubmit}
                 onMouseDown={(event) => {
                   // Prevent mouse focus transfer without cancelling touch click synthesis.
                   if (event.button === 0) event.preventDefault();

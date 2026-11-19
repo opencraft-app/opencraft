@@ -29,6 +29,11 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # A newer PR commit replaces the old run; each main commit keeps its own run.
+  group: electron-fork-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   source:
     strategy:

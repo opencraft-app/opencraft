@@ -52,6 +52,18 @@ def check_platform(target):
         raise ValueError(f'{target} requires {system}/{arch}; runner is {sys.platform}/{actual_arch}')
 
 
+def check_linux_userns():
+    """Chromium's sandboxed renderers need unprivileged user namespaces.
+
+    Ubuntu 24.04 restricts them through AppArmor by default; a renderer then
+    aborts (SIGABRT) during the native probe, after a multi-hour build.
+    """
+    restriction = Path('/proc/sys/kernel/apparmor_restrict_unprivileged_userns')
+    if restriction.is_file() and restriction.read_text().strip() == '1':
+        raise ValueError('kernel.apparmor_restrict_unprivileged_userns=1 blocks the Chromium '
+                         'sandbox; set it to 0 on this runner (sysctl.d) before building')
+
+
 def preflight(target, root):
     check_platform(target)
     free = shutil.disk_usage(root).free // (1024 ** 3)
@@ -62,9 +74,12 @@ def preflight(target, root):
     required = ['git', 'node', 'npm']
     required += ['xcodebuild'] if sys.platform == 'darwin' else []
     required += ['pkg-config', 'xvfb-run'] if sys.platform == 'linux' else []
-    for command in required:
-        if not shutil.which(command):
-            raise ValueError('Provision build runner with ' + command)
+    missing = [command for command in required if not shutil.which(command)]
+    if missing:
+        raise ValueError(f'{target} runner has {free} GiB free; provision missing tools: '
+                         + ', '.join(missing))
+    if sys.platform == 'linux':
+        check_linux_userns()
     print(json.dumps({'target': target, 'freeGiB': free, 'platformVerified': True}))
 
 

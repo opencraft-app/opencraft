@@ -21,7 +21,8 @@
       "types": "./src/thread-command.d.mts",
       "import": "./src/thread-command.mjs"
     },
-    "./input-completion": "./src/input-completion.mjs"
+    "./input-completion": "./src/input-completion.mjs",
+    "./server-spaces": "./src/server-spaces.ts"
   },
   "dependencies": {
     "@opencraft/document-storage": "0.1.0",

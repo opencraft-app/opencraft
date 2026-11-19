@@ -1,6 +1,7 @@
+import { bundleCodexCore } from './core-programs.mjs';
 import { build } from 'esbuild';
 import { readFile, writeFile, mkdir, cp, readdir, stat } from 'node:fs/promises';
-import { join, dirname, resolve } from 'node:path';
+import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -35,24 +36,7 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   const selectedEngines = normalizeFullRuntimeEngines(engines);
   const enabled = new Set(selectedEngines);
   const full = join(packageRoot, 'full');
-  const bundledPackages = new Map();
-  if (enabled.has('codex')) {
-    await mkdir(join(full, 'core'), { recursive: true });
-    for (const [source, name, format] of [['bin', 'main', 'cjs'], ['app-server-bin', 'app-server', 'cjs'], ['generation-bin', 'generations', 'cjs'], ['generation-registry.worker', 'generation-registry-worker', 'esm']]) {
-      const bundle = await build({ metafile: true, absWorkingDir: repositoryRoot, entryPoints: [join(repositoryRoot, 'apps/codex-core/src', source + '.ts')], outfile: join(full, 'core', name + (format === 'esm' ? '.mjs' : '.cjs')),
-        bundle: true, platform: 'node', format, banner: format === 'esm' ? { js: "import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);" } : undefined, target: 'node26', external: ['bufferutil', 'utf-8-validate', 'node-pty'] });
-      for (const input of Object.keys(bundle.metafile.inputs)) {
-        if (!input.includes('node_modules/')) continue;
-        let directory = dirname(resolve(repositoryRoot, input));
-        while (directory.startsWith(repositoryRoot)) {
-          try { const manifest = JSON.parse(await readFile(join(directory, 'package.json')));
-            if (manifest.name && manifest.version) { bundledPackages.set(directory, manifest); break; }
-          } catch (error) { if (error.code !== 'ENOENT') throw error; }
-          directory = dirname(directory);
-        }
-      }
-    }
-  }
+  const bundledPackages = enabled.has('codex') ? await bundleCodexCore({ repositoryRoot, directory: join(full, 'core') }) : new Map();
   if (enabled.has('codex')) {
     // Retain the native executor transport with its independently switched Core payload.
     // Codex uses pipes; terminal consumers use execution/native's packaged node-pty.
@@ -101,7 +85,7 @@ export async function packageFullRuntime({ repositoryRoot, packageRoot, sourceRe
   const rootLock = await readFile(join(repositoryRoot, 'package-lock.json'));
   await writeFile(join(packageRoot, 'release/locks/workspace.json'), rootLock);
   await mkdir(join(packageRoot, 'release'), { recursive: true });
-  const provenance = { schemaVersion: 1, license: 'Apache-2.0', sourceRevision, buildId, engines: selectedEngines,
+  const provenance = { schemaVersion: 1, license: 'MIT-0', sourceRevision, buildId, engines: selectedEngines,
     target: { platform: process.platform, arch: process.arch, nodeAbi: Number(process.versions.modules) },
     rootLockfileSha256: digest(rootLock), coreLicenses, componentLimits: COMPONENT_LIMITS, runtimes: records,
     activation: 'Payload only. Independent Core, generations, DSH, Pi, ACP and broker owners require a compatible P2/P3 plan.' };

@@ -99,6 +99,124 @@ export const SERVER_MIGRATIONS = [
     "version": 20,
     "name": "0019_native_group_lifecycle",
     "sql": "CREATE TABLE `actor_channel_departures` (\n\t`channel_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`member_epoch` text NOT NULL,\n\t`left_at` integer NOT NULL,\n\tPRIMARY KEY(`channel_id`, `actor_id`),\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_lifecycles` (\n\t`channel_id` text PRIMARY KEY NOT NULL,\n\t`revision` integer DEFAULT 1 NOT NULL,\n\t`dissolved_at` integer,\n\t`dissolved_by` text,\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"actor_channel_lifecycles_revision\" CHECK(\"actor_channel_lifecycles\".\"revision\" >= 1)\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `actor_channel_list_states` (\n\t`channel_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`hidden` integer DEFAULT 0 NOT NULL,\n\tPRIMARY KEY(`channel_id`, `actor_id`),\n\tFOREIGN KEY (`channel_id`) REFERENCES `actor_channels`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"actor_channel_list_hidden\" CHECK(\"actor_channel_list_states\".\"hidden\" IN (0,1))\n) STRICT;\n"
+  },
+  {
+    "version": 21,
+    "name": "0020_collaboration_spaces",
+    "sql": "CREATE TABLE `collaboration_space_invitations` (\n\t`digest` text PRIMARY KEY NOT NULL,\n\t`space_id` text NOT NULL,\n\t`created_by` text NOT NULL,\n\t`expires_at` integer NOT NULL,\n\t`used_by` text,\n\tFOREIGN KEY (`space_id`) REFERENCES `collaboration_spaces`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `collaboration_space_members` (\n\t`space_id` text NOT NULL,\n\t`actor_id` text NOT NULL,\n\t`role` text NOT NULL,\n\t`joined_at` integer NOT NULL,\n\tPRIMARY KEY(`space_id`, `actor_id`),\n\tFOREIGN KEY (`space_id`) REFERENCES `collaboration_spaces`(`id`) ON UPDATE no action ON DELETE no action,\n\tCONSTRAINT \"collaboration_space_role\" CHECK(role IN ('owner','member'))\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `collaboration_space_threads` (\n\t`engine_server_id` text NOT NULL,\n\t`thread_id` text NOT NULL,\n\t`space_id` text NOT NULL,\n\tPRIMARY KEY(`engine_server_id`, `thread_id`),\n\tFOREIGN KEY (`space_id`) REFERENCES `collaboration_spaces`(`id`) ON UPDATE no action ON DELETE no action\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `collaboration_spaces` (\n\t`id` text PRIMARY KEY NOT NULL,\n\t`name` text NOT NULL,\n\t`owner_actor_id` text NOT NULL,\n\t`created_at` integer NOT NULL\n) STRICT;\n"
   }
 ] as const;
+export const SERVER_ALTERNATE_MIGRATIONS = [
+  {
+    "id": "upstream-main-20261119",
+    "migrations": [
+      {
+        "version": 1,
+        "name": "0000_server_core",
+        "sql": SERVER_MIGRATIONS[0].sql
+      },
+      {
+        "version": 2,
+        "name": "0001_execution_capability_bindings",
+        "sql": SERVER_MIGRATIONS[1].sql
+      },
+      {
+        "version": 3,
+        "name": "0002_thread_access_and_notes",
+        "sql": SERVER_MIGRATIONS[8].sql
+      },
+      {
+        "version": 4,
+        "name": "0003_project_automations",
+        "sql": SERVER_MIGRATIONS[9].sql
+      },
+      {
+        "version": 5,
+        "name": "0004_magenta_aqueduct",
+        "sql": SERVER_MIGRATIONS[20].sql
+      },
+      {
+        "version": 6,
+        "name": "converge_0002_native_channels",
+        "sql": SERVER_MIGRATIONS[2].sql
+      },
+      {
+        "version": 7,
+        "name": "converge_0003_actor_inbox",
+        "sql": SERVER_MIGRATIONS[3].sql
+      },
+      {
+        "version": 8,
+        "name": "converge_0004_native_channel_sync",
+        "sql": SERVER_MIGRATIONS[4].sql
+      },
+      {
+        "version": 9,
+        "name": "converge_0005_personal_assistants",
+        "sql": SERVER_MIGRATIONS[5].sql
+      },
+      {
+        "version": 10,
+        "name": "converge_0006_personal_assistant_credentials",
+        "sql": SERVER_MIGRATIONS[6].sql
+      },
+      {
+        "version": 11,
+        "name": "converge_0007_assistant_model_selection",
+        "sql": SERVER_MIGRATIONS[7].sql
+      },
+      {
+        "version": 12,
+        "name": "converge_0010_eminent_mathemanic",
+        "sql": SERVER_MIGRATIONS[10].sql
+      },
+      {
+        "version": 13,
+        "name": "converge_0011_dear_wild_pack",
+        "sql": SERVER_MIGRATIONS[11].sql
+      },
+      {
+        "version": 14,
+        "name": "converge_0012_channel_attachments",
+        "sql": SERVER_MIGRATIONS[12].sql
+      },
+      {
+        "version": 15,
+        "name": "converge_0013_join_wecom_assistants",
+        "sql": SERVER_MIGRATIONS[13].sql
+      },
+      {
+        "version": 16,
+        "name": "converge_0014_join_wecom_group_sync",
+        "sql": SERVER_MIGRATIONS[14].sql
+      },
+      {
+        "version": 17,
+        "name": "converge_0015_native_channel_mentions",
+        "sql": SERVER_MIGRATIONS[15].sql
+      },
+      {
+        "version": 18,
+        "name": "converge_0016_visible_mention_reads",
+        "sql": SERVER_MIGRATIONS[16].sql
+      },
+      {
+        "version": 19,
+        "name": "converge_0017_human_reservations",
+        "sql": SERVER_MIGRATIONS[17].sql
+      },
+      {
+        "version": 20,
+        "name": "converge_0018_multi_bot_assignments",
+        "sql": SERVER_MIGRATIONS[18].sql
+      },
+      {
+        "version": 21,
+        "name": "converge_0019_native_group_lifecycle",
+        "sql": SERVER_MIGRATIONS[19].sql
+      }
+    ]
+  }
+] as const;
+export const SERVER_MIGRATION_CONTRACT_HASH = "ad363b5938ab4d4f12ee047c261e544121f44a1f947ac75eeb33f443395b2922" as const;
 export const OPENCRAFT_VERSION = "0.1.0" as const;

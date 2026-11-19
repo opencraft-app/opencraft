@@ -15,7 +15,7 @@ service or update an installed desktop client.
 | `scripts/remote-browser/focus.cjs` | Shared owner initializes focus and nested frames | Keep a single physical owner |
 | `scripts/remote-browser/touch.cjs` | Worker supplies the shared owner port with document guards | Reuse for native automation |
 | `apps/workbench-web/src/browser/electron-browser-automation.ts` | Thin client of document-scoped Main IPC, with temporary native focus and per-operation cancellation | Thin client of owned-guest Main IPC |
-| `apps/workbench-electron/src/browser-guests.ts` | Main owns guests, CDP connections, document leases and cancellation | Host of shared CDP automation with trusted caller checks |
+| `apps/desktop/src/browser-guests.ts` | Main owns guests, CDP connections, document leases and cancellation | Host of shared CDP automation with trusted caller checks |
 | `packages/session-capabilities` | Generic provider/gateway with bounded text/image wire conversion; headless registers a browser provider with execution-bound grants | Per-harness receipt and cancellation acceptance |
 
 ## Dependency direction

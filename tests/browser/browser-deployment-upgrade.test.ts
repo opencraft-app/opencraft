@@ -5,8 +5,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID, createHash } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { openManagedDatabase } from '@opencraft/sqlite-node';
-import { migrations } from '../../scripts/remote-browser/state-migrations.js';
+import { openManagedDatabase, resolveStoreMigrations } from '@opencraft/sqlite-node';
+import { migrations as legacy } from '../../scripts/remote-browser/state-migrations.js';
+const migrations = resolveStoreMigrations('remote-browser', legacy);
 import { BrowserStateStore } from '../../scripts/remote-browser/state-store.mjs';
 
 test('consumer SQLite version 2 upgrades additively with resources, metadata and retirement intact', async t => {
@@ -25,6 +26,7 @@ test('consumer SQLite version 2 upgrades additively with resources, metadata and
   old.database.prepare('INSERT INTO browser_metadata(key,value) VALUES (?,?)').run('owner', JSON.stringify(metadata));
   old.database.prepare('INSERT INTO browser_retirements(key,owner,value) VALUES (?,?,?)').run(retiredKey, 'owner', JSON.stringify(fact));
   old.database.prepare('INSERT INTO browser_retirement_identities(owner,kind,id,key) VALUES (?,?,?,?)').run('owner', 'lease', fact.lease, retiredKey);
+  const previousLedger=old.database.prepare('SELECT * FROM schema_migrations ORDER BY version').all();
   old.database.close(); await writeFile(join(directory, 'state.sqlite.identity'), identity, { mode: 0o600 });
   const store = new BrowserStateStore(directory);
   try {
@@ -35,6 +37,7 @@ test('consumer SQLite version 2 upgrades additively with resources, metadata and
     const inspect = new DatabaseSync(path, { readOnly: true });
     try {
       assert.equal(inspect.prepare('SELECT value FROM browser_retirements WHERE key=?').get(retiredKey)!.value, JSON.stringify(fact));
+      assert.deepEqual(inspect.prepare('SELECT * FROM schema_migrations WHERE version<=2 ORDER BY version').all(),previousLedger,'published original names, hashes and timestamps are not rewritten');
       for (const table of ['browser_presentations', 'browser_operations']) assert.equal(inspect.prepare(`SELECT count(*) AS n FROM ${table}`).get()!.n, 0);
     } finally { inspect.close(); }
   } finally { await store.close(); }

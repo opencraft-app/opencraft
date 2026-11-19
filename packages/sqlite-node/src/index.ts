@@ -4,5 +4,9 @@ export { SqliteLifecycleError, type SqliteLifecycleErrorKind } from "./errors.js
 export { durableJson, assertRecoveryState } from "./recovery.js";
 export { acquireProcessWriter } from './writer-lock.js';
 
-export { resolveMigrationContract, type StorageMigrationContract } from './migration-contract.js';
-export { captureSqliteReadGuard } from './read-guard.js';
+export { resolveStoreMigrations, resolveMigrationContract, type StorageMigrationContract, type StorageSchemaId } from "./store-migrations.js";
+
+export { captureSqliteReadGuard } from "./read-guard.js";
+
+export { selectMigrationHistory, type MigrationHistory } from "./history-selection.js";
+export { assertAppendOnlyMigrationHistories } from "./history-append-only.js";

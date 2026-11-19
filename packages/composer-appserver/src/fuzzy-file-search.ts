@@ -109,6 +109,7 @@ export class AppServerFuzzyFileSearchController {
     const sessionId = this.createSessionId();
     let stopped = false;
     let started = false;
+    let requestedQuery = "";
     let starting: Promise<void> | undefined;
     let updates = Promise.resolve();
     const stopRemote = async () => {
@@ -132,10 +133,14 @@ export class AppServerFuzzyFileSearchController {
           if (!isMethodNotFound(error, "fuzzyFileSearch/sessionStart")) throw error;
           this.sessionSupport = "unsupported";
         }
-      })();
+      })().catch((error) => {
+        starting = undefined;
+        throw error;
+      });
     };
     const session: FuzzyFileSearchSession = {
       update: (query) => {
+        requestedQuery = query;
         const update = updates.then(async () => {
           if (stopped || this.disposed) return;
           if (!query.trim()) {
@@ -178,7 +183,15 @@ export class AppServerFuzzyFileSearchController {
         await stopRemote();
       },
     };
-    this.sessions.set(sessionId, { ...options, stop: session.stop });
+    this.sessions.set(sessionId, {
+      stop: session.stop,
+      onUpdated: (update) => {
+        if (started && requestedQuery.trim() && update.query === requestedQuery) options.onUpdated?.(update);
+      },
+      onCompleted: () => {
+        if (started && requestedQuery.trim()) options.onCompleted?.();
+      },
+    });
     return session;
   }
 

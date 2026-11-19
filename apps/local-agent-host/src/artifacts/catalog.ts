@@ -54,7 +54,7 @@ export class ArtifactCatalog {
     chmodSync(schemaPath,0o600);
     try {
       schemaLock.exec('PRAGMA busy_timeout=5000; BEGIN EXCLUSIVE');
-      this.db = openManagedDatabase({ path: join(this.root, 'catalog.sqlite'), legacyPolicy: 'reject-unknown',
+      this.db = openManagedDatabase({ schemaId: 'artifact-catalog', path: join(this.root, 'catalog.sqlite'), legacyPolicy: 'reject-unknown',
         validateSchema: createSchemaValidator(schema), migrations: [{ version: 1, name: 'artifact-catalog', sql: schema }] }).database;
     } finally {schemaLock.close();}
     this.db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');

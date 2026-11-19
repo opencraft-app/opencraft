@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isBrowserGuestUrl, installBrowserGuests } from "../../apps/workbench-electron/src/browser-guests";
+import { isBrowserGuestUrl, installBrowserGuests } from "../../apps/desktop/src/browser-guests";
 test("guest attachment cannot choose arbitrary partitions, preload or Node privileges", () => {
   const callbacks = new Map<string, Function>();
   installBrowserGuests({ on: (name: string, fn: Function) => callbacks.set(name, fn) } as never);

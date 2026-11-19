@@ -66,3 +66,19 @@ test('only saved AppServer endpoints for the selected instance are refreshed', t
   enabled = false;
   assert.equal(serverEndpointNeedsRefresh('wss://entry.test/servers/stable-instance/appserver', 'wss://entry.test/appserver'), false);
 });
+
+test('a fresh direct Headless instance isolates browser state without changing URLs or old keys', t => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  t.after(() => { if (original) Object.defineProperty(globalThis, 'document', original); else Reflect.deleteProperty(globalThis, 'document'); });
+  let instance: string | null = 'instance-one';
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: {
+    getElementById: (id: string) => id === 'opencraft-instance-id' && instance ? { textContent: JSON.stringify(instance) } : null,
+  } });
+  assert.equal(serverStorageKey('opencraft-host-connections'), 'server:instance-one:opencraft-host-connections');
+  assert.equal(serverStorageKey('drafts'), 'server:instance-one:drafts');
+  assert.equal(serverUrl('/apphost'), '/apphost');
+  instance = 'instance-two';
+  assert.equal(serverStorageKey('drafts'), 'server:instance-two:drafts');
+  instance = null;
+  assert.equal(serverStorageKey('drafts'), 'drafts', 'plain static clients keep their established storage identity');
+});

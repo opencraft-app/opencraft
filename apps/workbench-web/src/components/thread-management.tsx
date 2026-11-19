@@ -5,6 +5,7 @@ import type { ThreadAccessSnapshot } from "@opencraft/appserver-protocol";
 import { PermissionShieldIcon } from "@opencraft/design-system-web/action-icons";
 import type { PointerEventHandler } from "react";
 import { LoadingRingIcon as LoaderCircle, MoreIcon as MoreHorizontal, EditIcon as Pencil, DeleteIcon as Trash2 } from "@opencraft/design-system-web/action-icons";
+import { archivedConversationLabel } from "../sidebar-activity";
 import { useAsyncNotices } from "./async-notices";
 import { useIntl } from "@opencraft/i18n/react";
 import * as ContextMenu from "@opencraft/design-system-web/context-menu";
@@ -12,15 +13,6 @@ import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { ArchiveIcon as Archive, ForkIcon as GitFork, PinIcon as Pin, PinOffIcon as PinOff } from "@opencraft/design-system-web/action-icons";
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { LinkIcon as Link2 } from "@opencraft/design-system-web/action-icons";
-import { useQuery } from "@tanstack/react-query";
-import {
-  SettingsActions,
-  SettingsButton,
-  SettingsGroup,
-  SettingsListItem,
-  SettingsNotice,
-  SettingsPageHeader,
-} from "@opencraft/extension-react";
 import { ConfirmationModalSurface } from "./modal/confirmation-modal-surface";
 import { ConversationRenameDialog } from "./conversation-rename-dialog";
 import { useWorkbenchPresentationRoot } from "./workbench-presentation-root";
@@ -214,53 +206,5 @@ function ThreadRowMenuBase({ activityLabelId, target, capabilities, disabled = f
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
     </div>
-  </>;
-}
-
-export interface ArchivedThreadsSettingsProps {
-  hostId: string;
-  load(hostId: string): Promise<ReadonlyArray<{ id: string; name?: string | null; preview?: string }>>;
-  restore(hostId: string, threadId: string): Promise<void>;
-}
-
-export function ArchivedThreadsSettings({ hostId, load, restore }: ArchivedThreadsSettingsProps) {
-  const query = useQuery({ queryKey: ["appserver", hostId, "threads", "archived", "management"], queryFn: () => load(hostId) });
-  const [busy, setBusy] = useState<string | null>(null);
-  const notices = useAsyncNotices();
-  const intl = useIntl();
-  const mounted = useRef(true);
-  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const empty = !query.isPending && query.error == null && query.data?.length === 0;
-  const title = intl.formatMessage({ id: "settings.archived", defaultMessage: "Archived conversations" });
-  return <>
-    <SettingsPageHeader title={title} />
-    {query.isPending ? <SettingsNotice role="status">{intl.formatMessage({ id: "settings.archived.loading", defaultMessage: "Loading archived conversations…" })}</SettingsNotice> : null}
-    {query.error ? <SettingsNotice role="alert" tone="error">{query.error.message}</SettingsNotice> : null}
-    {empty ? <SettingsNotice>{intl.formatMessage({ id: "settings.archived.empty", defaultMessage: "No archived conversations." })}</SettingsNotice> : null}
-    {query.data?.length ? <SettingsGroup aria-label={title}>
-      {query.data.map(thread => <SettingsListItem
-        key={thread.id}
-        label={thread.name ?? thread.preview ?? intl.formatMessage({ id: "sidebar.newChat", defaultMessage: "New chat" })}
-        description={thread.name != null && thread.preview && thread.preview !== thread.name ? thread.preview : undefined}
-        actions={<SettingsButton
-          disabled={busy !== null}
-          aria-busy={busy === thread.id}
-          onClick={() => {
-            setBusy(thread.id);
-            void restore(hostId, thread.id)
-              .catch(() => {
-                if (mounted.current) notices.error({ key: `restore:${hostId}:${thread.id}`, detail: thread.name ?? thread.preview,
-                  message: intl.formatMessage({ id: "tasks.relation.saveError", defaultMessage: "Could not confirm the change. Review the current selection and retry." }) });
-              })
-              .finally(() => { if (mounted.current) setBusy(null); });
-          }}
-        >{busy === thread.id
-          ? intl.formatMessage({ id: "chat.archived.restoring", defaultMessage: "Restoring…" })
-          : intl.formatMessage({ id: "chat.archived.restore", defaultMessage: "Restore conversation" })}</SettingsButton>}
-      />)}
-    </SettingsGroup> : null}
-    {empty || query.error ? <SettingsActions>
-      <SettingsButton type="button" onClick={() => { void query.refetch(); }}>{intl.formatMessage({ id: "settings.archived.refresh", defaultMessage: "Refresh" })}</SettingsButton>
-    </SettingsActions> : null}
   </>;
 }

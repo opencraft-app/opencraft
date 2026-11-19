@@ -47,7 +47,7 @@ export class ConversationSchedules {
     private readonly now = Date.now, private readonly diagnostic: (event: { event: string; scheduleId?: string }) => void = () => {},
     private readonly changed: () => void = () => {},
     private readonly admissionOpen: () => boolean = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
+    this.managed = openManagedDatabase({ schemaId: "host-schedules", path: join(directory, "conversation-schedules.sqlite"), legacyPolicy: "reject-unknown",
       validateSchema: createSchemaValidator(schema), migrations: [{ version: 1, name: "conversation-schedules", sql: schema }] });
     this.outcome = this.managed.outcome;
     this.summarySignature = JSON.stringify(this.list());

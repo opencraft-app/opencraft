@@ -7,7 +7,7 @@ export const modelPolicyMigrations = [{version:1,name:'model-usage-policy',sql:s
 export class ModelPolicyStore {
   private managed;
   constructor(path:string) {
-    this.managed = openManagedDatabase({path,migrations:modelPolicyMigrations,legacyPolicy:'reject',validateSchema:createSchemaValidator(schema)});
+    this.managed = openManagedDatabase({ schemaId: "model-usage-policy",path,migrations:modelPolicyMigrations,legacyPolicy:'reject',validateSchema:createSchemaValidator(schema)});
     this.managed.database.prepare('INSERT OR IGNORE INTO model_usage_policy VALUES(1,0,?)').run('[]');
   }
   get outcome() { return this.managed.outcome; }

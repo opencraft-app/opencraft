@@ -5,6 +5,7 @@ import { serveNotModified } from "./web-asset-cache.mjs";
 import { selectAssetEncoding } from "./web-asset-encoding.mjs";
 import { injectUserPluginBootstrap, loadUserPlugins, userPluginAsset } from './web-deployment/user-plugins.mjs';
 import { createUserPluginCatalog } from './web-deployment/craft-plugins.mjs';
+import { resourceRecoveryHtml, resourceRecoveryPath } from './web-resource-recovery.mjs';
 import { HtmlFilePreviews } from "./html-file-previews.mjs";
 import { APP_HOST_PROTOCOL_VERSION } from "@opencraft/app-host-protocol/version";
 import { CHANNELS_HOST_ID } from "../packages/appserver-protocol/src/channels.ts";
@@ -12,14 +13,14 @@ import { CHANNELS_HOST_ID } from "../packages/appserver-protocol/src/channels.ts
 import { createReadStream } from "node:fs";
 import { readFile, realpath, stat } from "node:fs/promises";
 import { createServer } from "node:http";
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import WebSocket, { WebSocketServer } from "ws";
 import { createWebSocketSender } from "../packages/relay-protocol/src/websocket-sender.mjs";
 import { RESUME_ACK_DELAY_MS, isAcknowledgement, isResumeAttempt, isSequence, parseResumeAttempt } from "../packages/app-host-resume/src/index.ts";
-import { ResumeRegistry } from "../packages/app-host-resume/src/server.ts";
+import { ResumeRegistry, ResumeSessionCapacityError } from "../packages/app-host-resume/src/server.ts";
 import { trackSocketHeartbeat } from "./websocket-heartbeat.mjs";
 import { appHostWebSocketOptions } from "./apphost-websocket-options.mjs";
 
@@ -108,7 +109,19 @@ function bridgeAppServerSocket(client, request, options) {
   const accessSession = options.createAccessSession?.(options.submissionContext, frame => {
     if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
   });
+  let outbound=Promise.resolve();
   const write = (frame, isBinary = false) => {
+    if(accessSession?.prepare) {
+      outbound=outbound.then(async()=>{
+        if(client.readyState!==WebSocket.OPEN||options.authorize?.()===false)return;
+        if(isBinary)throw new Error("Text frames required");
+        await accessSession.prepare(String(frame));
+        if(client.readyState!==WebSocket.OPEN||options.authorize?.()===false)return;
+        const projected=accessSession.project(String(frame));
+        if(projected!==null)client.send(projected,{binary:false});
+      }).catch(()=>{client.close(1002,"Invalid RPC frame");});
+      return;
+    }
     if (client.readyState !== WebSocket.OPEN || options.authorize?.() === false) return;
     if (accessSession && isBinary) { client.close(1003, 'Text frames required'); return; }
     try {
@@ -143,9 +156,11 @@ function bridgeAppServerSocket(client, request, options) {
     write(frame);
   });
   const terminalSession = options.createTerminalSession?.(frame => {
-    if (client.readyState === WebSocket.OPEN && options.authorize?.() !== false) client.send(frame);
+    write(frame);
   });
   const terminalReady = terminalSession?.connect();
+  const driverSession = options.createAppServerDriverSession?.(frame => write(frame));
+  client.once('close', () => driverSession?.close());
   const dshPending = new Set();
   const dshPacket = frame => {try {const value=JSON.parse(String(frame));return value && typeof value === "object" ? value : null;}catch{return null;}};
   const dshKey = packet => JSON.stringify([packet.__opencraftClient ?? "",packet.id]);
@@ -153,14 +168,22 @@ function bridgeAppServerSocket(client, request, options) {
     if (options.authorize?.() === false) { client.close(1008, 'Instance access revoked'); return; }
     if (identitySession && isBinary) { client.close(1003, "Text frames only"); return; }
     try {
+      // Register and authorize the request before a local terminal intercepts it.
+      // Otherwise the policy owner cannot correlate its direct result and drops it.
+      if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
+      if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
       if (terminalSession) {
         if (isBinary) { client.close(1003, 'Text frames only'); return; }
         await terminalReady;
         if (clientClosed || options.authorize?.() === false) return;
         if (await terminalSession.receive(data.toString('utf8'), options.submissionContext)) return;
       }
-      if (accessSession && isBinary) { client.close(1003,'Text frames required'); return; }
-      if (accessSession && await accessSession.receive(data.toString('utf8'))) return;
+      if(accessSession?.rewrite)data=accessSession.rewrite(data.toString('utf8'));
+      if (!isBinary && driverSession) {
+        const prepared = await driverSession.prepare(data.toString("utf8"), options.submissionContext);
+        if (prepared === null) return;
+        data = prepared;
+      }
       if (!isBinary && await querySession?.receive(data.toString("utf8"), options.submissionContext)) return;
       if (clientClosed || options.authorize?.() === false) return;
       if (!isBinary && appSession?.receive(data.toString("utf8"), options.submissionContext)) return;
@@ -213,7 +236,8 @@ function bridgeAppServerSocket(client, request, options) {
         // Identity restores rewritten request IDs before query initialization is correlated.
         const restored = identitySession ? await identitySession.observeNative(data.toString("utf8")) : data;
         const terminalFrame = restored !== null && !isBinary && terminalSession ? terminalSession.project(String(restored)) : restored;
-        const frame = terminalFrame !== null && !isBinary && querySession ? querySession.project(String(terminalFrame)) : terminalFrame;
+        const driven = terminalFrame !== null && !isBinary && driverSession ? driverSession.project(String(terminalFrame)) : terminalFrame;
+        const frame = driven !== null && !isBinary && querySession ? querySession.project(String(driven)) : driven;
         if (frame !== null) write(appSession && !isBinary ? appSession.project(String(frame), options.submissionContext) : frame, isBinary);
         if (!isBinary) {
           const packet = dshPacket(data), key = packet ? dshKey(packet) : null, proof = packet?.opencraftDshReceipt;
@@ -252,6 +276,7 @@ function bridgeAppServerSocket(client, request, options) {
   });
   client.on("error", () => upstream.terminate());
 }
+
 
 // Return bounded, allowlisted metadata only: never echo an untrusted frame value.
 export const APP_HOST_HEARTBEAT_MS = 10_000;
@@ -379,8 +404,8 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
   };
   const protocolError = (reason) => {
     logDiagnostic("invalid-frame", { code: 1008, ...frameContext(), reason });
-    wire.session?.resumable?.end("protocol-error");
     closeAppHostSocket(client, 1008, "Invalid App Host request");
+    wire.session?.resumable?.end("protocol-error");
   };
 
   /** Shared state of one App Host connection; outlives sockets only when resumable. */
@@ -388,11 +413,12 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     const session = {
       wire: null, connection: null, listeners: new Set(), pendingConnects: new Set(),
       authorize, resumable: null, sequencing: false, heartbeat: false, ackTimer: null, route: resume?.route ?? null,
-      port: null,
+      port: null, authority: null,
     };
     const current = () => session.wire;
     session.port = {
       postMessage(message) {
+        if (session.resumable?.isEnded) return;
         const active = current();
         if (!session.authorize(message)) {
           if (active) closeAppHostSocket(active.client, 1008, "Connection access expired");
@@ -441,6 +467,16 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
         session.resumable?.end("connection-closed");
       },
     };
+    session.adoptAuthority = authority => {
+      const old = session.authority;
+      session.authority = authority;
+      authority?.hold(reason => {
+        const active = session.wire;
+        if (active) { active.client.removeAllListeners('message'); closeAppHostSocket(active.client, 1008, reason); active.client.terminate(); }
+        session.end(reason === "Identity access expired" ? "access-expired" : "access-revoked");
+      });
+      if (old !== authority) old?.release();
+    };
     session.end = reason => {
       if (session.resumable) session.resumable.end(reason);
       else session.connection?.close();
@@ -470,6 +506,7 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     session.resumable.attach();
     session.wire = wire; wire.session = session;
     session.authorize = authorize;
+    session.adoptAuthority(resume.authority);
     // Authority closures of the original upgrade follow the live socket and request.
     if (session.route && resume.route && session.route !== resume.route) Object.assign(session.route, resume.route);
     wire.heartbeatRequested = heartbeatRequested;
@@ -480,12 +517,14 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
   };
 
   client.on("message", (raw, isBinary) => {
+    if (client.readyState !== WebSocket.OPEN || appHostServerClosedSockets.has(client)) return;
     wire.frameSequence += 1;
     if (isBinary) { logDiagnostic("invalid-frame", { code: 1003, reason: "binary", ...frameContext() }); closeAppHostSocket(client, 1003, "Text frames required"); return; }
     let message;
     try { message = JSON.parse(raw.toString()); }
     catch { logDiagnostic("invalid-frame", { code: 1003, reason: "json", ...frameContext() }); closeAppHostSocket(client, 1003, "Invalid App Host frame"); return; }
     const session = wire.session;
+    if (session?.resumable?.isEnded) { closeAppHostSocket(client, 1000, "App Host session ended"); return; }
     if (message && typeof message === "object" && !Array.isArray(message)) {
       if (message.type === "connection/ack") {
         if (!session?.resumable || !isAcknowledgement(message.received) || !session.resumable.link.acknowledge(message.received)) protocolError("acknowledgement");
@@ -501,6 +540,9 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
     if (message && typeof message === "object" && "seq" in message) {
       if (!session?.sequencing || !isSequence(message.seq)) { protocolError("sequence"); return; }
       ({ seq, ...message } = message);
+    }
+    if (session && (message?.type === "hello" || (session.sequencing && seq === undefined))) {
+      protocolError("sequence-required"); return;
     }
     const rejection = appHostFrameRejection(message);
     if (rejection !== null) {
@@ -528,16 +570,26 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
         logDiagnostic("probe-received", { ...probeDetail(probe), frameSequence: wire.frameSequence });
       }
     }
+    if (seq !== undefined) {
+      const arrival = wire.session.resumable.link.accept(seq, raw.length);
+      if (arrival === "duplicate") return;
+      if (arrival === "gap") { protocolError("sequence-gap"); return; }
+      wire.session.scheduleAck();
+    }
     if (!authorize(message)) {
       const probe = wire.probes.get(message.requestId);
       if (probe) {
         wire.probes.delete(message.requestId);
         logDiagnostic("probe-rejected", { ...probeDetail(probe), reason: "access" });
       }
-      wire.send(JSON.stringify({ type: "response", requestId: message.requestId, ok: false,
+      const denied = { type: "response", requestId: message.requestId, ok: false,
         error: submissionContext.actorContext?.credentialId
           ? { code: "CHANNEL_SCOPE_REQUIRED", message: "This credential can only access Channels", retryable: false }
-          : { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } }));
+          : { code: "SSH_ACCESS_REQUIRED", message: "Unlock remote connections in settings", retryable: false } };
+      // A denied operation still occupies its valid transport sequence, but never
+      // reaches Host dispatch. Reply through the same retained logical owner.
+      if (wire.session) wire.session.port.postMessage(denied);
+      else wire.send(JSON.stringify(denied));
       return;
     }
     if (wire.session === null) {
@@ -549,7 +601,7 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
       const heartbeatRequested = message.heartbeat === true;
       const requested = resume && message.resume !== undefined ? parseResumeAttempt(message.resume) : null;
       if (requested && isResumeAttempt(requested)) {
-        const found = resume.registry.find(requested, resume.identity);
+        const found = resume.registry.find(requested, JSON.stringify([resume.identity, message.rendererId]));
         let reason = "failure" in found ? found.failure : null, replayed = 0;
         if (reason === null) {
           const adopted = adopt(found.session.payload, requested, heartbeatRequested);
@@ -568,25 +620,26 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
       wire.session = session; session.wire = wire;
       wire.heartbeatRequested = heartbeatRequested;
       if (requested && resume) {
-        session.resumable = resume.registry.create(resume.identity, session, reason => {
+        try { session.resumable = resume.registry.create(JSON.stringify([resume.identity, message.rendererId]), session, reason => {
           if (session.ackTimer !== null) clearTimeout(session.ackTimer);
           session.ackTimer = null;
-          session.connection?.close();
+          session.authority?.release(); session.authority = null;
+          try { session.connection?.close(); }
+          finally { if (session.wire?.client.readyState === WebSocket.OPEN) closeAppHostSocket(session.wire.client, 1000, "App Host session ended"); }
           if (reason !== "connection-closed" && reason !== "client-end") logDiagnostic("resume-ended", { reason });
-        });
+        }); } catch (error) {
+          if (!(error instanceof ResumeSessionCapacityError)) { closeAppHostSocket(client, 1011, "App Host unavailable"); return; }
+          // Resumption is optional: registry saturation cannot evict another owner or deny a fresh legacy connection.
+          logDiagnostic("resume-unavailable", { reason: "capacity" });
+        }
       }
+      if (session.resumable) session.adoptAuthority(resume.authority);
       try { session.connection = appHostServer.accept(session.port, message.rendererId, submissionContext); }
       catch { logDiagnostic("hello-rejected", { code: 1011 }); session.resumable?.end("accept-failed"); closeAppHostSocket(client, 1011, "App Host unavailable"); return; }
       logDiagnostic("hello-accepted", { frameSequence: wire.frameSequence, receivedProtocolVersion: message.protocolVersion,
         ...(session.resumable ? { resumable: 1 } : {}) });
     }
     const active = wire.session;
-    if (seq !== undefined) {
-      const arrival = active.resumable.link.accept(seq, raw.length);
-      if (arrival === "duplicate") return;
-      if (arrival === "gap") { protocolError("sequence-gap"); return; }
-      active.scheduleAck();
-    }
     if (message.type === "host/connect") active.pendingConnects.add(message.requestId);
     for (const listener of active.listeners) listener(message);
   });
@@ -611,6 +664,7 @@ function bridgeAppHostSocket(client, appHostServer, logDiagnostic, authorize = (
   });
 }
 
+
 function resolveRequestPath(staticRoot, pathname) {
   let decoded;
   try {
@@ -633,7 +687,7 @@ function isWorkbenchApplicationRoute(pathname) {
   return /^\/(?:local|settings|threads|views)\/[^/]+\/?$/u.test(pathname);
 }
 
-async function serveFile(request, response, path, pathname, userPlugins = null, browserBackend = null) {
+async function serveFile(request, response, path, pathname, instanceId = null, assetVersion = null, userPlugins = null, browserBackend = null) {
   let metadata = await stat(path);
   if (!metadata.isFile()) return false;
   let selectedPath = path;
@@ -652,10 +706,17 @@ async function serveFile(request, response, path, pathname, userPlugins = null, 
   }
   response.statusCode = 200;
   const shell = pathname === '/' || pathname === '/index.html';
-  let html = shell && (userPlugins?.length || browserBackend !== null) ? await readFile(path, 'utf8') : null;
-  if (html !== null && userPlugins?.length) html = injectUserPluginBootstrap(html,userPlugins);
-  if (html !== null && browserBackend !== null) html = html.replace(/<head(?:\s[^>]*)?>/iu,
+  let html = extname(path) === '.html' ? await readFile(path, 'utf8') : null;
+  if (html !== null && shell && userPlugins?.length) html = injectUserPluginBootstrap(html,userPlugins);
+  if (html !== null && shell && browserBackend !== null) html = html.replace(/<head(?:\s[^>]*)?>/iu,
     head => head + '<meta name="opencraft-browser-backend" content="' + (browserBackend ? 'remote' : 'iframe') + '">');
+  if (html !== null) {
+    if (instanceId) html = html.replace(/<head(?:\s[^>]*)?>/iu,
+      head => `${head}<script id="opencraft-instance-id" type="application/json">${JSON.stringify(instanceId)}</script>`);
+    const url = new URL(request.url || '/', 'http://localhost');
+    if (assetVersion && !url.searchParams.has('opencraft-resource-recovery')) url.searchParams.set('opencraft-resource-recovery', createHash('sha256').update(assetVersion).digest('hex').slice(0, 24));
+    html = resourceRecoveryHtml(html, url.href);
+  }
   response.setHeader("content-length", html === null ? metadata.size : Buffer.byteLength(html));
   response.setHeader("content-type", contentTypes.get(extname(path).toLowerCase()) || "application/octet-stream");
   response.setHeader("x-content-type-options", "nosniff");
@@ -667,7 +728,7 @@ async function serveFile(request, response, path, pathname, userPlugins = null, 
   } else {
     response.setHeader("cache-control", "no-cache");
   }
-  if (serveNotModified(request, response)) return true;
+  if (html === null && serveNotModified(request, response)) return true;
   if (request.method === "HEAD") {
     response.end();
     return true;
@@ -681,14 +742,19 @@ export async function createWorkbenchWebServer({
   root,
   userPluginDirectory = null,
   productPluginAssets = null,
+  instanceId = null,
+  assetVersion = null,
   appServerTarget = "ws://127.0.0.1:9988/rpc",
   resolveAppServerTarget,
   appServerIdentity = null,
   createAppServerQuerySession = null,
   createTerminalSession = null,
+  createAppServerDriverSession = null,
   hyperNodeUser = "",
   loopbackOnly = false,
   appHostServer = null,
+  appHostResumeEnabled = process.env.OPENCRAFT_APPHOST_RESUME !== "0",
+  appHostResumeOptions = {},
   sshServerDescriptors = [],
   sshManagement = null,
   fileDownloads = null,
@@ -716,7 +782,6 @@ export async function createWorkbenchWebServer({
   observability = null,
   mcpAppsService = null,
   getImService = () => null,
-  appHostResumeEnabled = process.env.OPENCRAFT_APPHOST_RESUME !== "0",
   connectorService = null,
   hubService = null,
   speechPublicAccess = process.env.OPENCRAFT_SPEECH_PUBLIC_ACCESS === "1",
@@ -725,6 +790,8 @@ export async function createWorkbenchWebServer({
   ...unknownOptions
 } = {}) {
   if (Object.keys(unknownOptions).length) throw new Error("Unknown workbench gateway option; check server composition");
+  if (instanceId !== null && (typeof instanceId !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/u.test(instanceId))) throw new Error('Invalid instance storage identity');
+  if (assetVersion !== null && (typeof assetVersion !== 'string' || !assetVersion || assetVersion.length > 128)) throw new Error('Invalid asset version');
   if (identityService !== null && (!identityService || ["admissionStatus", "connectionContext", "handle"].some(method => typeof identityService[method] !== "function"))) throw new Error("Invalid request identity service");
   if (!["loopback", "trusted-internal"].includes(desktopAccess)) throw new Error("Invalid desktop access policy");
   if (desktopService !== null && desktopAccess === "loopback" && !loopbackOnly) throw new Error("Local desktop requires a loopback-only gateway");
@@ -1047,16 +1114,17 @@ export async function createWorkbenchWebServer({
         sendJson(response, 404, { ok: false, error: 'Product plugin asset not found' }); return;
       }
 
-      const requestedPath = resolveRequestPath(staticRoot, url.pathname);
+      const resourcePath = resourceRecoveryPath(url.pathname);
+      const requestedPath = resolveRequestPath(staticRoot, resourcePath);
       if (requestedPath == null) {
         sendJson(response, 400, { ok: false, error: "Invalid path" });
         return;
       }
       try {
-        if (await serveFile(request, response, requestedPath, url.pathname, userPlugins, !!remoteBrowserService)) return;
+        if (await serveFile(request, response, requestedPath, resourcePath, instanceId, assetVersion, userPlugins, !!remoteBrowserService)) return;
         // Product-owned standalone documents can share the static origin without
         // booting the Workbench SPA. Admission and reserved API routing stay above.
-        if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname)) return;
+        if (extname(url.pathname) === "" && await serveFile(request, response, join(requestedPath, "index.html"), url.pathname, instanceId, assetVersion)) return;
       } catch (error) {
         if (error?.code !== "ENOENT") throw error;
       }
@@ -1073,7 +1141,7 @@ export async function createWorkbenchWebServer({
         acceptsHtml &&
         (extname(url.pathname) === "" || isWorkbenchApplicationRoute(url.pathname))
       ) {
-        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", userPlugins, !!remoteBrowserService);
+        await serveFile(request, response, join(staticRoot, "index.html"), "/index.html", instanceId, assetVersion, userPlugins, !!remoteBrowserService);
         return;
       }
       sendJson(response, 404, { ok: false, error: "Not found" });
@@ -1090,8 +1158,7 @@ export async function createWorkbenchWebServer({
   const websocketServer = new WebSocketServer(appHostWebSocketOptions());
   const desktopWebSockets = new WebSocketServer({ noServer: true, maxPayload: 1 << 20 });
   const activeAppHostSockets = new Set();
-  // Opt-in App Host session resumption (packages/app-host-resume). Disabled with OPENCRAFT_APPHOST_RESUME=0.
-  const appHostResume = appHostServer !== null && appHostResumeEnabled ? new ResumeRegistry() : null;
+  const appHostResume = appHostServer !== null && appHostResumeEnabled ? new ResumeRegistry(appHostResumeOptions) : null;
   const socketHeartbeats = new WeakMap();
   const privateSockets = new Map();
   const revokePrivateSockets = () => {
@@ -1135,7 +1202,7 @@ export async function createWorkbenchWebServer({
       return;
     }
     const sessionRequest = actorService?.isSessionRequest(request);
-    let admissionStatus, submissionContext, principal, channelSession;
+    let admissionStatus, submissionContext, principal, channelSession, localAdmission = false;
     try {
       if (sessionRequest) {
         channelSession = allowSessionChannels && pathname === '/apphost' && appHostServer !== null ? actorService.lease(request) : null;
@@ -1146,6 +1213,7 @@ export async function createWorkbenchWebServer({
         submissionContext = { sender: null, validUntil: channelSession.context.expiresAt };
       } else {
         const local = !!localAccess?.origin(request);
+        localAdmission = local;
         if (!local) await accessService?.prepare?.(request);
         admissionStatus = local ? 204 : authService?.invalidSession(request) ? 401 : accessService?.admissionStatus(request) ?? identityService?.admissionStatus(request) ?? 204;
         submissionContext = local ? { sender: null } : identityService ? identityService.connectionContext(request) : { sender: null };
@@ -1200,20 +1268,38 @@ export async function createWorkbenchWebServer({
     const admissionDeadline = Math.min(principal?.expiresAt ?? Infinity, submissionContext.validUntil ?? Infinity);
     const trackAdmittedWebSocket = (client, diagnostic) => {
       trackWebSocket(client, diagnostic);
-      const retire = reason => {
-        // A peer may ignore the close handshake. Stop delivery before destroying the wire.
+      const cleanups = [];
+      let active = true, retained = false, timer;
+      const physicalRetire = reason => {
         client.removeAllListeners('message'); closeAppHostSocket(client, 1008, reason); client.terminate();
       };
-      if (actorService) { const unwatch = actorService.watch(request, () => retire('Actor access revoked')); client.once('close', unwatch); }
-      if (principal) { const unwatch = accessService.watch(principal, () => retire('Instance access revoked')); client.once('close', unwatch); }
-      if (!Number.isFinite(admissionDeadline)) return;
-      let timer;
-      const expire = () => {
-        const remaining = admissionDeadline - Date.now();
-        if (remaining <= 0) { retire("Identity access expired"); return; }
-        timer = setTimeout(expire, Math.min(remaining, 2_147_483_647)); timer.unref();
+      let retireOwner = physicalRetire;
+      const authority = {
+        hold(retire) { if (!active) return false; retained = true; retireOwner = retire; return true; },
+        release() {
+          if (!active) return;
+          // Fence callbacks before invoking external disposers; old request watches cannot retire a successor.
+          active = false; clearTimeout(timer);
+          for (const cleanup of cleanups.splice(0)) { try { cleanup(); } catch { emitAppHostDiagnostic({ event: "authority-cleanup-failed" }); } }
+        },
       };
-      expire(); client.once("close", () => clearTimeout(timer));
+      const retire = reason => { if (active) retireOwner(reason); };
+      if (actorService) cleanups.push(actorService.watch(request, () => retire('Actor access revoked')));
+      if (principal) cleanups.push(accessService.watch(principal, () => retire('Instance access revoked')));
+      if (privateConnection && sshManagement?.onRevocation) cleanups.push(sshManagement.onRevocation(() => {
+        if (!sshManagement.authorized(request)) retire('Connection access expired');
+      }));
+      if (Number.isFinite(admissionDeadline)) {
+        const expire = () => {
+          const remaining = admissionDeadline - Date.now();
+          if (remaining <= 0) { retire("Identity access expired"); return; }
+          timer = setTimeout(expire, Math.min(remaining, 2_147_483_647)); timer.unref();
+        };
+        expire();
+      }
+      // The bridge's close handler decides whether the physical loss is detachable.
+      client.once('close', () => queueMicrotask(() => { if (!retained) authority.release(); }));
+      return authority;
     };
     if (pathname === '/__opencraft_browser/stream') {
       if (!remoteBrowserService || !(sameOrigin(request, true) || allowedInternalDesktopOrigin(request))) {
@@ -1246,7 +1332,7 @@ export async function createWorkbenchWebServer({
     if ((pathname === "/apphost" || privateConnection) && appHostServer !== null) {
       websocketServer.handleUpgrade(request, socket, head, (client) => {
         if(!sessionRequest)turnPushService?.initializeDefaultsForRequest?.(request);
-        trackAdmittedWebSocket(client, logAppHost);
+        const authority = trackAdmittedWebSocket(client, logAppHost);
         activeAppHostSockets.add(client);
         if (privateConnection) privateSockets.set(client, request);
         logAppHost("upgrade-accepted", { active: activeAppHostSockets.size });
@@ -1258,18 +1344,17 @@ export async function createWorkbenchWebServer({
         bridgeAppHostSocket(client, appHostServer, logAppHost, message => {
           // The anonymous channel cannot guess a remote ID. Private sockets
           // bind the server-validated cookie, never the renderer-supplied ID.
-          if (!actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) return false;
+          if (closing || !actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) return false;
           if (channelSession) return message.hostId === undefined || message.hostId === CHANNELS_HOST_ID;
           if (privateConnection) return sshManagement.authorized(request);
           return !sshManagement || !message.hostId?.startsWith("ssh:");
         }, submissionContext, appHostResume === null ? null : {
           registry: appHostResume,
-          // A session resumes only for exactly the same channel and identity.
-          identity: JSON.stringify([privateConnection ? "private" : "public", ownerId, actor?.actorId ?? null,
-            channelSession?.context.credentialId ?? null, principal ? [principal.provider, principal.subject] : null,
-            submissionContext.sender?.loginName ?? null]),
-          route,
-          deadline: admissionDeadline,
+          // Exact route, Actor, credential and execution identity; no renderer authority.
+          identity: JSON.stringify([pathname, ownerId, actor ?? null,
+            channelSession?.context.credentialId ?? null, submissionContext.executionPrincipal ?? null,
+            submissionContext.sender ?? null, submissionContext.validUntil ?? null, localAdmission]),
+          route, authority, deadline: admissionDeadline,
         });
       });
       return;
@@ -1291,7 +1376,7 @@ export async function createWorkbenchWebServer({
       return;
     }
     if (closing || socket.destroyed) { socket.destroy(); return; }
-    if (!actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) {
+    if (closing || !actorAllowed() || admissionDeadline <= Date.now() || (principal && !accessService.role(principal))) {
       socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); return;
     }
     websocketServer.handleUpgrade(request, socket, head, (client) => {
@@ -1304,6 +1389,7 @@ export async function createWorkbenchWebServer({
         identity: appServerIdentity,
         createAppServerQuerySession,
         createTerminalSession,
+        createAppServerDriverSession,
         createAccessSession: createAppServerAccessSession,
         submissionContext,
         authorize: () => actorAllowed() && admissionDeadline > Date.now() && (!principal || !!accessService.role(principal)),
@@ -1328,7 +1414,6 @@ export async function createWorkbenchWebServer({
     close(update = null, retireIngress = () => undefined) {
       htmlPreviews?.close();
       closing = true;
-      appHostResume?.close();
       speechService?.close();
       remoteBrowserService?.close();
       unsubscribeRevocation?.();
@@ -1342,6 +1427,7 @@ export async function createWorkbenchWebServer({
         if (update && client.readyState === WebSocket.OPEN) client.close(1012);
         else client.terminate();
       }));
+      appHostResume?.close();
       let deadline;
       const closeClients = Promise.race([Promise.allSettled(clientClosures),new Promise(done => {deadline=setTimeout(done,250);})])
         .finally(()=>{clearTimeout(deadline);for(const client of clients)if(client.readyState!==WebSocket.CLOSED)client.terminate();});

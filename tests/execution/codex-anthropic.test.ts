@@ -596,3 +596,31 @@ test("assistant text carries Codex MessagePhase from the committed Anthropic sto
   // Truncated output stays unknown.
   assert.deepEqual((await done([start, ...text("Partial", 0), ...end("max_tokens")])).phases, [null]);
 });
+
+test("oversized Anthropic 400 bodies are cancelled without signature resend or unbounded buffering", async () => {
+  let calls = 0, pulls = 0, cancelled = false;
+  const response = await forwardConfiguredResponses({
+    configured: { protocol: "anthropic-messages", baseUrl: "https://provider.test/v1", model: "ep", apiKey: "test-key" },
+    payload: { model: "ep", input: "hello" }, publicModel: "configured/test/ep", accept: null,
+    signal: AbortSignal.timeout(2000), fetch: (async () => {
+      calls++;
+      return new Response(new ReadableStream<Uint8Array>({
+        pull(controller) { pulls++; controller.enqueue(new Uint8Array(32 * 1024).fill(120)); },
+        cancel() { cancelled = true; },
+      }), { status: 400 });
+    }) as typeof fetch,
+  });
+  assert.equal(response.status, 400);
+  assert.equal(calls, 1);
+  assert.equal(cancelled, true);
+  assert.ok(pulls <= 4, `read at most 64 KiB plus one overflow chunk and stream prefetch, got ${pulls} pulls`);
+  assert.doesNotMatch((await response.json()).error.message, /xxxx/);
+});
+
+test("a committed but empty visible answer is failed rather than successful", async () => {
+  for (const events of [[start, ...end()], [start, ...text(""), ...end()], [start, ...text("   "), ...end()]]) {
+    const result = await bridge(events, { streaming: false }).response.json();
+    assert.equal(result.status, "failed");
+    assert.equal(result.error.source_reason, "empty_response");
+  }
+});

@@ -49,7 +49,11 @@ export function queuedSubmissionPresentation(
   avatars: IdentityAvatarContribution | null = null,
   intl?: IntlShape,
 ): ComposerQueuedSubmissionPresentation {
-  const statusMessage = submission.pausedReason === "session-tools-recovering"
+  const statusMessage = submission.pausedReason === "execution-recovering"
+    ? { id: "chat.queue.executionRecovering", defaultMessage: "Waiting for execution to recover" }
+    : submission.pausedReason === "execution-fault-unconfirmed" || submission.pausedReason === "execution-interrupted"
+      ? { id: "chat.queue.executionInterrupted", defaultMessage: "Execution interrupted · outcome unknown" }
+    : submission.pausedReason === "session-tools-recovering"
     ? { id: "chat.queue.toolsRecovering", defaultMessage: "Waiting for session tools to recover · continues automatically" }
     : submission.pausedReason === "session-tools-unavailable"
       ? { id: "chat.queue.pausedAfterFailure", defaultMessage: "Message not sent. Resume to try again." }
@@ -72,7 +76,8 @@ export function queuedSubmissionPresentation(
     operation: submission.operation,
     actionable: submission.serverSubmissionId !== null && submission.actions?.edit !== false,
     deletable: submission.serverSubmissionId !== null && submission.actions?.delete !== false,
-    steerable: submission.actions?.start === false ? false : submission.steerable,
+    steerable: submission.actions?.start === false || ["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? "") ? false : submission.steerable,
+    resumable: !["execution-recovering", "execution-fault-unconfirmed", "execution-interrupted"].includes(submission.pausedReason ?? ""),
     dismissible: (submission.local === true && submission.state !== "submitting" && submission.state !== "unknown") || (submission.state === "failed" && submission.serverSubmissionId === null),
     reorderable: !submission.local && reorderable && submission.actions?.reorder !== false,
     editableContent: restoreQueuedInput(submission.input),

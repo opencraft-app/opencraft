@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "thread-catalog",
+      "checksum": "a8cfe3f290a0e5abcecda5101bdd2bbaf677c522d8c367e6fd487f29ba70916b"
+    }
+  ],
+  "tableOptions": {
+    "opencraft_threads": {
+      "strict": false,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "37fefc422754ca86cf896660b32e0840c1603111978da8674c2b1efdd839bfb3",
+  "baselineSnapshotChecksum": "7ca4755b1330e0d17688c6d797ff341da9331525dc1dee74f14a9bcdf94a2328"
+}

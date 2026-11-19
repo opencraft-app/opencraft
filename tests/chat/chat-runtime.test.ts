@@ -3140,18 +3140,96 @@ test("verified receipt supplies the sender before native echo when browser ident
   const key = createConversationKey("local", "thread-one");
   const replica = new FakeReplica(threadView({turns: [], pendingInteractions: []}));
   const runtime = createReplicaConversationRuntime({key, replica, getSubmissionSender: () => null,
-    commands: commands({submit: async intent => ({...receipt(intent.commandId, intent.clientMessageId), turnId: "turn-two", sender: {kind: "employee", loginName: "skipzhang"}})}),
+    commands: commands({submit: async intent => ({...receipt(intent.commandId, intent.clientMessageId), turnId: "turn-two", sender: {kind: "employee", loginName: "contributor-a"}})}),
     history: {async loadOlder() {}}});
   const composer = createComposerController({type: "existing-thread", key}, {now: () => 100, createId: () => "receipt-sender"});
   composer.dispatch({type: "set-document", document: {version: 1, blocks: [{type: "paragraph", children: [{type: "text", text: "继续"}]}]}});
   const intent = composer.createSubmitIntent();
   await runtime.submit(intent);
   const messages = () => runtime.getSnapshot().timeline.frames.flatMap(f => f.blocks).filter(b => b.type === "user-message");
-  assert.deepEqual(messages()[0]?.sender, {kind: "employee", loginName: "skipzhang"});
+  assert.deepEqual(messages()[0]?.sender, {kind: "employee", loginName: "contributor-a"});
   replica.setEntity(threadView({pendingInteractions: [], turns: [{id: "turn-two", status: "inProgress", items: [{id: "u", type: "userMessage", clientId: intent.clientMessageId, content: [{type: "text", text: "继续"}], sender: null}]}]}));
   assert.equal(messages()[0]?.sender ?? null, null, "explicit server absence still wins");
   runtime.dispose();
 });
+
+test("empty outbox skips history reconciliation and async restored custody still reconciles", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
+  let rows: readonly ConversationOutboxEntry[] = [];
+  let refresh = () => {};
+  const box = createConversationOutbox({ key, ready: () => false, blocked: () => false, publish() {}, retire() {},
+    async send() { throw new Error("Never dispatch from this fixture"); },
+    storage: { async read() { return rows; }, async write(_, next) { rows = next; },
+      subscribe(listener) { refresh = listener; return () => {}; } },
+  });
+  const reconcile = box.reconcile.bind(box);
+  let calls = 0;
+  box.reconcile = ids => { calls++; return reconcile(ids); };
+  const runtime = createReplicaConversationRuntime({ key, replica, localOutbox: box, canDispatchOutbox: () => false,
+    commands: commands(), history: { async loadOlder() {} },
+  });
+  const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
+  try {
+    await box.ready(); await settle();
+    const user = { id: "user", type: "userMessage", clientId: "ack-client", content: [{type: "text", text: "Already accepted"}] };
+    const turn = { id: "ack-turn", status: "inProgress", items: [user, { id: "tail", type: "agentMessage", text: "tail" }] };
+    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
+    replica.setEntity(threadView({ turns: [{ ...turn, items: [user, { ...turn.items[1]!, text: "tail updated" }] }], pendingInteractions: [] }));
+    assert.equal(calls, 0, "empty custody must not ask for historical acknowledgements");
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "outbox" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Already accepted" }] }] } });
+    const intent = { ...composer.createSubmitIntent(), clientMessageId: "ack-client" };
+    rows = [{ intent, state: "unknown" }];
+    refresh(); await settle(); await settle();
+    assert.ok(calls > 0, "async hydration republishes and reconciles recovered custody");
+    assert.equal(rows.length, 0, "authoritative acknowledgement removes the recovered entry");
+    assert.equal(box.hasPending(), false);
+    const after = calls;
+    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
+    assert.equal(calls, after, "empty again returns to the scan-free path");
+  } finally { runtime.dispose(); box.dispose(); }
+});
+
+
+
+for (const mismatch of ["commandId", "clientMessageId", "hostId", "threadId"] as const) test(`mismatched ${mismatch} receipt cannot replace optimistic sender`, async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    getSubmissionSender: () => ({kind: "employee", loginName: "local-fallback"}),
+    commands: commands({ submit: async intent => ({ ...receipt(intent.commandId, intent.clientMessageId),
+      hostId: key.hostId, threadId: key.threadId, turnId: "turn-two", [mismatch]: "different",
+      sender: { kind: "employee", loginName: "wrong-receipt" } }) }), history: { async loadOlder() {} } });
+  const composer = createComposerController({type:"existing-thread",key}, {now:()=>100,createId:()=>"mismatch"});
+  composer.dispatch({type:"set-document",document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"hello"}]}]}});
+  try {
+    await runtime.submit(composer.createSubmitIntent());
+    const block = runtime.getSnapshot().timeline.frames.flatMap(f=>f.blocks).find(b=>b.type==="user-message");
+    assert.deepEqual(block?.sender, {kind:"employee",loginName:"local-fallback"});
+  } finally { runtime.dispose(); }
+});
+
+
+test("retry keeps the unconfirmed input until authoritative queue reconciliation", async () => {
+  const calls: string[] = [];
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
+    commands: commands({ async retryUnconfirmedSteer(_key, id, turnId) { calls.push(id + ":" + turnId); } }),
+    history: { async loadOlder() {} },
+  });
+  const claim = { id: "claim", clientUserMessageId: "message", input: [{ type: "text" as const, text: "hello", text_elements: [] }], createdAt: 1, pausedReason: "steer-delivery-unconfirmed", targetTurnId: "turn-one" };
+  runtime.replaceQueuedSubmissions([], [claim]);
+  await runtime.retryUnconfirmedSteer("claim", asTurnId("turn-one"));
+  assert.deepEqual(calls, ["claim:turn-one"]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 1);
+  runtime.replaceQueuedSubmissions([], [{ ...claim, pausedReason: "delivery-retry-requested" }]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers[0]?.pausedReason, "delivery-retry-requested");
+  runtime.replaceQueuedSubmissions([], []);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 0);
+  runtime.dispose();
+});
+
 
 
 test("Guardian history preserves projection identity until its source or ordered reviews change", () => {
@@ -3223,44 +3301,6 @@ test("missing Guardian Turns retain first non-approved order and stable standalo
   } finally { runtime.dispose(); }
 });
 
-
-test("empty outbox skips history reconciliation and async restored custody still reconciles", async () => {
-  const key = createConversationKey("local", "thread-one");
-  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
-  let rows: readonly ConversationOutboxEntry[] = [];
-  let refresh = () => {};
-  const box = createConversationOutbox({ key, ready: () => false, blocked: () => false, publish() {}, retire() {},
-    async send() { throw new Error("Never dispatch from this fixture"); },
-    storage: { async read() { return rows; }, async write(_, next) { rows = next; },
-      subscribe(listener) { refresh = listener; return () => {}; } },
-  });
-  const reconcile = box.reconcile.bind(box);
-  let calls = 0;
-  box.reconcile = ids => { calls++; return reconcile(ids); };
-  const runtime = createReplicaConversationRuntime({ key, replica, localOutbox: box, canDispatchOutbox: () => false,
-    commands: commands(), history: { async loadOlder() {} },
-  });
-  const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
-  try {
-    await box.ready(); await settle();
-    const user = { id: "user", type: "userMessage", clientId: "ack-client", content: [{type: "text", text: "Already accepted"}] };
-    const turn = { id: "ack-turn", status: "inProgress", items: [user, { id: "tail", type: "agentMessage", text: "tail" }] };
-    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
-    replica.setEntity(threadView({ turns: [{ ...turn, items: [user, { ...turn.items[1]!, text: "tail updated" }] }], pendingInteractions: [] }));
-    assert.equal(calls, 0, "empty custody must not ask for historical acknowledgements");
-    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "outbox" });
-    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Already accepted" }] }] } });
-    const intent = { ...composer.createSubmitIntent(), clientMessageId: "ack-client" };
-    rows = [{ intent, state: "unknown" }];
-    refresh(); await settle(); await settle();
-    assert.ok(calls > 0, "async hydration republishes and reconciles recovered custody");
-    assert.equal(rows.length, 0, "authoritative acknowledgement removes the recovered entry");
-    assert.equal(box.hasPending(), false);
-    const after = calls;
-    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
-    assert.equal(calls, after, "empty again returns to the scan-free path");
-  } finally { runtime.dispose(); box.dispose(); }
-});
 
 
 test("stable command payloads are expanded once across live tail updates, but new payloads invalidate", () => {

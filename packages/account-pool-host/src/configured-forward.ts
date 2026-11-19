@@ -13,12 +13,20 @@ const THINKING_SIGNATURE_REJECTION = /Invalid `signature` in `thinking` block/u;
 
 /** Read a bounded provider error body once so it can be inspected and still reported unchanged. */
 async function bufferedError(upstream: Response): Promise<{ response: Response; text: string }> {
-  let text = "";
+  const reader = upstream.body?.getReader();
+  let text = "", size = 0;
+  const chunks: Uint8Array[] = [];
   try {
-    const bytes = new Uint8Array(await upstream.arrayBuffer());
-    text = bytes.byteLength <= 64 * 1024 ? new TextDecoder().decode(bytes) : "";
+    if (reader) while (true) {
+      const { done, value } = await reader.read();
+      if (done) { text = new TextDecoder().decode(Buffer.concat(chunks)); break; }
+      size += value.byteLength;
+      if (size > 64 * 1024) { void reader.cancel().catch(() => undefined); break; }
+      chunks.push(value);
+    }
   } catch { text = ""; }
-  return { text, response: new Response(text, { status: upstream.status, statusText: upstream.statusText, headers: upstream.headers }) };
+  finally { reader?.releaseLock(); }
+  return { text, response: new Response(text, { status: upstream.status, statusText: upstream.statusText, headers: forwardedResponseHeaders(upstream.headers) }) };
 }
 
 const decompressGzip = promisify(gunzip), decompressBrotli = promisify(brotliDecompress), decompressZstd = promisify(zstdDecompress);

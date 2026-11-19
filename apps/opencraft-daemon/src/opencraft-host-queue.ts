@@ -57,14 +57,16 @@ export class OpenCraftHostQueue {
   private readonly owner: OpenCraftHostStateDatabase | null;
   readonly outcome: DatabaseOutcome | undefined;
 
-  constructor(dataDirectory: string, database?: DatabaseSync) {
+  constructor(dataDirectory: string, database?: DatabaseSync, options: {recoverPending?: boolean} = {}) {
     this.owner = database === undefined ? new OpenCraftHostStateDatabase(dataDirectory) : null;
     this.db = database ?? this.owner!.database;
     this.outcome = this.owner?.outcome;
     this.deliveries = new InputDeliveryStore(this.db);
+    if (options.recoverPending !== false) this.atomic(() => {
     for (const row of this.db.prepare("SELECT thread_id,client_id FROM opencraft_host_queue WHERE state='dispatching'").all())
       this.deliveries.admission(String(row.thread_id),String(row.client_id),'unknown');
     this.db.prepare("UPDATE opencraft_host_queue SET state='unknown', paused_reason='steer-delivery-unconfirmed', updated_at_ms=? WHERE state='dispatching'").run(Date.now());
+    });
   }
 
   close(): void { this.owner?.close(); }
@@ -119,25 +121,25 @@ export class OpenCraftHostQueue {
 
   list(threadId: string, receiptTurnIds?: readonly string[]): HostQueuedSubmission[] {
     const open="SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','steering','unknown')";
-    const closed=receiptTurnIds?.length===0 ? "" : " UNION ALL SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state='closed'"+
+    const closed=receiptTurnIds?.length===0 ? " UNION ALL SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state='closed' AND paused_reason='delivery-retry-requested'" : " UNION ALL SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state='closed'"+
       (receiptTurnIds===undefined ? "" : ` AND target_turn_id IN (${receiptTurnIds.map(()=>'?').join(',')})`);
     return this.db.prepare(open+closed+" ORDER BY position,created_at_ms,id")
       .all(threadId,...(closed ? [threadId,...(receiptTurnIds??[])] : [])).map(row=>this.project(row));
   }
 
   observationCount(threadId: string): number {
-    return Number(this.db.prepare("SELECT count(*) AS n FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown') AND NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)").get(threadId)!.n);
+    return Number(this.db.prepare("SELECT count(*) AS n FROM opencraft_host_queue WHERE thread_id=? AND ((state IN ('queued','dispatching','unknown') AND NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)) OR (state='closed' AND paused_reason='delivery-retry-requested'))").get(threadId)!.n);
   }
 
   maintenanceCounts(): { queued: number; inFlightKeys: string[]; unknown: number } {
-    const row = this.db.prepare("SELECT sum(state='queued') AS queued, sum(state='unknown') AS unknown FROM opencraft_host_queue WHERE NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)").get()!;
+    const row = this.db.prepare("SELECT sum(state='queued') AS queued, sum(state='unknown' OR (state='closed' AND paused_reason='delivery-retry-requested')) AS unknown FROM opencraft_host_queue WHERE NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id) OR (state='closed' AND paused_reason='delivery-retry-requested')").get()!;
     const sending = this.db.prepare("SELECT thread_id, client_id FROM opencraft_host_queue WHERE state IN ('dispatching','steering') AND NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)").all();
     return { queued: Number(row.queued), unknown: Number(row.unknown),
       inFlightKeys: sending.map(input => JSON.stringify(["input", input.thread_id, input.client_id])) };
   }
 
   pendingThreads(): string[] {
-    return this.db.prepare("SELECT DISTINCT thread_id FROM opencraft_host_queue WHERE state IN ('queued','dispatching','steering','unknown') AND NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)")
+    return this.db.prepare("SELECT DISTINCT thread_id FROM opencraft_host_queue WHERE ((state IN ('queued','dispatching','steering','unknown') AND NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)) OR (state='closed' AND paused_reason='delivery-retry-requested'))")
       .all().map(row => requiredText(row.thread_id, "thread id"));
   }
 
@@ -150,7 +152,7 @@ export class OpenCraftHostQueue {
   firstUnsettled(threadId: string): HostQueuedSubmission | null { return this.list(threadId,[]).find(row => !inputExecutionEnded(row.delivery)) ?? null; }
 
   firstAwaitingAdmission(threadId: string): HostQueuedSubmission | null {
-    const row = this.db.prepare(`SELECT * FROM opencraft_host_queue WHERE thread_id=? AND state IN ('queued','dispatching','unknown')
+    const row = this.db.prepare(`SELECT * FROM opencraft_host_queue WHERE thread_id=? AND (state IN ('queued','dispatching') OR (state='unknown' AND COALESCE(paused_reason,'')!='execution-interrupted' AND (client_id LIKE 'actor-input:%' OR paused_reason='execution-fault-unconfirmed')))
       AND NOT EXISTS (SELECT 1 FROM opencraft_turn_delivery t WHERE t.thread_id=opencraft_host_queue.thread_id AND t.turn_id=opencraft_host_queue.target_turn_id)
       ORDER BY position,created_at_ms,id LIMIT 1`)
       .get(threadId);
@@ -171,7 +173,7 @@ export class OpenCraftHostQueue {
 
   reorder(threadId: string, ids: readonly string[]): void {
     const unsettled = this.list(threadId,[]);
-    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown"))
+    if (unsettled.some(row => row.state === "dispatching" || row.state === "unknown" && (row.clientUserMessageId.startsWith("actor-input:") || row.pausedReason === "execution-fault-unconfirmed")))
       throw new Error("Reconcile in-flight delivery before reordering this queue");
     const queued = unsettled.filter(row => row.state === "queued");
     if (ids.length !== queued.length || new Set(ids).size !== ids.length || queued.some(row => !ids.includes(row.id))) {
@@ -199,12 +201,47 @@ export class OpenCraftHostQueue {
     return this.atomic(() => {
     const row = this.row(threadId,id);
     if (!row) return false;
-    const changed = this.db.prepare("UPDATE opencraft_host_queue SET state=CASE WHEN state='closed' THEN 'closed' ELSE ? END,paused_reason=CASE WHEN state='closed' THEN NULL ELSE ? END,target_turn_id=CASE WHEN state='closed' THEN target_turn_id WHEN ?='queued' THEN NULL ELSE COALESCE(?,target_turn_id) END,updated_at_ms=? WHERE thread_id=? AND id=? AND state IN ('dispatching','steering','unknown','closed')")
-      .run(state, reason, state, turnId, Date.now(), threadId, id).changes === 1;
+    const changed = this.db.prepare("UPDATE opencraft_host_queue SET state=CASE WHEN state='closed' THEN 'closed' ELSE ? END,paused_reason=CASE WHEN state='closed' THEN NULL WHEN ?='unknown' AND paused_reason IN ('execution-fault-unconfirmed','execution-interrupted') THEN paused_reason ELSE ? END,target_turn_id=CASE WHEN state='closed' THEN target_turn_id WHEN ?='queued' THEN NULL ELSE COALESCE(?,target_turn_id) END,updated_at_ms=? WHERE thread_id=? AND id=? AND state IN ('dispatching','steering','unknown','closed')")
+      .run(state, state, reason, state, turnId, Date.now(), threadId, id).changes === 1;
     if (changed && state==='delivered') this.db.prepare("UPDATE opencraft_host_queue SET state='delivered' WHERE thread_id=? AND id=?").run(threadId,id);
     if (changed && state!=='discarded') this.deliveries.admission(threadId,row.clientUserMessageId,
       state==='steering'||state==='delivered'?'accepted':state==='unknown'?'unknown':'rejected');
     return changed;
+    });
+  }
+
+  /** Unknown work is retained. Only confirmed source exit permits later, explicit new inputs. */
+  interruptExecution(threadId: string, recovered: boolean): void {
+    this.atomic(() => {
+    if (!recovered) for (const row of this.db.prepare("SELECT client_id FROM opencraft_host_queue WHERE thread_id=? AND state IN ('dispatching','steering','unknown')").all(threadId))
+      this.deliveries.admission(threadId, String(row.client_id), "unknown");
+    if (recovered) this.db.prepare("UPDATE opencraft_host_queue SET paused_reason='execution-interrupted',updated_at_ms=? WHERE thread_id=? AND state='unknown' AND paused_reason='execution-fault-unconfirmed'")
+      .run(Date.now(), threadId);
+    else this.db.prepare("UPDATE opencraft_host_queue SET state='unknown',paused_reason='execution-fault-unconfirmed',updated_at_ms=? WHERE thread_id=? AND state IN ('dispatching','steering','unknown') AND COALESCE(paused_reason,'') NOT IN ('execution-fault-unconfirmed','execution-interrupted')")
+      .run(Date.now(), threadId);
+    });
+  }
+
+  requestRetry(threadId: string, id: string, expectedTurnId: string): boolean {
+    return this.db.prepare("UPDATE opencraft_host_queue SET paused_reason='delivery-retry-requested',updated_at_ms=? WHERE thread_id=? AND id=? AND state='unknown' AND target_turn_id=? AND client_id NOT LIKE 'actor-input:%' AND COALESCE(paused_reason,'')!='execution-fault-unconfirmed'")
+      .run(Date.now(), threadId, id, expectedTurnId).changes === 1;
+  }
+
+  /** Consume an explicit retry only after exact terminal proof and final history absence.
+   * The caller performs the history read; the transaction rechecks durable custody. */
+  resumeRequestedRetry(threadId: string, id: string): boolean {
+    return this.atomic(() => {
+      const row = this.row(threadId,id);
+      if (!row || row.pausedReason !== "delivery-retry-requested" || row.clientUserMessageId.startsWith("actor-input:")) return false;
+      if (row.delivery?.nativeAdmission === "accepted" || row.delivery?.context === "recorded") {
+        this.db.prepare("UPDATE opencraft_host_queue SET paused_reason=NULL,updated_at_ms=? WHERE thread_id=? AND id=? AND paused_reason='delivery-retry-requested'").run(Date.now(),threadId,id);
+        return false;
+      }
+      if (!inputExecutionEnded(row.delivery)) return false;
+      const changed=this.db.prepare("UPDATE opencraft_host_queue SET state='queued',paused_reason=NULL,target_turn_id=NULL,updated_at_ms=? WHERE thread_id=? AND id=? AND state IN ('closed','unknown') AND paused_reason='delivery-retry-requested'")
+        .run(Date.now(),threadId,id).changes === 1;
+      if (changed) this.deliveries.attempting(threadId,row.clientUserMessageId);
+      return changed;
     });
   }
 

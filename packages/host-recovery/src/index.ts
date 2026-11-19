@@ -12,7 +12,7 @@ export interface RecoveryTurn {
   threadId: string; rootTurnId: string; turnId: string; attempts: number;
   state: "running" | "interrupted" | "preparing" | "dispatching" | "complete" | "handled" | "exhausted" | "unconfirmed";
   inputId: string | null;
-  handledReason?: "user_stop" | "user_input";
+  handledReason?: "user_stop" | "user_input" | "execution_fault";
 }
 export interface TurnRecoveryPort {
   /** lost requires positive evidence that the execution is no longer live. */
@@ -36,7 +36,7 @@ export class InterruptedTurnRecovery {
   private closing: Promise<void> | null = null;
   private readonly dispatching = new Set<string>();
   constructor(directory: string, private readonly port: TurnRecoveryPort, private readonly delayMs = 500, private readonly admissionOpen: () => boolean = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "interrupted-turn-recovery.sqlite"),
+    this.managed = openManagedDatabase({ schemaId: "host-recovery", path: join(directory, "interrupted-turn-recovery.sqlite"),
       migrations: [{ version: 1, name: "interrupted-turn-recovery", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
     this.outcome = this.managed.outcome;
   }
@@ -76,7 +76,7 @@ export class InterruptedTurnRecovery {
     // Synthetic failure on connection/process loss is not a native completion.
     if (row?.turnId === turnId && row.state === "running") this.put({ ...row, state: "complete" });
   }
-  handled(threadId: string, reason: "user_stop" | "user_input" = "user_input"): void {
+  handled(threadId: string, reason: "user_stop" | "user_input" | "execution_fault" = "user_input"): void {
     if (this.closed) return;
     const row = this.get(threadId);
     if (row) this.put({ ...row, state: "handled", handledReason: reason });

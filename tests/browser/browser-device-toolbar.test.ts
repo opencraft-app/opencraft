@@ -20,3 +20,16 @@ test("device UI renders a compact toolbar row and edge resize handles",()=>{
   assert.ok(view.includes('"bottom-left","bottom-right"'));
   assert.doesNotMatch(panel,/拖动调整尺寸|browser-device-controls|宽 <input|高 <input/);
 });
+
+
+test("device toolbar delegates icon geometry and feedback to shared controls", () => {
+  const view = readFileSync(new URL("../../apps/workbench-web/src/browser/browser-device-toolbar.tsx", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../../apps/workbench-web/src/styles/app.scss", import.meta.url), "utf8");
+  const controls = readFileSync(new URL("../../packages/design-system-web/src/button.web.scss", import.meta.url), "utf8");
+  assert.equal((view.match(/<IconButton size="toolbar"/g) ?? []).length, 2);
+  assert.doesNotMatch(styles, /\.browser-device-toolbar\s+\.ui-button/);
+  assert.match(controls, /\[data-size="toolbar"\][\s\S]*?min-height: var\(--height-toolbar-control\)/);
+  assert.match(controls, /\[data-content-layout="icon"\][\s\S]*?aspect-ratio: 1/);
+  assert.match(controls, /&:focus-visible/);
+  assert.match(controls, /controls\.hover-capable/);
+});

@@ -15,7 +15,7 @@ export function ProgressIndicatorBase({ className, value, size, variant = "ring"
   const geometry = progressIndicatorGeometry;
   const determinate = value !== undefined && Number.isFinite(value);
   const fraction = determinate ? Math.max(0, Math.min(1, value)) : 0;
-  const diameter = size ?? geometry.size;
+  const diameter = size !== undefined && Number.isFinite(size) && size > 0 ? size : geometry.size;
   const element = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const node = element.current;
@@ -38,7 +38,7 @@ export function ProgressIndicatorBase({ className, value, size, variant = "ring"
     style={size === undefined ? undefined : { width: diameter, height: diameter }} onAnimationStart={event => {
       const reduced = event.currentTarget.ownerDocument.defaultView?.matchMedia("(prefers-reduced-motion: reduce)").matches;
       for (const animation of event.currentTarget.getAnimations({ subtree: true })) {
-        if (reduced) animation.cancel();
+        if (reduced || determinate) animation.cancel();
         else animation.startTime = 0;
       }
     }}>

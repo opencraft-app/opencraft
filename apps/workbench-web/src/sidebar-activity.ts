@@ -1,4 +1,5 @@
-import type { ThreadServerOrigin } from "@opencraft/workbench-runtime";
+import type { NativeConversationProject } from "@opencraft/appserver-protocol";
+import { looksLikeThreadToken, type ThreadServerOrigin } from "@opencraft/workbench-runtime";
 import { sidebarThreadIdentity, type SidebarThreadTreeNode, type SidebarTreeThread } from "./sidebar-thread-tree";
 
 interface SidebarActivityState {
@@ -47,6 +48,8 @@ export interface SidebarActivityThread {
   readonly id: string;
   readonly serverOrigin: ThreadServerOrigin;
   readonly project: string;
+  readonly nativeProject?: NativeConversationProject;
+  readonly connectionHostId?: string;
   /** AppServer timestamps are expressed in seconds. */
   readonly updatedAt: number;
   readonly createdAt?: number;
@@ -125,7 +128,31 @@ export function sidebarActivityMetadata(thread: SidebarActivityThread): {
   };
 }
 
-/** Headings follow consecutive local days; the consumer chooses its dated rows. */
+/** Visible row detail: agent, workspace and time. Never a raw thread id. */
+export function sidebarThreadMetadata(thread: {
+  readonly project?: string | null;
+  readonly agentLabel?: string | null;
+  readonly time?: string | null;
+}): string {
+  const project = thread.project?.trim() ?? "";
+  const workspace = project && !looksLikeThreadToken(project) ? project : "";
+  return [thread.agentLabel?.trim(), workspace, thread.time?.trim()].filter(Boolean).join(" · ");
+}
+
+export function archivedConversationLabel(thread: {
+  readonly id: string;
+  readonly name?: string | null;
+  readonly preview?: string | null;
+}, untitled: string): { readonly label: string; readonly description?: string } {
+  const name = thread.name?.trim() ?? "";
+  const preview = thread.preview?.trim() ?? "";
+  const usable = (value: string) => value && value !== thread.id && !looksLikeThreadToken(value) ? value : "";
+  const label = usable(name) || usable(preview) || untitled;
+  const description = usable(preview) && usable(preview) !== label ? usable(preview) : undefined;
+  return description ? { label, description } : { label };
+}
+
+/** Headings follow rendered runs, including when running rows precede newer days. */
 export function sidebarActivityDateHeadings<T extends SidebarActivityThread>(
   threads: readonly T[], nowMs = Date.now(), locale?: string,
 ): ReadonlyMap<T, string> {
@@ -198,4 +225,19 @@ export function groupThreadsByTaskFlow<T extends SidebarActivityThread & {
   }
   recent.sort(compareRecentThreads);
   return { attention, pinned, recent };
+}
+
+
+/** Source IDs, not display names or cwd basenames, keep imported projects distinct. */
+export function groupThreadsByNativeProject<T extends SidebarActivityThread>(threads: readonly T[]) {
+  const groups = new Map<string, { key: string; label: string; position: number; threads: T[] }>();
+  for (const thread of threads) {
+    const project = thread.nativeProject;
+    if (!project) continue;
+    const key = JSON.stringify([thread.connectionHostId ?? thread.serverOrigin.serverId, project.source, project.id]);
+    const group = groups.get(key);
+    if (group) group.threads.push(thread);
+    else groups.set(key, { key, label: project.name, position: project.position, threads: [thread] });
+  }
+  return [...groups.values()].sort((a, b) => a.position - b.position || a.key.localeCompare(b.key));
 }

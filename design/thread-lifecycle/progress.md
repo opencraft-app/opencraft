@@ -21,5 +21,5 @@
 - 最终聚焦生命周期 43/43、Host/AppHost 16/16；完整 gate exit 0。未提交/推送/发布。
 - 收尾审查发现启动失败遗漏目录关闭，增加 bind failure 红绿测试并关闭各失败路径的 ThreadLifecycle。
 - 断连临时线程 release:false 无重试、断连释放与新 resume 不串行均以红测复现；统一入队且保留宽限重试，测试通过。
-- 收尾修改后再次通过真实 DSH 冒烟、Host 类型检查及实际桌面菜单验收；最终包为 `apps/workbench-electron/release/thread-lifecycle-20260915-checked/mac-arm64/OpenCraft Preview.app`，codesign strict/deep 验证通过。
+- 收尾修改后再次通过真实 DSH 冒烟、Host 类型检查及实际桌面菜单验收；最终包为 `apps/desktop/release/thread-lifecycle-20260915-checked/mac-arm64/OpenCraft Preview.app`，codesign strict/deep 验证通过。
 - 文档检查 errors/warnings 均为空；显式源码/正式设计映射检查和 git diff --check 通过。Root 历史 Context 问题未扩散清理。

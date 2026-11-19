@@ -1,15 +1,15 @@
-import { createHash } from "node:crypto";
 import { mkdirSync, existsSync, openSync, fsyncSync, closeSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { openManagedDatabase, SqliteLifecycleError, acquireProcessWriter } from "@opencraft/sqlite-node";
 import type { ServerDatabaseSource } from "./repository.js";
 import { importServerData } from "./import.js";
-import { SERVER_MIGRATIONS, OPENCRAFT_VERSION } from "./migrations.generated.js";
+import { serverMigrationsFor } from "./history.js";
+import { SERVER_MIGRATIONS, SERVER_MIGRATION_CONTRACT_HASH, OPENCRAFT_VERSION } from "./migrations.generated.js";
 export { SERVER_MIGRATIONS } from "./migrations.generated.js";
 
 export const SERVER_DATA_CONTRACT = Object.freeze({ productVersion: OPENCRAFT_VERSION, store: "server", migrationVersion: SERVER_MIGRATIONS.length,
-  hash: createHash("sha256").update(JSON.stringify(SERVER_MIGRATIONS)).digest("hex") });
+  hash: SERVER_MIGRATION_CONTRACT_HASH });
 
 export type ServerDatabase = Exclude<ServerDatabaseSource, string> & {
   readonly contract: typeof SERVER_DATA_CONTRACT;
@@ -32,7 +32,7 @@ export async function openServerDatabase(directory: string): Promise<ServerDatab
         }
       } finally { existing.close(); }
     }
-    managed = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS, legacyPolicy: "reject" });
+    managed = openManagedDatabase({ path, migrations: serverMigrationsFor(path), legacyPolicy: "reject" });
     // Retain installation identity even after a current-core-only backup restoration.
     mkdirSync(join(directory, ".server-import"), { recursive: true, mode: 0o700 });
     const parent = openSync(directory, "r");

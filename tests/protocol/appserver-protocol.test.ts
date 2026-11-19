@@ -36,6 +36,7 @@ test("Thread lifecycle capability requires a known version and explicit operatio
     ephemeralFork: false,
     ephemeral: false,
     injectItems: false,
+    sideChatSettings: false,
     unsubscribe: false,
     rename: false,
     archive: false,

@@ -26,16 +26,29 @@ async function fixture(t: test.TestContext) {
   return { directory, repository, credentials };
 }
 
-test("endpoint rule: HTTPS anywhere, plaintext HTTP on this machine or the local network", () => {
+test("endpoint policy defaults to HTTPS or loopback; LAN plaintext requires explicit opt-in", () => {
+  for (const url of ["https://api.example.com/v1", "http://127.0.0.1:8080/v1", "http://localhost/v1", "http://[::1]/v1"]) {
+    assert.equal(engineEndpointAllowed(url), true, url);
+  }
+  for (const url of ["http://10.1.2.3/v1", "http://192.168.1.20:11434/v1", "http://[fd12:3456::1]/v1", "http://ollama:11434/v1"]) {
+    assert.equal(engineEndpointAllowed(url), false, url);
+    assert.equal(engineEndpointAllowed(url, true), true, url);
+  }
+  for (const url of ["http://api.example.com/v1", "http://8.8.8.8/v1", "http://[::ffff:8.8.8.8]/v1", "https://u:p@x.test", "https://x.test/v1?k=1", "not a url"]) {
+    assert.equal(engineEndpointAllowed(url, true), false, url);
+  }
+});
+
+test("LAN opt-in permits only local network HTTP and HTTPS", () => {
   for (const url of ["https://api.example.com/v1", "http://127.0.0.1:8080/v1", "http://localhost/v1", "http://[::1]/v1",
     "http://10.1.2.3/v1", "http://172.16.0.1/v1", "http://172.31.255.255/v1", "http://192.168.1.20:11434/v1", "http://169.254.1.1/v1",
     "http://100.100.1.1/v1", "http://[fd12:3456::1]/v1", "http://[fe80::1]/v1", "http://[::ffff:192.168.1.2]/v1",
     "http://ollama:11434/v1", "http://gpu-box.local/v1", "http://nas.lan/v1", "http://llm.internal/v1", "http://x.home.arpa/v1"]) {
-    assert.equal(engineEndpointAllowed(url), true, url);
+    assert.equal(engineEndpointAllowed(url, true), true, url);
   }
   for (const url of ["http://api.example.com/v1", "http://8.8.8.8/v1", "http://172.32.0.1/v1", "http://100.128.0.1/v1",
     "http://[2001:db8::1]/v1", "http://[::ffff:8.8.8.8]/v1", "ftp://10.0.0.1", "https://u:p@x.test", "https://x.test/v1?k=1", "not a url"]) {
-    assert.equal(engineEndpointAllowed(url), false, url);
+    assert.equal(engineEndpointAllowed(url, true), false, url);
   }
 });
 
@@ -136,4 +149,25 @@ test("assistant reaches Anthropic through a loopback gateway that holds the cred
   assert.equal(upstream.length, 2);
   await assistant.close();
   await assert.rejects(post(resolved.apiKey));
+});
+
+test("credential resolution fails closed if the configuration revision changes", async t => {
+  const f = await fixture(t);
+  const original = ModelCredentialRepository.prototype.resolve;
+  ModelCredentialRepository.prototype.resolve = async function(reference) {
+    const result = await original.call(this, reference);
+    await f.repository.update(0, document => { document.providers[0]!.baseUrl = "https://replacement.test/v1"; });
+    return result;
+  };
+  t.after(() => { ModelCredentialRepository.prototype.resolve = original; });
+  await assert.rejects(createEngineModelSource(f.directory, { protocols: ["openai-responses"] }).resolve({ providerId: "responses", modelId: "r1" }),
+    (error: unknown) => error instanceof EngineModelError && error.code === "changed");
+});
+
+test("LAN opt-in is applied by the resolver and Codex projection, not just the URL predicate", async t => {
+  const f = await fixture(t);
+  await f.repository.update(0, document => { document.providers[0]!.baseUrl = "http://192.168.1.20:11434/v1"; });
+  const alias = configuredCodexModelId("responses", "r1");
+  assert.equal(await createConfiguredCodexResponses(f.directory).resolve(alias), null);
+  assert.equal((await createConfiguredCodexResponses(f.directory, { allowInsecureLocalNetwork: true }).resolve(alias))?.apiKey, "responses-secret");
 });

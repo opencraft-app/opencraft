@@ -93,6 +93,8 @@ class MessageEvents {
       if (this.stopReason === "tool_use" && !this.outputs.some(item => item.type === "function_call" || item.type === "custom_tool_call")) throw new AnthropicStreamError("Missing tool call");
       const hasTools = [...this.blocks.values()].some(block => block.tool);
       if (hasTools && !["tool_use", "max_tokens"].includes(this.stopReason)) throw new AnthropicStreamError("Contradictory tool stop reason");
+      if (!hasTools && this.stopReason !== "max_tokens" && ![...this.blocks.values()].some(block => block.source.type === "text" && block.text.trim()))
+        return this.fail("empty_response");
       this.terminal = true; this.observe(this.stopReason);
       const incomplete = this.stopReason === "max_tokens";
       this.response = { ...this.snapshot(incomplete ? "incomplete" : "completed"), error: null,

@@ -183,6 +183,8 @@ Codex 的执行激活 `thread/resume` 在已有执行准备工具时等待同一
 
 Pi/DSH 的 snapshot port 可能仍需读取完整原生逻辑快照，不声称其数据库字节支持 JSONL 增量。缓存对比有序 Turn 前缀，只更新变化的未完成尾轮及新增 Turn 的偏移、正文和 Blob；这两类变化保留既有序号与分页 epoch，运行中新轮次不会使用户正在翻阅的旧页失效。SQLite WAL checkpoint 或截短本身也不改变逻辑历史的 epoch。历史前缀改写、删轮或重排、原生来源身份/路径/路由变更、schema 失效或派生文件丢失时重建并更换 epoch；旧游标明确要求重新加载，不能继续解释为另一版历史的偏移。SQLite 只读连接可能改变 WAL 的 ctime，因此 snapshot 水位不以该元数据变化制造内容失效；Codex 保留自己的字节追加判断。
 
+Pi 的完整 Turn 投影统一使用协议值 `itemsView: "full"`，与执行是否完成的 `status` 分开。历史读取与流式事件使用同一投影。修正投影格式时同时推进 Pi snapshot 来源的投影版本，使原生数据库未变化的旧派生缓存也会重建；不能把旧缓存中的非协议值当作没有正文，或修改原生历史来触发重建。
+
 删缓存目录、索引损坏或正文/Blob 校验失败只能重建派生数据，不能修改或删除原生日志。归档或删除的缓存清理与迟到读取通过会话级失效代次协调；清理同时删除索引行及该会话的正文与 Blob。无可用文件来源的临时会话或原生 backend 保留原有只读协议兼容。回归入口为 [原生 snapshot 缓存](../tests/protocol/native-transcript-snapshot-cache.test.ts)、[Codex 缓存](../tests/protocol/transcript-read-cache.test.ts)及 [DSH 冷态来源定位](../tests/execution/dsh-thread-engine.test.mjs)；主服 Host 是否已加载这些能力仍须核对实际版本、进程与行为。
 
 ### 历史读取的等待与取消
@@ -954,6 +956,37 @@ continue to inspect coverage.
 It neither replays mutations nor stops retained execution owners. The registry's
 existing synchronous SQLite implementation remains a separate concern.
 
+### Codex execution failure recovery
+
+A readable AppServer connection does not prove its execution environment works.
+Managed Codex generations observe official environment status independently from
+Native connectivity. A confirmed disconnected executor records a durable fault
+and source identity, then stops that exact instance without waiting for Native,
+Host, goal or OS work to become idle. A changed process birth or systemd
+invocation is not permission to kill a successor. Unconfirmed stops remain blocked;
+failed recovery retries with backoff. Normal retirement still uses its existing drain.
+
+Old dispatched work keeps its interrupted/unknown outcome and is never continued
+by generic generation-loss or provider-retry handling. New explicit inputs use
+the existing persistent queue. Only confirmed source exit, replacement execution
+readiness and committed Host recovery receipts permit those new inputs to run.
+Host fault transitions and receipts use an owned storage Worker; close drains
+submitted work. Re-observing completed receipts must not interrupt successor turns.
+
+Transport status exposes execution independently, including affected conversation
+IDs for retained generations. Existing Views and newly attached Views receive
+the same status; history and Composer stay mounted. Attach-only external servers
+retain their external lifecycle owner. See the [specification](specs/codex-execution-health-and-recovery.md)
+and [decision](adr/0001-codex-execution-fault-recovery.md).
+
+Fault recovery may retire Router custody for the exact source generation and
+incarnation while keeping the original unknown lease records and recovery ID.
+This is distinct from observing Native completion. On controller restart, the
+Router first validates these records against the durable fault journal; it does
+not accept an unattributed or unrelated uncertainty. Recovering generations start
+through the fault monitor rather than ordinary ensure, including when the source
+unit is still deactivating. Stored retry deadlines remain authoritative.
+
 ### DSH generation routing storage owner
 
 Live Local Agent Hosts open session-routing storage through an owned Worker,
@@ -1063,3 +1096,69 @@ ACK 必须匹配 id/receipt，并在删除提交后才完成。失败关闭、�
 原文件保留且不重写。导入来源摘要提交在同一数据库，重启不复活已确认记录；旧来源
 发生变化拒绝启动，避免旧/新 writer 分叉。升级恢复必须继续选择能打开当前存储的
 程序；不能恢复旧数据覆盖后续 ACK。持久化不等于消费者确认，断线不自动退休责任。
+
+
+## Browser AppHost route resumption
+
+The WebSocket adapter can replace a physical route without replacing the logical
+AppHost connection or its Host leases. This is an in-memory optimization, not a
+durable operation receipt or permission grant. Non-WebSocket ports are unchanged.
+
+- A client advertises `hello.resume: {v: 1}`; an accepting server returns a
+  `ready.capabilities.resume` grant. Subsequent data frames carry per-direction
+  sequence numbers. ACKs, heartbeats and resumption controls are unnumbered.
+  The replacement hello presents the grant and the last received sequence;
+  `connection/resumed` acknowledges the reverse direction before replay.
+- Every upgrade requires fresh ingress admission. The grant is bound to the
+  renderer and trusted route/identity/authorization context. Detached logical
+  sessions retain revocation and expiry watches; an old carrier cannot revoke
+  its successor. Tokens are secrets, not diagnostics or persistent client state.
+- Detached sessions expire after five minutes by default. Each server session
+  retains at most 1 MiB of unacknowledged data, with a shared 1 GiB byte budget;
+  frame/session count limits bound small-frame overhead separately. These are
+  replay-cache limits, **not** a process RSS limit. The browser retains at most
+  8 MiB. Eviction can make resumption unavailable. Session saturation falls back
+  to the legacy route rather than evicting an unrelated live owner.
+- Browser resumption spends at most 30 seconds total, including handshakes capped
+  at 10 seconds each. Failure falls back to ordinary logical reconnection.
+  Shared physical retry admission prevents multiple Host owners from multiplying
+  attempts; lifecycle hints are throttled and background probes are suspended.
+- Sequenced replay does not resubmit a business operation. A send whose local
+  queue-drain progress is being observed cannot silently migrate between routes.
+  A positively undispatched outbox entry retries with bounded backoff, preserving
+  its message identity and FIFO custody even without another timeline event.
+  Unknown or rejected outcomes are never automatically retried by that fallback.
+  Queue-drain progress is neither peer receipt nor operation completion.
+- Set `OPENCRAFT_APPHOST_RESUME=0` to disable server negotiation. Legacy clients
+  continue without sequence numbers; server restarts and normal closure do not
+  promise recovery. The optimization does not survive process replacement.
+
+Protocol and registry tests live in `tests/protocol/app-host-resume*.test.ts`;
+real-WebSocket browser-adapter scenarios live in
+`tests/protocol/websocket-app-host-resume.test.ts`. They use synthetic execution
+boundaries and do not prove a production Agent/Host or authentication provider.
+
+## Accepted-message display provenance
+
+A successful `turn/start`, `turn/steer` or `thread/queue/add` can precede its
+native user-message echo. The trusted Host identity owner may attach
+`__opencraftSubmissionSender: { clientMessageId, sender }` to that successful
+result, using the exact persisted Thread/message attribution. Renderer request
+fields and native-engine response fields are not a source of verified identity.
+The generic native projection strips an incoming marker; only an explicit
+trusted identity projection mints one. Attachment enrichment preserves the
+already projected marker. A mismatched result Thread cannot mint one.
+
+The command receipt retains only a matching message ID and the existing bounded
+sender shape. `sender: null` is explicit anonymous attribution; an omitted sender
+keeps compatibility with older peers. The optimistic timeline and the transient
+new-Thread display handoff consume this receipt without waiting for account
+metadata. A canonical native echo, including explicit absence of a sender,
+remains authoritative. Late or mismatched receipt ownership cannot replace the
+current runtime's author. This is display provenance, not an authorization grant,
+proof of model execution, or a new identity provider.
+
+History acknowledgement reconciliation is unnecessary when the local outbox has
+no custody. Once asynchronous storage restoration supplies pending entries, the
+same authoritative reconciliation runs again; the optimization must not strand
+restored unknown outcomes or convert absence in history into non-execution proof.

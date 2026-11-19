@@ -88,7 +88,8 @@ export function nativeMessageFixture(kind: MessageAdapter) {
     previousWindow=Object.getOwnPropertyDescriptor(globalThis,'window');
     Object.defineProperty(globalThis,'window',{configurable:true,value:{location:{href:'https://fixture.invalid/chat'}}});
     browser=connectWebSocketAppHost(()=>{const socket=new MessageAppHostSocket();sockets.push(socket);return socket as unknown as WebSocket;},
-      {recoveryEvents:{isVisible:()=>false,subscribe:()=>()=>{}},reportFailure:()=>{}});
+      // Ordering fixture: a successor socket is admitted immediately instead of after physical backoff.
+      {recoveryEvents:{isVisible:()=>false,subscribe:()=>()=>{}},reportFailure:()=>{},retryDelaysMs:[0]});
     transport=browser.createTransport('message-host');
   } else {host=messageHostFixture();transport=host.client.createTransport('message-host');}
   const openBrowser=async()=>{await flushMessages();const socket=sockets.at(-1)!;socket.emitOpen();socket.emitMessage(JSON.stringify({type:'ready',protocolVersion:2,services:['appserver']}));};

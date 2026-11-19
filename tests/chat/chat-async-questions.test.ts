@@ -18,8 +18,23 @@ import {
   type AsyncQuestion,
   type TimelineProjectionSource,
 } from "@opencraft/chat-core";
-import { AsyncQuestionCard } from "../../apps/workbench-web/src/components/conversation/async-question-card";
-import { AsyncQuestionContext } from "../../apps/workbench-web/src/components/conversation-renderers/render-contexts";
+import { registerHooks } from "node:module";
+
+// The card's import graph reaches stylesheet imports; this Node suite renders markup only.
+const styles = registerHooks({
+  load(url, context, nextLoad) {
+    return /\.(?:css|scss)$/u.test(new URL(url).pathname)
+      ? { format: "module", source: "export default {};", shortCircuit: true }
+      : nextLoad(url, context);
+  },
+});
+// Some modules in that graph build JSX at module scope with the classic runtime.
+const hadReact = Object.hasOwn(globalThis, "React");
+Object.assign(globalThis, { React });
+const { AsyncQuestionCard } = await import("../../apps/workbench-web/src/components/conversation/async-question-card");
+const { AsyncQuestionContext } = await import("../../apps/workbench-web/src/components/conversation-renderers/render-contexts");
+if (!hadReact) Reflect.deleteProperty(globalThis, "React");
+styles.deregister();
 
 const renderLocalized = (node: ReactNode) => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, "React");

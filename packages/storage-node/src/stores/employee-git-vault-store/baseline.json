@@ -1,0 +1,17 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "employee-git-credentials",
+      "checksum": "9c5dcd82336b9aef91a03f68a022eb47c4344d44e3e8a169408171e5f4915412"
+    }
+  ],
+  "tableOptions": {
+    "employee_git_credentials": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "5a3a9e8c2a2de33f19cf96f90dadcf05726b05ed357f3aa74757b21b21892c99",
+  "baselineSnapshotChecksum": "c9776f0a40579395dc06e1a0a6d03f75c927eab9b10a9dde6a96ec00ff3379c7"
+}

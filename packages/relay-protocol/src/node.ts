@@ -65,3 +65,18 @@ export function bridgeRelayDuplex(left: Duplex, right: Duplex): () => void {
   left.pipe(right); right.pipe(left);
   return abort;
 }
+
+/**
+ * Tears down `to` when `from` closes. After a clean end, `from` has already
+ * ended `to` through pipe(), so `to` keeps flushing its queued bytes and closes
+ * on its own; destroying it here would truncate the tail of a response. Only an
+ * abnormal close, or a flush that never completes, destroys `to`.
+ */
+export function closeWhenDone(from: Duplex, to: Duplex, flushMs = 30_000) {
+  from.once('close', () => {
+    if (to.destroyed) return;
+    if (!from.readableEnded || to.writableFinished) { to.destroy(); return; }
+    const timer = setTimeout(() => to.destroy(), flushMs); timer.unref();
+    to.once('close', () => clearTimeout(timer));
+  });
+}

@@ -209,3 +209,20 @@ test("leaving an empty editor preserves its View checkpoint until the View budge
     assert.equal(views.getDraftOwner("view:a"), null);
   } finally { views.dispose(); leases.dispose(); }
 });
+
+test("a retained draft keeps its Server audience when its workspace changes and rejects another audience at submit", () => {
+  const scopes = createConversationScopeRegistry({ initialDraft: null });
+  const draft = scopes.openDraft({ draftId: "server-draft", execution: { ...execution, collaborationSpaceId: "team-a" } });
+  const retargeted = scopes.retargetDraft(draft.id, { ...execution, workspace: { cwd: "/project", runtimeWorkspaceRoots: ["/project"] } });
+  assert.equal(retargeted.target.execution.collaborationSpaceId, "team-a");
+  const controller = createComposerController(retargeted.target, { now: Date.now, createId: () => "scope-submit" });
+  try {
+    write(controller, "for team A");
+    const intent = controller.createSubmitIntent();
+    assert.equal(intent.target.type, "new-thread");
+    if (intent.target.type !== "new-thread") throw new Error("Expected a new-thread target");
+    assert.throws(() => scopes.beginSubmit(draft.id, { ...intent, target: { ...intent.target, execution: { ...intent.target.execution, collaborationSpaceId: "team-b" } } }), /does not belong/u);
+    assert.equal(scopes.getDraft(draft.id)?.phase, "editing");
+    assert.doesNotThrow(() => scopes.beginSubmit(draft.id, intent));
+  } finally { controller.dispose(); scopes.dispose(); }
+});

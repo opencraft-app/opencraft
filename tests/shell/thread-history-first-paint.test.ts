@@ -1,3 +1,4 @@
+import { setLocalDiagnosticsEnabled, captureLocalDiagnostics } from "../../apps/workbench-web/src/runtime/local-diagnostics";
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createThreadHistoryFirstPaintObserver, historyLengthBucket, historyEngine } from '../../apps/workbench-web/src/runtime/thread-history-first-paint';
@@ -57,6 +58,7 @@ test('durable View lookup is inside the timer, cancellation is fenced, and real 
   let nav: ReturnType<typeof createWorkbenchNavigationTransaction> | undefined;
   try {
     await (createObservabilityExtension() as any).activate({signal:controller.signal});
+    setLocalDiagnosticsEnabled(true);
     await new Promise(resolve=>setTimeout(resolve,10));
     let resolveView!: (value: any)=>void;
     let mounted=0;
@@ -97,12 +99,13 @@ test('durable View lookup is inside the timer, cancellation is fenced, and real 
     }
     observeEvent({kind:'client_signal',outcome:'failed'});
     await new Promise(resolve=>setTimeout(resolve,10));
+    captured.push(...captureLocalDiagnostics().samples.map(sample => sample.fields));
     const terminal=captured.filter(e=>e.operationType==='thread_history_first_paint'&&e.outcome!=='started');
     assert.deepEqual(terminal.map(e=>e.outcome),['ok','aborted','ok','failed','failed']);
     assert.equal(terminal[0].cache,'warm');assert(terminal[0].durationMs>=10,'durable storage wait is included');
     assert(!JSON.stringify(captured).includes('private-b'));
   } finally {
-    nav?.dispose();controller.abort();
+    nav?.dispose();controller.abort();setLocalDiagnosticsEnabled(false);
     for(const [key,descriptor] of originals) { if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete (globalThis as any)[key]; }
   }
 });
@@ -131,6 +134,7 @@ test('history RPC keeps its opening operation through replacement and exports on
   let dispose: (()=>void)|undefined;
   try {
     await (createObservabilityExtension() as any).activate({signal:controller.signal});
+    setLocalDiagnosticsEnabled(true);
     await new Promise(resolve=>setTimeout(resolve,30));
     dispose = installClientObservation({connectionGeneration:1,subscribeRequestLifecycle(fn:any){listener=fn;return ()=>{};}} as any);
     const observer = createThreadHistoryFirstPaintObserver();
@@ -143,6 +147,7 @@ test('history RPC keeps its opening operation through replacement and exports on
     observeEvent({kind:"operation",operationType:"other",outcome:"failed"});
     for (const callback of visibility)callback();
     await new Promise(resolve=>setTimeout(resolve,30));
+    captured.push(...captureLocalDiagnostics().samples.map(sample => sample.fields));
     const starts = captured.filter(event=>event.operationType==='thread_history_first_paint'&&event.outcome==='started');
     const rpc = captured.find(event=>event.kind==='rpc'&&event.pairId==='server-trace');
     assert.equal(starts.length,2);assert(rpc);
@@ -154,7 +159,7 @@ test('history RPC keeps its opening operation through replacement and exports on
     assert.equal(rpc.historySourceMs,undefined);
     assert(!JSON.stringify(captured).includes('private-'));
   } finally {
-    dispose?.();controller.abort();
+    dispose?.();controller.abort();setLocalDiagnosticsEnabled(false);
     for(const [key,descriptor]of originals)if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete (globalThis as any)[key];
   }
 });

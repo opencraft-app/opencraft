@@ -1,6 +1,6 @@
 import { ThreadCatalogPublisher } from "@opencraft/app-host-server/thread-catalog";
 import { THREAD_CATALOG_CHANGED } from "@opencraft/appserver-protocol";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { LocalHostResources } from "./host-resources.js";
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
@@ -249,7 +249,8 @@ export async function startEngineHost(options: {
               [SCOPED_SKILL_CATALOG_EXTENSION]: { version: 1 },
               "opencraft/execution-engines": { version: 1, defaultEngine: options.defaultEngine, providers: options.providers.map(provider => ({ id: provider.id, threadPrefix: provider.threadPrefix, modelPrefix: provider.modelPrefix, extensions: provider.extensions })) },
               "opencraft/thread-pins": { version: 1 },
-              "opencraft/scoped-model-catalog": { version: 1 } } } }); return;
+              "opencraft/scoped-model-catalog": { version: 1 },
+              "opencraft/engine-permission-catalog": { version: 1 } } } }); return;
           }
           if (method === "opencraft/schedules/list") {
             const providers = options.providers.filter(provider => (provider.extensions?.["opencraft/conversation-schedules"] as Value)?.summary === true);
@@ -301,7 +302,13 @@ export async function startEngineHost(options: {
               ?? (options.defaultEngine !== options.legacy?.id ? registry.get(options.defaultEngine) : undefined);
             if (target) { reply(await target.request(method, params, state.owner)); return; }
           }
-          if (method === "permissionProfile/list" && !options.legacy) { reply(await registry.get(options.defaultEngine)!.request(method, params, state.owner)); return; }
+          if (method === "permissionProfile/list") {
+            const model = typeof params.model === "string" ? params.model : "";
+            const owner = model ? options.providers.find(provider => provider.ownsModel(model)) : undefined;
+            if (owner) { reply(await owner.request(method, params, state.owner)); return; }
+            if (!options.legacy) { reply(await registry.get(options.defaultEngine)!.request(method, params, state.owner)); return; }
+            if ("model" in params) delete params.model;
+          }
           if (method === "skills/list" || method === SCOPED_SKILL_CATALOG_METHOD) {
             const scoped = method === SCOPED_SKILL_CATALOG_METHOD;
             if (scoped && ((params.threadId !== undefined && (typeof params.threadId !== "string" || !params.threadId))
@@ -327,10 +334,11 @@ export async function startEngineHost(options: {
             const catalog = await singleflight(`${method}:${JSON.stringify(params)}`, async () => {
             const outcomes = await Promise.allSettled([
               ...(options.legacy ? [allLegacy(method, params, clientId).then(data => ({ data: method === "model/list" ? data.map(model => ({ ...model,
+                agentId: model.agentId ?? options.legacy!.id, agentLabel: model.agentLabel ?? options.legacy!.label,
                 groupKey: `dsh:${model.groupKey ?? "models"}`, groupLabel: `DSH · ${model.groupLabel ?? "Models"}`,
                 isDefault: options.defaultEngine === options.legacy?.id && model.isDefault })) : data }))] : []),
               ...options.providers.map(provider => provider.request(method, params, state.owner).then(page => ({ ...page, data: method === "model/list"
-                ? page.data.map((model: Value) => ({ ...model, isDefault: provider.id === options.defaultEngine && model.isDefault })) : page.data }))),
+                ? page.data.map((model: Value) => ({ ...model, agentId: model.agentId ?? provider.id, agentLabel: model.agentLabel ?? provider.label, isDefault: provider.id === options.defaultEngine && model.isDefault })) : page.data }))),
             ]);
             const pages = outcomes.flatMap(outcome => outcome.status === "fulfilled" ? [outcome.value] : []);
             if (!pages.length) throw new Error("No execution engine catalog is available");

@@ -4,6 +4,7 @@
 // of the reading preference. Disclosure geometry/interaction stays in app.scss.
 .thread-subagent-activity,
 .thread-activity-item__header,
+.thread-subagent-trigger,
 .thread-subagent-activity__status {
   @include typography.role(body);
   // Long single-line commands must use the shared role at its declared size,

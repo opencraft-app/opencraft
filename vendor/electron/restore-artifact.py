@@ -9,6 +9,8 @@ HERE = Path(__file__).resolve().parent
 
 
 def restore(directory, distribution, kind):
+    if kind not in ('browser', 'desktop'):
+        raise ValueError('Unsupported native artifact kind')
     marker = 'opencraft-electron-' + ('desktop-artifact.json' if kind == 'desktop' else 'artifact.json')
     # upload-artifact's common root can include nested evidence directories.
     candidates = [path for path in directory.rglob(marker) if (path.parent / 'dist.zip').is_file()]

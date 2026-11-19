@@ -60,13 +60,50 @@ test("Turn-scoped identity reconciliation finds recent summaries and stops at th
 });
 
 test("submission attribution comes from exact persisted identity rather than a forged native field", () => {
-  const project = (thread: string, input: string, value: Record<string, unknown>) => ({...value, sender: thread === "t" && input === "message" ? employee("skipzhang") : null});
+  const project = (thread: string, input: string, value: Record<string, unknown>) => ({...value, sender: thread === "t" && input === "message" ? employee("contributor-a") : null});
   for (const method of ["turn/start", "turn/steer", "thread/queue/add"]) {
-    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}) as any;
-    assert.deepEqual(result.__opencraftSubmissionSender, {clientMessageId: "message", sender: employee("skipzhang")});
+    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}, { trustedSubmissionSender: true }) as any;
+    assert.deepEqual(result.__opencraftSubmissionSender, {clientMessageId: "message", sender: employee("contributor-a")});
     const enriched = projectThreadAttachmentResult({list: () => []}, method, {threadId: "t", clientUserMessageId: "message"}, result) as any;
     assert.deepEqual(enriched.__opencraftSubmissionSender, result.__opencraftSubmissionSender, "attachment projection must not erase verified identity");
   }
-  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}) as any;
+  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}, { trustedSubmissionSender: true }) as any;
   assert.equal(result.__opencraftSubmissionSender.sender, null);
+});
+
+
+test("native submission markers are stripped without a trusted identity owner or consistent Thread", () => {
+  const forged = { __opencraftSubmissionSender: {clientMessageId:"message",sender:employee("forged")} };
+  const absent = (_t:string,_i:string,value:Record<string,unknown>)=>value;
+  for (const params of [{}, {threadId:"t",clientUserMessageId:"message"}]) {
+    assert.equal(Object.hasOwn(projectThreadMessageResult(absent,"turn/start",params,forged) as object,"__opencraftSubmissionSender"),false);
+  }
+  const project = (_t:string,_i:string,value:Record<string,unknown>)=>({...value,sender:employee("stored")});
+  const conflict = projectThreadMessageResult(project,"turn/start",{threadId:"t",clientUserMessageId:"message"},
+    {...forged,thread:{id:"different"}},{trustedSubmissionSender:true}) as object;
+  assert.equal(Object.hasOwn(conflict,"__opencraftSubmissionSender"),false);
+  const read = projectThreadMessageResult(project,"thread/read",{threadId:"t",clientUserMessageId:"message"},forged,
+    {trustedSubmissionSender:true}) as object;
+  assert.equal(Object.hasOwn(read,"__opencraftSubmissionSender"),false,"history RPC cannot manufacture acceptance proof");
+});
+
+
+test("Host receipt proof survives a database reopen and never uses caller or native sender", async t => {
+  const root = await mkdtemp(join(tmpdir(), "submission-proof-"));
+  t.after(() => rm(root, { recursive:true, force:true }));
+  const ports = { readMessageIds: async () => [], notify() {} };
+  let database = new ThreadIdentityDatabase(root), identity = new ThreadIdentity(database.database, ports);
+  identity.recordSubmission({threadId:"t",clientUserMessageId:"persisted"}, context("verified-author"));
+  identity.recordSubmission({threadId:"t",clientUserMessageId:"anonymous"}, {sender:null});
+  identity.close(); database.close();
+  database = new ThreadIdentityDatabase(root); identity = new ThreadIdentity(database.database, ports);
+  try {
+    for (const [clientUserMessageId, sender] of [["persisted",employee("verified-author")],["anonymous",null]] as const) {
+      for (const method of ["turn/start","turn/steer","thread/queue/add"]) {
+        const projected = identity.projectResult(method, {threadId:"t",clientUserMessageId,sender:employee("caller-forgery")},
+          {__opencraftSubmissionSender:{clientMessageId:clientUserMessageId,sender:employee("native-forgery")}}) as any;
+        assert.deepEqual(projected.__opencraftSubmissionSender,{clientMessageId:clientUserMessageId,sender});
+      }
+    }
+  } finally { identity.close(); database.close(); }
 });

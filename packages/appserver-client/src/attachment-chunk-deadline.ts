@@ -13,11 +13,17 @@ export class AttachmentChunkDeadline {
   private timer: unknown;
   private reported = false;
   private sent = false;
+  private disposed = false;
   expired = false;
   message = "Attachment upload timed out";
 
-  constructor(frameBytes: number, private readonly final: boolean,
-    private readonly clock: { setTimeout(run: () => void, ms: number): unknown; clearTimeout(id: unknown): void } = globalThis as never) {
+  private readonly final: boolean;
+  private readonly clock: { setTimeout(run: () => void, ms: number): unknown; clearTimeout(id: unknown): void };
+
+  constructor(frameBytes: number, final: boolean,
+    clock: { setTimeout(run: () => void, ms: number): unknown; clearTimeout(id: unknown): void } = globalThis as never) {
+    this.final = final;
+    this.clock = clock;
     // Without progress reports, allow a conservative weak-uplink transfer time.
     this.arm(30_000 + Math.ceil(frameBytes / ATTACHMENT_FALLBACK_BYTES_PER_MS) + this.acknowledgementMs,
       "Attachment upload timed out on a slow connection");
@@ -27,7 +33,8 @@ export class AttachmentChunkDeadline {
   private get acknowledgementMs(): number { return this.final ? 120_000 : 30_000; }
 
   observe(progress: { readonly loaded: number; readonly total: number }): void {
-    if (this.sent || this.expired) return;
+    if (this.disposed || this.sent || this.expired || !Number.isFinite(progress.loaded) || !Number.isFinite(progress.total)
+      || progress.total <= 0 || progress.loaded < 0 || progress.loaded > progress.total) return;
     if (progress.total > 0 && progress.loaded >= progress.total) {
       this.sent = true;
       this.arm(this.acknowledgementMs, "The Host did not acknowledge the attachment chunk in time");
@@ -38,12 +45,18 @@ export class AttachmentChunkDeadline {
   }
 
   dispose(): void {
+    this.disposed = true;
+    this.clearTimer();
+  }
+
+  private clearTimer(): void {
     if (this.timer !== undefined) this.clock.clearTimeout(this.timer);
     this.timer = undefined;
   }
 
   private arm(delayMs: number, message: string): void {
-    this.dispose();
+    if (this.disposed) return;
+    this.clearTimer();
     this.timer = this.clock.setTimeout(() => {
       this.timer = undefined;
       this.expired = true;
@@ -52,4 +65,3 @@ export class AttachmentChunkDeadline {
     }, delayMs);
   }
 }
-

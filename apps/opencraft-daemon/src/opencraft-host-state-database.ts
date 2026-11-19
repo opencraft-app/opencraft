@@ -8,7 +8,7 @@ import { OPENCRAFT_HOST_TOKEN_USAGE_COUNTERS } from "./token-usage-counter-schem
 import { ownedDatabasePath } from "./owned-database-path.js";
 import { acquireOwnedStorageLease } from "./owned-storage-lease.js";
 import type { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
+import { openManagedDatabase, resolveStoreMigrations, createSchemaValidator, createMissingLegacyObjects, type DatabaseOutcome } from "@opencraft/sqlite-node";
 import { OPENCRAFT_HOST_TOKEN_USAGE } from "./token-usage-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_RUNTIME } from "./token-usage-runtime-schema.js";
 
@@ -138,15 +138,15 @@ const legacyMigration = {
     const objects = database.prepare("SELECT type,name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name!='schema_migrations' ORDER BY type,name")
       .all() as Array<{ type: string; name: string; sql: string }>;
     if (objects.length === priorFullObjectCount && v14Legacy.accepts("", objects)) {
-      database.exec(OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK + INPUT_DELIVERY_SCHEMA);
+      database.exec(OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
       return;
     }
     if (objects.length === priorFullObjectCount && previousOwnedLegacy.accepts("", objects)) {
-      database.exec(OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK + INPUT_DELIVERY_SCHEMA);
+      database.exec(OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
       return;
     }
     if (objects.length === priorFullObjectCount && priorFullLegacy.accepts("", objects)) {
-      database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK + INPUT_DELIVERY_SCHEMA);
+      database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
       return;
     }
     const columns = database.prepare("PRAGMA table_info(codex_bot_rooms)").all().map(row => String(row.name));
@@ -159,7 +159,7 @@ const legacyMigration = {
         FROM codex_bot_rooms_legacy; DROP TABLE codex_bot_rooms_legacy;`);
     }
     database.exec(LEGACY_FULL_SCHEMA.replace(/CREATE (TABLE|INDEX) /g, "CREATE $1 IF NOT EXISTS "));
-    database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK + INPUT_DELIVERY_SCHEMA);
+    database.exec(OPENCRAFT_HOST_STATE_OWNED_NAMES + OPENCRAFT_HOST_BOT_OWNED_NAMES + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK);
   },
 };
 
@@ -181,8 +181,12 @@ export const OPENCRAFT_HOST_STATE_MIGRATIONS = [
   { version: 14, name: "opencraft-host-bot-owned-names", sql: OPENCRAFT_HOST_BOT_OWNED_NAMES },
   { version: 15, name: "immutable-execution-leases", sql: OPENCRAFT_HOST_EXECUTION_LEASES },
   { version: 16, name: "execution-boot-clock", sql: OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK },
-  { version: 17, name: "input-delivery-lifecycle", sql: INPUT_DELIVERY_SCHEMA },
 ] as const;
+
+/** Full registered chain; the immutable legacy prefix above is not the current version. */
+export const OPENCRAFT_HOST_STATE_CURRENT_MIGRATIONS = resolveStoreMigrations(
+  "opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS,
+);
 
 export class OpenCraftHostStateDatabase {
   readonly database: DatabaseSync;
@@ -194,7 +198,7 @@ export class OpenCraftHostStateDatabase {
     this.releaseLease = acquireOwnedStorageLease(directory);
     try {
       const path = this.path = ownedDatabasePath(directory, "opencraft-host-state.sqlite", "codex-host-queue.sqlite");
-      const managed = openManagedDatabase({ path, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(FULL_SCHEMA),
+      const managed = openManagedDatabase({ schemaId: "opencraft-host-state-database", path, legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(FULL_SCHEMA),
         migrations: OPENCRAFT_HOST_STATE_MIGRATIONS, legacyMigration });
       this.database = managed.database;
       this.outcome = managed.outcome;

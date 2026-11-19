@@ -50,6 +50,7 @@ export interface CodexGenerationHostUsage {
 }
 
 export interface CodexGenerationFenceState {
+  readonly executionRecoveries?: readonly { id: string; generationId: string; incarnation: number; state: "recovering" | "recovered"; threadIds?: readonly string[] }[];
   readonly routingEpoch: string;
   readonly fenceEpoch: number;
   readonly fencedGenerationIds: readonly string[];
@@ -69,6 +70,14 @@ export interface CodexGenerationDirectory {
 
 /** Temporary control-plane outage; callers may wait before starting execution. */
 export class CodexCoreUnavailableError extends Error { override name = "CodexCoreUnavailableError"; }
+class CodexCoreHttpError extends Error {
+  constructor(readonly status: number, message: string) { super(`Codex core request failed: ${message}`); }
+}
+
+/** The owner is alive but its configured executor cannot execute work. */
+export class CodexExecutionUnavailableError extends CodexCoreUnavailableError {
+  constructor(readonly executionStatus: "pending" | "disconnected" | "unknown") { super("Execution environment unavailable"); }
+}
 
 /** Local authenticated control plane. Requests are never retried: mutations may have committed. */
 export class CodexCoreControlClient {
@@ -76,7 +85,7 @@ export class CodexCoreControlClient {
   // still asks the authenticated owner for current routes and incarnations.
   private directoryEpoch: string | undefined;
   private healthFlight: { operation: Promise<CodexCoreHealth>; controller: AbortController;
-    readers: number; settled: boolean } | null = null;
+    readers: number; settled: boolean; observation: "execution" | "native" } | null = null;
   constructor(private readonly endpoint: string, private readonly authToken: string) {
     if (!isAbsolute(endpoint)) throw new Error("Codex core endpoint must be an absolute Unix socket path");
     if (!authToken) throw new Error("Codex core requires the daemon authentication token");
@@ -102,14 +111,15 @@ export class CodexCoreControlClient {
     });
   }
 
-  async health(signal?: AbortSignal): Promise<CodexCoreHealth> {
+  async health(signal?: AbortSignal, observation: "execution" | "native" = "execution"): Promise<CodexCoreHealth> {
     const cancelled = () => signal?.reason instanceof Error ? signal.reason
       : new CodexCoreUnavailableError("Codex core is temporarily unavailable");
     if (signal?.aborted) throw cancelled();
     let flight = this.healthFlight;
+    if (flight?.observation !== observation) flight = null;
     if (!flight) {
       const controller = new AbortController();
-      flight = { operation: this.readHealth(controller.signal), controller, readers: 0, settled: false };
+      flight = { operation: this.readHealth(controller.signal, observation === "native" ? "/native-health" : "/health"), controller, readers: 0, settled: false, observation };
       this.healthFlight = flight;
       const current = flight;
       const retire = () => {
@@ -144,8 +154,18 @@ export class CodexCoreControlClient {
     });
   }
 
-  private async readHealth(signal: AbortSignal): Promise<CodexCoreHealth> {
-    const value = await this.request("GET", "/health", undefined, signal) as Partial<CodexCoreHealth> | null;
+  private async readHealth(signal: AbortSignal, path = "/health"): Promise<CodexCoreHealth> {
+    let value: Partial<CodexCoreHealth> | null;
+    try { value = await this.request("GET", path, undefined, signal) as Partial<CodexCoreHealth> | null; }
+    catch (error) {
+      if (path !== "/native-health" || signal.aborted || !(error instanceof CodexCoreUnavailableError || error instanceof CodexCoreHttpError && error.status === 404)) throw error;
+      return this.readHealth(signal);
+    }
+    if (path === "/native-health" && (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
+      || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid) || typeof value.nativeSocket !== "string" || !isAbsolute(value.nativeSocket))) {
+      // Some older control facades return a generic successful response for unknown routes.
+      return this.readHealth(signal);
+    }
     if (!value || value.protocolVersion !== CODEX_CORE_PROTOCOL_VERSION
       || !Number.isSafeInteger(value.pid) || !Number.isSafeInteger(value.codexPid)
       || (value.appServerPid !== undefined && (!Number.isSafeInteger(value.appServerPid) || value.appServerPid < 1))
@@ -181,8 +201,8 @@ export class CodexCoreControlClient {
     return { accessToken: auth.accessToken, chatgptAccountId: auth.chatgptAccountId };
   }
 
-  async appServerHealth(): Promise<CodexAppServerHealth> {
-    const value = await this.health() as CodexAppServerHealth;
+  async appServerHealth(observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
+    const value = await this.health(undefined, observation) as CodexAppServerHealth;
     if (!isAbsolute(value.dataDirectory ?? "") || typeof value.proxyBaseUrl !== "string") {
       throw new Error("Incompatible Codex AppServer owner");
     }
@@ -202,7 +222,7 @@ export class CodexCoreControlClient {
   async generationDirectory(threadId?: string, signal?: AbortSignal): Promise<CodexGenerationDirectory | null> {
     let epoch = this.directoryEpoch;
     if (epoch === undefined) {
-      const health = await this.health(signal);
+      const health = await this.health(signal, "native");
       if (!health.routingEpoch) return null;
       epoch = health.routingEpoch;
       this.directoryEpoch = epoch;
@@ -233,7 +253,7 @@ export class CodexCoreControlClient {
       const body = payload === undefined ? undefined : JSON.stringify(payload);
       const req = request({ socketPath: this.endpoint, method, path,
         headers: { authorization: `Bearer ${this.authToken}`, "content-type": "application/json" },
-        signal: AbortSignal.any([AbortSignal.timeout(path === "/health" || path === "/launch" ? 5_000 : 120_000), ...(signal ? [signal] : [])]),
+        signal: AbortSignal.any([AbortSignal.timeout(["/health", "/native-health", "/launch"].includes(path) ? 5_000 : 120_000), ...(signal ? [signal] : [])]),
       }, res => {
         let response = "";
         res.on("error", reject);
@@ -248,10 +268,14 @@ export class CodexCoreControlClient {
               const diagnostic = parseAccountFailure(value?.diagnostic);
               if (diagnostic) throw new CodexAccountOperationError(diagnostic);
             }
-            if (res.statusCode === 503) throw new CodexCoreUnavailableError("Codex core is temporarily unavailable");
-            if (res.statusCode !== 200) throw new Error(typeof value?.error === "string" ? value.error : `HTTP ${res.statusCode}`);
+            if (res.statusCode === 503) {
+              if (value?.code === "EXECUTION_ENVIRONMENT_UNAVAILABLE") throw new CodexExecutionUnavailableError(
+                value.executionStatus === "pending" || value.executionStatus === "disconnected" ? value.executionStatus : "unknown");
+              throw new CodexCoreUnavailableError("Codex core is temporarily unavailable");
+            }
+            if (res.statusCode !== 200) throw new CodexCoreHttpError(res.statusCode ?? 0, typeof value?.error === "string" ? value.error : `HTTP ${res.statusCode}`);
             resolve(value);
-          } catch (error) { reject(error instanceof CodexCoreUnavailableError || error instanceof CodexAccountOperationError ? error
+          } catch (error) { reject(error instanceof CodexCoreUnavailableError || error instanceof CodexAccountOperationError || error instanceof CodexCoreHttpError ? error
             : new Error(`Codex core request failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })); }
         });
       });

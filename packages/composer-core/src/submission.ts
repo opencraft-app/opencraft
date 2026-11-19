@@ -37,6 +37,16 @@ export function resolveComposerPrimaryAction({
   return canSubmit ? resolveComposerFollowUpAction(defaultFollowUpAction, availableFollowUpActions) ?? "stop" : "stop";
 }
 
+/** Stop stays reachable while a response is running, even if a follow-up can also be sent. */
+export function composerTrailingControls(options: ResolveComposerPrimaryActionOptions): {
+  readonly stop: boolean;
+  readonly primary: ComposerPrimaryAction | null;
+} {
+  const primary = resolveComposerPrimaryAction(options);
+  if (!options.isResponseInProgress) return { stop: false, primary };
+  return { stop: true, primary: primary === "stop" ? null : primary };
+}
+
 export function invertComposerFollowUpAction(
   action: ComposerFollowUpAction,
 ): ComposerFollowUpAction {

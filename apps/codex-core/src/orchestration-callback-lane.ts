@@ -1,7 +1,7 @@
 import { ThreadPublication } from "./thread-publication.js";
 import { isHumanInteraction } from "@opencraft/appserver-protocol";
 import { OperationReceipts } from './operation-receipts.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chmod, unlink } from 'node:fs/promises';
 import WebSocket, { WebSocketServer } from 'ws';
@@ -212,7 +212,11 @@ class CallbackLane {
       if (!this.replay) throw new Error('Orchestration callback lane is required');
       if(expectedIncarnation!==undefined&&expectedIncarnation!==this.incarnation){send(socket,{id:message.id,error:{code:-32000,message:'Orchestration creation outcome is unconfirmed after Engine Host replacement'}});return;}
       if (!['thread/start','thread/name/set'].includes(String(method)) || !operation || operation.length>256) throw new Error('Invalid orchestration mutation');
-      const fingerprint=typeof identity==='string'?JSON.stringify([method,identity,deferPublication===true]):JSON.stringify([method,nativeParams,deferPublication===true]);
+      // Store a bounded digest of the actual intent as well as the caller's identity.
+      // Object key order is not an argument change; a reused caller fingerprint cannot hide changed arguments.
+      const fingerprint = createHash('sha256').update(JSON.stringify([method, typeof identity === 'string' ? identity : null, nativeParams, deferPublication === true],
+        (_key, value) => value && typeof value === 'object' && !Array.isArray(value)
+          ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]])) : value)).digest('hex');
       if(deferPublication===true && method!=='thread/start') throw Error('Only creation can defer publication');
       let created = false;
       try {
@@ -239,7 +243,7 @@ class CallbackLane {
     const preparingCount = method === 'initialize' ? this.preparing.size : this.owner.preparations.size;
     if (preparingCount + this.pending.size >= (this.limits.maxPendingRequests ?? 1024)) {
       if(operation && deferPublication===true)this.publication.resolve(operation,this.owner);
-      reply({error:{code:-32085,message:'Request capacity exhausted',data:{forwarded:false,orchestrationRejected:true}}});return;
+      reply({error:{code:-32085,message:'Request capacity exhausted',data:{notSubmitted:true,forwarded:false,orchestrationRejected:true}}});return;
     }
     const id=`callback-lane:${this.incarnation}:${this.connectionId}:${++this.sequence}`;
     let forwarded = false;
@@ -248,7 +252,7 @@ class CallbackLane {
       if(!forwarded && operation && deferPublication===true)this.publication.resolve(operation,this.owner);
       this.finishRequest(id);
       // Deadline is not cancellation or permission to repeat a mutation.
-      const outcome={error:{code:-32086,message:forwarded?'Request outcome unconfirmed':'Request preparation timed out',data:{forwarded,resultUnknown:forwarded,orchestrationRejected:!forwarded}}};
+      const outcome={error:{code:-32086,message:forwarded?'Request outcome unconfirmed':'Request preparation timed out',data:{notSubmitted:!forwarded,forwarded,resultUnknown:forwarded,orchestrationRejected:!forwarded}}};
       if(operation && forwarded)this.mutations.uncertain(operation,outcome);
       else reply(outcome);
     }, this.limits.requestTimeoutMs ?? 120_000);
@@ -270,7 +274,7 @@ class CallbackLane {
       if(operation && deferPublication===true)this.publication.resolve(operation,this.owner);
       if (preparationStarted !== undefined) reportExecutionPreparationFailure(method, nativeParams, this.incarnation,
         cause instanceof ExecutionPreparationError ? cause.reason : 'policy-failed', performance.now() - preparationStarted);
-      reply({error: {code: -32084, message: 'Execution environment unavailable'}}); return;
+      reply({error: {code: -32084, message: 'Execution environment unavailable', data: {notSubmitted: true, ...(operation ? {orchestrationRejected: true} : {})}}}); return;
     }
     finally {
       this.preparing.delete(id);this.preparingOperations.delete(id);this.owner.preparations.delete(id);this.armIdleRetirement();
@@ -282,7 +286,7 @@ class CallbackLane {
     if (!this.requests.has(id) || this.closed) return;
     if (preparation?.cancelled) {
       this.finishRequest(id);
-      reply({error: {code: -32800, message: 'Execution interrupted'}}); return;
+      reply({error: {code: -32800, message: 'Execution interrupted', data: {notSubmitted: true}}}); return;
     }
     if (!operation && (this.client !== socket || socket.readyState !== WebSocket.OPEN)) {
       this.finishRequest(id);
@@ -331,7 +335,7 @@ class CallbackLane {
       const receipt=this.mutations.get(operation);
       if (!receipt || receipt.settled) continue;
       if (receipt.publication) this.publication.resolve(operation,this.owner);
-      this.mutations.complete(operation,{error:{code:-32086,message:'Native connection lost before admission',data:{forwarded:false,resultUnknown:false,orchestrationRejected:true}}});
+      this.mutations.complete(operation,{error:{code:-32086,message:'Native connection lost before admission',data:{notSubmitted:true,forwarded:false,resultUnknown:false,orchestrationRejected:true}}});
     }
     for (const pending of this.pending.values()) if (pending.operation) {
       this.mutations.uncertain(pending.operation,{error:{code:-32086,message:'Native connection lost; request outcome unconfirmed',data:{forwarded:true,resultUnknown:true,orchestrationRejected:false}}});

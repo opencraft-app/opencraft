@@ -38,7 +38,7 @@ test("terminal Turn errors use a neutral timeline banner instead of an error-own
   const errorStyleStart = styles.indexOf(".thread-system-error {");
   const errorStyleEnd = styles.indexOf("\n.thread-turn-render-error", errorStyleStart);
   const errorStyles = styles.slice(errorStyleStart, errorStyleEnd);
-  assert.match(conversationSource, /className="thread-system-error"/u);
+  assert.match(conversationSource, /className=(?:"thread-system-error"|\{[^}]*"thread-system-error"\})/u);
   assert.doesNotMatch(conversationSource, /className="thread-error-card"/u);
   assert.ok(errorStyleStart >= 0 && errorStyleEnd > errorStyleStart);
   assert.match(errorStyles, /border:\s*1px solid var\(--color-border-subtle\)/u);

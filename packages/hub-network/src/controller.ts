@@ -1,6 +1,6 @@
 import { lstatSync } from 'node:fs';
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http';
-import { readPrivateJson } from '../../identity-core/src/node.js';
+import { readPrivateJson } from "@opencraft/identity-core/node";
 import { HUB_SETTINGS_PATH } from './contract.js';
 import { HubNetwork, readCommand, sameOriginJson } from './node.js';
 

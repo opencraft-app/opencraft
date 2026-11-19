@@ -63,10 +63,12 @@ function fixture() {
   const calls: unknown[] = [];
   let resolveFork!: (thread: { id: string }) => void;
   const fork = new Promise<{ id: string }>(resolve => { resolveFork = resolve; });
+  let markForkStarted!: () => void;
+  const forkStarted = new Promise<void>(resolve => { markForkStarted = resolve; });
   const lease = { threadId: "child", release: () => calls.push("release"), getSnapshot: () => ({ activeTurn: null, timeline: { frames: [] } }), submit: async (intent: unknown) => { calls.push(intent); return {}; } } as unknown as AppServerThreadRuntimeLease;
-  const runtime = { resources: { threads: { fork: (params: unknown) => { calls.push(params); return fork; }, unsubscribe: async (id: string) => { calls.push(["unsubscribe", id]); } } }, acquireThread: async () => lease } as unknown as AppServerWorkbenchRuntime;
+  const runtime = { resources: { threads: { fork: (params: unknown) => { calls.push(params); markForkStarted(); return fork; }, unsubscribe: async (id: string) => { calls.push(["unsubscribe", id]); } } }, acquireThread: async () => lease } as unknown as AppServerWorkbenchRuntime;
   runtime.resources.threads.injectItems = async (id, items) => { calls.push(["inject", id, items]); };
-  return { calls, runtime, resolveFork };
+  return { calls, runtime, resolveFork, forkStarted };
 }
 
 test("Side Chat retries failed cleanup without forgetting the owned child", async () => {
@@ -88,11 +90,23 @@ test("Side Chat preserves hydration failure and retains cleanup for retry", asyn
   const f = fixture(); const ctx = new Context(); let attempts = 0;
   const original = new Error("history hydration failed");
   f.runtime.acquireThread = async () => { throw original; };
-  f.runtime.resources.threads.unsubscribe = async () => { if (++attempts === 1) throw new Error("cleanup unavailable"); };
+  let startCleanup!: () => void, rejectCleanup!: (error: Error) => void;
+  const cleanupStarted = new Promise<void>(resolve => { startCleanup = resolve; });
+  f.runtime.resources.threads.unsubscribe = async () => {
+    if (++attempts === 1) {
+      startCleanup();
+      await new Promise<void>((_resolve, reject) => { rejectCleanup = reject; });
+    }
+  };
   const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
   const pending = ctx.sideChats.open("hydrate-error", createConversationKey("local", "parent"), null);
   f.resolveFork({ id: "child" });
   await assert.rejects(pending, error => error === original);
+  await cleanupStarted;
+  const closing = ctx.sideChats.close("hydrate-error");
+  rejectCleanup(new Error("cleanup unavailable"));
+  await assert.rejects(closing, /cleanup unavailable/);
+  assert.equal(ctx.sideChats.pendingCleanup()[0]?.threadId, "child", "failed cleanup retains the exact child");
   await ctx.sideChats.close("hydrate-error");
   assert.equal(attempts, 2);
   await fiber.dispose();
@@ -141,8 +155,9 @@ test("WSP-08 cancelled fork cannot mount a late child and releases the server su
   const f = fixture(); const ctx = new Context();
   const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
   const pending = ctx.sideChats.open("request", createConversationKey("local", "parent"), null);
-  await Promise.resolve(); ctx.sideChats.cancel("request"); f.resolveFork({ id: "late" });
+  await f.forkStarted; ctx.sideChats.cancel("request"); f.resolveFork({ id: "late" });
   await assert.rejects(pending, /cancelled/); assert.equal(ctx.sideChats.get("request"), null);
+  await ctx.sideChats.close("request");
   assert.deepEqual(f.calls.at(-1), ["unsubscribe", "late"]);
   await fiber.dispose();
 });

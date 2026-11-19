@@ -17,7 +17,7 @@ export function sharedControlClassNames(path, source) {
   if (!/\.[cm]?[jt]sx?$/u.test(path) || owner(path)) return [];
   const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   // A group owns material, while its Shell/feature container still owns the box.
-  const names = new Set(["Button", "InlineAction", "DisclosureButton", "IconButton", "ButtonPlaceholder", "SettingsButton", "SettingsIconButton", "NavigationList", "NavigationGroup", "NavigationItem"]);
+  const names = new Set(["Button", "InlineAction", "DisclosureButton", "IconButton", "ButtonPlaceholder", "ObjectCardButton", "MediaActionButton", "SettingsButton", "SettingsIconButton", "NavigationList", "NavigationGroup", "NavigationItem"]);
   const result = new Set();
   function visit(node) {
     if (ts.isImportDeclaration(node) && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)) {
@@ -47,7 +47,7 @@ export function controlOwnershipViolations(path, source, consumerClasses = new S
     const tree = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const line = node => tree.getLineAndCharacterOfPosition(node.getStart(tree)).line + 1;
     const constants = new Map();
-    const shared = new Set(["Button", "InlineAction", "DisclosureButton", "IconButton", "ButtonPlaceholder", "ControlSurface", "SettingsButton", "SettingsIconButton", "NavigationList", "NavigationGroup", "NavigationItem"]);
+    const shared = new Set(["Button", "InlineAction", "DisclosureButton", "IconButton", "ButtonPlaceholder", "ObjectCardButton", "MediaActionButton", "ControlSurface", "SettingsButton", "SettingsIconButton", "NavigationList", "NavigationGroup", "NavigationItem"]);
     function index(node) {
       if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer) constants.set(node.name.text, node.initializer);
       if (ts.isImportDeclaration(node) && node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)) {

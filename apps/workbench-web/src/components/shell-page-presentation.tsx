@@ -3,6 +3,8 @@ import { cancelFrame, frame, type MotionValue } from "motion/react";
 
 /** Page-owned DOM overlays share a stable Shell host, including over native guests.
  * Features own their content; Shell owns its physical frame and input boundary. */
+/** Whole-page displacement, independent of the ordinary conversation sidebar. */
+export const ShellPageDisplacementContext=createContext<{x:MotionValue<number>;blocked:boolean}|null>(null);
 export const ShellPageOverlayContext = createContext<HTMLElement | null>(null);
 export const useShellPageOverlay = () => useContext(ShellPageOverlayContext);
 

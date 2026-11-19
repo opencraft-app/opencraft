@@ -1,0 +1,38 @@
+name: workflow-lint
+
+# Every workflow is checked for syntax and expression errors (actionlint, with
+# shellcheck on run: scripts) and for Actions security problems such as
+# template injection, cache poisoning and persisted credentials (zizmor).
+on:
+  pull_request:
+    paths:
+      - .github/**
+  push:
+    branches: [main]
+    paths:
+      - .github/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: workflow-lint-${{ github.event.pull_request.number || (github.event_name == 'push' && github.sha) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: actionlint
+        env:
+          GOTOOLCHAIN: auto
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 -pyflakes=
+      - name: zizmor
+        # Report security findings even when actionlint failed.
+        if: always()
+        run: pipx run zizmor==1.32.0 --offline --min-severity low --config .github/zizmor.yml .github/workflows/

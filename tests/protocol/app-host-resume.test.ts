@@ -122,3 +122,81 @@ test("acknowledgements and eviction release payload references before queue comp
   assert.equal(storage().reduce((sum, frame) => sum + (frame?.data.length ?? 0), 0), link.bytes);
   assert.deepEqual(link.replay(256)?.map(frame => frame.seq), [257,258]);
 });
+
+test('UTF-8 accounting handles isolated high surrogates without skipping the following character', () => {
+  for (const value of ['\ud800é', '\ud800中', '\ud800\ud800', '\udfff', '\ud800', '😀', 'a\ud800é中']) {
+    assert.equal(utf8Length(value), new TextEncoder().encode(value).byteLength, JSON.stringify(value));
+  }
+});
+
+test('zero-byte retained records have a frame-count bound independent of the byte budget', () => {
+  const link = new ResumeLink<null>({ maxBytes: 10 });
+  for (let index = 0; index < 9_000; index++) link.retain(link.next(), null, 0);
+  assert.ok(link.frames <= 8_192, `retained ${link.frames} zero-byte records`);
+  assert.equal(link.replay(0), null, 'evicted sequence is not resumable');
+});
+
+test('a zero-byte oldest frame cannot stop global byte-budget enforcement', () => {
+  const registry = new ResumeRegistry<null>({ maxBytes: 5, sessionMaxBytes: 100 });
+  const session = registry.create('identity', null, () => {});
+  session.link.retain(session.link.next(), null, 0);
+  session.link.retain(session.link.next(), Buffer.alloc(10), 10);
+  assert.ok(registry.stats.bytes <= 5, `retained ${registry.stats.bytes} bytes over a 5-byte budget`);
+  registry.close();
+});
+
+test('registry shutdown fences reentrant and subsequent session admission', () => {
+  const registry = new ResumeRegistry<null>();
+  let rejected = false;
+  registry.create('identity', null, () => {
+    try { registry.create('reentrant', null, () => {}); } catch { rejected = true; }
+  });
+  registry.close();
+  assert.equal(rejected, true); assert.equal(registry.stats.sessions, 0);
+  assert.throws(() => registry.create('late', null, () => {}), /closed/);
+});
+
+test('session count is bounded independently of byte occupancy and closing a session releases capacity', () => {
+  const registry = new ResumeRegistry<null>({ maxSessions: 1 });
+  const first = registry.create('identity', null, () => {});
+  assert.throws(() => registry.create('another', null, () => {}), /capacity/);
+  assert.equal(registry.stats.sessions, 1); assert.equal(first.isEnded, false);
+  first.end('intentional');
+  assert.doesNotThrow(() => registry.create('replacement', null, () => {})); registry.close();
+});
+
+test('invalid budgets and invalid frame accounting cannot disable resource enforcement', () => {
+  for (const invalid of [-1, NaN, Infinity, 0.5]) {
+    assert.throws(() => new ResumeLink({ maxBytes: invalid }), /budget/);
+    assert.throws(() => new ResumeRegistry({ maxBytes: invalid }), /limits/);
+    const link = new ResumeLink<null>({ maxBytes: 10 });
+    assert.throws(() => link.retain(link.next(), null, invalid), /size/);
+    assert.equal(link.bytes, 0);
+  }
+  const link = new ResumeLink<null>({ maxBytes: 0, maxFrames: 2 });
+  for (let index = 0; index < 3; index++) link.retain(link.next(), null, 0);
+  assert.equal(link.frames, 2); assert.equal(link.replay(0), null);
+});
+
+test('global frame accounting bounds empty records across sessions and releases them atomically', () => {
+  const registry = new ResumeRegistry<null>({ maxFrames: 3 });
+  const first = registry.create('first', null, () => {}), second = registry.create('second', null, () => {});
+  for (let index = 0; index < 10; index++) {
+    const owner = index % 2 ? first : second;
+    owner.link.retain(owner.link.next(), null, 0);
+    assert.ok(registry.stats.frames <= 3);
+    assert.equal(registry.stats.frames, first.link.frames + second.link.frames);
+  }
+  registry.close(); assert.equal(registry.stats.frames, 0); assert.equal(registry.stats.bytes, 0);
+});
+
+test('ending a session fences late writers so forgotten owners cannot retain orphaned bytes', () => {
+  const registry = new ResumeRegistry<null>();
+  const session = registry.create('identity', null, () => {});
+  const seq = session.link.next(); session.link.retain(seq, Buffer.alloc(10), 10);
+  session.end('ended');
+  assert.throws(() => session.link.retain(seq, Buffer.alloc(10), 10), /closed/);
+  assert.throws(() => session.link.next(), /closed/);
+  assert.equal(session.link.replay(0), null);
+  assert.deepEqual(registry.stats, { sessions: 0, detached: 0, bytes: 0, frames: 0 });
+});

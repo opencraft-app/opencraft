@@ -87,6 +87,7 @@ export interface ConversationRuntime {
     input: readonly UserInput[],
   ): Promise<void>;
   deleteQueuedSubmission(queuedSubmissionId: string): Promise<void>;
+  retryUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   discardUnconfirmedSteer(queuedSubmissionId: string, expectedTurnId: TurnId): Promise<void>;
   reorderQueuedSubmissions(
     queuedSubmissionIds: readonly string[],
@@ -1617,7 +1618,7 @@ export function createReplicaConversationRuntime(
         };
       }),
       unconfirmedSteers: [...steeringClaims.values()].filter(
-        (item) => item.pausedReason === "steer-delivery-unconfirmed" && item.delivery?.custody!=="accepted" && !inputExecutionEnded(item.delivery),
+        (item) => (item.pausedReason === "steer-delivery-unconfirmed" || item.pausedReason === "delivery-retry-requested") && item.delivery?.custody !== "accepted" && !inputExecutionEnded(item.delivery),
       ),
       history: {
         hasOlder:
@@ -1755,9 +1756,11 @@ export function createReplicaConversationRuntime(
       publish();
       try {
         const receipt = await submitWithAdmissionProof(intent, options);
+        if (disposed || options?.canDispatch() === false) return receipt;
         // An accepted message can precede its native echo. Preserve its exact
         // verified author even when the browser account contribution is late.
-        if (receipt.clientMessageId === intent.clientMessageId && receipt.sender !== undefined) {
+        if (receipt.commandId === intent.commandId && receipt.clientMessageId === intent.clientMessageId
+          && receipt.hostId === config.key.hostId && receipt.threadId === config.key.threadId && receipt.sender !== undefined) {
           if (receipt.sender === null) submissionSenders.delete(intent.clientMessageId);
           else submissionSenders.set(intent.clientMessageId, { ...receipt.sender });
           if (submissionSenders.size > 256) submissionSenders.delete(submissionSenders.keys().next().value!);
@@ -2245,6 +2248,12 @@ export function createReplicaConversationRuntime(
         localRevision += 1;
         publish();
       }
+    },
+    async retryUnconfirmedSteer(queuedSubmissionId, expectedTurnId) {
+      if (!config.commands.retryUnconfirmedSteer) throw new Error("Message retry is unavailable");
+      await config.commands.retryUnconfirmedSteer(config.key, queuedSubmissionId, expectedTurnId);
+      // Queue events own reconciliation, including a retry accepted while the
+      // original Turn is still running. Do not delete the local claim early.
     },
     async discardUnconfirmedSteer(queuedSubmissionId, expectedTurnId) {
       const claim = steeringClaims.get(queuedSubmissionId);

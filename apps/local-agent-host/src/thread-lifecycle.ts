@@ -31,6 +31,9 @@ export class ThreadLifecycle {
     if (!reply?.thread?.id) return reply;
     const thread = this.catalog.upsert(reply.thread);
     return { ...reply, thread: { ...thread, turns: reply.thread.turns ?? [],
+      // Thread metadata owns archive state; an archived Thread still returns
+      // readable history, so the client needs this flag beside the transcript.
+      archived: this.catalog.archived(thread.id),
       status: this.attachments.isLoaded(thread.id) ? reply.thread.status ?? { type: "idle" } : { type: "notLoaded" } },
       ...(reply.runtimeWorkspaceRoots ? { runtimeWorkspaceRoots: this.catalog.configuration(thread.id).runtimeWorkspaceRoots ?? reply.runtimeWorkspaceRoots } : {}) };
   }
@@ -61,6 +64,13 @@ export class ThreadLifecycle {
       return archived ? {} : this.decorate({ thread });
     }
     if (method === "thread/list") {
+      const query = { ...params, sortKey: params.sortKey ?? "updated_at" };
+      if (this.catalog.directory?.supports(query)) {
+        const page = await this.catalog.directory.list(query);
+        this.assertClient(clientId);
+        return { ...page, data: page.data.map(thread => ({ ...thread,
+          status: this.attachments.isLoaded(thread.id) ? this.catalog.get(thread.id)?.status ?? thread.status : { type: "notLoaded" } })) };
+      }
       let cursor: string | null = null;
       do {
         const page = await delegate("thread/list", { cursor, limit: 1000 });

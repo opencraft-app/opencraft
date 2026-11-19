@@ -74,7 +74,8 @@ async function renderPermission(mode: string | null, requested: string | null = 
 }
 
 test("real Composer renders Chinese permission names and pending change hints", async () => {
-  assert.match(await renderPermission(null), />权限</u);
+  // An existing conversation without a known effective profile must not look confirmed.
+  assert.match(await renderPermission(null), />权限未确认</u);
   for (const [mode, label] of [["read-only", "只读"], ["accept-edits", "允许编辑"], ["auto", "自动审核"], ["full", "完全访问"]]) {
     assert.match(await renderPermission(mode), new RegExp(`>${label}<`, "u"));
   }

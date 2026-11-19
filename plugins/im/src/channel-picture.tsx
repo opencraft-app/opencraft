@@ -1,5 +1,6 @@
 import {useRef,useState} from 'react';
-import {Button} from '@opencraft/design-system-web/button';
+import {MediaActionButton} from '@opencraft/design-system-web/object-controls';
+import '@opencraft/design-system-web/object-controls.web';
 import {useIntl} from '@opencraft/i18n/react';
 import {useChannelPicture,type ChannelPictures,type ChannelPictureTarget} from './channel-pictures';
 import {useChannelResourceVisible} from './channel-resources';
@@ -16,10 +17,10 @@ export function ChannelPicture({pictures,target,unavailable=false,label}:{
   const name=label??intl.formatMessage({id:'im.shadow.previewImage',defaultMessage:'Preview image'});
   async function retry(){if(!target)return;try{await pictures.retry(target);setBroken(null);}catch{if(source)setBroken(source);}}
   return <div className="im-channel-chat__attachment im-channel-chat__picture-frame" ref={host}>
-    {source&&!failed?<Button ref={trigger} className="im-channel-chat__picture" variant="ghost" contentLayout="row" aria-label={name}
-      onClick={()=>{if(target&&trigger.current)gallery?.(target,trigger.current);}}><img src={source} alt="" onError={()=>setBroken(source)} /></Button>
-      :<Button variant="ghost" className="im-channel-chat__picture-placeholder" disabled={!failed||!target||snapshot.isFetching} onClick={()=>void retry()}>
-        <small role="status">{intl.formatMessage(failed?{id:'im.shadow.imageUnavailable',defaultMessage:'Image unavailable.'}:{id:'im.shadow.imagePending',defaultMessage:'Loading image…'})}</small>
-      </Button>}
+    {source&&!failed?<MediaActionButton ref={trigger} className="im-channel-chat__picture" aria-label={name}
+      onClick={()=>{if(target&&trigger.current)gallery?.(target,trigger.current);}}><img src={source} alt="" onError={()=>setBroken(source)} /></MediaActionButton>
+      :<MediaActionButton action="retry" disabled={!failed||!target||snapshot.isFetching} onClick={()=>void retry()}>
+        <span className="im-channel-chat__picture-placeholder"><small role="status">{intl.formatMessage(failed?{id:'im.shadow.imageUnavailable',defaultMessage:'Image unavailable.'}:{id:'im.shadow.imagePending',defaultMessage:'Loading image…'})}</small></span>
+      </MediaActionButton>}
   </div>;
 }

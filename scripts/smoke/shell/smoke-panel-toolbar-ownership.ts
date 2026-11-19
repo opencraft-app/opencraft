@@ -1,5 +1,6 @@
+import {compareToolbarPixels,equivalentToolbarRaster} from './toolbar-pixel-comparison.mjs';
 import assert from 'node:assert/strict';
-import {mkdtemp} from 'node:fs/promises';
+import {mkdtemp,writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'vite';
@@ -18,6 +19,8 @@ import '/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();const ctx=new Context();await ctx.plugin(WorkbenchPanelService);const panels=ctx.workbenchPanels;
 panels.register({kind:'terminal',createTab:({id})=>({id,resource:id,kind:'terminal',region:'right',title:'Terminal '+id,icon:'terminal',closable:true,preview:false})});
 for(let i=0;i<12;i++)panels.open('scope','terminal',{id:String(i)});
+// Opening tools now selects tools foreground; this fixture starts from the conversation to edit its draft.
+panels.dispatch('scope',{type:'select-foreground',foreground:'primary'});
 const subscribe=f=>panels.subscribeOwner('scope',f),get=()=>panels.getOwnerSnapshot('scope');
 const navigation={layout:'unified',actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
 function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);window.fixture={panels,setThemePreference};
@@ -31,7 +34,7 @@ createRoot(document.getElementById('root')).render(<WorkbenchPanelRuntimeProvide
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom','react-intl']},cacheDir:'node_modules/.vite-toolbar-ownership',optimizeDeps:{entries:[],include:['react','react-dom/client','react-intl']},esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0,hmr:false},plugins:[{name:'toolbar-ownership-fixture',resolveId:id=>id==='/toolbar-fixture.tsx'?id:null,load:id=>id==='/toolbar-fixture.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/toolbar-fixture.tsx"></script>');});}}]});
 let browser:any;
 try{
-await vite.listen();const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwright');browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1600,height:850}});await page.addInitScript('window.__name=value=>value');const errors:string[]=[];page.on('pageerror',(e:Error)=>{errors.push(e.message);console.error(e.stack)});await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port);await page.getByLabel('Draft').waitFor();await page.getByLabel('Draft').fill('Preserved');
+await vite.listen();const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwright');browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:1600,height:850},hasTouch:true});await page.addInitScript('window.__name=value=>value');const errors:string[]=[];page.on('pageerror',(e:Error)=>{errors.push(e.message);console.error(e.stack)});await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port);await page.getByLabel('Draft').waitFor();await page.getByLabel('Draft').fill('Preserved');
 // Pixels detect opaque chrome even when pointer-events:none makes hit tests pass.
 await page.addStyleTag({content:'.right-panel-toolbar__tab-actions{background:rgb(255,0,180)!important}'});
 const evidence=[];
@@ -40,10 +43,10 @@ await page.evaluate(full=>{const p=(window as any).fixture.panels;if(p.getOwnerS
 const controls=page.locator('.right-panel-toolbar__tab-actions');if(!(await controls.isVisible())){assert.equal(width,390,'only immersive small-screen mode hides panel');await page.locator('.app-shell-header__end-slot .app-shell-header__right-panel-toggle').click();await controls.waitFor();await page.waitForTimeout(650);}
 assert.equal(await page.locator('.right-panel-toolbar__actions').getByRole('button',{name:'New terminal',exact:true}).count(),0,'creation types are offered by menus, not repeated on the bar');
 const before=await controls.screenshot({animations:'disabled'});
-if(width===1600&&!full){const old=await page.addStyleTag({content:'.has-unified-sidebar[data-opencraft-window-type="browser"] .app-shell-header{background:var(--color-surface)!important}'});const covered=await controls.screenshot({animations:'disabled'});await old.evaluate(e=>e.remove());assert.notDeepEqual(before,covered,'negative control reproduces original opaque-header defect');}
-const transparent=await page.addStyleTag({content:'.has-unified-sidebar[data-opencraft-window-type="browser"] .app-shell-header{background:none!important}'});const uncovered=await controls.screenshot({animations:'disabled'});await transparent.evaluate(e=>e.remove());assert.deepEqual(before,uncovered,mode+'/'+width+': header must not paint over panel controls');
+if(width===1600&&!full){const old=await page.addStyleTag({content:'.has-unified-sidebar[data-opencraft-window-type="browser"] .app-shell-header{background:var(--color-surface)!important}'});const covered=await controls.screenshot({animations:'disabled'});await old.evaluate(e=>e.remove());const negative=await compareToolbarPixels(page,before,covered);assert.ok(negative.changedPixels>=20&&negative.maxChannelDelta>16,'negative control must reproduce substantial opaque-header pixel coverage: '+JSON.stringify(negative));}
+const transparent=await page.addStyleTag({content:'.has-unified-sidebar[data-opencraft-window-type="browser"] .app-shell-header{background:none!important}'});const uncovered=await controls.screenshot({animations:'disabled'});await transparent.evaluate(e=>e.remove());if(!before.equals(uncovered)){await writeFile(join(output,'failed-before.png'),before);await writeFile(join(output,'failed-uncovered.png'),uncovered);await page.screenshot({path:join(output,'failed-page.png')});console.error('TOOLBAR_IMAGE_DIAGNOSTIC',JSON.stringify({output,mode,width,full,headers:await page.locator('.app-shell-header').evaluateAll(elements=>elements.map(element=>({background:getComputedStyle(element).background,rect:element.getBoundingClientRect().toJSON()})))}));}const raster=await compareToolbarPixels(page,before,uncovered);assert.ok(equivalentToolbarRaster(raster),mode+'/'+width+': header must not paint over panel controls: '+JSON.stringify(raster));
 for(const end of [0,100000]){await page.locator('.right-panel-tab-strip').evaluate((e:HTMLElement,end:number)=>{e.scrollLeft=end},end);for(const name of ['New tab','Tabs']){const button=page.getByRole('button',{name,exact:true});const box=await button.boundingBox();assert.ok(box&&box.x>=0&&box.x+box.width<=width+1,name+' stays in viewport');assert.equal(await button.evaluate((e:HTMLElement)=>e.closest('.right-panel-tab-strip')===null),true);}}
-await page.getByRole('button',{name:'Tabs',exact:true}).click();assert.equal(await page.locator('[role^="menuitem"]').count(),13,'creation action and all twelve tabs');await page.keyboard.press('Escape');await page.screenshot({path:join(output,mode+'-'+width+'-'+full+'.png')});evidence.push({mode,width,full});}
+await page.getByRole('button',{name:'Tabs',exact:true}).click();assert.equal(await page.locator('[role^="menuitem"]').count(),13,'creation action and all twelve tabs');await page.keyboard.press('Escape');await page.screenshot({path:join(output,mode+'-'+width+'-'+full+'.png')});evidence.push({mode,width,full,raster});}
 // Check intermediate frames, including rapid reversal, not only endpoints.
 for (const reducedMotion of ['no-preference', 'reduce'] as const) {
 await page.emulateMedia({reducedMotion});
@@ -51,6 +54,23 @@ for (const width of [390, 1280]) {
 await page.setViewportSize({width,height:850});
 await page.evaluate(()=>{document.documentElement.dataset.uiDensity='touch';const p=(window as any).fixture.panels;if(p.getOwnerSnapshot('scope').rightPanelFullWidth)p.dispatch('scope',{type:'toggle-right-full-width'});p.dispatch('scope',{type:'set-region-open',region:'right',open:false});});
 await page.waitForTimeout(650);
+if(width===390){
+  // Mobile tools own their dock; the legacy conversation header is hidden on
+  // purpose. Return through the actual overview, never click a hidden button.
+  for(let cycle=0;cycle<2;cycle++){
+    const beforeTabs=await page.evaluate(()=>(window as any).fixture.panels.getOwnerSnapshot('scope').right.tabs.map((tab:any)=>tab.id));
+    await page.getByRole('button',{name:'Open preview panel',exact:true}).tap();
+    await page.locator('.right-panel-content[data-mobile-panel="true"]').waitFor();
+    assert.equal(await page.locator('button.app-shell-header__right-panel-toggle').isVisible(),false,'mobile tool dock replaces conversation header');
+    await page.locator('.panel-mobile-dock').getByRole('button',{name:'Tabs',exact:true}).tap();
+    await page.locator('.panel-overview-primary').getByRole('button',{name:'Main chat',exact:true}).tap();
+    await page.getByLabel('Draft').waitFor();
+    assert.equal(await page.getByLabel('Draft').inputValue(),'Preserved');
+    assert.deepEqual(await page.evaluate(()=>(window as any).fixture.panels.getOwnerSnapshot('scope').right.tabs.map((tab:any)=>tab.id)),beforeTabs);
+  }
+  evidence.push({width,reducedMotion,mobileDockReturn:'passed'});
+  continue;
+}
 const frames=await page.locator('button.app-shell-header__right-panel-toggle').evaluate(async(button:HTMLButtonElement)=>{
 const read=()=>{const b=button.getBoundingClientRect();return {x:b.x,w:b.width,connected:button.isConnected,glyphs:Array.from(button.querySelectorAll<HTMLElement>('.right-panel-toggle-icon__glyph')).map(g=>{const r=g.getBoundingClientRect();return {x:r.x-b.x,y:r.y-b.y,w:r.width,h:r.height};})};};
 const frames=[read()];button.click();

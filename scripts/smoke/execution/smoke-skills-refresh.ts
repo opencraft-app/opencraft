@@ -80,12 +80,12 @@ const markdown = "---\nname: refresh-fixture\ndescription: Refresh fixture\n---\
 try {
   await new Promise<void>(resolve => endpoint.listen(0, "127.0.0.1", resolve));
   const workspace = join(root, "workspace"); await mkdir(workspace);
-  const packaging = JSON.parse(await readFile("apps/workbench-electron/package.json", "utf8"));
+  const packaging = JSON.parse(await readFile("apps/desktop/package.json", "utf8"));
   for (const resource of packaging.build.extraResources) {
     if (!resource.from?.endsWith(".mjs")) continue;
     const target = join(root, "packaged", resource.to);
     await mkdir(dirname(target), { recursive: true });
-    await copyFile(resolve("apps/workbench-electron", resource.from), target);
+    await copyFile(resolve("apps/desktop", resource.from), target);
   }
   const options = { dshExecutable: resolve("runtime/dsh/node_modules/@deepseek-ai/dsh/lib/bin.js"),
     dshCapabilityPlugin: join(root, "packaged/runtime/dsh/opencraft-capability-plugin.mjs"),

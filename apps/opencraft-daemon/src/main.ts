@@ -1,15 +1,15 @@
-import { AssistantThreadCommands } from '../../../packages/access-control/src/assistant-thread-commands.js';
-import { ThreadAccessStore } from '../../../packages/access-control/src/thread-access.js';
-import { createThreadOrchestrationExecution } from '../../../scripts/thread-orchestration-execution.mjs';
+import { AssistantThreadCommands } from '@opencraft/access-control/assistant-thread-commands';
+import { ThreadAccessStore } from '@opencraft/access-control/thread-access';
+import { createThreadOrchestrationExecution } from '@opencraft/access-control/thread-orchestration-execution';
 import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
 import { loadAssistantEnvironments } from './assistant-environments.js';
 import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
-import { Collaboration } from '../../../packages/access-control/src/collaboration.js';
-import { ImChannelsAppServer } from '../../../scripts/im-channels-appserver.mjs';
-import { createRoutedConversationExecution } from '../../../scripts/conversation-execution.mjs';
+import { Collaboration } from '@opencraft/access-control/collaboration';
+import { ImChannelsAppServer } from '@opencraft/access-control/im-channels-appserver';
+import { createRoutedConversationExecution } from '@opencraft/access-control/conversation-execution';
 import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol';
 import { join } from "node:path";
-import { nodeObserver } from "../../../packages/observability-contract/node.mjs";
+import { nodeObserver } from "@opencraft/observability-contract/node";
 import { unlink } from "node:fs/promises";
 import { connect } from "node:net";
 

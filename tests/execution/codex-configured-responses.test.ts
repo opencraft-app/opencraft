@@ -98,3 +98,62 @@ test("configured provider failures never fall through to OAuth and built-in cata
     assert.equal((await catalog.json()).models[0].slug, "existing-model"); assert.equal(calls, 1);
   } finally { pool.close(); await rm(directory, { recursive: true, force: true }); }
 });
+
+test("real loopback HTTP ingress decodes native requests, isolates credentials and observes configuration removal", async t => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const { gzipSync } = await import("node:zlib");
+  const { startCodexAccountPoolServer } = await import("../../packages/account-pool-host/src/server.js");
+  const directory = await mkdtemp(join(tmpdir(), "configured-http-"));
+  const seen: { path: string | undefined; headers: import("node:http").IncomingHttpHeaders; body: any }[] = [];
+  const provider = createServer(async (request, response) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of request) chunks.push(Buffer.from(chunk));
+    seen.push({ path: request.url, headers: request.headers, body: JSON.parse(Buffer.concat(chunks).toString()) });
+    response.writeHead(200, { "content-type": "text/event-stream", "set-cookie": "provider-private=synthetic" });
+    const events = [
+      { type: "message_start", message: { id: "msg-http", role: "assistant", content: [], usage: { input_tokens: 1, output_tokens: 0 } } },
+      { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
+      { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "HTTP bridge works" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { output_tokens: 3 } },
+      { type: "message_stop" },
+    ];
+    response.end(events.map(event => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`).join(""));
+  });
+  provider.listen(0, "127.0.0.1"); await once(provider, "listening");
+  const address = provider.address() as import("node:net").AddressInfo;
+  const pool = new AccountPoolStore({ databasePath: join(directory, "pool.sqlite"), secretsDirectory: join(directory, "secrets") });
+  let ingress: Awaited<ReturnType<typeof startCodexAccountPoolServer>> | undefined;
+  t.after(async () => {
+    await ingress?.close(); pool.close(); provider.closeAllConnections();
+    await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve()));
+    await rm(directory, { recursive: true, force: true });
+  });
+  const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
+  await credentials.set("HTTP_TEST_KEY", "http-provider-secret");
+  await repository.initialize({ schemaVersion: 1, revision: 0, defaultModel: null, providers: [{
+    id: "http", name: "HTTP fixture", protocol: "anthropic-messages", baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    credentialRef: "HTTP_TEST_KEY", enabled: true, models: [{ id: "fixture", enabled: true, maxTokens: 2048 }],
+  }] });
+  const proxy = new CodexAccountPoolProxy({ store: pool, upstreamBaseUrl: "https://oauth.invalid", configuredResponses: createConfiguredCodexResponses(directory) });
+  ingress = await startCodexAccountPoolServer({ proxy });
+  const alias = configuredCodexModelId("http", "fixture"), token = pool.issueHostToken("http-test");
+  const headers = { "x-opencraft-account-pool-token": token, "content-type": "application/json", "content-encoding": "gzip" };
+  const body = gzipSync(JSON.stringify({ model: alias, input: "hello", stream: true }));
+  assert.equal((await fetch(ingress.url + "/v1/responses", { method: "POST", body })).status, 401);
+  assert.equal(seen.length, 0);
+  const catalog = await fetch(ingress.url + "/v1/models", { headers });
+  assert.equal((await catalog.json()).models[0].slug, alias);
+  const response = await fetch(ingress.url + "/v1/responses", { method: "POST", headers, body });
+  assert.equal(response.status, 200); assert.equal(response.headers.get("set-cookie"), null);
+  const output = await response.text(); assert.match(output, /HTTP bridge works/); assert.match(output, /response\.completed/);
+  assert.equal(seen.length, 1); assert.equal(seen[0].path, "/v1/messages");
+  assert.equal(seen[0].headers["x-api-key"], "http-provider-secret");
+  assert.equal(seen[0].headers["x-opencraft-account-pool-token"], undefined);
+  assert.equal(seen[0].headers.authorization, undefined); assert.equal(seen[0].headers["content-encoding"], undefined);
+  assert.equal(seen[0].body.model, "fixture"); assert.equal(seen[0].body.max_tokens, 2048);
+  await repository.update(0, document => { document.providers[0]!.enabled = false; });
+  const removed = await fetch(ingress.url + "/v1/responses", { method: "POST", headers, body });
+  assert.equal(removed.status, 404); await removed.text(); assert.equal(seen.length, 1);
+});

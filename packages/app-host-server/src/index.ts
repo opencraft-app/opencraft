@@ -40,6 +40,8 @@ export interface AppHostServerOptions {
   /** Trusted Hub access boundary, installed per logical lease before native forwarding. */
   readonly createRpcAccessSession?: (hostId: string, context: TransportSubmissionContext, emit: (frame: string) => void) => {
     receive(frame: string): boolean | Promise<boolean>;
+    rewrite?(frame:string):string;
+    prepare?(frame:string):Promise<void>;
     project(frame: string): string | null;
     close(): void;
   };
@@ -219,6 +221,11 @@ export class AppHostServer {
     if (slot?.phase === "failed") return "failed";
     return slot?.resetOperation || slot?.phase === "closing" ? "closing" : slot?.phase === "starting" ? "connecting" : slot?.record?.physical.transport.status.state ?? slot?.lastState ?? "idle";
   }
+  /** A readable connection can outlive its execution environment. */
+  hostExecutionState(hostId: string): "ready" | "recovering" | "unavailable" | "unknown" {
+    const status = this.slots.get(hostId)?.record?.physical.transport.status;
+    return status?.execution ?? (this.hostState(hostId) === "open" ? "ready" : "unknown");
+  }
 
   /** Trusted explicit connection intent; never grants a Client lease or starts remote work. */
   async ensureHostConnected(hostId: string, assertAdmission?: () => void): Promise<void> {
@@ -310,7 +317,7 @@ export class AppHostServer {
         await this.disconnectClaim(connection, message.hostId, message.leaseId, record.generation);
         throw cause;
       }
-      return { hostId: message.hostId, generation: record.generation };
+      return { hostId: message.hostId, generation: record.generation, execution: record.physical.transport.status.execution, executionUnavailableThreadIds: record.physical.transport.status.executionUnavailableThreadIds };
     }
     if (message.type === "host/send") {
       let record: HostRecord;
@@ -323,7 +330,7 @@ export class AppHostServer {
         // Only this boundary proves that native forwarding never began.
         throw new HostSendNotAdmittedError(cause);
       }
-      const frame = this.options.logicalClientRouting
+      let frame = this.options.logicalClientRouting
         ? stampLogicalClientFrame(message.frame, this.claimKey(connection, message.leaseId)) : message.frame;
       const claim = this.slots.get(message.hostId)!.claims.get(this.claimKey(connection, message.leaseId))!;
       // Routing identity is owned by this server; never correlate access policy with a client-supplied stamp.
@@ -331,6 +338,7 @@ export class AppHostServer {
         const accessPacket = JSON.parse(message.frame);
         if (this.options.logicalClientRouting) delete accessPacket[LOGICAL_CLIENT_FIELD];
         if (await connection.receiveRpc(message.hostId, message.leaseId, record.generation, JSON.stringify(accessPacket))) return undefined;
+        frame=connection.rewriteRpc(message.hostId,message.leaseId,record.generation,frame);
       }
       await this.forward(record, frame, connection.submissionContext, claim.forwarding.signal);
       return undefined;
@@ -890,6 +898,9 @@ export class AppHostServerConnection {
     return session;
   }
 
+  rewriteRpc(hostId:string,leaseId:string,generation:number,frame:string):string {
+    return this.accessSession(hostId,leaseId,generation)?.rewrite?.(frame)??frame;
+  }
   async receiveRpc(hostId: string, leaseId: string, generation: number, frame: string): Promise<boolean> {
     return await this.accessSession(hostId,leaseId,generation)?.receive(frame) ?? false;
   }
@@ -925,8 +936,7 @@ export class AppHostServerConnection {
     this.server.trackConnectionCleanup(this, true);
     const errors: unknown[] = [];
     try {
-      // Retire admission first, then attempt every cleanup even if one owner fails.
-      // Failed handles stay registered for the existing explicit shutdown retry.
+      // Retire admission first; retain failed handles for explicit cleanup retry.
       for (const [key, entry] of this.accessSessions) {
         try { entry.session.close(); this.accessSessions.delete(key); }
         catch (cause) { errors.push(cause); }
@@ -944,23 +954,40 @@ export class AppHostServerConnection {
     } finally { this.cleaningPort = false; }
   }
 
-  /** Projection and wire failures belong to one connection, not the shared Host. */
+  /** Delivery failures retire one connection, never the shared Host or its peers. */
+  private retireFailedDelivery(): void {
+    try { this.close(); }
+    catch { /* Failed handles remain owned by the server for explicit shutdown retry. */ }
+  }
+
   private deliver(write: () => void): void {
     if (this.closed) return;
     try { write(); }
-    catch {
-      try { this.close(); }
-      catch { /* Failed cleanup handles remain owned by the server for shutdown retry. */ }
-    }
+    catch { this.retireFailedDelivery(); }
   }
 
+  private accessOutbound=Promise.resolve();
   post(message: AppHostToRendererMessage): void {
     this.deliver(() => {
       if (message.type === 'host/frame' && this.createRpcAccessSession) {
         const leases = [...this.leases.values()].filter(lease => lease.hostId === message.hostId && lease.generation === message.generation && (message.leaseId === undefined || lease.leaseId === message.leaseId));
         for (const lease of leases) {
           if (this.closed) return;
-          const frame = this.accessSession(lease.hostId,lease.leaseId,lease.generation)!.project(message.frame);
+          const access=this.accessSession(lease.hostId,lease.leaseId,lease.generation)!;
+          if(access.prepare) {
+            const current = () => !this.closed
+              && this.leases.get(hostScopedKey(lease.hostId,lease.leaseId))?.generation === lease.generation
+              && this.accessSessions.get(hostScopedKey(lease.hostId,lease.leaseId))?.session === access;
+            this.accessOutbound=this.accessOutbound.then(async()=>{
+              if(!current())return;
+              await access.prepare!(message.frame);
+              if(!current())return;
+              const projected=access.project(message.frame);
+              if(!this.closed && projected!==null)this.port.postMessage({...message,leaseId:lease.leaseId,frame:projected});
+            }).catch(()=>{this.retireFailedDelivery();});
+            continue;
+          }
+          const frame = access.project(message.frame);
           if (!this.closed && frame !== null) this.port.postMessage({...message,leaseId:lease.leaseId,frame});
         }
         return;

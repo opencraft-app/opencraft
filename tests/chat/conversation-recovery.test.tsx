@@ -9,6 +9,7 @@ import {
   connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
+  conversationArchivePresentation,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
 } from "../../apps/workbench-web/src/components/conversation-recovery";
@@ -35,6 +36,13 @@ test("routine recovery has no error, retry button or diagnostic UI in cold and r
       assert.doesNotMatch(markup, /<button|<details|<pre|Try again|Technical details/);
     }
   } finally { runtime.dispose(); }
+});
+
+test("archiving keeps a readable transcript and only a missing conversation replaces it", () => {
+  assert.deepEqual(conversationArchivePresentation("archived", true), { showHistory: true, banner: "alongside" });
+  assert.deepEqual(conversationArchivePresentation("archived", false), { showHistory: false, banner: "replace" });
+  assert.deepEqual(conversationArchivePresentation("not-found", true), { showHistory: false, banner: "replace" });
+  assert.deepEqual(conversationArchivePresentation(null, true), { showHistory: true, banner: "none" });
 });
 
 test("archived conversations render one read-only restore state instead of a retry transcript", () => {

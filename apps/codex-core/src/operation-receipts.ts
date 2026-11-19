@@ -27,15 +27,17 @@ export class OperationReceipts {
     if (!record || record.settled) return;
     record.settled = true;
     record.reply = reply;
-    for (const subscriber of record.subscribers) subscriber.deliver(reply);
+    const subscribers = record.subscribers;
     record.subscribers = [];
+    for (const subscriber of subscribers) { try { subscriber.deliver(reply); } catch { /* subscriber transport is not the operation owner */ } }
   }
   uncertain(key: string, reply: OperationReply): void {
     const record = this.records.get(key);
     if (!record || record.settled) return;
     record.reply = reply;
-    for (const subscriber of record.subscribers) subscriber.deliver(reply);
+    const subscribers = record.subscribers;
     record.subscribers = [];
+    for (const subscriber of subscribers) { try { subscriber.deliver(reply); } catch { /* subscriber transport is not the operation owner */ } }
   }
   detach(owner: object): void {
     for (const record of this.records.values()) record.subscribers = record.subscribers.filter(value => value.owner !== owner);

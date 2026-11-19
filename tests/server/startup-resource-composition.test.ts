@@ -15,7 +15,7 @@ test("bounded gzip precompression preserves bytes and never grows the former enc
     const encoded = gzipAsset(raw);
     assert.deepEqual(gunzipSync(encoded), raw);
     assert.deepEqual(gzipAsset(raw), encoded, "same input yields the same sidecar");
-    assert.equal(encoded.length, Math.min(...[8, 6, 7].map(memLevel => gzipSync(raw, { level: 9, memLevel }).length)));
+    assert.equal(encoded.length, Math.min(...[4, 5, 6, 7, 8, 9].map(memLevel => gzipSync(raw, { level: 9, memLevel }).length)));
     assert.ok(encoded.length <= gzipSync(raw, { level: 9 }).length);
   }
 });

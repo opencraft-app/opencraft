@@ -25,10 +25,14 @@ export class ThreadAccessStore {
   private readonly closeRepository: () => void;
   private readonly db: DatabaseSync;
   private readonly readCache: PermissionReadCache;
+  private readonly spaceAccess?: {allows(actorId:string|undefined,serverId:string,threadId:string):boolean};
   private readonly readPolicy: ReturnType<DatabaseSync["prepare"]>;
   readonly outcome;
-  private readonly listeners = new Set<(policy: ThreadAccessPolicy) => void>();
-  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, options: { permissionOwner?: object; projection?: boolean } = {}) {
+  private readonly listeners = new Set<(policy: ThreadAccessPolicy | null) => void>();
+  private readonly unsubscribeSpaces?:()=>void;
+  constructor(path: ServerDatabaseSource, readonly actors: ActorStore, options: { permissionOwner?: object; projection?: boolean; spaces?: {allows(actorId:string|undefined,serverId:string,threadId:string):boolean;subscribe?(listener:()=>void):()=>void} } = {}) {
+    this.spaceAccess=options.spaces;
+    this.unsubscribeSpaces=options.spaces?.subscribe?.(()=>{for(const listener of this.listeners)listener(null);});
     const managed = openServerRepository(path, "thread-access");
     this.closeRepository = managed.close;
     this.db = managed.database; this.outcome = managed.outcome;
@@ -46,7 +50,7 @@ export class ThreadAccessStore {
   created(serverId: string, threadId: string, context?: ActorContext, mode: 'shared'|'private' = 'shared'): void {
     this.read(serverId,threadId);
     // Null is durable too: a later viewer cannot claim an anonymous creation.
-    const creator = context && this.actors.allows(context, 'conversation.create') ? context.actorId : null;
+    const creator = context && this.actors.isCurrent(context) && this.actors.get(context.actorId)?.kind === 'human' ? context.actorId : null;
     withPermissionWrite(() => this.db.prepare("INSERT OR IGNORE INTO thread_access VALUES(?,?,?,?,1,?)").run(serverId,threadId,creator,mode,Date.now()), this.readCache);
   }
   acceptCreated(policy:ThreadAccessPolicy):void {
@@ -54,12 +58,14 @@ export class ThreadAccessStore {
   }
   readablePolicy(serverId: string, threadId: string, context?: ActorContext): ThreadAccessPolicy | null {
     const policy = this.read(serverId,threadId);
+    if(this.spaceAccess && !this.spaceAccess.allows(context?.actorId,serverId,threadId))return null;
     return policy.accessMode === 'shared' || !!context && context.actorId === policy.creatorActorId && this.actors.isCurrent(context) ? policy : null;
   }
   allows(serverId: string, threadId: string, context?: ActorContext): boolean {
     return this.readablePolicy(serverId,threadId,context) !== null;
   }
   allowsActor(serverId: string, threadId: string, actorId: string): boolean {
+    if(this.spaceAccess && !this.spaceAccess.allows(actorId,serverId,threadId))return false;
     const policy = this.read(serverId,threadId);
     return policy.accessMode === 'shared' || policy.creatorActorId === actorId && this.actors.get(actorId)?.enabled === true;
   }
@@ -88,8 +94,8 @@ export class ThreadAccessStore {
     for (const listener of this.listeners) { try { listener(next); } catch { /* Observers cannot undo a committed policy. */ } }
     return this.projection(serverId,threadId,context);
   }
-  subscribe(listener: (policy: ThreadAccessPolicy) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  close() { this.readCache.close(); this.listeners.clear(); this.closeRepository(); }
+  subscribe(listener: (policy: ThreadAccessPolicy | null) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
+  close() { this.unsubscribeSpaces?.(); this.readCache.close(); this.listeners.clear(); this.closeRepository(); }
 }
 
 interface Pending { method: string; params: Value }
@@ -105,13 +111,17 @@ export class ThreadAccessSession {
     private readonly restoreCreator?: (threadId: string) => Promise<void>,
     private readonly assertCurrent: () => void = () => {},
     private readonly notes?: { exchange(serverId: string, threadId: string, update: string, vector: string): {update: string} },
-    private readonly admittedCatalogOwner = false) {
+    private readonly admittedCatalogOwner = false,
+    private readonly anonymousHandoff: () => boolean = () => false) {
     this.unsubscribe = store.subscribe(policy => {
-      const key = JSON.stringify([policy.serverId,policy.threadId]);
-      if (this.seen.has(key) && !this.store.allows(policy.serverId,policy.threadId,this.context)) {
-        this.seen.delete(key);
-        let local = false; try { local = this.server(policy.threadId) === policy.serverId; } catch { /* A foreign engine is not this lane. */ }
-        this.emit(JSON.stringify({method:THREAD_ACCESS_REVOKED,params:{threadId:policy.threadId,serverId:policy.serverId,local}}));
+      const keys=policy?[JSON.stringify([policy.serverId,policy.threadId])]:[...this.seen];
+      for(const key of keys) {
+        const [serverId,threadId]=JSON.parse(key) as [string,string];
+        if(this.seen.has(key)&&!this.store.allows(serverId,threadId,this.context)) {
+          this.seen.delete(key);
+          let local=false;try{local=this.server(threadId)===serverId;}catch{/* Foreign engine. */}
+          this.emit(JSON.stringify({method:THREAD_ACCESS_REVOKED,params:{threadId,serverId,local}}));
+        }
       }
       // A title-free invalidation is safe even for viewers who never saw this thread.
       this.emit(JSON.stringify({method:THREAD_ACCESS_CHANGED,params:{}}));
@@ -146,6 +156,13 @@ export class ThreadAccessSession {
       this.serverRequests.delete(this.key(packet));
       // Only replies to requests actually delivered on this lane may reach the native owner.
       return !refs || refs.some(ref => !this.permits(ref));
+    }
+    if (packet.method === "thread/start" && params.handoffSource !== undefined) {
+      const source = object(params.handoffSource);
+      if (!validId(source.threadId) || Object.keys(source).some(key => key !== "threadId") || !(this.context ? this.store.actors.isCurrent(this.context) : this.anonymousHandoff())
+        || !this.allowed(source.threadId)) {
+        if (packet.id !== undefined) this.emit(this.denial(packet)); return true;
+      }
     }
     if ([...this.requestRefs(String(packet.method),params),...['parentThreadId','ancestorThreadId'].map(key => params[key]).filter(validId).map(id=>({id}))].some(ref => !this.permits(ref))) { if (packet.id !== undefined) this.emit(this.denial(packet)); return true; }
     if (packet.method === THREAD_NOTE_EXCHANGE) {
@@ -214,7 +231,9 @@ export class ThreadAccessSession {
         && threadUnavailableReason(new AppServerRpcError({code:error.code,message:error.message,data:error.data})) === 'not-found') return this.denial(packet);
       const threadId = object(object(packet.result).thread).id;
       if (!packet.error && ['thread/start','thread/fork'].includes(pending.method) && validId(threadId)) {
-        this.store.created(serverFor(threadId),threadId,this.context);
+        const sourceId = object(pending.params.handoffSource).threadId;
+        const source = validId(sourceId) ? this.store.projection(serverFor(sourceId),sourceId,this.context) : null;
+        this.store.created(serverFor(threadId),threadId,this.context,source?.accessMode ?? "shared");
         policies.clear();
       }
     }
@@ -227,7 +246,7 @@ export class ThreadAccessSession {
     const result = object(packet.result);
     if (pending?.method === 'initialize' && !packet.error) {
       const capabilities = object(result.capabilities), extensions = object(capabilities.extensions);
-      extensions['opencraft/thread-access'] = {version:1};
+      extensions['opencraft/thread-access'] = {version:1,agentHandoff:this.context ? this.store.actors.isCurrent(this.context) : this.anonymousHandoff()};
       // Raw engine summaries can include inaccessible records. Only an admitted
       // history projection may expose a Merkle root through this lane.
       if (!this.admittedCatalogOwner || object(extensions['opencraft/thread-directory-merkle']).admission !== 'reader')

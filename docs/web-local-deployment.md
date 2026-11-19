@@ -14,7 +14,7 @@ OPENCRAFT_WEB_UPDATE_URL=http://127.0.0.1:10000 \
 npm run update:server:local -- --version 0.1.10
 ```
 
-版本只是示例，必须选择比当前版本新的精确版本。该命令在当前 checkout 构建到新的 `.local/server-releases/` 目录，保留旧版本；记录来源 commit/dirty，依据服务器声明决定是否打包 execution payload。可用 `OPENCRAFT_WEB_PACKAGE_OUTPUT` 指定独立输出位置。需要复用已验证归档时，传 `--archive /absolute/release.tgz --build-id exact-build-id`，并保留 `--version`。
+版本只是示例，必须选择比当前版本新的精确版本。该命令默认在 OS 临时目录创建一次性包，安装观察到终态后删除临时包；不会把部署归档写进当前 checkout。需要保留归档时显式设置 `OPENCRAFT_WEB_PACKAGE_OUTPUT=/absolute/output`，或复用已验证归档时传 `--archive /absolute/release.tgz --build-id exact-build-id`，并保留 `--version`。
 
 命令从指定网站状态目录读取既有 admin-key，经回环 HTTP 授权后，把本机归档路径、精确身份和 SHA512 交给 `/install-local`。设置了公开 Origin 的部署同时传入原 `OPENCRAFT_PUBLIC_ORIGIN`；归档必须对网站部署用户可读。命令不上传 npm。它与 npm 更新共用下载后的验证、切换、健康检查、持久化、失败回退和中断恢复；不能并发改写部署状态。更新仍由稳定入口完成，shell/页面断开不触发任务重发。
 
@@ -60,7 +60,7 @@ export OPENCRAFT_SOURCE_REVISION="$(git rev-parse HEAD)"
 if [ -n "$(git status --porcelain)" ]; then
   export OPENCRAFT_SOURCE_REVISION="$OPENCRAFT_SOURCE_REVISION-dirty"
 fi
-export OPENCRAFT_WEB_PACKAGE_OUTPUT="$PWD/.local/local-web/$(date +%Y%m%d-%H%M%S)"
+export OPENCRAFT_WEB_PACKAGE_OUTPUT="${TMPDIR:-/tmp}/opencraft-web-package-$(date +%Y%m%d-%H%M%S)"
 npm run typecheck --workspace @opencraft/workbench-web
 npm run test:web-release
 npm run test:web-updates

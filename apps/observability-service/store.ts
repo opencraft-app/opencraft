@@ -52,7 +52,7 @@ export class ObserveStore {
   constructor(path: string, now: () => number = Date.now, databaseBytes?: number) {
     if (databaseBytes !== undefined && (!Number.isSafeInteger(databaseBytes) || databaseBytes < 4096)) throw new TypeError('Invalid Observe database capacity');
     this.now = now;
-    const managed = openManagedDatabase({ path, legacyPolicy: 'reject', backup: {keep: 1},
+    const managed = openManagedDatabase({ schemaId: "observability", path, legacyPolicy: 'reject', backup: {keep: 1},
       validateSchema: createSchemaValidator(observationSchemaV1+observationSchemaV2+observationSchemaV3+observationSchemaV4+observationSchemaV5+observationSchemaV6), migrations: [{version: 1, name: 'bounded-derived-observations', sql: observationSchemaV1},{version:2,name:'bounded-query-indexes-and-domain-rollups',sql:observationSchemaV2+backfill},{version:3,name:'execution-progress-and-queue-samples',sql:observationSchemaV3},{version:4,name:'latest-component-producer-index',sql:observationSchemaV4},{version:5,name:'availability-event-index',sql:observationSchemaV5},{version:6,name:'connection-outage-rollup',sql:observationSchemaV6}] });
     this.db = managed.database; this.outcome = managed.outcome;
     this.db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=50; PRAGMA journal_size_limit=33554432;');

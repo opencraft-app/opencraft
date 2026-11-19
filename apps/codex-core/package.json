@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/main.cjs && esbuild src/app-server-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/app-server.cjs && esbuild src/generation-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/generations.cjs && esbuild src/generation-registry.worker.ts --bundle --platform=node --format=esm --outfile=dist/generation-registry-worker.mjs --banner:js=\"import {createRequire as __createRequire} from 'node:module'; const require = __createRequire(import.meta.url);\"",
+    "build": "esbuild src/bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/main.cjs && esbuild src/app-server-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/app-server.cjs && esbuild src/generation-bin.ts --bundle --external:node-pty --platform=node --format=cjs --outfile=dist/generations.cjs && esbuild src/router-evidence.worker.ts --bundle --platform=node --format=esm --outfile=dist/router-evidence-worker.mjs && esbuild src/generation-registry.worker.ts --bundle --platform=node --format=esm --outfile=dist/generation-registry-worker.mjs --banner:js=\"import {createRequire as __createRequire} from 'node:module'; const require = __createRequire(import.meta.url);\"",
     "start": "tsx src/bin.ts",
     "typecheck": "tsc --noEmit"
   },

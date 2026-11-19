@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { installBrowserAutomationIpc } from '../../apps/workbench-electron/src/browser-automation-ipc';
+import { installBrowserAutomationIpc } from '../../apps/desktop/src/browser-automation-ipc';
 
 test('Main rejects foreign callers, unowned guests and arbitrary protocol commands before invocation', async () => {
   const handlers = new Map<string, Function>(); let trusted = false, calls = 0;

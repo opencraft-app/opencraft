@@ -289,3 +289,154 @@ Both the model ID and configured-provider model ID still pass the current usage
 policy. A denied or unsupported explicit default is not silently replaced. Missing
 reasoning metadata remains unspecified and therefore fails closed when the policy
 requires a concrete level; max-only declarations cannot be projected to native Codex.
+
+## Import local Codex and Cursor conversations
+
+Hosts advertising `OnboardingSnapshot.historyImport` expose local resumable
+history during the onboarding Start step, Settings > Chat > Agent, and the
+Import local conversations action at the top of Model services. The model
+configuration action opens history selection directly, without choosing a model
+or repeating onboarding. Users
+explicitly select up to 100 conversations per import; failed selections remain
+available for retry. Native `session/list` provides pagination and trusted
+metadata; the Host accepts only recently discovered native IDs. This imports
+conversations exposed by the installed CLI/ACP peer, not arbitrary IDE files or
+another deployment's conversation store.
+
+`opencraft/agents/onboarding/history` and `/import` are local Host operations.
+The ACP routing ledger persists the native session ID and original working
+directory; the read-only native history adapter validates the transcript before
+registration. Repeated imports reuse the existing route and preserve renamed
+metadata. Import does not call session/new, session/resume or session/prompt.
+Opening/continuing uses the existing read/resume/Turn path. The import is assigned
+to `myself` before a catalog upsert is published. Original source transcripts are
+retained in their native stores; the import is not an independent archive.
+
+Codex imports also preserve the original desktop's project grouping. The native
+history Worker reads `.codex-global-state.json` under the configured Codex home:
+local project IDs/names/order and explicit assignments take precedence, with a
+legacy fallback restricted to saved project roots. Existing imported routes are
+backfilled during catalog discovery; users do not need to import them again.
+Source project metadata is an optional display contract (`nativeProject`),
+separate from OpenCraft execution Project identity, Server membership and cwd.
+It persists through directory/notification/cache projections. The sidebar shows
+source folders with expandable members; ungrouped conversations remain Recent.
+The source file is never modified by this adapter.
+
+
+### Continuing imported Codex conversations across clients
+
+An imported route retains the original native ID. Codex permits one native writer
+at a time: close/release the conversation in the other client before resuming it
+here. The conversation action menu offers explicit **Release Codex conversation**
+when the installed peer advertises `session/close`. Release stops that session's
+background tasks; it is refused during active or unconfirmed work and while other
+OpenCraft clients hold the conversation. A later send resumes the same native ID
+and reads native context again. Merely switching pages does not release a writer.
+
+A native resume rejected with `CODEX_SESSION_BUSY` and `inputNotSent: true`
+proves the new input has not reached Codex. The Workbench submission owner can
+then automatically fork, navigate to the acknowledged child, and transfer the
+same immutable input once. A superseded navigation or unknown fork result stops
+this transfer; arbitrary error text is never sufficient proof for replay. The
+original unsent row remains in the source history.
+
+When automatic transfer is unavailable, the error card offers **Continue in a
+new conversation** if the installed Codex peer advertises `session/fork`. The Host
+forks native storage directly, without resuming the locked source or sending a
+prompt, persists the new native ID, and assigns the new route to the source Server.
+The original route and its unsent input remain unchanged. Forked conversations
+inherit context up to creation and subsequently evolve independently; there is no
+bidirectional merging or simultaneous writing to the original conversation.
+
+`opencraft/agent-session/status` negotiates the actual peer's capabilities;
+`/release` is an explicit serialized lifecycle action. This implementation supports
+full-history Codex forks only, not a selected Turn boundary, ephemeral forks,
+Cursor forks, or fork creation through a configured execution-environment adapter.
+A lost creation acknowledgement is not an invitation to retry automatically.
+
+
+### Model directory read latency and execution ownership
+
+Connected Agent model lists first read declarations already persisted by the ACP
+owner. Login probes and cold peer discovery run independently, with one shared
+background refresh; an unavailable peer does not hold the entire model/list
+response. `opencraft/agents/models/changed` invalidates client capability hints and
+refreshes a previously requested directory. Cached declarations do not authorize
+execution: native admission and model configuration still validate each send.
+
+A native conversation requests its own Agent's directory. The Host advertises
+Codex/Cursor execution-engine capability sets rather than inheriting DSH queues,
+tools, or history behavior. Legacy unqualified IDs are normalized only when the
+owning Agent declares that exact native model. Loading and refresh failures retain
+existing selections; unrelated permission/default queries are not model loading.
+
+
+### Switching Agents from an imported conversation
+
+A scoped native model directory validates the current Agent; it does not hide the
+other Agents from the chooser. Imported Codex/Cursor views also load the Host's
+Agent directory for browsing. Selecting a model from the same Agent updates the
+current Composer. Selecting a different Agent opens a new draft on the same Host,
+Server and working directory, retaining unsent text, ready attachments and context.
+Interrupted attachment processing is marked for re-adding in the destination.
+
+`opencraft/agent-session/export-context` reads the original conversation without
+resuming it. The native history Worker writes a private readable transcript and a
+structured JSONL archive of the complete normalized Turns, including tool/media
+references. These files live under the Host's private connected-agent data root,
+with directory mode 0700 and file mode 0600. They are retained with that data root
+so a persisted draft remains usable after restart; they are not added to the
+workspace or served as public downloads.
+
+The new draft displays a removable reference to that history. Its durable reference and explicit model/effort/tier choices use the existing View-scoped draft continuity envelope, including context-only drafts; refreshing retains the Cursor selection and source record without caching permission grants. The first user
+submission sends this reference as untrusted context; the destination Agent can
+read/search the files rather than stuffing a long conversation into one prompt.
+ACP forwards that context while keeping the visible user message, preview and
+initial title based on the actual input. Source native state remains unchanged;
+this is a context handoff, not a native fork or continuous cross-Agent sync.
+Selecting an Agent alone does not start a new native session or send a prompt.
+
+The selection callback can acknowledge a handled destination transition, preventing
+the previous View from being rewritten with another Agent's model ID. Navigation
+and source ownership are rechecked before preparing the destination. On Servers
+with private-thread access control, private-source handoff is refused until
+creation can atomically preserve destination visibility; it never silently shares
+a private source into a default shared conversation.
+
+## Codex Responses / Anthropic projection
+
+Codex can consume the same installation-owned model document as the other engine adapters. Start the account/control owner with
+`--model-storage-directory <absolute-model-directory>` (the container native-Host launcher uses its existing `models` directory).
+The optional `CodexAccountServiceOptions.configuredResponses` interface provides the equivalent embedding seam. Without either,
+existing account-pool behavior is unchanged. There is no separate credential store, provider default or persisted model selection.
+This is a Host/protocol capability; it does not add a new settings screen or configure an independently managed external Core.
+
+Only enabled chat models declared as `openai-responses` or `anthropic-messages` are advertised. Their stable catalog identity is
+`configured/<encoded-provider-id>/<encoded-model-id>`; the actual provider model ID is restored only at dispatch. Catalogs expose
+capability declarations, not endpoint URLs or credentials. Native `model/list` normalization restores an absent configured reasoning
+default from native `none` to null only when that connection does not declare `none`; explicit supported choices and built-in models stay untouched. The resolver rereads configuration and credentials for each request and
+rejects a configuration revision change during resolution, rather than pairing a new endpoint with an old connection's key.
+Missing credentials are an unavailable connection (503); disabled, removed or unsupported selections are absent (404). Neither
+falls back to another configured provider or to a pooled OAuth account. Native account catalog entries remain available if configured
+catalog loading fails, and configured entries remain available without an OAuth account.
+
+HTTPS endpoints are accepted. Plain HTTP defaults to literal loopback or `localhost`; the separate
+`--allow-insecure-local-model-network` flag explicitly permits local-network names/addresses for this projection.
+Embedders use `allowInsecureLocalNetwork: true` on `createConfiguredCodexResponses` / `createEngineModelSource`.
+This is permission to send the configured credential over plaintext on that network, not proof of DNS isolation or encryption.
+Public plaintext endpoints, embedded URL credentials, query strings and fragments are rejected. Redirects are not followed.
+
+Responses requests pass through to the connection's `/responses` endpoint. Anthropic connections translate to `/messages`, using
+only that connection's `x-api-key`; local Host tokens and OAuth account headers are never forwarded. Streaming conversion requires
+a genuine `message_stop` plus a valid terminal reason: truncated, malformed, empty or interrupted replies cannot become a successful
+answer or compaction checkpoint. Tool names/namespaces, free-text arguments and root schema combinators use reversible wire projections.
+Unsupported structured-output bounds become descriptions; this is not a replacement for the caller's original schema validation.
+Hosted OAuth search is not advertised as an Anthropic capability. Cancellation releases the upstream reader.
+
+Protocol switching preserves visible messages and tool results. Anthropic signatures and bridge item IDs are removed only from the
+outgoing OpenAI projection; the original native history is not rewritten. An explicit Anthropic invalid-thinking-signature HTTP 400
+may be resent **once to the same endpoint**, after stripping earlier thinking blocks. No other provider failure triggers a resend.
+Error-body inspection is capped at 64 KiB; logs contain allowlisted categories, never provider bodies or prompts. Provider error text
+returned to the authenticated caller is bounded and credential-redacted. Native AppServer/provider interoperability still needs a real
+runtime acceptance run; synthetic protocol tests do not establish availability of a particular hosted model.

@@ -1,0 +1,15 @@
+{
+  "production": {
+    "displayName": "OpenCraft",
+    "profileDirectoryName": "OpenCraft",
+    "legacyProfileDirectoryNames": [],
+    "applicationId": "app.opencraft.desktop",
+    "speechHelperId": "app.opencraft.desktop.speech"
+  },
+  "preview": {
+    "displayName": "OpenCraft Preview",
+    "profileDirectoryName": "OpenCraft Preview",
+    "legacyProfileDirectoryNames": [],
+    "applicationId": "app.opencraft.desktop.preview"
+  }
+}

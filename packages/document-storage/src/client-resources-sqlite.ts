@@ -14,7 +14,7 @@ export class SqliteClientResources implements ClientResourcePersistence {
   private readonly database: DatabaseSync;
   readonly outcome: DatabaseOutcome;
   constructor(path: string) {
-    const managed = openManagedDatabase({ path,
+    const managed = openManagedDatabase({ schemaId: "client-resources-sqlite", path,
       migrations: [{ version: 1, name: "client-resources", sql: BASELINE }] });
     this.database = managed.database;
     this.outcome = managed.outcome;

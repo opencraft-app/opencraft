@@ -1,8 +1,277 @@
+import {useIntl} from '@opencraft/i18n/react';
+import {defineMessages} from '@opencraft/i18n';
 import {useEffect,useRef,useState,type ComponentType} from 'react';
 import * as Popover from '@radix-ui/react-popover';
 import {SettingsButton,SettingsNotice,SettingsPageHeader,SettingsSelect,SettingsSwitch,SettingsTextInput,type ExtensionSettingsViewProps} from '@opencraft/extension-react';
 import {BrandMark} from './brand-mark';
 import {NavigationList,NavigationItem} from '@opencraft/design-system-web/navigation';
+
+const personalMessages=defineMessages({
+  "onlyMe": {
+    "id": "modelServices.personal.onlyMe",
+    "defaultMessage": "Only me"
+  },
+  "sharedForUse": {
+    "id": "modelServices.personal.sharedForUse",
+    "defaultMessage": "Shared for use"
+  },
+  "providedByPlatform": {
+    "id": "modelServices.personal.providedByPlatform",
+    "defaultMessage": "Provided by platform"
+  },
+  "backToMyModels": {
+    "id": "modelServices.personal.backToMyModels",
+    "defaultMessage": "Back to my models"
+  },
+  "modelServices": {
+    "id": "modelServices.personal.modelServices",
+    "defaultMessage": "Model services"
+  },
+  "modelConnections": {
+    "id": "modelServices.personal.modelConnections",
+    "defaultMessage": "Model connections"
+  },
+  "searchConnections": {
+    "id": "modelServices.personal.searchConnections",
+    "defaultMessage": "Search connections"
+  },
+  "addMyConnection": {
+    "id": "modelServices.personal.addMyConnection",
+    "defaultMessage": "Add my connection"
+  },
+  "add": {
+    "id": "modelServices.personal.add",
+    "defaultMessage": "Add"
+  },
+  "myModels": {
+    "id": "modelServices.personal.myModels",
+    "defaultMessage": "My models"
+  },
+  "noPersonalConnectionsYet": {
+    "id": "modelServices.personal.noPersonalConnectionsYet",
+    "defaultMessage": "No personal connections yet"
+  },
+  "platformModels": {
+    "id": "modelServices.personal.platformModels",
+    "defaultMessage": "Platform models"
+  },
+  "managePlatformConnections": {
+    "id": "modelServices.personal.managePlatformConnections",
+    "defaultMessage": "Manage platform connections"
+  },
+  "selectAConnection": {
+    "id": "modelServices.personal.selectAConnection",
+    "defaultMessage": "Select a connection"
+  },
+  "loadingModelConnections": {
+    "id": "modelServices.personal.loadingModelConnections",
+    "defaultMessage": "Loading model connections…"
+  },
+  "tryAgain": {
+    "id": "modelServices.personal.tryAgain",
+    "defaultMessage": "Try again"
+  },
+  "connectionMethod": {
+    "id": "modelServices.personal.connectionMethod",
+    "defaultMessage": "Connection method"
+  },
+  "enterAnAPIKey": {
+    "id": "modelServices.personal.enterAnAPIKey",
+    "defaultMessage": "Enter an API key"
+  },
+  "signInToACodexSubscription": {
+    "id": "modelServices.personal.signInToACodexSubscription",
+    "defaultMessage": "Sign in to a Codex subscription"
+  },
+  "myCodexSubscription": {
+    "id": "modelServices.personal.myCodexSubscription",
+    "defaultMessage": "My Codex subscription"
+  },
+  "onlyYouAndYourAssistantsCanUse": {
+    "id": "modelServices.personal.onlyYouAndYourAssistantsCanUse",
+    "defaultMessage": "Only you and your assistants can use this subscription. Available allowance is determined by the provider."
+  },
+  "openTheSignInPageAndEnter": {
+    "id": "modelServices.personal.openTheSignInPageAndEnter",
+    "defaultMessage": "Open the sign-in page and enter this code:"
+  },
+  "openSignInPage": {
+    "id": "modelServices.personal.openSignInPage",
+    "defaultMessage": "Open sign-in page"
+  },
+  "connectsAutomaticallyAfterSignIn": {
+    "id": "modelServices.personal.connectsAutomaticallyAfterSignIn",
+    "defaultMessage": "Connects automatically after sign-in."
+  },
+  "cancel": {
+    "id": "modelServices.personal.cancel",
+    "defaultMessage": "Cancel"
+  },
+  "signInAndConnect": {
+    "id": "modelServices.personal.signInAndConnect",
+    "defaultMessage": "Sign in and connect"
+  },
+  "name": {
+    "id": "modelServices.personal.name",
+    "defaultMessage": "Name"
+  },
+  "forExampleMyCodingModel": {
+    "id": "modelServices.personal.forExampleMyCodingModel",
+    "defaultMessage": "For example: My coding model"
+  },
+  "service": {
+    "id": "modelServices.personal.service",
+    "defaultMessage": "Service"
+  },
+  "model": {
+    "id": "modelServices.personal.model",
+    "defaultMessage": "Model"
+  },
+  "apiKey": {
+    "id": "modelServices.personal.apiKey",
+    "defaultMessage": "API key"
+  },
+  "availableTo": {
+    "id": "modelServices.personal.availableTo",
+    "defaultMessage": "Available to"
+  },
+  "youAndYourAssistantsCanUseThis": {
+    "id": "modelServices.personal.youAndYourAssistantsCanUseThis",
+    "defaultMessage": "You and your assistants can use this connection, but other people's tasks cannot."
+  },
+  "save": {
+    "id": "modelServices.personal.save",
+    "defaultMessage": "Save"
+  },
+  "connectionSettings": {
+    "id": "modelServices.personal.connectionSettings",
+    "defaultMessage": "Connection settings"
+  },
+  "connectionConfigured": {
+    "id": "modelServices.personal.connectionConfigured",
+    "defaultMessage": "Connection configured"
+  },
+  "enabled": {
+    "id": "modelServices.personal.enabled",
+    "defaultMessage": "Enabled"
+  },
+  "notEnabled": {
+    "id": "modelServices.personal.notEnabled",
+    "defaultMessage": "Not enabled"
+  },
+  "usersOnThisPlatform": {
+    "id": "modelServices.personal.usersOnThisPlatform",
+    "defaultMessage": "Users on this platform"
+  },
+  "change": {
+    "id": "modelServices.personal.change",
+    "defaultMessage": "Change"
+  },
+  "whoCanUseThis": {
+    "id": "modelServices.personal.whoCanUseThis",
+    "defaultMessage": "Who can use this"
+  },
+  "accessScope": {
+    "id": "modelServices.personal.accessScope",
+    "defaultMessage": "Access scope"
+  },
+  "otherPeopleCanSelectThisConnectionUpstream": {
+    "id": "modelServices.personal.otherPeopleCanSelectThisConnectionUpstream",
+    "defaultMessage": "Other people can select this connection. Upstream API charges are still billed to the account that owns your key."
+  },
+  "allowOthersToUse": {
+    "id": "modelServices.personal.allowOthersToUse",
+    "defaultMessage": "Allow others to use"
+  },
+  "modelList": {
+    "id": "modelServices.personal.modelList",
+    "defaultMessage": "Model list"
+  },
+  "available": {
+    "id": "modelServices.personal.available",
+    "defaultMessage": "Available"
+  },
+  "advancedSettings": {
+    "id": "modelServices.personal.advancedSettings",
+    "defaultMessage": "Advanced settings"
+  },
+  "serviceAddress": {
+    "id": "modelServices.personal.serviceAddress",
+    "defaultMessage": "Service address"
+  },
+  "subscriptionSignInOnlyMe": {
+    "id": "modelServices.personal.subscriptionSignInOnlyMe",
+    "defaultMessage": "Subscription sign-in · Only me"
+  },
+  "disableConnection": {
+    "id": "modelServices.personal.disableConnection",
+    "defaultMessage": "Disable connection"
+  },
+  "stopsFutureCallsRequestsAlreadySentWill": {
+    "id": "modelServices.personal.stopsFutureCallsRequestsAlreadySentWill",
+    "defaultMessage": "Stops future calls. Requests already sent will still be billed."
+  },
+  "disable": {
+    "id": "modelServices.personal.disable",
+    "defaultMessage": "Disable"
+  },
+  "noModelServicesAreCurrentlyAvailable": {
+    "id": "modelServices.personal.noModelServicesAreCurrentlyAvailable",
+    "defaultMessage": "No model services are currently available."
+  },
+  "myUsage": {
+    "id": "modelServices.personal.myUsage",
+    "defaultMessage": "My usage"
+  },
+  "myConnectionUsage": {
+    "id": "modelServices.personal.myConnectionUsage",
+    "defaultMessage": "My connection usage"
+  },
+  "usedThisMonth": {
+    "id": "modelServices.personal.usedThisMonth",
+    "defaultMessage": "Used this month"
+  },
+  "processingOrUnconfirmed": {
+    "id": "modelServices.personal.processingOrUnconfirmed",
+    "defaultMessage": "Processing or unconfirmed"
+  },
+  "tokens": {
+    "id": "modelServices.personal.tokens",
+    "defaultMessage": "tokens"
+  },
+  "usageLimit": {
+    "id": "modelServices.personal.usageLimit",
+    "defaultMessage": "Usage limit"
+  },
+  "controlsFutureRequestsByTokenCountNot": {
+    "id": "modelServices.personal.controlsFutureRequestsByTokenCountNot",
+    "defaultMessage": "Controls future requests by token count, not by monetary amount. A single request may exceed its reservation."
+  },
+  "noPlatformAllowanceConfigured": {
+    "id": "modelServices.personal.noPlatformAllowanceConfigured",
+    "defaultMessage": "No platform allowance configured"
+  },
+  "maximumMonthlyUsage": {
+    "id": "modelServices.personal.maximumMonthlyUsage",
+    "defaultMessage": "Maximum monthly usage"
+  },
+  "saveLimit": {
+    "id": "modelServices.personal.saveLimit",
+    "defaultMessage": "Save limit"
+  },
+  "refresh": {
+    "id": "modelServices.personal.refresh",
+    "defaultMessage": "Refresh"
+  },
+  "saving": {
+    "id": "modelServices.personal.saving",
+    "defaultMessage": "Saving…"
+  },
+  "monthlyTokens": {
+    "id": "modelServices.personal.monthlyTokens",
+    "defaultMessage": "{count} tokens / month"
+  }
+});
 
 export interface PersonalModelConnection {
   kind?:'subscription'|'api-key'|'platform';id:string;name:string;baseUrl:string;protocol:string;enabled:boolean;owned:boolean;scope:'personal'|'team';revision:number;template:boolean;
@@ -30,6 +299,7 @@ export async function readPersonalModels(fetcher:typeof fetch=globalThis.fetch):
 }
 export function createPersonalModelServicesView(fetcher:typeof fetch=globalThis.fetch, PlatformView?:ComponentType<ExtensionSettingsViewProps>) {
   return function PersonalModelServicesView(_props:ExtensionSettingsViewProps) {
+    const intl=useIntl();
     const [managePlatform,setManagePlatform]=useState(false);
     const [doc,setDoc]=useState<PersonalModelsDocument|null>(null),[selected,setSelected]=useState<string|null>(null);
     const [adding,setAdding]=useState(false),[name,setName]=useState(''),[templateId,setTemplateId]=useState(''),[modelId,setModelId]=useState(''),[key,setKey]=useState('');
@@ -79,52 +349,52 @@ export function createPersonalModelServicesView(fetcher:typeof fetch=globalThis.
     const visible=connections.filter(c=>c.name.toLowerCase().includes(query.toLowerCase()));
     const pick=(id:string)=>{setSelected(id);setAdding(false);setScopeOpen(false);setError('');setMessage('');};
     const add=()=>{setAdding(true);setScopeOpen(false);setError('');setMessage('');};
-    const row=(c:PersonalModelConnection)=><NavigationItem key={c.id} className="model-services-personal__connection" aria-current={!adding&&connection?.id===c.id?"page":undefined} onClick={()=>pick(c.id)}><BrandMark kind="provider" id={c.id} size={24}/><span>{c.name}<small>{c.owned?(c.scope==='personal'?'仅自己':'已开放使用'):'平台提供'}</small></span></NavigationItem>;
-    if(managePlatform&&doc?.canManage&&PlatformView)return <div className="model-services-personal__platform"><SettingsButton variant="quiet" onClick={()=>setManagePlatform(false)}>返回我的模型</SettingsButton><PlatformView {..._props}/></div>;
+    const row=(c:PersonalModelConnection)=><NavigationItem key={c.id} className="model-services-personal__connection" aria-current={!adding&&connection?.id===c.id?"page":undefined} onClick={()=>pick(c.id)}><BrandMark kind="provider" id={c.id} size={24}/><span>{c.name}<small>{c.owned?(c.scope==='personal'?intl.formatMessage(personalMessages.onlyMe):intl.formatMessage(personalMessages.sharedForUse)):intl.formatMessage(personalMessages.providedByPlatform)}</small></span></NavigationItem>;
+    if(managePlatform&&doc?.canManage&&PlatformView)return <div className="model-services-personal__platform"><SettingsButton variant="quiet" onClick={()=>setManagePlatform(false)}>{intl.formatMessage(personalMessages.backToMyModels)}</SettingsButton><PlatformView {..._props}/></div>;
     return <div className="model-services">
-      <SettingsPageHeader title="模型服务"/>
-      <aside className="model-services__navigation" aria-label="模型连接">
-        <div className="model-services__search"><SettingsTextInput aria-label="搜索连接" placeholder="搜索连接" value={query} onChange={e=>setQuery(e.target.value)}/><SettingsButton aria-label="添加我的连接" disabled={!doc||busy||!templates.length&&!doc.subscriptionAvailable} onClick={add}>添加</SettingsButton></div>
-        <details open><summary className="ui-native-disclosure">我的模型</summary><NavigationList label="我的模型">{visible.filter(c=>c.owned).map(row)}</NavigationList>{doc&&!connections.some(c=>c.owned)?<p className="model-services__muted">还没有添加自己的连接</p>:null}</details>
-        <details open><summary className="ui-native-disclosure">平台提供</summary><NavigationList label="平台模型">{visible.filter(c=>!c.owned).map(row)}</NavigationList></details>
-        {doc?.canManage&&PlatformView?<SettingsButton variant="quiet" disabled={busy} onClick={()=>setManagePlatform(true)}>管理平台连接</SettingsButton>:null}
+      <SettingsPageHeader title={intl.formatMessage(personalMessages.modelServices)}/>
+      <aside className="model-services__navigation" aria-label={intl.formatMessage(personalMessages.modelConnections)}>
+        <div className="model-services__search"><SettingsTextInput aria-label={intl.formatMessage(personalMessages.searchConnections)} placeholder={intl.formatMessage(personalMessages.searchConnections)} value={query} onChange={e=>setQuery(e.target.value)}/><SettingsButton aria-label={intl.formatMessage(personalMessages.addMyConnection)} disabled={!doc||busy||!templates.length&&!doc.subscriptionAvailable} onClick={add}>{intl.formatMessage(personalMessages.add)}</SettingsButton></div>
+        <details open><summary className="ui-native-disclosure">{intl.formatMessage(personalMessages.myModels)}</summary><NavigationList label={intl.formatMessage(personalMessages.myModels)}>{visible.filter(c=>c.owned).map(row)}</NavigationList>{doc&&!connections.some(c=>c.owned)?<p className="model-services__muted">{intl.formatMessage(personalMessages.noPersonalConnectionsYet)}</p>:null}</details>
+        <details open><summary className="ui-native-disclosure">{intl.formatMessage(personalMessages.providedByPlatform)}</summary><NavigationList label={intl.formatMessage(personalMessages.platformModels)}>{visible.filter(c=>!c.owned).map(row)}</NavigationList></details>
+        {doc?.canManage&&PlatformView?<SettingsButton variant="quiet" disabled={busy} onClick={()=>setManagePlatform(true)}>{intl.formatMessage(personalMessages.managePlatformConnections)}</SettingsButton>:null}
       </aside>
       <div className="model-services__main">
-        <div className="model-services__mobile-select"><SettingsSelect aria-label="选择连接" value={adding?'':connection?.id??''} onChange={e=>pick(e.target.value)}><option value="">选择连接</option>{connections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</SettingsSelect><SettingsButton aria-label="添加我的连接" disabled={!doc||busy||!templates.length&&!doc.subscriptionAvailable} onClick={add}>添加</SettingsButton></div>
+        <div className="model-services__mobile-select"><SettingsSelect aria-label={intl.formatMessage(personalMessages.selectAConnection)} value={adding?'':connection?.id??''} onChange={e=>pick(e.target.value)}><option value="">{intl.formatMessage(personalMessages.selectAConnection)}</option>{connections.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</SettingsSelect><SettingsButton aria-label={intl.formatMessage(personalMessages.addMyConnection)} disabled={!doc||busy||!templates.length&&!doc.subscriptionAvailable} onClick={add}>{intl.formatMessage(personalMessages.add)}</SettingsButton></div>
         <div className="model-services__detail">
-          {!doc?<SettingsNotice>{error||'正在读取模型连接…'}<SettingsButton disabled={busy} onClick={()=>void refresh()}>重试</SettingsButton></SettingsNotice>:null}
-          {doc&&adding?<section className="model-services__config" aria-label="添加我的连接">
-            <header><h2>添加我的连接</h2></header>
-            {doc.subscriptionAvailable?<div className="model-services__row"><label htmlFor="personal-model-type">连接方式</label><SettingsSelect id="personal-model-type" value={connectionType} disabled={busy||!!login} onChange={e=>setConnectionType(e.target.value)}><option value="api-key">填写 API key</option><option value="subscription">登录 Codex 订阅</option></SettingsSelect></div>:null}
-            {connectionType==='subscription'&&doc.subscriptionAvailable?<><div className="model-services__row"><div><label>我的 Codex 订阅</label><p>仅你和帮你办事的助手使用，订阅可用额度以服务商为准。</p></div></div>
-            {login?<SettingsNotice><p>打开登录页面，输入验证码：<strong>{login.userCode}</strong></p><a href={login.verificationUrl} target="_blank" rel="noopener noreferrer">打开登录页面</a><p>完成登录后会自动连接。</p></SettingsNotice>:null}
-            <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>{if(login)void write({action:'subscription',operation:'cancel',sessionId:login.sessionId},()=>{setLogin(null);setAdding(false);});else setAdding(false);}}>取消</SettingsButton><SettingsButton variant="primary" disabled={busy||!!login} onClick={()=>void write({action:'subscription',operation:'start'},subscriptionResult)}>登录并连接</SettingsButton></div></>:<>
-            <div className="model-services__row"><label htmlFor="personal-model-name">名称</label><SettingsTextInput id="personal-model-name" value={name} disabled={busy} placeholder="例如：我的编程模型" onChange={e=>setName(e.target.value)}/></div>
-            <div className="model-services__row"><label htmlFor="personal-model-service">服务</label><SettingsSelect id="personal-model-service" disabled={busy} value={template?.id??''} onChange={e=>{setTemplateId(e.target.value);setModelId('');setKey('');}}>{templates.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</SettingsSelect></div>
-            <div className="model-services__row"><label htmlFor="personal-model-model">模型</label><SettingsSelect id="personal-model-model" disabled={busy} value={model?.id??''} onChange={e=>setModelId(e.target.value)}>{template?.models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</SettingsSelect></div>
-            <div className="model-services__row"><div><label htmlFor="personal-model-key">API key</label><p>{template?.baseUrl}</p></div><SettingsTextInput id="personal-model-key" type="password" autoComplete="new-password" spellCheck={false} value={key} disabled={busy} onChange={e=>setKey(e.target.value)}/></div>
-            <div className="model-services__row"><div><label>可供使用</label><p>你和帮你办事的助手可以用，别人的任务不能用。</p></div><span>仅自己</span></div>
-            <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>{setAdding(false);setKey('');}}>取消</SettingsButton><SettingsButton variant="primary" disabled={busy||!name.trim()||!key.trim()||!template||!model} onClick={()=>void write({action:'contribute',name,apiKey:key,baseUrl:template!.baseUrl,protocol:template!.protocol,model:model!.id,scope:'personal'},result=>{setKey('');setName('');setSelected(result.providerId);setAdding(false);})}>保存</SettingsButton></div></>}
+          {!doc?<SettingsNotice>{error||intl.formatMessage(personalMessages.loadingModelConnections)}<SettingsButton disabled={busy} onClick={()=>void refresh()}>{intl.formatMessage(personalMessages.tryAgain)}</SettingsButton></SettingsNotice>:null}
+          {doc&&adding?<section className="model-services__config" aria-label={intl.formatMessage(personalMessages.addMyConnection)}>
+            <header><h2>{intl.formatMessage(personalMessages.addMyConnection)}</h2></header>
+            {doc.subscriptionAvailable?<div className="model-services__row"><label htmlFor="personal-model-type">{intl.formatMessage(personalMessages.connectionMethod)}</label><SettingsSelect id="personal-model-type" value={connectionType} disabled={busy||!!login} onChange={e=>setConnectionType(e.target.value)}><option value="api-key">{intl.formatMessage(personalMessages.enterAnAPIKey)}</option><option value="subscription">{intl.formatMessage(personalMessages.signInToACodexSubscription)}</option></SettingsSelect></div>:null}
+            {connectionType==='subscription'&&doc.subscriptionAvailable?<><div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.myCodexSubscription)}</label><p>{intl.formatMessage(personalMessages.onlyYouAndYourAssistantsCanUse)}</p></div></div>
+            {login?<SettingsNotice><p>{intl.formatMessage(personalMessages.openTheSignInPageAndEnter)}<strong>{login.userCode}</strong></p><a href={login.verificationUrl} target="_blank" rel="noopener noreferrer">{intl.formatMessage(personalMessages.openSignInPage)}</a><p>{intl.formatMessage(personalMessages.connectsAutomaticallyAfterSignIn)}</p></SettingsNotice>:null}
+            <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>{if(login)void write({action:'subscription',operation:'cancel',sessionId:login.sessionId},()=>{setLogin(null);setAdding(false);});else setAdding(false);}}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton variant="primary" disabled={busy||!!login} onClick={()=>void write({action:'subscription',operation:'start'},subscriptionResult)}>{intl.formatMessage(personalMessages.signInAndConnect)}</SettingsButton></div></>:<>
+            <div className="model-services__row"><label htmlFor="personal-model-name">{intl.formatMessage(personalMessages.name)}</label><SettingsTextInput id="personal-model-name" value={name} disabled={busy} placeholder={intl.formatMessage(personalMessages.forExampleMyCodingModel)} onChange={e=>setName(e.target.value)}/></div>
+            <div className="model-services__row"><label htmlFor="personal-model-service">{intl.formatMessage(personalMessages.service)}</label><SettingsSelect id="personal-model-service" disabled={busy} value={template?.id??''} onChange={e=>{setTemplateId(e.target.value);setModelId('');setKey('');}}>{templates.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</SettingsSelect></div>
+            <div className="model-services__row"><label htmlFor="personal-model-model">{intl.formatMessage(personalMessages.model)}</label><SettingsSelect id="personal-model-model" disabled={busy} value={model?.id??''} onChange={e=>setModelId(e.target.value)}>{template?.models.map(m=><option key={m.id} value={m.id}>{m.name}</option>)}</SettingsSelect></div>
+            <div className="model-services__row"><div><label htmlFor="personal-model-key">{intl.formatMessage(personalMessages.apiKey)}</label><p>{template?.baseUrl}</p></div><SettingsTextInput id="personal-model-key" type="password" autoComplete="new-password" spellCheck={false} value={key} disabled={busy} onChange={e=>setKey(e.target.value)}/></div>
+            <div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.availableTo)}</label><p>{intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis)}</p></div><span>{intl.formatMessage(personalMessages.onlyMe)}</span></div>
+            <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>{setAdding(false);setKey('');}}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton variant="primary" disabled={busy||!name.trim()||!key.trim()||!template||!model} onClick={()=>void write({action:'contribute',name,apiKey:key,baseUrl:template!.baseUrl,protocol:template!.protocol,model:model!.id,scope:'personal'},result=>{setKey('');setName('');setSelected(result.providerId);setAdding(false);})}>{intl.formatMessage(personalMessages.save)}</SettingsButton></div></>}
           </section>:doc&&connection?<>
-            <section className="model-services__config" aria-label="连接设置">
+            <section className="model-services__config" aria-label={intl.formatMessage(personalMessages.connectionSettings)}>
               <header><BrandMark kind="provider" id={connection.id} size={24}/><h2>{connection.name}</h2></header>
-              <div className="model-services__connection-summary"><span>{connection.owned?'连接已配置': '平台提供'} · {connection.enabled?'已启用':'未启用'}</span></div>
-              {connection.owned?<div className="model-services__row"><div><label>可供使用</label>{connection.scope==='personal'?<p>你和帮你办事的助手可以用，别人的任务不能用。</p>:null}</div><div className="model-services__row-end"><span>{connection.scope==='personal'?'仅自己':'此平台的用户'}</span>
-                {connection.kind!=='subscription'?<Popover.Root open={scopeOpen} onOpenChange={open=>{if(busy)return;setScopeOpen(open);if(open){setScope(connection.scope);setConsent(false);}}}><Popover.Trigger asChild><SettingsButton variant="quiet" disabled={busy}>更改</SettingsButton></Popover.Trigger><Popover.Portal><Popover.Content className="model-services-actions model-services-personal__scope" align="end" sideOffset={6} collisionPadding={12} aria-label="谁可以使用">
-                  <strong>谁可以使用</strong><SettingsSelect aria-label="使用范围" value={scope} disabled={busy} onChange={e=>{setScope(e.target.value as 'personal'|'team');setConsent(false);}}><option value="personal">仅自己</option><option value="team">此平台的用户</option></SettingsSelect>
-                  {scope==='team'?<><p>别人也能选择这条连接，上游 API 费用仍由你的 key 所属账户承担。</p><div className="model-services__row"><span>允许其他人使用</span><SettingsSwitch label="允许其他人使用" checked={consent} disabled={busy} onCheckedChange={setConsent}/></div></>:<p>你和帮你办事的助手可以用，别人的任务不能用。</p>}
-                  <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>setScopeOpen(false)}>取消</SettingsButton><SettingsButton variant="primary" disabled={busy||scope===connection.scope||scope==='team'&&!consent} onClick={()=>void write({action:'scope',provider:connection.id,scope,revision:connection.revision,shareWithTeam:scope==='team'},()=>setScopeOpen(false))}>保存</SettingsButton></div>
+              <div className="model-services__connection-summary"><span>{connection.owned?intl.formatMessage(personalMessages.connectionConfigured): intl.formatMessage(personalMessages.providedByPlatform)} · {connection.enabled?intl.formatMessage(personalMessages.enabled):intl.formatMessage(personalMessages.notEnabled)}</span></div>
+              {connection.owned?<div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.availableTo)}</label>{connection.scope==='personal'?<p>{intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis)}</p>:null}</div><div className="model-services__row-end"><span>{connection.scope==='personal'?intl.formatMessage(personalMessages.onlyMe):intl.formatMessage(personalMessages.usersOnThisPlatform)}</span>
+                {connection.kind!=='subscription'?<Popover.Root open={scopeOpen} onOpenChange={open=>{if(busy)return;setScopeOpen(open);if(open){setScope(connection.scope);setConsent(false);}}}><Popover.Trigger asChild><SettingsButton variant="quiet" disabled={busy}>{intl.formatMessage(personalMessages.change)}</SettingsButton></Popover.Trigger><Popover.Portal><Popover.Content className="model-services-actions model-services-personal__scope" align="end" sideOffset={6} collisionPadding={12} aria-label={intl.formatMessage(personalMessages.whoCanUseThis)}>
+                  <strong>{intl.formatMessage(personalMessages.whoCanUseThis)}</strong><SettingsSelect aria-label={intl.formatMessage(personalMessages.accessScope)} value={scope} disabled={busy} onChange={e=>{setScope(e.target.value as 'personal'|'team');setConsent(false);}}><option value="personal">{intl.formatMessage(personalMessages.onlyMe)}</option><option value="team">{intl.formatMessage(personalMessages.usersOnThisPlatform)}</option></SettingsSelect>
+                  {scope==='team'?<><p>{intl.formatMessage(personalMessages.otherPeopleCanSelectThisConnectionUpstream)}</p><div className="model-services__row"><span>{intl.formatMessage(personalMessages.allowOthersToUse)}</span><SettingsSwitch label={intl.formatMessage(personalMessages.allowOthersToUse)} checked={consent} disabled={busy} onCheckedChange={setConsent}/></div></>:<p>{intl.formatMessage(personalMessages.youAndYourAssistantsCanUseThis)}</p>}
+                  <div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>setScopeOpen(false)}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton variant="primary" disabled={busy||scope===connection.scope||scope==='team'&&!consent} onClick={()=>void write({action:'scope',provider:connection.id,scope,revision:connection.revision,shareWithTeam:scope==='team'},()=>setScopeOpen(false))}>{intl.formatMessage(personalMessages.save)}</SettingsButton></div>
                   {error?<SettingsNotice tone="error">{error}</SettingsNotice>:null}
                 </Popover.Content></Popover.Portal></Popover.Root>:null}
               </div></div>:null}
             </section>
-            <section className="model-services__models" aria-label="模型列表"><div className="model-services__model-heading"><h3>模型</h3></div>{connection.models.map(m=><div className="model-services__model" key={m.id}><BrandMark kind="model" id={m.id} size={32}/><div><strong>{m.name}</strong><small>{m.id}</small></div><span>{connection.enabled&&m.enabled?'可用':'未启用'}</span></div>)}</section>
-            <details className="model-services__advanced"><summary className="ui-native-disclosure">高级设置</summary><div className="model-services__row"><span>{connection.kind==='subscription'?'连接方式':'服务地址'}</span><span>{connection.kind==='subscription'?'订阅登录 · 仅自己':connection.baseUrl}</span></div>{connection.owned?<div className="model-services__row"><div><label>停用连接</label><p>停止后续调用，已经发出的请求仍会结算。</p></div><SettingsButton disabled={busy} onClick={()=>void write({action:'withdraw',provider:connection.id},()=>setSelected(null))}>停用</SettingsButton></div>:null}</details>
-          </>:doc?<SettingsNotice>暂时没有可用的模型服务。</SettingsNotice>:null}
-          {doc&&!adding?<section className="model-services__config" aria-label="我的用量"><header><h3>我的连接用量</h3></header><div className="model-services__row"><span>本月已用</span><span className="model-services__row-end">{doc.usedTokens.toLocaleString()} tokens</span></div>{doc.heldTokens>0?<div className="model-services__row"><span>处理中或待确认</span><span className="model-services__row-end">{doc.heldTokens.toLocaleString()} tokens</span></div>:null}<div className="model-services__row"><div><label>用量限制</label><p>按 token 控制后续请求，不是金额上限；单次请求可能超过预留量。</p></div><div className="model-services__row-end"><span>{doc.limit?`${Math.min(doc.limit.monthlyTokens,doc.personalLimit.monthlyTokens??Infinity).toLocaleString()} tokens / 月`:'平台尚未配置额度'}</span><SettingsButton variant="quiet" disabled={busy||!doc.limit} onClick={()=>{setLimitDraft(String(doc.personalLimit.monthlyTokens??doc.limit?.monthlyTokens??0));setLimitOpen(!limitOpen);}}>更改</SettingsButton></div></div>
-          {limitOpen?<div className="model-services__row"><label htmlFor="personal-model-limit">每月最多使用</label><div><SettingsTextInput id="personal-model-limit" type="number" min={0} step={1} value={limitDraft} disabled={busy} onChange={e=>setLimitDraft(e.target.value)}/><div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>setLimitOpen(false)}>取消</SettingsButton><SettingsButton disabled={busy||limitDraft.trim()===''||!Number.isSafeInteger(Number(limitDraft))||Number(limitDraft)<0} onClick={()=>void write({action:'personalLimit',monthlyTokens:Number(limitDraft),revision:doc.personalLimit.revision},()=>setLimitOpen(false))}>保存限制</SettingsButton></div></div></div>:null}</section>:null}
-          {error&&doc&&!scopeOpen?<SettingsNotice tone="error">{error}<SettingsButton disabled={busy} onClick={()=>void refresh()}>刷新</SettingsButton></SettingsNotice>:null}
-          <p className="model-services__status" role="status">{busy?'正在保存…':message}</p>
+            <section className="model-services__models" aria-label={intl.formatMessage(personalMessages.modelList)}><div className="model-services__model-heading"><h3>{intl.formatMessage(personalMessages.model)}</h3></div>{connection.models.map(m=><div className="model-services__model" key={m.id}><BrandMark kind="model" id={m.id} size={32}/><div><strong>{m.name}</strong><small>{m.id}</small></div><span>{connection.enabled&&m.enabled?intl.formatMessage(personalMessages.available):intl.formatMessage(personalMessages.notEnabled)}</span></div>)}</section>
+            <details className="model-services__advanced"><summary className="ui-native-disclosure">{intl.formatMessage(personalMessages.advancedSettings)}</summary><div className="model-services__row"><span>{connection.kind==='subscription'?intl.formatMessage(personalMessages.connectionMethod):intl.formatMessage(personalMessages.serviceAddress)}</span><span>{connection.kind==='subscription'?intl.formatMessage(personalMessages.subscriptionSignInOnlyMe):connection.baseUrl}</span></div>{connection.owned?<div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.disableConnection)}</label><p>{intl.formatMessage(personalMessages.stopsFutureCallsRequestsAlreadySentWill)}</p></div><SettingsButton disabled={busy} onClick={()=>void write({action:'withdraw',provider:connection.id},()=>setSelected(null))}>{intl.formatMessage(personalMessages.disable)}</SettingsButton></div>:null}</details>
+          </>:doc?<SettingsNotice>{intl.formatMessage(personalMessages.noModelServicesAreCurrentlyAvailable)}</SettingsNotice>:null}
+          {doc&&!adding?<section className="model-services__config" aria-label={intl.formatMessage(personalMessages.myUsage)}><header><h3>{intl.formatMessage(personalMessages.myConnectionUsage)}</h3></header><div className="model-services__row"><span>{intl.formatMessage(personalMessages.usedThisMonth)}</span><span className="model-services__row-end">{doc.usedTokens.toLocaleString()}  {intl.formatMessage(personalMessages.tokens)}</span></div>{doc.heldTokens>0?<div className="model-services__row"><span>{intl.formatMessage(personalMessages.processingOrUnconfirmed)}</span><span className="model-services__row-end">{doc.heldTokens.toLocaleString()}  {intl.formatMessage(personalMessages.tokens)}</span></div>:null}<div className="model-services__row"><div><label>{intl.formatMessage(personalMessages.usageLimit)}</label><p>{intl.formatMessage(personalMessages.controlsFutureRequestsByTokenCountNot)}</p></div><div className="model-services__row-end"><span>{doc.limit?intl.formatMessage(personalMessages.monthlyTokens, { count: Math.min(doc.limit.monthlyTokens,doc.personalLimit.monthlyTokens??Infinity).toLocaleString() }):intl.formatMessage(personalMessages.noPlatformAllowanceConfigured)}</span><SettingsButton variant="quiet" disabled={busy||!doc.limit} onClick={()=>{setLimitDraft(String(doc.personalLimit.monthlyTokens??doc.limit?.monthlyTokens??0));setLimitOpen(!limitOpen);}}>{intl.formatMessage(personalMessages.change)}</SettingsButton></div></div>
+          {limitOpen?<div className="model-services__row"><label htmlFor="personal-model-limit">{intl.formatMessage(personalMessages.maximumMonthlyUsage)}</label><div><SettingsTextInput id="personal-model-limit" type="number" min={0} step={1} value={limitDraft} disabled={busy} onChange={e=>setLimitDraft(e.target.value)}/><div className="model-services__connection-actions"><SettingsButton disabled={busy} onClick={()=>setLimitOpen(false)}>{intl.formatMessage(personalMessages.cancel)}</SettingsButton><SettingsButton disabled={busy||limitDraft.trim()===''||!Number.isSafeInteger(Number(limitDraft))||Number(limitDraft)<0} onClick={()=>void write({action:'personalLimit',monthlyTokens:Number(limitDraft),revision:doc.personalLimit.revision},()=>setLimitOpen(false))}>{intl.formatMessage(personalMessages.saveLimit)}</SettingsButton></div></div></div>:null}</section>:null}
+          {error&&doc&&!scopeOpen?<SettingsNotice tone="error">{error}<SettingsButton disabled={busy} onClick={()=>void refresh()}>{intl.formatMessage(personalMessages.refresh)}</SettingsButton></SettingsNotice>:null}
+          <p className="model-services__status" role="status">{busy?intl.formatMessage(personalMessages.saving):message}</p>
         </div>
       </div>
     </div>;

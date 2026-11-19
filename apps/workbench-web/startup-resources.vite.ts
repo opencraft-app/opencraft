@@ -7,11 +7,11 @@ import type { Plugin } from "vite";
 
 /** Smaller wire bytes, not a normalized estimate: the gate counts this sidecar.
  * Keep the former level-9 result as a ceiling. A bounded sequential search over
- * two smaller hash tables can compress JS/CSS better without changing assets.
+ * a bounded set of hash tables can compress JS/CSS better without changing assets.
  */
 export function gzipAsset(raw: Uint8Array): Buffer {
   let best = gzipSync(raw, { level: 9 });
-  for (const memLevel of [6, 7]) {
+  for (const memLevel of [4, 5, 6, 7, 9]) {
     const candidate = gzipSync(raw, { level: 9, memLevel });
     if (candidate.length < best.length) best = candidate;
   }

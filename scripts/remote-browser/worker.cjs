@@ -392,11 +392,14 @@ async function annotationAutomation(p, method, input) {
   if (!['readContext', 'inspect', 'click', 'fill', 'press', 'scroll', 'wait', 'annotatePick', 'annotateRegion', 'annotateText', 'annotateStyles', 'annotatePreview', 'annotateClearPreview'].includes(method)) throw new Error('Unsupported browser operation');
   const generation = p.document, wc = p.window.webContents;
   if (!p.domReady) await new Promise((resolve, reject) => {
-    const clean = () => { wc.off('dom-ready', ready); wc.off('did-start-navigation', changed); wc.off('destroyed', destroyed); };
+    const timer = setTimeout(() => { clean(); reject(Object.assign(new Error('Browser document not ready'), { code: 'DOCUMENT_NOT_READY' })); }, 15000);
+    const clean = () => { clearTimeout(timer); wc.off('dom-ready', ready); wc.off('did-start-navigation', changed); wc.off('destroyed', destroyed); signal?.removeEventListener('abort', aborted); };
     const ready = () => { clean(); resolve(); };
-    const destroyed = () => { clean(); reject(new Error('Browser page closed')); };
-    const changed = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { clean(); reject(new Error('Browser document changed')); } };
+    const destroyed = () => { clean(); reject(Object.assign(new Error('Browser page closed'), { code: 'PAGE_CLOSED' })); };
+    const changed = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { clean(); reject(Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED' })); } };
+    const aborted = () => { clean(); reject(Object.assign(new Error('Browser automation cancelled'), { code: 'CDP_ABORTED', retryable: false, outcome: 'not-dispatched' })); };
     wc.once('dom-ready', ready); wc.on('did-start-navigation', changed); wc.once('destroyed', destroyed);
+    signal?.addEventListener('abort', aborted, { once: true }); if (signal?.aborted) aborted();
   });
   if (p.document !== generation || p.closed) throw new Error('Browser document changed');
   const frame = wc.mainFrame;

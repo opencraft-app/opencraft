@@ -683,7 +683,7 @@ test("Codex Engine shares one physical initialize and restores logical client ro
       { version: 1, fork: true, ephemeral: true, injectItems: false, sideChatSettings: true, rename: true, archive: true, unsubscribe: true },
     );
     assert.deepEqual((first.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false });
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false });
 
     await adapter.send(JSON.stringify({ id: "a:start", method: "thread/start", params: { cwd: root }, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     await waitFor(frames, frame => frame.id === "a:start");
@@ -980,7 +980,7 @@ test("Codex Host queue Steer capability does not depend on a patched native mark
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false },
     );
   } finally {
     await adapter.close();
@@ -1027,7 +1027,7 @@ test("older native queue marker does not change Host queue capabilities", async 
     const initialized = await waitFor(frames, frame => frame.id === "client-a:init");
     assert.deepEqual(
       (initialized.result as any).capabilities.extensions[OPENCRAFT_THREAD_QUEUE_EXTENSION],
-      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, perItemPause: false },
+      { version: 2, reorder: true, atomicSteer: true, unconfirmedSteerDiscard: true, unconfirmedDeliveryRetry: true, perItemPause: false },
     );
   } finally {
     await adapter.close();
@@ -1091,26 +1091,20 @@ test("Host-owned Codex queue admits a second steer before the first appears in h
   }
 });
 
-test("ambiguous admission blocks only its live attempt; terminal receipt releases later input without replay", async () => {
+test("ambiguous admission retains custody; terminal receipt releases later input without replay", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-"));
   const frames: Array<Record<string, unknown>> = [];
   const adapter = createRoutingAdapter(root, frames, 0, "ambiguous");
-  const client = "client-a";
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
-    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client }));
+    await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     return waitFor(frames, frame => frame.id === id);
   };
   try {
-    await adapter.connect();
-    await initializeClient(adapter, frames, client);
+    await adapter.connect(); await initializeClient(adapter, frames, "client-a");
     await request("thread", "thread/start", { cwd: root });
-    const turn = await request("turn", "turn/start", {
-      threadId: "fixture-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first",
-    });
-    const targetTurnId = (turn.result as any).turn.id;
-    const added = await request("add", "thread/queue/add", {
-      threadId: "fixture-thread-1", input: [{ type: "text", text: "possibly delivered" }], clientUserMessageId: "maybe-1",
-    });
+    const turn = await request("turn", "turn/start", { threadId: "fixture-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first" });
+    const threadId = "fixture-thread-1", targetTurnId = (turn.result as any).turn.id;
+    const added = await request("add", "thread/queue/add", { threadId, input: [{ type: "text", text: "retry me" }], clientUserMessageId: "retry-message" });
     const queuedId = (added.result as any).queuedSubmission.id;
     const next = await request("add-next", "thread/queue/add", {
       threadId: "fixture-thread-1", input: [{ type: "text", text: "must wait" }], clientUserMessageId: "next-1",
@@ -1121,10 +1115,9 @@ test("ambiguous admission blocks only its live attempt; terminal receipt release
     assert.ok(steer.error);
     const unknown = await request("unknown", "thread/queue/list", { threadId: "fixture-thread-1" });
     assert.equal((unknown.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
-    const blocked = await request("blocked", "thread/queue/steer", {
-      threadId: "fixture-thread-1", queuedSubmissionId: (next.result as any).queuedSubmission.id, expectedTurnId: targetTurnId,
-    });
-    assert.match((blocked.error as any).message, /Earlier delivery is unconfirmed/);
+    const queue=(adapter as any).queueStore();
+    assert.equal(queue.find(threadId,queuedId)?.state,"unknown");
+    assert.equal(queue.firstAwaitingAdmission(threadId)?.id,(next.result as any).queuedSubmission.id,"later input owns independent admission; unknown old work is never replayed");
     const stillQueued = await request("still-queued", "thread/queue/list", { threadId: "fixture-thread-1" });
     assert.equal((stillQueued.result as any).data[0].clientUserMessageId, "next-1");
     await request("complete", "test/completeTurn", { threadId: "fixture-thread-1" });
@@ -1144,39 +1137,48 @@ test("ambiguous admission blocks only its live attempt; terminal receipt release
   }
 });
 
-test("a queued start with an unknown target reconciles against all Turn history by client message identity", async () => {
-  const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-unknown-start-"));
-  const dataRoot = join(root, "data");
-  await mkdir(dataRoot);
-  const queue = new OpenCraftHostQueue(dataRoot);
-  const claim = queue.add("fixture-thread-1", "accepted-before-restart", [{ type: "text", text: "same input" }]);
-  queue.claim("fixture-thread-1", claim.id, "unknown");
-  queue.settle("fixture-thread-1", claim.id, "unknown", "steer-delivery-unconfirmed");
-  queue.close();
+for (const lateReceipt of [false, true]) test(`unconfirmed input retries only on request after final reconciliation (late receipt: ${lateReceipt})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-queue-retry-"));
   const frames: Array<Record<string, unknown>> = [];
-  const adapter = createRoutingAdapter(root, frames);
+  const adapter = createRoutingAdapter(root, frames, 0, lateReceipt ? "defer-history" : "ambiguous");
   const request = async (id: string, method: string, params: Record<string, unknown>) => {
     await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "client-a" }));
-    return waitFor(frames, frame => frame.id === id);
+    return waitFor(frames, frame => frame.id === id).catch(error => { throw new Error(`Retry fixture request ${id} (${method}) did not settle`, {cause:error}); });
   };
   try {
-    await adapter.connect();
-    await initializeClient(adapter, frames, "client-a");
+    await adapter.connect(); await initializeClient(adapter, frames, "client-a");
     await request("thread", "thread/start", { cwd: root });
-    await request("turn", "turn/start", {
-      threadId: "fixture-thread-1", input: [{ type: "text", text: "same input" }], clientUserMessageId: "accepted-before-restart",
-    });
-    let reconciled = false;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
-      const listed = await request(`list-${attempt}`, "thread/queue/list", { threadId: "fixture-thread-1" });
-      if ((listed.result as any).steering.length === 0) { reconciled = true; break; }
-      await new Promise(resolve => setTimeout(resolve, 5));
+    const turn = await request("turn", "turn/start", { threadId: "fixture-thread-1", input: [{ type: "text", text: "first" }], clientUserMessageId: "first" });
+    const threadId = "fixture-thread-1", targetTurnId = (turn.result as any).turn.id;
+    const added = await request("add", "thread/queue/add", { threadId, input: [{ type: "text", text: "retry me" }], clientUserMessageId: "retry-message" });
+    const queuedId = (added.result as any).queuedSubmission.id;
+    await request("steer", "thread/queue/steer", { threadId, queuedSubmissionId: queuedId, expectedTurnId: targetTurnId });
+    const queue = (adapter as any).queueStore();
+    if (lateReceipt) queue.settle(threadId, queuedId, "unknown", "steer-delivery-unconfirmed");
+    const next = await request("add-next", "thread/queue/add", { threadId, input: [{ type: "text", text: "next" }], clientUserMessageId: "next-message" });
+    const nextId = (next.result as any).queuedSubmission.id;
+    assert.equal(queue.firstAwaitingAdmission(threadId)?.id, nextId, "unknown input must not block later messages");
+    assert.equal((await request("reorder", "thread/queue/reorder", { threadId, queuedSubmissionIds: [nextId] })).error, undefined);
+    await request("remove-next", "thread/queue/delete", { threadId, queuedSubmissionId: nextId });
+    const wrong = await request("wrong", "thread/queue/retry", { threadId, queuedSubmissionId: queuedId, expectedTurnId: "wrong-turn" });
+    assert.ok(wrong.error);
+    for (const id of ["retry", "retry-again"]) {
+      const reply = await request(id, "thread/queue/retry", { threadId, queuedSubmissionId: queuedId, expectedTurnId: targetTurnId });
+      assert.equal(reply.error, undefined, "retry during an active Turn is accepted without an error dialog");
     }
-    assert.equal(reconciled, true);
-  } finally {
-    await adapter.close();
-    await rm(root, { recursive: true, force: true });
-  }
+    assert.equal(queue.find(threadId, queuedId)?.pausedReason, lateReceipt ? "steer-delivery-unconfirmed" : "delivery-retry-requested");
+    const before = (await request("before", "test/readAcceptedInputs", {})).result as any;
+    assert.equal(before.data.filter((row: any) => row.params.clientUserMessageId === "retry-message").length, 1);
+    await request("complete", "test/completeTurn", { threadId });
+    await waitFor(frames, () => (queue.find(threadId, queuedId)?.state === "delivered" || lateReceipt && queue.find(threadId, queuedId)?.state === "closed")).catch(error => { throw new Error(`Retry fixture final delivery: ${JSON.stringify(queue.find(threadId,queuedId))}`, {cause:error}); });
+    const after = (await request("after", "test/readAcceptedInputs", {})).result as any;
+    const inputs = after.data.filter((row: any) => row.params.clientUserMessageId === "retry-message");
+    assert.equal(inputs.length, lateReceipt ? 1 : 2, "late original acceptance prevents replay; otherwise exactly one explicit retry");
+    if (!lateReceipt) assert.equal(inputs[1].method, "turn/start");
+    assert.equal((await request("retry-delivered", "thread/queue/retry", { threadId, queuedSubmissionId: queuedId, expectedTurnId: targetTurnId })).error, undefined);
+    const final = (await request("final", "test/readAcceptedInputs", {})).result as any;
+    assert.equal(final.data.length, after.data.length, "a lost retry receipt is idempotent");
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("Host queue starts the next turn after completion without sending a native queue RPC", async () => {
@@ -1332,7 +1334,7 @@ test("definitive Codex steer rejection releases the Host claim without losing th
   }
 });
 
-test("restart preserves an unconfirmed claim and blocks a later queued turn", async () => {
+test("restart preserves an unconfirmed input without blocking the next queued turn", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-restart-"));
   const dataRoot = join(root, "data");
   await mkdir(dataRoot);
@@ -1350,9 +1352,14 @@ test("restart preserves an unconfirmed claim and blocks a later queued turn", as
     const listed = await waitFor(frames, frame => frame.id === "list");
     assert.equal((listed.result as any).steering[0].id, uncertain.id);
     assert.equal((listed.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
-    assert.equal((listed.result as any).data[0].clientUserMessageId, "later");
-    await new Promise(resolve => setTimeout(resolve, 30));
-    assert.equal(frames.some(frame => frame.method === "turn/started"), false);
+    // Maintenance can already have dispatched this row before list returns.
+    // Verify durable identity and actual one-time native delivery, not a stale queued snapshot.
+    assert.equal((adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.clientUserMessageId, "later");
+    await waitFor(frames, () => (adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.state === "delivered");
+    assert.equal((adapter as any).queueStore().find("fixture-thread-1", uncertain.id)?.state, "unknown");
+    await adapter.send(JSON.stringify({ id: "accepted", method: "test/readAcceptedInputs", params: {}, [LOGICAL_CLIENT_FIELD]: "client-a" }));
+    const accepted = (await waitFor(frames, frame => frame.id === "accepted")).result as any;
+    assert.deepEqual(accepted.data.map((input: any) => input.params.clientUserMessageId), ["later"]);
   } finally {
     await adapter.close();
     await rm(root, { recursive: true, force: true });
@@ -1572,10 +1579,13 @@ test("Host binds each submission to its trusted sender and keeps queued authors 
     await initializeClient(adapter, frames, "a"); await initializeClient(adapter, frames, "b");
     const threadId = (await request("a", "thread/start", { testNoServerRequest: true })).result.thread.id;
     const first = await request("a", "turn/start", { threadId, clientUserMessageId: "first", input: [{ type: "text", text: "one" }], sender: b });
+    assert.deepEqual(first.result.__opencraftSubmissionSender, { clientMessageId: "first", sender: a });
     const turnId = first.result.turn.id;
-    assert.ok((await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "second", input: [{ type: "text", text: "two" }] }, b)).result);
+    const steered = await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "second", input: [{ type: "text", text: "two" }] }, b);
+    assert.deepEqual(steered.result.__opencraftSubmissionSender, { clientMessageId: "second", sender: b });
     const added = await request("a", "thread/queue/add", { threadId, clientUserMessageId: "third", input: [{ type: "text", text: "three" }] });
     assert.deepEqual(added.result.queuedSubmission.sender, a);
+    assert.deepEqual(added.result.__opencraftSubmissionSender, { clientMessageId: "third", sender: a });
     // A repeat ID from another employee must not change authorship or reach native Codex.
     const collision = await request("b", "turn/steer", { threadId, expectedTurnId: turnId, clientUserMessageId: "first", input: [{ type: "text", text: "overwrite" }] }, b);
     assert.match(collision.error.message, /another sender/);
@@ -2300,13 +2310,206 @@ test("a queued native send with a lost acknowledgement remains unknown and never
     const threadId = ((await rpc("create", "thread/start", { cwd: root, testNoServerRequest: true })).result as any).thread.id;
     const request = (adapter as any).requestPhysical.bind(adapter);
     (adapter as any).requestPhysical = async (method: string, ...args: any[]) => {
-      if (method === "turn/start") { sends++; throw new Error("Native acknowledgement was lost"); }
+      if (method === "turn/start" && ++sends === 1) throw new Error("Native acknowledgement was lost");
       return request(method, ...args);
     };
     const queued = (await rpc("enqueue", "thread/queue/add", { threadId, clientUserMessageId: "uncertain", input: [{ type: "text", text: "one" }] })).result as any;
     await waitFor(frames, f => f.method === "thread/queue/changed" &&
       (adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state === "unknown");
     assert.equal(sends, 1); assert.equal((adapter as any).queuePreparationRetries.size, 0);
+    const next = (await rpc("next", "thread/queue/add", { threadId, clientUserMessageId: "subsequent", input: [{ type: "text", text: "two" }] })).result as any;
+    await waitFor(frames, () => (adapter as any).queueStore().find(threadId, next.queuedSubmission.id)?.state === "delivered");
+    assert.equal(sends, 2, "subsequent input dispatches without retrying the unknown input");
+    assert.equal((adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state, "unknown");
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("execution fault keeps history readable, durably queues new input and never continues the interrupted turn", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-execution-fault-adapter-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames);
+  let sequence = 0;
+  const rpc = async (method: string, params: object = {}) => {
+    const id = `fault:${++sequence}`;
+    await adapter.send(JSON.stringify({id, method, params, [LOGICAL_CLIENT_FIELD]: "viewer"}));
+    const response = await waitFor(frames, frame => frame.id === id);
+    assert.equal(response.error, undefined, `${method} rejected: ${JSON.stringify(response.error)}`);
+    return response.result as any;
+  };
+  const notify = (state: "failed" | "recovered") => (adapter as any).receivePhysicalLine(JSON.stringify({
+    method: "opencraft/codex/generation/lost",
+    params: {generationId: "one", incarnation: 1, connectionEpoch: "source", threadIds: ["fixture-thread-1"],
+      recoveryId: "fault-one", reason: `execution-environment-${state}`},
+    __opencraftGeneration: {routingEpoch: "fixture-router", generationId: "one", incarnation: state === "failed" ? 1 : 2},
+  }));
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer");
+    await rpc("thread/start", {});
+    (adapter as any).applyGenerationFences({routingEpoch: "fixture-router", fenceEpoch: 0, fencedGenerationIds: [],
+      defaultGenerationId: "one", legacyGenerationId: "one", routes: [{threadId: "fixture-thread-1", generationId: "one"}]});
+    await rpc("turn/start", {threadId: "fixture-thread-1", clientUserMessageId: "old", input: [{type: "text", text: "old"}]});
+    notify("failed");
+    const queued = await rpc("thread/queue/add", {threadId: "fixture-thread-1", clientUserMessageId: "new", input: [{type: "text", text: "explicit new input"}]});
+    assert.equal(queued.queuedSubmission.pausedReason, "execution-recovering");
+    const history = await rpc("thread/read", {threadId: "fixture-thread-1", includeTurns: true});
+    assert.equal(history.thread.id, "fixture-thread-1");
+    for (let n = 0; n < 200 && !frames.some(frame => frame.method === "turn/completed" && (frame.params as any)?.turn?.status === "interrupted"); n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(frames.some(frame => frame.method === "turn/completed" && (frame.params as any)?.turn?.status === "interrupted"));
+    assert.equal((await rpc("test/readAcceptedInputs")).data.length, 1, "failure must not continue the old Turn");
+    // Native fixture's old turn is gone before the recovery receipt permits a new input.
+    await rpc("test/completeTurn", {threadId: "fixture-thread-1"});
+    notify("recovered");
+    let inputs: any[] = [];
+    for (let n = 0; n < 200; n++) {
+      inputs = (await rpc("test/readAcceptedInputs")).data;
+      if (inputs.length === 2) break;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.deepEqual(inputs.map(input => input.params.clientUserMessageId), ["old", "new"]);
+    assert.equal(inputs.some(input => input.params.input.length === 0), false, "no automatic empty-input continuation");
+    const interruptedBeforeReplay = frames.filter(frame => frame.method === "turn/completed" && (frame.params as any)?.turn?.status === "interrupted").length;
+    // Host restart loses volatile receipt memory, while its durable receipt and
+    // the new Native Turn remain. The same completed controller snapshot returns.
+    (adapter as any).executionFaultNotifications.clear();
+    (adapter as any).applyGenerationFences({routingEpoch: "fixture-router", fenceEpoch: 0, fencedGenerationIds: [],
+      defaultGenerationId: "one", legacyGenerationId: "one", routes: [{threadId: "fixture-thread-1", generationId: "one"}],
+      executionRecoveries: [{id: "fault-one", generationId: "one", incarnation: 1, state: "recovered", threadIds: ["fixture-thread-1"]}]});
+    for (let n = 0; n < 200 && adapter.status.execution !== "ready"; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(frames.filter(frame => frame.method === "turn/completed" && (frame.params as any)?.turn?.status === "interrupted").length, interruptedBeforeReplay);
+    await rpc("thread/resume", {threadId: "post-fault-thread"});
+    await rpc("turn/start", {threadId: "post-fault-thread", clientUserMessageId: "post-fault-input", input: [{type: "text", text: "new conversation"}]});
+    (adapter as any).applyGenerationFences({routingEpoch: "fixture-router", fenceEpoch: 0, fencedGenerationIds: [],
+      defaultGenerationId: "one", legacyGenerationId: "one", routes: [{threadId: "fixture-thread-1", generationId: "one"}, {threadId: "post-fault-thread", generationId: "one"}],
+      executionRecoveries: [{id: "fault-one", generationId: "one", incarnation: 1, state: "recovered", threadIds: ["fixture-thread-1"]}]});
+    await new Promise(resolve => setTimeout(resolve, 30));
+    assert.equal(frames.some(frame => frame.method === "turn/completed" && (frame.params as any)?.threadId === "post-fault-thread" && (frame.params as any)?.turn?.status === "interrupted"), false,
+      "a completed fault never grows to include conversations created later");
+    notify("failed"); // delayed source notice cannot re-block an already completed recovery
+    assert.equal((await rpc("thread/queue/list", {threadId: "fixture-thread-1"})).data.length, 0);
+  } finally { await adapter.close(); await rm(root, {recursive: true, force: true}); }
+});
+
+for (const recoveredId of ["fault", "later-fault"]) test(`recovered commit supersedes a failed recovering commit and releases new input (${recoveredId})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-fault-stage-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames), internal = adapter as any;
+  let sequence = 0, failed = false;
+  const rpc = async (method: string, params: object = {}) => {
+    const id = `stages:${++sequence}`; await adapter.send(JSON.stringify({id, method, params, [LOGICAL_CLIENT_FIELD]: "viewer"}));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  const snapshot = (state: "recovering" | "recovered") => internal.applyGenerationFences({routingEpoch: "router", fenceEpoch: 0, fencedGenerationIds: [], defaultGenerationId: "one", legacyGenerationId: "one",
+    routes: [{threadId: "fixture-thread-1", generationId: "one"}], executionRecoveries: [{id: state === "recovered" ? recoveredId : "fault", generationId: "one", incarnation: state === "recovered" && recoveredId !== "fault" ? 2 : 1, state, threadIds: ["fixture-thread-1"]}]});
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer"); await rpc("thread/start");
+    const write = internal.executionFaultWriter.write.bind(internal.executionFaultWriter);
+    internal.executionFaultWriter.write = async (work: any) => {if (!work.recovered) {failed = true; throw new Error("Storage unavailable");} return write(work);};
+    snapshot("recovering");
+    for (let n = 0; n < 100 && !failed; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(adapter.status.execution, "recovering");
+    snapshot("recovered");
+    for (let n = 0; n < 200 && adapter.status.execution !== "ready"; n++) await new Promise(resolve => setTimeout(resolve, 5));
+    assert.equal(adapter.status.execution, "ready");
+    const result = await rpc("turn/start", {threadId: "fixture-thread-1", clientUserMessageId: "new", input: [{type: "text", text: "new"}]});
+    assert.equal(result.error, undefined, "superseded failure must not permanently block the generation");
+  } finally {await adapter.close(); await rm(root, {recursive: true, force: true});}
+});
+
+test("execution preflight refusal preserves queue custody as unsent and later dispatches the input once", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-preflight-unsent-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames); let sequence = 0;
+  const rpc = async (method: string, params: object = {}) => {
+    const id = `unsent:${++sequence}`; await adapter.send(JSON.stringify({id, method, params, [LOGICAL_CLIENT_FIELD]: "viewer"}));
+    const reply = await waitFor(frames, frame => frame.id === id); assert.equal(reply.error, undefined); return reply.result as any;
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer"); await rpc("thread/start");
+    await rpc("test/refuseExecution", {enabled: true});
+    await rpc("thread/queue/add", {threadId: "fixture-thread-1", clientUserMessageId: "new", input: [{type: "text", text: "new"}]});
+    let queue: any;
+    for (let n = 0; n < 100; n++) {
+      const counts = await rpc("test/readMethodCounts"); queue = await rpc("thread/queue/list", {threadId: "fixture-thread-1"});
+      if (counts["turn/start"] && queue.data.length === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+    assert.equal(queue.data.length, 1); assert.equal(queue.steering?.length ?? 0, 0);
+    assert.equal((await rpc("test/readAcceptedInputs")).data.length, 0);
+    await rpc("test/refuseExecution", {enabled: false});
+    await rpc("thread/queue/start", {threadId: "fixture-thread-1"});
+    let inputs: any[] = [];
+    for (let n = 0; n < 200; n++) {inputs = (await rpc("test/readAcceptedInputs")).data; if (inputs.length) break; await new Promise(resolve => setTimeout(resolve, 10));}
+    assert.deepEqual(inputs.map(row => row.params.clientUserMessageId), ["new"]);
+  } finally {await adapter.close(); await rm(root, {recursive: true, force: true});}
+});
+
+test("execution preflight refusal of a queued steer retains the unsent input and its rejection proof", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-steer-preflight-")), frames: Array<Record<string, unknown>> = [];
+  const adapter = createRoutingAdapter(root, frames); let sequence = 0;
+  const rpc = async (method: string, params: object = {}) => {
+    const id = `steer-unsent:${++sequence}`; await adapter.send(JSON.stringify({id, method, params, [LOGICAL_CLIENT_FIELD]: "viewer"}));
+    return waitFor(frames, frame => frame.id === id);
+  };
+  try {
+    await adapter.connect(); await initializeClient(adapter, frames, "viewer"); await rpc("thread/start");
+    const start = await rpc("turn/start", {threadId: "fixture-thread-1", clientUserMessageId: "old", input: [{type: "text", text: "old"}]});
+    const queued = await rpc("thread/queue/add", {threadId: "fixture-thread-1", clientUserMessageId: "new", input: [{type: "text", text: "new"}]});
+    const params = {threadId: "fixture-thread-1", queuedSubmissionId: (queued.result as any).queuedSubmission.id, expectedTurnId: (start.result as any).turn.id};
+    await rpc("test/refuseExecution", {enabled: true});
+    const rejected = await rpc("thread/queue/steer", params);
+    assert.equal((rejected.error as any).data.notSubmitted, true);
+    const list = (await rpc("thread/queue/list", {threadId: "fixture-thread-1"})).result as any;
+    assert.equal(list.data[0].id, params.queuedSubmissionId); assert.equal(list.steering?.length ?? 0, 0);
+    await rpc("test/refuseExecution", {enabled: false});
+    assert.equal((await rpc("thread/queue/steer", params)).error, undefined);
+    const inputs = (await rpc("test/readAcceptedInputs")).result as any;
+    assert.deepEqual(inputs.data.map((row: any) => row.params.clientUserMessageId), ["old", "new"]);
+  } finally {await adapter.close(); await rm(root, {recursive: true, force: true});}
+});
+
+for (const [message, expectedHint] of [
+  ["list_turns is not supported yet", "turn-history-unsupported"],
+  ["Method not found", "method-not-found"],
+  ["Unknown method: thread/resume", "method-not-found"],
+  ["No client handler for account/chatgptAuthTokens/refresh", "client-handler-missing"],
+  ["experimental API is not enabled", "experimental-api-unavailable"],
+  ["Bearer fixture-secret /private/path\nrequest payload fixture-prompt", "redacted"],
+  ["list_turns is not supported yet: Bearer fixture-secret", "redacted"],
+] as const) test(`capture-settings RPC logs only a safe hint: ${expectedHint} (${message.slice(0, 18)})`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-capture-diagnostics-"));
+  const diagnostics: Array<Record<string, unknown>> = [], calls: string[] = [];
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp", http_headers: { Authorization: "Bearer fixture-secret" } }),
+    undefined, event => diagnostics.push(event));
+  const internals = adapter as any;
+  const nativeError = Object.assign(new Error(message), { code: -32601,
+    data: { credential: "fixture-secret", cwd: "/private/path", input: "fixture-prompt" } });
+  internals.requestPhysical = async (method: string, params: any) => {
+    calls.push(method);
+    if (method === "thread/read") return { thread: { status: { type: "idle" } } };
+    assert.equal(method, "thread/resume");
+    assert.equal(params.config, undefined, "failure is settings capture, before tool application");
+    throw nativeError;
+  };
+  try {
+    let failure: any;
+    try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+    assert.ok(failure); assert.equal(failure.cause, nativeError, "logging preserves the original cause");
+    const error = internals.sessionMcpFailure(failure);
+    assert.equal(error.data.stage, "capture-settings");
+    assert.equal(error.data.reason, "native-rpc-failed");
+    assert.equal(error.data.nativeCode, -32601);
+    assert.equal(error.data.submissionOutcome, "rejected");
+    assert.deepEqual(calls, ["thread/read", "thread/resume"], "no replay, unsubscribe or input dispatch");
+    const events = diagnostics.filter(event => event.event === "session-mcp-preparation-failed");
+    assert.equal(events.length, 1, "reuse the existing failure event rather than adding success traffic");
+    const event = events[0];
+    assert.equal(event.diagnosticId, error.data.diagnosticId);
+    assert.equal(event.threadId, "thread"); assert.equal(event.inputId, "input");
+    assert.equal(event.nativeStatus, "idle");
+    assert.equal(event.rpcMethod, "thread/resume");
+    assert.equal(event.nativeErrorHint, expectedHint);
+    assert.ok(Number.isSafeInteger(event.rpcElapsedMs) && Number(event.rpcElapsedMs) >= 0);
+    assert.equal(error.data.nativeErrorHint, undefined, "native hint is not sent to the browser");
+    assert.doesNotMatch(JSON.stringify({ error, diagnostics }), /fixture-secret|fixture-prompt|private\/path|Authorization|credential|stack/);
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 

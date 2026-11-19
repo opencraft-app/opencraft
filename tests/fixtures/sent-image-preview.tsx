@@ -49,6 +49,8 @@ const block: UserMessageTimelineBlock = {
 };
 
 const mode = new URLSearchParams(location.search).get("mode") === "dark" ? "dark" : "light";
+const multipleMetadataImages = new URLSearchParams(location.search).has("metadata-multiple");
+const metadataDenied = new URLSearchParams(location.search).has("metadata-denied");
 const metadataOnly = new URLSearchParams(location.search).has("metadata-only");
 function SentImageMessage() {
   const [hydrated, setHydrated] = useState(false);
@@ -56,17 +58,26 @@ function SentImageMessage() {
   Object.assign(window, { hydrateImageContent: () => setHydrated(true) });
   return <UserMessageBlock block={{ ...block,
     message: "Inspect these images",
-    content: hydrated ? [{ type: "local-image", source: "/host/IMG_3364.png", detail: null }] : [],
-    attachments: [{ type: "file", id: "photo", name: "IMG_3364.png", target: "/host/IMG_3364.png", mimeType: "image/png", startLine: null, endLine: null }],
+    content: hydrated ? (multipleMetadataImages
+      ? [{ type: "local-image", source: "/host/second.png", detail: null }, { type: "local-image", source: "/host/IMG_3364.png", detail: null }]
+      : [{ type: "local-image", source: "/host/IMG_3364.png", detail: null }]) : [],
+    attachments: (multipleMetadataImages ? ["IMG_3364.png", "second.png"] : ["IMG_3364.png"]).map(name => ({
+      type: "file", id: name, name, target: `/host/${name}`, mimeType: "image/png", startLine: null, endLine: null,
+    })),
   }} />;
 }
+const metadataCompletions: (() => void)[] = [];
 const metadataMedia = {
   conversationId: "preview", hostId: "fixture", cwd: "/host", theme: mode,
-  loadMediaSource: async () => {
+  loadMediaSource: async (request: import("@opencraft/chat-render-web").ChatMediaSourceRequest) => {
     const state = window as any;
     state.metadataLoads = (state.metadataLoads ?? 0) + 1;
-    await new Promise<void>(resolve => { state.completeMetadataMedia = resolve; });
-    return { source: image };
+    (state.metadataRequests ??= []).push({documentId:request.documentId,source:request.source});
+    await new Promise<void>(resolve => {
+      metadataCompletions.push(resolve);
+      state.completeMetadataMedia = () => metadataCompletions.splice(0).forEach(complete => complete());
+    });
+    return metadataDenied ? null : { source: image };
   },
 } as const;
 for (const [key, value] of Object.entries(themes.buildOpenCraftThemeCssProperties(mode, themes.opencraftNeutralThemePalette[mode]))) presentationRoot.style.setProperty(key, value);
@@ -86,7 +97,7 @@ createIntlTestRoot(presentationRoot).render(
     {metadataOnly ? <ConversationDocumentContext.Provider value={metadataMedia}><SentImageMessage /></ConversationDocumentContext.Provider> : <SentImageMessage />}
     </ConversationDocumentContext.Provider>
     <div style={{ position: "relative", maxWidth: 760, margin: "24px auto", padding: 12 }}>
-      <OpenCraftComposer ref={composer} controller={controller} portalContainer={presentationRoot} mentionSuggestionsEnabled={false} onCancel={() => {}}
+      <OpenCraftComposer isStreaming={false} ref={composer} controller={controller} portalContainer={presentationRoot} mentionSuggestionsEnabled={false} onCancel={() => {}}
         onSubmit={() => { (window as any).imagePreviewFixture.submissions++; return false; }}
         onResolveAttachment={(file, pending) => { (window as any).imagePreviewFixture.files.push(file); return new Promise(resolve => completions.push(() => resolve({ ...pending, lifecycle: "ready", uri: "file:///synthetic/" + pending.name, error: null }))); }} />
     </div>

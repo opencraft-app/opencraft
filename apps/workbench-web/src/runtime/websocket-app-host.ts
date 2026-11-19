@@ -213,9 +213,11 @@ class WebSocketAppHostPort {
           if (!this.resume || !this.resume.link.acknowledge(message.received)) throw new Error("Invalid acknowledgement");
           return;
         }
+        if (this.phase === "ready" && message?.type === "ready") throw new Error("Duplicate ready");
+        if (this.resume && (!message || typeof message !== "object" || !("seq" in message))) throw new Error("Missing sequence");
         if (this.resume && message && typeof message === "object" && "seq" in message) {
           if (!isSequence(message.seq)) throw new Error("Invalid sequence");
-          const arrival = this.resume.link.accept(message.seq, data.length);
+          const arrival = this.resume.link.accept(message.seq, utf8Length(data));
           if (arrival === "duplicate") return;
           if (arrival === "gap") throw new Error("Sequence gap");
           const { seq: _seq, ...body } = message;
@@ -294,16 +296,16 @@ class WebSocketAppHostPort {
     this.outgoing = new WebSocketSendProgress(socket);
     resuming.handshake = globalThis.setTimeout(() => {
       if (this.resuming === resuming && this.live === socket) this.resumeAttemptFailed();
-    }, RESUME_HANDSHAKE_MS);
+    }, Math.min(RESUME_HANDSHAKE_MS, RESUME_ATTEMPT_MS - (Date.now() - resuming.startedAt)));
     this.attach(socket);
     if (socket.readyState === 1) this.sendResumeHello(socket);
   }
 
   private sendResumeHello(socket: WebSocket): void {
     if (!this.resume || !this.hello) return;
-    socket.send(JSON.stringify({ ...this.hello, heartbeat: true, resume: {
+    try { socket.send(JSON.stringify({ ...this.hello, heartbeat: true, resume: {
       v: RESUME_PROTOCOL_VERSION, sessionId: this.resume.grant.sessionId, token: this.resume.grant.token, received: this.resume.link.received,
-    } }));
+    } })); } catch { this.resumeAttemptFailed(); }
   }
 
   private receiveResumeReply(message: { type?: unknown; received?: unknown }): void {
@@ -350,6 +352,8 @@ class WebSocketAppHostPort {
     if (resuming.timer !== null) globalThis.clearTimeout(resuming.timer);
     if (resuming.handshake !== null) globalThis.clearTimeout(resuming.handshake);
     this.resuming = null;
+    if (this.resume?.ackTimer != null) globalThis.clearTimeout(this.resume.ackTimer);
+    this.resume?.link.dispose();
     this.resume = null;
     const attempt = this.live;
     this.live = null;
@@ -366,7 +370,8 @@ class WebSocketAppHostPort {
     const flush = () => {
       resume.ackTimer = null;
       if (this.closed || this.resuming || this.resume !== resume || this.live?.readyState !== 1) return;
-      this.outgoing.send(JSON.stringify({ type: "connection/ack", received: resume.link.acknowledged() }));
+      try { this.outgoing.send(JSON.stringify({ type: "connection/ack", received: resume.link.acknowledged() })); }
+      catch { this.lost({ message: "App Host acknowledgement failed", failure: "socket-error" }); }
     };
     if (due === "now") { if (resume.ackTimer !== null) globalThis.clearTimeout(resume.ackTimer); flush(); }
     else if (resume.ackTimer === null) resume.ackTimer = globalThis.setTimeout(flush, RESUME_ACK_DELAY_MS);
@@ -375,7 +380,7 @@ class WebSocketAppHostPort {
   /** Number a frame for the session and retain it until the server acknowledges it. */
   private sequence(message: RendererToAppHostMessage): string | null {
     const resume = this.resume;
-    if (!resume || message.type === "hello" || (message.type as string) === "connection/probe") return null;
+    if (!resume || message.type === "hello") return null;
     const seq = resume.link.next();
     const frame = JSON.stringify({ ...message, seq });
     resume.link.retain(seq, frame, utf8Length(frame));
@@ -394,14 +399,24 @@ class WebSocketAppHostPort {
     // Heartbeats and resumption are WebSocket-route concerns; other App Host ports never see them.
     const frame = this.sequence(message) ?? JSON.stringify(message.type === "hello"
       ? { ...message, heartbeat: true, resume: { v: RESUME_PROTOCOL_VERSION } } : message);
-    if (this.socket.readyState === 1) this.outgoing.send(frame);
+    if (this.socket.readyState === 1) {
+      try { this.outgoing.send(frame); }
+      catch (error) { this.fail("App Host send failed", "socket-error"); throw error; }
+    }
     else if (this.socket.readyState === 0 && this.queued.length < 16) this.queued.push(frame);
     else throw new Error("App Host connection is unavailable");
   }
 
   postMessageWithProgress(message: RendererToAppHostMessage, signal: AbortSignal | undefined, progress: TransportSendProgressOptions): void {
     if (this.closed || this.resuming || this.socket.readyState !== 1) throw new Error("App Host connection is unavailable");
-    this.outgoing.send(this.sequence(message) ?? JSON.stringify(message), signal, progress);
+    signal?.throwIfAborted();
+    try { this.outgoing.send(this.sequence(message) ?? JSON.stringify(message), signal, progress); }
+    catch (error) {
+      // A refused local write cannot remain retained and later replay behind a
+      // caller's non-dispatch retry. Retire the logical owner conservatively.
+      this.fail("App Host send failed", "socket-error");
+      throw error;
+    }
   }
 
   addEventListener(_type: "message", listener: (event: MessageEvent<unknown>) => void): void {
@@ -508,7 +523,7 @@ class WebSocketAppHostPort {
       if (resuming?.handshake) globalThis.clearTimeout(resuming.handshake);
       this.resuming = null;
       if (this.resume?.ackTimer) globalThis.clearTimeout(this.resume.ackTimer);
-      this.resume?.link.clear();
+      this.resume?.link.dispose();
       this.resume = null;
       this.live = null;
       this.closed = true;

@@ -80,6 +80,7 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands;
   for (const value of [service, brain, hands]) {
     assert.equal(value.user, '1234:2345');
+    assert.deepEqual(value.build.args, { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345' });
     assert.equal(value.network_mode, 'host');
     assert.equal(value.ports, undefined);
     assert.deepEqual(value.logging, { driver: 'local', options: { 'max-size': '10m', 'max-file': '3' } });
@@ -118,6 +119,30 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
   assert.equal(service.command[service.command.indexOf('--data-dir') + 1], paths.dataDirectory);
   assert.equal(service.command[service.command.indexOf('--engines') + 1], 'dsh,pi');
   assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/var/lib/opencraft/execution/browser/owner.sock');
+});
+
+test('prebuilt role images preserve the runtime service contract and project paths', t => {
+  if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
+    return t.skip('Docker Compose CLI is unavailable');
+  const env = { ...process.env, OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/srv/projects' };
+  const roles = ['gateway', 'brain', 'hands'];
+  const image = role => `example.org/opencraft/${role}:v1`;
+  for (const role of roles) env[`OPENCRAFT_${role.toUpperCase()}_IMAGE`] = image(role);
+  const render = (...extra) => JSON.parse(execFileSync('docker', ['compose', '--env-file', 'docker/.env.example',
+    '-f', 'docker/compose.yaml', ...extra, 'config', '--format', 'json'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'],
+  })).services;
+  const base = render();
+  const overlay = ['-f', 'docker/compose.role-images.yaml'];
+  const rendered = render(...overlay);
+  for (const role of roles) {
+    const { build, ...expected } = base[role];
+    assert.ok(build);
+    assert.deepEqual(rendered[role], { ...expected, image: image(role) });
+    assert.ok(rendered[role].volumes.some(v => v.source === '/srv/projects' && v.target === v.source));
+  }
+  env.OPENCRAFT_HANDS_IMAGE = '';
+  assert.throws(() => render(...overlay), /OPENCRAFT_HANDS_IMAGE/u);
 });
 
 test('the published env example renders without hidden required variables', t => {
@@ -162,6 +187,13 @@ test('custom container candidates carry pinned bases, source identity and a veri
   for (const argument of ['OPENCRAFT_BUILD_ID', 'OPENCRAFT_SOURCE_REVISION', 'SOURCE_DATE_EPOCH'])
     assert.match(workflow, new RegExp(`--build-arg "${argument}=`, 'u'));
   assert.ok(workflow.indexOf('npm ci --no-audit --no-fund') < workflow.indexOf('node --test tests/server/container-deployment.test.mjs'));
+});
+
+test('standalone container Core entries ship the registry and recovery Workers beside the runtime', async () => {
+  const packager = await readFile(new URL('../../scripts/package-container.mjs', import.meta.url), 'utf8');
+  for (const [source, target] of [['generation-registry.worker.ts', 'generation-registry-worker.mjs'], ['router-evidence.worker.ts', 'router-evidence-worker.mjs']]) {
+    assert.ok(packager.includes(`['apps/codex-core/src/${source}', '${target}', 'esm']`));
+  }
 });
 
 test('the local GitHub builder is portable, locked, revision-pinned and advances its moving tag only after success', async () => {

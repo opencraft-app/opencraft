@@ -37,12 +37,40 @@ Control frames are never numbered; every other App Host message carries `seq`
 
 ## Bounds (server)
 
-- Unacknowledged frames per session: 1 MiB. Evicting an unacknowledged frame
+- Unacknowledged frames per session: 1 MiB and 8192 records. Evicting an unacknowledged frame
   makes resumption from before it impossible (it then falls back).
-- All sessions together: 1 GiB; over budget, the largest session loses its
+- All sessions together: 1 GiB and 65536 retained records; over budget, the largest session loses its
   oldest frames first.
+- At most 4096 session owners, independent of retained bytes. Capacity exhaustion must use the legacy non-resumable connection, not evict another owner.
 - Detached sessions live 5 minutes, then their App Host connection is closed.
-- Frames are stored as `Buffer`s (outside the V8 heap).
+- Server frame payloads are stored as `Buffer`s. They still count toward process RSS/external memory; these budgets are not a total-process memory guarantee. Empty records and live payload owners have separate count bounds. Invalid limits are rejected, and registry shutdown rejects further admission.
 
 The client retries resumption for at most 30 seconds after it detects a dead
 route, then falls back.
+
+## Authority and receipt boundaries
+
+A grant is a replay capability, not authentication. Every new physical socket
+passes the existing HTTP/WS admission owner before the resume token is examined.
+The session also binds the trusted route, principal/actor context and expiry,
+admission mode and logical renderer ID. A changed identity or credential lifetime
+requires a fresh logical connection. The old resource context follows the adopted
+carrier/request rather than keeping a destroyed socket or superseded proof alive.
+
+Revocation watches and expiry belong to the logical resumable session, including
+while detached. Successful adoption installs the fresh authority lease and retires
+its predecessor; late predecessor callbacks cannot revoke the successor. Ending
+the session fences replay writers before releasing their byte/record accounting.
+Server shutdown ends detached owners as well as live ones, without masking the
+existing restart close code. Invalid sequence/control data ends the logical session
+rather than bypassing negotiated duplicate suppression.
+
+Frame acknowledgement only confirms transport receipt. It is not a native input
+admission or completion receipt. An unavailable replay window causes full reconnect
+and the existing Host/history reconciliation; it does not authorize automatically
+resubmitting `turn/start`, `turn/steer` or a business mutation with an unknown outcome.
+
+The server exposes trusted composition options `appHostResumeEnabled` and
+`appHostResumeOptions` (registry budgets). `OPENCRAFT_APPHOST_RESUME=0` disables new
+grants. Legacy clients retain their unnumbered, connection-scoped behavior. Registry
+saturation falls back to that legacy behavior without evicting another owner.

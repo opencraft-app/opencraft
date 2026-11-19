@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { routerStorageTask, type GenerationRegistryPort } from "./generation-registry-worker.js";
 import { routerDigest, routerNativeDigest, routerPhysicalNativeDigest, hostRestartRuntime, routerFileDigest, archivedHostColdUnavailable, type RouterMaintenanceReceipt } from "./router-maintenance.js";
+import type { ExecutionFault } from "./execution-fault-recovery.js";
 
 import { RouterOperatorLease } from "./router-operator-lease.js";
 import { type OperatorLeaseClaim, type OperatorLeaseAbort, type OperatorLeaseEnd } from "./operator-lease.js";
@@ -28,9 +29,11 @@ export interface RouterLease {
   update(context: RouterLeaseContext): Promise<void>;
   sent(): Promise<void>;
   unknown(reason: RouterUnknownReason): Promise<void>;
+  retireForExecutionFault(recoveryId: string): Promise<void>;
 }
 type LeaseRecord = RouterLeaseContext & { version: 1; id: string; kind: string; routerOwner: string; routerIncarnation: string;
   bootId: string; pid: number; phase: "accepted" | "sent" | "released"; acceptedAt: string; sentAt?: string; releasedAt?: string;
+  executionFaultId?: string;
   uncertainty?: Partial<Record<RouterUnknownReason, { firstAt: string; lastAt: string; count: number }>> };
 const RECENT_LEASES = "router-lease-recent", RECENT_LIMIT = 32;
 // Only protocol identity fields cross this boundary, never params, inputs, env,
@@ -56,16 +59,21 @@ export class CodexRouterOwner {
   async drain(): Promise<void> { await this.ready; await this.operations; }
   private state!: State;
   private historyCache?: { revision: string; ids: string; rows: { id: string; value: { version: number; receipt: RouterMaintenanceReceipt } }[]; digest?: string };
+  private deferredExecutionStartup = false;
+  private executionFaults: readonly ExecutionFault[] = [];
+  private executionExplainsUncertainty = false;
+  private readonly leaseRecords = new Map<string, LeaseRecord>();
+  private readonly otherUncertainty: RouterLeaseContext[] = [];
   private failed = false;
   private calls = 0;
   private busy = true;
   private operatorLease?: RouterOperatorLease;
   private proof?: { identity: string; expires: number; storage: string };
   private maintenance?: RouterMaintenanceReceipt;
-  constructor(private readonly registry: GenerationRegistryPort, maintenanceFile?: string) {
-    this.ready = this.initialize(maintenanceFile);
+  constructor(private readonly registry: GenerationRegistryPort, maintenanceFile?: string, options: {deferExecutionRecovery?: boolean} = {}) {
+    this.ready = this.initialize(maintenanceFile, options);
   }
-  private async initialize(maintenanceFile: string | undefined) {
+  private async initialize(maintenanceFile: string | undefined, options: {deferExecutionRecovery?: boolean}) {
     this.bootId = (await readFile("/proc/sys/kernel/random/boot_id", "utf8")).trim();
     const stored = this.registry.metadata("router-handoff") as State | null;
     this.state = stored ?? { version: 1, epoch: 0, phase: "open", uncertain: false };
@@ -78,7 +86,12 @@ export class CodexRouterOwner {
       this.maintenance = await routerStorageTask<RouterMaintenanceReceipt>("read-maintenance", [maintenanceFile, this.state, await this.storage(), createHash("sha256").update(await readFile(process.argv[1]!)).digest("hex"), this.historicalPending().size, this.historicalUnknownSha256()]);
       this.busy = true; return;
     }
-    if (this.currentUnconfirmed()) throw new Error("Router accepted work is unconfirmed; recovery required");
+    if (this.currentUnconfirmed()) {
+      if (!options.deferExecutionRecovery) throw new Error("Router accepted work is unconfirmed; recovery required");
+      // No admission until the asynchronously loaded fault journal can explain
+      // every unresolved current responsibility. Ordinary uncertainty still fails.
+      this.deferredExecutionStartup = true; this.busy = true; return;
+    }
     await this.finishStartup();
   }
   private async finishStartup(): Promise<void> {
@@ -110,12 +123,51 @@ export class CodexRouterOwner {
     return rows;
   }
   private historicalPending() { return new Set(this.history().flatMap(row => row.value.receipt.sourceHandoff.pending as string[] | undefined ?? [])); }
+  private executionFaultFor(context: RouterLeaseContext | undefined): ExecutionFault | undefined {
+    return context && this.executionFaults.find(fault => fault.source && fault.generationId === context.generationId && fault.incarnation === context.incarnation);
+  }
+  /** The fault journal is the proof boundary; raw unknown leases remain intact.
+   * No caller-provided override can excuse an unrelated or unattributed lease. */
+  observeExecutionFaults(faults: readonly ExecutionFault[]): void {
+    this.executionFaults = faults;
+    const unknown = [...this.leaseRecords.values()].filter(record => record.uncertainty);
+    this.executionExplainsUncertainty = unknown.length + this.otherUncertainty.length > 0
+      && unknown.every(record => !!this.executionFaultFor(record)) && this.otherUncertainty.every(record => !!this.executionFaultFor(record));
+  }
+  needsExecutionRecoveryEvidence(): boolean { return this.deferredExecutionStartup; }
+  async resumeExecutionFaults(faults: readonly ExecutionFault[], evidence: readonly {key: string; value: unknown}[] = []): Promise<void> {
+    await this.ready;
+    if (this.deferredExecutionStartup) {
+      const historicalOwners = new Set(this.history().map(row => row.value.receipt.source.owner));
+      for (const {key, value} of evidence) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid router responsibility evidence");
+        const record = value as LeaseRecord & {reason?: RouterUnknownReason};
+        const prefix = key.startsWith("router-lease:") ? "router-lease:" : key.startsWith("router-uncertainty:") ? "router-uncertainty:" : null;
+        if (!prefix || record.version !== 1 || record.id !== key.slice(prefix.length) || typeof record.routerOwner !== "string") throw new Error("Invalid router responsibility evidence");
+        if (historicalOwners.has(record.routerOwner)) continue;
+        if (prefix === "router-lease:") {
+          if (!["accepted", "sent", "released"].includes(record.phase) || typeof record.kind !== "string") throw new Error("Invalid router responsibility evidence");
+          this.leaseRecords.set(record.id, record);
+        } else this.otherUncertainty.push(leaseContext(record));
+      }
+    }
+    this.observeExecutionFaults(faults);
+    if (!this.deferredExecutionStartup) return;
+    const historical = this.historicalPending();
+    const unexplainedPending = (this.state.pending ?? []).some(id => !historical.has(id) && !this.executionFaultFor(this.leaseRecords.get(id)));
+    const rawUnknown = this.state.currentUncertain === true || this.state.uncertain && !this.state.history?.length;
+    if (unexplainedPending || rawUnknown && !this.executionExplainsUncertainty) throw new Error("Router accepted work is unconfirmed; recovery required");
+    await this.finishStartup();
+    this.deferredExecutionStartup = false; this.busy = false;
+  }
   private currentUnconfirmed() {
     const historical = this.historicalPending();
-    return this.state.currentUncertain === true || !!this.state.uncertain && !this.state.history?.length
-      || (this.state.pending ?? []).some(id => !historical.has(id));
+    return this.currentUnknown() || (this.state.pending ?? []).some(id => !historical.has(id) && !this.executionFaultFor(this.leaseRecords.get(id)));
   }
-  private currentUnknown() { return this.state.currentUncertain === true || !!this.state.uncertain && !this.state.history?.length; }
+  private currentUnknown() {
+    const rawUnknown = this.state.currentUncertain === true || this.state.uncertain && !this.state.history?.length;
+    return rawUnknown && !this.executionExplainsUncertainty || this.executionFaults.some(fault => fault.state === "recovering");
+  }
   historicalUnknownSha256() { this.history(); return this.historyCache?.digest; }
   maintenancePending() { return this.maintenance !== undefined; }
   hostRestartPending() { const receipt = this.hostRestartReceipt(); return receipt ? { sourceBootId: receipt.source.bootId, sourceOwner: receipt.source.owner, recoveryBootId: this.bootId, ...(this.maintenance ? {} : { policyArchived: true }) } : undefined; }
@@ -210,6 +262,7 @@ export class CodexRouterOwner {
       bootId: this.bootId, pid: process.pid, phase: "accepted", acceptedAt: new Date().toISOString(), ...leaseContext(context) };
     await this.save({ ...this.state, pending: [...(this.state.pending ?? []), id] }, { [key]: record });
 
+    this.leaseRecords.set(id, record);
     this.calls++; let done = false;
     const release = (() => this.serialize(async () => {
       if (done) return;
@@ -220,6 +273,7 @@ export class CodexRouterOwner {
       await this.save({ ...this.state, pending: this.state.pending?.filter(value => value !== id) },
         { [key]: next, [RECENT_LEASES]: recent }, expired.map(value => `router-lease:${value}`));
       record=next;done=true;
+      this.leaseRecords.set(id, record); for (const expiredId of expired) this.leaseRecords.delete(expiredId);
       this.calls--;
     })) as RouterLease;
     Object.assign(release, {
@@ -228,28 +282,37 @@ export class CodexRouterOwner {
         if (done) return;
         const changes = leaseContext(context);
         if (Object.entries(changes).every(([key, value]) => record[key as keyof LeaseRecord] === value)) return;
-        const next = { ...record, ...changes }; await this.save(this.state, { [key]: next }); record=next;
+        const next = { ...record, ...changes }; await this.save(this.state, { [key]: next }); record=next; this.leaseRecords.set(id, record);
       }),
       sent: () => this.serialize(async () => {
         if (!this.registry.available || this.failed) throw new Error("Router storage is unavailable before submission");
         if (done) throw new Error("Router lease was released before submission");
         if (record.sentAt) return;
-        const next: LeaseRecord = { ...record, phase: "sent", sentAt: new Date().toISOString() }; await this.save(this.state, { [key]: next }); record=next;
+        const next: LeaseRecord = { ...record, phase: "sent", sentAt: new Date().toISOString() }; await this.save(this.state, { [key]: next }); record=next; this.leaseRecords.set(id, record);
       }),
       unknown: (reason: RouterUnknownReason) => this.serialize(async () => {
         const at = new Date().toISOString(), prior = record.uncertainty?.[reason];
         const next = { ...record, uncertainty: { ...record.uncertainty, [reason]: { firstAt: prior?.firstAt ?? at, lastAt: at, count: (prior?.count ?? 0) + 1 } } };
         // Retain conservative evidence even if persistence fails; a later release cannot erase it.
-        record = next;
+        record = next; this.leaseRecords.set(id, record); this.observeExecutionFaults(this.executionFaults);
         await this.save({ ...this.state, uncertain: true, currentUncertain: true }, { [key]: next, [RECENT_LEASES]: this.recent().filter(value => value !== id) });
-        record=next;
+        record=next; this.leaseRecords.set(id, record);
       }),
+      retireForExecutionFault: async (recoveryId: string) => {
+        await this.serialize(async () => {
+          if (this.executionFaultFor(record)?.id !== recoveryId) throw new Error("Router lease does not belong to the execution fault");
+          record = { ...record, executionFaultId: recoveryId };
+        });
+        await release.unknown("generation-replaced");
+        await release();
+      },
     });
     return release;
   }
   async uncertain(reason: RouterUnknownReason = "unattributed", context: RouterLeaseContext = {}) {
     await this.ready; return this.serialize(async () => {
     const id = randomUUID();
+    this.otherUncertainty.push(leaseContext(context)); this.observeExecutionFaults(this.executionFaults);
 
     await this.save({ ...this.state, uncertain: true, currentUncertain: true }, { [`router-uncertainty:${id}`]: { version: 1, id, reason,
       at: new Date().toISOString(), routerOwner: this.owner, routerIncarnation: this.incarnation, bootId: this.bootId, pid: process.pid, ...leaseContext(context) } });

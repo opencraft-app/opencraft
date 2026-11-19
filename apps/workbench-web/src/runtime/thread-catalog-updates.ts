@@ -1,11 +1,11 @@
 import { replaceEqualDeep, type InfiniteData, type QueryClient, type QueryKey } from "@tanstack/react-query";
 import type { ThreadListResponse } from "@opencraft/appserver-protocol/generated/v2";
-import type { ThreadCatalogChange, ThreadCatalogMutation } from "@opencraft/appserver-protocol";
+import type { ThreadCatalogChange, ThreadCatalogFact } from "@opencraft/appserver-protocol";
 
 import { mergeThreadCatalogPages } from "./thread-catalog-query";
 import { withTurnRecency } from "./thread-catalog-recency";
 
-type Fact = { readonly sequence: number; readonly change: Exclude<ThreadCatalogMutation, { type: "invalidate" }> };
+type Fact = { readonly sequence: number; readonly change: ThreadCatalogFact };
 const journals = new WeakMap<QueryClient, Map<string, ThreadCatalogUpdates>>();
 const boundary = "__opencraftCatalogReadEvidence";
 class ReadToken {}
@@ -41,6 +41,11 @@ export class ThreadCatalogUpdates {
     if (this.sources.size > 32) this.sources.delete(this.sources.keys().next().value!);
     const change = event.change;
     if (change.type === "invalidate") return;
+    // A batch carries one publisher revision; apply its facts in order, notify once.
+    for (const fact of change.type === "batch" ? change.changes : [change]) this.receiveFact(fact);
+    for (const listener of this.listeners) listener();
+  }
+  private receiveFact(change: ThreadCatalogFact): void {
     const id = change.type === "upsert" ? change.thread.id : change.threadId;
     if (change.type === "remove") this.activity.delete(id);
     const previous = this.facts.get(id)?.change;
@@ -52,7 +57,6 @@ export class ThreadCatalogUpdates {
       else if (previous?.type === "patch") merged = { ...previous, ...change };
     }
     this.facts.set(id, { sequence: ++this.sequence, change: merged });
-    for (const listener of this.listeners) listener();
   }
   observeTurnStart(threadId: string, startedAt: number): void {
     if (!this.enabled || !threadId || threadId.length > 4096 || !Number.isFinite(startedAt) || startedAt < 0 || startedAt <= (this.activity.get(threadId) ?? -1)

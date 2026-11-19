@@ -3,8 +3,8 @@ import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { installBrowserGuests } from '../../../apps/workbench-electron/src/browser-guests';
-import { installBrowserAutomationIpc } from '../../../apps/workbench-electron/src/browser-automation-ipc';
+import { installBrowserGuests } from '../../../apps/desktop/src/browser-guests';
+import { installBrowserAutomationIpc } from '../../../apps/desktop/src/browser-automation-ipc';
 
 const directory = process.env.OPENCRAFT_CDP_PROBE_DIR!;
 const server = createServer(async (request, response) => {

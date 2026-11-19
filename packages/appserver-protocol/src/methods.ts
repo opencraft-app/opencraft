@@ -1,6 +1,7 @@
 import type { WorkspacePlacement } from '@opencraft/chat-core';
 import type { AppServerBotMethodMap } from "./bot-conversations";
 import type { PersonalAssistantMethodMap } from "./personal-assistant";
+import type { ServerSpaceCommand } from "./server-spaces";
 import type { ThreadAccessMethodMap } from "./thread-access";
 import type { AgentOnboardingMethodMap } from "./agent-onboarding";
 import type { AgentUsageMethodMap } from "./agent-usage";
@@ -223,6 +224,8 @@ export type ThreadStartParams = GeneratedThreadStartParams & {
   readonly agentBridge?: { readonly threadId: string; readonly clientRequestId: string };
   /** Host-owned execution Agent. Omitted means the Host default. */
   agentId?: string | null;
+  /** Hub validates source access and inherits its visibility and collaboration space. */
+  readonly handoffSource?: { readonly threadId: string };
 };
 export type ThreadStartResponse = GeneratedThreadStartResponse;
 export type ModelListParams = GeneratedModelListParams & {
@@ -242,6 +245,8 @@ export type CatalogModel = Omit<GeneratedModelListResponse["data"][number], "def
   maxTokens?: number;
   source?: "builtin" | "custom";
   /** Optional composition-owned display metadata; not execution authorization. */
+  readonly agentId?: string | null;
+  readonly agentLabel?: string | null;
   groupKey?: string | null;
   groupLabel?: string | null;
   configuredRole?: "primary" | "fallback" | null;
@@ -310,6 +315,8 @@ export interface QueuedSubmission {
 }
 /** Host-owned follow-up receipt. The bound execution may be active or terminal. */
 export interface SteeringSubmission extends QueuedSubmission {
+  /** Host presentation hint; retry still revalidates authority and execution state. */
+  readonly retryable?: boolean;
   readonly targetTurnId: string;
 }
 export interface ThreadQueueAddResponse {
@@ -533,7 +540,7 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, ThreadAccessM
     result: { presentation: Record<string, unknown>; executions: Array<Record<string, unknown>> };
   };
   "thread/start": {
-    params: ThreadStartParams;
+    params: ThreadStartParams & {collaborationSpaceId?:string};
     result: ThreadStartResponse;
   };
   "thread/fork": {
@@ -599,6 +606,10 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, ThreadAccessM
   "thread/queue/start": {
     params: ThreadQueueStartParams;
     result: ThreadQueueStartResponse;
+  };
+  "thread/queue/retry": {
+    params: { readonly threadId: string; readonly queuedSubmissionId: string; readonly expectedTurnId: string };
+    result: Record<string, never>;
   };
   "thread/queue/steer": {
     params: ThreadQueueSteerParams;
@@ -684,6 +695,7 @@ export interface AppServerMethodMap extends AppServerBotMethodMap, ThreadAccessM
     params: FuzzyFileSearchSessionUpdateParams;
     result: FuzzyFileSearchSessionUpdateResponse;
   };
+  "opencraft/server-spaces": {params: ServerSpaceCommand; result: unknown};
   "fuzzyFileSearch/sessionStop": {
     params: FuzzyFileSearchSessionStopParams;
     result: FuzzyFileSearchSessionStopResponse;

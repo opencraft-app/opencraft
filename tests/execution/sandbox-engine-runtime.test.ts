@@ -258,3 +258,17 @@ test('conflicting workspace input is rejected before any Native registration', a
   await assert.rejects(policy('thread/start', { cwd: '/other' }), /workspace-binding-conflict/);
   assert.equal(registered, false);
 });
+
+
+test('executor availability fences every mutating method before workspace resolution but permits history', async () => {
+  let checks = 0, resolutions = 0;
+  const policy = codexSandboxRequestPolicy(async () => null, undefined,
+    async () => { resolutions++; return { kind: 'local' }; }, undefined,
+    async () => { checks++; throw Error('Executor disconnected'); });
+  for (const method of ['thread/start','thread/fork','turn/start','turn/steer','command/exec','process/spawn','fs/writeFile'])
+    await assert.rejects(policy(method, {}), /Executor disconnected/);
+  assert.equal(checks, 7); assert.equal(resolutions, 0);
+  const params = { threadId: 'history-only' };
+  assert.equal(await policy('thread/read', params), params);
+  assert.equal(checks, 7);
+});

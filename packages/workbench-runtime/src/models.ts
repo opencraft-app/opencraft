@@ -1,3 +1,4 @@
+import type { NativeConversationProject } from "@opencraft/appserver-protocol";
 import type { TimelineSnapshot } from "@opencraft/chat-core";
 
 export type ThreadStatus = "ready" | "running" | "review" | "error";
@@ -6,6 +7,9 @@ export interface WorkbenchThread {
   id: string;
   title: string;
   project: string;
+  /** Product name of the executing agent. Absent when the provider is unknown. */
+  agentLabel?: string;
+  nativeProject?: NativeConversationProject;
   lineage: "root" | "fork" | "subagent";
   /** Host-authored topology. Missing metadata never implies a parent. */
   parentThreadId?: string | null;

@@ -5,9 +5,11 @@ import { threadServerOrigin } from "@opencraft/workbench-runtime";
 import {
   groupThreadsByActivityDate,
   groupThreadsByTaskFlow,
+  archivedConversationLabel,
   sidebarActivityMetadata,
   sidebarActivityDateHeadings,
   sidebarRecentHeadings,
+  sidebarThreadMetadata,
   type SidebarActivityThread,
 } from "../../apps/workbench-web/src/sidebar-activity";
 import {
@@ -31,6 +33,16 @@ function thread(
     ...overrides,
   };
 }
+
+test("sidebar rows identify a conversation without a raw thread id", () => {
+  assert.equal(sidebarThreadMetadata({
+    project: "thread-52be165e-a18a-4217-9a11-111111111111", agentLabel: "Codex", time: "Now",
+  }), "Codex · Now");
+  assert.equal(sidebarThreadMetadata({ project: "opencraft", agentLabel: "Pi", time: "5m" }), "Pi · opencraft · 5m");
+  assert.deepEqual(archivedConversationLabel({ id: "thread-1", name: " ", preview: "" }, "New chat"), { label: "New chat" });
+  assert.deepEqual(archivedConversationLabel({ id: "thread-1", name: "thread-52be165e-a18a-4217-9a11-111111111111", preview: "整理菜单" }, "New chat"), { label: "整理菜单" });
+  assert.deepEqual(archivedConversationLabel({ id: "thread-1", name: "发布说明", preview: "整理菜单" }, "New chat"), { label: "发布说明", description: "整理菜单" });
+});
 
 test("Activity chronology owns sections while equal thread ids retain Server provenance", () => {
   const now = new Date(2026, 8, 21, 12);
@@ -111,13 +123,14 @@ test("taskflow precedence is unique, keeps urgent pins visible and retains full 
 
 
 test("reading cannot resolve waits or failures, and unread never creates a todo", () => {
-  const now = new Date(2026, 10, 18, 12);
+  // Attention is newest first; distinct times keep the order independent of clock ticks.
+  const now = Date.now();
   for (const unread of [false, true]) {
     const input = [
-      { ...thread("waiting", now), status: "review", unread },
-      { ...thread("failed", now), status: "error", unread },
-      { ...thread("completed", now), status: "ready", unread },
-      { ...thread("pinned-completed", now), status: "ready", pinned: true, unread },
+      { ...thread("waiting", new Date(now)), status: "review", unread },
+      { ...thread("failed", new Date(now - 1_000)), status: "error", unread },
+      { ...thread("completed", new Date()), status: "ready", unread },
+      { ...thread("pinned-completed", new Date()), status: "ready", pinned: true, unread },
     ];
     const flow = groupThreadsByTaskFlow(input);
     assert.deepEqual(flow.attention.map(t => t.id), ["waiting", "failed"]);

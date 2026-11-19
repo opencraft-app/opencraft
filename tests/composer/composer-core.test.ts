@@ -7,6 +7,7 @@ import {
   createComposerController,
   invertComposerFollowUpAction,
   legacyContentBlocksToComposer,
+  composerTrailingControls,
   resolveComposerPrimaryAction,
   resolveComposerFollowUpAction,
   retargetSubmitIntentForFollowUp,
@@ -575,6 +576,21 @@ test("the primary Composer action changes from Stop to Queue or Steer when a fol
   );
 });
 
+test("a follow-up draft keeps Stop reachable beside Queue or Steer", () => {
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: true, canSubmit: true, defaultFollowUpAction: "queue",
+  }), { stop: true, primary: "queue" });
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: true, canSubmit: true, defaultFollowUpAction: "steer",
+  }), { stop: true, primary: "steer" });
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: true, canSubmit: false, defaultFollowUpAction: "queue",
+  }), { stop: true, primary: null });
+  assert.deepEqual(composerTrailingControls({
+    isResponseInProgress: false, canSubmit: true, defaultFollowUpAction: "queue",
+  }), { stop: false, primary: "send" });
+});
+
 test("follow-up preferences cannot enable a denied queue operation", () => {
   assert.equal(resolveComposerFollowUpAction("queue", ["steer"]), "steer");
   assert.equal(resolveComposerFollowUpAction("steer", ["queue"]), "queue");
@@ -837,4 +853,42 @@ test('document and attachment receipts consume their snapshot independently of n
     assert.equal(composerDocumentToPlainText(controller.getSnapshot().draft.document),editText?'new text':'');
     controller.dispose();
   }
+});
+
+test("Agent handoff keeps the source, text and attachments; cancel restores the original selection", () => {
+  const controller = createComposerController(existing("source"), services());
+  controller.dispatch({ type: "set-document", document: richDocument });
+  controller.dispatch({ type: "add-attachment", attachment: { id: "a", name: "a.txt", mimeType: "text/plain", size: 3, uri: "file:///a.txt", lifecycle: "ready", error: null } });
+  controller.dispatch({ type: "set-selections", patch: { model: "pi-model", effort: "low", permissionProfile: "read-only" } });
+  const original = controller.getSnapshot().draft;
+  for (const model of ["codex-model", "claude-model"]) controller.dispatch({ type: "begin-agent-handoff", sourceThreadId: "source", reference: "opencraft://conversation/v1/server/source", selections: { agentId: "codex", model } });
+  const pending = controller.getSnapshot().draft;
+  assert.deepEqual(pending.target, original.target);
+  assert.equal(pending.document, original.document);
+  assert.equal(pending.attachments, original.attachments);
+  assert.equal(pending.handoff?.originalSelections, original.selections);
+  assert.equal(controller.createSubmitIntent().handoff, pending.handoff);
+  controller.dispatch({ type: "cancel-agent-handoff" });
+  assert.equal(controller.getSnapshot().draft.handoff, undefined);
+  assert.deepEqual(controller.getSnapshot().draft.selections, original.selections);
+  assert.equal(controller.getSnapshot().draft.document, original.document);
+  controller.dispose();
+});
+
+test("failed handoff retains immutable retry identity, successful settlement restores the source selection", () => {
+  const controller = createComposerController(existing("source"), services());
+  controller.dispatch({ type: "set-selections", patch: { model: "pi-model" } });
+  controller.dispatch({ type: "begin-agent-handoff", sourceThreadId: "source", reference: "opencraft://conversation/v1/server/source", selections: { agentId: "codex", model: "codex-model" } });
+  assert.equal(controller.getSnapshot().canSubmit, true, "reference alone is sendable");
+  const intent = controller.createSubmitIntent(), draftId = controller.getSnapshot().draft.id;
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.settleSubmission(draftId, intent, { status: "failed", error: new Error("offline") });
+  const retry = controller.createSubmitIntent();
+  assert.equal(retry.commandId, intent.commandId);
+  assert.equal(retry.handoff, intent.handoff);
+  controller.dispatch({ type: "set-lifecycle", phase: "submitting" });
+  controller.settleSubmission(draftId, retry, { status: "accepted" });
+  assert.equal(controller.getSnapshot().draft.handoff, undefined);
+  assert.equal(controller.getSnapshot().draft.selections.model, "pi-model");
+  controller.dispose();
 });

@@ -81,3 +81,22 @@ test('an ineligible login does not consume the same Actor default decision after
  }) as typeof fetch);
  try{owner.configure('en-US',messages);await flush();assert.equal(posts,1);eligible=true;await owner.refresh();assert.equal(posts,2);await owner.refresh();assert.equal(posts,2);}finally{owner.dispose();}
 });
+
+test("malformed destination and host data never enters the ready state", async () => {
+  for (const malformed of [
+    { ...configuration, hosts: [null] },
+    { ...configuration, defaultsAvailable: "yes" },
+    { ...configuration, defaultsStatus: "other" },
+    { ...configuration, imTargets: [{ channelId: "channel", senderId: "sender", label: "account", methodLabel: 17 }] },
+    { ...configuration, destinations: [null] },
+    { ...configuration, destinations: [{ id: "x", kind: "webhook", label: "x", enabled: "yes", authorized: true }] },
+    { ...configuration, imTargets: [{ channelId: "channel", senderId: 17, label: "account" }] },
+  ]) {
+    const owner = new NotificationDestinationsController((async () => Response.json(malformed)) as typeof fetch);
+    owner.configure("en-US", messages);
+    await flush();
+    assert.equal(owner.getSnapshot().phase, "error");
+    assert.equal(owner.getSnapshot().configuration, null);
+    owner.dispose();
+  }
+});

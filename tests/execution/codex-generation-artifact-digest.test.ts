@@ -54,7 +54,15 @@ test("writes during the first read are rejected and non-regular artifacts fail c
   const root = await mkdtemp(join(tmpdir(), "oc-artifact-")); t.after(() => rm(root, { recursive: true, force: true }));
   const path = join(root, "program"); await writeFile(path, "first"); let mutate = true;
   const cache = new GenerationArtifactDigests({ open: path => open(path, "r"), async stat(path) {
-    if (mutate) { mutate = false; await writeFile(path, "other"); }
+    if (mutate) {
+      mutate = false;
+      const before = await stat(path, { bigint: true });
+      await writeFile(path, "other");
+      // Same-size writes can share a filesystem clock tick. Make this injected
+      // mutation observably versioned without relying on scheduler timing.
+      await utimes(path, Number(before.atimeNs) / 1e9, Number(before.mtimeNs) / 1e9 + 1);
+      assert.notEqual((await stat(path, { bigint: true })).mtimeNs, before.mtimeNs);
+    }
     return stat(path, { bigint: true });
   } });
   await assert.rejects(cache.sha256(path), /changed during observation/u);

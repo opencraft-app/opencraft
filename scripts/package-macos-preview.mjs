@@ -7,10 +7,10 @@ import { fileURLToPath } from "node:url";
 import { packageBuilderArguments } from './package-electron-desktop.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const electronAppRoot = resolve(repositoryRoot, "apps/workbench-electron");
+const electronAppRoot = resolve(repositoryRoot, "apps/desktop");
 const electronBuilderCli = resolve(repositoryRoot, "node_modules/electron-builder/out/cli/cli.js");
 
-export const PREVIEW_APP_ID = "dev.opencraft.workbench.preview";
+export const PREVIEW_APP_ID = "app.opencraft.desktop.preview";
 export const PREVIEW_PRODUCT_NAME = "OpenCraft Preview";
 
 export function previewBuilderArguments(arch) {

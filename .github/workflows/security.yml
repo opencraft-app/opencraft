@@ -86,10 +86,19 @@ jobs:
   managed-web:
     needs: plan
     if: needs.plan.outputs.managed-web == 'true'
+    name: managed-web (${{ matrix.suite }})
     runs-on: ubuntu-latest
     # Slow system-package mirrors can consume most of the setup budget.
     # Leave time for the full browser suite after Chromium is installed.
     timeout-minutes: 30
+    # Three independent groups run side by side instead of one 9-minute series.
+    # The browser smokes serve the source through Vite, so they do not need the
+    # release build the e2e group makes. Within a group every suite still runs
+    # after an earlier one fails, so one failure does not hide the next.
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [release, browser-e2e, browser-smoke]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -98,13 +107,30 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm ci --no-audit --no-fund
+      - id: dependencies
+        run: npm ci --no-audit --no-fund
       - run: git diff --exit-code -- package-lock.json
       - run: npm run typecheck --workspace @opencraft/workbench-web
+        if: always() && steps.dependencies.outcome == 'success' && matrix.suite == 'release'
       - run: npm run test:web-release
+        if: always() && steps.dependencies.outcome == 'success' && matrix.suite == 'release'
       - run: npm run test:web-updates
-      - run: npx playwright install --with-deps chromium
+        if: always() && steps.dependencies.outcome == 'success' && matrix.suite == 'release'
+      - id: browser
+        run: bash scripts/ci/install-playwright-chromium.sh
+        if: matrix.suite != 'release'
       - run: npm run test:web-updates:e2e
+        if: always() && steps.browser.outcome == 'success' && matrix.suite == 'browser-e2e'
+      - run: npm run smoke:attachment-upload-recovery
+        if: always() && steps.browser.outcome == 'success' && matrix.suite == 'browser-smoke'
+      - run: npm run smoke:image-metadata-preview
+        if: always() && steps.browser.outcome == 'success' && matrix.suite == 'browser-smoke'
+      - run: npm run smoke:offline-startup-continuity
+        if: always() && steps.browser.outcome == 'success' && matrix.suite == 'browser-smoke'
+      - run: npm run test:queue-delivery-retry
+        if: always() && steps.dependencies.outcome == 'success' && matrix.suite == 'browser-smoke'
+      - run: npm run smoke:queue-delivery-retry
+        if: always() && steps.browser.outcome == 'success' && matrix.suite == 'browser-smoke'
 
   security-checks:
     if: always()

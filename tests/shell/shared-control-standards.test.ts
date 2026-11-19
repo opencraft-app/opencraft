@@ -105,7 +105,10 @@ test("list action styling cannot repaint a switch's state or touch target", () =
   const source = read("../apps/workbench-web/src/styles/app.scss");
   assert.match(block(source, ".settings-control-list-item__actions"), /> button:not\(\.settings-control-button\):not\(\.settings-control-switch\)/);
   const toggle = block(source, ".settings-control-switch");
-  assert.match(toggle, /width: max\(36px, var\(--size-control-hit-min\)\);/);
-  assert.match(toggle, /height: max\(20px, var\(--size-control-hit-min\)\);/);
+  // The shared density floor enlarges the touch target; the painted track keeps its 36x20 size.
+  assert.match(toggle, /@include controls\.density-target\(36px, 20px\);/);
+  assert.match(read("../packages/design-system/src/controls.web.scss"),
+    /@mixin density-target\(\$width: 0px, \$height: 0px\) \{\s*min-width: max\(#\{\$width\}, var\(--size-control-hit-min\)\);\s*min-height: max\(#\{\$height\}, var\(--size-control-hit-min\)\);/);
+  assert.match(toggle, /&::before \{[^}]*width: 36px;[^}]*height: 20px;/);
   assert.match(toggle, /\[aria-checked="true"\][\s\S]*background: var\(--color-accent-blue\)/);
 });

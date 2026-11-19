@@ -66,28 +66,28 @@ export function localNetworkHost(hostname: string): boolean {
   return host === "localhost" || !host.includes(".") || LAN_SUFFIXES.some(suffix => host.endsWith(suffix));
 }
 
-/** Credentials go to HTTPS anywhere; plaintext HTTP is accepted only for this machine or the local network. */
-export function engineEndpointAllowed(baseUrl: string): boolean {
+/** Credentials go to HTTPS anywhere; plaintext HTTP defaults to loopback; local-network hosts require explicit opt-in. */
+export function engineEndpointAllowed(baseUrl: string, allowInsecureLocalNetwork = false): boolean {
   let url: URL;
   try { url = new URL(baseUrl); } catch { return false; }
   if (url.username || url.password || url.search || url.hash) return false;
-  return url.protocol === "https:" || (url.protocol === "http:" && localNetworkHost(url.hostname));
+  return url.protocol === "https:" || (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "[::1]" || /^127\./u.test(url.hostname) || (allowInsecureLocalNetwork && localNetworkHost(url.hostname))));
 }
 
-function eligible(provider: ConfiguredProvider, model: ConfiguredModel, protocols: readonly EngineModelProtocol[]): boolean {
+function eligible(provider: ConfiguredProvider, model: ConfiguredModel, protocols: readonly EngineModelProtocol[], allowInsecureLocalNetwork: boolean): boolean {
   return provider.enabled && (protocols as readonly string[]).includes(provider.protocol) && !!provider.baseUrl
-    && engineEndpointAllowed(provider.baseUrl) && model.enabled && model.type !== "asr" && MODEL_ID.test(model.id);
+    && engineEndpointAllowed(provider.baseUrl, allowInsecureLocalNetwork) && model.enabled && model.type !== "asr" && MODEL_ID.test(model.id);
 }
 
 /**
  * Single read-only resolver over the installation model owners (Model Services).
  * Engines never copy endpoints or keys into their own stores; every execution resolves again.
  */
-export function createEngineModelSource(directory: string, options: { readonly protocols: readonly EngineModelProtocol[]; readonly meteredContributions?: boolean }) {
+export function createEngineModelSource(directory: string, options: { readonly protocols: readonly EngineModelProtocol[]; readonly meteredContributions?: boolean; readonly allowInsecureLocalNetwork?: boolean }) {
   const repository = new ModelConfigurationRepository(directory), credentials = new ModelCredentialRepository(directory);
 
   async function route(document: ModelDocument, provider: ConfiguredProvider, model: ConfiguredModel): Promise<EngineModelRoute> {
-    if (!eligible(provider, model, options.protocols)) throw new EngineModelError("unavailable");
+    if (!eligible(provider, model, options.protocols, options.allowInsecureLocalNetwork === true)) throw new EngineModelError("unavailable");
     if (provider.catalogId === "opencraft-human-contribution" || provider.catalogId === "opencraft-human-subscription") {
       if (!options.meteredContributions) throw new EngineModelError("unavailable");
       const path = configuredModelGatewayPath();

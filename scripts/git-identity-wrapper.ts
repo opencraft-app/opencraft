@@ -142,8 +142,13 @@ async function credentialHelper(socket: string, sessionId: string, action: strin
   const fields: Record<string, string> = {};
   for (const line of input.split('\n')) {
     if (!line) continue; const at = line.indexOf('=');
-    if (at < 1 || fields[line.slice(0, at)] !== undefined) { process.stdout.write('quit=true\n\n'); return 1; }
-    fields[line.slice(0, at)] = line.slice(at + 1);
+    if (at < 1) { process.stdout.write('quit=true\n\n'); return 1; }
+    const key = line.slice(0, at);
+    // Git 2.46+ repeats array keys such as `capability[]` and `wwwauth[]`. They are
+    // multi-valued by protocol and unused here; a repeated scalar key stays an error.
+    if (key.endsWith('[]')) continue;
+    if (fields[key] !== undefined) { process.stdout.write('quit=true\n\n'); return 1; }
+    fields[key] = line.slice(at + 1);
   }
   const result = await retry(socket, { op: 'credential', sessionId, protocol: fields.protocol, host: fields.host });
   if (result.status !== 'configured' || typeof result.username !== 'string' || typeof result.password !== 'string'

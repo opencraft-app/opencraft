@@ -99,6 +99,8 @@ export const frame = {
   sidebarDefaultWidth: sidebarListDefaultWidth,
   /** Two-line collection rows include an avatar, summary and timestamp. */
   collectionNavigationWidth: 320,
+  serverDrawerWidth: 280,
+  serverDrawerEdgeWidth: 36,
   sidebarIconRailWidth,
   sidebarUnifiedDefaultWidth: sidebarListDefaultWidth,
   sidebarUnifiedMinWidth: sidebarListMinimumWidth,

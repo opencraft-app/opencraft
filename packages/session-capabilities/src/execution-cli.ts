@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { executionCliSourceSession } from './credentials.js';
+import { executionCliInstructionText } from './thread-cli-instruction.js';
 import { issueThreadCli,reserveThreadCli } from './thread-cli-provider.js';
 
 /** Server→Host admission port: signed source + live Server authority recheck. */
@@ -76,4 +77,50 @@ export async function waitForExecutionCliBinding(check:()=>Promise<{turnId:strin
     if(Date.now()>=deadline)throw Error('cliUnavailable');
     await new Promise(resolve=>setTimeout(resolve,Math.min(25,Math.max(0,deadline-Date.now()))));
   }
+}
+
+/** Host-owned lease for exactly one admitted input. The environment contains a launcher path, never a bearer. */
+export interface ExecutionCliLease {
+  readonly environment: Readonly<Record<string,string>>;
+  revoke(): Promise<void>;
+}
+export interface ScopedExecutionCliPort {
+  issue(threadId: string, inputId: string, credential?: string): Promise<ExecutionCliLease | null>;
+}
+export function executionCliInstructions(lease: ExecutionCliLease): string {
+  const launcher = lease.environment.OPENCRAFT_THREAD_CLI;
+  if (!launcher || !launcher.startsWith('/') || /[\x00-\x1f]/u.test(launcher)) throw Error('cliUnavailable');
+  return executionCliInstructionText(launcher);
+}
+
+/** Local connected Host uses the same P7a issuance/forwarding protocol as BridgeHost. */
+export async function localExecutionCli(options: {directory:string;endpoint:string;key:Buffer}) {
+  const {createServer}=await import('node:http');
+  let launcherEndpoint='';
+  const host=hostExecutionCli({...options,launcherEndpoint:()=>launcherEndpoint});
+  const leases=new Set<ExecutionCliLease>();
+  let closed=false;
+  const server=createServer(async(request,response)=>{
+    if(request.url!=='/thread-cli'||request.method!=='POST'||request.headers.origin!==undefined){response.writeHead(403).end();return;}
+    try {
+      let bytes=0;const chunks:Buffer[]=[];
+      for await(const chunk of request){bytes+=chunk.length;if(bytes>64*1024)throw Error();chunks.push(chunk);}
+      const auth=request.headers.authorization??'';if(!auth.startsWith('Bearer '))throw Error();
+      const reply=await host.forward(auth.slice(7),JSON.parse(Buffer.concat(chunks).toString()));
+      response.writeHead(reply.status,{'content-type':'application/json','cache-control':'no-store'}).end(JSON.stringify(reply.body));
+    }catch{response.writeHead(403,{'content-type':'application/json','cache-control':'no-store'}).end(JSON.stringify({error:'cliUnavailable'}));}
+  });
+  await new Promise<void>((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
+  launcherEndpoint=`http://127.0.0.1:${(server.address() as import('node:net').AddressInfo).port}/thread-cli`;
+  return {async issue(threadId:string,inputId:string,credential?:string):Promise<ExecutionCliLease|null>{
+    if(closed)throw Error('cliUnavailable');
+    if(credential===undefined)return null;
+    if(!inputId)throw Error('cliUnavailable');
+    const session=executionCliSourceSession(options.key,credential);
+    if(session.threadId!==threadId||session.execution?.inputId!==inputId)throw Error('cliUnavailable');
+    const issued=await host.issue({serverId:session.serverId,threadId,credential});
+    if(closed){await issued.revoke();throw Error('cliUnavailable');}
+    const lease={environment:issued.environment,async revoke(){leases.delete(lease);await issued.revoke();}};
+    leases.add(lease);return lease;
+  },async close(){closed=true;await Promise.all([...leases].map(lease=>lease.revoke()));server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));}};
 }

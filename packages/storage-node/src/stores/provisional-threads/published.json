@@ -1,0 +1,19 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1793322051751,
+    "version": 0,
+    "sqlChecksum": "3c0de7177603772a139896efc169479c98c1155114c37283c640602f1ea4222b",
+    "snapshotChecksum": "d6d5eaf9dff8a7682bd7f554e1ad6577b52e1b8e9f71a0e5b397d7030cdfa5fb",
+    "compiledChecksum": null
+  },
+  {
+    "tag": "0001_catalog_evidence",
+    "when": 1795100503554,
+    "version": 3,
+    "sqlChecksum": "55c711380776998c659c2d90130fec6c82b94f555311ed5f188bd2323e9f8490",
+    "snapshotChecksum": "e19bc36cd37e9d8a6b7b005e5e89a72b3dda469a269c8c9c1984fce578ea4fde",
+    "compiledChecksum": "55c711380776998c659c2d90130fec6c82b94f555311ed5f188bd2323e9f8490",
+    "ledgerName": "creation-catalog-evidence"
+  }
+]

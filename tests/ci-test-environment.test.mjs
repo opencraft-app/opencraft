@@ -14,11 +14,13 @@ test('test child inherits source loader and isolated paths, not live credentials
   const result = await runIsolatedTest(process.execPath, ['-e', code, output], { root, loader, parent: {
     PATH: process.env.PATH, HOME: '/production/home', OPENCRAFT_DATA_DIR: '/production/data',
     OPENCRAFT_WORKSPACE_DIR: '/production/workspace', GITHUB_TOKEN: 'synthetic-secret',
+    PLAYWRIGHT_BROWSERS_PATH: '/ci/verified-browser-cache',
     NODE_OPTIONS: '--require=/production/startup.js', SSH_AUTH_SOCK: '/production/agent',
   } });
   assert.equal(result, 7);
   const receipt = JSON.parse(readFileSync(output));
   assert.equal(receipt.loaded, true); assert.equal(receipt.mode, 0o700);
+  assert.equal(receipt.env.PLAYWRIGHT_BROWSERS_PATH, '/ci/verified-browser-cache');
   assert.equal(receipt.env.GITHUB_TOKEN, undefined); assert.equal(receipt.env.SSH_AUTH_SOCK, undefined);
   assert.notEqual(receipt.env.OPENCRAFT_DATA_DIR, '/production/data');
   assert.equal(receipt.env.OPENCRAFT_DATA_DIR, join(receipt.env.TMPDIR, 'data'));

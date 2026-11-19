@@ -203,7 +203,7 @@ explicit distinction between implemented coordination and pending delivery guara
 
 ## 跨桌面、手机和平板的会话连续性
 
-Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与滚动状态；任务输入槽位以 View ID 标识，但其 Application 级草稿所有权独立于页面缓存。`workbench-runtime` 的 `ConversationDraftOwnerRegistry` 保留原 Controller 与附件资源，`ConversationDraftContinuity` 管理同一输入槽文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除所有草稿所有者及其内部目标缓存，包括已无页面的草稿。附件与临时文件引用不从文档缓存恢复；会话切换保留内存附件不等于刷新恢复字节。
+Conversation Scope 是会话身份，View 是具体窗口或页面的呈现与滚动状态；任务输入槽位以 View ID 标识，但其 Application 级草稿所有权独立于页面缓存。`workbench-runtime` 的 `ConversationDraftOwnerRegistry` 保留原 Controller 与附件资源，`ConversationDraftContinuity` 管理同一输入槽文档的保存、恢复、发送成功后的丢弃和迟到读取仲裁；平台只提供本地存储。移动端用 SQLite，并以区域、凭证摘要和 Bot 实例/Profile 分区；Web/Electron 用浏览器本地存储，并以产品和账号服务的凭证作用域分区。退出登录或切换凭证时撤销旧存储、清除所有草稿所有者及其内部目标缓存，包括已无页面的草稿。附件与临时文件引用不从文档缓存恢复；会话切换保留内存附件不等于刷新恢复字节。 导入会话跨 Agent 续接使用 Host 私有目录内的持久会话记录，属于显式可恢复引用：同一草稿 envelope 的可选 `context` 仅保存标记了 `conversationSourceThreadId` 的文件引用及其只读说明；可选 `modelSelection` 保存该 View 明确选择的 model、effort、serviceTier。无正文但有记录引用或模型选择的草稿仍可恢复目标、工作目录和 Server。它们不保存权限授予、能力目录或临时附件句柄；发送仍由当前 Host 校验。迟到恢复不得覆盖新的模型选择。
 
 `recovery-policy.ts` 中的 `ConversationReturnProbe` 统一短暂离开、较长前台恢复和断网恢复的触发条件。iOS 把 AppState/Expo Network 事件交给它，Web/Electron 把 visibility/online 事件交给它；真正的追平仍调用当前 Thread lease 的 `retryRestore()`。追平不创建新会话，不重置可读历史。已经显示的内容是否权威，仍由 Replica/Session 决定。
 
@@ -866,6 +866,13 @@ remain available to the runtime; failed, blocked and unconfirmed delivery still
 show actionable feedback. Attachment-only steering does not reserve an empty
 status footer.
 
+Host-owned unconfirmed queued input stays in the Composer rail with a localized
+“Delivery unconfirmed” status and a single Retry action. There is no record-removal
+dialog, raw RPC error, or refresh instruction. Retry shows pending/failed feedback
+in the same row, preserves the draft and editor, and disables repeated activation.
+An unrelated unconfirmed row does not disable sending or reordering queued input.
+The server queue capability gates Retry; older Hosts still show the status.
+
 ## Composer image attachment preview
 
 Draft image thumbnails open the shared zoomable image viewport in a Radix modal.
@@ -1148,3 +1155,40 @@ Send while the receipt is held, with both touch and mouse input.
 
 
 Follow-up custody and exact Turn termination now follow the shared [input delivery lifecycle](input-delivery-lifecycle.md). A Host custody receipt acknowledges reception independently of native context evidence; closed attempts remain visible without blocking later explicit input. Local outbox attempts without a Host receipt retain the reconciliation rules above.
+
+
+## Chunk upload recovery and measured preparation
+
+Attachment staging negotiates `uploadRetry: "last-chunk-v1"` independently of
+chunk support. Within one Host process the last accepted chunk and bounded final
+receipts can replay an exact upload identity, offset, metadata and byte digest.
+The Host never creates an absent upload from a retry: expiry, cancellation and
+Host restart cannot turn an unknown write into a new upload. This is not durable
+cross-process resume. Older capabilities keep acknowledgement-only behavior and
+never automatically retry an ambiguous chunk.
+
+The uploader joins the existing connection owner and its retry schedule instead
+of creating a competing reconnect loop. Capability is checked again after that
+wait; losing replay support refuses the replay. Cancellation ends this upload's
+wait/observation, not the shared Host connection or an admitted remote operation.
+An admitted final chunk is still awaited so its committed reference can be
+released if the Draft was removed. Cleanup uses only that proved ref on the same
+Host generation; uncertain cleanup or a successor remains subject to Host
+retention rather than deleting through the wrong owner.
+
+Transport drain is a local estimate, not peer acknowledgement. The existing
+Composer attachment session owns progress by Draft, attachment and attempt;
+late observers cannot update a replacement job or a disposed view. Sending 100%
+shows Processing, and cannot mark the file ready or enable submission until the
+committed reference arrives. Retry retains the selected browser File and resets
+progress. Shared determinate rings and localized metadata keep progress in the
+existing attachment row, preserving the draft and editor focus. Cancel/retry
+controls use the shared interaction-density minimum, not viewport-width tests.
+
+`npm run test:attachment-upload` validates its explicit file manifest and runs
+RPC/provider/Host/recovery/Composer ownership regressions. The existing unit gate
+includes it. `npm run smoke:attachment-upload-recovery` exercises actual Composer,
+browser resolver, Workbench runtime, WebSocket transport and Host upload store in
+Chromium desktop/touch contexts and light/dark themes; managed-Web CI runs it.
+Only initialization/control and the final file location are synthetic. This does
+not prove a production login, model, deployed Host or physical-device session.

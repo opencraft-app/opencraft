@@ -2,8 +2,8 @@
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { readFile, mkdir, mkdtemp } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { homedir, tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
@@ -15,6 +15,10 @@ import { packageWebServer } from './package-web-server.mjs';
 // Only the accepted job's terminal state determines the outcome; an individual
 // status transport failure never authorizes another installation request.
 const updateObservationBudgetMs = 15 * 60_000;
+export const temporaryServerReleasePrefix = () => join(tmpdir(), 'opencraft-server-release-');
+export function shouldCleanupTemporaryOutput({ submission, terminal }) {
+  return submission !== 'unknown' && (submission === 'not-started' || submission === 'rejected' || terminal);
+}
 export async function observeLocalUpdate({ jobId, version, buildId, status, deadline,
   now = () => performance.now(), sleep = delay }) {
   if (typeof jobId !== 'string' || !jobId) throw new Error('Local update did not return a job identity');
@@ -30,10 +34,17 @@ export async function observeLocalUpdate({ jobId, version, buildId, status, dead
     if (current) {
       if (current.job?.id !== jobId || current.job.version !== version)
         throw new Error('Local update job identity changed before terminal observation');
-      if (current.job.phase === 'failed') throw new Error(current.job.error || 'Local update failed');
+      if (current.job.phase === 'failed') {
+        const error = new Error(current.job.error || 'Local update failed');
+        error.updateTerminal = true;
+        throw error;
+      }
       if (current.job.phase === 'completed') {
-        if (current.current?.version !== version || current.current.buildId !== buildId)
-          throw new Error('Local update completed with a different release identity');
+        if (current.current?.version !== version || current.current.buildId !== buildId) {
+          const error = new Error('Local update completed with a different release identity');
+          error.updateTerminal = true;
+          throw error;
+        }
         return current;
       }
     }
@@ -59,7 +70,12 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
   };
   const post = async (action, input, signal = AbortSignal.timeout(10_000)) => {
     const response = await fetch(`${endpoint}/${action}`, { method: 'POST', headers: { origin, cookie, 'content-type': 'application/json' }, body: JSON.stringify(input), signal });
-    const result = await response.json(); if (!response.ok) throw new Error(result.error || 'Local update request failed');
+    const result = await response.json();
+    if (!response.ok) {
+      const error = new Error(result.error || 'Local update request failed');
+      error.updateRejected = true;
+      throw error;
+    }
     return { result, cookie: response.headers.get('set-cookie') };
   };
   const initial = await status();
@@ -69,6 +85,10 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
   const login = await post('login', { key }); cookie = login.cookie.split(';')[0];
   const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
   let packed;
+  let ownsOutput = false;
+  let submission = 'not-started';
+  let terminal = false;
+  try {
   if (tree) {
     if (archive || !version || !buildId || !/^[a-f0-9]{64}$/.test(manifestSha256)) throw new Error('Prepared tree requires exact version, buildId and manifest digest, without archive');
     if (initial.localTreeInstall !== 1) throw new Error('Pinned bootstrap does not support signed local tree installation');
@@ -78,7 +98,7 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
     packed = { archive: resolve(archive), version, buildId };
   } else {
     if (!version) throw new Error('Set OPENCRAFT_RELEASE_VERSION or pass --version');
-    if (!output) { const parent = join(repository, '.local/server-releases'); await mkdir(parent, { recursive: true }); output = await mkdtemp(join(parent, `${version}-`)); }
+    if (!output) { output = await mkdtemp(temporaryServerReleasePrefix()); ownsOutput = true; }
     let revision = (await promisify(execFile)('git', ['rev-parse', 'HEAD'], { cwd: repository })).stdout.trim();
     if ((await promisify(execFile)('git', ['status', '--porcelain'], { cwd: repository })).stdout.trim()) revision += '-dirty';
     const executionProfile = initial.execution?.profile || 'daemon';
@@ -89,12 +109,33 @@ export async function updateLocalServer({ version, archive, buildId, tree, manif
   }
   const input = tree ? packed : { ...packed, archive: resolve(packed.archive), integrity: `sha512-${createHash('sha512').update(await readFile(packed.archive)).digest('base64')}` };
   const deadline = performance.now() + updateObservationBudgetMs;
-  const receipt = await post(tree ? 'install-local-tree' : 'install-local', input,
-    AbortSignal.timeout(Math.max(1, Math.ceil(deadline - performance.now()))));
-  const current = await observeLocalUpdate({ jobId: receipt.result.jobId, version,
-    buildId: packed.buildId, status, deadline });
+  submission = 'unknown';
+  let receipt;
+  try {
+    receipt = await post(tree ? 'install-local-tree' : 'install-local', input,
+      AbortSignal.timeout(Math.max(1, Math.ceil(deadline - performance.now()))));
+    submission = 'accepted';
+  } catch (error) {
+    if (error.updateRejected === true) submission = 'rejected';
+    throw error;
+  }
+  let current;
+  try {
+    current = await observeLocalUpdate({ jobId: receipt.result.jobId, version,
+      buildId: packed.buildId, status, deadline });
+    terminal = true;
+  } catch (error) {
+    terminal = error.updateTerminal === true;
+    throw error;
+  }
   return { version, buildId: current.current.buildId, execution: current.execution,
-    ...(tree ? { tree: packed.tree, activationTransport: 'prepared-tree' } : { archive: packed.archive }) };
+    ...(tree ? { tree: packed.tree, activationTransport: 'prepared-tree' }
+      : ownsOutput ? { artifact: 'temporary-cleaned' } : { archive: packed.archive }) };
+  } finally {
+    if (ownsOutput && shouldCleanupTemporaryOutput({ submission, terminal })) {
+      await rm(output, { recursive: true, force: true });
+    }
+  }
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {
   const argument = name => { const index = process.argv.indexOf(name); return index < 0 ? undefined : process.argv[index + 1]; };

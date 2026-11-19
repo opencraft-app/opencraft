@@ -26,7 +26,7 @@ function open() {
   if (database) throw Error('Browser storage already opened');
   const identity = existsSync(identityPath) ? readFileSync(identityPath, 'utf8') : null;
   if ((identity !== null || existsSync(join(directory, 'tabs.imported.json'))) && !existsSync(path)) throw Error('Browser database missing after migration');
-  const opened = openManagedDatabase({ path, migrations, legacyPolicy: 'reject' });
+  const opened = openManagedDatabase({ path, schemaId: 'remote-browser', migrations, legacyPolicy: 'reject' });
   database = opened.database; database.exec('PRAGMA synchronous=FULL');
   const db = database;
   const meta = (key: string) => (db.prepare('SELECT value FROM browser_meta WHERE key=?').get(key) as { value: string } | undefined)?.value;

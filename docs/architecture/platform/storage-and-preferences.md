@@ -97,6 +97,16 @@ authorization or persistence boundary.
 
 ### UI preference authority
 
+`chat.agentAvailability` is an installation-scoped map keyed by display/account/Host,
+with explicit Agent boolean choices. Missing choices default to enabled; an explicit
+all-disabled set stays empty. It filters only new-conversation model catalogs and
+send admission, never server engine lifecycle or existing threads. Server model
+metadata owns Agent identity. Settings and onboarding share this preference. Map edits use the Runtime
+`update` operation: load the durable value, apply a pure edit, and re-evaluate the
+edit after a CAS conflict. Failed writes do not publish the proposed value.
+This preserves independent Agent choices across windows as well as within one
+Runtime. Queued edits also check that their display/account scope is still current.
+
 `chat.turnNotifications` is an installation-scoped boolean, defaulting to false.
 The Application owns a `TurnCompletionObserver` across all registered Clients;
 it accepts only validated live `turn/completed` events with completed, failed or
@@ -280,7 +290,7 @@ protocol adaptations are tracked there rather than implied by a successful build
 | `composer-editor` | ProseMirror/DOM composer view | DOM only |
 | `workbench-web` | Workbench frame, SCSS, Electron/browser adapters | React DOM |
 | `workbench-expo` | Expo Router routes, native views, Expo Web view | React Native |
-| `workbench-electron` | windows, tray, static origin and App Host byte relay | Electron main |
+| `desktop` | windows, tray, static origin and App Host byte relay | Electron main |
 | `opencraft-daemon` | native Host process, physical transports, local Agent and DSH lifecycle | Node only |
 | `apps/appserver-lab` | machine-first SDK smoke, recordings and fault injection | Node only |
 
@@ -353,3 +363,11 @@ receipts, drafts or credentials. The existing downloadable resource cache has
 its own `OPENCRAFT_RESOURCE_CACHE_DIRECTORY`; it is not an established global
 setting for every temporary store. Broader unification must preserve each
 owner's isolation and retention contract rather than redirecting all data roots.
+
+### Server drawer selection
+
+`sidebar.collaborationServers` stores only the selected collaboration-space ID,
+partitioned by Host and authenticated display/account scope in the installation
+adapter, like the existing model-selection map. The server remains the membership
+authority. Neither membership data nor invitation codes enter this preference.
+Drawer visibility is transient and defaults closed on each new page load.

@@ -10,15 +10,10 @@ import { packageHeadlessLinux, buildHeadlessBundle } from './package-headless-li
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(process.argv[2] ?? '/out');
 await mkdir(output, { recursive: true });
-process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT = join(output, 'server.tar.gz');
-console.log('Building the verified Headless archive and native runtimes');
-const archive = await packageHeadlessLinux({
-  architecture: process.arch === 'arm64' ? 'arm64' : 'amd64',
-  includeBrowser: !process.argv.slice(3).includes('--without-browser'),
-});
+console.log('Building the verified Headless tree and native runtimes');
+// Staged in place: the image copies this directory, so no archive is needed.
+const root = await packageHeadlessLinux({ architecture: process.arch === 'arm64' ? 'arm64' : 'amd64', stageInto: output, includeBrowser: !process.argv.slice(3).includes('--without-browser') });
 console.log('Preparing container Gateway, Brain and Hands owner entries');
-execFileSync('tar', ['-xzf', archive, '-C', output]);
-const root = join(output, 'opencraft-server');
 for (const [source, target] of [
   [process.env.OPENCRAFT_CONTAINER_GATEWAY_ENTRY || 'scripts/container-deployment/gateway.mjs', 'container-gateway.mjs'],
   ['scripts/server-deployment/engine-host.mjs', 'engine-host.mjs'],
@@ -33,6 +28,8 @@ for (const [source, target] of [
 for (const [source, target, format] of [
   ['apps/codex-core/src/bin.ts', 'codex-core.cjs', 'cjs'],
   ['apps/codex-core/src/app-server-bin.ts', 'codex-app-server.cjs', 'cjs'],
+  ['apps/codex-core/src/generation-registry.worker.ts', 'generation-registry-worker.mjs', 'esm'],
+  ['apps/codex-core/src/router-evidence.worker.ts', 'router-evidence-worker.mjs', 'esm'],
   ['scripts/container-deployment/host.mjs', 'native-host.mjs', 'esm'],
   [process.env.OPENCRAFT_CONTAINER_HANDS_ENTRY || 'scripts/container-deployment/hands.mjs', 'native-hands.mjs', 'esm'],
   ['scripts/container-deployment/proxy.mjs', 'proxy-host.mjs', 'esm'],

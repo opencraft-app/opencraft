@@ -138,31 +138,32 @@ test("a paused row without action authority cannot resume the queue", () => {
   assert.doesNotMatch(markup, /Resume/);
 });
 
-test("unconfirmed steering claim offers review and explicit discard, never Send or Resume", () => {
+test("unconfirmed delivery offers only its status and retry, without a discard dialog", () => {
   const markup = renderToStaticMarkup(
     <ComposerQueueTray items={[{
       ...pendingItem,
       state: "queued",
       pausedReason: "Delivery unconfirmed",
       unconfirmedTargetTurnId: "turn-one",
-    }]} isResponseInProgress={false} />,
+    }]} isResponseInProgress={false} onRetryUnconfirmed={async () => {}} />,
   );
-  assert.match(markup, /Review &amp; discard/);
+  assert.match(markup, /Delivery unconfirmed/);
+  assert.ok(markup.includes(">Retry</button>"));
+  assert.doesNotMatch(markup, /Review &amp; discard|alertdialog/);
   assert.doesNotMatch(markup, /Start queued message|Resume|Edit queued message|Delete queued message/);
 });
 
-test("a queued item behind an unconfirmed delivery does not offer a Resume that cannot clear the claim", () => {
+test("unconfirmed delivery does not block sending or reordering later messages", () => {
   const markup = renderToStaticMarkup(
     <ComposerQueueTray items={[
-      { ...pendingItem, state: "queued", actionable: true, pausedReason: "Earlier delivery is unconfirmed; review it before sending another message" },
-      { ...pendingItem, id: "claim-1", state: "queued", pausedReason: "Delivery unconfirmed", unconfirmedTargetTurnId: "turn-one" },
-    ]} isResponseInProgress atomicSteer />,
+      { ...pendingItem, state: "queued", actionable: true },
+      { ...pendingItem, id: "claim-1", state: "unknown", reorderable: false, unconfirmedTargetTurnId: "turn-one" },
+    ]} isResponseInProgress atomicSteer onRetryUnconfirmed={async () => {}} />,
   );
-  assert.match(markup, /Earlier delivery is unconfirmed/);
-  assert.match(markup, /Review &amp; discard/);
-  assert.doesNotMatch(markup, /Resume/);
-  assert.match(markup, /aria-label="Steer with queued message"[^>]*disabled=""/);
-  assert.match(markup, /aria-label="Reorder queued message"[^>]*disabled=""/);
+  assert.match(markup, /Delivery unconfirmed/);
+  assert.doesNotMatch(markup, /aria-label="Steer with queued message"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /aria-label="Reorder queued message"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /alertdialog|Review &amp; discard/);
 });
 
 test("queued Steer is disabled without Host atomic support while idle Send remains available", () => {
@@ -282,6 +283,26 @@ test('Host queue permissions distinguish cancellation from editing and preserve 
   assert.equal(queuedSubmissionPresentation(legacy, true).deletable, true);
 });
 
+
+
+
+test("externally managed delivery has no unsupported human retry action", () => {
+  const markup = renderToStaticMarkup(<ComposerQueueTray items={[{
+    ...pendingItem, state: "unknown", unconfirmedTargetTurnId: "turn", retryable: false,
+  }]} isResponseInProgress atomicSteer onRetryUnconfirmed={async () => {}} />);
+  assert.match(markup, /Delivery unconfirmed/);
+  assert.ok(!markup.includes(">Retry</button>"));
+});
+
+
+test("older Hosts present unconfirmed status without an unsupported retry action", () => {
+  const markup = renderToStaticMarkup(<ComposerQueueTray items={[{
+    ...pendingItem, state: "unknown", unconfirmedTargetTurnId: "turn", retryable: true,
+  }]} isResponseInProgress atomicSteer />);
+  assert.match(markup, /Delivery unconfirmed/);
+  assert.ok(!markup.includes(">Retry</button>"));
+  assert.doesNotMatch(markup, /alertdialog|Review &amp; discard/);
+});
 
 test("queue labels project Markdown to visible single-line text", () => {
   const markdown = "1. **邀请群成员**\n2. 查看 [文档](https://example.com/private-path) 和 `a_b`\n\n| 名称 | 状态 |\n| --- | --- |\n| 服务 | 正常 |";

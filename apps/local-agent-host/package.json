@@ -43,7 +43,9 @@
     "@opencraft/account-pool-host": "0.1.0",
     "@opencraft/plugin-acp-engine": "^0.1.0",
     "@opencraft/sandbox-node": "0.1.0",
-    "@opencraft/agent-bridge-host": "0.1.0"
+    "@opencraft/agent-bridge-host": "0.1.0",
+    "@opencraft/access-control": "0.1.0",
+    "@opencraft/observability-contract": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

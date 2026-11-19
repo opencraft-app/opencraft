@@ -34,6 +34,7 @@ export interface SettingsSectionProps extends Omit<HTMLAttributes<HTMLElement>, 
   readonly title: ReactNode;
   readonly description?: ReactNode;
   readonly action?: ReactNode;
+  readonly actionAlignment?: "start" | "center";
   readonly icon?: ReactNode;
 }
 
@@ -42,6 +43,7 @@ export function SettingsSection({
   title,
   description,
   action,
+  actionAlignment = "start",
   icon,
   children,
   className,
@@ -53,7 +55,7 @@ export function SettingsSection({
   return (
     <section
       {...props}
-      className={classes("settings-control-section", className)}
+      className={classes("settings-control-section", actionAlignment === "center" && "settings-control-section--center-action", className)}
       aria-labelledby={headingId}
     >
       <div className="settings-control-section__heading">

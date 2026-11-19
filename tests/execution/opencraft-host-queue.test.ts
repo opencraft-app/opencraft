@@ -7,6 +7,29 @@ import test from "node:test";
 
 import { OpenCraftHostQueue } from "../../apps/opencraft-daemon/src/opencraft-host-queue.js";
 
+test("confirmed execution recovery retains unknown history but releases later explicit messages across Host restart", async () => {
+  const root = await mkdtemp(join(tmpdir(), "oc-exec-queue-"));
+  let queue = new OpenCraftHostQueue(root);
+  try {
+    const old = queue.add("thread", "old-input", [{type: "text", text: "old work"}]);
+    queue.claim("thread", old.id, "old-turn");
+    queue.interruptExecution("thread", false);
+    const next = queue.add("thread", "new-input", [{type: "text", text: "new work"}]);
+    assert.equal(queue.firstAwaitingAdmission("thread")?.id, old.id);
+    assert.equal(queue.requestRetry("thread", old.id, "old-turn"), false, "retry cannot overwrite an unconfirmed execution fault");
+    assert.throws(() => queue.reorder("thread", [next.id]), /Reconcile in-flight/);
+    queue.interruptExecution("thread", true);
+    // A late rejection of the original send cannot turn the sealed unknown back into a blocker.
+    queue.settle("thread", old.id, "unknown", "steer-delivery-unconfirmed");
+    queue.close(); queue = new OpenCraftHostQueue(root);
+    assert.equal(queue.find("thread", old.id)?.state, "unknown");
+    assert.equal(queue.find("thread", old.id)?.pausedReason, "execution-interrupted");
+    assert.equal(queue.firstAwaitingAdmission("thread")?.id, next.id);
+    assert.equal(queue.claim("thread", old.id, "never-replay"), null);
+    assert.equal(queue.claim("thread", next.id, "new-turn")?.state, "dispatching");
+  } finally { queue.close(); await rm(root, {recursive: true, force: true}); }
+});
+
 test("Host queue claims survive restart as delivery-unknown and never re-enter the pending head", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-host-queue-store-"));
   try {
@@ -44,9 +67,14 @@ test("accepted steer remains visible for reconciliation without blocking admissi
     queue.reorder("thread-1", [second.id]);
     queue.claim("thread-1", second.id, "turn-1");
     queue.settle("thread-1", second.id, "unknown", "steer-delivery-unconfirmed");
-    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, second.id);
-    assert.equal(queue.firstAwaitingAdmission("thread-1")?.state, "unknown");
-    assert.throws(() => queue.reorder("thread-1", []), /Reconcile in-flight/);
+    assert.equal(queue.firstAwaitingAdmission("thread-1"), null);
+    queue.reorder("thread-1", []);
+    const next = queue.add("thread-1", "message-3", [{ type: "text", text: "third" }]);
+    assert.equal(queue.firstAwaitingAdmission("thread-1")?.id, next.id);
+    assert.equal(queue.requestRetry("thread-1", second.id, "wrong-turn"), false);
+    assert.equal(queue.requestRetry("thread-1", second.id, "turn-1"), true);
+    assert.equal(queue.find("thread-1", second.id)?.pausedReason, "delivery-retry-requested");
+    assert.equal(queue.find("thread-1", second.id)?.state, "unknown", "retry is still fenced by original execution");
     queue.close();
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -83,6 +111,30 @@ test("deleting a Thread retires its Host-owned queued inputs", async () => {
     assert.deepEqual(queue.list("thread-1"), []);
     queue.close();
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test("explicit retry survives restart while managed delivery keeps its authority ordering", async () => {
+  const root = await mkdtemp(join(tmpdir(), "opencraft-queue-retry-restart-"));
+  try {
+    const queue = new OpenCraftHostQueue(root);
+    const row = queue.add("thread", "human-message", [{ type: "text", text: "retry" }]);
+    queue.claim("thread", row.id, "original-turn");
+    queue.settle("thread", row.id, "unknown", "steer-delivery-unconfirmed");
+    assert.equal(queue.requestRetry("thread", row.id, "original-turn"), true);
+    queue.close();
+    const restored = new OpenCraftHostQueue(root);
+    try {
+      assert.equal(restored.find("thread", row.id)?.pausedReason, "delivery-retry-requested");
+      assert.equal(restored.find("thread", row.id)?.clientUserMessageId, "human-message");
+      assert.equal(restored.firstAwaitingAdmission("thread"), null);
+      const managed = restored.add("thread", "actor-input:external", [{ type: "text", text: "managed" }]);
+      restored.claim("thread", managed.id, "original-turn");
+      restored.settle("thread", managed.id, "unknown", "steer-delivery-unconfirmed");
+      restored.add("thread", "subsequent", [{ type: "text", text: "next" }]);
+      assert.equal(restored.firstAwaitingAdmission("thread")?.id, managed.id);
+    } finally { restored.close(); }
+  } finally { await rm(root, {recursive:true,force:true}); }
 });
 
 test("input outcomes distinguish a thread whose every input was discarded from one that ever delivered", async () => {
@@ -125,7 +177,8 @@ for (const admission of ['accepted','unknown'] as const) test(`terminal receipt 
     assert.equal(q.firstAwaitingAdmission('t')!.id,next.id,'restart preserves terminal fence');
     assert.equal(q.claim('t',next.id,'turn-a'),null,'new input cannot bind an already terminal Turn');
     q.claim('t',next.id,'turn-b'); q.settle('t',next.id,'unknown','steer-delivery-unconfirmed');
-    assert.equal(q.firstAwaitingAdmission('t')!.id,next.id,'old terminal receipt cannot close a new attempt');
+    assert.equal(q.firstUnsettled('t')!.id,next.id,'old terminal receipt cannot close a new attempt');
+    assert.equal(q.firstAwaitingAdmission('t'),null,'unknown human input is not automatically readmitted');
     q.deliveries.admission('t','m1','accepted');
     q.deliveries.admission('t','m1','unknown');
     assert.equal(q.find('t',original.id)!.delivery!.nativeAdmission,'accepted','late timeout cannot undo positive admission');
@@ -144,7 +197,8 @@ test('idle inference cannot close an unknown or unbound input',async()=>{
     q.claim('t',a.id,'unknown'); q.settle('t',a.id,'unknown');
     assert.equal(q.deliveries.finish('t','unknown','idle'),false);
     assert.equal(q.find('t',a.id)!.delivery!.execution,'unbound');
-    assert.equal(q.firstAwaitingAdmission('t')!.id,a.id);
+    assert.equal(q.firstUnsettled('t')!.id,a.id);
+    assert.equal(q.firstAwaitingAdmission('t'),null,'idle inference does not authorize replay');
     q.close();
   } finally {await rm(root,{recursive:true,force:true});}
 });
@@ -180,4 +234,69 @@ test('v16 upgrade retains message bytes and conservatively reconstructs admissio
     assert.equal(upgraded.firstAwaitingAdmission('t'),null);
     upgraded.close();
   } finally {await rm(root,{recursive:true,force:true});}
+});
+
+
+test("read-only queue projection does not recover pending sends or mutate admission evidence", async () => {
+ const root=await mkdtemp(join(tmpdir(),"queue-no-recovery-"));
+ try {
+  const owner=new OpenCraftHostQueue(root),row=owner.add("t","input",[{type:"text",text:"payload"}]);
+  owner.claim("t",row.id,"turn");
+  const before=owner.find("t",row.id)!;
+  // A borrowed projection may read, but must not declare the live writer lost.
+  const {OpenCraftHostStateDatabase}=await import("../../apps/opencraft-daemon/src/opencraft-host-state-database.js");
+  owner.close();const db=new OpenCraftHostStateDatabase(root);
+  const projection=new OpenCraftHostQueue(root,db.database,{recoverPending:false});
+  assert.equal(projection.find("t",row.id)!.state,"dispatching");
+  assert.deepEqual(projection.find("t",row.id)!.delivery,before.delivery);
+  projection.close();db.close();
+  const recovered=new OpenCraftHostQueue(root);
+  try{assert.equal(recovered.find("t",row.id)!.state,"unknown");assert.equal(recovered.find("t",row.id)!.delivery!.nativeAdmission,"unknown");}
+  finally{recovered.close();}
+ }finally{await rm(root,{recursive:true,force:true});}
+});
+
+test("execution fault cannot downgrade confirmed admission or invent terminal execution", async () => {
+ const root=await mkdtemp(join(tmpdir(),"queue-fault-evidence-")),queue=new OpenCraftHostQueue(root);
+ try{
+  const row=queue.add("t","input",[{type:"text",text:"payload"}]);queue.claim("t",row.id,"turn");queue.settle("t",row.id,"steering");
+  queue.interruptExecution("t",false);
+  assert.equal(queue.find("t",row.id)!.delivery!.nativeAdmission,"accepted");
+  assert.equal(queue.find("t",row.id)!.pausedReason,"execution-fault-unconfirmed");
+  assert.equal(queue.requestRetry("t",row.id,"turn"),false);
+  queue.interruptExecution("t",true);queue.settle("t",row.id,"unknown","steer-delivery-unconfirmed");
+  const after=queue.find("t",row.id)!;
+  assert.equal(after.delivery!.nativeAdmission,"accepted");assert.notEqual(after.delivery!.execution,"interrupted");
+  assert.equal(after.pausedReason,"execution-interrupted");assert.equal(queue.firstUnsettled("t")!.id,row.id);
+ }finally{queue.close();await rm(root,{recursive:true,force:true});}
+});
+
+
+test("terminal-known explicit retry keeps durable responsibility until final history reconciliation",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"queue-retry-custody-"));let q=new OpenCraftHostQueue(root);
+ try{
+  const row=q.add("t","input",[{type:"text",text:"retry"}]);q.claim("t",row.id,"old");q.settle("t",row.id,"unknown","steer-delivery-unconfirmed");
+  assert.equal(q.requestRetry("t",row.id,"old"),true);
+  assert.equal(q.resumeRequestedRetry("t",row.id),false,"idle or user intent alone never proves exact terminal state");
+  q.deliveries.finish("t","old","completed");q.close();q=new OpenCraftHostQueue(root);
+  assert.equal(q.find("t",row.id)!.state,"closed");assert.equal(q.find("t",row.id)!.pausedReason,"delivery-retry-requested");
+  assert.deepEqual(q.pendingThreads(),["t"]);assert.equal(q.observationCount("t"),1);assert.equal(q.maintenanceCounts().unknown,1);
+  assert.equal(q.resumeRequestedRetry("t",row.id),true);assert.equal(q.resumeRequestedRetry("t",row.id),false,"intent consumed exactly once");
+  assert.equal(q.find("t",row.id)!.targetTurnId,null);assert.equal(q.find("t",row.id)!.delivery!.nativeAdmission,"pending");
+  assert.equal(q.claim("t",row.id,"old"),null,"retry cannot reopen old terminal Turn");assert.ok(q.claim("t",row.id,"new"));
+  q.deliveries.finish("t","old","completed");assert.equal(q.find("t",row.id)!.state,"dispatching","late old terminal cannot close new attempt");
+ }finally{q.close();await rm(root,{recursive:true,force:true});}
+});
+
+test("late native acceptance or context proof refuses a requested retry",async()=>{
+ const root=await mkdtemp(join(tmpdir(),"queue-retry-proof-")),q=new OpenCraftHostQueue(root);
+ try{for(const proof of ["admission","context"] as const){
+  const row=q.add("t",proof,[{type:"text",text:proof}]);q.claim("t",row.id,"turn-"+proof);q.settle("t",row.id,"unknown");
+  assert.equal(q.requestRetry("t",row.id,"turn-"+proof),true);q.deliveries.finish("t","turn-"+proof,"completed");
+  if(proof==="context")q.deliveries.recorded("t",proof);else q.deliveries.admission("t",proof,"accepted");
+  assert.equal(q.resumeRequestedRetry("t",row.id),false,"positive proof is not permission for another execution");
+  assert.equal(q.find("t",row.id)!.state,"closed");
+  assert.equal(q.find("t",row.id)!.pausedReason,null,"positive proof retires unresolved retry responsibility");
+  assert.deepEqual(q.pendingThreads(),[]);
+ }}finally{q.close();await rm(root,{recursive:true,force:true});}
 });

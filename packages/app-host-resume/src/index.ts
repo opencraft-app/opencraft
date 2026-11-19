@@ -5,6 +5,9 @@
  */
 
 export const RESUME_PROTOCOL_VERSION = 1 as const;
+/** Records consume memory even when their byte payload is empty. */
+export const RESUME_MAX_FRAMES = 8_192;
+export const RESUME_GLOBAL_MAX_FRAMES = 65_536;
 /** How long the server keeps a detached session. Advertised to the client. */
 export const RESUME_DETACH_MS = 5 * 60_000;
 /** How long a client keeps trying to resume after detecting a dead route. */
@@ -65,8 +68,9 @@ interface Retained<T> { readonly seq: number; readonly data: T; readonly bytes: 
 export interface ResumeLinkOptions {
   /** Upper bound on retained unacknowledged bytes; older frames are evicted. */
   readonly maxBytes: number;
+  readonly maxFrames?: number;
   /** Observes every change of retained bytes (server global budget). */
-  readonly onBytes?: (delta: number) => void;
+  readonly onAccounting?: (bytes: number, frames: number) => void;
   /** Observes an unacknowledged frame being dropped (resumption from before it is lost). */
   readonly onEvict?: () => void;
 }
@@ -83,13 +87,21 @@ export class ResumeLink<T> {
   private head = 0;
   private retainedBytes = 0;
   private lastSent = 0;
+  private disposed = false;
   /** Highest frame evicted before acknowledgement; the peer can't resume from before it. */
   private lostThrough = 0;
   private lastReceived = 0;
   private unacknowledgedFrames = 0;
   private unacknowledgedBytes = 0;
 
-  constructor(private readonly options: ResumeLinkOptions) {}
+  private readonly options: ResumeLinkOptions;
+
+  constructor(options: ResumeLinkOptions) {
+    this.options = options;
+    if (!Number.isSafeInteger(options.maxBytes) || options.maxBytes < 0) throw new RangeError("Invalid resume byte budget");
+    if (!Number.isSafeInteger(options.maxFrames ?? RESUME_MAX_FRAMES) || (options.maxFrames ?? RESUME_MAX_FRAMES) < 1)
+      throw new RangeError("Invalid resume frame budget");
+  }
 
   get sent(): number { return this.lastSent; }
   get received(): number { return this.lastReceived; }
@@ -98,15 +110,21 @@ export class ResumeLink<T> {
   get maxBytes(): number { return this.options.maxBytes; }
 
   /** Assign the next outgoing sequence number. */
-  next(): number { return ++this.lastSent; }
+  next(): number {
+    if (this.disposed) throw new Error("Resume link is closed");
+    if (this.lastSent >= Number.MAX_SAFE_INTEGER) throw new RangeError("Resume sequence exhausted");
+    return ++this.lastSent;
+  }
 
   /** Retain an outgoing frame (already numbered with next()) for replay. */
   retain(seq: number, data: T, bytes: number): void {
-    if (seq !== this.lastSent) throw new Error("Retained frames must be numbered in order");
+    if (this.disposed) throw new Error("Resume link is closed");
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError("Invalid retained frame size");
+    if (!isSequence(seq) || seq !== this.lastSent) throw new Error("Retained frames must be numbered in order");
     if (bytes > this.options.maxBytes) { this.drop(this.frames); this.lostThrough = seq; this.options.onEvict?.(); return; }
     this.retained.push({ seq, data, bytes });
-    this.adjust(bytes);
-    while (this.retainedBytes > this.options.maxBytes) this.evictOldest();
+    this.adjust(bytes, 1);
+    while (this.retainedBytes > this.options.maxBytes || this.frames > (this.options.maxFrames ?? RESUME_MAX_FRAMES)) this.evictOldest();
   }
 
   /** Evict the oldest retained frame (budget pressure). Returns bytes freed. */
@@ -121,7 +139,7 @@ export class ResumeLink<T> {
 
   /** The peer has received every frame up to `received`. False: impossible value. */
   acknowledge(received: number): boolean {
-    if (!isAcknowledgement(received) || received > this.lastSent) return false;
+    if (this.disposed || !isAcknowledgement(received) || received > this.lastSent) return false;
     let count = 0;
     while (this.head + count < this.retained.length && this.retained[this.head + count]!.seq <= received) count++;
     this.drop(count);
@@ -139,6 +157,8 @@ export class ResumeLink<T> {
 
   /** Classify an incoming numbered frame. Only "deliver" may be processed. */
   accept(seq: number, bytes = 0): Arrival {
+    if (this.disposed) throw new Error("Resume link is closed");
+    if (!isSequence(seq) || !Number.isSafeInteger(bytes) || bytes < 0) throw new RangeError("Invalid received frame");
     if (seq <= this.lastReceived) return "duplicate";
     if (seq !== this.lastReceived + 1) return "gap";
     this.lastReceived = seq;
@@ -163,6 +183,9 @@ export class ResumeLink<T> {
   /** Release every retained frame (session ended). */
   clear(): void { this.drop(this.frames); }
 
+  /** End the owner and fence all late writers before releasing accounting. */
+  dispose(): void { if (this.disposed) return; this.disposed = true; this.clear(); }
+
   private drop(count: number): void {
     if (count <= 0) return;
     let freed = 0;
@@ -174,13 +197,13 @@ export class ResumeLink<T> {
     this.head += count;
     if (this.head > 1024 && this.head * 2 > this.retained.length) { this.retained = this.retained.slice(this.head); this.head = 0; }
     if (this.head === this.retained.length) { this.retained = []; this.head = 0; }
-    this.adjust(-freed);
+    this.adjust(-freed, -count);
   }
 
-  private adjust(delta: number): void {
-    if (!delta) return;
-    this.retainedBytes += delta;
-    this.options.onBytes?.(delta);
+  private adjust(bytes: number, frames: number): void {
+    if (!bytes && !frames) return;
+    this.retainedBytes += bytes;
+    this.options.onAccounting?.(bytes, frames);
   }
 }
 
@@ -191,7 +214,8 @@ export function utf8Length(text: string): number {
     const code = text.charCodeAt(index);
     if (code < 0x80) bytes += 1;
     else if (code < 0x800) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length) { bytes += 4; index++; }
+    else if (code >= 0xd800 && code <= 0xdbff && index + 1 < text.length
+      && text.charCodeAt(index + 1) >= 0xdc00 && text.charCodeAt(index + 1) <= 0xdfff) { bytes += 4; index++; }
     else bytes += 3;
   }
   return bytes;

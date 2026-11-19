@@ -25,7 +25,7 @@ export class ProviderTurnRetry {
   private closed = false;
   private closing: Promise<void> | null = null;
   constructor(directory: string, private readonly port: ProviderRetryPort, private readonly now = Date.now, private readonly random = Math.random, private readonly admissionOpen = () => true) {
-    this.managed = openManagedDatabase({ path: join(directory, "provider-turn-retry.sqlite"),
+    this.managed = openManagedDatabase({ schemaId: "provider-retry", path: join(directory, "provider-turn-retry.sqlite"),
       migrations: [{ version: 1, name: "provider-turn-retry", sql: schema }], legacyPolicy: "reject-unknown", validateSchema: createSchemaValidator(schema) });
     this.outcome = this.managed.outcome;
   }

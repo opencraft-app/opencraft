@@ -1,16 +1,11 @@
 import { useState } from "react";
-import { defineMessages } from "@opencraft/i18n";
 import { useIntl } from "@opencraft/i18n/react";
 import { SettingsActions, SettingsButton, SettingsGroup, SettingsPageHeader, SettingsRow, SettingsTextInput, type ProvisionHostInput } from "@opencraft/extension-react";
 import type { HostConnectionProfile } from "@opencraft/workbench-runtime";
 import { useOptionalAsyncNotices } from "./async-notices";
 
-export const mobileConnectionMessages = defineMessages({
-  title: { id: "mobile.connection.title", defaultMessage: "Connect a server" },
-  description: { id: "mobile.connection.description", defaultMessage: "Connect to your OpenCraft server to start working. Your server manages sign-in and access." },
-  address: { id: "mobile.connection.address", defaultMessage: "Secure WebSocket address" },
-  failed: { id: "mobile.connection.failed", defaultMessage: "The connection could not be saved. Check the address and try again." },
-});
+import { mobileConnectionMessages } from "./mobile-connection-messages";
+export { mobileConnectionMessages } from "./mobile-connection-messages";
 
 export function MobileConnectionSettings({ onProvisionHost }: { onProvisionHost(input: ProvisionHostInput): Promise<HostConnectionProfile> }) {
   const intl = useIntl();

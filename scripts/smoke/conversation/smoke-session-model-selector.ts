@@ -26,6 +26,7 @@ const controller = createComposerController({ type: "new-thread", draftId: "draf
 }}, { now: Date.now, createId: () => String(++sequence) });
 window.__sent = [];
 window.__resetDraft = () => controller.dispatch({ type: "reset-all" });
+window.__selections = () => controller.getSnapshot().draft.selections;
 const model = (id, label, isDefault, configuredRole = null) => ({ id, value: id, label, isDefault, configuredRole,
   description: null, efforts: [], defaultEffort: null, inputModalities: ["text"] });
 function Fixture() {
@@ -173,8 +174,8 @@ try {
   // The standalone picker must preserve engine identity even for identical labels.
   await page.evaluate(`window.__resetDraft(); window.__setPolicy("user");
     const models = [
-      { id: "dsh-model", value: "dsh-model", label: "Shared model", groupKey: "dsh", groupLabel: "DSH · Models", isDefault: true, efforts: [], defaultEffort: null },
-      { id: "pi:provider:model", value: "pi:provider:model", label: "Shared model", groupKey: "pi:provider", groupLabel: "Pi · provider", efforts: [], defaultEffort: null }
+      { id: "dsh-model", value: "dsh-model", agentId: "dsh", agentLabel: "DSH", label: "Shared model", groupKey: "dsh", groupLabel: "DSH · Models", isDefault: true, efforts: [], defaultEffort: null },
+      { id: "pi:provider:model", value: "pi:provider:model", agentId: "pi", agentLabel: "Pi", label: "Shared model", groupKey: "pi:provider", groupLabel: "Pi · provider", efforts: [], defaultEffort: null }
     ];
     window.__setCatalog({ agents: [], permissionProfiles: [], models,
       agentGroups: [{ id: "server", label: "Server", active: true, models, select: model => { window.__selectedEngineModel = model.value; } }] });`);
@@ -182,8 +183,8 @@ try {
   await picker.click();
   await page.getByRole("menuitem", { name: "Shared model", exact: true }).click();
   const standalone = page.locator(".opencraft-composer-model-browser-surface");
-  await standalone.getByRole("tab", { name: "DSH · Models", exact: true }).waitFor();
-  await standalone.getByRole("tab", { name: "Pi · provider", exact: true }).click();
+  await standalone.getByRole("tab", { name: "API models", exact: true }).waitFor();
+  await standalone.getByRole("tab", { name: "Pi", exact: true }).click();
   assert.equal(await standalone.getByRole("menuitem", { name: "Shared model", exact: true }).count(), 1);
   await standalone.getByRole("menuitem", { name: "Shared model", exact: true }).click();
   await page.waitForFunction(() => (window as unknown as { __selectedEngineModel: string }).__selectedEngineModel === "pi:provider:model");
@@ -191,6 +192,26 @@ try {
   const standaloneGeometry = await standalone.boundingBox();
   assert.ok(standaloneGeometry && standaloneGeometry.x >= 0 && standaloneGeometry.x + standaloneGeometry.width <= (touch ? 390 : 1280));
   await page.screenshot({ path: resolve(root, `.local/session-model-selector/standalone-${touch ? "mobile" : "desktop"}-${theme}.png`) });
+  await page.keyboard.press("Escape");
+  await standalone.waitFor({ state: "hidden" });
+
+  // A cross-Agent destination transition owns its own selection. Never write
+  // the Cursor model into the old Source View while that transition completes.
+  await page.evaluate(`window.__resetDraft(); window.__setPolicy("user");
+    const models = [
+      { id: "source-model", value: "source-model", agentId: "dsh", agentLabel: "Source", label: "Source model", isDefault: true, efforts: [], defaultEffort: null },
+      { id: "cursor:target", value: "cursor:target", agentId: "cursor", agentLabel: "Cursor", label: "Target model", efforts: [], defaultEffort: null }
+    ];
+    window.__setCatalog({ permissionProfiles: [], models, agentGroups: [{ id: "same-host", label: "Local", active: true, models,
+      select(model) { window.__handledSelection = model.value; return { selection: "handled" }; }
+    }] });`);
+  await editor.fill("Keep the source View draft");
+  await picker.click();
+  await standalone.getByRole("tab", { name: "Cursor", exact: true }).click();
+  await standalone.getByRole("menuitem", { name: "Target model", exact: true }).click();
+  await page.waitForFunction(() => (window as any).__handledSelection === "cursor:target");
+  assert.notEqual(await page.evaluate('window.__selections().model'), "cursor:target", "handled navigation cannot overwrite the source selection");
+  assert.equal(await editor.innerText(), "Keep the source View draft");
   await page.keyboard.press("Escape");
   await standalone.waitFor({ state: "hidden" });
 
@@ -229,7 +250,9 @@ try {
   const retry = standalone.getByRole("menuitem", { name: "重试", exact: true });
   await activate(retry);
   await standalone.getByText("正在加载模型…").waitFor();
-  assert.equal(await retry.getAttribute("aria-disabled"), "true");
+  assert.equal(await retry.count(), 0, "loading has no misleading disabled retry action");
+  assert.equal(await standalone.getByText("请检查此 Agent 的配置后重试。", { exact: true }).count(), 0, "loading does not present setup failure advice");
+  assert.equal(await standalone.getByText("所选模型不可用，请重新选择。", { exact: true }).count(), 0, "an incomplete directory cannot declare the selected model unavailable");
   assert.equal(await page.evaluate('window.__retryCount'), 1);
   await settleMenu();
   const pendingGeometry = await standalone.boundingBox();

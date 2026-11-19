@@ -36,7 +36,12 @@
     "./preview-activation": "./src/preview-activation.tsx",
     "./use-touch-layout": "./src/use-touch-layout.ts",
     "./adaptive-sheet": "./src/adaptive-sheet.tsx",
-    "./adaptive-sheet.web": "./src/adaptive-sheet.scss"
+    "./adaptive-sheet.web": "./src/adaptive-sheet.scss",
+    "./motion-reduction": "./src/use-motion-reduction.ts",
+    "./object-controls": "./src/object-controls.tsx",
+    "./object-controls.web": "./src/object-controls.web.scss",
+    "./material-surface": "./src/material-surface.tsx",
+    "./material-surface.web": "./src/material-surface.web.scss"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -164,6 +164,7 @@ test("history backfill uses the updated committed loader without replacing its o
   function Consumer({ version }: { version: number }) {
     const history = useTurnHistoryBackfill({
       historyKey: "same-conversation",
+      pagination: { cursor: `page-${version}`, hasOlder: true, loading: false },
       loadPage: async () => { loads.push(version); return "stop"; },
       readMetrics: () => ({ viewportHeight: 500, contentHeight: 100, scrollTop: 0 }),
       afterLayout: async () => {},

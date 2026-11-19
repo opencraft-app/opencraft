@@ -183,20 +183,6 @@ test("layout retains input objects and makes no writes to frozen content", () =>
   assert.equal(layout.contexts[0], skill);
 });
 
-test("status-only Goal and hook feedback retain the empty bubble; review stands alone", () => {
-  for (const overrides of [{ goal: true }, { hookFeedback: true }, { deliveryStatus: "failed" as const }]) {
-    const layout = deriveUserMessageWebLayout(message(overrides));
-    assert.equal(layout.hasStatus, true);
-    assert.equal(layout.showBubble, true);
-  }
-  for (const overrides of [{ reviewMode: true }, { pullRequestFixMode: true }, { autoResolveSync: true }, { commentCount: 1 }]) {
-    const layout = deriveUserMessageWebLayout(message(overrides));
-    assert.equal(layout.hasStatus, true);
-    assert.equal(layout.showBody, true);
-    assert.equal(layout.showBubble, false);
-  }
-});
-
 function imageFile(overrides: Partial<Extract<UserMessageTimelineBlock["attachments"][number], { type: "file" }>> = {}) {
   return { type: "file" as const, id: "photo", name: "IMG_3364.png", target: "/host/IMG_3364.png",
     mimeType: "image/png", startLine: null, endLine: null, ...overrides };
@@ -216,6 +202,7 @@ test("metadata-only history starts image preview before image content arrives", 
 
 test("image hydration retains a single preview and no duplicate file chip", () => {
   const file = imageFile();
+  assert.ok(file.target !== null);
   const early = deriveUserMessageWebLayout(message({ attachments: [file, { ...file, id: "duplicate" }] }));
   const hydrated = deriveUserMessageWebLayout(message({ attachments: [file],
     content: [{ type: "local-image", source: file.target, detail: null }] }));
@@ -233,3 +220,16 @@ test("ordinary files, unavailable locators and source line citations retain file
   }
 });
 
+test("status-only Goal and hook feedback retain the empty bubble; review stands alone", () => {
+  for (const overrides of [{ goal: true }, { hookFeedback: true }, { deliveryStatus: "failed" as const }]) {
+    const layout = deriveUserMessageWebLayout(message(overrides));
+    assert.equal(layout.hasStatus, true);
+    assert.equal(layout.showBubble, true);
+  }
+  for (const overrides of [{ reviewMode: true }, { pullRequestFixMode: true }, { autoResolveSync: true }, { commentCount: 1 }]) {
+    const layout = deriveUserMessageWebLayout(message(overrides));
+    assert.equal(layout.hasStatus, true);
+    assert.equal(layout.showBody, true);
+    assert.equal(layout.showBubble, false);
+  }
+});

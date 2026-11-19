@@ -15,15 +15,21 @@ function argument(name: string): string {
 function optional(name: string): string | undefined { return process.argv.includes(name) ? argument(name) : undefined; }
 
 async function main() {
+  const explicitModelDirectory = optional("--model-storage-directory");
+  const modelDirectory = explicitModelDirectory ?? process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY
+    ?? join(dirname(argument("--data-directory")), "models");
+  if (modelDirectory !== undefined && !isAbsolute(modelDirectory)) throw new Error("Model storage directory must be absolute");
+  if (!explicitModelDirectory && process.argv.includes("--allow-insecure-local-model-network")) throw new Error("Local model network opt-in requires a model storage directory");
   const token = (await readFile(argument("--token-file"), "utf8")).trim();
   let shutdown: ((code: number) => Promise<void>) | undefined;
   const options: CodexCoreOptions = {
-    configuredResponses: createConfiguredCodexResponses(optional("--model-storage-directory")
-      ?? process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY ?? join(dirname(argument("--data-directory")), "models")),
     endpoint: argument("--endpoint"), authToken: token,
     executable: argument("--codex-executable"), runtimeDirectory: argument("--runtime-directory"),
     dataDirectory: argument("--data-directory"), nativeCodexHomeDirectory: argument("--native-codex-home-directory"),
     appServerEndpoint: optional("--app-server-endpoint"),
+    configuredResponses: createConfiguredCodexResponses(modelDirectory, {
+      allowInsecureLocalNetwork: process.argv.includes("--allow-insecure-local-model-network"),
+    }),
     proxyPort: optional("--proxy-port") === undefined ? undefined : Number(argument("--proxy-port")),
     onFailure: error => { console.error(error.message); void shutdown?.(1); },
   };

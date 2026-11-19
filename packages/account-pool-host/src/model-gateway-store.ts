@@ -79,7 +79,7 @@ export class ModelGatewayStore {
   private readonly db;
   constructor(path: string, private readonly now = Date.now) {
     if (path !== ":memory:" && !isAbsolute(path)) throw new ModelGatewayError("gateway_path_must_be_absolute", 503);
-    this.managed = openManagedDatabase({ path, migrations: [{ version: 1, name: "model-gateway", sql: schema }, { version: 2, name: "personal-keys", sql: scopeMigration }, {version: 3, name: "execution-authority", sql: executionMigration}, {version: 4, name: "conversation-model-binding", sql: conversationModelMigration}],
+    this.managed = openManagedDatabase({ schemaId: "model-gateway", path, migrations: [{ version: 1, name: "model-gateway", sql: schema }, { version: 2, name: "personal-keys", sql: scopeMigration }, {version: 3, name: "execution-authority", sql: executionMigration}, {version: 4, name: "conversation-model-binding", sql: conversationModelMigration}],
       legacyPolicy: "reject", validateSchema: createSchemaValidator(schema + scopeMigration + executionMigration + conversationModelMigration) });
     this.db = this.managed.database;
     this.db.exec("PRAGMA busy_timeout=5000");

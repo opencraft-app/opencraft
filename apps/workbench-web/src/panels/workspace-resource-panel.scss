@@ -518,8 +518,8 @@
 .workspace-resource-panel .workspace-file-path {
   display: flex; align-items: center; flex: 0 0 auto; min-width: 0; overflow: hidden;
   gap: calc(var(--spacing) * 0.5); padding-inline: calc(var(--spacing) * 3); white-space: nowrap;
-  > .ui-button { min-width: 0; flex: 0 1 auto; padding-inline: var(--spacing); @include typography.role(metadata, secondary); }
-  > .workspace-file-path__overflow { flex: 0 0 auto; color: var(--color-text-secondary); }
+  > .ui-button { min-width: 0; flex: 0 1 auto; }
+  > .workspace-file-path__overflow { flex: 0 0 auto; }
   .ui-button__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .workspace-file-path__separator { flex: 0 0 auto; color: var(--color-text-tertiary); }
 }

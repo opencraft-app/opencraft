@@ -10,8 +10,8 @@ import { RelayAuthentication, type EntryOriginResolver } from './authentication.
 import type { RelayClusterPort, RelayHub } from './cluster-port.js';
 import { SERVERS_PATH, LEGACY_SERVERS_PATH, isServerPath, selectedPath, serverBase, selectorPage, scopedHtml, targetCookies, scopedCookies, selectionDefault, parseServerPaths, type ServerPaths } from './selection.js';
 import type { Principal } from '@opencraft/identity-core';
-import type { HubService } from '../../../packages/hub-network/src/contract.js';
-import { HUB_CONTROL_PATH, HUB_DATA_PATH } from '../../../packages/hub-network/src/contract.js';
+import type { HubService } from '@opencraft/hub-network';
+import { HUB_CONTROL_PATH, HUB_DATA_PATH } from '@opencraft/hub-network';
 
 export interface RelayEntryIdentity { principal: Principal; origin: string; }
 export interface RelayServerDirectory { servers: { id: string; name: string; route: string }[]; pending: boolean; }
@@ -287,7 +287,7 @@ export function createRelayServer(routes: readonly RelayRoute[], options: { auth
       if (req.method === 'GET') { res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(options.hub.snapshot())); return; }
       if (req.method !== 'POST') { failure(res, 403); return; }
       try {
-        const { readCommand } = await import('../../../packages/hub-network/src/node.js'); const input = await readCommand(req);
+        const { readCommand } = await import("@opencraft/hub-network/node"); const input = await readCommand(req);
         const operator = typeof req.headers['x-opencraft-hub-operator'] === 'string' ? Buffer.from(req.headers['x-opencraft-hub-operator'], 'base64url').toString('utf8') : 'local-operator';
         const result = await options.hub.command(input, operator); res.writeHead('conflict' in result ? 409 : 200, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(result));
       } catch { res.writeHead(400, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end('{"error":"invalid_hub_change"}'); } return;

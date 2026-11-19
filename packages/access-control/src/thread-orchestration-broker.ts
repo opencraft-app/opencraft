@@ -29,15 +29,17 @@ const assistantRef=(value:unknown)=>{
 };
 const permissionSnapshot=(settings:Record<string,unknown>)=>JSON.stringify(canonical({permissions:settings.permissions,sandbox:settings.sandbox,approvalPolicy:settings.approvalPolicy,approvalsReviewer:settings.approvalsReviewer,runtimeWorkspaceRoots:settings.runtimeWorkspaceRoots,config:settings.config,cwd:settings.cwd}));
 const terminal=new Set(['completed','failed','exhausted','unconfirmed','interrupted_by_user']);
-// Timer sweeps re-read a child only when due: changed children every 500 ms, unchanged ones back
+// Timer sweeps re-read a child only when due: observed changes reset to 500 ms, unchanged ones back
 // off to 5 s, and a child stuck in "starting" (no first turn) for 10 min to 15 s. Each status
 // read costs a full logical-client lifecycle in the engine, so a fixed 500 ms poll of every
-// non-terminal child is a constant load (12+ clients/s with a handful of stuck children).
+// non-terminal child creates constant background load.
 export const ORCHESTRATION_POLL_MIN_MS=500,ORCHESTRATION_POLL_MAX_MS=5_000,ORCHESTRATION_STALE_STARTING_MS=10*60_000,ORCHESTRATION_STALE_STARTING_POLL_MS=15_000;
 
 /** Hub coordination over the collaboration ledger and existing Host input queue. */
 export class ThreadOrchestrationBroker {
   automations?: ProjectAutomations;
+  /** Record the already-created child in its source collaboration scope before delivery. */
+  childScope?: (parent:import('@opencraft/appserver-protocol/collaboration').ConversationRef,child:import('@opencraft/appserver-protocol/collaboration').ConversationRef)=>Promise<void>;
   legacySchedule?: (threadId:string)=>Promise<{status:string}|null>;
   private readonly calls=new Map<string,{fingerprint:string;promise:Promise<unknown>}>();
   private readonly operationCalls=new Map<string,Promise<unknown>>();
@@ -48,7 +50,8 @@ export class ThreadOrchestrationBroker {
   private closed=false;
   private reportedSweepFailure=false;
   private readonly observations=new Set<Promise<void>>();
-  private readonly statusReads=new Map<string,Promise<OrchestrationRuntimeSnapshot>>();
+  private readonly pacingEpoch=new Map<string,number>();
+  private readonly statusReads=new Map<string,{epoch:number;promise:Promise<OrchestrationRuntimeSnapshot>}>();
   private readonly statusFailures=new Map<string,{attempts:number;dueAt:number}>();
   private readonly pacing=new Map<string,{key:string;unchanged:number;since:number;dueAt:number;state:OrchestrationRuntimeSnapshot}>();
   constructor(readonly collaboration:Collaboration,private readonly execution:OrchestrationExecutionPort,private readonly now=Date.now,private readonly runtimeStorage?:OrchestrationRuntimeStorage){}
@@ -74,7 +77,7 @@ export class ThreadOrchestrationBroker {
   private get runtime(){if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');return this.runtimeStorage;}
   start():void {if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');if(!this.timer&&!this.closed){this.timer=setInterval(()=>{void this.reconcile(true).then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});},500);this.timer.unref();}}
   get available():boolean{return !this.closed&&!!this.runtimeStorage;}
-  stop():void{this.closed=true;void this.assistant?.close();this.detachAssistant?.();this.detachAssistant=undefined;if(this.timer)clearInterval(this.timer);}
+  stop():void{this.closed=true;void this.assistant?.close();this.detachAssistant?.();this.detachAssistant=undefined;if(this.timer)clearInterval(this.timer);this.pacing.clear();this.pacingEpoch.clear();this.statusFailures.clear();this.statusReads.clear();}
   async close():Promise<void>{this.stop();await this.sweep?.catch(()=>{});await this.ackSweep?.catch(()=>{});await Promise.allSettled([...this.observations]);await Promise.allSettled([...this.calls.values()].map(call=>call.promise));await Promise.allSettled(this.operationCalls.values());}
   async invoke(threadId:string,turnId:string,toolCallKey:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
     if(!this.available)return Promise.reject(new CollaborationError(503,this.closed?'orchestration_closed':'orchestration_runtime_unavailable'));
@@ -265,7 +268,7 @@ export class ThreadOrchestrationBroker {
   }
   private async perform(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
     // A direct operation on a child is new evidence; read it again on the next sweep.
-    if(name==='thread_tell'||name==='send_message_to_thread')for(const id of [args.threadId,...(Array.isArray(args.threadIds)?args.threadIds:[])])if(typeof id==='string'){this.pacing.delete(id);this.statusFailures.delete(id);}
+    if(!['thread_wait','read_thread','get_thread_delivery'].includes(name))for(const id of [args.threadId,...(Array.isArray(args.threadIds)?args.threadIds:[])])if(typeof id==='string'){this.pacing.delete(id);this.statusFailures.delete(id);this.pacingEpoch.set(id,(this.pacingEpoch.get(id)??0)+1);}
     if(['read_thread','send_message_to_thread','get_thread_delivery'].includes(name))return this.conversationTool(threadId,turnId,key,name,args,delegationId);
     if(!ORCHESTRATION_TOOL_NAMES.includes(name as typeof ORCHESTRATION_TOOL_NAMES[number]))throw new CollaborationError(400,'unknown_orchestration_tool');
     const delegation=this.collaboration.delegation(threadId,turnId,delegationId),ledger=this.collaboration.orchestration;
@@ -315,6 +318,7 @@ export class ThreadOrchestrationBroker {
         void this.reconcileAcks();throw new CollaborationError(created.rejected.status,'native_child_creation_rejected');
       }
       const childId=text(created.threadId),parent=ledger.relation(threadId);
+      await this.childScope?.(this.reference(threadId),this.reference(childId));
       ledger.transaction(()=>{
         ledger.createThread({threadId:childId,serverId:this.reference(childId).serverId,driverKind:created.driverKind??String(settings.driver??args.driver??'codex'),ownerActorId:delegation.context.actorId,parentThreadId:threadId,
           lifecycleOwnerThreadId:threadId,forkedFromId:null,visibility:args.visibility==='visible'?'visible':'hidden',engineHostGeneration:created.generationId??null,nativeSessionId:childId,
@@ -799,34 +803,37 @@ export class ThreadOrchestrationBroker {
       try{if(await this.execution.acknowledge!(id)!==false){await this.runtime.acknowledge(id);}}catch{/* Durable intent remains for the next sweep. */}
     }})().finally(()=>{this.ackSweep=null;});
   }
-  observe(snapshot:OrchestrationRuntimeSnapshot):Promise<void>{
+  observe(snapshot:OrchestrationRuntimeSnapshot,epoch=this.pacingEpoch.get(snapshot.threadId)??0):Promise<void>{
     if(this.closed)return Promise.resolve();
     const operation=this.runtime.observe(snapshot,this.now());this.observations.add(operation);
-    void operation.then(()=>{this.observations.delete(operation);this.pace(snapshot.threadId,snapshot,this.now());},()=>this.observations.delete(operation));
+    void operation.then(()=>{this.observations.delete(operation);this.pace(snapshot.threadId,snapshot,this.now(),epoch);},()=>this.observations.delete(operation));
     return operation;
   }
   /** One status owner for waiters and timer sweeps; cache successes and pace failures. */
   private readStatus(id:string,fresh=false):Promise<OrchestrationRuntimeSnapshot>{
-    const inFlight=this.statusReads.get(id);if(inFlight)return inFlight;
+    const epoch=this.pacingEpoch.get(id)??0,inFlight=this.statusReads.get(id);if(inFlight?.epoch===epoch)return inFlight.promise;
     const now=this.now(),known=this.pacing.get(id),failed=this.statusFailures.get(id);
     if(!fresh&&failed&&failed.dueAt>now)return Promise.reject(new Error('Child status temporarily unavailable'));
     if(!fresh&&known&&known.dueAt>now)return Promise.resolve(known.state);
     let reading:Promise<OrchestrationRuntimeSnapshot>;try{reading=this.execution.snapshot(id);}catch(error){reading=Promise.reject(error);}
     const read=reading.then(async state=>{
-      if(!this.closed)await this.observe(state);
-      this.statusFailures.delete(id);return state;
+      if((this.pacingEpoch.get(id)??0)!==epoch)throw new Error('Child status superseded');
+      if(!this.closed)await this.observe(state,epoch);
+      if((this.pacingEpoch.get(id)??0)===epoch)this.statusFailures.delete(id);return state;
     }).catch(error=>{
+      if(this.closed||(this.pacingEpoch.get(id)??0)!==epoch)throw error;
       const attempts=(this.statusFailures.get(id)?.attempts??0)+1;
       const delayMs=Math.min(30_000,500*2**Math.min(attempts-1,6));
       this.statusFailures.set(id,{attempts,dueAt:this.now()+delayMs});
-      if(attempts===1)console.warn('[opencraft orchestration]',JSON.stringify({event:'child-status-read-failed',threadId:id,retryMs:delayMs}));
+      if(attempts===1)console.warn('[opencraft orchestration]',JSON.stringify({event:'child-status-read-failed',retryMs:delayMs}));
       throw error;
-    }).finally(()=>{if(this.statusReads.get(id)===read)this.statusReads.delete(id);});
-    this.statusReads.set(id,read);return read;
+    }).finally(()=>{if(this.statusReads.get(id)?.promise===read)this.statusReads.delete(id);});
+    this.statusReads.set(id,{epoch,promise:read});return read;
   }
   reconcile(paced=false):Promise<void>{if(this.closed)return Promise.resolve();return this.sweep??=this.runSweep(paced).finally(()=>{this.sweep=null;});}
   /** Record one observed child state and schedule its next timer-driven read. */
-  private pace(id:string,state:OrchestrationRuntimeSnapshot,now:number):void{
+  private pace(id:string,state:OrchestrationRuntimeSnapshot,now:number,epoch:number):void{
+    if(this.closed||(this.pacingEpoch.get(id)??0)!==epoch)return;
     const key=JSON.stringify([state.state,state.turnId??null,state.rootTurnId??null]),prior=this.pacing.get(id),same=prior?.key===key;
     const unchanged=same?prior.unchanged+1:0,since=same?prior.since:now;
     const interval=state.state==='starting'&&now-since>=ORCHESTRATION_STALE_STARTING_MS?ORCHESTRATION_STALE_STARTING_POLL_MS
@@ -837,8 +844,9 @@ export class ThreadOrchestrationBroker {
     void this.reconcileAcks();
     const ledger=this.collaboration.orchestration;
     const targets=new Set(await this.runtime.targets(!this.reconciledStartup,this.now()));
+    if(this.closed)return;
     const snapshots=new Map<string,OrchestrationRuntimeSnapshot>();
-    for(const id of new Set([...this.pacing.keys(),...this.statusFailures.keys()]))if(!targets.has(id)){this.pacing.delete(id);this.statusFailures.delete(id);}
+    for(const id of new Set([...this.pacing.keys(),...this.statusFailures.keys(),...this.pacingEpoch.keys()]))if(!targets.has(id)){this.pacing.delete(id);this.statusFailures.delete(id);this.pacingEpoch.delete(id);}
     const sweepAt=this.now();
     for(const id of targets){
       const pace=this.pacing.get(id);

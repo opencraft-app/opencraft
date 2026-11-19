@@ -119,7 +119,7 @@
   .shell-sidebar__navigation {
     grid-column: 1; grid-row: 2;
     align-self: end;
-    padding-inline: var(--padding-shell-sidebar-inline) 0;
+    padding-inline: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline)) 0;
     // Keep one footer row. Extra contributed destinations scroll natively
     // rather than making the entire sidebar footer taller.
     overflow: auto hidden;
@@ -499,3 +499,15 @@
 // A capacity adapter on the existing Shell plane; no additional material layer.
 .shell-navigation-strip { min-width: 0; width: 100%; }
 .shell-sidebar__column[data-navigation-layout="mobile"] .shell-navigation-strip { display: contents; }
+
+// The server edge drawer occupies the sidebar's start edge. Add the same
+// gutter to the brand, list and bottom actions as the context list already
+// receives, so their inline origins stay aligned when the drawer is present.
+.has-server-drawer .shell-sidebar__navigation.sidecar-content-slot,
+.app-shell-floating-overlay-root[data-server-edge-present] .shell-sidebar__navigation.sidecar-content-slot {
+  padding-inline-start: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline) + var(--spacing-shell-server-edge-gutter));
+}
+.has-server-drawer .app-shell-header__window-controls-rail[data-navigation-brand],
+.app-shell-floating-overlay-root[data-server-edge-present] .app-shell-header__window-controls-rail[data-navigation-brand] {
+  padding-inline-start: calc(var(--window-controls-padding-start) + var(--spacing-shell-server-edge-gutter));
+}

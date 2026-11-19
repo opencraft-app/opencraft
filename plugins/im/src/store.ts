@@ -74,7 +74,7 @@ export interface StoredMessage {
 export class SwitchboardStore {
   private readonly managed;
   constructor(path: string) {
-    this.managed = openManagedDatabase({
+    this.managed = openManagedDatabase({ schemaId: "im",
       path,
       legacyPolicy: "reject",
       migrations: switchboardMigrations,

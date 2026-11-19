@@ -63,7 +63,7 @@ export function WorkspacePlacementPicker({ control, execution, locked, portalCon
         </Menu.Item>
         {catalog?.environments.map(entry => <Menu.Item key={JSON.stringify(entry.target)} className="new-thread-project-menu__item"
           disabled={locked || !control.selectable} onSelect={event => change(() => selectPlacementEnvironment(execution, entry.target, catalog), event)}>
-          <span><strong>{entry.name}</strong><small><FormattedMessage id="workspacePlacement.configured" defaultMessage="Configured" /> · {entry.resources.cpuMillis / 1000} CPU · {Math.round(entry.resources.memoryBytes / 1024 ** 3)} GiB</small></span>
+          <span><strong>{entry.name}</strong><small><FormattedMessage id="workspacePlacement.configured" defaultMessage="Configured" /> · {intl.formatMessage({"id": "workspacePlacement.resources", "defaultMessage": "{cpu} CPU · {memory} GiB"}, { cpu: entry.resources.cpuMillis / 1000, memory: Math.round(entry.resources.memoryBytes / 1024 ** 3) })}</small></span>
           {sameEnvironment(environment, entry.target) ? <CheckIcon size={15} /> : null}
         </Menu.Item>)}
         {empty}{status}

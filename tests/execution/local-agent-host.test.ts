@@ -1,5 +1,4 @@
 import { startTerminalPtyOwner } from "../../apps/local-agent-host/src/terminal-pty-owner.js";
-import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
@@ -15,6 +14,9 @@ import { seedNewerHostStorage } from "../support/local-agent-storage-fixture.js"
 import { ConnectedAgentHost, connectedAgentCatalogEntry } from "../../apps/local-agent-host/src/connected-agents.js";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
 import { DshExecutionAuthority } from "../../apps/local-agent-host/src/dsh-execution-authority.js";
+import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
+import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from "../../apps/local-agent-host/src/terminal-owner-wire.js";
+import { connect as connectSocket } from "node:net";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { OpenCraftMessageSenders } from "../../apps/opencraft-daemon/src/opencraft-message-senders.js";
 import { SshConnectionStore } from "../../apps/opencraft-daemon/src/ssh-connection-store.js";
@@ -38,15 +40,42 @@ test("Host storage failure neither listens nor starts the engine", async () => {
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
+test("standalone Host reports a stable OS machine identity without a reachable engine", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "oc-host-machine-"));
+  let host: Awaited<ReturnType<typeof startLocalAgentHost>> | undefined;
+  let socket: WebSocket | undefined;
+  try {
+    const options = { dataDirectory: directory, dshUrl: "http://127.0.0.1:1" };
+    host = await startLocalAgentHost(options);
+    socket = await connect(host.websocketUrl);
+    const first = await request(socket, 1, "runtime/machine/read");
+    assert.equal(first.agent, "OpenCraft");
+    assert.ok(first.machine.name.trim());
+    assert.equal(first.machine.platform, process.platform === "darwin" ? "macos" : process.platform === "win32" ? "windows" : "linux");
+    assert.equal((await readFile(join(directory, "machine-id"), "utf8")).trim(), first.machine.machineId);
+    socket.close(); socket = undefined; await host.close(); host = undefined;
+    host = await startLocalAgentHost(options);
+    socket = await connect(host.websocketUrl);
+    assert.deepEqual(await request(socket, 2, "runtime/machine/read"), first);
+    socket.close(); socket = undefined; await host.close(); host = undefined;
+    const supplied = { ...first.machine, name: "Configured deployment", machineId: "12345678-1234-4123-8123-123456789abc" };
+    host = await startLocalAgentHost({ ...options, machineIdentity: supplied });
+    socket = await connect(host.websocketUrl);
+    assert.deepEqual(await request(socket, 3, "runtime/machine/read"), { machine: supplied, agent: "OpenCraft" });
+    assert.equal((await readFile(join(directory, "machine-id"), "utf8")).trim(), first.machine.machineId);
+  } finally { socket?.close(); await host?.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
 test("Host health reports all eagerly opened stores", async () => {
-  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1" });
+  const directory = await mkdtemp(join(tmpdir(), "oc-host-health-"));
+  const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", dataDirectory: directory });
   try {
     const url = new URL(host.websocketUrl); url.protocol = "http:"; url.pathname = "/health"; url.search = "";
     const health = await (await fetch(url)).json();
     assert.equal(health.ok, true);
     assert.deepEqual(health.storage.map((item: { name: string; status: string }) => [item.name, item.status]),
-      ["session-routing", "threads", "executions", "host-documents", "managed-connectors", "interrupted-turn-recovery", "conversation-schedules"].map(name => [name, "fresh"]));
-  } finally { await host.close(); }
+      ["session-routing", "threads", "executions", "host-documents", "managed-connectors", "tasks", "server-collaboration", "interrupted-turn-recovery", "conversation-schedules"].map(name => [name, "fresh"]));
+  } finally { await host.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
 test("Host bind failure closes its thread catalog", async t => {
@@ -413,7 +442,8 @@ test("Local Agent Host advertises and owns attachment staging", async () => {
         sources: ["client-bytes"],
         locations: ["host-file"],
         maxBytes: 1024 * 1024 * 1024,
-        chunkBytes: 1024 * 1024,
+        chunkBytes: 64 * 1024,
+        uploadRetry: "last-chunk-v1",
       },
     );
     const upload = { uploadId: crypto.randomUUID(), clientAttachmentId: "chunked-host-file", name: "chunked.txt", mimeType: "text/plain", size: 6 };
@@ -519,7 +549,10 @@ test("process RPC survives WebSocket replacement without contacting the Agent ha
     }
     assert.equal(snapshot.phase, "exited");
     assert.match(snapshot.output.map((c: { deltaBase64: string }) => Buffer.from(c.deltaBase64, "base64").toString()).join(""), /RPC_alive/);
-  } finally { socket.close(); await host.close(); }
+  } finally {
+    socket.close(); await host.close();
+    // t.after owns the private PTY stop closure and directory cleanup.
+  }
 });
 
 test("local Agent Host authenticates and projects DSH history into stable AppServer turns", async () => {

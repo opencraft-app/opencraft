@@ -35,7 +35,7 @@ async function fixture(t, overrides = {}) {
   const root = await mkdtemp(join(tmpdir(), "apphost-resume-"));
   const logs = [], host = fakeAppHost();
   const server = await createWorkbenchWebServer({ root, appServerTarget: null, loopbackOnly: false,
-    webSocketHeartbeatIntervalMs: 0, onAppHostDiagnostic: event => logs.push(event), appHostServer: host, ...overrides });
+    webSocketHeartbeatIntervalMs: 0, appHostResumeEnabled: true, onAppHostDiagnostic: event => logs.push(event), appHostServer: host, ...overrides });
   const address = await server.listen({ host: "127.0.0.1", port: 0 });
   t.after(async () => { await server.close(); await rm(root, { recursive: true, force: true }); });
   return { logs, host, url: `ws://127.0.0.1:${address.port}/apphost` };
@@ -117,7 +117,7 @@ test("a resumed session replays exactly the frames lost with the socket, both di
   await until(() => connection.closed);
 });
 
-test("resumption is refused for a wrong token, another identity, or a gap, and the client falls back", async t => {
+test("resumption rejects a wrong token or unavailable replay window without stealing another session", async t => {
   const f = await fixture(t);
   const first = await open(f.url);
   first.send({ type: "hello", protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: "r1", resume: { v: 1 } });
@@ -140,7 +140,7 @@ test("resumption is refused for a wrong token, another identity, or a gap, and t
   await until(() => f.host.connections[0].closed);
 });
 
-test("a normal close ends the session immediately; detached sessions expire", async t => {
+test("a normal close ends the session immediately without detaching", async t => {
   const f = await fixture(t);
   const first = await open(f.url);
   first.send({ type: "hello", protocolVersion: APP_HOST_PROTOCOL_VERSION, rendererId: "r1", resume: { v: 1 } });

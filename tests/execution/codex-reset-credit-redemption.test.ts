@@ -64,6 +64,35 @@ test("opening details uses only GET; confirmed redemption binds exact account, c
   } finally { await fixture.close(); }
 });
 
+test("redemption prefers code and retains legacy outcome compatibility", async () => {
+  const cases = [
+    { body: { code: "reset", outcome: "no_credit" }, expected: "reset" },
+    { body: { code: "nothing_to_reset" }, expected: "nothingToReset" },
+    { body: { code: "no_credit" }, expected: "noCredit" },
+    { body: { code: "already_redeemed" }, expected: "alreadyRedeemed" },
+    { body: { outcome: "reset" }, expected: "reset" },
+    { body: { outcome: "nothing_to_reset" }, expected: "nothingToReset" },
+    { body: { outcome: "no_credit" }, expected: "noCredit" },
+    { body: { outcome: "already_redeemed" }, expected: "alreadyRedeemed" },
+    { body: { code: null, outcome: "reset" }, expected: "reset" },
+    { body: { code: "future_value", outcome: "reset" }, expected: "unknown" },
+    { body: { code: "", outcome: "reset" }, expected: "unknown" },
+    { body: {}, expected: "unknown" },
+  ];
+  for (const { body, expected } of cases) {
+    let posts = 0;
+    const fixture = await setup(async (_url, init) => {
+      if (init?.method !== "POST") return Response.json(details());
+      posts++;
+      return Response.json(body);
+    });
+    try {
+      assert.equal((await fixture.service.consume(request)).outcome, expected, JSON.stringify(body));
+      assert.equal(posts, 1);
+    } finally { await fixture.close(); }
+  }
+});
+
 test("confirmation, identity, current status, supported plan and known unexpired expiry are required before POST", async () => {
   for (const changed of [{ status: "redeemed" }, { status: "redeeming" }, { status: "future-state" }, { is_supported_by_plan: false },
     { expires_at: "2026-10-24T00:00:00Z" }, { expires_at: undefined }, { reset_type: "unknown" }, { id: "other-credit" }]) {

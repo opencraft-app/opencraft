@@ -1,0 +1,270 @@
+{
+  "format": 1,
+  "canonicalPublished": [
+    {
+      "version": 1,
+      "name": "0000_server_core",
+      "checksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af",
+      "snapshotChecksum": "9de4504302ba7c161174394548b13c7acd5d23c001356fc1dbc73fb2499d50ec"
+    },
+    {
+      "version": 2,
+      "name": "0001_execution_capability_bindings",
+      "checksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31",
+      "snapshotChecksum": "2d02c94c3199392251fbe2320c26f062ae92e7e9b770ebb1b72ce8a6282e4553"
+    },
+    {
+      "version": 3,
+      "name": "0002_native_channels",
+      "checksum": "750d52e3cb3dd983a5b7339f4cb59779456cc6fa5228f3f5289bd7d0e5065dd8",
+      "snapshotChecksum": "b2fe0209d97310b65932d1d6c1d13c62c253d40142445a8f0d47626445b7ba41"
+    },
+    {
+      "version": 4,
+      "name": "0003_actor_inbox",
+      "checksum": "f41a01bbeeb44df393266b4e36bf4440e30f86359082630a8a9cbb53d84148f1",
+      "snapshotChecksum": "deb34ae3c470a2577b252b3872dbb368ce897af64046f29df105ac1bd2893e1d"
+    },
+    {
+      "version": 5,
+      "name": "0004_native_channel_sync",
+      "checksum": "f1beed6031ff9069ce1b1697c466213d2547c6587227d1895da46c088dc34efd",
+      "snapshotChecksum": "6e7ae8e9defb268f99c522e66734e4f111aba177843f7849d3c6c0c07aa99b08"
+    },
+    {
+      "version": 6,
+      "name": "0005_personal_assistants",
+      "checksum": "f42175da982c1380f855fe0fda80e87a9b2084b88b982be36b6748e2bc42f53f",
+      "snapshotChecksum": "8f303ccda389cbf554421d34be2f47249cd395dbf700c43503332dcb9a07402a"
+    },
+    {
+      "version": 7,
+      "name": "0006_personal_assistant_credentials",
+      "checksum": "8f4a7481d769026df0d35756e33e841744ca291a63f5733aad2daf2fa4177103",
+      "snapshotChecksum": "5ea4d4a39b52cdf54ce6f7aa6f463bb9cb853240810aa3df04624bd2fdc2487a"
+    },
+    {
+      "version": 8,
+      "name": "0007_assistant_model_selection",
+      "checksum": "272febfc9fd6d396bd05ab16f12ab7b99485058f6aa7312bb1ac28df98939a60",
+      "snapshotChecksum": "ad2c9cad5b24e2df18c1aa30c06538c80af4b12a43201cc44b465b95814e5318"
+    },
+    {
+      "version": 9,
+      "name": "0008_thread_access_and_notes",
+      "checksum": "569fa2217ae43ec59b90b6323573af514663aa00c370eb0614d473158665a47e",
+      "snapshotChecksum": "817c2589418877fc594921e5d04bc56b04bde871515ecdac085c211456bebe2a"
+    },
+    {
+      "version": 10,
+      "name": "0009_project_automations",
+      "checksum": "ed4100079a93f254664dc61176cf01202d8d00a7df8184d36f67acb33981874f",
+      "snapshotChecksum": "9d278510a3786f3be498d447d889556dc2673d4568e91b259c1a66c956fec9fe"
+    },
+    {
+      "version": 11,
+      "name": "0010_eminent_mathemanic",
+      "checksum": "7281923e750c75042b9b0cd784bf8017594566aaedebd96a3a0130853864bdd6",
+      "snapshotChecksum": "20dc03fc2c02b00804d82802295ca147228de66fcec073b99c3ab24a4dcf9f74"
+    },
+    {
+      "version": 12,
+      "name": "0011_dear_wild_pack",
+      "checksum": "d3cb22474c9393bf2a8787e45cd67b6143b87606f1246ee0d921f2211dfea5b9",
+      "snapshotChecksum": "52384ff8a79f3892f05216a9bcd42a511b85cc6a32f6954d71321e73dc00adc5"
+    },
+    {
+      "version": 13,
+      "name": "0012_channel_attachments",
+      "checksum": "f58b0bbe9d80a47d9247535059881587be505b33dfe679859bf930bcf42a1b59",
+      "snapshotChecksum": "9f6b7356391ced00c603df2945f65951568ff1fb2fd91c29bdf551949eb77386"
+    },
+    {
+      "version": 14,
+      "name": "0013_join_wecom_assistants",
+      "checksum": "83ca7e2215baf628925c6848188a9652778733a4d4aa11087acb2e7f3c144d87",
+      "snapshotChecksum": "29b347fa525aeff70b4a9dfa58b16b5e6fc3d84f8dfb977fb18bbdbd2e668769"
+    },
+    {
+      "version": 15,
+      "name": "0014_join_wecom_group_sync",
+      "checksum": "4e6c69ba8f5807649ec90ad2ed504787a7e937db50f81eb6e3fd1b5fb4416ae7",
+      "snapshotChecksum": "b5e50048eeb92b40ecf071c4ecf8152d1ed0905045f33f47767b7e218b6eb813"
+    },
+    {
+      "version": 16,
+      "name": "0015_native_channel_mentions",
+      "checksum": "fa9447bfcc3ab802054f0d2b705705e2c0775453e52a0ee8a6bd6fa04a40a868",
+      "snapshotChecksum": "c553cce67dfc29bea6e60f68226aab6339cc9b5f772ec534dd6a3bd8e49589b2"
+    },
+    {
+      "version": 17,
+      "name": "0016_visible_mention_reads",
+      "checksum": "6730029e68957a8a788500baa6ec3c31bac39429efda69be3d3653e6c1a3e471",
+      "snapshotChecksum": "05f44300f8c09efe35d8be70ef4ac1eaa88ceae84a8b161fb30059bd71809cac"
+    },
+    {
+      "version": 18,
+      "name": "0017_human_reservations",
+      "checksum": "ea19b836061f82c6c25908f5c10c7e70f18306bd31c239c138d171e75f69cb6c",
+      "snapshotChecksum": "8b3e512b6e73d94edc4c81615dcdbc98ce27d914a917f480d814f08119c3e967"
+    },
+    {
+      "version": 19,
+      "name": "0018_multi_bot_assignments",
+      "checksum": "92419be103c6c03065cdf4ad7cf903e75def97eef97b7718920d1dd3f7b1f16f",
+      "snapshotChecksum": "223dd8d8e4317d9692f51b843c4826fc0b36778fcf1cb07a3e2f36407ce2abf1"
+    },
+    {
+      "version": 20,
+      "name": "0019_native_group_lifecycle",
+      "checksum": "0c322591d0f760d46eb10adecad67adcebf8f9b504effebcbf9a28b6e48f6814",
+      "snapshotChecksum": "e35e1f183c3bdaa594cd93b15ebcb27742e763889dcc7acd66f717f937162dc9"
+    },
+    {
+      "version": 21,
+      "name": "0020_collaboration_spaces",
+      "checksum": "f6d13ee0808a333c14a05a9febbcf5a7a58e4689b802e03869b6203fd7bb84c6",
+      "snapshotChecksum": "1ce6b412c47efb3442798999bd84ee9ffdfbc3e3c095164e3c1d424476ec2b3c"
+    }
+  ],
+  "alternates": [
+    {
+      "id": "upstream-main-20261119",
+      "published": [
+        {
+          "version": 1,
+          "name": "0000_server_core",
+          "checksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af"
+        },
+        {
+          "version": 2,
+          "name": "0001_execution_capability_bindings",
+          "checksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31"
+        },
+        {
+          "version": 3,
+          "name": "0002_thread_access_and_notes",
+          "checksum": "569fa2217ae43ec59b90b6323573af514663aa00c370eb0614d473158665a47e"
+        },
+        {
+          "version": 4,
+          "name": "0003_project_automations",
+          "checksum": "ed4100079a93f254664dc61176cf01202d8d00a7df8184d36f67acb33981874f"
+        },
+        {
+          "version": 5,
+          "name": "0004_magenta_aqueduct",
+          "checksum": "f6d13ee0808a333c14a05a9febbcf5a7a58e4689b802e03869b6203fd7bb84c6"
+        }
+      ],
+      "convergencePublished": [
+        {
+          "version": 1,
+          "name": "0000_server_core",
+          "checksum": "d9988a3f715bac332da54dd79455a47fd34ef568cb1dbef797936e8286df05af"
+        },
+        {
+          "version": 2,
+          "name": "0001_execution_capability_bindings",
+          "checksum": "5fe82f0e68f34983b2b5255d7873485f5b826318d59fccd07ff6c23384b19b31"
+        },
+        {
+          "version": 3,
+          "name": "0002_thread_access_and_notes",
+          "checksum": "569fa2217ae43ec59b90b6323573af514663aa00c370eb0614d473158665a47e"
+        },
+        {
+          "version": 4,
+          "name": "0003_project_automations",
+          "checksum": "ed4100079a93f254664dc61176cf01202d8d00a7df8184d36f67acb33981874f"
+        },
+        {
+          "version": 5,
+          "name": "0004_magenta_aqueduct",
+          "checksum": "f6d13ee0808a333c14a05a9febbcf5a7a58e4689b802e03869b6203fd7bb84c6"
+        },
+        {
+          "version": 6,
+          "name": "converge_0002_native_channels",
+          "checksum": "750d52e3cb3dd983a5b7339f4cb59779456cc6fa5228f3f5289bd7d0e5065dd8"
+        },
+        {
+          "version": 7,
+          "name": "converge_0003_actor_inbox",
+          "checksum": "f41a01bbeeb44df393266b4e36bf4440e30f86359082630a8a9cbb53d84148f1"
+        },
+        {
+          "version": 8,
+          "name": "converge_0004_native_channel_sync",
+          "checksum": "f1beed6031ff9069ce1b1697c466213d2547c6587227d1895da46c088dc34efd"
+        },
+        {
+          "version": 9,
+          "name": "converge_0005_personal_assistants",
+          "checksum": "f42175da982c1380f855fe0fda80e87a9b2084b88b982be36b6748e2bc42f53f"
+        },
+        {
+          "version": 10,
+          "name": "converge_0006_personal_assistant_credentials",
+          "checksum": "8f4a7481d769026df0d35756e33e841744ca291a63f5733aad2daf2fa4177103"
+        },
+        {
+          "version": 11,
+          "name": "converge_0007_assistant_model_selection",
+          "checksum": "272febfc9fd6d396bd05ab16f12ab7b99485058f6aa7312bb1ac28df98939a60"
+        },
+        {
+          "version": 12,
+          "name": "converge_0010_eminent_mathemanic",
+          "checksum": "7281923e750c75042b9b0cd784bf8017594566aaedebd96a3a0130853864bdd6"
+        },
+        {
+          "version": 13,
+          "name": "converge_0011_dear_wild_pack",
+          "checksum": "d3cb22474c9393bf2a8787e45cd67b6143b87606f1246ee0d921f2211dfea5b9"
+        },
+        {
+          "version": 14,
+          "name": "converge_0012_channel_attachments",
+          "checksum": "f58b0bbe9d80a47d9247535059881587be505b33dfe679859bf930bcf42a1b59"
+        },
+        {
+          "version": 15,
+          "name": "converge_0013_join_wecom_assistants",
+          "checksum": "83ca7e2215baf628925c6848188a9652778733a4d4aa11087acb2e7f3c144d87"
+        },
+        {
+          "version": 16,
+          "name": "converge_0014_join_wecom_group_sync",
+          "checksum": "4e6c69ba8f5807649ec90ad2ed504787a7e937db50f81eb6e3fd1b5fb4416ae7"
+        },
+        {
+          "version": 17,
+          "name": "converge_0015_native_channel_mentions",
+          "checksum": "fa9447bfcc3ab802054f0d2b705705e2c0775453e52a0ee8a6bd6fa04a40a868"
+        },
+        {
+          "version": 18,
+          "name": "converge_0016_visible_mention_reads",
+          "checksum": "6730029e68957a8a788500baa6ec3c31bac39429efda69be3d3653e6c1a3e471"
+        },
+        {
+          "version": 19,
+          "name": "converge_0017_human_reservations",
+          "checksum": "ea19b836061f82c6c25908f5c10c7e70f18306bd31c239c138d171e75f69cb6c"
+        },
+        {
+          "version": 20,
+          "name": "converge_0018_multi_bot_assignments",
+          "checksum": "92419be103c6c03065cdf4ad7cf903e75def97eef97b7718920d1dd3f7b1f16f"
+        },
+        {
+          "version": 21,
+          "name": "converge_0019_native_group_lifecycle",
+          "checksum": "0c322591d0f760d46eb10adecad67adcebf8f9b504effebcbf9a28b6e48f6814"
+        }
+      ]
+    }
+  ]
+}

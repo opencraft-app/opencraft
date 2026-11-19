@@ -20,13 +20,13 @@ import { startCodexAccountPoolServer, type AccountPoolUncertainDiagnostic } from
 function string(value: unknown): string { return typeof value === "string" ? value : ""; }
 
 export interface CodexAccountServiceOptions {
-  readonly configuredResponses?: ConfiguredCodexResponses;
   readonly executable: string;
   readonly dataDirectory: string;
   readonly nativeCodexHomeDirectory: string;
   readonly upstreamBaseUrl?: string;
   /** Fixed loopback port for an independently running AppServer. */
   readonly proxyPort?: number;
+  readonly configuredResponses?: ConfiguredCodexResponses;
   readonly fetch?: typeof fetch;
   readonly createMaintenanceClient?: CodexMaintenanceClientFactory;
   readonly ownerHandoff?: {

@@ -157,7 +157,7 @@ See the [repository layout](repository-layout.md) for documentation, tooling,
 build inputs and task records.
 
 - `apps/workbench-web`: React DOM + Vite renderer for browser and Electron.
-- `apps/workbench-electron`: Electron main/preload host without a second UI.
+- `apps/desktop`: Electron main/preload host without a second UI.
 - `apps/mobile`: Expo Router host for native and Expo Web.
 - `apps/bridges/hermes`: independently installed Bun bridge from Hermes to the AppServer protocol.
 - `packages/appserver-protocol`: Host-aware AppServer contracts and generated native Codex types.

@@ -1,0 +1,21 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "conversation-schedules",
+      "checksum": "a94dba978dd888e1c09c0cc7dfe447f605feca1c157ef2d409cc05b787fa34ad"
+    }
+  ],
+  "tableOptions": {
+    "schedule_runs": {
+      "strict": true,
+      "withoutRowid": false
+    },
+    "schedules": {
+      "strict": true,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "2749f0c4355936efce4d69300f7637dde0e8359a94a67a2821c68271115968f9",
+  "baselineSnapshotChecksum": "0c21e18d4a4d4d6f68061cb82f152cf07ccacd66eee6020a6af64136c931153c"
+}

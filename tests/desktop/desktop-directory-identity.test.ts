@@ -8,12 +8,12 @@ import {
   nodeDesktopDirectoryFileSystem,
   prepareDesktopDirectories,
   resolveDesktopDirectoryPlan,
-} from "../../apps/workbench-electron/src/desktop-directories.ts";
+} from "../../apps/desktop/src/desktop-directories.ts";
 import {
   desktopPreviewProduct,
   desktopProduct,
-} from "../../apps/workbench-electron/src/product-identity.ts";
-import { daemonLaunchSpec } from "../../apps/workbench-electron/src/daemon-client.ts";
+} from "../../apps/desktop/src/product-identity.ts";
+import { daemonLaunchSpec } from "../../apps/desktop/src/daemon-client.ts";
 
 const appDataDirectory = "/Users/test/Library/Application Support";
 const homeDirectory = "/Users/test";

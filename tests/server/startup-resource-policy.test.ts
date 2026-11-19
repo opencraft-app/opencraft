@@ -82,3 +82,22 @@ test("shared file and table preview implementations activate after intent", () =
     assert.deepEqual(startupResourceViolations(report(module,false)),[]);
   }
 });
+
+test('startup sidebar consumers use typography mixins without re-emitting global tokens', async () => {
+  const { readFile } = await import('node:fs/promises');
+  for (const file of ['apps/workbench-web/src/components/applications-sidebar.scss', 'apps/workbench-web/src/components/connectors/connector-panel.scss']) {
+    const source = await readFile(file, 'utf8');
+    assert.match(source, /typography-mixins\.web/);
+    assert.doesNotMatch(source, /typography\.web/);
+  }
+});
+
+test("desktop media/input loads on connect while authority and attachment owners remain startup-capable", () => {
+  for(const name of ["rfb","rfb-client","pointer-input","trackpad-input","text-input","clipboard-input","frame-preview"]){
+    const module=`/repo/plugins/cloud-desktop/src/${name}.ts`;
+    assert.match(startupResourceViolations(report(module)).join("\n"),/Demand-only/);
+    assert.deepEqual(startupResourceViolations(report(module,false)),[]);
+  }
+  for(const module of ["/repo/apps/workbench-web/src/runtime/host-desktop-backend.ts","/repo/apps/workbench-web/src/runtime/deferred-desktop-media.ts","/repo/plugins/cloud-desktop/src/session-wire.ts"])
+    assert.deepEqual(startupResourceViolations(report(module)),[]);
+});

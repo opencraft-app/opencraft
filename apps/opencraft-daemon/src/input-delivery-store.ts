@@ -100,7 +100,7 @@ export class InputDeliveryStore {
           .run(threadId, turnId, outcome, Date.now()).changes === 1;
       this.db
         .prepare(
-          `UPDATE opencraft_host_queue SET state='closed',paused_reason=NULL,updated_at_ms=?
+          `UPDATE opencraft_host_queue SET state='closed',paused_reason=CASE WHEN paused_reason='delivery-retry-requested' THEN paused_reason ELSE NULL END,updated_at_ms=?
         WHERE thread_id=? AND target_turn_id=? AND state IN ('dispatching','steering','unknown')`,
         )
         .run(Date.now(), threadId, turnId);
