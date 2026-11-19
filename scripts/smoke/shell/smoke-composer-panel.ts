@@ -5,10 +5,10 @@ import { createServer } from "vite";
 const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
 const browserName = process.env.OPENCRAFT_SMOKE_BROWSER ?? "chromium";
 assert(["chromium", "webkit"].includes(browserName), "Select chromium or webkit");
-const mobile = process.argv.includes("--mobile-browser");
-const pagePresentation = process.argv.includes("--page-presentation");
+const _mobile = process.argv.includes("--mobile-browser");
+const _pagePresentation = process.argv.includes("--page-presentation");
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-workspace-presentation";
-async function settleMobileViewport(page: any) {
+async function _settleMobileViewport(page: any) {
   await page.waitForFunction(
     () => {
       const panel = document.querySelector('.browser-panel[data-mobile-browser="true"]');

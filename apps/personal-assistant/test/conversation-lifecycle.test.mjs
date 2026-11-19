@@ -155,7 +155,7 @@ test("goal creation and extension inherit original conversation rather than defa
     "goal",
   );
   fresh(a, "unrelated");
-  const extended = call(
+  const _extended = call(
     a,
     "goal.extend",
     {

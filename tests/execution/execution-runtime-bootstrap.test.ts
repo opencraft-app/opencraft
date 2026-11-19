@@ -107,9 +107,8 @@ test("Python bootstrap validates shared archive and extracts privately without n
   const { execFile } = await import("node:child_process");
   const { promisify } = await import("node:util");
   const run = promisify(execFile);
-  const { executionRuntimeBootstrapScript } = await import(
-    "../../packages/sandbox-node/src/execution-runtime-bootstrap"
-  );
+  const { executionRuntimeBootstrapScript } =
+    await import("../../packages/sandbox-node/src/execution-runtime-bootstrap");
   const root = await mkdtemp(join(tmpdir(), "runtime-cache-test-"));
   let extracted: string | undefined;
   try {

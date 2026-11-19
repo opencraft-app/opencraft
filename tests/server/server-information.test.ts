@@ -187,7 +187,11 @@ test("existing external destinations use the current canonical entry without re-
   t.after(() => service.close());
   const finish = async (id: string) => {
     store.watch("admin-a", "native-server", "local-codex", "thread", id);
-    store.finish(store.watches().find((w) => w.inputId === id)!, id + "-turn", "completed");
+    store.finish(
+      store.watches().find((w) => w.inputId === id)!,
+      id + "-turn",
+      "completed",
+    );
     await service.tick();
   };
   await finish("before");

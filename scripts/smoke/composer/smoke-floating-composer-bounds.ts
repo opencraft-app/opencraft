@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "vite";
 import { chromium } from "playwright";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 const server = await createServer({
   configFile: false,
   root: process.cwd(),

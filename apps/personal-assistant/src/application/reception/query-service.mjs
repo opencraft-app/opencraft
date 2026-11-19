@@ -171,7 +171,7 @@ export class ReceptionQueries {
       questionsWorkId: grant.targetWork?.workId ?? null,
       questionsNext: questions.next,
       memories: this.reads.memories(12, this.memoryView(grant)).map((m) => {
-        const { value, ...metadata } = memorySummary(m);
+        const { value: _value, ...metadata } = memorySummary(m);
         return { ...metadata, valueOmitted: true };
       }),
       memoryDefaultScope: this.authority.memoryDefaultScope ?? "user",

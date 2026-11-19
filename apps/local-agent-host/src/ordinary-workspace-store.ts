@@ -1,11 +1,6 @@
 import { Worker } from "node:worker_threads";
 import type { DatabaseOutcome } from "@opencraft/sqlite-node";
-import type {
-  OrdinaryWorkspaceJournal,
-  WorkspaceAuthority,
-  WorkspaceBinding,
-  WorkspaceLease,
-} from "./ordinary-workspace-journal.js";
+import type { OrdinaryWorkspaceJournal, WorkspaceAuthority, WorkspaceLease } from "./ordinary-workspace-journal.js";
 import type { ResolvedWorkspaceSelection } from "./ordinary-workspace-selection.js";
 export type { WorkspaceAuthority, WorkspaceBinding, WorkspaceLease } from "./ordinary-workspace-journal.js";
 /** One FIFO storage Worker owns all synchronous filesystem, SQL and migration

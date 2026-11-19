@@ -1,12 +1,7 @@
 /** Operation effects are not execution provenance or installed configuration.
  * Trusted ingress still owns Thread/Actor authorization for every request. */
 export type ExecutionRequestEffect =
-  | "none"
-  | "admit-input"
-  | "queued-intent"
-  | "thread-control"
-  | "active-turn-input"
-  | "configured-execution";
+  "none" | "admit-input" | "queued-intent" | "thread-control" | "active-turn-input" | "configured-execution";
 
 export function executionRequestEffect(method: string): ExecutionRequestEffect {
   if (["turn/start", "thread/queue/add", "thread/queue/start"].includes(method)) return "admit-input";

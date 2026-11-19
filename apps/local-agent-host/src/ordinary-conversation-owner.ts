@@ -61,8 +61,10 @@ export interface OrdinaryCreationOptions {
     binding: OrdinaryExecutionBinding,
   ): Promise<unknown>;
 }
-export interface OrdinaryRestoreOptions
-  extends Omit<OrdinaryCreationOptions, "intentId" | "selection" | "nativeStart"> {
+export interface OrdinaryRestoreOptions extends Omit<
+  OrdinaryCreationOptions,
+  "intentId" | "selection" | "nativeStart"
+> {
   threadId: string;
   /** Read-only provider inspection. Never kill or adopt a live member here. */
   inspect(binding: { workspaceId: string; privateVolumeId: string }): Promise<"absent" | "present" | "unknown">;

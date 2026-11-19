@@ -8,7 +8,14 @@ import { ModelGatewayStore } from "@opencraft/account-pool-host";
 import { ModelConfigurationRepository } from "./model-config/repository.js";
 const reads = new Set(["model/list", "runtime/providers/list", "runtime/models/list", "runtime/settings/describe"]);
 const configuration = (method: string) => /^runtime\/(providers|models|settings|credentials)\//.test(method);
-const key = (v: Record<string, any>) => JSON.stringify([v[LOGICAL_CLIENT_FIELD] ?? null, v.id]);
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+const parseFrame = (frame: string): Record<string, unknown> => {
+  const value: unknown = JSON.parse(frame);
+  if (!record(value)) throw Error("Invalid model settings frame");
+  return value;
+};
+const key = (v: Record<string, unknown>) => JSON.stringify([v[LOGICAL_CLIENT_FIELD] ?? null, v.id]);
 /** The personal-key endpoint is not a bypass around legacy installation settings.
  * Revalidate the trusted caller on replies; hide other people's connections and
  * refuse unmetered probes and credential-reference reuse in gateway mode. */
@@ -26,7 +33,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
     ) => { actor: string; administrator: boolean } | null,
   ) {
     this.unsubscribe = inner.subscribeMessage((frame) => {
-      const value = JSON.parse(frame),
+      const value = parseFrame(frame),
         request = this.pending.get(key(value));
       if (request && !value.method) {
         this.pending.delete(key(value));
@@ -56,7 +63,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
   private emit(frame: string) {
     if (!this.closed) for (const listener of this.listeners) listener(frame);
   }
-  private failure(value: Record<string, any>) {
+  private failure(value: Record<string, unknown>) {
     this.emit(
       JSON.stringify({
         id: value.id,
@@ -83,7 +90,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
     }
   }
   private async reply(
-    value: Record<string, any>,
+    value: Record<string, unknown>,
     request: { context: TransportSubmissionContext; method: string },
     current: () => boolean,
   ) {
@@ -91,7 +98,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
       const identity = this.current(request.context),
         hidden = new Set(await this.protectedConnections(identity.actor));
       if (this.current(request.context).actor !== identity.actor) throw Error("authority");
-      const strip = (v: any): any => {
+      const strip = (v: unknown): unknown => {
         if (typeof v === "string") {
           if (hidden.has(v)) return undefined;
           if (v.startsWith("configured/")) {
@@ -104,7 +111,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
           return v;
         }
         if (Array.isArray(v)) return v.map(strip).filter((x) => x !== undefined);
-        if (!v || typeof v !== "object") return v;
+        if (!record(v)) return v;
         if (
           ["provider", "providerId", "id", "model", "slug"].some(
             (k) => typeof v[k] === "string" && strip(v[k]) === undefined,
@@ -121,7 +128,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
         );
       };
       value.result = strip(value.result);
-      if (request.method === "runtime/providers/list" && !identity.administrator && value.result)
+      if (request.method === "runtime/providers/list" && !identity.administrator && record(value.result))
         delete value.result.creation;
       if (current()) this.emit(JSON.stringify(value));
     } catch {
@@ -132,7 +139,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
     return this.sendWithContext(frame, { sender: null }, signal);
   }
   async sendWithContext(frame: string, context: TransportSubmissionContext, signal?: AbortSignal) {
-    const value = JSON.parse(frame),
+    const value = parseFrame(frame),
       method = String(value.method ?? "");
     try {
       if (method.startsWith("opencraft/codex/accounts/")) {
@@ -145,7 +152,7 @@ export class ModelGatewaySettingsTransport implements DuplexTransport {
         if (!reads.has(method)) {
           if (!identity.administrator) throw Error("administrator");
           const protectedIds = new Set(await this.protectedConnections(identity.actor, true));
-          const touches = (v: any): boolean =>
+          const touches = (v: unknown): boolean =>
             typeof v === "string"
               ? protectedIds.has(v)
               : !!v && typeof v === "object" && Object.entries(v).some(([k, x]) => protectedIds.has(k) || touches(x));

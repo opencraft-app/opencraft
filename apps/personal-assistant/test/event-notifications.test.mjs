@@ -175,7 +175,7 @@ test("changed suppresses identical results, never stays quiet, and direct result
   app.notifications.now = () => Date.now() + 2000;
   app.notifications.flush();
   assert.equal(messages(app).length, 2);
-  const quiet = app.triggers.add("quiet", {
+  const _quiet = app.triggers.add("quiet", {
     eventType: "quiet.event",
     goal: "quiet result",
     notify: "never",

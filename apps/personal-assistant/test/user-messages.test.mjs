@@ -378,7 +378,7 @@ test("only accepted user transport is reported; sending a progress message never
 
 test("real Pi choice wait resumes the original submission through the actual message response CLI", async (t) => {
   const { profile } = await running(t);
-  const receipt = await call(profile, "say", { text: "整理一份笔记，先问我范围 [choice]" }, "native-choice");
+  const _receipt = await call(profile, "say", { text: "整理一份笔记，先问我范围 [choice]" }, "native-choice");
   const card = await until(async () =>
     (await call(profile, "messages.list")).items.find((m) => m.body.type === "question"),
   );

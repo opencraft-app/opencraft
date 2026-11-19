@@ -7,13 +7,17 @@ export function createDeferredRfbDesktopAdapter(
 ): RfbDesktopAdapter {
   let adapter: RfbDesktopAdapter | undefined;
   let loading: Promise<RfbDesktopAdapter> | undefined;
-  const resolve = () => loading ??= Promise.resolve().then(load).then(value => {
-    adapter = value;
-    return value;
-  }).catch(error => {
-    loading = undefined;
-    throw error;
-  });
+  const resolve = () =>
+    (loading ??= Promise.resolve()
+      .then(load)
+      .then((value) => {
+        adapter = value;
+        return value;
+      })
+      .catch((error) => {
+        loading = undefined;
+        throw error;
+      }));
   return {
     async connect(session, signal) {
       let closed = false;
@@ -21,7 +25,11 @@ export function createDeferredRfbDesktopAdapter(
       const close = () => {
         if (closed) return;
         closed = true;
-        try { session.close(); } catch { /* Retire the caller even if transport cleanup fails. */ }
+        try {
+          session.close();
+        } catch {
+          /* Retire the caller even if transport cleanup fails. */
+        }
       };
       signal.addEventListener("abort", close, { once: true });
       try {

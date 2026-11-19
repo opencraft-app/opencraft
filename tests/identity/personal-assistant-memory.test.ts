@@ -275,7 +275,7 @@ test("offline source evidence is a SELECT-only identity-bound projection, not a 
     db = new DatabaseSync(join(profile, "assistant.sqlite"));
   // Seed an offline fixture; no runtime writer exists now. Production reader never executes these writes.
   const assistantId = binding.botId,
-    conversationId = "offline-evidence-conversation";
+    _conversationId = "offline-evidence-conversation";
   const table = db.prepare("PRAGMA table_info(conversation)").all();
   assert.ok(table.length);
   const existing: any = db.prepare("SELECT id FROM conversation WHERE assistant_id=? LIMIT 1").get(assistantId);

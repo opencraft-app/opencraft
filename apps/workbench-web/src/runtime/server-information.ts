@@ -86,9 +86,11 @@ export class ServerInformationController {
           : {}),
       });
       if (this.disposed || generation !== this.generation) return false;
-      let value: any;
+      let value: Record<string, unknown> | undefined;
       try {
-        value = await response.json();
+        const parsed: unknown = await response.json();
+        if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed))
+          value = parsed as Record<string, unknown>;
       } catch {
         /* A proxy may return HTML. */
       }
@@ -121,6 +123,7 @@ export class ServerInformationController {
       }
       if (
         !value ||
+        typeof value.revision !== "number" ||
         !Number.isSafeInteger(value.revision) ||
         value.revision < 0 ||
         typeof value.publicUrl !== "string" ||

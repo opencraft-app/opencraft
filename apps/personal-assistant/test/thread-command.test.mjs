@@ -159,9 +159,8 @@ test("model tool uses the Work captured platform capability and denies old or re
 test("one resource catalog drives reception discovery and execution delegation without granting old turns new tools", async (t) => {
   const { profileFor } = await import("./helpers.mjs");
   const { createLocalDomain } = await import("../src/runtime/create-local-domain.mjs");
-  const { receptionRoutingInstruction, threadRoutingInstruction } = await import(
-    "../src/adapters/models/reception-routing.mjs"
-  );
+  const { receptionRoutingInstruction, threadRoutingInstruction } =
+    await import("../src/adapters/models/reception-routing.mjs");
   const profile = profileFor(t);
   const { app, uow } = createLocalDomain(profile, null, {
     platformThreads: { id: "platform.threads", binding: "original" },

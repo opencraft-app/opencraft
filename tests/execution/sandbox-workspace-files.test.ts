@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, rm, writeFile, symlink, mkdir, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, symlink, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SandboxEnvironment } from "@opencraft/sandbox";

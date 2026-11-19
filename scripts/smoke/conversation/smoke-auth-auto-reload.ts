@@ -72,7 +72,7 @@ try {
         isMobile: width === 390,
       });
       let authenticated = true,
-        allocations = 0;
+        _allocations = 0;
       const wires = new Set<any>();
       await context.route("**/__opencraft*/**", async (route: any) => {
         const path = new URL(route.request().url()).pathname;
@@ -85,7 +85,7 @@ try {
         else await route.fulfill({ status: 404, body: "{}" });
       });
       await context.routeWebSocket("**/apphost?*", (wire: any) => {
-        allocations++;
+        _allocations++;
         wires.add(wire);
         wire.onMessage((raw: string) => {
           const frame = JSON.parse(raw);

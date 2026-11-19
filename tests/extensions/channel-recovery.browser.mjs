@@ -108,7 +108,7 @@ const server = await createServer({
   ],
 });
 let browser;
-const evidence = [];
+const _evidence = [];
 try {
   await server.listen();
   browser = await chromium.launch({
@@ -130,7 +130,7 @@ try {
       await page.getByRole("button", { name: "Open Inbox", exact: true }).click();
       await page.getByRole("button", { name: "Navigation group 0", exact: true }).click();
       const live = page.locator(".page-stack > .page-stack__live");
-      const timeline = live.locator("[data-message-timeline]"),
+      const _timeline = live.locator("[data-message-timeline]"),
         editor = live.locator("[contenteditable=true]").first();
       await editor.waitFor();
       await page.waitForTimeout(750);

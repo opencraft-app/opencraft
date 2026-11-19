@@ -50,7 +50,7 @@ const service = new Collaboration(storage, actors, {
 });
 actors.setGrant(human.actorId, bot.id, "execution.queue", true, "fixture");
 await service.bind(bot.id, "fixture-review", 0, () => {});
-const claimed = await service.personalAssistant(human, "opencraft/personal-assistant/claim");
+const _claimed = await service.personalAssistant(human, "opencraft/personal-assistant/claim");
 const assistantChannel = (await service.personalAssistant(human, "opencraft/personal-assistant/open")).channel;
 let runtime: any = {
   phase: "running",

@@ -153,7 +153,7 @@ test("Bot runs through the real local runner, closes, and retains identity on re
   }
 });
 
-test("platform history stays native, authorization is checked around await, and search is bounded", async (t) => {
+test("platform history stays native, authorization is checked around await, and search is bounded", async (_t) => {
   const { PlatformChannels } = await import("../src/application/platform-channels.mjs");
   const calls = [];
   let epoch = "one",

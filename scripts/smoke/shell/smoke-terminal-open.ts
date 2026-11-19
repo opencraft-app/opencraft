@@ -221,7 +221,7 @@ try {
     await context.close();
   }
   await writeFile(output + "/report.json", JSON.stringify(reports, null, 2));
-  console.log(JSON.stringify({ ok: true, negative, reports: reports.map(({ samples, ...r }) => r) }));
+  console.log(JSON.stringify({ ok: true, negative, reports: reports.map(({ samples: _samples, ...r }) => r) }));
 } finally {
   await browser?.close();
   await vite.close();

@@ -335,7 +335,7 @@ createInterface({input:process.stdin}).on('line',raw=>{
       },
       body: JSON.stringify({ model, input: "synthetic inference; no real user content" }),
     });
-  const complete = async (threadId: string, turnId: string) => {
+  const complete = async (threadId: string, _turnId: string) => {
     assert.equal(ledger.execution(threadId)?.state, "active");
     nativeProcess!.stdin.write(JSON.stringify({ method: "fixture/complete", params: { threadId } }) + "\n");
     const until = Date.now() + 5000;

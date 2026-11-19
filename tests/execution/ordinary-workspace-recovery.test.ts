@@ -4,7 +4,6 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
 import { OrdinaryWorkspaceStore } from "../../apps/local-agent-host/src/ordinary-workspace-store";
 import {
   OrdinaryWorkspaceCompute,

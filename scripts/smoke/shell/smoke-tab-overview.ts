@@ -552,7 +552,7 @@ try {
       const node = document.createElement("div");
       node.style.opacity = "0";
       document.body.append(node);
-      const before = getComputedStyle(node).opacity;
+      const _before = getComputedStyle(node).opacity;
       node.style.opacity = "1";
       const style = getComputedStyle(node);
       const result = {

@@ -157,13 +157,11 @@ export class OrdinaryWorkspaceJournal {
       this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA busy_timeout=5000;");
       this.transaction(() => {
         const meta = this.db.prepare("SELECT value FROM workspace_journal_meta WHERE key='deployment'").get() as
-          | JournalRow
-          | undefined;
+          JournalRow | undefined;
         if (meta && meta.value !== deploymentId) throw Error("Workspace journal deployment mismatch");
         this.db.prepare("INSERT OR IGNORE INTO workspace_journal_meta VALUES ('deployment',?)").run(deploymentId);
         const version = this.db.prepare("SELECT value FROM workspace_journal_meta WHERE key='schema'").get() as
-          | JournalRow
-          | undefined;
+          JournalRow | undefined;
         if (version && !["1", "2", "3", "4"].includes(String(version.value)))
           throw Error("Unsupported workspace journal schema");
         this.db.prepare("INSERT OR REPLACE INTO workspace_journal_meta VALUES ('schema','4')").run();

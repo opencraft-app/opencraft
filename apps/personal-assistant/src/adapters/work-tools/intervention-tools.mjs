@@ -1,7 +1,7 @@
 import { Type } from "@earendil-works/pi-ai";
 const defineTool = (definition) => definition;
 
-export function interventionTool({ request, guard, onWait }) {
+export function interventionTool({ request, guard, onWait: _onWait }) {
   return defineTool({
     name: "request_intervention",
     description:

@@ -29,7 +29,7 @@ export function createE2BPersistentWorkspaceInspector(
   )
     throw Error("Invalid workspace inspector configuration");
   const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
-  async function get(path: string, key: string, signal: AbortSignal): Promise<any> {
+  async function get(path: string, key: string, signal: AbortSignal): Promise<unknown> {
     const response = await request(url.origin + path, {
       method: "GET",
       headers: { "X-API-Key": key },
@@ -58,6 +58,8 @@ export function createE2BPersistentWorkspaceInspector(
       reader.releaseLock();
     }
   }
+  const record = (value: unknown): value is Record<string, unknown> =>
+    value !== null && typeof value === "object" && !Array.isArray(value);
   return async (binding: {
     workspaceId: string;
     privateVolumeId: string;
@@ -71,9 +73,9 @@ export function createE2BPersistentWorkspaceInspector(
       if (typeof key !== "string" || !key || /[\r\n]/.test(key)) return "unknown";
       const signal = AbortSignal.timeout(timeout);
       const path = "/workspaces/" + binding.workspaceId;
-      const classify = (value: any): "absent" | "present" | "unknown" => {
+      const classify = (value: unknown): "absent" | "present" | "unknown" => {
         if (
-          !value ||
+          !record(value) ||
           value.schemaVersion !== 2 ||
           value.workspaceID !== binding.workspaceId ||
           value.privateVolumeID !== binding.privateVolumeId ||
@@ -82,7 +84,10 @@ export function createE2BPersistentWorkspaceInspector(
           return "unknown";
         // Never infer an empty family from only the journal's previous instance.
         if (value.members.length) return "present";
-        return value.phase === "ready" && Number.isSafeInteger(value.generation) && value.generation >= 0
+        return value.phase === "ready" &&
+          typeof value.generation === "number" &&
+          Number.isSafeInteger(value.generation) &&
+          value.generation >= 0
           ? "absent"
           : "unknown";
       };
@@ -93,14 +98,14 @@ export function createE2BPersistentWorkspaceInspector(
         return state;
       }
       const volume = await get("/volumes/" + binding.privateVolumeId, key, signal);
-      if (!volume || volume.volumeID !== binding.privateVolumeId) return "unknown";
+      if (!record(volume) || volume.volumeID !== binding.privateVolumeId) return "unknown";
       // Check again after reading the volume: a new member or generation blocks
       // clearance. The subsequent create must still obey the provider's 409.
       const second = await get(path, key, signal);
       await options.authorize(binding.workspaceId);
       const final = classify(second);
       if (final !== "absent") return final;
-      return first.generation === second.generation ? "absent" : "unknown";
+      return record(first) && record(second) && first.generation === second.generation ? "absent" : "unknown";
     } catch {
       return "unknown";
     } // No provider messages or credentials escape.

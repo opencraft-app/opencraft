@@ -212,8 +212,7 @@ try {
         const row = [...rows.children].indexOf(source.parentElement),
           cell = [...source.parentElement.children].indexOf(source);
         const cursor = document.querySelector("[data-terminal-native-text]")?.children[row]?.children[cell] as
-          | HTMLElement
-          | undefined;
+          HTMLElement | undefined;
         return !!cursor?.style.boxShadow.includes("inset");
       });
       await page.keyboard.type("pwd");

@@ -171,9 +171,8 @@ export function ManagedBots({
     try {
       const s = request(),
         body = { name: editor.name.trim(), duties: editor.duties, environment: editor.environment };
-      let result: PersonalAssistantStatus;
       if (editor.status?.assistant)
-        result = await rpc.request(
+        await rpc.request(
           "opencraft/personal-assistant/bots/update",
           {
             ...body,
@@ -185,7 +184,7 @@ export function ManagedBots({
       else {
         const payload = JSON.stringify(body);
         if (creation.current?.payload !== payload) creation.current = { payload, id: "create-bot:" + createClientId() };
-        result = await rpc.request(
+        await rpc.request(
           "opencraft/personal-assistant/bots/create",
           { ...body, clientRequestId: creation.current.id },
           s,

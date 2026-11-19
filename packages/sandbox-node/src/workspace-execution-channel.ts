@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { createServer, request } from "node:http";
+import { createServer, request, type IncomingMessage, type ServerResponse } from "node:http";
 import { chmod, lstat, realpath, unlink } from "node:fs/promises";
 import { dirname, isAbsolute } from "node:path";
 import type { Socket } from "node:net";
@@ -122,7 +122,7 @@ export async function createWorkspaceExecutionAuthority(options: {
     const now = performance.now();
     for (const [key, grant] of grants) if (grant.until <= now) grants.delete(key);
   };
-  const server = createServer(async (req, res) => {
+  const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const reject = () => {
       if (!res.destroyed) {
         res.writeHead(503);
@@ -174,6 +174,9 @@ export async function createWorkspaceExecutionAuthority(options: {
     } catch {
       reject();
     }
+  };
+  const server = createServer((req, res) => {
+    void handleRequest(req, res).catch(() => res.destroy());
   });
   server.maxConnections = maximum * 2 + 16;
   server.maxRequestsPerSocket = 1;

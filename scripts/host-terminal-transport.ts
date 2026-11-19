@@ -123,20 +123,20 @@ export class HostTerminalSession {
     this.removes.set(
       service,
       service.subscribe((method, params) => {
-      const handle = object(params).processHandle;
-      const watchers = this.watched.get(handle);
-      for (const [key, watcher] of watchers ?? []) {
+        const handle = object(params).processHandle;
+        const watchers = this.watched.get(handle);
+        for (const [key, watcher] of watchers ?? []) {
           if (watcher.service !== service) continue;
           try {
-          const current = this.authorize(watcher.context, watcher.params);
-          if (JSON.stringify(current) !== JSON.stringify(watcher.scope)) {
+            const current = this.authorize(watcher.context, watcher.params);
+            if (JSON.stringify(current) !== JSON.stringify(watcher.scope)) {
+              watchers?.delete(key);
+              continue;
+            }
+            this.emit({ method, params, [LOGICAL_CLIENT_FIELD]: watcher.clientId });
+          } catch {
             watchers?.delete(key);
-            continue;
           }
-          this.emit({ method, params, [LOGICAL_CLIENT_FIELD]: watcher.clientId });
-        } catch {
-          watchers?.delete(key);
-        }
           if (method === "process/exited") watchers?.delete(key);
         }
         if (watchers?.size === 0) this.watched.delete(handle);
@@ -196,7 +196,10 @@ export class HostTerminalSession {
                   },
                 }
               : {}),
-            "opencraft/terminal": { version: 1, available: this.available, recovery: this.available,
+            "opencraft/terminal": {
+              version: 1,
+              available: this.available,
+              recovery: this.available,
               ...(this.selectService ? { selection: "per-request" } : {}),
             },
           },
@@ -217,8 +220,12 @@ export class HostTerminalSession {
     }
     try {
       signal?.throwIfAborted();
-      if (this.closed ||
-        (!this.available && !this.selectService) || !this.initialized.has(String(clientId ?? "")) || !methods.has(value.method))
+      if (
+        this.closed ||
+        (!this.available && !this.selectService) ||
+        !this.initialized.has(String(clientId ?? "")) ||
+        !methods.has(value.method)
+      )
         throw new Error("Terminal unavailable");
       const scope = this.authorize(context, params);
       const current = () => {

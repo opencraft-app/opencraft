@@ -344,7 +344,7 @@ export async function simulateWebSocketRecovery(
     if (wireError) throw wireError;
   };
   const advance = async (ms: number) => {
-    for (let left = ms; left > 0; ) {
+    for (let left = ms; left > 0;) {
       const step = Math.min(left, 1_000);
       mock.timers.tick(step);
       await flush();

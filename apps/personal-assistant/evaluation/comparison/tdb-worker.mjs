@@ -19,7 +19,7 @@ let cfg;
 let l1;
 let l2;
 let l3;
-const cursor = 0;
+const _cursor = 0;
 const scopes = new Set();
 async function init(r) {
   opts = r;

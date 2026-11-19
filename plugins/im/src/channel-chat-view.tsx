@@ -376,7 +376,7 @@ function GroupTimeline({
   const observation = useAssistantObservation(channelRuntime, direct && loadState !== "denied" ? group.id : null);
   const runtime = observation?.runtime ?? null;
   const peer = messages?.find((message) => !message.sender?.isSelf)?.sender;
-  const bot = !!observation?.assistant || peer?.actorKind === "session";
+  const _bot = !!observation?.assistant || peer?.actorKind === "session";
   const avatarId = observation?.assistant?.actorId ?? peer?.id ?? group.id;
   const Header = regions?.Header;
   const ComposerActions = regions?.ComposerActions;

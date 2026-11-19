@@ -7,9 +7,7 @@ export interface SideChatRecord {
 }
 /** Old tombstones have no binding. Do not guess one from native fork lineage. */
 export type SideChatDirectoryRow =
-  | SideChatRecord
-  | (SideChatRecord & { readonly closed: true })
-  | { readonly id: string; readonly closed: true };
+  SideChatRecord | (SideChatRecord & { readonly closed: true }) | { readonly id: string; readonly closed: true };
 
 export function sideChatDirectoryBinding(row: SideChatDirectoryRow): SideChatRecord | null {
   return "parent" in row ? { id: row.id, parent: row.parent, key: row.key } : null;

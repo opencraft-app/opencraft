@@ -16,7 +16,7 @@ test("consumer SQLite version 2 upgrades additively with resources, metadata and
     identity = randomUUID();
   const old = openManagedDatabase({ path, migrations: migrations.slice(0, 2), legacyPolicy: "reject" });
   const key = JSON.stringify(["owner", "browser-" + "1".repeat(64)]),
-    lease = JSON.parse(key)[1];
+    _lease = JSON.parse(key)[1];
   const retiredKey = JSON.stringify(["owner", "retired-lease"]);
   const page = {
     key,

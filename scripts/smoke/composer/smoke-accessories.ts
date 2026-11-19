@@ -78,7 +78,7 @@ try {
         Object.defineProperty(navigator, "clipboard", {
           value: {
             writeText: async (t: string) => (window as any).copies.push(t),
-            write: async (t: any) => (window as any).copies.push("rich"),
+            write: async (_t: any) => (window as any).copies.push("rich"),
           },
           configurable: true,
         });

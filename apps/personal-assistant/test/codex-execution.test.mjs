@@ -251,7 +251,7 @@ test(
   native,
   async () => {
     let first = true;
-    const server = await fixture(({ body, n, send }) => {
+    const server = await fixture(({ body: _body, n, send }) => {
       if (first) {
         first = false;
         return;
@@ -466,7 +466,7 @@ test("native host-call budget also bounds invalid arguments instead of looping i
 
 test("cancelling a native turn prevents a late remote tool call from publishing", native, async () => {
   let release;
-  const server = await fixture(({ n, send }) => {
+  const server = await fixture(({ n: _n, send }) => {
     release = () => send(tool("publish_note", { body: "# must not publish" }, "late"));
   });
   const p = profile(server.config);
@@ -924,7 +924,7 @@ test(
   native,
   async () => {
     const reads = [];
-    const server = await fixture(({ body, n, send }) => {
+    const server = await fixture(({ body: body, n: n, send }) => {
       if (outputs(body).some((o) => o.call_id === "groups"))
         return send(answer("One visible group was checked. This is not an exhaustive search of all history.", n));
       assert.ok(body.tools.some((t) => t.name === "platform_read"));

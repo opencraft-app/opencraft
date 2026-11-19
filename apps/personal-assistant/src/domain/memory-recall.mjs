@@ -52,7 +52,7 @@ export function memoryPromptView(context, recalled = []) {
     recent,
     projects: {
       ...projects,
-      injected: (projects.injected ?? []).map(({ profile, recent, ...metadata }) => metadata),
+      injected: (projects.injected ?? []).map(({ profile: _profile, recent: _recent, ...metadata }) => metadata),
     },
   };
 }

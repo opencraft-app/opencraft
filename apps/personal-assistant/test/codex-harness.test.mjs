@@ -1223,7 +1223,7 @@ test(
   "native Codex receives verified image bytes and bounded text file content, not just attachment labels",
   native,
   async () => {
-    const server = await endpoint(({ body, res, n }) =>
+    const server = await endpoint(({ body: _body, res, n }) =>
       sse(res, wire({ kind: "reply", text: "read attached data" }), n),
     );
     const image = Buffer.from(
@@ -1258,7 +1258,9 @@ test(
 // Real native app-server echoes image URLs on userMessage item notifications.
 // The old 2 MB frame ceiling rejected a perfectly valid two-picture request.
 test("native image echoes reserve bounded framing space without changing text-only limits", native, async () => {
-  const server = await endpoint(({ body, res, n }) => sse(res, wire({ kind: "reply", text: "read two pictures" }), n));
+  const server = await endpoint(({ body: _body, res, n }) =>
+    sse(res, wire({ kind: "reply", text: "read two pictures" }), n),
+  );
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==",
     "base64",

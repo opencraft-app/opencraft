@@ -138,7 +138,7 @@ test("synthesis updates and removes obsolete facts; automatic removal does not b
 });
 
 test("legacy facts may be corrected by cited evidence while explicit entries remain immutable", (t) => {
-  const { app, db } = local(t);
+  const { app, db: _db } = local(t);
   const dir = app.memory.files.locations().user;
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "profile.md"), "# User\n\n- (2026-11-01) Lives in Shanghai\n");
@@ -529,7 +529,7 @@ test("updating an obsolete automatic fact toward forgotten content retires the o
 });
 
 test("large pre-migration facts cannot make every future synthesis skip due to an oversized compatibility view", (t) => {
-  const { app, db } = local(t);
+  const { app, db: _db } = local(t);
   const dir = app.memory.files.locations().user;
   mkdirSync(dir, { recursive: true });
   const raw = Array.from({ length: 280 }, (_, i) => `- (2026-11-01) ${i}:` + "x".repeat(19000)).join("\n") + "\n";

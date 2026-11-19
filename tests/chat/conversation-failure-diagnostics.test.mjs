@@ -58,9 +58,9 @@ test("only allowlisted engine reasons and numeric codes survive diagnostic envel
 function fakeHost(failAt, failure = { code: -32600, message: "Trusted Actor admission required" }) {
   return {
     accept(port) {
-      let receive;
+      let _receive;
       port.subscribe((message) => {
-        receive = message;
+        _receive = message;
         queueMicrotask(() => {
           if (message.type === "hello") port.postMessage({ type: "ready" });
           if (message.type === "host/connect")
@@ -84,7 +84,7 @@ function fakeHost(failAt, failure = { code: -32600, message: "Trusted Actor admi
       });
       return {
         close() {
-          receive = undefined;
+          _receive = undefined;
         },
       };
     },

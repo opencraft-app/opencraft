@@ -105,9 +105,8 @@ test("catalog reopening preserves content and reference protection", async (t) =
 test("AIGC output ingestion shares the catalog, preserves slots and can become an input attachment", async (t) => {
   const { catalog, root } = await setup(t);
   const { captureGeneratedImage } = await import("../../apps/local-agent-host/src/artifacts/generated-output.js");
-  const { LocalAttachmentStagingService } = await import(
-    "../../apps/local-agent-host/src/attachments/local-attachment-staging.js"
-  );
+  const { LocalAttachmentStagingService } =
+    await import("../../apps/local-agent-host/src/attachments/local-attachment-staging.js");
   const item = {
     id: "output-1",
     type: "imageGeneration",
@@ -148,9 +147,8 @@ test("AIGC output ingestion shares the catalog, preserves slots and can become a
 
 test("prepared attachment text is consumable by DSH and Pi without controller-side stat of an execution path", async (t) => {
   const { root } = await setup(t);
-  const { LocalAttachmentStagingService } = await import(
-    "../../apps/local-agent-host/src/attachments/local-attachment-staging.js"
-  );
+  const { LocalAttachmentStagingService } =
+    await import("../../apps/local-agent-host/src/attachments/local-attachment-staging.js");
   const { promptContent } = await import("../../apps/local-agent-host/src/dsh-appserver-adapter.js");
   const { compilePiInput } = await import("../../plugins/pi-engine/src/input.js");
   const staging = new LocalAttachmentStagingService(join(root, "uploads"), root);
@@ -251,9 +249,8 @@ test("lost acknowledgement after catalog commit preserves the published bytes fo
 
 test("an upload registered by one engine can be attached through another without a second original", async (t) => {
   const { root, catalog } = await setup(t);
-  const { LocalAttachmentStagingService } = await import(
-    "../../apps/local-agent-host/src/attachments/local-attachment-staging.js"
-  );
+  const { LocalAttachmentStagingService } =
+    await import("../../apps/local-agent-host/src/attachments/local-attachment-staging.js");
   const codex = new LocalAttachmentStagingService(join(root, "codex", "attachments"), root);
   const agent = new LocalAttachmentStagingService(join(root, "agent", "attachments"), root);
   try {

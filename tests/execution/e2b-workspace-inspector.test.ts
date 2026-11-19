@@ -11,7 +11,7 @@ const empty = {
   members: [],
 };
 const volume = { volumeID: binding.privateVolumeId, token: "MUST_NOT_ESCAPE" };
-function fixture(values: any[], authorize = async (_id: string) => {}) {
+function fixture(values: unknown[], authorize = async (_id: string) => {}) {
   const calls: { url: string; init: RequestInit }[] = [];
   const inspect = createE2BPersistentWorkspaceInspector(
     { apiUrl: "https://provider.test", readApiKey: async () => "private-key", authorize },
@@ -58,6 +58,12 @@ test("HTTP failures, wrong workspace/volume, unsupported schema and pending phas
     { ...empty, phase: "creating" },
     { ...empty, members: null },
     { ...empty, generation: undefined },
+    { ...empty, generation: "2" },
+    { ...empty, generation: -1 },
+    null,
+    [],
+    "ready",
+    2,
     new Error("PRIVATE_PROVIDER_DETAIL"),
   ]) {
     const f = fixture([response]);

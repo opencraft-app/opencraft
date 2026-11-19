@@ -190,7 +190,7 @@ export class ChannelsClient extends ImClient {
     }
     onProgress?.(0, file.size);
     return this.sendWithReceipt(channelId, clientMessageId, signal, async () => {
-      for (let offset = 0; ; ) {
+      for (let offset = 0; ;) {
         signal.throwIfAborted();
         const bytes = new Uint8Array(await file.slice(offset, offset + 64 * 1024).arrayBuffer());
         let binary = "";

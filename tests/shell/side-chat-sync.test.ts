@@ -316,7 +316,7 @@ test("remote closing a live view releases its lease without interrupt or another
   await fiber.dispose();
 });
 
-test("a Server restart retains close tombstones and original directory references", async (t) => {
+test("a Server restart retains close tombstones and original directory references", async (_t) => {
   const directory = await mkdtemp(join(tmpdir(), "sidechat-sync-restart-"));
   let server = new RemoteBrowserService({ root: directory, dataDirectory: directory, ownerConnector: null });
   const initial = await server.metadata("account", undefined, () => {});

@@ -299,9 +299,8 @@ test("replaying a path output reuses the committed copy after its source is dele
 
 test("host capture catalogues completed items from every subscribed engine once, then stops", async (t) => {
   const { root, catalog } = await setup(t);
-  const { HostArtifactCapture, generatedFileRootsFromEnvironment } = await import(
-    "../../apps/local-agent-host/src/artifacts/host-capture.js"
-  );
+  const { HostArtifactCapture, generatedFileRootsFromEnvironment } =
+    await import("../../apps/local-agent-host/src/artifacts/host-capture.js");
   const listeners: Array<(method: string, params: unknown) => void> = [];
   const subscribe = (listener: (method: string, params: unknown) => void) => {
     listeners.push(listener);

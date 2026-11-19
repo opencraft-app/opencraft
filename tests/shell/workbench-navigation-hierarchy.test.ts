@@ -136,9 +136,8 @@ test("cyclic or oversized contribution parents fail closed", () => {
 });
 
 test("semantic return supersedes a pending conversation activation through the existing transaction", async () => {
-  const { createWorkbenchNavigationTransaction } = await import(
-    "../../apps/workbench-web/src/runtime/workbench-navigation-transaction"
-  );
+  const { createWorkbenchNavigationTransaction } =
+    await import("../../apps/workbench-web/src/runtime/workbench-navigation-transaction");
   const first = createWorkbenchThreadLocation("host", "first"),
     late = createWorkbenchThreadLocation("host", "late");
   let prepared!: (value: any) => void,
@@ -193,9 +192,8 @@ test("semantic return reports acceptance independently of presentation completio
 });
 
 test("a blocked semantic return reports rejection and leaves the page owner intact", async () => {
-  const { createWorkbenchNavigationTransaction } = await import(
-    "../../apps/workbench-web/src/runtime/workbench-navigation-transaction"
-  );
+  const { createWorkbenchNavigationTransaction } =
+    await import("../../apps/workbench-web/src/runtime/workbench-navigation-transaction");
   const location = createWorkbenchThreadLocation("host", "thread");
   let blocked = false;
   const nav = createWorkbenchNavigationTransaction(

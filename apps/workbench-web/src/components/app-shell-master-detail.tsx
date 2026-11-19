@@ -16,7 +16,9 @@ import "./app-shell-master-detail.scss";
 import { useOptionalUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { RouteStackFocusContext } from "./route-stack-motion";
 
-const minList = frame.collectionNavigationMinWidth, maxList = frame.collectionNavigationMaxWidth, minChat = frame.collectionDetailMinWidth;
+const minList = frame.collectionNavigationMinWidth,
+  maxList = frame.collectionNavigationMaxWidth,
+  minChat = frame.collectionDetailMinWidth;
 const noSubscribe = () => () => {};
 
 const SplitContext = createContext(false);
@@ -37,9 +39,11 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
     detailRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const preferences = useOptionalUiPreferencesRuntime();
-  const persisted = useSyncExternalStore(preferences?.subscribe ?? noSubscribe,
+  const persisted = useSyncExternalStore(
+    preferences?.subscribe ?? noSubscribe,
     () => preferences?.getSnapshot().values["shell.collectionNavigationWidth"].width ?? null,
-    () => null);
+    () => null,
+  );
   const [preferred, setPreferred] = useState<number | null>(persisted);
   useLayoutEffect(() => setPreferred(persisted), [persisted]);
   const [preview, setPreview] = useState<number | null>(null);
@@ -50,7 +54,7 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
   const listWidth = clamp(preview ?? preferred ?? defaultWidth);
   const save = (value: number | null) => {
     setPreferred(value);
-    if (preferences) void preferences.set("shell.collectionNavigationWidth", {width:value});
+    if (preferences) void preferences.set("shell.collectionNavigationWidth", { width: value });
   };
   const previousLevel = useRef<number | undefined>(undefined);
   const space = resolveShellSpace({

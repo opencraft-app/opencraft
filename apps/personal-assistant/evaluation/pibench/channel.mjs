@@ -18,9 +18,9 @@ export function visibleReply(messages, after) {
 export function busy(status, conversation) {
   return Boolean(
     (!conversation && (status.active || status.receptionActive)) ||
-      (conversation?.works ?? status.works).some((w) =>
-        ["queued", "running", "awaiting_review", "awaiting_delivery"].includes(w.status),
-      ),
+    (conversation?.works ?? status.works).some((w) =>
+      ["queued", "running", "awaiting_review", "awaiting_delivery"].includes(w.status),
+    ),
   );
 }
 

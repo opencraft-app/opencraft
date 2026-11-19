@@ -374,7 +374,7 @@ export class ReceptionService {
         break;
       }
       case "routine.create": {
-        const receipt = this.routines.add(
+        const _receipt = this.routines.add(
           childInput,
           proposal.params,
           this.scope.receptionResources(turn, this.history.require(turn.conversation_id)),
@@ -383,7 +383,7 @@ export class ReceptionService {
         break;
       }
       case "routine.update": {
-        const receipt = this.routines.update(childInput, {
+        const _receipt = this.routines.update(childInput, {
           routineId: proposal.routineId,
           expectedRevision: proposal.expectedRevision,
           definition: proposal.definition,

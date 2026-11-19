@@ -198,9 +198,8 @@ test("omitting visible stays in the background and non-boolean visibility cannot
 });
 
 test("physical visibility cannot acknowledge an attached surface before its drawable frame", async () => {
-  const { BrowserPresentationCoordinator } = await import(
-    "../../apps/workbench-web/src/browser/browser-presentation-coordinator"
-  );
+  const { BrowserPresentationCoordinator } =
+    await import("../../apps/workbench-web/src/browser/browser-presentation-coordinator");
   const coordinator: any = Object.create(BrowserPresentationCoordinator.prototype);
   const record = {
     disposed: false,

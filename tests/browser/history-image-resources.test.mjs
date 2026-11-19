@@ -83,7 +83,7 @@ test(
                     items: t.items.map((i) => {
                       if (i.type !== "imageGeneration") return i;
                       if (mode === "inline") {
-                        const { imageDimensions, ...item } = i;
+                        const { imageDimensions: _imageDimensions, ...item } = i;
                         return item;
                       }
                       return {
@@ -126,7 +126,7 @@ test(
                   res.end();
                   return;
                 }
-                const { imageDimensions, ...item } = entry;
+                const { imageDimensions: _imageDimensions, ...item } = entry;
                 defer(() => json(item));
                 return;
               }

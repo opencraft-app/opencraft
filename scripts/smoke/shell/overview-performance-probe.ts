@@ -3,8 +3,7 @@
 export function installOverviewPerformanceProbe() {
   const w = window as any;
   let scope:
-    | { kind: string; reads: number; layoutReads: number; styleReads: number; forcedDocumentWidths: number }
-    | undefined;
+    { kind: string; reads: number; layoutReads: number; styleReads: number; forcedDocumentWidths: number } | undefined;
   const probe = (w.overviewPerformance = {
     records: [] as any[],
     progress: undefined as number | undefined,

@@ -13,18 +13,14 @@ interface State {
   readonly peers: readonly RelaySummary[];
 }
 export function relaySummary(value: unknown): readonly RelaySummary[] {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    (value as any).schemaVersion !== 1 ||
-    !Array.isArray((value as any).peers) ||
-    (value as any).peers.length > 256
-  )
+  const record = (input: unknown): input is Record<string, unknown> =>
+    input !== null && typeof input === "object" && !Array.isArray(input);
+  if (!record(value) || value.schemaVersion !== 1 || !Array.isArray(value.peers) || value.peers.length > 256)
     throw Error("invalid_relay_summary");
   const seen = new Set<string>();
-  return (value as any).peers.map((peer: any) => {
+  return value.peers.map((peer: unknown) => {
     if (
-      !peer ||
+      !record(peer) ||
       typeof peer.id !== "string" ||
       !peer.id ||
       peer.id.length > 256 ||

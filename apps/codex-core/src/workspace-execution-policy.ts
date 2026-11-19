@@ -53,7 +53,11 @@ export function privateWorkspaceExecutionPolicy(options: {
     if (!isWorkspaceExecutionMethod(method)) {
       if (Object.hasOwn(input, workspaceGrantField))
         throw new ExecutionPreparationError("workspace-binding-unavailable");
-      return codexSandboxRequestPolicy(options.readThread, options.projectlessRoot, options.assertExecutable)(method, input);
+      return codexSandboxRequestPolicy(
+        options.readThread,
+        options.projectlessRoot,
+        options.assertExecutable,
+      )(method, input);
     }
     const { [workspaceGrantField]: ticket, ...params } = input;
     let selection: WorkspaceExecutionSelection;

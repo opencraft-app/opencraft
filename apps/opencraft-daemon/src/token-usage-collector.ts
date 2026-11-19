@@ -32,6 +32,14 @@ export type CollectorEvent =
 export type CollectorReply = { type: "reply"; id: number; result?: unknown; error?: true };
 
 export type CollectorNotice = { type: "invalidate"; threadId: string; path?: string };
+type CollectorMessage =
+  | CollectorReply
+  | CollectorNotice
+  | { type: "gaps"; count: number }
+  | { type: "diagnostic"; category: string }
+  | { type: "call"; id: number; request: CollectorCall }
+  | { type: "ready"; coverage: Coverage }
+  | { type: "closed" };
 
 export class TokenUsageCollectorUnavailable extends Error {}
 
@@ -131,7 +139,7 @@ export class TokenUsageCollector {
       this.worker.postMessage(build(id));
     });
   }
-  private receive(message: { type: string; [key: string]: any }): void {
+  private receive(message: CollectorMessage): void {
     if (message.type === "reply") {
       const reply = this.replies.get(message.id);
       if (!reply) return;
@@ -147,7 +155,7 @@ export class TokenUsageCollector {
       try {
         this.port.invalidate?.(String(message.threadId), typeof message.path === "string" ? message.path : undefined);
       } catch {}
-    } else if (message.type === "call") void this.serve(message.id, message.request as CollectorCall);
+    } else if (message.type === "call") void this.serve(message.id, message.request);
   }
   private async serve(id: number, request: CollectorCall): Promise<void> {
     try {

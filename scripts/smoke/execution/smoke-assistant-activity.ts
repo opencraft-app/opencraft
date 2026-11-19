@@ -29,7 +29,7 @@ const principal = parsePrincipal({
 const human = actors.resolveHuman(principal)!,
   bot = actors.createSession("Review Bot", human.actorId);
 const credential = actors.issueCredential(bot.id, Date.now() + 3600000, human.actorId),
-  botContext = actors.authenticateSession(credential.token)!;
+  _botContext = actors.authenticateSession(credential.token)!;
 actors.setGrant(human.actorId, bot.id, "message.send", true, "fixture");
 const service = new Collaboration(storage, actors, {
   hostId: "fixture",
@@ -48,7 +48,7 @@ const service = new Collaboration(storage, actors, {
     return false;
   },
 });
-const claimed = await service.personalAssistant(human, "opencraft/personal-assistant/claim");
+const _claimed = await service.personalAssistant(human, "opencraft/personal-assistant/claim");
 const assistantChannel = (await service.personalAssistant(human, "opencraft/personal-assistant/open")).channel;
 const provision = await service.provisionPersonalAssistant(human);
 const assistantActor = actors.authenticateSession(provision.credential.token)!;

@@ -29,7 +29,7 @@ const renderers = new Map(),
   views = new Map(),
   lifetime = new AbortController(),
   noop = () => {},
-  subs = () => () => {};
+  _subs = () => () => {};
 
 const groups = [
   {
@@ -240,14 +240,14 @@ const navigation = createApplicationNavigation(null, {
 });
 window.navigationProbe = navigation;
 const query = new QueryClient();
-let bridge;
+let _bridge;
 window.installNativeBridge = () => {
   window.opencraftMobile = { version: 1, runtimeId: "navigation-probe" };
   window.mobileMessages = [];
   window.ReactNativeWebView = {
     postMessage: (raw) => window.mobileMessages.push(JSON.parse(raw)),
   };
-  bridge = bindMobileContainer(navigation);
+  _bridge = bindMobileContainer(navigation);
 };
 function App() {
   const preferences = useUiPreferencesRuntime();

@@ -1,3 +1,4 @@
+// source-contract: Read the exact immutable v1 migration SQL to exercise a published-store upgrade, not the generated latest schema.
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';

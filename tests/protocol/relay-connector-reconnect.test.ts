@@ -28,7 +28,7 @@ async function until(check: () => boolean) {
     await new Promise((r) => setTimeout(r, 10));
   }
 }
-function get(url: string, headers: Record<string, string> = {}, received?: () => void) {
+function _get(url: string, headers: Record<string, string> = {}, received?: () => void) {
   return new Promise<{ status: number; body: Buffer; headers: IncomingHttpHeaders }>((resolve, reject) => {
     request(url, { agent: false, headers }, (res) => {
       const chunks: Buffer[] = [];

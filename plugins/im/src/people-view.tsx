@@ -237,7 +237,7 @@ export function createPeopleViews(
     statusResource = runtime.assistant;
   function Entry({ host }: ExtensionSettingsViewProps) {
     const intl = useIntl(),
-      state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+      _state = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
     return (
       <NavigationList label={intl.formatMessage(title)} inset="contained">
         <NavigationItem
@@ -273,7 +273,7 @@ export function createPeopleViews(
     const groups = groupsState.value?.groups ?? [],
       groupMembers = groupsState.value?.members ?? {};
     const groupsPending = !groupsState.value && !groupsState.failed,
-      groupsFailed = !groupsState.value && groupsState.failed;
+      _groupsFailed = !groupsState.value && groupsState.failed;
     const [memoryOpen, setMemoryOpen] = useState(false);
     const memoryCloseGuard = useRef<(() => boolean) | null>(null);
     const [activeAction, setActiveAction] = useState<string | null>(null);

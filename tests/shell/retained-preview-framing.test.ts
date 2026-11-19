@@ -48,9 +48,8 @@ test("decoration and native content share geometry without sharing their clippin
 });
 
 test("flight projection is shared by both placement paths and revoked independently of other cards", async () => {
-  const { setPreviewFlightProjection, getPreviewFlightProjection } = await import(
-    "../../apps/workbench-web/src/components/retained-preview-placement"
-  );
+  const { setPreviewFlightProjection, getPreviewFlightProjection } =
+    await import("../../apps/workbench-web/src/components/retained-preview-placement");
   const frame = {} as HTMLElement,
     other = {} as HTMLElement;
   const target = {
