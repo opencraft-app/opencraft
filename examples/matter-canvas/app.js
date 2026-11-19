@@ -67,17 +67,18 @@
   var TABBAR = [['chats', '消息', '<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>'], ['people', '通讯录', '<circle cx="9" cy="9" r="3.200"/><path d="M3.500 19c.6-3 2.800-4.800 5.500-4.800s4.900 1.800 5.500 4.800M16 6.500a2.800 2.800 0 0 1 0 5.400M17.500 14.600c1.600.7 2.700 2.200 3 4.400"/>'], ['office', '办公室', '<path d="M12 3.500 4 8v8l8 4.500 8-4.500V8z"/><path d="M4 8l8 4.500L20 8M12 12.500v8"/>']];
   var AVC = ['#a9dcc9', '#c3b5ee', '#a9c8f2', '#fbe39c', '#f9cdb0', '#bfe3ee', '#d9e8a6'];
   var ui = { tab: 'chats', stack: [], sel: null, sub: null }, has3d = false;
+  var wideMq = window.matchMedia ? matchMedia('(min-width: 900px)') : { matches: false }; function wide() { return wideMq.matches && ui.tab !== 'office'; }
   function top() { return ui.stack[ui.stack.length - 1]; }
   function cur() { var t = top(); return t && (t.k === 'chat' || t.k === 'profile') ? P(t.id) : null; }
   function reachOf(id) { var p = P(id), o = kin(id); if (p) p.reach.forEach(function (j) { if (o.indexOf(j) < 0) o.push(j); }); return o; }
   function toScene() {
     var nodes = [{ id: 'me', name: '你', kind: 'me' }], links = [], boss = [];
-    db.people.forEach(function (p) { nodes.push({ id: p.id, name: p.name, kind: 'bot', look: p.look, badge: unread(p.id).length, busy: !!p.doing, pc: !!(p.pc || p.env) }); boss.push([p.boss, p.id]); links.push([p.boss, p.id]); p.reach.forEach(function (j) { if (P(j) || O(j)) links.push([p.id, j]); }); });
+    db.people.forEach(function (p) { nodes.push({ id: p.id, name: p.name, kind: 'bot', look: p.look, badge: unread(p.id).length, busy: !!p.doing, pc: !!(p.pc || p.env), fx: (function (e) { var r = e && (R('pc', e.via) || R('env', e.via) || R('conn', e.via)); return e ? { id: e.id, mark: r ? r.name.slice(0, 1) : '改' } : null; })(lastFx(p.id)) }); boss.push([p.boss, p.id]); links.push([p.boss, p.id]); p.reach.forEach(function (j) { if (P(j) || O(j)) links.push([p.id, j]); }); });
     db.outs.forEach(function (o) { nodes.push({ id: o.id, name: o.name, kind: 'out' }); });
     return { nodes: nodes, links: links, boss: boss };
   }
   function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? reachOf(ui.sel) : [], ui.sel ? reachers(ui.sel) : []); } }
-  function pick(id) { if (id && id !== 'me' && !P(id) && !O(id)) id = null; ui.sel = id; if (has3d) window.Office.select(id, id ? reachOf(id) : [], id ? reachers(id) : []); draw(); }
+  function pick(id) { if (id && id !== 'me' && !P(id) && !O(id)) id = null; ui.sel = id; draw(); if (has3d) window.Office.select(id, id ? reachOf(id) : [], id ? reachers(id) : []); } /* 先画卡片，镜头才知道要给它留多高 */
   function go(page) { ui.sub = null; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); } /* 对话和资料来回点，不越叠越深 */
 
   function av(id, n) { var p = P(id); return '<span class="av" style="--c:' + (id === 'me' ? '#e9e6f0' : p ? AVC[(p.look || 0) % AVC.length] : '#f6c1c7') + '">' + (n ? '<i class="badge">' + n + '</i>' : '') + '</span>'; }
@@ -91,6 +92,9 @@
       (m.fx || []).map(function (id) { var e = F(id); return e ? fxCard(e) : ''; }).join('') + '</div></div>'; }
   function fxCard(e) { var r = R('pc', e.via) || R('env', e.via) || R('conn', e.via);
     return (e.body ? '<details class="file">' : '<div class="file">') + '<' + (e.body ? 'summary' : 'div class="fs"') + '><span><b>' + esc(e.name) + '</b><i>' + esc(N(e.who) + (r ? '在' + r.name : '') + e.what) + '</i></span><span class="fi" aria-hidden="true">' + esc(r ? r.name.slice(0, 1) : '改') + '</span></' + (e.body ? 'summary' : 'div') + '>' + (e.body ? '<pre>' + esc(e.body) + '</pre></details>' : '</div>'); }
+  function lastFx(id) { return (db.fx || []).filter(function (e) { return e.who === id && Date.now() - e.ts < 3600000; }).sort(function (a, b) { return b.ts - a.ts; })[0]; } /* 最近一小时里他在外面动的最后一下 */
+  function ago(ts) { var m = Math.round((Date.now() - ts) / 60000); return m < 1 ? '刚刚' : m < 60 ? m + ' 分钟前' : hhmm(ts); }
+  function fxLine(e) { var r = R('pc', e.via) || R('env', e.via) || R('conn', e.via); return ago(e.ts) + (r ? '在' + r.name : '') + e.what + '：' + e.name; }
   function bubbles(list, self) { var prev = 0; return list.map(function (m) { var gap = m.ts - prev > 5 * 60000; prev = m.ts; return (gap && !m.sys ? '<p class="when">' + hhmm(m.ts) + '</p>' : '') + bubble(m, self); }).join(''); }
 
   /* 标签一：消息。老板自己的手机，只有直接归你管的人 */
@@ -112,10 +116,10 @@
   /* 标签三：办公室。三维画面在 .stage 里，这里只出底部那张卡片 */
   function card() {
     var id = ui.sel, p = P(id), o = O(id);
-    if (!id) return '<p class="hint">点一个小家伙：彩色箭头是他能主动找的人，灰色箭头是能主动找他的人。</p>';
+    if (!id) return '<p class="hint">名字旁的绿方块：他最近一小时在外面动过的工具。点一个小家伙，彩色箭头是他能主动找的人，灰色箭头是能主动找他的人。</p>';
     if (id === 'me') return '<div class="pcard">' + av('me') + '<span class="t"><b>你</b><span>老板，不是员工，所以没有工位</span></span><button class="btn ok" data-do="tab" data-id="chats">看消息</button></div>';
     if (o) return '<div class="pcard">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span><button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'out', id: o.id })) + '\'>查看</button></div>';
-    return '<div class="pcard">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span></span>' + (p.boss === 'me' ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>对话</button>' : '') + '<button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>手机和电脑</button></div>';
+    return '<div class="pcard">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span>' + (lastFx(p.id) ? '<button class="lastfx" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'pc' })) + '\'>' + esc(fxLine(lastFx(p.id))) + '</button>' : '') + '</span>' + (p.boss === 'me' ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>对话</button>' : '') + '<button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>手机和电脑</button></div>';
   }
 
   /* 整页：对话 */
@@ -162,10 +166,12 @@
     var t = top(), view = $('view'), b = view.querySelector('.body'), keep = b ? b.scrollTop : 0, key = JSON.stringify(t || ui.tab) + ui.sub, same = view.getAttribute('data-key') === key;
     if (t && t.k === 'chat') markRead(t.id);
     while (t && ((t.k === 'chat' || t.k === 'profile') && !P(t.id) || t.k === 'out' && !O(t.id))) { ui.stack.pop(); t = top(); }
-    var office = !t && ui.tab === 'office';
-    view.innerHTML = t ? (t.k === 'chat' ? chat(P(t.id)) : t.k === 'profile' ? profile(P(t.id), t) : t.k === 'out' ? outside(O(t.id)) : recruit()) : ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
+    var office = !t && ui.tab === 'office', page = t ? (t.k === 'chat' ? chat(P(t.id)) : t.k === 'profile' ? profile(P(t.id), t) : t.k === 'out' ? outside(O(t.id)) : recruit()) : '', root = ui.tab === 'chats' ? chats() : ui.tab === 'people' ? people() : '';
+    view.classList.toggle('split', wide());
+    view.innerHTML = wide() ? '<div class="pane l">' + root + '</div><div class="pane r">' + (page || '<p class="blank">选一个人</p>') + '</div>' : t ? page : root;
+    if (wide() && t) Array.prototype.forEach.call(view.querySelectorAll('.pane.l [data-go]'), function (el) { var g = JSON.parse(el.getAttribute('data-go')); el.classList.toggle('on', g.id === t.id); });
     view.setAttribute('data-key', key); view.hidden = office; $('office').hidden = !office; $('card').innerHTML = office ? card() : '';
-    var n = unread().length; $('tabbar').hidden = !!t; $('tabbar').innerHTML = TABBAR.map(function (x) { return '<button data-do="tab" data-id="' + x[0] + '" aria-current="' + (ui.tab === x[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + x[2] + '</svg>' + x[1] + (x[0] === 'chats' && n ? '<i class="badge">' + n + '</i>' : '') + '</button>'; }).join('');
+    var n = unread().length; $('tabbar').hidden = !!t && !wide(); $('tabbar').innerHTML = TABBAR.map(function (x) { return '<button data-do="tab" data-id="' + x[0] + '" aria-current="' + (ui.tab === x[0] ? 'page' : 'false') + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + x[2] + '</svg>' + x[1] + (x[0] === 'chats' && n ? '<i class="badge">' + n + '</i>' : '') + '</button>'; }).join('');
     var nb = view.querySelector('.body'); if (nb && same) nb.scrollTop = keep; var c = $('chat'); if (c && !same) c.scrollTop = c.scrollHeight;
     if (office && has3d) window.Office.resize();
   }
@@ -198,7 +204,7 @@
 
   document.addEventListener('click', function (e) {
     var t = e.target.closest('[data-tab]'); if (t && top()) { top().tab = t.getAttribute('data-tab'); ui.sub = null; draw(); return; }
-    var g = e.target.closest('[data-go]'); if (g) { go(JSON.parse(g.getAttribute('data-go'))); return; }
+    var g = e.target.closest('[data-go]'); if (g) { if (wide() && g.closest('.pane.l')) ui.stack = []; go(JSON.parse(g.getAttribute('data-go'))); return; }
     var d = e.target.closest('button[data-do]'); if (d) { e.preventDefault(); DO[d.getAttribute('data-do')](d); }
   });
   document.addEventListener('submit', function (e) { var f = e.target.closest('form[data-do]'); if (f) { e.preventDefault(); DO[f.getAttribute('data-do')](f); } });
@@ -206,6 +212,7 @@
 
   has3d = !!(window.Office && window.Office.init($('stage'), $('labels'), pick));
   if (!has3d) $('fail').hidden = false;
+  if (wideMq.addEventListener) wideMq.addEventListener('change', function () { draw(); });
   draw(); sync();
   window.__app = { pick: pick, go: go, db: function () { return db; } };
 })();

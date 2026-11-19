@@ -71,8 +71,15 @@ window.Office = (function () {
   /* 视角：off 是镜头在自己平面里的偏移，zoom 是放大倍数。选人时镜头靠过去；手指拖动和双指缩放直接改它。画面始终按屏幕像素重画，所以放大不糊。 */
   var view = { x: 0, y: 0, z: 0, zoom: 1 }, half = 4.7, resetBtn;
   function applyView() { camera.position.set(CAM[0] + view.x, CAM[1] + view.y, CAM[2] + view.z); camera.zoom = view.zoom; camera.updateProjectionMatrix(); if (resetBtn) resetBtn.hidden = view.zoom < 1.05 && Math.hypot(view.x, view.y, view.z) < .3; }
-  function aim() { var p = pets[selId], x = p ? (p.g.position.x - LOOK[0]) * .55 : 0, z = p ? p.g.position.z * .55 : 0;
-    gsap.to(view, { x: x, y: 0, z: z, zoom: p ? Math.max(view.zoom, 1.22) : 1, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView }); }
+  function aim() { /* 选中一个人：把他和跟他有箭头的人一起框进画面，留出底部卡片的位置 */
+    var p = pets[selId]; if (!p) { gsap.to(view, { x: 0, y: 0, z: 0, zoom: 1, duration: dur(.6), ease: 'power2.out', overwrite: true, onUpdate: applyView }); return; }
+    var ids = [selId].concat(selReach, selIn).filter(function (k) { return pets[k]; }), c = new THREE.Vector3(), q = new THREE.Vector3(), inv = new THREE.Matrix4();
+    ids.forEach(function (k) { c.add(pets[k].g.position); }); c.multiplyScalar(1 / ids.length); c.y = 1;
+    var base = camera.clone(); base.position.set(CAM[0], CAM[1], CAM[2]); base.lookAt(LOOK[0], LOOK[1], LOOK[2]); base.updateMatrixWorld(); inv.copy(base.matrixWorldInverse);
+    var cc = c.clone().applyMatrix4(inv), mx = 1.2, my = 1.2; ids.forEach(function (k) { [0, 2.6].forEach(function (y) { q.copy(pets[k].g.position).setY(y).applyMatrix4(inv); mx = Math.max(mx, Math.abs(q.x - cc.x) + 1.1); my = Math.max(my, Math.abs(q.y - cc.y) + .5); }); }); /* 加上人和桌子本身的宽度 */
+    var a = canvas.clientWidth / canvas.clientHeight, cardEl = document.getElementById('card'), cardFrac = cardEl ? Math.min(.4, (cardEl.offsetHeight + 24) / canvas.clientHeight) : 0,
+      zoom = Math.max(1, Math.min(2.4, Math.min(half * a / (mx * 1.15), half * (1 - cardFrac) / (my * 1.15)))), up = new THREE.Vector3(0, 1, 0).applyQuaternion(base.quaternion), d = c.clone().sub(new THREE.Vector3(LOOK[0], LOOK[1], LOOK[2])).addScaledVector(up, -cardFrac * half / zoom);
+    gsap.to(view, { x: d.x, y: d.y, z: d.z, zoom: zoom, duration: dur(.7), ease: 'power2.out', overwrite: true, onUpdate: applyView }); }
   function nudge(dx, dy, k) { /* 手指移动 dx,dy 像素；k 是缩放倍率 */
     gsap.killTweensOf(view); var per = 2 * half / canvas.clientHeight / view.zoom, r = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion), u = new THREE.Vector3(0, 1, 0).applyQuaternion(camera.quaternion);
     view.x += (-dx * r.x + dy * u.x) * per; view.y += (-dx * r.y + dy * u.y) * per; view.z += (-dx * r.z + dy * u.z) * per; var l = Math.hypot(view.x, view.y, view.z); if (l > 8) { view.x *= 8 / l; view.y *= 8 / l; view.z *= 8 / l; }
@@ -125,7 +132,7 @@ window.Office = (function () {
     sync: function (m) {
       var first = !Object.keys(pets).length, ids = {}; model = m;
       m.nodes.forEach(function (n, i) { ids[n.id] = 1; if (!pets[n.id]) { var t = i * 2.4; pets[n.id] = makePet(n, n.kind === 'me' ? .2 : -.8 + Math.cos(t) * 2.6, n.kind === 'me' ? 2.6 : Math.sin(t) * 2.6); }
-        var p = pets[n.id]; p.el.textContent = n.name; p.el.className = (n.kind === 'me' ? 'me' : '') + (n.badge ? ' wait' : ''); if (n.badge) p.el.setAttribute('data-n', n.badge); else p.el.removeAttribute('data-n');
+        var p = pets[n.id]; p.el.textContent = n.name; if (n.fx) { var chip = document.createElement('b'); chip.className = 'fx'; chip.textContent = n.fx.mark; p.el.appendChild(chip); if (p.fxKey && p.fxKey !== n.fx.id && !calm) gsap.fromTo(p.sp.scale, { x: 1.3, y: .7, z: 1.3 }, { x: 1, y: 1, z: 1, duration: .8, ease: 'elastic.out(1,.35)' }); } p.fxKey = n.fx ? n.fx.id : null; p.el.className = (n.kind === 'me' ? 'me' : '') + (n.badge ? ' wait' : ''); if (n.badge) p.el.setAttribute('data-n', n.badge); else p.el.removeAttribute('data-n');
         if (p.mon) p.mon.visible = !!n.pc;
         if (p.screen) { if (p.glow) { p.glow.kill(); p.glow = null; } p.screen.emissive.setRGB(n.busy ? .3 : 0, n.busy ? .26 : 0, n.busy ? .55 : 0); if (n.busy && !calm) p.glow = gsap.to(p.screen.emissive, { r: .1, g: .08, b: .2, duration: .9, yoyo: true, repeat: -1, ease: 'sine.inOut' }); } });
       Object.keys(pets).forEach(function (k) { if (!ids[k]) dropPet(k); });
