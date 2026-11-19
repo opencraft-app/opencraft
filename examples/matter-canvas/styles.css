@@ -61,3 +61,12 @@ textarea { display: block; width: 100%; min-height: 180px; padding: 14px 16px; b
 .field label { width: 4em; flex: none; } .field input { flex: 1; min-width: 0; height: 54px; border: 0; background: none; font: inherit; color: var(--ink); } .field input:focus { outline: none; }
 .warn { color: var(--red); } .cell.c b { text-align: center; } .cell.c { justify-content: center; }
 .go.red { background: var(--red); }
+.todo { min-height: 64px; gap: 12px; } .todo + .todo::before { left: 50px !important; }
+.box { width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--ink-3); flex: none; display: grid; place-items: center; color: #fff; font-size: 13px; }
+.todo.done .box { background: var(--green); border-color: var(--green); } .todo.done b { color: var(--ink-2); text-decoration: line-through; }
+.todo .t span.you { color: var(--red); } .todo .who { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); white-space: nowrap; } .todo .av { width: 30px; height: 30px; font-size: 13px; border-radius: 5px; }
+.pillb { padding: 4px 10px; border-radius: 14px; border: 1.5px dashed var(--ink-3); color: var(--ink-2); font-size: 13px; }
+.newt { display: flex; gap: 10px; padding: 10px 16px; background: var(--cell); margin-bottom: 8px; } .newt input { flex: 1; min-width: 0; height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--bg); font: inherit; color: var(--ink); } .newt input:focus { outline: 2px solid var(--green); }
+.newt button { padding: 0 14px; border-radius: 8px; background: var(--green); color: #fff; font-weight: 600; }
+.cell time { font-size: 12px; color: var(--ink-3); align-self: flex-start; padding-top: 3px; font-variant-numeric: tabular-nums; }
+.cell .t span.wrap { white-space: normal; }

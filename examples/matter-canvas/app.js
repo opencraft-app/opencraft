@@ -1,4 +1,4 @@
-/* 老板的两个界面：事情（每件事一个负责人，待办跟着事情走）和员工（可以管理：岗位、岗位提示、是否在岗、能联系谁、增减员工）。版式照聊天应用。 */
+/* 老板的三个标签：事情（一张待办清单，每件事可以分配负责人）、员工（可以管理）、动态（谁刚做了什么）。版式照聊天应用。 */
 (function () {
   'use strict';
   var E = window.MatterEngine, dsl = E.validate(E.clone(window.MATTER_DSL)), KEY = 'opencraft.matter-canvas.v4';
@@ -7,7 +7,7 @@
   var BACK = svg('<path d="m14.500 5-7 7 7 7"/>'), GO = svg('<path d="m9.500 5 7 7-7 7"/>');
   var TABS = [['things', '事情', svg('<rect x="4.500" y="4" width="15" height="16" rx="2.500"/><path d="m8 9.500 1.500 1.500L12 8.500M8 15l1.500 1.500L12 14M14.500 10h2M14.500 15.500h2"/>')],
     ['staff', '员工', svg('<path d="M12 4.500c-4.700 0-8.500 3.100-8.500 7 0 2.200 1.200 4.100 3.100 5.400L6 20l3.400-1.600c.8.200 1.700.300 2.600.300 4.700 0 8.500-3.100 8.500-7s-3.800-7.200-8.500-7.200z"/>')],
-    ['book', '通讯录', svg('<circle cx="9.500" cy="8.500" r="3.500"/><path d="M3 19.500c.600-3.400 3.200-5.500 6.500-5.500s5.900 2.100 6.500 5.500M17 9h4M17 12.500h4M18.500 16h2.500"/>')]];
+    ['feed', '动态', svg('<circle cx="12" cy="12" r="8.500"/><path d="m15.500 8.500-2 5-5 2 2-5z"/>')]];
 
   /* ---------- 数据：三件事各自一份进度；负责人和岗位提示可以改 ---------- */
   var saved = {}; try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { /* 没有存储也能用 */ }
@@ -21,13 +21,24 @@
     c.nodes.forEach(function (n) { if (n.id === from) n.id = to; }); c.owner = to;
     dsl.bots.forEach(function (b) { if (b.id !== to && c.steps.some(function (st) { return st.source === b.id || st.target === b.id; })) { dsl.contacts.push([to, b.id]); dsl.grants.push([to, b.id], [b.id, to]); } });
   }
-  dsl.cases.forEach(function (c, i) {
+  var custom = saved.custom || [], notes = saved.notes || [], tick = 0;
+  function makeCase(id, title) { /* 老板自己加的事：交给负责人处理，做完等老板验收 */
+    var o = dsl.bots[0].id, S = function (kind, status, summary, action, message, envelope, reaction, file, body) { return { kind: kind, status: status, summary: summary, action: action, source: 'user', target: o, message: message, envelope: envelope, reaction: reaction, desktop: { operator: o, file: file, body: body, input: envelope } }; };
+    return { id: id, title: title, tag: '待办', owner: o, peer: null, market: [], nodes: [], artifact: title + ' · 结果', headline: title, desktop: { title: title, body: title },
+      steps: [S('receive', '待处理', '还没开始。', '开始处理', '请处理：' + title, '交办', '处理「' + title + '」', title + ' · 结果', '已处理完，请验收。'), S('confirm', '等你验收', '已处理完，请验收。', '确认完成', '确认完成：' + title, '确认', '归档「' + title + '」', title + ' · 归档', '已归档。'), { kind: 'done', status: '已完成', summary: '已完成：' + title }] };
+  }
+  custom.forEach(function (x) { dsl.cases.push(makeCase(x.id, x.title)); });
+  function stamp(w) { w.run.events.forEach(function (ev) { if (!ev.ts) ev.ts = Date.now() + (tick++); }); }
+  function note(who, text, c) { notes.push({ ts: Date.now() + (tick++), who: who, text: text, c: c }); }
+  function boot(c, i) {
     if (owners[c.id]) reassign(c, owners[c.id]);
     var run = E.newRun(dsl, c.id, 1, c.id); run.events = (saved.runs || {})[c.id] || [];
     var w = worlds[c.id] = E.makeWorld(dsl, book, run, 'real');
     if (!saved.runs && i < 2) E.settle(w, function (x) { var k = c.steps[x.state.idx].kind; return k === (i ? 'deliver' : 'confirm') ? false : { bot: c.market[0] }; });
-  });
-  function save() { var runs = {}; dsl.cases.forEach(function (c) { runs[c.id] = worlds[c.id].run.events; }); try { localStorage.setItem(KEY, JSON.stringify({ owners: owners, prompts: prompts, runs: runs, book: book, added: added, removed: removed })); } catch (e) { /* ignore */ } }
+    stamp(w);
+  }
+  dsl.cases.forEach(boot);
+  function save() { var runs = {}; dsl.cases.forEach(function (c) { runs[c.id] = worlds[c.id].run.events; }); try { localStorage.setItem(KEY, JSON.stringify({ owners: owners, prompts: prompts, runs: runs, book: book, added: added, removed: removed, custom: custom, notes: notes })); } catch (e) { /* ignore */ } }
   var W0 = worlds[dsl.cases[0].id];
   function N(id) { return id === 'user' ? '老板' : E.nameOf(W0, id); }
   function job(id) { return E.skillsOf(W0, id); }
@@ -53,9 +64,19 @@
     if (w.state.halt) return ['卡住了', 'you'];
     return [w.state.log.length ? st.status : '待开始', ''];
   }
+  function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function feed() {
+    var o = notes.slice();
+    each(function (c, w, s) { s.log.forEach(function (ev) {
+      var t = ev.type === 'sent' ? [ev.from, '对' + N(ev.to) + '说：' + ev.text] : ev.type === 'file' ? [ev.operator, '做完了：' + c.steps[ev.step].reaction + '，交出「' + ev.name + '」'] : ev.type === 'hired' ? [ev.bot, '被请来帮忙'] :
+        ev.type === 'blocked' || ev.type === 'stalled' || (ev.type === 'checked' && !ev.ok) ? [ev.from || ev.operator || c.owner, E.describe(w, ev), 1] : null;
+      if (t) o.push({ ts: ev.ts || 0, who: t[0], text: t[1], c: c.id, bad: t[2] });
+    }); });
+    return o.sort(function (a, b) { return b.ts - a.ts; });
+  }
 
   /* ---------- 界面 ---------- */
-  var tab = 'things', stack = [];
+  var tab = saved.tab || 'things', stack = [];
   function av(id, cls) { if (!id) return '<span class="av q ' + (cls || '') + '">?</span>'; var b = E.botOf(W0, id), t = b && dsl.teams.find(function (x) { return x.id === b.team; }); return '<span class="av ' + (cls || '') + '"' + (t ? ' style="--tc:' + t.color + '"' : '') + '>' + esc(id === 'user' ? '老' : N(id).slice(-1)) + '</span>'; }
   function nav(title) { return '<div class="nav">' + (stack.length ? '<button data-go="back" aria-label="返回">' + BACK + '</button>' : '<i></i>') + '<h1>' + esc(title) + '</h1><i></i></div>'; }
   function go(o) { return ' data-go=\'' + esc(JSON.stringify(o)) + '\''; }
@@ -64,11 +85,15 @@
 
   var PAGE = {
     things: function () {
-      var rank = { you: 0, '': 1, ok: 2 }, list = dsl.cases.slice().sort(function (a, b) { return rank[status(a)[1]] - rank[status(b)[1]]; });
-      return nav('事情') + '<div class="body"><div class="cells">' + list.map(function (c) {
-        var st = status(c), o = ownerOf(c);
-        return '<button class="cell chatrow"' + go({ p: 'thing', c: c.id }) + '>' + av(o, 'x') + '<span class="t"><b>' + esc(c.title) + '</b><span>' + esc(o ? N(o) + '负责 · ' + c.headline : c.headline) + '</span></span><span class="st ' + st[1] + '">' + st[0] + '</span></button>';
-      }).join('') + '</div></div>';
+      var open = dsl.cases.filter(function (c) { return status(c)[1] !== 'ok'; }), done = dsl.cases.filter(function (c) { return status(c)[1] === 'ok'; });
+      open.sort(function (a, b) { return (status(a)[1] === 'you' ? 0 : 1) - (status(b)[1] === 'you' ? 0 : 1); });
+      function row(c) {
+        var st = status(c), o = ownerOf(c), ok = st[1] === 'ok';
+        return '<button class="cell todo' + (ok ? ' done' : '') + '"' + go({ p: 'thing', c: c.id }) + '><span class="box">' + (ok ? '✓' : '') + '</span><span class="t"><b>' + esc(c.title) + '</b><span class="' + st[1] + '">' + st[0] + '</span></span>' +
+          (o ? '<span class="who">' + esc(N(o)) + av(o) + '</span>' : '<span class="pillb">分配</span>') + '</button>';
+      }
+      return nav('事情') + '<div class="body"><div class="newt"><input id="nt" placeholder="添加一件事…" aria-label="添加一件事"><button data-do="newthing">添加</button></div>' +
+        '<div class="cells">' + (open.map(row).join('') || '<p class="none">没有待办的事</p>') + '</div>' + (done.length ? '<div class="sec">已完成 ' + done.length + '</div><div class="cells">' + done.map(row).join('') + '</div>' : '') + '</div>';
     },
     thing: function (g) {
       var c = dsl.cases.find(function (x) { return x.id === g.c; }), w = worlds[c.id], s = w.state, st = c.steps[s.idx], o = ownerOf(c), sta = status(c), fresh = !s.log.length, act = '';
@@ -78,7 +103,7 @@
       else if (st.kind !== 'done') act = '<button class="go alt" data-do="next" data-c="' + c.id + '">' + (s.halt ? '再试一次' : '推进一步：' + esc(st.kind === 'hire' ? '请' + N(c.market[0]) + '帮忙' : st.action)) + '</button>';
       return nav(c.title) + '<div class="body"><div class="cells"><div class="cell text"><small>' + esc(c.tag) + ' · <span class="st ' + sta[1] + '">' + sta[0] + '</span></small><b style="font-size:20px">' + esc(st.kind === 'done' ? '办完了' : c.headline) + '</b><p>' + esc(st.summary) + '</p>' + (s.halt && o ? '<p class="warn">' + esc(E.describe(w, s.halt)) + '</p>' : '') + '</div></div>' + (act ? '<div class="act">' + act + '</div>' : '<div class="gap"></div>') +
         '<div class="cells">' + (o ? '<button class="cell a"' + go({ p: 'one', id: o }) + '>' + av(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>负责人 · ' + esc(job(o)) + '</span></span><span class="r">' + GO + '</span></button>' : '<div class="cell a">' + av(null) + '<span class="t"><b>还没有负责人</b><span>分配后这件事才会开始</span></span></div>') +
-        (o && fresh ? cell({ p: 'pick', c: c.id }, '', '换一位负责人', '', '') : '') + '</div>' +
+        (o && st.kind !== 'done' ? cell({ p: 'pick', c: c.id }, '', '换一位负责人', '', '') : '') + '</div>' +
         '<div class="sec">进度</div><div class="cells">' + c.steps.map(function (x, i) { var k = i < s.idx || x.kind === 'done' && i === s.idx ? 'd' : i === s.idx && o ? 'n' : 'w'; return '<div class="cell step ' + k + '"><i>' + (k === 'd' ? '✓' : '') + '</i><span class="t"><b>' + esc(x.status) + '</b>' + (k === 'n' ? '<span>' + esc(x.summary) + '</span>' : '') + '</span></div>'; }).join('') + '</div>' +
         (castOf(c).length > 1 ? '<div class="sec">参与的人</div><div class="cells">' + castOf(c).map(function (id) { return '<button class="cell a"' + go({ p: 'one', id: id }) + '>' + av(id) + '<span class="t"><b>' + esc(N(id)) + '</b><span>' + esc(id === o ? '负责人' : id === s.hired ? '临时帮手' : job(id)) + '</span></span><span class="r">' + GO + '</span></button>'; }).join('') + '</div>' : '') +
         (files.length ? '<div class="sec">材料</div><div class="cells">' + files.map(function (f) { return cell({ p: 'job', c: c.id, f: f.id }, '', f.name, N(f.owner) + ' · ' + c.steps[f.step].reaction, ''); }).join('') + '</div>' : '') +
@@ -91,11 +116,18 @@
       }).join('') + '</div>';
     },
     staff: function () {
-      var ids = []; dsl.cases.forEach(function (c) { castOf(c).forEach(function (id) { if (ids.indexOf(id) < 0) ids.push(id); }); });
-      return nav('员工') + '<div class="body"><div class="cells">' + ids.map(function (id) { var own = ownsOf(id), j = jobsOf(id).pop(); return botRow(id, own.length ? '负责：' + own.map(function (c) { return c.title; }).join('、') : j ? '参与：' + j.c.title : job(id)); }).join('') + '</div><p class="foot">这里是手上有事的员工，全部员工在通讯录。</p></div>';
+      var busy = []; dsl.cases.forEach(function (c) { if (status(c)[1] !== 'ok') castOf(c).forEach(function (id) { if (busy.indexOf(id) < 0) busy.push(id); }); });
+      function row(id) { var own = ownsOf(id).filter(function (c) { return status(c)[1] !== 'ok'; }); return '<button class="cell a"' + go({ p: 'one', id: id }) + '>' + av(id) + '<span class="t"><b>' + esc(N(id)) + '</b><span>' + esc(own.length ? '负责：' + own.map(function (c) { return c.title; }).join('、') : job(id)) + (onDuty(id) ? '' : ' · 已停工') + '</span></span></button>'; }
+      return nav('员工') + '<div class="body"><div class="cells">' + cell({ p: 'add' }, '<span class="av q">+</span>', '新增员工', '', '') + '</div>' +
+        (busy.length ? '<div class="sec">手上有事</div><div class="cells">' + busy.map(row).join('') + '</div>' : '') +
+        dsl.teams.map(function (t) { var m = dsl.bots.filter(function (b) { return b.team === t.id && busy.indexOf(b.id) < 0; }); return m.length ? '<div class="sec">' + esc(t.name) + '</div><div class="cells">' + m.map(function (b) { return row(b.id); }).join('') + '</div>' : ''; }).join('') + '<p class="foot">' + dsl.bots.length + ' 位员工</p></div>';
     },
-    book: function () {
-      return nav('通讯录') + '<div class="body"><div class="cells">' + cell({ p: 'add' }, '<span class="av q">+</span>', '新增员工', '', '') + '</div>' + dsl.teams.map(function (t) { return '<div class="sec">' + esc(t.name) + '</div><div class="cells">' + dsl.bots.filter(function (b) { return b.team === t.id; }).map(function (b) { return '<button class="cell a"' + go({ p: 'one', id: b.id }) + '>' + av(b.id) + '<span class="t"><b>' + esc(b.name) + '</b><span>' + esc(job(b.id)) + (onDuty(b.id) ? '' : ' · 已停工') + '</span></span></button>'; }).join('') + '</div>'; }).join('') + '<p class="foot">' + dsl.bots.length + ' 位员工</p></div>';
+    feed: function () {
+      var list = feed();
+      return nav('动态') + '<div class="body"><div class="cells">' + (list.map(function (x) {
+        var c = dsl.cases.find(function (k) { return k.id === x.c; });
+        return '<button class="cell a"' + go(c ? { p: 'thing', c: c.id } : { p: 'one', id: x.who }) + '>' + av(x.who) + '<span class="t"><b>' + esc(N(x.who)) + (c ? ' <small style="color:var(--ink-2)">· ' + esc(c.title) + '</small>' : '') + '</b><span class="wrap' + (x.bad ? ' warn' : '') + '">' + esc(x.text) + '</span></span><time>' + hhmm(x.ts) + '</time></button>';
+      }).join('') || '<p class="none">还没有动态</p>') + '</div></div>';
     },
     one: function (g) {
       var own = ownsOf(g.id), on = onDuty(g.id);
@@ -149,8 +181,12 @@
     document.getElementById('app').innerHTML = h;
   }
   var DO = {
-    next: function (d) { var w = worlds[d.c], c = E.caseOf(w); E.act(w, { bot: c.market[0] }); while (E.advance(w)); },
-    assign: function (d) { var c = dsl.cases.find(function (x) { return x.id === d.c; }); reassign(c, d.id); owners[c.id] = d.id; stack.pop(); },
+    next: function (d) { var w = worlds[d.c], c = E.caseOf(w), k = c.steps[w.state.idx].kind; E.act(w, { bot: c.market[0] }); while (E.advance(w)); stamp(w); if (k === 'confirm' && !w.state.halt) note('user', '验收了这件事', c.id); },
+    assign: function (d) { var c = dsl.cases.find(function (x) { return x.id === d.c; }); reassign(c, d.id); owners[c.id] = d.id; note('user', '把这件事交给了' + N(d.id), c.id); stack.pop(); },
+    newthing: function () {
+      var el = document.getElementById('nt'), title = el.value.trim(); if (!title) { el.focus(); return; }
+      var x = { id: 't' + Date.now().toString(36), title: title }; custom.push(x); var c = makeCase(x.id, x.title); dsl.cases.push(c); owners[c.id] = null; boot(c, 9); note('user', '加了一件事', c.id);
+    },
     prompt: function (d) { prompts[d.id] = document.getElementById('pt').value.trim(); stack.pop(); },
     role: function (d) { var v = document.getElementById('f1').value.trim(); if (v) book.skills[d.id] = v; stack.pop(); },
     add: function () {
@@ -164,15 +200,16 @@
   document.addEventListener('click', function (e) {
     var el = e.target.closest('[data-go],[data-tab],[data-do]'); if (!el) return;
     if (el.dataset.do) { DO[el.dataset.do](el.dataset); save(); }
-    else if (el.dataset.tab) tab = el.dataset.tab;
+    else if (el.dataset.tab) { tab = el.dataset.tab; saved.tab = tab; }
     else if (el.dataset.go === 'back') stack.pop();
     else stack.push(JSON.parse(el.dataset.go));
     draw();
   });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.id === 'nt') { DO.newthing(); save(); draw(); } });
   document.addEventListener('change', function (e) {
     var d = e.target.dataset; if (!d.sw) return;
     if (d.sw === 'grant') book.grants[d.id + '>' + d.b] = e.target.checked;
-    else { var o = book.comp[d.id] = book.comp[d.id] || {}; o.work = e.target.checked; o.send = e.target.checked; }
+    else { var o = book.comp[d.id] = book.comp[d.id] || {}; o.work = e.target.checked; o.send = e.target.checked; note('user', e.target.checked ? '让他回岗了' : '让他停工了'); notes[notes.length - 1].who = d.id; notes[notes.length - 1].text = e.target.checked ? '被老板安排回岗' : '被老板安排停工'; }
     save(); draw();
   });
   draw();
