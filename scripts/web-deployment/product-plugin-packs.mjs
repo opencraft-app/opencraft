@@ -119,10 +119,15 @@ export async function prepareProductPluginPacks({ sourceDirectory, cacheDirector
   await mkdir(cacheDirectory, { recursive: true, mode: 0o700 });
   const temporary = join(cacheDirectory, '.prepare-' + randomUUID());
   try {
-    const directories = new Set([temporary]);
+    const directories = new Set([temporary]), copied = new Set();
     for (const pack of inventory.packages) for (const record of pack.files) {
       const source = await checked(join(sourceDirectory, 'public'), record), target = join(temporary, 'public', record.path);
+      // Shared assets may appear in several packages. The first copy is already
+      // sealed read-only; verify every subsequent claim rather than rewriting it
+      // (which fails for the non-root deployment owner) or trusting the path alone.
+      if (copied.has(record.path)) { await checked(join(temporary, 'public'), record); continue; }
       await mkdir(dirname(target), { recursive: true, mode: 0o700 }); await copyFile(source, target); await chmod(target, 0o444); await durable(target);
+      copied.add(record.path);
       for (let path = dirname(target); path.startsWith(temporary + sep); path = dirname(path)) directories.add(path);
     }
     await writeInventory(temporary, bytes); await chmod(join(temporary, 'inventory.json'), 0o444);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, readdir } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, symlink, readdir, stat } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fork } from 'node:child_process';
@@ -179,4 +179,13 @@ test('a sidecar shared by another pack remains with its original Web asset',asyn
   await writeFile(join(one.web,'product-plugins.json'),JSON.stringify(inventory));await splitProductPluginPacks(one.web,one.source);
   assert.deepEqual(await readFile(join(one.web,path)),raw);await access(join(one.web,path+'.gz'));
   await prepareProductPluginPacks({sourceDirectory:one.source,cacheDirectory:f.cache,webRoot:one.web});
+  const snapshot=join(f.cache,sha(await readFile(join(one.source,'inventory.json'))));
+  assert.deepEqual(await readFile(join(snapshot,'public',path)),raw);
+  if(process.platform!=='win32')assert.equal((await stat(join(snapshot,'public',path))).mode&0o777,0o444);
+  await prepareProductPluginPacks({sourceDirectory:one.source,cacheDirectory:f.cache,webRoot:one.web});
+  const conflicting=JSON.parse(await readFile(join(one.source,'inventory.json')));
+  conflicting.packages[1].files.find(file=>file.path===path).sha256='0'.repeat(64);
+  await writeFile(join(one.source,'inventory.json'),JSON.stringify(conflicting));
+  await assert.rejects(prepareProductPluginPacks({sourceDirectory:one.source,cacheDirectory:f.cache,webRoot:one.web}),/integrity mismatch|identity collision/);
+  assert.deepEqual(await readdir(f.cache),[sha(await readFile(join(snapshot,'inventory.json')))],'failed preparation leaves only the original immutable snapshot');
 });
