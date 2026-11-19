@@ -3,12 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>OpenCraft 事项画布</title>
-<meta name="claude:viewport-fit-sides" content="cover">
+<title>OpenCraft 办公室</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<main id="app"></main>
+<div id="app">
+  <div class="stage"><canvas id="stage" aria-label="办公室"></canvas><div id="labels"></div><div id="fail" hidden>这台设备没能打开三维办公室。下面的面板仍然可以用。</div></div>
+  <aside id="sheet" aria-live="polite"></aside>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="scene.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
