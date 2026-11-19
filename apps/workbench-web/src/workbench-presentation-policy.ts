@@ -23,7 +23,7 @@ export const FULL_WORKBENCH_PRESENTATION: WorkbenchPresentationPolicy =
     shellNavigation: true,
     contextSidebar: true,
     rightPanel: true,
-    rightPanelDefaultSize: "standard",
+    rightPanelDefaultSize: "compact",
     panelActions: "all",
     filePreviewOnly: false,
     connectorLauncher: true,

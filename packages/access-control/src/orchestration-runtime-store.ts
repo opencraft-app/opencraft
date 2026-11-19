@@ -1,3 +1,6 @@
+import { communicationExtensionModule } from './communication-extension.js';
+import type { ChannelSyncCommand, ChannelSyncResult } from "./native-channel-sync.js";
+import type { CommunicationCommand, CommunicationResult } from './communication-command.js';
 import { AutomationError } from './automation.js';
 import { Worker } from 'node:worker_threads';
 import type { ThreadOrchestrationSnapshot } from '@opencraft/appserver-protocol/collaboration';
@@ -22,7 +25,7 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   private stopping = false;
   private nextId = 0;
   constructor(path: string) {
-    this.worker = new Worker(new URL('./orchestration-runtime-worker.mjs', import.meta.url), {workerData:{path},execArgv:[]});
+    this.worker = new Worker(new URL('./orchestration-runtime-worker.mjs', import.meta.url), {workerData:{path,extensionModule:communicationExtensionModule()},execArgv:[]});
     this.ready = new Promise<void>((resolve,reject)=>{
       const failed=(error:Error)=>{this.failure??=error;reject(error);for(const request of this.pending.values())request.reject(error);this.pending.clear();};
       this.worker.on('error',failed);
@@ -53,9 +56,14 @@ export class OrchestrationRuntimeWorker implements OrchestrationRuntimeStorage {
   work(now:number):Promise<{waits:WaitTicket[];notifications:ParentNotification[]}>{return this.request('work',{now});}
   pendingAcks():Promise<string[]>{return this.request('pendingAcks');}
   acknowledge(operationId:string):Promise<void>{return this.request('acknowledge',{operationId});}
+  recordAssistantThreadAllocation(value:import('./assistant-thread-store.js').AssistantThreadAllocation):Promise<any>{return this.request('assistantAllocation',value);}
+  assistantAdmissions():Promise<any[]>{return this.request('assistantAdmissions');}
   admission(threadId:string,inputId:string):Promise<Record<string,unknown>|null>{return this.request('admission',{threadId,inputId});}
   executionAuthority(threadId:string,execution:{inputId?:string;turnId?:string}):Promise<Record<string,unknown>|null>{return this.request('executionAuthority',{threadId,execution});}
   updateExecution(value:ExecutionRequestState):Promise<void>{return this.request('updateExecution',value);}
+  personalAssistantAssignments(after:string):Promise<ReturnType<import('./personal-assistants.js').PersonalAssistants['assignments']>>{return this.request('personalAssistantAssignments',{after});}
+  synchronizeChannels<M extends string>(command:ChannelSyncCommand<M>):Promise<ChannelSyncResult<M>>{return this.request('channelSync',command);}
+  communicate(command: CommunicationCommand): Promise<CommunicationResult> { return this.request('communication',command); }
   close():Promise<void>{
     return this.closing??=(async()=>{
       this.stopping=true;

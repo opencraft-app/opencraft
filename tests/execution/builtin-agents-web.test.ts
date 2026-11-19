@@ -127,3 +127,20 @@ test("headless model setup resolves the actual server owner and advertises readi
   assert.equal(resolveHostModelSettingsPage(pages,"another-host","web"),undefined);
  }finally{await supervisor.dispose()}
 });
+
+
+test("headless model settings register without probing the personal model page", async () => {
+ const reads:string[]=[];
+ const supervisor=new ExtensionSupervisor({platform:"web",internalContributions:{platformViewRenderer:{prepare(){return {commit:()=>()=>undefined}}}}});
+ try {
+  await supervisor.activate(createHeadlessModelServicesExtension({hostId:"opencraft-server", requestHost:async()=>{throw Error("No model RPC at registration")},fetcher:async input=>{
+   reads.push(String(input));
+   if(String(input)!=="/__opencraft_model_policy")throw Error("Page-specific requests must wait for the page");
+   return Response.json({canManage:true,revision:0,rules:[]});
+  }}));
+  assert.deepEqual(reads,["/__opencraft_model_policy"]);
+  const pages=supervisor.contributions.getSnapshot().settingsPages.map(({contribution})=>contribution.id);
+  assert.ok(pages.includes("opencraft.headless-model-services"));
+  assert.ok(pages.includes("opencraft.headless-model-services.policy"));
+ }finally {await supervisor.dispose();}
+});

@@ -11,6 +11,7 @@ import type { DuplexTransport, TransportStatus } from "@opencraft/appserver-clie
 import { ClientObserverList, combineAbortSignals, TransportStatusObservers } from "@opencraft/appserver-client/transport";
 
 interface AppHostPort {
+  /** Optional local adapter capability, never sent over the message port. */
   postMessageWithProgress?(message: RendererToAppHostMessage, signal: AbortSignal | undefined, progress: TransportSendProgressOptions): void;
   postMessage(message: RendererToAppHostMessage): void;
   addEventListener(type: "message", listener: (event: MessageEvent<unknown>) => void): void;

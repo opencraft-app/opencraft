@@ -1,11 +1,14 @@
 import { createServer, type Socket } from 'node:net';
 import { chmod, unlink } from 'node:fs/promises';
 import lockfile from 'proper-lockfile';
-import { HostProcessService, TerminalCapacityError } from './process-service.js';
+import { timingSafeEqual } from 'node:crypto';
+import { HostProcessService, TerminalCapacityError, type PreparedProcessIdentity } from './process-service.js';
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from './terminal-owner-wire.js';
 
 /** Independent PTY owner. Losing every Host connection never closes a PTY. */
-export async function startTerminalPtyOwner(directory: string, endpoint: string) {
+export async function startTerminalPtyOwner(directory: string, endpoint: string, options: {
+  token?: string; prepare?: (method: string, params: unknown, identity: PreparedProcessIdentity) => Promise<PreparedProcessIdentity>;
+} = {}) {
   const release = await lockfile.lock(directory, { realpath: true, stale: 30_000, update: 5000, retries: 0 });
   const processes = new HostProcessService(), peers = new Set<Socket>(), admittedPeers = new Set<Socket>();
   const server = createServer(socket => {
@@ -15,8 +18,15 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string)
     let admitted = false;
     socket.on('error', () => {});
     socket.once('close', () => { clearTimeout(timer); peers.delete(socket); admittedPeers.delete(socket); });
+    let requests = 0;
     readOwnerFrames(socket, message => {
       if (!admitted) {
+        const validToken = !options.token || typeof message?.token === 'string' && Buffer.byteLength(message.token) === Buffer.byteLength(options.token)
+          && timingSafeEqual(Buffer.from(message.token), Buffer.from(options.token));
+        if (!validToken) { socket.destroy(); return; }
+        if (message?.type === 'probe' && message.protocol === TERMINAL_OWNER_PROTOCOL) {
+          clearTimeout(timer); sendOwnerFrame(socket, { type: 'healthy', protocol: TERMINAL_OWNER_PROTOCOL }); socket.end(); return;
+        }
         if (message?.type !== 'attach' || message.protocol !== TERMINAL_OWNER_PROTOCOL) {
           sendOwnerFrame(socket, { type: 'incompatible' }); socket.end(); return;
         }
@@ -25,12 +35,17 @@ export async function startTerminalPtyOwner(directory: string, endpoint: string)
       }
       if (!Number.isSafeInteger(message?.id) || message.id < 1 || typeof message.method !== 'string' || !message.method.startsWith('process/')
         || !message.identity || typeof message.identity.quotaOwner !== 'string') { socket.destroy(); return; }
-      try {
-        const result = processes.dispatchPrepared(message.method, message.params, message.identity);
-        sendOwnerFrame(socket, { id: message.id, result });
-      } catch (error) {
-        sendOwnerFrame(socket, { id: message.id, error: error instanceof TerminalCapacityError ? 'capacity' : 'unavailable' });
-      }
+      if (++requests > 128) { socket.destroy(); return; }
+      void (async () => {
+        try {
+          const identity = options.prepare ? await options.prepare(message.method, message.params, message.identity) : message.identity;
+          if (socket.destroyed) return;
+          const result = processes.dispatchPrepared(message.method, message.params, identity);
+          sendOwnerFrame(socket, { id: message.id, result });
+        } catch (error) {
+          sendOwnerFrame(socket, { id: message.id, error: error instanceof TerminalCapacityError ? 'capacity' : 'unavailable' });
+        } finally { requests--; }
+      })();
     });
   });
   processes.subscribe((method, params) => {

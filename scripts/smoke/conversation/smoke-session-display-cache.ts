@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createServer } from 'vite';
-const { chromium } = await import('playwright');
+import { resolve } from 'node:path';
+const { chromium, _electron } = await import('playwright');
 const output = process.env.OPENCRAFT_DISPLAY_CACHE_EVIDENCE ?? '/tmp/opencraft-session-display-cache';
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: 'error', resolve: { dedupe: ['react', 'react-dom'] }, cacheDir: 'node_modules/.vite-display-cache-smoke', optimizeDeps: { entries: ['tests/fixtures/session-display-cache-browser.tsx'] }, server: { host: '127.0.0.1', port: 0 }, plugins: [{ name: 'display-cache-smoke', configureServer(server) { server.middlewares.use((req, res, next) => { if (req.url?.split('?')[0] !== '/')
                 return next(); res.setHeader('content-type', 'text/html'); res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/session-display-cache-browser.tsx"></script>'); }); } }] });
@@ -10,14 +11,33 @@ const results = [];
 try {
     await mkdir(output, { recursive: true });
     await vite.listen();
-    browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+    const electronPath = process.env.OPENCRAFT_ELECTRON_EXECUTABLE;
+    if (electronPath) {
+        const entry = resolve(output, 'app.cjs');
+        await writeFile(entry, `const {app,BrowserWindow}=require('electron');app.setPath('userData',__dirname+'/profile');app.whenReady().then(()=>new BrowserWindow({show:true}).loadURL('about:blank'));`);
+        const env = { ...process.env };
+        for (const key of ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS', 'DISPLAY', 'WAYLAND_DISPLAY']) delete env[key];
+        browser = await _electron.launch({ executablePath: electronPath, args: ['--ozone-platform=headless', '--ozone-override-screen-size=1600,1200', '--disable-gpu', '--disable-dev-shm-usage', entry], env });
+    } else browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
     for (const width of [390, 1100]) {
-        const page = await browser.newPage({ viewport: { width, height: 850 } });
+        const nextWindow = electronPath && width === 1100 ? browser.waitForEvent('window') : null;
+        if (nextWindow) await browser.evaluate(({ BrowserWindow }: any) => { new BrowserWindow({show:true}).loadURL('about:blank'); });
+        const page = nextWindow ? await nextWindow : electronPath ? await browser.firstWindow() : await browser.newPage({ viewport: { width, height: 850 }, hasTouch: width === 390 });
+        await page.setViewportSize({ width, height: 850 });
+        page.setDefaultTimeout(30_000);
+        const cdp = electronPath ? await page.context().newCDPSession(page) : null;
+        if (cdp) await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: width === 390 });
         const errors: string[] = [];
         page.on('pageerror', (e: Error) => errors.push(e.message));
         await page.addInitScript('window.__name=value=>value');
         await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}/`);
-        await page.getByRole('button', { name: 'Open A', exact: true }).click();
+        const open = page.getByRole('button', { name: 'Open A', exact: true });
+        if (width === 390 && cdp) {
+            await open.waitFor();
+            const box = (await open.boundingBox())!;
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + box.width / 2, y: box.y + box.height / 2 }] });
+            await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        } else if (width === 390) await open.tap(); else await open.click();
         await page.getByText('My previously viewed answer', { exact: true }).waitFor();
         const first = await page.evaluate(() => (window as any).displayBenchmark.commits.find((x: any) => x.thread === 'a'));
         assert.equal(first.frames, 2, 'first render must paint cached history before Effects');
@@ -32,9 +52,17 @@ try {
         // Only display-scope replacement is modeled here; account draft disposal has its own owner tests.
         await page.getByRole('button', { name: 'Switch account', exact: true }).click();
         await page.getByText('My previously viewed answer', { exact: true }).waitFor({ state: 'hidden' });
+        await page.evaluate(() => (window as any).displayBenchmark.returnToAccountA());
+        await page.getByText('My previously viewed answer', { exact: true }).waitFor();
+        await page.evaluate(() => (window as any).displayBenchmark.emptyThenDisconnect(true));
+        await page.getByText('My previously viewed answer', { exact: true }).waitFor({ state: 'hidden' });
+        await page.evaluate(() => (window as any).displayBenchmark.emptyThenDisconnect(false));
+        await page.waitForTimeout(100);
+        assert.equal(await page.getByText('My previously viewed answer', { exact: true }).count(), 0,
+            'loss of live history cannot resurrect an obsolete hook read receipt');
         assert.deepEqual(errors, []);
-        results.push({ width, firstRenderFrames: first.frames, authoritative: first.authoritative, accountIsolation: true, draftPreserved: true });
-        await page.close();
+        results.push({ width, firstRenderFrames: first.frames, authoritative: first.authoritative, accountIsolation: true, draftPreserved: true, staleReceiptCannotResurrect: true });
+        if (!electronPath) await page.close();
     }
     await writeFile(output + '/results.json', JSON.stringify(results, null, 2));
     console.log(JSON.stringify(results));

@@ -6,5 +6,14 @@
     "sqlChecksum": "fb71306eb94e3dfcaa57218344a6a4fa399f4da1493fa754a730b8ad1c7386f7",
     "snapshotChecksum": "ddeca1a4bcbccae318c57472b2fae5ca0a68d629474cb3ba903f302a4435986c",
     "compiledChecksum": null
+  },
+  {
+    "tag": "0001_funny_slapstick",
+    "when": 1795014768288,
+    "version": 4,
+    "sqlChecksum": "fedb951eb4bac584ce0464dda32fcb7dcda17c314f4f656ccda90508c3672ba1",
+    "snapshotChecksum": "847fe538abec83bafcd558109c661297777a7d785f23848d54cff51ea41f0d0a",
+    "compiledChecksum": "fedb951eb4bac584ce0464dda32fcb7dcda17c314f4f656ccda90508c3672ba1",
+    "ledgerName": "token-usage-open-gap-thread-index"
   }
 ]

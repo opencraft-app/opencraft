@@ -4,13 +4,13 @@ import { DatabaseSync } from "node:sqlite";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openManagedDatabase, SqliteLifecycleError } from "@opencraft/sqlite-node";
+import { openManagedDatabase, resolveStoreMigrations, SqliteLifecycleError } from "@opencraft/sqlite-node";
 import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database";
 import { OpenCraftMessageAttachments, OPENCRAFT_MESSAGE_ATTACHMENTS_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-message-attachments";
 
 const owners = [
   {
-    name: "Host state", file: "codex-host-queue.sqlite", previousVersion: 12,
+    name: "Host state", schemaId: "opencraft-host-state-database", file: "codex-host-queue.sqlite", previousVersion: 12,
     migrations: OPENCRAFT_HOST_STATE_MIGRATIONS,
     open: (root: string) => new OpenCraftHostStateDatabase(root),
     tables: ["codex_host_queue", "codex_thread_catalog", "codex_catalog_sync", "codex_bot_rooms", "codex_bot_commands", "codex_bot_message_slots"],
@@ -25,7 +25,7 @@ const owners = [
     `),
   },
   {
-    name: "Message attachments", file: "codex-message-attachments.sqlite", previousVersion: 1,
+    name: "Message attachments", schemaId: "opencraft-message-attachments", file: "codex-message-attachments.sqlite", previousVersion: 1,
     migrations: OPENCRAFT_MESSAGE_ATTACHMENTS_MIGRATIONS,
     open: (root: string) => new OpenCraftMessageAttachments(root),
     tables: ["codex_message_attachments"],
@@ -53,7 +53,7 @@ for (const spec of owners) {
     const owner = spec.open(root);
     const outcome = owner.outcome;
     assert.equal(outcome.status, "migrated");
-    assert.equal(outcome.appliedVersion, spec.migrations.at(-1)!.version);
+    assert.equal(outcome.appliedVersion, resolveStoreMigrations(spec.schemaId, spec.migrations).at(-1)!.version);
     assert.deepEqual(outcome.movedAsidePaths, []);
     assert.ok(outcome.backupPath);
     owner.close();
@@ -61,7 +61,7 @@ for (const spec of owners) {
     const currentTables = tables.map(table => spec.tables.some(name => name === table) ? table.replace(/^codex_/, "opencraft_") : table);
     assert.deepEqual(snapshot(read, currentTables), before, "all business rows survive, including preserved Bot and sender tables");
     if (ledgered) assert.deepEqual(history(read).slice(0, spec.previousVersion), ledger, "previous checksums and timestamps are immutable");
-    else assert.deepEqual(history(read).slice(0, spec.previousVersion).map(({ applied_at, ...row }) => row), ledger.map(({ applied_at, ...row }) => row));
+    else assert.deepEqual(history(read).slice(0, spec.previousVersion).map(({ applied_at: _applied_at, ...row }) => row), ledger.map(({ applied_at: _applied_at, ...row }) => row));
     for (const table of spec.tables) assert.equal(read.prepare("SELECT name FROM sqlite_master WHERE name=?").get(table), undefined);
     assert.equal(read.prepare("PRAGMA integrity_check").get()?.integrity_check, "ok");
     assert.ok(read.prepare("SELECT name FROM sqlite_master WHERE type='index'").all().every(row => !spec.tables.some(table => String(row.name).startsWith(table + "_"))));
@@ -116,7 +116,7 @@ for (const spec of owners) {
     repair.prepare("UPDATE schema_migrations SET checksum=? WHERE version=1").run(checksum); repair.close();
     const owner = spec.open(root); owner.close();
     const tamper = new DatabaseSync(path);
-    tamper.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=?").run(spec.migrations.at(-1)!.version); tamper.close();
+    tamper.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=?").run(resolveStoreMigrations(spec.schemaId, spec.migrations).at(-1)!.version); tamper.close();
     refuses();
     const read = new DatabaseSync(path, { readOnly: true });
     assert.deepEqual(snapshot(read, renamed(spec.tables)), before); read.close();

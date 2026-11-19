@@ -8,6 +8,7 @@ export interface ConversationSearchRow {
   readonly connectionHostId: string;
   readonly serverOrigin: { readonly label: string };
   readonly interactionAvailable?: boolean;
+  readonly viewTarget?: {readonly viewId:string;readonly resourceUri:string};
   readonly snippet?: string;
   readonly searchTerm?: string;
 }

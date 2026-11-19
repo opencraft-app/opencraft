@@ -1,3 +1,4 @@
+import type { ChannelSearchRegistry } from './channel-search-contribution';
 import { parseConversationRef } from "@opencraft/appserver-protocol/collaboration";
 import { continueNativeSessionInBranch, nativeSessionBusyBeforeInput } from "./native-session-recovery";
 import { readSelectionPreference, writeSelectionPreference } from "./selection-preferences";
@@ -21,9 +22,6 @@ import {
   type TasksRequestPort
 } from "@opencraft/appserver-protocol";
 import { BlobResourceService } from "@opencraft/blob-resources";
-import {
-  AppServerBotDirectory
-} from "@opencraft/bot-conversation-appserver";
 import {
   asHostId,
   createConversationKey,
@@ -131,12 +129,12 @@ export interface AppServerHostCatalog {
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly threadAttention: BrowserThreadAttention;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   /**
    * Navigation intent being hydrated. The presented Conversation remains the
@@ -145,7 +143,8 @@ export interface AppServerHostCatalog {
    */
   readonly pendingLocation: WorkbenchLocation | null;
   readonly currentLocation: WorkbenchLocation;
-  continueWithAgent(target: { hostId: string; threadId: string; historyTitle: string; agentId: string; permissionProfile: string | null; model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
+  continueWithAgent(target: { hostId: string; threadId: string; historyTitle: string; agentId: string; permissionProfile: string | null; model: string; effort: string | null; serviceTier?: string | null;
+  }): Promise<void>;
   selectHost(hostId: string, selection?: { model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
   selectConversation(location: WorkbenchLocation): Promise<boolean>;
@@ -172,7 +171,8 @@ export interface AppServerHostCatalog {
 
 export interface WebWorkbenchCommands {
   forgetThread(hostId: string, threadId: string): void;
-  continueWithAgent(target: { hostId: string; threadId: string; historyTitle: string; agentId: string; permissionProfile: string | null; model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
+  continueWithAgent(target: { hostId: string; threadId: string; historyTitle: string; agentId: string; permissionProfile: string | null; model: string; effort: string | null; serviceTier?: string | null;
+  }): Promise<void>;
   selectHost(hostId: string, selection?: { model: string; effort: string | null; serviceTier?: string | null }): Promise<void>;
   navigate(location: WorkbenchLocation, mode?: WorkbenchHistoryMode): Promise<boolean>;
   selectConversation(location: WorkbenchLocation): Promise<boolean>;
@@ -251,7 +251,7 @@ export async function refreshBundledHostProfiles(
     if (!refreshEndpoint && !refreshRoots) continue;
     await store.put({
       ...current,
-      ...(refreshEndpoint ? { providerConfig: { ...current.providerConfig as object, url: definition.url } } : {}),
+      ...(refreshEndpoint ? { providerConfig: { ...(current.providerConfig as object), url: definition.url } } : {}),
       ...(refreshRoots ? { workspaceBrowseRoots: definition.workspaceBrowseRoots } : {}),
       revision: current.revision + 1,
     });
@@ -451,12 +451,12 @@ export interface WebWorkbenchApplicationBase {
   readonly platformViewRenderers: PlatformViewRendererRegistry;
   readonly platformAccounts: PlatformAccountContributionRegistry;
   readonly applicationBranding: ApplicationBrandingRegistry;
+  readonly channelSearch: ChannelSearchRegistry;
   readonly threadBadges: ThreadBadgeContributionRegistry;
   readonly threadListGrouping: ThreadListGroupingContributionRegistry;
   readonly identityAvatars: IdentityAvatarContributionRegistry;
   readonly imageEditors?: import("./image-editor-contributions").ImageEditorContributionRegistry;
   readonly composerActionRenderers: ComposerActionRendererRegistry;
-  readonly botDirectory: AppServerBotDirectory;
   readonly sidebarLayout: SidebarLayoutStore;
   readonly hostProfiles: HostConnectionProfileStore;
   readonly hostProfileStorageError?: BrowserStorageError | null;
@@ -668,13 +668,13 @@ export function createWebWorkbenchCommands(input: {
     return activated;
   };
   const startGoal = createNewThreadGoalFlow({
-    createThread: intent => {
+    createThread: (intent) => {
       if (intent.target.type !== "new-thread") throw new Error("Expected a new conversation");
       return input.registry.getRuntime(intent.target.execution.hostId).createThread(intent);
     },
-    goals: hostId => input.registry.getRuntime(hostId).resources.goals,
-    openThread: async receipt => {
-      if (!await commands.navigate(createWorkbenchThreadLocation(receipt.hostId, receipt.threadId))) {
+    goals: (hostId) => input.registry.getRuntime(hostId).resources.goals,
+    openThread: async (receipt) => {
+      if (!(await commands.navigate(createWorkbenchThreadLocation(receipt.hostId, receipt.threadId)))) {
         throw new Error("Goal created; conversation navigation was superseded");
       }
     },
@@ -695,7 +695,7 @@ export function createWebWorkbenchCommands(input: {
         || current.location.key.threadId !== threadId || (pending && !equalWorkbenchLocation(pending, current.location))) return;
       input.navigation.forgetView(current.routeScopeId);
       const surface = current.applicationRoute;
-      const cwd = input.hostProfiles.getSnapshot().profiles.find(profile => profile.hostId === hostId)?.workspaceBrowseRoots[0] ?? null;
+      const cwd = input.hostProfiles.getSnapshot().profiles.find((profile) => profile.hostId === hostId)?.workspaceBrowseRoots[0] ?? null;
       commands.navigateToHome({ execution: { hostId: asHostId(hostId), workspace: {
         cwd, runtimeWorkspaceRoots: cwd ? [cwd] : [],
       } }, mode: "replace" });
@@ -734,18 +734,27 @@ export function createWebWorkbenchCommands(input: {
       const epoch = ++hostSelectionEpoch;
       const origin = input.navigation.getSnapshot().revision;
       input.activation.cancelPending();
-      if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && isNewConversationHost(profile))) throw new Error("此连接当前不可用于新建聊天。");
+      if (!input.hostProfiles.getSnapshot().profiles.some((profile) => profile.hostId === hostId && isNewConversationHost(profile))) throw new Error("此连接当前不可用于新建聊天。");
       const activeDraft = input.scopes.getActiveDraft();
       if (activeDraft !== null && draftSubmissionOwnsNavigation(activeDraft.phase)) {
         throw new Error("The execution node cannot change while the first turn is being submitted");
+      }
+      if (
+        activeDraft &&
+        activeDraft.target.execution.hostId !== hostId &&
+        (activeDraft.target.execution.environment || activeDraft.target.execution.workspace.source)
+      ) {
+        throw new Error(
+          "Choose an empty Host workspace before changing Host. Your current environment and source have been retained.",
+        );
       }
       let runtime: AppServerWorkbenchRuntime;
       try { runtime = await input.registry.ensureConnected(hostId); }
       catch (error) { if (epoch !== hostSelectionEpoch) return; throw error; }
       const profiles = input.hostProfiles.getSnapshot().profiles;
       const sameMachine = activeDraft !== null && sameWorkInMachine(
-        profiles.find(profile => profile.hostId === activeDraft.target.execution.hostId),
-        profiles.find(profile => profile.hostId === hostId), input.environmentDirectory?.getSnapshot().entries);
+        profiles.find((profile) => profile.hostId === activeDraft.target.execution.hostId),
+        profiles.find((profile) => profile.hostId === hostId), input.environmentDirectory?.getSnapshot().entries);
       let workspace = activeDraft?.target.execution.workspace ?? { cwd: null, runtimeWorkspaceRoots: [] };
       if (!sameMachine && workspace.cwd !== null) {
         const resolved = await resolveWorkInWorkspace(workspace, runtime.resources, () => epoch === hostSelectionEpoch
@@ -753,7 +762,7 @@ export function createWebWorkbenchCommands(input: {
         if (resolved === null) return;
         workspace = resolved;
       }
-      if (!input.hostProfiles.getSnapshot().profiles.some(profile => profile.hostId === hostId && isNewConversationHost(profile))) return;
+      if (!input.hostProfiles.getSnapshot().profiles.some((profile) => profile.hostId === hostId && isNewConversationHost(profile))) return;
       if (epoch !== hostSelectionEpoch || origin !== input.navigation.getSnapshot().revision
         || input.scopes.getActiveDraft()?.id !== activeDraft?.id
         || input.scopes.getActiveDraft()?.target !== activeDraft?.target) return;
@@ -779,7 +788,7 @@ export function createWebWorkbenchCommands(input: {
           if (nextComposer && previousComposer) {
             const previous = previousComposer.getSnapshot().draft;
             nextComposer.dispatch({ type: "replace-content", document: previous.document,
-              attachments: previous.attachments.map(attachment => {
+              attachments: previous.attachments.map((attachment) => {
                 const interrupted = attachment.lifecycle === "pending" || attachment.lifecycle === "uploading" || attachment.lifecycle === "processing";
                 const movedHostFile = !sameMachine && attachment.uri?.startsWith("file:") === true;
                 return { ...attachment,
@@ -1012,8 +1021,8 @@ export function createWebWorkbenchCommands(input: {
             void input.queryClient.invalidateQueries({ queryKey: ["appserver", target.key.hostId, "threads"] });
             return child.id;
           },
-          open: childId => commands.navigate(createWorkbenchThreadLocation(target.key.hostId, childId)),
-          submit: next => {
+          open: (childId) => commands.navigate(createWorkbenchThreadLocation(target.key.hostId, childId)),
+          submit: (next) => {
             const childLease = input.coordinator.getActiveThreadLease();
             if (!childLease || next.target.type === "new-thread" || childLease.threadId !== next.target.key.threadId) throw new Error("New conversation is not ready");
             return childLease.submit(next);
@@ -1043,7 +1052,7 @@ export function createWebWorkbenchCommands(input: {
       if (submission?.handoff) {
         const continuation = handoffDrafts.get(submission.commandId);
         if (!continuation || continuation.origin !== input.navigation.getSnapshot().revision || continuation.scope !== input.displayContinuity.getScope()) throw new Error("Handoff navigation was superseded");
-        if (!await commands.navigate(createWorkbenchDraftLocation(receipt.hostId, draftId))) throw new Error("Handoff navigation was superseded");
+        if (!(await commands.navigate(createWorkbenchDraftLocation(receipt.hostId, draftId)))) throw new Error("Handoff navigation was superseded");
         continuation.origin = input.navigation.getSnapshot().revision;
       }
       await commands.promoteDraft(draftId, receipt);

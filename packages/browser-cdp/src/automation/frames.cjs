@@ -2,6 +2,7 @@
 const { failure } = require('./errors.cjs');
 function createFrames(transport, sessions, worldName) {
   const initialized = new Set(), worlds = new Map();
+  let documentGeneration = 0;
   const unsubscribe = transport.subscribe(event => {
     const session = event.sessionId || '';
     for (const [id, world] of worlds) {
@@ -48,7 +49,7 @@ function createFrames(transport, sessions, worldName) {
         const result = await call.send('Page.createIsolatedWorld', {
           frameId: frame.id, worldName, grantUniveralAccess: false,
         }, frame.session || undefined);
-        world = { ...frame, contextId: result.executionContextId };
+        world = { ...frame, contextId: result.executionContextId, documentId: `${worldName}:${++documentGeneration}` };
         worlds.set(frame.id, world);
       }
       return world;

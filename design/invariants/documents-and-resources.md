@@ -5,12 +5,24 @@
 ## Image preview gestures
 
 Web image previews share a bounded local pinch/rotate/pan viewport. Scaling spans 0.2–5× the fitted size;
-rotation and scaling preserve the two-finger anchor, with rotated bounds for pan. Lightboxes use the
+rotation and scaling preserve the two-finger anchor, with rotated bounds for pan.
+Double click/tap on the image toggles between 3× and the fitted scale around the clicked
+screen position while retaining rotation; viewport bounds take precedence when the image would
+expose extra empty space. Small tap jitter does not pan. Continuous rotation can cross multiple
+full turns without angular discontinuities. A single click/tap never changes scale. Dragging, multi-pointer gestures,
+long presses and cancelled pointers never count as taps. Rotation snaps within 5° of each
+quarter turn and holds until the raw gesture moves more than 8° away.
+Lightboxes use the
 full available screen as that viewport, never the initial image rectangle;
 embedded resources retain the panel boundary. Manipulation never
 changes the document, page scale, source or active gallery index. Preview controls
 remain outside the transformed image and reachable at every scale; cancelling a
 pointer ends its participation without closing the modal or starting navigation.
+The fixed preview viewport owns pointer capture; moving gallery pages are paint-only.
+A new contact anywhere in the viewport interrupts settling before sampling its live offset,
+including the incoming page. Held reversals follow that offset continuously; release
+resolves from the total visible displacement, and cancellation or vertical rejection
+returns to the selected page without a late navigation commit.
 
 
 
@@ -29,9 +41,19 @@ Changing node construction must not create a second resource or identity owner.
 - 图片选中即在输入卡片内显示方形缩略图；处理中、失败和删除均原位反馈。触控删除始终可见，不能依赖 hover；处理中不宣称网络上传百分比，失败图片不允许发送。
 - 已发送图片由 Timeline 及媒体加载边界投影。缩略图进入图片查看器，不绕过通用链接策略来打开 `data:` URL；查看器按原资源身份加载并在关闭后恢复焦点。
 
+## 文件浏览与文档会话
+
+- 浏览标签的入口资源身份不可变，当前位置及行列属于导航回执；标题与恢复位置同步。工作区 owner/Host/path 下共享文档草稿，浏览状态按标签隔离。
+- 编辑模式与 dirty 分开。保存只确认提交时的文本，后续输入继续保留；保存前复读拒绝已观察到的冲突，当前协议不提供原子条件写入。
+- dirty/saving 文档使相关标签不可关闭并退出临时预览替换；“未保存”入口可定位每份草稿，保存或丢弃后才恢复关闭。scope 释放为最终销毁，未声称草稿跨进程持久化。
+- 读取失败有缓存时保留编辑器；监听按读取作用域共享并精确失效。搜索按查询意图持有可释放 lease，旧回调不得覆盖当前结果。
+- 触控行高来自共享命中区域 token，虚拟窗口、行位置和滚动定位消费同一测量值；目录和搜索错误提供重试。
+- 文件路径导航保持各级按钮的内容宽度，超出容器时横向滚动；当前位置变化或隐藏面板获得宽度时，仅滚动路径栏使当前文件可见，不滚动页面或重建编辑器。长目录名不能溢出到相邻按钮。回归：`OPENCRAFT_OVERVIEW_CONFIRMATION_ONLY=1` 的 `scripts/smoke/shell/smoke-tab-overview.ts`，含旧压缩样式负控与键盘导航。
+- 证据：`tests/shell/workspace-sessions.test.ts`、`tests/shell/workbench-panels.test.ts`、真实 AppShell/编辑器 Chromium 键鼠及触控模拟 `scripts/smoke/resources/smoke-workspace-file-tree.ts`。物理手机和已部署 Host 未验证。
+
 ## Markdown 文件预览
 - 文件标题栏提供文件树显隐开关；收起后内容占满宽度，树保持挂载以保留展开、搜索和滚动位置，不重建预览或编辑器。只读嵌入预览仍无目录入口。验证：`scripts/smoke/resources/smoke-file-tree-toggle.ts`。
-- 文件树的目录数据归Host作用域Query缓存，展开/键盘活动项/滚动归当前面板；按数据版本排序、展开分支拍平，DOM仅挂载可视窗口和overscan。侧栏/聊天更新不得触发未变化目录排序或每目录会话订阅。隐藏和搜索保留展开/滚动，键盘上下/Home/End/左右/Enter与选中文件仍可达；目录折叠后迟到数据不恢复子行。验证：`tests/resources/workspace-file-tree-model.test.ts`、`scripts/smoke/resources/smoke-workspace-file-tree.ts`。
+- 文件树的目录数据归Host及读取代次作用域Query缓存，展开/键盘活动项/滚动归当前面板；按数据版本排序、展开分支拍平，DOM仅挂载可视窗口和overscan。侧栏/聊天更新不得触发未变化目录排序或每目录会话订阅。隐藏和搜索保留展开/滚动，键盘上下/Home/End/左右/Enter与选中文件仍可达；目录折叠后迟到数据不恢复子行。验证：`tests/resources/workspace-file-tree-model.test.ts`、`scripts/smoke/resources/smoke-workspace-file-tree.ts`。
 - 下载按钮沿用文件标题栏同排操作的尺寸、图标和反馈样式；不单独放大下载控件或为它撑高标题栏。
 - 文件预览标题栏右侧提供下载原文件；包括空文件、图片和不可预览的二进制。下载使用当前 Host/path/runtime generation 下已读取的 Blob 和文件名，不导出渲染 HTML 或未保存编辑草稿，不写回 Host。读取未完成、读取失败或旧资源 URL 尚未替换时禁用；切换身份/关闭释放 URL。只读内嵌预览同样允许下载。
 - 文件面板默认将 `.md` / `.markdown`（大小写不敏感）交给既有 WebChatDocument 排版，可切换到原始文本；不将原始 HTML 注入 DOM。相对文件链接与图片以当前文件目录解析，继续消费当前 Host 的资源接口和 Blob lease。
@@ -195,6 +217,12 @@ Legacy Word uses the same retained read-only preview identity, with local Worker
   active draft, attachment/source identity. Neither path submits a message. Crops,
   quarter turns and strokes share one undo/redo history; source pixels stay immutable
   within the editor. Pixelation is composited into the exported image.
+- Sent and generated image previews reuse this editor through a captured Composer
+  destination. Done appends a new image to that draft and focuses its input, preserving
+  existing text and attachments; it never rewrites history or submits a message.
+  Cancel returns to the selected preview. A missing editor/destination hides the
+  edit action; stale routes, drafts, upload resolvers or disposed Views reject results.
+  The preview uses an icon action without additional instructions or confirmation.
 
 - Image editing is touch-first: a second finger cancels unfinished ink/crop/placement; pinch/pan changes only viewport, with no editing until all fingers release. Undo/export use native document pixels. Keyboard resize preserves the same editing transaction and keeps tools in the visual viewport.
 
@@ -203,3 +231,78 @@ Image annotation text is entered at the tapped image position with a native mult
 ## Generated image pending feedback
 
 - Generated-image pending feedback stays visible against the conversation canvas in light, dark and custom themes. Its skeleton derives from the current foreground rather than a raised surface that can equal the canvas; reduced motion keeps the same visible footprint without pulsing. The media owner retains its existing progress semantics and lifecycle.
+
+## Panel attachment directory and resource ownership
+
+`WorkbenchPanelService` owns the displayed attachment list for each panel owner.
+Overview counts subscribe directly to that list; presentation context carries the
+subscription identity, never a separately maintained count. Main chat and the
+create-tool card are not resource tabs and do not contribute to the count.
+
+A plugin may provide a complete synchronous `tabDirectory` for its own kind and
+owner. The service subscribes before reading, coalesces notifications and applies
+one reconciled projection. A successful empty directory removes those attachments;
+a failed or invalid read preserves the last list. Absence never invokes
+`disposeTab`. Other kinds, existing ordering, selection and visibility survive.
+Unchanged reads do not publish. Connection recovery requests another read through
+`refreshOwnerResources`; this is local directory reconciliation, not a durable
+cross-device revision or transport protocol.
+
+Explicit close still delegates to the plugin's existing resource semantics.
+Closed IDs are suppressed until explicit reopen or owner eviction, so delayed
+hydration cannot resurrect a just-closed tab. Hydration for a directory-backed
+plugin rereads its current directory rather than applying a stale returned array.
+Owner/plugin disposal invalidates queued callbacks and hydration results.
+
+Terminal subscriptions follow the resource owner, including an explicitly bound
+panel owner with a different identity. Projection eviction does not terminate the
+PTY; explicit terminal close retains its existing termination behavior. Browser
+logical attachment intent is separate from physical panel projections and from
+background pages: `visible:false` pages remain usable resources without counting
+as tabs. Attachment intent survives projection eviction and metadata reload;
+legacy browser records without an attachment flag retain their prior visible
+behavior. File and side-chat attachments continue to be owned by panel state;
+resource providers cannot delete them through another kind's directory.
+
+Evidence: `tests/shell/panel-conversation-ownership.test.ts`,
+`tests/chat/conversation-terminal.test.ts`,
+`tests/browser/browser-conversation-resources.test.ts`, and
+`OPENCRAFT_OVERVIEW_SUBSCRIPTIONS_ONLY=1` in `smoke-tab-overview.ts`.
+
+### Default tool pane width and explicit resize preference
+
+The Shell owns the right pane's geometry. Full Workbench and embedded chat start
+with the compact size policy, capped at the shared 640px preferred width. An
+unset preference recomputes from available container space; opening a resource
+or changing tabs cannot turn default geometry into a saved preference.
+
+Only completed pointer/keyboard resize commits the normalized split position to
+the installation UI-preference store. Cancelled gestures and magnetic close
+restore the starting preference; fullscreen and responsive suppression do not
+write it. Explicit widths may exceed the default cap within current layout
+bounds. Resetting the divider clears the explicit position. Web and desktop
+consume the same preference contract through their existing storage adapters.
+
+### Directory browsing density
+
+The file pane's container owns the single/split-column breakpoint. Wide panes
+use compact directory rows; shared touch hit targets still apply. Narrow panes
+retain the larger drill-in list. The tree's workspace search is primary in split
+view; the current-folder filter is disclosed on demand and remains visible while
+active. Resizing changes presentation without replacing the directory session,
+filter, selected path, draft or scroll receipts. File rows open files and do not
+show a directory-navigation chevron.
+
+## Side chat creation recovery
+
+Creation validates metadata readiness before allocating a child. A failed save
+keeps its child, lease and original error in the creation panel; Retry saves
+the same child rather than forking again. Cleanup does not delay reporting a
+preparation error. Metadata fields retain independent write ordering and a
+Sidechat save waits for its own accepted mutation and fresh projection, not
+unrelated writes. Concurrent directory additions merge their binding intents
+under immutable identity and close-wins rules. Authorization failures remain
+terminal; rejected mutations do not poison every later save. Regression evidence:
+`tests/browser/sidechat-concurrency.test.ts`, `tests/browser/offline-remote-storage.test.ts`,
+`tests/shell/side-chat-refresh.test.ts`. Browser failure/retry presentation must
+retain the same attempt identity across touch and keyboard operation.

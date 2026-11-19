@@ -91,7 +91,10 @@ not echo commands, credentials or environment values.
 Deployment assembly explicitly selects the provider and policy for engine execution.
 Unconfigured Hosts retain existing behavior and do not claim sandbox containment.
 A selected uninstalled provider rejects execution instead of falling back to host
-execution. An E2B production adapter is not included.
+execution. An optional `@opencraft/sandbox-e2b` execution adapter is included, but is not
+automatically registered in engine or Bot assembly. Its transport, resource and
+lifetime scope is documented in [the E2B adapter](../packages/sandbox-e2b/README.md).
+Provider tests must not be described as complete production Bot integration.
 
 The independent durable terminal owner keeps its existing process RPC and lifetime.
 This integration does not route that separate Workbench terminal owner through
@@ -130,6 +133,25 @@ has no automatic local fallback. Existing retained generations require a managed
 deployment policy to apply equivalent limits until they retire.
 
 The three-container Docker assembly selects the `hands-unix` backend for Codex.
+Workspace files also belong to Hands. The Gateway's local Host `fs/readDirectory`,
+`fs/getMetadata`, `fs/readFile`, `fs/writeFile` and `fs/createDirectory` requests
+use the private authenticated Hands filesystem owner, independently of the engine.
+Raw AppServer and leased AppHost ingress apply the same current human/instance
+authority. SSH Hosts keep their existing remote route. Preview and download bytes
+use that same owner through a streaming data plane, with cancellation and access
+revocation; file bodies need not occupy the chat WebSocket. The owner bounds IO
+concurrency to four operations, queues up to 64 additional requests, and serializes
+writes to the same resolved path. Unsupported file operations and owner loss do
+not fall back to Brain's filesystem. This preserves `include_local = false` for
+the Native execution environment. Recreating Hands still ends its active PTYs,
+browser workers and execution leases; a Gateway reconnect alone does not.
+Existing installations may adopt the filesystem owner online through
+`scripts/container-deployment/supervise-files.mjs`: the host supervisor verifies
+an immutable owner bundle and runs it inside the existing Hands container as its
+configured user. It retains the terminal and Native execution connections and
+restarts the file owner after a Hands restart. An already healthy integrated
+owner takes precedence. Supervised owners close when their private stdin closes.
+
 AppServer and its writable `CODEX_HOME` remain in Brain; the sandbox runner opens
 a private authenticated Unix connection and Hands launches only the pinned
 `codex exec-server --listen stdio` vector. Hands rejects other commands, paths
@@ -139,6 +161,18 @@ cgroup. One connection is one non-replayable execution lease. Disconnect or
 owner shutdown terminates the whole process group; an unacknowledged create or
 cleanup remains unknown and retains admission capacity. Account, AppServer and
 Host databases are not mounted into Hands.
+
+Hands publishes an ephemeral execution-owner incarnation in its private probe.
+Brain observes it independently of health checks. After a ready new incarnation
+appears, Brain terminates the old Codex AppServer process group and waits for its
+exit before starting a replacement, leaving account Core, DSH, Gateway and
+persisted threads in place. This is intentional Native connection invalidation:
+the shipped Native stdio transport does not reconnect across an executor loss.
+A probe timeout alone never authorizes replacing the writer. The old bridge
+resolves its process-exit wait on transport loss but keeps cleanup unconfirmed;
+it must not release admission capacity or replay any command. On reconnect the
+client reconciles persisted thread state; this lifecycle recovery never resends
+conversation input or old tool calls.
 
 A Linux `parentSlice` must already have finite CPU, memory and task limits. It
 provides a shared kernel ceiling across independent engine controllers; a

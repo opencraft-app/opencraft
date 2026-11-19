@@ -46,6 +46,7 @@ test("dynamic browser tools authorize logical Tab IDs, then operate their Pages"
   const pages = {
     setSessionClosedHandler() {},
     setNewWindowHandler() {},
+    setSessionClosedHandler() {},
     openExternalIfRequired() { return false; },
     create(input: { ownerId: string }) {
       createdOwners.push(input.ownerId);
@@ -77,9 +78,12 @@ test("dynamic browser tools authorize logical Tab IDs, then operate their Pages"
   const workbench = new BrowserWorkbenchCoordinator(pages as never, panels as never, bindings);
   try {
     workbench.bindView(ownedScope, "view-owned");
+    // Ownership unit fixture supplies the paint acknowledgement; real mounting
+    // and frame timing are covered by the foreground/product route acceptance.
+    workbench.waitForConversationPresentation = async () => true;
     const host = new WebBrowserDynamicToolHost(pages as never, workbench);
     const context = { hostId: "host-1", threadId: "thread-1", turnId: "turn-1", callId: "call-1" };
-    const opened = await host.open(context, { url: "http://127.0.0.1:5173/" }) as { tabId: string };
+    const opened = await host.open(context, { url: "http://127.0.0.1:5173/", visible: true }) as { tabId: string };
     const other = workbench.open("scope-other");
 
     const listed = await host.browserUse(context, { action: "list_tabs" }) as { tabs: readonly { tabId: string }[] };

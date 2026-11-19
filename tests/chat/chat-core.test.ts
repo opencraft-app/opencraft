@@ -3867,3 +3867,19 @@ test("text-only projections reuse immutable locator indexes; topology changes re
   mutate([]);
   assert.equal(project().anchorFrameIds.size, 0);
 });
+
+test("resource images retain the host path and only trusted-shaped bounded dimensions", () => {
+  for (const dimensions of [{ width: 1536, height: 1024 }, { width: 0, height: 10 }, { width: 1.1, height: 10 }, { width: 32768, height: 32768 }, { width: "48", height: 32 }]) {
+    const snapshot = projectTimeline(source([{ id: "images", status: "complete", items: [{ id: "image", type: "imageGeneration", payload: {
+      result: null, src: "/delivered/immutable-resource", savedPath: "/native/original.png", status: "completed", imageDimensions: dimensions,
+      historyDetail: { cursor: "transcript:epoch:1" },
+    } }] }]), createDefaultTimelineProjectorRegistry());
+    const block = snapshot.frames.flatMap(f=>f.blocks).find(b=>b.type==="image");
+    assert.equal(block?.type,"image"); if (block?.type!=="image") throw Error("Image missing");
+    assert.equal(block.uri,"/delivered/immutable-resource"); assert.equal(block.savedPath,"/native/original.png");
+    assert.deepEqual(block.dimensions, dimensions.width===1536?dimensions:undefined);
+    assert.equal(JSON.parse(block.historyDetail!).cursor,"transcript:epoch:1");
+  }
+});
+
+

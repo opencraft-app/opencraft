@@ -55,7 +55,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     || (currentAgentId === null ? "" : currentAgentId === "dsh" || currentAgentId === "api" ? apiLabel : brands[currentAgentId]?.name || currentAgentId);
   const currentTagLabel = intl.formatMessage({ id: "composer.agent.currentTag", defaultMessage: "Current conversation" });
   const groups = catalog?.agentGroups?.length ? catalog.agentGroups : [{ id: "active", label: "", active: true,
-    models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, retry: catalog?.retryModels }];
+    models: catalog?.models ?? [], loading: catalog?.isFetching, error: catalog?.modelError, errorKind: catalog?.modelErrorKind, retry: catalog?.retryModels }];
   type Source = { id: string; agentId: string; label: string; brand?: AgentBrand; group: typeof groups[number]; models: ComposerModelOption[] };
   let sources: Source[] = [];
   for (const group of groups) {
@@ -109,7 +109,10 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
     const node = root.current;
     if (!node) return;
     const active = node.ownerDocument.activeElement;
-    if (!(active instanceof Node) || !node.contains(active)) return;
+    // The popup can receive focus before this optional module arrives. Move
+    // that same focus lease to its first control, never steal editor/touch or
+    // another surface's focus after a late import.
+    if (!(active instanceof Node) || (!node.contains(active) && active !== node.closest('[role="menu"]'))) return;
     node.querySelector<HTMLElement>(view === "effort" ? '[role="slider"]' : 'input[type="search"]')?.focus({ preventScroll: true });
   }, [view]);
   const sourceIcon = (brand: AgentBrand | undefined) => brand
@@ -223,7 +226,7 @@ export function ComposerModelMenu({ catalog, selected, onSelect, effort, onEffor
         {family === selectedFamily ? <CheckIcon size={16} aria-hidden="true" /> : null}
       </Menu.Item>)}
       {query.trim() && !matches.length && families.length ? <div className="opencraft-composer-selection-menu__status"><FormattedMessage id="composer.model.noResults" defaultMessage="No models match your search." /></div> : null}
-      {source.group.loading || source.group.error || source.models.length === 0 ? <ModelCatalogStatus loading={source.group.loading} error={!!source.group.error} retry={source.group.retry} /> : null}
+      {source.group.loading || source.group.error || source.models.length === 0 ? <ModelCatalogStatus loading={source.group.loading} error={!!source.group.error} errorKind={source.group.errorKind} retry={source.group.retry} /> : null}
       {switchingAgentId === source.group.id ? <div className="opencraft-composer-selection-menu__status" role="status"><FormattedMessage id="workIn.switchingAgent" defaultMessage="Switching Agent…" /></div> : null}
       {agentSelectionError?.id === source.group.id ? <div className="opencraft-composer-selection-menu__status is-error" role="alert">{agentSelectionError.message}</div> : null}
       {!source.group.loading && !source.group.error && source.models.length > 0 && selected !== null && !groups.some(group => group.active && group.models.some(model => model.value === selected || model.id === selected)) ? <div className="opencraft-composer-selection-menu__status is-error"><FormattedMessage id="composer.model.unavailable" defaultMessage="The selected model is unavailable. Choose another model." /></div> : null}

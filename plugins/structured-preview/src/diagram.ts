@@ -1,7 +1,6 @@
 import type { WebPreviewDocument } from "@opencraft/file-preview-web";
 import DOMPurify from "dompurify";
 import { createSvgViewport } from "./svg-viewport";
-import "./preview.web.scss";
 
 export async function openDiagram(input: { blob: Blob; name: string; signal: AbortSignal }): Promise<WebPreviewDocument> {
   const source = await input.blob.text(); input.signal.throwIfAborted();

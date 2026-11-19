@@ -1,3 +1,5 @@
+import { ArtifactCatalog, artifactFileBody, inspectArtifactFile } from "@opencraft/local-agent-host/artifacts";
+import { Readable } from "node:stream";
 import { createReadStream } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -10,6 +12,7 @@ export const SSH_ATTACHMENT_SFTP_THRESHOLD = 10 * 1024 * 1024;
 
 export interface SshAttachmentStorage {
   readonly directory: string;
+  readonly artifactDirectory?: string;
   /** Stable installation Server + endpoint identity, not a connection generation. */
   readonly namespace: string;
   readonly files: Pick<SshFileTransfer, "upload" | "download" | "commit" | "protectDirectory" | "close">;
@@ -33,6 +36,38 @@ const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex
 export class SshAttachmentStagingService {
   readonly capability = LOCAL_ATTACHMENT_STAGING_CAPABILITY;
   private root: string | null = null;
+  private catalogValue?: ArtifactCatalog;
+  get catalog() { return this.catalogValue ??= new ArtifactCatalog(this.storage.artifactDirectory ?? join(this.storage.directory, ".catalog")); }
+  private identity(id: string) { return { scope: `ssh-upload:${this.storage.namespace}`, key: JSON.stringify([this.requireRoot(), id]) }; }
+  private referenceOwner(id: string) { return JSON.stringify(["ssh-attachment", this.storage.namespace, this.requireRoot(), id]); }
+
+  private async registerArtifact(manifest: Manifest, source: Buffer | string) {
+    const identity = this.identity(manifest.ref.id), owner = this.referenceOwner(manifest.ref.id);
+    const existing = this.catalog.get(this.catalog.id(identity));
+    if (existing) {
+      const actual = await inspectArtifactFile(existing.path);
+      if (actual.sha256 !== manifest.contentSha256 || actual.size !== manifest.ref.size || existing.name !== manifest.ref.name || existing.mimeType !== manifest.ref.mimeType) throw Error("Registered SSH attachment content changed");
+      this.catalog.retain(existing.id, owner, manifest.ref.id);
+      return;
+    }
+    await this.catalog.ingest(identity, { name: manifest.ref.name, mimeType: manifest.ref.mimeType, origin: "upload" },
+      typeof source === "string" ? artifactFileBody(source) : Readable.from([source]),
+      { maxBytes: this.capability.maxBytes, size: manifest.ref.size, sha256: manifest.contentSha256, reference: { owner, slot: manifest.ref.id } });
+  }
+  /** Spool one remote execution file locally for cataloguing; the spool is removed on dispose. */
+  async readRemoteFile(path: string, signal?: AbortSignal): Promise<{ body: Readable; dispose(): Promise<void> }> {
+    if (this.closed) throw new Error("SSH attachment staging is closed");
+    if (!posix.isAbsolute(path) || /[\r\n\0]/u.test(path)) throw new Error("Invalid remote generated file path");
+    signal?.throwIfAborted();
+    const temp = await mkdtemp(join(this.storage.directory, ".generated-"));
+    const dispose = () => rm(temp, { recursive: true, force: true });
+    try {
+      const local = join(temp, "content");
+      await this.storage.files.download(path, local, 30 * 60_000);
+      signal?.throwIfAborted();
+      return { body: artifactFileBody(local), dispose };
+    } catch (error) { await dispose(); throw error; }
+  }
   private readonly operations = new Map<string, Promise<unknown>>();
   private closed = false;
   private readonly uploads: AttachmentUploadStore;
@@ -110,12 +145,14 @@ export class SshAttachmentStagingService {
         if (size !== manifest.ref.size || hash.digest("hex") !== manifest.contentSha256) {
           throw new Error("Remote attachment content does not match its committed bytes");
         }
+        await this.registerArtifact(manifest, local);
         return;
       } finally { await rm(temp, { recursive: true, force: true }); }
     }
     if (bytes.length !== manifest.ref.size || sha256(bytes) !== manifest.contentSha256) {
       throw new Error("Remote attachment content does not match its committed bytes");
     }
+    await this.registerArtifact(manifest, bytes);
   }
 
   async stage(request: AttachmentStageParams): Promise<AttachmentStageResponse> {
@@ -195,6 +232,7 @@ export class SshAttachmentStagingService {
       if (this.storage.isRetained?.(id)) throw new Error("Sent attachments cannot be removed from history");
       await this.saveManifest({ ...manifest, phase: "pending-removal" });
       await this.storage.request("fs/remove", { path: this.remoteDirectory(id), recursive: true, force: true });
+      this.catalog.release(this.referenceOwner(id));
       await rm(this.manifestPath(id), { force: true });
       return { removed: true };
     });
@@ -228,5 +266,6 @@ export class SshAttachmentStagingService {
     await this.storage.files.close();
     await this.uploads.close();
     await Promise.allSettled([...this.operations.values()]);
+    this.catalogValue?.close();
   }
 }

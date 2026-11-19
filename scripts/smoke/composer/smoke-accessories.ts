@@ -1,0 +1,230 @@
+import assert from "node:assert/strict";
+import { mkdir, writeFile, readFile } from "node:fs/promises";
+import { createServer } from "vite";
+const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const output = process.env.OPENCRAFT_ACCESSORY_OUTPUT ?? "/tmp/opencraft-accessories";
+const source = `
+import React,{useEffect,useState}from'react';import{createIntlTestRoot}from'/tests/fixtures/intl-root.tsx';
+import{useUiPreferencesRuntime}from'/apps/workbench-web/src/runtime/ui-preferences-runtime';import{bindInteractionDensity}from'/apps/workbench-web/src/runtime/interaction-density';
+import{OpenCraftComposer}from'@opencraft/composer-editor';import{createComposerController}from'@opencraft/composer-core';import{createConversationKey}from'@opencraft/chat-core';
+import{AssistantCopyButton,CommandBlock}from'/apps/workbench-web/src/components/conversation-renderers/activity/command-and-review-renderers';import{ForkTurnButton}from'/apps/workbench-web/src/components/conversation/fork-turn-button';
+import{GeneratedImageBlock}from'/apps/workbench-web/src/components/conversation-renderers/tool/tool-renderers';import{ConversationDocumentContext}from'/apps/workbench-web/src/components/conversation/document-context';import{CommandViewStateContext}from'/apps/workbench-web/src/components/conversation/command-view-state';
+import{initializeAppearanceTheme,setThemePreference,setAppearanceThemeId,frostThemeId}from'/apps/workbench-web/src/appearance-theme';
+import'/apps/workbench-web/src/styles/app.scss';initializeAppearanceTheme();setAppearanceThemeId(frostThemeId);
+const uri='data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="160"><rect width="240" height="160" fill="#a5bac5"/></svg>');
+const controller=createComposerController({type:'existing-thread',key:createConversationKey('fixture','accessories')},{now:Date.now,createId:()=>crypto.randomUUID()});
+function reset(){if(!controller.getSnapshot().draft.context.length)controller.dispatch({type:'add-context',reference:{id:'ref',kind:'annotation',title:'Retained context / 引用',uri:null,visible:true,metadata:{chip:true}}});for(const[id,mime,name]of[['file','text/plain','notes.txt'],['image','image/svg+xml','preview.svg']])if(!controller.getSnapshot().draft.attachments.some(a=>a.id===id))controller.dispatch({type:'add-attachment',attachment:{id,name,mimeType:mime,size:123,uri:id==='image'?uri:'data:text/plain,test',lifecycle:'ready',error:null}})}reset();let forks=0,edits=0;
+const views=new Map([['cmd',{open:true,scrollTop:0,scrollLeft:0,followOutput:true}]]);const block={id:'cmd',type:'command-execution',status:'completed',command:'printf retained-output',output:'retained-output\\n'+('long-output-'.repeat(12)),cwd:'/fixture',exitCode:0,durationMs:12,actions:[],automaticApprovalReviews:[],sourceItemIds:[]};
+function App(){const preferences=useUiPreferencesRuntime();const[theme,setTheme]=useState('light');useEffect(()=>bindInteractionDensity(document,preferences),[preferences]);window.fixture={setDensity:v=>preferences.set('interface.touchFriendly',v),theme:v=>{setTheme(v);setThemePreference(v)},reset,forks:()=>forks,edits:()=>edits,snapshot:()=>({attachments:controller.getSnapshot().draft.attachments.map(a=>a.id),context:controller.getSnapshot().draft.context.map(a=>a.id)})};return <ConversationDocumentContext.Provider value={{conversationId:'fixture',cwd:'/fixture',hostId:'fixture',theme,onEditGeneratedImage:()=>{edits++}}}><main style={{padding:12,maxWidth:760,margin:'auto'}}><h1>Accessory controls</h1><section className='thread-frame--assistant'><p>Retained assistant response / 回答</p><div className='thread-message-actions'><AssistantCopyButton value='retained response'/><ForkTurnButton fork={async()=>{forks++}}/><time>12:00</time></div><p id='next-content'>Following content stays clear</p></section><CommandViewStateContext.Provider value={views}><CommandBlock block={block}/></CommandViewStateContext.Provider><GeneratedImageBlock block={{id:'generated',type:'image',status:'completed',uri,savedPath:null,sourceItemIds:[]}}/><div className='thread-composer-region'><OpenCraftComposer controller={controller} isStreaming={false} onSubmit={()=>false} onCancel={()=>{}}/></div><input className='settings-control-input' aria-label='Semantic input' defaultValue='Retained field'/><textarea id='fallback' aria-label='Fallback field' style={{fontSize:24}} defaultValue='Authored larger text'/></main></ConversationDocumentContext.Provider>}
+createIntlTestRoot(document.getElementById('root')).render(<App/>);`;
+const vite = await createServer({
+  root: process.cwd(),
+  configFile: false,
+  publicDir: "apps/workbench-web/public",
+  logLevel: "error",
+  cacheDir: "node_modules/.vite-accessory-hit",
+  resolve: { dedupe: ["react", "react-dom"] },
+  esbuild: { jsx: "automatic" },
+  server: { host: "127.0.0.1", port: 0, hmr: false },
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom/client",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-popover",
+      "@radix-ui/react-tooltip",
+      "@tanstack/react-query",
+    ],
+  },
+  plugins: [
+    {
+      name: "accessory-fixture",
+      enforce: "pre",
+      resolveId: (id) => (id === "/probe.tsx" ? id : null),
+      load(id) {
+        if (id === "/probe.tsx") return source;
+      },
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url !== "/") return next();
+          res.setHeader("content-type", "text/html");
+          res.end(
+            '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/probe.tsx"></script>',
+          );
+        });
+      },
+    },
+  ],
+});
+let browser: any;
+const errors: string[] = [],
+  evidence: unknown[] = [];
+try {
+  await mkdir(output, { recursive: true });
+  await vite.listen();
+  browser = await chromium.launch({ headless: true });
+  for (const hasTouch of [false, true])
+    for (const theme of ["light", "dark"]) {
+      const context = await browser.newContext({ hasTouch, viewport: { width: 900, height: 1100 } });
+      const page = await context.newPage();
+      page.on("pageerror", (e) => {
+        errors.push(e.message);
+        console.log("BROWSER_ERROR", e.message);
+      });
+      await page.addInitScript(() => {
+        (window as any).__name = (v: any) => v;
+        (window as any).copies = [];
+        Object.defineProperty(navigator, "clipboard", {
+          value: {
+            writeText: async (t: string) => (window as any).copies.push(t),
+            write: async (_t: any) => (window as any).copies.push("rich"),
+          },
+          configurable: true,
+        });
+      });
+      await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as any).port}`);
+      const editor = page.locator(".opencraft-composer-editor");
+      await editor.waitFor({ timeout: 60000 });
+      await page.locator(".thread-shell-output__copy").first().waitFor({ state: "attached", timeout: 30000 });
+      await page.locator(".thread-generated-image-edit").waitFor({ state: "attached", timeout: 30000 });
+      if (process.env.OPENCRAFT_ACCESSORY_CSS) {
+        await page.evaluate(() => {
+          for (const s of document.querySelectorAll('style,link[rel="stylesheet"]')) s.remove();
+        });
+        await page.addStyleTag({ content: await readFile(process.env.OPENCRAFT_ACCESSORY_CSS, "utf8") });
+      }
+      await page.evaluate((v) => (window as any).fixture.theme(v), theme);
+      await editor.fill("Retained draft / 保留草稿");
+      await editor.evaluate((e) => ((window as any).retainedEditor = e));
+      for (const choice of ["auto", "on", "off"])
+        for (const width of [352, 900]) {
+          await page.setViewportSize({ width, height: 1100 });
+          await page.evaluate((v) => {
+            (window as any).fixture.reset();
+            (window as any).fixture.setDensity(v);
+          }, choice);
+          const touch = choice === "on" || (choice === "auto" && hasTouch);
+          await page.waitForFunction(
+            (v) => document.documentElement.dataset.uiDensity === v,
+            touch ? "touch" : "compact",
+          );
+          await page.locator(".opencraft-composer-context-chip button").waitFor();
+          const g = await page.evaluate(() => {
+            const r = (e: Element) => {
+              const b = e.getBoundingClientRect();
+              return { w: b.width, h: b.height, x: b.x, y: b.y, font: getComputedStyle(e).fontSize };
+            };
+            return {
+              ref: r(document.querySelector(".opencraft-composer-context-chip button")!),
+              file: r(document.querySelector(".opencraft-composer-attachment__actions button")!),
+              image: r(document.querySelector(".opencraft-composer-image-attachment__remove")!),
+              answer: [...document.querySelectorAll(".thread-message-actions button")].map(r),
+              lane: r(document.querySelector(".thread-message-actions")!),
+              next: r(document.querySelector("#next-content")!),
+              terminal: [...document.querySelectorAll(".thread-shell-output__copy")].map((e) => ({
+                button: r(e),
+                parent: r(e.parentElement!),
+              })),
+              edit: r(document.querySelector(".thread-generated-image-edit")!),
+              doc: document.documentElement.scrollWidth,
+              editor: r(document.querySelector(".opencraft-composer-editor")!),
+            };
+          });
+          for (const [r, compact] of [
+            [g.ref, 20],
+            [g.file, 22],
+            [g.image, 36],
+            ...g.answer.map((r) => [r, 25]),
+            ...g.terminal.map((v) => [v.button, 22]),
+          ] as any) {
+            assert.ok(
+              r.w + 0.02 >= (touch ? 44 : compact) && r.h + 0.02 >= (touch ? 44 : compact),
+              "accessory follows shared hit minimum " + JSON.stringify({ hasTouch, choice, width, r }),
+            );
+            if (!touch) assert.ok(Math.abs(r.h - compact) < 0.02);
+          }
+          assert.ok(g.edit.h + 0.02 >= (touch ? 44 : 24));
+          assert.ok(g.lane.h + 0.02 >= Math.max(...g.answer.map((r) => r.h)), "answer lane reserves target height");
+          assert.ok(g.next.y + 0.02 >= g.lane.y + g.lane.h, "next content stays clear");
+          for (const { button, parent } of g.terminal)
+            assert.ok(button.y + button.h <= parent.y + parent.h + 0.02, "terminal copy stays within its row");
+          assert.ok(g.doc <= width, "narrow containment");
+          for (const size of [14, 24]) {
+            await page.evaluate((n) => {
+              document.documentElement.style.setProperty("--typography-composer-size", n + "px");
+              document.documentElement.style.setProperty("--typography-input-size", n + "px");
+            }, size);
+            const fonts = await page.evaluate(() => ({
+              composer: parseFloat(getComputedStyle(document.querySelector(".opencraft-composer-editor")!).fontSize),
+              input: parseFloat(getComputedStyle(document.querySelector('[aria-label="Semantic input"]')!).fontSize),
+              fallback: parseFloat(getComputedStyle(document.querySelector("#fallback")!).fontSize),
+            }));
+            const expected = hasTouch && width <= 767 ? Math.max(size, 16) : size;
+            assert.equal(fonts.composer, expected, "composer minimum not ceiling");
+            assert.equal(fonts.input, expected, "semantic Input minimum not ceiling");
+            assert.equal(fonts.fallback, 24, "authored larger generic input survives");
+          }
+          await page.evaluate(() => {
+            document.documentElement.style.removeProperty("--typography-composer-size");
+            document.documentElement.style.removeProperty("--typography-input-size");
+          });
+          assert.equal(await editor.evaluate((e) => e === (window as any).retainedEditor), true);
+          assert.equal(await editor.innerText(), "Retained draft / 保留草稿");
+          if (choice === "on" && width === 352)
+            await page.screenshot({
+              path: output + "/" + theme + "-" + (hasTouch ? "touch" : "pointer") + ".png",
+              fullPage: true,
+            });
+          evidence.push({ hasTouch, theme, choice, width, geometry: g });
+        }
+      // Real existing actions, touch/keyboard, not selector-only click geometry.
+      await page.evaluate(() => (window as any).fixture.setDensity("on"));
+      const activate = async (q: string) => {
+        const el = page.locator(q).first();
+        if (hasTouch) await el.tap();
+        else {
+          await el.focus();
+          await page.keyboard.press("Enter");
+        }
+      };
+      await activate(".opencraft-composer-context-chip button");
+      assert.deepEqual(await page.evaluate(() => (window as any).fixture.snapshot().context), []);
+      await activate(".opencraft-composer-attachment__actions button");
+      assert.deepEqual(await page.evaluate(() => (window as any).fixture.snapshot().attachments), ["image"]);
+      await activate(".opencraft-composer-image-attachment__remove");
+      assert.deepEqual(await page.evaluate(() => (window as any).fixture.snapshot().attachments), []);
+      await activate(".thread-message-actions button");
+      await activate(".thread-message-actions [data-turn-fork]");
+      assert.equal(await page.evaluate(() => (window as any).fixture.forks()), 1);
+      await activate(".thread-shell-output__copy");
+      await activate(".thread-generated-image-edit");
+      assert.equal(await page.evaluate(() => (window as any).fixture.edits()), 1);
+      assert.ok((await page.evaluate(() => (window as any).copies)).length >= 2);
+      await page.evaluate(() => {
+        (window as any).fixture.reset();
+        document.documentElement.style.setProperty("--size-control-hit-min", "52px");
+      });
+      await page.locator(".opencraft-composer-context-chip button").waitFor();
+      for (const r of await page
+        .locator(
+          ".opencraft-composer-context-chip button,.opencraft-composer-attachment__actions button,.opencraft-composer-image-attachment__remove,.thread-message-actions button,.thread-shell-output__copy,.thread-generated-image-edit",
+        )
+        .evaluateAll((es) =>
+          es.map((e) => {
+            const r = e.getBoundingClientRect();
+            return [r.width, r.height];
+          }),
+        ))
+        assert.ok(r[0] + 0.02 >= 52 && r[1] + 0.02 >= 52, "shared52px token reaches every accessory");
+      await context.close();
+    }
+  assert.deepEqual(errors, []);
+  await writeFile(output + "/evidence.json", JSON.stringify(evidence, null, 2));
+  console.log(
+    "PASS accessory hit and font floors: actual Composer attachments/context, answer Copy/Fork, CommandBlock and GeneratedImageBlock; pointer/coarse auto/on/off,352/900,light/dark,14/24px fonts,52px hit token,draft continuity and keyboard/touch callbacks",
+  );
+} finally {
+  await browser?.close();
+  await vite.close();
+}

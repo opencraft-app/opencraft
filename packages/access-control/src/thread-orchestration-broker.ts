@@ -1,3 +1,9 @@
+import { parseInputCompletion } from "@opencraft/appserver-protocol";
+import type { ActorContext } from "@opencraft/identity-core/actors";
+import type { ThreadAccessStore } from "./thread-access.js";
+import { AssistantThreadAuthority } from "./assistant-thread-authority.js";
+import { codexPermissionMode } from "@opencraft/appserver-protocol";
+import { parseThreadCommand, threadDeliveryIntent } from "@opencraft/appserver-protocol/thread-command";
 import type { ProjectAutomations } from './automation-runtime.js';
 import type { Automation, AutomationRun } from './automation.js';
 import type { AutomationGrant } from './automation-ledger.js';
@@ -16,12 +22,17 @@ const text=(value:unknown,max=256)=>{
   if(typeof value!=='string'||!value.trim()||value.length>max||/[\x00-\x08\x0b\x0c\x0e-\x1f]/u.test(value))throw new CollaborationError(400,'invalid_orchestration_field');return value;
 };
 const fields=(value:Record<string,unknown>,allowed:readonly string[])=>{if(Object.keys(value).some(k=>!allowed.includes(k)))throw new CollaborationError(400,'unexpected_orchestration_field');};
+const assistantRef=(value:unknown)=>{
+  const result=parseConversationRef(text(value,2048));
+  if(!result)throw new CollaborationError(400,'invalid_reference');
+  return result;
+};
 const permissionSnapshot=(settings:Record<string,unknown>)=>JSON.stringify(canonical({permissions:settings.permissions,sandbox:settings.sandbox,approvalPolicy:settings.approvalPolicy,approvalsReviewer:settings.approvalsReviewer,runtimeWorkspaceRoots:settings.runtimeWorkspaceRoots,config:settings.config,cwd:settings.cwd}));
 const terminal=new Set(['completed','failed','exhausted','unconfirmed','interrupted_by_user']);
-// Timer sweeps re-read a child only when due: observed changes reset to 500 ms, unchanged ones back
+// Timer sweeps re-read a child only when due: changed children every 500 ms, unchanged ones back
 // off to 5 s, and a child stuck in "starting" (no first turn) for 10 min to 15 s. Each status
 // read costs a full logical-client lifecycle in the engine, so a fixed 500 ms poll of every
-// non-terminal child creates constant background load.
+// non-terminal child is a constant load (12+ clients/s with a handful of stuck children).
 export const ORCHESTRATION_POLL_MIN_MS=500,ORCHESTRATION_POLL_MAX_MS=5_000,ORCHESTRATION_STALE_STARTING_MS=10*60_000,ORCHESTRATION_STALE_STARTING_POLL_MS=15_000;
 
 /** Hub coordination over the collaboration ledger and existing Host input queue. */
@@ -43,13 +54,33 @@ export class ThreadOrchestrationBroker {
   private readonly statusReads=new Map<string,{epoch:number;promise:Promise<OrchestrationRuntimeSnapshot>}>();
   private readonly statusFailures=new Map<string,{attempts:number;dueAt:number}>();
   private readonly pacing=new Map<string,{key:string;unchanged:number;since:number;dueAt:number;state:OrchestrationRuntimeSnapshot}>();
-  constructor(readonly collaboration:Collaboration,private readonly execution:OrchestrationExecutionPort,private readonly now=Date.now,private readonly runtimeStorage:OrchestrationRuntimeStorage){}
-  start():void {if(!this.timer&&!this.closed){this.timer=setInterval(()=>{void this.reconcile(true).then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});},500);this.timer.unref();}}
-  get available():boolean{return !this.closed;}
-  stop():void{this.closed=true;if(this.timer)clearInterval(this.timer);this.pacing.clear();this.pacingEpoch.clear();this.statusFailures.clear();this.statusReads.clear();}
-  async close():Promise<void>{this.stop();await this.sweep?.catch(()=>{});await this.ackSweep?.catch(()=>{});await Promise.allSettled([...this.observations]);await Promise.allSettled([...this.calls.values()].map(call=>call.promise));}
+  constructor(readonly collaboration:Collaboration,private readonly execution:OrchestrationExecutionPort,private readonly now=Date.now,private readonly runtimeStorage?:OrchestrationRuntimeStorage){}
+  private assistant?: AssistantThreadAuthority;
+  private detachAssistant?: () => void;
+  enableAssistantThreads(access: ThreadAccessStore): void {
+    if(this.assistant || this.closed)throw Error('Assistant Thread adapter already configured or closed');
+    const authority=new AssistantThreadAuthority(this.collaboration,access);
+    const detach=this.collaboration.attachAssistantThreads(this);
+    this.assistant=authority;this.detachAssistant=detach;
+  }
+  async initializeAssistantThreads():Promise<void>{await this.assistant?.initialize();}
+  command(c:ActorContext,method:string,p:Record<string,unknown>):Promise<unknown>{
+    if(!this.assistant||this.closed)throw new CollaborationError(503,'assistant_threads_unavailable');
+    return this.assistantCommand(c,method,p);
+  }
+  allowsInput(grant:any,threadId:string):boolean{return !this.closed&&!!this.assistant?.allowsInput(grant,threadId);}
+  refreshInput(grant:any,threadId:string):Promise<void>{
+    if(!this.assistant||this.closed)throw new CollaborationError(503,'assistant_threads_unavailable');
+    return this.assistant.refreshInput(grant,threadId);
+  }
+  invalidate(threadId?:string,ownerActorId?:string,botId?:string):void{this.assistant?.invalidate(threadId,ownerActorId,botId);}
+  private get runtime(){if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');return this.runtimeStorage;}
+  start():void {if(!this.runtimeStorage)throw new CollaborationError(503,'orchestration_runtime_unavailable');if(!this.timer&&!this.closed){this.timer=setInterval(()=>{void this.reconcile(true).then(()=>{this.reportedSweepFailure=false;},()=>{if(!this.reportedSweepFailure){this.reportedSweepFailure=true;console.warn('[opencraft orchestration]',JSON.stringify({event:'orchestration-sweep-failed'}));}});},500);this.timer.unref();}}
+  get available():boolean{return !this.closed&&!!this.runtimeStorage;}
+  stop():void{this.closed=true;void this.assistant?.close();this.detachAssistant?.();this.detachAssistant=undefined;if(this.timer)clearInterval(this.timer);this.pacing.clear();this.pacingEpoch.clear();this.statusFailures.clear();this.statusReads.clear();}
+  async close():Promise<void>{this.stop();await this.sweep?.catch(()=>{});await this.ackSweep?.catch(()=>{});await Promise.allSettled([...this.observations]);await Promise.allSettled([...this.calls.values()].map(call=>call.promise));await Promise.allSettled(this.operationCalls.values());}
   async invoke(threadId:string,turnId:string,toolCallKey:string,name:string,args:Record<string,unknown>,delegationId?:string,callbackIncarnation?:string):Promise<unknown>{
-    if(this.closed)return Promise.reject(new CollaborationError(503,'orchestration_closed'));
+    if(!this.available)return Promise.reject(new CollaborationError(503,this.closed?'orchestration_closed':'orchestration_runtime_unavailable'));
     text(threadId);text(turnId);text(toolCallKey,1024);
     const authority=this.collaboration.delegation(threadId,turnId,delegationId);
     if(this.automations){const scope=await this.automations.checkDelegation(authority.id);if(scope.derived)throw new CollaborationError(403,'automation_thread_mutation_denied');}
@@ -149,11 +180,10 @@ export class ThreadOrchestrationBroker {
     };
     const mapped={...input};
     if(command==='tell') {
-      const delivery=mapped.delivery??'queue';delete mapped.delivery;
-      if(!['native','queue','interrupt'].includes(String(delivery)))throw new CollaborationError(400,'invalid_delivery');
-      // Interruption requires an atomic stop/send owner; never emulate it with queue.
-      if(delivery==='interrupt')throw new CollaborationError(409,'unsupported_delivery');
-      mapped.mode=delivery==='native'?'steer':'queue';
+      let intent;
+      try{intent=threadDeliveryIntent(mapped.delivery,mapped.expectedTurnId);}
+      catch(error){throw new CollaborationError((error as Error).message==='unsupported_delivery'?409:400,(error as Error).message);}
+      delete mapped.delivery;mapped.mode=intent.mode;
     }
     if(command==='show'||command==='tell'){mapped.threadId=target(mapped.reference);delete mapped.reference;}
     if(command==='wait'){
@@ -352,6 +382,388 @@ export class ThreadOrchestrationBroker {
     checkWait();ledger.finish(key,result);return result;
     });
   }
+  private async assistantCommand(
+    c: ActorContext,
+    method: string,
+    p: Record<string, unknown>,
+  ): Promise<unknown> {
+    if (this.closed)
+      throw new CollaborationError(503, "assistant_threads_unavailable");
+    if (method.endsWith("/threads/profiles")) {
+      fields(p, ["botId"]);
+      return this.assistant!.store(c, "human-profiles", p);
+    }
+    if (method.endsWith("/threads/sources")) {
+      fields(p, ["botId","cursor"]);
+      if (p.cursor !== undefined) text(p.cursor, 2048);
+      await this.collaboration.communicate(
+        c,
+        "personal-assistant/model-authority",
+        p.botId===undefined?{}:{botId:p.botId},
+      );
+      const result = await this.collaboration.discover(
+        c,
+        "",
+        (p.cursor ?? null) as string | null,
+      );
+      return {
+        ...result,
+        conversations: result.conversations.filter(
+          (v) =>
+            this.collaboration.execution.hostForServer?.(v.ref.serverId) ===
+              "local-codex" &&
+            this.collaboration.conversationAllowed(c, v.ref, "execution.delegate"),
+        ),
+      };
+    }
+    if (method.endsWith("/profile/set")) {
+      fields(p, ["botId","id", "reference", "expectedRevision"]);
+      text(p.id, 80);
+      const source = assistantRef(p.reference);
+      const a = await this.collaboration.communicate(
+        c,
+        "personal-assistant/model-authority",
+        p.botId===undefined?{}:{botId:p.botId},
+      );
+      const sourceAuthority = await this.assistant!.store(c, "source-authority", {
+        reference: encodeConversationRef(source),
+      });
+      const valid = () => !this.closed && this.assistant!.sourceAllowed(sourceAuthority);
+      if (!valid() || !this.execution.prepare || !this.execution.createRoot)
+        throw new CollaborationError(
+          403,
+          "assistant_thread_profile_unavailable",
+        );
+      // First version uses the local Codex driver; unsupported routing is explicit.
+      if (
+        this.collaboration.execution.hostForServer?.(source.serverId) !==
+        "local-codex"
+      )
+        throw new CollaborationError(409, "assistant_thread_host_unsupported");
+      const prepared = await this.execution.prepare(
+        "assistant-profile:" + randomUUID(),
+        source.threadId,
+        {},
+        valid,
+      );
+      if (!valid())
+        throw new CollaborationError(
+          403,
+          "assistant_thread_source_unavailable",
+        );
+      const {
+        orchestrationSourceThreadId,
+        orchestrationHostIncarnation,
+        orchestrationCrossDriver,
+        ...settings
+      } = prepared;
+      if (
+        typeof settings.permissions === "string" &&
+        !codexPermissionMode(settings.permissions)
+      )
+        throw new CollaborationError(
+          409,
+          "assistant_thread_permission_profile_unsupported",
+        );
+      this.assistant!.invalidate(undefined, c.actorId);
+      return this.assistant!.store(c, "profile-save", {
+        ...p,
+        reference: encodeConversationRef(source),
+        settings,
+        epoch: a.epoch,
+      });
+    }
+    if (method.endsWith("/profile/revoke")) {
+      fields(p, ["botId","id", "expectedRevision"]);
+      const a = await this.collaboration.communicate(
+        c,
+        "personal-assistant/model-authority",
+        p.botId===undefined?{}:{botId:p.botId},
+      );
+      this.assistant!.invalidate(undefined, c.actorId);
+      return this.assistant!.store(c, "profile-revoke", { ...p, epoch: a.epoch });
+    }
+    fields(p, ["argv", "workId"]);
+    if (p.workId !== undefined) text(p.workId, 256);
+    const cmd = parseThreadCommand(p.argv as string[]),
+      args = cmd.arguments;
+    if (cmd.command === "profiles") {
+      const result = await this.assistant!.store(c, "profiles");
+      const profiles = [];
+      for (const v of result.profiles) {
+        try {
+          await this.assistant!.check(c, v.id, v.revision);
+          profiles.push(v);
+        } catch (error) {
+          if (![403, 409].includes(Number((error as any).status))) throw error;
+        }
+      }
+      return { profiles };
+    }
+    if (cmd.command === "list") {
+      if (args.owned !== true)
+        throw new CollaborationError(400, "use_list_owned");
+      if (args.cursor !== undefined) text(args.cursor, 2048);
+      const limit = Number(args.limit ?? 50);
+      if (limit > 100) throw new CollaborationError(400, "invalid_limit");
+      const rows = await this.assistant!.store(c, "list", {
+          after: args.cursor ?? "",
+          limit,
+        }),
+        page = rows.slice(0, limit);
+      return {
+        threads: page.map((r: any) => this.assistant!.receipt(r)),
+        nextCursor: rows.length > limit ? page.at(-1).id : null,
+      };
+    }
+    if (cmd.command === "operation") {
+      const r = await this.assistant!.store(c, "operation", args);
+      const reference = r.reference ?? JSON.parse(r.args).reference;
+      if (reference) await this.assistant!.current(c, r, assistantRef(reference).threadId);
+      const delivery = await this.assistant!.store(c, "delivery", { id: r.id, native: true });
+      if (!delivery.found) return this.assistant!.receipt(r);
+      const native = await this.collaboration.execution.receipt(delivery.nativeBinding, delivery.receipt.requestId, {includeCompletion:true});
+      await this.assistant!.current(c, r, delivery.receipt.ref.threadId);
+      const persistedTurn = delivery.receipt.targetTurnId;
+      const targetTurnId = persistedTurn ?? native?.targetTurnId ?? null;
+      const completion = (!persistedTurn || !native?.targetTurnId || persistedTurn === native.targetTurnId)
+        ? parseInputCompletion(native?.completion, targetTurnId) : undefined;
+      return {
+        ...this.assistant!.receipt(r),
+        input: {
+          ...delivery.receipt,
+          targetTurnId,
+          completion: completion ?? {
+            version: 1, turnId: targetTurnId, status: "unknown", text: "", truncated: false,
+            // No native row is an observation gap, not proof of unsupported or
+            // exhausted history. Keep tracking the same durable operation.
+            ...(native == null ? {} : { unavailable: true }),
+          },
+        },
+      };
+    }
+    if (cmd.command === "stop") {
+      text(args.expectedTurnId,256);
+      const r=await this.assistant!.store(c,"target",{reference:encodeConversationRef(assistantRef(args.reference))});
+      const g=await this.assistant!.current(c,r),target=assistantRef(r.reference);
+      if(g.takenOver||!this.collaboration.conversationAllowed(g.context,target,"execution.cancel"))throw new CollaborationError(403,"assistant_task_stop_denied");
+      const state=await this.execution.snapshot(target.threadId);
+      if(state.turnId!==args.expectedTurnId)throw new CollaborationError(409,"task_turn_changed");
+      await this.assistant!.current(c,r);
+      if(["completed","failed","exhausted","interrupted_by_user"].includes(state.state))return {stopped:false,state:state.state};
+      if(!this.execution.interrupt)throw new CollaborationError(503,"task_stop_unavailable");
+      await this.execution.interrupt(target.threadId,String(args.expectedTurnId),()=>this.assistant!.sourceAllowed(g)&&this.collaboration.actors.isCurrent(c)&&this.collaboration.conversationAllowed(g.context,target,"execution.cancel"));
+      await this.assistant!.current(c,r);return {stopped:true,turnId:args.expectedTurnId};
+    }
+    if (cmd.command === "output" || cmd.command === "show") {
+      if (args.includeRecentTurns !== undefined)
+        throw new CollaborationError(400, "use_output_cursor");
+      const r = await this.assistant!.store(c, "target", {
+        reference: encodeConversationRef(assistantRef(args.reference)),
+      });
+      const g = await this.assistant!.current(c, r),
+        target = assistantRef(r.reference);
+      const history = await this.collaboration.readConversation(
+        g.context,
+        target,
+        (args.cursor ?? null) as string | null,
+        true,
+      );
+      const state = await this.execution.snapshot(target.threadId);
+      await this.assistant!.current(c, r);
+      return { ...history, state, reference: r.reference, workId: r.work_id };
+    }
+    if (!["start", "tell"].includes(cmd.command))
+      throw new CollaborationError(400, "unsupported_assistant_thread_command");
+    if (cmd.command === "start") {
+      text(args.profile, 80);
+      text(args.prompt, 16384);
+      if (args.title !== undefined) text(args.title, 256);
+    } else {
+      args.reference = encodeConversationRef(assistantRef(args.reference));
+      text(args.message, 16384);
+      try {
+        threadDeliveryIntent(args.delivery,args.expectedTurnId);
+      } catch(error) {
+        throw new CollaborationError((error as Error).message==='unsupported_delivery'?409:400,(error as Error).message);
+      }
+      // Normalize only the new alias: old persisted arguments/defaults keep their fingerprints.
+      if(args.delivery==='native')args.delivery='steer';
+      if (args.replyExpectation !== undefined)
+        throw new CollaborationError(
+          400,
+          "assistant_thread_reply_expectation_unsupported",
+        );
+      if (args.delivery === "steer") text(args.expectedTurnId, 256);
+      else if (args.expectedTurnId !== undefined)
+        throw new CollaborationError(400, "unexpected_turn");
+    }
+    const r = await this.assistant!.store(c, "accept", {
+      command: cmd.command,
+      args,
+      key: cmd.idempotencyKey,
+      workId: p.workId,
+    });
+    if (["submitted", "rejected"].includes(r.state)) return this.assistant!.receipt(r);
+    return this.coalesceOperation('assistant:'+r.id,()=>this.performAssistant(c,r));
+  }
+  private async performAssistant(c: ActorContext, r: any) {
+    // Queue acceptance and command completion are separate commits. Recover the
+    // durable queue receipt before attempting any new effect or takeover check.
+    const delivery = await this.assistant!.store(c, "delivery", { id: r.id });
+    if (delivery.found)
+      return this.assistant!.receipt(
+        await this.assistant!.store(c, "finish", {
+          id: r.id,
+          state: "submitted",
+          reference: encodeConversationRef(delivery.receipt.ref),
+          result: {
+            requestId: delivery.receipt.requestId,
+            delivery: "accepted",
+            taskOutcome: "unknown",
+            inputMode: delivery.receipt.mode,
+            ...(delivery.receipt.mode === "steer"
+              ? { expectedTurnId: JSON.parse(r.args).expectedTurnId }
+              : {}),
+          },
+        }),
+      );
+    const args = JSON.parse(r.args);
+    let g = await this.assistant!.current(c, r),
+      target = r.reference ? assistantRef(r.reference) : null;
+    if (r.command === "start" && !target) {
+      if (!this.execution.createRoot)
+        throw new CollaborationError(503, "assistant_threads_unavailable");
+      const settings = {
+        ...JSON.parse(g.profile.settings as string),
+        ...(args.title ? { orchestrationTitle: args.title } : {}),
+      };
+      const created = await this.execution.createRoot(
+        r.id,
+        settings,
+        () =>
+          !this.closed &&
+          g.expiresAt > this.collaboration.now() &&
+          this.collaboration.actors.isCurrent(c) &&
+          this.assistant!.sourceAllowed(g),
+      );
+      if ("rejected" in created)
+        return this.assistant!.receipt(
+          await this.assistant!.store(c, "finish", {
+            id: r.id,
+            state: "rejected",
+            result: {
+              reason: "native_creation_rejected",
+              status: created.rejected.status,
+            },
+          }),
+        );
+      const serverId =
+        this.collaboration.execution.serverForThread?.(created.threadId) ??
+        this.collaboration.execution.serverId!;
+      target = { serverId, threadId: created.threadId };
+      // Ownership registration is independent of sending the first input. An orphan remains findable.
+      const relation: import("./assistant-thread-store.js").AssistantThreadAllocation["relation"] =
+        {
+          threadId: created.threadId,
+          serverId,
+          driverKind: created.driverKind ?? "codex",
+          ownerActorId: g.context.actorId,
+          parentThreadId: null,
+          lifecycleOwnerThreadId: null,
+          forkedFromId: null,
+          visibility: "visible",
+          engineHostGeneration: created.generationId ?? null,
+          nativeSessionId: created.threadId,
+          runtimeStatus: "idle",
+          rootTurnId: null,
+          turnId: null,
+          delegationRevision: g.context.generation,
+          autoExchangeDepth: 0,
+          hasDirectUserInput: false,
+          userInputExcerpt: null,
+        };
+      r = await this.collaboration.recordAssistantThreadAllocation({
+        id: r.id,
+        actor: c,
+        owner: g.context,
+        reference: encodeConversationRef(target),
+        relation,
+      });
+      this.assistant!.acceptCreated({
+        serverId,
+        threadId: created.threadId,
+        creatorActorId: g.context.actorId,
+        accessMode: "private",
+        revision: 1,
+      });
+    }
+    // Publication is independent of command authorization: even a revoked Bot
+    // leaves its allocated Thread privately owned by the original Human.
+    if(r.command === "start") await this.execution.publishRoot?.(r.id);
+    target ??= assistantRef(args.reference);
+    g = await this.assistant!.current(c, r);
+    if (r.command === "start") {
+      await this.execution.finalizeRoot?.(r.id,target.threadId,{
+        ...JSON.parse(g.profile.settings as string),
+        ...(args.title ? { orchestrationTitle: args.title } : {}),
+      },()=>!this.closed && g.expiresAt>this.collaboration.now() && this.collaboration.actors.isCurrent(c) && this.assistant!.sourceAllowed(g));
+      g = await this.assistant!.current(c,r);
+    }
+    if (r.command === "tell") {
+      const observed = await this.execution.snapshot(target.threadId);
+      g = await this.assistant!.current(c, r);
+      if (observed.state === "interrupted_by_user")
+        throw new CollaborationError(409, "assistant_thread_user_control");
+      // Pin the actual running turn. A stale steer must never become a queued
+      // follow-up or silently target a newer turn. The native queue rechecks it
+      // again at injection, closing the snapshot-to-send race.
+      if (args.delivery === "steer") {
+        if (observed.turnId !== args.expectedTurnId)
+          throw new CollaborationError(409, "assistant_thread_turn_changed");
+        if (observed.state !== "active")
+          throw new CollaborationError(409, "assistant_thread_not_running");
+      }
+    }
+    const sent = await this.assistant!.store(c, "send", {
+      id: r.id,
+      profile: String(r.profile_id),
+      revision: Number(r.profile_revision),
+      epoch: String(r.epoch),
+      reference: target,
+      content: args.prompt ?? args.message,
+    });
+    await this.assistant!.refreshInput(
+      {
+        actor: c,
+        profile: r.profile_id,
+        revision: r.profile_revision,
+        epoch: r.epoch,
+      },
+      target.threadId,
+    );
+    const result = {
+      reference: encodeConversationRef(target),
+      requestId: sent.requestId,
+      delivery: "accepted",
+      taskOutcome: "unknown",
+      inputMode: args.delivery === "steer" ? "steer" : "queue",
+      ...(args.delivery === "steer"
+        ? { expectedTurnId: args.expectedTurnId }
+        : {}),
+    };
+    const saved = await this.assistant!.store(c, "finish", {
+      id: r.id,
+      reference: result.reference,
+      state: "submitted",
+      result,
+    });
+    // Native receipt is retained until the durable operation records the result.
+    if (r.command === "start")
+      await this.execution.acknowledge?.(r.id).catch(() => {});
+    void this.collaboration.pump().catch(() => {});
+    return this.assistant!.receipt(saved);
+  }
   private async conversationTool(threadId:string,turnId:string,key:string,name:string,args:Record<string,unknown>,delegationId?:string):Promise<unknown>{
     const delegation=this.collaboration.delegation(threadId,turnId,delegationId),ledger=this.collaboration.orchestration;
     let target:string|null=null;
@@ -377,19 +789,23 @@ export class ThreadOrchestrationBroker {
   private withOperation(operation:ToolOperation,run:()=>Promise<unknown>):Promise<unknown>{
     const fresh=this.collaboration.orchestration.operationById(operation.operationId)!;
     if(fresh.result!==null){try{return Promise.resolve(this.receipt(fresh));}catch(error){return Promise.reject(error);}}
-    const prior=this.operationCalls.get(operation.operationId);if(prior)return prior;
-    const promise=run().finally(()=>{if(this.operationCalls.get(operation.operationId)===promise)this.operationCalls.delete(operation.operationId);});
-    this.operationCalls.set(operation.operationId,promise);return promise;
+    return this.coalesceOperation(operation.operationId,run);
+  }
+  /** One in-flight owner for all callers; durable receipts remain with their existing journals. */
+  private coalesceOperation(id:string,run:()=>Promise<unknown>):Promise<unknown>{
+    const prior=this.operationCalls.get(id);if(prior)return prior;
+    const promise=run().finally(()=>{if(this.operationCalls.get(id)===promise)this.operationCalls.delete(id);});
+    this.operationCalls.set(id,promise);return promise;
   }
   private reconcileAcks():Promise<void>{
-    if(this.closed||!this.execution.acknowledge)return Promise.resolve();
-    return this.ackSweep??=(async()=>{for(const id of await this.runtimeStorage.pendingAcks()){
-      try{if(await this.execution.acknowledge!(id)!==false){await this.runtimeStorage.acknowledge(id);}}catch{/* Durable intent remains for the next sweep. */}
+    if(this.closed||!this.execution.acknowledge||!this.runtimeStorage)return Promise.resolve();
+    return this.ackSweep??=(async()=>{for(const id of await this.runtime.pendingAcks()){
+      try{if(await this.execution.acknowledge!(id)!==false){await this.runtime.acknowledge(id);}}catch{/* Durable intent remains for the next sweep. */}
     }})().finally(()=>{this.ackSweep=null;});
   }
   observe(snapshot:OrchestrationRuntimeSnapshot,epoch=this.pacingEpoch.get(snapshot.threadId)??0):Promise<void>{
     if(this.closed)return Promise.resolve();
-    const operation=this.runtimeStorage.observe(snapshot,this.now());this.observations.add(operation);
+    const operation=this.runtime.observe(snapshot,this.now());this.observations.add(operation);
     void operation.then(()=>{this.observations.delete(operation);this.pace(snapshot.threadId,snapshot,this.now(),epoch);},()=>this.observations.delete(operation));
     return operation;
   }
@@ -416,7 +832,7 @@ export class ThreadOrchestrationBroker {
   }
   reconcile(paced=false):Promise<void>{if(this.closed)return Promise.resolve();return this.sweep??=this.runSweep(paced).finally(()=>{this.sweep=null;});}
   /** Record one observed child state and schedule its next timer-driven read. */
-  private pace(id:string,state:OrchestrationRuntimeSnapshot,now:number,epoch:number):void{
+  private pace(id:string,state:OrchestrationRuntimeSnapshot,now:number,epoch=this.pacingEpoch.get(id)??0):void{
     if(this.closed||(this.pacingEpoch.get(id)??0)!==epoch)return;
     const key=JSON.stringify([state.state,state.turnId??null,state.rootTurnId??null]),prior=this.pacing.get(id),same=prior?.key===key;
     const unchanged=same?prior.unchanged+1:0,since=same?prior.since:now;
@@ -427,7 +843,7 @@ export class ThreadOrchestrationBroker {
   private async runSweep(paced=false):Promise<void>{
     void this.reconcileAcks();
     const ledger=this.collaboration.orchestration;
-    const targets=new Set(await this.runtimeStorage.targets(!this.reconciledStartup,this.now()));
+    const targets=new Set(await this.runtime.targets(!this.reconciledStartup,this.now()));
     if(this.closed)return;
     const snapshots=new Map<string,OrchestrationRuntimeSnapshot>();
     for(const id of new Set([...this.pacing.keys(),...this.statusFailures.keys(),...this.pacingEpoch.keys()]))if(!targets.has(id)){this.pacing.delete(id);this.statusFailures.delete(id);this.pacingEpoch.delete(id);}
@@ -439,7 +855,7 @@ export class ThreadOrchestrationBroker {
       let state:OrchestrationRuntimeSnapshot;try{state=await this.readStatus(id,!paced);}catch{continue;}if(this.closed)return;snapshots.set(id,state);
     }
     this.reconciledStartup=true;
-    const work=await this.runtimeStorage.work(this.now());
+    const work=await this.runtime.work(this.now());
     if(this.closed)return;
     for(const ticket of work.waits){
       const states=ticket.targetThreadIds.map(id=>snapshots.get(id)),settled=ticket.waitFor==='all_settled'?states.every(state=>state&&terminal.has(state.state)):states.some(state=>state&&terminal.has(state.state));

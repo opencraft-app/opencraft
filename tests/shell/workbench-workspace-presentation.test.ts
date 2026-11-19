@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { setImmediate as nextTurn } from "node:timers/promises";
 import { Context } from "@deepseek-ai/cordis";
 import { WorkbenchPanelService, createConversationPanelState, reduceConversationPanelState } from "@opencraft/workbench-panels";
 import { createConversationKey } from "@opencraft/chat-core";
@@ -62,11 +63,13 @@ test("WSP-03 invalid transfer is a no-op; last right tab transfer exits full-wid
 function fixture() {
   const calls: unknown[] = [];
   let resolveFork!: (thread: { id: string }) => void;
+  let beganFork!: () => void;
+  const forkStarted = new Promise<void>(resolve => { beganFork = resolve; });
   const fork = new Promise<{ id: string }>(resolve => { resolveFork = resolve; });
   const lease = { threadId: "child", release: () => calls.push("release"), getSnapshot: () => ({ activeTurn: null, timeline: { frames: [] } }), submit: async (intent: unknown) => { calls.push(intent); return {}; } } as unknown as AppServerThreadRuntimeLease;
-  const runtime = { resources: { threads: { fork: (params: unknown) => { calls.push(params); return fork; }, unsubscribe: async (id: string) => { calls.push(["unsubscribe", id]); } } }, acquireThread: async () => lease } as unknown as AppServerWorkbenchRuntime;
+  const runtime = { resources: { threads: { fork: (params: unknown) => { calls.push(params); beganFork(); return fork; }, unsubscribe: async (id: string) => { calls.push(["unsubscribe", id]); } } }, acquireThread: async () => lease } as unknown as AppServerWorkbenchRuntime;
   runtime.resources.threads.injectItems = async (id, items) => { calls.push(["inject", id, items]); };
-  return { calls, runtime, resolveFork };
+  return { calls, runtime, resolveFork, forkStarted };
 }
 
 test("Side Chat retries failed cleanup without forgetting the owned child", async () => {
@@ -93,6 +96,10 @@ test("Side Chat preserves hydration failure and retains cleanup for retry", asyn
   const pending = ctx.sideChats.open("hydrate-error", createConversationKey("local", "parent"), null);
   f.resolveFork({ id: "child" });
   await assert.rejects(pending, error => error === original);
+  // Creation rejects promptly; its owned background cleanup is independent.
+  for (let n = 0; n < 100 && !ctx.sideChats.pendingCleanup()[0]?.error; n++) await nextTurn();
+  assert.match(String(ctx.sideChats.pendingCleanup()[0]?.error), /cleanup unavailable/);
+  await nextTurn();
   await ctx.sideChats.close("hydrate-error");
   assert.equal(attempts, 2);
   await fiber.dispose();
@@ -118,14 +125,14 @@ test("Side Chat still unsubscribes when interrupt reports an already unavailable
   assert.equal(ctx.sideChats.pendingCleanup().length, 0); await fiber.dispose();
 });
 
-test("WSP-07 side chat forks an ephemeral child on the parent's host and owns a separate draft", async () => {
+test("WSP-07 side chat forks a durable child on the parent's host and owns a separate draft", async () => {
   const f = fixture(); const ctx = new Context(); const hosts: string[] = [];
   const fiber = ctx.plugin(SideChatService, { resolveHost: async (host: string) => { hosts.push(host); return f.runtime; } }); await fiber;
   const pending = ctx.sideChats.open("request", createConversationKey("remote", "parent"), "/work");
   f.resolveFork({ id: "child" }); const session = await pending;
   assert.deepEqual(hosts, ["remote"]); assert.equal(session.key.threadId, "child");
   assert.deepEqual(session.composer.getSnapshot().draft.target, { type: "existing-thread", key: session.key });
-  assert.equal((f.calls[0] as { ephemeral: boolean }).ephemeral, true);
+  assert.equal((f.calls[0] as { ephemeral: boolean }).ephemeral, false);
   session.composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "child question" }] }] } });
   const intent = session.composer.createSubmitIntent();
   session.composer.dispatch({ type: "set-lifecycle", phase: "submitting" });
@@ -141,8 +148,9 @@ test("WSP-08 cancelled fork cannot mount a late child and releases the server su
   const f = fixture(); const ctx = new Context();
   const fiber = ctx.plugin(SideChatService, { resolveHost: async () => f.runtime }); await fiber;
   const pending = ctx.sideChats.open("request", createConversationKey("local", "parent"), null);
-  await Promise.resolve(); ctx.sideChats.cancel("request"); f.resolveFork({ id: "late" });
+  await f.forkStarted; ctx.sideChats.cancel("request"); f.resolveFork({ id: "late" });
   await assert.rejects(pending, /cancelled/); assert.equal(ctx.sideChats.get("request"), null);
+  for (let n = 0; n < 100 && !f.calls.some(call => Array.isArray(call) && call[0] === "unsubscribe"); n++) await nextTurn();
   assert.deepEqual(f.calls.at(-1), ["unsubscribe", "late"]);
   await fiber.dispose();
 });

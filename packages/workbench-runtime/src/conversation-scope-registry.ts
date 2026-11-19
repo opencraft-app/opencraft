@@ -1,3 +1,4 @@
+import { assertComposerPlacement } from "@opencraft/composer-core";
 import { asHostId } from "@opencraft/chat-core";
 import type { MessageSender } from "@opencraft/appserver-protocol";
 import type {
@@ -13,8 +14,7 @@ import {
 } from "./conversation-binding";
 
 export type NewThreadDraftEntrypoint = "home" | "new-chat";
-export type NewThreadDraftPhase =
-  | "editing"
+export type NewThreadDraftPhase = "editing"
   | "submitting"
   | "submit-failed"
   | "accepted"
@@ -91,6 +91,7 @@ function defaultDraftId(): string {
 
 function normalizeExecution(execution: ComposerExecutionTarget): ComposerExecutionTarget {
   if(execution.collaborationSpaceId!==undefined&&(typeof execution.collaborationSpaceId!=='string'||!execution.collaborationSpaceId||execution.collaborationSpaceId.length>256))throw new Error('Invalid collaboration space');
+  assertComposerPlacement(execution);
   const roots = [...new Set(
     execution.workspace.runtimeWorkspaceRoots
       .map((root) => root.trim())
@@ -100,9 +101,11 @@ function normalizeExecution(execution: ComposerExecutionTarget): ComposerExecuti
   return {
     hostId: asHostId(execution.hostId),
     ...(execution.collaborationSpaceId===undefined?{}:{collaborationSpaceId:execution.collaborationSpaceId}),
+    ...(execution.environment === undefined ? {} : { environment: { ...execution.environment } }),
     workspace: {
       cwd,
       runtimeWorkspaceRoots: roots,
+      ...(execution.workspace.source === undefined ? {} : { source: { ...execution.workspace.source } }),
       ...(execution.workspace.projectId === undefined
         ? {}
         : { projectId: execution.workspace.projectId }),
@@ -193,7 +196,7 @@ export function createConversationScopeRegistry(
       return () => listeners.delete(listener);
     },
     getDraft: (draftId) => drafts.get(draftId) ?? null,
-    getActiveDraft: () => activeDraftId === null ? null : drafts.get(activeDraftId) ?? null,
+    getActiveDraft: () => (activeDraftId === null ? null : (drafts.get(activeDraftId) ?? null)),
     openDraft(options) {
       ensureOpen();
       if (options.draftId !== undefined) {

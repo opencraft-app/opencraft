@@ -64,6 +64,7 @@ export interface AnnouncementActionContribution {
   /** Stable, script-owned value returned when the user chooses this action. */
   readonly id: string;
   readonly label: string;
+  readonly labelMessage?: ContributionMessage;
 }
 
 export interface AnnouncementMediaContribution {
@@ -74,9 +75,13 @@ export interface AnnouncementMediaContribution {
 
 /**
  * Serializable announcement content. Extensions describe meaning; the Host
- * owns the actual modal window, focus, stacking, dismissal and theme mapping.
+ * owns the actual dialog or anchored hint, focus, dismissal and theme mapping.
  */
 export interface AnnouncementContribution {
+  /** Optional same-origin interactive document; Hosts without frames retain the media/actions. */
+  readonly preview?: { readonly path: string };
+  readonly titleMessage?: ContributionMessage;
+  readonly bodyMessage?: ContributionMessage;
   /** Must be namespaced by the calling extension. */
   readonly id: string;
   readonly title: string;
@@ -85,6 +90,9 @@ export interface AnnouncementContribution {
   readonly primaryAction?: AnnouncementActionContribution;
   readonly secondaryAction?: AnnouncementActionContribution;
   readonly actionLayout?: "inline" | "stacked";
+  /** Present a compact hint beside this extension's navigation entry when visible.
+   * Web waits for a visible entry; other Hosts may use a dialog. No DOM/coordinates cross the API. */
+  readonly anchorNavigationId?: string;
   readonly dismissOnOutsidePress?: boolean;
 }
 
@@ -153,12 +161,20 @@ export interface SettingsSchemaContribution {
 export interface ViewContribution {
   readonly id: string;
   readonly title: string;
+  readonly titleMessage?: ContributionMessage;
   readonly viewType: string;
   /**
    * Optional host-facing capability supplied by this view. Consumers bind to
    * the capability instead of importing an extension's concrete view id.
    */
-  readonly role?: "bot-conversation" | "connector-management";
+  readonly role?: "connector-management";
+  /** Keep the Workbench conversation sidebar available beside this view. */
+  readonly keepConversationSidebar?: boolean;
+  /** Opt-in in-place collection owner across routes. Family members share one
+   * viewType/renderer; URL, history and resource identities remain independent. */
+  readonly routeFamily?: string;
+  /** Semantic parent for child routes and direct links; the platform owns history and presentation. */
+  readonly navigationParent?: { readonly viewId: string; readonly resourceUri?: string | null };
   readonly icon?: string;
   readonly platforms?: readonly ExtensionPlatform[];
   /** Presentation audience only; internal views stay registered but hidden by the host. */
@@ -202,9 +218,14 @@ export type MiniAppContribution = NavigationContribution & {
  * projection; the View owns only its content.
  */
 export interface SidebarCatalogContribution {
+  /** A standalone destination has no expandable section header. */
+  readonly presentation?: 'section' | 'entry';
   readonly id: string;
   readonly title: string;
+  readonly titleMessage?: ContributionMessage;
   readonly viewId: string;
+  /** Optional action rendered beside the section title. */
+  readonly actionViewId?: string;
   readonly order?: number;
   readonly icon?: string;
   readonly initiallyCollapsed?: boolean;
@@ -219,6 +240,9 @@ export interface ContributionMessage {
 
 /** A settings navigation entry that presents a registered View. */
 export interface SettingsPageContribution {
+  /** Extension-owned settings embedded in its Plugins detail, not a standalone
+   * Settings destination. This is presentation, never an authorization grant. */
+  readonly placement?: 'navigation' | 'extension';
   /** Fixed configuration owner; independent of the selected conversation Host. */
   readonly targetHostId?: string;
   /** Model-menu configuration destination for targetHostId; the extension owns the page. */

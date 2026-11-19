@@ -1,3 +1,5 @@
+import { startTerminalPtyOwner } from "../../apps/local-agent-host/src/terminal-pty-owner.js";
+import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
@@ -13,7 +15,6 @@ import { seedNewerHostStorage } from "../support/local-agent-storage-fixture.js"
 import { ConnectedAgentHost, connectedAgentCatalogEntry } from "../../apps/local-agent-host/src/connected-agents.js";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
 import { DshExecutionAuthority } from "../../apps/local-agent-host/src/dsh-execution-authority.js";
-import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from "../../apps/local-agent-host/src/terminal-owner-wire.js";
 import { connect as connectSocket } from "node:net";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
@@ -521,22 +522,11 @@ test("DSH questions cross the real mux and AppServer WebSocket, survive reconnec
   } finally { preflight.close(); socket.close(); await host.close(); await dsh.close(); }
 });
 
-/** The PTY owner intentionally outlives its Host; tests own and stop the one in their private data root. */
-async function stopTerminalOwner(dataDirectory: string) {
-  const { endpoint } = await terminalOwnerLocation(dataDirectory);
-  const pid = await new Promise<number | null>(resolve => {
-    const socket = connectSocket(endpoint);
-    const done = (value: number | null) => { clearTimeout(timer); socket.destroy(); resolve(value); };
-    const timer = setTimeout(() => done(null), 2000);
-    socket.once("error", () => done(null));
-    socket.once("connect", () => sendOwnerFrame(socket, { type: "attach", protocol: TERMINAL_OWNER_PROTOCOL }));
-    readOwnerFrames(socket, message => done(message?.type === "attached" && Number.isSafeInteger(message.pid) ? message.pid : null));
-  });
-  if (pid !== null) process.kill(pid, "SIGTERM");
-}
-
-test("process RPC survives WebSocket replacement without contacting the Agent harness", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencraft-process-rpc-"));
+test("process RPC survives WebSocket replacement without contacting the Agent harness", async t => {
+  const directory = await mkdtemp(join(tmpdir(), "process-rpc-isolated-"));
+  const location = await terminalOwnerLocation(directory);
+  const stopOwner = await startTerminalPtyOwner(location.directory, location.endpoint);
+  t.after(async () => { await stopOwner(); await rm(directory, { recursive: true, force: true }); });
   const host = await startLocalAgentHost({ dshUrl: "http://127.0.0.1:1", token: "process-test", dataDirectory: directory });
   let socket = await connect(host.websocketUrl);
   try {
@@ -561,8 +551,8 @@ test("process RPC survives WebSocket replacement without contacting the Agent ha
     assert.match(snapshot.output.map((c: { deltaBase64: string }) => Buffer.from(c.deltaBase64, "base64").toString()).join(""), /RPC_alive/);
   } finally {
     socket.close(); await host.close();
-    await stopTerminalOwner(directory);
-    await rm(directory, { recursive: true, force: true });
+    // This fixture owns the PTY service in-process; its registered cleanup
+    // stops it directly. The external-owner PID helper would SIGTERM this test.
   }
 });
 
@@ -582,6 +572,11 @@ test("local Agent Host authenticates and projects DSH history into stable AppSer
       assert.equal(models.data[0].isDefault, true);
       const firstPage = await request(socket, 41, "model/list", { limit: 1 });
       assert.equal(firstPage.data.length, 1);
+      if (firstPage.nextCursor !== null) {
+        const nextPage = await request(socket, 42, "model/list", { limit: 1, cursor: firstPage.nextCursor });
+        assert.equal(nextPage.data.length, 1);
+        assert.notEqual(nextPage.data[0].model, firstPage.data[0].model);
+      }
       const resumed = await request(socket, 3, "thread/resume", { threadId: "s1" });
       assert.equal(resumed.thread.turns.length, 1);
       assert.deepEqual(resumed.thread.turns[0].items.map((item: { type: string }) => item.type), ["userMessage", "reasoning", "agentMessage"]);
@@ -1035,3 +1030,19 @@ test("model/list paginates native and connected models without duplicates", asyn
     await rm(directory, { recursive: true, force: true });
   }
 });
+
+
+
+/** The PTY owner intentionally outlives its Host; tests own and stop the one in their private data root. */
+async function stopTerminalOwner(dataDirectory: string) {
+  const { endpoint } = await terminalOwnerLocation(dataDirectory);
+  const pid = await new Promise<number | null>(resolve => {
+    const socket = connectSocket(endpoint);
+    const done = (value: number | null) => { clearTimeout(timer); socket.destroy(); resolve(value); };
+    const timer = setTimeout(() => done(null), 2000);
+    socket.once("error", () => done(null));
+    socket.once("connect", () => sendOwnerFrame(socket, { type: "attach", protocol: TERMINAL_OWNER_PROTOCOL }));
+    readOwnerFrames(socket, message => done(message?.type === "attached" && Number.isSafeInteger(message.pid) ? message.pid : null));
+  });
+  if (pid !== null) process.kill(pid, "SIGTERM");
+}

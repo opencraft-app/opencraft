@@ -11,6 +11,7 @@ import {Context} from '@deepseek-ai/cordis';
 import {WorkbenchPanelService} from '@opencraft/workbench-panels';
 import {AppShell} from '/apps/workbench-web/src/components/app-shell.tsx';
 import {AppShellHeader} from '/apps/workbench-web/src/components/app-shell-header.tsx';
+import {WorkbenchPanelRuntimeProvider} from '/apps/workbench-web/src/runtime/panel-runtime-context.tsx';
 import {RightPanel} from '/apps/workbench-web/src/components/right-panel.tsx';
 import {initializeAppearanceTheme,setThemePreference} from '/apps/workbench-web/src/appearance-theme.ts';
 import '/apps/workbench-web/src/styles/app.scss';
@@ -21,12 +22,12 @@ const subscribe=f=>panels.subscribeOwner('scope',f),get=()=>panels.getOwnerSnaps
 const navigation={layout:'unified',actions:[{id:'chat',title:'Chat',icon:'chat',onInvoke:()=>{}}],settingsActive:false,onOpenSettings:()=>{},account:{snapshot:{phase:'anonymous',name:null,avatarUrl:null},onOpen:()=>{},onRefresh:async()=>{},onSignOut:async()=>{}}};
 function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);window.fixture={panels,setThemePreference};
 const action={id:'terminal',region:'right',icon:'terminal',label:'New terminal',creationLabel:'Terminal',run:()=>panels.open('scope','terminal',{id:crypto.randomUUID()})};
-return <AppShell layoutScope='toolbar-ownership' mainContentLayout='default' navigation={navigation} sidebarOpen={sidebar} sidebarWidth={275} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}}
+return <AppShell sceneOwnerId='scope' foreground={state.foreground} onForegroundChange={foreground=>panels.dispatch('scope',{type:'select-foreground',foreground})} layoutScope='toolbar-ownership' mainContentLayout='default' navigation={navigation} sidebarOpen={sidebar} sidebarWidth={275} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={()=>{}} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}}
 header={<AppShellHeader title='Conversation' project={null} sidebarOpen={sidebar} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onToggleSidebar={()=>setSidebar(!sidebar)} onToggleRightPanel={()=>panels.dispatch('scope',{type:'set-region-open',region:'right',open:!state.right.open})} onHome={()=>{}} canGoBack={false} canGoForward={false} onBack={()=>{}} onForward={()=>{}} navigationActions={['sidebar-toggle']}/>}
 floatingSidebarHeader={()=>null} leftPanel={<p>Navigation</p>}
 rightPanel={<RightPanel state={state} presentationId='view' renderers={[]} toolbarActions={[action]} toolbarActionContext={{ownerId:'scope',resourceOwnerId:'scope',hostId:'fixture',cwd:null}} onAction={a=>panels.dispatch('scope',a)} onCloseTab={t=>panels.close('scope',t.region,t.id)}/>}
 rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onRightPanelOpenChange={open=>panels.dispatch('scope',{type:'set-region-open',region:'right',open})}><input aria-label='Draft' defaultValue='Keep draft'/></AppShell>}
-createRoot(document.getElementById('root')).render(<App/>);`;
+createRoot(document.getElementById('root')).render(<WorkbenchPanelRuntimeProvider runtime={{panels,context:ctx}}><App/></WorkbenchPanelRuntimeProvider>);`;
 const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom','react-intl']},cacheDir:'node_modules/.vite-toolbar-ownership',optimizeDeps:{entries:[],include:['react','react-dom/client','react-intl']},esbuild:{jsx:'automatic'},server:{host:'127.0.0.1',port:0,hmr:false},plugins:[{name:'toolbar-ownership-fixture',resolveId:id=>id==='/toolbar-fixture.tsx'?id:null,load:id=>id==='/toolbar-fixture.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/toolbar-fixture.tsx"></script>');});}}]});
 let browser:any;
 try{

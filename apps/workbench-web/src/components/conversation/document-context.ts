@@ -18,6 +18,10 @@ import type { McpAppPort } from "../../mcp-apps/contract";
  * renderer owns only presentation and user intent.
  */
 export interface ConversationDocumentContextValue {
+  /** Exact-input recovery is owned by the live conversation, absent in cached views. */
+  readonly submissionRecovery?: import('../../submission-recovery-presentation').SubmissionRecoveryActions;
+  /** Captures a guarded draft destination; editing never rewrites sent history. */
+  readonly beginImageEdit?: () => import("@opencraft/composer-editor").ComposerImageEditSession | null;
   readonly conversationId: string | null;
   readonly cwd: string | null;
   readonly hostId: string | null;
@@ -35,6 +39,8 @@ export interface ConversationDocumentContextValue {
   /** Workbench-owned read-only review surface; ChatUI only emits open intent. */
   readonly onReviewTurnDiff?: (block: TurnDiffTimelineBlock, path?: string) => void;
   /** Fork through a completed native Turn, inclusive; omitted for cached/read-only views. */
+  /** Host-supported action shape survives authority changes. */
+  readonly turnActions?: { readonly fork: boolean; readonly reviewDiff?: boolean };
   readonly onForkConversation?: () => Promise<void>;
   readonly onForkTurn?: (turnId: string) => Promise<void>;
   /** The main Composer is the sole live-resource presenter for this Turn. */

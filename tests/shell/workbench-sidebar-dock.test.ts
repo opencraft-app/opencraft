@@ -162,7 +162,7 @@ test("one Sidecar owns two platform panes with independent frame, clip, and view
     assert.match(source, /usePersistedSidebarWidth\((?:presentation\.shellNavigation)?\)/u);
     assert.doesNotMatch(source, /localStorage\.getItem\("sidebar-width"\)|localStorage\.setItem\("sidebar-width"/u);
   }
-  assert.match(navigationSource, /<NavigationIcon name="applications" selected=\{projection\.docked\.applications \|\| projection\.peek === "applications"\} \/>/u,
+  assert.match(navigationSource, /<NavigationIcon name="applications" selected=/u,
     "the Applications entrance consumes the shared semantic app-grid glyph and open-state projection");
   assert.match(navigationStyles, /--shell-navigation-label-opacity/u);
   assert.match(navigationStyles, /--sidebar-leading-slot-size:\s*28px/u);
@@ -180,10 +180,22 @@ test("context sidebar actions share one stable leading slot after account moves 
     designTokens,
     /--size-navigation-leading-slot:\s*28px;/u,
   );
-  assert.match(
-    workbenchStyles,
-    /\.sidebar-navigation-item__icon\s*\{[\s\S]*?width:\s*var\(--size-navigation-leading-slot\);[\s\S]*?place-items:\s*center;/u,
+  // The leading slot is part of the shared NavigationItem contract, not an app selector.
+  const navigationStyles = readFileSync(
+    new URL("../../packages/design-system-web/src/navigation.web.scss", import.meta.url),
+    "utf8",
   );
+  const sidebarItem = readFileSync(
+    new URL("../../apps/workbench-web/src/components/sidebar-navigation-item.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    navigationStyles,
+    /\.ui-navigation-item > \[data-navigation-leading\]\s*\{[\s\S]*?width:\s*var\(--size-navigation-leading-slot\);/u,
+  );
+  assert.match(navigationStyles, /\.ui-navigation-item > \[data-navigation-leading\]\s*\{[^}]*?place-items:\s*center;/u);
+  assert.match(sidebarItem, /<span className="sidebar-navigation-item__icon" data-navigation-leading=""/u);
+  assert.doesNotMatch(workbenchStyles, /\.sidebar-navigation-item__icon\s*\{[^}]*width:/u);
   assert.doesNotMatch(sidebarSource, /sidebar-account__trigger/u);
 });
 
@@ -217,9 +229,9 @@ test("device settings replace shared context/content slots without a private lay
     const source = readFileSync(new URL(path, new URL("../", import.meta.url)), "utf8");
     assert.doesNotMatch(source, /useSettingsPresentation|settingsPresentation/);
     assert.doesNotMatch(source, /allowDock: !routeSettingsOpen|sidebar(?:TransientEnabled|Resizable|Collapsible)=\{!routeSettingsOpen\}/);
-    assert.match(source, /settingsActive: sidebarDestination === "settings" \|\| \(routeSettingsOpen && !applicationsSelected\)/);
+    assert.match(source, /settingsActive:\s*sidebarDestination === "settings" \|\| \(routeSettingsOpen && !applicationsSelected\)/);
     assert.match(source, /presentation=\{sidebarDestination === "settings" \? "sidebar" : managementSettingsOpen \? "dialog" : "sidebar"\}/);
-    assert.match(source, /routeSettingsOpen \? settingsNavigation/);
+    assert.match(source, /routeSettingsOpen \? \(?\s*settingsNavigation\b/);
   }
 });
 

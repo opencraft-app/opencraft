@@ -23,20 +23,23 @@ export async function serveGitIdentityBroker(broker: GitIdentityBroker, socket: 
   });
   return { exited, async close() { lines.close(); child.stdin.end(); child.kill(); await exited; await broker.close(); } };
 }
+export class GitIdentityIpcError extends Error {
+  constructor(readonly code: string) { super(`Git identity transport: ${code}`); }
+}
 export async function queryGitIdentityBroker(socket: string, request: unknown, timeout = 2_000): Promise<any> {
   return new Promise((resolve, reject) => {
     const client = createConnection(socket); let pending = '';
-    const timer = setTimeout(() => { client.destroy(); reject(new Error('Git identity broker unavailable')); }, timeout);
+    const timer = setTimeout(() => { client.destroy(); reject(new GitIdentityIpcError('request-timeout')); }, timeout);
     const finish = (error?: Error) => { clearTimeout(timer); client.destroy(); if (error) reject(error); };
-    client.once('error', error => finish(error));
+    client.once('error', error => finish(new GitIdentityIpcError(({ ENOENT: 'connect-missing', ECONNREFUSED: 'connect-refused', EACCES: 'connect-denied' } as Record<string,string>)[(error as NodeJS.ErrnoException).code ?? ''] ?? 'broker-io')));
     client.once('connect', () => client.write(`${JSON.stringify(request)}\n`));
     client.on('data', data => {
       pending += data.toString('utf8');
-      if (pending.length > 32768) { finish(new Error('Git identity response too large')); return; }
+      if (pending.length > 32768) { finish(new GitIdentityIpcError('response-too-large')); return; }
       if (!pending.includes('\n')) return;
-      try { const result = JSON.parse(pending.slice(0, pending.indexOf('\n'))); finish(); resolve(result); }
-      catch { finish(new Error('Git identity response invalid')); }
+      try { const result: unknown = JSON.parse(pending.slice(0, pending.indexOf('\n'))); if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('Invalid response'); finish(); resolve(result); }
+      catch { finish(new GitIdentityIpcError('response-invalid')); }
     });
-    client.once('end', () => { if (!pending.includes('\n')) finish(new Error('Git identity broker disconnected')); });
+    client.once('end', () => { if (!pending.includes('\n')) finish(new GitIdentityIpcError('broker-disconnected')); });
   });
 }

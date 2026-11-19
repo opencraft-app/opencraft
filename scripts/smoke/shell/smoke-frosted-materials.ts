@@ -9,17 +9,17 @@ const output = process.env.OPENCRAFT_MATERIAL_REPORT ?? await mkdtemp(join(tmpdi
 const compiledCss = process.env.OPENCRAFT_MATERIAL_CSS ? await readFile(process.env.OPENCRAFT_MATERIAL_CSS, "utf8") : null;
 let source = `
 import React,{useState} from 'react';
-import {createRoot} from 'react-dom/client';
+import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';
 import * as Menu from '@opencraft/design-system-web/dropdown-menu';
 import {ModalSurface} from '/apps/workbench-web/src/components/modal/modal-surface.tsx';
-import {buildOpenCraftThemeCssProperties,opencraftNeutralThemePalette} from '/packages/design-system/src/theme-engine.ts';
+import {buildOpenCraftThemeCssProperties,opencraftNeutralThemePalette,seeThemePalette} from '/packages/design-system/src/theme-engine.ts';
 import '/apps/workbench-web/src/styles/app.scss';
 import '/apps/workbench-web/src/components/modal/modal.scss';
 import '/apps/workbench-web/src/styles/context-menu.scss';
 import '/frost-probe.scss';
 function App(){const [open,setOpen]=useState(false),[presentation,setPresentation]=useState('dialog'),[appearance,setAppearance]=useState('default');
 window.fixture={theme:(mode,custom)=>{document.documentElement.dataset.theme=mode;
-const base=opencraftNeutralThemePalette[mode], definition=custom?{...base,surfaces:{popover:mode==='light'?'#f4e8df':'#25292c'}}:base;
+const base=${process.env.OPENCRAFT_MATERIAL_THEME === "see" ? "seeThemePalette" : "opencraftNeutralThemePalette"}[mode], definition=custom?{...base,surfaces:{popover:mode==='light'?'#f4e8df':'#25292c'}}:base;
 for(const [key,value]of Object.entries(buildOpenCraftThemeCssProperties(mode,definition)))document.documentElement.style.setProperty(key,value);
 },show:(kind='dialog',look='default')=>{setPresentation(kind);setAppearance(look);setOpen(true)}};
 return <main><div className="scene"><span>CONVERSATION · 128,420</span></div><button id="open" onClick={()=>setOpen(true)}>Open panel</button>
@@ -44,7 +44,7 @@ let browser: any;
 const evidence: unknown[] = [], errors: string[] = [];
 try {
   await mkdir(output,{recursive:true});await vite.listen();
-  browser=await chromium.launch({headless:true,executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE});
+  browser=await chromium.launch({headless:true,args:["--no-sandbox","--disable-dev-shm-usage"],executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE});
   const page=await browser.newPage();page.on('pageerror',(error:Error)=>errors.push(error.message));
   await page.addInitScript("window.__name=value=>value");
   await page.emulateMedia({reducedMotion:'reduce'});
@@ -55,8 +55,8 @@ try {
     await page.setViewportSize({width,height:844});
     await page.evaluate(({mode,custom}:any)=>(window as any).fixture.theme(mode,custom),{mode,custom});
     await page.locator('#open').click();await page.locator('.modal-surface').waitFor();
-    const state=await read();assert(state.filter.includes('32px'));assert(state.width<=width);assert(state.focus);
-    assert(custom?!state.fill.includes('color(srgb'):state.fill.includes(mode==='light'?'0.64':'0.62'),JSON.stringify(state));
+    const state=await read();assert(state.filter.includes(process.env.OPENCRAFT_MATERIAL_THEME === 'see' ? '24px' : '32px'));assert(state.width<=width);assert(state.focus);
+    assert(custom?!state.fill.includes('color(srgb'):state.fill.includes(process.env.OPENCRAFT_MATERIAL_THEME === 'see' ? (mode==='light'?'0.4':'0.58') : (mode==='light'?'0.64':'0.62')),JSON.stringify(state));
     assert.equal(await page.locator('.modal-surface__scrim').evaluate((n:HTMLElement)=>getComputedStyle(n).backdropFilter),'none');
     await page.locator('.scene').evaluate((n:HTMLElement)=>n.style.background='');
     const before=await page.locator('.modal-surface').screenshot();
@@ -70,7 +70,7 @@ try {
     await page.keyboard.press('Escape');await page.locator('.modal-surface').waitFor({state:'detached'});
     await page.waitForFunction(()=>document.activeElement?.id==='open');
     await page.locator('#menu').click();const menu=page.getByRole('menu');await menu.waitFor();
-    assert((await menu.evaluate((n:HTMLElement)=>getComputedStyle(n).backdropFilter)).includes('32px'));
+    assert((await menu.evaluate((n:HTMLElement)=>getComputedStyle(n).backdropFilter)).includes(process.env.OPENCRAFT_MATERIAL_THEME === 'see' ? '24px' : '32px'));
     await page.keyboard.press('ArrowDown');await page.keyboard.press('Escape');await menu.waitFor({state:'detached'});
     await page.waitForFunction(()=>document.activeElement?.id==='menu');
     assert(await page.locator('.frost-floating').evaluate((n:HTMLElement)=>getComputedStyle(n).boxShadow.split(/,(?![^()]*\))/).every(s=>s.includes('inset'))));

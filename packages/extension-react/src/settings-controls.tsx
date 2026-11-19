@@ -1,4 +1,4 @@
-import { ChevronDownIcon, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
+import { ChevronDownIcon, ChevronRightIcon, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
 import { Button } from "@opencraft/design-system-web/button";
 export { ChoiceSelect as SettingsChoiceSelect } from "@opencraft/design-system-web/choice-select";
 import type {
@@ -180,9 +180,13 @@ export function SettingsControlPair({ primary, companion, className, ...props }:
   </div>;
 }
 
-export const SettingsTextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  function SettingsTextInput({ className, ...props }, ref) {
-    return <input {...props} ref={ref} className={classes("settings-control-input", className)} />;
+export const SettingsTextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & {
+  leadingIcon?: ReactNode;
+  variant?: "default" | "subtle";
+}>(
+  function SettingsTextInput({ className, leadingIcon, variant = "default", ...props }, ref) {
+    const input = <input {...props} ref={ref} className={classes("settings-control-input", variant === "subtle" && "settings-control-input--subtle", className)} />;
+    return leadingIcon ? <span className="settings-control-input-shell"><span className="settings-control-input-shell__icon" aria-hidden="true">{leadingIcon}</span>{input}</span> : input;
   },
 );
 
@@ -211,7 +215,8 @@ export interface SegmentedControlProps {
   readonly onValueChange: (value: string) => void;
   readonly label: string;
   readonly disabled?: boolean;
-  readonly appearance?: "toolbar" | "inset";
+  readonly appearance?: "toolbar" | "inset" | "underline";
+  readonly width?: "content" | "fill";
   readonly className?: string;
 }
 
@@ -223,6 +228,7 @@ export function SegmentedControl({
   label,
   disabled = false,
   appearance = "toolbar",
+  width = "content",
   className,
 }: SegmentedControlProps) {
   const focusValue = options.find(option => option.value === value && !option.disabled)?.value
@@ -231,6 +237,7 @@ export function SegmentedControl({
     <div
       className={classes("segmented-control", className)}
       data-appearance={appearance}
+      data-width={width}
       role="radiogroup"
       aria-label={label}
       onKeyDown={event => {
@@ -364,5 +371,29 @@ export function SettingsButton({ variant = "secondary", className, children, loa
       className={classes("settings-control-button", `settings-control-button--${variant}`, className)}>
       {children}
     </Button>
+  );
+}
+
+export interface SettingsNavigationRowProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "value"> {
+  readonly label: ReactNode;
+  /** Secondary summary shown before the chevron, e.g. a count or current value. */
+  readonly value?: ReactNode;
+  /** Visual tone for destructive single-action rows (no value or chevron). */
+  readonly tone?: "default" | "danger";
+}
+
+/**
+ * Card row that opens a destination: label on the leading edge, a muted value
+ * and chevron on the trailing edge. Geometry comes from the Settings row tokens.
+ */
+export function SettingsNavigationRow({ label, value, tone = "default", className, type, ...props }: SettingsNavigationRowProps) {
+  return (
+    <button {...props} type={type ?? "button"} data-tone={tone} className={classes("settings-control-row", "settings-navigation-row", className)}>
+      <span className="settings-control-row__label">{label}</span>
+      {tone === "danger" ? null : <>
+        {value === undefined ? null : <span className="settings-navigation-row__value">{value}</span>}
+        <ChevronRightIcon className="settings-navigation-row__chevron" aria-hidden="true" />
+      </>}
+    </button>
   );
 }

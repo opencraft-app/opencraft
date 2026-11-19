@@ -1,8 +1,12 @@
 import type { ConversationKey, HostId, TurnId } from "@opencraft/chat-core";
 
+import type { ComposerSandboxTarget, ComposerWorkspaceSource } from "./execution-placement";
+
 import type { ComposerDocument } from "./document";
 
 export interface ComposerWorkspaceTarget {
+  /** Logical baseline/reference, not a path on the execution endpoint. */
+  readonly source?: ComposerWorkspaceSource;
   readonly cwd: string | null;
   readonly runtimeWorkspaceRoots: readonly string[];
   /** AppServer-owned project assignment; distinct from a filesystem root. */
@@ -17,6 +21,8 @@ export interface ComposerWorkspaceTarget {
 export interface ComposerExecutionTarget {
   /** Captured collaboration scope for creation; never a Native engine Server ID. */
   readonly collaborationSpaceId?: string;
+  /** Optional compute resource owned by this Host; never a connected Host itself. */
+  readonly environment?: ComposerSandboxTarget;
   readonly hostId: HostId;
   readonly workspace: ComposerWorkspaceTarget;
 }
@@ -113,6 +119,7 @@ export interface SubmitIntent {
 }
 
 export interface SubmissionReceipt {
+  readonly inputDelivery?: import("@opencraft/chat-core").UserMessageTimelineBlock["inputDelivery"];
   /** Verified Host attribution for this exact accepted message; absent on older peers. */
   readonly sender?: import("@opencraft/chat-core").UserMessageTimelineBlock["sender"];
   readonly commandId: string;

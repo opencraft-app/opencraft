@@ -89,6 +89,11 @@ test('three real Hub nodes stream HTTP and WS; target owns membership; withdraw 
   const ws = new WebSocket(base.replace('http:', 'ws:') + '/desktop/connect', { origin: 'http://team-c.test', headers: { host: 'team-c.test', 'x-test-auth': 'yes' } });
   const first = once(ws, 'message'); await once(ws, 'open'); assert.equal((await first)[0].toString(), 'from-c');
   const echo = once(ws, 'message'); ws.send(Buffer.alloc(30_000, 9)); assert.deepEqual((await echo)[0], Buffer.alloc(30_000, 9));
+  const oldControl = b.links.get(c.store.id)!;
+  oldControl.ws.terminate();
+  await waitFor(() => !!b.links.get(c.store.id) && b.links.get(c.store.id) !== oldControl);
+  const afterControlLoss = once(ws, 'message'); ws.send('control reconnected');
+  assert.equal((await afterControlLoss)[0].toString(), 'control reconnected', 'control loss preserves established end-to-end data');
   const unused = parseInvitation(invite(b, [], false)); command(b, { action: 'revoke', id: unused.id });
   assert.equal(ws.readyState, WebSocket.OPEN, 'unused invitation changes preserve unrelated active traffic');
   const stillOpen = once(ws, 'message'); ws.send('after-invitation'); assert.equal((await stillOpen)[0].toString(), 'after-invitation');
@@ -250,4 +255,29 @@ test('Headless publishes its managed Web entry through the real Hub transport', 
   assert.equal((await virtualGet(base,'/')).body,text);
   text = 'managed Web release two';
   assert.equal((await virtualGet(base,'/')).body,text,'a Web-only update must not leave Hub clients on backend assets');
+});
+
+test('revoking a peer also retires data retained after its control transport disappeared', {timeout:10000}, async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'hub-detached-revoke-'));
+  const authority = {issuer:'retained-test',publicKey:keys().publicKey,providers:['fixture']};
+  const a = new HubNetwork(join(dir,'a.json'),{authority}), b = new HubNetwork(join(dir,'b.json'),{authority});
+  const ingress = createServer(), target = createServer((_req,res) => { res.write('held'); });
+  ingress.on('upgrade',(req,socket,head) => { if (!a.handleUpgrade(req,socket,head)) socket.destroy(); });
+  const ap = await listen(ingress), bp = await listen(target);
+  t.after(async () => { a.close(); b.close(); ingress.closeAllConnections(); ingress.close(); target.closeAllConnections(); target.close(); await rm(dir,{recursive:true,force:true}); });
+  a.start(ap); b.start(bp); configure(a,`http://127.0.0.1:${ap}`); configure(b,`http://127.0.0.1:${bp}`,{origin:'http://retained.test'});
+  const invitation = invite(a,['http://retained.test']); command(b,{action:'connect',invitation,trustIdentity:true});
+  await waitFor(() => a.routes().some(r => r.service.hubId === b.store.id));
+  const stream = await a.open(b.store.id);
+  const response = await new Promise<import('node:http').IncomingMessage>((resolve,reject) => {
+    request({host:'retained.test',path:'/',headers:{host:'retained.test'},createConnection:()=>stream},resolve).on('error',reject).end();
+  });
+  assert.equal(response.statusCode,200);
+  response.on('error',()=>{}); response.resume();
+  a.links.get(b.store.id)!.ws.terminate();
+  await waitFor(() => !a.links.has(b.store.id));
+  assert.equal(stream.destroyed,false,'established data survived control loss');
+  const ended = once(stream,'close');
+  command(a,{action:'revoke',id:parseInvitation(invitation).id});
+  await ended; assert.equal(stream.destroyed,true,'detached peer still participates in revocation');
 });

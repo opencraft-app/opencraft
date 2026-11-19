@@ -8,7 +8,7 @@
 
 客户端资源层只解决四件事：资源属于哪个身份范围、谁是权威、如何持久化与恢复、旧异步结果如何失效。请求、分页、重试、服务端权限和执行回执仍由各领域 owner 持有。
 
-会话列表使用远端展示副本；会话草稿、Bot Composer 草稿和未发送消息已通过具名本地文档端口接入同一平台 adapter，业务 owner 和发送状态机保持唯一。
+会话列表使用远端展示副本；会话草稿和未发送消息已通过具名本地文档端口接入同一平台 adapter，业务 owner 和发送状态机保持唯一。
 
 ## 资源身份
 
@@ -126,3 +126,27 @@ Web/PWA IndexedDB、Electron Main SQLite 已消费同一 contract。原生移动
 ## 明确不承诺
 
 该 contract 不承诺离线模型执行、离线权限判断、离线支付/验证、iOS 立即后台发送，也不把一次成功恢复称作服务端已接受。离线启动只证明应用壳和允许展示的本地数据可用。
+
+### File browser presentation
+
+The workspace file session owns the selected location, per-directory filter and
+scroll receipts, document drafts, editor scroll/selection and line-wrap preference.
+The directory list and desktop tree share the filesystem query cache; neither owns
+a second filesystem snapshot. Folder rows navigate to a directory; file rows open
+the viewer. Returning to the containing directory restores its filter and scroll.
+
+Below 640 CSS pixels of **panel container** capacity, show one surface at a time:
+directory contents or file contents. Do not allocate a permanent tree column in a
+narrow pane. Wider containers allow the existing optional tree alongside the
+viewer; resizing does not change selection or the user's tree-open preference.
+The Shell keeps ownership of the global sidebar and bottom overview controls.
+
+The file header is a single row. The full path is available through Copy path and
+the title; the ancestor strip shows the nearest two ancestors, with earlier
+ancestors in a shared accessible menu. It never repeats the current file or directory
+name, and long ancestor labels truncate within the panel capacity. Code defaults to horizontal scrolling, with Wrap long lines in the file
+menu. Folder artwork is an original SVG whose palette derives from theme tokens.
+
+Validation: `scripts/smoke/resources/smoke-file-navigation.ts` exercises real
+components with a synthetic filesystem at narrow/wide sizes in light/dark themes,
+including directory return, filters, code overflow, drafts and width changes.

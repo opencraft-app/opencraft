@@ -16,12 +16,33 @@ export interface PanelRendererProps {
   readonly presentationId: string;
   /** Logical visibility, not exit-animation progress. Inactive cannot own input. */
   readonly active?: boolean;
+  /** Read-only placement of this same viewer. May initialize its first UI,
+   * but must not create resources, publish dimensions, focus, or accept input. */
+  readonly overviewPreview?: boolean;
   /** Shell-owned touch toolbar slot; null while the slot is mounting. */
   readonly toolbarContainer?: HTMLElement | null;
   readonly touchToolbar?: boolean;
+  /** A prepared scene can replace its preview. Report errors as ready only once
+   * the renderer has a usable error surface. Never implies remote page load. */
+  readonly onPresentationReady?: () => void;
 }
 
 export interface PanelRendererRegistration {
+  /** Async/native surfaces explicitly acknowledge presentation readiness.
+   * Ordinary DOM and retained viewers are ready after the host layout commit. */
+  readonly presentationReadiness?: 'renderer';
+  /** Reuse the resident physical viewer in read-only, scaled overview placement.
+   * The host moves its stable portal target; it must never create another resource. */
+  readonly previewPresentation?: 'retained-view';
+  /** Conversation previews frame the latest visible content like primary Chat. */
+  readonly previewAnchor?: 'start' | 'end';
+  /** Explicitly safe for plain reparenting on legacy engines (no live frame/media).
+   * Other viewers retain their original placement when atomic/top-layer APIs lack. */
+  readonly previewFallback?: 'reparent-safe';
+  /** Optional, read-only preview. Never mount a live tool to produce a card. */
+  readonly subscribePreview?: (tab: import("@opencraft/workbench-panels").PanelTabDescriptor, listener: () => void) => () => void;
+  readonly preview?: import("@opencraft/workbench-panels").PanelPreviewProvider;
+  readonly label?: { readonly id: string; readonly defaultMessage: string };
   readonly kind: string;
   readonly Component: ComponentType<PanelRendererProps>;
   /** Opt-in only: preserve the physical viewer while its tab remains open. */
@@ -48,6 +69,9 @@ export class WorkbenchPanelRendererRegistryService extends Service {
   }
 
   register(registration: PanelRendererRegistration): () => void {
+    if (registration.previewPresentation === 'retained-view' && registration.residency !== 'while-tab-open') {
+      throw new RangeError('Retained-view previews require while-tab-open residency');
+    }
     if (registration.kind.trim().length === 0) throw new RangeError("Panel renderer kind must not be empty");
     if (this.renderers.has(registration.kind)) throw new Error(`Panel renderer ${registration.kind} is already registered`);
     this.renderers.set(registration.kind, registration);

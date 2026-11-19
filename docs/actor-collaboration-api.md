@@ -213,3 +213,58 @@ Origins. It shares `ThreadOrchestrationBroker.cli`, resource checks, immutable
 input delegation and the original write budget; it creates no parallel queue.
 The child's durable Broker parentage, rather than each engine's native lineage,
 is the authority for paginated discovery. See [Conversation CLI](thread-cli.md).
+
+## 多 Human 发现与实施范围
+
+同一核心服务可接收多个 Human 的独立认证请求。旧 discover 与 discoverMetadata 均在返回前按当前调用者的 conversation.discover 权限过滤目录行；查询期间撤权也生效。空页保留下一页游标，发现权限不等于历史读取权限。已有无显式归属的历史会话保持实例共享政策；本次不改变旧原生接口准入，不宣称完整资源或执行隔离。具体核心/插件边界、测试与后续缺口见[多 Human Server 覆盖账本](multi-human-server.md)。
+
+## Channels 与身份 Inbox 的唯一写入路径
+
+Channels 统一私聊、原生群聊和外部渠道接入，客户端沿用逻辑 AppServer 的 WebSocket
+请求与失效通知。原生 Channels 的 HTTP 与 WebSocket 适配器均调用 `Collaboration.communicate`，
+由受 Server 所有权约束的存储 Worker 执行同一个 `communicationCommand`。
+授权、成员关系、幂等键、消息以及执行意图在同一数据库事务内核验和提交。
+Worker 不复用主线程权限投影：它在事务内读取当前身份、凭据和授权，避免跨线程缓存滞后。
+外部渠道仍由自己的 provider 持有消息事实，不能另建一套原生群或覆盖目录入口。
+
+`opencraft/inbox/sync` 返回当前 Actor 的原生会话投影、最近消息、未读数和移除标记；
+它不是第二份消息日志。游标绑定 Actor、身份代次、投影 epoch；分页可重复、可恢复。
+`opencraft/channels/read` 只推进当前身份的已读位置，成员重新加入后使用新的成员 epoch。
+原生群历史对当前成员可见，重新加入前的消息不计为新增未读；空群和空私聊也在 Inbox 中。
+外部渠道不提供原生已读保证，不填造未读数。
+
+客户端每个已认证 Server 生命周期持有一个 Inbox 副本。连接、目录读取和服务端通知驱动
+追平，重连沿用游标；身份变化关闭并清空副本。不另建 HTTP 轮询连接。前台群聊窗口真正
+可见且滚动到底部时才推进已读；隐藏窗口、预览和旧响应不确认消息已读。
+
+通信服务可以不接 `ConversationExecutionPort`。发送消息不启动模型；显式唤醒请求只在
+既有授权和持久执行绑定有效时进入执行队列，由执行宿主独立消费。缺少绑定时，带唤醒的
+发送整体失败，不遗留半条消息。通信 Worker 不持有引擎句柄，不调用执行宿主。
+当前实现为同一 Server 的对称 Actor 通信，不声称已实现跨 Server 联邦。
+
+验证入口：`tests/identity/communication-worker.test.ts`、
+`tests/extensions/im-channels-appserver.test.ts`、`tests/identity/actor-inbox-client.test.ts`、
+`scripts/smoke/execution/smoke-native-channels.ts`。浏览器烟测使用真实 Workbench、WebSocket、
+存储 Worker 与 SQLite；身份为本地合成身份，分别覆盖浅色鼠标与深色触控模拟。
+
+### Native mention visibility
+
+Native group mentions retain the selected Actor and exact source range, never an
+identity inferred from `@name` text. Inbox projects `mentionUnreadCount` and the
+oldest `firstUnreadMentionSequence`. `channels/read` advances ordinary unread only;
+it cannot consume unseen mentions outside the latest history page.
+`opencraft/channels/mentions/ack {channelId,messageId}` acknowledges only the
+current member's own mentioned message after their current join watermark. It is
+idempotent and persisted; other recipients, other channels and pre-rejoin messages
+are rejected. Migration 17 preserves previously read mentions without resurrecting
+historical alerts. Web acknowledges a visible mention marker only in the focused,
+foreground, non-hidden timeline, and retains the marker on failed delivery.
+The unread-mention action opens the existing focused-history route and preserves
+the channel draft. Markdown literals carry exact validated source spans through
+normalization; plain matching names and code/link destinations do not gain identity.
+
+Members may carry provider-owned `mentionDelivery` readiness. Native-only mentions
+and non-wakeable Bots are explained before send; a linked identity is not a provider
+delivery receipt. WeCom's documented inbound `MentionedType` describes whether the
+service was mentioned, not ordinary human target IDs. Its group-sync view advertises
+`mentionIngress: text-only`; incoming display names must not be guessed as Actors.

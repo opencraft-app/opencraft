@@ -35,6 +35,7 @@ test("feature renderers cannot choose local glyph metrics or recreate the rail",
     'function ThreadTool(){return <div><Bot/>Created</div>}',
   ]) assert.ok(inspectActivityJsx(source).length > 0, source);
   assert.deepEqual(inspectActivityJsx('<ActivitySummaryRow icon={<ListChecks/>} summary="Done"/>'), []);
+  assert.deepEqual(inspectActivityJsx('function SubagentBlock(){return <SubagentActivityRow blocks={[block]}/>;}'), []);
   assert.deepEqual(inspectActivityJsx('function CompactionBlock(){return <ActivitySummaryRow icon={<ListChecks/>} summary="Done"/>}'), []);
   assert.deepEqual(inspectActivityJsx('function SubagentBlock(){return <button className="thread-subagent-trigger"><ActivityIcon><Bot/></ActivityIcon></button>}'), []);
   assert.ok(inspectActivityJsx('function SubagentBlock(){return <button className="thread-subagent-trigger"><Bot/></button>}').length > 0);

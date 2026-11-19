@@ -1,3 +1,4 @@
+import { inputExecutionEnded, type InputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { createPendingInteractionProjector } from "./pending-interaction-projection";
 import { createSteeringAcknowledgementResolver, type SteeringAcknowledgementResolver } from "./steering-acknowledgement-index";
 import { humanInteractionWaitReason } from "@opencraft/appserver-protocol";
@@ -94,6 +95,9 @@ export interface ConversationRuntime {
   startQueuedSubmission(queuedSubmissionId?: string): Promise<TurnId>;
   steerQueuedSubmission(queuedSubmissionId: string): Promise<TurnId>;
   dismissFailedSubmission(commandId: string): void;
+  /** Local abandonment only: the Host may still accept the original message. */
+  abandonUnknownSubmission(commandId: string): Promise<void>;
+  retryQueuedSubmission(commandId: string): Promise<void>;
   dispose(): void;
 }
 
@@ -880,6 +884,7 @@ function queuedInputPreview(input: readonly UserInput[]): string {
 }
 
 interface OptimisticSubmissionState extends PendingSubmission {
+  readonly delivery?: InputDeliveryReceipt;
   readonly kind: "turn" | "steer";
   readonly targetTurnId: TurnId | null;
   /**
@@ -988,6 +993,7 @@ function optimisticItem(state: OptimisticSubmissionState): TimelineSourceItem {
             ? "sent"
             : "sending",
       sentAtMs: state.createdAt,
+      ...(state.delivery ? {inputDelivery: state.delivery} : {}),
     },
   };
 }
@@ -1304,6 +1310,9 @@ export function createReplicaConversationRuntime(
   }>();
   const submissionSenders = new Map<string, MessageSender>();
   const pendingSubmissions = new Map<string, OptimisticSubmissionState>();
+  // Releasing the local fence never grants permission to replay that identity.
+  const abandonedCommands = new Set<string>();
+  const abandonedClientIds = new Set<string>();
   const confirmedSteers = new Map<string, OptimisticSubmissionState>();
   const authoritativeSteers = new Map<string, OptimisticSubmissionState>();
   const steerEvidence = new Map<string, SteerInputStatus>();
@@ -1328,6 +1337,7 @@ export function createReplicaConversationRuntime(
     return lastEvidenceFrames.result;
   };
   const steeringClaims = new Map<string, ProtocolSteeringSubmission>();
+  const inputReceipts = new Map<string,InputDeliveryReceipt>();
   const authoritativeQueue = new Map<string, QueuedSubmission>();
   let pendingQueueOrder: readonly string[] | null = null;
   let localRevision = 0;
@@ -1424,8 +1434,12 @@ export function createReplicaConversationRuntime(
       view.pendingInteractions, pendingInteractionCache,
     );
     const history = sourceTurns(view.turns ?? thread.turns, sourceTurnCache);
+    const closedReceiptByTurn = new Map([...inputReceipts.values()].filter(inputExecutionEnded).map(receipt=>[receipt.targetTurnId,receipt]));
     const source = history.map((original, index) => {
       let turn = original;
+      const closedReceipt=closedReceiptByTurn.get(String(original.id));
+      if (closedReceipt && (turn.status==='streaming'||turn.status==='pending'))
+        turn={...turn,status:closedReceipt.execution==='completed'?'complete':closedReceipt.execution==='interrupted'?'interrupted':'failed'};
       // Native history may retain inProgress across a process restart. Only
       // a later authoritative Turn proves it has been superseded. Thread status
       // travels independently and may still be idle when a new Turn starts.
@@ -1451,6 +1465,8 @@ export function createReplicaConversationRuntime(
         }
       }
     }
+    // The normal streaming path has no local custody to reconcile. Avoid
+    // scanning every historical Item unless the outbox actually has entries.
     if (replica.authoritative && outbox?.hasPending()) outbox.reconcile(new Set([
       ...sourceClientMessageIds(source), ...[...authoritativeQueue.values()].map(item => item.clientMessageId),
     ]));
@@ -1594,13 +1610,15 @@ export function createReplicaConversationRuntime(
         return {
           ...submission,
           ...(submission.sender === undefined && sender ? { sender: { ...sender } } : {}),
+          ...(submission.actions ? { actions: { ...submission.actions,
+            reorder: submission.actions.reorder && ![...authoritativeQueue.values()].some(item => item.actions?.reorder === false) } } : {}),
           operation: queuePromotions.has(submission.clientMessageId) ? "starting" : submission.operation,
-          steerable: submission.serverSubmissionId !== null || (submission.state === "submitting"
-            && replica.authoritative && replica.phase === "live" && submission.error === null),
+          steerable: submission.actions?.start !== false && (submission.serverSubmissionId !== null || (submission.state === "submitting"
+            && replica.authoritative && replica.phase === "live" && submission.error === null)),
         };
       }),
       unconfirmedSteers: [...steeringClaims.values()].filter(
-        (item) => item.pausedReason === "steer-delivery-unconfirmed" || item.pausedReason === "delivery-retry-requested",
+        (item) => (item.pausedReason === "steer-delivery-unconfirmed" || item.pausedReason === "delivery-retry-requested") && item.delivery?.custody!=="accepted" && !inputExecutionEnded(item.delivery),
       ),
       history: {
         hasOlder:
@@ -1624,6 +1642,48 @@ export function createReplicaConversationRuntime(
   snapshot = derive();
   scheduleCapacityRetry();
   const removeReplicaListener = config.replica.subscribe(() => { publish(); outbox?.wake(); });
+
+  // Replica input and queue entries are also authoritative admission proofs.
+  // A missing RPC response must not retain a Draft whose exact message ID is
+  // already owned by the Host. Never infer custody from an optimistic bubble,
+  // matching text, cached history, or a Turn's local input hint.
+  const replicaReceipt = (intent: SubmitIntent): SubmissionReceipt | null => {
+    const replica = config.replica.getSnapshot();
+    if (!replica.authoritative) return null;
+    const entity = replica.entities.get(config.key.threadId);
+    const view = isRecord(entity) ? entity : {};
+    const thread = isRecord(view.thread) ? view.thread : {};
+    const accepted = sourceTurns(view.turns ?? thread.turns, sourceTurnCache).find(turn =>
+      (intent.target.type !== "steer-active-turn" || String(turn.id) === String(intent.target.turnId))
+      && turn.items.some(item => {
+        if (item.type !== "userMessage" && item.type !== "steeringUserMessage") return false;
+        const payload = isRecord(item.payload) ? item.payload : {};
+        return (string(payload.clientUserMessageId) ?? string(payload.clientId)) === intent.clientMessageId;
+      }));
+    const queued = [...authoritativeQueue.values()].find(item => item.clientMessageId === intent.clientMessageId);
+    if (!accepted && !queued) return null;
+    return { commandId: intent.commandId, clientMessageId: intent.clientMessageId,
+      hostId: config.key.hostId, threadId: config.key.threadId,
+      turnId: accepted ? String(accepted.id) : null, acceptedAt: Date.now(), replayed: false,
+      disposition: accepted ? "turn" : "queue",
+      ...(queued?.serverSubmissionId ? { queuedSubmissionId: queued.serverSubmissionId } : {}) };
+  };
+
+  const submitWithAdmissionProof = async (intent: SubmitIntent, options?: { readonly canDispatch: () => boolean }): Promise<SubmissionReceipt> => {
+    const existing = replicaReceipt(intent);
+    if (existing) return existing;
+    let accept!: (receipt: SubmissionReceipt) => void;
+    const proof = new Promise<SubmissionReceipt>(resolve => { accept = resolve; });
+    const check = () => { const receipt = replicaReceipt(intent); if (receipt) accept(receipt); };
+    listeners.add(check);
+    try {
+      // Subscribe before dispatch: an in-process Host may publish acceptance
+      // synchronously. Promise.race also observes any late RPC rejection.
+      return await Promise.race([proof, config.commands.submit(intent, options)]);
+    } finally {
+      listeners.delete(check);
+    }
+  };
 
   const submitOnline = async (intent: SubmitIntent, options?: { readonly canDispatch: () => boolean }): Promise<SubmissionReceipt> => {
       assertIntentTarget(config.key, intent);
@@ -1695,7 +1755,7 @@ export function createReplicaConversationRuntime(
       localRevision += 1;
       publish();
       try {
-        const receipt = await config.commands.submit(intent, options);
+        const receipt = await submitWithAdmissionProof(intent, options);
         if (disposed || options?.canDispatch() === false) return receipt;
         // An accepted message can precede its native echo. Preserve its exact
         // verified author even when the browser account contribution is late.
@@ -1705,6 +1765,10 @@ export function createReplicaConversationRuntime(
           else submissionSenders.set(intent.clientMessageId, { ...receipt.sender });
           if (submissionSenders.size > 256) submissionSenders.delete(submissionSenders.keys().next().value!);
           senderRevision++;
+        }
+        if (receipt.inputDelivery) {
+          const previous=inputReceipts.get(intent.clientMessageId);
+          if (!previous || receipt.inputDelivery.revision>=previous.revision) inputReceipts.set(intent.clientMessageId,receipt.inputDelivery);
         }
         if (options?.canDispatch() === false) return receipt;
         if (intent.target.type === "enqueue-follow-up") {
@@ -1742,10 +1806,10 @@ export function createReplicaConversationRuntime(
                 previous.kind === "steer" && receipt.turnId !== null
                   ? asTurnId(receipt.turnId)
                   : previous.targetTurnId,
-              // A steer RPC receipt is transport admission only. The steering
-              // Item becomes accepted exclusively when a matching
-              // authoritative userMessage arrives.
-              state: previous.kind === "steer" ? previous.state : "accepted",
+              delivery: inputReceipts.get(intent.clientMessageId) ?? previous.delivery,
+              // Host custody acknowledges sending. Context adoption remains a
+              // separate fact; legacy peers still require their history echo.
+              state: previous.kind === "steer" && !receipt.inputDelivery ? previous.state : "accepted",
               error: null,
             });
           }
@@ -1807,6 +1871,7 @@ export function createReplicaConversationRuntime(
     queueMicrotask(() => outbox?.wake());
   }
   const steerConfirmedQueueSubmission = async (previous: QueuedSubmission): Promise<TurnId> => {
+    if (previous.actions?.start === false) throw new Error("This queued message cannot be started here");
     const queuedSubmissionId = previous.serverSubmissionId;
     const activeTurnId = snapshot.activeTurn?.turnId;
     if (queuedSubmissionId === null) {
@@ -1832,10 +1897,11 @@ export function createReplicaConversationRuntime(
       clientMessageId: previous.clientMessageId,
       turnId: activeTurnId,
       preview: previous.preview,
-      state: "submitting",
+      state: previous.delivery?.custody==='accepted' ? "accepted" : "submitting",
       createdAt: previous.createdAt,
       error: null,
       kind: "steer",
+      delivery: previous.delivery,
       targetTurnId: activeTurnId,
       predecessorTurnId: null,
       input: [...previous.input],
@@ -1932,6 +1998,8 @@ export function createReplicaConversationRuntime(
     },
     async submit(intent) {
       assertIntentTarget(config.key, intent);
+      if (abandonedCommands.has(intent.commandId) || abandonedClientIds.has(intent.clientMessageId))
+        throw new SubmissionOutcomeUnknownError();
       resetCapacityRetry();
       if (outbox && !outbox.hydrated) await outbox.ready();
       if (outbox && ((intent.target.type !== "steer-active-turn" && outbox.hasPending())
@@ -1939,11 +2007,13 @@ export function createReplicaConversationRuntime(
         return outbox.admit(intent);
       try { return await submitOnline(intent); }
       catch (error) {
-        if (!outbox || intent.target.type !== "existing-thread" || !(error instanceof SubmissionNotDispatchedError)) throw error;
+        if (!outbox || !["existing-thread", "enqueue-follow-up"].includes(intent.target.type)
+          || !(error instanceof SubmissionNotDispatchedError)) throw error;
         // Persist custody before retiring the failed optimistic row. The outbox
         // uses the same immutable message ID and queues only after readiness.
         const receipt = await outbox.admit(intent);
         if (pendingSubmissions.get(intent.commandId)?.error === error) pendingSubmissions.delete(intent.commandId);
+        if (queued.get(intent.commandId)?.error === error) queued.delete(intent.commandId);
         localRevision++; publish();
         return receipt;
       }
@@ -2005,6 +2075,8 @@ export function createReplicaConversationRuntime(
         authoritativeQueue.set(submission.id, {
           commandId: submission.id,
           ...(submission.sender === undefined ? {} : { sender: submission.sender }),
+          actions: submission.actions,
+          delivery: submission.delivery,
           clientMessageId: submission.clientUserMessageId,
           serverSubmissionId: submission.id,
           input: [...submission.input],
@@ -2039,9 +2111,13 @@ export function createReplicaConversationRuntime(
       }
       authoritativeSteers.clear();
       steeringClaims.clear();
-      for (const submission of steeringSubmissions) {
+      for (const incoming of steeringSubmissions) {
+        const previous=inputReceipts.get(incoming.clientUserMessageId);
+        const newer=incoming.delivery;
+        if (newer && (!previous || newer.revision>=previous.revision)) inputReceipts.set(incoming.clientUserMessageId,newer);
+        const submission={...incoming,delivery:inputReceipts.get(incoming.clientUserMessageId)??incoming.delivery};
         steeringClaims.set(submission.id, submission);
-        const unconfirmedError = submission.pausedReason === null
+        const unconfirmedError = submission.delivery?.custody==='accepted' || submission.pausedReason === null || inputExecutionEnded(submission.delivery)
           ? null
           : new Error(submission.pausedReason);
         const local = [...pendingSubmissions.entries()].find(
@@ -2050,13 +2126,18 @@ export function createReplicaConversationRuntime(
         );
         if (local !== undefined) {
           const [commandId, candidate] = local;
-          pendingSubmissions.set(commandId, {
+          const updated: OptimisticSubmissionState = {
             ...candidate,
+            delivery: submission.delivery,
             turnId: asTurnId(submission.targetTurnId),
             targetTurnId: asTurnId(submission.targetTurnId),
             state: unconfirmedError === null ? "accepted" : "unknown",
             error: unconfirmedError,
-          });
+          };
+          if (inputExecutionEnded(submission.delivery)) {
+            pendingSubmissions.delete(commandId);
+            authoritativeSteers.set(submission.id,updated);
+          } else pendingSubmissions.set(commandId,updated);
           continue;
         }
         if ([...confirmedSteers.values()].some(
@@ -2065,6 +2146,7 @@ export function createReplicaConversationRuntime(
         authoritativeSteers.set(submission.id, {
           commandId: submission.id,
           clientMessageId: submission.clientUserMessageId,
+          delivery: submission.delivery,
           turnId: asTurnId(submission.targetTurnId),
           preview: queuedInputPreview(submission.input),
           state: unconfirmedError === null ? "accepted" : "unknown",
@@ -2082,7 +2164,7 @@ export function createReplicaConversationRuntime(
     },
     async updateQueuedSubmission(queuedSubmissionId, input) {
       const previous = authoritativeQueue.get(queuedSubmissionId);
-      if (previous === undefined)
+      if (previous === undefined || previous.actions?.edit === false)
         throw new Error(
           `Queued submission ${queuedSubmissionId} is not editable`,
         );
@@ -2103,6 +2185,7 @@ export function createReplicaConversationRuntime(
         );
         authoritativeQueue.set(queuedSubmissionId, {
           ...previous,
+          actions: updated.actions,
           clientMessageId: updated.clientUserMessageId,
           ...(updated.sender === undefined ? {} : { sender: updated.sender }),
           input: [...updated.input],
@@ -2133,7 +2216,7 @@ export function createReplicaConversationRuntime(
         return;
       }
       const previous = authoritativeQueue.get(queuedSubmissionId);
-      if (previous === undefined)
+      if (previous === undefined || previous.actions?.delete === false)
         throw new Error(
           `Queued submission ${queuedSubmissionId} is not deletable`,
         );
@@ -2192,6 +2275,8 @@ export function createReplicaConversationRuntime(
       publish();
     },
     async reorderQueuedSubmissions(queuedSubmissionIds) {
+      if ([...authoritativeQueue.values()].some(item => item.actions?.reorder === false))
+        throw new Error("This queue cannot be reordered here");
       const previous = [...authoritativeQueue.entries()];
       const currentIds = previous.map(([id]) => id);
       if (
@@ -2233,6 +2318,7 @@ export function createReplicaConversationRuntime(
         queuedSubmissionId ?? authoritativeQueue.keys().next().value;
       const previous =
         targetId === undefined ? undefined : authoritativeQueue.get(targetId);
+      if (previous?.actions?.start === false) throw new Error("This queued message cannot be started here");
       if (targetId !== undefined && previous !== undefined) {
         authoritativeQueue.set(targetId, {
           ...previous,
@@ -2278,6 +2364,20 @@ export function createReplicaConversationRuntime(
         return Promise.reject(new Error(`Queued submission ${queuedSubmissionId} is not steerable`));
       return promotePendingQueueSubmission(previous);
     },
+    async abandonUnknownSubmission(commandId) {
+      const local = outbox?.project().find(item => item.commandId === commandId);
+      const submission = local ?? pendingSubmissions.get(commandId) ?? queued.get(commandId);
+      if (submission?.state !== "unknown") throw new Error("Only an unconfirmed local submission can be abandoned");
+      if (local) await outbox!.abandon(commandId);
+      abandonedCommands.add(commandId);
+      abandonedClientIds.add(submission.clientMessageId);
+      pendingSubmissions.delete(commandId);
+      queued.delete(commandId);
+      localRevision++; publish(); outbox?.wake();
+    },
+    async retryQueuedSubmission(commandId) {
+      if (!outbox || !await outbox.retry(commandId)) throw new Error("Only a failed local outbox submission can be retried");
+    },
     dismissFailedSubmission(commandId) {
       if (queued.get(commandId)?.state === "failed") {
         queued.delete(commandId);
@@ -2304,6 +2404,7 @@ export function createReplicaConversationRuntime(
       submissionSenders.clear();
       confirmedSteers.clear();
       authoritativeQueue.clear();
+      inputReceipts.clear();
       pendingQueueOrder = null;
     },
   };

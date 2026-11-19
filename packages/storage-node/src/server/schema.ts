@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, blob, primaryKey, index, uniqueIndex, foreignKey, check } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, blob, primaryKey, index, uniqueIndex, foreignKey, check } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const accessAudit = sqliteTable("access_audit", {
@@ -7,12 +7,12 @@ export const accessAudit = sqliteTable("access_audit", {
   operator: text("operator").notNull(),
   binding: text("binding").notNull(),
   action: text("action").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const accessImports = sqliteTable("access_imports", {
   source: text("source").notNull().primaryKey(),
-}, table => [
+}, _table => [
 ]);
 
 export const accountInvitations = sqliteTable("account_invitations", {
@@ -23,7 +23,7 @@ export const accountInvitations = sqliteTable("account_invitations", {
   subject: text("subject").notNull(),
   actorId: text("actor_id"),
   createdBy: text("created_by").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const accountSetup = sqliteTable("account_setup", {
@@ -33,7 +33,7 @@ export const accountSetup = sqliteTable("account_setup", {
   username: text("username"),
   subject: text("subject"),
   ownerActor: text("owner_actor"),
-}, table => [
+}, _table => [
   check("account_setup_check_1", sql.raw("id=1")),
 ]);
 
@@ -44,13 +44,13 @@ export const actorAudit = sqliteTable("actor_audit", {
   actorId: text("actor_id").notNull(),
   action: text("action").notNull(),
   resource: text("resource"),
-}, table => [
+}, _table => [
 ]);
 
 export const actorAuthority = sqliteTable("actor_authority", {
   singleton: integer("singleton").primaryKey(),
   id: text("id").notNull(),
-}, table => [
+}, _table => [
   check("actor_authority_check_1", sql.raw("singleton=1")),
 ]);
 
@@ -68,7 +68,7 @@ export const actorCollaborationAudit = sqliteTable("actor_collaboration_audit", 
   resourceId: text("resource_id").notNull(),
   detail: text("detail").notNull(),
   happenedAt: integer("happened_at").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const actorCredentials = sqliteTable("actor_credentials", {
@@ -148,7 +148,7 @@ export const actorMembers = sqliteTable("actor_members", {
   actorId: text("actor_id").notNull().primaryKey(),
   role: text("role").notNull(),
   enabled: integer("enabled").notNull(),
-}, table => [
+}, _table => [
   check("actor_members_check_1", sql.raw("role IN ('admin','member')")),
   check("actor_members_check_2", sql.raw("enabled IN (0,1)")),
 ]);
@@ -166,10 +166,27 @@ export const actorMessages = sqliteTable("actor_messages", {
   serverId: text("server_id"),
   sourceRef: text("source_ref"),
   delegationId: text("delegation_id"),
+  authorDisplayName: text("author_display_name"),
 }, table => [
   index("actor_messages_channel").on(table.channelId, table.seq),
   uniqueIndex("actor_messages_seq_unique").on(table.seq),
 ]);
+
+export const actorChannelMentions = sqliteTable("actor_channel_mentions", {
+  messageId: text("message_id").notNull().references(() => actorMessages.id),
+  actorId: text("actor_id").notNull(),
+  start: integer("start").notNull(), end: integer("end").notNull(),
+  displayName: text("display_name").notNull(), actorKind: text("actor_kind").notNull(),
+}, table => [primaryKey({columns:[table.messageId,table.start]}),
+  index("actor_channel_mentions_receiver").on(table.actorId,table.messageId),
+  check("actor_channel_mentions_range",sql.raw("start >= 0 AND end > start")),
+  check("actor_channel_mentions_kind",sql.raw("actor_kind IN ('human','session')"))]);
+
+/** A visible mention is acknowledged independently of the ordinary read-to-latest cursor. */
+export const actorChannelMentionReads = sqliteTable("actor_channel_mention_reads", {
+  messageId: text("message_id").notNull().references(() => actorMessages.id),
+  actorId: text("actor_id").notNull(),
+}, table => [primaryKey({columns:[table.messageId,table.actorId]})]);
 
 export const actorRunBindings = sqliteTable("actor_run_bindings", {
   actorId: text("actor_id").notNull().primaryKey(),
@@ -199,7 +216,7 @@ export const actors = sqliteTable("actors", {
   generation: integer("generation").notNull(),
   createdAt: integer("created_at").notNull(),
   createdBy: text("created_by"),
-}, table => [
+}, _table => [
   check("actors_check_1", sql.raw("kind IN ('human','session')")),
   check("actors_check_2", sql.raw("enabled IN (0,1)")),
 ]);
@@ -231,7 +248,7 @@ export const conversationAuthorities = sqliteTable("conversation_authorities", {
 export const conversationToolBudget = sqliteTable("conversation_tool_budget", {
   authorityId: text("authority_id").notNull().primaryKey(),
   sent: integer("sent").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const conversationTurnAuthorities = sqliteTable("conversation_turn_authorities", {
@@ -246,7 +263,7 @@ export const conversationTurnAuthorities = sqliteTable("conversation_turn_author
 export const humanIdentityLabels = sqliteTable("human_identity_labels", {
   binding: text("binding").notNull().primaryKey(),
   label: text("label").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const humanLogins = sqliteTable("human_logins", {
@@ -278,7 +295,7 @@ export const members = sqliteTable("members", {
   binding: text("binding").notNull().primaryKey(),
   role: text("role").notNull(),
   enabled: integer("enabled").notNull(),
-}, table => [
+}, _table => [
   check("members_check_1", sql.raw("role IN ('admin','member')")),
   check("members_check_2", sql.raw("enabled IN (0,1)")),
 ]);
@@ -354,7 +371,7 @@ export const opencraftOrchestrationRuntimeViews = sqliteTable("opencraft_orchest
   turnId: text("turn_id"),
   state: text("state").notNull(),
   updatedAtMs: integer("updated_at_ms").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const opencraftOrchestrationToolCalls = sqliteTable("opencraft_orchestration_tool_calls", {
@@ -390,7 +407,7 @@ export const opencraftServerImports = sqliteTable("opencraft_server_imports", {
   rowCounts: text("row_counts").notNull(),
   backupPath: text("backup_path").notNull(),
   importedAt: integer("imported_at").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const opencraftServerInstallation = sqliteTable("opencraft_server_installation", {
@@ -398,7 +415,7 @@ export const opencraftServerInstallation = sqliteTable("opencraft_server_install
   productVersion: text("product_version").notNull(),
   contractHash: text("contract_hash").notNull(),
   completedAt: integer("completed_at").notNull(),
-}, table => [
+}, _table => [
   check("opencraft_server_installation_check_1", sql.raw("singleton=1")),
 ]);
 
@@ -462,6 +479,143 @@ export const executionCapabilityBindings = sqliteTable("execution_capability_bin
   sessionJson: text("session_json"),
 }, table => [uniqueIndex("execution_capability_bindings_server_id_thread_id_unique").on(table.serverId, table.threadId)]);
 
+export const actorChannelIdentity = sqliteTable("actor_channel_identity", {
+  epoch: text("epoch").notNull(),
+});
+
+export const actorChannels = sqliteTable("actor_channels", {
+  id: text("id").notNull().primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  peerId: text("peer_id"),
+  title: text("title"),
+  createKey: text("create_key"),
+  createFingerprint: text("create_fingerprint"),
+}, table => [
+  uniqueIndex("actor_channels_owner_id_create_key_unique").on(table.ownerId, table.createKey),
+  index("actor_channels_peer").on(table.peerId),
+]);
+
+// Native group lifecycle, explicit departure fences, and personal list visibility
+// are separate facts. Provider bindings never own any of these states.
+export const actorChannelLifecycles = sqliteTable("actor_channel_lifecycles", {
+  channelId: text("channel_id").notNull().primaryKey().references(() => actorChannels.id),
+  revision: integer("revision").notNull().default(1),
+  dissolvedAt: integer("dissolved_at"),
+  dissolvedBy: text("dissolved_by"),
+}, table => [check("actor_channel_lifecycles_revision", sql`${table.revision} >= 1`)]);
+export const actorChannelListStates = sqliteTable("actor_channel_list_states", {
+  channelId: text("channel_id").notNull().references(() => actorChannels.id),
+  actorId: text("actor_id").notNull(),
+  hidden: integer("hidden").notNull().default(0),
+}, table => [primaryKey({columns:[table.channelId,table.actorId]}), check("actor_channel_list_hidden",sql`${table.hidden} IN (0,1)`)]);
+export const actorChannelDepartures = sqliteTable("actor_channel_departures", {
+  channelId: text("channel_id").notNull().references(() => actorChannels.id),
+  actorId: text("actor_id").notNull(),
+  memberEpoch: text("member_epoch").notNull(),
+  leftAt: integer("left_at").notNull(),
+}, table => [primaryKey({columns:[table.channelId,table.actorId]})]);
+
+export const actorChannelMembers = sqliteTable("actor_channel_members", {
+  channelId: text("channel_id").notNull().references(() => actorChannels.id),
+  actorId: text("actor_id").notNull(),
+  epoch: text("epoch").notNull(),
+}, table => [
+  primaryKey({ columns: [table.channelId, table.actorId] }),
+  index("actor_channel_members_actor").on(table.actorId, table.channelId),
+]);
+
+export const actorChannelExecutionMembership = sqliteTable("actor_channel_execution_membership", {
+  requestId: text("request_id").notNull().references(() => actorExecutionRequests.id),
+  channelId: text("channel_id").notNull().references(() => actorChannels.id),
+  requesterEpoch: text("requester_epoch").notNull(),
+  targetEpoch: text("target_epoch").notNull(),
+}, table => [
+  primaryKey({ columns: [table.requestId, table.channelId] }),
+]);
+
+export const actorChannelChanges = sqliteTable("actor_channel_changes", {
+  revision: integer("revision").primaryKey({ autoIncrement: true }),
+  channelId: text("channel_id").notNull(),
+  messageId: text("message_id").notNull().references(() => actorMessages.id),
+}, table => [
+  uniqueIndex("actor_channel_changes_message_id_unique").on(table.messageId),
+  index("actor_channel_changes_by_channel").on(table.channelId, table.revision),
+]);
+
+export const actorInboxClock = sqliteTable("actor_inbox_clock", {
+  id: integer("id").primaryKey(), epoch: text("epoch").notNull(), revision: integer("revision").notNull(),
+}, _table => [check("actor_inbox_clock_singleton", sql`id = 1`)]);
+export const actorInboxRows = sqliteTable("actor_inbox_rows", {
+  actorId: text("actor_id").notNull(), channelId: text("channel_id").notNull(),
+  revision: integer("revision").notNull(), payload: text("payload"),
+}, table => [primaryKey({ columns: [table.actorId, table.channelId] }),
+  index("actor_inbox_changes").on(table.actorId, table.revision)]);
+
+
+export const actorChannelReads = sqliteTable('actor_channel_reads', {
+ channelId: text('channel_id').notNull(), actorId:text('actor_id').notNull(), epoch:text('epoch').notNull(),
+ joinedSeq:integer('joined_seq').notNull(), readSeq:integer('read_seq').notNull(),
+},table=>[primaryKey({columns:[table.channelId,table.actorId]})]);
+
+// External transports keep synchronization metadata, never a second timeline.
+export const actorChannelSources = sqliteTable("actor_channel_sources", {
+  source: text("source").primaryKey(),
+  channelId: text("channel_id").notNull().references(() => actorChannels.id),
+  epoch: text("epoch").notNull(), incarnation: text("incarnation").notNull(),
+  active: integer("active").notNull(), images: integer("images").notNull(),
+}, table => [uniqueIndex("actor_channel_sources_channel").on(table.channelId)]);
+export const actorChannelExternalMessages = sqliteTable("actor_channel_external_messages", {
+  messageId: text("message_id").primaryKey().references(() => actorMessages.id),
+  source: text("source").notNull(), externalId: text("external_id").notNull(),
+  senderId: text("sender_id").notNull(), fingerprint: text("fingerprint").notNull(),
+}, table => [uniqueIndex("actor_channel_external_identity").on(table.source, table.externalId)]);
+export const actorChannelAttachments = sqliteTable("actor_channel_attachments", {
+  messageId: text("message_id").primaryKey().references(() => actorMessages.id),
+  name: text("name").notNull(), mime: text("mime").notNull(), bytes: blob("bytes", { mode: "buffer" }).notNull(),
+});
+export const actorChannelImages = sqliteTable("actor_channel_images", {
+  messageId: text("message_id").primaryKey().references(() => actorMessages.id),
+  source: text("source"), mediaId: text("media_id"), mime: text("mime"), bytes: blob("bytes", { mode: "buffer" }),
+  state: text("state").notNull(), attribution: text("attribution"),
+});
+export const actorChannelOutbox = sqliteTable("actor_channel_outbox", {
+  messageId: text("message_id").primaryKey().references(() => actorMessages.id),
+  source: text("source").notNull(), sourceEpoch: text("source_epoch").notNull(),
+  actorGeneration: integer("actor_generation").notNull(), memberEpoch: text("member_epoch").notNull(),
+  credentialId: text("credential_id"), actorExpiresAt: integer("actor_expires_at").notNull(),
+  state: text("state").notNull(), attemptId: text("attempt_id"),
+}, table => [index("actor_channel_outbox_pending").on(table.state,table.source)]);
+
+/** Existing Bot assignments; exactly one default personal assistant per Human. */
+export const personalAssistants = sqliteTable("personal_assistants", {
+  botId: text("bot_id").notNull().primaryKey(),
+  actorId: text("actor_id").notNull(),
+  ownerHumanId: text("owner_human_id").notNull(),
+  ownerGeneration: integer("owner_generation").notNull(),
+  assignmentId: text("assignment_id").notNull(),
+  epoch: text("epoch").notNull(),
+  state: text("state").notNull(),
+  createdAt: integer("created_at").notNull(),
+  credentialId: text("credential_id"),
+  isDefault: integer("is_default").notNull().default(1),
+  duties: text("duties").notNull().default(""),
+  environment: text("environment_json").notNull().default('{"kind":"local"}'),
+  configRevision: integer("config_revision").notNull().default(0),
+  paused: integer("paused").notNull().default(0),
+  createKey: text("create_key"),
+  createFingerprint: text("create_fingerprint"),
+  modelSelection: text("model_selection"),
+  modelRevision: integer("model_revision").notNull().default(0),
+}, table => [
+  uniqueIndex("personal_assistants_default_owner_unique").on(table.ownerHumanId).where(sql`${table.isDefault}=1`),
+  uniqueIndex("personal_assistants_create_key").on(table.ownerHumanId,table.createKey),
+  check("personal_assistants_default_boolean", sql.raw("is_default IN (0,1)")),
+  check("personal_assistants_paused_boolean", sql.raw("paused IN (0,1)")),
+  uniqueIndex("personal_assistants_actor_unique").on(table.actorId),
+  foreignKey({ columns: [table.actorId], foreignColumns: [actors.id] }),
+  foreignKey({ columns: [table.ownerHumanId], foreignColumns: [actors.id] }),
+  check("personal_assistants_state", sql.raw("state IN ('claimed','revoked')")),
+]);
 export const threadAccess = sqliteTable("thread_access", {
   serverId: text("server_id").notNull(), threadId: text("thread_id").notNull(),
   creatorActorId: text("creator_actor_id"), accessMode: text("access_mode").notNull(),
@@ -505,6 +659,31 @@ export const automationDelegations = sqliteTable("automation_delegations", {
   authorityId: text("authority_id").primaryKey(), runKey: text("run_key").notNull(), grantId: text("grant_id").notNull(),
 },table=>[index("automation_delegations_run").on(table.runKey)]);
 
+/** Explicit Human grant. The saved native settings are a snapshot, never model input. */
+export const assistantThreadProfiles = sqliteTable("assistant_thread_profiles", {
+  botId: text("bot_id").notNull().references(() => personalAssistants.botId),
+  id: text("id").notNull(), epoch: text("epoch").notNull(), revision: integer("revision").notNull(),
+  source: text("source").notNull(), settings: text("settings").notNull(), enabled: integer("enabled").notNull(),
+}, t => [primaryKey({columns:[t.botId,t.id]})]);
+/** Command receipts; native engine creation and the existing input queue own execution. */
+export const assistantThreadOperations = sqliteTable("assistant_thread_operations", {
+  id:text("id").primaryKey(),botId:text("bot_id").notNull().references(()=>personalAssistants.botId),
+  epoch:text("epoch").notNull(),requestKey:text("request_key").notNull(),fingerprint:text("fingerprint").notNull(),
+  command:text("command").notNull(),args:text("args").notNull(),workId:text("work_id"),
+  profileId:text("profile_id").notNull(),profileRevision:integer("profile_revision").notNull(),
+  state:text("state").notNull(),reference:text("reference"),result:text("result"),createdAt:integer("created_at").notNull(),
+},t=>[uniqueIndex("assistant_thread_operation_key").on(t.botId,t.epoch,t.requestKey),index("assistant_thread_owned_page").on(t.botId,t.epoch,t.command,t.id),index("assistant_thread_target").on(t.botId,t.epoch,t.reference,t.command)]);
+
+export const actorHumanReservations = sqliteTable("actor_human_reservations", {
+  binding: text("binding").primaryKey().notNull(),
+  actorId: text("actor_id").notNull().references(() => actors.id),
+  loginProvider: text("login_provider").notNull(),
+  alias: text("alias").notNull(),
+  createdAt: integer("created_at").notNull(),
+  state: text("state").notNull(),
+}, table => [index("actor_human_reservations_alias").on(table.loginProvider, table.alias, table.state),
+  check("actor_human_reservations_state", sql`state IN ('pending','claimed','revoked')`)]);
+
 export const collaborationSpaces = sqliteTable("collaboration_spaces", {
   id: text("id").primaryKey(), name: text("name").notNull(), ownerActorId: text("owner_actor_id").notNull(),
   createdAt: integer("created_at").notNull(),
@@ -523,3 +702,16 @@ export const collaborationSpaceThreads = sqliteTable("collaboration_space_thread
   engineServerId: text("engine_server_id").notNull(), threadId: text("thread_id").notNull(), spaceId: text("space_id").notNull(),
 }, table => [primaryKey({columns:[table.engineServerId,table.threadId]}),
   foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]})]);
+
+
+/** Non-table DDL owned by this schema; executed only through reviewed migrations.
+ * Drizzle SQLite snapshots do not represent triggers. Keep exact schema checks
+ * inclusive of these hooks rather than excluding triggers from validation. */
+export const CHANNEL_SYNC_TRIGGERS_SQL = `CREATE TRIGGER actor_channel_message_inserted AFTER INSERT ON actor_messages
+  WHEN new.target_kind IN ('actor','channel') BEGIN
+    INSERT INTO actor_channel_changes(channel_id,message_id) VALUES(new.channel_id,new.id);
+END;
+CREATE TRIGGER actor_channel_request_linked AFTER INSERT ON actor_execution_inputs BEGIN
+    INSERT OR REPLACE INTO actor_channel_changes(channel_id,message_id)
+      SELECT channel_id,id FROM actor_messages WHERE id=new.message_id AND target_kind IN ('actor','channel');
+END;`;

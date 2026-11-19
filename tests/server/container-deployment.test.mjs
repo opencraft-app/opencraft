@@ -7,6 +7,12 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { deploymentPaths, readPrivateToken } from '../../scripts/container-deployment/paths.mjs';
 import { handsResources } from '../../scripts/container-deployment/resources.mjs';
 import { OWNER_ORDER, assertImageReference, deploymentIdentity, parseEnvironment, setEnvironmentValue } from '../../scripts/container-deployment/compose-release.mjs';
+import { legacyLayoutValues } from '../../scripts/container-deployment/layout.mjs';
+
+const composeExecutable = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ?? 'docker';
+const composePrefix = process.env.OPENCRAFT_COMPOSE_EXECUTABLE ? [] : ['compose'];
+const composeAvailable = () => spawnSync(composeExecutable, [...composePrefix, 'version'], { stdio: 'ignore' }).status === 0;
+const compose = (args, options) => execFileSync(composeExecutable, [...composePrefix, ...args], options);
 
 test('Compose release transactions preserve env content and owner dependency order', () => {
   assert.deepEqual(OWNER_ORDER, ['hands', 'brain', 'gateway']);
@@ -61,13 +67,14 @@ test('core authentication refuses readable-by-others and empty files', async t =
 });
 
 test('rendered Compose separates gateway, brain and hands while preserving path identity', t => {
-  if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
+  if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
-  const config = JSON.parse(execFileSync('docker', ['compose', '-f', 'docker/compose.yaml', 'config', '--format', 'json'], {
+  const config = JSON.parse(compose(['-f', 'docker/compose.yaml', 'config', '--format', 'json'], {
     cwd: new URL('../..', import.meta.url), encoding: 'utf8',
     env: { ...process.env, OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345',
-      OPENCRAFT_HOST_DATA_DIR: '/home/demo/.opencraft', OPENCRAFT_DATA_DIR: '/data/.opencraft',
-      OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/data' },
+      OPENCRAFT_HOST_DATA_DIR: '/srv/opencraft/state', OPENCRAFT_DATA_DIR: '/var/lib/opencraft',
+      OPENCRAFT_HOST_LOG_DIR: '/srv/opencraft/logs', OPENCRAFT_LOG_DIR: '/var/log/opencraft',
+      OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/opencraft/workspaces', OPENCRAFT_WORKSPACE_DIR: '/workspace' },
   }));
   assert.deepEqual(Object.keys(config.services).sort(), ['brain', 'gateway', 'hands']);
   const service = config.services.gateway, brain = config.services.brain, hands = config.services.hands;
@@ -76,33 +83,44 @@ test('rendered Compose separates gateway, brain and hands while preserving path 
     assert.deepEqual(value.build.args, { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345' });
     assert.equal(value.network_mode, 'host');
     assert.equal(value.ports, undefined);
+    assert.deepEqual(value.logging, { driver: 'local', options: { 'max-size': '10m', 'max-file': '3' } });
   }
   assert.equal(service.pid, 'host');
   assert.equal(brain.pid, 'host');
   assert.equal(hands.pid, undefined);
   assert.deepEqual(hands.cap_drop, ['ALL']);
   assert.deepEqual([...hands.cap_add].sort(), ['SETGID', 'SETUID', 'SYS_ADMIN', 'SYS_CHROOT']);
-  assert.equal(hands.environment.HOME, '/data/.opencraft/hands');
+  assert.equal(hands.environment.HOME, '/var/lib/opencraft/execution');
   assert.deepEqual(hands.volumes.map(v => [v.source, v.target]), [
-    ['/home/demo/.opencraft/hands', '/data/.opencraft/hands'],
-    ['/srv/projects', '/data'],
+    ['/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials'],
+    ['/srv/opencraft/state/execution', '/var/lib/opencraft/execution'],
+    ['/srv/opencraft/workspaces', '/workspace'],
+    ['/srv/opencraft/logs', '/var/log/opencraft'],
+    ['/srv/opencraft/logs/hands', '/var/log/opencraft/hands'],
   ]);
-  assert.equal(hands.environment.OPENCRAFT_HANDS_EXECUTION_SOCKET, '/data/.opencraft/hands/exec-owner.sock');
-  assert.equal(hands.environment.OPENCRAFT_WORKSPACE_DIR, '/data');
+  for (const [name, value] of Object.entries(config.services)) {
+    assert.equal(value.volumes.find(v => v.target === '/var/log/opencraft').read_only, true);
+    assert.notEqual(value.volumes.find(v => v.target === `/var/log/opencraft/${name}`).read_only, true);
+    assert.deepEqual(value.entrypoint, ['/opt/opencraft/bin/node', '/opt/opencraft/runtime/container-service.mjs', name]);
+    assert.equal(value.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, '/workspace/sessions/codex');
+    assert.equal(value.environment.OPENCRAFT_BROWSER_DATA_DIR, '/var/lib/opencraft/execution/browser');
+  }
+  assert.equal(hands.environment.OPENCRAFT_HANDS_EXECUTION_SOCKET, '/var/lib/opencraft/execution/exec-owner.sock');
+  assert.equal(hands.environment.OPENCRAFT_WORKSPACE_DIR, '/workspace');
   assert.equal(hands.environment.OPENCRAFT_HANDS_CPUS, '4.0');
   assert.equal(hands.environment.OPENCRAFT_HANDS_MEMORY_BYTES, '8589934592');
   assert.equal(hands.cpus, 4);
   assert.equal(hands.mem_limit, '8589934592');
   // Some Compose versions omit false-valued bind options from JSON output.
   assert.deepEqual(service.volumes.map(v => [v.type, v.source, v.target, v.bind?.create_host_path ?? false]), [
-    ['bind', '/home/demo/.opencraft', '/data/.opencraft', false], ['bind', '/srv/projects', '/data', false],
+    ['bind', '/srv/opencraft/state/execution/git-credentials', '/var/lib/opencraft/git-credentials', false],
+    ['bind', '/srv/opencraft/state', '/var/lib/opencraft', false], ['bind', '/srv/opencraft/workspaces', '/workspace', false],
+    ['bind', '/srv/opencraft/logs', '/var/log/opencraft', false], ['bind', '/srv/opencraft/logs/gateway', '/var/log/opencraft/gateway', false],
   ]);
   const paths = deploymentPaths(service.environment);
   assert.equal(service.command[service.command.indexOf('--data-dir') + 1], paths.dataDirectory);
   assert.equal(service.command[service.command.indexOf('--engines') + 1], 'dsh,pi');
-  assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/data/.opencraft/hands/owner.sock');
-  assert.deepEqual(brain.entrypoint, ['/opt/opencraft/bin/opencraft-host']);
-  assert.deepEqual(hands.entrypoint, ['/opt/opencraft/bin/opencraft-hands']);
+  assert.equal(service.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/var/lib/opencraft/execution/browser/owner.sock');
 });
 
 test('prebuilt role images preserve the runtime service contract and project paths', t => {
@@ -130,24 +148,44 @@ test('prebuilt role images preserve the runtime service contract and project pat
 });
 
 test('the published env example renders without hidden required variables', t => {
-  if (spawnSync('docker', ['compose', 'version'], { stdio: 'ignore' }).status !== 0)
+  if (!composeAvailable())
     return t.skip('Docker Compose CLI is unavailable');
-  assert.doesNotThrow(() => execFileSync('docker', ['compose', '-f', 'docker/compose.yaml', '--env-file', 'docker/.env.example', 'config'], {
+  assert.doesNotThrow(() => compose(['-f', 'docker/compose.yaml', '--env-file', 'docker/.env.example', 'config'], {
     cwd: new URL('../..', import.meta.url), stdio: 'pipe',
   }));
 });
 
-test('container candidates carry pinned bases, source identity and both public architectures', async () => {
+test('adopted legacy deployments render the existing browser, execution and thread cwd identities', t => {
+  if (!composeAvailable()) return t.skip('Docker Compose CLI is unavailable');
+  const environment = { OPENCRAFT_UID: '1234', OPENCRAFT_GID: '2345', OPENCRAFT_HOST_DATA_DIR: '/home/demo/.opencraft',
+    OPENCRAFT_DATA_DIR: '/data/.opencraft', OPENCRAFT_HOST_WORKSPACE_DIR: '/srv/projects', OPENCRAFT_WORKSPACE_DIR: '/data' };
+  const config = JSON.parse(compose(['-f', 'docker/compose.yaml', 'config', '--format', 'json'], {
+    cwd: new URL('../..', import.meta.url), encoding: 'utf8', env: { ...process.env, ...environment, ...legacyLayoutValues(environment) },
+  }));
+  const hands = config.services.hands, brain = config.services.brain;
+  assert.equal(hands.environment.OPENCRAFT_BROWSER_DATA_DIR, '/data/.opencraft/hands');
+  assert.equal(config.services.gateway.environment.OPENCRAFT_BROWSER_OWNER_SOCKET, '/data/.opencraft/hands/owner.sock');
+  assert.equal(config.services.gateway.environment.OPENCRAFT_GATEWAY_HOME, '/data/.opencraft/container-home');
+  assert.equal(brain.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, '/data/.opencraft/hands/projectless-workspaces');
+  assert.equal(hands.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR, brain.environment.OPENCRAFT_CODEX_PROJECTLESS_DIR);
+  assert.ok(hands.volumes.some(v => v.source === '/home/demo/.opencraft/hands' && v.target === '/data/.opencraft/hands'));
+  assert.ok(hands.volumes.some(v => v.target === '/var/log/opencraft' && v.read_only));
+});
+
+test('custom container candidates carry pinned bases, source identity and a verified owned runtime input', async () => {
   const root = new URL('../..', import.meta.url);
   const [dockerfile, workflow] = await Promise.all([
-    readFile(new URL('docker/Dockerfile', root), 'utf8'),
+    readFile(new URL('docker/Dockerfile.owned-electron', root), 'utf8'),
     readFile(new URL('.github/workflows/container.yml', root), 'utf8'),
   ]);
   assert.match(dockerfile, /node:26\.7\.0-bookworm-slim@sha256:[a-f0-9]{64}/u);
   assert.match(dockerfile, /debian:bookworm-slim@sha256:[a-f0-9]{64}/u);
   for (const label of ['org.opencontainers.image.source', 'org.opencontainers.image.revision', 'org.opencontainers.image.licenses'])
     assert.match(dockerfile, new RegExp(label.replaceAll('.', '\\.'), 'u'));
-  for (const architecture of ['amd64', 'arm64']) assert.match(workflow, new RegExp(`architecture: ${architecture}`, 'u'));
+  assert.match(workflow, /architecture: amd64/u);
+  assert.match(workflow, /target: linux-x64/u);
+  assert.match(workflow, /kind: browser/u);
+  assert.match(workflow, /--build-context "owned-electron=\$OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION"/u);
   for (const argument of ['OPENCRAFT_BUILD_ID', 'OPENCRAFT_SOURCE_REVISION', 'SOURCE_DATE_EPOCH'])
     assert.match(workflow, new RegExp(`--build-arg "${argument}=`, 'u'));
   assert.ok(workflow.indexOf('npm ci --no-audit --no-fund') < workflow.indexOf('node --test tests/server/container-deployment.test.mjs'));
@@ -169,6 +207,8 @@ test('the local GitHub builder is portable, locked, revision-pinned and advances
     readFile(new URL('packaging/container-build/opencraft-github-build.timer', root), 'utf8'),
   ]);
   assert.match(environmentExample, /^OPENCRAFT_BUILD_REPOSITORY=\/path\/to\/opencraft$/mu);
+  assert.match(environmentExample, /^OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=\/path\/to\/verified\/browser$/mu);
+  assert.match(builder, /--build-context "owned-electron=\$distribution"/u);
   assert.doesNotMatch(environmentExample, /\/root\/|imconnect/u);
   assert.match(builder, /flock -n 9/u);
   assert.match(builder, /refs\/remotes\/origin\/\$branch\^\{commit\}/u);

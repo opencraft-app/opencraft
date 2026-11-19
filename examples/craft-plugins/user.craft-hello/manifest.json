@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "user.craft-hello",
+  "name": "Craft Hello",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "trust": "trusted",
+  "platforms": [
+    "web"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "moduleSha256": "0797909065adf03a36124d848927ce9e20a35d8b7f66ca77a8eff6869a456e3e"
+}

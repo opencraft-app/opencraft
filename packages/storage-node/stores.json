@@ -158,5 +158,25 @@
     "id": "remote-browser",
     "owner": "scripts/remote-browser/state.worker.ts",
     "index": 0
+  },
+  {
+    "id": "artifact-catalog",
+    "owner": "apps/local-agent-host/src/artifacts/catalog.ts",
+    "index": 0
+  },
+  {
+    "id": "model-gateway",
+    "owner": "packages/account-pool-host/src/model-gateway-store.ts",
+    "index": 0
+  },
+  {
+    "id": "dsh-consumer-receipts",
+    "owner": "scripts/server-deployment/dsh-consumer-receipts-store.ts",
+    "index": 0
+  },
+  {
+    "id": "ordinary-workspaces",
+    "owner": "apps/local-agent-host/src/ordinary-workspace-journal.ts",
+    "index": 0
   }
 ]

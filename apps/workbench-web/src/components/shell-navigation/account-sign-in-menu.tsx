@@ -1,4 +1,4 @@
-import { Button } from "@opencraft/design-system-web/button";
+import { ShellNavigationButton } from "./navigation-button";
 import { SettingsGearIcon } from "@opencraft/design-system-web/action-icons";
 import * as DropdownMenu from "@opencraft/design-system-web/dropdown-menu";
 import { useIntl } from "@opencraft/i18n/react";
@@ -22,12 +22,12 @@ export function AccountSignInMenu({ account, signIn, id, visible, container, onO
   const label = shellAccountEntranceLabel(account, intl)!;
   return <DropdownMenu.Root open={visible && open} onOpenChange={setOpen}>
     <DropdownMenu.Trigger asChild>
-      <Button id={id} type="button" size="navigation" variant="ghost" contentLayout="row"
+      <ShellNavigationButton id={id} type="button" contentLayout="row"
         surface={floating ? "floating" : "integrated"} className="shell-navigation__entrance" data-surface="account"
         aria-label={label} title={label}>
         <AccountLeadingVisual account={account} />
         <span className="shell-navigation__name" aria-live="polite">{label}</span>
-      </Button>
+      </ShellNavigationButton>
     </DropdownMenu.Trigger>
     <DropdownMenu.Portal container={container}>
       <DropdownMenu.Content className="shell-sign-in-menu" aria-label="登录" side="top" align="start" sideOffset={8} collisionPadding={12}>

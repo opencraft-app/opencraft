@@ -84,7 +84,7 @@ export class GitIdentityBroker {
             && this.options.store.read(identity.account, request.host as string).revision === record.revision;
         };
         const signer = credential.signing ? await createMemoryGitSigner(credential.signing, this.options.runtimeDirectory, this.options.ttlMs, authorize, () => this.owner.begin('sign', true)) : null;
-        const authenticator = request.operation === 'push' && credential.sshAuth
+        const authenticator = ['push', 'fetch', 'pull', 'ls-remote', 'clone'].includes(String(request.operation)) && credential.sshAuth
           ? await createMemoryGitAuthenticator(credential.sshAuth, this.options.runtimeDirectory, this.options.ttlMs, authorize, () => this.owner.begin('ssh-auth', true)) : null;
         const id = randomUUID();
         this.sessions.set(id, { peer, startTicks: start.startTicks, account: identity.account, host: request.host,

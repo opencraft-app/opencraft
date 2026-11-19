@@ -1,3 +1,4 @@
+import { INPUT_DELIVERY_SCHEMA } from "./input-delivery-store.js";
 import { OPENCRAFT_HOST_EXECUTION_LEASES, OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK } from "./execution-lease-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_FROZEN } from "./token-usage-frozen-schema.js";
 import { OPENCRAFT_HOST_TOKEN_USAGE_ACTORS } from "./token-usage-actor-schema.js";
@@ -104,7 +105,10 @@ ALTER TABLE codex_bot_message_slots RENAME TO opencraft_bot_message_slots;
 `;
 const PREVIOUS_OWNED_SCHEMA = LEGACY_FULL_SCHEMA + OPENCRAFT_HOST_STATE_OWNED_NAMES;
 const V14_SCHEMA = PREVIOUS_OWNED_SCHEMA + OPENCRAFT_HOST_BOT_OWNED_NAMES;
-const FULL_SCHEMA = V14_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK;
+// Unledgered conversion stops at the immutable v16 owner prefix. The managed
+// generated v17 tail owns input delivery; never run its DDL before adoption.
+const LEGACY_TARGET_SCHEMA = V14_SCHEMA + OPENCRAFT_HOST_EXECUTION_LEASES + OPENCRAFT_HOST_EXECUTION_BOOT_CLOCK;
+const FULL_SCHEMA = LEGACY_TARGET_SCHEMA + INPUT_DELIVERY_SCHEMA;
 // Historical schema source and the deployed CREATE/ALTER sequence establish these
 // room layouts. Only known objects/constraints are accepted; records are retained.
 const LEGACY_ROOM_COLUMNS = [

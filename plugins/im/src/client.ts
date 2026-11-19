@@ -37,12 +37,30 @@ export class ImHttpError extends Error {
 }
 export class ImClient {
   constructor(readonly fetcher: typeof fetch) {}
-  async request<T>(body: Record<string, unknown>): Promise<T> {
+  async request<T>(body: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
     const response = await this.fetcher("/__opencraft_im", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+      signal,
     });
+    return this.decode<T>(response);
+  }
+
+  async sendImage<T>(groupId: string, requestId: string, file: File, signal: AbortSignal): Promise<T> {
+    const response = await this.fetcher(`/__opencraft_im/channel-image/${encodeURIComponent(groupId)}/${encodeURIComponent(requestId)}`, {
+      method: 'POST', headers: { 'content-type': file.type }, body: file, signal,
+    });
+    return this.decode<T>(response);
+  }
+
+  async image(groupId: string, sequence: number, signal: AbortSignal): Promise<Blob> {
+    const response = await this.fetcher(`/__opencraft_im/channel-image/${encodeURIComponent(groupId)}/${sequence}`, { signal });
+    if (!response.ok) throw new ImHttpError('image_unavailable', response.status);
+    return response.blob();
+  }
+
+  private async decode<T>(response: Response): Promise<T> {
     let value: any;
     try { value = await response.json(); }
     catch { throw new ImHttpError("invalid_server_response", response.status); }

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createConnection, createServer, type Socket } from "node:net";
 import { chmod, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -48,7 +48,14 @@ export async function handsUnixSandboxBackend(options: HandsUnixBackendOptions):
       const exited = new Promise<SandboxExit>(resolve => { exitResolve = resolve; });
       const pending: Frame[] = [];
       let wake: (() => void) | undefined, protocolError: Error | undefined;
-      const fail = (error: Error) => { protocolError ??= error; startReject?.(fault("SANDBOX_START", "Hands execution transport failed")); wake?.(); };
+      const fail = (error: Error) => {
+        protocolError ??= error;
+        // Transport loss is not confirmed cleanup. End the process wait so the
+        // stdio bridge exits; close() still retains unknown cleanup/capacity.
+        exitResolve({ code: null });
+        startReject?.(fault("SANDBOX_START", "Hands execution transport failed"));
+        wake?.();
+      };
       frames(socket, frame => {
         if (ready && frame.lease !== lease) { fail(Error("Stale Hands lease")); socket.destroy(); return; }
         if (frame.type === "output" && typeof frame.data === "string" && (frame.stream === "stdout" || frame.stream === "stderr")) output?.({ stream: frame.stream, data: Buffer.from(frame.data, "base64") });
@@ -57,7 +64,7 @@ export async function handsUnixSandboxBackend(options: HandsUnixBackendOptions):
         else { pending.push(frame); wake?.(); }
       }, fail);
       socket.once("error", fail);
-      socket.once("close", () => { ended = true; if (!graceful && !protocolError) fail(Error("Hands owner disconnected")); });
+      socket.once("close", () => { ended = true; if (!graceful) fail(Error("Hands owner disconnected")); });
       const next = async (...types: string[]) => {
         for (;;) {
           const at = pending.findIndex(frame => types.includes(frame.type));
@@ -66,7 +73,10 @@ export async function handsUnixSandboxBackend(options: HandsUnixBackendOptions):
           await new Promise<void>(resolve => { wake = resolve; }); wake = undefined;
         }
       };
-      const send = (frame: Frame) => { if (ended || !socket.write(encode(frame))) { /* backpressure is bounded by Node; drain is not an acknowledgement. */ } };
+      const send = (frame: Frame) => {
+        if (ended || protocolError || socket.destroyed) throw fault("SANDBOX_START", "Hands execution transport failed");
+        socket.write(encode(frame)); // A write is never a creation/cleanup acknowledgement.
+      };
       const onAbort = () => socket.destroy(Error("Hands creation cancelled"));
       signal.addEventListener("abort", onAbort, { once: true });
       try {
@@ -149,6 +159,7 @@ export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptio
     await writeFile(options.tokenFile, token + "\n", { mode: 0o600, flag: "wx" });
   }
   await rm(options.endpoint, { force: true });
+  const incarnation = randomUUID();
   const active = new Set<Socket>();
   const server = createServer(socket => {
     active.add(socket); let lease = "", opened = false, closing = false, child: ChildProcessWithoutNullStreams | undefined;
@@ -164,7 +175,7 @@ export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptio
     frames(socket, async frame => {
       try {
         if (!opened) {
-          if (frame.type === "probe" && frame.protocol === 1) { send({ type: "healthy", protocol: 1, resources: options.resources }); socket.end(); return; }
+          if (frame.type === "probe" && frame.protocol === 1) { send({ type: "healthy", protocol: 1, incarnation, resources: options.resources }); socket.end(); return; }
           if (frame.type !== "open" || typeof frame.token !== "string") throw Error();
           const left = createHash("sha256").update(frame.token).digest(), right = createHash("sha256").update(token).digest();
           if (!timingSafeEqual(left, right) || !frame.identity || JSON.stringify(frame.resources) !== JSON.stringify(options.resources)) { send({ type: "rejected" }); socket.end(); return; }
@@ -205,5 +216,10 @@ export async function startHandsExecutionOwner(options: HandsExecutionOwnerOptio
   });
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(options.endpoint, resolve); });
   await chmod(options.endpoint, 0o600);
-  return { close: async () => { for (const socket of active) socket.destroy(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); await rm(options.endpoint, { force: true }); } };
+  let closingOwner: Promise<void> | undefined;
+  return { close: () => closingOwner ??= (async () => {
+    for (const socket of active) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+    await rm(options.endpoint, { force: true });
+  })() };
 }

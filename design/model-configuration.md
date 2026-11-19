@@ -21,9 +21,41 @@
 
 ## 引擎边界
 
+Codex 原生模型目录把缺省思考档位物化为 `none`。原生 AppServer 出口仅对 `configured/` 模型还原这个缺省哨兵：若可选档位不包含 `none`，默认档位投影为 `null`，保留所有声明档位；不擅自选第一个档位，也不放宽其他非法默认值的校验。显式声明 `none` 的模型保持原值。
+
 ModelEnginePort 只接收产品文档和窄的凭据解析能力，不获得模型仓库写权限。DSH 适配器把产品配置转换成运行时需要的临时设置/凭据；这些引擎文件是可重建的执行投影，不是反向写回来源。其他引擎可以实现同一端口，不要求迁移产品 JSON。
 
 现有 runtime 模型命令暂由 DshModelConfigurationBridge 兼容，旧命名空间在适配边界转换为产品记录及全局文档 revision。UI 的旧协议投影尚保留兼容，不把它误称为整个工作台已经无 DSH 依赖。
+
+### 引擎模型解析的唯一入口
+
+各执行引擎（原生 Codex 目录/账号代理、Personal Assistant）通过 `@opencraft/local-agent-host/model-config` 的 `createEngineModelSource` 解析 Model Services 中的连接，不各自实现可选性、端点、凭据或 revision 规则。调用方声明本适配器能承载的协议；Codex 与 Personal Assistant 均声明 `openai-responses` 与 `anthropic-messages`。共同规则：提供商与模型均启用、非 ASR、模型 ID 为 `[A-Za-z0-9_.:/-]{1,160}`；非免鉴权连接必须解析到无空白的密钥；读取密钥后重读文档，revision 变化即拒绝，不把新端点配旧密钥。结果分为 `unavailable`（不可选，Codex 返回 404）、`credential`（可选但密钥缺失，Codex 返回 503）、`changed`（重试）；目录省略前两类且不解释原因。推理档位投影和模型使用策略属于各适配器，不进入共享解析。
+
+端点：HTTPS 不限主机；明文 HTTP 仅限本机或局域网——回环、RFC 1918、链路本地、100.64/10（CGNAT/Tailscale）、IPv6 ULA/链路本地字面量，以及单段主机名和 `.localhost`/`.local`/`.lan`/`.internal`/`.home.arpa` 后缀。主机名按书写判断，不做 DNS 解析，因此该规则是配置约束，不是网络隔离保证。
+
+Responses→Anthropic 转换只有一份实现：`@opencraft/account-pool-host` 的 `forwardConfiguredResponses`。Codex 账号代理直接调用它；Personal Assistant 把 Responses 连接的端点直接交给原生 Codex，Anthropic 连接则交给宿主进程内只监听 `127.0.0.1` 的模型网关。原生 Codex 只得到网关地址和每个模型源随机生成的令牌，提供商密钥不进入原生进程环境；网关对每次请求重新解析连接，密钥轮换和停用立即生效，地址与令牌在网关生命周期内不变，因此 `turn/start` 的连接比对不会误判。网关随 Personal Assistant Host 关闭。
+
+Codex 的安装级模型投影同样读取 ModelConfigurationRepository 与 ModelCredentialRepository；不另存提供商目录或密钥。已启用的 `openai-responses`、`anthropic-messages` 聊天模型加入原生 Codex catalog，使用 `configured/<编码后的 provider ID>/<编码后的 model ID>` 区分不同连接的同名模型，显示提供商名与模型名。目录不传端点或密钥，不改变默认模型或已有 Thread 的选择。当前默认目录位于 Codex 数据目录的同级 `models`，支持既有 `OPENCRAFT_MODEL_STORAGE_DIRECTORY` 与明确的 `--model-storage-directory`。
+
+账号代理先验证本地 Host 身份，再按显式模型标识解析连接；仅向该连接发送其自己的凭据。配置停用、移除、密钥缺失或修改冲突均拒绝本次请求，不回退账号池或其他连接。原有 OAuth 模型、账号亲和性及配额路径保持独立。压缩请求异步且有解压上限；取消信号贯穿请求，外部推理不自动重试、不跟随重定向。声明的输入类型和推理映射沿用产品文档；未声明能力保持保守，Codex 托管搜索/图片等 OpenAI 专用能力不因为兼容 Responses 就被宣称支持。原生目录刷新遵循 Codex 自己的刷新周期，停用后的旧目录项在执行时仍会被拒绝。
+
+## Codex 的 Anthropic 协议边界
+
+Codex 原生仍使用 Responses。账号代理对显式 `anthropic-messages` 连接调用 `<baseUrl>/messages`，仅发送该连接自己的 `x-api-key` 与标准 `anthropic-version`；不在失败后改用其他协议或提供商。转换器无持久状态，完整历史由原生会话提供。支持文本、图片内容块、函数/命名空间/自由文本工具及工具结果；自由文本工具用单字符串字段承载，格式描述随工具定义提供，原生工具执行器保留最终校验。OpenAI 托管工具和未识别历史条目在调用上游前明确拒绝；切换模型后遗留的其他协议推理状态无法验证，仅省略该推理条目，可见消息、工具调用与结果照常重放。反方向同理：发往 OpenAI（账号池或已配置 Responses 连接）前，省略带 Anthropic 封装的推理条目并清除转换器生成的 `item_` 条目 ID，原生历史字节不变。上游以 `Invalid \`signature\` in \`thinking\` block` 拒绝时（例如网关换了后端），按其要求在同一连接上去掉所有既往 thinking 块重发一次；再失败即返回原错误，其他错误不重发。Anthropic 不接受空文本块，也不接受以 thinking 结尾的 assistant 消息；可见文本为空或在思考后中断的回合，转换时省略空文本与结尾的 thinking，并合并相邻同角色消息。
+
+Messages 的 `message_stop` 才构成完整终止收据；HTTP EOF、非法事件和未完成参数不得伪装为成功。输出用量包含普通输入、缓存读取和缓存写入，原始 signed/redacted thinking 经 Responses 的 wire-opaque `encrypted_content` 槽位往返；该封装只是协议容器，不宣称加密，也不另建历史仓库。未指定思考档位时省略 thinking，遵循上游默认；不把缺失能力声明当成支持关闭思考。明确声明且选择 Off 才发送 disabled；声明的命名 effort 或数值预算须通过转换器校验。缺失输出预算时使用操作性上限 32768，不冒充模型能力；显式模型 `maxTokens` 是上限。
+
+Messages 只缓存以显式断点结尾的前缀（顺序为 tools、system、messages），而原生每一步都重发完整历史。账号代理在发出 Messages 请求前追加最多四个 `cache_control: {type: "ephemeral"}` 断点：最后一个工具定义、最后一个 system 块、最新消息的最后一个非 thinking 块，以及上一个 user 回合（即上一次请求的最新断点，长工具循环超出提供方回溯窗口时仍能命中）。断点只是传输提示，不改变内容；转换器自行构造所有块，调用方无法带入断点；thinking 签名重发沿用同一组断点。输出用量的 `cached_tokens` 为缓存读取、`cache_write_tokens` 为缓存写入，两者都计入 `input_tokens`。
+
+上游以 400/413 报告提示超出上下文窗口（`prompt is too long`、`input is too long` 或 exceed context limit/window）时，错误码统一为 `context_length_exceeded`，不被提供方私有代码遮蔽；流式调用返回只含 `response.failed` 的事件流，因为原生只从该事件识别上下文预算失败并压缩/裁剪后重试，非流式调用保留原 HTTP 状态。代理不自行重发。上下文窗口仍以模型配置的 `contextWindow` 为准，缺失时原生不会事前压缩。
+
+共享账号代理使用 ChatGPT 身份服务 OAuth 会话，原生可能因此向 API Key 模型附带可选的 OpenAI 托管 `web_search` 定义；`supports_search_tool` 只控制工具发现，不控制这项托管能力。Messages 编译边界排除该不可执行的可选声明，保留 Host 函数工具；显式指定托管搜索或没有可用工具却强制调用时仍拒绝。不能把定义改名为函数冒充实现，也不能借其他账号执行搜索。原生烟测同时覆盖 API Key 身份和生产共享代理身份，避免仅验证前者。
+
+工具 Schema 的根层 `oneOf`、`anyOf`、`allOf` 用 wire-only `arguments` 对象封装，保留组合约束，不合并或删掉分支。移动 Schema 时重定位文档内 JSON Pointer 引用；有 `$id` 的独立资源保持原引用作用域，不改 `const/default/examples` 中的普通数据。返回 Codex 的工具参数解包为原对象，下一轮历史再按该工具的声明封装；封装 JSON 不作为原生参数增量暴露。缺少封装或混入额外字段时不放行执行。
+
+工具完成事件直到整条 Messages 消息成功终止后才释放：原生 Codex 会在 `output_item.done` 后立即执行工具，因此仅收到 `content_block_stop` 不足以授权执行；随后出现拒绝、截断或流错误时不释放工具收据。
+
+明确 `refusal`/`content_filter` 映射为携带原始原因的终止失败，使用当前原生支持的不可重试 `invalid_prompt` 类别；保留此前已输出的内容，不伪造 completed。`max_tokens` 保持 `response.incomplete/max_output_tokens`；瞬时故障重试和截断后续策略仍属于原生引擎，本适配器不重放请求。诊断仅记录请求 ID、协议终止原因、HTTP 状态和时长，不记录聊天或凭据。SSE 单记录、总输出和 HTTP 错误体均有上限；取消释放上游读取者。
 
 ## 默认选择与输入能力
 
@@ -154,3 +186,5 @@ OpenAI 兼容聊天连接可显式选择“无需鉴权”。产品记录保存 
 图像服务属于 Host 应用工具能力，与聊天模型、推理档位分别选择。模型服务统一呈现/编辑，image-generation.json 为其唯一配置文档，ModelCredentialRepository 持有凭据；不复制为 Codex 或 DSH 专用模型文件。独立 revision 避免旧文本引擎解码未知图像类型，Host 通过现有 settings/providers/models 命令投影管理目录。type=image 不能作为聊天默认或就绪证明。
 
 当前只由非订阅 CustomResponsesGateway 消费：受控本地 actor 模式允许固定原版 Codex 暴露原生 image_gen，图片端点按已接纳的 native turn 绑定独立生图选择；订阅模型仍走自己的账号池。生图服务与推理模型可来自不同供应商，思考档位不因生图而变更。不可用配置不触发跨服务替换。
+
+Codex V2 远程压缩通过末尾 `compaction_trigger` 发起，要求返回一个 `compaction` 条目。Messages 适配层将该控制请求转换为同一模型的摘要请求，停止工具调用；只有正常完成且非空的摘要才封装为带 `opencraft-anthropic-summary-v1:` 前缀的 checkpoint。该字段只是原生协议的 wire envelope，不宣称加密；checkpoint 仍由原生持久化。后续 Messages 请求或切换至 OpenAI 时，将该自有 checkpoint 还原成 user 角色的对话摘要，不发送私有封装。中断、空摘要、截断或上游失败不能产生有效 checkpoint，原历史保留。其他提供方的不透明 checkpoint 不能无损解码，明确拒绝而不是丢弃。

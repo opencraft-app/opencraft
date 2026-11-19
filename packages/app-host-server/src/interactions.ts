@@ -37,13 +37,19 @@ export class HostInteractions {
     const key = JSON.stringify(source.id), stable = source.__opencraftInteractionKey;
     const id = stable ?? this.nativeIds.get(key) ?? `interaction:${this.epoch}:${randomUUID()}`;
     const currentNative = this.nativeIds.get(key);
-    if (currentNative && currentNative !== id) throw new InteractionFault({ code: "SOURCE_CONFLICT" }, "Native request identity is still in use");
+    if (currentNative && currentNative !== id) {
+      const previousRoute = this.entries.get(currentNative);
+      // A new stable producer identity may replace a suspended route, never a live one.
+      // Keep the old interaction unavailable; transport ID reuse does not resolve it.
+      if (!stable || !previousRoute?.source.__opencraftInteractionKey || previousRoute.value.canRespond !== false)
+        throw new InteractionFault({ code: "SOURCE_CONFLICT" }, "Native request identity is still in use");
+    }
     if (this.resolved.has(id)) throw new InteractionFault({ code: "SOURCE_RETIRED" }, "Interaction source has already retired");
     const previous = this.entries.get(id);
     if (previous) {
       if (canonical(previous.source.params) !== canonical(source.params) || previous.source.method !== source.method)
         throw new InteractionFault({ code: "SOURCE_CONFLICT" }, "Interaction source identity was reused");
-      this.nativeIds.delete(JSON.stringify(previous.source.id));
+      if (this.nativeIds.get(JSON.stringify(previous.source.id)) === id) this.nativeIds.delete(JSON.stringify(previous.source.id));
       previous.source = source;
       previous.value = { ...previous.value, canRespond: true };
       // A producer replay, rather than a UI retry, establishes current state.
@@ -134,13 +140,18 @@ export class HostInteractions {
   resolveNative(id: string | number, threadId: string): void {
     const key = this.nativeIds.get(JSON.stringify(id)), e = key ? this.entries.get(key) : undefined;
     if (!key || !e || e.value.params.threadId !== threadId) return;
-    this.entries.delete(key); this.nativeIds.delete(JSON.stringify(id));
+    this.retire(key, e);
+  }
+  private retire(key: string, e: Entry): void {
+    const threadId = String(e.value.params.threadId);
+    this.entries.delete(key);
+    if (this.nativeIds.get(JSON.stringify(e.source.id)) === key) this.nativeIds.delete(JSON.stringify(e.source.id));
     this.resolved.set(key, threadId);
     while (this.resolved.size > 256) this.resolved.delete(this.resolved.keys().next().value!);
     this.publish(threadId);
   }
   resolveTurn(threadId: string, turnId: string): void {
-    for (const e of [...this.entries.values()]) if (e.source.params.threadId === threadId && e.source.params.turnId === turnId) this.resolveNative(e.source.id, threadId);
+    for (const [key, e] of [...this.entries]) if (e.source.params.threadId === threadId && e.source.params.turnId === turnId) this.retire(key, e);
   }
   clear(): void { this.entries.clear(); this.nativeIds.clear(); this.resolved.clear(); this.revisions.clear(); }
   private publish(threadId: string): void {

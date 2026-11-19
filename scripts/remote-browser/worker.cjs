@@ -1,8 +1,10 @@
 // Separate Electron main process. No public listener or application UI.
-const { app, BrowserWindow, ipcMain, session } = require('electron');
+const { app, BrowserWindow, ipcMain, session, nativeImage } = require('electron');
+const { readFileSync } = require('node:fs');
 const { join } = require('node:path');
 const { randomUUID } = require('node:crypto');
 const { createInterface } = require('node:readline');
+const { createPresentation } = require('./presentation.cjs');
 const { installClipboard } = require('./clipboard.cjs');
 const { installIme } = require('./ime.cjs');
 const { initializeNativeFocus } = require('./focus.cjs');
@@ -34,7 +36,7 @@ function deviceProfile(input = {}) {
   if (!deviceProfiles.has(profile)) throw new Error('Invalid device profile');
   return profile;
 }
-const configuration = p => ({ automationBackend: 'electron-cdp', document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true, touchTiming: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
+const configuration = p => ({ presentationVersion: 1, automationBackend: 'electron-cdp', document: p.document, navigation: navigation(p), width: p.width, height: p.height, zoom: Math.round(p.window.webContents.getZoomFactor() * 100), dpr: 1, deviceProfile: p.deviceProfile, codec: 'avc1.42E028', nativeCopy: p.clipboard?.available() === true, nativeIme: p.ime?.available() === true, multiTouch: true, touchTiming: true, productionDemand: 1, mediaBuckets: 2, production: p.productionStats ?? null });
 function userAgent(p, profile) {
   const chrome = process.versions.chrome;
   if (profile === 'iphone') return 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -101,8 +103,29 @@ function resize(p, input = {}) {
 }
 const pages = new Map();
 let encoderWindow, encoderReady = false;
+const iconDecodes = new Map();
+function decodeIcon(bytes, mime) {
+  return new Promise((resolve, reject) => {
+    const id = randomUUID();
+    const timer = setTimeout(() => { iconDecodes.delete(id); reject(new Error('Icon decode timed out')); }, 3000);
+    iconDecodes.set(id, { resolve, reject, timer });
+    try { encoderWindow.webContents.send('decode-icon', { id, bytes, mime }); }
+    catch (error) { clearTimeout(timer); iconDecodes.delete(id); reject(error); }
+  });
+}
+ipcMain.on('decoded-icon', (event, { id, bytes }) => {
+  if (event.sender !== encoderWindow?.webContents) return;
+  const pending = iconDecodes.get(id); if (!pending) return;
+  iconDecodes.delete(id); clearTimeout(pending.timer);
+  pending.resolve(bytes && bytes.length <= 18000 ? nativeImage.createFromBuffer(Buffer.from(bytes)) : nativeImage.createEmpty());
+});
+const bridge = readFileSync(join(__dirname, 'preview-bridge.js'), 'utf8');
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('ozone-platform', 'headless');
+// Container /dev/shm is commonly only 64 MiB. Independent offscreen pages
+// exhaust it before the configured page limit; use Chromium's file-backed
+// shared-memory path rather than failing navigation/capture on later pages.
+if (process.platform === 'linux') app.commandLine.appendSwitch('disable-dev-shm-usage');
 app.commandLine.appendSwitch('force-device-scale-factor', '1');
 app.setPath('userData', process.env.OPENCRAFT_BROWSER_DATA_DIR);
 const connected = () => ipc ? process.connected : !process.stdout.destroyed;
@@ -186,6 +209,27 @@ function refresh(p, bucket = 'fast') {
   if (p.latest) st.pending = { raw: { image: p.latest }, timestamp: Math.round(performance.now() * 1000) };
   p.window.webContents.invalidate(); pump(p, bucket);
 }
+function captureThumbnail(p) {
+  const wc = p.window.webContents;
+  if (p.visible) return wc.capturePage();
+  // A parked offscreen page has no Viz surface. Produce one still frame,
+  // without viewer demand, encoders, focus or a control lease.
+  p.previewPainting = true;
+  return new Promise((resolve, reject) => {
+    const finish = (image, error) => { p.previewPainting = false; clearTimeout(timer); wc.off('paint', painted); wc.off('destroyed', destroyed);
+      if (!wc.isDestroyed() && !p.visible) wc.stopPainting();
+      error ? reject(error) : resolve(image);
+    };
+    const painted = (_event, _dirty, image) => {
+      if (image.isEmpty()) return;
+      const copy = nativeImage.createFromBuffer(image.resize({ width: Math.min(360, image.getSize().width) }).toPNG());
+      finish(copy);
+    };
+    const destroyed = () => finish(null, new Error('Browser page closed'));
+    const timer = setTimeout(() => finish(null, new Error('Browser preview timed out')), 2000);
+    wc.on('paint', painted); wc.once('destroyed', destroyed); wc.startPainting(); wc.invalidate();
+  });
+}
 function navigation(p) {
   const wc = p.window.webContents;
   return { url: wc.getURL(), title: wc.getTitle(), canGoBack: wc.navigationHistory.canGoBack(), canGoForward: wc.navigationHistory.canGoForward(), isLoading: wc.isLoading() };
@@ -210,7 +254,7 @@ function closePage(id) {
   pages.delete(id); p.closed = true;
   automationRequests.retire(id);
   dispatch?.retire(id);
-  p.clipboard?.dispose(); p.ime?.dispose();
+  p.presentation?.close(); p.clipboard?.dispose(); p.ime?.dispose();
   p.automation?.dispose();
   p.focusDispose?.();
   clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer);
@@ -228,12 +272,15 @@ async function createPage(id, input) {
   ses.setPermissionCheckHandler(() => false);
   ses.on('will-download', event => event.preventDefault());
   const window = new BrowserWindow({ width, height, useContentSize: true, show: true, frame: false,
-    webPreferences: { partition, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
+    webPreferences: { partition, offscreen: true, sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, preload: join(__dirname, 'annotation-preload.cjs') } });
   const p = { id, window, width, height, deviceProfile:'desktop', deviceConfigured:false,
     desktopUserAgent:window.webContents.getUserAgent(), desktopPlatform:process.platform === 'darwin'?'MacIntel':process.platform === 'win32'?'Win32':'Linux x86_64',
     desktopPlatformName:process.platform === 'darwin'?'macOS':process.platform === 'win32'?'Windows':'Linux', epoch: randomUUID(), visible: false, closed: false, key: true, encoderReady: false, document: randomUUID(), interactive: false, productionGated: input.productionDemand === true };
   pages.set(id, p);
   const wc = window.webContents;
+  p.presentation = createPresentation({ capture: () => captureThumbnail(p), fetchIcon: (url, options) => ses.fetch(url, options), decode: decodeIcon, document: () => p.document, notify: metadata => send({ type: 'presentation-changed', page: id, metadata }) });
+  wc.on('page-favicon-updated', (_event, urls) => { void p.presentation.favicon(urls); });
+  wc.on('did-stop-loading', () => { void p.presentation.thumbnail(); });
   const cdpPort = { sendCommand(method, params, sessionId) {
     const document = p.document;
     return p.cdp.send(method, params, sessionId, { validate() {
@@ -249,7 +296,7 @@ async function createPage(id, input) {
   for (const event of ['will-navigate', 'will-redirect']) wc.on(event, (e, url) => { try { validUrl(url); } catch { e.preventDefault(); } });
   wc.on('did-start-navigation', (_e, _url, inPlace, mainFrame) => { if (!p.closed && mainFrame && !inPlace) {
     automationRequests.documentChanged(id);
-    p.document = randomUUID(); p.domReady = false;
+    p.document = randomUUID(); p.presentation.reset(); p.bridgeInstalled = null; p.domReady = false;
     send({ type: 'input-reset', page: id, document: p.document });
     p.inputReset = (p.inputReset ?? Promise.resolve()).then(() => resetInput(p)).catch(() => {});
   } });
@@ -265,6 +312,7 @@ async function createPage(id, input) {
   wc.on('did-fail-load', (_e, code, _description, _url, mainFrame) => { if (!p.closed && mainFrame && code !== -3) send({ type: 'error', page: id, message: 'Browser navigation failed' }); });
   wc.on('paint', (_event, _dirty, image) => {
     if (p.closed || p.reconfiguring || image.getSize().width !== p.width || image.getSize().height !== p.height) return;
+    void p.presentation.thumbnail(image);
     queueFrame(p, image);
   });
   wc.on('cursor-changed', (_event, cursor) => {
@@ -289,7 +337,7 @@ async function createPage(id, input) {
       return () => {
         p.automationDrawing--;
         if (p.closed) return;
-        if (!p.automationDrawing && !p.visible) { wc.stopPainting(); p.pending = p.previous = p.latest = null; }
+        if (!p.automationDrawing && !p.previewPainting && !p.visible) { wc.stopPainting(); p.pending = p.previous = p.latest = null; }
         captureRate(p);
       };
     };
@@ -316,6 +364,9 @@ async function automation(p, method, input, validate, signal, requestId) {
       return { accepted: true };
     });
   }
+  if (method.startsWith('annotate')) {
+    const value = await annotationAutomation(p, method, input); validate(); signal?.throwIfAborted(); return value;
+  }
   if (!p.domReady) await new Promise((resolve, reject) => {
     const timer = setTimeout(() => { clean(); reject(Object.assign(new Error('Browser document not ready'), { code: 'DOCUMENT_NOT_READY' })); }, 15000);
     const clean = () => { clearTimeout(timer); wc.off('dom-ready', ready); wc.off('did-start-navigation', changed); wc.off('destroyed', destroyed); signal?.removeEventListener('abort', aborted); };
@@ -337,6 +388,46 @@ async function automation(p, method, input, validate, signal, requestId) {
   }
   return p.automation.invoke(method, input || {}, { validate, signal });
 }
+async function annotationAutomation(p, method, input) {
+  if (!['readContext', 'inspect', 'click', 'fill', 'press', 'scroll', 'wait', 'annotatePick', 'annotateRegion', 'annotateText', 'annotateStyles', 'annotatePreview', 'annotateClearPreview'].includes(method)) throw new Error('Unsupported browser operation');
+  const generation = p.document, wc = p.window.webContents;
+  if (!p.domReady) await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { clean(); reject(Object.assign(new Error('Browser document not ready'), { code: 'DOCUMENT_NOT_READY' })); }, 15000);
+    const clean = () => { clearTimeout(timer); wc.off('dom-ready', ready); wc.off('did-start-navigation', changed); wc.off('destroyed', destroyed); signal?.removeEventListener('abort', aborted); };
+    const ready = () => { clean(); resolve(); };
+    const destroyed = () => { clean(); reject(Object.assign(new Error('Browser page closed'), { code: 'PAGE_CLOSED' })); };
+    const changed = (_event, _url, inPlace, mainFrame) => { if (mainFrame && !inPlace) { clean(); reject(Object.assign(new Error('Browser document changed'), { code: 'DOCUMENT_CHANGED' })); } };
+    const aborted = () => { clean(); reject(Object.assign(new Error('Browser automation cancelled'), { code: 'CDP_ABORTED', retryable: false, outcome: 'not-dispatched' })); };
+    wc.once('dom-ready', ready); wc.on('did-start-navigation', changed); wc.once('destroyed', destroyed);
+    signal?.addEventListener('abort', aborted, { once: true }); if (signal?.aborted) aborted();
+  });
+  if (p.document !== generation || p.closed) throw new Error('Browser document changed');
+  const frame = wc.mainFrame;
+  const key = 'opencraft.remote.bridge.' + generation;
+  p.bridgeInstalled ??= frame.executeJavaScript(`${bridge}\n;(() => {
+    const api = OpenCraftPreviewBridgeRuntime;
+    const policy = { preview: false };
+    const cleanup = api.installPreviewBridgeRuntime({window,parentOrigin:location.origin,authorizeAnnotationPreview:()=>policy.preview});
+    const adapter = new api.PreviewBridgeAdapter({hostWindow:window,frameWindow:window,targetOrigin:location.origin,previewId:${JSON.stringify(p.id + ':' + generation)},generation:1});
+    window[Symbol.for(${JSON.stringify(key)})]={adapter,cleanup,policy};
+  })()`);
+  await p.bridgeInstalled;
+  if (p.document !== generation || p.closed) throw new Error('Browser document changed');
+  const result = await frame.executeJavaScript(`(async () => {
+    const state=window[Symbol.for(${JSON.stringify(key)})];
+    if(!state) throw new Error('Browser document changed');
+    const preview = ${JSON.stringify(method)} === "annotatePreview";
+    if (preview) state.policy.preview = true;
+    try { return {ok:true,value:await state.adapter[${JSON.stringify(method)}](${JSON.stringify(input || {})})}; }
+    catch(error) { return {ok:false,error:{code:error.code||'BROWSER_ERROR',message:error.message,retryable:!!error.retryable}}; }
+    finally { if (preview) state.policy.preview = false; }
+  })()`);
+  if (p.document !== generation || p.closed) throw new Error('Browser document changed');
+  if (!result.ok) throw Object.assign(new Error(result.error.message), result.error);
+  if (['annotatePick', 'annotateText'].includes(method) && typeof result.value?.anchor?.bindingKey === 'string') wc.send('opencraft:annotation', { type: 'bind', key: result.value.anchor.bindingKey, selector: result.value.anchor.selector, framePath: result.value.anchor.framePath });
+  if (['annotatePick', 'annotateRegion', 'annotateText'].includes(method) && typeof result.value?.anchor?.documentGeneration === 'string') wc.send('opencraft:annotation', { type: 'bind-generation', key: result.value.anchor.documentGeneration, framePath: result.value.anchor.framePath });
+  return result.value;
+}
 async function command(message) {
   const { page: id, method, input = {} } = message;
   if (method === 'inventory') return [...pages.values()].map(p => ({ id: p.id, ...configuration(p) }));
@@ -357,11 +448,18 @@ async function command(message) {
   checkDocument();
   if (method === 'control') {
     if (input.token !== null && (typeof input.token !== 'string' || !/^[a-zA-Z0-9-]{20,100}$/.test(input.token))) throw new Error('Invalid control token');
-    await resetInput(p); p.clipboard.retire(); p.controlToken = input.token; return;
+    await resetInput(p); p.clipboard.retire();
+    // Restore temporary DOM writes before handing control to another viewer.
+    // Internal cleanup uses the annotation adapter's document/lifecycle fences;
+    // external automation requires its own admitted control validation callback.
+    if (p.bridgeInstalled) await annotationAutomation(p, 'annotateClearPreview');
+    checkDocument(); p.controlToken = input.token;
+    wc.send('opencraft:annotation', { type: 'clear' }); return;
   }
   if (message.control !== undefined && message.control !== p.controlToken)
     throw Object.assign(new Error('Browser control changed'), { code: 'CONTROL_LOST', retryable: true });
   if (method === 'observe') { p.ime.observe(); return; }
+  if (method === 'presentation') return p.presentation.read();
   if (method === 'snapshot') return configuration(p);
   if (method === 'production') {
     if (!input || !/^[a-zA-Z0-9-]{20,100}$/.test(input.epoch ?? '') || !Number.isSafeInteger(input.revision) || input.revision < 1
@@ -401,6 +499,7 @@ async function command(message) {
   if (method === 'forward') { if (wc.navigationHistory.canGoForward()) wc.navigationHistory.goForward(); return; }
   if (method === 'visible') {
     p.visible = input.visible === true;
+    wc.send('opencraft:annotation', { type: 'pause', paused: !p.visible });
     if (!p.visible) p.clipboard.retire();
     if (p.visible) {
       wc.startPainting(); activity(p); refresh(p); p.ime.observe();
@@ -409,11 +508,27 @@ async function command(message) {
       const epoch = p.epoch, image = await wc.capturePage();
       if (!p.closed && p.visible && p.epoch === epoch && image.getSize().width === p.width && image.getSize().height === p.height) { queueFrame(p, image); }
     }
-    else { await resetInput(p); if (!p.automationDrawing) wc.stopPainting(); p.epoch = randomUUID(); releaseStreams(p); p.productionPlan = null; p.productionEpoch = null; p.productionRevision = 0; p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
+    else { await resetInput(p); if (!p.automationDrawing && !p.previewPainting) wc.stopPainting(); p.epoch = randomUUID(); releaseStreams(p); p.productionPlan = null; p.productionEpoch = null; p.productionRevision = 0; p.key = true; clearTimeout(p.activityTimer); clearTimeout(p.mergeTimer); p.mergeUntil = 0; p.pending = p.previous = p.latest = null; }
     return;
   }
   if (method === 'keyframe') { const bucket = input?.bucket === 'slow' ? 'slow' : 'fast', st = stream(p, bucket); if (performance.now() - (st.lastKey || -1000) >= 500) { st.lastKey = performance.now(); refresh(p, bucket); } return; }
   if (method === 'capture') return (await wc.capturePage()).toDataURL();
+  if (method === 'annotation-overlay') {
+    wc.send('opencraft:annotation', { type: 'pause', paused: !p.visible });
+    // Draw or clear boxes (document CSS px) in the page-hosted overlay.
+    const box = b => ({ caption: typeof b?.caption === "string" ? b.caption.slice(0, 120) : undefined, selectionRects: Array.isArray(b?.selectionRects) ? b.selectionRects.slice(0, 64).map(r => ({ x: Number(r?.x), y: Number(r?.y), width: Number(r?.width), height: Number(r?.height) })) : undefined, markerId: typeof b?.markerId === "string" ? b.markerId.slice(0, 240) : undefined, state: ["hover", "current", "selected", "saved"].includes(b?.state) ? b.state : undefined, kind: ["element", "region", "text"].includes(b?.kind) ? b.kind : undefined, documentGeneration: typeof b?.documentGeneration === "string" ? b.documentGeneration.slice(0, 120) : undefined, selector: typeof b?.selector === 'string' ? b.selector.slice(0, 1000) : undefined, targetKey: typeof b?.targetKey === 'string' ? b.targetKey.slice(0, 1200) : undefined, x: Number(b?.x), y: Number(b?.y), width: Number(b?.width), height: Number(b?.height), label: typeof b?.label === 'string' ? b.label.slice(0, 4) : undefined, pending: b?.pending === true, fixed: b?.fixed === true });
+    const command = input?.type === 'hit' ? { type: 'hit', point: input.point } : input?.type === 'boxes' && Array.isArray(input.boxes) ? { type: 'boxes', boxes: input.boxes.slice(0, 64).map(box), color: typeof input.color === 'string' ? input.color : undefined } : { type: 'clear' };
+    const requestId = randomUUID();
+    const hit = await new Promise((resolve, reject) => {
+      const cleanup = () => { clearTimeout(timer); wc.removeListener('ipc-message', reply); wc.removeListener('destroyed', closed); };
+      const reply = (_event, channel, id, result) => { if (channel === 'opencraft:annotation-applied' && id === requestId) { cleanup(); resolve(Array.isArray(result) ? result.filter(v => typeof v === 'string' && v.length <= 240).slice(0, 32) : []); } };
+      const closed = () => { cleanup(); reject(new Error('Browser page closed')); };
+      const timer = setTimeout(() => { cleanup(); reject(new Error('Annotation overlay did not paint')); }, 5000);
+      wc.on('ipc-message', reply); wc.once('destroyed', closed);
+      try { wc.send('opencraft:annotation', { ...command, requestId }); } catch (error) { cleanup(); reject(error); }
+    });
+    checkDocument(); return input?.type === 'hit' ? hit : undefined;
+  }
   if (method === 'zoom') { const percent = Number(input.percent); if (!Number.isFinite(percent) || percent < 25 || percent > 500) throw new Error('Invalid zoom'); wc.setZoomFactor(percent / 100); return; }
   if (method === 'ime') { activity(p); return p.ime.apply(input); }
   if (method === 'text') { if (typeof input.text !== 'string' || input.text.length > 10000) throw new Error('Invalid text'); activity(p); await wc.insertText(input.text); return; }
@@ -448,6 +563,10 @@ async function command(message) {
     wc.sendInputEvent(event); return;
   }
   if (method === 'automation') {
+    // Preview is a human-controlled, document-bound write, never an implicit agent capability.
+    if (['annotatePreview', 'annotateClearPreview'].includes(input.method) &&
+      (!p.controlToken || message.control !== p.controlToken || message.document !== p.document))
+      throw Object.assign(new Error('Annotation preview requires current document control'), { code: 'CONTROL_LOST', retryable: true });
     activity(p);
     const document = p.document, control = p.controlToken;
     return automation(p, input.method, input.input, () => {

@@ -1,0 +1,28 @@
+{
+  "name": "@opencraft/conversation-execution",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./conversation-execution": {
+      "types": "./src/conversation-execution.d.mts",
+      "default": "./src/conversation-execution.mjs"
+    },
+    "./thread-orchestration-execution": {
+      "types": "./src/thread-orchestration-execution.d.mts",
+      "default": "./src/thread-orchestration-execution.mjs"
+    },
+    "./im-channels-appserver": {
+      "types": "./src/im-channels-appserver.d.mts",
+      "default": "./src/im-channels-appserver.mjs"
+    },
+    "./conversation-projections": "./src/conversation-projections.mjs"
+  },
+  "dependencies": {
+    "@opencraft/access-control": "0.1.0",
+    "@opencraft/app-host-protocol": "0.1.0",
+    "@opencraft/app-host-server": "0.1.0",
+    "@opencraft/appserver-client": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
+  }
+}

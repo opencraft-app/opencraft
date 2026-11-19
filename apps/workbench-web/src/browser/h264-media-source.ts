@@ -31,9 +31,7 @@ function fragment(sequence: number, time: number, sample: Uint8Array, key: boole
   const make = (offset: number) => box('moof',full('mfhd',0,0,u32(sequence)),box('traf',full('tfhd',0,0x020000,u32(1)),full('tfdt',1,0,u32(0,time)),full('trun',0,0x000701,u32(1,offset,3000,sample.length,key ? 0x02000000 : 0x01010000))));
   const moof = make(0); return concat(make(moof.length + 8),box('mdat',sample));
 }
-export function supportsH264MediaSource() {
-  return typeof MediaSource !== 'undefined' && MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E028"');
-}
+export { supportsH264MediaSource } from './browser-media-capabilities';
 /** A one-shot presentation fence; cancellation also retires queued callbacks. */
 export function onFirstVideoFrame(video: HTMLVideoElement, present: () => void): () => void {
   let retired = false, frame: number | null = null, raf: number | null = null;

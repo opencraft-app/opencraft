@@ -1,7 +1,10 @@
+import { subscriptionProxyTarget } from "./subscription-proxy-target.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { timingSafeEqual } from "node:crypto";
 import { chmod, mkdir, stat, unlink } from "node:fs/promises";
 import { createServer } from "node:http";
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { dirname, isAbsolute, join } from "node:path";
 import WebSocket from "ws";
 import {
@@ -53,6 +56,18 @@ export async function startCodexCore(options: CodexCoreOptions) {
       reply(503, { error: "Codex core is unavailable" }); return;
     }
     if (req.method === "GET" && req.url === "/health") { reply(200, health); return; }
+    if(/^\/personal\/[a-f0-9]{64}\/v1\/(responses|models)$/.test(req.url??'')) {
+      try {
+        const setting=accounts!.launch().args.find(arg=>arg.startsWith('chatgpt_base_url='))!;
+        const target=subscriptionProxyTarget(JSON.parse(setting.slice(setting.indexOf('=')+1)),req.url!);
+        const headers=new Headers({'authorization':'Bearer '+String(req.headers['x-opencraft-subscription-token']??'')});
+        if(req.headers['content-type'])headers.set('content-type',req.headers['content-type']);
+        const result=await fetch(target,{method:req.method,headers,redirect:'error',...(req.method==='GET'?{}:{body:Readable.toWeb(req),duplex:'half'})} as RequestInit);
+        res.writeHead(result.status,Object.fromEntries(result.headers));
+        if(result.body)await pipeline(Readable.fromWeb(result.body as import('node:stream/web').ReadableStream),res);else res.end();
+      }catch {if(res.headersSent)res.destroy();else reply(503,{error:'Subscription unavailable'});}
+      return;
+    }
     if (req.method !== "POST" || req.url !== "/accounts") { reply(404, { error: "Unknown Codex core operation" }); return; }
     try {
       const chunks: Buffer[] = [];

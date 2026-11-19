@@ -12,13 +12,16 @@
     "./authenticated-mcp": "./src/authenticated-mcp.ts",
     "./thread-cli": "./src/thread-cli.ts",
     "./execution-cli": "./src/execution-cli.ts",
-    "./thread-cli-instruction": "./src/thread-cli-instruction.ts",
-    "./credentials": "./src/credentials.ts"
+    "./credentials": "./src/credentials.ts",
+    "./native-invocation": "./src/native-invocation.ts",
+    "./execution-tools": "./src/execution-tools.ts",
+    "./thread-cli-instruction": "./src/thread-cli-instruction.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "@opencraft/sqlite-node": "0.1.0",
-    "@opencraft/storage-node": "0.1.0"
+    "@opencraft/storage-node": "0.1.0",
+    "@opencraft/appserver-protocol": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

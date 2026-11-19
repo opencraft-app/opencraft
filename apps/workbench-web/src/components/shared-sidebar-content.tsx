@@ -10,7 +10,7 @@ export interface SidebarScrollViewport {
 }
 
 /** A single React/DOM owner; dock and overlay provide slots, not duplicate views. */
-function SidebarContentPortal({ target, children, name, scrollViewport }: {
+export function SidebarContentPortal({ target, children, name, scrollViewport }: {
   target: HTMLElement | null; children: ReactNode; name: string; scrollViewport?: SidebarScrollViewport;
 }) {
   const [container] = useState(() => {
@@ -22,6 +22,7 @@ function SidebarContentPortal({ target, children, name, scrollViewport }: {
   const scrollPositions = useRef(new Map<HTMLElement, { top: number; left: number }>());
   const viewportPositions = useRef(new Map<string, { top: number; left: number }>());
   const previousViewport = useRef<SidebarScrollViewport | undefined>(undefined);
+  const restoringViewport = useRef<HTMLElement | null>(null);
   const viewportElement = scrollViewport?.element;
   const viewportKey = scrollViewport?.key;
   const lastFocused = useRef<HTMLElement | null>(null);
@@ -50,7 +51,7 @@ function SidebarContentPortal({ target, children, name, scrollViewport }: {
     const rememberViewport = ({ key, element }: SidebarScrollViewport) => {
       // Removal, emptying the old slot, and hidden layouts can clamp scrollTop
       // to zero. Only the live viewport containing our content may write a receipt.
-      if (element?.isConnected && element.contains(container) && element.clientHeight > 0
+      if (element !== restoringViewport.current && element?.isConnected && element.contains(container) && element.clientHeight > 0
         && element.clientWidth > 0 && !element.closest('[inert], [aria-hidden="true"]')) {
         viewportPositions.current.set(key, { top: element.scrollTop, left: element.scrollLeft });
       }
@@ -64,15 +65,41 @@ function SidebarContentPortal({ target, children, name, scrollViewport }: {
     }
     const viewport = viewportKey !== undefined ? { key: viewportKey, element: viewportElement ?? null } : undefined;
     previousViewport.current = viewport;
+    let restoreFrame: number | null = null;
+    restoringViewport.current = null;
     if (target && viewportElement?.contains(container) && viewportKey !== undefined) {
       const receipt = viewportPositions.current.get(viewportKey);
-      if (receipt) { viewportElement.scrollTop = receipt.top; viewportElement.scrollLeft = receipt.left; }
+      if (receipt) {
+        const restore = () => {
+          if (viewportElement.isConnected && viewportElement.contains(container) && viewportElement.clientHeight > 0
+            && !viewportElement.closest('[inert], [aria-hidden="true"]')) {
+            viewportElement.scrollTop = receipt.top; viewportElement.scrollLeft = receipt.left;
+          }
+        };
+        // Slot refs can publish a second layout commit before paint. Its temporary
+        // extent must not replace the receipt with a browser-clamped position.
+        restoringViewport.current = viewportElement;
+        restore();
+        restoreFrame = requestAnimationFrame(() => {
+          restore(); restoringViewport.current = null; restoreFrame = null;
+        });
+      }
     }
+    const inputIntent = () => {
+      if (restoreFrame !== null) { cancelAnimationFrame(restoreFrame); restoreFrame = null; }
+      restoringViewport.current = null;
+    };
+    const intentEvents = ["pointerdown", "touchstart", "wheel", "keydown"] as const;
+    for (const type of intentEvents) viewportElement?.addEventListener(type, inputIntent, { passive: true, capture: true });
     if (target && focused && !target.closest('[inert], [aria-hidden="true"]')) focused.focus({ preventScroll: true });
     const onScroll = () => { if (viewport) rememberViewport(viewport); };
     viewportElement?.addEventListener("scroll", onScroll, { passive: true });
     // Do not read during cleanup: React may already have detached the old slot.
-    return () => { viewportElement?.removeEventListener("scroll", onScroll); };
+    return () => {
+      if (restoreFrame !== null) cancelAnimationFrame(restoreFrame);
+      for (const type of intentEvents) viewportElement?.removeEventListener(type, inputIntent, true);
+      viewportElement?.removeEventListener("scroll", onScroll);
+    };
   }, [container, target, viewportElement, viewportKey]);
   useLayoutEffect(() => () => { container.remove(); }, [container]);
   return createPortal(children, container);

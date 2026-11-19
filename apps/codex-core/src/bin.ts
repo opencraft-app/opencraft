@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { createConfiguredCodexResponses } from "./configured-responses.js";
 import { readFile } from "node:fs/promises";
 import { startCodexCore, type CodexCoreOptions } from "./main.js";
 import { AccountCoreOwner, sealLegacyAccountMaintenance, sealFencedAccountMaintenance, sealExportedAccountMaintenance, inspectRetainedAccountExport } from "./account-owner.js";
-import { isAbsolute } from "node:path";
+import { isAbsolute, dirname, join } from "node:path";
+import { createConfiguredCodexResponses } from "./configured-responses.js";
 
 function argument(name: string): string {
   const index = process.argv.indexOf(name);
@@ -15,7 +15,7 @@ function argument(name: string): string {
 function optional(name: string): string | undefined { return process.argv.includes(name) ? argument(name) : undefined; }
 
 async function main() {
-  const modelDirectory = optional("--model-storage-directory");
+  const modelDirectory = optional("--model-storage-directory") ?? process.env.OPENCRAFT_MODEL_STORAGE_DIRECTORY ?? join(dirname(argument("--data-directory")), "models");
   if (modelDirectory !== undefined && !isAbsolute(modelDirectory)) throw new Error("Model storage directory must be absolute");
   if (!modelDirectory && process.argv.includes("--allow-insecure-local-model-network")) throw new Error("Local model network opt-in requires a model storage directory");
   const token = (await readFile(argument("--token-file"), "utf8")).trim();

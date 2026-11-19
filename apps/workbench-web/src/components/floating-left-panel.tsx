@@ -93,6 +93,9 @@ function FloatingLeftPanelContent({
           x: horizontalOffset,
           ...(mobile ? {
             scale: reducedMotion ? 1 : depthScale,
+            // Depth wash/scale own recession. Fading the complete subtree
+            // makes even solid footer controls transmit the list underneath.
+            opacity: 1,
             transformOrigin: "0% 50%",
           } : {}),
         }}

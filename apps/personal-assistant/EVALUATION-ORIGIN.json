@@ -1,0 +1,7 @@
+{
+  "source": "opencraft-superapp-handoff-20261107/runner",
+  "version": "0.15.0",
+  "schema": 17,
+  "sourceArchiveSha256": "fc42bd4f3a88ba50b9373295f6ddb9679725c9573f1f67ff0921ef0e679b5d10",
+  "purpose": "Independent memory benchmark work copy; frozen handoff remains unchanged"
+}

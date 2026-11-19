@@ -1,24 +1,31 @@
 import { readFile, readdir, lstat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 async function digest(path) {
   const hash = createHash('sha256');
   for await (const bytes of createReadStream(path)) hash.update(bytes);
   return hash.digest('hex');
 }
-/** An explicitly selected owned runtime must match this exact fork definition
- * and every shipped byte. A stale/incomplete artifact never falls back to stock. */
+/** All distributed browser runtimes must match the owned fork and every shipped byte. */
 export async function verifyRemoteBrowserArtifact(directory, forkDefinition) {
+  if (!directory) throw new Error('Set OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION to a verified owned Electron distribution; see vendor/electron/CONTAINER.md');
   if (!isAbsolute(directory)) throw new Error('Owned browser distribution must be an absolute path');
   const marker = 'opencraft-electron-artifact.json';
-  const value = JSON.parse(await readFile(join(directory, marker), 'utf8'));
+  let value;
+  try { value = JSON.parse(await readFile(join(directory, marker), 'utf8')); }
+  catch (error) {
+    if (error.code === 'ENOENT') throw new Error('Owned Electron artifact is missing. Supply the verified browser directory through OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION or Docker --build-context owned-electron=...; see vendor/electron/CONTAINER.md');
+    throw error;
+  }
   const fork = JSON.parse(await readFile(forkDefinition, 'utf8'));
   if (value.schemaVersion !== 1 || value.platform !== 'linux' || value.arch !== process.arch
     || value.forkDefinitionSha256 !== await digest(forkDefinition)
     || value.electronVersion !== fork.version || value.chromiumVersion !== fork.chromiumVersion
-    || value.nativeCopyProbePassed !== true || !Array.isArray(value.files)) throw new Error('Owned browser artifact provenance mismatch');
+    || value.nativeCopyProbePassed !== true || value.nativeInputCausalityProbePassed !== true
+    || value.nativeImeFocusIdentityProbePassed !== true || !Array.isArray(value.files)) throw new Error('Owned browser artifact provenance mismatch: all native input probes are required');
   const expected = new Map();
   for (const item of value.files) {
     if (!item || typeof item.path !== 'string' || item.path === marker || item.path.startsWith('/')
@@ -27,7 +34,7 @@ export async function verifyRemoteBrowserArtifact(directory, forkDefinition) {
       throw new Error('Invalid owned browser file inventory');
     expected.set(item.path, item);
   }
-  for (const path of ['electron', 'LICENSE', 'LICENSES.chromium.html']) if (!expected.has(path)) throw new Error('Incomplete owned browser distribution');
+  for (const path of ['electron', 'chrome-sandbox', 'LICENSE', 'LICENSES.chromium.html']) if (!expected.has(path)) throw new Error('Incomplete owned browser distribution');
   async function check(prefix = '') {
     for (const entry of await readdir(join(directory, prefix), { withFileTypes: true })) {
       const relative = prefix + entry.name;
@@ -43,4 +50,9 @@ export async function verifyRemoteBrowserArtifact(directory, forkDefinition) {
   await check();
   if (expected.size) throw new Error('Owned browser distribution has missing files');
   return directory;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  await verifyRemoteBrowserArtifact(process.argv[2], process.argv[3]);
+  console.log('Owned browser distribution verified');
 }

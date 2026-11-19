@@ -6,7 +6,7 @@ const server = await createWorkbenchStaticServer({ root: resolve("apps/workbench
 try {
   const address = await server.listen();
   const origin = `http://127.0.0.1:${address.port}`;
-  for (const route of ["/", "/views/opencraft.bot-management.view", "/settings/models"]) {
+  for (const route of ["/", "/views/opencraft.token-usage.view", "/settings/models"]) {
     const pageUrl = `${origin}${route}`;
     const page = await fetch(pageUrl, { headers: { accept: "text/html" } });
     assert.equal(page.status, 200);
@@ -19,5 +19,5 @@ try {
       assert.ok(!response.headers.get("content-type")?.includes("text/html"), "Assets cannot be SPA fallback HTML");
     }
   }
-  console.log("PASS built Electron assets resolve through actual static server from root, Bot View and Settings deep routes");
+  console.log("PASS built Electron assets resolve through actual static server from root, Token Usage View and Settings deep routes");
 } finally { await server.close(); }

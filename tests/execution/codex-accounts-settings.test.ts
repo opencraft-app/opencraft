@@ -93,7 +93,7 @@ test("Codex account row shares touch-safe hover and a reachable actions target",
   assert.match(tokens, /@mixin touch-density-tokens\s*\{[\s\S]*?--size-chrome-action: var\(--size-shell-header-action-mobile\)/u);
   assert.match(interaction, /@mixin hover-capable\s*\{\s*@media \(any-hover: hover\) and \(any-pointer: fine\)[\s\S]*?:root:not\(\[data-touch-interaction\]\) &/u);
   assert.match(menu, /@include controls\.hover-capable/u);
-  assert.match(menu, /@include controls\.density-target\(0px, 28px\)/u);
+  assert.match(menu, /@include controls\.density-target\(0px, var\(--height-menu-item\)\)/u);
   assert.match(controls, /min-height: max\(#\{\$height\}, var\(--size-control-hit-min\)\)/u);
 });
 
@@ -321,4 +321,38 @@ test("account list distinguishes credential owners and gives external renewal in
       assert.doesNotMatch(markup, /auth.json|accessToken|refreshToken/);
     } finally { service.dispose(); }
   }
+});
+
+test("an initial maintenance read failure is localized and keeps its correlation ID without exposing raw messages", async () => {
+  Object.assign(globalThis, { React });
+  const diagnostic = { code: "admission-fenced", stage: "operation", retryable: true, occurredAt: Date.now(), diagnosticId: "11111111-2222-4333-8444-555555555555" };
+  const service = new CodexAccountsService((async () => {
+    throw Object.assign(new Error("private upstream error Bearer never-render"), { data: { codexAccountFailure: diagnostic } });
+  }) as HostProtocolRequest, "local-codex");
+  try {
+    await service.refresh();
+    const View = createCodexAccountsView(service);
+    const html = renderToStaticMarkup(createElement(View, {} as any));
+    assert.match(html, /account service is under maintenance/);
+    assert.match(html, /Copy diagnostic ID/);
+    assert.match(html, /admission-fenced/);
+    assert.doesNotMatch(html, /never-render|private upstream|认证异常/);
+  } finally { service.dispose(); }
+});
+
+test("a failed state read retains account data without showing its stale ready status as current", async () => {
+  Object.assign(globalThis, { React });
+  let unavailable = false;
+  const account: CodexAccountView = { id: "a", label: "Synthetic", priority: 1, enabled: true, credentialConfigured: true, email: null,
+    subscriptionType: "pro", rateLimitTier: null, status: "ready", observedAt: null, heldUntil: null, lastUsedAt: null, lastUsedHostId: null, limitWindows: [] };
+  const service = new CodexAccountsService((async () => {
+    if (unavailable) throw Object.assign(new Error("private"), { data: { codexAccountFailure: { code: "service-unavailable", stage: "operation", retryable: true,
+      occurredAt: Date.now(), diagnosticId: "11111111-2222-4333-8444-555555555555" } } });
+    return { accounts: [account] };
+  }) as HostProtocolRequest, "local-codex");
+  try {
+    await service.refresh(); unavailable = true; await service.refresh();
+    const View = createCodexAccountsView(service), html = renderToStaticMarkup(createElement(View, {} as any));
+    assert.match(html, /Synthetic/); assert.match(html, /Status not confirmed/); assert.match(html, /data-status="held"/);
+  } finally { service.dispose(); }
 });

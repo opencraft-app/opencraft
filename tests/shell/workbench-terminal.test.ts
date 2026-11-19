@@ -47,7 +47,7 @@ test("terminal visual inset is outside the measured xterm host", () => {
     "utf8",
   );
 
-  assert.match(source, /className="terminal-panel__inset"[\s\S]*?className="terminal-panel__host" ref=\{hostRef\}/u);
+  assert.match(source, /className="terminal-panel__inset"[\s\S]*?className="terminal-panel__host"[^>]*\bref=\{hostRef\}/u);
   assert.match(source, /terminal\.open\(host\)/u);
   assert.match(source, /resizeObserver\.observe\(host\)/u);
   assert.match(source, /resizeObserver\.observe\(host\);\s*fitAndPublish\(\);\s*scheduleFit\(\);/u);
@@ -55,7 +55,7 @@ test("terminal visual inset is outside the measured xterm host", () => {
   assert.match(source, /terminalGridSizeChanged\(lastPublishedGrid, nextGrid\)/u);
   assert.doesNotMatch(source, /terminal\.open\(slot\)|resizeObserver\.observe\(slot\)/u);
   assert.match(styles, /\.terminal-panel__inset\s*\{[\s\S]*?padding:\s*9px 10px;/u);
-  assert.match(styles, /\.terminal-panel__host\s*\{[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*hidden;/u);
+  assert.match(styles, /\.terminal-panel__host\s*\{[\s\S]*?width:\s*100%;[\s\S]*?overflow:\s*(?:hidden|clip);/u);
 });
 
 test("terminal measurement and rendering do not inherit application text tracking", () => {

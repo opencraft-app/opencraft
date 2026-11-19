@@ -26,10 +26,13 @@
     "@opencraft/native-history-node": "0.1.0",
     "@opencraft/plugin-local-account": "0.1.0",
     "@opencraft/model-usage-policy": "0.1.0",
+    "@opencraft/personal-assistant": "*",
     "@opencraft/agent-bridge-host": "0.1.0",
     "@opencraft/codex-execution": "0.1.0",
+    "@opencraft/sandbox-e2b": "0.1.0",
     "@opencraft/observability-contract": "0.1.0",
-    "@opencraft/access-control": "0.1.0"
+    "@opencraft/access-control": "0.1.0",
+    "@opencraft/conversation-execution": "0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

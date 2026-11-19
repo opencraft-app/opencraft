@@ -7,6 +7,7 @@ const mailScheme = /^mailto:/iu;
 const contactScheme = /^(?:sms|tel):/iu;
 const fileScheme = /^file:/iu;
 const appScheme = /^(?:app|agent|navigation):/iu;
+const conversationScheme = /^opencraft:\/\/conversation\/v1\//u;
 // Legacy URI input compatibility; hosts still decide whether to open the target.
 const legacyCodexAppScheme = /^codex:/iu;
 const resourceScheme = /^(?:sandbox|attachment|resource|plugin|mcp):/iu;
@@ -22,7 +23,10 @@ function workspaceTarget(target: string, cwd: string | null | undefined): string
   if (windowsAbsolutePath.test(target)) return `file:///${target.replace(/\\/gu, "/")}`;
   if (posixAbsolutePath.test(target)) return `file://${target}`;
   if (cwd == null || cwd.trim().length === 0) return target;
-  const base = cwd.replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const normalized = cwd.replace(/\\/gu, "/");
+  let end = normalized.length;
+  while (end > 0 && normalized[end - 1] === "/") end--;
+  const base = normalized.slice(0, end);
   return `file://${base}/${target.replace(/^\.\//u, "")}`;
 }
 
@@ -76,7 +80,7 @@ export function resolveStandardChatResource(
   }
   if (mailScheme.test(target)) return decision("mail", target);
   if (contactScheme.test(target)) return decision("external", target);
-  if (appScheme.test(target) || legacyCodexAppScheme.test(target)) return decision("app-route", target);
+  if (appScheme.test(target) || legacyCodexAppScheme.test(target) || conversationScheme.test(target)) return decision("app-route", target);
   if (resourceScheme.test(target)) return decision("resource", target);
   const location = fileLocationTarget(target);
   if (fileScheme.test(location.path) || windowsAbsolutePath.test(location.path) || posixAbsolutePath.test(location.path)) {

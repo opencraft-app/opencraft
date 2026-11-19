@@ -1,3 +1,4 @@
+export type { AttachmentResolver, ComposerImageEditSession } from "./attachment-preview-session";
 export { modelChoiceFamilies, chooseFamilyModel } from "./model-choice-families";
 export { modelEffortLabel } from "./model-choice-labels";
 export { ComposerAttachedRail } from "./attached-rail";

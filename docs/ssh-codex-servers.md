@@ -98,16 +98,18 @@ and outgoing reply; logout/expiry closes the socket. Anonymous `/apphost` reject
 all SSH IDs, including guessed IDs and forged Renderer names. Local anonymous
 features remain separate and usable.
 
-Public SSH requires an explicit opt-in: a fixed HTTPS origin via
-`--ssh-public-origin`, or `--ssh-public-access` for operator-approved changing
-addresses. The latter accepts HTTP and HTTPS without an installation-wide
-domain pin and binds each session to the admission Origin. In shared mode every
+SSH management does not require a configured domain. By default it accepts
+valid HTTP/HTTPS admission origins and binds each session to its own origin,
+independently of the backend listener hostname or reverse proxy Host rewriting.
+There is no fixed-origin configuration. `--ssh-public-access` explicitly enables
+SSH management on a public listener without requiring a domain. Public listeners still require their existing
+explicit exposure and installation-access configuration. In shared mode every
 visitor allowed to reach this entry can use the installation's saved SSH connections;
 it is not an account-level permission system. Invalid/opaque Origin and cross-site
 requests are rejected; possession of a Renderer ID alone grants nothing. Cookies remain
 HttpOnly/SameSite=Strict and use Secure when admitted through HTTPS. Plain HTTP
 provides no transport encryption and exposes the session (and optional access key) to network
-observers; this explicit option is not a secure public multi-user deployment.
+observers; domain-independent admission does not replace installation membership.
 Forwarded headers, hiding controls, or putting an anonymous endpoint behind a
 reverse proxy do not grant remote authority. A backend restart revokes sessions
 but preserves saved connections. A status response identifies the selected grant's
@@ -201,8 +203,7 @@ untouched. Set `--ssh-require-access-key` to enable protection and generate/reus
 `<data-dir>/ssh/access.key` (0600), never printed by the service.
 Supply `--ssh-access-file /private/access.key` to enable protection using an existing high-entropy
 private key. It is independent of the remote SSH password. Deliver it only through
-a trusted administrator channel. Public deployments choose a fixed HTTPS origin
-or explicitly enable changing addresses. Shared mode intentionally grants every
+a trusted administrator channel. Public deployments explicitly enable SSH management without configuring a domain. Shared mode intentionally grants every
 allowed entry visitor use of saved remote credentials. Choose key protection or
 an authenticated private entry when that is not acceptable.
 

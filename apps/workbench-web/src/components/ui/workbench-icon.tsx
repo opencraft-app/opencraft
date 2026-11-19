@@ -1,4 +1,5 @@
 import React from "react";
+import { SmartphoneIcon } from "@opencraft/design-system-web/action-icons";
 import type { ComponentType } from "react";
 import type { ActionIconProps } from "@opencraft/design-system-web/action-icons";
 import { ModelIcon as Brain, ModelIcon as BrainCircuit, FolderIcon as Folder, MicrophoneIcon as Mic, AddIcon as Plus, SearchIcon as Search, SettingsGearIcon as Settings, ComposeIcon as SquarePen, TerminalIcon as TerminalSquare } from "@opencraft/design-system-web/action-icons";
@@ -9,6 +10,7 @@ import { ExtensionsIcon as Blocks, PaletteIcon as Palette, MessageIcon as Messag
 
 /** Wire names stay semantic. Only this Web adapter selects the artwork. */
 export const workbenchIconRegistry = {
+  smartphone: SmartphoneIcon,
   activity: Activity, appearance: SunMoon, archive: Archive, "arrow-left": ArrowLeft, "arrow-right": ArrowRight,
   audio: AudioLines, bot: Bot, brain: BrainCircuit, browser: Globe2,
   calendar: CalendarClock, changes: GitBranch, chat: MessageCircle,

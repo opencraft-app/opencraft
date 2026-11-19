@@ -4,6 +4,7 @@ import { PushStore } from "./store";
 const store = new PushStore(workerData.path);
 parentPort!.postMessage({ ready: true, outcome: store.outcome });
 const methods = new Set([
+  "initializeDefault",
   "keys",
   "get",
   "register",

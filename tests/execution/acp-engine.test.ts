@@ -902,3 +902,4 @@ test("observed restricted Codex policy preserves workspace, network and reviewer
   assert.deepEqual(prepared.config.sandbox_workspace_write,{writable_roots:[f.root],network_access:false,exclude_tmpdir_env_var:false,exclude_slash_tmp:false});
   assert.equal(prepared.permissions,undefined,"no untranslatable custom profile overrides the actual sandbox");
 });
+

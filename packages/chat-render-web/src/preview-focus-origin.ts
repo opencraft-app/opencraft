@@ -3,14 +3,17 @@ import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 /** Keep native dialog auto-focus visually tied to the action that opened it. */
 export function usePreviewFocusOrigin() {
   const [openedByPointer, setOpenedByPointer] = useState(false);
+  const origin=useRef<HTMLElement|null>(null);
   const pointerActivation = useRef(false);
 
   return {
     openedByPointer,
+    returnFocus:()=>origin.current,
     onTriggerPointerDown: () => { pointerActivation.current = true; },
     onTriggerPointerCancel: () => { pointerActivation.current = false; },
     onTriggerKeyDown: () => { pointerActivation.current = false; },
     recordOpen: (event: MouseEvent<HTMLButtonElement>) => {
+      origin.current=event.currentTarget;
       setOpenedByPointer(event.detail > 0 || pointerActivation.current);
       pointerActivation.current = false;
     },

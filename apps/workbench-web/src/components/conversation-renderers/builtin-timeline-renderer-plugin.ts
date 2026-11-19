@@ -2,9 +2,13 @@ import type { Context } from "@deepseek-ai/cordis";
 import type { TimelineBlock } from "@opencraft/chat-core";
 import type { TimelineBlockRendererRegistration } from "@opencraft/timeline-render-react";
 
+import { DisplayActivityPreview } from "./activity/display-activity-preview";
+
 import { webBuiltinTimelineRendererComponents as component } from "../conversation";
 
 const builtinTimelineRenderers: readonly TimelineBlockRendererRegistration[] = [
+  { name: "display-activity-preview", priority: 1000, types: ["command-execution", "tool-call", "patch"],
+    matches: block => "displayPreview" in block && block.displayPreview !== undefined, component: DisplayActivityPreview },
   { name: "user-message", priority: 0, types: ["user-message"], component: component.userMessage },
   { name: "text", priority: 0, types: ["text"], component: component.text },
   { name: "reasoning", priority: 0, types: ["reasoning"], component: component.reasoning },

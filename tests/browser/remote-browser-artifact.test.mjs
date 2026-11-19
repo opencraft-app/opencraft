@@ -15,13 +15,14 @@ async function fixture(t) {
   const { mkdir } = await import('node:fs/promises');
   const distribution = join(directory, 'distribution'); await mkdir(distribution);
   const files = [];
-  for (const name of ['electron', 'LICENSE', 'LICENSES.chromium.html']) {
+  for (const name of ['electron', 'chrome-sandbox', 'LICENSE', 'LICENSES.chromium.html']) {
     const data = Buffer.from('fixture ' + name); await writeFile(join(distribution, name), data);
     files.push({ path: name, sha256: hash(data), size: data.length });
   }
   await chmod(join(distribution, 'electron'), 0o755);
   const marker = { schemaVersion: 1, platform: 'linux', arch: process.arch, forkDefinitionSha256: hash(fork),
-    electronVersion: '44.8.0', chromiumVersion: '152.0.7977.167', nativeCopyProbePassed: true, files };
+    electronVersion: '44.8.0', chromiumVersion: '152.0.7977.167', nativeCopyProbePassed: true,
+    nativeInputCausalityProbePassed: true, nativeImeFocusIdentityProbePassed: true, files };
   const save = () => writeFile(join(distribution, 'opencraft-electron-artifact.json'), JSON.stringify(marker));
   await save(); return { distribution, forkPath, marker, save };
 }
@@ -30,6 +31,18 @@ test('owned runtime requires exact fork, native probe receipt and complete byte 
   assert.equal(await verifyRemoteBrowserArtifact(f.distribution, f.forkPath), f.distribution);
   await writeFile(join(f.distribution, 'electron'), 'tampered');
   await assert.rejects(verifyRemoteBrowserArtifact(f.distribution, f.forkPath), /checksum/);
+});
+test('every native input proof is mandatory, including absent fields', async t => {
+  const f = await fixture(t);
+  for (const key of ['nativeCopyProbePassed', 'nativeInputCausalityProbePassed', 'nativeImeFocusIdentityProbePassed']) {
+    for (const value of [false, undefined]) {
+      f.marker[key] = value; await f.save();
+      await assert.rejects(verifyRemoteBrowserArtifact(f.distribution, f.forkPath), /all native input probes/);
+    }
+    f.marker[key] = true;
+  }
+  await f.save();
+  assert.equal(await verifyRemoteBrowserArtifact(f.distribution, f.forkPath), f.distribution);
 });
 test('stale fork, failed native probe, undeclared and escaping files fail closed', async t => {
   const f = await fixture(t), original = f.marker.forkDefinitionSha256;

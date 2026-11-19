@@ -15,5 +15,13 @@
     "snapshotChecksum": "dfd9ad2bd79325e3e971d485502f326f13adc7ce5b84a665899061a9d4c875f5",
     "compiledChecksum": "051fcc6e15af2eb7a8838d774beca6cafa0270dd067a966b688cc0859e26c7b6",
     "ledgerName": "notification-destinations"
+  },
+  {
+    "tag": "0002_soft_screwball",
+    "when": 1795014500283,
+    "version": 3,
+    "sqlChecksum": "e438da85f63992aea180638b3cc18342d52cecc865dec9c8f13fc0a4394ca57f",
+    "snapshotChecksum": "2995ac5c38ebe3c6849164e3f689d232b2d6b196b1141797a0354fa6cbb7e78c",
+    "compiledChecksum": "6ae5e3352eb7d0dca3b2a18d915b00ef26c2b742d2161d26ef1e92bf7e07b0dc"
   }
 ]

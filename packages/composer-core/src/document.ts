@@ -96,10 +96,14 @@ export function createEmptyComposerDocument(): ComposerDocument {
   return { version: 1, blocks: [{ type: "paragraph", children: [] }] };
 }
 
-function inlineText(inline: ComposerInline): string {
+function inlineText(inline: ComposerInline, message = false): string {
   switch (inline.type) {
     case "text": return inline.text;
-    case "mention": return `@${inline.label}`;
+    case "mention": {
+      const label = `@${inline.label}`;
+      return message && inline.mentionKind === "thread" && inline.uri
+        ? `[${label.replace(/[\\\[\]()`*_<>]/gu, "\\$&")}](${inline.uri})` : label;
+    }
     case "command": return `/${inline.name}${inline.argument === undefined ? "" : ` ${inline.argument}`}`;
     case "resource": return inline.title;
     case "link": return inline.children.map((child) => child.text).join("");
@@ -107,13 +111,13 @@ function inlineText(inline: ComposerInline): string {
   }
 }
 
-function paragraphText(paragraph: ComposerParagraphNode): string {
-  return paragraph.children.map(inlineText).join("");
+function paragraphText(paragraph: ComposerParagraphNode, message: boolean): string {
+  return paragraph.children.map(inline => inlineText(inline, message)).join("");
 }
 
 function blockText(block: ComposerBlockNode, preserveQuotes = false): string {
   switch (block.type) {
-    case "paragraph": return paragraphText(block);
+    case "paragraph": return paragraphText(block, preserveQuotes);
     case "code-block": return block.text;
     case "divider": return "---";
     case "quote": {

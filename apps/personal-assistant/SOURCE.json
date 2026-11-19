@@ -1,0 +1,17 @@
+{
+  "sourceProject": "opencraft-superapp-headless-lab",
+  "sourceCommit": "9671dfe53f0ba8964bab54f3f502ab20eb744c07",
+  "sourceTree": "a7f2f83e5d06df811ee6d4c97c2fb84c4d2d48ee",
+  "sourceLockSha256": "754f9ca93ea8b732dd482fff922233f5fe4089be2b4a717e59cade6ba2c4db60",
+  "integration": "One-time import of committed source. This workspace is now the maintained runtime; no source synchronization or second writable Core.",
+  "excluded": [
+    "local profiles and credentials",
+    "model runs and datasets",
+    "uncommitted stdio work in the original lab"
+  ],
+  "changes": [
+    "npm workspace identity and root lock",
+    "maintainer entry documentation",
+    "package exports for trusted Host integration"
+  ]
+}

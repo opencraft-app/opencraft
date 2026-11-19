@@ -1,0 +1,19 @@
+[
+  {
+    "tag": "0000_legacy_baseline",
+    "when": 1795016307327,
+    "version": 0,
+    "sqlChecksum": "67cbb5bb8199b01fffd72e0c939ca4d6298ad05885d742eaf97bdc24cb82ae35",
+    "snapshotChecksum": "bf9b2a40218e35ed97a34a3b4c66cd34f95eea048900cc147615d5633d2d7f37",
+    "compiledChecksum": null
+  },
+  {
+    "tag": "0001_tidy_sersi",
+    "when": 1795016411264,
+    "version": 5,
+    "sqlChecksum": "88e05fed2420ac6d9fa68ef62dc6a8c7d04130eda62a0cc263c35b71f267cb0f",
+    "snapshotChecksum": "fa9e30b58eb9259511fcea612782367a52b9b6f0a279ae91faabc53591a3e9fc",
+    "compiledChecksum": "88e05fed2420ac6d9fa68ef62dc6a8c7d04130eda62a0cc263c35b71f267cb0f",
+    "ledgerName": "model-gateway-admission-lease"
+  }
+]

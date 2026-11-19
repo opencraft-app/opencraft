@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import { readyGitBroker } from './personal-git-protocol.js';
 import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from 'node:fs';
 import { spawn, execFile } from 'node:child_process';
 import { chmod, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
@@ -102,15 +104,38 @@ async function privateGitHome(env: NodeJS.ProcessEnv): Promise<() => Promise<voi
   } catch (error) { await rm(directory, { recursive: true, force: true }); throw error; }
 }
 const preserveAuthor = (command: string, tail: string[]) => ['rebase', 'cherry-pick', 'am'].includes(command) || (command === 'commit' && tail.some(arg => ['--amend', '-c', '-C', '--reuse-message', '--reedit-message'].includes(arg) || /^--(?:reuse|reedit)-message=/u.test(arg))) || (command === 'pull' && tail.some(a => a.startsWith('--rebase')));
-async function retry(socket: string, request: unknown) {
-  let lastStatus = 'unavailable';
-  for (const delay of [0, 100, 300, 700]) {
-    if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-    try { const answer = await queryGitIdentityBroker(socket, request); lastStatus = answer.status; if (!['unavailable', 'expired'].includes(answer.status)) return answer; }
-    catch { /* Retry lookup only; never replay Git. */ }
+async function retry(socket: string, request: any): Promise<any> {
+  const reference = randomUUID();
+  const body = request.op === 'open' ? { ...request, requestId: reference } : request;
+  let reason = 'broker-unavailable';
+  const directory = process.env.OPENCRAFT_GIT_BROKER_DIRECTORY;
+  const authority = process.env.OPENCRAFT_GIT_BROKER_AUTHORITY;
+  const uid = Number(process.env.OPENCRAFT_GIT_BROKER_UID);
+  for (const delay of [0,100,300,700]) {
+    if (delay) await new Promise(resolve => setTimeout(resolve,delay));
+    try {
+      // Existing command sessions stay pinned to their signer. Only a new open
+      // may discover a replacement; native Git is never replayed here.
+      const endpoint = request.op === 'open' && directory && authority
+        ? await readyGitBroker(directory,authority,uid,socket,Date.now()+2500) : socket;
+      const answer = await queryGitIdentityBroker(endpoint,body);
+      if (answer.status === 'expired' || answer.status === 'denied') {
+        const code = answer.status === 'expired' ? 'lease-expired' : 'authorization-denied';
+        throw Object.assign(Error(`Git execution unavailable [git/${code}; ref ${reference}]; refusing server-account fallback`), { terminal: true });
+      }
+      if (answer.status !== 'unavailable') return { ...answer, brokerSocket:endpoint };
+      reason = ['session-capacity','agent-unavailable','authority-store-unavailable','broker-closed'].includes(answer.reason) ? answer.reason : 'broker-unavailable';
+    } catch (error) {
+      if ((error as any)?.terminal) throw error;
+      const code = (error as any)?.code;
+      reason = ['connect-missing','connect-refused','connect-denied','request-timeout','response-invalid','response-too-large','broker-disconnected','broker-io'].includes(code)
+        ? code : error instanceof Error && ['git_broker_not_ready','git_broker_locator_invalid'].includes(error.message) ? error.message : 'broker-unavailable';
+      if (['connect-denied','git_broker_locator_invalid','response-invalid','response-too-large'].includes(reason)) break;
+    }
   }
-  throw new Error(`Git identity ${lastStatus === 'expired' ? 'execution lease expired' : 'broker unavailable'}; refusing server-account fallback`);
+  throw Error(`Git identity unavailable [git/${reason}; ref ${reference}]; refusing server-account fallback`);
 }
+
 async function credentialHelper(socket: string, sessionId: string, action: string) {
   if (action !== 'get') return 0; // Never persist Git's store/erase messages.
   let input = ''; for await (const chunk of process.stdin) { input += chunk; if (input.length > 16_384) return 1; }
@@ -202,19 +227,24 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
   // No remote/profile means no safe identity guess. Confirm unconfigured before retaining legacy behavior.
   const cloneConflict = command === 'clone' && conflicts(tail);
   const candidates = command === 'submodule' || cloneConflict || !managedHosts.length ? supported : managedHosts;
-  const bindings = await Promise.all(candidates.map(async host => ({ host, reply: await retry(socket, { op: 'open', threadId, host, operation: command }) })));
+  const bindings = await Promise.all(candidates.map(async host => ({ host, reply: await retry(socket, { op: 'open', threadId, host, operation: command, ...(process.env.OPENCRAFT_GIT_CAPABILITY ? { capability: process.env.OPENCRAFT_GIT_CAPABILITY } : {}) }) })));
   const sessions = bindings.filter(binding => binding.reply.status === 'configured');
   let releaseHome: (() => Promise<void>) | undefined;
   try {
+    if (bindings.some(binding => binding.reply.status === 'unbound')) throw new Error('personal_git_binding_missing: configure your own Git SSH credential in platform settings');
     if (bindings.some(binding => !['configured', 'unconfigured'].includes(binding.reply.status))) throw new Error('Git execution lease expired or unavailable; refusing server-account fallback');
-    if (!sessions.length) return run();
+    if (!sessions.length) {
+      if (process.env.OPENCRAFT_GIT_REQUIRED === '1') throw new Error('personal_git_binding_missing: configure your own Git SSH credential in platform settings');
+      return run();
+    }
     if (command === 'submodule') throw new Error('Git identity: run network commands in the explicit submodule repository');
     if (isAlias) throw new Error('Git identity: use the explicit Git command instead of an alias in managed execution');
     if (hosts.size !== 1 || managedHosts.length !== 1 || sessions.length !== 1) throw new Error('Git identity profile is ambiguous; select one managed HTTPS remote');
     const { host, reply } = sessions[0]!;
     if (command === 'push' && (process.env.OPENCRAFT_GIT_PERSONAL_SSH_PUSH_HOSTS ?? '').split(',').includes(host) && !reply.sshAuth)
       throw new Error('Git identity: generate a personal SSH key in employee settings and add its public key to your code host before pushing');
-    const personalSsh = command === 'push' && !!reply.sshAuth;
+    const serverReadPolicy = !process.env.OPENCRAFT_GIT_CAPABILITY && reads.has(command) && (process.env.OPENCRAFT_GIT_SERVER_READ_HOSTS ?? '').split(',').includes(host);
+    const personalSsh = !serverReadPolicy && (command === 'push' || reads.has(command)) && !!reply.sshAuth;
     const httpsUrls = new Map([...urls].map(url => [url, personalHttpsRemote(url, host)]));
     if (network.has(command) && [...httpsUrls].some(([url, https]) => !https || (url !== https && !rawUrls.has(url))))
       throw new Error('Personal Git credentials require a matching HTTPS remote or canonical SSH remote without conflicting URL rewrites');
@@ -228,8 +258,8 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
       if (process.env.GIT_SSL_CERT || process.env.GIT_SSL_KEY) throw new Error('Git identity: conflicting client-certificate authentication');
     }
     // This is an explicit deployment policy, never a retry after personal Git fails.
-    const serverRead = reads.has(command) && (process.env.OPENCRAFT_GIT_SERVER_READ_HOSTS ?? '').split(',').includes(host);
-    const env: NodeJS.ProcessEnv = { ...withoutTrace(process.env), OPENCRAFT_GIT_COMMAND_SESSION: reply.sessionId,
+    const serverRead = serverReadPolicy;
+    const env: NodeJS.ProcessEnv = { ...withoutTrace(process.env), OPENCRAFT_GIT_COMMAND_SESSION: reply.sessionId, OPENCRAFT_GIT_BROKER_SOCKET: reply.brokerSocket ?? socket,
       GIT_COMMITTER_NAME: reply.identity.name, GIT_COMMITTER_EMAIL: reply.identity.email, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false' };
     env.GIT_TRACE_REDACT = '1';
     if (!serverRead) {
@@ -268,8 +298,10 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
       env.GIT_SSH_VARIANT = 'ssh';
       env.GIT_SSH_COMMAND = ['/usr/bin/ssh', '-F', '/dev/null', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes',
         '-o', `IdentityAgent=${reply.sshAuth.socket}`, '-i', publicPath, '-o', 'PreferredAuthentications=publickey',
-        '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no', '-o', 'StrictHostKeyChecking=yes',
-        '-o', `UserKnownHostsFile=${join(originalHome, '.ssh/known_hosts')}`, '-o', 'ClearAllForwardings=yes', '-o', 'ForwardAgent=no'].map(shellQuote).join(' ');
+        ...(process.env.OPENCRAFT_GIT_KNOWN_HOSTS
+          ? ['-o', 'StrictHostKeyChecking=accept-new', '-o', `UserKnownHostsFile=${process.env.OPENCRAFT_GIT_KNOWN_HOSTS}`]
+          : ['-o', 'StrictHostKeyChecking=yes', '-o', `UserKnownHostsFile=${join(originalHome, '.ssh/known_hosts')}`]),
+        '-o', 'PasswordAuthentication=no', '-o', 'KbdInteractiveAuthentication=no', '-o', 'ClearAllForwardings=yes', '-o', 'ForwardAgent=no'].map(shellQuote).join(' ');
       parameters.push(['credential.helper', ''], ['protocol.allow', 'never'], ['protocol.ssh.allow', 'always'],
         ['submodule.recurse', 'false'], ['push.recurseSubmodules', 'no']);
       if (tail.some(arg => arg.startsWith('--rec'))) throw new Error('Git identity: push each submodule explicitly');
@@ -300,7 +332,7 @@ export async function runManagedGit(args = process.argv.slice(2)): Promise<numbe
     return await run(env);
   } finally {
     await releaseHome?.();
-    for (const session of sessions) await queryGitIdentityBroker(socket, { op: 'close', sessionId: session.reply.sessionId }).catch(() => undefined);
+    for (const session of sessions) await queryGitIdentityBroker(session.reply.brokerSocket ?? socket, { op: 'close', sessionId: session.reply.sessionId }).catch(() => undefined);
   }
 }
 if (process.argv[1] && existsSyncEntry(process.argv[1]) && realpathSyncEntry(process.argv[1]) === realpathSyncEntry(new URL(import.meta.url))) {

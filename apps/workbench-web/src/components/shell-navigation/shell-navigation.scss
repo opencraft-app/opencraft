@@ -1,19 +1,22 @@
 @use "./shell-navigation.mobile";
+@use "./shell-navigation.density" as density;
 @use "@opencraft/design-system/controls.web" as controls;
 @use "@opencraft/design-system/menu.web" as menu;
 @use "@opencraft/design-system/icons.web" as icons;
-@use "@opencraft/design-system/typography.web" as typography;
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 
 // A+D: AppShell still owns all dock/floating/gesture geometry and shared portals.
 .shell-sidebar__column {
-  --padding-shell-sidebar-inline: 8px;
+  --padding-shell-sidebar-inline: var(--padding-sidebar-content-inline);
   --padding-sidebar-activity-row-inline: 6px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%; min-height: 0; min-width: 0;
-  .sidebar-panel { padding: 0 8px 8px; }
+  // Share the list/accessory/footer gutter; leave just one unit for focus ink.
+  .sidebar-panel { padding: 0 var(--padding-shell-sidebar-inline) var(--spacing); }
   .sidebar-navigation:empty { display: none; }
+  .sidebar-management-navigation { flex: 0 0 auto; min-width: 0; }
   .sidebar-content-scroll {
     display: flex; flex-direction: column; overflow: hidden; margin-top: 0;
     mask-image: none; -webkit-mask-image: none; animation: none;
@@ -24,9 +27,11 @@
   // Their floating popovers remain in the existing Shell/Radix portals.
   .sidebar-activity-group__items {
     isolation: isolate;
-    // Clip only the rows crossing their own sticky label. The material remains
-    // the continuous Shell plane, including selection and avatar backgrounds.
-    clip-path: inset(var(--sidebar-heading-occlusion, 0px) -100% -100%);
+    // Rows keep their local avatar ordering. Native scroll/sticky composition
+    // owns occlusion; no whole-group clip follows scroll on the main thread.
+    :where(button, a[href], [tabindex]) {
+      scroll-margin-block-start: max(var(--height-sidebar-group-heading), var(--size-control-hit-min));
+    }
   }
   .sidebar-thread-group-heading {
     // The section bounds its own disclosure. Desktop scrolls the activity list;
@@ -36,9 +41,25 @@
     align-self: start;
     // Local to the isolated activity list, below Shell chrome and portals.
     z-index: 1;
-    background: var(--opencraft-sidebar-heading-background, var(--color-surface));
+    // An opaque projection of the existing Shell material prevents row tint
+    // without a second local backdrop filter or a scroll-dependent mask.
+    background: var(--opencraft-sidebar-sticky-background, var(--color-surface));
+    // Keep legacy theme context/heading paints in their existing order, over
+    // the opaque backing. CSS backgrounds may be colors or images; alpha never
+    // reveals moving rows. Sticky's own stacking context bounds both layers.
+    &::before, &::after {
+      content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    }
+    &::before { background: var(--opencraft-sidebar-context-background, transparent); }
+    &::after { background: var(--opencraft-sidebar-heading-background, transparent); }
+    @media (forced-colors: active) { background: Canvas; }
   }
   .sidebar-list-toolbar, .sidebar-new-chat, .sidebar-list-search, .sidebar-catalog-feedback { flex-shrink: 0; }
+}
+.sidebar-entry-navigation {
+  flex: 0 0 auto;
+  &:empty { display: none; }
+  > .sidecar-shared-content { height: auto; }
 }
 .shell-sidebar__scroll { display: contents; }
 .shell-sidebar__navigation.sidecar-content-slot {
@@ -53,7 +74,7 @@
   grid-column: 2; grid-row: 2; height: auto;
   border-inline-end: 0;
 }
-.shell-sidebar-navigation {
+:where(.shell-sidebar__column[data-navigation-layout="mobile"]) .shell-sidebar-navigation {
   padding: 4px 0;
   .shell-navigation__items--applications {
     justify-items: center;
@@ -83,9 +104,12 @@
 // Desktop bottom-row sizing stays local to its two tracks; labeled mobile
 // destinations retain their own glyph size and density-aware touch targets.
 .shell-sidebar__column:not([data-navigation-layout="mobile"]) {
+  // Compact spacing is independent of hit target density, including wide touch.
+  --padding-shell-footer-block: var(--spacing);
+  grid-template-rows: minmax(0, 1fr) auto;
   // The context list and bottom actions occupy one continuous sidebar plane.
   background: var(--opencraft-sidebar-context-background, var(--color-surface));
-  .shell-sidebar__context.sidecar-content-slot { background: transparent; }
+  .shell-sidebar__context.sidecar-content-slot { background: transparent; grid-row: 1; }
   .shell-sidebar__navigation, .shell-sidebar__rail-footer {
     --size-application-navigation-hit-min: max(var(--height-application-navigation-row), var(--size-control-hit-min));
     --height-navigation-row: var(--size-application-navigation-hit-min);
@@ -93,7 +117,12 @@
     padding-block: var(--padding-shell-footer-block);
   }
   .shell-sidebar__navigation {
-    padding-inline-start: calc(var(--padding-shell-sidebar-inline) + var(--padding-sidebar-activity-row-inline));
+    grid-column: 1; grid-row: 2;
+    align-self: end;
+    padding-inline: var(--padding-shell-sidebar-inline) 0;
+    // Keep one footer row. Extra contributed destinations scroll natively
+    // rather than making the entire sidebar footer taller.
+    overflow: auto hidden;
     scrollbar-width: none;
     .sidecar-shared-content { height: auto; }
   }
@@ -102,17 +131,25 @@
     .shell-navigation__items--applications {
       display: flex;
       flex-direction: row;
-      gap: max(var(--spacing), var(--gap-control-density-min));
-      width: max-content;
-      > button { flex: 0 0 var(--size-application-navigation-hit-min); }
+      flex-wrap: nowrap;
+      gap: max(var(--gap-application-navigation-items), var(--gap-control-density-min));
+      width: 100%;
+      > button {
+        flex: 0 0 var(--size-application-navigation-hit-min);
+        .shell-navigation__item-label { display: none; }
+      }
     }
   }
   .shell-sidebar__rail-footer {
-    padding-inline: var(--spacing) var(--padding-shell-sidebar-inline);
+    grid-column: 2; grid-row: 2;
+    justify-self: end;
+    padding-inline: max(var(--gap-application-navigation-items), var(--gap-control-density-min)) var(--padding-shell-sidebar-inline);
+    position: relative;
     .sidecar-shared-content { height: auto; }
     .shell-navigation__footer--unified {
       flex-direction: row;
-      gap: max(var(--spacing), var(--gap-control-density-min));
+      justify-content: flex-end;
+      gap: max(var(--gap-application-navigation-items), var(--gap-control-density-min));
       padding: 0;
     }
   }
@@ -120,6 +157,11 @@
     --size-application-navigation-icon: var(--size-shell-footer-icon);
     --size-icon-navigation: var(--size-application-navigation-icon);
     --radius-application-navigation-control: var(--radius-md);
+  }
+  // These four footer destinations share the quiet section-icon tone. Keep
+  // button selection/hover/focus surfaces and account/extension artwork intact.
+  :is([data-action-id="shell.home"], [data-action-id="shell.applications"], [data-action-id="shell.search"], [data-surface="settings"]) svg.ui-action-glyph {
+    color: var(--sidebar-icon-tone);
   }
   .shell-sidebar__rail-footer .shell-navigation__entrance {
     .sidebar-account__avatar {
@@ -129,6 +171,9 @@
     }
   }
 }
+
+// Preserve shared action spacing and hit targets at every sidebar width.
+// Extra destinations use the navigation track's existing horizontal scroll.
 
 
 .shell-navigation__dock {
@@ -450,6 +495,10 @@
   width: max-content;
   > .application-brand { flex: 0 0 auto; }
 }
+
+// A capacity adapter on the existing Shell plane; no additional material layer.
+.shell-navigation-strip { min-width: 0; width: 100%; }
+.shell-sidebar__column[data-navigation-layout="mobile"] .shell-navigation-strip { display: contents; }
 // The server edge drawer occupies the sidebar's start edge. Add the same
 // gutter to the brand, list and bottom actions as the context list already
 // receives, so their inline origins stay aligned when the drawer is present.

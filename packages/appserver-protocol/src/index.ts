@@ -1,5 +1,4 @@
 export * from "./json-rpc";
-export * from "./bot-conversations";
 export * from "./codex-accounts";
 export * from "./extensions";
 export * from "./method-access";
@@ -31,12 +30,25 @@ export * from "./turn-recovery";
 export * from "./shared-interactions";
 
 export * from "./thread-note";
+export * from "./channels";
+
+export * from "./channel-images.js";
+export * from "./channel-attachments.js";
+
+export * from "./personal-assistant";
 export * from "./thread-access";
 export * from "./agent-onboarding";
 export * from "./agent-usage";
 export * from "./steer-evidence";
+export * from "./input-delivery";
+
+export * from "./forwarded-record";
+
+export * from "./bot-conversations";
 
 export * from "./catalog-merkle";
 export * from "./catalog-merkle-pages";
 
 export * from "./native-conversation-project";
+
+export * from "./workspace-catalog";

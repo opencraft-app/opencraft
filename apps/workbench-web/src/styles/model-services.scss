@@ -89,7 +89,7 @@
   @include menu.surface;
   [data-disabled], small { color: var(--color-text-secondary); }
   small { display: block; padding: 8px; font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking); }
-  &__separator { height: 1px; margin: 4px; background: var(--color-border-subtle); }
+  &__separator { @include menu.separator; }
   &__sub-trigger { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   &__current { margin-left: 16px; color: var(--color-text-secondary); }
 }
@@ -139,4 +139,13 @@
   ul { margin: 0; padding-inline-start: calc(var(--spacing) * 5); }
 }
 
+.model-services-personal__connection {
+  > span { min-width: 0; text-align: start; overflow-wrap: anywhere; }
+  small { display: block; color: var(--color-text-secondary); }
+}
+.model-services-personal__scope {
+  max-width: min(24rem, calc(100vw - 24px));
+  p { margin: 0; }
+}
+.model-services-personal__platform { display: flex; flex-direction: column; height: 100%; min-height: 0; > .model-services { flex: 1; } }
 .model-services__agent-actions { display: flex; flex-wrap: wrap; gap: calc(var(--spacing) * 2); margin-inline-start: auto; }

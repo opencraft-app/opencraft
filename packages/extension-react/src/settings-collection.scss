@@ -1,0 +1,77 @@
+// Demand-loaded composition. Shared Settings own row controls and surfaces.
+.settings-collection-panel {
+  min-block-size: 0; max-block-size: inherit; display: flex; flex-direction: column;
+  .settings-panel__header { padding-inline: var(--padding-token-settings-panel); flex-wrap: nowrap;
+    h2 { flex: 1 1 auto; text-wrap: initial; }
+  }
+  .settings-panel__actions { flex-shrink: 0; }
+}
+.settings-collection-toolbar {
+  display: flex; align-items: center; gap: var(--gap-control-group);
+  inline-size: 100%; min-inline-size: 0;
+  h2 { flex: 1; min-inline-size: 0; margin: 0; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap;
+    font: var(--typography-panel-title-font); letter-spacing: var(--typography-panel-title-tracking); }
+}
+.settings-collection { min-inline-size: 0; }
+.settings-collection-section > .settings-control-section__heading {
+  margin-block-end: calc(2 * var(--spacing));
+  padding-inline: var(--padding-token-settings-row-inline);
+  h3 { margin: 0; font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking); color: var(--color-text-secondary); }
+}
+.settings-collection .settings-control-group:not([data-appearance="plain"]) {
+  border-color: transparent; box-shadow: none;
+}
+.settings-collection-footer {
+  margin: 0; padding: calc(2 * var(--spacing)) var(--padding-token-settings-row-inline) 0;
+  font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking);
+  color: var(--color-text-secondary); overflow-wrap: anywhere;
+}
+.settings-control-row.settings-collection-row > .settings-control-row__label {
+  display: flex; align-items: center; gap: calc(3 * var(--spacing)); flex: 1 1 auto; min-inline-size: 0;
+}
+.settings-collection-row__icon { display: grid; place-items: center; flex-shrink: 0;
+  inline-size: var(--size-navigation-leading-slot); color: var(--color-text-secondary);
+  svg { inline-size: var(--size-application-navigation-icon); block-size: var(--size-application-navigation-icon); }
+}
+.settings-collection-row__copy { display: flex; flex-direction: column; min-inline-size: 0; gap: var(--spacing); overflow-wrap: anywhere;
+  small { font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking); color: var(--color-text-secondary); white-space: normal; }
+}
+.settings-collection .settings-control-list-item__copy > small { white-space: normal; overflow: visible; }
+
+.settings-collection-document {
+  inline-size: 100%; block-size: 100%; min-inline-size: 0; min-block-size: 0;
+  overflow: auto; box-sizing: border-box; container-type: inline-size;
+  color: var(--color-text); background: var(--color-background-surface);
+}
+.settings-collection-document__content {
+  box-sizing: border-box; inline-size: 100%; max-inline-size: var(--width-collection-document-max);
+  margin-inline: auto; padding: var(--padding-collection-document-block) var(--padding-collection-document-inline);
+  display: flex; flex-direction: column; gap: var(--gap-collection-sections); min-inline-size: 0;
+}
+.settings-collection-navigation {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: var(--gap-control-group); border-block-end: 1px solid var(--color-border-subtle);
+  .segmented-control { flex-shrink: 0; }
+}
+.settings-collection-navigation__actions {
+  display: flex; align-items: center; gap: var(--gap-control-group); margin-inline-start: auto;
+  padding-block-end: var(--spacing);
+}
+.settings-collection[data-collection-appearance="list"] {
+  .settings-control-section__heading { padding-inline: 0; }
+  .settings-control-group > *:not(:last-child)::after { display: none; }
+  .settings-control-group {
+    background: transparent; border: 0; border-radius: 0; box-shadow: none;
+    > .settings-control-row, > .settings-control-list-item {
+      min-block-size: var(--height-collection-row); padding-inline: var(--spacing);
+      border-block-end: 1px solid var(--color-border-subtle);
+    }
+  }
+  .settings-collection-row__icon, .settings-control-list-item__icon {
+    inline-size: var(--size-collection-leading-icon); block-size: var(--size-collection-leading-icon);
+    display: grid; place-items: center; border-radius: var(--radius-lg);
+    background: var(--color-background-button-secondary); color: var(--color-text-secondary);
+  }
+  .settings-collection-footer { padding-inline: 0; }
+}

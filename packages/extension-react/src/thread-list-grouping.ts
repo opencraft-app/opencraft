@@ -5,6 +5,8 @@ export interface ThreadListReference {
   readonly threadId: string;
   readonly updatedAt: number;
   readonly pinned?: boolean;
+  /** Authenticated current-reader creation evidence; absence is unknown. */
+  readonly createdByViewer?: boolean;
 }
 export interface ThreadListGroup {
   readonly id: string;

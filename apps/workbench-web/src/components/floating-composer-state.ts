@@ -57,8 +57,6 @@ export class FloatingComposerState {
     phase: "visible",
   };
   private readonly observers = new Set<() => void>();
-  private pending: ReturnType<typeof setTimeout> | undefined;
-  private revision = 0;
 
   get hasSubscribers(): boolean { return this.observers.size > 0; }
   getSnapshot = (): FloatingComposerSnapshot => this.value;
@@ -77,24 +75,15 @@ export class FloatingComposerState {
   }
 
   private animate(visible: boolean, reducedMotion: boolean): void {
-    const ticket = ++this.revision;
-    if (this.pending !== undefined) clearTimeout(this.pending);
-    this.pending = undefined;
     const destination = visible ? "visible" : "hidden";
     this.update({ phase: reducedMotion ? destination : visible ? "entering" : "exiting" });
-    if (!reducedMotion) {
-      this.pending = setTimeout(() => {
-        if (ticket !== this.revision) return;
-        this.pending = undefined;
-        this.update({ phase: destination });
-      }, 120);
-    }
+  }
+
+  completePresentation(snapshot: FloatingComposerSnapshot): void {
+    if (snapshot === this.value) this.settle();
   }
 
   settle(): void {
-    ++this.revision;
-    if (this.pending !== undefined) clearTimeout(this.pending);
-    this.pending = undefined;
     if (this.value.phase === "entering") this.update({ phase: "visible" });
     else if (this.value.phase === "exiting") this.update({ phase: "hidden" });
   }

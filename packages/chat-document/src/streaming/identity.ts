@@ -142,7 +142,19 @@ function segmentWords(text: string): readonly string[] {
   } catch {
     // The regex fallback works in older native JavaScript runtimes.
   }
-  return text.match(/\s*\S+(?:\s+|$)/gu) ?? (text.length === 0 ? [] : [text]);
+  // Scan once: an unanchored greedy whitespace regexp retries quadratically
+  // for long whitespace-only native output.
+  const result: string[] = [];
+  let start = 0, cursor = 0;
+  while (cursor < text.length) {
+    while (cursor < text.length && /\s/u.test(text[cursor]!)) cursor++;
+    while (cursor < text.length && !/\s/u.test(text[cursor]!)) cursor++;
+    while (cursor < text.length && /\s/u.test(text[cursor]!)) cursor++;
+    if (cursor > start) result.push(text.slice(start, cursor));
+    start = cursor;
+  }
+  return result;
+
 }
 
 function collectTextSegments(nodes: readonly ChatDocumentNode[]): ChatTextSegment[] {

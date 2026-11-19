@@ -1,6 +1,6 @@
 import { SidebarReturnToApp } from "./sidebar-return-to-app";
 import { Button } from "@opencraft/design-system-web/button";
-import { NavigationList, NavigationGroup, NavigationItem } from "@opencraft/design-system-web/navigation";
+import { NavigationList, NavigationGroup, NavigationItem, NavigationEmpty, NavigationCount } from "@opencraft/design-system-web/navigation";
 import { SearchIcon as Search } from "@opencraft/design-system-web/action-icons";
 import "../styles/settings-page.scss";
 import { useOptionalAsyncNotices } from "./async-notices";
@@ -15,8 +15,7 @@ import { TouchDensitySetting } from "./touch-density-setting";
 import { WorkbenchShortcutList } from "./workbench-shortcut-help";
 import { ChatSettings } from "./chat-settings";
 import { HubNetworkSettings } from "./hub-network-settings";
-import { ServerSelectionSettings } from "./server-selection-settings";
-import { browserServerContext } from "../runtime/server-context";
+import { ServerInformationSettings } from "./server-information-settings";
 import { ExtensionLibrary } from "./extensions/extension-library";
 import { mobileContainer, openMobileSourceSettings } from "../runtime/mobile-container";
 import { MobileConnectionSettings, mobileConnectionMessages } from "./mobile-connection-settings";
@@ -52,7 +51,7 @@ import { DesktopWelcome } from "./desktop-welcome";
 import {
   ArchivedThreadsSettings,
   type ArchivedThreadsSettingsProps,
-} from "./thread-management";
+} from "./archived-threads-settings";
 
 export type SettingsSection = "appearance" | "laboratory" | "plugins" | string;
 
@@ -115,7 +114,7 @@ export function useSettingsExtensionPages(
           group: contribution.groupMessage ? intl.formatMessage(contribution.groupMessage) : contribution.group,
         }))
         .filter(
-          (page) => (page.platforms?.includes(platform) ?? true)
+          (page) => page.placement !== 'extension' && (page.platforms?.includes(platform) ?? true)
             && (page.audience !== "internal" || internalDeveloperMode),
         )
         .sort((left, right) => (left.order ?? 0) - (right.order ?? 0)),
@@ -143,7 +142,6 @@ export function SettingsNavigation({
   const intl = useIntl();
   const showBack = presentation === "route";
   const dismissSidebar = useDismissSidebarAfterSelection();
-  const returnToApp = () => { onBack(); if (presentation === "sidebar") dismissSidebar?.(); };
   const bottomReturn = presentation === "sidebar" ? <SidebarReturnToApp onReturn={onBack} /> : null;
   const onSectionChange = (nextSection: SettingsSection) => {
     navigateToSection(nextSection);
@@ -185,7 +183,7 @@ export function SettingsNavigation({
             <>
               <NavigationItem type="button" className="settings-page__back" onClick={onBack}>
                 <ArrowLeft size={15} />
-                <span>Back to workbench</span>
+                <span data-navigation-label="">Back to workbench</span>
               </NavigationItem>
 
               <div className="management-navigation__subject" aria-label="Current agent">
@@ -208,9 +206,9 @@ export function SettingsNavigation({
               </div>
               <label className="management-navigation__search">
                 <Search size={15} aria-hidden="true" />
-                <span className="sr-only">Search agent settings</span>
                 <input
                   type="search"
+                  aria-label={intl.formatMessage({ id: "settings.management.search", defaultMessage: "Search agent settings" })}
                   value={managementQuery}
                   onChange={(event) => setManagementQuery(event.currentTarget.value)}
                   placeholder="Search"
@@ -232,7 +230,7 @@ export function SettingsNavigation({
             onSectionChange={onSectionChange}
           />
           {visiblePages.length === 0 ? (
-            <p className="management-navigation__empty">No matching settings</p>
+            <NavigationEmpty className="management-navigation__empty">No matching settings</NavigationEmpty>
           ) : null}
         </NavigationList>
       </div>
@@ -243,14 +241,14 @@ export function SettingsNavigation({
     <div className={`settings-page__navigation settings-page__navigation--${presentation}`} data-selection="chrome">
       {bottomReturn}
         <NavigationList inset={presentation === "sidebar" ? "sidebar" : undefined} label={intl.formatMessage({ id: "settings.title", defaultMessage: "Settings" })}>
-        {showBack ? <NavigationItem type="button" className="settings-page__back" onClick={returnToApp}>
+        {showBack ? <NavigationItem type="button" className="settings-page__back" onClick={onBack}>
           <ArrowLeft size={15} />
-          <span><FormattedMessage id="settings.back" defaultMessage="Back to app" /></span>
+          <span data-navigation-label=""><FormattedMessage id="settings.back" defaultMessage="Back to app" /></span>
         </NavigationItem> : null}
         <div className="settings-page__navigation-heading"><FormattedMessage id="settings.groups.application" defaultMessage="Application" /></div>
         <NavigationGroup className="settings-page__navigation-list">
           {mobileContainer() && <NavigationItem type="button" aria-current={section === "mobile-connection" ? "page" : undefined} onClick={() => onSectionChange("mobile-connection")}>
-            <Server size={16} /><span>{intl.formatMessage(mobileConnectionMessages.title)}</span>
+            <Server size={16} /><span data-navigation-label="">{intl.formatMessage(mobileConnectionMessages.title)}</span>
           </NavigationItem>}
           <NavigationItem
             type="button"
@@ -258,7 +256,7 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("chat")}
           >
             <WorkbenchIcon name="message-circle" />
-            <span><FormattedMessage id="settings.chat" defaultMessage="Chat" /></span>
+            <span data-navigation-label=""><FormattedMessage id="settings.chat" defaultMessage="Chat" /></span>
           </NavigationItem>
           <NavigationItem
             type="button"
@@ -266,7 +264,7 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("appearance")}
           >
             <WorkbenchIcon name="appearance" />
-            <span><FormattedMessage id="settings.appearance" defaultMessage="Appearance" /></span>
+            <span data-navigation-label=""><FormattedMessage id="settings.appearance" defaultMessage="Appearance" /></span>
           </NavigationItem>
           <NavigationItem
             type="button"
@@ -274,7 +272,7 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("plugins")}
           >
             <Blocks size={16} />
-            <span><FormattedMessage id="settings.plugins" defaultMessage="Plugins" /></span>
+            <span data-navigation-label=""><FormattedMessage id="settings.plugins" defaultMessage="Plugins" /></span>
           </NavigationItem>
           <NavigationItem
             type="button"
@@ -282,19 +280,14 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("shortcuts")}
           >
             <WorkbenchIcon name="keyboard" />
-            <span><FormattedMessage id="shortcuts.title" defaultMessage="Keyboard shortcuts" /></span>
+            <span data-navigation-label=""><FormattedMessage id="shortcuts.title" defaultMessage="Keyboard shortcuts" /></span>
           </NavigationItem>
-          {currentPlatform() === "web" && browserServerContext() ? <NavigationItem
-            type="button"
-            aria-current={section === "servers" ? "page" : undefined}
-            onClick={() => onSectionChange("servers")}
-          >
-            <Server size={16} />
-            <span><FormattedMessage id="settings.servers" defaultMessage="Servers" /></span>
-          </NavigationItem> : null}
           {currentPlatform() === "web" && hasManagedWebUpdates() ? <WebUpdatesNavigation selected={section === "updates"} onOpen={() => onSectionChange("updates")} /> : null}
+          {currentPlatform() === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <NavigationItem type="button" aria-current={section === 'server-information' ? 'page' : undefined} onClick={() => onSectionChange('server-information')}>
+            <Server size={16} /><span data-navigation-label="">{intl.formatMessage({ id: 'settings.serverInformation.title', defaultMessage: 'Server information' })}</span>
+          </NavigationItem> : null}
           {currentPlatform() === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <NavigationItem type="button" aria-current={section === 'hub-network' ? 'page' : undefined} onClick={() => onSectionChange('hub-network')}>
-            <Server size={16} /><span>{intl.formatMessage({ id: 'settings.hubNetwork', defaultMessage: 'Hub network' })}</span>
+            <Server size={16} /><span data-navigation-label="">{intl.formatMessage({ id: 'settings.hubNetwork', defaultMessage: 'Hub network' })}</span>
           </NavigationItem> : null}
           {showArchivedConversations ? <NavigationItem
             type="button"
@@ -302,7 +295,7 @@ export function SettingsNavigation({
             onClick={() => onSectionChange("archived-conversations")}
           >
             <Archive size={16} />
-            <span><FormattedMessage id="settings.archived" defaultMessage="Archived conversations" /></span>
+            <span data-navigation-label=""><FormattedMessage id="settings.archived" defaultMessage="Archived conversations" /></span>
           </NavigationItem> : null}
           {internalDeveloperMode ? (
             <>
@@ -312,7 +305,7 @@ export function SettingsNavigation({
                 onClick={() => onSectionChange("laboratory")}
               >
                 <FlaskConical size={16} />
-                <span><FormattedMessage id="settings.laboratory" defaultMessage="Laboratory" /></span>
+                <span data-navigation-label=""><FormattedMessage id="settings.laboratory" defaultMessage="Laboratory" /></span>
               </NavigationItem>
             </>
           ) : null}
@@ -323,7 +316,7 @@ export function SettingsNavigation({
               onClick={() => onSectionChange("sqlite-debug")}
             >
               <Database size={16} />
-              <span><FormattedMessage id="settings.sqliteInspector" defaultMessage="SQLite inspector" /></span>
+              <span data-navigation-label=""><FormattedMessage id="settings.sqliteInspector" defaultMessage="SQLite inspector" /></span>
             </NavigationItem>
           ) : null}
           {extensionPages.filter((page) => page.management === undefined && page.targetHostId === undefined).map((page, index, pages) => (
@@ -336,19 +329,19 @@ export function SettingsNavigation({
               onClick={() => onSectionChange(page.id)}
             >
               <WorkbenchIcon name={page.icon} purpose="settings-page" />
-              <span>{page.title}</span>
+              <span data-navigation-label="">{page.title}</span>
             </NavigationItem>
             </div>
           ))}
           <div className="settings-page__navigation-heading"><FormattedMessage id="settings.machines.run" defaultMessage="Run" /></div>
           {runPages.map(page => <NavigationItem key={page.id} type="button"
             aria-current={section === page.id ? "page" : undefined} onClick={() => onSectionChange(page.id)}>
-            <WorkbenchIcon name={page.icon} /><span>{page.title}</span>
+            <WorkbenchIcon name={page.icon} /><span data-navigation-label="">{page.title}</span>
           </NavigationItem>)}
           <NavigationItem type="button" aria-current={section === "machines" || section.startsWith("machine-") || (!selectedRunPage && selectedPage?.targetHostId !== undefined) ? "page" : undefined} onClick={() => onSectionChange("machines")}>
             <Server size={16} />
-            <span><FormattedMessage id="settings.machines.title" defaultMessage="Machines" /></span>
-            <span className="settings-machines-count">{machines.length}</span>
+            <span data-navigation-label=""><FormattedMessage id="settings.machines.title" defaultMessage="Machines" /></span>
+            <NavigationCount className="settings-machines-count">{machines.length}</NavigationCount>
           </NavigationItem>
         </NavigationGroup>
       </NavigationList>
@@ -380,7 +373,7 @@ function ManagementNavigationGroup({
             onClick={() => onSectionChange(page.id)}
           >
             <WorkbenchIcon name={page.icon} />
-            <span>{page.title}</span>
+            <span data-navigation-label="">{page.title}</span>
           </NavigationItem>
         ))}
       </NavigationGroup>
@@ -436,6 +429,8 @@ export function SettingsContent({
     platformViewRenderers.getSnapshot,
     platformViewRenderers.getSnapshot,
   );
+  const movedToPlugin = contributionSnapshot.settingsPages.some(({contribution}) => contribution.id === section && contribution.placement === 'extension');
+  useEffect(() => { if (movedToPlugin) onSectionChange('plugins'); }, [movedToPlugin, onSectionChange]);
   const selectedExtensionPage = extensionPages.find((page) => page.id === section) ?? null;
   const selectedMachine = machines.find(machine => machineSettingsSection(machine) === section) ?? null;
   const configurationHostId = selectedExtensionPage?.targetHostId;
@@ -481,7 +476,7 @@ export function SettingsContent({
               {section === "mobile-connection" && mobileContainer() ? <MobileConnectionSettings onProvisionHost={onProvisionHost} />
               : section === "machines" ? <SettingsMachines machines={machines} platform={platform} onSectionChange={onSectionChange} />
               : selectedMachine !== null ? <SettingsMachine machine={selectedMachine} pages={extensionPages.filter(page => page.management === undefined)} platform={platform} onSectionChange={onSectionChange} />
-              : section === "servers" && platform === "web" && browserServerContext() ? <ServerSelectionSettings />
+              : section === 'server-information' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <ServerInformationSettings />
               : section === 'hub-network' && platform === 'web' && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === 'true' ? <HubNetworkSettings />
               : section.startsWith("execution-") ? null
               : missingConfigurationHost || section.startsWith("machine-") ? <><SettingsPageHeader title={intl.formatMessage({ id: "settings.machines.unavailable", defaultMessage: "Machine unavailable" })} /><SettingsButton onClick={() => onSectionChange("machines")}>{intl.formatMessage({ id: "settings.machines.title", defaultMessage: "Machines" })}</SettingsButton></>
@@ -512,7 +507,7 @@ export function SettingsContent({
                   restore={archivedConversations.restore}
                 />
               ) : section === "chat" ? (
-                <ChatSettings />
+                <ChatSettings onOpenImSettings={extensionPages.some(page => page.id === "opencraft.im.channels") ? () => onSectionChange("opencraft.im.channels") : undefined} />
               ) : section === "updates" && platform === "web" && hasManagedWebUpdates() ? (
                 <WebUpdatesSettings />
               ) : section === "shortcuts" ? (
@@ -633,7 +628,7 @@ export function SettingsContent({
                     title={intl.formatMessage({ id: "settings.plugins", defaultMessage: "Plugins" })}
                     description={intl.formatMessage({ id: "settings.plugins.description", defaultMessage: "View installed plugins and their current status." })}
                   />
-                  <ExtensionLibrary supervisor={extensionRuntime} manager={extensionManager} />
+                  <ExtensionLibrary supervisor={extensionRuntime} manager={extensionManager} settingsHost={extensionViewHost} renderers={platformViewRenderers} reportError={notices?.error} />
                 </>
               ) : (
                 <SettingsSection

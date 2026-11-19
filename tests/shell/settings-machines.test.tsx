@@ -29,7 +29,7 @@ test("settings render machine ownership, cold/failed connections, first-level na
     loader: { ".scss": "empty", ".css": "empty", ".svg": "dataurl" },
     plugins: [{ name: "runtime-boundary", setup(builder) {
       builder.onResolve({ filter: /appearance-theme$/ }, () => ({ path: "appearance", namespace: "test-appearance" }));
-      builder.onLoad({ filter: /.*/, namespace: "test-appearance" }, () => ({ contents: 'export const getAppearanceThemePreviewProperties = () => ({});', loader: "js" }));
+      builder.onLoad({ filter: /.*/, namespace: "test-appearance" }, () => ({ contents: 'export const getAppearanceThemePreviewProperties = () => ({}); export const useAppearanceTheme = () => ({ preference: "system", requestedThemeId: null });', loader: "js" }));
       builder.onResolve({ filter: /appserver-runtime-context$/ }, () => ({ path: "runtime", namespace: "test" }));
       builder.onLoad({ filter: /.*/, namespace: "test" }, () => ({ contents: 'export const useMachineConnectionPhase = () => "ready"; export const useHostConnectionPhase = id => id === "local-codex" ? "error" : "ready";', loader: "js" }));
     }}], logLevel: "silent",
@@ -84,7 +84,7 @@ test("settings render machine ownership, cold/failed connections, first-level na
   assert.match(render(<NavigationContent config={{ actions: [], account: null, onOpenSettings: onSectionChange }} surface="applications" onInvoke={onSectionChange} />), /aria-label="应用"/);
   function BotNavigationFixture() {
     const intl = useIntl();
-    return <NavigationContent config={{ actions: [{ id: "opencraft.bot-management.navigation", title: intl.formatMessage({ id: "sidebar.bots", defaultMessage: "Bots" }), icon: "bot", active: false, onInvoke: () => {} }], account: null, onOpenSettings: () => {} }} surface="applications" compact onInvoke={() => {}} />;
+    return <NavigationContent config={{ actions: [{ id: "example.management.navigation", title: intl.formatMessage({ id: "sidebar.bots", defaultMessage: "Bots" }), icon: "bot", active: false, onInvoke: () => {} }], account: null, onOpenSettings: () => {} }} surface="applications" compact onInvoke={() => {}} />;
   }
   const botNavigation = <BotNavigationFixture />;
   assert.match(render(botNavigation), /aria-label="机器人"/);

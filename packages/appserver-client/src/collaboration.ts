@@ -56,3 +56,5 @@ export class CollaborationClient {
   }
   close() { return this.connection.close(); }
 }
+
+export * from './actor-inbox.js';

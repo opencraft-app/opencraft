@@ -8,6 +8,8 @@ import {
   createConversationOutbox,
   type ConversationOutboxEntry,
   createReplicaConversationRuntime,
+  createConversationOutbox,
+  type ConversationOutboxEntry,
   ContinuationCommandError,
   SubmissionOutcomeUnknownError,
   SubmissionNotDispatchedError,
@@ -1422,6 +1424,107 @@ test("unknown delivery is fenced until an authoritative Item acknowledges it", a
   runtime.dispose();
 });
 
+function idleThreadView(extraItems: ReplicaJsonValue[] = []): ReplicaJsonValue {
+  return threadView({ pendingInteractions: [], turns: [{ id: "turn-one", status: "completed", items: [
+    { id: "user-one", type: "userMessage", clientId: "client-user-one", content: [{ type: "text", text: "Run tests" }] },
+    ...extraItems,
+  ] }] });
+}
+
+function textIntent(key: ReturnType<typeof createConversationKey>, id: string, text: string,
+  target: "existing-thread" | "enqueue-follow-up" = "existing-thread") {
+  const composer = createComposerController({ type: target, key }, { now: () => 100, createId: () => id });
+  composer.dispatch({ type: "set-document", document: { version: 1, blocks: [
+    { type: "paragraph", children: [{ type: "text", text }] },
+  ] } });
+  return composer.createSubmitIntent();
+}
+
+test("weak network: history absence never settles unknown; explicit abandonment permits independent input", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(idleThreadView());
+  let calls = 0;
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    commands: commands({ submit: async intent => {
+      calls++;
+      if (calls === 1) throw new SubmissionOutcomeUnknownError();
+      return receipt(intent.commandId, intent.clientMessageId);
+    } }),
+    history: { async loadOlder() {} },
+  });
+  try {
+    const lost = textIntent(key, "lost-frame", "Hello");
+    await assert.rejects(runtime.submit(lost), SubmissionOutcomeUnknownError);
+    replica.setEntity(idleThreadView());
+    assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "unknown",
+      "the same connection may still deliver the original admission");
+    await assert.rejects(runtime.submit(textIntent(key, "blocked", "Next")), SubmissionOutcomeUnknownError);
+    replica.setAuthority(false);
+    assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "unknown");
+    replica.setAuthority(true);
+    const settled = runtime.getSnapshot().pendingSubmissions[0];
+    assert.equal(settled?.state, "unknown", "history absence is not a negative receipt");
+    const user = runtime.getSnapshot().timeline.frames.flatMap(f => f.blocks)
+      .find(b => b.type === "user-message" && b.message === "Hello");
+    assert.equal(user?.type === "user-message" && user.deliveryStatus, "unknown");
+    await assert.rejects(runtime.submit(lost), SubmissionOutcomeUnknownError);
+    await runtime.abandonUnknownSubmission(lost.commandId);
+    await assert.rejects(runtime.submit(lost), SubmissionOutcomeUnknownError);
+    await assert.rejects(runtime.submit({ ...lost, commandId: "renamed-command" }), SubmissionOutcomeUnknownError);
+    await runtime.submit(textIntent(key, "after-reconnect", "Different message"));
+    assert.equal(calls, 2, "the conversation accepts new input after explicit abandonment");
+    runtime.dismissFailedSubmission(lost.commandId);
+    assert.equal(runtime.getSnapshot().pendingSubmissions.some(item => item.commandId === lost.commandId), false);
+  } finally { runtime.dispose(); }
+});
+
+test("weak network: unknown survives idle history and late positive Host evidence resolves it", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView());
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    commands: commands({ submit: async () => { throw new SubmissionOutcomeUnknownError(); } }),
+    history: { async loadOlder() {} },
+  });
+  try {
+    const intent = textIntent(key, "racing-frame", "Hello");
+    await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+    replica.setAuthority(false); replica.setAuthority(true);
+    assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "unknown",
+      "an in-progress Turn may still be admitting the original frame");
+    replica.setEntity(idleThreadView());
+    assert.equal(runtime.getSnapshot().pendingSubmissions[0]?.state, "unknown");
+    replica.setEntity(idleThreadView([
+      { id: "late-user", type: "userMessage", clientId: intent.clientMessageId, content: [{ type: "text", text: "Hello" }] },
+    ]));
+    assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0,
+      "authoritative evidence resolves the unconfirmed placeholder");
+  } finally { runtime.dispose(); }
+});
+
+test("weak network: an unknown follow-up needs explicit local abandonment without Host deletion", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(idleThreadView());
+  let hostDeletes = 0;
+  const runtime = createReplicaConversationRuntime({ key, replica,
+    commands: commands({
+      async submit() { throw new SubmissionOutcomeUnknownError(); },
+      async deleteQueuedSubmission() { hostDeletes += 1; return true; },
+    }),
+    history: { async loadOlder() {} },
+  });
+  try {
+    const intent = textIntent(key, "lost-follow-up", "Next", "enqueue-follow-up");
+    await assert.rejects(runtime.submit(intent), SubmissionOutcomeUnknownError);
+    assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "unknown");
+    replica.setAuthority(false); replica.setAuthority(true);
+    assert.equal(runtime.getSnapshot().queuedSubmissions[0]?.state, "unknown");
+    await assert.rejects(runtime.deleteQueuedSubmission(intent.commandId));
+    await runtime.abandonUnknownSubmission(intent.commandId);
+    assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+    assert.equal(hostDeletes, 0);
+  } finally { runtime.dispose(); }
+});
+
 test("ordinary submission is an optimistic Turn and never a queued follow-up", async () => {
   const expectedError = new Error("network down");
   let rejectSubmission!: (error: Error) => void;
@@ -2121,7 +2224,8 @@ for (const lostAck of [false, true]) test(`late queue admission ${lostAck ? "fai
   assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
   if (lostAck) {
     reject(new SubmissionOutcomeUnknownError());
-    await assert.rejects(operation, SubmissionOutcomeUnknownError);
+    const admitted = await operation;
+    assert.equal(admitted.queuedSubmissionId, "server-next");
   } else {
     accept({ commandId: intent.commandId, clientMessageId: intent.clientMessageId,
       hostId: "local", threadId: "thread-one", turnId: null, acceptedAt: 102, replayed: false });
@@ -2236,7 +2340,8 @@ test("Host queue acknowledgement arriving before a lost receipt does not leave a
     input: [{ type: "text", text: "Next", text_elements: [] }], createdAt: 101, pausedReason: null,
   }]);
   rejectReceipt(new SubmissionOutcomeUnknownError());
-  await assert.rejects(operation, SubmissionOutcomeUnknownError);
+  const admitted = await operation;
+  assert.equal(admitted.queuedSubmissionId, "server-follow-up");
   runtime.replaceQueuedSubmissions([]);
   assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
   runtime.dispose();
@@ -2882,7 +2987,8 @@ test("local outbox sending accepts Steer without blocking the next draft", async
   f.runtime.dispose();
 });
 
-for (const reconnect of [false, true]) test(`an explicitly unsent online input transfers once to the durable queue (reconnect=${reconnect})`, async () => {
+for (const target of ["existing-thread", "enqueue-follow-up"] as const)
+for (const reconnect of [false, true]) test(`an explicitly unsent online input transfers once to the durable queue (target=${target}, reconnect=${reconnect})`, async () => {
   const replica = new FakeReplica(threadView());
   const key = createConversationKey("local", "thread-one");
   let rows: readonly import("@opencraft/chat-runtime").ConversationOutboxEntry[] = [];
@@ -2891,7 +2997,7 @@ for (const reconnect of [false, true]) test(`an explicitly unsent online input t
     outbox: { read: () => rows, write: (_, next) => { rows = next; }, subscribe: () => () => {} },
     commands: commands({ async submit(input) {
       calls.push({ type: input.target.type, id: input.clientMessageId });
-      if (input.target.type === "existing-thread") {
+      if (calls.length === 1) {
         if (reconnect) replica.setAuthority(false);
         throw new SubmissionNotDispatchedError();
       }
@@ -2899,7 +3005,7 @@ for (const reconnect of [false, true]) test(`an explicitly unsent online input t
     } }), history: { async loadOlder() {} },
   });
   try {
-    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "same-id" });
+    const composer = createComposerController({ type: target, key }, { now: () => 1, createId: () => "same-id" });
     composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "看看" }] }] } });
     const input = composer.createSubmitIntent();
     const accepted = await runtime.submit(input);
@@ -2910,7 +3016,7 @@ for (const reconnect of [false, true]) test(`an explicitly unsent online input t
       replica.setAuthority(true);
     }
     await new Promise(resolve => setTimeout(resolve, 0));
-    assert.deepEqual(calls, [{ type: "existing-thread", id: input.clientMessageId }, { type: "enqueue-follow-up", id: input.clientMessageId }]);
+    assert.deepEqual(calls, [{ type: target, id: input.clientMessageId }, { type: "enqueue-follow-up", id: input.clientMessageId }]);
     assert.equal(rows.length, 0);
     assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
     assert.equal(runtime.getSnapshot().queuedSubmissions.some(row => row.state === "failed"), false);
@@ -2931,6 +3037,83 @@ for (const unknown of [true, false]) test(`an uncertain or permanent online fail
     await assert.rejects(runtime.submit(composer.createSubmitIntent()), error => error === failure);
     assert.equal(rows.length, 0); assert.equal(sends, 1);
   } finally { runtime.dispose(); }
+});
+
+test("authoritative user input releases send custody while its RPC receipt is lost", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const controller = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: (() => { let n = 0; return () => `custody-${++n}`; })() });
+  controller.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Sent once" }] }] } });
+  const intent = controller.createSubmitIntent();
+  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
+  let failRpc!: (error: Error) => void;
+  const runtime = createReplicaConversationRuntime({ key, replica, history: { async loadOlder() {} },
+    commands: commands({ submit: () => new Promise((_, reject) => { failRpc = reject; }) }) });
+  try {
+    const sending = runtime.submit(intent);
+    await Promise.resolve();
+    replica.setEntity(threadView({ pendingInteractions: [], turns: [{ id: "accepted-turn", status: "inProgress", items: [
+      { id: "accepted-user", type: "userMessage", clientUserMessageId: intent.clientMessageId, content: [{ type: "text", text: "Sent once" }] },
+    ] }] }));
+    const result = await Promise.race([sending, new Promise<null>(resolve => setTimeout(() => resolve(null), 100))]);
+    assert.ok(result, "authoritative input must release custody independently of the RPC");
+    assert.equal(result.clientMessageId, intent.clientMessageId);
+    assert.equal(result.turnId, "accepted-turn");
+    failRpc(new SubmissionOutcomeUnknownError());
+    await Promise.resolve();
+    assert.equal(runtime.getSnapshot().pendingSubmissions.length, 0);
+  } finally { runtime.dispose(); controller.dispose(); }
+});
+
+for (const insufficient of ["cached", "different-id", "turn-hint", "assistant-item"] as const) {
+  test(`send custody ignores ${insufficient} and waits for exact authoritative user input`, async () => {
+    const key = createConversationKey("local", "thread-one");
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => `guard-${insufficient}` });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Same text" }] }] } });
+    const intent = composer.createSubmitIntent();
+    const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }), insufficient !== "cached");
+    let resolved = false;
+    const runtime = createReplicaConversationRuntime({ key, replica, history: { async loadOlder() {} }, commands: commands({ submit: () => new Promise(() => {}) }) });
+    try {
+      const operation = runtime.submit(intent).then(receipt => { resolved = true; return receipt; });
+      const acceptedTurn = { id: "proof-turn", status: "inProgress", items: [{ id: "proof-user", type: "userMessage", clientUserMessageId: intent.clientMessageId, content: [{ type: "text", text: "Same text" }] }] };
+      const insufficientTurn = insufficient === "turn-hint"
+        ? { ...acceptedTurn, params: { clientUserMessageId: intent.clientMessageId, input: acceptedTurn.items[0]!.content }, items: [] }
+        : { ...acceptedTurn, items: [{ ...acceptedTurn.items[0]!,
+          ...(insufficient === "different-id" ? { clientUserMessageId: "someone-else" } : {}),
+          ...(insufficient === "assistant-item" ? { type: "agentMessage" } : {}),
+        }] };
+      replica.setEntity(threadView({ turns: [insufficientTurn], pendingInteractions: [] }));
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(resolved, false);
+      replica.setAuthority(true);
+      replica.setEntity(threadView({ turns: [acceptedTurn], pendingInteractions: [] }));
+      assert.equal((await operation).turnId, "proof-turn");
+    } finally { runtime.dispose(); composer.dispose(); }
+  });
+}
+
+test('managed queue restrictions survive refresh and reject unauthorized commands before changing local state', async () => {
+  let calls = 0;
+  const runtime = createReplicaConversationRuntime({ key: createConversationKey('local', 'thread-one'),
+    replica: new FakeReplica(threadView()), commands: commands({
+      async deleteQueuedSubmission() { calls++; return true; },
+      async updateQueuedSubmission() { calls++; throw Error('unexpected'); },
+      async startQueuedSubmission() { calls++; return asTurnId('unexpected'); },
+      async reorderQueuedSubmissions() { calls++; },
+    }), history: { async loadOlder() {} } });
+  const row = { id: 'managed', clientUserMessageId: 'actor-input:managed', input: [], createdAt: 1, pausedReason: null,
+    actions: { edit: false, delete: false, start: false, reorder: false } };
+  runtime.replaceQueuedSubmissions([row]);
+  await assert.rejects(runtime.deleteQueuedSubmission(row.id), /not deletable/);
+  await assert.rejects(runtime.updateQueuedSubmission(row.id, []), /not editable/);
+  await assert.rejects(runtime.startQueuedSubmission(row.id), /cannot be started/);
+  await assert.rejects(runtime.reorderQueuedSubmissions([row.id]), /cannot be reordered/);
+  assert.equal(calls, 0);
+  assert.equal(runtime.getSnapshot().queuedSubmissions[0].operation, 'idle');
+  runtime.replaceQueuedSubmissions([{ ...row, actions: { ...row.actions, delete: true } }]);
+  await runtime.deleteQueuedSubmission(row.id);
+  assert.equal(calls, 1); assert.equal(runtime.getSnapshot().queuedSubmissions.length, 0);
+  runtime.dispose();
 });
 
 test('input evidence stays separate from admission and late query cannot regress its facet or timeline identity', () => {
@@ -2959,96 +3142,18 @@ test("verified receipt supplies the sender before native echo when browser ident
   const key = createConversationKey("local", "thread-one");
   const replica = new FakeReplica(threadView({turns: [], pendingInteractions: []}));
   const runtime = createReplicaConversationRuntime({key, replica, getSubmissionSender: () => null,
-    commands: commands({submit: async intent => ({...receipt(intent.commandId, intent.clientMessageId), turnId: "turn-two", sender: {kind: "employee", loginName: "contributor-a"}})}),
+    commands: commands({submit: async intent => ({...receipt(intent.commandId, intent.clientMessageId), turnId: "turn-two", sender: {kind: "employee", loginName: "skipzhang"}})}),
     history: {async loadOlder() {}}});
   const composer = createComposerController({type: "existing-thread", key}, {now: () => 100, createId: () => "receipt-sender"});
   composer.dispatch({type: "set-document", document: {version: 1, blocks: [{type: "paragraph", children: [{type: "text", text: "继续"}]}]}});
   const intent = composer.createSubmitIntent();
   await runtime.submit(intent);
   const messages = () => runtime.getSnapshot().timeline.frames.flatMap(f => f.blocks).filter(b => b.type === "user-message");
-  assert.deepEqual(messages()[0]?.sender, {kind: "employee", loginName: "contributor-a"});
+  assert.deepEqual(messages()[0]?.sender, {kind: "employee", loginName: "skipzhang"});
   replica.setEntity(threadView({pendingInteractions: [], turns: [{id: "turn-two", status: "inProgress", items: [{id: "u", type: "userMessage", clientId: intent.clientMessageId, content: [{type: "text", text: "继续"}], sender: null}]}]}));
   assert.equal(messages()[0]?.sender ?? null, null, "explicit server absence still wins");
   runtime.dispose();
 });
-
-test("empty outbox skips history reconciliation and async restored custody still reconciles", async () => {
-  const key = createConversationKey("local", "thread-one");
-  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
-  let rows: readonly ConversationOutboxEntry[] = [];
-  let refresh = () => {};
-  const box = createConversationOutbox({ key, ready: () => false, blocked: () => false, publish() {}, retire() {},
-    async send() { throw new Error("Never dispatch from this fixture"); },
-    storage: { async read() { return rows; }, async write(_, next) { rows = next; },
-      subscribe(listener) { refresh = listener; return () => {}; } },
-  });
-  const reconcile = box.reconcile.bind(box);
-  let calls = 0;
-  box.reconcile = ids => { calls++; return reconcile(ids); };
-  const runtime = createReplicaConversationRuntime({ key, replica, localOutbox: box, canDispatchOutbox: () => false,
-    commands: commands(), history: { async loadOlder() {} },
-  });
-  const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
-  try {
-    await box.ready(); await settle();
-    const user = { id: "user", type: "userMessage", clientId: "ack-client", content: [{type: "text", text: "Already accepted"}] };
-    const turn = { id: "ack-turn", status: "inProgress", items: [user, { id: "tail", type: "agentMessage", text: "tail" }] };
-    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
-    replica.setEntity(threadView({ turns: [{ ...turn, items: [user, { ...turn.items[1]!, text: "tail updated" }] }], pendingInteractions: [] }));
-    assert.equal(calls, 0, "empty custody must not ask for historical acknowledgements");
-    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "outbox" });
-    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Already accepted" }] }] } });
-    const intent = { ...composer.createSubmitIntent(), clientMessageId: "ack-client" };
-    rows = [{ intent, state: "unknown" }];
-    refresh(); await settle(); await settle();
-    assert.ok(calls > 0, "async hydration republishes and reconciles recovered custody");
-    assert.equal(rows.length, 0, "authoritative acknowledgement removes the recovered entry");
-    assert.equal(box.hasPending(), false);
-    const after = calls;
-    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
-    assert.equal(calls, after, "empty again returns to the scan-free path");
-  } finally { runtime.dispose(); box.dispose(); }
-});
-
-
-
-for (const mismatch of ["commandId", "clientMessageId", "hostId", "threadId"] as const) test(`mismatched ${mismatch} receipt cannot replace optimistic sender`, async () => {
-  const key = createConversationKey("local", "thread-one");
-  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
-  const runtime = createReplicaConversationRuntime({ key, replica,
-    getSubmissionSender: () => ({kind: "employee", loginName: "local-fallback"}),
-    commands: commands({ submit: async intent => ({ ...receipt(intent.commandId, intent.clientMessageId),
-      hostId: key.hostId, threadId: key.threadId, turnId: "turn-two", [mismatch]: "different",
-      sender: { kind: "employee", loginName: "wrong-receipt" } }) }), history: { async loadOlder() {} } });
-  const composer = createComposerController({type:"existing-thread",key}, {now:()=>100,createId:()=>"mismatch"});
-  composer.dispatch({type:"set-document",document:{version:1,blocks:[{type:"paragraph",children:[{type:"text",text:"hello"}]}]}});
-  try {
-    await runtime.submit(composer.createSubmitIntent());
-    const block = runtime.getSnapshot().timeline.frames.flatMap(f=>f.blocks).find(b=>b.type==="user-message");
-    assert.deepEqual(block?.sender, {kind:"employee",loginName:"local-fallback"});
-  } finally { runtime.dispose(); }
-});
-
-
-test("retry keeps the unconfirmed input until authoritative queue reconciliation", async () => {
-  const calls: string[] = [];
-  const runtime = createReplicaConversationRuntime({
-    key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
-    commands: commands({ async retryUnconfirmedSteer(_key, id, turnId) { calls.push(id + ":" + turnId); } }),
-    history: { async loadOlder() {} },
-  });
-  const claim = { id: "claim", clientUserMessageId: "message", input: [{ type: "text" as const, text: "hello", text_elements: [] }], createdAt: 1, pausedReason: "steer-delivery-unconfirmed", targetTurnId: "turn-one" };
-  runtime.replaceQueuedSubmissions([], [claim]);
-  await runtime.retryUnconfirmedSteer("claim", asTurnId("turn-one"));
-  assert.deepEqual(calls, ["claim:turn-one"]);
-  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 1);
-  runtime.replaceQueuedSubmissions([], [{ ...claim, pausedReason: "delivery-retry-requested" }]);
-  assert.equal(runtime.getSnapshot().unconfirmedSteers[0]?.pausedReason, "delivery-retry-requested");
-  runtime.replaceQueuedSubmissions([], []);
-  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 0);
-  runtime.dispose();
-});
-
 
 
 test("Guardian history preserves projection identity until its source or ordered reviews change", () => {
@@ -3120,6 +3225,44 @@ test("missing Guardian Turns retain first non-approved order and stable standalo
   } finally { runtime.dispose(); }
 });
 
+
+test("empty outbox skips history reconciliation and async restored custody still reconciles", async () => {
+  const key = createConversationKey("local", "thread-one");
+  const replica = new FakeReplica(threadView({ turns: [], pendingInteractions: [] }));
+  let rows: readonly ConversationOutboxEntry[] = [];
+  let refresh = () => {};
+  const box = createConversationOutbox({ key, ready: () => false, blocked: () => false, publish() {}, retire() {},
+    async send() { throw new Error("Never dispatch from this fixture"); },
+    storage: { async read() { return rows; }, async write(_, next) { rows = next; },
+      subscribe(listener) { refresh = listener; return () => {}; } },
+  });
+  const reconcile = box.reconcile.bind(box);
+  let calls = 0;
+  box.reconcile = ids => { calls++; return reconcile(ids); };
+  const runtime = createReplicaConversationRuntime({ key, replica, localOutbox: box, canDispatchOutbox: () => false,
+    commands: commands(), history: { async loadOlder() {} },
+  });
+  const settle = async () => { await new Promise(resolve => setTimeout(resolve, 0)); };
+  try {
+    await box.ready(); await settle();
+    const user = { id: "user", type: "userMessage", clientId: "ack-client", content: [{type: "text", text: "Already accepted"}] };
+    const turn = { id: "ack-turn", status: "inProgress", items: [user, { id: "tail", type: "agentMessage", text: "tail" }] };
+    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
+    replica.setEntity(threadView({ turns: [{ ...turn, items: [user, { ...turn.items[1]!, text: "tail updated" }] }], pendingInteractions: [] }));
+    assert.equal(calls, 0, "empty custody must not ask for historical acknowledgements");
+    const composer = createComposerController({ type: "existing-thread", key }, { now: () => 1, createId: () => "outbox" });
+    composer.dispatch({ type: "set-document", document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: "Already accepted" }] }] } });
+    const intent = { ...composer.createSubmitIntent(), clientMessageId: "ack-client" };
+    rows = [{ intent, state: "unknown" }];
+    refresh(); await settle(); await settle();
+    assert.ok(calls > 0, "async hydration republishes and reconciles recovered custody");
+    assert.equal(rows.length, 0, "authoritative acknowledgement removes the recovered entry");
+    assert.equal(box.hasPending(), false);
+    const after = calls;
+    replica.setEntity(threadView({ turns: [turn], pendingInteractions: [] }));
+    assert.equal(calls, after, "empty again returns to the scan-free path");
+  } finally { runtime.dispose(); box.dispose(); }
+});
 
 
 test("stable command payloads are expanded once across live tail updates, but new payloads invalidate", () => {
@@ -3195,3 +3338,105 @@ test("unchanged pending request records reuse parsing and display artifacts duri
   assert.equal(runtime.getSnapshot().pendingInteractions.length,0);
   runtime.dispose();
 });
+
+test('closed Host receipt settles follow-up even before terminal Replica; stale receipt cannot restore pending state',()=>{
+  const replica=new FakeReplica(threadView({pendingInteractions:[]}));
+  const runtime=createReplicaConversationRuntime({key:createConversationKey('local','thread-one'),replica,commands:commands(),history:{async loadOlder(){}}});
+  const row={id:'received-follow',clientUserMessageId:'receipt-client',input:[{type:'text' as const,text:'continue',text_elements:[]}],createdAt:101,pausedReason:'steer-delivery-unconfirmed',targetTurnId:'turn-one'};
+  runtime.replaceQueuedSubmissions([], [row]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length,1);
+  const delivery={version:1 as const,custody:'accepted' as const,nativeAdmission:'unknown' as const,context:'unobserved' as const,targetTurnId:'turn-one',execution:'interrupted' as const,revision:3};
+  runtime.replaceQueuedSubmissions([], [{...row,pausedReason:null,delivery}]);
+  assert.equal(runtime.getSnapshot().activeTurn,null,'exact terminal receipt fences stale streaming projection');
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length,0);
+  const message=runtime.getSnapshot().timeline.frames.flatMap(f=>f.blocks).find(b=>b.type==='user-message'&&b.clientId==='receipt-client');
+  assert.equal(message?.type==='user-message'&&message.deliveryStatus,'sent','Host custody is acknowledged');
+  assert.equal(message?.type==='user-message'&&message.inputDelivery?.context,'unobserved','no fabricated context adoption');
+  runtime.replaceQueuedSubmissions([], [{...row,delivery:{...delivery,execution:'running',revision:2}}]);
+  assert.equal(runtime.getSnapshot().activeTurn,null,'late old receipt cannot reopen the Turn');
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length,0);
+  runtime.dispose();
+});
+
+test('two equal follow-ups retain distinct custody identities without content-only acknowledgement',()=>{
+  const replica=new FakeReplica(threadView({turns:[{id:'turn-one',status:'completed',items:[
+    {id:'agent',type:'agentMessage',text:'waiting'},
+    {id:'idless-history',type:'userMessage',content:[{type:'text',text:'Continue'}]},
+  ]}]}));
+  const runtime=createReplicaConversationRuntime({key:createConversationKey('local','thread-one'),replica,commands:commands(),history:{async loadOlder(){}}});
+  const delivery={version:1 as const,custody:'accepted' as const,nativeAdmission:'accepted' as const,context:'unobserved' as const,targetTurnId:'turn-one',execution:'interrupted' as const,revision:3};
+  runtime.replaceQueuedSubmissions([],['first','second'].map(id=>({id,clientUserMessageId:id,input:[{type:'text' as const,text:'Continue',text_elements:[]}],createdAt:1,pausedReason:null,targetTurnId:'turn-one',delivery})));
+  const ids=runtime.getSnapshot().timeline.frames.flatMap(f=>f.blocks).filter(b=>b.type==='user-message').map(b=>b.type==='user-message'?b.clientId:null);
+  assert.ok(ids.includes('first'));assert.ok(ids.includes('second'),'equal text is not a delivery identity');
+  runtime.dispose();
+});
+
+
+test('Host custody receipt immediately acknowledges a live follow-up without claiming context adoption',async()=>{
+  const key=createConversationKey('local','thread-one');
+  const replica=new FakeReplica(threadView({pendingInteractions:[]}));
+  const delivery={version:1 as const,custody:'accepted' as const,nativeAdmission:'accepted' as const,context:'unobserved' as const,targetTurnId:'turn-one',execution:'running' as const,revision:2};
+  const runtime=createReplicaConversationRuntime({key,replica,commands:commands({submit:async intent=>({...receipt(intent.commandId,intent.clientMessageId),turnId:'turn-one',inputDelivery:delivery})}),history:{async loadOlder(){}}});
+  const composer=createComposerController({type:'steer-active-turn',key,turnId:asTurnId('turn-one')},{now:()=>100,createId:()=>'custody'});
+  composer.dispatch({type:'set-document',document:{version:1,blocks:[{type:'paragraph',children:[{type:'text',text:'Continue'}]}]}});
+  const intent=composer.createSubmitIntent();
+  await runtime.submit(intent);
+  const block=runtime.getSnapshot().timeline.frames.flatMap(f=>f.blocks).find(b=>b.type==='user-message'&&b.clientId===intent.clientMessageId);
+  assert.equal(block?.type,'user-message');
+  if(block?.type!=='user-message')throw Error('Expected custody-backed follow-up');
+  assert.equal(block.deliveryStatus,'sent');
+  assert.equal(block.inputDelivery?.context,'unobserved');
+  assert.equal(block.inputDelivery?.execution,'running');
+  assert.equal(runtime.getSnapshot().activeTurn!==null,true);
+  runtime.dispose();
+});
+
+test("native file-change history is identical across independent tab replicas, refresh and detail replacement", () => {
+  const view = (deferred = false) => threadView({ pendingInteractions: [], turns: [{
+    id: "historical", status: "completed", params: { cwd: "/workspace" }, items: [{
+      id: "saved-patch", type: "fileChange", status: "completed", changes: Array.from({ length: 14 }, (_, index) => ({
+        path: `src/${index}.ts`, kind: { type: "add" }, ...deferred && index === 0 ? {} : { diff: `content-${index}\n` },
+      })), ...deferred ? { historyDetail: { cursor: "opaque" } } : {},
+    }, { id: "answer", type: "agentMessage", text: "Done", phase: "final_answer", completed: true }],
+  }] });
+  const replicas = [new FakeReplica(view()), new FakeReplica(view(true))];
+  const runtimes = replicas.map(replica => createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"),
+    replica, commands: commands(), history: { async loadOlder() {} } }));
+  const summary = (index: number) => runtimes[index]!.getSnapshot().timeline.frames.at(-1)!.changeSummary!;
+  try {
+    assert.equal(summary(0).files.length, 14); assert.equal(summary(1).files.length, 14);
+    assert.equal(summary(1).contentAvailable, false); assert.deepEqual(summary(1).detailItemIds, ["saved-patch"]);
+    replicas[1]!.setEntity(view());
+    assert.deepEqual(summary(1), summary(0));
+    replicas[0]!.setEntity(JSON.parse(JSON.stringify(view())));
+    assert.deepEqual(summary(0), summary(1));
+    const refreshed = createReplicaConversationRuntime({ key: createConversationKey("local", "thread-one"), replica: new FakeReplica(view()),
+      commands: commands(), history: { async loadOlder() {} } });
+    try { assert.deepEqual(refreshed.getSnapshot().timeline.frames.at(-1)!.changeSummary, summary(0)); }
+    finally { refreshed.dispose(); }
+  } finally { for (const runtime of runtimes) runtime.dispose(); }
+});
+
+
+
+
+test("retry keeps the unconfirmed input until authoritative queue reconciliation", async () => {
+  const calls: string[] = [];
+  const runtime = createReplicaConversationRuntime({
+    key: createConversationKey("local", "thread-one"), replica: new FakeReplica(threadView()),
+    commands: commands({ async retryUnconfirmedSteer(_key, id, turnId) { calls.push(id + ":" + turnId); } }),
+    history: { async loadOlder() {} },
+  });
+  const claim = { id: "claim", clientUserMessageId: "message", input: [{ type: "text" as const, text: "hello", text_elements: [] }], createdAt: 1, pausedReason: "steer-delivery-unconfirmed", targetTurnId: "turn-one" };
+  runtime.replaceQueuedSubmissions([], [claim]);
+  await runtime.retryUnconfirmedSteer("claim", asTurnId("turn-one"));
+  assert.deepEqual(calls, ["claim:turn-one"]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 1);
+  runtime.replaceQueuedSubmissions([], [{ ...claim, pausedReason: "delivery-retry-requested" }]);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers[0]?.pausedReason, "delivery-retry-requested");
+  runtime.replaceQueuedSubmissions([], []);
+  assert.equal(runtime.getSnapshot().unconfirmedSteers.length, 0);
+  runtime.dispose();
+});
+
+

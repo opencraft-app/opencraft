@@ -63,7 +63,7 @@ test("read-only Host rejects writes without changing the projection", async () =
   assert.equal(resource.getSnapshot("one").goal?.objective, "read only");
 });
 
-test("Goal change is not reported successful when confirmation read fails", async () => {
+test("Goal write acknowledgement succeeds without a confirmation read", async () => {
   let calls = 0;
   const resource = new ThreadGoalResource({
     capability: () => ({ version: 1, read: true, write: true }),
@@ -75,9 +75,10 @@ test("Goal change is not reported successful when confirmation read fails", asyn
     clear: async () => ({ cleared: true }),
   });
   await resource.refresh("one");
-  await assert.rejects(resource.set("one", { objective: "after" }), /confirmation unavailable/);
-  assert.equal(resource.getSnapshot("one").phase, "error");
-  assert.equal(resource.getSnapshot("one").goal?.objective, "before");
+  await resource.set("one", { objective: "after" });
+  assert.equal(calls, 1);
+  assert.equal(resource.getSnapshot("one").phase, "ready");
+  assert.equal(resource.getSnapshot("one").goal?.objective, "after");
   assert.equal(resource.getSnapshot("one").busy, false);
 });
 
@@ -122,14 +123,12 @@ function replacementFixture() {
   return { resource, controls, calls, current: () => current, change: (change: Partial<ThreadGoal>) => { current = { ...current!, ...change }; } };
 }
 
-test("new Goal clears the completed native record and starts fresh accounting", async () => {
+test("completed replacement preserves the native record without any writes", async () => {
   const f = replacementFixture(); await f.resource.refresh("one");
-  await f.resource.create("one", "next");
-  assert.deepEqual(f.calls, ["get", "get", "clear", "get", "set", "get"]);
-  const next = f.resource.getSnapshot("one").goal!;
-  assert.equal(next.objective, "next"); assert.equal(next.status, "active");
-  assert.equal(next.createdAt, 100); assert.equal(next.timeUsedSeconds, 0);
-  assert.equal(next.tokensUsed, 0); assert.equal(next.tokenBudget, null);
+  await assert.rejects(f.resource.create("one", "next"), { code: "atomicReplacementRequired" });
+  assert.deepEqual(f.calls, ["get", "get"]);
+  assert.equal(f.current()?.objective, "finished");
+  assert.equal(f.current()?.tokensUsed, 1234);
 });
 
 test("editing and pausing/resuming the current Goal retain accounting", async () => {
@@ -143,45 +142,39 @@ test("editing and pausing/resuming the current Goal retain accounting", async ()
   assert.equal(f.current()?.objective, "edited");
 });
 
-for (const failure of ["failClear", "unconfirmedClear"] as const) test(`new Goal is not sent after ${failure}`, async () => {
-  const f = replacementFixture(); f.controls[failure] = true;
-  await assert.rejects(f.resource.create("one", "next"));
-  assert.equal(f.current()?.objective, "finished"); assert.equal(f.calls.includes("set"), false);
+test("lost write response is unknown, not a confirmed failure, and is not replayed", async () => {
+  const f = replacementFixture(); f.controls.lostSet = true;
+  await assert.rejects(f.resource.set("one", { objective: "saved" }), { code: "outcomeUnknown" });
+  assert.equal(f.current()?.objective, "saved");
+  assert.equal(f.calls.filter(c => c === "set").length, 1);
+  assert.equal(f.resource.getSnapshot("one").busy, false);
 });
 
-test("failed new Goal preserves a completed summary and draft retry without inventing server state", async () => {
-  const f = replacementFixture(); f.controls.failSet = true;
-  await assert.rejects(f.resource.create("one", "next"), /set unavailable/);
-  assert.equal(f.resource.getSnapshot("one").goal, null);
-  assert.equal(f.resource.getSnapshot("one").completedGoal?.objective, "finished");
-  assert.equal(f.resource.getSnapshot("one").completedGoal?.timeUsedSeconds, 9000);
-  f.controls.failSet = false; await f.resource.create("one", "next");
-  assert.equal(f.current()?.timeUsedSeconds, 0);
-  await f.resource.clear("one"); assert.equal(f.resource.getSnapshot("one").completedGoal, null);
-});
-
-test("unknown creation which completed before retry is confirmed without starting it again", async () => {
-  const f = replacementFixture(); f.controls.lostSet = true; f.controls.finishOnSet = true;
-  await assert.rejects(f.resource.create("one", "next"), /unknown/);
-  f.controls.lostSet = false;
-  await f.resource.create("one", "next");
-  assert.equal(f.current()?.status, "complete"); assert.equal(f.calls.filter(c => c === "set").length, 1);
-  assert.equal(f.calls.filter(c => c === "clear").length, 1);
-});
-
-test("Goal creation cannot continue after the connection changes during removal", async () => {
-  const removed = deferred<{ cleared: boolean }>(); let sets = 0;
+test("acknowledged write after reconnect does not overwrite the new connection", async () => {
+  const held = deferred<{ goal: ThreadGoal }>();
   const resource = new ThreadGoalResource({
     capability: () => ({ version: 1, read: true, write: true }),
-    get: async () => ({ goal: goal("old", "complete") }),
-    clear: () => removed.promise,
-    set: async () => { sets++; return { goal: goal("new") }; },
+    get: async () => ({ goal: goal("new host") }),
+    set: () => held.promise,
+    clear: async () => ({ cleared: true }),
   });
-  const pending = resource.create("one", "new"); await new Promise(resolve => setImmediate(resolve));
-  await assert.rejects(resource.create("one", "new"), /already in progress/);
-  resource.reset(); removed.resolve({ cleared: true });
-  await assert.rejects(pending, /connection changed/);
-  assert.equal(sets, 0); assert.equal(resource.getSnapshot("one").goal, null);
+  const pending = resource.set("one", { objective: "old host" });
+  resource.reset(); await resource.refresh("one");
+  held.resolve({ goal: goal("old host") }); await pending;
+  assert.equal(resource.getSnapshot("one").goal?.objective, "new host");
+});
+
+test("notification during a write wins over its older acknowledgement", async () => {
+  const held = deferred<{ goal: ThreadGoal }>();
+  const resource = new ThreadGoalResource({
+    capability: () => ({ version: 1, read: true, write: true }),
+    get: async () => ({ goal: null }), set: () => held.promise,
+    clear: async () => ({ cleared: true }),
+  });
+  const pending = resource.set("one", { objective: "next" });
+  resource.observe("one", goal("next", "complete"));
+  held.resolve({ goal: goal("next") }); await pending;
+  assert.equal(resource.getSnapshot("one").goal?.status, "complete");
 });
 
 test("hydrating or observing a completion never initiates a background clear", async () => {

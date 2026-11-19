@@ -170,6 +170,14 @@ export function inspectHoverSource(source, file) {
   if (/\.(?:css|scss)$/u.test(file)) return inspectHoverStyles(source, file);
   const issues = inspectHoverHandlers(source, file);
   for (const match of source.matchAll(/<style(?:\s[^>]*)?>([\s\S]*?)<\/style>/giu)) {
+    const body = match[1].trim();
+    if (/^\{[\s\S]*\}$/u.test(body)) {
+      const expression = ts.createSourceFile("style-expression.ts", "const css = " + body.slice(1,-1), ts.ScriptTarget.Latest, true);
+      const statement = expression.statements[0];
+      const value = statement && ts.isVariableStatement(statement) ? statement.declarationList.declarations[0]?.initializer : undefined;
+      if (value && (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value))) issues.push(...inspectHoverStyles(value.text,file));
+      continue;
+    }
     const offset = source.slice(0, match.index + match[0].indexOf(match[1])).split("\n").length - 1;
     issues.push(...inspectHoverStyles(match[1], file).map(issue => ({ ...issue, line: issue.line + offset })));
   }

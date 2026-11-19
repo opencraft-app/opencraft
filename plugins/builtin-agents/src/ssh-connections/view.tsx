@@ -1,3 +1,4 @@
+import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { MoreIcon as Ellipsis, AddIcon as Plus, RefreshIcon as RefreshCw, SettingsGearIcon as Settings, DeleteIcon as Trash2, CloseIcon as X } from "@opencraft/design-system-web/action-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Menu from "@opencraft/design-system-web/dropdown-menu";
@@ -36,9 +37,7 @@ function ConnectionEditor({ editor, controller, onClose, returnFocus }: { editor
   const title = editor.kind === "delete" ? "删除连接" : row ? "连接设置" : "添加远程连接";
   const input: SshConnectionEdit = { displayName: draft.displayName.trim() || draft.hostname.trim(), hostname: draft.hostname.trim(), port: Number(draft.port), username: draft.username.trim(), enabled: row?.enabled ?? true, hideFromNewChat,
     workspaceBrowseRoots: draft.root.trim() ? [draft.root.trim(), ...(row?.workspaceBrowseRoots.slice(1) ?? [])] : [], ...(draft.password ? { password: draft.password } : {}) };
-  return <Dialog.Root open onOpenChange={open => { if (!open && !busy) onClose(); }}><Dialog.Portal>
-    <Dialog.Overlay className="ssh-connections-dialog__overlay" />
-    <Dialog.Content className="ssh-connections-dialog" onCloseAutoFocus={event => { const target = returnFocus(); if (target?.isConnected) { event.preventDefault(); target.focus({ preventScroll: true }); } }} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
+  return <Dialog.Root open onOpenChange={open => { if (!open && !busy) onClose(); }}><ModalContent overlayClassName={"ssh-connections-dialog__overlay"} overlayProps={{}} className="ssh-connections-dialog" onCloseAutoFocus={event => { const target = returnFocus(); if (target?.isConnected) { event.preventDefault(); target.focus({ preventScroll: true }); } }} onEscapeKeyDown={event => { if (busy) event.preventDefault(); }} onPointerDownOutside={event => { if (busy) event.preventDefault(); }}>
       <header><Dialog.Title>{title}</Dialog.Title><Dialog.Close asChild><SettingsIconButton label="关闭连接设置" disabled={busy}><X size={18} /></SettingsIconButton></Dialog.Close></header>
       <Dialog.Description>{editor.kind === "delete" ? <FormattedMessage id="sshConnections.removeDescription" defaultMessage="Removing this connection does not delete remote files or stop remote services." /> : "从 OpenCraft 服务器连接远端。密码只交给后端保存，不会返回浏览器。"}</Dialog.Description>
       {editor.kind === "delete" ? <SettingsNotice>确认删除“{row?.displayName}”？此处已有会话将暂时无法访问。</SettingsNotice> : <form id="ssh-connection-form" onSubmit={event => { event.preventDefault(); void run(async () => {
@@ -67,8 +66,7 @@ function ConnectionEditor({ editor, controller, onClose, returnFocus }: { editor
         {editor.kind === "delete" ? <SettingsButton variant="danger" disabled={busy} onClick={() => { void run(async () => { await controller.remove(row!); if (alive.current) onClose(); }); }}>{busy ? "处理中…" : "删除"}</SettingsButton>
           : <SettingsButton variant="primary" type="submit" form="ssh-connection-form" disabled={busy || (!row && (!trust || !trusted))}>{busy ? "处理中…" : "保存"}</SettingsButton>}
       </SettingsActions>
-    </Dialog.Content>
-  </Dialog.Portal></Dialog.Root>;
+    </ModalContent></Dialog.Root>;
 }
 
 export function createSshConnectionsView(controller: SshConnectionsController) {

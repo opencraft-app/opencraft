@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
 import type { AttachmentStageParams } from "@opencraft/appserver-protocol";
@@ -45,6 +45,11 @@ test("small binary/Unicode filenames use native RPC; >10 MiB and 32 MiB use actu
     const response = await service.stage(input);
     const path = response.ref.location.kind === "host-file" ? response.ref.location.path : "";
     assert.deepEqual(await readFile(path), bytes);
+    const artifact = service.catalog.get(service.catalog.id({ scope: `ssh-upload:${"a".repeat(64)}`, key: JSON.stringify([dirname(dirname(path)), input.clientAttachmentId]) }));
+    assert.ok(artifact);
+    assert.notEqual(artifact.path, path);
+    assert.deepEqual(await readFile(artifact.path), bytes);
+    assert.equal(service.catalog.hasReferences(artifact.id), true);
     assert.equal(calls.includes("fs/writeFile"), size <= 10 * 1024 * 1024);
     assert.equal(calls.includes("sftp:put"), size > 10 * 1024 * 1024);
     assert.equal((await lstat(path)).mode & 0o777, 0o600);
@@ -54,7 +59,7 @@ test("small binary/Unicode filenames use native RPC; >10 MiB and 32 MiB use actu
     assert.deepEqual(await service.remove(input.clientAttachmentId), { removed: false });
     await assert.rejects(service.referenceForHostPath(input.name, path), /not committed/u);
   }
-  assert.deepEqual(await readdir(state), []);
+  assert.deepEqual(await readdir(state), [".catalog"]);
 });
 
 test("unknown commit replays exact bytes after reopening; conflicts never overwrite", async t => {
@@ -168,4 +173,33 @@ test("stale or corrupt unrelated manifests cannot block new uploads; direct acce
   assert.equal(await readFile(join(state, "old-home.json"), "utf8"), oldManifest);
   assert.equal(await readFile(join(state, "corrupt.json"), "utf8"), "{invalid");
   assert.equal((await readFile(oldPath)).toString(), "hello");
+});
+
+test('SSH upload does not acknowledge ready when catalog persistence fails and retries the same identity', async t => {
+  const { service, state } = await setup(t);
+  const input = request('catalog-failure');
+  const catalog = service.catalog, ingest = catalog.ingest.bind(catalog);
+  catalog.ingest = async () => { throw new Error('Catalog disk unavailable'); };
+  await assert.rejects(service.stage(input), /Catalog disk unavailable/);
+  assert.equal(JSON.parse(await readFile(join(state, 'catalog-failure.json'), 'utf8')).phase, 'uploading');
+  catalog.ingest = ingest;
+  const result = await service.stage(input);
+  assert.equal(JSON.parse(await readFile(join(state, 'catalog-failure.json'), 'utf8')).phase, 'ready');
+  assert.deepEqual(await service.stage(input), result);
+});
+
+test("remote generated outputs are spooled over SFTP into the shared catalog and the spool is removed", async t => {
+  const { home, state, service } = await setup(t);
+  const { captureGeneratedOutputs } = await import("../../apps/local-agent-host/src/artifacts/tool-output.js");
+  await mkdir(join(home, "outputs"), { recursive: true });
+  await writeFile(join(home, "outputs", "talk.webm"), "remote voice");
+  const item = { type: "mcpToolCall", id: "call", status: "completed", result: { content: [], structuredContent: { artifacts: [
+    { id: "talk", mimeType: "audio/webm;codecs=opus", savedPath: join(home, "outputs", "talk.webm") }] } } };
+  const [saved] = await captureGeneratedOutputs(service.catalog, "codex-generated-remote", "thread", item,
+    (path, signal) => service.readRemoteFile(path, signal), undefined, { savedPathRoots: [home] });
+  assert.equal(await readFile(saved!.path, "utf8"), "remote voice");
+  assert.deepEqual((await readdir(state)).filter(name => name.startsWith(".generated-")), []);
+  await assert.rejects(service.readRemoteFile("relative/path"), /Invalid remote generated file path/);
+  await assert.rejects(service.readRemoteFile(join(home, "missing")));
+  assert.deepEqual((await readdir(state)).filter(name => name.startsWith(".generated-")), []);
 });

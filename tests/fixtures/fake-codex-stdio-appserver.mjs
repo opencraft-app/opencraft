@@ -34,12 +34,12 @@ let itemReadsPaused = false;
 const heldItemReads = [];
 const delayedThreadReads = new Set();
 const delayedReadWaiters = [];
-const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
+const send = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 function readThread(message) {
   const active = turns.get(message.params.threadId);
   const type = !loadedThreads.has(message.params.threadId) ? "notLoaded" : active ? "active" : systemErrorThreads.has(message.params.threadId) ? "systemError" : "idle";
   const metadata = threadMetadata.get(message.params.threadId) ?? {};
-  const reply = () => send({ id: message.id, result: { thread: { ...metadata, id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: metadata.activeFlags ?? [] } : {}) }, turns: message.params.includeTurns ? threadTurns.get(message.params.threadId) ?? [] : [] } } });
+  const reply = () => send({ id: message.id, result: { thread: { ...metadata, id: message.params.threadId, path: threadPaths.get(message.params.threadId) ?? (loadedThreads.has(message.params.threadId) ? `/synthetic/${message.params.threadId}.jsonl` : null), createdAt: 123, name: threadNames.get(message.params.threadId) ?? null, status: { type, ...(active ? { activeFlags: metadata.activeFlags ?? [] } : {}) }, turns: message.params.includeTurns ? (threadTurns.get(message.params.threadId) ?? []) : [] } } });
   if (metadata.readDelayMs) {
     const timer = setTimeout(() => {
       reply(); delayedThreadReads.delete(timer);
@@ -53,13 +53,15 @@ function readItems(message) {
   if (smallHistoryBudgets.has(message.params.threadId) && message.params.limit > 1) {
     send({id:message.id,error:{code:-32072,message:"budget exceeded",data:{code:"HISTORY_RESPONSE_TOO_LARGE"}}});return;
   }
-  const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap(turn => turn.items.map(item => ({turnId:turn.id,item}))) : history.get(message.params.threadId) ?? []).filter(entry => !message.params.turnId || entry.turnId === message.params.turnId);
+  const items = (seededHistory.has(message.params.threadId) || legacyItems.has(message.params.threadId) || !history.has(message.params.threadId) ? (threadTurns.get(message.params.threadId) ?? []).flatMap((turn) =>
+          turn.items.map((item) => ({turnId:turn.id,item}))) : (history.get(message.params.threadId) ?? [])
+  ).filter((entry) => !message.params.turnId || entry.turnId === message.params.turnId);
   if (message.params.sortDirection === 'desc') items.reverse();
   const offset = message.params.cursor ? Number(message.params.cursor) : 0;
   const limit = message.params.limit ?? 100;
   send({ id: message.id, result: { data: items.slice(offset, offset + limit), nextCursor: offset + limit < items.length ? String(offset + limit) : null } });
 }
-input.on("line", line => {
+input.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === 'test/waitForDelayedReads') {
     if (delayedThreadReads.size) delayedReadWaiters.push(message.id); else send({id:message.id,result:{}});
@@ -75,7 +77,7 @@ input.on("line", line => {
     threadMethodCounts.set(message.params.threadId, counts);
   }
   if (message.method === "test/readMethodCounts") {
-    send({ id: message.id, result: message.params?.threadId ? threadMethodCounts.get(message.params.threadId) ?? {} : methodCounts }); return;
+    send({ id: message.id, result: message.params?.threadId ? (threadMethodCounts.get(message.params.threadId) ?? {}) : methodCounts }); return;
   }
   if (message.method === undefined && testTools.has(String(message.id))) {
     toolResults.push({id:message.id,...testTools.get(String(message.id)),result:message.result,error:message.error});testTools.delete(String(message.id));return;
@@ -158,7 +160,7 @@ input.on("line", line => {
     const rows = [...(threadTurns.get(message.params.threadId) ?? [])];
     if (message.params.sortDirection !== "asc") rows.reverse();
     const offset = Number(message.params.cursor ?? 0), limit = message.params.limit ?? 100;
-    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map(turn => ({ ...(message.params.itemsView === "notLoaded" && systemErrorThreads.has(message.params.threadId) ? { id: turn.id, status: turn.status } : turn), items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
+    send({ id: message.id, result: { data: rows.slice(offset, offset + limit).map((turn) => ({ ...(message.params.itemsView === "notLoaded" && systemErrorThreads.has(message.params.threadId) ? { id: turn.id, status: turn.status } : turn), items: message.params.itemsView === "full" && !legacyItems.has(message.params.threadId) ? turn.items : [], ...(legacyItems.has(message.params.threadId) ? {itemsView:"notLoaded"} : {}) })),
       nextCursor: offset + limit < rows.length ? String(offset + limit) : null } }); return;
   }
   if (message.method === "thread/items/list") {
@@ -227,15 +229,15 @@ input.on("line", line => {
     const turnId = turns.get(threadId);
     turns.delete(threadId);
     if (message.params.testSystemError) systemErrorThreads.add(threadId);
-    const completed = { id: turnId, status: message.params.codexErrorInfo ? "failed" : "completed", items: [], ...(message.params.codexErrorInfo ? { error: { message: "Selected model is at capacity.", codexErrorInfo: message.params.codexErrorInfo } } : {}) };
-    threadTurns.set(threadId, (threadTurns.get(threadId) ?? []).map(turn => turn.id === turnId ? completed : turn));
+    const completed = { id: turnId, status: message.params.status ?? (message.params.codexErrorInfo ? "failed" : "completed"), items: [], ...(message.params.codexErrorInfo ? { error: { message: "Selected model is at capacity.", codexErrorInfo: message.params.codexErrorInfo } } : {}) };
+    threadTurns.set(threadId, (threadTurns.get(threadId) ?? []).map((turn) => (turn.id === turnId ? completed : turn)));
     const deferred = deferredSteerHistory.get(threadId) ?? [];
-    if (deferred.length > 0) {
+    if (deferred.length > 0 && !message.params.dropDeferredInput) {
       history.set(threadId, [...(history.get(threadId) ?? []), ...deferred]);
       deferredSteerHistory.delete(threadId);
     }
     send({ id: message.id, result: {} });
-    if (turnId && subscribedThreads.has(threadId)) {
+    if (turnId && subscribedThreads.has(threadId) && !message.params.suppressNotification) {
       send({ method: "turn/completed", params: { threadId, turn: completed } });
       send({ method: "thread/status/changed", params: { threadId, status: { type: "idle" } } });
     }
@@ -269,6 +271,7 @@ input.on("line", line => {
     const threadId = message.params.threadId;
     const status = !loadedThreads.has(threadId) ? "notLoaded"
       : subscribedThreads.delete(threadId) ? "unsubscribed" : "notSubscribed";
+    if (process.env.OPENCRAFT_TEST_UNLOAD_ON_UNSUBSCRIBE === "1") loadedThreads.delete(threadId);
     send({ id: message.id, result: { status } });
     return;
   }
@@ -298,6 +301,10 @@ input.on("line", line => {
     return;
   }
   if (message.method === "thread/start") {
+    if (message.params.testRejectCreation) {
+      send({ id: message.id, error: { code: -32602, message: "synthetic creation rejected" } });
+      return;
+    }
     const respond = () => {
       const title = process.env.OPENCRAFT_TEST_AUTO_TITLES && message.params.threadSource === "thread_title";
       const thread = { id: title ? `title-thread-${++nextTitleThread}` : "fixture-thread-1", preview: "", ephemeral: message.params.ephemeral === true, modelProvider: "opencraft-account-pool", createdAt: 1, updatedAt: 1, status: { type: "idle" }, turns: [] };

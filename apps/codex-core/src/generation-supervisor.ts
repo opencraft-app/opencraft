@@ -22,7 +22,8 @@ export interface GenerationProcessIdentity {
   readonly unit: string;
   readonly invocationId?: string;
   readonly launcher?: { readonly nodeSha256: string; readonly entrypointSha256: string; readonly wrapperSha256: string;
-    readonly childPid: number; readonly childStart: string; readonly childExecutable: string };
+    readonly childPid: number; readonly childStart: string; readonly childExecutable: string;
+  };
 }
 export interface GenerationSupervisor {
   inspect?(generation: GenerationRecord): Promise<CodexAppServerHealth>;
@@ -39,7 +40,7 @@ export interface GenerationSupervisor {
 
 export async function collectDelegatedOwnerPids(root: string, io = {
   members: (path: string) => readFile(`${path}/cgroup.procs`, "utf8"),
-  children: async (path: string) => (await readdir(path, { withFileTypes: true })).filter(entry => entry.isDirectory()).map(entry => entry.name),
+  children: async (path: string) => (await readdir(path, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name),
 }): Promise<Set<number> | null> {
   const snapshot = async () => {
     const records: [string, string[], number[]][] = [];
@@ -73,7 +74,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   private unit(g: GenerationRecord): string { return g.externalUnit ?? `opencraft-codex-${this.prefix}-${g.id}.service`; }
   private async unitState(unit: string): Promise<{ pid: number; active: string; file: string; invocationId?: string }> {
     const output = (await execute("systemctl", [...this.scope(), "show", "--property=LoadState", "--property=ActiveState", "--property=MainPID", "--property=UnitFileState", "--property=InvocationID", "--", unit], {timeout: 2_000})).stdout;
-    const values = Object.fromEntries(output.trim().split("\n").map(line => { const split = line.indexOf("="); return [line.slice(0, split), line.slice(split + 1)]; }));
+    const values = Object.fromEntries(output.trim().split("\n").map((line) => { const split = line.indexOf("="); return [line.slice(0, split), line.slice(split + 1)]; }));
     const pid = Number(values.MainPID);
     if (!Number.isSafeInteger(pid) || pid < 0 || !values.LoadState || !values.ActiveState) throw new Error("Generation unit state is unverified");
     return { pid, active: values.ActiveState, file: values.UnitFileState ?? "", ...(values.InvocationID ? {invocationId: values.InvocationID} : {}) };
@@ -84,7 +85,10 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   async inspect(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g); }
   async inspectNative(g: GenerationRecord): Promise<CodexAppServerHealth> { return this.health(g, "native"); }
   private async health(g: GenerationRecord, observation: "execution" | "native" = "execution"): Promise<CodexAppServerHealth> {
-    return new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth(observation);
+    const health = await new CodexCoreControlClient(g.endpoint, this.options.token).appServerHealth(observation);
+    if (process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET !== undefined && health.workspaceExecutionVersion !== 1)
+      throw new Error("Generation does not support configured private workspace authority");
+    return health;
   }
   async start(g: GenerationRecord, validation?: { homeCopy: string }): Promise<CodexAppServerHealth> {
     try { return await this.health(g, ["active", "ready", "draining"].includes(g.state) ? "native" : "execution"); } catch { /* Readiness below never signals an existing unit. */ }
@@ -95,13 +99,19 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         if (g.state === "candidate") throw new Error("An adopted generation must already be running");
         await execute("systemctl", [...this.scope(), "start", "--", unit]);
       } else {
-      if ([g.node, g.bundle, g.executable, g.cwd, g.runtimeDataDirectory, g.endpoint, this.options.coreEndpoint, this.options.dataDirectory, this.options.tokenFile].some(path => path.startsWith("/tmp/"))) throw new Error("Generation payload, runtime and account endpoints must be outside private /tmp");
+      if ([g.node, g.bundle, g.executable, g.cwd, g.runtimeDataDirectory, g.endpoint, this.options.coreEndpoint, this.options.dataDirectory, this.options.tokenFile].some((path) => path.startsWith("/tmp/"))) throw new Error("Generation payload, runtime and account endpoints must be outside private /tmp");
       const managed = new Set(["NOTIFY_SOCKET", "LISTEN_PID", "LISTEN_FDS", "LISTEN_FDNAMES", "INVOCATION_ID", "MANAGERPID", "JOURNAL_STREAM", "SYSTEMD_EXEC_PID", "WATCHDOG_PID", "WATCHDOG_USEC"]);
       const identity = { uid: g.executionUid ?? process.getuid!(), gid: g.executionGid ?? process.getgid!() };
       const sameUser = identity.uid === process.getuid!();
-      const publicEnvironment = new Set(["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]);
-      const environment = Object.keys(process.env).filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) && !managed.has(name)
-        && (sameUser || publicEnvironment.has(name))).map(name => `--setenv=${name}`);
+        // Cross-user generations intentionally inherit only public environment.
+        // Dropping strict workspace routing would silently restore local execution.
+        // A separately owned authority/socket handoff is required for that topology.
+        if (!sameUser && process.env.OPENCRAFT_WORKSPACE_AUTHORITY_SOCKET !== undefined)
+          throw new Error("Private workspace authority requires a same-user generation");
+        const publicEnvironment = new Set(["PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]);
+      const environment = Object.keys(process.env).filter(
+            (name) => /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name) && !managed.has(name)
+        && (sameUser || publicEnvironment.has(name))).map((name) => `--setenv=${name}`);
       const temporary = `${g.runtimeDataDirectory}/tmp`; await routerStorageTask<void>("create-directory", [temporary, identity.uid, identity.gid]);
       // NAME without '=value' copies the private process environment; no secret is an argv value.
       const sandboxConfig = await engineSandboxConfiguration();
@@ -117,7 +127,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     }
     const deadline = Date.now() + 60_000;
     while (Date.now() < deadline) {
-      try { return await this.health(g, ["active", "ready", "draining"].includes(g.state) ? "native" : "execution"); } catch { await new Promise(resolve => setTimeout(resolve, 100)); }
+      try { return await this.health(g, ["active", "ready", "draining"].includes(g.state) ? "native" : "execution"); } catch { await new Promise((resolve) => setTimeout(resolve, 100)); }
     }
     throw new Error("Generation did not become ready; its unit is retained for inspection");
   }
@@ -151,11 +161,13 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const digest = (path: string) => generationArtifactDigest.sha256(path);
       const args = (await readFile(`/proc/${h.codexPid}/cmdline`, "utf8")).split("\0");
       const ownerArgs = (await readFile(`/proc/${pid}/cmdline`, "utf8")).split("\0"), selector = ownerArgs.indexOf("--codex-executable");
-      if (selector < 0 || await realpath(ownerArgs[selector + 1]!) !== await realpath(g.executable)
-        || !args[1] || await realpath(args[1]) !== await realpath(g.nativeLauncher.entrypoint)
+      if (selector < 0 ||
+        (await realpath(ownerArgs[selector + 1]!)) !== (await realpath(g.executable)) ||
+        !args[1] ||
+        (await realpath(args[1])) !== (await realpath(g.nativeLauncher.entrypoint))
         || args[2] !== "app-server") throw new Error("Generation CLI launcher command differs from its fixed definition");
       const nodeSha256 = await digest(g.node);
-      if (await digest(`/proc/${h.codexPid}/exe`) !== nodeSha256) throw new Error("Generation CLI launcher Node differs from its fixed executable");
+      if ((await digest(`/proc/${h.codexPid}/exe`)) !== nodeSha256) throw new Error("Generation CLI launcher Node differs from its fixed executable");
       const children = new Set<string>();
       for (const task of await readdir(`/proc/${h.codexPid}/task`)) {
         for (const child of (await readFile(`/proc/${h.codexPid}/task/${task}/children`, "utf8")).trim().split(/\s+/u).filter(Boolean)) children.add(child);
@@ -164,10 +176,15 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
       const childPid = Number([...children][0]), childStart = await start(childPid), childOwner = await stat(`/proc/${childPid}`);
       if (childOwner.uid !== (g.executionUid ?? process.getuid!()) || childOwner.gid !== (g.executionGid ?? process.getgid!())) throw new Error("Generation CLI child execution identity differs");
       const childExecutable = await realpath(g.nativeLauncher.executable), cliSha256 = await digest(childExecutable);
-      if (await realpath(`/proc/${childPid}/exe`) !== childExecutable || await digest(`/proc/${childPid}/exe`) !== cliSha256) throw new Error("Generation CLI child differs from its fixed executable");
+      if (
+        (await realpath(`/proc/${childPid}/exe`)) !== childExecutable ||
+        (await digest(`/proc/${childPid}/exe`)) !== cliSha256) throw new Error("Generation CLI child differs from its fixed executable");
       const cliVersion = (await execute(childExecutable, ["--version"], { uid: childOwner.uid, gid: childOwner.gid, cwd: g.cwd,
         env: { PATH: "/usr/bin:/bin", HOME: g.runtimeDataDirectory, CODEX_HOME: `${g.runtimeDataDirectory}/runtime`, TMPDIR: `${g.runtimeDataDirectory}/tmp` } })).stdout.trim();
-      if (await start(pid) !== ownerStart || await start(h.codexPid) !== nativeStart || await start(childPid) !== childStart) throw new Error("Generation CLI launcher changed during observation");
+      if (
+        (await start(pid)) !== ownerStart ||
+        (await start(h.codexPid)) !== nativeStart ||
+        (await start(childPid)) !== childStart) throw new Error("Generation CLI launcher changed during observation");
       return { ownerPid: pid, ownerStart, nativePid: h.codexPid, nativeStart, cliSha256, cliVersion, unit: this.unit(g),
         launcher: { nodeSha256, entrypointSha256: await digest(g.nativeLauncher.entrypoint), wrapperSha256: await digest(g.executable), childPid, childStart, childExecutable } };
     }
@@ -189,30 +206,31 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
   async verifyHostRestart(g: GenerationRecord, h: CodexAppServerHealth, identity: GenerationProcessIdentity) {
     const args = (await readFile(`/proc/${identity.ownerPid}/cmdline`, "utf8")).split("\0").filter(Boolean);
     const selector = (name: string) => {
-      const indices = args.flatMap((value, index) => value === name || value.startsWith(name + "=") ? [index] : []);
+      const indices = args.flatMap((value, index) => (value === name || value.startsWith(name + "=") ? [index] : []));
       if (!indices.length) return undefined;
       if (indices.length !== 1 || args[indices[0]!] !== name || !args[indices[0]! + 1] || args[indices[0]! + 1]!.startsWith("--")) throw Error("Host APP selector is ambiguous");
       return args[indices[0]! + 1]!;
     };
-    const samePath = async (actual: string | undefined, expected: string) => !!actual && actual.startsWith("/") && await realpath(actual) === await realpath(expected);
+    const samePath = async (actual: string | undefined, expected: string) => !!actual && actual.startsWith("/") && (await realpath(actual)) === (await realpath(expected));
     const digest = (path: string) => generationArtifactDigest.sha256(path);
-    if (h.pid !== identity.ownerPid || h.codexPid !== identity.nativePid || !await samePath(args[1], g.bundle)
-      || !await samePath(`/proc/${identity.ownerPid}/exe`, g.node)
-      || await digest(`/proc/${identity.ownerPid}/exe`) !== await digest(g.node)) throw Error("Host APP program differs from its fixed definition");
+    if (h.pid !== identity.ownerPid || h.codexPid !== identity.nativePid || !(await samePath(args[1], g.bundle)) ||
+      !(await samePath(`/proc/${identity.ownerPid}/exe`, g.node)) ||
+      (await digest(`/proc/${identity.ownerPid}/exe`)) !== (await digest(g.node))) throw Error("Host APP program differs from its fixed definition");
     const runtimeDataDirectory = await realpath(g.runtimeDataDirectory), codexHome = await realpath(`${runtimeDataDirectory}/runtime`);
-    if (!await samePath(selector("--runtime-data-directory") ?? selector("--data-directory"), runtimeDataDirectory)
-      || !await samePath(selector("--runtime-directory"), g.cwd)
-      || !await samePath(selector("--codex-executable"), g.executable)
-      || h.runtimeDataDirectory !== undefined && !await samePath(h.runtimeDataDirectory, runtimeDataDirectory)
-      || h.codexHome !== undefined && !await samePath(h.codexHome, codexHome)) throw Error("Host APP HOME or launch selectors differ from its fixed definition");
+    if (!(await samePath(selector("--runtime-data-directory") ?? selector("--data-directory"), runtimeDataDirectory)) ||
+      !(await samePath(selector("--runtime-directory"), g.cwd)) ||
+      !(await samePath(selector("--codex-executable"), g.executable)) ||
+      (h.runtimeDataDirectory !== undefined && !(await samePath(h.runtimeDataDirectory, runtimeDataDirectory))) ||
+      (h.codexHome !== undefined && !(await samePath(h.codexHome, codexHome)))) throw Error("Host APP HOME or launch selectors differ from its fixed definition");
     for (const [pid, parent, executable, started] of [
       [identity.nativePid, identity.ownerPid, g.nativeLauncher ? g.node : g.executable, identity.nativeStart],
       ...(identity.launcher ? [[identity.launcher.childPid, identity.nativePid, identity.launcher.childExecutable, identity.launcher.childStart]] : []),
     ] as [number, number, string, string][]) {
       const fields = (await readFile(`/proc/${pid}/stat`, "utf8")).replace(/^.*\)\s/u, "").trim().split(/\s+/u);
-      const homes = (await readFile(`/proc/${pid}/environ`, "utf8")).split("\0").filter(entry => entry.startsWith("CODEX_HOME="));
-      if (Number(fields[1]) !== parent || fields[19] !== started || !await samePath(`/proc/${pid}/exe`, executable)
-        || homes.length !== 1 || !await samePath(homes[0]!.slice("CODEX_HOME=".length), codexHome)) throw Error("Host Native parent, program or HOME differs from its fixed definition");
+      const homes = (await readFile(`/proc/${pid}/environ`, "utf8")).split("\0").filter((entry) => entry.startsWith("CODEX_HOME="));
+      if (Number(fields[1]) !== parent || fields[19] !== started || !(await samePath(`/proc/${pid}/exe`, executable)) ||
+        homes.length !== 1 ||
+        !(await samePath(homes[0]!.slice("CODEX_HOME=".length), codexHome))) throw Error("Host Native parent, program or HOME differs from its fixed definition");
     }
     if (JSON.stringify(await this.identify(g, h)) !== JSON.stringify(identity)) throw Error("Host APP changed during program observation");
     return { nodeSha256: await digest(g.node), bundleSha256: await digest(g.bundle), runtimeDataDirectory, codexHome };
@@ -242,15 +260,17 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     if (expected.unit !== this.unit(g)) throw new Error("Fault recovery unit differs from its fixed definition");
     await stopFailedGeneration(expected, {
       state: () => this.unitState(expected.unit),
-      birth: async pid => {
+      birth: async (pid) => {
         try {
           const value = await readFile(`/proc/${pid}/stat`, "utf8");
-          return value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] ?? null;
+          return (
+            value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19] ?? null
+          );
         } catch (error) { if (["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) return null; throw error; }
       },
       stop: async () => { await execute("systemctl", [...this.scope(), "stop", "--no-block", "--", expected.unit], {timeout: 2_000}); },
       kill: async () => { await execute("systemctl", [...this.scope(), "kill", "--kill-whom=all", "--signal=SIGKILL", "--", expected.unit], {timeout: 2_000}); },
-      now: Date.now, wait: () => new Promise(resolve => setTimeout(resolve, 100)),
+      now: Date.now, wait: () => new Promise((resolve) => setTimeout(resolve, 100)),
     });
   }
 
@@ -274,7 +294,8 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
         let launcherChild = false;
         if (identity.launcher && Number(child) === identity.launcher.childPid && executable === identity.launcher.childExecutable) {
           const value = await readFile(`/proc/${child}/stat`, "utf8"), started = value.slice(value.lastIndexOf(")") + 1).trim().split(/\s+/u)[19];
-          launcherChild = started === identity.launcher.childStart && await generationArtifactDigest.sha256(`/proc/${child}/exe`) === identity.cliSha256;
+          launcherChild = started === identity.launcher.childStart &&
+            (await generationArtifactDigest.sha256(`/proc/${child}/exe`)) === identity.cliSha256;
           if (launcherChild) launcherSeen = true;
         }
         const codeModeDirectory = identity.launcher ? identity.launcher.childExecutable.replace(/\/[^/]+$/u, "") : nativeDirectory;
@@ -289,7 +310,7 @@ export class SystemdGenerationSupervisor implements GenerationSupervisor {
     const delegated = relative?.match(/^(\/.*\.service)\/app(?:\/.*)?$/u)?.[1];
     if (delegated) {
       const members = await collectDelegatedOwnerPids(`/sys/fs/cgroup${delegated}`);
-      if (!members || [...members].some(pid => !allowed.has(pid))) return false;
+      if (!members || [...members].some((pid) => !allowed.has(pid))) return false;
     }
     return launcherSeen;
   }

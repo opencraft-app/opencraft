@@ -1,0 +1,148 @@
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
+const require = createRequire(import.meta.url);
+import assert from "node:assert/strict";
+import { build } from "esbuild";
+import * as sass from "sass";
+import { chromium } from "playwright";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createServer } from "node:http";
+const root = await mkdtemp(join(tmpdir(), "annotation-integrated-"));
+await build({
+  entryPoints: ["scripts/smoke/browser/smoke-annotation-v2-integrated.entry.tsx"],
+  outfile: join(root, "entry.js"),
+  bundle: true,
+  minify: true,
+  format: "esm",
+  jsx: "automatic",
+  platform: "browser",
+  plugins: [
+    {
+      name: "scss",
+      setup(b) {
+        b.onLoad({ filter: /\.scss$/ }, (args) => ({
+          contents: sass.compile(args.path, {
+            loadPaths: ["node_modules"],
+            importers: [
+              {
+                findFileUrl(url) {
+                  return url.startsWith("@opencraft/") ? pathToFileURL(require.resolve(url)) : null;
+                },
+              },
+            ],
+          }).css,
+          loader: "css",
+        }));
+      },
+    },
+  ],
+});
+const server = createServer(async (req, res) => {
+  try {
+    if (req.url === "/") {
+      res.setHeader("content-type", "text/html");
+      res.end(
+        '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/entry.css"><style>body{margin:0}*{box-sizing:border-box}</style><div id="root"></div><script type="module" src="/entry.js"></script>',
+      );
+      return;
+    }
+    res.setHeader("content-type", req.url.endsWith(".css") ? "text/css" : "text/javascript");
+    res.end(await readFile(join(root, req.url === "/entry.css" ? "entry.css" : "entry.js")));
+  } catch {
+    res.writeHead(404).end();
+  }
+});
+await new Promise((r) => server.listen(0, "127.0.0.1", r));
+const browser = await chromium.launch({ args: ["--no-sandbox"] });
+try {
+  for (const mobile of [false, true]) {
+    const page = await browser.newPage({
+      viewport: mobile ? { width: 390, height: 844 } : { width: 1100, height: 850 },
+      hasTouch: mobile,
+      isMobile: mobile,
+    });
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(`http://127.0.0.1:${server.address().port}/${mobile ? "#dark" : ""}`);
+    await page.waitForFunction(() => window.integratedAnnotation?.controller.available);
+    const frame = page.frames().find((f) => f.parentFrame());
+    await frame.waitForFunction(() => window.ready);
+    await page.click("#activate");
+    await frame.locator("#first").click();
+    await page.waitForFunction(() => integratedAnnotation.controller.selections.length === 1);
+    assert.equal(await frame.evaluate(() => window.pageClicks), 0, "picking must not activate button");
+    await page.getByPlaceholder("Describe a change or ask a question…").fill("Align these controls");
+    await page.getByRole("button", { name: "Add target", exact: true }).click();
+    await frame.locator("#second").click();
+    await page.waitForFunction(() => integratedAnnotation.controller.selections.length === 2);
+    assert.equal(await page.evaluate(() => integratedAnnotation.controller.comment), "Align these controls");
+    await page.evaluate(() => integratedAnnotation.controller.readStyles());
+    await page.waitForFunction(() => integratedAnnotation.controller.styles);
+    await page.evaluate(() => integratedAnnotation.controller.setStyle("color", "rgb(255, 0, 0)"));
+    await page.evaluate(() => integratedAnnotation.controller.previewChanges());
+    assert.equal(await frame.locator("#second").evaluate((el) => getComputedStyle(el).color), "rgb(255, 0, 0)");
+    await page.evaluate(() => integratedAnnotation.controller.previewChanges(true));
+    assert.notEqual(await frame.locator("#second").evaluate((el) => getComputedStyle(el).color), "rgb(255, 0, 0)");
+    assert.equal(
+      await page.evaluate(() => integratedAnnotation.controller.submit(integratedAnnotation.controller.comment)),
+      true,
+    );
+    const refs = await page.evaluate(() => integratedAnnotation.composer.getSnapshot().draft.context);
+    assert.equal(refs.length, 1);
+    assert.equal(refs[0].metadata.browserAnnotation.selections.length, 2);
+    assert.equal(refs[0].metadata.browserAnnotation.styleIntents.length, 1);
+    assert.equal(refs[0].metadata.browserAnnotation.selections[0].label, "1A");
+    await page.getByRole("button", { name: "Edit comment 1", exact: true }).click();
+    await page.waitForFunction(() => integratedAnnotation.controller.editingId);
+    await page.getByPlaceholder("Describe a change or ask a question…").fill("Edited without losing targets");
+    await page.getByRole("button", { name: "Save changes", exact: true }).click();
+    await page.waitForFunction(() => !integratedAnnotation.controller.editingId);
+    const updated = await page.evaluate(() => integratedAnnotation.composer.getSnapshot().draft.context);
+    assert.equal(updated.length, 1);
+    assert.equal(updated[0].id, refs[0].id);
+    assert.equal(updated[0].metadata.browserAnnotation.comment, "Edited without losing targets");
+    assert.equal(
+      updated[0].metadata.browserAnnotation.selections[1].id,
+      refs[0].metadata.browserAnnotation.selections[1].id,
+    );
+    await page.evaluate(() => integratedAnnotation.controller.setMode("region"));
+    const box = await frame.locator("#visual").boundingBox();
+    await page.mouse.move(box.x + 10, box.y + 10);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 110, box.y + 60, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForFunction(() => integratedAnnotation.controller.candidate?.pick.anchor.kind === "region");
+    await page.getByPlaceholder("Describe a change or ask a question…").fill("This region needs spacing");
+    assert.equal(
+      await page.evaluate(() => integratedAnnotation.controller.submit(integratedAnnotation.controller.comment)),
+      true,
+    );
+    await page.evaluate(() => integratedAnnotation.controller.setMode("element"));
+    await frame.locator("#first").click();
+    await page.waitForFunction(() => integratedAnnotation.controller.candidate);
+    await page.getByPlaceholder("Describe a change or ask a question…").fill("Keep this draft after reload");
+    await page.evaluate(() => integratedAnnotation.reload());
+    await page.waitForFunction(() => integratedAnnotation.controller.stale);
+    assert.equal(await page.evaluate(() => integratedAnnotation.controller.comment), "Keep this draft after reload");
+    assert.equal(
+      await page.locator(".browser-annotation-editor").evaluate((el) => el.getBoundingClientRect().right <= innerWidth),
+      true,
+      "editor fits viewport",
+    );
+    assert.deepEqual(errors, []);
+    if (process.env.OPENCRAFT_ANNOTATION_SCREENSHOTS)
+      await page.screenshot({
+        path: join(process.env.OPENCRAFT_ANNOTATION_SCREENSHOTS, `annotation-v2-${mobile ? "mobile" : "desktop"}.png`),
+      });
+    await page.close();
+  }
+  console.log(
+    "annotation V2 integrated: minified actual opaque iframe → controls → styles preview/original → multi-target/region Composer commit → reload preservation, desktop/mobile passed",
+  );
+} finally {
+  await browser.close();
+  await new Promise((r) => server.close(r));
+  await rm(root, { recursive: true, force: true });
+}

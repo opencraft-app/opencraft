@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { buildTimelineLayout, createTimelineViewportState, createTimelineWindowSlice, TIMELINE_VIRTUALIZER_CONFIG } from "@opencraft/timeline-virtualizer/timeline";
 
 import {
   anchorRange,
   buildTurnLayout,
-  buildTimelineLayout,
   calculateSoftwareKeyboardInset,
   OPENCRAFT_LATEST_TURN_PLACEMENT_SPRING,
   OPENCRAFT_TURN_VIRTUALIZER_CONFIG,
@@ -18,8 +18,6 @@ import {
   createTurnFollowState,
   createTurnViewportState,
   createTurnWindowSlice,
-  createTimelineViewportState,
-  createTimelineWindowSlice,
   distanceFromBottomToCenterTurn,
   distanceAfterUnplacedLatestTurnContentResize,
   distanceFromBottomToTargetWithinTurn,
@@ -60,7 +58,6 @@ import {
   type VirtualizedTurnEntry,
   TurnScrollController,
   TurnResponsePositioningController,
-  TIMELINE_VIRTUALIZER_CONFIG,
 } from "@opencraft/timeline-virtualizer";
 
 test("history backfill drains pages until the viewport becomes scrollable", async () => {
@@ -69,6 +66,7 @@ test("history backfill drains pages until the viewport becomes scrollable", asyn
   let layoutBarrierCount = 0;
   const coordinator = new TurnHistoryBackfillCoordinator({
     isEnabled: () => true,
+    readPagination: () => ({ cursor: String(pageCount), hasOlder: true, loading: false }),
     readMetrics: () => ({
       distanceFromBottomPx: 0,
       viewportHeightPx: 600,
@@ -95,6 +93,7 @@ test("history backfill is single-flight within one layout generation", async () 
   const page = new Promise<void>((resolve) => { releasePage = resolve; });
   const coordinator = new TurnHistoryBackfillCoordinator({
     isEnabled: () => true,
+    readPagination: () => ({ cursor: null, hasOlder: true, loading: false }),
     readMetrics: () => ({ distanceFromBottomPx: 0, viewportHeightPx: 600, scrollHeightPx: 300 }),
     loadPage: async () => {
       pageCount += 1;
@@ -107,16 +106,18 @@ test("history backfill is single-flight within one layout generation", async () 
   const first = coordinator.request();
   const second = coordinator.request();
   assert.equal(first, second);
+  await Promise.resolve();
   assert.equal(pageCount, 1);
   releasePage();
   await Promise.all([first, second]);
   assert.equal(pageCount, 1);
 });
 
-test("history backfill stops when a page produces no new layout", async () => {
+test("history backfill stops when a page does not advance its cursor", async () => {
   let pageCount = 0;
   const coordinator = new TurnHistoryBackfillCoordinator({
     isEnabled: () => true,
+    readPagination: () => ({ cursor: null, hasOlder: true, loading: false }),
     readMetrics: () => ({ distanceFromBottomPx: 0, viewportHeightPx: 600, scrollHeightPx: 300 }),
     loadPage: () => { pageCount += 1; },
     afterLayout: async () => undefined,
@@ -126,11 +127,43 @@ test("history backfill stops when a page produces no new layout", async () => {
   assert.equal(pageCount, 1);
 });
 
+test("visible history coverage can advance without changing a filled viewport", async () => {
+  let gap: string | null = "a,b";
+  let pages = 0;
+  const coordinator = new TurnHistoryBackfillCoordinator({
+    isEnabled: () => true,
+    readPagination: () => ({ cursor: String(pages), hasOlder: true, loading: false }),
+    readMetrics: () => ({ distanceFromBottomPx: 0, viewportHeightPx: 600, scrollHeightPx: 2000 }),
+    readVisibleHistoryGap: () => gap,
+    loadPage: () => { gap = ++pages === 1 ? "a" : null; },
+    afterLayout: async () => undefined,
+  });
+  await coordinator.request();
+  assert.equal(pages, 2);
+  await coordinator.request();
+  assert.equal(pages, 2, "confirmed content does not force another page");
+});
+
+test("visible history gap stops when neither coverage nor geometry advances", async () => {
+  let pages = 0;
+  const coordinator = new TurnHistoryBackfillCoordinator({
+    isEnabled: () => true,
+    readPagination: () => ({ cursor: null, hasOlder: true, loading: false }),
+    readMetrics: () => ({ distanceFromBottomPx: 0, viewportHeightPx: 600, scrollHeightPx: 2000 }),
+    readVisibleHistoryGap: () => "a,b",
+    loadPage: () => { pages++; },
+    afterLayout: async () => undefined,
+  });
+  await coordinator.request();
+  assert.equal(pages, 1);
+});
+
 test("history backfill reports bounded viewport diagnostics without content", async () => {
   let scrollHeightPx = 300;
   const diagnostics: Array<{ phase: string; before: number; after?: number | null; reason?: string }> = [];
   const coordinator = new TurnHistoryBackfillCoordinator({
     isEnabled: () => true,
+    readPagination: () => ({ cursor: String(scrollHeightPx), hasOlder: true, loading: false }),
     readMetrics: () => ({
       distanceFromBottomPx: 0,
       viewportHeightPx: 600,
@@ -163,6 +196,7 @@ test("a new history generation waits for the stale load instead of overlapping i
   const firstPage = new Promise<void>((resolve) => { releaseFirst = resolve; });
   const coordinator = new TurnHistoryBackfillCoordinator({
     isEnabled: () => true,
+    readPagination: () => ({ cursor: null, hasOlder: true, loading: false }),
     readMetrics: () => ({ distanceFromBottomPx: 0, viewportHeightPx: 600, scrollHeightPx: 300 }),
     loadPage: async () => {
       loadCount += 1;
@@ -176,6 +210,7 @@ test("a new history generation waits for the stale load instead of overlapping i
   });
 
   const stale = coordinator.request();
+  await Promise.resolve();
   coordinator.invalidate();
   const current = coordinator.request();
   assert.equal(loadCount, 1);
@@ -190,6 +225,7 @@ test("history backfill contains recoverable page failures", async () => {
   const expected = new Error("offline");
   const coordinator = new TurnHistoryBackfillCoordinator({
     isEnabled: () => true,
+    readPagination: () => ({ cursor: null, hasOlder: true, loading: false }),
     readMetrics: () => ({ distanceFromBottomPx: 0, viewportHeightPx: 600, scrollHeightPx: 300 }),
     loadPage: () => { throw expected; },
     afterLayout: async () => undefined,
@@ -417,6 +453,24 @@ test("the platform renderer receives only the current slice and full-height plac
   assert.deepEqual(slice.entries.map((entry) => entry.turnKey), ["turn-2", "turn-3", "turn-4"]);
   assert.equal(slice.marginTopPx, 200);
   assert.equal(slice.totalHeightPx, 600);
+  assert.equal(slice.paddingBottomPx, 100);
+});
+
+test("natural-flow window reserves only unmounted rows, even while mounted heights shrink", () => {
+  const entries = turns(6);
+  const options = { ...config, gapPx: 12 };
+  const before = buildTurnLayout(entries, { "turn-3": 400 }, options);
+  const after = buildTurnLayout(entries, { "turn-3": 40 }, options);
+  for (const range of [{ startIndex: 2, endIndex: 5 }, { startIndex: 2, endIndex: 6 }]) {
+    const oldSlice = createTurnWindowSlice(entries, before, range, 12);
+    const newSlice = createTurnWindowSlice(entries, after, range, 12);
+    assert.equal(oldSlice.marginTopPx, newSlice.marginTopPx);
+    assert.equal(oldSlice.paddingBottomPx, newSlice.paddingBottomPx);
+    assert.equal(oldSlice.paddingBottomPx, range.endIndex === 6 ? 0 : 112);
+    const mountedHeight = after.heightsPx.slice(range.startIndex, range.endIndex)
+      .reduce((sum, height) => sum + height, 0) + (newSlice.entries.length - 1) * 12;
+    assert.equal(oldSlice.marginTopPx + mountedHeight + oldSlice.paddingBottomPx, after.totalHeightPx);
+  }
 });
 
 test("only an explicit composer submit snapshot places a changed latest Turn", () => {
@@ -1441,5 +1495,72 @@ test("state reads retain pending layout preservation and reflect animation cance
   controller.cancelScrollAnimation();
   assert.equal(controller.getState().isScrollAnimationActive, false);
   assert.equal(frames.size, 0);
+  controller.dispose();
+});
+
+function unreportedMovementHost(start: number) {
+  const state = { distance: start, scrollHeight: 2_000, writes: [] as number[] };
+  let nextFrameId = 1;
+  const frames = new Map<number, (nowMs: number) => void>();
+  const controller = new TurnScrollController({
+    getMetrics: () => ({ distanceFromBottomPx: state.distance, viewportHeightPx: 600, scrollHeightPx: state.scrollHeight }),
+    writeDistanceFromBottomPx: (next) => { state.writes.push(next); state.distance = next; },
+    now: () => 0,
+    requestFrame: (callback) => { const id = nextFrameId++; frames.set(id, callback); return id; },
+    cancelFrame: (id) => { frames.delete(id); },
+  }, start);
+  const flush = () => { for (const [id, callback] of [...frames]) { frames.delete(id); callback(16); } };
+  return { state, controller, flush };
+}
+
+test("layout compensation applies only its correction onto movement the platform has not reported yet", () => {
+  const { state, controller } = unreportedMovementHost(500);
+  state.distance = 540; // iOS touch-to-stop: moved, scroll event still pending
+  const base = controller.getLastScrollDistanceFromBottomPx();
+  assert.equal(controller.compensateLayoutToDistanceFromBottomPx(base, base), false, "a zero correction is not a write");
+  assert.deepEqual(state.writes, []);
+  assert.equal(controller.compensateLayoutToDistanceFromBottomPx(base + 30, base), true);
+  assert.equal(state.distance, 570, "the 40px user movement survives the 30px correction");
+  controller.dispose();
+});
+
+test("layout preservation keeps touch movement delivered before the layout change", () => {
+  const { state, controller, flush } = unreportedMovementHost(500);
+  state.distance = 520; // snapshot reads the live position, not the stale confirmed 500
+  controller.preserveScrollPositionForNextLayout();
+  state.distance = 580; // momentum, reported before any layout change
+  controller.reportPlatformScroll("user");
+  state.scrollHeight = 2_300; state.distance = 590;
+  flush();
+  assert.equal(state.distance, 580, "restores the last user position, not the 520 snapshot");
+  controller.dispose();
+});
+
+for (const height of [1000, 1190, 1298, 805, 840]) {
+  test(`natural-flow hydration 280→${height} above a moving reader never schedules absolute preservation`, () => {
+    const entries = turns(20, 280);
+    const layout = buildTurnLayout(entries, {}, config);
+    const transaction = createTurnMeasurementTransaction({
+      entries, measurements: [{ turnKey: "turn-0", heightPx: height }],
+      measuredHeightsByKey: {}, layout, viewport: createTurnViewportState(layout, 2418, 690, null, config),
+      currentDistanceFromBottomPx: 2418, bottomPaddingPx: 0,
+      preserveMeasuredTurnViewport: true, measuredContentFlowsNaturally: true,
+      getPendingRestoreScrollDistanceFromBottomPx: null, config,
+    });
+    assert.ok(transaction);
+    assert.equal(transaction.layoutHeightDeltaPx, height - 280);
+    assert.equal(transaction.scrollDistanceFromBottomPx, null);
+    assert.equal(transaction.preservePlatformScrollForNextLayout, false,
+      "above-viewport space extends upward; native momentum owns the physical position");
+  });
+}
+
+test("an unchanged absolute compensation target does not issue a momentum-cancelling write", () => {
+  const { state, controller, flush } = unreportedMovementHost(2442);
+  controller.preserveScrollPositionForNextLayout();
+  controller.compensateScrollToDistanceFromBottomPx(2442);
+  state.distance = 2466; state.scrollHeight += 720; flush();
+  assert.deepEqual(state.writes, []);
+  assert.equal(state.distance, 2466, "the satisfied target also retires an older queued preservation");
   controller.dispose();
 });

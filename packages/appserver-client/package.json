@@ -8,7 +8,9 @@
     "./transport": "./src/transport.ts",
     "./utf8": "./src/utf8.ts",
     "./clock": "./src/clock.ts",
-    "./collaboration": "./src/collaboration.ts"
+    "./collaboration": "./src/collaboration.ts",
+    "./agent-driver": "./src/agent-driver.ts",
+    "./execution-engine": "./src/execution-engine.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

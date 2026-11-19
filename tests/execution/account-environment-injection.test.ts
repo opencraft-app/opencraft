@@ -69,6 +69,20 @@ test('execution scope follows original admitted input; envelopes reject tamperin
   assert.throws(() => f.runtime.scope({ sender: null, executionPrincipal: { provider: 'employee', subject: 'alice' }, validUntil: Date.now() + 5000 }, 'opencraft-server', { threadId: 'thread-a', projectId: 'b' }));
 });
 
+test('durable queued execution retains each admitted sender without replacing creation provenance', async t => {
+  const f = await fixture(t);
+  f.runtime.bindCreator(scope('employee:alice', 'a', null), 'bound-task');
+  f.admit('bound-task', 'alice', 'creator-input');
+  assert.equal(f.runtime.snapshot(f.runtime.execution('opencraft-server', 'bound-task', 'creator-input')).overlay().SERVICE_KEY, 'alice-a');
+  f.leases.finished('bound-task', 'turn-creator-input');
+  f.admit('bound-task', 'bob', 'other-input');
+  assert.equal(f.runtime.snapshot(f.runtime.execution('opencraft-server', 'bound-task', 'other-input')).overlay().SERVICE_KEY, 'bob-global');
+  const restored = new ExecutionEnvironmentRuntime(f.root, f.vault);
+  assert.equal(restored.snapshot(restored.execution('opencraft-server', 'bound-task', 'other-input')).overlay().SERVICE_KEY, 'bob-global');
+  assert.deepEqual(restored.creator('opencraft-server', 'bound-task'), { account: 'employee:alice' });
+  assert.deepEqual(restored.snapshot(restored.execution('opencraft-server', 'bound-task', 'unknown-input')).overlay(), {});
+});
+
 test('Workbench PTYs use employee/project snapshots and refuse another employee or project control', async t => {
   const f = await fixture(t), service = new HostProcessService(f.runtime); t.after(() => service.close());
   const launch = async (id: string, execution: EnvironmentExecutionScope) => {
@@ -76,12 +90,17 @@ test('Workbench PTYs use employee/project snapshots and refuse another employee 
     await until(() => (service.dispatch('process/attach', { processHandle: id, afterSequence: 0 }, execution) as any).phase === 'exited');
     return (service.dispatch('process/attach', { processHandle: id, afterSequence: 0 }, execution) as any).output.map((row: any) => Buffer.from(row.deltaBase64, 'base64').toString()).join('').trim();
   };
+  f.runtime.bindCreator(scope(), 'shared-shell');
+  assert.equal(await launch('shared-alice', scope('employee:alice', 'a', 'shared-shell')), hash('alice-a'));
+  assert.throws(() => service.dispatch('process/attach', { processHandle: 'shared-alice', afterSequence: 0 }, scope('employee:bob', 'a', 'shared-shell')));
+  assert.throws(() => service.dispatch('process/kill', { processHandle: 'shared-alice' }, scope('employee:bob', 'a', 'shared-shell')));
+  assert.equal(await launch('shared-bob', scope('employee:bob', 'a', 'shared-shell')), hash('bob-global'));
   assert.equal(await launch('one', scope()), hash('alice-a'));
   assert.equal(await launch('two', scope('employee:alice', 'b')), hash('alice-global'));
   assert.equal(await launch('three', scope('employee:bob')), hash('bob-global'));
   assert.throws(() => service.dispatch('process/attach', { processHandle: 'one', afterSequence: 0 }, scope('employee:bob')));
   assert.throws(() => service.dispatch('process/kill', { processHandle: 'one' }, scope('employee:alice', 'b')));
-  assert.deepEqual((service.dispatch('process/list', {}, scope()) as any).processes.map((row: any) => row.processHandle), ['one']);
+  assert.deepEqual((service.dispatch('process/list', {}, scope()) as any).processes.map((row: any) => row.processHandle), ['shared-alice', 'one']);
   assert.throws(() => service.dispatch('process/spawn', { processHandle: 'override', tty: true, command: ['/bin/true'], size: { cols: 80, rows: 24 }, env: { SERVICE_KEY: 'forged' } }, scope()));
 });
 

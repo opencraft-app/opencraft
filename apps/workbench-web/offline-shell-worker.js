@@ -12,7 +12,6 @@ const brandingAliases = new Map(Array.isArray(FILES) ? FILES
   .filter(name => name === "opencraft-icon.svg" || name.startsWith("plugin-assets/"))
   .map(name => [new URL("/" + name, scope).href, url(name)]) : []);
 const configurationUrl = url("opencraft-offline-configuration");
-
 const installationUrl = url("opencraft-offline-installation");
 const installationState = value => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
 

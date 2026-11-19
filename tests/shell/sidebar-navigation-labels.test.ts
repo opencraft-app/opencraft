@@ -25,7 +25,7 @@ for (const [locale, labels] of Object.entries(expected)) test(`sidebar uses ${lo
 
 test("unknown extension names use the contribution's full and optional short copy", () => {
   const intl = createIntl({locale: "en-US", messages: {}});
-  for (const id of ["third-party", "example.workspace.navigation", "example.vendor.skills", "example.vendor.storage", "opencraft.tasks.navigation", "opencraft.bot-management.navigation"]) {
+  for (const id of ["third-party", "example.workspace.navigation", "example.vendor.skills", "example.vendor.storage", "opencraft.tasks.navigation", "example.management.navigation"]) {
     assert.deepEqual(shellNavigationLabels({id, title: "Full extension name", shortTitle: "Tools", onInvoke() {}}, intl), {full: "Full extension name", short: "Tools"});
   }
 });

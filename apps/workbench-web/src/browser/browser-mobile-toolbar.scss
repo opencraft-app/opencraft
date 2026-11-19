@@ -1,0 +1,37 @@
+@use '@opencraft/design-system/material.web' as material;
+
+// The mobile browser borrows one conversation surface. Its controls keep their
+// original React owner and render in the header slot, not in a second dock.
+:root[data-ui-density='touch'] .thread-composer-overlay-host[data-integrated-browser='true'] {
+  .thread-composer-overlay__padding {
+    padding-inline: max(var(--inset-scene-dock), env(safe-area-inset-left, 0px)) max(var(--inset-scene-dock), env(safe-area-inset-right, 0px));
+    padding-bottom: var(--inset-scene-dock);
+  }
+  .thread-composer-overlay { opacity: 1; transition: none; }
+  .thread-composer-overlay[data-transition-state='hidden'] { visibility: hidden; }
+  .thread-composer-overlay__content { pointer-events: none; }
+  .thread-composer-overlay__interactive {
+    @include material.surface;
+    border-radius: var(--radius-2xl);
+    &[data-browser-moving=true] { will-change: clip-path; }
+    pointer-events: none;
+  }
+  .thread-composer-overlay__browser-controls { pointer-events: auto; border-bottom: 1px solid var(--color-border-subtle); }
+  .thread-composer-overlay__latest {
+    opacity: var(--browser-composer-progress, 1);
+    transition: none;
+    position: relative; inset: auto; margin: 0; padding: 0;
+    background: transparent; border: 0; box-shadow: none; backdrop-filter: none;
+    border-radius: 0; pointer-events: auto;
+  }
+  .thread-composer-overlay__summary { display: none; }
+  .thread-composer-overlay__response { max-height: min(40cqh, var(--right-panel-composer-preview-max-height)); }
+  .thread-composer-overlay__editor-row {
+    display: flex; align-items: flex-end;
+    gap: max(var(--gap-toolbar-dock), var(--gap-control-density-min));
+  }
+  .thread-composer-overlay__editor-slot { flex: 1; min-width: 0; pointer-events: auto; opacity: var(--browser-composer-progress, 1); }
+  .thread-composer-overlay__editor-row { padding-inline-end: calc(var(--size-material-liquid-control) + max(var(--gap-toolbar-dock), var(--gap-control-density-min))); }
+  .thread-composer-overlay__switcher-slot { position: absolute; inset-inline-end: 0; bottom: 0; z-index: 2; pointer-events: auto; }
+  .panel-mobile-dock__address { position: relative; z-index: 1; transform-origin: top left; }
+}

@@ -73,6 +73,11 @@ export const STORE_MIGRATIONS = {
         "version": 2,
         "name": "notification-destinations",
         "sql": "ALTER TABLE push_devices ADD COLUMN target TEXT;\nALTER TABLE push_devices ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;\nCREATE TABLE push_preferences (actor_id TEXT PRIMARY KEY, enabled INTEGER NOT NULL) STRICT;"
+      },
+      {
+        "version": 3,
+        "name": "0002_soft_screwball",
+        "sql": "CREATE TABLE `push_default_decisions` (\n\t`actor_id` text NOT NULL,\n\t`policy_id` text NOT NULL,\n\tPRIMARY KEY(`actor_id`, `policy_id`)\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `push_target_opt_outs` (\n\t`actor_id` text NOT NULL,\n\t`target_key` text NOT NULL,\n\tPRIMARY KEY(`actor_id`, `target_key`)\n) STRICT;\n--> statement-breakpoint\nALTER TABLE `push_preferences` ADD `defaults_blocked` integer DEFAULT 0 NOT NULL;\n--> statement-breakpoint\nUPDATE push_preferences SET defaults_blocked=1 WHERE enabled=0;\n"
       }
     ]
   },
@@ -355,7 +360,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "54d6f348751c19776c29569fa98f69bcf094196e5b92d5fc67e3dae66387ffad"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 17,
+        "name": "input-delivery-lifecycle",
+        "sql": "\nALTER TABLE opencraft_host_queue RENAME TO opencraft_host_queue_v16;\nDROP INDEX opencraft_host_queue_order;\nDROP INDEX opencraft_host_queue_state;\nCREATE TABLE opencraft_host_queue (\n  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, client_id TEXT NOT NULL, input_json TEXT NOT NULL,\n  position INTEGER NOT NULL, created_at_ms INTEGER NOT NULL, updated_at_ms INTEGER NOT NULL,\n  state TEXT NOT NULL CHECK(state IN ('queued','dispatching','steering','unknown','delivered','discarded','closed')),\n  target_turn_id TEXT, paused_reason TEXT, UNIQUE(thread_id,client_id)\n) STRICT;\nINSERT INTO opencraft_host_queue SELECT * FROM opencraft_host_queue_v16;\nDROP TABLE opencraft_host_queue_v16;\nCREATE INDEX opencraft_host_queue_order ON opencraft_host_queue(thread_id,position,created_at_ms);\nCREATE INDEX opencraft_host_queue_state ON opencraft_host_queue(state,thread_id);\nCREATE INDEX opencraft_host_queue_turn ON opencraft_host_queue(thread_id,target_turn_id,state);\nCREATE TABLE opencraft_input_delivery (\n  thread_id TEXT NOT NULL, client_id TEXT NOT NULL,\n  native_admission TEXT NOT NULL CHECK(native_admission IN ('pending','accepted','unknown','rejected')),\n  context_state TEXT NOT NULL CHECK(context_state IN ('unobserved','recorded')),\n  revision INTEGER NOT NULL, PRIMARY KEY(thread_id,client_id),\n  FOREIGN KEY(thread_id,client_id) REFERENCES opencraft_host_queue(thread_id,client_id)\n) STRICT;\nCREATE TABLE opencraft_turn_delivery (\n  thread_id TEXT NOT NULL, turn_id TEXT NOT NULL,\n  outcome TEXT NOT NULL CHECK(outcome IN ('completed','interrupted','failed')),\n  observed_at_ms INTEGER NOT NULL, PRIMARY KEY(thread_id,turn_id)\n) STRICT;\nINSERT INTO opencraft_input_delivery(thread_id,client_id,native_admission,context_state,revision)\nSELECT thread_id,client_id,CASE WHEN state IN ('steering','delivered') THEN 'accepted'\n  WHEN state IN ('dispatching','unknown') THEN 'unknown' ELSE 'pending' END,'unobserved',1\nFROM opencraft_host_queue;\n"
+      }
+    ]
   },
   "token-usage-cache": {
     "baseline": [
@@ -420,7 +431,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "bedae82d9fe833746c3594a596e038d3abd52c598c3a916da4062c85edc9350a"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 3,
+        "name": "0001_creation_catalog_evidence",
+        "sql": "ALTER TABLE `thread_creations` ADD COLUMN `catalog_state` text CHECK(catalog_state IN ('pending','retired'));\n--> statement-breakpoint\nALTER TABLE `thread_creations` ADD COLUMN `catalog_only` integer NOT NULL DEFAULT 0 CHECK(catalog_only IN (0,1));\n"
+      }
+    ]
   },
   "token-usage-state-database": {
     "baseline": [
@@ -440,7 +457,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "ea28856874066a436c2a486d7711847aedf7b84f5a04e1a69965ddd35f8d1bf1"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 4,
+        "name": "token-usage-open-gap-thread-index",
+        "sql": "\nCREATE INDEX token_usage_gaps_open_thread ON token_usage_gaps(server_id,thread_id) WHERE ends_ms IS NULL;\n\nDELETE FROM token_usage_gaps WHERE ends_ms IS NOT NULL;\n"
+      }
+    ]
   },
   "document-storage": {
     "baseline": [
@@ -530,7 +553,13 @@ export const STORE_MIGRATIONS = {
         "checksum": "cfce61648b03c24768cf6266631c8236302727405f66ee3a2b3c974321d2755f"
       }
     ],
-    "migrations": []
+    "migrations": [
+      {
+        "version": 4,
+        "name": "codex-account-human-owner",
+        "sql": "ALTER TABLE pool_accounts ADD COLUMN owner_actor TEXT; CREATE INDEX pool_account_owner ON pool_accounts(owner_actor);"
+      }
+    ]
   },
   "host-recovery": {
     "baseline": [
@@ -555,7 +584,88 @@ export const STORE_MIGRATIONS = {
         "version": 2,
         "name": "0001_tearful_wild_child",
         "sql": "CREATE TABLE `browser_retirement_identities` (\n\t`owner` text NOT NULL,\n\t`kind` text NOT NULL,\n\t`id` text NOT NULL,\n\t`key` text NOT NULL,\n\tPRIMARY KEY(`owner`, `kind`, `id`, `key`)\n) STRICT;\n\n--> statement-breakpoint\nINSERT INTO browser_retirement_identities SELECT r.owner,'page',j.value,r.key FROM browser_retirements r,json_each(r.value,'$.pageIds') j GROUP BY r.owner,j.value,r.key;\nINSERT INTO browser_retirement_identities SELECT r.owner,'tab',j.value,r.key FROM browser_retirements r,json_each(r.value,'$.tabIds') j GROUP BY r.owner,j.value,r.key;\nINSERT INTO browser_retirement_identities SELECT owner,'lease',json_extract(value,'$.lease'),key FROM browser_retirements;\n"
+      },
+      {
+        "version": 3,
+        "name": "0002_typical_the_executioner",
+        "sql": "CREATE TABLE `browser_operations` (\n\t`key` text PRIMARY KEY NOT NULL,\n\t`owner` text NOT NULL,\n\t`value` text NOT NULL\n) STRICT;\n--> statement-breakpoint\nCREATE TABLE `browser_presentations` (\n\t`key` text PRIMARY KEY NOT NULL,\n\t`owner` text NOT NULL,\n\t`value` text NOT NULL\n) STRICT;\n"
       }
     ]
+  },
+  "artifact-catalog": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "artifact-catalog",
+        "checksum": "fabf66789a75b443bdc31cd7d31108de15162999ec3de1bab4f33a6be4d02370"
+      }
+    ],
+    "migrations": []
+  },
+  "model-gateway": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "model-gateway",
+        "checksum": "880dea7637d5efc08d7c77f32804556003d3ddd81af4adf0b81e22737856744b"
+      },
+      {
+        "version": 2,
+        "name": "personal-keys",
+        "checksum": "6228bea02d9e70bb43f03b8baacc057709fbd21366dbe0be49baf6f8a871674b"
+      },
+      {
+        "version": 3,
+        "name": "execution-authority",
+        "checksum": "e8063653a20cda634375f8ca782bbe01fa23917e74faebb8d978ade1021c5827"
+      },
+      {
+        "version": 4,
+        "name": "conversation-model-binding",
+        "checksum": "e05ead924b37c153add82e639d622470ff594825a5f004f880ee129bcc65af48"
+      }
+    ],
+    "migrations": [
+      {
+        "version": 5,
+        "name": "model-gateway-admission-lease",
+        "sql": "\nALTER TABLE gateway_executions ADD COLUMN admission TEXT;\nALTER TABLE gateway_execution_turns ADD COLUMN admission TEXT;\n"
+      }
+    ]
+  },
+  "dsh-consumer-receipts": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "dsh-consumer-receipts",
+        "checksum": "4864f24f7efc229e4076605b3bea304ce83b2764393551d2f862731fa57da5b5"
+      }
+    ],
+    "migrations": []
+  },
+  "ordinary-workspaces": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "ordinary-workspace-identity",
+        "checksum": "ed812867f2bbf48625e49e4c4646ec3e4fe8bfab4b36499048471634b8144818"
+      },
+      {
+        "version": 2,
+        "name": "ordinary-workspace-selection",
+        "checksum": "d3846928ef767146822be9d07c2c59e567447319144ca6659ee48df6022dfaeb"
+      },
+      {
+        "version": 3,
+        "name": "ordinary-workspace-native-start",
+        "checksum": "0e91db7d3af30563c9ac885e15bd15103ebbe6b4fe69eff04d47dbcd2c147b55"
+      },
+      {
+        "version": 4,
+        "name": "ordinary-workspace-volume",
+        "checksum": "5f54a703a4f3980cf71b7a96b37a9d70e66f6046fec7f1d8c75d11e939707c5f"
+      }
+    ],
+    "migrations": []
   }
 } as const;

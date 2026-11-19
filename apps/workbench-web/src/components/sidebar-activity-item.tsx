@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import type { WorkbenchThread } from "@opencraft/workbench-runtime";
 import { FormattedMessage, useIntl } from "@opencraft/i18n/react";
 import { ClockIcon as Clock, TargetIcon as Target, LoadingRingIcon } from "@opencraft/design-system-web/action-icons";
+import { sidebarActivityIndicator } from "../sidebar-activity";
 
 function ThreadActivity({
   id,
@@ -18,7 +19,8 @@ function ThreadActivity({
   readonly goalActive: boolean;
 }) {
   const intl = useIntl();
-  if (!pending && goalActive && (status === "ready" || status === "running")) {
+  const activity = sidebarActivityIndicator({ status, unread, goalActive });
+  if (!pending && activity === "goal") {
     const goalLabel = intl.formatMessage({ id: "sidebar.status.goal", defaultMessage: "Pursuing goal" });
     return <span id={id} className="sidebar-activity-item__status is-goal" role="img" aria-label={goalLabel} title={goalLabel}><Target size={15} aria-hidden="true" /></span>;
   }
@@ -31,7 +33,7 @@ function ThreadActivity({
         ? "Ready for review"
         : status === "error"
           ? "Thread unavailable"
-          : unread ? "Unread" : null;
+          : activity === "unread" ? "Unread" : null;
   return (
     <span
       id={id}
@@ -45,6 +47,7 @@ function ThreadActivity({
 
 export function SidebarActivityItem({
   activityId,
+  icon,
   active,
   disabled = false,
   twoLine = false,
@@ -63,6 +66,7 @@ export function SidebarActivityItem({
   unread,
 }: {
   readonly activityId?: string;
+  readonly icon?: ReactNode;
   readonly schedule?: import("@opencraft/appserver-protocol").ConversationScheduleSummary;
   readonly active: boolean;
   readonly disabled?: boolean;
@@ -105,7 +109,7 @@ export function SidebarActivityItem({
       title={tooltip}
     >
       <span className="sidebar-activity-item__body">
-        <span className="sidebar-activity-item__title-line"><span className="sidebar-activity-item__title" data-optical-leading-punctuation={hasFullWidthOpeningPunctuation(title) ? "true" : undefined}>{title}</span>
+        <span className="sidebar-activity-item__title-line">{icon}<span className="sidebar-activity-item__title" data-optical-leading-punctuation={hasFullWidthOpeningPunctuation(title) ? "true" : undefined}>{title}</span>
           {scheduleLabel ? <span className="sidebar-activity-item__schedule" role="img" aria-label={scheduleLabel} title={scheduleLabel}><Clock size={16} aria-hidden="true" /></span> : null}</span>
         {!titleOnly && !metadataBadge && (twoLine || project) ? <span className="sidebar-activity-item__metadata">
           {stateLabel}

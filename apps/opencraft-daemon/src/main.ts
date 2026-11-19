@@ -1,3 +1,14 @@
+import { AssistantThreadCommands } from '@opencraft/access-control/assistant-thread-commands';
+import { ThreadAccessStore } from '@opencraft/access-control/thread-access';
+import { createThreadOrchestrationExecution } from '@opencraft/conversation-execution/thread-orchestration-execution';
+import { createAssistantModelSource } from '@opencraft/local-agent-host/model-config/assistant';
+import { loadAssistantEnvironments } from './assistant-environments.js';
+import { createPersonalAssistantHost } from '@opencraft/personal-assistant/host';
+import { Collaboration } from '@opencraft/access-control/collaboration';
+import { ImChannelsAppServer } from '@opencraft/conversation-execution/im-channels-appserver';
+import { createRoutedConversationExecution } from '@opencraft/conversation-execution/conversation-execution';
+import { CHANNELS_HOST_ID } from '@opencraft/appserver-protocol';
+import { join } from "node:path";
 import { nodeObserver } from "@opencraft/observability-contract/node";
 import { unlink } from "node:fs/promises";
 import { connect } from "node:net";
@@ -59,6 +70,9 @@ export async function startOpenCraftDaemon(options: {
   readonly codexCoreEndpoint?: string;
   readonly codexAgentBridge?: BridgeGatewayOptions;
   readonly codexWriterOwnership?: boolean;
+  /** Trusted composition may replace only native startup while preserving the
+   * daemon's identity, storage reporting and AppHost/IPC assembly. */
+  readonly createCodexTransport?: (options: ConstructorParameters<typeof CodexEngineAdapter>[0]) => CodexEngineAdapter;
   /** Deployment display name; defaults to the OS computer name. */
   readonly machineName?: string;
 }) {
@@ -81,7 +95,7 @@ export async function startOpenCraftDaemon(options: {
   reportStorage();
   let humanAccounts: Awaited<ReturnType<typeof createDesktopAccountHost>> | null = null;
   try {
-    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '') : null;
+    humanAccounts = options.humanAccountDirectory ? await createDesktopAccountHost(options.humanAccountDirectory, () => '', {storageRole:'borrower'}) : null;
   } catch (error) {
     try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;
@@ -90,10 +104,15 @@ export async function startOpenCraftDaemon(options: {
   let localAgentStarting: Promise<Awaited<ReturnType<typeof startLocalAgentHost>>> | null = null;
   const codexAgents = new Set<CodexEngineAdapter>();
   let closing: Promise<void> | null = null;
+  let collaboration: Collaboration | null = null;
+  let assistantThreads: AssistantThreadCommands | undefined;
+  const threadAccess=humanAccounts?new ThreadAccessStore(humanAccounts.storage,humanAccounts.actors):undefined;
+  let personalAssistantHost: Awaited<ReturnType<typeof createPersonalAssistantHost>> | undefined;
   const appHost = new AppHostServer({
     logicalClientRouting: true,
     physicalHostLifetime: "server",
     createTransport(hostId) {
+      if(hostId===CHANNELS_HOST_ID && collaboration) return new ImChannelsAppServer(()=>collaboration);
       if (hostId !== "local" && hostId !== "local-codex") throw new Error(`OpenCraft Daemon does not own Host ${hostId}`);
       return new MachineIdentityTransport(machineIdentity, hostId === "local" ? "OpenCraft" : "Codex", async () => {
       if (hostId === "local") {
@@ -103,6 +122,7 @@ export async function startOpenCraftDaemon(options: {
           dshCapabilityPlugin: options.dshCapabilityPlugin,
           runtimeDirectory: options.runtimeDirectory,
           dataDirectory: options.dataDirectory,
+          artifactDirectory: join(options.dataDirectory,"artifacts"),
           modelStorageDirectory: options.modelStorageDirectory,
           skillsDirectory: options.skillsDirectory,
           machineIdentity,
@@ -126,7 +146,8 @@ export async function startOpenCraftDaemon(options: {
         });
       }
       if (hostId === "local-codex") {
-        const codexAgent = new CodexEngineAdapter({
+        const codexAgent = (options.createCodexTransport ?? (configuration => new CodexEngineAdapter(configuration)))({
+          historyImageResources: process.env.OPENCRAFT_HISTORY_IMAGE_RESOURCES === "1",
           onStorageOpened: outcomes => {
             const retained = storageSummary.filter(row => row.hostId !== "local-codex");
             storageSummary.splice(0, storageSummary.length, ...retained, ...outcomes.map(({ name, outcome }) => ({
@@ -137,6 +158,7 @@ export async function startOpenCraftDaemon(options: {
           executable: options.codexExecutable,
           runtimeDirectory: options.runtimeDirectory,
           dataDirectory: options.codexDataDirectory,
+          artifactDirectory: join(options.dataDirectory,"artifacts"),
           nativeCodexHomeDirectory: options.nativeCodexHomeDirectory,
           coreEndpoint: options.codexCoreEndpoint,
           coreAuthToken: options.authToken,
@@ -150,12 +172,17 @@ export async function startOpenCraftDaemon(options: {
       });
     },
   });
+  if(humanAccounts) collaboration=new Collaboration(humanAccounts.storage,humanAccounts.actors,
+    createRoutedConversationExecution(()=>appHost,{machineId:machineIdentity.machineId,engines:['dsh'],agentHostId:'local'}),Date.now,humanAccounts.admittedActor,undefined,(c,r)=>threadAccess!.allows(r.serverId,r.threadId,c));
+  if(collaboration)assistantThreads=new AssistantThreadCommands(collaboration,createThreadOrchestrationExecution(()=>appHost),threadAccess!);
   let daemonServer: Awaited<ReturnType<typeof startOpenCraftDaemonServer>>;
   const close = (): Promise<void> => {
     if (closing !== null) return closing;
     let operation!: Promise<void>;
     operation = Promise.resolve().then(async () => {
       await daemonServer.close();
+      await personalAssistantHost?.close();
+      await assistantThreads?.close();
       try { await appHost.close(); } catch (error) {
         // Keep dependent handles owned and allow a later explicit shutdown to
         // retry the AppHost's retained physical cleanup. Server close is idempotent.
@@ -169,12 +196,23 @@ export async function startOpenCraftDaemon(options: {
       }
       await Promise.allSettled([...codexAgents].map(adapter => adapter.close()));
       codexAgents.clear();
-      humanAccounts?.close();
+      await collaboration?.close();
+      threadAccess?.close();
+      await humanAccounts?.close();
     });
     closing = operation;
     return operation;
   };
   try {
+    await assistantThreads?.initialize();
+    collaboration?.start();
+    let environmentProviders={};
+    if(collaboration&&process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG){
+      try{environmentProviders=await loadAssistantEnvironments(process.env.OPENCRAFT_ASSISTANT_SANDBOX_CONFIG);}
+      catch{console.warn('assistant_environment_configuration_unavailable');}
+    }
+    if(collaboration && options.humanAccountDirectory)personalAssistantHost=await createPersonalAssistantHost({directory:options.humanAccountDirectory,service:collaboration,environmentProviders,
+      ...(options.modelStorageDirectory?{modelSource:createAssistantModelSource(options.modelStorageDirectory)}:{}),codexBinary:options.codexExecutable});
     daemonServer = await startOpenCraftDaemonServer({
     storage: storageSummary,
     endpoint: options.endpoint,
@@ -184,7 +222,11 @@ export async function startOpenCraftDaemon(options: {
     onShutdownRequested: () => void close().then(() => process.exit(0), () => process.exit(1)),
   });
   } catch (error) {
-    humanAccounts?.close();
+    await personalAssistantHost?.close();
+    await assistantThreads?.close();
+    await collaboration?.close();
+    threadAccess?.close();
+    await humanAccounts?.close();
     await appHost.close();
     try { await storage.close(); } finally { await releaseStorageOwner(); }
     throw error;

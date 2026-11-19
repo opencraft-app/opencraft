@@ -17,11 +17,11 @@ function pdfFixture() {
 }
 const runtime=`
 const reads=[];window.fixtureReads=reads;
-const runtime={resources:{host:{canRequest:method=>method==='fuzzyFileSearch/sessionStart'},fileSystem:{
+const runtime={resources:{host:{canRequest:method=>method==='fuzzyFileSearch/sessionStart'||method==='fs/writeFile'},fileSystem:{
 async getMetadata(){return {isFile:true,isDirectory:false,modifiedAtMs:0,size:100}},
 async readFile(path){reads.push(path);return {dataBase64:path.endsWith('.pdf')?'${pdfFixture()}':btoa('<html><body><h1>Persistent preview</h1><p>'+path+'</p></body></html>')}},
 async readDirectory(path){return {entries:path==='/fixture'? [{fileName:'report.pdf',isDirectory:false,isFile:true},{fileName:'nested',isDirectory:true,isFile:false},...Array.from({length:35},(_,i)=>({fileName:'report-'+i+'.html',isDirectory:false,isFile:true}))]:[{fileName:'child.html',isDirectory:false,isFile:true}]}},
-async createFuzzyFileSearchSession(options){return {update:async()=>{options.onUpdated({files:[{root:'/fixture',path:'report-0.html',file_name:'report-0.html',match_type:'file'}]});options.onCompleted()},stop:async()=>{}}}
+async createFuzzyFileSearchSession(options){return {update:async(query)=>{options.onUpdated({query,files:[{root:'/fixture',path:'report-0.html',file_name:'report-0.html',match_type:'file'}]});options.onCompleted()},stop:async()=>{}}}
 }}};
 export const useAppServerRuntime=()=>runtime;
 export const useBlobResources=()=>window.fixtureBlobs;
@@ -40,9 +40,10 @@ let browser:any;
 try{
 await vite.listen();const {chromium}=await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE??'playwright');browser=await chromium.launch({headless:true});
 const evidence=[];
-for(const width of [1000,390])for(const theme of ['light','dark']){
+// Narrow navigation is covered by smoke-file-navigation.ts.
+for(const width of [1000])for(const theme of ['light','dark']){
  const page=await browser.newPage({viewport:{width,height:800}});const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.addInitScript('window.__name=value=>value');
- await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port);await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
+ await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port,{waitUntil:'domcontentloaded',timeout:60000});await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
  const hide=page.getByRole('button',{name:'Hide file tree',exact:true}),show=page.getByRole('button',{name:'Show file tree',exact:true});
  await page.frameLocator('iframe').getByRole('heading',{name:'Persistent preview'}).waitFor();
  assert.equal(await show.getAttribute('aria-expanded'),'false');
@@ -60,9 +61,10 @@ for(const width of [1000,390])for(const theme of ['light','dark']){
  const search=page.getByRole('textbox',{name:'Search workspace files'});await search.fill('report');await page.locator('.workspace-file-search-result').waitFor();await hide.click();await show.click();assert.equal(await search.inputValue(),'report');
  await page.screenshot({path:join(output,theme+'-'+width+'.png')});assert.deepEqual(errors,[]);evidence.push({width,theme});await page.close();
 }
-for(const width of [1000,390])for(const theme of ['light','dark']){
+// Narrow navigation is covered by smoke-file-navigation.ts.
+for(const width of [1000])for(const theme of ['light','dark']){
  const page=await browser.newPage({viewport:{width,height:800}});const errors:string[]=[];page.on('pageerror',(e:Error)=>errors.push(e.message));await page.addInitScript('window.__name=value=>value');
- await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port+'/?pdf');
+ await page.goto('http://127.0.0.1:'+(vite.httpServer!.address() as any).port+'/?pdf',{waitUntil:'domcontentloaded',timeout:60000});
  await page.evaluate(theme=>document.documentElement.dataset.theme=theme,theme);
  const show=page.getByRole('button',{name:'Show file tree',exact:true}),hide=page.getByRole('button',{name:'Hide file tree',exact:true});
  await show.waitFor();assert.equal(await show.getAttribute('aria-expanded'),'false');

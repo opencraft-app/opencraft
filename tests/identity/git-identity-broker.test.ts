@@ -155,7 +155,7 @@ test('real wrapper preserves original authors on amend/cherry-pick/rebase and ne
   managedEnv.OPENCRAFT_GIT_BROKER_SOCKET = join(f.root, 'missing.sock');
   managedEnv.CODEX_THREAD_ID = 'synthetic-thread';
   const unavailable = await managed('commit', '--allow-empty', '-qm', 'broker down');
-  assert.equal(unavailable.code, 128); assert.match(unavailable.err, /broker unavailable/u);
+  assert.equal(unavailable.code, 128); assert.match(unavailable.err, /Git identity unavailable \[git\/(?:broker-unavailable|connect-missing); ref [a-f0-9-]+\]/u);
   assert.equal((await git('rev-parse', 'HEAD')).out, before);
 });
 test('config encoding and Git global options retain exact worktree context', () => {
@@ -323,7 +323,7 @@ test('bound SSH remote uses personal HTTPS for real push/delete without changing
     assert.equal(await readFile(join(f.work,'.git/config'),'utf8'),before);
   }
   assert.ok(received.length>0&&received.every(v=>v===expected));assert.ok(f.credentials()>0);await assert.rejects(readFile(marker));
-  const requestsBefore=received.length; f.managedEnv.OPENCRAFT_GIT_BROKER_SOCKET=join(f.root,'missing-broker.sock');const unavailable=await f.managed('push','origin','HEAD:refs/heads/no-fallback');assert.equal(unavailable.code,128);assert.match(unavailable.err,/broker unavailable/u);assert.equal(received.length,requestsBefore);await assert.rejects(readFile(marker));
+  const requestsBefore=received.length; f.managedEnv.OPENCRAFT_GIT_BROKER_SOCKET=join(f.root,'missing-broker.sock');const unavailable=await f.managed('push','origin','HEAD:refs/heads/no-fallback');assert.equal(unavailable.code,128);assert.match(unavailable.err,/Git identity unavailable \[git\/(?:broker-unavailable|connect-missing); ref [a-f0-9-]+\]/u);assert.equal(received.length,requestsBefore);await assert.rejects(readFile(marker));
 });
 
 
@@ -397,7 +397,7 @@ esac
   f.setIdentity({ status: 'active', account: 'synthetic:unbound', executionId: 'other-turn' });
   const unbound = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unbound.code, 0, unbound.err);
   f.setIdentity({ status: 'unknown' });
-  const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /broker unavailable/u);
+  const unknown = await f.managed('ls-remote', '--heads', 'origin'); assert.equal(unknown.code, 128); assert.match(unknown.err, /Git identity unavailable \[git\/(?:broker-unavailable|connect-missing); ref [a-f0-9-]+\]/u);
 });
 
 test('installation launcher restores its broker connection when callers filter inherited environment', async t => {
@@ -417,7 +417,7 @@ test('installation launcher restores its broker connection when callers filter i
     assert.equal(result.code, 0, result.err);
     assert.equal((await f.native('log', '-1', '--format=%an <%ae>')).out, 'Employee <employee@example.test>');
   }
-  assert.ok(f.opens.includes('github.com'), 'the real wrapper must contact the installed broker');
+  assert.equal(f.opens.some(host => host === 'github.com'), true, 'the real wrapper must contact the installed broker');
 });
 
 test('installation launcher applies an explicit read policy to already-running callers', async t => {
@@ -526,7 +526,7 @@ test('HTTPS credential allowlist denies a retired token without changing other h
   }
 });
 
-test('broker fence includes pending admission, drains existing signer, and cold successor preserves history', async t => {
+test('broker fence includes pending admission, drains existing signer, and cold successor preserves history', { skip: process.getuid?.() !== 0 ? 'Legacy owner-handoff control requires UID 0' : false }, async t => {
   const f = await fixture(t);
   f.store.write('synthetic:1', 'github.com', 0, { identity: { username: 'synthetic', name: 'Synthetic', email: 'synthetic@example.test' }, token: 'synthetic-only', signing: generateGitSigningKey() });
   const session = await queryGitIdentityBroker(f.socket, { op: 'open', threadId: 'synthetic-thread', host: 'github.com' });

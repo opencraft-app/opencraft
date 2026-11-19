@@ -1,0 +1,21 @@
+// One overview geometry recipe for tool scenes and conversation selection.
+@mixin layout {
+  flex: 1; min-width: 0; min-height: 0; box-sizing: border-box; display: flex; flex-direction: column;
+  gap: var(--gap-tool-overview-grid);
+  padding-block: var(--padding-tool-overview-page) var(--inset-scene-dock);
+  padding-inline: max(var(--inset-scene-dock), var(--safe-layout-inset-left, env(safe-area-inset-left, 0px))) max(var(--inset-scene-dock), var(--safe-layout-inset-right, env(safe-area-inset-right, 0px)));
+}
+@mixin scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: var(--spacing); }
+@mixin grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--width-tool-overview-card-min)), 1fr)); gap: var(--gap-tool-overview-grid); align-items: start; }
+@mixin card {
+  position: relative; min-width: 0; height: var(--height-tool-overview-card); box-sizing: border-box;
+  display: flex; flex-direction: column; overflow: hidden;
+  padding: var(--padding-tool-overview-card); border: var(--width-tool-overview-border) solid var(--color-tool-overview-border);
+  border-radius: var(--radius-tool-overview-card);
+  box-shadow: var(--overview-frame-shadow, var(--shadow-tool-overview-card)); color: var(--color-text);
+}
+@mixin footer {
+  flex: none; display: flex; align-items: flex-end;
+  gap: max(var(--gap-toolbar-dock), var(--gap-control-density-min));
+  > .ui-icon-button { flex: none; }
+}

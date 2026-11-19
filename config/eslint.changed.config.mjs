@@ -16,7 +16,8 @@ export default [
     rules: {
       eqeqeq: ["error", "smart"],
       "no-var": "error",
-      "prefer-const": "error",
+      // A variable read by a closure before its single assignment cannot become const.
+      "prefer-const": ["error", { ignoreReadBeforeAssign: true }],
       "@typescript-eslint/no-unused-vars": [
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_", caughtErrors: "none" },

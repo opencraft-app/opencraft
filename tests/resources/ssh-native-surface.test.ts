@@ -147,7 +147,9 @@ test("actual SSH transport + shared broker + Runtime restores paginated items, o
   try {
     await runtime.connect();
     assert.equal(runtime.resources.host.canRequest?.("thread/search"), true);
-    assert.deepEqual(await runtime.resources.terminal.list(), { processes: [] });
+    // Native Codex has no terminal directory. Report it as unavailable rather than
+    // an authoritative empty list, which would let restore detach live sessions.
+    await assert.rejects(runtime.resources.terminal.list(), /Terminal directory is unavailable/);
     assert.ok(!calls.includes("process/list"), "terminal hydration must not send OpenCraft extensions to native Codex");
     const body = await runtime.resources.protocol.request("thread/search", { searchTerm: "Historical", limit: 1 });
     assert.equal(body.data[0]?.snippet, "Historical remote answer");

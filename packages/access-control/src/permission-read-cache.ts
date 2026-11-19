@@ -25,6 +25,8 @@ export function withPermissionWrite<T>(write: () => T, cache: PermissionReadCach
 export class PermissionReadCache {
   private rows = new Map<string, unknown>();
   private valid = false;
+  private bytes = 0;
+  private readonly presentationRevisions=new Map<string,number>();
   private closed = false;
   private readonly group: Set<PermissionReadCache>;
   constructor(private readonly load: () => Iterable<readonly [string, unknown]>,
@@ -46,7 +48,7 @@ export class PermissionReadCache {
     }
     return rows;
   }
-  publish(rows: Map<string, unknown>): void { this.rows = rows; this.valid = true; }
+  publish(rows: Map<string, unknown>): void { this.rows = rows; this.bytes=[...rows].reduce((n,[key,row])=>n+Buffer.byteLength(key)+Buffer.byteLength(JSON.stringify(row)),0); this.valid = true; }
   invalidate(): void { this.valid = false; }
   get<T>(key: string, readDuringWrite: () => T): T {
     if (this.closed) throw new Error("Permission repository is closed");
@@ -55,5 +57,32 @@ export class PermissionReadCache {
     if (!this.valid) throw new Error("Permission projection is unavailable");
     return this.rows.get(key) as T;
   }
-  close(): void { this.closed = true; this.valid = false; this.rows.clear(); dirty.delete(this); this.group.delete(this); }
+  /** A committed newly allocated identity can fill a missing slot, never replace an
+   * existing permission/generation. Existing identities still use owner mutations. */
+  seedMissing(key: string, row: unknown): void {
+    if (this.closed || !this.valid || this.options.enabled === false || this.rows.has(key)) return;
+    const size=Buffer.byteLength(key)+Buffer.byteLength(JSON.stringify(row));
+    if(this.rows.size>=(this.options.entries??100_000)||this.bytes+size>(this.options.bytes??32*1024*1024)) {
+      this.invalidate();throw Error('Permission projection exceeds its memory budget');
+    }
+    this.rows.set(key, row);this.bytes+=size;
+  }
+  /** A committed revocation only removes authority; late publication cannot restore it. */
+  retireCredential(id:string):void {
+    const key=JSON.stringify(['credential',id]);
+    if(this.closed||!this.valid||this.options.enabled===false)return;
+    const row=this.rows.get(key) as Record<string,unknown>|undefined;
+    if(row)this.rows.set(key,{...row,enabled:0});
+    else this.seedMissing(key,{id,enabled:0});
+  }
+  /** Trusted committed display-name projection only; cannot change identity, grants or generation. */
+  updateActorName(id:string,displayName:string,revision:number):void {
+    if(this.closed||!this.valid||this.options.enabled===false)return;
+    const key=JSON.stringify(['actor',id]),row=this.rows.get(key) as Record<string,unknown>|undefined;
+    if(!row||row.kind!=='session'||revision<=(this.presentationRevisions.get(id)??-1))return;
+    const next={...row,display_name:displayName},delta=Buffer.byteLength(JSON.stringify(next))-Buffer.byteLength(JSON.stringify(row));
+    if(this.bytes+delta>(this.options.bytes??32*1024*1024))throw Error('Permission projection exceeds its memory budget');
+    this.rows.set(key,next);this.bytes+=delta;this.presentationRevisions.set(id,revision);
+  }
+  close(): void { this.closed = true; this.valid = false; this.rows.clear();this.presentationRevisions.clear(); dirty.delete(this); this.group.delete(this); }
 }

@@ -12,6 +12,7 @@ import type { HookStats } from "./hook-stats";
 import { normalizeTurnUserMessages } from "./turn-user-message-normalization";
 import { deriveTurnWorkStatus } from "./work-status";
 import { createTurnChangeSummary } from "./turn-diff";
+import { recoverTurnChangeSummary } from "./turn-file-changes";
 import { normalizeCommandCompletionOrder } from "./command-completion-order";
 
 export type TimelineLane = "user" | "assistant" | "event" | "interaction";
@@ -252,14 +253,21 @@ function projectTurnFrames(
     const turn = inferSettledMessagePhases(normalizeTurnUserMessages(normalizeCommandCompletionOrder(sourceTurn)));
     const workStatus = deriveTurnWorkStatus(turn);
     // Compatibility Items are lowered once here, not allowed to participate
-    // in transcript topology. An explicit Turn value (including null) wins.
-    const legacyDiff = turn.items.filter(item => item.type === "turnDiff").at(-1);
+    // in transcript topology. Empty native aggregates recover from durable patches;
+    // an explicit Turn value still suppresses stale compatibility Items.
+    const nativeSummary = createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff ?? null);
+    const legacyDiff = nativeSummary === null && turn.unifiedDiff === undefined
+      ? turn.items.filter(item => item.type === "turnDiff").at(-1) : undefined;
     const legacyBlock = legacyDiff === undefined ? null
       : registry.project(legacyDiff, { turn, itemIndex: turn.items.indexOf(legacyDiff) }).block;
-    const changeSummary = turn.unifiedDiff !== undefined
-      ? createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff)
-      : legacyBlock?.type === "turn-diff"
-        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null;
+    // Native aggregate updates never reparse patch bodies. Durable hunk content
+    // outranks compatibility Items; metadata-only patches may still use them.
+    const recoveredSummary = nativeSummary === null ? recoverTurnChangeSummary(turn) : null;
+    const durablePatchContent = recoveredSummary?.unifiedDiff.split("\n").some(line => line.startsWith("@@ ")) ?? false;
+    const changeSummary = nativeSummary
+      ?? (turn.unifiedDiff === undefined && !durablePatchContent && legacyBlock?.type === "turn-diff"
+        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null)
+      ?? recoveredSummary;
     const initialFrameCount = frames.length;
     let pendingLane: TimelineLane | null = null;
     let pendingBlocks: TimelineBlock[] = [];

@@ -1,0 +1,22 @@
+.terminal-panel__host {
+  position: relative;
+
+  // xterm owns the visible cursor. Its helper only captures keyboard/IME
+  // input; suppress the browser caret explicitly, not just textarea opacity.
+  .xterm-helper-textarea {
+    caret-color: transparent;
+  }
+}
+
+.terminal-panel__host[data-native-selection="true"] .xterm-rows {
+  opacity: 0;
+}
+
+.terminal-native-text {
+  position: absolute;
+  z-index: 1;
+  overflow: clip;
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}

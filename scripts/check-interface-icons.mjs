@@ -8,8 +8,6 @@ const root = resolve(import.meta.dirname, "..");
 const localArtwork = new Set([
   "apps/workbench-web/src/chrome-actions/sidebar-toggle-icon.tsx",
   "apps/workbench-web/src/components/sidebar-bots.tsx",
-  "plugins/bot-chat/src/bot-avatar.tsx",
-  "plugins/bot-chat/src/bot-avatar-stage.tsx",
 ]);
 
 /** Inspect imports as well as JSX so aliases and dynamic registries cannot evade coverage. */

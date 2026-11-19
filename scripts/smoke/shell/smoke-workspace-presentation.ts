@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { verifyPaneMotion } from "./verify-pane-motion";
 import { sidebarToggleGlyphs } from "@opencraft/design-system/sidebar-toggle-glyphs";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
@@ -30,12 +31,13 @@ import{createBrowserWorkbenchPanelPlugin}from'/apps/workbench-web/src/browser/br
 import{createComposerController}from'@opencraft/composer-core';import{createConversationKey}from'@opencraft/chat-core';
 import{OpenCraftComposer}from'@opencraft/composer-editor';
 import{AppShell}from'/apps/workbench-web/src/components/app-shell.tsx';
+import{WorkbenchPanelRuntimeProvider}from'/apps/workbench-web/src/runtime/panel-runtime-context.tsx';
 import{RightPanel}from'/apps/workbench-web/src/components/right-panel.tsx';
 import{useShellPresentation}from'/apps/workbench-web/src/components/shell-presentation.ts';
 import{ThreadComposerPresentation}from'/apps/workbench-web/src/components/thread-composer-presentation.tsx';
 import{TimelineBlockRendererProvider,TimelineBlockRendererRegistryService}from'@opencraft/timeline-render-react';
 import{BuiltinTimelineRendererPlugin}from'/apps/workbench-web/src/components/conversation-renderers/builtin-timeline-renderer-plugin';
-import{initializeAppearanceTheme,setThemePreference}from'/apps/workbench-web/src/appearance-theme.ts';
+import{initializeAppearanceTheme,setThemePreference,setAppearanceThemeId}from'/apps/workbench-web/src/appearance-theme.ts';
 import{AsyncNoticesProvider}from'/apps/workbench-web/src/components/async-notices.tsx';
 import'/apps/workbench-web/src/styles/app.scss';
 initializeAppearanceTheme();const ctx=new Context();await ctx.plugin(WorkbenchPanelService);const panels=ctx.workbenchPanels;const key=createConversationKey('fixture-host','parent');
@@ -59,22 +61,24 @@ const subscribe=f=>panels.subscribeOwner('scope',f),get=()=>panels.getOwnerSnaps
 
 function FixtureHeader(){const shell=useShellPresentation();return <>{topology&&<button data-fixture-sidebar onClick={()=>shell?.toggleSidebar()}>Toggle sidebar</button>}<button type='button' onClick={()=>shell?.toggleRightPanel()}>Open preview</button></>}
 function App(){const state=useSyncExternalStore(subscribe,get);const [sidebar,setSidebar]=useState(false);const [width,setWidth]=useState(275);const [enabled,setEnabled]=useState(true);const[unified,setUnified]=useState(true);
-window.fixture={state,closed,submitted,setSidebar,setUnified,controller,panels,keyboardRequests,setThemePreference,setEnabled,pages,openBrowser:()=>workbench.open('scope',{initialUrl:location.origin+'/browser-fixture',panelOwnerId:'scope'})};
+window.fixture={state,closed,submitted,setSidebar,setUnified,controller,panels,keyboardRequests,setThemePreference,setAppearanceThemeId,setEnabled,pages,openBrowser:()=>workbench.open('scope',{initialUrl:location.origin+'/browser-fixture',panelOwnerId:'scope'})};
 const panel=()=> <RightPanel state={state} presentationId='view' renderers={renderers} toolbarActions={panels.getToolbarActionSnapshot()} toolbarActionContext={{ownerId:'scope',resourceOwnerId:'scope',hostId:'fixture-host',cwd:null}} onAction={a=>panels.dispatch('scope',a)} onCloseTab={t=>panels.close('scope',t.region,t.id)}/>;
 const navigation=topology&&unified?{layout:'unified',actions:[],account:{snapshot:{phase:'anonymous'},onOpen:()=>{}},onOpenSettings:()=>{}}:undefined;
-return <AppShell navigation={navigation} layoutScope='scope' mainContentLayout='default' header={<FixtureHeader/>} floatingSidebarHeader={()=>null} leftPanel={<div><p>Navigation</p><button data-fixture-drawer-action onClick={()=>closed.push("drawer-action")}>Drawer action</button></div>} sidebarOpen={sidebar} sidebarWidth={width} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={setWidth} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanelKeepMounted={true} rightPanel={panel('right')} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onRightPanelOpenChange={open=>panels.dispatch('scope',{type:'set-region-open',region:'right',open})}>
+return <AppShell sceneOwnerId='scope' foreground={state.foreground} onForegroundChange={foreground=>panels.dispatch('scope',{type:'select-foreground',foreground})} navigation={navigation} layoutScope='scope' mainContentLayout='default' header={<FixtureHeader/>} floatingSidebarHeader={()=>null} leftPanel={<div><p>Navigation</p><button data-fixture-drawer-action onClick={()=>closed.push("drawer-action")}>Drawer action</button></div>} sidebarOpen={sidebar} sidebarWidth={width} onSidebarCollapse={()=>setSidebar(false)} onSidebarExpand={()=>setSidebar(true)} onSidebarResizeEnd={setWidth} windowChrome={{kind:'browser',platform:'linux',safeArea:{left:0,right:0}}} rightPanelKeepMounted={true} rightPanel={panel('right')} rightPanelOpen={state.right.open} rightPanelFullWidth={state.rightPanelFullWidth} onRightPanelOpenChange={open=>panels.dispatch('scope',{type:'set-region-open',region:'right',open})}>
 <div style={{height:'100%',display:'flex',flexDirection:'column'}}><p style={{flex:1}}>Parent conversation</p>
 <ThreadComposerPresentation scopeId='scope' controller={controller} activeTabId={state.right.activeTabId} enabled={enabled} timeline={{key,revision:1,phase:'live',authoritative:true,anchorFrameIds:new Map(),frames:[{id:'user-frame',type:'user',turnId:'turn',status:'complete',durationMs:null,hookStats:null,anchors:[],blocks:[{id:'user-block',type:'text',text:'User intro must not be duplicated',sourceItemIds:[],streaming:false}]},{id:'assistant-frame',type:'assistant',turnId:'turn',status:'complete',durationMs:1000,hookStats:null,anchors:[],blocks:[{id:'answer',type:'text',text:'Latest answer preview\\n\\n'+('A bounded response paragraph.\\n\\n'.repeat(40)),sourceItemIds:['answer'],streaming:false,completed:true,phase:'final_answer'}]}]}} documentContext={{conversationId:'parent',hostId:'fixture-host',cwd:null,theme:'light'}}>
 <div className='thread-composer-region'><OpenCraftComposer controller={controller} onSubmit={async intent=>{submitted.push(intent.target)}} onCancel={()=>{}} /></div>
 </ThreadComposerPresentation></div></AppShell>}
-createRoot(document.getElementById('root'),undefined,params.get('locale')??'en-US').render(<AsyncNoticesProvider><TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}><BrowserEnvironmentProvider pages={pages} surfaces={surfaces} presentations={presentations} workbench={workbench}><App/><BrowserPresentationRoot/></BrowserEnvironmentProvider></TimelineBlockRendererProvider></AsyncNoticesProvider>);`;
+createRoot(document.getElementById('root'),undefined,params.get('locale')??'en-US').render(<WorkbenchPanelRuntimeProvider runtime={{panels,context:ctx}}><AsyncNoticesProvider><TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}><BrowserEnvironmentProvider pages={pages} surfaces={surfaces} presentations={presentations} workbench={workbench}><App/><BrowserPresentationRoot/></BrowserEnvironmentProvider></TimelineBlockRendererProvider></AsyncNoticesProvider></WorkbenchPanelRuntimeProvider>);`;
 const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", cacheDir: "node_modules/.vite-workspace-presentation", resolve: { dedupe: ["react", "react-dom"] }, esbuild: { jsx: "automatic" }, server: { host: "127.0.0.1", port: 0 }, optimizeDeps: { include: ["react", "react-dom/client", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@tanstack/react-query"] }, plugins: [{ name: "workspace-presentation-fixture", resolveId: id => id === "/workspace-probe.tsx" ? id : null, load: id => id === "/workspace-probe.tsx" ? source : null, configureServer(server) { server.middlewares.use((req,res,next) => { if (req.url === "/browser-fixture") { res.setHeader("content-type","text/html"); res.end('<title>Fixture web page</title><button onclick="this.textContent=String.fromCharCode(80,97,103,101,32,99,111,117,110,116,32)+(++window.count)">Page count 0</button><script>window.count=0</script>'); return; } if(req.url?.split("?")[0] !== "/") return next();res.setHeader("content-type","text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/workspace-probe.tsx"></script>'); }); } }] });
 let browser: any;
 const errors: string[] = [];
 try {
   await mkdir(output, { recursive: true }); await vite.listen();
   browser = await playwright[browserName].launch({ headless: true, ...(browserName === 'chromium' ? { executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ['--no-sandbox'] } : {}) });
-  if (pagePresentation) {
+  if (process.argv.includes('--pane-motion')) {
+    await verifyPaneMotion(browser, vite.resolvedUrls!.local[0]!, output);
+  } else if (pagePresentation) {
     const receipts: unknown[] = [];
     for (const reducedMotion of ['no-preference', 'reduce'] as const) {
       const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, reducedMotion });
@@ -560,16 +564,16 @@ try {
   await counter.click(); assert.equal(await counter.innerText(), 'Page count 2');
   await editor.focus();
   await page.waitForFunction(() => document.querySelector('.thread-composer-overlay__content')?.getAttribute('data-density') === 'expanded');
-  await page.getByRole('button', { name: 'Latest turn', exact: true }).click();
+  await page.getByRole('button', { name: 'Conversation', exact: true }).click();
   const response = page.locator('.thread-composer-overlay__response'); await response.waitFor();
   await page.waitForFunction(() => document.querySelector('.thread-composer-overlay__response')?.textContent?.includes('Latest answer preview'));
   assert.match(await response.innerText(), /Latest answer preview/);
-  assert.doesNotMatch(await response.innerText(), /User intro must not be duplicated/);
+  assert.match(await response.innerText(), /User intro must not be duplicated/);
   const responseBox = await response.boundingBox(); assert.ok(responseBox && responseBox.height <= 361);
   await page.screenshot({ path: output + '/latest-turn.png' });
   // Scrolling the preview consumes its own scroll; it must not hide/expand input.
   await response.hover(); await page.mouse.wheel(0, 100); await page.waitForTimeout(100);
-  assert.equal(await page.getByRole('button', { name: 'Latest turn', exact: true }).getAttribute('aria-expanded'), 'true');
+  assert.equal(await page.getByRole('button', { name: 'Conversation', exact: true }).getAttribute('aria-expanded'), 'true');
   await page.getByRole('button', { name: 'Hide chat input', exact: true }).click();
   await page.waitForTimeout(180);
   assert.equal(await page.locator('.opencraft-composer-editor').evaluate(e => Boolean(e.closest('[inert]'))), true);

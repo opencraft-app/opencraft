@@ -32,6 +32,13 @@ export function createWorkbenchSubmissionPipeline(
   config: WorkbenchSubmissionPipelineConfig,
 ): WorkbenchSubmissionPipeline {
   const promoting = new Map<string, Promise<SubmissionReceipt>>();
+  // The receipt transfers input custody. Refreshing projections is a separate
+  // consequence: a slow or failed read cannot delay/reject an accepted send.
+  const notifyAccepted = (receipt: SubmissionReceipt): void => {
+    void Promise.resolve().then(() => config.afterAccepted?.(receipt)).catch(() => {
+      console.warn("[submission] Post-acceptance refresh failed");
+    });
+  };
 
   const promoteAccepted = (draftId: string): Promise<SubmissionReceipt> => {
     const pending = promoting.get(draftId);
@@ -59,7 +66,7 @@ export function createWorkbenchSubmissionPipeline(
       const turnReceipt = receipt.turnId === null
         ? await config.submitFirstTurn(submission, receipt)
         : receipt;
-      await config.afterAccepted?.(turnReceipt);
+      notifyAccepted(turnReceipt);
       return turnReceipt;
     })().finally(() => {
       if (promoting.get(draftId) === operation) promoting.delete(draftId);
@@ -72,7 +79,7 @@ export function createWorkbenchSubmissionPipeline(
     async submit(intent) {
       if (intent.target.type !== "new-thread") {
         const receipt = await config.submitExistingThread(intent);
-        await config.afterAccepted?.(receipt);
+        notifyAccepted(receipt);
         return receipt;
       }
 
@@ -87,7 +94,7 @@ export function createWorkbenchSubmissionPipeline(
         const original = await promoteAccepted(draftId);
         const receipt = await config.submitExistingThread({ ...intent, target: { type: "enqueue-follow-up",
           key: createConversationKey(original.hostId, original.threadId) } });
-        await config.afterAccepted?.(receipt);
+        notifyAccepted(receipt);
         return receipt;
       }
 

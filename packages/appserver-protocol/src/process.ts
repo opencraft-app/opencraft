@@ -2,6 +2,8 @@ import { allowsAppServerMethod, OPENCRAFT_METHOD_ACCESS_EXTENSION, parseAppServe
 
 /** Host-owned PTYs, independent of Agent runs. attach/list are OpenCraft extensions. */
 export const OPENCRAFT_TERMINAL_RESTORE_EXTENSION = "opencraft/terminal-restore";
+/** Host/Hands terminal capability, independent of the selected engine. */
+export const OPENCRAFT_TERMINAL_EXTENSION = "opencraft/terminal";
 
 /** Admission alone is not feature support. Legacy native servers lack attach/list. */
 export function supportsTerminalMethod(
@@ -11,9 +13,21 @@ export function supportsTerminalMethod(
   if (!allowsAppServerMethod(extensions, method)) return false;
   if (method !== "process/attach" && method !== "process/list") return true;
   const capability = extensions?.[OPENCRAFT_TERMINAL_RESTORE_EXTENSION];
-  return (typeof capability === "object" && capability !== null
+  const hands = extensions?.[OPENCRAFT_TERMINAL_EXTENSION];
+  return (
+    (typeof capability === "object" && capability !== null
     && !Array.isArray(capability) && "version" in capability && capability.version === 1)
-    || parseAppServerMethodAccess(extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION])?.methods.includes(method) === true;
+    || (typeof hands === "object" && hands !== null && !Array.isArray(hands)
+      && "version" in hands && hands.version === 1
+      &&
+      (("available" in hands && hands.available === true
+      && "recovery" in hands && hands.recovery === true)
+    ||
+        // This advertises the routing protocol, not readiness of every target.
+        // Each selected owner is authorized and probed before dispatch.
+        ("selection" in hands && hands.selection === "per-request")))
+    || parseAppServerMethodAccess(extensions?.[OPENCRAFT_METHOD_ACCESS_EXTENSION])?.methods.includes(method) === true
+  );
 }
 
 export interface ProcessOutput {
@@ -48,12 +62,15 @@ export interface ProcessSnapshot {
 }
 export interface AppServerProcessMethodMap {
   "process/spawn": {
-    params: { processHandle: string; command: string[]; tty: true; streamStdoutStderr: true; outputBytesCap: null; timeoutMs: null; resourceOwnerId?: string; threadId?: string | null; projectId?: string | null; cwd?: string | null; env?: Record<string, string | null>; size: { cols: number; rows: number } };
+    params: { processHandle: string; command: string[]; tty: true; streamStdoutStderr: true; outputBytesCap: null; timeoutMs: null; resourceOwnerId?: string; threadId?: string | null; projectId?: string | null; cwd?: string | null; env?: Record<string, string | null>; size: { cols: number; rows: number };
+    };
     result: { processHandle: string };
   };
   "process/writeStdin": { params: { processHandle: string; deltaBase64: string }; result: Record<string, never> };
-  "process/resizePty": { params: { processHandle: string; size: { cols: number; rows: number } }; result: Record<string, never> };
+  "process/resizePty": { params: { processHandle: string; size: { cols: number; rows: number } }; result: Record<string, never>;
+  };
   "process/kill": { params: { processHandle: string }; result: Record<string, never> };
   "process/attach": { params: { processHandle: string; afterSequence: number }; result: ProcessSnapshot };
-  "process/list": { params: { threadId?: string | null; projectId?: string | null }; result: { processes: Array<Omit<ProcessSnapshot, "output">> } };
+  "process/list": { params: { threadId?: string | null; projectId?: string | null }; result: { processes: Array<Omit<ProcessSnapshot, "output">> };
+  };
 }

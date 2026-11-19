@@ -15,6 +15,13 @@
       "when": 1794994542298,
       "tag": "0001_daffy_mister_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795014500283,
+      "tag": "0002_soft_screwball",
+      "breakpoints": true
     }
   ]
 }

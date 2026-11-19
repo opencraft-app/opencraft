@@ -4,6 +4,8 @@ import { SwitchboardStore } from "../plugins/im/src/store.ts";
 import { IM_REPLY_TOOL } from "../plugins/im/src/reply-tool.ts";
 import { IM_READ_TOOLS } from "../plugins/im/src/read-tools.ts";
 import { ImPostReceipts } from "../plugins/im/src/post-receipts.ts";
+import { ChannelSync } from "../plugins/im/src/channel-sync.ts";
+import { CHANNEL_IMAGE_LIMIT, CHANNEL_IMAGE_TYPES } from "../packages/appserver-protocol/src/channel-images.ts";
 import { ImWeComPosts } from "./im-wecom-posts.mjs";
 import { WECOM_POST_TOOL } from "../plugins/wecom/src/post-tool.ts";
 import { ImWeComHistory } from "./im-wecom-history.mjs";
@@ -58,6 +60,11 @@ export class ImChannelService {
   static async open(endpoints, dependencies) {
     const service = new ImChannelService(dependencies);
     try {
+      if (dependencies.channelSync) {
+        service.channelSync = await ChannelSync.open(dependencies.channelSync, dependencies.collaboration);
+      } else if(dependencies.collaboration?.synchronizeChannels) {
+        await dependencies.collaboration.synchronizeChannels({method:'configure',params:{incarnation:randomUUID(),bindings:[],images:false}});
+      }
       for (const endpoint of endpoints) {
         if (!service.store.hasChannel(endpoint.id)) {
           await service.credentials.set(
@@ -163,6 +170,7 @@ export class ImChannelService {
       senders: {},
       platform: c.provider,
     });
+    const notificationSenders = new Map(Object.entries(this.store.senderLinks(c.id)));
     const receive = async (message) => {
       if (!this.store.channel(c.id)?.enabled) throw Error("channel_disabled");
       // Identity verification is a control message, never agent input or user routing code.
@@ -180,6 +188,7 @@ export class ImChannelService {
         );
         if (!actor) throw Error("invalid_identity_challenge");
         this.execution.human(actor);
+        notificationSenders.set(message.source.senderId,actor);
         await message.reply(
           "身份已关联。后续消息将以你的 OpenCraft 账号权限处理。",
         );
@@ -252,7 +261,7 @@ export class ImChannelService {
         adapter.close();
         return;
       }
-      this.adapters.set(c.id, { adapter, unregister });
+      this.adapters.set(c.id, { adapter, unregister, notificationSenders, name:c.name });
       adapter.start();
     } catch (error) {
       unregister();
@@ -301,6 +310,10 @@ export class ImChannelService {
       "cursor",
     ]);
     const actor = this.execution.human(context.actorId);
+    if(body.action==='wecom.link') {
+      if(Object.keys(body).some(key=>key!=='action')||!this.channelSync?.transport.link)throw Error('invalid_operation');
+      return this.channelSync.transport.link(context);
+    }
     if (body.action === "list")
       return {
         channels: this.store
@@ -442,6 +455,7 @@ export class ImChannelService {
       if (!manages && this.store.senderLinks(c.id)[sender] !== actor.actorId)
         throw Error("channel_denied");
       this.store.unlinkSender(c.id, sender);
+      this.adapters.get(c.id)?.notificationSenders?.delete(sender);
       return { ok: true };
     }
     if (body.action === "messages")
@@ -579,6 +593,42 @@ export class ImChannelService {
     }
     throw Error("invalid_operation");
   }
+  notificationTargets(actorId) {
+    const actor=this.dependencies.actors.get(actorId);
+    if(!actor?.enabled || actor.kind!=='human' || this.dependencies.admittedActor?.(actorId)===false)return [];
+    const ordinary=[...this.adapters.entries()].filter(([,entry])=>typeof entry.adapter?.sendDirect==='function')
+      .flatMap(([channelId,entry])=>[...entry.notificationSenders.entries()].filter(([,owner])=>owner===actorId)
+        .map(([senderId])=>({channelId,senderId,label:entry.name+' · '+senderId})));
+    // A product connection contributes verified personal targets through its existing
+    // transport owner. No provider credentials, arbitrary recipient or chat binding.
+    let contributed=[];
+    try { contributed=this.channelSync?.transport.notifications?.targets(actorId)??[]; } catch {}
+    return [...ordinary,...contributed.filter(target=>!this.adapters.has(target.channelId))];
+  }
+  prepareDirectNotification(channelId,senderId,actorId) {
+    const selected=this.notificationTargets(actorId).find(target=>target.channelId===channelId && target.senderId===senderId);
+    if(!selected)throw Error('notification_binding_denied');
+    const contribution=this.channelSync?.transport.notifications;
+    return async (content,requestId)=>{
+      // Recheck the binding at delivery, not only at configuration time.
+      if(!this.notificationTargets(actorId).some(target=>target.channelId===channelId && target.senderId===senderId))throw Error('notification_binding_denied');
+      const contributed=contribution;
+      if(selected.methodId) {
+        if(!contributed?.send||this.channelSync?.transport.notifications!==contributed)throw Error('notification_binding_denied');
+        const assertCurrent=()=>{
+          if(this.channelSync?.transport.notifications!==contributed || !this.notificationTargets(actorId).some(target=>target.channelId===channelId && target.senderId===senderId))throw Error('notification_binding_denied');
+        };
+        assertCurrent();return contributed.send(actorId,{channelId,senderId},content,requestId,assertCurrent);
+      }
+      const adapter=this.adapters.get(channelId)?.adapter;
+      if(!adapter?.sendDirect || adapter.state!=='ready')throw Object.assign(Error('notification_unavailable'),{deliveryState:'not_sent'});
+      const assertCurrent=()=>{
+        if(this.adapters.get(channelId)?.adapter!==adapter || !this.notificationTargets(actorId).some(target=>target.channelId===channelId && target.senderId===senderId))throw Error('notification_binding_denied');
+      };
+      assertCurrent();
+      return adapter.sendDirect(senderId,content,requestId,assertCurrent);
+    };
+  }
   prepareOperatorNotification(channelId, senderId, actorId) {
     const channel = this.store.channels().find(row => row.id === channelId && row.provider === 'wecom' && row.enabled);
     if (!channel || this.store.senderLinks(channelId)[senderId] !== actorId) throw Error('notification_binding_denied');
@@ -600,19 +650,22 @@ export class ImChannelService {
       response.end(JSON.stringify(value));
     };
     const context = this.dependencies.actorAccess.authenticate(request);
-    const human =
-      context &&
-      !context.credentialId &&
-      this.dependencies.actors.get(context.actorId)?.kind === "human";
+    const actor = context && !context.credentialId ? this.dependencies.actors.get(context.actorId) : null;
+    const human = actor?.kind === "human";
     if (path === "/__opencraft_im/capabilities" && request.method === "GET") {
-      send(200, { available: !!human });
+      const nativeChannels = human && this.dependencies.collaboration?.available
+        && this.dependencies.actors.isCurrent(context) && (this.dependencies.admittedActor?.(context.actorId) ?? true);
+      send(200, {available:!!human,...(nativeChannels?{nativeChannels:true,channelGroupTools:true,channels:1,channelImages:true}:{})});
       return true;
     }
     if (!human) {
       send(401, { error: "human_authentication_required" });
       return true;
     }
-    if (path !== "/__opencraft_im" || request.method !== "POST") {
+    const imageRoute = /^\/__opencraft_im\/channel-image\/([^/]+)\/([A-Za-z0-9_-]{1,128})$/.exec(path);
+    if(imageRoute){try{imageRoute[1]=decodeURIComponent(imageRoute[1]);}catch{send(400,{error:'invalid_input'});return true;}}
+    const imageRead = imageRoute && request.method === "GET";
+    if (!imageRead && (request.method !== "POST" || (!imageRoute && path !== "/__opencraft_im"))) {
       send(404, { error: "missing" });
       return true;
     }
@@ -624,23 +677,53 @@ export class ImChannelService {
     const humanOrigin = typeof origin === "string" &&
       (origin === trustedOrigin ||
         ["http:", "https:"].some(protocol => origin === protocol + "//" + request.headers.host));
-    if (
-      request.headers["content-type"]?.split(";")[0] !== "application/json" ||
-      !(humanOrigin || sameOrigin(request, true))
-    ) {
+    const contentType = request.headers["content-type"]?.split(";")[0];
+    const acceptedBody = imageRoute ? CHANNEL_IMAGE_TYPES.includes(contentType) : contentType === "application/json";
+    if (imageRead ? request.headers["sec-fetch-site"] === "cross-site" : !acceptedBody || !(humanOrigin || sameOrigin(request, true))) {
       send(403, { error: "same_origin_required" });
       return true;
     }
+    const assertAuthorized = () => {
+      const current = this.dependencies.actorAccess.authenticate(request);
+      if (this.closed || !this.dependencies.collaboration?.available || !current || current.credentialId
+        || current.actorId !== context.actorId || current.generation !== context.generation
+        || !this.dependencies.actors.isCurrent(current)
+        || !(this.dependencies.admittedActor?.(current.actorId) ?? true)) throw Error('channel_denied');
+    };
     try {
+      if (imageRoute) {
+        assertAuthorized();
+        if (imageRead) {
+          const sequence = Number(imageRoute[2]);
+          if (!/^[1-9]\d*$/.test(imageRoute[2]) || !Number.isSafeInteger(sequence)) throw Error('invalid_input');
+          const image = await this.dependencies.collaboration.communicate(context,'channel/image',{channelId:imageRoute[1],sequence});
+          await this.dependencies.collaboration.communicate(context,'channel/readable',{channelId:imageRoute[1]});
+          assertAuthorized();
+          if (!image) { send(404, { error: "missing" }); return true; }
+          response.writeHead(200, { "content-type": image.type, "content-length": image.bytes.length,
+            "cache-control": "private, no-store", "x-content-type-options": "nosniff",
+            "cross-origin-resource-policy": "same-origin" });
+          response.end(Buffer.from(image.bytes));
+          return true;
+        }
+      }
       let size = 0;
+      const limit = imageRoute ? CHANNEL_IMAGE_LIMIT : 65536;
       const chunks = [];
-      for await (const chunk of request) {
+      for await (const chunk of request.iterator({ destroyOnReturn: false })) {
         size += chunk.length;
-        if (size > 65536) {
+        if (size > limit) {
           send(413, { error: "too_large" });
           return true;
         }
         chunks.push(chunk);
+      }
+      if (imageRoute) {
+        const {receipt} = await this.dependencies.collaboration.communicate(context,'channel/image/send',
+          {channelId:imageRoute[1],clientMessageId:imageRoute[2],type:contentType,bytes:Buffer.concat(chunks,size)});
+        assertAuthorized();
+        send(200, { receipt });
+        return true;
       }
       if (!this.dependencies.actorAccess.authenticate(request))
         throw Error("channel_denied");
@@ -689,10 +772,17 @@ export class ImChannelService {
     }
     return true;
   }
+  async handleChannelCallback(request, response, pathname) {
+    const callback = this.channelSync?.transport.callback;
+    if (this.closed || request.method !== 'POST' || !callback || pathname !== callback.path) return false;
+    await callback.handle(request, response);
+    return true;
+  }
   async close() {
     if (this.closed) return;
     this.closed = true;
     this.unregisterCapabilities?.();
+    await this.channelSync?.close();
     await this.serial.catch(() => {});
     for (const id of this.adapters.keys()) this.disconnect(id);
     await this.wecomPosts.close();

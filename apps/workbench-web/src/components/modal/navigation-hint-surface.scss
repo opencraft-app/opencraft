@@ -1,0 +1,61 @@
+@use "@opencraft/design-system/menu.web" as menu;
+
+// Anchored hints share the menu material/motion, not the full announcement canvas.
+.navigation-hint-surface {
+  @include menu.surface;
+  position: relative;
+  z-index: var(--layer-shell-navigation);
+  width: min(320px, calc(100vw - 24px));
+  max-width: var(--radix-popover-content-available-width);
+  max-height: var(--radix-popover-content-available-height);
+  box-sizing: border-box;
+  padding: 0;
+  overflow: visible;
+  transform-origin: var(--radix-popover-content-transform-origin);
+  background: var(--color-background-elevated-primary-opaque);
+  .announcement-dialog[data-compact="true"] { max-height: var(--radix-popover-content-available-height); }
+}
+
+.navigation-hint-surface__close {
+  position: absolute;
+  top: var(--gap-control-group);
+  right: var(--gap-control-group);
+}
+
+.navigation-hint-surface__arrow { fill: var(--color-background-elevated-primary-opaque); }
+
+.announcement-dialog[data-compact="true"] {
+  min-height: 0;
+  max-height: calc(100dvh - 24px);
+  box-sizing: border-box;
+  padding: 24px;
+  gap: 16px;
+
+  .announcement-dialog__header {
+    justify-items: start;
+    text-align: start;
+    h2 {
+      padding-right: 20px;
+      font: var(--typography-panel-title-font);
+      letter-spacing: var(--typography-panel-title-tracking);
+    }
+    p {
+      margin-top: 8px;
+      font: var(--typography-metadata-font);
+      letter-spacing: var(--typography-metadata-tracking);
+    }
+  }
+  .announcement-dialog__media {
+    flex: 0 0 auto;
+    margin: 0;
+    img { width: 200px; max-width: 100%; height: auto; }
+  }
+  .announcement-dialog__actions {
+    margin: 0;
+    flex-wrap: wrap;
+    flex-direction: row;
+    justify-content: flex-end;
+    .ui-button { width: auto; }
+  }
+}
+

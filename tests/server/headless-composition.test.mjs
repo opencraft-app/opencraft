@@ -63,7 +63,7 @@ test('public Headless artifact has no enterprise implementation and its CLI reje
   } }); t.after(() => app.close());
   const health = await fetch(app.url + '/__opencraft_health').then(response => response.json());
   const storage = health.storage.find(row => row.name === 'remote-browser');
-  assert.equal(storage.appliedVersion, 2);
+  assert.equal(storage.appliedVersion, 3); // the three remote-browser migrations in store-migrations.generated.ts
   assert.equal(storage.movedAside, false);
   assert.equal((await fetch(app.url)).status, 200);
   assert.equal((await fetch(app.url + '/__opencraft_actors/me')).status, 401);
@@ -239,3 +239,4 @@ test('anonymous installation can subsequently initialize its first real administ
   const setup=await fetch(app.url+'/__opencraft_account/setup',{method:'POST',headers:{origin:anonymous.url,'content-type':'application/json'},body:JSON.stringify({proof,mode:'web',username:'owner',password:'Fixture-account-password-42'})});
   assert.equal(setup.status,200,await setup.text());
 });
+

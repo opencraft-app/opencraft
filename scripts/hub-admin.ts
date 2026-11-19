@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { readPrivateJson } from '../packages/identity-core/src/node.js';
 import { HubNetwork } from '../packages/hub-network/src/node.js';
 
@@ -12,6 +13,10 @@ const node = new HubNetwork(statePath);
 try {
   if (input) {
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid Hub command');
-    console.log(JSON.stringify(node.command({ ...input, revision: node.store.state.revision }, 'local-operator')));
+    const result=input.action==='connect'&&typeof input.relay==='string'
+      ? await node.connectEndpoint(input.relay,{publishOrigin:typeof input.publishOrigin==='string'?input.publishOrigin:undefined,trustIdentity:input.trustIdentity===true,
+          ...(typeof input.caFile==='string'?{ca:await readFile(input.caFile,'utf8')}:{})},'local-operator')
+      : node.command({ ...input, revision: node.store.state.revision }, 'local-operator');
+    console.log(JSON.stringify(result));
   } else console.log(JSON.stringify(node.snapshot()));
 } finally { node.close(); }

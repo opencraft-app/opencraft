@@ -1,4 +1,6 @@
+import { recordTimelineDiagnostic, timelineDiagnosticsEnabled, timelineDiagnosticId } from "@opencraft/timeline-host-web";
 import { findConversationItemElement } from "./search-target";
+import { ConversationTurnWindow } from "./turn-window";
 import { timelineTurnRenderKey, type TimelineTurnView } from "@opencraft/chat-core";
 import {
   buildTurnLayout,
@@ -323,6 +325,9 @@ export function VirtualizedConversationTurns({
     return () => onApiChange?.(null);
   }, [onApiChange, virtualizedTurnListApi]);
 
+  // The distance each transaction was computed from: confirmed model position,
+  // or the physical position paired with a sampled text-anchor correction.
+  const measurementBasesRef = useRef(new WeakMap<TurnMeasurementTransaction, number | null>());
   const finishTurnMeasurementTransaction = useStableEvent(
     (transaction: TurnMeasurementTransaction) => {
       if (transaction.latestTurnHeightChange !== null) {
@@ -333,10 +338,19 @@ export function VirtualizedConversationTurns({
       if (transaction.restoreScrollDistanceFromBottom) {
         restoreScrollDistanceFromBottomPx?.();
       } else if (transaction.scrollDistanceFromBottomPx !== null) {
-        scrollController.compensateScrollToDistanceFromBottomPx(
-          transaction.scrollDistanceFromBottomPx,
-        );
+        const base = measurementBasesRef.current.get(transaction);
+        if (base === undefined || base === null)
+          scrollController.compensateScrollToDistanceFromBottomPx(
+            transaction.scrollDistanceFromBottomPx,
+          );
+        else
+          scrollController.compensateLayoutToDistanceFromBottomPx(
+            transaction.scrollDistanceFromBottomPx,
+            base,
+          );
       }
+      if (expandToMountedContent && preserveMeasuredTurnViewport)
+        viewportOwner.captureReadingAnchor(transaction.measuredHeightsByKey);
     },
   );
 
@@ -348,7 +362,23 @@ export function VirtualizedConversationTurns({
       }[],
       synchronous = true,
     ) => {
-      const transaction = createTurnMeasurementTransaction({
+      if (timelineDiagnosticsEnabled()) for (const measurement of measurements) {
+        const row = viewportOwner.getTurnElement(measurement.turnKey);
+        const geometry = getTurnGeometry(layoutRef.current, measurement.turnKey);
+        recordTimelineDiagnostic("turn-measurement", {
+          viewport: timelineDiagnosticId(viewportOwner), row: row ? timelineDiagnosticId(row) : null,
+          height: measurement.heightPx, previousMeasured: measuredHeightsRef.current[measurement.turnKey] ?? null,
+          layoutHeight: geometry ? geometry.endPx - geometry.startPx : null,
+        });
+      }
+      const previousTransaction = pendingMeasurementTransactionRef.current;
+      const reflowDistance = expandToMountedContent && preserveMeasuredTurnViewport
+        && pendingScrollRequestRef.current === null
+        ? viewportOwner.synchronizeReflowAnchor() : null;
+      let base: number | null = previousTransaction === null
+        ? scrollController.getLastScrollDistanceFromBottomPx()
+        : measurementBasesRef.current.get(previousTransaction) ?? null;
+      let transaction = createTurnMeasurementTransaction({
         entries: entriesRef.current,
         measurements,
         measuredHeightsByKey: measuredHeightsRef.current,
@@ -358,10 +388,35 @@ export function VirtualizedConversationTurns({
           scrollController.getLastScrollDistanceFromBottomPx(),
         bottomPaddingPx: getBottomScrollPaddingPx(),
         preserveMeasuredTurnViewport,
+        measuredContentFlowsNaturally: expandToMountedContent,
         getPendingRestoreScrollDistanceFromBottomPx: getPendingRestoreScrollDistanceFromBottomPx ?? null,
         previousPendingTransaction: pendingMeasurementTransactionRef.current,
       });
       if (transaction === null) return;
+      const anchorCorrection = reflowDistance === null && expandToMountedContent && preserveMeasuredTurnViewport
+        && pendingScrollRequestRef.current === null
+        ? viewportOwner.readingAnchorCorrection() : null;
+      if (anchorCorrection !== null) base = anchorCorrection.baseDistanceFromBottomPx;
+      if (anchorCorrection !== null) transaction = {
+        ...transaction,
+        scrollDistanceFromBottomPx: anchorCorrection.distanceFromBottomPx,
+        preservePlatformScrollForNextLayout: false,
+        viewport: updateTurnViewportState(transaction.viewport, transaction.layout,
+          distanceExcludingBottomPadding(anchorCorrection.distanceFromBottomPx, getBottomScrollPaddingPx()),
+          transaction.viewport.viewportHeightPx),
+      };
+      if (reflowDistance !== null) transaction = {
+        ...transaction,
+        // The interaction already compensated the physical scrollport. Never
+        // add this row's growth again or reconcile a window from its old height.
+        restoreScrollDistanceFromBottom: false,
+        scrollDistanceFromBottomPx: null,
+        preservePlatformScrollForNextLayout: false,
+        viewport: updateTurnViewportState(transaction.viewport, transaction.layout,
+          distanceExcludingBottomPadding(reflowDistance, getBottomScrollPaddingPx()),
+          transaction.viewport.viewportHeightPx),
+      };
+      measurementBasesRef.current.set(transaction, base);
       measuredHeightsRef.current = transaction.measuredHeightsByKey;
       layoutRef.current = transaction.layout;
       viewportRef.current = transaction.viewport;
@@ -380,7 +435,8 @@ export function VirtualizedConversationTurns({
         transaction.canUseLatestTurnFastPath &&
         virtualizerSpacerRef.current !== null
       ) {
-        virtualizerSpacerRef.current.style[expandToMountedContent ? "minHeight" : "height"] = `${transaction.layout.totalHeightPx}px`;
+        if (!expandToMountedContent)
+          virtualizerSpacerRef.current.style.height = `${transaction.layout.totalHeightPx}px`;
         commit();
         finishTurnMeasurementTransaction(transaction);
       } else {
@@ -428,12 +484,12 @@ export function VirtualizedConversationTurns({
     if (measurementOwnsLayout) measurementCommittedHeightsRef.current = null;
     const element = scrollRef.current;
     if (element === null || pendingScrollRequest !== null) return;
+    const base = scrollController.getLastScrollDistanceFromBottomPx();
     const distance = reconcileTurnLayoutViewport({
       previousLayout: previous,
       nextLayout: layout,
       measuredHeightsByKey,
-      currentDistanceFromBottomPx:
-        scrollController.getLastScrollDistanceFromBottomPx(),
+      currentDistanceFromBottomPx: base,
       viewportHeightPx: element.clientHeight,
       bottomPaddingPx: getBottomScrollPaddingPx(),
       preserveViewport: preserveMeasuredTurnViewport,
@@ -441,7 +497,7 @@ export function VirtualizedConversationTurns({
       restorePending: (getPendingRestoreScrollDistanceFromBottomPx?.() ?? null) !== null,
     });
     if (distance !== null)
-      scrollController.compensateScrollToDistanceFromBottomPx(distance);
+      scrollController.compensateLayoutToDistanceFromBottomPx(distance, base);
   }, [
     getBottomScrollPaddingPx,
     getPendingRestoreScrollDistanceFromBottomPx,
@@ -579,40 +635,28 @@ export function VirtualizedConversationTurns({
     updateVirtualViewport,
   ]);
 
-  useEffect(() => {
-    if (
-      onVisibleContentReady === undefined ||
-      visibleContentReadyRef.current === visibleContentReadyKey ||
-      pendingScrollRequest !== null ||
-      (entries.length > 0 && rowElements.current.size === 0)
-    )
-      return;
-    let secondFrame: number | null = null;
-    const firstFrame = window.requestAnimationFrame(() => {
-      restoreScrollDistanceFromBottomPx?.();
-      secondFrame = window.requestAnimationFrame(() => {
-        if (
-          visibleContentReadyRef.current === visibleContentReadyKey ||
-          pendingScrollRequestRef.current !== null ||
-          (entriesRef.current.length > 0 && rowElements.current.size === 0)
-        )
-          return;
-        visibleContentReadyRef.current = visibleContentReadyKey;
-        onVisibleContentReady();
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame !== null) window.cancelAnimationFrame(secondFrame);
-    };
-  }, [
-    entries.length,
-    onVisibleContentReady,
-    visibleContentReadyKey,
-    pendingScrollRequest,
-    restoreScrollDistanceFromBottomPx,
-    viewport.renderedRange,
-  ]);
+  // Readiness is a layout receipt, not a timer. Initial measurements and scroll
+  // restoration above finish in React's layout transaction before browser paint.
+  // A stream revision does not revoke a receipt for the same View allocation.
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (onVisibleContentReady === undefined
+      || visibleContentReadyRef.current === visibleContentReadyKey
+      || element === null || element.clientWidth <= 0 || element.clientHeight <= 0
+      || pendingMeasurementTransactionRef.current !== null
+      || pendingScrollRequestRef.current !== null
+      || (entries.length > 0 && rowElements.current.size === 0)) return;
+    restoreScrollDistanceFromBottomPx?.();
+    if (pendingMeasurementTransactionRef.current !== null || pendingScrollRequestRef.current !== null) return;
+    visibleContentReadyRef.current = visibleContentReadyKey;
+    onVisibleContentReady();
+  });
+
+  useLayoutEffect(() => {
+    if (expandToMountedContent && preserveMeasuredTurnViewport
+      && pendingMeasurementTransactionRef.current === null && pendingScrollRequestRef.current === null)
+      viewportOwner.captureReadingAnchor(measuredHeightsRef.current);
+  });
 
   let renderedRange = viewport.renderedRange;
   if (pendingScrollRequest !== null) {
@@ -643,16 +687,21 @@ export function VirtualizedConversationTurns({
   const windowSlice = createTurnWindowSlice(entries, layout, renderedRange);
 
   return (
-    <div
-      className="thread-virtualizer-spacer"
-      ref={virtualizerSpacerRef}
-      // Measured virtual space is a floor. Mounted content can grow before its
-      // ResizeObserver transaction arrives; it must still push the footer down.
-      style={expandToMountedContent ? { minHeight: windowSlice.totalHeightPx } : { height: windowSlice.totalHeightPx }}
+    <ConversationTurnWindow
+      viewportOwner={viewportOwner}
+      elementRef={virtualizerSpacerRef}
+      naturalFlow={expandToMountedContent}
+      rowKeys={windowSlice.entries.map(timelineTurnRenderKey)}
+      // In natural flow only unmounted rows own synthetic space. A measured
+      // total-height floor retains obsolete mounted height when media shrinks,
+      // moving the visible tail until the next observer commit catches up.
+      style={expandToMountedContent
+        ? { paddingTop: windowSlice.marginTopPx, paddingBottom: windowSlice.paddingBottomPx }
+        : { height: windowSlice.totalHeightPx }}
     >
       <div
         className="thread-virtualizer-window"
-        style={{ gap: windowSlice.gapPx, marginTop: windowSlice.marginTopPx }}
+        style={{ gap: windowSlice.gapPx, marginTop: expandToMountedContent ? 0 : windowSlice.marginTopPx }}
       >
         {windowSlice.entries.map((turn, sliceIndex) => {
           const index = windowSlice.range.startIndex + sliceIndex;
@@ -673,6 +722,6 @@ export function VirtualizedConversationTurns({
           );
         })}
       </div>
-    </div>
+    </ConversationTurnWindow>
   );
 }

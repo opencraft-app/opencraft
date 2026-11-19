@@ -1,0 +1,13 @@
+.ui-companion-avatar {
+  display: block;
+  flex-shrink: 0;
+  --companion-surface: var(--companion-surface-light);
+  --companion-body: var(--companion-body-light);
+  --companion-ink: var(--companion-ink-light);
+}
+:where(:root[data-theme="dark"], .electron-dark) .ui-companion-avatar:not([data-companion-theme="light"]),
+.ui-companion-avatar[data-companion-theme="dark"] {
+  --companion-surface: var(--companion-surface-dark);
+  --companion-body: var(--companion-body-dark);
+  --companion-ink: var(--companion-ink-dark);
+}

@@ -7,6 +7,7 @@ import { existsSync as existsSyncEntry, realpathSync as realpathSyncEntry } from
 import { buildTerminalOwnerRuntime } from './package-terminal-runtime.mjs';
 import { buildPiShellRuntime } from './package-pi-shell-runtime.mjs';
 import { packageBrowserRuntime } from './package-browser-runtime.mjs';
+import { verifyRemoteBrowserArtifact } from './remote-browser-artifact.mjs';
 
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -24,6 +25,7 @@ import { assertHeadlessWebRelease } from "./headless-web-release.mjs";
 import { buildGitIdentityRuntime } from './package-git-identity-runtime.mjs';
 import { buildDshCapabilityPlugin } from './package-dsh-capability-runtime.mjs';
 import { buildConversationCli } from './build-conversation-cli.mjs';
+import { splitProductPluginPacks } from './web-deployment/product-plugin-packs.mjs';
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -45,18 +47,25 @@ export function headlessWebHostDefinitions() {
   }];
 }
 
-export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [] } = {}) {
+export async function buildHeadlessBundle(output, { headlessEntry = join(repositoryRoot, "scripts/headless-server.mjs"), additionalGitRuntimeEntries = [], assistantEntry = join(repositoryRoot,'apps/personal-assistant/src/runtime/assistant-server.mjs') } = {}) {
+  await mkdir(dirname(output), { recursive: true });
+  await cp(join(repositoryRoot, 'scripts/craft-plugin.mjs'), join(dirname(output), 'craft-plugin.mjs'));
   await build({ entryPoints: [join(repositoryRoot, "scripts/remote-browser/state.worker.ts")], outfile: join(dirname(output), "browser-state-worker.mjs"), bundle: true, platform: "node", format: "esm", target: "node26", logLevel: "warning" });
   await buildTranscriptCacheRuntime(dirname(output));
-  await build({entryPoints:[join(repositoryRoot,"packages/web-push-node/src/store.worker.ts")],outfile:join(dirname(output),"push-storage-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning",banner:{js:"import {createRequire} from 'node:module';const require=createRequire(import.meta.url);"}});
+  await build({entryPoints:[fileURLToPath(new URL('../packages/web-push-node/src/store.worker.ts',import.meta.url))],outfile:join(dirname(output),'push-storage-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildServerSpacesRuntime(dirname(output));
-  await buildDshRoutingRuntime(dirname(output));
   await buildConnectedAgentHistoryRuntime(dirname(output));
+  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/execution-fault.worker.ts")],outfile:join(dirname(output),"execution-fault-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await buildDshRoutingRuntime(dirname(output));
+  await build({entryPoints:[join(repositoryRoot,'scripts/server-deployment/dsh-consumer-receipts.worker.ts')],outfile:join(dirname(output),'dsh-consumer-receipts-worker.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',logLevel:'warning',banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
   await buildGitIdentityRuntime(dirname(output), additionalGitRuntimeEntries);
   await buildPiShellRuntime(dirname(output));
   await buildTerminalOwnerRuntime(dirname(output));
-  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/execution-fault.worker.ts")],outfile:join(dirname(output),"execution-fault-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
-  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
+  await build({entryPoints:[join(repositoryRoot,"apps/opencraft-daemon/src/token-usage-query-worker.ts")],outfile:join(dirname(output),"token-usage-query-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning",
+    // The collector role reaches CJS dependencies (undici) through the core control client.
+    banner:{js:"import { createRequire } from 'node:module'; const require=createRequire(import.meta.url);"}});
+  await (await import('node:fs/promises')).copyFile(join(repositoryRoot,'apps/personal-assistant/src/adapters/sqlite/schema.sql'),join(dirname(output),'schema.sql'));
+  await build({entryPoints:[assistantEntry],outfile:join(dirname(output),'assistant-server.mjs'),bundle:true,platform:'node',format:'esm',target:'node26',external:['@earendil-works/pi-*','@earendil-works/chord'],banner:{js:"import {createRequire} from 'node:module';const require=createRequire(import.meta.url);"}});
   await build({entryPoints:[join(repositoryRoot,"packages/access-control/src/orchestration-runtime.worker.ts")],outfile:join(dirname(output),"orchestration-runtime-worker.mjs"),bundle:true,platform:"node",format:"esm",target:"node26",logLevel:"warning"});
   return build({
     entryPoints: [resolve(headlessEntry)],
@@ -158,6 +167,8 @@ async function inventory(root, directory = root) {
 export async function packageHeadlessLinux(composition = {}) {
   const architecture = composition.architecture ?? 'amd64';
   assertHeadlessBuildHost(process.platform, process.arch, architecture);
+  // Explicit custom distributions must be verified before builds/downloads.
+  if (process.env.OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION) await verifyRemoteBrowserArtifact(process.env.OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION, join(repositoryRoot, 'vendor/electron/fork.json'));
   const outputOverride = process.env.OPENCRAFT_HEADLESS_PACKAGE_OUTPUT;
   if (outputOverride !== undefined && !isAbsolute(outputOverride)) {
     throw new Error("OPENCRAFT_HEADLESS_PACKAGE_OUTPUT must be absolute");
@@ -166,7 +177,7 @@ export async function packageHeadlessLinux(composition = {}) {
   if (typeof require("node-pty").spawn !== "function") throw new Error("Linux node-pty is unavailable");
   await run("npm", ["run", "prepare:dsh-runtime"]);
   await run("npm", ["ci", "--prefix", join(repositoryRoot, "runtime/codex"), "--workspaces=false", "--omit=dev", "--no-audit", "--no-fund"]);
-  await run("npm", ["run", "build:web:release"], {
+  await run("npm", ["run", process.env.OPENCRAFT_CONTAINER_WEB_SCRIPT || "build:web:release"], {
     env: {
       OPENCRAFT_HEADLESS_SERVER_BUILD: "true",
       VITE_HYPERNODE_PLUGIN: "disabled",
@@ -204,8 +215,10 @@ export async function packageHeadlessLinux(composition = {}) {
       recursive: true,
       filter: (path) => !path.endsWith(".map"),
     });
+    const productPlugins = await splitProductPluginPacks(join(stage, 'web'), join(stage, 'runtime/product-plugins'));
+    if (productPlugins) await chmod(join(stage, 'runtime/product-plugins/inventory.json'), 0o444);
     await copyRuntimeModules(stage);
-    await packageBrowserRuntime(join(stage, 'runtime/browser'));
+    if (composition.includeBrowser !== false) await packageBrowserRuntime(join(stage, 'runtime/browser'));
     const versionInfo = JSON.parse(await readFile(join(stage, "web/version.json"), "utf8"));
     const files = await inventory(stage);
     await writeFile(join(stage, "manifest.json"), `${JSON.stringify({
@@ -215,6 +228,7 @@ export async function packageHeadlessLinux(composition = {}) {
       architecture,
       nodeVersion: process.version,
       buildId: versionInfo.buildId,
+      ...(productPlugins ? { productPlugins } : {}),
       files,
     }, null, 2)}\n`);
     if (stageInto !== undefined) return stage;

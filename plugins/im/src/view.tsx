@@ -1,3 +1,4 @@
+import { ModalContent } from "@opencraft/design-system-web/modal-content";
 import { useEffect, useRef, useState } from "react";
 import { FormattedMessage } from "@opencraft/i18n/react";
 import { ChevronLeftIcon, ArrowRightIcon } from "@opencraft/design-system-web/action-icons";
@@ -1046,9 +1047,7 @@ export function createImView(controller: ImController) {
             if (!open && !pending) setModal(null);
           }}
         >
-          <Dialog.Portal>
-            <Dialog.Overlay className="modal-surface__scrim" data-appearance="utility" />
-            <Dialog.Content className="modal-surface im-dialog" data-appearance="utility" data-size="default"
+          <ModalContent overlayClassName={"modal-surface__scrim"} overlayProps={{"data-appearance":"utility"}} className="modal-surface im-dialog" data-appearance="utility" data-size="default"
               onOpenAutoFocus={() => { modalOpener.current = window.document.activeElement instanceof HTMLElement ? window.document.activeElement : null; }}
               onCloseAutoFocus={(event) => { if (modalOpener.current?.isConnected) { event.preventDefault(); modalOpener.current.focus({ preventScroll: true }); } }}
             >
@@ -1470,8 +1469,7 @@ export function createImView(controller: ImController) {
               ) : null}
               </div>
               </SettingsPanel>
-            </Dialog.Content>
-          </Dialog.Portal>
+            </ModalContent>
         </Dialog.Root>
       </div>
     );

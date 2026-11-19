@@ -1,3 +1,4 @@
+@use "@opencraft/design-system/typography-mixins.web" as typography;
 @use '@opencraft/design-system/material.web' as material;
 @use "@opencraft/design-system/interaction-mixins.web" as controls;
 
@@ -19,7 +20,7 @@
   pointer-events: none;
   position: absolute;
   inset-inline: 0;
-  bottom: 0;
+  bottom: var(--thread-keyboard-clearance, 0px);
   transition: opacity var(--transition-duration-basic) var(--ease-enter-snappy),
     transform var(--transition-duration-basic) var(--ease-enter-snappy);
   &[data-transition-state="exiting"][data-composer-peeked="false"],
@@ -107,16 +108,16 @@
 .thread-composer-overlay__response {
   // A compact reply is an independent reading surface, even when its ancestor
   // conversation has wide-block space available.
-  container: latest-turn-preview / inline-size;
+  container: conversation-overlay / inline-size;
   --chat-wide-content-available-width: 100%;
   --wide-block-panel-max-width: 100%;
-  max-height: min(22.5rem, 40vh, var(--right-panel-composer-preview-max-height, 22.5rem));
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 calc(var(--spacing) * 3) calc(var(--spacing) * 3);
-  .thread-turn {
-    gap: 0;
-  }
+  height: min(22.5rem, 40vh, var(--right-panel-composer-preview-max-height, 22.5rem));
+  overflow: clip;
+  .thread-scroll-layout { height: 100%; min-height: 0; }
+  .thread-scroll { overscroll-behavior: contain; }
+  .thread-content { padding-inline: calc(var(--spacing) * 3); }
+  .thread-scroll-surface { padding-top: 0; }
+  .thread-scroll-footer__content { padding: 0; }
 }
 .thread-composer-overlay__hide,
 .thread-composer-overlay__reveal {
@@ -255,6 +256,8 @@
     white-space: nowrap;
   }
   .opencraft-composer-footer {
+    // The compact flex row must measure its visible button, not just padding.
+    container-type: normal;
     flex: 0 0 auto;
     padding: 0 calc(var(--spacing) * 2) 0 0;
   }
@@ -276,15 +279,112 @@
   }
 }
 .side-chat-panel {
+  position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
 }
-.side-chat-panel__notice {
-  color: var(--color-text-tertiary);
-  padding: var(--spacing) calc(var(--spacing) * 3);
-  font-size: var(--typography-metadata-size);
+
+// Touch reading headers: floating glass controls over a soft blur band, with
+// the conversation name beside them. Main chat and side chat share this shape;
+// the side chat only adds its badge. Desktop keeps the panel tab title.
+
+.side-chat-header { display: none; }
+html:root[data-ui-density="touch"] {
+  // One emitted rule for the common title and blur band; both reading surfaces
+  // consume this contract rather than expanding identical Sass mixins twice.
+  :is(.side-chat-header, .app-shell-header[data-app-shell-conversation-header="true"])::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: 0 0 auto 0;
+    width: auto;
+    height: calc(100% + var(--spacing) * 6);
+    clip-path: none;
+    border: 0;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--color-background-surface) 55%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.4);
+    backdrop-filter: blur(14px) saturate(1.4);
+    -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 0%, #000 55%, transparent 100%);
+  }
+  :is(.side-chat-header__copy, .app-shell-header[data-app-shell-conversation-header="true"] .thread-header-copy) {
+    strong {
+      display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      @include typography.role(navigation-title);
+    }
+    small {
+      display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font: var(--typography-metadata-font); letter-spacing: var(--typography-metadata-tracking);
+      color: var(--color-text-secondary);
+    }
+  }
+
+  .side-chat-panel {
+    --thread-content-top-inset: calc(var(--size-material-liquid-control) + var(--spacing) * 8);
+  }
+  .side-chat-header {
+    position: absolute;
+    z-index: 2;
+    inset-block-start: 0;
+    inset-inline: 0;
+    isolation: isolate;
+    display: flex;
+    align-items: center;
+    gap: calc(var(--spacing) * 3);
+    padding-block: calc(var(--spacing) * 2);
+    padding-inline: max(var(--shell-mobile-safe-left, 0px), calc(var(--spacing) * 3)) max(var(--shell-mobile-safe-right, 0px), calc(var(--spacing) * 3));
+    pointer-events: none;
+    > * { pointer-events: auto; }
+  }
+  .side-chat-header__group {
+    --size-chrome-action: var(--size-material-liquid-control);
+    display: flex;
+    flex: 0 0 auto;
+    height: var(--size-material-liquid-control);
+    padding: var(--padding-material-liquid-group);
+    border-radius: 999px;
+  }
+  .side-chat-header__copy {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: calc(var(--spacing) * 2);
+  }
+  .side-chat-header__badge {
+    flex: 0 0 auto;
+    padding: 2px calc(var(--spacing) * 2);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-accent-blue) 14%, transparent);
+    color: var(--color-text-accent, var(--color-accent-blue));
+    font: var(--typography-metadata-font);
+    letter-spacing: var(--typography-metadata-tracking);
+    white-space: nowrap;
+  }
+
+  // Main conversation: show the name beside the floating controls.
+  .app-shell-root .app-shell-header[data-app-shell-conversation-header="true"] {
+    isolation: isolate;
+    &::before { display: block; }
+    .app-shell-header__context { flex: 1 1 auto; min-width: 0; }
+    .app-shell-header__context-surface { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; }
+    .thread-header-title {
+      display: flex;
+      flex: 1 1 auto;
+      min-width: 0;
+      padding-inline: calc(var(--spacing) * 3) calc(var(--spacing) * 2);
+    }
+    .thread-header-heading, .thread-header-heading__main, .conversation-appearance-heading { min-width: 0; }
+    .thread-header-copy {
+      display: grid;
+      max-width: none;
+      min-width: 0;
+      gap: 0;
+      }
+    .thread-header-rename, .conversation-appearance-trigger { display: none; }
+  }
 }
 
 // Keyboard chrome already occupies the visual viewport's lower edge. Avoid

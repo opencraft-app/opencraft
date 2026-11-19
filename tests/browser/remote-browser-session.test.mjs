@@ -27,7 +27,8 @@ class FixtureService extends RemoteBrowserService {
     if (!p) throw Object.assign(new Error('Browser page closed'), { code: 'BROWSER_ERROR' });
     if (method === 'automation' && this.echoAutomation) return { method: input.method, control, document, memory: p.memory };
     if (method === 'navigate') { if (input.url && !['https:', 'http:'].includes(new URL(input.url).protocol)) throw new Error('Unsupported browser URL'); if (!this.pendingNavigation) p.url = input.url ?? 'about:blank'; this.receive({ type: 'navigation', page: id, state: { url: p.url, title: 'Fixture', isLoading: this.pendingNavigation } }); }
-    if (method === 'snapshot') return { ...p, navigation: { url: p.url, title: 'Fixture', isLoading: false } };
+    if (method === 'presentation') return { version: 1, document: p.document, revision: 'one', updatedAt: 1, thumbnail: 'data:image/jpeg;base64,YQ==', favicon: 'data:image/png;base64,Yg==' };
+    if (method === 'snapshot') return { presentationVersion: 1, ...p, navigation: { url: p.url, title: 'Fixture', isLoading: false } };
   }
 }
 async function fixture() {
@@ -54,6 +55,34 @@ async function fixture() {
     async close() { service.close(); await service.persistence; await new Promise(resolve => server.close(resolve)); await rm(directory, { recursive: true, force: true }); },
   };
 }
+
+test('viewer cancellation is scoped to its connection even when request IDs and native pages match', async () => {
+  const f = await fixture(), peers = [], admitted = [];
+  const until = async predicate => {
+    const deadline = Date.now() + 5000;
+    while (!predicate()) { assert(Date.now() < deadline, 'viewer cancellation condition timed out'); await new Promise(resolve => setTimeout(resolve, 5)); }
+  };
+  try {
+    const lease = randomUUID();
+    for (let i = 0; i < 3; i++) { const peer = await f.connect('owner-a'); peers.push(peer); await peer.call('open', { lease, multiView: true }); }
+    const request = f.service.request.bind(f.service);
+    f.service.request = (id, method, input, control, document, options) => {
+      if (method !== 'automation') return request(id, method, input, control, document);
+      admitted.push(options.signal);
+      return new Promise((_, reject) => options.signal.addEventListener('abort', () => reject(Object.assign(Error('cancelled'),
+        { code: 'CDP_ABORTED', outcome: 'unknown' })), { once: true }));
+    };
+    for (const peer of peers.slice(0, 2)) peer.ws.send(JSON.stringify({ id: 'same-native-request-id', method: 'automation', input: { method: 'wait', input: { text: 'never', timeoutMs: 30000 } } }));
+    await until(() => admitted.length === 2);
+    await peers[2].call('cancelAutomation', { requestId: 'same-native-request-id' });
+    assert.equal(admitted.some(signal => signal.aborted), false, 'another connection cannot cancel either request');
+    await peers[1].call('cancelAutomation', { requestId: 'same-native-request-id' });
+    await until(() => admitted[1].aborted);
+    assert.equal(admitted[0].aborted, false);
+    await peers[0].call('cancelAutomation', { requestId: 'same-native-request-id' });
+    await until(() => admitted[0].aborted);
+  } finally { for (const peer of peers) await peer.detach(); await f.close(); }
+});
 
 test('detach keeps the same live page; restart restores URL/config while explicit close retires it', async () => {
   const f = await fixture();
@@ -412,7 +441,21 @@ test('legacy storage removal shares retirement and removes the remaining logical
   } finally { await f.close(); }
 });
 
-test('Agent close respects human control and a takeover queued ahead of close intent wins', async () => {
+test('Agent close automatically retires human control', async () => {
+  const f = await fixture();
+  try {
+    const binding = await dormantServiceTab(f.service); f.service.echoAutomation = true;
+    await f.service.invokeAutomation(binding, 'inspect', {});
+    const human = await f.connect('owner');
+    await human.call('open', { lease: binding.lease, multiView: true, visible: true });
+    await human.call('control', { action: 'human' });
+    assert.equal((await f.service.closeTab(binding, { tabId: 'service-tab' })).closed, true);
+    assert.equal(f.service.pages.size, 0); assert.equal(f.service.physical.size, 0);
+    await human.detach();
+  } finally { await f.close(); }
+});
+
+test('a newer human takeover queued ahead of Agent close intent wins', async () => {
   const f = await fixture(); let release;
   try {
     const binding = await dormantServiceTab(f.service); f.service.echoAutomation = true;
@@ -557,7 +600,8 @@ test('service navigation accepts its own document replacement and retains contro
     f.service.ownerConnector = null; f.service.child = undefined;
     const viewer = await f.connect('owner'); await viewer.call('open', { lease: binding.lease, multiView: true, visible: true });
     await viewer.call('control', { action: 'human' });
-    await assert.rejects(f.service.invokeAutomation(binding, 'reload', {}), { code: 'CONTROL_BUSY' });
+    assert.equal((await f.service.invokeAutomation(binding, 'reload', {})).method, 'reload');
+    assert.equal(page.controller, null, 'human navigation does not block the next Agent action');
     await viewer.detach();
     const controller = new AbortController(); controller.abort();
     await assert.rejects(f.service.invokeAutomation(binding, 'stop', {}, { signal: controller.signal }), { name: 'AbortError' });
@@ -590,10 +634,12 @@ test('service automation needs no viewer and retains account, host, scope and co
     assert.equal(f.service.commands.at(-1).input.token, null);
     const human = await f.connect('owner'); await human.call('open', { lease, multiView: true, visible: true });
     const grant = await human.call('control', { action: 'human' });
-    await assert.rejects(f.service.invokeAutomation(binding, 'click', { ref: 'fixture' }), { code: 'CONTROL_BUSY' });
-    assert.equal(page.controlToken, grant.token);
     const readWhileHuman = await f.service.invokeAutomation(binding, 'inspect', {});
     assert.equal(readWhileHuman.control, undefined); assert.equal(page.controlToken, grant.token);
+    const taken = await f.service.invokeAutomation(binding, 'click', { ref: 'fixture' });
+    assert(taken.control); assert.notEqual(taken.control, grant.token);
+    assert.equal(page.controller, null, 'Agent automatically takes human control and releases after completion');
+    await assert.rejects(human.call('input', { type: 'keyDown', key: 'x' }, grant.token), { code: 'CONTROL_LOST' });
     await human.call('control', { action: 'release', token: grant.token });
     const request = f.service.request.bind(f.service);
     let started;
@@ -707,14 +753,19 @@ test('modern viewers share one document/stream, keep viewport authority and aggr
   } finally { await f.close(); }
 });
 
-test('control generations fence writes, Agent never preempts a human, and only controller receives private events', async () => {
+test('control generations fence writes, Agent preempts a human, and only controller receives private events', async () => {
   const f=await fixture();
   try {
     const lease=randomUUID(),a=await f.connect('owner'),b=await f.connect('owner');
     await a.call('open',{lease,multiView:true,visible:true}); await b.call('open',{lease,multiView:true,visible:true});
     const page=[...f.service.pages.values()][0],one=await a.call('control',{action:'human',takeover:true});
-    await assert.rejects(b.call('control',{action:'agent'}),{code:'CONTROL_BUSY'});
     assert.equal(await b.call('automation',{method:'inspect'}),undefined); assert.equal(page.controlToken,one.token);
+    await assert.rejects(b.call('annotation-overlay',{type:'clear'},one.token),{code:'CONTROL_LOST'});
+    await a.call('annotation-overlay',{type:'boxes',boxes:[]},one.token);
+    assert.equal(f.service.commands.at(-1).control,one.token);
+    const preempted=await b.call('control',{action:'agent'}); assert.equal(preempted.kind,'agent');
+    assert.notEqual(preempted.token,one.token);
+    await a.call('control',{action:'release',token:one.token}); assert.equal(page.controlToken,preempted.token);
     const two=await b.call('control',{action:'human',takeover:true}); assert(two.epoch>one.epoch); assert.notEqual(two.token,one.token);
     await assert.rejects(a.call('navigate',{url:'https://example.test/stale'},one.token),{code:'CONTROL_LOST'});
     await a.call('control',{action:'release',token:one.token}); assert.equal(page.controlToken,two.token,'late release cannot revoke new controller');
@@ -827,6 +878,9 @@ test('document-aware peers cannot send missing or old document input; legacy adm
     const p=[...f.service.pages.values()][0];assert.equal(p.document,document);
     assert(!f.service.commands.some(c=>c.method==='input'));
     await assert.rejects(a.call('input',{type:'char',keyCode:'x'},grant.token,randomUUID()),{code:'DOCUMENT_CHANGED'});
+    await assert.rejects(a.call('annotation-overlay',{type:'clear'},grant.token,randomUUID()),{code:'DOCUMENT_CHANGED'});
+    await a.call('annotation-overlay',{type:'clear'},grant.token,document);
+    assert.equal(f.service.commands.at(-1).document,document);
     await a.call('input',{type:'char',keyCode:'x'},grant.token,document);
     assert.equal(f.service.commands.at(-1).document,document);
     const replacement=randomUUID();f.service.receive({type:'input-reset',page:p.id,document:replacement});
@@ -951,6 +1005,58 @@ test('complete metadata registers a dormant logical session in the same commit w
   } finally { await f.close(); }
 });
 
+test('presentation is owner-scoped, read-only, available without viewer attachment, and conditional', async () => {
+ const f = await fixture(); try {
+ const lease=randomUUID(), viewer=await f.connect('owner-a'); await viewer.call('open',{lease,viewport:{width:430,height:932}}); await viewer.detach();
+ const reader=await f.connect('owner-a'), stranger=await f.connect('owner-b');
+ f.service.commands.length=0;
+ const data=await reader.call('presentation',{lease}); assert.equal(data.revision,'one'); assert.ok(data.favicon);
+ assert.deepEqual(await reader.call('presentation',{lease,revision:'one'}),{version:1,unchanged:true,revision:'one'});
+ assert.equal(await stranger.call('presentation',{lease}),null);
+ assert.ok(f.service.commands.every(c=>['snapshot','presentation'].includes(c.method)));
+ const p=[...f.service.pages.values()][0]; assert.equal(f.service.viewers(p).size,0); assert.equal(p.controller,null);
+ f.service.receive({type:'presentation-changed',page:p.id,metadata:{version:1,revision:'two',document:'fixture'}});
+ await new Promise(r=>setTimeout(r,20)); assert.ok(reader.events.some(e=>e.type==='presentation-changed')); assert.ok(!stranger.events.some(e=>e.type==='presentation-changed'));
+ f.revoke(); await assert.rejects(reader.call('presentation',{lease}),/Revoked|Connection closed/);
+ } finally { await f.close(); }
+});
+
+test('V2 annotation WebSocket routes enforce document identity and preserve write control', async () => {
+  const f = await fixture();
+  try {
+    const request = f.service.request.bind(f.service), document = randomUUID();
+    f.service.request = async (...args) => {
+      const result = await request(...args);
+      return ['create', 'snapshot'].includes(args[1]) ? { ...result, document } : result;
+    };
+    const client = await f.connect('annotation-owner');
+    await client.call('open', { lease: randomUUID(), multiView: true, visible: true, documentInput: true });
+    const page = [...f.service.pages.values()][0];
+    for (const method of ['annotatePick', 'annotateRegion', 'annotateText', 'annotateStyles']) {
+      await assert.rejects(client.call('automation', { method, input: {} }, undefined, randomUUID()), { code: 'DOCUMENT_CHANGED' });
+      await client.call('automation', { method, input: {} }, undefined, document);
+      assert.equal(f.service.commands.at(-1).input.method, method);
+      assert.equal(f.service.commands.at(-1).document, document);
+      assert.equal(f.service.commands.at(-1).control, undefined, 'read-only annotation does not acquire control');
+    }
+    for (const method of ['annotatePreview', 'annotateClearPreview']) {
+      await assert.rejects(client.call('automation', { method, input: {} }, undefined, document), { code: 'CONTROL_LOST' });
+    }
+    const grant = await client.call('control', { action: 'human', takeover: true });
+    await client.call('automation', { method: 'annotatePreview', input: { changes: [] } }, grant.token, document);
+    assert.equal(f.service.commands.at(-1).control, grant.token);
+    await assert.rejects(client.call('automation', { method: 'annotateClearPreview' }, grant.token, randomUUID()), { code: 'DOCUMENT_CHANGED' });
+    const previous = f.service.request.bind(f.service);
+    f.service.request = async (...args) => {
+      const result = await previous(...args);
+      if (args[1] === 'automation') f.service.receive({ type: 'input-reset', page: page.id, document: randomUUID() });
+      return result;
+    };
+    await assert.rejects(client.call('automation', { method: 'annotateStyles', input: {} }, undefined, document), { code: 'DOCUMENT_CHANGED' });
+    await client.detach();
+  } finally { await f.close(); }
+});
+
 for (const change of ['owner', 'epoch', 'missing']) test(`unknown-page recovery fences stale ${change} results`, async () => {
   const f = await fixture();
   try {
@@ -1025,5 +1131,113 @@ test('discard acknowledgement survives a foreign retirement selection after its 
     assert.equal(f.service.pages.size, 0);
     assert.equal(f.service.commands.length, 0);
     await client.detach();
+  } finally { await f.close(); }
+});
+
+
+test('idle layout has one visible owner and never preempts input control', async () => {
+  const f=await fixture();
+  try {
+    const lease=randomUUID(),a=await f.connect('owner'),b=await f.connect('owner');
+    const config=await a.call('open',{lease,multiView:true,visible:true});
+    assert.equal(config.layoutViewport,true);
+    await b.call('open',{lease,multiView:true,visible:true});
+    const page=[...f.service.pages.values()][0],request=f.service.request.bind(f.service);
+    const sizes=[];
+    f.service.request=async(id,method,input,...rest)=>{
+      if(method==='viewport'){sizes.push(input);page.viewport=input;return input;}
+      return request(id,method,input,...rest);
+    };
+    const before=f.service.commands.filter(c=>c.method==='control').length;
+    assert.equal((await a.call('layoutViewport',{width:1200,height:1040,deviceProfile:'desktop'})).deferred,false);
+    assert.equal(page.viewport.height,1040);assert.equal(page.controller,null);
+    assert.equal(f.service.commands.filter(c=>c.method==='control').length,before);
+    assert.equal((await b.call('layoutViewport',{width:400,height:800})).deferred,true);assert.equal(sizes.length,1);
+    const agent=await b.call('control',{action:'agent'});
+    assert.equal((await a.call('layoutViewport',{width:1200,height:1100})).deferred,true);
+    assert.equal(page.controlToken,agent.token);assert.equal(sizes.length,1);
+    await b.call('control',{action:'release',token:agent.token});
+    assert.equal((await a.call('layoutViewport',{width:1200,height:1100})).deferred,false);
+    const human=await b.call('control',{action:'human'});
+    assert.equal((await a.call('layoutViewport',{width:1200,height:1200})).deferred,true);
+    assert.equal(page.controlToken,human.token);
+    await b.call('control',{action:'release',token:human.token});
+    await a.detach();
+    assert.equal((await b.call('layoutViewport',{width:400,height:900})).deferred,false);
+    b.quiet('visible',{visible:false});await settle();
+    assert.equal((await b.call('layoutViewport',{width:400,height:950})).deferred,true);
+    await b.detach();
+  } finally {await f.close();}
+});
+
+test('native idle resize completes before an Agent input grant is admitted', async () => {
+  const f=await fixture();let finish;
+  try {
+    const a=await f.connect('owner');await a.call('open',{lease:randomUUID(),multiView:true,visible:true});
+    const page=[...f.service.pages.values()][0],request=f.service.request.bind(f.service);
+    let begin;const started=new Promise(resolve=>{begin=resolve;});
+    f.service.request=(id,method,input,...rest)=>method==='viewport'?new Promise(resolve=>{finish=()=>resolve(input);begin();}):request(id,method,input,...rest);
+    const layout=a.call('layoutViewport',{width:1280,height:1000});await started;
+    const taking=a.call('control',{action:'agent'});await settle();
+    assert.equal(page.controller,null,'native geometry is fenced before Agent input');finish();
+    assert.equal((await layout).deferred,false);const grant=await taking;assert.equal(grant.kind,'agent');
+    await a.call('control',{action:'release',token:grant.token});await a.detach();
+  } finally {finish?.();await f.close();}
+});
+
+
+
+test('Agent close respects human control and a takeover queued ahead of close intent wins', async () => {
+  const f = await fixture(); let release;
+  try {
+    const binding = await dormantServiceTab(f.service); f.service.echoAutomation = true;
+    await f.service.invokeAutomation(binding, 'inspect', {});
+    const viewer = await f.connect('owner'); await viewer.call('open', { lease: binding.lease, multiView: true, visible: true });
+    const human = await viewer.call('control', { action: 'human' });
+    await assert.rejects(f.service.closeTab(binding, { tabId: 'service-tab' }), { code: 'CONTROL_BUSY' });
+    const page = [...f.service.pages.values()][0]; assert.equal(page.controlToken, human.token);
+    await viewer.call('control', { action: 'release', token: human.token });
+    const request = f.service.request.bind(f.service); let started, hold = true;
+    const admitted = new Promise(resolve => { started = resolve; }), gate = new Promise(resolve => { release = resolve; });
+    f.service.request = async (id, method, input, ...rest) => {
+      const result = await request(id, method, input, ...rest);
+      if (method === 'control' && input.token && hold) { hold = false; started(); await gate; }
+      return result;
+    };
+    const closing = f.service.closeTab(binding, { tabId: 'service-tab' });
+    const denied = assert.rejects(closing, { code: 'CONTROL_LOST' }); await admitted;
+    const takeover = viewer.call('control', { action: 'human', takeover: true }); await settle(); release();
+    const winner = await takeover; await denied;
+    assert.equal(page.controlToken, winner.token); assert.equal(page.closing, undefined);
+    assert.equal(await f.service.store.hasRetirement(page.key), false);
+    await viewer.call('control', { action: 'release', token: winner.token });
+    assert.equal((await f.service.closeTab(binding, { tabId: 'service-tab' })).closed, true);
+    await viewer.detach(); assert.equal(f.service.pages.size, 0);
+  } finally { release?.(); await f.close(); }
+});
+
+
+test('control generations fence writes, Agent never preempts a human, and only controller receives private events', async () => {
+  const f=await fixture();
+  try {
+    const lease=randomUUID(),a=await f.connect('owner'),b=await f.connect('owner');
+    await a.call('open',{lease,multiView:true,visible:true}); await b.call('open',{lease,multiView:true,visible:true});
+    const page=[...f.service.pages.values()][0],one=await a.call('control',{action:'human',takeover:true});
+    await assert.rejects(b.call('control',{action:'agent'}),{code:'CONTROL_BUSY'});
+    assert.equal(await b.call('automation',{method:'inspect'}),undefined); assert.equal(page.controlToken,one.token);
+    const two=await b.call('control',{action:'human',takeover:true}); assert(two.epoch>one.epoch); assert.notEqual(two.token,one.token);
+    await assert.rejects(a.call('navigate',{url:'https://example.test/stale'},one.token),{code:'CONTROL_LOST'});
+    await a.call('control',{action:'release',token:one.token}); assert.equal(page.controlToken,two.token,'late release cannot revoke new controller');
+    f.service.receive({type:'ime-state',page:page.id,editable:true,editor:'private-editor'}); await settle();
+    assert.equal(a.events.filter(e=>e.type==='ime-state').length,0); assert.equal(b.events.filter(e=>e.type==='ime-state').length,1);
+    assert(a.events.some(e=>e.type==='control'&&e.active&&!e.controller&&!e.token));
+    await b.call('control',{action:'release',token:two.token});
+    const agent=await a.call('control',{action:'agent'}); assert.equal(agent.kind,'agent');
+    await assert.rejects(b.call('control',{action:'agent'}),{code:'CONTROL_BUSY'});
+    await a.call('automation',{method:'fill',input:{value:'你好'}},agent.token);
+    await a.call('control',{action:'release',token:agent.token}); assert.equal(page.controller,null);
+    const old=await f.connect('owner'); await assert.rejects(old.call('open',{lease,takeover:true}),/reload OpenCraft/); await old.detach();
+    const peerClosed=once(b.ws,'close'); await a.call('close'); assert.equal((await peerClosed)[0],1000);
+    assert.equal(f.service.physical.size,0); assert.equal(f.service.pages.size,0);
   } finally { await f.close(); }
 });

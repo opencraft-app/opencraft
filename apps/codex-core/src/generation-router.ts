@@ -12,7 +12,7 @@ import type { CodexRouterOwner, RouterLease, RouterLeaseContext } from "./router
 import { removeStaleSocket } from "./native-process.js";
 import type { ExecutionFault } from "./execution-fault-recovery.js";
 
-const text = (value: unknown) => typeof value === "string" ? value : "";
+const text = (value: unknown) => (typeof value === "string" ? value : "");
 const error = (message: string, retryable = false) => new NativeGenerationError({ code: -32080, message, data: { retryable } });
 const threadId = (message: RpcRecord) => text(rpcRecord(message.params).threadId) || text(rpcRecord(rpcRecord(message.params).thread).id);
 const epochSensitiveRead = (method: string) => /(?:\/(?:read|list|get)|^(?:getAuthStatus|getConversationSummary|gitDiffToRemote|fuzzyFileSearch))$/u.test(method);
@@ -43,7 +43,7 @@ export class CodexGenerationRouter {
   executionFault(fault: ExecutionFault): void { for (const session of this.sessions) session.executionFault(fault); }
   serverRequestCount(id: string): number { return [...this.sessions].reduce((n, s) => n + s.serverRequestCount(id), 0); }
   handoffCounts() { return { subscriptions: this.sessions.size, connectionTools: [...this.sessions].reduce((n, s) => n + s.toolCount(), 0) }; }
-  async close(): Promise<void> { await Promise.all([...this.sessions].map(s => s.close())); this.sessions.clear(); }
+  async close(): Promise<void> { await Promise.all([...this.sessions].map((s) => s.close())); this.sessions.clear(); }
 }
 
 class RoutingSession {
@@ -51,8 +51,14 @@ class RoutingSession {
   private readonly lifetime = new AbortController();
   private readonly operations = new Set<Promise<unknown>>();
   private readonly epoch = randomUUID();
-  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> }>();
-  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string } }>();
+  private readonly peers = new Map<string, { incarnation: number; operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean;
+        supportsWorkspaceExecution?: boolean;
+      }>;
+    }>();
+  private readonly serverRequests = new Map<string, { operation: Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean;
+        supportsWorkspaceExecution?: boolean;
+      }>; nativeId: unknown; ticket: GenerationTicket; answered: boolean; release?: RouterLease; completion?: { threadId: string; turnId: string; callId: string };
+    }>();
   private readonly pendingStarts = new Map<string, { forward: () => Promise<void>; context: RouterLeaseContext }>();
   private readonly commands = new Map<string, { ticket: GenerationTicket; active: boolean; release?: RouterLease }>();
   private readonly processes = new Map<string, { ticket: GenerationTicket; active: boolean; pending: boolean; release?: RouterLease }>();
@@ -61,7 +67,7 @@ class RoutingSession {
   private closed = false;
   constructor(private readonly router: CodexGenerationRouter, private readonly socket: WebSocket, private readonly callbackLaneId?: string) {
     socket.on("error", () => { void this.close().catch(() => {}); });
-    socket.on("message", frame => {
+    socket.on("message", (frame) => {
       let message: RpcRecord;
       try { message = rpcRecord(JSON.parse(String(frame))); } catch { socket.close(1002); return; }
       let release: RouterLease | undefined;
@@ -74,7 +80,7 @@ class RoutingSession {
         if (this.closed) throw error("Routing connection is closed");
         await this.receive(message, release);
       };
-      const flight = operation().catch(reason => {
+      const flight = operation().catch((reason) => {
         if (message.id !== undefined) this.emit({ id: message.id, error: reason instanceof NativeGenerationError ? reason.rpcError
           : { code: -32081, message: "Generation routing unavailable; delivery is unconfirmed", data: { resultUnknown: true } } });
       }).finally(async () => { await release?.(); }).catch(() => this.socket.close(1011));
@@ -89,7 +95,9 @@ class RoutingSession {
   }
   private get registry() { return this.router.runtime.registry; }
   private emit(message: RpcRecord): void { if (!this.closed && this.socket.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
-  private async peer(id: string, readOnly = false): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean }> {
+  private async peer(id: string, readOnly = false): Promise<{ peer: GenerationPeer; result: RpcRecord; supportsOrchestration?:boolean;
+    supportsWorkspaceExecution?: boolean;
+  }> {
     const health = await (readOnly && this.router.runtime.readHealth ? this.router.runtime.readHealth(id) : this.router.runtime.ensure(id)), generation = this.registry.get(id)!;
     if (this.closed) throw error("Routing connection is closed");
     const existing = this.peers.get(id);
@@ -97,7 +105,7 @@ class RoutingSession {
     if (existing) {
       await this.releaseIncarnation(id, existing.incarnation);
       this.generationLost(id, existing.incarnation, `replaced:${existing.incarnation}`, generation.incarnation);
-      void existing.operation.then(value => value.peer.close()).catch(() => {});
+      void existing.operation.then((value) => value.peer.close()).catch(() => {});
     }
     const incarnation = generation.incarnation;
     let connectionEpoch = "starting";
@@ -164,7 +172,7 @@ class RoutingSession {
     };
     let notifications: Promise<unknown> = Promise.resolve();
     const operation = GenerationPeer.open(health.nativeSocket, this.initializeParams!, {
-      message: message => { const next = notifications.then(() => forward(message)); this.operations.add(next); notifications = next.catch(() => { this.socket.close(1011); }).finally(() => this.operations.delete(next)); return next; },
+      message: (message) => { const next = notifications.then(() => forward(message)); this.operations.add(next); notifications = next.catch(() => { this.socket.close(1011); }).finally(() => this.operations.delete(next)); return next; },
       disconnected: async () => {
         if (this.closed) return;
         if (this.peers.get(id)?.operation !== operation) return;
@@ -181,8 +189,11 @@ class RoutingSession {
         }
         this.generationLost(id, incarnation, connectionEpoch, incarnation);
       },
-    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined, this.lifetime.signal).then(value=>({...value,supportsOrchestration:health.callbackProtocolVersion===1}));
-    void operation.then(value => { connectionEpoch = value.peer.connectionEpoch; }).catch(() => {});
+    }, health.callbackProtocolVersion === 1 ? this.callbackLaneId : undefined, this.lifetime.signal).then((value) =>({...value,supportsOrchestration:health.callbackProtocolVersion===1,
+      supportsWorkspaceExecution: health.workspaceExecutionVersion === 1,
+    }));
+    void operation
+      .then((value) => { connectionEpoch = value.peer.connectionEpoch; }).catch(() => {});
     this.peers.set(id, { incarnation, operation });
     try { const value = await operation; if (this.closed) { value.peer.close(); throw error("Routing connection is closed"); } return value; }
     catch (reason) { if (this.peers.get(id)?.operation === operation) this.peers.delete(id); throw reason; }
@@ -244,7 +255,10 @@ class RoutingSession {
       if (this.registry.valid(pending.ticket)) { pending.answered = true; const peer = (await pending.operation).peer; await lease?.sent(); peer.notify({ ...message, id: pending.nativeId }); }
       return;
     }
-    if (method === "opencraft/orchestration/ack") {
+    if (method === "opencraft/orchestration/private-capability") {
+      const {peer}=await this.peer(this.registry.current().generation.id);this.emit({id,result:await peer.call(method,params)});return;
+    }
+    if (method === "opencraft/orchestration/ack" || method === "opencraft/orchestration/publish") {
       const operationId = text(params.operationId), creationId = text(params.creationOperationId) || operationId;
       if (operationId !== creationId && operationId !== `${creationId}:title`) throw error("Invalid orchestration acknowledgement");
       let ticket:GenerationTicket|null;try{ticket = this.registry.creationTicket(creationId,true);}catch{this.emit({id,result:{acknowledged:true}});return;}
@@ -260,9 +274,9 @@ class RoutingSession {
     if (method === "thread/list") { this.emit({ id, result: await this.listThreads(params) }); return; }
     if (method === "thread/loaded/list") {
       const data = new Set<string>();
-      for (const generation of this.registry.list().filter(value => !["retired", "retiring", "candidate", "discarded"].includes(value.state))) {
+      for (const generation of this.registry.list().filter((value) => !["retired", "retiring", "candidate", "discarded"].includes(value.state))) {
         const { peer } = await this.peer(generation.id, true), result = rpcRecord(await peer.call(method, params));
-        if (!Array.isArray(result.data) || !result.data.every(v => typeof v === "string")) throw error("Invalid native loaded Thread list");
+        if (!Array.isArray(result.data) || !result.data.every((v) => typeof v === "string")) throw error("Invalid native loaded Thread list");
         for (const tid of result.data as string[]) { await this.registry.discover(tid, generation.id); data.add(tid); }
       }
       this.emit({ id, result: { data: [...data] } }); return;
@@ -290,26 +304,30 @@ class RoutingSession {
     if(delegatedSource&&(!text(params.__opencraftOrchestrationOperation)||method!=='thread/start'||!text(params.__opencraftOrchestrationIncarnation)))throw error('Trusted source callback identity is required');
     const source=delegatedSource?await this.findThread(delegatedSource):null;
     const ticket = creation ? await this.registry.acceptCreation(source?.generationId??existing?.generationId, text(params.__opencraftOrchestrationOperation) || undefined)
-      : existing ?? (command && !executing ? command.ticket : null) ?? (process && !spawning ? process.ticket : null) ?? { ownerEpoch: this.registry.ownerEpoch, generationId: this.registry.current().generation.id,
-        incarnation: this.registry.current().generation.incarnation, admissionEpoch: this.registry.epoch() };
+      : (existing ?? (command && !executing ? command.ticket : null) ?? (process && !spawning ? process.ticket : null) ?? { ownerEpoch: this.registry.ownerEpoch, generationId: this.registry.current().generation.id,
+        incarnation: this.registry.current().generation.incarnation, admissionEpoch: this.registry.epoch() });
     await lease?.update(this.context(method, ticket, params, id));
     if (executing && processId) { command = { ticket, active: true, release: await this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.commands.set(processId, command); }
     if (spawning) { process = { ticket, active: true, pending: true, release: await this.router.runtime.owner?.retainConnectionTool({ ...this.context(method, ticket, params, id), parentLeaseId: lease?.id }) }; this.processes.set(processHandle, process); }
     let release: (() => void) | undefined, sent = false;
     try {
       const readOnly = historyReadMethods.has(method);
-      const { peer, supportsOrchestration } = await this.peer(ticket.generationId, readOnly);
+      const { peer, supportsOrchestration, supportsWorkspaceExecution } = await this.peer(ticket.generationId, readOnly,
+      );
+      if (Object.hasOwn(params, "__opencraftWorkspaceGrant") && !supportsWorkspaceExecution)
+        throw error("This Native generation does not support private workspace execution admission");
       if(!supportsOrchestration){
         if(params.__opencraftOrchestrationOperation)throw error('This Engine Host does not support orchestration replay');
         delete params.__opencraftDelegationId;
-        if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(tool=>!['thread_spawn','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
+        if(Array.isArray(params.dynamicTools))params.dynamicTools=params.dynamicTools.filter(
+            (tool) =>!['thread_spawn','thread_tell','thread_inspect','thread_wait'].includes(text(rpcRecord(tool).name)));
       }
       release = this.router.runtime.admit(ticket, readOnly);
       if (id === undefined) { await lease?.sent(); peer.notify(message); return; }
       const nativeStarted = performance.now();
       if (method === "thread/read" && timing) timing.nativeStarted = nativeStarted;
       let result: unknown;
-      try { result = await peer.call(method, params, async nativeRequestId => { await lease?.update({ nativeRequestId }); await lease?.sent(); if (executing) { await command?.release?.update({ nativeRequestId }); await command?.release?.sent(); } if (spawning) { await process?.release?.update({ nativeRequestId }); await process?.release?.sent(); } sent = true; if (creation) await this.registry.markSent(ticket); }, null); }
+      try { result = await peer.call(method, params, async (nativeRequestId) => { await lease?.update({ nativeRequestId }); await lease?.sent(); if (executing) { await command?.release?.update({ nativeRequestId }); await command?.release?.sent(); } if (spawning) { await process?.release?.update({ nativeRequestId }); await process?.release?.sent(); } sent = true; if (creation) await this.registry.markSent(ticket); }, null); }
       finally {
         if (method === "thread/read" && timing) timing.nativeFinished = performance.now();
       }
@@ -342,7 +360,8 @@ class RoutingSession {
       throw reason;
     } finally { release?.(); }
   }
-  private readonly cursors = new Map<string, { epoch: number; params: RpcRecord; queues: Map<string, { data: RpcRecord[]; next: string | null; fetched: boolean }>; unavailable: Set<string>; seen: Set<string>; touched: number }>();
+  private readonly cursors = new Map<string, { epoch: number; params: RpcRecord; queues: Map<string, { data: RpcRecord[]; next: string | null; fetched: boolean }>; unavailable: Set<string>; seen: Set<string>; touched: number;
+    }>();
   private async listThreads(params: RpcRecord): Promise<RpcRecord> {
     const cursor = text(params.cursor);
     let state = cursor ? this.cursors.get(cursor) : undefined;
@@ -352,10 +371,10 @@ class RoutingSession {
       const { cursor: _cursor, ...filters } = params;
       // Start with the current execution owner when a retained fleet exceeds
       // the bounded read concurrency; output ordering is still metadata-owned.
-      const generations = this.registry.list().filter(g => !["candidate", "discarded", "retiring"].includes(g.state))
+      const generations = this.registry.list().filter((g) => !["candidate", "discarded", "retiring"].includes(g.state))
         .sort((a, b) => Number(b.state === "active") - Number(a.state === "active"));
       state = { epoch: this.registry.epoch(), params: filters, seen: new Set(), unavailable: new Set(), touched: Date.now(),
-        queues: new Map(generations.map(g => [g.id, { data: [], next: null, fetched: false }])) };
+        queues: new Map(generations.map((g) => [g.id, { data: [], next: null, fetched: false }])) };
     }
     const view = state;
     const limit = params.limit === undefined ? 100 : Number(params.limit);
@@ -435,7 +454,7 @@ class RoutingSession {
     if (fault.state === "recovering") {
       await this.releaseIncarnation(id, fault.incarnation, fault.id);
       const peer = this.peers.get(id); this.peers.delete(id);
-      if (peer) void peer.operation.then(value => value.peer.close()).catch(() => {});
+      if (peer) void peer.operation.then((value) => value.peer.close()).catch(() => {});
     }
   }
   private generationLost(id: string, incarnation: number, connectionEpoch: string, currentIncarnation: number, reason?: string, recoveryId?: string, affectedThreadIds?: readonly string[]): void {
@@ -455,12 +474,18 @@ class RoutingSession {
   flushStarts(): void {
     for (const [id, pending] of this.pendingStarts) if (this.registry.route(id)) { this.pendingStarts.delete(id); void pending.forward().catch(() => this.socket.close(1011)); }
   }
-  serverRequestCount(generationId: string): number { return [...this.serverRequests.values()].filter(value => value.ticket.generationId === generationId).length + [...this.commands.values()].filter(value => value.active && value.ticket.generationId === generationId).length + [...this.processes.values()].filter(value => value.active && value.ticket.generationId === generationId).length; }
-  toolCount(): number { return this.serverRequests.size + [...this.commands.values()].filter(v => v.active).length + [...this.processes.values()].filter(v => v.active).length + this.pendingStarts.size; }
-  close(): Promise<void> { return this.closing ??= (async () => {
+  serverRequestCount(generationId: string): number { return (
+      [...this.serverRequests.values()].filter((value) => value.ticket.generationId === generationId).length + [...this.commands.values()].filter((value) => value.active && value.ticket.generationId === generationId).length + [...this.processes.values()].filter((value) => value.active && value.ticket.generationId === generationId).length
+    );
+  }
+  toolCount(): number {
+    return (
+      this.serverRequests.size + [...this.commands.values()].filter((v) => v.active).length + [...this.processes.values()].filter((v) => v.active).length + this.pendingStarts.size
+    ); }
+  close(): Promise<void> { return (this.closing ??= (async () => {
     this.closed = true; this.lifetime.abort();
     // Stop producers first, then retain/settle every admitted responsibility before storage closes.
-    const peers = [...this.peers.values()].map(async pending => { const value=await pending.operation; value.peer.close(); await value.peer.drain(); });
+    const peers = [...this.peers.values()].map(async (pending) => { const value=await pending.operation; value.peer.close(); await value.peer.drain(); });
     this.socket.terminate();
     try {
       for (const request of this.serverRequests.values()) await request.release?.unknown("consumer-disconnected");
@@ -471,7 +496,7 @@ class RoutingSession {
       await Promise.allSettled([...this.operations,...peers]);
       this.peers.clear(); this.serverRequests.clear(); this.pendingStarts.clear(); this.processes.clear(); this.commands.clear(); this.cursors.clear();
     }
-  })(); }
+  })()); }
 }
 
 export async function startGenerationSocket(path: string, router: CodexGenerationRouter) {
@@ -486,5 +511,5 @@ export async function startGenerationSocket(path: string, router: CodexGeneratio
   });
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(path, () => { server.off("error", reject); resolve(); }); });
   await chmod(path, 0o600);
-  return { async close() { await router.close(); sockets.close(); await new Promise<void>(resolve => server.close(() => resolve())); await unlink(path).catch(() => {}); } };
+  return { async close() { await router.close(); sockets.close(); await new Promise<void>((resolve) => server.close(() => resolve())); await unlink(path).catch(() => {}); } };
 }

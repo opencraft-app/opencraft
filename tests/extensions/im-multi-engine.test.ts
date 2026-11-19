@@ -73,7 +73,8 @@ test('Pi IM uses native durable input and both browser/Host tools; final and dup
   assert.deepEqual(capabilities.tools({serverId:'server:fixture:dsh',threadId:thread.id}),[]);
   const history = (await engine.request('thread/read',{threadId:thread.id,includeTurns:true},browser)).thread.turns;
   assert.equal(history.length,1);assert.match(JSON.stringify(history),/final remains in workbench/);
-  const request = collaboration.getRequest(human,record.request_id!);assert.equal(request.state,'submitted');
+  // A Host acknowledgement with an exact target Turn records the request as injected.
+  const request = collaboration.getRequest(human,record.request_id!);assert.equal(request.state,'injected');
   const inputId = 'actor-input:'+record.request_id;
   assert.equal((await engine.inputs.receipt(thread.id,inputId))?.state,'delivered');
   await appHost.close();await host.close();
@@ -98,7 +99,7 @@ test('multi-engine admission isolates server identity, safely defers busy native
   assert.equal(service.authorizeInput(ref.threadId,'actor-input:'+id,'queue',undefined,ref.serverId),true);
   assert.equal(service.authorizeInput(ref.threadId,'actor-input:'+id,'queue',undefined,'server:fixture:dsh'),false);
   await service.pump();assert.equal(service.getRequest(human,id).state,'accepted');assert.equal(sent,0);
-  busy=false;await service.pump();await service.pump();assert.equal(service.getRequest(human,id).state,'submitted');assert.equal(sent,1);
+  busy=false;await service.pump();await service.pump();assert.equal(service.getRequest(human,id).state,'injected');assert.equal(sent,1);
   const steer=send('steer',{mode:'steer',expectedTurnId:'foreign'});await service.pump();assert.equal(service.getRequest(human,steer).state,'rejected');assert.equal(sent,1);
   ambiguous=true;const unknown=send('unknown');await service.pump();await service.pump();assert.equal(service.getRequest(human,unknown).state,'unknown');assert.equal(sent,2);
   await service.pump();assert.equal(sent,2);

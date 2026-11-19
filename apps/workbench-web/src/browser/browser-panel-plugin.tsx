@@ -38,7 +38,11 @@ export function createBrowserWorkbenchPanelPlugin(
     const remove = [
       ctx.workbenchPanels.register<{ readonly browserTabId: string }>({
         kind: "browser",
-        restoreTabs: (ownerId) => workbench.listForOwner(ownerId)
+        tabDirectory: {
+          read: ownerId => workbench.listPanelTabs(ownerId).map(({ tab }) => browserPanelTab(tab.id)),
+          subscribe: (ownerId, changed) => workbench.subscribePanelTabs(ownerId, changed),
+        },
+        restoreTabs: (ownerId) => workbench.listPanelTabs(ownerId)
           .map(({ tab }) => browserPanelTab(tab.id)),
         createTab: ({ browserTabId }) => browserPanelTab(browserTabId),
         disposeTab: (tab, ownerId, reason) => {
@@ -46,7 +50,14 @@ export function createBrowserWorkbenchPanelPlugin(
             workbench.releasePanel(ownerId, tab.resource as BrowserTabId, reason === "close");
         },
       }),
-      ctx.workbenchPanelRenderers.register({ kind: "browser", Component: BrowserPanel }),
+      ctx.workbenchPanelRenderers.register({ kind: "browser", Component: BrowserPanel, presentationReadiness: "renderer", subscribePreview: (tab, listener) => workbench.onPresentationChanged(tab.resource as BrowserTabId, listener), preview: async (tab, _owner, signal) => {
+        if (!tab.resource || signal.aborted) return null;
+        const presentation = await workbench.readPresentation(tab.resource as BrowserTabId);
+        if (signal.aborted) return null;
+        if (presentation) return presentation.thumbnail ? { kind: "image", src: presentation.thumbnail, iconSrc: presentation.favicon ?? undefined } : { kind: "placeholder", iconSrc: presentation.favicon ?? undefined };
+        const src = await workbench.capturePreview(tab.resource as BrowserTabId);
+        return src && !signal.aborted ? { kind: "image", src } : null;
+      } }),
       ctx.workbenchPanels.registerToolbarAction({
         id: "opencraft.browser.new-tab",
         region: "right",

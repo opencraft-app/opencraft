@@ -1,5 +1,7 @@
+import { installRandomUuidFallback } from "./web-crypto-compat";
 import { serverPath, serverUrl, serverStorageKey, browserServerContext } from "./server-context";
 import {
+  AdaptiveNavigation,
   createWorkbenchDraftLocation,
   createWorkbenchThreadLocation,
   equalWorkbenchLocation,
@@ -43,6 +45,15 @@ interface WorkbenchHistoryState {
   readonly applicationReturnIndex: number | null;
 }
 
+export interface ApplicationNavigationPage {
+  readonly id: string;
+  readonly route: ApplicationRoute;
+  readonly location: WorkbenchLocation | null;
+  readonly routeScopeId: RouteScopeId;
+  /** Only an exact owned history key may be used for POP. Direct-link parents have no key. */
+  readonly historyKey?: string;
+}
+
 export interface ApplicationNavigationSnapshot<TLocation extends WorkbenchLocation | null = WorkbenchLocation> {
   readonly url: string;
   readonly revision: number;
@@ -53,9 +64,14 @@ export interface ApplicationNavigationSnapshot<TLocation extends WorkbenchLocati
   readonly historyIndex: number;
   readonly routeScopeId: RouteScopeId;
   readonly applicationRoute: ApplicationRoute;
+  readonly navigationPath?: readonly ApplicationNavigationPage[];
+  readonly canReturn?: boolean;
+  /** Contribution metadata changed without a route transaction. */
+  readonly contextOnly?: boolean;
 }
 
 export interface ApplicationNavigation<TLocation extends WorkbenchLocation | null = WorkbenchLocation> {
+  registerNavigationGuard(shouldBlock: () => boolean, onBlocked: (attempt: { proceed(): void; cancel(): void }) => void): () => void;
   getSnapshot(): ApplicationNavigationSnapshot<TLocation>;
   subscribe(listener: () => void): () => void;
   push(location: TLocation, options?: { readonly routeScopeId?: RouteScopeId }): void;
@@ -74,6 +90,8 @@ export interface ApplicationNavigation<TLocation extends WorkbenchLocation | nul
     },
   ): void;
   restore(snapshot: ApplicationNavigationSnapshot<TLocation>): void;
+  /** True when the semantic return was accepted; presentation never commits it. */
+  returnToParent(): boolean;
   back(): void;
   forward(): void;
   go(delta: number): void;
@@ -125,7 +143,8 @@ export function parseApplicationRouteUrl(url: URL): ApplicationRoute {
   }
   const settingsMatch = /^\/settings\/([^/]+)\/?$/u.exec(url.pathname);
   if (settingsMatch !== null) try {
-    const slug = decodeURIComponent(settingsMatch[1]!);
+    const decoded = decodeURIComponent(settingsMatch[1]!);
+    const slug = decoded === "servers" ? "appearance" : decoded;
     return slug.length > 0 ? { kind: "settings", slug } : CONVERSATION_ROUTE;
   } catch {
     return CONVERSATION_ROUTE;
@@ -196,12 +215,14 @@ export function workbenchLocationUrl(
 }
 
 export function createRouteScopeId(): RouteScopeId {
-  const uuid =
-    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+  installRandomUuidFallback();
+  const uuid = globalThis.crypto.randomUUID();
   return asRouteScopeId(`web-route:${uuid}`);
 }
 
 export interface ApplicationRouterOptions {
+  readonly resolveParentRoute?: (route: ApplicationRoute) => ApplicationRoute | null;
+  readonly subscribeRouteHierarchy?: (listener: () => void) => () => void;
   /** The composition may idempotently canonicalize its own historical Settings/View IDs. */
   readonly resolveApplicationRoute?: (route: ApplicationRoute) => ApplicationRoute;
   /** Deployment compatibility applied to URLs and remembered POP locations. */
@@ -259,10 +280,10 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
   const bootUrl = serverPath(url.pathname).replace(/\/$/, "") === "/environments" && firstRoute.kind === "settings"
     ? new URL(serverUrl("/settings/" + encodeURIComponent(firstRoute.slug)), initialUrl) : url;
   const firstScope = legacy ? asRouteScopeId(legacy.routeScopeId) : options.initialRouteScopeId ?? createRouteScopeId();
-  const entry = (location: TLocation, routeScopeId: RouteScopeId) => ({
+  const entry = (location: TLocation, routeScopeId: RouteScopeId, navigationPath?: readonly ApplicationNavigationPage[]) => ({
     namespace: "opencraft.application-route.v8",
     location: location === null ? null : serializeWorkbenchLocation(location),
-    routeScopeId,
+    routeScopeId, navigationPath: navigationPath?.map(page => ({ ...page, location: page.location === null ? null : serializeWorkbenchLocation(page.location) })),
   });
   const routes = [{ id: "application", path: "*" }];
   const memoryEntries = options.initialEntries?.map(path => {
@@ -277,6 +298,33 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
         state: entry(firstLocation as TLocation, firstScope),
       }], initialIndex: options.initialIndex })
     : createBrowserRouter(routes, { window: browserWindow, basename: browserServerContext()?.basePath ?? "/" });
+  // One Router blocker owns PUSH/REPLACE/POP, including browser and native Back.
+  // Views register scoped policy; no history patching or second navigation queue.
+  const guardKey = "application-leave";
+  type LeaveGuard = { key: string; shouldBlock(): boolean; onBlocked(attempt: { proceed(): void; cancel(): void }): void };
+  const guards = new Set<LeaveGuard>();
+  let selectedGuard: LeaveGuard | undefined;
+  let handledBlocker: unknown;
+  router.getBlocker(guardKey, ({ currentLocation, nextLocation }) => {
+    if (currentLocation.pathname === nextLocation.pathname && currentLocation.search === nextLocation.search) return false;
+    selectedGuard = [...guards].reverse().find(guard => guard.key === currentLocation.key && guard.shouldBlock());
+    return !!selectedGuard;
+  });
+  const stopGuard = router.subscribe(state => {
+    const blocker = state.blockers.get(guardKey);
+    const guard = selectedGuard;
+    if (blocker?.state !== "blocked" || blocker === handledBlocker || !guard || !guards.has(guard)) return;
+    handledBlocker = blocker;
+    // Avoid publishing a View state update from inside Router's own transition.
+    queueMicrotask(() => {
+      const current = () => !disposed && guards.has(guard) && router.state.blockers.get(guardKey) === blocker;
+      if (!current()) return;
+      guard.onBlocked({
+        proceed() { if (current()) blocker.proceed(); },
+        cancel() { if (current()) blocker.reset(); },
+      });
+    });
+  });
   const listeners = new Set<() => void>();
   const scopes = new Map<string, RouteScopeId>();
   let disposed = false;
@@ -294,6 +342,31 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
     }
   } catch { /* unavailable session storage does not prevent navigation */ }
   let lastRouterLocation = router.state.location;
+  const pageId = (route: ApplicationRoute) => JSON.stringify(route.kind === "extension-view" ? [route.kind, route.viewId, route.resourceUri] : route.kind === "settings" ? [route.kind, route.slug] : [route.kind]);
+  const validRoute = (route: any): route is ApplicationRoute => !!route && (
+    route.kind === "conversation" || route.kind === "settings" && typeof route.slug === "string" && !!route.slug.trim()
+    || route.kind === "extension-view" && typeof route.viewId === "string" && !!route.viewId.trim() && (route.resourceUri === null || typeof route.resourceUri === "string"));
+  const declaredPath = (leaf: ApplicationNavigationPage): readonly ApplicationNavigationPage[] => {
+    const path = [leaf], seen = new Set([leaf.id]);
+    while (path.length < 32) {
+      const parent = options.resolveParentRoute?.(path[0]!.route);
+      if (!parent || !validRoute(parent)) break;
+      if (seen.has(pageId(parent))) return [leaf];
+      seen.add(pageId(parent)); path.unshift({ ...leaf, id: pageId(parent), route: parent, historyKey: undefined });
+    }
+    return path.length === 32 && options.resolveParentRoute?.(path[0]!.route) ? [leaf] : path;
+  };
+  const readPath = (state: any, leaf: ApplicationNavigationPage): readonly ApplicationNavigationPage[] => {
+    const stored: unknown = state?.namespace === "opencraft.application-route.v8" ? state.navigationPath : undefined;
+    if (Array.isArray(stored) && stored.length > 1 && stored.length <= 32 && stored.every((page: any) =>
+      page && validRoute(page.route) && page.id === pageId(page.route) && typeof page.routeScopeId === "string"
+      && (page.historyKey === undefined || typeof page.historyKey === "string")
+      && (page.location === null || parseWorkbenchLocation(page.location) !== null))
+      && new Set(stored.map(page => page.id)).size === stored.length && stored.at(-1).id === leaf.id) {
+      return [...stored.slice(0, -1).map(page => ({ ...page, location: page.location === null ? null : parseWorkbenchLocation(page.location) })), leaf];
+    }
+    return declaredPath(leaf);
+  };
   const read = (action: ApplicationNavigationSnapshot["action"]): ApplicationNavigationSnapshot<TLocation> => {
     const current = router.state.location;
     const routeUrl = new URL(current.pathname + current.search + current.hash, initialUrl);
@@ -303,7 +376,11 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
     let scope = state?.namespace === "opencraft.application-route.v8" && typeof state.routeScopeId === "string"
       ? asRouteScopeId(state.routeScopeId) : scopes.get(current.key);
     if (!scope) { scope = action === "initial" ? firstScope : createRouteScopeId(); scopes.set(current.key, scope); }
+    const route = parseApplicationRouteUrl(routeUrl);
+    const location = (initialLocation === null ? null : parseUrlLocation(routeUrl) ?? remembered ?? firstLocation) as TLocation;
+    const navigationPath = readPath(state, { id: pageId(route), route, location, routeScopeId: scope, historyKey: current.key });
     return {
+      navigationPath, canReturn: navigationPath.length > 1,
       url: current.pathname + current.search + current.hash,
       revision, action, historyIndex: index,
       location: (initialLocation === null ? null : parseUrlLocation(routeUrl) ?? remembered ?? firstLocation) as TLocation,
@@ -355,11 +432,11 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
       : route.kind === "extension-view" ? "/views/" + encodeURIComponent(route.viewId)
         + (route.resourceUri === null ? "" : "?" + new URLSearchParams({ resource: route.resourceUri }))
       : workbenchLocationUrl(location!);
-  const navigate = (location: TLocation, route: ApplicationRoute, replace: boolean, scope: RouteScopeId) => {
+  const navigate = (location: TLocation, route: ApplicationRoute, replace: boolean, scope: RouteScopeId, navigationPath?: readonly ApplicationNavigationPage[]) => {
     if (disposed) throw new Error("Workbench navigation is disposed");
     // No loaders/actions are attached to the application router: route commits
     // are synchronous. Conversation hydration is a separate cancellable consumer.
-    void router.navigate(pathFor(location, options.resolveApplicationRoute?.(route) ?? route), { replace, state: entry(location, scope) });
+    void router.navigate(pathFor(location, options.resolveApplicationRoute?.(route) ?? route), { replace, state: entry(location, scope, navigationPath) });
   };
   const sameLocation = (left: TLocation, right: TLocation) =>
     left === null || right === null ? left === right : equalWorkbenchLocation(left, right);
@@ -368,13 +445,46 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
     navigate(snapshot.location, CONVERSATION_ROUTE, false, snapshot.routeScopeId);
   };
   const restore = (target: ApplicationNavigationSnapshot<TLocation>) =>
-    navigate(target.location, target.applicationRoute, true, target.routeScopeId);
+    navigate(target.location, target.applicationRoute, true, target.routeScopeId, target.navigationPath);
   const resolvedInitial = resolveEntry(snapshot);
   if (resolvedInitial !== snapshot || (mode === "browser" && (bootUrl.href !== url.href
     || (parseWorkbenchLocationUrl(url) !== null && firstLocation !== null
       && !equalWorkbenchLocation(parseWorkbenchLocationUrl(url)!, firstLocation))
     || router.state.location.state?.namespace !== "opencraft.application-route.v8"))) restore(resolvedInitial);
+  const childPath = (route: ApplicationRoute, resourceChild = false) => {
+    const currentPath = snapshot.navigationPath!;
+    const leaf: ApplicationNavigationPage = { id: pageId(route), route, location: snapshot.location, routeScopeId: snapshot.routeScopeId };
+    const parentRoute = resourceChild ? snapshot.applicationRoute : options.resolveParentRoute?.(route);
+    if (!parentRoute) return [leaf];
+    const parentIndex = currentPath.findIndex(page => equalApplicationRoute(page.route, parentRoute));
+    // A child opened from another surface returns to that exact caller.
+    // Canonical parents are only a direct-link fallback.
+    const ownerIndex = parentIndex < 0 ? currentPath.length - 1 : parentIndex;
+    const existing = currentPath.findIndex(page => page.id === leaf.id);
+    if (existing >= 0) return currentPath.slice(0, existing + 1);
+    const model = new AdaptiveNavigation(currentPath[0]!, currentPath.slice(1));
+    model.enter(currentPath[ownerIndex]!.id, leaf);
+    return model.getSnapshot();
+  };
+  const stopHierarchy = options.subscribeRouteHierarchy?.(() => {
+    const next = read(snapshot.action);
+    if (JSON.stringify(next.navigationPath) === JSON.stringify(snapshot.navigationPath)) return;
+    snapshot = { ...next, contextOnly: true };
+    for (const listener of listeners) listener();
+  });
   return {
+    registerNavigationGuard(shouldBlock, onBlocked) {
+      const guard = { key: router.state.location.key, shouldBlock, onBlocked };
+      guards.add(guard);
+      return () => {
+        guards.delete(guard);
+        if (selectedGuard === guard) {
+          const blocker = router.state.blockers.get(guardKey);
+          if (blocker?.state === "blocked") blocker.reset();
+          selectedGuard = undefined;
+        }
+      };
+    },
     getSnapshot: () => snapshot,
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
     push(location, options = {}) {
@@ -400,26 +510,38 @@ export function createApplicationNavigation<TLocation extends WorkbenchLocation 
       const input: ApplicationRoute = { kind: "extension-view", viewId: viewId.trim(), resourceUri: resourceUri?.trim() || null };
       const route = options.resolveApplicationRoute?.(input) ?? input;
       if (pathFor(snapshot.location, route) === pathFor(snapshot.location, snapshot.applicationRoute)) return;
-      navigate(snapshot.location, route, false, snapshot.routeScopeId);
+      navigate(snapshot.location, route, false, snapshot.routeScopeId, childPath(route));
     },
     pushExtensionViewResource(viewId, resourceUri) {
       if (snapshot.applicationRoute.kind !== "extension-view" || snapshot.applicationRoute.viewId !== viewId)
         throw new Error("Only the active Extension View can push one of its resources");
       if (!resourceUri.trim()) throw new RangeError("Extension View resource URI must not be empty");
       if (snapshot.applicationRoute.resourceUri === resourceUri.trim()) return;
-      navigate(snapshot.location, { kind: "extension-view", viewId, resourceUri: resourceUri.trim() }, false, snapshot.routeScopeId);
+      const route: ApplicationRoute = { kind: "extension-view", viewId, resourceUri: resourceUri.trim() };
+      navigate(snapshot.location, route, false, snapshot.routeScopeId, childPath(route, true));
     },
     replaceExtensionViewResource(viewId, resourceUri) {
       if (snapshot.applicationRoute.kind !== "extension-view" || snapshot.applicationRoute.viewId !== viewId) return;
       if (!resourceUri.trim()) throw new RangeError("Extension View resource URI must not be empty");
       if (snapshot.applicationRoute.resourceUri === resourceUri.trim()) return;
-      navigate(snapshot.location, { kind: "extension-view", viewId, resourceUri: resourceUri.trim() }, true, snapshot.routeScopeId);
+      const route: ApplicationRoute = { kind: "extension-view", viewId, resourceUri: resourceUri.trim() };
+      const path = snapshot.navigationPath!;
+      navigate(snapshot.location, route, true, snapshot.routeScopeId, [...path.slice(0, -1), { ...path.at(-1)!, id: pageId(route), route, historyKey: undefined }]);
     },
     closeExtensionView: openChat,
     restore,
+    returnToParent() {
+      if (disposed || !snapshot.canReturn) return false;
+      const model = new AdaptiveNavigation(snapshot.navigationPath![0]!, snapshot.navigationPath!.slice(1));
+      model.back(); const path = model.getSnapshot(), parent = path.at(-1)!;
+      const target = parent.historyKey ? keys.indexOf(parent.historyKey) : -1;
+      if (target >= 0 && target < index) void router.navigate(target - index);
+      else navigate(parent.location as TLocation, parent.route, true, parent.routeScopeId, path);
+      return true;
+    },
     back() { if (!disposed && snapshot.canGoBack) void router.navigate(-1); },
     forward() { if (!disposed && snapshot.canGoForward) void router.navigate(1); },
     go(delta) { if (!disposed && Number.isInteger(delta) && delta !== 0) void router.navigate(delta); },
-    dispose() { disposed = true; unsubscribe(); router.dispose(); listeners.clear(); },
+    dispose() { disposed = true; guards.clear(); stopGuard(); router.deleteBlocker(guardKey); stopHierarchy?.(); unsubscribe(); router.dispose(); listeners.clear(); },
   };
 }

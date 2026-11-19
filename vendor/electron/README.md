@@ -9,7 +9,11 @@ separate Electron fork repository or manually maintained source copy is needed.
 The initial baseline is Electron **44.8.0**, commit
 `60169b45c12488c6fda237af7f6425526a7ce5f0`, with Chromium **152.0.7977.167**.
 `fork.json` is authoritative. Generated sources, dependencies and build outputs
-are ignored; local changes are rejected rather than reset or overwritten.
+are ignored; local changes are rejected rather than reset or overwritten. A clean
+persistent checkout may advance by appending missing patches only when its tree
+exactly matches a prefix of the current pinned series. The complete new series
+is validated before any commit is made; changed, removed or reordered patches
+that do not match that prefix are rejected without resetting the checkout.
 
 ## GitHub Actions native build capacity
 
@@ -63,6 +67,17 @@ Official references: [GitHub runner specifications](https://docs.github.com/en/a
 and [Electron build prerequisites](https://www.electronjs.org/docs/latest/development/build-instructions-gn).
 
 ## Source and build
+
+For a portable native Linux x64 build environment, see the
+[dedicated build container](CONTAINER.md). It uses the same fork manager and
+native probes, with an explicitly mounted persistent workspace and pinned
+toolchain inputs; it does not depend on a specific host layout.
+
+On a provisioned Linux build volume, the optional
+[build workspace entry](../../docs/build-workspace.md) routes the commands below
+to a fork-hash-specific source root, shared build lock, per-user caches and
+volume-backed temporary/log directories. It checks the mount before writing;
+the native toolchain and functional probes remain required.
 
 Use Python 3.11+, Git, Chromium's platform build prerequisites and
 [depot_tools](https://chromium.googlesource.com/chromium/tools/depot_tools.git).
@@ -246,6 +261,16 @@ undefined-symbol checks.
 
 ## Verification and runtime adoption
 
+`0020-native-input-focus-fence.patch` orders native input acknowledgements
+after focus notifications from the target renderer's associated frame channel.
+The widget ACK alone can arrive before a cross-site frame's `DidFocusFrame`.
+A private, read-only IPC round trip now completes before the receipt promise
+resolves. It reads no DOM data, grants no edit capability and changes no focus;
+the existing timeout, disconnect and destruction paths still reject unknown
+outcomes. The IME focus probe additionally checks 120 root/cross-site focus
+switches synchronously at mouseDown and mouseUp ACK, without a timing delay.
+Artifact preparation requires that regression to pass before stamping output.
+
 ```sh
 python3 -m unittest discover -s vendor/electron/tests -v
 python3 vendor/electron/manage.py verify
@@ -268,13 +293,16 @@ OPENCRAFT_BROWSER_ELECTRON_DISTRIBUTION=/absolute/owned/distribution \
   npm run package:headless:linux:amd64
 ```
 
-The producer verifies the exact fork and executes the native clipboard probe
+The producer verifies the exact fork and executes the native clipboard, input
+causality and focus identity probes
 from the extracted distribution before writing its byte inventory and marker.
 Packaging verifies that marker against the current `fork.json`, versions,
-licenses, executable and every shipped file. An explicitly selected invalid
-artifact fails rather than falling back. Without this environment variable,
-packaging retains the pinned stock runtime and the worker advertises native
-copy as unavailable. This packaging path does not claim that any deployment has
+licenses, executable, all three native input proofs and every shipped file.
+This distribution is required: missing or invalid artifacts stop packaging
+before application builds; there is no stock Electron fallback.
+The standard Dockerfile consumes the same artifact through its `owned-electron`
+named context; see [container delivery](CONTAINER.md).
+This packaging path does not claim that any deployment has
 adopted the owned binary; record the actual running artifact separately.
 Browser session/permission ownership, H.264, variable-frame-rate streaming and
 touch behavior remain with their existing owners.
@@ -288,9 +316,10 @@ running `start-electron.mjs`. For desktop packaging, set the target-specific
 containing `opencraft-electron-desktop-artifact.json`; the wrapper checks its
 platform, architecture, Electron/Chromium versions, fork definition hash and
 native probe before passing `electronDist` to electron-builder. With neither
-variable set, release packaging fails closed. An explicit
-`OPENCRAFT_ELECTRON_ALLOW_STOCK=1` is available only for a local diagnostic
-package and must not be used by release jobs. Linux cannot create a Windows or
+variable set, release packaging fails closed. Workspace package commands,
+preview packages and direct electron-builder calls enforce the same owned
+distribution requirement. The former stock diagnostic packaging override is
+no longer supported. Linux cannot create a Windows or
 macOS fork artifact; those markers and probes must be produced by their native
 runners.
 

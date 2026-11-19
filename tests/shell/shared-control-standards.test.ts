@@ -1,3 +1,4 @@
+import { inspectStyle } from "../../scripts/check-ui-typography.mjs";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -62,7 +63,7 @@ test("button typography is projected from the registry without changing size geo
 
 test("shared Web controls cannot introduce their own typography metrics", () => {
   const button = read("../packages/design-system-web/src/button.web.scss");
-  assert.doesNotMatch(button, /font(?:-size|-family)?\s*:|line-height\s*:/u);
+  assert.deepEqual(inspectStyle(button, "packages/design-system-web/src/button.web.scss"), []);
   assert.match(button, /font-weight: var\(--typography-primary-action-weight\)/u);
   assert.match(button, /typography\.role\(control/u);
   const settings = read("../apps/workbench-web/src/styles/app.scss");

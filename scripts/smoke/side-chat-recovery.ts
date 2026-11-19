@@ -1,0 +1,61 @@
+import { createServer } from "vite";
+import { chromium } from "playwright";
+import assert from "node:assert/strict";
+const server = await createServer({
+  configFile: false,
+  root: process.cwd(),
+  resolve: { dedupe: ["react", "react-dom", "react-intl"] },
+  esbuild: { jsx: "automatic" },
+  server: { host: "127.0.0.1", port: 0 },
+  plugins: [
+    {
+      name: "sidechat-recovery",
+      enforce: "pre",
+      resolveId(id, importer) {
+        if (importer?.endsWith("/side-chat-panel-plugin.tsx") && id === "../runtime/appserver-runtime-context")
+          return "\0runtime-fixture";
+      },
+      load(id) {
+        if (id === "\0runtime-fixture") return "export function useThreadCatalog(){return {threads:[]}}";
+      },
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url !== "/") return next();
+          res.setHeader("content-type", "text/html");
+          res.end(
+            '<div id="root"></div><script type="module" src="/tests/fixtures/side-chat-creation-recovery.tsx"></script>',
+          );
+        });
+      },
+    },
+  ],
+});
+await server.listen();
+const browser = await chromium.launch({ headless: true });
+try {
+  for (const touch of [false, true]) {
+    const context = await browser.newContext({ hasTouch: touch, viewport: { width: touch ? 390 : 1200, height: 844 } });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.goto(server.resolvedUrls!.local[0]!);
+    await page.getByRole("alert").waitFor();
+    assert.match(await page.getByRole("alert").innerText(), /Directory save failed/);
+    await page.evaluate(() => (window as any).recovery.allow());
+    const retry = page.getByRole("button", { name: "Retry" });
+    if (touch) await retry.tap();
+    else {
+      await retry.focus();
+      await page.keyboard.press("Enter");
+    }
+    await page.waitForFunction(() => (window as any).recovery.success());
+    assert.equal(await page.evaluate(() => (window as any).recovery.forks()), 1);
+    assert.equal(await page.getByRole("alert").count(), 0);
+    assert.deepEqual(errors, []);
+    await context.close();
+    console.log("PASS " + (touch ? "touch" : "keyboard") + " failed panel retries original child");
+  }
+} finally {
+  await browser.close();
+  await server.close();
+}

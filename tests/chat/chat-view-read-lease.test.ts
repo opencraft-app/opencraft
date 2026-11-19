@@ -112,3 +112,34 @@ test("last View can retire an admitted older read before its asynchronous module
     assert.equal(f.a.getSnapshot().authoritative, true); assert.equal(f.a.getSnapshot().history.error, null);
   } finally { await f.close(); }
 });
+
+test("resident View borrowing is synchronous, preserves the body and admits no I/O", async () => {
+  const f = await fixture();
+  try {
+    const body = f.a.getSnapshot(); f.a.release();
+    const calls = [...f.methods];
+    const b = f.runtime.tryAcquireThread("a");
+    assert.ok(b); assert.equal(b.getSnapshot(), body);
+    assert.deepEqual(f.methods, calls);
+    assert.equal(f.runtime.tryAcquireThread("never-read"), null);
+    assert.equal(f.runtime.getThreadResidency("never-read"), null);
+    b.release();
+  } finally { await f.close(); }
+});
+test("a released resident View cannot admit commands while another View keeps the Thread alive", async () => {
+  const f = await fixture();
+  try {
+    const b = f.runtime.tryAcquireThread("a")!; f.a.release();
+    const calls = [...f.methods];
+    await assert.rejects(f.a.interrupt("turn" as any), /lease is released/);
+    await assert.rejects(f.a.continueTurn("turn" as any), /lease is released/);
+    await assert.rejects(f.a.deleteQueuedSubmission("queued"), /lease is released/);
+    assert.deepEqual(f.methods, calls); assert.equal(b.getSnapshot().authoritative, true);
+    b.release();
+  } finally { await f.close(); }
+});
+test("resident borrowing respects the existing eviction budget", async () => {
+  const f = await fixture(0);
+  try { f.a.release(); assert.equal(f.runtime.tryAcquireThread("a"), null); }
+  finally { await f.close(); }
+});

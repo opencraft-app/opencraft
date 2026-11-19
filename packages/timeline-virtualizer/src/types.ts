@@ -57,6 +57,8 @@ export interface TurnWindowSlice<TEntry extends VirtualizedTurnEntry> {
   readonly entries: readonly TEntry[];
   readonly range: TurnRange;
   readonly marginTopPx: number;
+  /** Unmounted space after the window, including the boundary gap. */
+  readonly paddingBottomPx: number;
   readonly totalHeightPx: number;
   readonly gapPx: number;
 }

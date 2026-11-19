@@ -958,3 +958,20 @@ cost remains separate; permanent anti-resurrection facts are never expired.
 ### 多源声明模型检查
 
 Server 的 `check:storage` 与生成器读取同一份 `packages/storage-node/drizzle.config.ts` 中的 `schema` 配置：支持单个具体文件路径或非空路径数组，路径相对该包解析。产品消费者可在自己的配置中组合独立声明模块，不需要把产品表复制进核心 schema。检查不读取运行中数据库，不接受 glob，缺失文件、重复源、重复导出名或跨源重复表 owner 均失败；完整声明模型仍须与最后的冻结 snapshot 一致。其他独立 owner 默认继续检查各自的 `schema.ts`。
+
+
+### Server channel cursor identity (v7)
+
+`0006_channel_identity_epoch` repairs the empty `actor_channel_identity` table
+introduced by canonical Server v6. It inserts a random epoch
+only when no identity exists; it does not rotate an existing epoch, rewrite
+published SQL, or alter messages, membership, inbox/read state or import receipts.
+Legacy source import retains its original epoch, and repeated opens keep it stable.
+The upgrade test covers populated v6 databases with and without an existing
+identity, exact prefix journal retention, backup creation and checksum rejection.
+
+The same migration restores the two channel change triggers omitted from v6's
+table-only snapshot and backfills missing message revisions in sequence order.
+Existing revision rows are not replaced. Trigger DDL is explicitly declared by
+the Server schema owner and included in the exact schema validator; rollback and
+AppServer restart tests verify committed changes remain observable through sync.

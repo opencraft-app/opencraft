@@ -1,6 +1,7 @@
 import { serverFetch } from "./server-context";
 import { ConnectorApprovalQueue, type ConnectorApprovalPresentation, type ConnectorApproval, type ConnectorManagementClient, type HeadlessConnectorPort, type HeadlessConnectorState } from "@opencraft/workbench-runtime";
 
+import { exponentialBackoffMs } from "@opencraft/workbench-runtime/retry-schedule";
 /** HTTP is management only. Model calls go directly through Headless session capabilities. */
 export class BrowserHeadlessConnectors implements HeadlessConnectorPort {
   private readonly states = new Map<string, HeadlessConnectorState>();
@@ -91,7 +92,7 @@ export class BrowserHeadlessConnectors implements HeadlessConnectorPort {
         if (sequence >= this.lastSuccess) {
           if (response.status === 401) {
             this.epoch++;
-            this.retryAt = Date.now() + Math.min(60000, 5000 * 2 ** Math.min(this.failures++, 4));
+            this.retryAt = Date.now() + exponentialBackoffMs(this.failures++, { initialMs: 5_000, maxMs: 60_000 });
             this.unavailable();
           } else if (response.status === 403) {
             // Protocol/origin and resource authorization errors are local to this Host.
@@ -107,7 +108,7 @@ export class BrowserHeadlessConnectors implements HeadlessConnectorPort {
       return value as T;
     } catch (error) {
       if (this.epoch === epoch && this.hostEpochs.get(hostId) === hostEpoch && (!controller.signal.aborted || timedOut) && sequence >= this.lastSuccess)
-        this.retryAt = Math.max(this.retryAt, Date.now() + Math.min(60000, 2000 * 2 ** Math.min(this.failures++, 5)));
+        this.retryAt = Math.max(this.retryAt, Date.now() + exponentialBackoffMs(this.failures++, { initialMs: 2_000, maxMs: 60_000 }));
       throw error;
     } finally { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.controllers.delete(controller); }
   }

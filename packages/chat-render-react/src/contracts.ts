@@ -46,6 +46,8 @@ export interface ChatMediaDiagnostic {
 }
 
 export interface ChatRenderContext {
+  /** Presentation-only annotations supplied by the document owner; never identity resolution or source rewriting. */
+  readonly renderText?: (node: Extract<ChatDocumentNode, { kind: "text" }>) => ReactNode;
   readonly documentId: string;
   readonly dialect?: ChatDocumentDialect;
   readonly conversationId?: string | null;

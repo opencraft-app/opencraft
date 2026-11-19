@@ -302,7 +302,6 @@ Presentation plugin   semantic contribution projection, layout preference and in
 公共贡献必须分开：
 
 - `ViewContribution` 只定义“是什么”，不带 `location`；
-- 承接 AppServer Bot 的 View 由 Bot 插件声明唯一语义角色 `bot-conversation`；Workbench 不知道插件的具体 View ID，角色冲突在扩展激活事务提交前失败；
 - `NavigationContribution` 定义 `sidebar-primary/sidebar-footer/applications` 入口及语义 target，并可声明 `titleMessage/shortTitleMessage/badgeMessage`。贡献拥有文案，Shell按当前locale解析完整可访问名、短标签和徽标；不按产品/插件ID选择文案或徽标。消息在注册时校验并冻结，随激活回收。Settings Page 可声明 `shortTitleMessage` 用于应用级工具入口，未声明时回退完整title。平台仍拥有几何、紧凑显隐和交互；
 - `SidebarCatalogContribution` 引用 View，由宿主保留标题、折叠、滚动和间距所有权；
 - `ViewContribution.role: "connector-management"` 声明连接器管理能力，沿用唯一事务 owner 和激活回收契约。核心 quick picker 只在该 View 与唯一关联 Settings Page 同时满足平台/audience 且 renderer 可用时提供管理入口；不识别产品私有 ID。缺失、歧义或退役时不提供入口，旧菜单回调不得跨激活代次导航。原生 MCP 连接与选择仍由现有 manager 负责，不依赖该管理页。
@@ -311,7 +310,6 @@ Presentation plugin   semantic contribution projection, layout preference and in
 - `WorkbenchSurfaceContribution` 只声明特殊宿主 surface，目前仅有 `empty-workbench`。
 - `BotContribution` 只声明 Bot 身份、头像、可用性和打开动作；它不拥有任何 Sidebar DOM 或坐标。
 - `SidebarLayoutStore` 是 durable 置顶顺序的唯一所有者；Sidebar 根拥有拖拽事务、临时投影、磁力落点和滚动坐标系。
-- AppServer Bot 目录先投影成带 `hostId/kind/entityId` 的 `SidebarEntity`，协议适配器负责创建与打开命令，React 不直接调用仓库。
 
 Bot 提供方不能注入侧栏 DOM，也不能持有面板坐标。Bot 来源可以来自扩展贡献或任意
 AppServer Host；两者进入同一个 Sidebar 实体投影后，才由平台分别呈现 pinned、row 或

@@ -1,4 +1,8 @@
-import { serverInstalledBuiltins } from './server-installed-extensions';
+import { requiresInitialPresentation } from "./initial-presentation";
+import { createAppHostAdmission } from './app-host-admission';
+import { createBrowserAdmissionRecovery } from './browser-admission-recovery';
+import { ChannelSearchRegistry } from './channel-search-contribution';
+import { serverInstalledBuiltins, readServerInstalledExtensions } from './server-installed-extensions';
 import { parseDesktopServerConnection, type DesktopServerConnection } from '@opencraft/app-host-protocol/desktop-server';
 import { DesktopServerConnectionExtension, desktopServerPort } from './desktop-server-connections';
 import { SERVER_CONNECTIONS_ID, migrateServerConnectionProfiles } from "@opencraft/plugin-builtin-agents/server-connection-identity";
@@ -29,17 +33,12 @@ import { ThreadListGroupingContributionRegistry } from "./thread-list-grouping-c
 import type { Context as CordisContext } from "@deepseek-ai/cordis";
 import { createCordisAppServerRegistry, JsonRpcAppServerClient } from "@opencraft/appserver-client";
 import {
+  CHANNELS_HOST_ID,
   TASKS,
   type TasksRequestPort
 } from "@opencraft/appserver-protocol";
 import { BlobResourceService } from "@opencraft/blob-resources";
 import { IndexedDbBlobStorage } from "@opencraft/blob-resources/browser";
-import {
-  AppServerBotConversationResolver,
-  AppServerBotConversationSource,
-  AppServerBotDirectory,
-  createCordisBotConversationRuntime,
-} from "@opencraft/bot-conversation-appserver";
 import {
   OPENCRAFT_BROWSER_CAPABILITY,
   OPENCRAFT_BROWSER_EXTENSION,
@@ -106,7 +105,6 @@ import {
 } from "@opencraft/workbench-runtime";
 import { installAppServerDiagnostics } from "./appserver-diagnostics";
 import { authenticationProviderAdapter } from "./authentication-contributions";
-import { createPersistentComposerDrafts } from "./browser-composer-drafts";
 import { openClientExtensionPersistence } from "./client-extension-persistence";
 import { changesComposerCapabilities, invalidateComposerCapabilities } from "./composer-capabilities-query";
 import { openConnectorConfigurationStore } from "./connector-configuration-store";
@@ -182,15 +180,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     const turnNotifications = new TurnNotificationController(options.pushDevice);
     startupRollback.push(() => turnNotifications.dispose());
     const agentRuntimes = new AgentRuntimeDirectory();
-    const botConversations = await createCordisBotConversationRuntime(cordis);
-    startupRollback.push(() => botConversations.dispose());
     const profileSkills = await createCordisProfileSkillsRuntime(cordis);
     startupRollback.push(() => profileSkills.dispose());
-    const botDirectory = new AppServerBotDirectory(
-      botConversations.service,
-      appServerRegistry.clients,
-    );
-    startupRollback.push(() => botDirectory.dispose());
     const connectionProviders = await createCordisHostConnectionProviderRuntime(cordis);
     startupRollback.push(() => connectionProviders.dispose());
     const hostConnectionProviderAdapter = createHostConnectionProviderContributionAdapter(
@@ -208,6 +199,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       Number(import.meta.env.VITE_THREAD_UNREAD_RESET_BEFORE) || 0);
     startupRollback.push(() => threadAttention.dispose());
     const applicationBranding = new ApplicationBrandingRegistry();
+    const channelSearch = new ChannelSearchRegistry();
     const threadBadges = new ThreadBadgeContributionRegistry();
     const threadParticipation = new ThreadParticipationContributionRegistry();
     const threadListGrouping = new ThreadListGroupingContributionRegistry();
@@ -266,14 +258,26 @@ export async function createWebWorkbenchApplicationSupervisor(
     );
     const electronAppHost = platform === "electron" ? connectElectronAppHost() : null;
     if (electronAppHost !== null) startupRollback.push(() => electronAppHost.close());
-    const headlessAppHost = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true"
-      ? connectWebSocketAppHost() : null;
+    const localDocumentStores = new Set<ClientLocalDocuments>();
+    const flushLocalDocuments = () => Promise.all([...localDocumentStores].map(store => store.flush())).then(() => undefined);
+    const admissionRecovery = platform === "web" ? createBrowserAdmissionRecovery({
+      get storage() { return window.sessionStorage; },
+      key: serverStorageKey("opencraft.admission-reload"),
+      flush: flushLocalDocuments,
+      reload: () => window.location.reload(),
+    }) : null;
+    if (admissionRecovery) startupRollback.push(() => admissionRecovery.dispose());
+    const appHostAdmission = platform === "web" && import.meta.env.VITE_INCLUDE_HEADLESS_APPHOST === "true"
+      ? createAppHostAdmission(serverFetch, status => admissionRecovery?.observe(status)) : null;
+    if (appHostAdmission) startupRollback.push(() => appHostAdmission.dispose());
+    const headlessAppHost = appHostAdmission
+      ? connectWebSocketAppHost(undefined, { beforeConnect: () => appHostAdmission.prepare() }) : null;
     if (headlessAppHost !== null) startupRollback.push(() => headlessAppHost.close());
     const sshManagement = headlessAppHost ? new (await import("@opencraft/plugin-builtin-agents")).SshConnectionsController(serverFetch, serverAdmissionOrigin()) : null;
     if (sshManagement) { startupRollback.push(() => sshManagement.dispose()); await sshManagement.startDiscovery(webSshDiscoveryLifecycle); }
     const remoteAppHost = headlessAppHost ? connectWebSocketAppHost(undefined, {
       path: "/ssh-apphost",
-      beforeConnect: () => sshManagement!.prepareConnection(),
+      beforeConnect: async () => { await appHostAdmission!.prepare(); await sshManagement!.prepareConnection(); },
     }) : null;
     if (remoteAppHost) startupRollback.push(() => remoteAppHost.close());
     const clientProduct = await options.clientProduct?.create({ platform, hostProfileMode: options.hostProfileMode, defaultExtensions: deployment.extensions });
@@ -282,12 +286,10 @@ export async function createWebWorkbenchApplicationSupervisor(
     if (localClientScope) startupRollback.push(() => localClientScope.dispose());
     const clientPersistenceScope = clientProduct?.persistenceScope ?? localClientScope!;
     const clientResourceStorage = openClientResourcePersistence(currentProductDatabaseName("opencraft-client-resources"));
-    const localDocumentStores = new Set<ClientLocalDocuments>();
     const localDocuments = (namespace: string, name: ClientLocalDocumentName) => {
       const documents = new ClientLocalDocuments(clientResourceStorage, namespace, name);
       localDocumentStores.add(documents); return documents;
     };
-    const flushLocalDocuments = () => Promise.all([...localDocumentStores].map(store => store.flush())).then(() => undefined);
     const clientResources = new ClientResources(
       clientResourceStorage,
       JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
@@ -296,17 +298,6 @@ export async function createWebWorkbenchApplicationSupervisor(
       JSON.stringify([serverStorageKey(workbenchProductId), clientPersistenceScope.getSnapshot().namespace]),
     ));
     startupRollback.push(stopClientResourceScope, () => clientResources.close(), flushLocalDocuments);
-    // Existing task View continuity remains its sole persistence owner. Bot
-    // content uses a separate account-bound adapter; an old account cannot
-    // read or write through it after its credential scope is revoked.
-    const botDraftScope = clientPersistenceScope.getSnapshot().namespace;
-    const botDraftNamespace = currentProductStorageKey(`opencraft.composer-drafts.v1.bot.${botDraftScope}`);
-    const botDrafts = createPersistentComposerDrafts(window.localStorage, botDraftNamespace,
-      localDocuments(botDraftNamespace, "composer-draft"));
-    const stopBotDraftScope = clientPersistenceScope.subscribe(() => {
-      if (clientPersistenceScope.getSnapshot().namespace !== botDraftScope) botDrafts.revokeAndClear();
-    });
-    startupRollback.push(stopBotDraftScope);
     const extensionPersistence = await openClientExtensionPersistence(currentProductDatabaseName);
     startupRollback.push(() => extensionPersistence.backend.close());
     const extensions = new ExtensionSupervisor({
@@ -321,6 +312,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         });
       },
       context: cordis,
+      blobResources: blobs,
       platform,
       internalContributions: {
         [CONNECTOR_PROVIDER_CHANNEL]: connectorProviderAdapter(connectors),
@@ -330,6 +322,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         platformViewRenderer: createPlatformViewRendererContributionAdapter(platformViewRenderers),
         platformAccount: platformAccounts.createAdapter(),
         applicationBranding: applicationBranding.createAdapter(),
+        nativeChannelSearch: channelSearch.createAdapter(),
         threadBadge: threadBadges.createAdapter(),
         threadParticipation: threadParticipation.createAdapter(),
         threadListGrouping: threadListGrouping.createAdapter(),
@@ -361,6 +354,7 @@ export async function createWebWorkbenchApplicationSupervisor(
       id: string,
       load: (signal?: AbortSignal) => ReturnType<Parameters<ExtensionSupervisor["loadOptional"]>[1]>,
       initialViewIds: readonly string[] = [],
+      initialSettingsIds: readonly string[] = [],
     ): Promise<void> => {
       const activate = async (signal?: AbortSignal) => {
         const moduleScope = new AbortController();
@@ -379,7 +373,7 @@ export async function createWebWorkbenchApplicationSupervisor(
         }
       };
       const route = parseApplicationRouteUrl(new URL(window.location.href));
-      const ownsInitialRoute = route.kind === "extension-view" && initialViewIds.includes(route.viewId);
+      const ownsInitialRoute = requiresInitialPresentation(route, initialViewIds, initialSettingsIds);
       // A deep-linked surface is required for its first paint. Deferring its
       // registration lets the Shell mistake it for an unavailable extension.
       if (options.optionalFeatureStartup !== undefined && !ownsInitialRoute) {
@@ -388,19 +382,17 @@ export async function createWebWorkbenchApplicationSupervisor(
         await activate();
       }
     };
-    await extensions.loadOptional("opencraft.overhome", async () => {
+    await loadPresentationExtension("opencraft.overhome", async () => {
       const { createOverhomeExtension } = await import("./overhome-extension");
       return createOverhomeExtension(extensions.contributions, platformViewRenderers);
-    });
-    await extensions.loadOptional("opencraft.schedules", async () => {
+    }, ["opencraft.overhome.view"]);
+    await loadPresentationExtension("opencraft.schedules", async () => {
       const { conversationSchedulesExtension } = await import("./conversation-schedules-extension");
       return conversationSchedulesExtension;
-    });
-    if (import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true") {
-      await loadPresentationExtension("opencraft.tasks", async signal => {
-        const { createTasksExtension } = await import("@opencraft/plugin-tasks");
-        signal?.throwIfAborted();
-        return createTasksExtension({
+    }, ["opencraft.schedules.view"], ["opencraft.schedules"]);
+    // The application owns connections and task/conversation workflow. The
+    // optional View can consume these same ports from an administrator pack.
+    const createTasksPorts = (): import("@opencraft/plugin-tasks").TasksExtensionPorts => ({
           followUpDwellSince: Number(import.meta.env.VITE_TASKS_DWELL_SINCE ?? 0),
           conversationOverview: {
             async read(...args) {
@@ -464,6 +456,11 @@ export async function createWebWorkbenchApplicationSupervisor(
             return () => { flowStop?.(); stop(); for (const dispose of subscriptions.values()) dispose(); subscriptions.clear(); };
           },
         });
+    if (import.meta.env.VITE_INCLUDE_TASKS_PLUGIN === "true" && import.meta.env.VITE_INCLUDE_TASKS_PRESENTATION !== "false") {
+      await loadPresentationExtension("opencraft.tasks", async signal => {
+        const { createTasksExtension } = await import("@opencraft/plugin-tasks");
+        signal?.throwIfAborted();
+        return createTasksExtension(createTasksPorts());
       }, ["opencraft.tasks.board"]);
     }
     await loadPresentationExtension("opencraft.image-editor", async signal => {
@@ -516,11 +513,14 @@ export async function createWebWorkbenchApplicationSupervisor(
       await extensions.loadOptional('opencraft.account', async () =>
         (await import('@opencraft/plugin-local-account/client')).createLocalAccountExtension(globalThis.fetch.bind(globalThis)));
     }
-    if (headlessAppHost !== null) {
+    if (headlessAppHost !== null || electronAppHost !== null) {
       await extensions.loadOptional("opencraft.im", async () => {
         const { createImExtension } = await import("@opencraft/plugin-im");
-        return createImExtension(serverFetch);
+        const { createChannelsRpc } = await import("./channels-rpc");
+        return createImExtension(serverFetch, signal => createChannelsRpc((headlessAppHost ?? electronAppHost)!.createTransport(CHANNELS_HOST_ID), signal),headlessAppHost===null);
       });
+    }
+    if (headlessAppHost !== null) {
       for (const extension of options.serverExtensions ?? []) {
         await extensions.loadOptional(extension.id, () => extension.load({
           fetcher: serverFetch,
@@ -557,41 +557,20 @@ export async function createWebWorkbenchApplicationSupervisor(
     for (const definition of clientProduct?.extensions({
       appServerClients: appServerRegistry.clients,
       profileSkills: profileSkills.service,
-      profileDirectory: botDirectory,
     }) ?? []) await extensions.activateOptional(definition);
     await clientProduct?.preflight?.();
-    const botSource = new AppServerBotConversationSource(botConversations.service);
-    startupRollback.push(() => botSource.dispose());
-    await loadPresentationExtension("opencraft.bot-chat", async signal => {
-      const createBotChatExtension = (
-        await import("@opencraft/plugin-bot-chat/runtime-entry")
-      ).default;
-      signal?.throwIfAborted();
-      return createBotChatExtension({
-        source: botSource,
-        resolver: new AppServerBotConversationResolver(botConversations.service),
-        showNavigation: false,
-        drafts: botDrafts,
-      });
-    });
-    let connectBotHost: (hostId: string) => Promise<void> = async () => { throw new Error("暂无可连接的实例。"); };
-    await loadPresentationExtension("opencraft.bot-management", async signal => {
-      const { createBotManagementExtension } = await import("./bot-management-extension");
-      signal?.throwIfAborted();
-      return createBotManagementExtension(botDirectory, botConversations.service, hostId => connectBotHost(hostId), clientProduct?.botManagement);
-    });
     const extensionInstallationFiber = cordis.plugin(
       provideExtensionInstallationRepository(extensionPersistence.installations),
     );
     await extensionInstallationFiber;
     startupRollback.push(() => extensionInstallationFiber.dispose());
-    const installedPlugins = websiteConfig?.userPlugins ?? [];
+    const installedPlugins = readServerInstalledExtensions(websiteConfig?.userPlugins ?? []);
     const replacedPlugins = new Set(installedPlugins.flatMap(plugin => plugin.replaces));
     const extensionManager = new ExtensionManager({
       installations: cordis.extensionInstallations,
       loader: new BrowserModuleUrlExtensionLoader(),
       supervisor: extensions,
-      builtins: [tokenUsageBuiltin, ...serverInstalledBuiltins(installedPlugins), ...(platform === "web" ? clientProduct?.builtins ?? [] : [])].filter(plugin => !replacedPlugins.has(plugin.manifest.id)),
+      builtins: [tokenUsageBuiltin, ...serverInstalledBuiltins(installedPlugins, undefined, { getClient: hostId => appServerRegistry.clients.get(hostId) ?? undefined, tasks: createTasksPorts }), ...(platform === "web" ? clientProduct?.builtins ?? [] : [])].filter(plugin => !replacedPlugins.has(plugin.manifest.id)),
     });
     startupRollback.push(() => extensionManager.dispose());
     if (options.optionalFeatureStartup !== undefined) {
@@ -613,6 +592,12 @@ export async function createWebWorkbenchApplicationSupervisor(
       presentation: options.presentation,
       mode: options.navigationMode,
       resolveApplicationRoute: (route: ApplicationRoute) => resolveBuiltinConnectionRoute(route, headlessAppHost !== null),
+      resolveParentRoute: (route: ApplicationRoute): ApplicationRoute | null => {
+        if (route.kind !== "extension-view") return null;
+        const parent = extensions.contributions.getSnapshot().views.find(view => view.contribution.id === route.viewId)?.contribution.navigationParent;
+        return parent ? { kind: "extension-view", viewId: parent.viewId, resourceUri: parent.resourceUri ?? null } : null;
+      },
+      subscribeRouteHierarchy: extensions.contributions.subscribe,
       // The containing page owns its URL. Embedded Workbench starts at Home.
       ...(options.navigationMode === "memory" ? { initialEntries: ["/"] } : {}),
     };
@@ -722,10 +707,7 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => clientResources.close(),
     () => clientProduct?.dispose(),
     disconnectAppearanceThemes,
-    () => botDirectory.dispose(),
     () => profileSkills.dispose(),
-    () => botSource.dispose(),
-    () => botConversations.dispose(),
     () => turnNotifications.dispose(),
     () => turnCompletions.dispose(),
     () => threadAttention.dispose(),
@@ -733,6 +715,8 @@ export async function createWebWorkbenchApplicationSupervisor(
     () => electronAppHost?.close(),
     () => headlessAppHost?.close(),
     () => remoteAppHost?.close(),
+    () => admissionRecovery?.dispose(),
+    () => appHostAdmission?.dispose(),
     () => sshManagement?.dispose(),
     () => connectionProviders.dispose(),
     () => blobFiber.dispose(),
@@ -805,11 +789,11 @@ export async function createWebWorkbenchApplicationSupervisor(
       platformAccounts,
       applicationBranding,
       threadBadges,
+    channelSearch,
       threadListGrouping,
       identityAvatars,
       composerActionRenderers,
       imageEditors,
-      botDirectory,
       sidebarLayout,
       hostProfiles,
       hostProfileStorageError: hostProfileBootstrap.storageError,
@@ -1035,7 +1019,6 @@ export async function createWebWorkbenchApplicationSupervisor(
   const stopIdentityProbes = async () => { probesDisposed = true; await Promise.allSettled([...identityProbes].map(client => client.close())); };
   startupRollback.push(stopIdentityProbes);
   agentRuntimes.bindRegistry(registry);
-  connectBotHost = async hostId => { await registry.ensureConnected(hostId); };
   startupRollback.push(() => registry.dispose());
   const stopEnvironmentRegistry = connectEnvironmentRuntimeRegistry(hostProfiles, registry, createHostRegistration);
   startupRollback.push(stopEnvironmentRegistry);
@@ -1104,14 +1087,14 @@ export async function createWebWorkbenchApplicationSupervisor(
       reportDisplayEvent("display-load", { ...displayTimingCounts(timeline), cacheHit: Number(timeline !== null) });
       return timeline;
     },
-    observe(snapshot) {
+    observe(snapshot, historyHasOlder, header) {
       if (displayWritesSuspended) {
         if (coordinator.getRuntime().getSnapshot().connectionGeneration <= displayResumeAfterGeneration) {
           return Promise.resolve();
         }
         displayWritesSuspended = false;
       }
-      return currentDisplayContinuity.observe(snapshot);
+      return currentDisplayContinuity.observe(snapshot, historyHasOlder, header);
     },
     getScope: () => draftCredentialScope,
     subscribe(listener) { displayListeners.add(listener); return () => displayListeners.delete(listener); },
@@ -1346,11 +1329,11 @@ export async function createWebWorkbenchApplicationSupervisor(
     platformAccounts,
     applicationBranding,
     threadBadges,
+    channelSearch,
     threadListGrouping,
     identityAvatars,
     composerActionRenderers,
     imageEditors,
-    botDirectory,
     sidebarLayout,
     displayContinuity,
     hostProfiles,

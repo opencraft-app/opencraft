@@ -30,7 +30,7 @@ export async function virtualFetch(url:string, init:{headers?:Record<string,stri
     });req.on('error',reject);req.end(init.body);
   });
 }
-export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;appServerTarget?:string;webRoot?:string;appHost?:()=>unknown;defaultUsers?:readonly string[];legacyDefaultUsers?:readonly string[];entryName?:string;sshPublicAccess?:boolean;serverPaths?:ServerPaths;fileDownloads?:()=>HostFileDownloads;entryProtocol?:'http'|'https'}={}) {
+export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;appServerTarget?:string;webRoot?:string;appHost?:()=>unknown;defaultUsers?:readonly string[];legacyDefaultUsers?:readonly string[];entryName?:string;sshPublicAccess?:boolean;admissionFault?:(id:string)=>number|undefined;serverPaths?:ServerPaths;fileDownloads?:()=>HostFileDownloads;entryProtocol?:'http'|'https'}={}) {
   const directory=await mkdtemp(join(tmpdir(),'server-selector-')),cleanup:(()=>unknown)[]=[];
   cleanup.push(()=>rm(directory,{recursive:true,force:true}));
   const pair=generateKeyPairSync('ed25519'),privateKey=pair.privateKey.export({format:'pem',type:'pkcs8'}).toString(),publicKey=pair.publicKey.export({format:'pem',type:'spki'}).toString();
@@ -48,7 +48,7 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     const root=options.webRoot??join(directory,id);if(!options.webRoot){await mkdir(root);await writeFile(join(root,'index.html'),`<!doctype html><html><head><title>${id}</title></head><body><h1>${id}</h1><a id="switch" href="/servers">切换服务器</a></body></html>`);}
     const oa=new FixtureRequestIdentity(req=>access.authenticate(req));cleanup.push(()=>oa.close());
     const appHost=options.appHost?.();if(appHost)cleanup.push(()=>(appHost as any).close());
-    const sshManagement=options.sshPublicAccess === undefined ? null : new SshManagement({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
+    const sshManagement=options.sshPublicAccess !== true ? null : new SshManagement({directory:join(directory,id+'-ssh'),publicAccess:options.sshPublicAccess,resetConnection:async()=>{},connectConnection:async()=>{}});
     if(sshManagement)cleanup.push(()=>sshManagement.close());
     const web=await createWorkbenchWebServer({root,sshManagement,appHostServer:appHost,appServerTarget:options.appServerTarget??null,loopbackOnly:false,desktopAccess:'trusted-internal',accessService:access,identityService:oa,fileDownloads:options.fileDownloads?.()??null,
       desktopService:{accept(ws:WebSocket){ws.send('connected-'+id);ws.on('message',(data,binary)=>ws.send(data,{binary}));},close(){}}});cleanup.push(()=>web.close());
@@ -56,6 +56,8 @@ export async function selectorFixture(options:{entryOrigin?:EntryOriginResolver;
     // Business streaming endpoint behind the same target authorization; no identity bypass.
     const target=createServer(async(req,res)=>{
       const fixturePath = (req.url ?? '/').split('?')[0];
+      const fault = fixturePath === '/__opencraft_access/session' ? options.admissionFault?.(id) : undefined;
+      if (fault !== undefined) { res.writeHead(fault); res.end(); return; }
       if(fixturePath==='/fixture/headers'||fixturePath==='/fixture/upload'||fixturePath==='/fixture/stream'||fixturePath==='/fixture/compressed.html'){
         const status=access.admissionStatus(req);if(status!==204){res.writeHead(status);res.end();return;}
         if(fixturePath==='/fixture/compressed.html'){res.writeHead(200,{'content-type':'text/html','content-encoding':'gzip'});res.end(gzipSync('<html><head><title>Compressed</title></head><body>Compressed document</body></html>'));return;}

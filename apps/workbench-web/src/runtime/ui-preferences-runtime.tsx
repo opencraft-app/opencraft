@@ -103,3 +103,8 @@ export function useUiPreferencesRuntime(): UiPreferencesRuntime {
   if (runtime === null) throw new Error("UI preferences runtime is unavailable");
   return runtime;
 }
+
+/** Standalone viewport consumers can operate without the Workbench provider. */
+export function useOptionalUiPreferencesRuntime(): UiPreferencesRuntime | null {
+  return useContext(UiPreferencesContext);
+}

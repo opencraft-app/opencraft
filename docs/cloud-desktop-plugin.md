@@ -875,3 +875,15 @@ Leaving, hiding or disposing retires the intent; a late grant cannot pull focus
 back. There is no takeover polling or automatic preemption on ordinary retry.
 The real ShadowRoot panel probe covers success and leaving before readiness;
 private provider allocation semantics are verified in the downstream product.
+
+### Startup media loading
+
+The Host backend registers target discovery and authorization synchronously.
+Its deferred RFB adapter loads the media/input implementation only for an
+actual viewer connection; the wire-session implementation is also imported at
+connect time. Both import boundaries retain cancellation and recheck authority:
+closing the tab or replacing the logical Client retires the attachment before
+any late session can open. Surface creation still delegates to the same real
+RFB adapter that admitted the connection; loading is not a capability flag or
+a fallback transport. A failed media import closes its pending session and may
+be retried by a new viewer attempt.

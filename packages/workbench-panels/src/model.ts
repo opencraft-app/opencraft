@@ -44,6 +44,8 @@ export interface PanelRegionState {
 }
 
 export interface ConversationPanelState {
+  /** Last explicit navigation within this owner; independent of pane visibility. */
+  readonly foreground: 'primary' | 'tools';
   readonly revision: number;
   readonly ownerId: string;
   readonly right: PanelRegionState;
@@ -52,6 +54,7 @@ export interface ConversationPanelState {
 }
 
 export type PanelAction =
+  | { readonly type: 'select-foreground'; readonly foreground: 'primary' | 'tools' }
   | {
       /** Placement transfer, never a logical resource close. */
       readonly type: "transfer-tab";
@@ -86,7 +89,7 @@ export type PanelAction =
       readonly region: PanelRegionId;
       readonly tabId: string;
       readonly patch: Partial<
-        Pick<PanelTabDescriptor, "title" | "icon">
+        Pick<PanelTabDescriptor, "title" | "icon" | "durableRoute" | "closable" | "preview">
       >;
     }
   | {
@@ -135,7 +138,8 @@ function updateRegion(
   region: PanelRegionId,
   updater: (current: PanelRegionState) => PanelRegionState,
 ): ConversationPanelState {
-  return { ...state, [region]: updater(state[region]) };
+  const next = updater(state[region]);
+  return next === state[region] ? state : { ...state, [region]: next };
 }
 
 export function createConversationPanelState(input: {
@@ -144,6 +148,7 @@ export function createConversationPanelState(input: {
   readonly rightPanelOpen?: boolean;
 }): ConversationPanelState {
   let state: ConversationPanelState = {
+    foreground: 'primary',
     revision: 0,
     ownerId: input.ownerId,
     right: emptyRegion(),
@@ -157,14 +162,8 @@ export function createConversationPanelState(input: {
       activate: false,
     });
   }
-  if (input.rightPanelOpen === true && state.right.tabs.length > 0) {
-    state = reduceConversationPanelState(state, {
-      type: "set-region-open",
-      region: "right",
-      open: true,
-    });
-  }
-  return { ...state, revision: 0 };
+  // Restoring a pane preference is not an explicit navigation command.
+  return { ...state, right: { ...state.right, open: input.rightPanelOpen === true && state.right.tabs.length > 0 }, revision: 0 };
 }
 
 function reduceRegionAction(
@@ -215,12 +214,15 @@ function reduceRegionAction(
     case "update-tab": {
       const current = region.tabs.find((tab) => tab.id === action.tabId);
       if (current === undefined) return region;
+      if (action.patch.durableRoute && (action.patch.durableRoute.kind !== current.durableRoute?.kind
+        || action.patch.durableRoute.params.resource !== current.durableRoute?.params.resource)) return region;
       const updated = { ...current, ...action.patch };
       if (
         updated.title === current.title &&
         updated.icon === current.icon &&
         updated.resource === current.resource &&
-        updated.durableRoute === current.durableRoute
+        updated.durableRoute === current.durableRoute &&
+        updated.closable === current.closable && updated.preview === current.preview
       ) return region;
       return {
         ...region,
@@ -268,6 +270,8 @@ export function reduceConversationPanelState(
 ): ConversationPanelState {
   let next = state;
   switch (action.type) {
+    case 'select-foreground':
+      return state.foreground === action.foreground ? state : { ...state, foreground: action.foreground, revision: state.revision + 1 };
     case "transfer-tab": {
       if (action.region === action.targetRegion) return state;
       const source = state[action.region];
@@ -291,7 +295,10 @@ export function reduceConversationPanelState(
           recentTabIds: promoteRecentTab(target.recentTabIds, tab.id),
           tabs: [...target.tabs.slice(0, insertion), { ...tab, region: action.targetRegion }, ...target.tabs.slice(insertion)],
         },
-        rightPanelFullWidth: action.region === "right" && remaining.length === 0 ? false : state.rightPanelFullWidth,
+        // Moving the last tool to the bottom reveals that destination instead
+        // of leaving an empty maximized right outlet above it.
+        rightPanelFullWidth: action.region === 'right' && remaining.length === 0 ? false : state.rightPanelFullWidth,
+        foreground: action.region === 'right' && remaining.length === 0 ? 'primary' : state.foreground,
       };
       break;
     }
@@ -365,6 +372,12 @@ export function reduceConversationPanelState(
       }
       break;
   }
+  const revealRight = (action.type === "open-tab" && action.tab.region === "right" && action.activate !== false)
+    || (action.type === "activate-tab" && action.region === "right" && next.right.tabs.some(tab => tab.id === action.tabId))
+    || (action.type === "transfer-tab" && action.targetRegion === "right" && next !== state)
+    || (action.type === "set-region-open" && action.region === "right" && action.open && action.reason !== "resize" && next.right.open);
+  if (revealRight || (action.type === 'toggle-right-full-width' && next.rightPanelFullWidth)) next = { ...next, foreground: 'tools' };
+  if (action.type === 'set-region-open' && action.region === 'right' && !action.open && action.reason !== 'resize') next = { ...next, foreground: 'primary' };
   return next === state ? state : { ...next, revision: state.revision + 1 };
 }
 
@@ -415,7 +428,7 @@ export function computeRightPanelDefaultWidth(input: {
       input.mainContentWidth - RIGHT_PANEL_MAIN_CONTENT_RESERVE,
     ),
   );
-  const preferred = input.size === "compact" ? standardWidth * 2 / 3 : standardWidth;
+  const preferred = input.size === "compact" ? Math.min(RIGHT_PANEL_MAXIMUM_PREFERRED_WIDTH, standardWidth * 2 / 3) : standardWidth;
   return clamp(preferred, bounds.minimum, bounds.maximum);
 }
 

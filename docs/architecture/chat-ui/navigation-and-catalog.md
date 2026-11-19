@@ -2,6 +2,19 @@
 
 [Architecture index](../../chat-ui-architecture.md) · [Documentation index](../../README.md)
 
+## New chat placement
+
+The shared Sidebar keeps one New chat action. In the touch-density narrow drawer,
+it uses the existing Shell-owned bottom floating host and large button surface;
+compact density keeps the inline row after Assistants and before Conversations.
+Desktop layout retains that inline row. Density comes from the shared preference,
+not the viewport. The shortcut and dismiss-after-selection authority are unchanged.
+The same footer account entrance (avatar, account popover or sign-in) is available
+in the mobile drawer. It does not introduce another account state owner.
+When the drawer cannot fit the primary label plus three accessory targets, the
+primary button spans a row above them. Shell measures both hosts to reserve the
+complete footprint, including safe areas. Settings' return-to-app still consumes
+the same action host independently.
 ## Child conversation labels and hierarchy
 
 The shared catalog projection prefers a nonblank saved name, then the message
@@ -100,8 +113,14 @@ autonomous continuation; the SSH bridge never schedules an additional Goal Turn.
 
 Workbench Runtime owns a per-Thread Goal resource: get-on-view activation,
 notification projection, revision-fenced reads, reconnect invalidation, and
-single-flight writes followed by a confirming read. A failed confirmation is
-not reported as success. Web owns only disclosure and an unsaved editor draft;
+single-flight writes. A successful write ACK confirms persisted Goal state, not
+that a new Turn has actually started; an optional later read cannot undo that ACK.
+Failures retain the original error as their cause and expose only typed error codes
+to UI copy. Pre-dispatch/standard RPC admission rejection is distinct from a server
+error and from a lost/unknown response. A failed write triggers one revision- and
+connection-fenced read-only reconciliation while the write stays single-flight.
+It never replays a mutation or infers its commit from a matching observed state.
+Failure of that read preserves the write diagnostic and leaves sync retry visible. Web owns only disclosure and an unsaved editor draft;
 its card cannot schedule a Turn or become a second authority for Goal state.
 
 The sidebar observes that same Host-scoped resource through a catalog subscription.

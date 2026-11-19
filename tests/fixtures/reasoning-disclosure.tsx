@@ -52,6 +52,13 @@ function longEmptyResponse(engine: string, withClock: boolean): TimelineSourceTu
     })),
     { ...reasoning(engine, "", true), id: `long-empty-reason-${cycle}` },
   ]);
+  if (params.has("longDisclosure")) items.splice(2, 0, {
+    id: "long-commentary", type: "agentMessage", payload: {
+      text: Array.from({ length: 160 }, (_, index) =>
+        `Expanded work paragraph ${index}: This visible content belongs to the completed work.`).join("\n\n"),
+      phase: "commentary", completed: true,
+    },
+  });
   items.push({ id: "long-answer", type: "agentMessage", payload: {
     text: params.has("longHistory") ? Array.from({ length: 100 }, (_, index) =>
       `Long response paragraph ${index}: Keep content below the visible disclosure.`).join("\n\n") : "Long response final answer", phase: "final_answer", completed: true,
@@ -249,6 +256,17 @@ function Demo() {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);
       setTurn(longEmptyResponse(selectedEngine, action === "long-empty-clock")); return;
     }
+    if (action.startsWith("subagent-create-")) {
+      const state = action.slice("subagent-create-".length);
+      if (state === "pending") { restore = null; setGeneration(value => value + 1); }
+      setTurn({ id: "turn", status: "streaming", items: [{ id: "creation", type: "dynamicToolCall", payload: {
+        tool: "thread_spawn", namespace: null, arguments: { title: "Review permissions", prompt: "Check access rules" },
+        status: state === "pending" ? "inProgress" : "completed", success: state !== "failed",
+        contentItems: state === "pending" || state === "failed" ? [] : [{ type: "inputText", text: JSON.stringify({
+          threadId: "created-child", ...(state === "unknown" ? {} : { status: state === "done" ? "idle" : "active" }),
+        }) }],
+      } }] }); return;
+    }
     if (action === "subagent-details" || action === "subagent-single" || action === "subagent-wait") {
       restore = null; setGeneration(value => value + 1);
       const agent = (id: string, name: string, tool: string, prompt: string): TimelineSourceItem => ({
@@ -321,6 +339,14 @@ function Demo() {
         { id: "scale-read", type: "commandExecution", payload: { command: "cat file.ts", status: "completed", exitCode: 0,
           commandActions: [{ type: "read", name: "file.ts", path: "file.ts" }] } },
       ] }); return;
+    }
+    if (action === "spacing-many-79" || action === "spacing-many-80") {
+      const count = action.endsWith("79") ? 79 : 80;
+      setTurn({ id: "turn", status: "streaming", items: Array.from({ length: count }, (_, index) => ({
+        id: `spacing-many-${index}`, type: "commandExecution", payload: {
+          command: `echo row-${index}`, status: "completed", exitCode: 0, aggregatedOutput: "Command detail",
+        },
+      })) }); return;
     }
     if (action === "spacing-contract") {
       restore = null; setEngine(selectedEngine); setGeneration(value => value + 1);

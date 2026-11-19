@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
+import { verifySentImageReedit } from "./sent-image-reedit-cases";
 
 // Run with an installed Playwright module and Chrome/Chromium binary; use
 // OPENCRAFT_PLAYWRIGHT_MODULE and OPENCRAFT_CHROMIUM_EXECUTABLE when external.
@@ -37,7 +38,122 @@ try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
-  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`);
+  await page.goto(`http://127.0.0.1:${(vite.httpServer!.address() as { port: number }).port}`, {timeout:120000});
+  await verifySentImageReedit(browser, page.url());
+  if (process.env.OPENCRAFT_IMAGE_REEDIT_ONLY !== "1") {
+  // Exercise the actual gallery inside the same embedded ShadowRoot.
+  for(const width of [390,600,768,1024,1366])for(const reducedMotion of ['no-preference','reduce'] as const){
+    const height=width===1024?1366:width===768||width===1366?1024:844;
+    const context=await browser.newContext({viewport:{width,height},hasTouch:true,isMobile:true,reducedMotion});
+    const gallery=await context.newPage();const failures:string[]=[];gallery.on('pageerror',e=>failures.push(e.message));
+    await gallery.addInitScript('window.__name=value=>value');
+    await gallery.goto(page.url()+'?gallery&touch');
+    await gallery.getByRole('button',{name:'Open attached image',exact:true}).first().tap();
+    const preview=gallery.locator('.thread-user-image-lightbox');await preview.waitFor();
+    const stage=preview.locator('.opencraft-zoomable-image');
+    await stage.locator('[data-motion-page=current] img').evaluate(async e=>{await (e as HTMLImageElement).decode();});
+    const cdp=await context.newCDPSession(gallery);
+    const touch=async(type:string,points:number[][])=>{await cdp.send('Input.dispatchTouchEvent',{type,touchPoints:points.map(([x,y],i)=>({x,y,id:i+1}))});await gallery.waitForTimeout(35);};
+    const box=(await stage.boundingBox())!,x=box.x+box.width/2,y=box.y+box.height/2;
+    const expectIndex=async(n:number)=>{await gallery.getByRole('dialog',{name:'Attached image '+n+' of 3',exact:true}).waitFor();await stage.locator('[data-motion-page=current] img').evaluate(async e=>{await (e as HTMLImageElement).decode();});};
+    const swipe=async(dx:number,dy=0,cancel=false)=>{await touch('touchStart',[[x,y]]);await touch('touchMove',[[x+dx/2,y+dy/2]]);await touch('touchMove',[[x+dx,y+dy]]);await touch(cancel?'touchCancel':'touchEnd',[]);};
+    const offset=()=>stage.locator('[data-motion-page=current]').evaluate(e=>new DOMMatrixReadOnly(getComputedStyle(e).transform).e);
+    // Direction stays reversible while held, including crossing the origin.
+    await touch('touchStart',[[x,y]]);
+    for(const delta of [-90,-40,50,-60]){
+      await touch('touchMove',[[x+delta,y]]);
+      assert(Math.abs(await offset()-delta)<2,'held reversal follows the latest finger position');
+    }
+    await touch('touchCancel',[]);await gallery.waitForTimeout(400);
+    if(reducedMotion==='no-preference'){
+      // Re-grab the incoming page while the outgoing page is settling.
+      await touch('touchStart',[[x,y]]);await touch('touchMove',[[x-box.width*.35,y]]);await touch('touchEnd',[]);
+      const grabX=box.x+box.width*.9;
+      await touch('touchStart',[[grabX,y]]);
+      const grabbed=await offset();
+      await touch('touchMove',[[grabX-35,y]]);
+      assert(Math.abs(await offset()-(grabbed-35))<3,'incoming page can interrupt settling and track the finger');
+      await touch('touchMove',[[grabX-10,y]]);
+      assert(Math.abs(await offset()-(grabbed-10))<3,'interrupted settle reverses without a dead zone');
+      await touch('touchCancel',[]);await gallery.waitForTimeout(400);await expectIndex(1);
+      await touch('touchStart',[[x,y]]);await touch('touchMove',[[x-box.width*.35,y]]);await touch('touchEnd',[]);
+      await touch('touchStart',[[grabX,y]]);await touch('touchMove',[[grabX+10,y]]);await touch('touchEnd',[]);
+      await expectIndex(2); // A small reversal still leaves the next page over the commit threshold.
+      await preview.getByRole('button',{name:'Previous image',exact:true}).tap();await expectIndex(1);
+      await touch('touchStart',[[x,y]]);await touch('touchMove',[[x-box.width*.35,y]]);await touch('touchEnd',[]);
+      await touch('touchStart',[[grabX,y]]);await touch('touchMove',[[grabX,y+60]]);await touch('touchEnd',[]);
+      await gallery.waitForTimeout(400);await expectIndex(1);
+      assert(Math.abs(await offset())<1,'vertical rejection of an interrupted settle returns to the selected page');
+    }
+    const travel=box.width*.35;
+    await touch('touchStart',[[x,y]]);await touch('touchMove',[[x-travel,y]]);
+    const held=await stage.evaluate(e=>{const current=e.querySelector('[data-motion-page=current]')!,next=e.querySelector('[data-motion-page=next]')!;return {width:e.clientWidth,current:new DOMMatrixReadOnly(getComputedStyle(current).transform).e,next:new DOMMatrixReadOnly(getComputedStyle(next).transform).e,incoming:next.querySelector('img')!.getBoundingClientRect().left,right:e.getBoundingClientRect().right};});
+    assert(Math.abs(held.current+travel)<1,'current page tracks the finger');
+    assert(Math.abs(held.next-held.current-held.width)<1,'neighbor remains exactly one container away');
+    assert(held.incoming<held.right,'incoming image is visible during the held drag');
+    await gallery.screenshot({path:'/tmp/opencraft-gallery-held-'+width+'-'+reducedMotion+'.png'});
+    await gallery.evaluate(()=>{
+      (window as any).releaseFrames=[];
+      const root=document.querySelector('#host')!.shadowRoot!;
+      const record=()=>{
+        const dialog=root.querySelector('.thread-user-image-lightbox'),plane=dialog?.querySelector('[data-motion-page=current]');
+        if(!dialog||!plane)return;
+        (window as any).releaseFrames.push({label:dialog.getAttribute('aria-label'),x:new DOMMatrixReadOnly(getComputedStyle(plane).transform).e});
+        if(dialog.getAttribute('aria-label')==='Attached image 1 of 3')requestAnimationFrame(record);
+      };
+      root.addEventListener('pointerup',()=>queueMicrotask(record),{once:true,capture:true});
+    });
+    await touch('touchEnd',[]);await expectIndex(2);
+    const frames=await gallery.evaluate(()=>(window as any).releaseFrames);
+    await writeFile("/tmp/opencraft-gallery-frames-"+width+"-"+reducedMotion+".json",JSON.stringify(frames,null,2));
+    if(reducedMotion==='no-preference'){
+      assert.equal(frames[0].label,'Attached image 1 of 3','selection commits after the page settles');
+      assert.ok(frames.some((frame:any)=>frame.label==='Attached image 1 of 3'&&frame.x < -travel-1&&frame.x > -box.width+1),'release continues from the held position through intermediate frames');
+      assert.ok(frames.filter((frame:any)=>frame.label==='Attached image 2 of 3').every((frame:any)=>Math.abs(frame.x)<1),'committed image never paints at the outgoing offset');
+    }
+    await swipe(110);await expectIndex(1);
+    await swipe(110);await expectIndex(3);
+    await swipe(-110);await expectIndex(1);
+    await swipe(-20);await expectIndex(1);
+    await swipe(-110,0,true);await expectIndex(1);
+    await swipe(-20,130);await expectIndex(1);
+    await touch('touchStart',[[x,y]]);await touch('touchMove',[[x-60,y]]);
+    await touch('touchStart',[[x-60,y],[x+50,y]]);await touch('touchMove',[[x-100,y],[x+100,y]]);await touch('touchEnd',[]);
+    assert(Math.abs(await stage.locator('[data-motion-page=current]').evaluate(e=>new DOMMatrixReadOnly(getComputedStyle(e).transform).e))<1,'multi-touch revokes page travel before pinch');
+    await swipe(-110);await expectIndex(1);
+    assert(Math.hypot(...await stage.locator('[data-motion-page=current] img').evaluate(e=>{const m=new DOMMatrixReadOnly(getComputedStyle(e).transform);return [m.a,m.b];}))>1.5,'zoomed drag pans without changing images');
+    await gallery.keyboard.press('Escape');
+    assert.equal(await gallery.locator('[role=dialog]').count(),0,'swipe does not leak to the underlying sidebar or close the preview');
+    await gallery.getByRole('button',{name:'Open attached image',exact:true}).first().tap();await expectIndex(1);
+    if(reducedMotion==='no-preference'){
+      await swipe(-110);
+      await preview.getByRole('button',{name:'Previous image',exact:true}).tap();await expectIndex(3);
+      await preview.getByRole('button',{name:'Next image',exact:true}).tap();await expectIndex(1);
+    }
+    await gallery.keyboard.press('ArrowRight');await expectIndex(2);
+    await preview.getByRole('button',{name:'Previous image',exact:true}).tap();await expectIndex(1);
+    await touch('touchStart',[[x,y]]);await touch('touchMove',[[x-60,y]]);
+    await gallery.setViewportSize({width:Math.max(320,width-120),height});
+    await touch('touchCancel',[]);await expectIndex(1);
+    const resized=await stage.evaluate(e=>({width:e.clientWidth,current:new DOMMatrixReadOnly(getComputedStyle(e.querySelector('[data-motion-page=current]')!).transform).e,next:new DOMMatrixReadOnly(getComputedStyle(e.querySelector('[data-motion-page=next]')!).transform).e}));
+    assert(Math.abs(resized.current)<1&&Math.abs(resized.next-resized.width)<1,'resize cancels obsolete travel and measures the new allocation');
+    await gallery.keyboard.press('Escape');
+    // Draft gallery shares the viewport, but retains draft/upload ownership.
+    const files=['first.svg','second.svg'].map((name,i)=>({name,mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="800" height="500"><rect width="800" height="500" fill="'+(i?'orange':'blue')+'"/></svg>')}));
+    const chooser=gallery.waitForEvent('filechooser');await gallery.getByRole('button',{name:'Add',exact:true}).tap();await(await chooser).setFiles(files);
+    await gallery.locator('.opencraft-composer-image-attachment__preview').first().tap();
+    const draftPreview=gallery.locator('.opencraft-composer-image-preview');await draftPreview.waitFor();
+    await draftPreview.locator('[data-motion-page=current] img').evaluate(async e=>{await(e as HTMLImageElement).decode();});
+    const draftBox=(await draftPreview.locator('.opencraft-zoomable-image').boundingBox())!;
+    const dx=draftBox.x+draftBox.width/2,dy=draftBox.y+draftBox.height/2;
+    await touch('touchStart',[[dx,dy]]);await touch('touchMove',[[dx-60,dy]]);await touch('touchMove',[[dx-120,dy]]);await touch('touchEnd',[]);
+    await gallery.waitForFunction(()=>[...document.querySelector('#host')!.shadowRoot!.querySelectorAll('.opencraft-composer-image-preview img')].some(e=>e.getAttribute('alt')==='second.svg'));
+    assert.equal(await gallery.evaluate(()=>(window as any).imagePreviewFixture.submissions),0);
+    await gallery.screenshot({path:'/tmp/opencraft-gallery-swipe-'+width+'-'+reducedMotion+'.png'});
+    assert.deepEqual(failures,[]);await context.close();
+    console.log('PASS gallery swipe',width,reducedMotion);
+  }
+  if(process.env.OPENCRAFT_IMAGE_SWIPE_ONLY!=='1'){
   const thumbnail = page.locator("#host").getByRole("button", { name: "Open attached image" });
   await thumbnail.click();
   const dialog = page.locator("#host").getByRole("dialog", { name: "Attached image 1 of 1" });
@@ -47,6 +163,22 @@ try {
   const previewBox = await dialog.locator("img").boundingBox();
   assert.ok(thumbnailBox !== null && previewBox !== null && previewBox.width > thumbnailBox.width);
   assert.equal(await page.evaluate(() => document.body.querySelectorAll('[role="dialog"]').length), 0);
+  const desktopImage = dialog.locator("img");
+  const desktopScale = () => desktopImage.evaluate(e => { const m = new DOMMatrixReadOnly(getComputedStyle(e).transform); return Math.hypot(m.a, m.b); });
+  const desktopStage = dialog.locator(".opencraft-zoomable-image");
+  const desktopBounds = (await desktopStage.boundingBox())!;
+  const clickPoint = { x: previewBox.x + previewBox.width * .65, y: previewBox.y + previewBox.height * .55 };
+  await page.mouse.click(clickPoint.x, clickPoint.y, { clickCount: 2 });
+  assert(Math.abs(await desktopScale() - 3) < .001, "mouse double click zooms to 3×");
+  const offset = await desktopImage.evaluate(e => { const m = new DOMMatrixReadOnly(getComputedStyle(e).transform); return { x: m.e, y: m.f }; });
+  assert(Math.abs(offset.x + 2 * (clickPoint.x - desktopBounds.x - desktopBounds.width / 2)) < 1
+    && Math.abs(offset.y + 2 * (clickPoint.y - desktopBounds.y - desktopBounds.height / 2)) < 1,
+    "mouse zoom keeps the clicked image point under the cursor");
+  await desktopImage.click();
+  assert(Math.abs(await desktopScale() - 3) < .001, "one click keeps enlarged size");
+  await page.waitForTimeout(350);
+  await desktopImage.dblclick();
+  assert(Math.abs(await desktopScale() - 1) < .001, "mouse double click restores fitted size");
   await page.screenshot({ path: "/tmp/cn-opencraft-sent-image-preview.png" });
   await page.keyboard.press("Escape");
   await dialog.waitFor({ state: "detached" });
@@ -60,7 +192,33 @@ try {
   const stage = phone.locator(".opencraft-zoomable-image");await stage.waitFor();await phone.waitForTimeout(250);
   const cdp = await mobile.newCDPSession(phone);
   const touch = async (type: string, points: number[][]) => {await cdp.send("Input.dispatchTouchEvent", { type, touchPoints: points.map(([x,y],i)=>({x,y,id:i+1})) });await phone.waitForTimeout(35);};
-  const matrix = () => stage.locator("img").evaluate(e => {const m=new DOMMatrixReadOnly(getComputedStyle(e).transform);return {scale:Math.hypot(m.a,m.b),angle:Math.atan2(m.b,m.a),x:m.e,y:m.f};});
+  const matrix = () => stage.locator("[data-motion-page=current] img").evaluate(e => {const m=new DOMMatrixReadOnly(getComputedStyle(e).transform);return {scale:Math.hypot(m.a,m.b),angle:Math.atan2(m.b,m.a),x:m.e,y:m.f};});
+  const tapImage = async (x = 195, y = 422) => { await touch("touchStart", [[x,y]]); await touch("touchEnd", []); };
+  await tapImage(265); await tapImage(265);
+  assert(Math.abs((await matrix()).scale - 3) < .001, "touch double tap zooms to 3×");
+  assert(Math.abs((await matrix()).x + 140) < 1, "touch zoom keeps the tapped image point under the finger");
+  await tapImage();
+  assert(Math.abs((await matrix()).scale - 3) < .001, "touch single tap keeps enlarged size");
+  await phone.waitForTimeout(350);
+  await tapImage(); await tapImage();
+  assert(Math.abs((await matrix()).scale - 1) < .001, "touch double tap restores fitted size");
+  assert(Math.abs((await matrix()).x) < .001 && Math.abs((await matrix()).y) < .001, "zoom out respects fitted bounds");
+  await phone.waitForTimeout(350);
+  const fittedImage = (await stage.locator("[data-motion-page=current] img").boundingBox())!;
+  const viewportBox = (await stage.boundingBox())!;
+  const edgeX = fittedImage.x + fittedImage.width - 8;
+  const edgeOffset = edgeX - viewportBox.x - viewportBox.width / 2;
+  const edgeLimit = Math.max(0, (fittedImage.width * 3 - viewportBox.width) / 2);
+  await tapImage(edgeX); await tapImage(edgeX);
+  assert(Math.abs((await matrix()).x + Math.min(edgeOffset * 2, edgeLimit)) < 1, "edge double tap focuses the edge within pan bounds");
+  await tapImage(edgeX); await tapImage(edgeX);
+  assert(Math.abs((await matrix()).scale - 1) < .001, "rapid consecutive double taps toggle back");
+  await touch("touchStart", [[195,422]]); await touch("touchCancel", []);
+  await tapImage();
+  assert(Math.abs((await matrix()).scale - 1) < .001, "cancelled touch does not seed a double tap");
+  await touch("touchStart", [[195,422]]);
+  await phone.waitForTimeout(320); await touch("touchEnd", []); await tapImage();
+  assert(Math.abs((await matrix()).scale - 1) < .001, "long press does not seed a double tap");
   await touch("touchStart", [[145,422],[245,422]]);await touch("touchMove", [[185,422],[205,422]]);await touch("touchEnd", []);
   assert(Math.abs((await matrix()).scale-.2)<.01, "pinch can shrink below fitted size to 0.2×");
   await touch("touchStart", [[185,422],[205,422]]);await touch("touchMove", [[45,422],[345,422]]);await touch("touchEnd", []);
@@ -71,15 +229,53 @@ try {
   assert(Math.abs(rotated.angle-Math.PI/2)<.02&&Math.abs(rotated.scale-3)<.05,"two fingers rotate 90 degrees without changing scale");
   await touch("touchStart", [[195,422]]);await touch("touchMove", [[230,470]]);await touch("touchEnd", []);
   const panned=await matrix();assert(panned.x>20&&panned.y>20,"rotated image remains draggable with rotated bounds");
+  assert(Math.abs(panned.scale-3)<.05,"releasing a drag does not trigger single-tap zoom out");
   await phone.screenshot({path:process.env.OPENCRAFT_IMAGE_GESTURE_SCREENSHOT??"/tmp/opencraft-image-rotate-shrink.png"});
   await phone.keyboard.press("Escape");await trigger.click();await phone.waitForTimeout(150);
   const reset=await matrix();assert(Math.abs(reset.scale-1)<.001&&Math.abs(reset.angle)<.001&&Math.abs(reset.x)<.001&&Math.abs(reset.y)<.001,"reopening resets rotation, scale and pan");
+  for (let turn = 1; turn <= 4; turn++) {
+    const moveAngle = async (degrees: number) => {
+      const a = degrees * Math.PI / 180;
+      await touch("touchMove", [[195-80*Math.cos(a),422-80*Math.sin(a)],[195+80*Math.cos(a),422+80*Math.sin(a)]]);
+    };
+    const angleError = async (degrees: number) => {
+      const delta = (await matrix()).angle - degrees * Math.PI / 180;
+      return Math.abs(Math.atan2(Math.sin(delta), Math.cos(delta)));
+    };
+    await touch("touchStart", [[115,422],[275,422]]);
+    for (let degrees = 10; degrees <= 80; degrees += 10) await moveAngle(degrees);
+    await moveAngle(86);
+    assert(await angleError(turn * 90) < .001, "rotation snaps within 5° at each quarter turn");
+    await moveAngle(96);
+    assert(await angleError(turn * 90) < .001, "magnetic angle holds inside its 8° release threshold");
+    await moveAngle(100);
+    assert(await angleError(turn * 90 + 10) < .001, "rotation releases beyond 8°");
+    await moveAngle(90); await touch("touchEnd", []);
+    assert(Math.abs((await matrix()).scale - 1) < .01, "rotating and lifting fingers does not trigger tap zoom");
+  }
+  const continuousAngle = () => stage.locator("[data-motion-page=current] img").evaluate(e => Number((e as HTMLImageElement).style.transform.match(/rotate\(([^r]+)rad\)/)![1]));
+  const beforeFullTurn = await continuousAngle();
+  await touch("touchStart", [[115,422],[275,422]]);
+  for (let degrees = 10; degrees <= 450; degrees += 10) {
+    const a = degrees * Math.PI / 180;
+    await touch("touchMove", [[195-80*Math.cos(a),422-80*Math.sin(a)],[195+80*Math.cos(a),422+80*Math.sin(a)]]);
+    assert(Math.abs(await continuousAngle() - beforeFullTurn - a) < .15, "continuous rotation crosses ±180° without jumping a full turn");
+  }
+  await touch("touchEnd", []);
+  const rotatedBeforeZoom = await matrix();
+  await tapImage(220,450); await tapImage(220,450);
+  const rotatedZoom = await matrix();
+  assert(Math.abs(rotatedZoom.scale - 3) < .001 && Math.abs(rotatedZoom.angle - rotatedBeforeZoom.angle) < .001, "double tap retains rotation");
+  assert(Math.abs(rotatedZoom.x + 50) < 1 && Math.abs(rotatedZoom.y + 56) < 1, "rotated image zoom uses the tapped screen coordinate");
+  await touch("touchStart", [[220,450]]); await touch("touchMove", [[223,452]]); await touch("touchEnd", []);
+  const afterJitter = await matrix();
+  assert(Math.abs(afterJitter.x - rotatedZoom.x) < .001 && Math.abs(afterJitter.y - rotatedZoom.y) < .001, "tap jitter does not pan the image");
   assert.deepEqual(mobileErrors,[]);await mobile.close();
   assert.deepEqual(errors, []);
   // Draft Composer uses the same viewport, with its own attachment and focus lifetime.
   const output = process.env.OPENCRAFT_IMAGE_PREVIEW_OUTPUT ?? "/tmp/opencraft-composer-image-preview";
   await mkdir(output, { recursive: true });
-  for (const touchMode of [false, true]) for (const mode of ["light", "dark"]) {
+  if(process.env.OPENCRAFT_IMAGE_GESTURES_ONLY!=="1") for (const touchMode of [false, true]) for (const mode of ["light", "dark"]) {
     const context = await browser.newContext({ viewport: { width: touchMode ? 390 : 1280, height: 844 }, hasTouch: touchMode, isMobile: touchMode });
     const draftPage = await context.newPage();
     const draftErrors: string[] = [];
@@ -111,10 +307,10 @@ try {
     await activate(triggers.first());
     const preview = draftPage.locator(".opencraft-composer-image-preview");
     await preview.waitFor();
-    assert.equal(await preview.locator("img").getAttribute("alt"), "portrait.svg");
+    assert.equal(await preview.locator("[data-motion-page=current] img").getAttribute("alt"), "portrait.svg");
     assert.equal(await draftPage.evaluate(() => document.body.querySelectorAll('[role="dialog"]').length), 0, "embedded preview portal stays in its ShadowRoot");
-    await preview.locator("img").evaluate(async el => { await (el as HTMLImageElement).decode(); });
-    const bounds = (await preview.locator("img").boundingBox())!;
+    await preview.locator("[data-motion-page=current] img").evaluate(async el => { await (el as HTMLImageElement).decode(); });
+    const bounds = (await preview.locator("[data-motion-page=current] img").boundingBox())!;
     assert(Math.abs(bounds.height / bounds.width - 4) < .02, "portrait preview keeps original aspect ratio");
     const stage = preview.locator(".opencraft-zoomable-image");
     if (touchMode) {
@@ -125,17 +321,17 @@ try {
         await session.send("Input.dispatchTouchEvent", { type, touchPoints: distance === undefined ? [] : [{ x: x - distance, y, id: 1 }, { x: x + distance, y, id: 2 }] });
       };
       await gesture("touchStart", 30); await gesture("touchMove", 60); await gesture("touchEnd");
-      assert.notEqual(await stage.getAttribute("data-zoomed"), null, "preview retains shared pinch zoom");
+      assert.notEqual(await stage.locator(".opencraft-image-viewport").getAttribute("data-zoomed"), null, "preview retains shared pinch zoom");
       await session.detach();
     }
     await draftPage.evaluate(() => (window as any).imagePreviewFixture.complete());
     assert.equal(await preview.count(), 1, "upload completion does not close/reopen the preview");
     await activate(preview.getByRole("button", { name: "Next image", exact: true }));
-    assert.equal(await preview.locator("img").getAttribute("alt"), "wide.svg");
-    assert.equal(await stage.getAttribute("data-zoomed"), null, "image navigation resets zoom");
+    await preview.locator('[data-motion-page=current] img[alt="wide.svg"]').waitFor();
+    assert.equal(await stage.locator(".opencraft-image-viewport").getAttribute("data-zoomed"), null, "image navigation resets zoom");
     await draftPage.screenshot({ path: `${output}/${touchMode ? "touch" : "desktop"}-${mode}.png` });
     await draftPage.keyboard.press("ArrowLeft");
-    assert.equal(await preview.locator("img").getAttribute("alt"), "portrait.svg");
+    await preview.locator('[data-motion-page=current] img[alt="portrait.svg"]').waitFor();
     await draftPage.keyboard.press("Escape");
     await preview.waitFor({ state: "detached" });
     await draftPage.waitForFunction(el => el === el.getRootNode().activeElement, await editor.elementHandle(), { timeout: 3000 });
@@ -157,10 +353,10 @@ try {
     await preview.getByRole("status").waitFor();
     assert.equal(await preview.getByRole("status").innerText(), "Image unavailable");
     await activate(preview.getByRole("button", { name: "Previous image", exact: true }));
-    assert.equal(await preview.locator("img").getAttribute("alt"), "wide.svg");
+    await preview.locator('[data-motion-page=current] img[alt="wide.svg"]').waitFor();
     // Stable identity survives removing an earlier image; removing the selected closes.
     await draftPage.evaluate(() => { const c = (window as any).imagePreviewFixture.controller; c.dispatch({ type: "remove-attachment", id: c.getSnapshot().draft.attachments[1].id }); });
-    assert.equal(await preview.locator("img").getAttribute("alt"), "wide.svg");
+    await preview.locator('[data-motion-page=current] img[alt="wide.svg"]').waitFor();
     await draftPage.evaluate(() => { const c = (window as any).imagePreviewFixture.controller; c.dispatch({ type: "remove-attachment", id: c.getSnapshot().draft.attachments[0].id }); });
     await preview.waitFor({ state: "detached" });
     await addFiles(files.slice(0, 1));
@@ -321,6 +517,8 @@ try {
     console.log("composer preview", touchMode ? "touch" : "desktop", mode, "passed");
   }
   console.log("PASS: sent image opens and closes inside the embedded presentation root");
+  }
+  }
 } finally {
   await browser?.close();
   await vite.close();

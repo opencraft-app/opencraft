@@ -1,5 +1,5 @@
 import { useSyncExternalStore, type ReactNode } from "react";
-import { NavigationList, NavigationItem } from "@opencraft/design-system-web/navigation";
+import { NavigationList, NavigationItem, NavigationEmpty } from "@opencraft/design-system-web/navigation";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ExtensionContributionStore } from "@opencraft/extension-runtime";
 import type { PlatformViewHost, PlatformViewRendererRegistry } from "@opencraft/extension-react";
@@ -40,7 +40,7 @@ export function ApplicationsSidebar({ contributions, renderers, host, route, act
             else host.openView(target.viewId);
           }}>
           <NavigationIcon name={app.icon} selected={active} />
-          <span className="applications-sidebar__label">{label}</span>
+          <span data-navigation-label="">{label}</span>
         </NavigationItem>;
       })}
       {actions.map(action => <NavigationItem key={action.id} type="button" data-action-id={action.id}
@@ -49,11 +49,11 @@ export function ApplicationsSidebar({ contributions, renderers, host, route, act
           action.onInvoke();
         }}>
         <NavigationIcon name={action.icon} selected={action.active} />
-        <span className="applications-sidebar__label">{action.title}</span>
+        <span data-navigation-label="">{action.title}</span>
       </NavigationItem>)}
     </NavigationList>
-    {apps.length === 0 && actions.length === 0 ? <p className="applications-sidebar__empty" role="status">{intl.formatMessage({
-      id: "overhome.empty", defaultMessage: "Your apps will appear here." })}</p> : null}
+    {apps.length === 0 && actions.length === 0 ? <NavigationEmpty className="applications-sidebar__empty">{intl.formatMessage({
+      id: "overhome.empty", defaultMessage: "Your apps will appear here." })}</NavigationEmpty> : null}
   </div>;
 }
 

@@ -4,8 +4,9 @@ import { AlertIcon, ModelIcon, ResetIcon } from "@opencraft/design-system-web/ac
 import { FormattedMessage } from "@opencraft/i18n/react";
 
 /** Catalog diagnostics stay with their owner; this surface explains the next action. */
-export function ModelCatalogStatus({ error, loading, retry, emptyTitle, emptyHint }: {
+export function ModelCatalogStatus({ error, errorKind, loading, retry, emptyTitle, emptyHint }: {
   readonly error?: boolean;
+  readonly errorKind?: "catalog" | "preferences";
   readonly loading?: boolean;
   readonly retry?: () => void;
   readonly emptyTitle?: ReactNode;
@@ -17,11 +18,13 @@ export function ModelCatalogStatus({ error, loading, retry, emptyTitle, emptyHin
     <div className="opencraft-composer-model-status__copy">
       <div className="opencraft-composer-model-status__title">
         {loading ? <FormattedMessage id="workIn.loadingModels" defaultMessage="Loading models…" />
+          : error && errorKind === "preferences" ? <FormattedMessage id="composer.model.preferencesFailedTitle" defaultMessage="Couldn't load your model preferences" />
           : error ? <FormattedMessage id="composer.model.failedTitle" defaultMessage="Couldn't load models" />
           : emptyTitle ?? <FormattedMessage id="composer.model.emptyTitle" defaultMessage="No models available yet" />}
       </div>
       {loading || emptyHint === null && !error ? null : <div className="opencraft-composer-model-status__hint">
-        {error ? <FormattedMessage id="composer.model.checkSetup" defaultMessage="Check this Agent's setup, then try again." />
+        {error && errorKind === "preferences" ? <FormattedMessage id="composer.model.preferencesFailedHint" defaultMessage="Retry to load your saved model choices. Agent configuration is unchanged." />
+          : error ? <FormattedMessage id="composer.model.checkSetup" defaultMessage="Check this Agent's setup, then try again." />
           : emptyHint ?? <FormattedMessage id="composer.model.setupHint" defaultMessage="Add a model to start chatting." />}
       </div>}
     </div>

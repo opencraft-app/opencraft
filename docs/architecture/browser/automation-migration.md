@@ -125,7 +125,8 @@ without attaching a viewer. Trusted composition supplies the account, Host,
 conversation Scope and a synchronous live authorization guard. Each call checks
 the committed metadata link and native document/runtime identity. Reads do not
 take input control; writes use the same arbiter as human and viewer agents,
-cannot preempt a human, and release their grant afterward. No visibility/media
+automatically preempt human control, and release their grant afterward. Concurrent
+Agents retain mutual exclusion. No visibility/media
 subscription is created. The shared native backend retains temporary drawing.
 Native activation/recovery and navigation share the viewer lifecycle and control
 authority. Background logical tab creation is described below. Host screenshot

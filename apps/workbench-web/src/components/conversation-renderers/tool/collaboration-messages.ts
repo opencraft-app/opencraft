@@ -1,6 +1,10 @@
 import { defineMessages } from "@opencraft/i18n";
 
 export const collaborationMessages = defineMessages({
+  activity: { id: "chat.collaboration.activity", defaultMessage: "{names} {status, select, starting {{count, plural, one {is starting} other {are starting}}} working {{count, plural, one {is working} other {are working}}} updated {received an update} done {finished} failed {encountered an error} interrupted {{count, plural, one {was interrupted} other {were interrupted}}} attention {{count, plural, one {needs attention} other {need attention}}} other {— status unconfirmed}}" },
+  unnamed: { id: "chat.collaboration.unnamed", defaultMessage: "Subagent" },
+  showDetails: { id: "chat.collaboration.showDetails", defaultMessage: "Show subagent details" },
+  hideDetails: { id: "chat.collaboration.hideDetails", defaultMessage: "Hide subagent details" },
   create: { id: "chat.collaboration.create", defaultMessage: "Create conversation" },
   send: { id: "chat.collaboration.send", defaultMessage: "Send message" },
   resume: { id: "chat.collaboration.resume", defaultMessage: "Resume conversation" },

@@ -1,0 +1,651 @@
+{
+  "schemaVersion": 1,
+  "reviewedAt": "2026-11-09",
+  "kind": "evaluation-catalog-not-runner",
+  "scope": "isolated-superapp-evaluation",
+  "document": "MATRIX.md",
+  "candidate": {
+    "assistantHarness": "codex",
+    "executionHarness": "codex",
+    "modelId": "deepseek-v4.1-flash-1017",
+    "backgroundModel": {
+      "modelId": "hy4",
+      "reasoningEffort": "none",
+      "roles": ["memory-propose", "memory-verify", "context-summary"]
+    }
+  },
+  "priorityOrder": ["P0", "P1", "P2", "P3"],
+  "policy": {
+    "crossSuiteAggregateScore": false,
+    "newPaidRunsStarted": true,
+    "upstreamMainIsPinnedRevision": false,
+    "requiredRunPins": [
+      "source",
+      "dependencyLock",
+      "nativeHarness",
+      "dataset",
+      "selection",
+      "protocol",
+      "modelConfiguration",
+      "judge",
+      "deadlines",
+      "retryPolicy",
+      "concurrency"
+    ],
+    "unknownCostsAreNull": true,
+    "knownFailuresAreRetained": true,
+    "goldAndEvidenceLabelsStayInEvaluator": true
+  },
+  "suites": [
+    {
+      "id": "synthetic-butler-v4.1",
+      "name": "Synthetic butler system acceptance",
+      "priority": "P0",
+      "coverage": [
+        "multi-work",
+        "ambiguity",
+        "goal-dependency",
+        "pause-resume",
+        "explicit-memory",
+        "idempotency",
+        "capability-boundary",
+        "requirement-replacement",
+        "ordered-instructions",
+        "native-continuation",
+        "goal-cancel-isolation",
+        "dependency-rebase",
+        "batch-target-ownership"
+      ],
+      "adapterStatus": "implemented",
+      "currentCandidateRunStatus": "same-executable-repeat-12-pass-zero-timeouts",
+      "source": "local synthetic scenarios",
+      "score": null,
+      "evidence": "BUTLER-CONTRACT-REPEAT-20261110.md",
+      "historicalEvidence": [
+        "BUTLER-CONTRACT-RESULTS-20261110.md",
+        "BUTLER-EXTENDED-RESULTS-20261110.md",
+        "BUTLER-REPEAT-RESULTS-20261110.md",
+        "BUTLER-SELECTED-PROTOCOL-20261110.md"
+      ],
+      "protocol": "BUTLER-SUITE.md",
+      "limitations": [
+        "twelve known synthetic scenarios repeated twice with identical executable sources/configuration; latest 12 automatic passes, previous 11 and one preserved date-grader false negative; no general quality score",
+        "extended v4: five automatic passes and one timeout; artifact review found one false pass, tightened in v4.1",
+        "explicit memory only; automatic learning disabled",
+        "goal plan supplied by evaluator; typed lifecycle and natural-language intent are labeled separately; no autonomous priority score",
+        "semantic review separate from automatic pass"
+      ],
+      "currentRun": "runs/butler-contract-20261110-v5-repeat",
+      "nextStep": "Freeze unseen compound scenarios covering autonomous planning, priority interruption, cross-day recovery and external tool partial failures; validate date grading separately without overwriting history."
+    },
+    {
+      "id": "synthetic-butler-v5-complex",
+      "name": "Synthetic compound butler acceptance",
+      "priority": "P0",
+      "coverage": [
+        "plan-projection",
+        "fan-in",
+        "restart",
+        "answer-routing",
+        "multi-goal",
+        "interrupt",
+        "amend",
+        "pause",
+        "rebase",
+        "multiple-revisions",
+        "late-answer",
+        "immutable-snapshot",
+        "answer-isolation",
+        "ordered-instructions",
+        "idempotency",
+        "transitive-invalidation",
+        "partial-rebase",
+        "goal-review",
+        "reopen",
+        "continuation",
+        "stale-evidence"
+      ],
+      "adapterStatus": "implemented",
+      "currentCandidateRunStatus": "first-run-5-pass-1-work-grouping-failure-zero-timeouts",
+      "source": "local synthetic compound scenarios",
+      "score": null,
+      "evidence": "BUTLER-COMPLEX-RESULTS-20261110.md",
+      "protocol": "BUTLER-SUITE.md",
+      "currentRun": "runs/butler-complex-20261110-v1",
+      "runEvidence": {
+        "planned": 6,
+        "passed": 5,
+        "failed": 1,
+        "timeouts": 0,
+        "notRun": 0,
+        "durationMs": 532421,
+        "modelQualityScore": null,
+        "semanticConcerns": [
+          "stale paused status after resume",
+          "unconfirmed offline-format assumption"
+        ],
+        "unreached": ["crossed-answers steps after initial task split"]
+      },
+      "limitations": [
+        "One fresh real-model run; synthetic evaluator-authored scenarios, not an independent blinded benchmark",
+        "Natural-language requirements give task boundaries; not fully autonomous planning",
+        "Typed lifecycle, explicit rebase and operator attestation are separate from model intent",
+        "No automatic memory learning, external service effects, crash-kill or cross-day operation",
+        "Automatic pass is not semantic quality; current-artifact hash binding only establishes evidence identity"
+      ],
+      "nextStep": "Repair independent-work grouping and current-lifecycle context, then rerun in a fresh frozen run without overwriting the first failure."
+    },
+    {
+      "id": "lme-oracle70",
+      "name": "LongMemEval classic oracle known regression 70",
+      "priority": "P0",
+      "coverage": [
+        "recall",
+        "preference",
+        "knowledge-update",
+        "temporal",
+        "abstention"
+      ],
+      "adapterStatus": "implemented",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "low",
+      "source": "https://github.com/xiaowu0162/LongMemEval",
+      "upstreamRevision": "9e0b455f4ef0e2ab8f2e582289761153549043fc",
+      "score": null,
+      "historicalEvidence": {
+        "report": "CODEX-RESULTS-20261108.md",
+        "scoreFile": "runs/codex-oracle70-20261108-final/score.json",
+        "correct": 67,
+        "total": 70,
+        "baselineCorrect": 60,
+        "jsonFailures": 0,
+        "timeouts": 1,
+        "officialLeaderboardScore": false,
+        "judge": "same-model-official-rubric-port",
+        "currentCandidateRevalidated": false
+      },
+      "nextStep": "Keep as known regression; use a fresh run after source changes."
+    },
+    {
+      "id": "lme-s",
+      "name": "LongMemEval classic S",
+      "priority": "P0",
+      "coverage": ["long-history", "distractor-resistance", "retrieval"],
+      "adapterStatus": "implemented-classic-s-paired-pilot",
+      "currentCandidateRunStatus": "feasibility-gated-two-preparation-timeouts",
+      "engineeringEffort": "medium",
+      "source": "https://github.com/xiaowu0162/LongMemEval",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Two started native cases timed out before QA; 12 pending. Baseline 10/14 after 429-only recovery. No native suite accuracy.",
+      "currentRun": "runs/codex-s14-20261109-recovered",
+      "runEvidence": {
+        "nativeStarted": 2,
+        "nativeTimeouts": 2,
+        "nativePending": 12,
+        "nativeAccuracy": null,
+        "baselineCorrect": 10,
+        "baselineTotal": 14,
+        "report": "P0-RESULTS-20261109.md"
+      },
+      "runtimeNote": "Benchmark used frozen source before shell-snapshot hardening; no quality rerun after that runtime change."
+    },
+    {
+      "id": "lme-m",
+      "name": "LongMemEval classic M",
+      "priority": "P2",
+      "coverage": ["history-scale", "retrieval", "efficiency"],
+      "adapterStatus": "input-supported-scale-unvalidated",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "medium-high",
+      "source": "https://github.com/xiaowu0162/LongMemEval",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Measure S first; verify file/case size limits without silent truncation."
+    },
+    {
+      "id": "locomo-text",
+      "name": "LoCoMo text QA",
+      "priority": "P1",
+      "coverage": ["speaker-attribution", "events", "multi-session-relations"],
+      "adapterStatus": "not-implemented",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "medium",
+      "source": "https://github.com/snap-research/locomo",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Preserve two human speakers through a source-document path; hide evidence/summary labels and report by conversation."
+    },
+    {
+      "id": "personamem-v1",
+      "name": "PersonaMem v1 32k initial track",
+      "priority": "P1",
+      "coverage": ["personalization", "evolving-preferences"],
+      "adapterStatus": "implemented-memory-component-three-arm-independent-controls",
+      "currentCandidateRunStatus": "completed-known-regression-coverage-improved-qa-not-improved",
+      "engineeringEffort": "medium",
+      "source": "https://github.com/bowen-upenn/PersonaMem",
+      "upstreamRevision": "d07e6ade22e85e0e5d562247323a9c3e07553226",
+      "score": 0.3333333333333333,
+      "nextStep": "Validate retrieval decisions under truncated initial memory and chronology; current reader made zero retrieval calls. Keep remaining rejected batch and strict original gold.",
+      "currentRun": "runs/memory-personamem-contract-hy4-none-20261109-v1",
+      "runEvidence": {
+        "planned": 6,
+        "memoryAnswered": 6,
+        "memoryCorrect": 2,
+        "memoryPending": 0,
+        "fullHistoryCorrect": 2,
+        "noHistoryCorrect": 1,
+        "independentHistories": 1,
+        "accuracy": 0.3333333333333333,
+        "preparationElapsedMs": 247723.574031,
+        "preparationKnownTokens": 193192,
+        "committedBatches": 6,
+        "rejectedBatches": 1,
+        "committedBatchUserExchanges": 48,
+        "totalUserExchanges": 60,
+        "report": "MEMORY-CONTRACT-RESULTS-20261109.md",
+        "officialLeaderboardScore": false
+      },
+      "historicalPreparationPilot": {
+        "currentRun": "runs/memory-personamem-20261109-v1",
+        "runEvidence": {
+          "planned": 6,
+          "memoryAnswered": 1,
+          "memoryCorrect": 1,
+          "memoryPending": 5,
+          "accuracy": null,
+          "preparationKnownTokens": 315763,
+          "preparationCallsWithUnknownTokens": 3,
+          "report": "MEMORY-SCHEME-RESULTS-20261109.md"
+        }
+      },
+      "previousContractRun": {
+        "run": "runs/memory-personamem-hy4-none-20261109-v1",
+        "evidence": {
+          "planned": 6,
+          "memoryAnswered": 6,
+          "memoryCorrect": 3,
+          "memoryPending": 0,
+          "fullHistoryCorrect": 3,
+          "noHistoryCorrect": 2,
+          "independentHistories": 1,
+          "accuracy": 0.5,
+          "preparationElapsedMs": 337852.682721,
+          "preparationKnownTokens": 297969,
+          "preparationCallsWithUnknownTokens": 0,
+          "committedBatches": 2,
+          "rejectedBatches": 5,
+          "report": "HY4-BACKGROUND-RESULTS-20261109.md",
+          "officialLeaderboardScore": false
+        }
+      }
+    },
+    {
+      "id": "personamem-v2",
+      "name": "PersonaMem v2",
+      "priority": "P2",
+      "coverage": ["implicit-preferences", "personalization"],
+      "adapterStatus": "not-implemented-modality-review-required",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "medium-high",
+      "source": "https://github.com/bowen-upenn/PersonaMem-v2",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Verify a legitimate text-only subset or implement required modality; never drop images and claim full score."
+    },
+    {
+      "id": "memoryagentbench",
+      "name": "MemoryAgentBench",
+      "priority": "P1",
+      "coverage": [
+        "incremental-retrieval",
+        "conflict-resolution",
+        "test-time-learning",
+        "long-range-understanding"
+      ],
+      "adapterStatus": "not-implemented",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "medium",
+      "source": "https://github.com/HUST-AI-HYZ/MemoryAgentBench",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Start with AR/CR, preserve chunk order; account for overlap with LongMemEval and isolate queries from shared preparation."
+    },
+    {
+      "id": "memoryarena",
+      "name": "MemoryArena",
+      "priority": "P2",
+      "coverage": ["experience-to-action", "interdependent-tasks"],
+      "adapterStatus": "not-implemented-environment-bridge-required",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "high",
+      "source": "https://memoryarena.github.io/",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Select one environment and bridge actual agent tools; retain state across dependent subtasks."
+    },
+    {
+      "id": "lme-v2",
+      "name": "LongMemEval-V2",
+      "priority": "P3",
+      "coverage": [
+        "web-enterprise-experience",
+        "multimodal-trajectories",
+        "workflow-knowledge"
+      ],
+      "adapterStatus": "not-implemented-trajectory-and-image-path-required",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "high",
+      "source": "https://github.com/xiaowu0162/LongMemEval-V2",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Implement trajectory ingestion/query boundary with original source semantics and official reader/context-budget contract."
+    },
+    {
+      "id": "bfcl-v4",
+      "name": "BFCL V4 selected diagnostics",
+      "priority": "P2",
+      "coverage": [
+        "tool-selection",
+        "arguments",
+        "irrelevance",
+        "multi-turn-tools"
+      ],
+      "adapterStatus": "not-implemented-tool-bridge-required",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "medium-high",
+      "source": "https://gorilla.cs.berkeley.edu/leaderboard.html",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Choose official subsets; distinguish model/Harness diagnostic from actual product end-to-end execution."
+    },
+    {
+      "id": "tau-text",
+      "name": "Tau-bench pinned text domain",
+      "priority": "P2",
+      "coverage": ["user-negotiation", "policy-compliance", "tool-execution"],
+      "adapterStatus": "not-implemented-user-simulator-and-tool-bridge-required",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "high",
+      "source": "https://github.com/sierra-research/tau2-bench",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Freeze release/domain/language/user simulator and official scoring; do not mix 1.x and 2.0 results."
+    },
+    {
+      "id": "agentdojo",
+      "name": "AgentDojo paired clean/attack",
+      "priority": "P2",
+      "coverage": ["prompt-injection", "untrusted-tool-results"],
+      "adapterStatus": "not-implemented-environment-bridge-required",
+      "currentCandidateRunStatus": "not-run",
+      "engineeringEffort": "high",
+      "source": "https://agentdojo.spylab.ai/",
+      "upstreamRevision": null,
+      "score": null,
+      "nextStep": "Use simulated tools and fixed clean/attack pairs; retain utility and attack success metrics separately."
+    },
+    {
+      "id": "memory-lifecycle",
+      "name": "Product memory lifecycle",
+      "priority": "P0",
+      "coverage": [
+        "correction",
+        "forgetting",
+        "non-resurrection",
+        "provenance"
+      ],
+      "adapterStatus": "mechanism-tests-and-natural-language-probe-exist-codex-extension-needed",
+      "currentCandidateRunStatus": "real-model-failed-or-not-reached",
+      "engineeringEffort": "medium",
+      "source": null,
+      "upstreamRevision": null,
+      "score": null,
+      "localEntries": [
+        "lifecycle-probe.mjs",
+        "../test/memory-learning.test.mjs",
+        "../test/memory-parity.test.mjs",
+        "../test/memory-files.test.mjs"
+      ],
+      "nextStep": "Explicit command decisions remain failed; automatic correction known-regression passed separately, explicit forgetting still unvalidated.",
+      "currentEvidence": [
+        "runs/codex-lifecycle-20261109-v2/report.json",
+        "runs/codex-lifecycle-settled-20261109-v3/report.json"
+      ],
+      "automaticComponentEvidence": {
+        "run": "runs/memory-canary-contract-hy4-none-20261109-v1",
+        "memoryCorrect": 6,
+        "fullHistoryCorrect": 6,
+        "noHistoryCorrect": 1,
+        "planned": 6,
+        "independentHistories": 1,
+        "selectionExposure": "known-regression-not-heldout",
+        "provesNaturalLanguageForget": false,
+        "scope": "initial-user-facts-role-attribution-two-corrections-and-their-reasons",
+        "currentCandidateQualityRerun": true,
+        "backgroundModel": "hy4",
+        "reasoningEffort": "none"
+      },
+      "historicalAutomaticComponentEvidence": {
+        "run": "runs/memory-canary-20261109-v1",
+        "memoryCorrect": 6,
+        "fullHistoryCorrect": 6,
+        "noHistoryCorrect": 1,
+        "planned": 6,
+        "independentHistories": 1,
+        "provesNaturalLanguageForget": false,
+        "scope": "initial-user-facts-role-attribution-two-corrections-and-their-reasons",
+        "currentCandidateQualityRerun": false
+      },
+      "previousContractAutomaticEvidence": {
+        "run": "runs/memory-canary-hy4-none-20261109-v1",
+        "memoryCorrect": 6,
+        "fullHistoryCorrect": 6,
+        "noHistoryCorrect": 3,
+        "planned": 6,
+        "independentHistories": 1,
+        "selectionExposure": "known-regression-not-heldout",
+        "provesNaturalLanguageForget": false,
+        "scope": "initial-user-facts-role-attribution-two-corrections-and-their-reasons",
+        "currentCandidateQualityRerun": true,
+        "backgroundModel": "hy4",
+        "reasoningEffort": "none"
+      }
+    },
+    {
+      "id": "durable-execution",
+      "name": "Product durable delegation",
+      "priority": "P0",
+      "coverage": [
+        "delegation",
+        "ask-resume",
+        "restart",
+        "amend-cancel",
+        "delivery-idempotency"
+      ],
+      "adapterStatus": "tests-and-executor-smoke-exist-all-codex-reception-has-known-failure",
+      "currentCandidateRunStatus": "all-codex-reception-failed-executor-only-passed",
+      "engineeringEffort": "medium",
+      "source": null,
+      "upstreamRevision": null,
+      "score": null,
+      "localEntries": [
+        "codex-execution-probe.mjs",
+        "../test/codex-execution.test.mjs",
+        "../test/continuation.test.mjs",
+        "../test/interaction.test.mjs"
+      ],
+      "nextStep": "Repair or explain native reception action selection; keep executor-only success separate from all-Codex chain.",
+      "currentEvidence": [
+        "runs/codex-durable-20261109-v1/report.json",
+        "runs/codex-durable-20261109-v2/report.json",
+        "runs/codex-executor-only-20261109-v1/report.json"
+      ]
+    },
+    {
+      "id": "scope-isolation",
+      "name": "Product scope and identity isolation",
+      "priority": "P0",
+      "coverage": [
+        "profile-isolation",
+        "project-grants",
+        "shard-membership",
+        "revocation"
+      ],
+      "adapterStatus": "partial-mechanism-coverage-real-model-matrix-needed",
+      "currentCandidateRunStatus": "local-single-human-two-agent-probe-passed",
+      "engineeringEffort": "medium",
+      "source": null,
+      "upstreamRevision": null,
+      "score": null,
+      "localEntries": [
+        "../test/memory-files.test.mjs",
+        "../test/ownership.test.mjs",
+        "../test/reception-queries.test.mjs"
+      ],
+      "nextStep": "Retain 11 local authorization checks; broader adversarial and multi-human server scope remains unvalidated.",
+      "currentEvidence": ["runs/codex-scope-20261109-v1/report.json"]
+    },
+    {
+      "id": "performance",
+      "name": "Product performance and reliability",
+      "priority": "P0",
+      "coverage": [
+        "cold-warm-latency",
+        "preparation",
+        "bounded-concurrency",
+        "timeouts",
+        "cancellation"
+      ],
+      "adapterStatus": "otel-instrumentation-and-offline-aggregation-implemented",
+      "currentCandidateRunStatus": "combined-contract-regression-coverage-and-preparation-improved-qa-not-improved",
+      "engineeringEffort": "medium",
+      "source": null,
+      "upstreamRevision": null,
+      "score": null,
+      "localEntries": [
+        "../docs/local-telemetry.md",
+        "../test/telemetry.test.mjs",
+        "../test/guardrails.test.mjs"
+      ],
+      "nextStep": "Account for initial retrieval contract overhead and validate retrieval use; one known history is not a stable speed estimate.",
+      "currentRun": "runs/memory-personamem-contract-hy4-none-20261109-v1",
+      "currentEvidence": [
+        "runs/memory-preparation-ablation-20261109-v1/report.json",
+        "HY4-BACKGROUND-RESULTS-20261109.md",
+        "MEMORY-CONTRACT-RESULTS-20261109.md"
+      ]
+    },
+    {
+      "id": "pibench",
+      "name": "Pi-Bench proactive personal assistant",
+      "priority": "P1",
+      "upstream": "https://github.com/Simplified-Reasoning/Pi-Bench",
+      "upstreamRevision": "4f545be5d289b28ff022d2904d455007358ed3b7",
+      "coverage": [
+        "proactivity",
+        "cross-session",
+        "dependent-tasks",
+        "persistent-workspace"
+      ],
+      "adapterStatus": "dialogue-probe-only-full-benchmark-not-ready",
+      "currentCandidateRunStatus": "three-attempted-one-timeout-two-dialogues-ended-reset-fixed",
+      "officialScore": null,
+      "evidence": ["PIBENCH.md", "PIBENCH-RESULTS-20261110.md", "PIBENCH-SESSION-RESULTS-20261110.md"],
+      "blockers": [
+        "appworld-and-search-tool-bridge",
+        "tool-and-attachment-trace-projection"
+      ]
+    }
+  ],
+  "watchlist": [
+    {
+      "name": "PersonaMem-v3",
+      "source": "https://github.com/bowen-upenn/PersonaMem-v3",
+      "reason": "Multi-platform and over-personalization scope; defer until conversation-only personalization ingestion is validated."
+    }
+  ],
+  "latestExecutionReport": "P0-RESULTS-20261109.md",
+  "verification": "../evidence/p0-evaluation-20261109/verification.json",
+  "currentFocus": {
+    "target": "grokbot-derived-memory-scheme",
+    "protocol": "MEMORY-SCHEME.md",
+    "sameModelAndReader": true,
+    "completeAssistantIsSeparate": true,
+    "backgroundRoleModelSeparatelyPinned": true
+  },
+  "latestMemoryComponentReport": "MEMORY-CONTRACT-RESULTS-20261109.md",
+  "externalMemoryComparison": {
+    "report": "TENCENT-COMPARISON-RETEST-20261109.md",
+    "protocol": "TENCENT-COMPARISON-PROTOCOL-20261109.md",
+    "run": "runs/tencent-memory-comparison-20261109-v4-tdb-correction",
+    "systems": ["ours", "Hy-Memory", "TencentDB-Agent-Memory"],
+    "plannedQuestions": 17,
+    "independentPersonas": 3,
+    "status": "completed-limited-pilot-with-adapter-correction",
+    "validQualityComparison": true,
+    "score": {
+      "ours": {
+        "correct": 7,
+        "planned": 17,
+        "returned": 17,
+        "failed": 0,
+        "accuracy": 0.4117647058823529
+      },
+      "hy": {
+        "correct": 6,
+        "planned": 17,
+        "returned": 17,
+        "failed": 0,
+        "accuracy": 0.35294117647058826
+      },
+      "tdb": {
+        "correct": 8,
+        "planned": 17,
+        "returned": 16,
+        "failed": 1,
+        "accuracy": 0.47058823529411764
+      },
+      "full-history": {
+        "correct": 10,
+        "planned": 17,
+        "returned": 17,
+        "failed": 0,
+        "accuracy": 0.5882352941176471
+      },
+      "no-history": {
+        "correct": 6,
+        "planned": 17,
+        "returned": 17,
+        "failed": 0,
+        "accuracy": 0.35294117647058826
+      }
+    },
+    "blocker": null,
+    "preservedFailureEvidence": true,
+    "referenceRun": "runs/tencent-memory-comparison-20261109-v3",
+    "scope": "Common backbone/configured memory pipelines pilot only; no statistical or vendor-best superiority claim",
+    "notFreshThreeArmRerun": true,
+    "previousRun": {
+      "report": "TENCENT-COMPARISON-RESULTS-20261109.md",
+      "protocol": "TENCENT-COMPARISON-PROTOCOL-20261109.md",
+      "run": "runs/tencent-memory-comparison-20261109-v2",
+      "systems": ["ours", "Hy-Memory", "TencentDB-Agent-Memory"],
+      "plannedQuestions": 17,
+      "independentPersonas": 3,
+      "status": "interrupted-external-service",
+      "validQualityComparison": false,
+      "score": null,
+      "blocker": {
+        "model": "hy4",
+        "httpStatus": 402,
+        "code": "401008"
+      },
+      "preservedFailureEvidence": true,
+      "scope": "Historical service-quota interrupted run, not quality ranking"
+    },
+    "validGeneralRanking": false,
+    "scoreIncludesQueryFailures": true
+  }
+}
