@@ -8,6 +8,7 @@ submodule 和补丁队列只保留为历史与回退资料，不再作为新 mas
 来源与交付检查见 [迁移记录](docs/internal-distribution/standard-fork-candidate.md)。
 
 - 开发与 CI 从网关获取原始提交；公共 upstream 只 fetch。公共贡献从干净公共祖先单独整理，不发布私有历史、IOA、企业微信或内部配置。
+- 通用功能优先在独立公开 checkout 从 GitHub main 创建 contrib/*，owner 可直接向上游分支提 PR，无需额外 fork；合入后及时回流内部。内部已有通用改动先审查拆分，禁止把私有 master merge 或整体推到 GitHub。网关仅适配工蜂身份，不替代冲突处理和公开性审核。
 - 集成前 fetch origin，核对 master 和干净工作树，使用公共 Git 目录的 `codex-integration.lock`。服务切换另用部署锁，不修改其他会话工作树或强推。
 - 只通过网关写工蜂投影前缀；不要用工蜂网页/MR/直接推送改写投影，也不能把投影图 merge 回原始 fork。后端漂移时停写调查。
 - 原工蜂物理 master 保留 consumer 历史，不能强推新图覆盖。已有 feature 工作目录和未提交改动应逐项迁移；本次切换不授权丢弃它们。
