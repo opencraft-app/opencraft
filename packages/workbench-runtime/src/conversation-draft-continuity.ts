@@ -15,7 +15,7 @@ export interface ConversationDraftStorage {
 }
 
 export interface ConversationDraftContinuity {
-  attach(viewId: string, controller: ComposerController): () => void;
+  attach(viewId: string, controller: ComposerController, recovery?: { loaded(raw: string | null): void; settled(): void }): () => void;
   discard(viewId: string, target: ComposerTarget): void;
 }
 
@@ -116,15 +116,20 @@ export function createConversationDraftContinuity(input: {
     enqueue(key, () => value === null ? input.storage.remove(key) : input.storage.save(key, value));
   };
   return {
-    attach(viewId, controller) {
+    attach(viewId, controller, recovery) {
       const initial = controller.getSnapshot().draft;
       const key = keyFor(viewId, initial.target);
       let live = true;
       let hydrated = false;
+      let previousDocument = initial.document;
+      let previousTarget = initial.target;
       const persist = () => {
         if (!hydrated || !live) return;
         const current = controller.getSnapshot().draft;
         if (keyFor(viewId, current.target) !== key) return;
+        if (current.document === previousDocument && (current.target === previousTarget || isComposerDocumentEmpty(current.document))) return;
+        previousDocument = current.document;
+        previousTarget = current.target;
         cancelTimer(key);
         const value = serializeConversationDraftDocument(current.document, current.target);
         if (value === null) {
@@ -144,22 +149,34 @@ export function createConversationDraftContinuity(input: {
           await (pending.get(key) ?? Promise.resolve()).catch(() => undefined);
           const value = await input.storage.load(key);
           if (!live) return;
+          recovery?.loaded(value);
+          if (!live) return;
           const document = parseConversationDraftDocument(value);
           const current = controller.getSnapshot().draft;
           if (document !== null && isComposerDocumentEmpty(initial.document) && current.document === initial.document
             && keyFor(viewId, current.target) === key && current.attachments.length === 0 && current.context.length === 0) {
             controller.dispatch({ type: "replace-content", document, attachments: [], context: [] });
+            previousDocument = controller.getSnapshot().draft.document;
+            previousTarget = controller.getSnapshot().draft.target;
           }
-        } catch { /* A failed local read never prevents editing. */ }
-        finally { hydrated = true; if (live) persist(); }
+          hydrated = true;
+          if (current.document !== initial.document) persist();
+        } catch {
+          // Resume explicit edits. An untouched editor is never a reason to
+          // erase data that the adapter could not read.
+          hydrated = true;
+          if (live && controller.getSnapshot().draft.document !== initial.document) persist();
+        } finally { recovery?.settled(); }
       })();
       return () => {
         if (!live) return;
         live = false;
         unsubscribe();
+        const needsFlush = timers.has(key);
         cancelTimer(key);
         const current = controller.getSnapshot().draft;
-        if (keyFor(viewId, current.target) === key && (hydrated || current.document !== initial.document)) write(key, current.document, current.target);
+        const hasUnhydratedInput = !hydrated && current.document !== initial.document && !isComposerDocumentEmpty(current.document);
+        if (keyFor(viewId, current.target) === key && (needsFlush || hasUnhydratedInput)) write(key, current.document, current.target);
       };
     },
     discard(viewId, target) {

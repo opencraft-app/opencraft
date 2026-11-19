@@ -1,9 +1,10 @@
-import { supportsWorkspaceFiles } from '@opencraft/appserver-protocol';
-import { useWorkspaceCatalog } from './runtime/use-workspace-catalog';
-import { placementProblem } from './runtime/workspace-placement-model';
+import {ConversationArchivedBadge, ConversationUnavailableState} from "./components/conversation-archived";
 import { recordQueueError } from "./runtime/queue-error-history";
 import { routeStackPresentation } from "./components/route-stack-motion";
 import { RouteViewStack } from "./components/route-view-stack";
+import { supportsWorkspaceFiles } from '@opencraft/appserver-protocol';
+import { useWorkspaceCatalog } from './runtime/use-workspace-catalog';
+import { placementProblem } from './runtime/workspace-placement-model';
 import { channelSearchSource } from './runtime/channel-search-contribution';
 import { ConversationAppearanceProvider, ConversationAppearanceButton } from "./components/conversation-appearance";
 import type { AttachmentProgress } from "@opencraft/composer-editor";
@@ -154,7 +155,6 @@ import {
   connectionRecoveryIsPending,
   ConversationRecoveryNotice,
   ConversationRecoveryEmptyState,
-  ConversationUnavailableState,
   conversationRecoveryPresentation,
   conversationRecoveryIsPending,
   conversationRecoveryIsUnstable,
@@ -345,6 +345,7 @@ export function App({
   const [conversationSearchTarget, setConversationSearchTarget] = useState<(ConversationSearchTarget & { hostId: string; threadId: string }) | null>(null);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
   const [restoringArchivedThread, setRestoringArchivedThread] = useState(false);
+  const archivedRestoreInFlight = useRef(false);
   const appearanceTheme = useAppearanceTheme();
   const windowChrome = useWindowChrome();
   const portalContainer = useWorkbenchPresentationRoot();
@@ -372,6 +373,11 @@ export function App({
   }, [hostCatalog]);
   const attentionScope = hostCatalog.threadAttention.getScope();
   const conversationViewIdentity = useConversationViewIdentity();
+  const recoveringDraft = useSyncExternalStore(hostCatalog.draftRecovery.subscribe,
+    () => hostCatalog.draftRecovery.isPending(conversationViewIdentity.viewId));
+  const draftRecoveryNotice = recoveringDraft ? <div className="thread-layout-width" role="status">
+    {intl.formatMessage({ id: "chat.restoringLocalDraft", defaultMessage: "Restoring your draft…" })}
+  </div> : null;
   const extensionPlatform = (
     globalThis as typeof globalThis & {
       opencraftDesktop?: { readonly kind?: string };
@@ -827,10 +833,14 @@ export function App({
     ? runtime.resources.threads.getUnavailableReason?.(unavailableThreadId) ?? null
     : null;
   const visibleTimeline = useThreadOrchestrationTimeline(
-    unavailableThreadReason === null ? display.timeline : null, runtime.resources.orchestration,
+    unavailableThreadReason !== "not-found" ? display.timeline : null, runtime.resources.orchestration,
     unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open");
-  const showingDisplayCache = unavailableThreadReason === null
-    && display.source !== "history" && display.source !== "mixed" && display.source !== "empty";
+  const showingDisplayCache = unavailableThreadReason !== null
+    || (display.source !== "history" && display.source !== "mixed" && display.source !== "empty");
+  const canReadArchivedHistory = unavailableThreadReason === "archived" && snapshot.conversation?.authoritative === true;
+  const archivedReadOnlyTurnIds = useMemo(() => unavailableThreadReason === "archived"
+    ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []) : undefined,
+  [unavailableThreadReason, visibleTimeline]);
   const deliveryRecovery = submissionRecoveryPresentation(
     showingDisplayCache ? [] : snapshot.conversation?.pendingSubmissions ?? [],
     showingDisplayCache ? [] : snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
@@ -1348,14 +1358,14 @@ export function App({
       }
       // transfer to Composer when no editable surface, menu or dialog owns
       // the event; browser shortcuts and IME composition remain untouched.
-      if (shouldTypeToCompose(event)) {
+      if (!recoveringDraft && shouldTypeToCompose(event)) {
         event.preventDefault();
         composerController.insertText(event.key);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [composerController, navigateToHome, toggleRightPanel, presentation.shellNavigation, presentation.rightPanel, conversationRouteOpen, conversationSurfaceVisible, openSettingsFromConversation, embedded, draft, activeThreadId]);
+  }, [recoveringDraft, composerController, navigateToHome, toggleRightPanel, presentation.shellNavigation, presentation.rightPanel, conversationRouteOpen, conversationSurfaceVisible, openSettingsFromConversation, embedded, draft, activeThreadId]);
 
 
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
@@ -1541,15 +1551,21 @@ export function App({
     await queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
   }, [hostCatalog.threadManagement, queryClient]);
   const restoreUnavailableThread = useCallback(async () => {
-    if (unavailableThreadReason !== "archived" || unavailableThreadId === null || restoringArchivedThread) return;
+    if (unavailableThreadReason !== "archived" || unavailableThreadId === null || archivedRestoreInFlight.current) return;
+    archivedRestoreInFlight.current = true;
     setRestoringArchivedThread(true);
     try {
       await restoreArchivedThread(unavailableHostId, unavailableThreadId);
       await hostCatalog.selectConversation(createWorkbenchThreadLocation(unavailableHostId, unavailableThreadId));
+    } catch {
+      notices.error({ key: `restore:${unavailableHostId}:${unavailableThreadId}`, message: intl.formatMessage({
+        id: "chat.archived.restoreFailed", defaultMessage: "Could not restore this conversation. Try again.",
+      }) });
     } finally {
+      archivedRestoreInFlight.current = false;
       setRestoringArchivedThread(false);
     }
-  }, [hostCatalog, restoreArchivedThread, restoringArchivedThread, unavailableHostId, unavailableThreadId, unavailableThreadReason]);
+  }, [hostCatalog, intl, notices, restoreArchivedThread, unavailableHostId, unavailableThreadId, unavailableThreadReason]);
   const loadArchivedThreads = useCallback(async (hostId: string) => {
     return hostCatalog.threadManagement.listArchived(hostId);
   }, [hostCatalog.threadManagement]);
@@ -2027,10 +2043,10 @@ export function App({
           title={activeThread.title}
           project={embedded === undefined ? (activeThread.project ?? "OpenCraft") : undefined}
           onRename={title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThread.id }, title)}
-        /> : <span className="thread-header-copy"><strong>{activeThread.title}</strong>{embedded === undefined ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: activeThread.project ?? "OpenCraft", branch: "main" })}</small> : null}</span>}</span>
+        /> : <span className="thread-header-copy"><strong>{activeThread.title}</strong>{embedded === undefined ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: activeThread.project ?? "OpenCraft", branch: "main" })}</small> : null}</span>}{unavailableThreadReason === "archived" ? <ConversationArchivedBadge /> : null}</span>
       ) : conversationSurfaceVisible && draft === null && displayHeader && displayKey ? (
         <span className="conversation-appearance-heading"><ConversationAppearanceButton readOnly hostId={displayKey.hostId} threadId={displayKey.threadId} title={displayHeader.title} /><span className="thread-header-copy"><strong>{displayHeader.title}</strong>{embedded === undefined
-          ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: displayHeader.project || "OpenCraft", branch: "main" })}</small> : null}</span></span>
+          ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: displayHeader.project || "OpenCraft", branch: "main" })}</small> : null}</span>{unavailableThreadReason === "archived" ? <ConversationArchivedBadge /> : null}</span>
       ) : undefined}
       title={standaloneManagementOpen || extensionViewOpen ? null : pageTitle}
       project={
@@ -2316,7 +2332,7 @@ export function App({
             {connectionInterventionNode}
           </div>
         ) : draft !== null && draft.submission === null ? (
-          <NewThreadDraftPage
+          draftRecoveryNotice ?? <NewThreadDraftPage
             key={draft.id}
             setupNotice={<>{selectedPlacementProblem ? <div className="thread-layout-width new-thread-draft-composer-width" role="alert">{selectedPlacementProblem}</div> : null}{recoveryAccessFailure !== null ? <div className="thread-layout-width new-thread-draft-composer-width"><ConversationRecoveryNotice
               failed accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission} /></div> : draftSetupNotice}</>}
@@ -2416,11 +2432,7 @@ export function App({
                       attentionScope, snapshot.hostId, activeThreadId, turnId);
                   }}
                   hasPendingSubmission={unavailableThreadReason === null && draft !== null}
-                  emptyState={unavailableThreadReason !== null ? <ConversationUnavailableState
-                      reason={unavailableThreadReason}
-                      onRestore={unavailableThreadReason === "archived" ? restoreUnavailableThread : undefined}
-                      restoring={restoringArchivedThread}
-                    /> : draft !== null ? <PendingConversationPage
+                  emptyState={unavailableThreadReason === "not-found" ? <ConversationUnavailableState reason="not-found" /> : unavailableThreadReason === "archived" ? undefined : draft !== null ? <PendingConversationPage
                       embedded
                       conversation={draft}
                       documentContext={{ conversationId: null, cwd: draft.target.execution.workspace.cwd,
@@ -2457,8 +2469,8 @@ export function App({
                         }) : undefined,
                     theme: appearanceTheme.resolvedTheme,
                   }}
-                  timeline={draft === null && unavailableThreadReason === null ? visibleTimeline : null}
-                  readOnlyTurnIds={display.source === "mixed" ? display.cachedTurnIds : undefined}
+                  timeline={draft === null ? visibleTimeline : null}
+                  readOnlyTurnIds={archivedReadOnlyTurnIds ?? (display.source === "mixed" ? display.cachedTurnIds : undefined)}
                   consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
                   navigationSource={showingDisplayCache ? null : navigationSource}
                   searchTarget={conversationSearchTarget?.hostId === snapshot.hostId && conversationSearchTarget.threadId === snapshot.activeThreadId ? conversationSearchTarget : null}
@@ -2472,9 +2484,9 @@ export function App({
                         restoreSnapshot,
                       );
                   }}
-                  onLoadItemDetails={loadItemDetails}
+                  onLoadItemDetails={!showingDisplayCache || canReadArchivedHistory ? loadItemDetails : undefined}
                   onLoadOlder={
-                    !showingDisplayCache && snapshot.conversation?.history.hasOlder
+                    (!showingDisplayCache || canReadArchivedHistory) && snapshot.conversation?.history.hasOlder
                       ? loadOlderConversation
                       : undefined
                   }
@@ -2524,7 +2536,9 @@ export function App({
                     conversationScrollApiRef.current = api;
                   }}
                   surfaceCapabilities={timelineSurfaceCapabilities}
-                  footer={unavailableThreadReason !== null ? null : (
+                  footer={unavailableThreadReason === "archived" ? <ConversationUnavailableState
+                    reason="archived" onRestore={restoreUnavailableThread} restoring={restoringArchivedThread}
+                  /> : unavailableThreadReason !== null ? null : (
                     <ThreadComposerPresentation
                       key={panelOwnerId}
                       scopeId={panelOwnerId}
@@ -2535,8 +2549,8 @@ export function App({
                       timeline={draft === null ? visibleTimeline : null}
                       conversationProps={{
                         readOnlyTurnIds: display.source === "mixed" ? display.cachedTurnIds : undefined,
-                        onLoadItemDetails: showingDisplayCache ? undefined : loadItemDetails,
-                        onLoadOlder: !showingDisplayCache && snapshot.conversation?.history.hasOlder ? loadOlderConversation : undefined,
+                        onLoadItemDetails: !showingDisplayCache || canReadArchivedHistory ? loadItemDetails : undefined,
+                        onLoadOlder: (!showingDisplayCache || canReadArchivedHistory) && snapshot.conversation?.history.hasOlder ? loadOlderConversation : undefined,
                         history: !showingDisplayCache ? snapshot.conversation?.history : null,
                         onRespondInteraction: showingDisplayCache ? undefined : respondToInteraction,
                         onAnswerAsyncQuestion: !showingDisplayCache && snapshot.phase === 'ready' ? answerAsyncQuestion : undefined,
@@ -2573,7 +2587,7 @@ export function App({
                         <SubmissionRecoveryNotice submission={item} onAbandon={deliveryRecoveryActions.onAbandon} onRetry={deliveryRecoveryActions.onRetry} />
                       </div>
                     ))}
-                    {pendingInteraction === null ? (
+                    {pendingInteraction === null && draftRecoveryNotice ? draftRecoveryNotice : pendingInteraction === null ? (
                       <ThreadGoalSurface
                         threadId={snapshot.phase === "ready" ? activeThreadId : null}
                         goals={runtime.resources.goals}

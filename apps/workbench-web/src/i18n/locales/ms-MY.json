@@ -1,4 +1,5 @@
 {
+  "chat.restoringLocalDraft": "Memulihkan draf anda…",
   "im.channels.imageTooLarge": "Sembang luaran ini menerima imej sehingga 2 MB. Pilih salinan yang lebih kecil; imej anda masih dalam draf.",
   "im.channels.imageInvalid": "Imej ini tidak dapat dibaca. Pilih salinan PNG atau JPEG yang sah.",
   "im.channels.imageFormatUnavailable": "Sembang luaran ini menerima imej PNG dan JPEG. Pilih salah satu format ini; imej anda masih dalam draf.",
@@ -1486,9 +1487,9 @@
   "terminal.disconnected": "Terminal terputus. Menunggu pelayan menyambung semula.",
   "terminal.unavailable": "Terminal tidak tersedia. Cuba buka terminal baharu.",
   "terminal.new": "Terminal baharu",
-  "chat.archived.title": "Perbualan diarkibkan",
+  "chat.archived.title": "Perbualan ini diarkibkan",
   "chat.unavailable.title": "Perbualan tidak tersedia",
-  "chat.archived.description": "Perbualan ini diarkibkan dan hanya boleh dibaca sehingga dipulihkan.",
+  "chat.archived.description": "Sejarah masih boleh dilihat. Pulihkan untuk meneruskan perbualan.",
   "chat.unavailable.description": "Perbualan ini tidak lagi tersedia.",
   "onboard.agent.codex": "Codex",
   "onboard.agent.cursor": "Cursor",
@@ -1963,5 +1964,7 @@
   "composer.context.retry": "Cuba semula carian perbualan",
   "composer.context.empty": "Tiada perbualan ditemui",
   "composer.context.conversations": "Perbualan",
-  "composer.context.files": "Fail"
+  "composer.context.files": "Fail",
+  "chat.archived.badge": "Diarkibkan",
+  "chat.archived.restoreFailed": "Tidak dapat memulihkan perbualan ini. Cuba lagi."
 }

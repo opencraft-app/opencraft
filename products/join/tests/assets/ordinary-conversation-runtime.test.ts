@@ -637,7 +637,8 @@ test('product Native router creates, executes and resumes one admitted durable w
  assert.equal(first.selections[1].workspaceId,first.selections[0].workspaceId);
  await first.transport.close();
  const next=make();
- await next.send('same-id','thread/resume',{threadId:'routed-thread'});
+ await next.send('same-id','thread/resume',{threadId:'routed-thread',path:'/old/rollout.jsonl'});
+ assert.equal(Object.hasOwn(next.frames[0].params,'path'),false);
  await next.receipt('same-id',{threadId:'routed-thread'},'routed-thread','thread/resume');
  assert.equal(next.selections[0].workspaceId,first.selections[0].workspaceId);
  assert.equal(f.leases.length,1,'attachment close must not kill service-owned live workspace');
@@ -655,12 +656,16 @@ test('product Native router never sends foreign or lost remote work through loca
  assert.equal(owner.frames.length,0);
  for(const method of ['thread/resume','thread/fork']){
   await assert.rejects(owner.send('history',method,{threadId:'existing-local',history:[]}),/durable thread ID/);
-  await assert.rejects(owner.send('path',method,{threadId:'existing-local',path:'/foreign/rollout'}),/durable thread ID/);
+  await assert.rejects(owner.send('missing-id',method,{path:'/foreign/rollout'}),/durable thread ID/);
   await assert.rejects(owner.send('injected',method,{threadId:'existing-local',environments:[{environmentId:'workspace-foreign'}]}),/no admitted placement/);
  }
+ await assert.rejects(owner.send('path','thread/fork',{threadId:'existing-local',path:'/foreign/rollout'}),/durable thread ID/);
  assert.equal(owner.frames.length,0);
+ await owner.send('local-resume','thread/resume',{threadId:'existing-local',path:'/old/rollout.jsonl'});
+ assert.equal(owner.frames[0].params.threadId,'existing-local');
+ assert.equal(Object.hasOwn(owner.frames[0].params,'path'),false);
  await owner.send('local','turn/start',{threadId:'existing-local'});
- assert.deepEqual(owner.selections,[{kind:'local'}]);
+ assert.deepEqual(owner.selections,[{kind:'local'},{kind:'local'}]);
 });
 
 test('private grants from a closed physical router cannot execute later',async t=>{

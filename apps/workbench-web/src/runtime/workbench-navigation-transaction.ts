@@ -53,6 +53,8 @@ export interface WorkbenchNavigationTransactionOptions extends ApplicationRouter
   /** A cached View or its independently retained draft owner may restore this slot. */
   readonly isRetainedView?: (location: WorkbenchLocation, viewId: RouteScopeId) => boolean;
   readonly maxPreferredViews?: number;
+  /** The browser can mount a cold View and recover its local input in that View. */
+  readonly recoverInputAfterMount?: (viewId: RouteScopeId) => void;
   readonly restoreViewId?: (location: WorkbenchLocation) => Promise<RouteScopeId | undefined>;
 }
 
@@ -448,12 +450,12 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
       }
       return returnToView(location, retainedScope);
     }
-    if (routerOptions.restoreViewId) {
+    if (routerOptions.restoreViewId || routerOptions.recoverInputAfterMount) {
       const epoch = beginIntent(undefined, location), origin = navigation.getSnapshot();
       if (!ownsIntent(epoch, origin)) return Promise.resolve(false);
       const pendingViewId = createRouteScopeId();
       const paint = location.kind === "thread" ? historyFirstPaint.begin(pendingViewId, "cold", location.key) : undefined;
-      const promise = Promise.resolve().then(() => routerOptions.restoreViewId!(location)).catch(error => {
+      const promise = Promise.resolve().then(() => routerOptions.recoverInputAfterMount ? pendingViewId : routerOptions.restoreViewId!(location)).catch(error => {
         // Fence the local lookup. Cold preparation keeps the same accepted intent.
         if (!ownsIntent(epoch, origin)) return undefined;
         throw error;
@@ -463,7 +465,8 @@ export function createWorkbenchNavigationTransaction<TRuntime extends WorkbenchA
         await awaitDeparture(epoch);
         if (!ownsIntent(epoch, origin)) return false;
         if (viewId !== undefined) {
-          if (paint) historyFirstPaint.bindView(paint, viewId, "warm");
+          if (paint) historyFirstPaint.bindView(paint, viewId, routerOptions.recoverInputAfterMount ? "cold" : "warm");
+          routerOptions.recoverInputAfterMount?.(viewId);
           activation.mountRestored(location, viewId);
           activeLocation = location; activeScope = viewId;
           commitRoute(() => navigation.push(location, { routeScopeId: viewId }),
