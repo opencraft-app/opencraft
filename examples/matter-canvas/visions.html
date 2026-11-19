@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>下一代视觉五个方案</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* 布局：上面五个方案的切换，中间一块会动的三维草图，下面三句话说明它是什么、多说明了什么、风险在哪。 */
+:root { --bg: #f4f3ef; --card: #ffffff; --ink: #1b1b1f; --ink-2: #6a6b74; --line: #e2e0d8; --stage: #e6e3db; --accent: #3657d9;
+  --font: "PingFang SC", "HarmonyOS Sans SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #131417; --card: #1c1d22; --ink: #f0f0f3; --ink-2: #9a9ca8; --line: #2c2e36; --stage: #25272e; --accent: #8ea3ff; color-scheme: dark; } }
+:root[data-theme="dark"] { --bg: #131417; --card: #1c1d22; --ink: #f0f0f3; --ink-2: #9a9ca8; --line: #2c2e36; --stage: #25272e; --accent: #8ea3ff; color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--font); -webkit-text-size-adjust: 100%; }
+main { max-width: 920px; margin: 0 auto; padding-block: 20px 36px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 14px; }
+h1 { margin: 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; text-wrap: balance; }
+.lead { margin: 0; color: var(--ink-2); max-width: 60ch; }
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.tabs button { flex: none; font: inherit; color: var(--ink-2); cursor: pointer; min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line); background: var(--card); white-space: nowrap; }
+.tabs button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 600; }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.frame { position: relative; border-radius: 18px; overflow: hidden; border: 1px solid var(--line); background: var(--stage); aspect-ratio: 4 / 3; max-width: 100%; }
+#stage { display: block; width: 100%; height: 100%; }
+#labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+#labels span { position: absolute; transform: translate(-50%, -100%); padding: 1px 7px; border-radius: 9px; background: rgba(255, 255, 255, .88); color: #1b1b1f; font-size: 12px; font-weight: 600; white-space: nowrap; }
+#labels span.me { background: #1b1b1f; color: #fff; }
+#cap { position: absolute; left: 12px; right: 12px; bottom: 12px; padding: 9px 14px; border-radius: 12px; background: rgba(20, 21, 26, .82); color: #fff; font-size: 14px; text-align: center; }
+#fail { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--ink-2); }
+.notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.notes div { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+.notes b { display: block; font-size: 12px; color: var(--ink-2); letter-spacing: .08em; margin-bottom: 4px; }
+.foot { color: var(--ink-2); font-size: 13px; margin: 0; }
+[hidden] { display: none !important; }
+@media (max-width: 640px) { .frame { aspect-ratio: 1 / 1; } .notes { grid-template-columns: 1fr; } h1 { font-size: 21px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1 id="title">下一代视觉：五个方案的草图</h1>
+  <p class="lead" id="lead"></p>
+  <div class="tabs" id="tabs" role="group" aria-label="方案"></div>
+  <div class="frame"><canvas id="stage"></canvas><div id="labels"></div><div id="cap" aria-live="polite"></div><div id="fail" hidden>这台设备没能打开三维画面。换一个浏览器再试，或者看下面的文字说明。</div></div>
+  <div class="notes"><div><b>画面里是什么</b><span id="n1"></span></div><div><b>三维多说明了什么</b><span id="n2"></span></div><div><b>风险</b><span id="n3"></span></div></div>
+  <p class="foot">这些是用方块和球搭的草图，只为比较方向，不是最终画风。动画循环播放的是同一段示例：你对阿岚说一件事，她把一部分交给下属小折，最后把结果交回给你。</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  if (!window.THREE || !window.gsap) { $('fail').hidden = false; return; }
+  var canvas = $('stage'), renderer;
+  try { renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true }); } catch (e) { $('fail').hidden = false; return; }
+  renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+  var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var scene, camera, tl, extra = [], tags = [];
+  var HUE = { me: 0x2b2d33, a: 0x4c7868, y: 0x8471ac, z: 0xb5793f, c: 0x5a8397 }, NAME = { me: '你', a: '阿岚', y: '言禾', z: '小折', c: '沐川' };
+  var V = function (x, y, z) { return new THREE.Vector3(x, y, z); };
+
+  function mat(c, o) { return new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .9, metalness: 0 }, o || {})); }
+  function add(parent, geo, m, x, y, z) { var o = new THREE.Mesh(geo, m); o.position.set(x || 0, y || 0, z || 0); parent.add(o); return o; }
+  function box(parent, w, h, d, c, x, y, z, o) { return add(parent, new THREE.BoxGeometry(w, h, d), mat(c, o), x, y, z); }
+  function ball(parent, r, c, x, y, z, o) { return add(parent, new THREE.SphereGeometry(r, 24, 16), mat(c, o), x, y, z); }
+  function tag(text, obj, dy, cls) { var el = document.createElement('span'); el.textContent = text; if (cls) el.className = cls; $('labels').appendChild(el); tags.push({ el: el, obj: obj, dy: dy || 0 }); }
+  function base(bg) {
+    scene = new THREE.Scene(); scene.background = new THREE.Color(bg || getComputedStyle(document.documentElement).getPropertyValue('--stage').trim() || '#e6e3db');
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8578, .62)); var d = new THREE.DirectionalLight(0xffffff, .42); d.position.set(4, 9, 6); scene.add(d);
+  }
+  function ortho(size, pos, look) { camera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, 100); camera.userData.size = size; camera.position.copy(pos); camera.lookAt(look); }
+  function persp(fov, pos, look) { camera = new THREE.PerspectiveCamera(fov, 1, .1, 100); camera.position.copy(pos); camera.lookAt(look); }
+  function say(text, at) { tl.call(function () { $('cap').textContent = text; }, null, at); }
+  function local(obj, parent, lift) { return function () { var v = obj.getWorldPosition(V(0, 0, 0)); parent.worldToLocal(v); v.y += lift || 0; return v; }; }
+  function fly(d, from, to, at, dur) {
+    tl.call(function () { d.position.copy(from()); d.visible = true; }, null, at);
+    tl.to(d.position, { duration: dur, ease: 'power2.inOut', x: function () { return to().x; }, y: function () { return to().y; }, z: function () { return to().z; } }, at + .02);
+    tl.call(function () { d.visible = false; }, null, at + dur + .06);
+  }
+  function glow(m, on, at, dur) { tl.to(m.emissive, { duration: dur || .3, r: on ? .35 : 0, g: on ? .85 : 0, b: on ? .5 : 0 }, at); }
+  function spark(parent, c) { var d = ball(parent, .13, c || 0xffc24a, 0, 0, 0, { emissive: c || 0xffc24a, emissiveIntensity: .9 }); d.visible = false; return d; }
+
+  /* 一张工位：桌子、人、电脑、手机 */
+  function desk(parent, who, x, z, s, front) {
+    var g = new THREE.Group(); g.position.set(x, 0, z); g.scale.setScalar(s || 1); parent.add(g);
+    box(g, 1.7, .12, .95, 0xd8c7a8, 0, .62, 0); box(g, .1, .62, .1, 0xb9a98c, -.75, .31, .38); box(g, .1, .62, .1, 0xb9a98c, .75, .31, .38); box(g, .1, .62, .1, 0xb9a98c, -.75, .31, -.38); box(g, .1, .62, .1, 0xb9a98c, .75, .31, -.38);
+    var dir = front ? 1 : -1, body = add(g, new THREE.CylinderGeometry(.24, .3, .7, 20), mat(HUE[who]), 0, .55, dir * .85), head = ball(g, .26, 0xf0d9c0, 0, 1.1, dir * .85);
+    box(g, .62, .42, .05, 0x23262c, -.3, .93, dir * .12); var screen = box(g, .54, .34, .02, 0x15181c, -.3, .93, dir * .12 + dir * .035, { emissive: 0x000000 }); box(g, .08, .12, .08, 0x23262c, -.3, .72, dir * .12);
+    var phone = box(g, .2, .03, .36, 0x3b3070, .48, .7, 0, { emissive: 0x000000 });
+    tag(NAME[who], head, .34, who === 'me' ? 'me' : '');
+    return { g: g, screen: screen.material, phone: phone, head: head };
+  }
+  function office(parent) {
+    var o = {}; box(parent, 13, .2, 11, 0xd3cfc5, 0, -.1, -.6);
+    o.me = desk(parent, 'me', 0, 3.1, 1.15, true); o.tray = box(parent, .6, .08, .8, 0x8a8f9c, -1.35, .78, 3.1);
+    o.a = desk(parent, 'a', -3.6, 0, 1); o.y = desk(parent, 'y', -1.2, 0, 1); o.c = desk(parent, 'c', 1.2, 0, 1); o.z = desk(parent, 'z', -3.6, -2.9, .82);
+    box(parent, 1.7, .02, .95, 0xc3beb3, 3.6, .01, 0);
+    [[-3.6, 0], [-1.2, 0], [1.2, 0]].forEach(function (p) { var m = box(parent, .06, .02, 2.2, 0xb4afa3, p[0] * .5, .01, 1.6); m.rotation.y = Math.atan2(p[0], 3); m.scale.z = Math.hypot(p[0], 3) / 2.2 * .8; });
+    box(parent, .06, .02, 1.6, 0xb4afa3, -3.6, .01, -1.45);
+    return o;
+  }
+
+  var SCENES = [
+    { name: '1 办公室', lead: '一间俯视的小办公室。公司就是办公室，谁坐哪、谁归谁管，摆出来就是答案。',
+      n: ['每人一张工位，桌上一台电脑一部手机。你的桌子在最前，直属下属一排，他们的下属在身后。', '消息是手机之间的一道光；干活是屏幕亮起；交到你手上是一张纸滑进你桌上的文件盘。三件事一眼分清。', '要做模型和摆位；人一多得分区或分层。'],
+      build: function () {
+        base(); ortho(5.4, V(7, 9, 10), V(-1, .4, .2)); var o = office(scene), d = spark(scene), paper = box(scene, .42, .03, .56, 0xfffdf5, 0, 0, 0, { emissive: 0x000000 }); paper.visible = false;
+        var ph = function (k) { return local(o[k].phone, scene, .35); };
+        say('你对阿岚说：周五把 2.3 版本交给客户', 0); fly(d, ph('me'), ph('a'), .1, 1.2); glow(o.a.screen, true, 1.4); say('阿岚的电脑亮了：她开始办', 1.4);
+        say('她把一部分交给自己的下属小折', 2.6); fly(d, ph('a'), ph('z'), 2.7, 1); glow(o.z.screen, true, 3.8); say('小折的电脑开始核对', 3.8);
+        say('小折把结果交回给阿岚', 5.2); fly(d, ph('z'), ph('a'), 5.3, 1); glow(o.z.screen, false, 6.3);
+        say('阿岚交出的核对单滑到你桌上：等你看', 6.7); tl.call(function () { paper.position.copy(local(o.a.phone, scene, .2)()); paper.visible = true; }, null, 6.7);
+        tl.to(paper.position, { duration: 1.3, ease: 'power2.inOut', x: -1.35, y: .86, z: 3.1 }, 6.75); glow(o.a.screen, false, 7.2); glow(paper.material, true, 8.1, .4);
+        tl.call(function () { paper.visible = false; paper.material.emissive.setRGB(0, 0, 0); }, null, 10);
+      } },
+    { name: '2 组织星图', lead: '你在中心，直属下属绕着你，他们的下属是更外一圈的卫星。',
+      n: ['每个人一个球，连线就是汇报线。整张图缓缓转动。', '汇报线和消息流向最清楚，放很多人也不挤；等你处理的人外面多一圈红环。', '抽象。手机和电脑不在画面里，容易回到看不懂的点和线。'],
+      build: function () {
+        base(); persp(42, V(0, 6.5, 8.6), V(0, .2, 0)); var g = new THREE.Group(); scene.add(g); extra.push(gsap.to(g.rotation, { y: Math.PI * 2, duration: 60, ease: 'none', repeat: -1 }));
+        var me = ball(g, .55, HUE.me, 0, 0, 0); tag('你', me, .7, 'me'); var P = {}, lm = new THREE.LineBasicMaterial({ color: 0x9a968c });
+        function line(a, b) { g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([a, b]), lm)); }
+        ['a', 'y', 'c'].forEach(function (k, i) { var t = i / 3 * Math.PI * 2 + .5, p = V(Math.cos(t) * 3.3, 0, Math.sin(t) * 3.3); P[k] = ball(g, .4, HUE[k], p.x, p.y, p.z, { emissive: 0x000000 }); tag(NAME[k], P[k], .52); line(V(0, 0, 0), p); });
+        var pz = P.a.position.clone().add(V(-1.1, 0, -1)); P.z = ball(g, .28, HUE.z, pz.x, pz.y, pz.z, { emissive: 0x000000 }); tag('小折', P.z, .4); line(P.a.position, pz);
+        var pc2 = P.c.position.clone().add(V(1.2, 0, .6)); ball(g, .28, 0x9aa0a8, pc2.x, pc2.y, pc2.z); line(P.c.position, pc2);
+        var ring = add(g, new THREE.TorusGeometry(.62, .05, 10, 40), mat(0xd6382d, { emissive: 0xd6382d, emissiveIntensity: .6 }), P.a.position.x, 0, P.a.position.z); ring.rotation.x = Math.PI / 2; ring.visible = false;
+        var d = spark(g), at = function (o) { return function () { return o.position.clone(); }; };
+        say('你对阿岚说一件事', 0); fly(d, at(me), at(P.a), .1, 1.1); glow(P.a.material, true, 1.3); say('阿岚亮起来：在办', 1.3);
+        say('她交给自己的下属小折', 2.4); fly(d, at(P.a), at(P.z), 2.5, .9); glow(P.z.material, true, 3.5); say('小折在办', 3.5);
+        say('小折交回给阿岚', 4.8); fly(d, at(P.z), at(P.a), 4.9, .9); glow(P.z.material, false, 5.8);
+        say('阿岚外面多了一圈红环：有东西等你', 6.4); glow(P.a.material, false, 6.4); tl.call(function () { ring.visible = true; }, null, 6.4); tl.fromTo(ring.scale, { x: .6, y: .6, z: .6 }, { x: 1, y: 1, z: 1, duration: .5, ease: 'back.out(2)' }, 6.4);
+        tl.call(function () { ring.visible = false; }, null, 9.6);
+      } },
+    { name: '3 你的办公桌', lead: '第一人称，只看你自己的桌面。交上来的东西就是落在桌上的纸。',
+      n: ['桌子后沿一排相框是直属下属，左边是文件盘，右边是办完的一摞。', '「等我处理」是文件盘里实实在在的纸，盖章就是验收。老板的视角最纯粹。', '员工的手机和电脑不在画面里，要点相框另外进去看。'],
+      build: function () {
+        base(); persp(40, V(0, 6.2, 6.4), V(0, 0, .2)); box(scene, 10, .3, 6, 0xcdb48f, 0, -.15, 0);
+        var F = {}; ['a', 'y', 'c'].forEach(function (k, i) { var x = -2.4 + i * 2.4; box(scene, 1.2, 1.5, .1, 0x3a3d45, x, .75, -2.2); F[k] = box(scene, 1, 1.3, .04, HUE[k], x, .75, -2.14, { emissive: 0x000000 }); tag(NAME[k], F[k], .95); });
+        box(scene, 1.5, .12, 1.9, 0x8a8f9c, -3.3, .06, 1.2); var done = box(scene, 1.3, .14, 1.7, 0xdfe9df, 3.3, .07, 1.2); tag('文件盘', scene.children[scene.children.length - 2], .5); tag('办完的', done, .5);
+        var stamp = new THREE.Group(); scene.add(stamp); add(stamp, new THREE.CylinderGeometry(.22, .28, .3, 20), mat(0x7a2f2a), 0, .15, 0); add(stamp, new THREE.CylinderGeometry(.1, .1, .5, 16), mat(0x4a3a2e), 0, .55, 0); stamp.position.set(1.7, 0, 2);
+        var paper = box(scene, 1.1, .03, 1.5, 0xfffdf5, 0, 0, 0); paper.visible = false;
+        say('阿岚的相框亮了：她交上来一份东西', 0); glow(F.a.material, true, 0); tl.call(function () { paper.material.color.set(0xfffdf5); paper.position.set(-2.4, .5, -1.8); paper.visible = true; }, null, .5);
+        tl.to(paper.position, { duration: 1.1, ease: 'power2.inOut', x: -3.3, y: .16, z: 1.2 }, .55); say('它落进你的文件盘：这就是待办', 1.7); glow(F.a.material, false, 1.7);
+        say('你把它拿到面前看', 3.1); tl.to(paper.position, { duration: .9, ease: 'power2.inOut', x: 0, y: .05, z: .9 }, 3.1);
+        say('盖章：可以', 4.6); tl.to(stamp.position, { duration: .5, x: .25, y: .9, z: .9, ease: 'power2.out' }, 4.6); tl.to(stamp.position, { duration: .18, y: .06, ease: 'power3.in' }, 5.15);
+        tl.call(function () { paper.material.color.set(0xd5ecd8); }, null, 5.35); tl.to(stamp.position, { duration: .5, x: 1.7, y: 0, z: 2, ease: 'power2.inOut' }, 5.5);
+        say('办完的归到右边', 6.3); tl.to(paper.position, { duration: .9, ease: 'power2.inOut', x: 3.3, y: .18, z: 1.2 }, 6.3); tl.call(function () { paper.visible = false; }, null, 9);
+      } },
+    { name: '4 时间河', lead: '每个直属下属一条泳道，说过的话和交出的东西顺着时间流过来。',
+      n: ['远处是过去，近处是现在。卡片沿泳道向你漂来。', '「经过」最直观；要你处理的那张会变红并浮到最前面。', '讲的是事的流动，不是人。和「先选人，再对他说」的逻辑不太合。'],
+      build: function () {
+        base(); persp(46, V(0, 4.4, 8.4), V(0, 0, -2.4)); var cards = [];
+        ['a', 'y', 'c'].forEach(function (k, i) { var x = -2.6 + i * 2.6; box(scene, 2, .06, 18, 0xb9b4a8, x, 0, -4.5); var h = ball(scene, .3, HUE[k], x, .45, 2.3); tag(NAME[k], h, .46);
+          for (var j = 0; j < 4; j++) { var cd = box(scene, 1.5, .05, .95, 0xfffdf5, x, .08, -12 + j * 3.6 + i, { emissive: 0x000000 }); cards.push(cd); tl.to(cd.position, { z: '+=3.6', duration: 9.5, ease: 'none' }, 0); } });
+        var hot = cards[2]; say('卡片顺着时间向你漂来：谁说了什么、交出了什么', 0);
+        say('阿岚这张变红并浮起来：等你处理', 4); tl.to(hot.material.color, { r: .95, g: .55, b: .5, duration: .4 }, 4); tl.to(hot.position, { y: 1.1, duration: .8, ease: 'power2.out' }, 4); tl.to(hot.rotation, { x: .5, duration: .8 }, 4);
+        say('你处理完，它落回去继续流走', 7); tl.to(hot.material.color, { r: .84, g: .93, b: .85, duration: .4 }, 7); tl.to(hot.position, { y: .08, duration: .7, ease: 'power2.in' }, 7); tl.to(hot.rotation, { x: 0, duration: .7 }, 7);
+      } },
+    { name: '5 列表 + 一屏总览', lead: '操作还是现在的对话界面，另加一屏三维的「公司」只做总览。',
+      n: ['左边是现在的列表，右边是缩小的办公室。两边是同一批人。', '点办公室里的工位，就是打开列表里那一行。三维只负责让你一眼看全局。', '最稳，但不够「下一代」，三维容易沦为装饰。'],
+      build: function () {
+        base(); ortho(5.2, V(8, 9, 10), V(.6, .4, .2)); var right = new THREE.Group(); right.position.set(2.6, 0, -.4); right.scale.setScalar(.62); scene.add(right); var o = office(right);
+        var pad = new THREE.Group(); pad.position.set(-3.6, 1.9, 1.6); pad.rotation.set(-.5, .55, 0); scene.add(pad); box(pad, 2.7, 3.9, .12, 0x23262c, 0, 0, 0); box(pad, 2.45, 3.6, .02, 0xf4f3ef, 0, 0, .07);
+        var rows = ['a', 'y', 'c'].map(function (k, i) { ball(pad, .2, HUE[k], -.9, 1.25 - i * .85, .12); return box(pad, 1.5, .5, .02, 0xd9d6cd, .25, 1.25 - i * .85, .09, { emissive: 0x000000 }); });
+        var ring = add(right, new THREE.TorusGeometry(1.25, .07, 10, 40), mat(0x3657d9, { emissive: 0x3657d9, emissiveIntensity: .7 }), 0, .05, 0); ring.rotation.x = Math.PI / 2;
+        ['a', 'y', 'c'].forEach(function (k, i) { var t = i * 2.4;
+          say('办公室里的' + NAME[k] + ' = 列表里的这一行', t); tl.call(function () { ring.position.set(o[k].g.position.x, .05, o[k].g.position.z); }, null, t);
+          tl.to(rows[i].material.emissive, { r: .2, g: .32, b: .85, duration: .3 }, t); tl.to(rows[i].material.emissive, { r: 0, g: 0, b: 0, duration: .3 }, t + 2.1); });
+      } }
+  ];
+
+  function resize() {
+    var w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h || !camera) return; renderer.setSize(w, h, false);
+    if (camera.isOrthographicCamera) { var s = camera.userData.size * (w / h < 1.1 ? 1.25 : 1), a = w / h; camera.left = -s * a; camera.right = s * a; camera.top = s; camera.bottom = -s; } else { camera.aspect = w / h; camera.fov = camera.userData.fov * (w / h < 1.1 ? 1.25 : 1); }
+    camera.updateProjectionMatrix();
+  }
+  function show(i) {
+    if (tl) tl.kill(); extra.forEach(function (t) { t.kill(); }); extra = []; tags = []; $('labels').innerHTML = ''; $('cap').textContent = '';
+    var s = SCENES[i]; tl = gsap.timeline({ repeat: -1, repeatDelay: 1.2 }); s.build(); if (camera.isPerspectiveCamera) camera.userData.fov = camera.fov; resize();
+    if (calm) { extra.forEach(function (t) { t.pause(); }); tl.pause(); tl.time(Math.min(tl.duration(), 6.9)); }
+    $('lead').textContent = s.lead; $('n1').textContent = s.n[0]; $('n2').textContent = s.n[1]; $('n3').textContent = s.n[2];
+    Array.prototype.forEach.call($('tabs').children, function (b, k) { b.setAttribute('aria-pressed', k === i); });
+    window.__vis = { i: i, tl: tl };
+  }
+  SCENES.forEach(function (s, i) { var b = document.createElement('button'); b.textContent = s.name; b.onclick = function () { show(i); }; $('tabs').appendChild(b); });
+  var v = new THREE.Vector3();
+  function frame() {
+    requestAnimationFrame(frame); if (document.hidden || !scene) return;
+    renderer.render(scene, camera); var w = canvas.clientWidth, h = canvas.clientHeight;
+    tags.forEach(function (t) { t.obj.getWorldPosition(v); v.y += t.dy; v.project(camera); t.el.style.left = (v.x * .5 + .5) * w + 'px'; t.el.style.top = (-v.y * .5 + .5) * h + 'px'; });
+  }
+  window.addEventListener('resize', resize);
+  show(0); frame();
+})();
+</script>
+</body>
+</html>
