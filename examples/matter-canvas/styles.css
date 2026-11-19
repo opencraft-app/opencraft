@@ -97,3 +97,7 @@ textarea { display: block; width: 100%; min-height: 180px; padding: 14px 16px; b
 
 button.stamp { align-self: center; font-size: 12px; color: var(--ink-3); padding: 2px 8px; }
 .act .go + .go { margin-top: 0; }
+.none b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 6px; } .none p { margin: 0 0 16px; line-height: 1.6; } .none .go { display: block; width: 100%; margin-top: 10px; }
+.todo button.t { flex: 1; min-width: 0; } .todo button.box { cursor: pointer; }
+.cell b small { color: var(--ink-2); font-size: 13px; }
+.sec + .none { padding: 20px 16px 8px; } .sec + .none p { margin-bottom: 0; }
