@@ -208,7 +208,7 @@ export function SettingsNavigation({
                 <Search size={15} aria-hidden="true" />
                 <input
                   type="search"
-                  aria-label="Search agent settings"
+                  aria-label={intl.formatMessage({ id: "settings.management.search", defaultMessage: "Search agent settings" })}
                   value={managementQuery}
                   onChange={(event) => setManagementQuery(event.currentTarget.value)}
                   placeholder="Search"

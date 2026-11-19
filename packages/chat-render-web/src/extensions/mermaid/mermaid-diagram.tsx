@@ -1,4 +1,5 @@
 import { ZoomableImage } from "../../zoomable-image";
+import { useIntl } from "@opencraft/i18n/react";
 import { PendingPreview } from "@opencraft/design-system-web/preview-activation";
 import { IconButton } from "@opencraft/design-system-web/button";
 import { downloadBlob } from "@opencraft/design-system-web/download";
@@ -300,11 +301,12 @@ function MermaidPreview({
   readonly openedByPointer: boolean;
   readonly onKeyboardNavigation: ReturnType<typeof usePreviewFocusOrigin>["onPreviewKeyDown"];
 }) {
+  const intl = useIntl();
   return (
-    <Suspense fallback={<PendingPreview onClose={onClose}/>}><MermaidPreviewSurface returnFocus={returnFocus} label="Mermaid diagram preview" className="chat-mermaid-preview" openedByPointer={openedByPointer} onClose={onClose} onKeyDown={onKeyboardNavigation}>
+    <Suspense fallback={<PendingPreview onClose={onClose}/>}><MermaidPreviewSurface returnFocus={returnFocus} label={intl.formatMessage({ id: "chat.mermaid.preview", defaultMessage: "Mermaid diagram preview" })} className="chat-mermaid-preview" openedByPointer={openedByPointer} onClose={onClose} onKeyDown={onKeyboardNavigation}>
       {close => <>
       <div className="chat-mermaid-preview__diagram">
-        <ZoomableImage src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} alt="Mermaid diagram" fitToContainer />
+        <ZoomableImage src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`} alt={intl.formatMessage({ id: "chat.mermaid.diagram", defaultMessage: "Mermaid diagram" })} fitToContainer />
       </div>
       <div className="chat-mermaid-preview__actions">
         <IconButton

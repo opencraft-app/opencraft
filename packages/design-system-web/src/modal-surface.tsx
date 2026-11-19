@@ -16,7 +16,8 @@ export interface ModalSurfaceProps extends ModalDescriptor {
   readonly returnFocus?: () => HTMLElement | null;
   /** A presentation owner may defer restoration until its controls are interactive. */
   readonly deferReturnFocus?: (resolve: () => HTMLElement | null) => void;
-  readonly closeLabel?: string;
+  /** Localized accessible name for the close button; the host supplies it. */
+  readonly closeLabel: string;
   /** Navigation surfaces must not summon an IME merely by opening. */
   readonly initialFocus?: "surface";
   /** Fullscreen scene canvases own their backdrop; modality still belongs here. */
@@ -136,7 +137,7 @@ export function ModalSurface({
           {showCloseButton ? (
             <Dialog.Close asChild>
               <button
-                aria-label={closeLabel ?? `Close ${label.toLocaleLowerCase()}`}
+                aria-label={closeLabel}
                 className="modal-surface__close"
                 type="button"
                 onClick={() => {

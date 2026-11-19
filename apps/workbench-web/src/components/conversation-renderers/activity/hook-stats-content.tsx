@@ -1,33 +1,36 @@
 import { Fragment } from "react";
 import { formatHookEventName, formatHookSource, type HookStats } from "@opencraft/chat-core";
+import type { IntlShape } from "@opencraft/i18n";
+import { useIntl } from "@opencraft/i18n/react";
 
-function hookStatsEntryLabel(kind: HookStats["entries"][number]["kind"]): string {
+function hookStatsEntryLabel(intl: IntlShape, kind: HookStats["entries"][number]["kind"]): string {
   switch (kind) {
     case "feedback":
-      return "Feedback";
+      return intl.formatMessage({ id: "chat.hookStats.entry.feedback", defaultMessage: "Feedback" });
     case "stop":
-      return "Stop";
+      return intl.formatMessage({ id: "chat.hookStats.entry.stop", defaultMessage: "Stop" });
     case "error":
-      return "Error";
+      return intl.formatMessage({ id: "chat.hookStats.entry.error", defaultMessage: "Error" });
   }
 }
 
 function HookStatsSummary({ stats }: { readonly stats: HookStats }) {
+  const intl = useIntl();
   return (
     <>
-      <strong>Hooks summary</strong>
+      <strong>{intl.formatMessage({ id: "chat.hookStats.summary", defaultMessage: "Hooks summary" })}</strong>
       <span className="thread-hook-stats__counts">
-        <span>Ran</span>
+        <span>{intl.formatMessage({ id: "chat.hookStats.ran", defaultMessage: "Ran" })}</span>
         <b>{stats.count}</b>
         {stats.blockedCount > 0 ? (
           <>
-            <span>Blocked</span>
+            <span>{intl.formatMessage({ id: "chat.hookStats.blocked", defaultMessage: "Blocked" })}</span>
             <b>{stats.blockedCount}</b>
           </>
         ) : null}
         {stats.errorCount > 0 ? (
           <>
-            <span>Errors</span>
+            <span>{intl.formatMessage({ id: "chat.hookStats.errors", defaultMessage: "Errors" })}</span>
             <b>{stats.errorCount}</b>
           </>
         ) : null}
@@ -36,7 +39,7 @@ function HookStatsSummary({ stats }: { readonly stats: HookStats }) {
         <span className="thread-hook-stats__entries">
           {stats.entries.map((entry, index) => (
             <span className="thread-hook-stats__entry" key={`${entry.kind}:${index}:${entry.text}`}>
-              <em>{hookStatsEntryLabel(entry.kind)}</em>
+              <em>{hookStatsEntryLabel(intl, entry.kind)}</em>
               <span>{entry.text}</span>
             </span>
           ))}
@@ -47,9 +50,10 @@ function HookStatsSummary({ stats }: { readonly stats: HookStats }) {
 }
 
 function HookStatsDetails({ stats }: { readonly stats: HookStats }) {
+  const intl = useIntl();
   return (
     <>
-      <strong>Hooks</strong>
+      <strong>{intl.formatMessage({ id: "chat.hookStats.title", defaultMessage: "Hooks" })}</strong>
       <ul className="thread-hook-stats__runs">
         {stats.runs.map((run) => (
           <Fragment key={run.id}>
@@ -57,7 +61,9 @@ function HookStatsDetails({ stats }: { readonly stats: HookStats }) {
             <li className="thread-hook-stats__run">
               <span>
                 {formatHookSource(run.source)}
-                {run.count > 1 ? ` · ${String(run.count)} runs` : ""}
+                {run.count > 1
+                  ? intl.formatMessage({ id: "chat.hookStats.runs", defaultMessage: " · {count} runs" }, { count: String(run.count) })
+                  : ""}
               </span>
               {run.statusMessage === null ? null : <span>{run.statusMessage}</span>}
               {run.entries.map((entry, index) => (

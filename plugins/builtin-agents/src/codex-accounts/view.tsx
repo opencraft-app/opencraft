@@ -153,7 +153,7 @@ function AccountDiagnostic({ failure }: { readonly failure: CodexAccountFailure 
     <span>{intl.formatMessage(accountFailureMessages[failure.code])}</span>
     <span className="engine-account__diagnostic-meta">
       <time dateTime={new Date(failure.occurredAt).toISOString()}>{formatDate(failure.occurredAt)}</time>
-      <code>{failure.code}{failure.reason ? ` · ${failure.reason}` : ""}{failure.httpStatus ? ` · HTTP ${failure.httpStatus}` : ""}</code>
+      <code>{failure.code}{failure.reason ? ` · ${failure.reason}` : ""}{failure.httpStatus ? intl.formatMessage({ id: "codexAccounts.diagnostic.httpStatus", defaultMessage: " · HTTP {status}" }, { status: String(failure.httpStatus) }) : ""}</code>
       <SettingsCopyButton value={failure.diagnosticId}
         label={intl.formatMessage({ id: "codexAccounts.diagnostic.copy", defaultMessage: "Copy diagnostic ID" })}
         successLabel={intl.formatMessage({ id: "codexAccounts.diagnostic.copied", defaultMessage: "Diagnostic ID copied" })} />

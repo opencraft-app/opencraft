@@ -168,7 +168,7 @@ function ServerInformationContent({ scope }: { scope: string }) {
                   id="server-public-url"
                   type="url"
                   value={value}
-                  placeholder="https://example.com/servers/server-id"
+                  placeholder={t("placeholder", "https://example.com/servers/server-id")}
                   autoComplete="off"
                   spellCheck={false}
                   readOnly={!editable}

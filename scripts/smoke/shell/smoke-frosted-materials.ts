@@ -9,7 +9,7 @@ const output = process.env.OPENCRAFT_MATERIAL_REPORT ?? await mkdtemp(join(tmpdi
 const compiledCss = process.env.OPENCRAFT_MATERIAL_CSS ? await readFile(process.env.OPENCRAFT_MATERIAL_CSS, "utf8") : null;
 let source = `
 import React,{useState} from 'react';
-import {createRoot} from 'react-dom/client';
+import {createIntlTestRoot as createRoot} from '/tests/fixtures/intl-root.tsx';
 import * as Menu from '@opencraft/design-system-web/dropdown-menu';
 import {ModalSurface} from '/apps/workbench-web/src/components/modal/modal-surface.tsx';
 import {buildOpenCraftThemeCssProperties,opencraftNeutralThemePalette,seeThemePalette} from '/packages/design-system/src/theme-engine.ts';

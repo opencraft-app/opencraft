@@ -19,6 +19,7 @@ export function SideChatContent({ session, service, runtime, active = true, oper
   const catalog = useQuery(composerCapabilitiesOptions(session.key.hostId, session.key.threadId, runtime.resources.composerCatalog));
   const displayModels = projectComposerModelChoices(catalog.data?.metadataReader === runtime.resources.composerCatalog ? catalog.data.models : []);
   const theme = useAppearanceTheme().resolvedTheme;
+  const intl = useIntl();
   const snapshot = useSyncExternalStore(session.lease.subscribe, session.lease.getSnapshot, session.lease.getSnapshot);
   const [error, setError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -37,7 +38,7 @@ export function SideChatContent({ session, service, runtime, active = true, oper
   }, [active, session.composer]);
   return <div ref={panelRef} className="side-chat-panel">
     <SideChatHeader parentThreadId={session.parent.threadId} />
-    {operationError ? <p role="alert">Side chat close failed: {operationError}. Try closing again.</p> : null}
+    {operationError ? <p role="alert">{intl.formatMessage({ id: "panel.sideChat.closeFailed", defaultMessage: "Side chat close failed: {error}. Try closing again." }, { error: operationError })}</p> : null}
     {snapshot.error ? <p role="alert">{snapshot.error.message}</p> : null}
     <Conversation active={active} scrollPolicy="natural" timeline={snapshot.timeline}
       documentContext={{ conversationId: session.key.threadId, hostId: session.key.hostId, cwd: snapshot.execution.cwd, theme }}
@@ -85,10 +86,14 @@ export function createSideChatPanelPlugin(service: SideChatService, bindings: Co
     const creationError = tab.resource ? service.getCreationError(tab.resource) : null;
     const failure = creationError ?? (tab.resource ? service.getRecoveryError(tab.resource) : null);
     const runtime = session ? resolveRuntime(session.key.hostId) : null;
+    const intl = useIntl();
     return session && runtime ? <SideChatContent key={session.id} session={session} service={service} runtime={runtime} active={active} operationError={failure?.message} />
       : <div className="right-panel-empty" role={failure ? "alert" : "status"}>
-        {failure ? `${creationError ? "Side chat creation failed" : "Side chat recovery failed"}: ${failure.message}` : "Restoring side chat…"}
-        {failure && parent ? <button onClick={() => void (creationError && tab.resource ? service.retryCreation(tab.resource) : service.restore(parent)).catch(() => {})}>Retry</button> : null}
+        {failure ? intl.formatMessage(creationError
+          ? { id: "panel.sideChat.creationFailed", defaultMessage: "Side chat creation failed: {error}" }
+          : { id: "panel.sideChat.recoveryFailed", defaultMessage: "Side chat recovery failed: {error}" }, { error: failure.message })
+          : intl.formatMessage({ id: "panel.sideChat.restoring", defaultMessage: "Restoring side chat…" })}
+        {failure && parent ? <button onClick={() => void (creationError && tab.resource ? service.retryCreation(tab.resource) : service.restore(parent)).catch(() => {})}>{intl.formatMessage({ id: "panel.sideChat.retry", defaultMessage: "Retry" })}</button> : null}
       </div>;
   }
   return Object.assign(function SideChatPanelPlugin(ctx: Context) {
