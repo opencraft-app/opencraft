@@ -1,8 +1,4 @@
-import type {
-  SandboxBackend,
-  SandboxIdentity,
-  SandboxResources,
-} from "@opencraft/sandbox";
+import type { SandboxBackend, SandboxIdentity, SandboxResources } from "@opencraft/sandbox";
 import type { AssistantEnvironmentProvider } from "./host-supervisor.mjs";
 export interface AssistantSandboxTemplate {
   id: string;
@@ -18,11 +14,7 @@ export function createSandboxAssistantProvider(options: {
   maxCommandMs?: number;
   /** Dedicated remote workspace derived only from the authenticated Bot binding. */
   persistentWorkspaces?: boolean;
-  onReconciliation?(identity: {
-    backend: string;
-    owner: string;
-    id?: string;
-  }): void;
+  onReconciliation?(identity: { backend: string; owner: string; id?: string }): void;
   createBackend(
     template: AssistantSandboxTemplate,
     lease: {

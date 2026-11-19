@@ -1,30 +1,14 @@
 import { memoryBm25Match } from "./memory-bm25.mjs";
-import {
-  memoryView,
-  selectProjectMemories,
-} from "../../domain/memory-spaces.mjs";
-import {
-  memorySearchTerms,
-  memoryDocument,
-  memoryRecallTerms,
-} from "../../domain/memory-recall.mjs";
+import { memoryView, selectProjectMemories } from "../../domain/memory-spaces.mjs";
+import { memorySearchTerms, memoryDocument, memoryRecallTerms } from "../../domain/memory-recall.mjs";
 export const memoryColumns = `m.*,coalesce(d.scope,'user') AS scope,d.project_id AS projectId,coalesce(d.kind,'profile') AS kind,coalesce(d.updated_at,0) AS updatedAt,s.agent_id AS agentId,s.agent_name AS agentName,s.content_id AS contentId,s.path`;
 export const memoryJoin = `memory m LEFT JOIN memory_detail d ON d.key=m.key LEFT JOIN memory_shard s ON s.key=m.key`;
 export const memoryVisible = `(coalesce(d.scope,'user') IN ('user','agent') OR d.project_id IN (SELECT value FROM json_each(?)))`;
-export const memoryVisibility = (value) =>
-  JSON.stringify(memoryView(value).projectIds);
+export const memoryVisibility = (value) => JSON.stringify(memoryView(value).projectIds);
 export function readMemories(
   db,
   view,
-  {
-    limit = 50,
-    query = "",
-    after = null,
-    deleted = false,
-    kind = null,
-    match = "literal",
-    scope = null,
-  } = {},
+  { limit = 50, query = "", after = null, deleted = false, kind = null, match = "literal", scope = null } = {},
 ) {
   return db
     .prepare(
@@ -33,7 +17,8 @@ export function readMemories(
     )
     .all(
       memoryVisibility(view),
-      scope, scope,
+      scope,
+      scope,
       deleted ? 1 : 0,
       after,
       after,
@@ -48,13 +33,8 @@ export function readMemories(
       evidenceIds: evidenceJson ? JSON.parse(evidenceJson) : [],
     }));
 }
-export function recallMemories(
-  db,
-  view,
-  { query = "", limit = 12, after, match = "literal", text = "" } = {},
-) {
-  if (query || after)
-    return readMemories(db, view, { query, limit, after, match });
+export function recallMemories(db, view, { query = "", limit = 12, after, match = "literal", text = "" } = {}) {
+  if (query || after) return readMemories(db, view, { query, limit, after, match });
   const terms = memoryRecallTerms(text);
   if (terms.length) {
     return db
@@ -87,10 +67,7 @@ export function promptMemories(db, value) {
     state = { truncated: false };
   const part = (scope, projectId, kind, n, budget) => {
     const all = rows
-      .filter(
-        (r) =>
-          r.scope === scope && r.projectId === projectId && r.kind === kind,
-      )
+      .filter((r) => r.scope === scope && r.projectId === projectId && r.kind === kind)
       .sort((a, b) => b.updatedAt - a.updatedAt || a.key.localeCompare(b.key));
     let chars = 0;
     const result = [];
@@ -129,16 +106,8 @@ export function promptMemories(db, value) {
   }));
   const projects = selectProjectMemories(blocks, 3);
   return {
-    profile: [
-      ...agent.profile,
-      ...projects.injected.flatMap((b) => b.profile),
-      ...user.profile,
-    ].slice(0, 50),
-    recent: [
-      ...agent.recent,
-      ...projects.injected.flatMap((b) => b.recent),
-      ...user.recent,
-    ].slice(0, 30),
+    profile: [...agent.profile, ...projects.injected.flatMap((b) => b.profile), ...user.profile].slice(0, 50),
+    recent: [...agent.recent, ...projects.injected.flatMap((b) => b.recent), ...user.recent].slice(0, 30),
     agent,
     user,
     projects,
@@ -155,12 +124,6 @@ export function listMemoryFiles(db, view, { after = null, limit = 13 } = {}) {
     .prepare(
       `SELECT DISTINCT s.path,d.scope,d.project_id AS projectId,s.agent_id AS agentId FROM ${memoryJoin} WHERE ${memoryVisible} AND m.deleted=0 AND s.path IS NOT NULL AND (? IS NULL OR s.path>?) AND (d.scope!='agent' OR s.agent_id=?) ORDER BY s.path LIMIT ?`,
     )
-    .all(
-      memoryVisibility(view),
-      after,
-      after,
-      memoryView(view).agentId ?? "",
-      limit,
-    )
+    .all(memoryVisibility(view), after, after, memoryView(view).agentId ?? "", limit)
     .map((row) => ({ documentId: row.path, ...memoryDocument(row) }));
 }

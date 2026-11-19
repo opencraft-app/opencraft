@@ -3,14 +3,7 @@ import { workOrigin } from "../domain/notification-policy.mjs";
 
 /** Owns background notification selection, deduplication and batching, never result acceptance. */
 export class NotificationService {
-  constructor({
-    repository,
-    uow,
-    readWork,
-    history,
-    attention,
-    now = Date.now,
-  }) {
+  constructor({ repository, uow, readWork, history, attention, now = Date.now }) {
     Object.assign(this, { repository, uow, readWork, history, attention, now });
   }
   accepted(delivery) {
@@ -18,22 +11,15 @@ export class NotificationService {
     const origin = workOrigin(this.readWork(delivery.work_id));
     if (origin.kind === "direct") {
       this.history.result(delivery);
-      if (this.history.destinations(delivery.work_id).length)
-        this.attention.notified();
+      if (this.history.destinations(delivery.work_id).length) this.attention.notified();
       return;
     }
     const key = origin.key ?? `${origin.kind}:${delivery.work_id}`;
-    const hash = digest(
-      delivery.user_message_json
-        ? [delivery.text, delivery.user_message_json]
-        : delivery.text,
-    );
+    const hash = digest(delivery.user_message_json ? [delivery.text, delivery.user_message_json] : delivery.text);
     const existing = this.repository.get(delivery.id);
     if (existing) return;
     const suppress =
-      origin.notify === "never" ||
-      (origin.notify === "changed" &&
-        this.repository.latest(key)?.content_hash === hash);
+      origin.notify === "never" || (origin.notify === "changed" && this.repository.latest(key)?.content_hash === hash);
     for (const conversationId of this.history.destinations(delivery.work_id))
       this.repository.add({
         id: `${delivery.id}:${conversationId}`,

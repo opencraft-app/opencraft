@@ -66,30 +66,24 @@ export class ExecutionService {
     requireText(callId, "native call id", 300);
     requireText(tool, "native tool", 160);
     const encoded = stable(args);
-    if (encoded.length > 150000)
-      throw new Error("Native arguments exceed bound");
+    if (encoded.length > 150000) throw new Error("Native arguments exceed bound");
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
       const e = this.execution(work);
-      if (e.harness !== "codex")
-        throw new Error("Native receipts require a Codex-owned execution");
+      if (e.harness !== "codex") throw new Error("Native receipts require a Codex-owned execution");
       const old = this.r.executions.nativeCall(e.id, callId);
       if (old) {
         if (old.tool !== tool || old.args_json !== encoded)
           throw new Error("Native call identity reused with different intent");
         return old;
       }
-      if (this.r.executions.nativeCalls(e.id).length >= 1024)
-        throw new Error("Native receipt bound exceeded");
+      if (this.r.executions.nativeCalls(e.id).length >= 1024) throw new Error("Native receipt bound exceeded");
       this.r.executions.prepareNativeCall(e.id, callId, tool, args);
       return this.r.executions.nativeCall(e.id, callId);
     });
   }
   nativeOutcome(work, callId, state, output) {
-    if (
-      !["waiting", "completed"].includes(state) ||
-      stable(output).length > 1100000
-    )
+    if (!["waiting", "completed"].includes(state) || stable(output).length > 1100000)
       throw new Error("Invalid native outcome");
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
@@ -97,8 +91,7 @@ export class ExecutionService {
         old = this.r.executions.nativeCall(e.id, callId);
       if (!old) throw new Error("Native outcome has no recorded intent");
       if (old.state === "completed") {
-        if (old.output_json !== stable(output))
-          throw new Error("Immutable native outcome changed");
+        if (old.output_json !== stable(output)) throw new Error("Immutable native outcome changed");
         return old;
       }
       this.r.executions.nativeOutcome(e.id, callId, state, output);
@@ -119,12 +112,7 @@ export class ExecutionService {
     });
   }
   modelStep(work, taskId, limit) {
-    if (
-      taskId == null ||
-      !Number.isSafeInteger(limit) ||
-      limit < 1 ||
-      limit > 5000
-    )
+    if (taskId == null || !Number.isSafeInteger(limit) || limit < 1 || limit > 5000)
       throw new Error("Invalid model-step boundary");
     const denied = this.uow.transaction(() => {
       this.works.assertCurrent(work);
@@ -154,8 +142,7 @@ export class ExecutionService {
   snapshot(work) {
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
-      if (!this.ready(work))
-        throw new Error("Goal paused or dependency no longer valid");
+      if (!this.ready(work)) throw new Error("Goal paused or dependency no longer valid");
       const e = this.execution(work);
       if (e.context_json) return JSON.parse(e.context_json);
       const directives = this.ledger.contextDirectives(work);
@@ -165,27 +152,18 @@ export class ExecutionService {
         revision: work.revision,
         text: work.text,
         origin: workOrigin(work),
-        completion: CompletionContract.forWork(
-          this.works.require(work.id).record,
-        ),
+        completion: CompletionContract.forWork(this.works.require(work.id).record),
         skills: this.skills.snapshot(),
         memoryEpoch: this.memory.epoch(),
         explicitMemoryEpoch: this.memory.guardEpoch(),
-        memoryContext: this.memory.prompt(
-          this.scope.forWork(work, e.input_id).record.resources,
-        ),
+        memoryContext: this.memory.prompt(this.scope.forWork(work, e.input_id).record.resources),
         memories: this.memory
-          .recall(
-            { limit: 20 },
-            this.scope.forWork(work, e.input_id).record.resources,
-          )
+          .recall({ limit: 20 }, this.scope.forWork(work, e.input_id).record.resources)
           .items.map(({ key, value, revision }) => ({ key, value, revision })),
         delegation: this.scope.forWork(work, e.input_id).toJSON(),
         ...(e.request_json ? { request: JSON.parse(e.request_json) } : {}),
         dependencyResults: this.goalInputs?.(work) ?? [],
-        confirmedInputs: e.predecessor_id
-          ? this.confirmedInputs(work)
-          : { items: [], omitted: false },
+        confirmedInputs: e.predecessor_id ? this.confirmedInputs(work) : { items: [], omitted: false },
         directives: directives.items,
         directivesOmitted: directives.omitted,
       };
@@ -214,8 +192,7 @@ export class ExecutionService {
       const current = this.works.require(work.id).record;
       if (
         current.revision !== work.revision ||
-        (work.active_execution_id &&
-          current.active_execution_id !== work.active_execution_id) ||
+        (work.active_execution_id && current.active_execution_id !== work.active_execution_id) ||
         ["cancelled", "completed"].includes(current.status)
       )
         return { ...receipt, stale: true };
@@ -228,17 +205,11 @@ export class ExecutionService {
           ["paused", "expired"].includes(routine.status) ||
           (routine.expires_at !== null && routine.expires_at <= this.now())
         ) {
-          this.works.blocked(
-            current,
-            "Routine no longer permits this execution report",
-          );
+          this.works.blocked(current, "Routine no longer permits this execution report");
           return { ...receipt, stale: true };
         }
       }
-      if (
-        this.r.executions.directives(work.id, "accepted").length &&
-        error === null
-      ) {
+      if (this.r.executions.directives(work.id, "accepted").length && error === null) {
         this.works.awaitingReview(current);
         this.ledger.mark(current, "reported");
         this.works.continue(`directives:${receipt.report.id}`, {
@@ -257,8 +228,7 @@ export class ExecutionService {
     });
   }
   reportProgress() {
-    const stale = (work) =>
-      work.status === "running" && this.now() - work.updated_at >= 30000;
+    const stale = (work) => work.status === "running" && this.now() - work.updated_at >= 30000;
     // Observation only; the transaction below re-reads and records the notice.
     if (!this.r.works.pending().some(stale)) return;
     this.uow.transaction(() => {
@@ -270,16 +240,10 @@ export class ExecutionService {
   }
   started(work) {
     this.uow.transaction(() => {
-      if (!this.ready(work))
-        throw new Error("Goal paused or dependency no longer valid");
+      if (!this.ready(work)) throw new Error("Goal paused or dependency no longer valid");
       this.works.started(work);
       this.ledger.mark(work, "running");
-      this.r.events.append(
-        "execution.started",
-        work.id,
-        { revision: work.revision },
-        this.now(),
-      );
+      this.r.events.append("execution.started", work.id, { revision: work.revision }, this.now());
     });
   }
   bound(work, conversationId, submissionId, { admitted = true } = {}) {
@@ -290,12 +254,7 @@ export class ExecutionService {
       if (admitted) this.ledger.submittedDirectives(e);
       if (admitted && this.r.inputs.get(e.input_id)?.delivered_at == null) {
         this.inbox.delivered(e.input_id);
-        this.r.events.append(
-          "input.delivered",
-          work.id,
-          { executionId: e.id, submissionId },
-          this.now(),
-        );
+        this.r.events.append("input.delivered", work.id, { executionId: e.id, submissionId }, this.now());
       }
     });
   }
@@ -304,19 +263,12 @@ export class ExecutionService {
       if (this.works.blocked(work, error)) {
         this.ledger.mark(work, "blocked");
         this.history.workNotice(work, "execution-blocked");
-        this.r.events.append(
-          "execution.blocked",
-          work.id,
-          { error: String(error) },
-          this.now(),
-        );
+        this.r.events.append("execution.blocked", work.id, { error: String(error) }, this.now());
       }
     });
   }
   assertThreadAction(work) {
-    const resource = this.scope
-      .forWork(work)
-      .record.resources.find((r) => r.id === "platform.threads");
+    const resource = this.scope.forWork(work).record.resources.find((r) => r.id === "platform.threads");
     if (!resource) throw Error("Work has no captured platform Thread binding");
     this.assertAction(work, "thread_command", resource);
   }
@@ -324,14 +276,10 @@ export class ExecutionService {
     const current = this.works.assertCurrent(work);
     if (
       current.status === "blocked" ||
-      (current.status === "waiting_input" &&
-        !["ask_user", "request_intervention"].includes(tool))
+      (current.status === "waiting_input" && !["ask_user", "request_intervention"].includes(tool))
     )
-      throw new Error(
-        "Work must resolve its pending information before acting",
-      );
-    if (!this.ready(current))
-      throw new Error("Goal paused or dependency no longer valid");
+      throw new Error("Work must resolve its pending information before acting");
+    if (!this.ready(current)) throw new Error("Goal paused or dependency no longer valid");
     this.scope.check(work, tool, resource);
     if (
       expectedMemoryEpoch !== undefined &&
@@ -339,8 +287,6 @@ export class ExecutionService {
         ? expectedMemoryEpoch.epoch !== this.memory.guardEpoch()
         : expectedMemoryEpoch !== this.memory.epoch())
     )
-      throw new Error(
-        "Memory changed during this execution; revise the work to use fresh context",
-      );
+      throw new Error("Memory changed during this execution; revise the work to use fresh context");
   }
 }

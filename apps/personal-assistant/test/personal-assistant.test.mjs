@@ -4,10 +4,7 @@ import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startPersonalAssistant } from "../src/runtime/personal-assistant.mjs";
-import {
-  platformAssistantPort,
-  httpPlatformAssistantPort,
-} from "../src/adapters/local/platform-assistant-port.mjs";
+import { platformAssistantPort, httpPlatformAssistantPort } from "../src/adapters/local/platform-assistant-port.mjs";
 import { provisionBotProfile } from "../src/adapters/local/bot-profile.mjs";
 import { ReceptionPlanner } from "../src/application/reception/planner.mjs";
 
@@ -24,17 +21,14 @@ test("shared Host activation validates a claimed binding, model can query groups
   const port = platformAssistantPort({
     async request(method, params) {
       calls.push({ method, params });
-      if (method.endsWith("/authorize"))
-        return { binding, epoch: "first", expiresAt: Date.now() + 15000 };
+      if (method.endsWith("/authorize")) return { binding, epoch: "first", expiresAt: Date.now() + 15000 };
       if (method.endsWith("/groups/list"))
         return {
           groups: [{ id: "group:one", title: "项目群", kind: "group" }],
         };
       if (method.endsWith("/conversations/list"))
         return {
-          conversations: [
-            { ref: { serverId: "codex", threadId: "thread" }, title: "进展" },
-          ],
+          conversations: [{ ref: { serverId: "codex", threadId: "thread" }, title: "进展" }],
           nextCursor: null,
         };
       throw Error("unexpected request");
@@ -56,8 +50,7 @@ test("shared Host activation validates a claimed binding, model can query groups
   const model = {
     async decide(input) {
       seen.push(input);
-      if (input.observations.length === 0)
-        return { kind: "query", name: "platform.groups.list", params: {} };
+      if (input.observations.length === 0) return { kind: "query", name: "platform.groups.list", params: {} };
       if (input.observations.length === 1)
         return {
           kind: "query",
@@ -71,23 +64,13 @@ test("shared Host activation validates a claimed binding, model can query groups
     },
   };
   const planner = new ReceptionPlanner(model, runner.app.receptionQueries);
-  const result = await planner.plan(
-    turn,
-    runner.app.reception.context(turn),
-    new AbortController().signal,
-  );
+  const result = await planner.plan(turn, runner.app.reception.context(turn), new AbortController().signal);
   assert.equal(result.proposal.text, "项目群");
   assert.equal(result.queries.length, 2);
   assert.equal(seen.at(-1).observations[0].response.data.externalContext, true);
   assert.equal(result.queries[0].name, "platform.groups.list");
-  assert.equal(
-    runner.uow.db.prepare("SELECT COUNT(*) AS n FROM memory").get().n,
-    0,
-  );
-  assert.throws(
-    () => runner.platformChannels.send("group:one", { text: "no" }),
-    /read-only/,
-  );
+  assert.equal(runner.uow.db.prepare("SELECT COUNT(*) AS n FROM memory").get().n, 0);
+  assert.throws(() => runner.platformChannels.send("group:one", { text: "no" }), /read-only/);
   await assert.rejects(
     port.request(binding, "opencraft/channels/messages/send", {}),
     /Unsupported personal assistant operation/,

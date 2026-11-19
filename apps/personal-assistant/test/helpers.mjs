@@ -43,8 +43,7 @@ export async function running(t, options = {}) {
   return {
     profile,
     runner,
-    call: (op, params = {}, id = crypto.randomUUID()) =>
-      request(profile, { op, params, id }),
+    call: (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id }),
   };
 }
 export async function until(check, timeout = 8000) {
@@ -59,32 +58,25 @@ export async function until(check, timeout = 8000) {
 export async function completed(profile, id) {
   return until(async () => {
     const w = await request(profile, { op: "work", params: { workId: id } });
-    if (w.work.status === "blocked")
-      throw new Error(`Work blocked: ${w.work.error}`);
+    if (w.work.status === "blocked") throw new Error(`Work blocked: ${w.work.error}`);
     return w.work.status === "completed" && w;
   });
 }
 export function files(profile, folder) {
-  return readdirSync(join(profile.path, folder)).filter(
-    (name) => !name.startsWith("."),
-  );
+  return readdirSync(join(profile.path, folder)).filter((name) => !name.startsWith("."));
 }
 export async function childRunner(t, profile, env = {}) {
-  const child = spawn(
-    process.execPath,
-    ["bin/assistant.mjs", "run", "--profile", profile.path],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        LAB_TEST_CRASH_AT: "",
-        LAB_TEST_DELIVERY_FAIL: "",
-        LAB_TEST_TOOL_PAUSE_MS: "",
-        ...env,
-      },
-      stdio: ["ignore", "pipe", "pipe"],
+  const child = spawn(process.execPath, ["bin/assistant.mjs", "run", "--profile", profile.path], {
+    cwd: root,
+    env: {
+      ...process.env,
+      LAB_TEST_CRASH_AT: "",
+      LAB_TEST_DELIVERY_FAIL: "",
+      LAB_TEST_TOOL_PAUSE_MS: "",
+      ...env,
     },
-  );
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let stdout = "",
     stderr = "";
   child.stdout.on("data", (c) => (stdout += c));
@@ -111,34 +103,19 @@ export async function childRunner(t, profile, env = {}) {
   };
   t.after(() => handle.stop());
   await until(() => {
-    if (child.exitCode !== null)
-      throw new Error(`Runner exited ${child.exitCode}: ${stderr}`);
+    if (child.exitCode !== null) throw new Error(`Runner exited ${child.exitCode}: ${stderr}`);
     return stdout.includes('"event":"ready"');
   }, 17000);
   return handle;
 }
 export async function nativeEntries(profile, workId) {
-  const storage = await openNodeSqliteStorage(
-    join(profile.path, "executions", `${workId}.sqlite`),
-  );
+  const storage = await openNodeSqliteStorage(join(profile.path, "executions", `${workId}.sqlite`));
   try {
-    const conversations = await storage.scanConversations(
-      {},
-      100,
-      undefined,
-      context,
-    );
+    const conversations = await storage.scanConversations({}, 100, undefined, context);
     const entries = [];
     for (const conversation of conversations.items)
       entries.push(
-        ...(
-          await storage.scanEntries(
-            { conversationId: conversation.id },
-            10000,
-            undefined,
-            context,
-          )
-        ).items,
+        ...(await storage.scanEntries({ conversationId: conversation.id }, 10000, undefined, context)).items,
       );
     return entries;
   } finally {
@@ -147,12 +124,11 @@ export async function nativeEntries(profile, workId) {
 }
 
 export async function publishTestNote(store, work, body) {
-  const { LocalArtifactStore } = await import(
-    "../src/adapters/filesystem/artifact-store.mjs"
+  const { LocalArtifactStore } = await import("../src/adapters/filesystem/artifact-store.mjs");
+  const artifact = new LocalArtifactStore(join(store.profile.path, "artifacts")).publishNote(
+    store.app.executionLedger.get(work).id,
+    body,
   );
-  const artifact = new LocalArtifactStore(
-    join(store.profile.path, "artifacts"),
-  ).publishNote(store.app.executionLedger.get(work).id, body);
   store.app.completion.publishedNote(work, artifact, body);
   return artifact;
 }

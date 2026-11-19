@@ -11,8 +11,12 @@ import type { ModalSurfaceProps } from "./modal-surface";
 
 /** The Shell owns navigation anchors; Radix owns collision, focus and dismissal.
  * Wait for a visible entry during Shell startup; never invent a detached anchor. */
-export function NavigationHintSurface({ anchorNavigationId, children, onDismiss, ...props }:
-  ModalSurfaceProps & { readonly anchorNavigationId?: string }) {
+export function NavigationHintSurface({
+  anchorNavigationId,
+  children,
+  onDismiss,
+  ...props
+}: ModalSurfaceProps & { readonly anchorNavigationId?: string }) {
   const intl = useIntl();
   const portal = useWorkbenchPresentationRoot();
   const [anchor, setAnchor] = useState<HTMLElement | null>(null);
@@ -26,9 +30,17 @@ export function NavigationHintSurface({ anchorNavigationId, children, onDismiss,
     const root = portal?.getRootNode() ?? document;
     const visible = (element: HTMLElement) => {
       const rect = element.getBoundingClientRect();
-      return element.isConnected && !element.closest('[inert], [aria-hidden="true"]')
-        && element.checkVisibility() && rect.width > 0 && rect.height > 0
-        && rect.bottom > 0 && rect.right > 0 && rect.top < window.innerHeight && rect.left < window.innerWidth;
+      return (
+        element.isConnected &&
+        !element.closest('[inert], [aria-hidden="true"]') &&
+        element.checkVisibility() &&
+        rect.width > 0 &&
+        rect.height > 0 &&
+        rect.bottom > 0 &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.left < window.innerWidth
+      );
     };
     let target: HTMLElement | null = null;
     const resize = new ResizeObserver(() => check());
@@ -45,8 +57,12 @@ export function NavigationHintSurface({ anchorNavigationId, children, onDismiss,
         virtualRef.current = null;
         setAnchor(null);
         mutation.disconnect();
-        mutation.observe(root, { childList: true, subtree: true, attributes: true,
-          attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"] });
+        mutation.observe(root, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"],
+        });
       }
       target = next;
       if (target) {
@@ -60,41 +76,76 @@ export function NavigationHintSurface({ anchorNavigationId, children, onDismiss,
       }
     };
     const mutation = new MutationObserver(check);
-    mutation.observe(root, { childList: true, subtree: true, attributes: true,
-      attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"] });
+    mutation.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style", "hidden", "inert", "aria-hidden"],
+    });
     check();
     window.addEventListener("resize", check);
-    return () => { resize.disconnect(); mutation.disconnect(); window.removeEventListener("resize", check); };
+    return () => {
+      resize.disconnect();
+      mutation.disconnect();
+      window.removeEventListener("resize", check);
+    };
   }, [anchorNavigationId, portal]);
 
   if (!anchor) return null;
   const closeLabel = intl.formatMessage({ id: "common.close", defaultMessage: "Close" });
-  return <Popover.Root open={present} onOpenChange={open => { if (!open) onDismiss(reason.current); }}>
-    <Popover.Anchor virtualRef={virtualRef} />
-    <Popover.Portal container={portal ?? undefined}>
-      <Popover.Content ref={content} className="navigation-hint-surface" side="top" align="start"
-        sideOffset={12} collisionPadding={12} aria-label={props.label}
-        onOpenAutoFocus={event => { event.preventDefault(); content.current?.focus({ preventScroll: true }); }}
-        onCloseAutoFocus={event => {
-          event.preventDefault();
-          if (reason.current !== "outside-press" && anchor.isConnected && anchor.checkVisibility()) anchor.focus({ preventScroll: true });
-        }}
-        onEscapeKeyDown={event => {
-          if (event.isComposing || event.keyCode === 229) event.preventDefault();
-          else reason.current = "escape-key";
-        }}
-        // Shell startup may restore a composer focus after this hint opens.
-        // A nonmodal reminder stays available; only an outside press dismisses it.
-        onFocusOutside={event => event.preventDefault()}
-        onInteractOutside={event => {
-          if (props.dismissOnOutsidePress === false) event.preventDefault();
-          else reason.current = "outside-press";
-        }}>
-        {children}
-        <Popover.Close asChild><IconButton aria-label={closeLabel} className="navigation-hint-surface__close"
-          onClick={() => { reason.current = "close-button"; }}><CloseIcon size={16} /></IconButton></Popover.Close>
-        <Popover.Arrow className="navigation-hint-surface__arrow" width={12} height={6} />
-      </Popover.Content>
-    </Popover.Portal>
-  </Popover.Root>;
+  return (
+    <Popover.Root
+      open={present}
+      onOpenChange={(open) => {
+        if (!open) onDismiss(reason.current);
+      }}
+    >
+      <Popover.Anchor virtualRef={virtualRef} />
+      <Popover.Portal container={portal ?? undefined}>
+        <Popover.Content
+          ref={content}
+          className="navigation-hint-surface"
+          side="top"
+          align="start"
+          sideOffset={12}
+          collisionPadding={12}
+          aria-label={props.label}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            content.current?.focus({ preventScroll: true });
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            if (reason.current !== "outside-press" && anchor.isConnected && anchor.checkVisibility())
+              anchor.focus({ preventScroll: true });
+          }}
+          onEscapeKeyDown={(event) => {
+            if (event.isComposing || event.keyCode === 229) event.preventDefault();
+            else reason.current = "escape-key";
+          }}
+          // Shell startup may restore a composer focus after this hint opens.
+          // A nonmodal reminder stays available; only an outside press dismisses it.
+          onFocusOutside={(event) => event.preventDefault()}
+          onInteractOutside={(event) => {
+            if (props.dismissOnOutsidePress === false) event.preventDefault();
+            else reason.current = "outside-press";
+          }}
+        >
+          {children}
+          <Popover.Close asChild>
+            <IconButton
+              aria-label={closeLabel}
+              className="navigation-hint-surface__close"
+              onClick={() => {
+                reason.current = "close-button";
+              }}
+            >
+              <CloseIcon size={16} />
+            </IconButton>
+          </Popover.Close>
+          <Popover.Arrow className="navigation-hint-surface__arrow" width={12} height={6} />
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  );
 }

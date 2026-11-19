@@ -1,4 +1,4 @@
-import type { Actor } from '@opencraft/identity-core/actors';
+import type { Actor } from "@opencraft/identity-core/actors";
 
 /**
  * Installation-wide capabilities decided by an Actor's standing, independently
@@ -7,27 +7,27 @@ import type { Actor } from '@opencraft/identity-core/actors';
  */
 export type ActorCapability =
   /** Read or discover a conversation without an owner record (legacy shared scope). */
-  | 'conversation.shared-history'
+  | "conversation.shared-history"
   /** List the installation's conversation servers. */
-  | 'conversation.directory'
+  | "conversation.directory"
   /** Search the installation's conversations. */
-  | 'conversation.search'
+  | "conversation.search"
   /** Be recorded as the creator of a new conversation. */
-  | 'conversation.create'
+  | "conversation.create"
   /** Authorize execution: bounded Thread delegations and queued Actor input. */
-  | 'execution.delegate'
+  | "execution.delegate"
   /** Issue automation commands through the collaboration HTTP API. */
-  | 'automation.manage'
+  | "automation.manage"
   /** Create a native group. */
-  | 'channel.create'
+  | "channel.create"
   /** Search invitation candidates for a native group. */
-  | 'channel.invite'
+  | "channel.invite"
   /** Browse the installation people directory. */
-  | 'people.directory'
+  | "people.directory"
   /** Wake a bound Session from a native channel message. */
-  | 'channel.wake'
+  | "channel.wake"
   /** Reference native group messages as execution input for another Session. */
-  | 'channel.forward-input';
+  | "channel.forward-input";
 
 export interface ActorPolicyRequest {
   /** Current, enabled Actor resolved by the identity authority, never a request body. */
@@ -43,7 +43,7 @@ export interface ActorPolicyRequest {
 export type ActorPolicy = (request: ActorPolicyRequest) => boolean;
 
 /** The current behavior: every listed capability belongs to admitted humans. */
-export const humanActorPolicy: ActorPolicy = ({ actor }) => actor.kind === 'human';
+export const humanActorPolicy: ActorPolicy = ({ actor }) => actor.kind === "human";
 
 export interface AssistantMemberPolicyOptions {
   /** Maximum assistant-initiated wakes per native group within `windowMs`. Default 6. */
@@ -69,21 +69,26 @@ export function assistantMemberPolicy(options: AssistantMemberPolicyOptions = {}
   const windowMs = Math.max(1, options.windowMs ?? 60_000);
   const now = options.now ?? Date.now;
   const spent = new Map<string, number[]>();
-  return request => {
+  return (request) => {
     if (humanActorPolicy(request)) return true;
-    if (request.actor.kind !== 'session') return false;
-    if (request.capability === 'execution.delegate') return options.delegation === true;
-    if (request.capability !== 'channel.wake' || !request.resource) return false;
-    const at = now(), recent = (spent.get(request.resource) ?? []).filter(time => at - time < windowMs);
-    if (recent.length >= limit) { spent.set(request.resource, recent); return false; }
+    if (request.actor.kind !== "session") return false;
+    if (request.capability === "execution.delegate") return options.delegation === true;
+    if (request.capability !== "channel.wake" || !request.resource) return false;
+    const at = now(),
+      recent = (spent.get(request.resource) ?? []).filter((time) => at - time < windowMs);
+    if (recent.length >= limit) {
+      spent.set(request.resource, recent);
+      return false;
+    }
     if (!request.use) return true;
-    recent.push(at); spent.set(request.resource, recent);
+    recent.push(at);
+    spent.set(request.resource, recent);
     return true;
   };
 }
 
 /** Environment variable naming the installation preset, read by every process. */
-export const ACTOR_POLICY_ENVIRONMENT = 'OPENCRAFT_ACTOR_POLICY';
+export const ACTOR_POLICY_ENVIRONMENT = "OPENCRAFT_ACTOR_POLICY";
 
 /**
  * Resolve the installation preset so the Daemon, headless host and Worker processes
@@ -91,10 +96,15 @@ export const ACTOR_POLICY_ENVIRONMENT = 'OPENCRAFT_ACTOR_POLICY';
  * group wakes; `assistant-member+delegation` also lets assistants delegate.
  * Unknown values fail closed to the human-only default.
  */
-export function actorPolicyFromEnvironment(environment: Readonly<Record<string, string | undefined>> = process.env): ActorPolicy {
-  switch ((environment[ACTOR_POLICY_ENVIRONMENT] ?? '').trim()) {
-    case 'assistant-member': return assistantMemberPolicy();
-    case 'assistant-member+delegation': return assistantMemberPolicy({ delegation: true });
-    default: return humanActorPolicy;
+export function actorPolicyFromEnvironment(
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): ActorPolicy {
+  switch ((environment[ACTOR_POLICY_ENVIRONMENT] ?? "").trim()) {
+    case "assistant-member":
+      return assistantMemberPolicy();
+    case "assistant-member+delegation":
+      return assistantMemberPolicy({ delegation: true });
+    default:
+      return humanActorPolicy;
   }
 }

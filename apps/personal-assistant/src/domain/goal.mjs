@@ -8,11 +8,7 @@ export function goalTasks(raw, existing = []) {
     const key = requireText(t.key, "task key", 80);
     if (!/^[a-zA-Z0-9_-]+$/.test(key)) throw new Error("Invalid task key");
     const dependsOn = t.dependsOn ?? [];
-    if (
-      !Array.isArray(dependsOn) ||
-      dependsOn.length > 31 ||
-      new Set(dependsOn).size !== dependsOn.length
-    )
+    if (!Array.isArray(dependsOn) || dependsOn.length > 31 || new Set(dependsOn).size !== dependsOn.length)
       throw new Error("Invalid task dependencies");
     return {
       key,

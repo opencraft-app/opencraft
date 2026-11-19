@@ -6,8 +6,7 @@ export const coreCases = [
     id: "parallel-wait",
     title: "出差安排等待日期，会议提纲独立完成",
     coverage: ["delegation", "parallelism", "clarification", "restart"],
-    review:
-      "问题是否必要、表述是否清楚；产物是否实际采用回答，而非只复制要求。",
+    review: "问题是否必要、表述是否清楚；产物是否实际采用回答，而非只复制要求。",
   },
   {
     id: "ambiguous-cancel",
@@ -19,15 +18,13 @@ export const coreCases = [
     id: "goal-dependency",
     title: "活动计划的前置确认、并行准备与暂停恢复",
     coverage: ["goal-planning", "dependency", "pause", "restart", "completion"],
-    review:
-      "计划是否满足用户的依赖与验收要求；不得把子任务返回当成整体目标已达成。",
+    review: "计划是否满足用户的依赖与验收要求；不得把子任务返回当成整体目标已达成。",
   },
   {
     id: "memory-correction",
     title: "搬家后更正城市，再要求遗忘",
     coverage: ["explicit-memory", "correction", "forget", "restart"],
-    review:
-      "回复是否准确说明更正与遗忘；历史仍保留，不得声称已删除所有历史记录。",
+    review: "回复是否准确说明更正与遗忘；历史仍保留，不得声称已删除所有历史记录。",
   },
   {
     id: "replay-recovery",
@@ -52,9 +49,7 @@ const pending = async (c, id) =>
   c.wait(async () => {
     const d = await c.call("work", { workId: id });
     if (["blocked", "completed", "cancelled"].includes(d.work.status))
-      throw new Error(
-        `Expected waiting_input, got ${d.work.status}: ${d.work.error ?? ""}`,
-      );
+      throw new Error(`Expected waiting_input, got ${d.work.status}: ${d.work.error ?? ""}`);
     return d.work.status === "waiting_input" && d;
   });
 const done = async (c, id) =>
@@ -70,13 +65,10 @@ const create = async (c, text, id) => {
   const works = (await c.call("status")).works;
   c.check(
     `bounded-task-not-expanded-${id}`,
-    works.length === before.length + 1 &&
-      JSON.parse(t.decision_json).kind === "delegate",
+    works.length === before.length + 1 && JSON.parse(t.decision_json).kind === "delegate",
     { decision: JSON.parse(t.decision_json).kind },
   );
-  const w =
-    works.find((w) => w.id === t.work_id) ??
-    works.find((w) => w.text.includes(id));
+  const w = works.find((w) => w.id === t.work_id) ?? works.find((w) => w.text.includes(id));
   c.check(`created-${id}`, !!w, { turn: t.id, workId: w?.id });
   return w;
 };
@@ -94,9 +86,7 @@ export function portfolioState(works, goals) {
         executionId: w.active_execution_id,
       })),
     ),
-    goals: sort(
-      goals.map((g) => ({ id: g.id, revision: g.revision, state: g.state })),
-    ),
+    goals: sort(goals.map((g) => ({ id: g.id, revision: g.revision, state: g.state }))),
   };
 }
 // Evaluator-only equivalents for these synthetic facts. Storage has no language
@@ -118,8 +108,7 @@ export async function runCase(id, c) {
     const finished = await done(c, b.id);
     c.check(
       "independent-work-completes-while-first-waits",
-      (await c.call("work", { workId: a.id })).work.status ===
-        "waiting_input" && finished.results.length === 1,
+      (await c.call("work", { workId: a.id })).work.status === "waiting_input" && finished.results.length === 1,
     );
     c.check("no-result-before-user-answer", before.results.length === 0);
     await c.restart();
@@ -129,59 +118,38 @@ export async function runCase(id, c) {
         (q) => q.id === before.interactions[0].id && q.state === "pending",
       ),
     );
-    await c.say(
-      "回答：日期为2026年12月18日。只回答本工作的待答问题，继续原工作。",
-      "answer",
-      a,
-    );
+    await c.say("回答：日期为2026年12月18日。只回答本工作的待答问题，继续原工作。", "answer", a);
     const after = await done(c, a.id);
     c.check(
       "same-work-and-native-thread",
       after.work.revision === 1 &&
         after.executions.length === 1 &&
-        after.executions[0].conversation_id ===
-          before.executions[0].conversation_id,
+        after.executions[0].conversation_id === before.executions[0].conversation_id,
     );
-    c.check(
-      "one-result-per-work",
-      after.results.length === 1 && (await c.call("status")).works.length === 2,
-    );
+    c.check("one-result-per-work", after.results.length === 1 && (await c.call("status")).works.length === 2);
     const notes = await c.notes();
     c.check(
       "answer-in-real-artifact",
-      notes.some(
-        (n) => n.text.includes("TRIP-A") && /2026.{0,3}12.{0,3}18/.test(n.text),
-      ),
+      notes.some((n) => n.text.includes("TRIP-A") && /2026.{0,3}12.{0,3}18/.test(n.text)),
     );
   } else if (id === "ambiguous-cancel") {
     const a = await create(c, note("TRIP-A", true), "TRIP-A");
     const b = await create(c, note("DINNER-B", true), "DINNER-B");
     const [da, db] = await Promise.all([pending(c, a.id), pending(c, b.id)]);
-    const before = portfolioState(
-      (await c.call("status")).works,
-      await c.call("goal.list"),
-    );
-    const t = await c.say(
-      "取消其中一个，具体是哪一个我还没决定。",
-      "ambiguous",
-    );
+    const before = portfolioState((await c.call("status")).works, await c.call("goal.list"));
+    const t = await c.say("取消其中一个，具体是哪一个我还没决定。", "ambiguous");
     const kind = JSON.parse(t.decision_json).kind;
-    const after = portfolioState(
-      (await c.call("status")).works,
-      await c.call("goal.list"),
-    );
+    const after = portfolioState((await c.call("status")).works, await c.call("goal.list"));
     c.check(
       "ambiguity-causes-no-write",
-      ["clarify", "reply", "send"].includes(kind) &&
-        JSON.stringify(before) === JSON.stringify(after),
+      ["clarify", "reply", "send"].includes(kind) && JSON.stringify(before) === JSON.stringify(after),
       { before, after },
     );
     await c.say("取消这个工作，只取消这一项。", "cancel-a", a);
     c.check(
       "cancel-only-target",
       (await c.call("work", { workId: a.id })).work.status === "cancelled" &&
-        (await c.call("work", { workId: b.id })).work.status ===
-          "waiting_input",
+        (await c.call("work", { workId: b.id })).work.status === "waiting_input",
     );
     await c.reject("late-answer-rejected", "interaction.answer", {
       interactionId: da.interactions[0].id,
@@ -192,9 +160,7 @@ export async function runCase(id, c) {
     c.check(
       "cancel-survives-and-other-question-remains",
       (await c.call("work", { workId: a.id })).work.status === "cancelled" &&
-        (await c.call("interaction.list")).some(
-          (q) => q.id === db.interactions[0].id && q.state === "pending",
-        ),
+        (await c.call("interaction.list")).some((q) => q.id === db.interactions[0].id && q.state === "pending"),
     );
   } else if (id === "goal-dependency") {
     const definition = {
@@ -219,10 +185,7 @@ export async function runCase(id, c) {
       );
     else await c.call("goal.create", { definition }, "plan");
     const goals = await c.call("goal.list");
-    c.check(
-      "one-goal-three-members",
-      goals.length === 1 && goals[0].works.length === 3,
-    );
+    c.check("one-goal-three-members", goals.length === 1 && goals[0].works.length === 3);
     const g = goals[0],
       a = g.works.find((w) => w.key === "confirm"),
       b = g.works.find((w) => w.key === "agenda"),
@@ -232,28 +195,17 @@ export async function runCase(id, c) {
     await done(c, d.id);
     c.check(
       "dependent-not-started",
-      (await c.call("work", { workId: b.id })).executions.every(
-        (e) => !e.conversation_id,
-      ),
+      (await c.call("work", { workId: b.id })).executions.every((e) => !e.conversation_id),
     );
     let state = await c.call("goal.get", { goalId: g.id });
     c.check(
       "no-premature-achievement",
-      state.state === "active" &&
-        !state.readyForReview &&
-        state.semanticReview.kind === "unverified",
+      state.state === "active" && !state.readyForReview && state.semanticReview.kind === "unverified",
     );
     // Typed operator commands deliberately isolate lifecycle mechanics from intent parsing.
-    state = await c.call(
-      "goal.pause",
-      { goalId: g.id, expectedRevision: state.revision },
-      "pause",
-    );
+    state = await c.call("goal.pause", { goalId: g.id, expectedRevision: state.revision }, "pause");
     await c.restart();
-    c.check(
-      "pause-survives-restart",
-      (await c.call("goal.get", { goalId: g.id })).state === "paused",
-    );
+    c.check("pause-survives-restart", (await c.call("goal.get", { goalId: g.id })).state === "paused");
     await c.call(
       "interaction.answer",
       {
@@ -266,33 +218,19 @@ export async function runCase(id, c) {
     await c.observe();
     c.check(
       "paused-goal-does-not-release-dependency",
-      (await c.call("work", { workId: b.id })).executions.every(
-        (e) => !e.conversation_id,
-      ),
+      (await c.call("work", { workId: b.id })).executions.every((e) => !e.conversation_id),
     );
-    await c.call(
-      "goal.resume",
-      { goalId: g.id, expectedRevision: state.revision },
-      "resume",
-    );
+    await c.call("goal.resume", { goalId: g.id, expectedRevision: state.revision }, "resume");
     await done(c, a.id);
     await done(c, b.id);
     state = await c.call("goal.get", { goalId: g.id });
-    c.check(
-      "results-ready-after-dependency",
-      state.readyForReview && state.works.every((w) => w.resultId),
-    );
-    c.check(
-      "model-cannot-claim-owner-attestation",
-      state.semanticReview.kind !== "owner-attested",
-    );
+    c.check("results-ready-after-dependency", state.readyForReview && state.works.every((w) => w.resultId));
+    c.check("model-cannot-claim-owner-attestation", state.semanticReview.kind !== "owner-attested");
   } else if (id === "memory-correction") {
     await c.say("记住我在上海", "remember");
     c.check(
       "explicit-memory-saved",
-      (await c.call("memory.list")).some((m) =>
-        mentionsCity(m.value, "shanghai"),
-      ),
+      (await c.call("memory.list")).some((m) => mentionsCity(m.value, "shanghai")),
     );
     await c.say("记住我在深圳", "correct");
     let memories = await c.call("memory.list");
@@ -304,26 +242,18 @@ export async function runCase(id, c) {
     await c.restart();
     c.check(
       "correction-survives-restart",
-      (await c.call("memory.list")).some((m) =>
-        mentionsCity(m.value, "shenzhen"),
-      ),
+      (await c.call("memory.list")).some((m) => mentionsCity(m.value, "shenzhen")),
     );
     await c.say("忘记城市", "forget");
     await c.restart();
     memories = await c.call("memory.list");
     c.check(
       "forgotten-fact-not-restored",
-      !memories.some(
-        (m) =>
-          mentionsCity(m.value, "shanghai") ||
-          mentionsCity(m.value, "shenzhen"),
-      ),
+      !memories.some((m) => mentionsCity(m.value, "shanghai") || mentionsCity(m.value, "shenzhen")),
     );
     c.check(
       "forget-does-not-erase-conversation",
-      (await c.call("conversation")).messages.some(
-        (m) => m.role === "user" && m.text.includes("上海"),
-      ),
+      (await c.call("conversation")).messages.some((m) => m.role === "user" && m.text.includes("上海")),
     );
   } else if (id === "replay-recovery") {
     const params = { text: note("RETRY-A", true) };
@@ -339,16 +269,8 @@ export async function runCase(id, c) {
     );
     await pending(c, first.workId);
     await c.restart();
-    c.check(
-      "retry-after-restart-same-work",
-      (await c.call("submit", params, "same-input")).workId === first.workId,
-    );
-    await c.reject(
-      "conflicting-retry-rejected",
-      "submit",
-      { text: "different request" },
-      "same-input",
-    );
+    c.check("retry-after-restart-same-work", (await c.call("submit", params, "same-input")).workId === first.workId);
+    await c.reject("conflicting-retry-rejected", "submit", { text: "different request" }, "same-input");
     const d = await c.call("work", { workId: first.workId });
     const q = d.interactions.find((q) => q.state === "pending");
     const answer = {
@@ -374,8 +296,7 @@ export async function runCase(id, c) {
     c.check("reply-received", !!t.reply_text);
     c.check(
       "no-invented-external-receipt",
-      (await c.call("status")).works.length === 0 &&
-        (await c.notes()).length === 0,
+      (await c.call("status")).works.length === 0 && (await c.notes()).length === 0,
     );
     // This assertion is only a local receipt check. Truthfulness of prose remains manual review.
   } else if (complexCases.some((spec) => spec.id === id)) {

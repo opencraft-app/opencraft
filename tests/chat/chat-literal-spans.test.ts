@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  ChatDocumentCompiler,
-  ChatDocumentStreamingSession,
-  chatDocumentPlainText,
-} from "@opencraft/chat-document";
+import { ChatDocumentCompiler, ChatDocumentStreamingSession, chatDocumentPlainText } from "@opencraft/chat-document";
 function annotations(value: unknown): any[] {
   if (Array.isArray(value)) return value.flatMap(annotations);
   if (!value || typeof value !== "object") return [];
@@ -74,10 +70,7 @@ test("literal annotation validation and session cache include the exact span set
     ],
     [{ start: 0.5, end: 4 }],
   ])
-    assert.throws(
-      () => compiler.compile(source, { literalSpans: spans }),
-      /span/i,
-    );
+    assert.throws(() => compiler.compile(source, { literalSpans: spans }), /span/i);
   const session = new ChatDocumentStreamingSession("literal", compiler),
     a = session.compile(source);
   a.commit();

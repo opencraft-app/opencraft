@@ -6,12 +6,9 @@ export class CompletionLedger {
     this.repository = repository;
   }
   record(receipt) {
-    const existing = this.repository
-      .evidence(receipt.executionId)
-      .find((e) => e.id === receipt.id);
+    const existing = this.repository.evidence(receipt.executionId).find((e) => e.id === receipt.id);
     if (existing) {
-      if (stable(existing.data) !== stable(receipt.data))
-        throw new Error("Immutable completion evidence reused");
+      if (stable(existing.data) !== stable(receipt.data)) throw new Error("Immutable completion evidence reused");
       return existing;
     }
     this.repository.addEvidence(receipt);
@@ -20,8 +17,7 @@ export class CompletionLedger {
   assess(assessment) {
     const existing = this.repository.assessment(assessment.executionId);
     if (existing) {
-      if (stable(existing.data) !== stable(assessment.data))
-        throw new Error("Immutable completion assessment reused");
+      if (stable(existing.data) !== stable(assessment.data)) throw new Error("Immutable completion assessment reused");
       return existing;
     }
     this.repository.addAssessment(assessment);

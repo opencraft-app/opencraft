@@ -1,13 +1,4 @@
-import {
-  realpathSync,
-  lstatSync,
-  readdirSync,
-  openSync,
-  fstatSync,
-  readSync,
-  closeSync,
-  constants,
-} from "node:fs";
+import { realpathSync, lstatSync, readdirSync, openSync, fstatSync, readSync, closeSync, constants } from "node:fs";
 import { resolve, relative, isAbsolute, extname, join } from "node:path";
 import { digest } from "../../domain/values.mjs";
 
@@ -28,13 +19,11 @@ export class DirectoryKnowledgeSource {
       throw new Error("Material path is outside the allowed scope");
     const resolved = resolve(this.root, path),
       rel = relative(this.root, resolved);
-    if (rel.startsWith("..") || isAbsolute(rel))
-      throw new Error("Material path escapes the configured source");
+    if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("Material path escapes the configured source");
     let at = this.root;
     for (const segment of segments.filter(Boolean)) {
       at = join(at, segment);
-      if (lstatSync(at).isSymbolicLink())
-        throw new Error("Material symlinks are not followed");
+      if (lstatSync(at).isSymbolicLink()) throw new Error("Material symlinks are not followed");
     }
     return resolved;
   }
@@ -58,42 +47,25 @@ export class DirectoryKnowledgeSource {
     return files;
   }
   supported(path) {
-    return [".md", ".txt", ".json", ".csv", ".log"].includes(
-      extname(path).toLowerCase(),
-    );
+    return [".md", ".txt", ".json", ".csv", ".log"].includes(extname(path).toLowerCase());
   }
   read(path) {
     if (!this.supported(path)) throw new Error("Unsupported material format");
     if (process.platform !== "linux")
-      throw new Error(
-        "This source adapter currently requires Linux descriptor verification",
-      );
-    const fd = openSync(
-      this.resolve(path),
-      constants.O_RDONLY | constants.O_NOFOLLOW,
-    );
+      throw new Error("This source adapter currently requires Linux descriptor verification");
+    const fd = openSync(this.resolve(path), constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const opened = realpathSync(`/proc/self/fd/${fd}`),
         rel = relative(this.root, opened);
-      if (rel.startsWith("..") || isAbsolute(rel))
-        throw new Error("Opened material escaped the configured source");
+      if (rel.startsWith("..") || isAbsolute(rel)) throw new Error("Opened material escaped the configured source");
       const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size > 65536)
-        throw new Error(
-          "Material must be a regular file no larger than 64 KiB",
-        );
+      if (!stat.isFile() || stat.size > 65536) throw new Error("Material must be a regular file no larger than 64 KiB");
       const bytes = Buffer.alloc(65537);
       let size = 0,
         n;
-      while (
-        size < bytes.length &&
-        (n = readSync(fd, bytes, size, bytes.length - size, null)) > 0
-      )
-        size += n;
+      while (size < bytes.length && (n = readSync(fd, bytes, size, bytes.length - size, null)) > 0) size += n;
       if (size > 65536) throw new Error("Material grew beyond the size limit");
-      const text = new TextDecoder("utf-8", { fatal: true }).decode(
-        bytes.subarray(0, size),
-      );
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size));
       return {
         source: "materials",
         path: rel,

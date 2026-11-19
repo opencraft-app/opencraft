@@ -20,40 +20,27 @@ import { createHash, randomUUID } from "node:crypto";
 import { digest, stable } from "../../domain/values.mjs";
 import { normalizeMemory } from "../../domain/memory-synthesis.mjs";
 import { memoryKey } from "../../domain/memory-recall.mjs";
-import {
-  memoryProjectSlug,
-  projectGrantId,
-  projectGrantBinding,
-} from "../../domain/memory-spaces.mjs";
+import { memoryProjectSlug, projectGrantId, projectGrantBinding } from "../../domain/memory-spaces.mjs";
 
 export const fileContentId = (value) =>
-  createHash("sha1")
-    .update(normalizeMemory(value).toLowerCase())
-    .digest("hex")
-    .slice(0, 16);
+  createHash("sha1").update(normalizeMemory(value).toLowerCase()).digest("hex").slice(0, 16);
 const safeId = (id) => {
-  if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(id))
-    throw new Error("Unsafe memory agent id");
+  if (typeof id !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/.test(id)) throw new Error("Unsafe memory agent id");
   return id;
 };
-const day = (at) =>
-  at ? new Date(at).toISOString().slice(0, 10) : "0000-00-00";
+const day = (at) => (at ? new Date(at).toISOString().slice(0, 10) : "0000-00-00");
 export class MemoryFileStore {
-  constructor(profile, {readOnly = false} = {}) {
+  constructor(profile, { readOnly = false } = {}) {
     this.readOnly = readOnly;
     this.profile = profile;
     this.agentId = safeId(profile.config.assistantId);
     this.owner = profile.config.owner;
     this.botLayout = profile.config.layout === "bot-v1";
     this.ownerPath = this.botLayout ? "memory/.owner.json" : "owner.json";
-    this.agentPath = this.botLayout
-      ? "memory/.identity.json"
-      : `agents/${this.agentId}/agent.json`;
+    this.agentPath = this.botLayout ? "memory/.identity.json" : `agents/${this.agentId}/agent.json`;
     this.membershipPath = `agents/${this.agentId}/projects.json`;
     const root = resolve(
-      this.botLayout
-        ? profile.path
-        : (profile.config.memoryRoot ?? join(profile.path, "memory-space")),
+      this.botLayout ? profile.path : (profile.config.memoryRoot ?? join(profile.path, "memory-space")),
     );
     if (!readOnly) mkdirSync(root, { recursive: true, mode: 0o700 });
     this.root = realpathSync(root);
@@ -72,11 +59,9 @@ export class MemoryFileStore {
     let at = this.root;
     for (const part of name.split("/")) {
       at = join(at, part);
-      if (existsSync(at) && lstatSync(at).isSymbolicLink())
-        throw new Error("Memory symlinks are forbidden");
+      if (existsSync(at) && lstatSync(at).isSymbolicLink()) throw new Error("Memory symlinks are forbidden");
     }
-    if (relative(this.root, path).startsWith(".."))
-      throw new Error("Memory path escaped root");
+    if (relative(this.root, path).startsWith("..")) throw new Error("Memory path escaped root");
     return path;
   }
   read(name, overlay = true, maxBytes = 8 * 1024 * 1024) {
@@ -91,17 +76,15 @@ export class MemoryFileStore {
     }
     try {
       const stat = fstatSync(fd);
-      if (!stat.isFile() || stat.size > maxBytes)
-        throw new Error("Invalid or oversized memory file");
-      if (realpathSync(`/proc/self/fd/${fd}`) !== path)
-        throw new Error("Memory file path changed");
+      if (!stat.isFile() || stat.size > maxBytes) throw new Error("Invalid or oversized memory file");
+      if (realpathSync(`/proc/self/fd/${fd}`) !== path) throw new Error("Memory file path changed");
       return readFileSync(fd, "utf8");
     } finally {
       closeSync(fd);
     }
   }
   atomic(name, text) {
-    if(this.readOnly) throw Error("Read-only memory store");
+    if (this.readOnly) throw Error("Read-only memory store");
     const path = this.safe(name);
     if (text === null) {
       try {
@@ -147,10 +130,9 @@ export class MemoryFileStore {
     }
   }
   initialize() {
-    if(this.readOnly) throw Error("Read-only memory store");
+    if (this.readOnly) throw Error("Read-only memory store");
     const claim = this.json(this.ownerPath);
-    if (claim && claim.owner !== this.owner)
-      throw new Error("Memory root belongs to another owner");
+    if (claim && claim.owner !== this.owner) throw new Error("Memory root belongs to another owner");
     if (!claim) {
       const temp = `.owner-${randomUUID()}.tmp`;
       this.atomic(temp, stable({ schema: 1, owner: this.owner }) + "\n");
@@ -165,8 +147,7 @@ export class MemoryFileStore {
           }
         } catch (error) {
           if (error.code !== "EEXIST") throw error;
-          if (this.json(this.ownerPath)?.owner !== this.owner)
-            throw new Error("Memory root belongs to another owner");
+          if (this.json(this.ownerPath)?.owner !== this.owner) throw new Error("Memory root belongs to another owner");
         }
       } finally {
         this.atomic(temp, null);
@@ -187,10 +168,7 @@ export class MemoryFileStore {
         }) + "\n",
       );
     if (!this.botLayout && this.read(this.membershipPath) === null)
-      this.atomic(
-        this.membershipPath,
-        stable({ projects: [], grants: {} }) + "\n",
-      );
+      this.atomic(this.membershipPath, stable({ projects: [], grants: {} }) + "\n");
   }
   directories(name) {
     const path = this.safe(name);
@@ -201,10 +179,8 @@ export class MemoryFileStore {
       if (e.code === "ENOENT") return [];
       throw e;
     }
-    if (entries.length > 512)
-      throw new Error("Memory directory exceeds scan limit");
-    if (entries.some((e) => e.isSymbolicLink()))
-      throw new Error("Memory symlinks are forbidden");
+    if (entries.length > 512) throw new Error("Memory directory exceeds scan limit");
+    if (entries.some((e) => e.isSymbolicLink())) throw new Error("Memory symlinks are forbidden");
     return entries
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
@@ -219,8 +195,7 @@ export class MemoryFileStore {
       if (e.code === "ENOENT") return [];
       throw e;
     }
-    if (entries.length > 2048 || entries.some((e) => e.isSymbolicLink()))
-      throw new Error("Invalid memory directory");
+    if (entries.length > 2048 || entries.some((e) => e.isSymbolicLink())) throw new Error("Invalid memory directory");
     return entries
       .filter((e) => e.isFile())
       .map((e) => e.name)
@@ -242,18 +217,11 @@ export class MemoryFileStore {
   membership() {
     if (this.botLayout) return { projects: [], grants: {} };
     const m = this.json(this.membershipPath);
-    if (
-      !m ||
-      !Array.isArray(m.projects) ||
-      m.projects.length > 128 ||
-      !m.grants ||
-      typeof m.grants !== "object"
-    )
+    if (!m || !Array.isArray(m.projects) || m.projects.length > 128 || !m.grants || typeof m.grants !== "object")
       throw new Error("Invalid memory project membership");
     for (const slug of m.projects) {
       memoryProjectSlug(slug);
-      if (typeof m.grants[slug] !== "string")
-        throw new Error("Invalid memory project grant");
+      if (typeof m.grants[slug] !== "string") throw new Error("Invalid memory project grant");
     }
     return m;
   }
@@ -261,11 +229,7 @@ export class MemoryFileStore {
     if (!/^[a-f0-9]{64}$/.test(slug ?? "")) memoryProjectSlug(slug);
     const p = this.json(`projects/${slug}/identity.json`);
     if (!p) return null;
-    if (
-      p.slug !== slug ||
-      typeof p.id !== "string" ||
-      typeof p.name !== "string"
-    )
+    if (p.slug !== slug || typeof p.id !== "string" || typeof p.name !== "string")
       throw new Error("Invalid memory project identity");
     return p;
   }
@@ -291,8 +255,7 @@ export class MemoryFileStore {
     });
   }
   stageProject(action, { slug, name, description = "" }) {
-    if (this.botLayout)
-      throw Error("Shared memory requires an explicit platform space binding");
+    if (this.botLayout) throw Error("Shared memory requires an explicit platform space binding");
     memoryProjectSlug(slug);
     let p = this.project(slug);
     const m = this.membership();
@@ -307,10 +270,7 @@ export class MemoryFileStore {
         throw new Error("Project needs a bounded name and description");
       p = { id: randomUUID(), slug, name: name.trim(), type: "named" };
       this.staged.set(`projects/${slug}/identity.json`, stable(p) + "\n");
-      this.staged.set(
-        `projects/${slug}/project.md`,
-        `# ${name.trim().replace(/[\r\n]/g, " ")}\n\n${description}\n`,
-      );
+      this.staged.set(`projects/${slug}/project.md`, `# ${name.trim().replace(/[\r\n]/g, " ")}\n\n${description}\n`);
     }
     if (!p) throw new Error("Memory project does not exist");
     if (action === "leave") {
@@ -321,8 +281,7 @@ export class MemoryFileStore {
       m.projects.sort();
       m.grants[slug] = randomUUID();
     }
-    if (m.projects.length > 128)
-      throw new Error("Too many joined memory projects");
+    if (m.projects.length > 128) throw new Error("Too many joined memory projects");
     this.staged.set(this.membershipPath, stable(m) + "\n");
     return { slug, name: p.name, joined: action !== "leave" };
   }
@@ -331,14 +290,10 @@ export class MemoryFileStore {
     const images = new Map(),
       read = (name) => {
         const raw = this.read(name);
-        bytes +=
-          Buffer.byteLength(raw ?? "", "utf8") -
-          Buffer.byteLength(images.get(name) ?? "", "utf8");
-        if (bytes > 64 * 1024 * 1024)
-          throw new Error("Memory scan exceeds total byte bound");
+        bytes += Buffer.byteLength(raw ?? "", "utf8") - Buffer.byteLength(images.get(name) ?? "", "utf8");
+        if (bytes > 64 * 1024 * 1024) throw new Error("Memory scan exceeds total byte bound");
         images.set(name, raw);
-        if (images.size > 10000)
-          throw new Error("Memory file count exceeds limit");
+        if (images.size > 10000) throw new Error("Memory file count exceeds limit");
         return raw;
       };
     const json = (name, fallback) => {
@@ -353,21 +308,14 @@ export class MemoryFileStore {
     read(this.ownerPath);
     if (!this.botLayout) read(this.membershipPath);
     const members = this.membership(),
-      projects = (this.botLayout ? [] : this.directories("projects"))
-        .map((id) => this.project(id))
-        .filter(Boolean),
+      projects = (this.botLayout ? [] : this.directories("projects")).map((id) => this.project(id)).filter(Boolean),
       rows = [],
       tombstones = [],
       refreshes = [];
     const names = new Map();
-    for (const id of this.botLayout
-      ? [this.agentId]
-      : this.directories("agents")) {
+    for (const id of this.botLayout ? [this.agentId] : this.directories("agents")) {
       safeId(id);
-      const agent = json(
-        this.botLayout ? this.agentPath : `agents/${id}/agent.json`,
-        null,
-      );
+      const agent = json(this.botLayout ? this.agentPath : `agents/${id}/agent.json`, null);
       if (agent) names.set(id, String(agent.name ?? id).slice(0, 120));
     }
     const add = (scope, projectId, agentId) => {
@@ -408,25 +356,15 @@ export class MemoryFileStore {
             id = fileContentId(value);
           if (seen.has(id)) continue;
           seen.add(id);
-          const record = records.find(
-              (r) => !r.deleted && r.contentId === id && r.kind === kind,
-            ),
-            sourceKey =
-              record?.key ?? memoryKey(`fact_${id}`, scope, projectId);
+          const record = records.find((r) => !r.deleted && r.contentId === id && r.kind === kind),
+            sourceKey = record?.key ?? memoryKey(`fact_${id}`, scope, projectId);
           if (memoryKey(sourceKey, scope, projectId) !== sourceKey)
             throw new Error("Memory metadata key escapes its shard");
           if (record) used.add(record.key);
-          const explicit =
-              read(`${dir}/.dreaming/explicit/${id}.memory`) !== null,
-            automatic =
-              read(`${dir}/.dreaming/synthesized/${id}.memory`) !== null;
+          const explicit = read(`${dir}/.dreaming/explicit/${id}.memory`) !== null,
+            automatic = read(`${dir}/.dreaming/synthesized/${id}.memory`) !== null;
           const at = Date.parse(`${m[1]}T00:00:00Z`),
-            updatedAt =
-              record && day(record.updatedAt) === m[1]
-                ? record.updatedAt
-                : Number.isFinite(at)
-                  ? at
-                  : 0;
+            updatedAt = record && day(record.updatedAt) === m[1] ? record.updatedAt : Number.isFinite(at) ? at : 0;
           rows.push({
             key:
               agentId === this.agentId
@@ -457,8 +395,7 @@ export class MemoryFileStore {
       if (agentId === this.agentId) {
         for (const r of records) {
           if (used.has(r.key)) continue;
-          if (memoryKey(r.key, scope, projectId) !== r.key)
-            throw new Error("Invalid memory record key");
+          if (memoryKey(r.key, scope, projectId) !== r.key) throw new Error("Invalid memory record key");
           rows.push({
             ...r,
             value: "",
@@ -474,8 +411,7 @@ export class MemoryFileStore {
           });
         }
         for (const name of this.files(`${dir}/.dreaming/tombstones`)) {
-          if (!/^[a-f0-9]{64}\.deleted$/.test(name))
-            throw new Error("Invalid memory tombstone");
+          if (!/^[a-f0-9]{64}\.deleted$/.test(name)) throw new Error("Invalid memory tombstone");
           read(`${dir}/.dreaming/tombstones/${name}`);
           tombstones.push({
             id: name.slice(0, -8),
@@ -488,34 +424,23 @@ export class MemoryFileStore {
         const refresh = read(`${dir}/.dreaming/next-refresh-at`);
         if (refresh !== null) {
           const n = Number(refresh.trim());
-          if (!Number.isSafeInteger(n) || n < 0)
-            throw new Error("Invalid temporal refresh marker");
+          if (!Number.isSafeInteger(n) || n < 0) throw new Error("Invalid temporal refresh marker");
           refreshes.push({
-            scope:
-              scope === "project"
-                ? `@project/${projectId}`
-                : scope === "agent"
-                  ? "agent"
-                  : "user",
+            scope: scope === "project" ? `@project/${projectId}` : scope === "agent" ? "agent" : "user",
             next_at: n,
           });
         }
       }
     };
     add("agent", null, this.agentId);
-    const users = new Set([
-      ...(this.botLayout ? [] : this.directories("user-memory/agents")),
-      this.agentId,
-    ]);
+    const users = new Set([...(this.botLayout ? [] : this.directories("user-memory/agents")), this.agentId]);
     if (!this.botLayout) for (const id of users) add("user", null, id);
     for (const p of projects) {
       read(`projects/${p.slug}/identity.json`);
       read(`projects/${p.slug}/project.md`);
       const ids = new Set([
         this.agentId,
-        ...(members.projects.includes(p.slug)
-          ? this.directories(`projects/${p.slug}/memory/agents`)
-          : []),
+        ...(members.projects.includes(p.slug) ? this.directories(`projects/${p.slug}/memory/agents`) : []),
       ]);
       for (const id of ids) add("project", p.slug, id);
     }
@@ -539,35 +464,13 @@ export class MemoryFileStore {
         projectId: r.projectId,
       });
     for (const [dir, scope] of groups) {
-      const previous = ownBefore.filter(
-          (r) => this.shard(r.scope, r.projectId) === dir,
-        ),
+      const previous = ownBefore.filter((r) => this.shard(r.scope, r.projectId) === dir),
         next = ownAfter.filter((r) => this.shard(r.scope, r.projectId) === dir);
       if (
         stable(
-          previous.map((r) => [
-            r.key,
-            r.value,
-            r.revision,
-            r.deleted,
-            r.kind,
-            r.updatedAt,
-            r.origin,
-            r.evidenceIds,
-          ]),
+          previous.map((r) => [r.key, r.value, r.revision, r.deleted, r.kind, r.updatedAt, r.origin, r.evidenceIds]),
         ) ===
-        stable(
-          next.map((r) => [
-            r.key,
-            r.value,
-            r.revision,
-            r.deleted,
-            r.kind,
-            r.updatedAt,
-            r.origin,
-            r.evidenceIds,
-          ]),
-        )
+        stable(next.map((r) => [r.key, r.value, r.revision, r.deleted, r.kind, r.updatedAt, r.origin, r.evidenceIds]))
       )
         continue;
       if (scope.scope === "project" && !this.project(scope.projectId)) {
@@ -578,39 +481,27 @@ export class MemoryFileStore {
           type: "workspace",
           binding: scope.projectId,
         };
-        this.staged.set(
-          `projects/${scope.projectId}/identity.json`,
-          stable(p) + "\n",
-        );
-        this.staged.set(
-          `projects/${scope.projectId}/project.md`,
-          `# Workspace ${scope.projectId}\n`,
-        );
+        this.staged.set(`projects/${scope.projectId}/identity.json`, stable(p) + "\n");
+        this.staged.set(`projects/${scope.projectId}/project.md`, `# Workspace ${scope.projectId}\n`);
       }
       const records = [];
       for (const r of next) {
         const old = previous.find((p) => p.key === r.key),
-          id = r.deleted
-            ? (old?.contentId ?? r.contentId ?? null)
-            : fileContentId(r.value);
+          id = r.deleted ? (old?.contentId ?? r.contentId ?? null) : fileContentId(r.value);
         if (
           !old ||
           stable([old.value, old.deleted, old.kind, old.updatedAt]) !==
             stable([r.value, !!r.deleted ? 1 : 0, r.kind, r.updatedAt])
         ) {
           if (old && !old.deleted) {
-            const raw = this.staged.has(old.path)
-              ? this.staged.get(old.path)
-              : this.read(old.path);
+            const raw = this.staged.has(old.path) ? this.staged.get(old.path) : this.read(old.path);
             if (raw !== null)
               this.staged.set(
                 old.path,
                 raw
                   .split("\n")
                   .filter((line) => {
-                    const m = /^-\s+\(\d{4}-\d{2}-\d{2}\)\s+(.+?)\s*$/.exec(
-                      line,
-                    );
+                    const m = /^-\s+\(\d{4}-\d{2}-\d{2}\)\s+(.+?)\s*$/.exec(line);
                     return !m || fileContentId(m[1]) !== old.contentId;
                   })
                   .join("\n"),
@@ -621,11 +512,7 @@ export class MemoryFileStore {
                 r.kind === "profile"
                   ? `${dir}/profile.md`
                   : `${dir}/log/${r.updatedAt ? day(r.updatedAt).slice(0, 7) : "0000-00"}.md`,
-              raw =
-                this.read(path) ??
-                (r.kind === "profile"
-                  ? "# About the user\n\n"
-                  : "# Memory log\n\n");
+              raw = this.read(path) ?? (r.kind === "profile" ? "# About the user\n\n" : "# Memory log\n\n");
             this.staged.set(
               path,
               `${raw}${raw.endsWith("\n") ? "" : "\n"}- (${day(r.updatedAt)}) ${normalizeMemory(r.value)}\n`,
@@ -633,20 +520,11 @@ export class MemoryFileStore {
           }
         }
         if (old?.contentId && old.contentId !== id) {
-          this.staged.set(
-            `${dir}/.dreaming/explicit/${old.contentId}.memory`,
-            null,
-          );
-          this.staged.set(
-            `${dir}/.dreaming/synthesized/${old.contentId}.memory`,
-            null,
-          );
+          this.staged.set(`${dir}/.dreaming/explicit/${old.contentId}.memory`, null);
+          this.staged.set(`${dir}/.dreaming/synthesized/${old.contentId}.memory`, null);
         }
         if (id) {
-          this.staged.set(
-            `${dir}/.dreaming/explicit/${id}.memory`,
-            !r.deleted && r.origin === "explicit" ? "" : null,
-          );
+          this.staged.set(`${dir}/.dreaming/explicit/${id}.memory`, !r.deleted && r.origin === "explicit" ? "" : null);
           this.staged.set(
             `${dir}/.dreaming/synthesized/${id}.memory`,
             !r.deleted && r.origin === "automatic" ? "" : null,
@@ -664,15 +542,11 @@ export class MemoryFileStore {
           evidenceIds: r.evidenceIds ?? [],
         });
       }
-      this.staged.set(
-        `${dir}/.dreaming/records.json`,
-        stable({ records }) + "\n",
-      );
+      this.staged.set(`${dir}/.dreaming/records.json`, stable({ records }) + "\n");
     }
     const oldMarkerPaths = new Set();
     for (const [dir] of groups)
-      for (const n of this.files(`${dir}/.dreaming/tombstones`))
-        oldMarkerPaths.add(`${dir}/.dreaming/tombstones/${n}`);
+      for (const n of this.files(`${dir}/.dreaming/tombstones`)) oldMarkerPaths.add(`${dir}/.dreaming/tombstones/${n}`);
     for (const t of tombstones) {
       const path = `${this.shard(t.scope, t.project_id)}/.dreaming/tombstones/${t.id}.deleted`;
       oldMarkerPaths.delete(path);
@@ -680,14 +554,9 @@ export class MemoryFileStore {
     }
     for (const path of oldMarkerPaths) this.staged.set(path, null);
     for (const f of refreshes) {
-      const scope =
-          f.scope === "user" || f.scope === "agent" ? f.scope : "project",
-        project =
-          scope === "project" ? f.scope.replace(/^@project\//, "") : null;
-      this.staged.set(
-        `${this.shard(scope, project)}/.dreaming/next-refresh-at`,
-        `${f.next_at}\n`,
-      );
+      const scope = f.scope === "user" || f.scope === "agent" ? f.scope : "project",
+        project = scope === "project" ? f.scope.replace(/^@project\//, "") : null;
+      this.staged.set(`${this.shard(scope, project)}/.dreaming/next-refresh-at`, `${f.next_at}\n`);
     }
   }
   locations() {

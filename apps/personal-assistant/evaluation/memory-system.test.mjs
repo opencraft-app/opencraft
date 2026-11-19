@@ -40,25 +40,14 @@ test("CSV preserves quoted newlines, commas, quotes, empty fields, CRLF and EOF"
 });
 test("reject malformed context, duplicate identities, cross-persona reuse and future boundary", () => {
   const contexts = new Map([["ctx", messages]]);
-  assert.throws(
-    () => parseContexts('{"ctx":[{"role":"tool","content":"x"}]}'),
-    /Unsupported/,
-  );
+  assert.throws(() => parseContexts('{"ctx":[{"role":"tool","content":"x"}]}'), /Unsupported/);
   assert.throws(() => parseContexts('{"ctx":[]}'), /Invalid/);
   assert.throws(() => validateQuestions([row(), row()], contexts), /Duplicate/);
   assert.throws(
-    () =>
-      validateQuestions(
-        [row(), row({ question_id: "q2", persona_id: "other" })],
-        contexts,
-      ),
+    () => validateQuestions([row(), row({ question_id: "q2", persona_id: "other" })], contexts),
     /personas/,
   );
-  assert.throws(
-    () =>
-      validateQuestions([row({ end_index_in_shared_context: "5" })], contexts),
-    /boundary/,
-  );
+  assert.throws(() => validateQuestions([row({ end_index_in_shared_context: "5" })], contexts), /boundary/);
 });
 test("selection is invariant to gold and length; projection hides annotations and future text", () => {
   const contexts = new Map([["ctx", messages]]);
@@ -80,18 +69,8 @@ test("selection is invariant to gold and length; projection hides annotations an
   const projected = projectGroup(g, contexts);
   assert.deepEqual(projected.history, messages.slice(0, 3));
   assert.deepEqual(Object.keys(projected), ["history", "queries"]);
-  assert.deepEqual(Object.keys(projected.queries[0]), [
-    "end",
-    "question",
-    "options",
-  ]);
-  for (const forbidden of [
-    "correct_answer",
-    "question_id",
-    "question_type",
-    "persona_id",
-    "Future secret",
-  ])
+  assert.deepEqual(Object.keys(projected.queries[0]), ["end", "question", "options"]);
+  for (const forbidden of ["correct_answer", "question_id", "question_type", "persona_id", "Future secret"])
     assert.ok(!JSON.stringify(projected).includes(forbidden));
 });
 test("same reader receives mutually isolated memory/history and common causal persona", () => {
@@ -190,10 +169,7 @@ test("reader actually incorporates host observation; one result does not become 
   assert.deepEqual(answer.queries, ["host"]);
 });
 test("official option scoring preserves marker and full-response fallback behavior", () => {
-  assert.equal(
-    scoreOption("consider (a), then <final_answer>(b)</final_answer>", "(b)"),
-    true,
-  );
+  assert.equal(scoreOption("consider (a), then <final_answer>(b)</final_answer>", "(b)"), true);
   assert.equal(scoreOption("(a) or (b)", "b"), false);
   assert.equal(scoreOption("", "b"), false);
   assert.equal(scoreOption("B", "(b)"), true);
@@ -234,14 +210,8 @@ test("failed and missing answers stay in denominator, unknown cost stays unknown
   assert.equal(result.arms["full-history"].accuracy, null);
   assert.equal(result.arms["full-history"].pending, 2);
   assert.equal(result.billedCost, null);
-  assert.equal(
-    summarizeCalls([{ outcome: "error", elapsedMs: 1 }]).knownTokens,
-    null,
-  );
-  assert.equal(
-    summarizeCalls([{ outcome: "error", elapsedMs: 1 }]).callsWithUnknownTokens,
-    1,
-  );
+  assert.equal(summarizeCalls([{ outcome: "error", elapsedMs: 1 }]).knownTokens, null);
+  assert.equal(summarizeCalls([{ outcome: "error", elapsedMs: 1 }]).callsWithUnknownTokens, 1);
 });
 
 test("native default policy merges twelve real exchanges, verifies and persists original user evidence", async () => {
@@ -249,15 +219,9 @@ test("native default policy merges twelve real exchanges, verifies and persists 
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { initProfile } = await import("../src/adapters/local/profile.mjs");
-  const { createLocalDomain } = await import(
-    "../src/runtime/create-local-domain.mjs"
-  );
-  const { MemoryLearningModel } = await import(
-    "../src/adapters/models/memory-learning-model.mjs"
-  );
-  const { MemoryLearningCoordinator } = await import(
-    "../src/runtime/memory-learning-coordinator.mjs"
-  );
+  const { createLocalDomain } = await import("../src/runtime/create-local-domain.mjs");
+  const { MemoryLearningModel } = await import("../src/adapters/models/memory-learning-model.mjs");
+  const { MemoryLearningCoordinator } = await import("../src/runtime/memory-learning-coordinator.mjs");
   const root = await mkdtemp(join(tmpdir(), "sa-memory-eval-test-"));
   let clock = Date.parse("2026-11-09T00:00:00Z");
   const profile = initProfile(root, "synthetic", { mode: "fixture" });
@@ -273,13 +237,9 @@ test("native default policy merges twelve real exchanges, verifies and persists 
         conversation_id: app.history.main.id,
         text: `我喜欢简短回答 ${i}`,
         created_at: clock,
-        query_scope_json: JSON.stringify(
-          app.scope.queryGrant(`recorded:${i}`, app.history.main.id),
-        ),
+        query_scope_json: JSON.stringify(app.scope.queryGrant(`recorded:${i}`, app.history.main.id)),
       };
-      app.uow.transaction(() =>
-        app.memoryLearning.capture(turn, "Perhaps a long response?"),
-      );
+      app.uow.transaction(() => app.memoryLearning.capture(turn, "Perhaps a long response?"));
       clock += 100;
     }
     assert.equal(profile.config.memoryPolicy.debounceMs, 15000);
@@ -292,17 +252,12 @@ test("native default policy merges twelve real exchanges, verifies and persists 
     await learning.process(job, new AbortController().signal);
     assert.equal(app.memoryLearning.get(job.id).state, "committed");
     assert.equal(app.memory.list().filter((m) => !m.deleted).length, 1);
-    const states = Array.from(
-      { length: 12 },
-      (_, i) => app.memoryLearning.get(`learning:recorded:${i}`).state,
-    );
+    const states = Array.from({ length: 12 }, (_, i) => app.memoryLearning.get(`learning:recorded:${i}`).state);
     assert.equal(states.filter((s) => s === "merged").length, 11);
     const turn = {
       id: "query",
       conversation_id: app.history.main.id,
-      query_scope_json: JSON.stringify(
-        app.scope.queryGrant("query", app.history.main.id),
-      ),
+      query_scope_json: JSON.stringify(app.scope.queryGrant("query", app.history.main.id)),
     };
     const observed = app.receptionQueries.open(turn).execute({
       kind: "query",
@@ -409,27 +364,11 @@ test("control processes retain their own complete results when memory later time
 });
 
 test("component memory reader exposes the same bounded retrieval contract as the product without granting history", () => {
-  const m = readerInput(
-    messages,
-    { question: "Q", options: "A" },
-    "memory",
-    {},
-  );
+  const m = readerInput(messages, { question: "Q", options: "A" }, "memory", {});
   assert.ok(m.availableQueries.includes("memory.files.list"));
-  assert.match(
-    m.queryContracts["memory.search"].description,
-    /every whitespace-separated term/,
-  );
-  assert.equal(
-    m.queryContracts["memory.search"].parameters.limit,
-    "1..12 (default 12)",
-  );
+  assert.match(m.queryContracts["memory.search"].description, /every whitespace-separated term/);
+  assert.equal(m.queryContracts["memory.search"].parameters.limit, "1..12 (default 12)");
   assert.equal(m.availableQueries.includes("history.read"), false);
-  const n = readerInput(
-    messages,
-    { question: "Q", options: "A" },
-    "no-history",
-    {},
-  );
+  const n = readerInput(messages, { question: "Q", options: "A" }, "no-history", {});
   assert.deepEqual(n.queryContracts, {});
 });

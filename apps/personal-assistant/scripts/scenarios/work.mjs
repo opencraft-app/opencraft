@@ -23,22 +23,13 @@ export async function workScenario({
   await restart();
   check(
     "questionSurvivesRestart",
-    (await call("interaction.list")).some(
-      (i) => i.id === q.id && i.state === "pending",
-    ),
+    (await call("interaction.list")).some((i) => i.id === q.id && i.state === "pending"),
   );
   const answer = await say("回答：只整理本周", "answer");
   check("answerTargetsOriginalWork", answer.work_id === work.work_id);
   const result = await done(work.work_id);
-  check(
-    "sameExecutionResumed",
-    result.work.revision === 1 && result.executions.length === 1,
-  );
-  check(
-    "oneAcceptedDelivery",
-    result.deliveries.length === 1 &&
-      result.deliveries[0].status === "accepted",
-  );
+  check("sameExecutionResumed", result.work.revision === 1 && result.executions.length === 1);
+  check("oneAcceptedDelivery", result.deliveries.length === 1 && result.deliveries[0].status === "accepted");
   const usage = await call("usage", { workId: work.work_id });
   check(
     "executionLimitsAndUsageVisible",
@@ -55,42 +46,24 @@ export async function workScenario({
     "artifactContainsSourceAndConfirmedFact",
     notes.some((s) => s.includes("project.md") && s.includes("导入接口")),
   );
-  const stopped = await say(
-    "整理另一个问题，先问我范围，必须用 ask_user 等我回答。",
-    "cancel-work",
-  );
+  const stopped = await say("整理另一个问题，先问我范围，必须用 ask_user 等我回答。", "cancel-work");
   await pending(stopped.work_id);
   await say(`取消 ${stopped.work_id}`, "cancel");
-  check(
-    "cancelledWorkStaysStopped",
-    (await call("work", { workId: stopped.work_id })).work.status ===
-      "cancelled",
-  );
-  const revised = await say(
-    "整理项目资料，先问我范围，必须用 ask_user 等我回答。",
-    "amend-work",
-  );
+  check("cancelledWorkStaysStopped", (await call("work", { workId: stopped.work_id })).work.status === "cancelled");
+  const revised = await say("整理项目资料，先问我范围，必须用 ask_user 等我回答。", "amend-work");
   await pending(revised.work_id);
   await say(
     `改成整理 project.md 中本周已确认进展，标注来源，直接发布笔记，无需再提问。工作 ID：${revised.work_id}`,
     "amend",
   );
-  check(
-    "amendPreservesWorkIdentity",
-    (await done(revised.work_id)).work.revision === 2,
-  );
+  check("amendPreservesWorkIdentity", (await done(revised.work_id)).work.revision === 2);
   const history = await call("conversation");
   check(
     "resultReturnsToOriginalConversation",
-    history.messages.some(
-      (m) => m.data.kind === "result" && m.data.workId === work.work_id,
-    ),
+    history.messages.some((m) => m.data.kind === "result" && m.data.workId === work.work_id),
   );
   check(
     "backgroundReportReviewedByMainAssistant",
-    (await call("events")).some(
-      (e) =>
-        e.kind === "reception.report-settled" && e.work_id === work.work_id,
-    ),
+    (await call("events")).some((e) => e.kind === "reception.report-settled" && e.work_id === work.work_id),
   );
 }

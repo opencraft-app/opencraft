@@ -12,9 +12,7 @@ test("OTLP summary distinguishes inclusive parent/child time, repeated exports a
     name: "gen_ai.operation",
     startTimeUnixNano: "1000000",
     endTimeUnixNano: "4000000",
-    attributes: [
-      { key: "app.model_role", value: { stringValue: "memory-verify" } },
-    ],
+    attributes: [{ key: "app.model_role", value: { stringValue: "memory-verify" } }],
     status: { code: 2 },
   };
   const parent = {
@@ -51,10 +49,7 @@ test("OTLP summary distinguishes inclusive parent/child time, repeated exports a
   const result = summarizeTelemetry([trace, trace], [logs]);
   assert.equal(result.completedSpans, 2);
   assert.equal(result.groups["memory.prepare"].totalInclusiveMs, 5);
-  assert.equal(
-    result.groups["gen_ai.operation/memory-verify"].totalInclusiveMs,
-    3,
-  );
+  assert.equal(result.groups["gen_ai.operation/memory-verify"].totalInclusiveMs, 3);
   assert.equal(result.groups["gen_ai.operation/memory-verify"].errors, 1);
   assert.deepEqual(result.observedUnfinishedStarts, { "codex.turn": 1 });
   assert.equal(result.wallTimeMs, undefined);
@@ -64,10 +59,7 @@ test("OTLP report reads rotation and marks malformed/missing data without fabric
   const path = await mkdtemp(join(tmpdir(), "eval-otel-summary-"));
   try {
     assert.equal((await profileTelemetry(path)).coverage, "no-trace-files");
-    await writeFile(
-      join(path, "traces.otlp.jsonl.1"),
-      JSON.stringify({ resourceSpans: [] }) + '\n{"truncated":',
-    );
+    await writeFile(join(path, "traces.otlp.jsonl.1"), JSON.stringify({ resourceSpans: [] }) + '\n{"truncated":');
     const observed = await profileTelemetry(path);
     assert.equal(observed.coverage, "observed-local-window");
     assert.equal(observed.malformedLines, 1);

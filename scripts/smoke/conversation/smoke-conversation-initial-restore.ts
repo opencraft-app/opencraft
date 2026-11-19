@@ -8,37 +8,62 @@ import { _electron } from "playwright";
 const output = resolve(process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/restore-audit");
 await mkdir(output, { recursive: true });
 const server = await createServer({
-  configFile: false, root: process.cwd(), logLevel: "error",
-  esbuild: { jsx: "automatic" }, resolve: { dedupe: ["react", "react-dom", "react-intl"] },
+  configFile: false,
+  root: process.cwd(),
+  logLevel: "error",
+  esbuild: { jsx: "automatic" },
+  resolve: { dedupe: ["react", "react-dom", "react-intl"] },
   cacheDir: resolve(output, "vite-cache"),
   optimizeDeps: { entries: [], include: ["react", "react-dom/client", "react-intl"] },
   server: { host: "127.0.0.1", port: 0, hmr: false },
-  plugins: [{ name: "restore-fixture", configureServer(vite) {
-    vite.middlewares.use((req, res, next) => {
-      if (req.url !== "/") return next();
-      res.setHeader("content-type", "text/html");
-      res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/conversation-reading-position.tsx"></script>');
-    });
-  } }],
+  plugins: [
+    {
+      name: "restore-fixture",
+      configureServer(vite) {
+        vite.middlewares.use((req, res, next) => {
+          if (req.url !== "/") return next();
+          res.setHeader("content-type", "text/html");
+          res.end(
+            '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/tests/fixtures/conversation-reading-position.tsx"></script>',
+          );
+        });
+      },
+    },
+  ],
 });
 let browser: Awaited<ReturnType<typeof _electron.launch>> | undefined;
 try {
   await server.listen();
-  await writeFile(`${output}/app.cjs`, `const {app,BrowserWindow}=require('electron');app.setPath('userData',__dirname+'/profile');app.whenReady().then(()=>new BrowserWindow({show:true}).loadURL('about:blank'));`);
+  await writeFile(
+    `${output}/app.cjs`,
+    `const {app,BrowserWindow}=require('electron');app.setPath('userData',__dirname+'/profile');app.whenReady().then(()=>new BrowserWindow({show:true}).loadURL('about:blank'));`,
+  );
   const env = { ...process.env };
   for (const key of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS", "DISPLAY", "WAYLAND_DISPLAY"]) delete env[key];
-  browser = await _electron.launch({ executablePath: process.env.OPENCRAFT_ELECTRON_EXECUTABLE ?? "/opt/opencraft/runtime/browser/electron/electron", args: ["--ozone-platform=headless", "--ozone-override-screen-size=1600,1200", "--disable-gpu", "--disable-dev-shm-usage", `${output}/app.cjs`], env });
+  browser = await _electron.launch({
+    executablePath: process.env.OPENCRAFT_ELECTRON_EXECUTABLE ?? "/opt/opencraft/runtime/browser/electron/electron",
+    args: [
+      "--ozone-platform=headless",
+      "--ozone-override-screen-size=1600,1200",
+      "--disable-gpu",
+      "--disable-dev-shm-usage",
+      `${output}/app.cjs`,
+    ],
+    env,
+  });
   const page = await browser.firstWindow();
   page.setDefaultTimeout(30_000);
   await page.addInitScript("window.__name = value => value");
   const errors: string[] = [];
-  page.on("pageerror", error => errors.push(error.message));
+  page.on("pageerror", (error) => errors.push(error.message));
   const cdp = await page.context().newCDPSession(page);
   for (const width of [390, 1200]) {
     await page.setViewportSize({ width, height: 320 });
     await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: width === 390 });
     if (width === 390) await page.goto(server.resolvedUrls!.local[0]!);
-    await page.waitForFunction(() => !!(window as any).readerFixture && document.querySelectorAll(".chat-code-block__scroller").length === 2);
+    await page.waitForFunction(
+      () => !!(window as any).readerFixture && document.querySelectorAll(".chat-code-block__scroller").length === 2,
+    );
     await page.evaluate(() => (window as any).readerFixture.hide());
     await page.locator(".thread-scroll").waitFor({ state: "detached" });
     await page.evaluate(() => (window as any).readerFixture.show());
@@ -54,16 +79,19 @@ try {
     });
     await page.evaluate(() => (window as any).readerFixture.checkpoint(1));
     await page.waitForTimeout(150);
-    const after = await page.locator(".thread-scroll").evaluate(el => el.scrollTop);
+    const after = await page.locator(".thread-scroll").evaluate((el) => el.scrollTop);
     console.log(JSON.stringify({ width, before, after }));
     assert.ok(Math.abs(after - before) < 2, "updating a saved checkpoint must not move a mounted reader");
     // The new checkpoint does apply to a genuinely new View.
     await page.evaluate(() => (window as any).readerFixture.hide());
     await page.locator(".thread-scroll").waitFor({ state: "detached" });
-    await page.evaluate(() => { (window as any).readerFixture.checkpoint(0); (window as any).readerFixture.show(); });
+    await page.evaluate(() => {
+      (window as any).readerFixture.checkpoint(0);
+      (window as any).readerFixture.show();
+    });
     await page.locator(".thread-scroll").waitFor();
     await page.waitForTimeout(250);
-    assert.ok(await page.locator(".thread-scroll").evaluate(el => Math.abs(el.scrollTop) < 2));
+    assert.ok(await page.locator(".thread-scroll").evaluate((el) => Math.abs(el.scrollTop) < 2));
     await page.screenshot({ path: `${output}/${width}.png` });
   }
   assert.deepEqual(errors, []);

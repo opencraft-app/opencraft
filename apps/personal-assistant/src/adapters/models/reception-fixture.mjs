@@ -6,8 +6,7 @@ export async function fixtureReception(catalog, input, signal) {
     signal,
   });
   if (input.source?.kind === "execution-report") {
-    if (input.report.status === "returned" && input.report.assessment.passed)
-      return { kind: "deliver" };
+    if (input.report.status === "returned" && input.report.assessment.passed) return { kind: "deliver" };
     return input.source.waitingForResult
       ? {
           kind: "blocked",
@@ -27,9 +26,7 @@ export async function fixtureReception(catalog, input, signal) {
       },
     };
   const text = input.text.trim(),
-    active = input.works.filter(
-      (w) => !["completed", "cancelled"].includes(w.status),
-    );
+    active = input.works.filter((w) => !["completed", "cancelled"].includes(w.status));
   const mentioned = input.works.filter((w) => text.includes(w.id));
   let target =
     input.targetWork ??
@@ -38,12 +35,9 @@ export async function fixtureReception(catalog, input, signal) {
       : active.length === 1 && !input.workOverview?.attentionTruncated
         ? active[0]
         : null);
-  if (input.targetWork?.changedSinceIntake)
-    return { kind: "clarify", text: "工作已更新，请按当前版本重新提交跟进。" };
+  if (input.targetWork?.changedSinceIntake) return { kind: "clarify", text: "工作已更新，请按当前版本重新提交跟进。" };
   const observation = (name, predicate = () => true) =>
-    input.observations?.findLast(
-      (o) => o.query.name === name && predicate(o.query.params),
-    )?.response;
+    input.observations?.findLast((o) => o.query.name === name && predicate(o.query.params))?.response;
   const query = (name, params) => ({ kind: "query", name, params });
   const queryReply = (response, text) =>
     response.ok
@@ -54,11 +48,9 @@ export async function fixtureReception(catalog, input, signal) {
         };
   if (/^(资料有哪些|有哪些资料|列出资料)$/.test(text)) {
     const source = input.capabilities.resources[0];
-    if (!source)
-      return { kind: "reply", text: "当前消息没有已绑定的可读资料源。" };
+    if (!source) return { kind: "reply", text: "当前消息没有已绑定的可读资料源。" };
     const response = observation("materials.list");
-    if (!response)
-      return query("materials.list", { source, directory: "", limit: 6 });
+    if (!response) return query("materials.list", { source, directory: "", limit: 6 });
     return queryReply(
       response,
       response.ok
@@ -71,11 +63,9 @@ export async function fixtureReception(catalog, input, signal) {
   const requestedFile = text.match(/^查看资料[：:\s]+(.+)$/);
   if (requestedFile) {
     const source = input.capabilities.resources[0];
-    if (!source)
-      return { kind: "reply", text: "当前消息没有已绑定的可读资料源。" };
+    if (!source) return { kind: "reply", text: "当前消息没有已绑定的可读资料源。" };
     const response = observation("material.read");
-    if (!response)
-      return query("material.read", { source, path: requestedFile[1] });
+    if (!response) return query("material.read", { source, path: requestedFile[1] });
     return queryReply(
       response,
       response.ok
@@ -101,9 +91,7 @@ export async function fixtureReception(catalog, input, signal) {
       response,
       response.ok
         ? "【确定性测试接待】" +
-            (response.data.items
-              .map((q) => `${q.id}：${q.question}`)
-              .join("\n") || "当前没有关联的待答问题。") +
+            (response.data.items.map((q) => `${q.id}：${q.question}`).join("\n") || "当前没有关联的待答问题。") +
             (response.data.next ? "\n（还有下一页待答问题。）" : "")
         : "",
     );
@@ -120,12 +108,9 @@ export async function fixtureReception(catalog, input, signal) {
       response,
       response.ok
         ? "【确定性测试接待，查询时状态】" +
-            (response.data.items
-              .map((w) => `${w.id}：${w.status}（版本 ${w.revision}）`)
-              .join("\n") || "当前没有工作。") +
-            (response.data.next
-              ? "\n（还有未列出的工作，请指定 ID 查询。）"
-              : "")
+            (response.data.items.map((w) => `${w.id}：${w.status}（版本 ${w.revision}）`).join("\n") ||
+              "当前没有工作。") +
+            (response.data.next ? "\n（还有未列出的工作，请指定 ID 查询。）" : "")
         : "",
     );
   }
@@ -182,15 +167,8 @@ export async function fixtureReception(catalog, input, signal) {
       : { kind: "reply", text: "没有保存城市偏好。" };
   }
   const questions = input.pendingInteractions ?? [];
-  const question =
-    questions.find((q) => text.includes(q.id)) ??
-    (questions.length === 1 ? questions[0] : null);
-  if (
-    question &&
-    question.kind !== "question" &&
-    !/^(不回答|拒绝)/.test(text) &&
-    /^(回答|只|本周)/.test(text)
-  )
+  const question = questions.find((q) => text.includes(q.id)) ?? (questions.length === 1 ? questions[0] : null);
+  if (question && question.kind !== "question" && !/^(不回答|拒绝)/.test(text) && /^(回答|只|本周)/.test(text))
     return {
       kind: "reply",
       text: `这项等待类型为 ${question.kind}，请使用专用命令完成：${question.id}；不要在聊天中提供秘密。`,
@@ -202,10 +180,8 @@ export async function fixtureReception(catalog, input, signal) {
       expectedRevision: question.revision,
       text: text.replace(/^回答[：:\s]*/, ""),
     };
-  if (questions.length > 1 && /^回答/.test(text))
-    return { kind: "clarify", text: "有多项待补充信息，请指出问题 ID。" };
-  if (/^(整理|总结|帮我|请|summari[sz]e|read)/i.test(text))
-    return { kind: "delegate", goal: text };
+  if (questions.length > 1 && /^回答/.test(text)) return { kind: "clarify", text: "有多项待补充信息，请指出问题 ID。" };
+  if (/^(整理|总结|帮我|请|summari[sz]e|read)/i.test(text)) return { kind: "delegate", goal: text };
   return {
     kind: "clarify",
     text: "【确定性测试接待】请用“整理……”交代工作；这个 fixture 只演示固定分支。",

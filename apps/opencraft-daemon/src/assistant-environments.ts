@@ -1,10 +1,7 @@
 import { open } from "node:fs/promises";
 import { constants } from "node:fs";
 import { isAbsolute } from "node:path";
-import {
-  createSandboxAssistantProvider,
-  type AssistantSandboxTemplate,
-} from "@opencraft/personal-assistant/sandbox";
+import { createSandboxAssistantProvider, type AssistantSandboxTemplate } from "@opencraft/personal-assistant/sandbox";
 import type { AssistantEnvironmentProvider } from "@opencraft/personal-assistant/host";
 import { e2bSandboxBackend } from "@opencraft/sandbox-e2b";
 const invalid = () => {
@@ -15,13 +12,7 @@ async function privateText(path: string, max: number) {
   const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const info = await file.stat();
-    if (
-      !info.isFile() ||
-      info.uid !== process.getuid?.() ||
-      info.mode & 0o077 ||
-      info.size > max
-    )
-      invalid();
+    if (!info.isFile() || info.uid !== process.getuid?.() || info.mode & 0o077 || info.size > max) invalid();
     const text = await file.readFile("utf8");
     if (Buffer.byteLength(text) > max) invalid();
     return text;
@@ -30,9 +21,7 @@ async function privateText(path: string, max: number) {
   }
 }
 /** Optional installation assembly. Credentials/endpoints never come from Bot settings. */
-export async function loadAssistantEnvironments(
-  path?: string,
-): Promise<Record<string, AssistantEnvironmentProvider>> {
+export async function loadAssistantEnvironments(path?: string): Promise<Record<string, AssistantEnvironmentProvider>> {
   if (!path) return {};
   const config = JSON.parse(await privateText(path, 32768));
   const keys = [
@@ -54,12 +43,9 @@ export async function loadAssistantEnvironments(
     config.backend !== "e2b" ||
     typeof config.apiKeyFile !== "string" ||
     !Array.isArray(config.templates) ||
-    (config.persistentWorkspaces !== undefined &&
-      typeof config.persistentWorkspaces !== "boolean") ||
+    (config.persistentWorkspaces !== undefined && typeof config.persistentWorkspaces !== "boolean") ||
     !config.lease ||
-    Object.keys(config.lease).some(
-      (k) => !["timeoutMs", "renewEveryMs", "maxLifetimeMs"].includes(k),
-    )
+    Object.keys(config.lease).some((k) => !["timeoutMs", "renewEveryMs", "maxLifetimeMs"].includes(k))
   )
     invalid();
   const keyFile = config.apiKeyFile;
@@ -75,8 +61,7 @@ export async function loadAssistantEnvironments(
     capacity: config.capacity,
     maxCommandMs: config.maxCommandMs,
     persistentWorkspaces: config.persistentWorkspaces,
-    onReconciliation: (identity) =>
-      console.warn("assistant_environment_reconciliation_required", identity),
+    onReconciliation: (identity) => console.warn("assistant_environment_reconciliation_required", identity),
     createBackend: (template, callbacks) =>
       e2bSandboxBackend({
         apiUrl: config.apiUrl,

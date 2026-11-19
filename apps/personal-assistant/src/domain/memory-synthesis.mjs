@@ -26,37 +26,22 @@ export class MemorySynthesisPolicy {
     )
       throw new Error("Unknown memory policy setting");
     const p = { ...this.defaults, ...raw };
-    if (typeof p.enabled !== "boolean")
-      throw new Error("memoryPolicy.enabled must be boolean");
+    if (typeof p.enabled !== "boolean") throw new Error("memoryPolicy.enabled must be boolean");
     for (const k of ["debounceMs", "deadlineMs", "pollMs", "refreshMs"])
-      if (
-        !Number.isSafeInteger(p[k]) ||
-        p[k] < (k === "debounceMs" ? 0 : 1) ||
-        p[k] > 7 * 86400000
-      )
+      if (!Number.isSafeInteger(p[k]) || p[k] < (k === "debounceMs" ? 0 : 1) || p[k] > 7 * 86400000)
         throw new Error(`Invalid memoryPolicy.${k}`);
     return p;
   }
 }
 export const normalizeMemory = (raw) =>
-  requireText(raw, "memory content", 1000000)
-    .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, 500);
+  requireText(raw, "memory content", 1000000).replace(/\s+/gu, " ").trim().slice(0, 500);
 export const memoryDedupe = (content) => normalizeMemory(content).toLowerCase();
 export const memoryFactId = (fact) =>
-  digest([
-    fact.scope ?? "user",
-    fact.projectId ?? null,
-    memoryDedupe(fact.value ?? fact.content),
-  ]).slice(0, 16);
-export const memoryTombstoneId = (scope, projectId, content) =>
-  digest([scope, projectId, memoryDedupe(content)]);
+  digest([fact.scope ?? "user", fact.projectId ?? null, memoryDedupe(fact.value ?? fact.content)]).slice(0, 16);
+export const memoryTombstoneId = (scope, projectId, content) => digest([scope, projectId, memoryDedupe(content)]);
 export function boundMemoryEvidence(text) {
   const value = String(text ?? "").trim();
-  return value.length <= 8000
-    ? value
-    : `${value.slice(0, 4000)}\n[...middle omitted...]\n${value.slice(-4000)}`;
+  return value.length <= 8000 ? value : `${value.slice(0, 4000)}\n[...middle omitted...]\n${value.slice(-4000)}`;
 }
 export function synthesisFingerprint(rows) {
   return digest(

@@ -231,7 +231,12 @@ type SelectionPicker = "intelligence" | "permissions";
 function readableModelIdentifier(value: string): string | null {
   const body = value.replace(/^:/, "");
   const colon = body.lastIndexOf(":");
-  const rest = (colon >= 0 ? body.slice(colon + 1) : body).replace(/\[[^\]]+\]$/u, "");
+  let rest = colon >= 0 ? body.slice(colon + 1) : body;
+  if (rest.endsWith("]")) {
+    const previousClose = rest.lastIndexOf("]", rest.length - 2);
+    const opening = rest.indexOf("[", previousClose + 1);
+    if (opening >= 0 && opening < rest.length - 2) rest = rest.slice(0, opening);
+  }
   if (!/[A-Za-z]/u.test(rest)) return null;
   const label = rest.split(/[-_\s]+/u).filter(Boolean)
     .map(part => /^gpt$/iu.test(part) ? "GPT" : /^\d/u.test(part) ? part : `${part[0]?.toUpperCase() ?? ""}${part.slice(1).toLowerCase()}`)

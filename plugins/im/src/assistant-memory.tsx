@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { SettingsButton, SettingsTextInput, SettingsIconButton } from "@opencraft/extension-react";
-import { SearchIcon, RefreshIcon, ChevronLeftIcon, ChevronRightIcon, PermissionShieldIcon, PermissionDocumentIcon } from "@opencraft/design-system-web/action-icons";
+import {
+  SearchIcon,
+  RefreshIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PermissionShieldIcon,
+  PermissionDocumentIcon,
+} from "@opencraft/design-system-web/action-icons";
 import { useIntl } from "@opencraft/i18n/react";
 import type {
   AssistantMemoryItem,
@@ -10,13 +17,8 @@ import type {
   PersonalAssistantMethodMap,
 } from "@opencraft/appserver-protocol";
 import type { ChannelRpc } from "./channel-client";
-import {
-  memoryDraft,
-  clearMemoryDrafts,
-  type MemoryDraft,
-} from "./assistant-memory-drafts";
-type Params =
-  PersonalAssistantMethodMap["opencraft/personal-assistant/memory"]["params"];
+import { memoryDraft, clearMemoryDrafts, type MemoryDraft } from "./assistant-memory-drafts";
+type Params = PersonalAssistantMethodMap["opencraft/personal-assistant/memory"]["params"];
 type FileResponse = Extract<AssistantMemoryResponse, { action: "file" }>;
 type SourceResponse = Extract<AssistantMemoryResponse, { action: "sources" }>;
 const labels = {
@@ -28,8 +30,7 @@ const labels = {
   profileDocument: "Personal profile",
   logDocument: "Dated notes",
   previousValue: "Memory before this edit",
-  about:
-    "Your personal assistant’s private memory. Shared and group memory is not included.",
+  about: "Your personal assistant’s private memory. Shared and group memory is not included.",
   search: "Search memory",
   all: "All memories",
   profile: "Long-term profile",
@@ -43,8 +44,7 @@ const labels = {
   sources: "Sources",
   correct: "Correct",
   forget: "Forget",
-  forgetAbout:
-    "Remove this memory? It will stop being recalled; this does not delete the source conversation.",
+  forgetAbout: "Remove this memory? It will stop being recalled; this does not delete the source conversation.",
   confirm: "Confirm forgetting",
   cancel: "Cancel",
   save: "Save correction",
@@ -55,8 +55,7 @@ const labels = {
   automatic: "Learned from conversation",
   sourceMissing: "The original source is unavailable.",
   moreText: "Continue reading",
-  rawAbout:
-    "Read-only Markdown source. Use Correct to change a remembered fact.",
+  rawAbout: "Read-only Markdown source. Use Correct to change a remembered fact.",
   saved: "Memory updated.",
   forgotten: "Memory forgotten.",
   facts: "Remembered facts",
@@ -66,8 +65,7 @@ const labels = {
   total: "{total} memories",
   order: "Most recently updated first",
   fileCount: "{count} recognized facts · {characters} characters",
-  newer:
-    "Memory has changed. Your current view and draft have not been replaced.",
+  newer: "Memory has changed. Your current view and draft have not been replaced.",
   offline:
     "Read-only: the assistant is not running. Browsing works without starting a model; changes require the original runtime.",
   discard: "You have an unsaved correction. Discard it and continue?",
@@ -75,36 +73,28 @@ const labels = {
   draftKept: "Your unsaved correction is kept on this page.",
   originalEvidence:
     "The following messages are the original basis. The current wording was explicitly corrected later; it is not a quote from these messages.",
-  manualEvidence:
-    "This memory was explicitly recorded or corrected. No original conversation evidence is attached.",
+  manualEvidence: "This memory was explicitly recorded or corrected. No original conversation evidence is attached.",
   latest: "Read latest version (keep draft)",
   latestValue: "Latest remembered value",
   adopt: "Use this version as the editing base",
   compare:
     "The memory changed while you were editing. Compare the latest version, then explicitly choose it as your editing base. Your draft is unchanged.",
-  missing:
-    "This memory was removed. Your draft is kept, but cannot overwrite a forgotten entry.",
+  missing: "This memory was removed. Your draft is kept, but cannot overwrite a forgotten entry.",
   error: "Memory could not be read. Please retry.",
   uncertain:
     "The change has not been confirmed. Keep this page open and retry the same change, or read the latest version.",
-  conflict:
-    "The memory was updated elsewhere. Your correction was not applied; your draft is kept.",
+  conflict: "The memory was updated elsewhere. Your correction was not applied; your draft is kept.",
   snapshot_changed: "The list changed. Refresh to start a new consistent page.",
-  document_changed:
-    "The document changed. Reload the original instead of joining different versions.",
-  not_provisioned:
-    "The assistant has not created a memory profile yet. Run it once before browsing.",
+  document_changed: "The document changed. Reload the original instead of joining different versions.",
+  not_provisioned: "The assistant has not created a memory profile yet. Run it once before browsing.",
   busy: "Memory is currently being committed. Please retry shortly.",
   recovery_required:
     "An interrupted memory transaction needs recovery by the original assistant runtime. Nothing has been repaired or overwritten here.",
-  storage:
-    "Memory storage could not be safely read. Check the runtime health; this is not an empty memory result.",
-  duplicate:
-    "The corrected content already exists as another memory. Your draft is kept.",
+  storage: "Memory storage could not be safely read. Check the runtime health; this is not an empty memory result.",
+  duplicate: "The corrected content already exists as another memory. Your draft is kept.",
   invalid: "The request is invalid. Corrections must contain 1–500 characters.",
   entry_missing: "This memory or document is no longer available.",
-  access:
-    "Your assistant binding or authorization changed. Reopen the view after signing in.",
+  access: "Your assistant binding or authorization changed. Reopen the view after signing in.",
   reloadDocument: "Reload original",
   pending: "Checking…",
 } as const;
@@ -135,10 +125,7 @@ export function AssistantMemory({
 }) {
   const intl = useIntl(),
     f = (k: keyof typeof labels, values?: Record<string, string | number>) =>
-      intl.formatMessage(
-        { id: "people.memory." + k, defaultMessage: labels[k] },
-        values,
-      );
+      intl.formatMessage({ id: "people.memory." + k, defaultMessage: labels[k] }, values);
   const [mode, setMode] = useState<"facts" | "documents">("facts"),
     [query, setQuery] = useState(""),
     [kind, setKind] = useState("all");
@@ -174,17 +161,14 @@ export function AssistantMemory({
     }),
     draftRef = useRef<MemoryDraft | null>(null),
     mutationBusy = useRef(false),
-    mutationRequest = useRef<{ signature: string; requestId: string } | null>(
-      null,
-    ),
+    mutationRequest = useRef<{ signature: string; requestId: string } | null>(null),
     discarded = useRef(false);
   draftRef.current = draft;
   const dirty = !!draft && draft.value !== draft.base.value;
   function storeDraft(value: MemoryDraft | null) {
     draftRef.current = value;
     setDraft(value);
-    if (connected.current && value && value.value !== value.base.value)
-      memoryDraft(rpc, binding, value);
+    if (connected.current && value && value.value !== value.base.value) memoryDraft(rpc, binding, value);
     else memoryDraft(rpc, binding, null);
   }
   function clearDetails() {
@@ -199,8 +183,7 @@ export function AssistantMemory({
   }
   function allowDiscard() {
     const d = draftRef.current;
-    if (d && d.value !== d.base.value && !window.confirm(f("discard")))
-      return false;
+    if (d && d.value !== d.base.value && !window.confirm(f("discard"))) return false;
     discarded.current = true;
     storeDraft(null);
     return true;
@@ -233,11 +216,7 @@ export function AssistantMemory({
     if (response.action === "error") throw new MemoryUiError(response.code);
     return response;
   }
-  async function load(
-    more = false,
-    options = criteria.current,
-    restore = false,
-  ) {
+  async function load(more = false, options = criteria.current, restore = false) {
     const c = life.current;
     if (!c) return;
     const epoch = ++listEpoch.current;
@@ -255,18 +234,14 @@ export function AssistantMemory({
           ? {
               action: "list",
               query: options.query,
-              ...(options.kind === "all"
-                ? {}
-                : { kind: options.kind as "profile" | "log" }),
+              ...(options.kind === "all" ? {} : { kind: options.kind as "profile" | "log" }),
               ...(more && next ? { after: next } : {}),
             }
           : { action: "documents", ...(more && next ? { after: next } : {}) },
       );
       if (c.signal.aborted || epoch !== listEpoch.current) return;
-      if (res.action !== "list" && res.action !== "documents")
-        throw new MemoryUiError("error");
-      if (res.action === "list")
-        setRows((old) => (more ? [...old, ...res.items] : res.items));
+      if (res.action !== "list" && res.action !== "documents") throw new MemoryUiError("error");
+      if (res.action === "list") setRows((old) => (more ? [...old, ...res.items] : res.items));
       else setDocs((old) => (more ? [...old, ...res.items] : res.items));
       setTotal(res.total);
       setNext(res.next);
@@ -276,9 +251,7 @@ export function AssistantMemory({
       connected.current = true;
       setLoaded(true);
       setSuspended(false);
-      const saved = restore
-        ? (draftRef.current ?? memoryDraft(rpc, binding))
-        : null;
+      const saved = restore ? (draftRef.current ?? memoryDraft(rpc, binding)) : null;
       if (saved) {
         const entry = await call({ action: "entry", key: saved.base.key });
         if (c.signal.aborted || epoch !== listEpoch.current) return;
@@ -324,13 +297,7 @@ export function AssistantMemory({
     });
     return () => {
       const d = draftRef.current;
-      if (
-        connected.current &&
-        !discarded.current &&
-        d &&
-        d.value !== d.base.value
-      )
-        memoryDraft(rpc, binding, d);
+      if (connected.current && !discarded.current && d && d.value !== d.base.value) memoryDraft(rpc, binding, d);
       c.abort();
       off();
       life.current = null;
@@ -338,10 +305,7 @@ export function AssistantMemory({
       detailEpoch.current++;
     };
   }, [rpc, binding.botId, binding.assignmentId]);
-  useEffect(
-    () => registerCloseGuard?.(() => !mutationBusy.current && allowDiscard()),
-    [registerCloseGuard, intl],
-  );
+  useEffect(() => registerCloseGuard?.(() => !mutationBusy.current && allowDiscard()), [registerCloseGuard, intl]);
   useEffect(() => {
     if (!dirty) return;
     const before = (event: BeforeUnloadEvent) => {
@@ -354,26 +318,14 @@ export function AssistantMemory({
   useEffect(() => {
     let pending = false;
     const check = async () => {
-      if (
-        pending ||
-        document.visibilityState === "hidden" ||
-        !life.current ||
-        !version.current ||
-        mutationBusy.current
-      )
+      if (pending || document.visibilityState === "hidden" || !life.current || !version.current || mutationBusy.current)
         return;
       pending = true;
       const epoch = listEpoch.current;
       try {
         const res = await call({ action: "status" });
-        if (
-          life.current &&
-          !life.current.signal.aborted &&
-          epoch === listEpoch.current &&
-          res.action === "status"
-        ) {
-          if (res.version !== version.current || res.writable !== writable)
-            setNewer(true);
+        if (life.current && !life.current.signal.aborted && epoch === listEpoch.current && res.action === "status") {
+          if (res.version !== version.current || res.writable !== writable) setNewer(true);
           if (!res.writable) setWritable(false);
         }
       } catch (error) {
@@ -403,11 +355,7 @@ export function AssistantMemory({
     setMode(value);
     void load(false, { mode: value, query: query.trim(), kind });
   }
-  async function readDetail(
-    action: "file" | "sources",
-    path?: string,
-    more = false,
-  ) {
+  async function readDetail(action: "file" | "sources", path?: string, more = false) {
     if (busy) return;
     const c = life.current!,
       epoch = ++detailEpoch.current;
@@ -420,16 +368,11 @@ export function AssistantMemory({
           : {
               action,
               path: path ?? selected?.document?.path ?? "profile.md",
-              ...(more && file && file.nextOffset !== null
-                ? { offset: file.nextOffset, version: file.version }
-                : {}),
+              ...(more && file && file.nextOffset !== null ? { offset: file.nextOffset, version: file.version } : {}),
             },
       );
       if (c.signal.aborted || epoch !== detailEpoch.current) return;
-      if (res.action === "file")
-        setFile((old) =>
-          more && old ? { ...res, content: old.content + res.content } : res,
-        );
+      if (res.action === "file") setFile((old) => (more && old ? { ...res, content: old.content + res.content } : res));
       else if (res.action === "sources") setSource(res);
       else throw new MemoryUiError("error");
     } catch (error) {
@@ -463,15 +406,9 @@ export function AssistantMemory({
     if (!item || mutationBusy.current || !writable || removed || latest) return;
     const c = life.current!,
       value = draftRef.current?.value.trim(),
-      signature = JSON.stringify([
-        item.key,
-        item.revision,
-        action,
-        action === "set" ? value : null,
-      ]);
+      signature = JSON.stringify([item.key, item.revision, action, action === "set" ? value : null]);
     let request = draftRef.current?.pending ?? mutationRequest.current;
-    if (!request || request.signature !== signature)
-      request = { signature, requestId: crypto.randomUUID() };
+    if (!request || request.signature !== signature) request = { signature, requestId: crypto.randomUUID() };
     mutationRequest.current = request;
     if (draftRef.current) storeDraft({ ...draftRef.current, pending: request });
     mutationBusy.current = true;
@@ -491,8 +428,7 @@ export function AssistantMemory({
       storeDraft(null);
       clearDetails();
       await load();
-      if (!c.signal.aborted)
-        setNotice(f(action === "set" ? "saved" : "forgotten"));
+      if (!c.signal.aborted) setNotice(f(action === "set" ? "saved" : "forgotten"));
     } catch (error) {
       if (!c.signal.aborted) fail(error, true);
     } finally {
@@ -501,13 +437,7 @@ export function AssistantMemory({
     }
   }
   const origin = (r: AssistantMemoryItem) =>
-    f(
-      r.origin === "automatic"
-        ? "automatic"
-        : r.origin === "explicit"
-          ? "explicit"
-          : "unknown",
-    );
+    f(r.origin === "automatic" ? "automatic" : r.origin === "explicit" ? "explicit" : "unknown");
   const hasDetail = !suspended && !!(selected || file);
   const listRef = useRef<HTMLDivElement>(null);
   const detailRef = useRef<HTMLElement>(null);
@@ -521,7 +451,9 @@ export function AssistantMemory({
     const key = selected?.key ?? file?.path;
     clearDetails();
     requestAnimationFrame(() => {
-      const row = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("[data-memory-key]") ?? []).find(el => el.dataset.memoryKey === key);
+      const row = Array.from(listRef.current?.querySelectorAll<HTMLButtonElement>("[data-memory-key]") ?? []).find(
+        (el) => el.dataset.memoryKey === key,
+      );
       row?.focus();
     });
   }
@@ -530,39 +462,73 @@ export function AssistantMemory({
       <header className="assistant-memory-header">
         <div className="assistant-memory-heading">
           <h3>{f("title")}</h3>
-          <span className="assistant-memory-private"><PermissionShieldIcon />{f("private")}</span>
+          <span className="assistant-memory-private">
+            <PermissionShieldIcon />
+            {f("private")}
+          </span>
         </div>
-        <SettingsIconButton label={f("refresh")} disabled={saving || loading} onClick={refresh}><RefreshIcon /></SettingsIconButton>
+        <SettingsIconButton label={f("refresh")} disabled={saving || loading} onClick={refresh}>
+          <RefreshIcon />
+        </SettingsIconButton>
       </header>
       <div className="assistant-memory-tabs" role="group" aria-label={f("title")}>
-        {(["facts", "documents"] as const).map(value => (
-          <button key={value} type="button" aria-pressed={mode === value} disabled={saving} onClick={() => switchMode(value)}>{f(value)}</button>
+        {(["facts", "documents"] as const).map((value) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={mode === value}
+            disabled={saving}
+            onClick={() => switchMode(value)}
+          >
+            {f(value)}
+          </button>
         ))}
       </div>
       {mode === "facts" ? (
-        <form className="assistant-memory-toolbar" onSubmit={event => { event.preventDefault(); refresh(); }}>
+        <form
+          className="assistant-memory-toolbar"
+          onSubmit={(event) => {
+            event.preventDefault();
+            refresh();
+          }}
+        >
           <div className="assistant-memory-search">
-            <SettingsTextInput aria-label={f("search")} placeholder={f("search")} maxLength={200} value={query} disabled={saving} onChange={e => setQuery(e.target.value)} />
-            <SettingsIconButton label={f("apply")} type="submit" disabled={saving || loading}><SearchIcon /></SettingsIconButton>
+            <SettingsTextInput
+              aria-label={f("search")}
+              placeholder={f("search")}
+              maxLength={200}
+              value={query}
+              disabled={saving}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <SettingsIconButton label={f("apply")} type="submit" disabled={saving || loading}>
+              <SearchIcon />
+            </SettingsIconButton>
           </div>
-          <select aria-label={f("all")} value={kind} disabled={saving || loading} onChange={e => {
-            if (!allowDiscard()) return;
-            setKind(e.target.value);
-            void load(false, {mode, query: query.trim(), kind: e.target.value});
-          }}>
-            {(["all", "profile", "log"] as const).map(k => <option key={k} value={k}>{f(k)}</option>)}
+          <select
+            aria-label={f("all")}
+            value={kind}
+            disabled={saving || loading}
+            onChange={(e) => {
+              if (!allowDiscard()) return;
+              setKind(e.target.value);
+              void load(false, { mode, query: query.trim(), kind: e.target.value });
+            }}
+          >
+            {(["all", "profile", "log"] as const).map((k) => (
+              <option key={k} value={k}>
+                {f(k)}
+              </option>
+            ))}
           </select>
         </form>
       ) : null}
       <details className="assistant-memory-about">
         <summary>{f("help")}</summary>
-        <p>{f("about")}</p><p>{f("note")}</p>
+        <p>{f("about")}</p>
+        <p>{f("note")}</p>
       </details>
-      {error ? (
-        <p role="alert">
-          {f(error in labels ? (error as keyof typeof labels) : "error")}
-        </p>
-      ) : null}
+      {error ? <p role="alert">{f(error in labels ? (error as keyof typeof labels) : "error")}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
       {loading ? <p role="status">{f("loading")}</p> : null}
       {busy ? <p role="status">{f("pending")}</p> : null}
@@ -578,9 +544,7 @@ export function AssistantMemory({
           </SettingsButton>
         </div>
       ) : null}
-      {loaded && !writable ? (
-        <p className="assistant-memory-hint">{f("offline")}</p>
-      ) : null}
+      {loaded && !writable ? <p className="assistant-memory-hint">{f("offline")}</p> : null}
       {!suspended ? (
         <>
           {loaded ? (
@@ -598,11 +562,11 @@ export function AssistantMemory({
               className="assistant-memory-list"
               aria-label={f(mode === "facts" ? "effective" : "documents")}
             >
-              {loaded &&
-              !loading &&
-              !(mode === "facts" ? rows.length : docs.length) &&
-              !error ? (
-                <div className="assistant-memory-empty"><SearchIcon /><p>{f(mode === "facts" ? "empty" : "noDocuments")}</p></div>
+              {loaded && !loading && !(mode === "facts" ? rows.length : docs.length) && !error ? (
+                <div className="assistant-memory-empty">
+                  <SearchIcon />
+                  <p>{f(mode === "facts" ? "empty" : "noDocuments")}</p>
+                </div>
               ) : null}
               {mode === "facts"
                 ? rows.map((row) => (
@@ -644,7 +608,10 @@ export function AssistantMemory({
                         void readDetail("file", doc.path);
                       }}
                     >
-                      <span className="assistant-memory-row-kind"><PermissionDocumentIcon />{f(doc.path === "profile.md" ? "profileDocument" : "logDocument")}</span>
+                      <span className="assistant-memory-row-kind">
+                        <PermissionDocumentIcon />
+                        {f(doc.path === "profile.md" ? "profileDocument" : "logDocument")}
+                      </span>
                       <span className="assistant-memory-row-value assistant-memory-path">{doc.path}</span>
                       <ChevronRightIcon className="assistant-memory-row-arrow" />
                       <small>
@@ -656,32 +623,33 @@ export function AssistantMemory({
                     </button>
                   ))}
               {next ? (
-                <SettingsButton
-                  disabled={loading || saving}
-                  onClick={() => void load(true)}
-                >
+                <SettingsButton disabled={loading || saving} onClick={() => void load(true)}>
                   {f("more")}
                 </SettingsButton>
               ) : null}
             </div>
             {selected || file ? (
-              <article className="assistant-memory-detail" ref={detailRef} tabIndex={-1} aria-label={f(selected ? "effective" : "documentTitle")}>
-                <div className="assistant-memory-detail-nav"><SettingsButton variant="quiet" disabled={saving} onClick={backToList}><ChevronLeftIcon />{f("back")}</SettingsButton></div>
+              <article
+                className="assistant-memory-detail"
+                ref={detailRef}
+                tabIndex={-1}
+                aria-label={f(selected ? "effective" : "documentTitle")}
+              >
+                <div className="assistant-memory-detail-nav">
+                  <SettingsButton variant="quiet" disabled={saving} onClick={backToList}>
+                    <ChevronLeftIcon />
+                    {f("back")}
+                  </SettingsButton>
+                </div>
                 {selected ? (
                   <>
-                    <h4>
-                      {f(removed || latest ? "previousValue" : "effective")}
-                    </h4>
+                    <h4>{f(removed || latest ? "previousValue" : "effective")}</h4>
                     <p className="assistant-memory-detail-value">{selected.value}</p>
                     <small>
                       {origin(selected)} · v{selected.revision}
                     </small>
                     <div className="assistant-memory-actions">
-                      <SettingsButton
-                        variant="quiet"
-                        disabled={saving || busy}
-                        onClick={() => void readDetail("file")}
-                      >
+                      <SettingsButton variant="quiet" disabled={saving || busy} onClick={() => void readDetail("file")}>
                         {f("original")}
                       </SettingsButton>
                       <SettingsButton
@@ -761,24 +729,13 @@ export function AssistantMemory({
                     <div className="assistant-memory-actions">
                       <SettingsButton
                         variant="primary"
-                        disabled={
-                          saving ||
-                          !writable ||
-                          !draft.value.trim() ||
-                          !dirty ||
-                          !!latest ||
-                          removed
-                        }
+                        disabled={saving || !writable || !draft.value.trim() || !dirty || !!latest || removed}
                         loading={saving}
                         onClick={() => void change("set")}
                       >
                         {f("save")}
                       </SettingsButton>
-                      <SettingsButton
-                        variant="quiet"
-                        disabled={saving || busy}
-                        onClick={() => void readLatest()}
-                      >
+                      <SettingsButton variant="quiet" disabled={saving || busy} onClick={() => void readLatest()}>
                         {f("latest")}
                       </SettingsButton>
                       <SettingsButton
@@ -809,11 +766,7 @@ export function AssistantMemory({
                       >
                         {f("confirm")}
                       </SettingsButton>
-                      <SettingsButton
-                        variant="quiet"
-                        disabled={saving}
-                        onClick={() => setConfirm(false)}
-                      >
+                      <SettingsButton variant="quiet" disabled={saving} onClick={() => setConfirm(false)}>
                         {f("cancel")}
                       </SettingsButton>
                     </div>
@@ -827,18 +780,12 @@ export function AssistantMemory({
                     </small>
                     <pre>{file.content}</pre>
                     {error === "document_changed" ? (
-                      <SettingsButton
-                        disabled={busy}
-                        onClick={() => void readDetail("file", file.path)}
-                      >
+                      <SettingsButton disabled={busy} onClick={() => void readDetail("file", file.path)}>
                         {f("reloadDocument")}
                       </SettingsButton>
                     ) : null}
                     {file.nextOffset !== null ? (
-                      <SettingsButton
-                        disabled={busy}
-                        onClick={() => void readDetail("file", file.path, true)}
-                      >
+                      <SettingsButton disabled={busy} onClick={() => void readDetail("file", file.path, true)}>
                         {f("moreText")}
                       </SettingsButton>
                     ) : null}
@@ -848,26 +795,15 @@ export function AssistantMemory({
                   <section>
                     <h4>{f("sources")}</h4>
                     {source.item.origin === "explicit" ? (
-                      <p>
-                        {f(
-                          source.sources.length
-                            ? "originalEvidence"
-                            : "manualEvidence",
-                        )}
-                      </p>
+                      <p>{f(source.sources.length ? "originalEvidence" : "manualEvidence")}</p>
                     ) : null}
-                    {!source.sources.length &&
-                    source.item.origin !== "explicit" ? (
+                    {!source.sources.length && source.item.origin !== "explicit" ? (
                       <p>{f("unknown")}</p>
                     ) : (
                       source.sources.map((s) => (
                         <blockquote key={s.id}>
                           <p>{s.unavailable ? f("sourceMissing") : s.text}</p>
-                          {s.at ? (
-                            <time dateTime={new Date(s.at).toISOString()}>
-                              {intl.formatDate(s.at)}
-                            </time>
-                          ) : null}
+                          {s.at ? <time dateTime={new Date(s.at).toISOString()}>{intl.formatDate(s.at)}</time> : null}
                           <small>
                             {s.id}
                             {s.truncated ? " …" : ""}

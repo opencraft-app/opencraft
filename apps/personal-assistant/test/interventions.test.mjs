@@ -7,23 +7,15 @@ import { join } from "node:path";
 import { Store } from "../src/store.mjs";
 import { LocalCredentialVault } from "../src/adapters/local/credential-vault.mjs";
 import { request } from "../src/runner.mjs";
-import {
-  profileFor,
-  running,
-  until,
-  completed,
-  childRunner,
-  nativeEntries,
-} from "./helpers.mjs";
+import { profileFor, running, until, completed, childRunner, nativeEntries } from "./helpers.mjs";
 const make = (app, kind, options = {}) => {
   const { workId } = app.works.submit(`work-${kind}`, { text: `wait ${kind}` });
   const work = app.workRecord(workId);
-  const interaction = app.interactions.request(
-    work,
-    `call-${kind}`,
-    "Need owner intervention",
-    { kind, provider: "service", ...options },
-  );
+  const interaction = app.interactions.request(work, `call-${kind}`, "Need owner intervention", {
+    kind,
+    provider: "service",
+    ...options,
+  });
   return { work, interaction };
 };
 
@@ -66,42 +58,22 @@ test("secret values are encrypted locally; wrong provider/kind and plaintext res
   assert.equal(app.r.inputs.get("text"), undefined);
   assert.equal(app.r.inputs.get("plain"), undefined);
   const credential = vault.put("correct", "secret", "service", marker);
-  assert.equal(
-    vault.put("correct", "secret", "service", marker).reference,
-    credential.reference,
-  );
-  assert.throws(
-    () => vault.put("correct", "secret", "service", "changed"),
-    /different/,
-  );
+  assert.equal(vault.put("correct", "secret", "service", marker).reference, credential.reference);
+  assert.throws(() => vault.put("correct", "secret", "service", "changed"), /different/);
   app.interactions.resolve("resolve", {
     interactionId: interaction.id,
     expectedRevision: 1,
     credentialRef: credential.reference,
   });
   assert.equal(app.workRecord(work.id).status, "queued");
-  assert.equal(
-    JSON.parse(app.interactions.list()[0].answer).credentialRef,
-    credential.reference,
-  );
+  assert.equal(JSON.parse(app.interactions.list()[0].answer).credentialRef, credential.reference);
   assert.equal(JSON.stringify(app.events()).includes(marker), false);
+  assert.equal(readFileSync(join(profile.path, "assistant.sqlite")).includes(Buffer.from(marker)), false);
   assert.equal(
-    readFileSync(join(profile.path, "assistant.sqlite")).includes(
-      Buffer.from(marker),
-    ),
+    readFileSync(join(profile.path, "credentials", `${credential.reference}.json`), "utf8").includes(marker),
     false,
   );
-  assert.equal(
-    readFileSync(
-      join(profile.path, "credentials", `${credential.reference}.json`),
-      "utf8",
-    ).includes(marker),
-    false,
-  );
-  assert.equal(
-    statSync(join(profile.path, "credentials", "key")).mode & 0o777,
-    0o600,
-  );
+  assert.equal(statSync(join(profile.path, "credentials", "key")).mode & 0o777, 0o600);
 });
 
 test("authorization and handoff return typed receipts without claiming external verification", (t) => {
@@ -111,20 +83,13 @@ test("authorization and handoff return typed receipts without claiming external 
   const { app } = store;
   const auth = make(app, "authorization"),
     vault = new LocalCredentialVault(profile);
-  const ref = vault.put(
-    "auth",
-    "authorization",
-    "service",
-    "user-supplied-token",
-  ).reference;
+  const ref = vault.put("auth", "authorization", "service", "user-supplied-token").reference;
   app.interactions.resolve("auth-complete", {
     interactionId: auth.interaction.id,
     expectedRevision: 1,
     credentialRef: ref,
   });
-  const authAnswer = JSON.parse(
-    app.interactions.list().find((i) => i.kind === "authorization").answer,
-  );
+  const authAnswer = JSON.parse(app.interactions.list().find((i) => i.kind === "authorization").answer);
   assert.equal(authAnswer.verification, "owner-provided");
   const handoff = make(app, "handoff");
   app.interactions.resolve("handoff-complete", {
@@ -132,9 +97,7 @@ test("authorization and handoff return typed receipts without claiming external 
     expectedRevision: 1,
     text: "I completed the local action",
   });
-  const answer = JSON.parse(
-    app.interactions.list().find((i) => i.kind === "handoff").answer,
-  );
+  const answer = JSON.parse(app.interactions.list().find((i) => i.kind === "handoff").answer);
   assert.equal(answer.verification, "owner-reported");
   assert.equal(answer.report, "I completed the local action");
   const duplicate = app.interactions.resolve("handoff-complete", {
@@ -248,12 +211,7 @@ test("Pi native intervention survives a crash and CLI secure input resumes the s
   const entries = await nativeEntries(profile, receipt.workId);
   assert.equal(JSON.stringify(entries).includes(marker), false);
   assert.ok(JSON.stringify(entries).includes("credentialRef"));
-  assert.equal(
-    readFileSync(join(profile.path, "assistant.sqlite")).includes(
-      Buffer.from(marker),
-    ),
-    false,
-  );
+  assert.equal(readFileSync(join(profile.path, "assistant.sqlite")).includes(Buffer.from(marker)), false);
 });
 
 for (const kind of ["authorization", "handoff"])
@@ -262,9 +220,7 @@ for (const kind of ["authorization", "handoff"])
     const receipt = await call("submit", {
       text: `Write a note [wait:${kind}]`,
     });
-    const interaction = await until(async () =>
-      (await call("interaction.list")).find((i) => i.kind === kind),
-    );
+    const interaction = await until(async () => (await call("interaction.list")).find((i) => i.kind === kind));
     await until(async () => (await call("status")).active === 0);
     const params = { interactionId: interaction.id, expectedRevision: 1 };
     if (kind === "handoff") params.text = "Done by owner";
@@ -288,9 +244,7 @@ test("main conversation identifies typed waiting and guides secure input without
     kind: "secret",
     provider: "service",
   });
-  const question = runner.app.history
-    .view()
-    .messages.find((m) => m.data.kind === "question");
+  const question = runner.app.history.view().messages.find((m) => m.data.kind === "question");
   assert.match(question.text, /provide-secret/);
   await call("say", { text: "回答：已准备好" }, "typed-response");
   await until(() => {
@@ -298,9 +252,6 @@ test("main conversation identifies typed waiting and guides secure input without
     assert.notEqual(turn.status, "blocked", turn.reply_text);
     return turn.status === "settled";
   });
-  assert.match(
-    runner.app.reception.turn("typed-response").reply_text,
-    /专用命令/,
-  );
+  assert.match(runner.app.reception.turn("typed-response").reply_text, /专用命令/);
   assert.equal(runner.app.interactions.list()[0].state, "pending");
 });

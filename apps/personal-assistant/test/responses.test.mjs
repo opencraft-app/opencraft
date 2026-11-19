@@ -4,8 +4,7 @@ import { createLocalDomain } from "../src/runtime/create-local-domain.mjs";
 import { Runner } from "../src/runner.mjs";
 import { profileFor, until } from "./helpers.mjs";
 
-const notices = (app, kind) =>
-  app.history.view().messages.filter((m) => m.data.kind === kind);
+const notices = (app, kind) => app.history.view().messages.filter((m) => m.data.kind === kind);
 
 test("reception activity is a durable projection, never a chat acknowledgement", (t) => {
   const profile = profileFor(t);
@@ -23,17 +22,11 @@ test("reception activity is a durable projection, never a chat acknowledgement",
     kind: "reply",
     text: "answer",
   });
-  domain.app.reception.failed(
-    domain.app.reception.turn("two"),
-    new Error("private provider details"),
-  );
+  domain.app.reception.failed(domain.app.reception.turn("two"), new Error("private provider details"));
   assert.deepEqual(domain.app.status().reception, { queued: 0, running: 0 });
   assert.equal(notices(domain.app, "acknowledgement").length, 0);
   assert.equal(notices(domain.app, "reception-error").length, 1);
-  assert.doesNotMatch(
-    notices(domain.app, "reception-error")[0].text,
-    /private provider/,
-  );
+  assert.doesNotMatch(notices(domain.app, "reception-error")[0].text, /private provider/);
 });
 
 test("progress is scoped, once per revision, durable, and cannot complete work", (t) => {
@@ -133,9 +126,7 @@ test("runtime projects a slow model without writing a message and later sends it
   await until(() => release && runner.app.status().reception.running === 1);
   assert.equal(notices(runner.app, "acknowledgement").length, 0);
   release({ kind: "reply", text: "actual answer" });
-  await until(
-    () => runner.app.reception.turn("pending-model").status === "settled",
-  );
+  await until(() => runner.app.reception.turn("pending-model").status === "settled");
   assert.equal(runner.app.history.view().messages.at(-1).text, "actual answer");
   assert.equal(notices(runner.app, "acknowledgement").length, 0);
   assert.deepEqual(runner.app.status().reception, { queued: 0, running: 0 });
@@ -152,10 +143,7 @@ test("failure state and its notification commit atomically", (t) => {
   app.history.workNotice = () => {
     throw new Error("history unavailable");
   };
-  assert.throws(
-    () => app.executions.blocked(work, new Error("execution failed")),
-    /history unavailable/,
-  );
+  assert.throws(() => app.executions.blocked(work, new Error("execution failed")), /history unavailable/);
   assert.equal(app.workRecord(workId).status, "running");
   assert.equal(app.executions.execution(work).status, "running");
   app.history.workNotice = original;
@@ -164,23 +152,29 @@ test("failure state and its notification commit atomically", (t) => {
   assert.equal(notices(app, "execution-blocked").length, 1);
 });
 
-test('six queued inputs keep FIFO, expose one running turn, and never produce six fake replies',async t=>{
-  const calls=[];
-  const runner=await Runner.open(profileFor(t),{receptionModel:{decide(input){return new Promise((resolve,reject)=>calls.push({text:input.text,resolve,reject}));}}});
-  t.after(()=>runner.close());
-  for(let i=0;i<6;i++)runner.app.reception.accept('input-'+i,{text:'message '+i});
-  runner.app.reception.now=()=>Date.now()+6000;
-  for(let i=0;i<6;i++) {
-    await until(()=>calls.length===i+1);
-    assert.equal(calls[i].text,'message '+i);
-    assert.deepEqual(runner.app.status().reception,{queued:5-i,running:1});
-    assert.equal(notices(runner.app,'acknowledgement').length,0);
-    if(i===1||i===2)calls[i].reject(new Error('private-native-failure'));
-    else calls[i].resolve({kind:'reply',text:'answer '+i});
-    await until(()=>['blocked','settled'].includes(runner.app.reception.turn('input-'+i).status));
+test("six queued inputs keep FIFO, expose one running turn, and never produce six fake replies", async (t) => {
+  const calls = [];
+  const runner = await Runner.open(profileFor(t), {
+    receptionModel: {
+      decide(input) {
+        return new Promise((resolve, reject) => calls.push({ text: input.text, resolve, reject }));
+      },
+    },
+  });
+  t.after(() => runner.close());
+  for (let i = 0; i < 6; i++) runner.app.reception.accept("input-" + i, { text: "message " + i });
+  runner.app.reception.now = () => Date.now() + 6000;
+  for (let i = 0; i < 6; i++) {
+    await until(() => calls.length === i + 1);
+    assert.equal(calls[i].text, "message " + i);
+    assert.deepEqual(runner.app.status().reception, { queued: 5 - i, running: 1 });
+    assert.equal(notices(runner.app, "acknowledgement").length, 0);
+    if (i === 1 || i === 2) calls[i].reject(new Error("private-native-failure"));
+    else calls[i].resolve({ kind: "reply", text: "answer " + i });
+    await until(() => ["blocked", "settled"].includes(runner.app.reception.turn("input-" + i).status));
   }
-  assert.deepEqual(runner.app.status().reception,{queued:0,running:0});
-  assert.equal(notices(runner.app,'reply').length,4);
-  assert.equal(notices(runner.app,'reception-error').length,2);
-  assert.equal(runner.app.history.view().messages.filter(m=>m.role==='assistant').length,6);
+  assert.deepEqual(runner.app.status().reception, { queued: 0, running: 0 });
+  assert.equal(notices(runner.app, "reply").length, 4);
+  assert.equal(notices(runner.app, "reception-error").length, 2);
+  assert.equal(runner.app.history.view().messages.filter((m) => m.role === "assistant").length, 6);
 });

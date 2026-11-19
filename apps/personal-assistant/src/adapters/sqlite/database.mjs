@@ -1,12 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import {
-  readFileSync,
-  mkdirSync,
-  existsSync,
-  lstatSync,
-  chmodSync,
-} from "node:fs";
+import { readFileSync, mkdirSync, existsSync, lstatSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 
 /** One physical connection and transaction owner. Repositories share this unit of work. */
@@ -15,16 +9,9 @@ export class SqliteUnitOfWork {
     this.db = new DatabaseSync(join(profile.path, "assistant.sqlite"));
     this.depth = 0;
     this.participants = [];
-    this.db.exec(
-      "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;",
-    );
+    this.db.exec("PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     const version = this.db.prepare("PRAGMA user_version").get().user_version;
-    if (
-      ![
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
-        20, 21,
-      ].includes(version)
-    ) {
+    if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].includes(version)) {
       this.db.close();
       throw new Error(`Unsupported domain schema ${version}`);
     }
@@ -33,24 +20,18 @@ export class SqliteUnitOfWork {
         backup = join(directory, `schema${version}-before-coordination.sqlite`);
       try {
         mkdirSync(directory, { recursive: true, mode: 0o700 });
-        if (lstatSync(directory).isSymbolicLink())
-          throw new Error("Unsafe database backup directory");
+        if (lstatSync(directory).isSymbolicLink()) throw new Error("Unsafe database backup directory");
         if (!existsSync(backup)) {
           this.db.prepare("VACUUM INTO ?").run(backup);
           chmodSync(backup, 0o600);
-        } else if (
-          !lstatSync(backup).isFile() ||
-          lstatSync(backup).mode & 0o077
-        )
+        } else if (!lstatSync(backup).isFile() || lstatSync(backup).mode & 0o077)
           throw new Error("Unsafe existing database backup");
       } catch (error) {
         this.db.close();
         throw error;
       }
     }
-    this.db.exec(
-      readFileSync(new URL("./schema.sql", import.meta.url), "utf8"),
-    );
+    this.db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
     if (version < 2)
       this.transaction(() => {
         this.db.exec(`ALTER TABLE work ADD COLUMN delegation_json TEXT;
@@ -288,17 +269,13 @@ export class SqliteUnitOfWork {
     if (
       this.closed ||
       (this.writerToken &&
-        this.db
-          .prepare("SELECT value FROM meta WHERE key='runtime.writer'")
-          .get()?.value !== this.writerToken)
+        this.db.prepare("SELECT value FROM meta WHERE key='runtime.writer'").get()?.value !== this.writerToken)
     )
       throw Error("Bot writer retired");
   }
   transaction(fn) {
     if (fn.constructor.name === "AsyncFunction")
-      throw new Error(
-        "Async work is forbidden inside a synchronous unit of work",
-      );
+      throw new Error("Async work is forbidden inside a synchronous unit of work");
     const depth = this.depth,
       name = `uow_${depth}`;
     this.db.exec(depth ? `SAVEPOINT ${name}` : "BEGIN IMMEDIATE");
@@ -313,9 +290,7 @@ export class SqliteUnitOfWork {
       }
       const result = fn();
       if (result && typeof result.then === "function")
-        throw new Error(
-          "Async work is forbidden inside a synchronous unit of work",
-        );
+        throw new Error("Async work is forbidden inside a synchronous unit of work");
       this.assertWriter();
       if (!depth) for (const participant of entered) participant.prepare();
       this.assertWriter();
@@ -328,8 +303,7 @@ export class SqliteUnitOfWork {
         this.db.exec(depth ? `ROLLBACK TO SAVEPOINT ${name}` : "ROLLBACK");
         if (depth) this.db.exec(`RELEASE SAVEPOINT ${name}`);
       }
-      for (const participant of entered.reverse())
-        participant.rollback(depth, committed);
+      for (const participant of entered.reverse()) participant.rollback(depth, committed);
       throw error;
     } finally {
       this.depth--;

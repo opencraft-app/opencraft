@@ -40,9 +40,7 @@ export class InputDeliveryStore {
 
   register(threadId: string, clientId: string): void {
     this.db
-      .prepare(
-        "INSERT OR IGNORE INTO opencraft_input_delivery VALUES(?,?,'pending','unobserved',1)",
-      )
+      .prepare("INSERT OR IGNORE INTO opencraft_input_delivery VALUES(?,?,'pending','unobserved',1)")
       .run(threadId, clientId);
   }
 
@@ -55,11 +53,7 @@ export class InputDeliveryStore {
       .run(threadId, clientId);
   }
 
-  admission(
-    threadId: string,
-    clientId: string,
-    value: InputDeliveryReceipt["nativeAdmission"],
-  ): void {
+  admission(threadId: string, clientId: string, value: InputDeliveryReceipt["nativeAdmission"]): void {
     this.register(threadId, clientId);
     // A late timeout cannot undo a positive receipt, nor can a late ACK reopen a Turn.
     this.db
@@ -82,21 +76,14 @@ export class InputDeliveryStore {
   }
 
   finish(threadId: string, turnId: string, outcome: string): boolean {
-    if (
-      !turnId ||
-      turnId === "unknown" ||
-      !["completed", "interrupted", "failed"].includes(outcome)
-    )
-      return false;
+    if (!turnId || turnId === "unknown" || !["completed", "interrupted", "failed"].includes(outcome)) return false;
     // First terminal observation is immutable. Later stale frames never resurrect it.
     const ownsTransaction = !this.db.isTransaction;
     if (ownsTransaction) this.db.exec("BEGIN IMMEDIATE");
     try {
       const changed =
         this.db
-          .prepare(
-            "INSERT OR IGNORE INTO opencraft_turn_delivery VALUES(?,?,?,?)",
-          )
+          .prepare("INSERT OR IGNORE INTO opencraft_turn_delivery VALUES(?,?,?,?)")
           .run(threadId, turnId, outcome, Date.now()).changes === 1;
       this.db
         .prepare(
@@ -112,30 +99,20 @@ export class InputDeliveryStore {
     }
   }
 
-  receipt(
-    threadId: string,
-    clientId: string,
-    targetTurnId: string | null,
-  ): InputDeliveryReceipt {
+  receipt(threadId: string, clientId: string, targetTurnId: string | null): InputDeliveryReceipt {
     const input = this.db
-      .prepare(
-        "SELECT * FROM opencraft_input_delivery WHERE thread_id=? AND client_id=?",
-      )
+      .prepare("SELECT * FROM opencraft_input_delivery WHERE thread_id=? AND client_id=?")
       .get(threadId, clientId);
     const terminal = targetTurnId
       ? this.db
-          .prepare(
-            "SELECT outcome FROM opencraft_turn_delivery WHERE thread_id=? AND turn_id=?",
-          )
+          .prepare("SELECT outcome FROM opencraft_turn_delivery WHERE thread_id=? AND turn_id=?")
           .get(threadId, targetTurnId)
       : undefined;
     return {
       version: 1,
       custody: "accepted",
-      nativeAdmission: (input?.native_admission ??
-        "pending") as InputDeliveryReceipt["nativeAdmission"],
-      context: (input?.context_state ??
-        "unobserved") as InputDeliveryReceipt["context"],
+      nativeAdmission: (input?.native_admission ?? "pending") as InputDeliveryReceipt["nativeAdmission"],
+      context: (input?.context_state ?? "unobserved") as InputDeliveryReceipt["context"],
       targetTurnId,
       execution: terminal
         ? (terminal.outcome as InputDeliveryReceipt["execution"])

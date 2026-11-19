@@ -29,37 +29,23 @@ const fixture = (t) => {
   mkdirSync(b);
   writeFileSync(join(a, "project.md"), "project A");
   writeFileSync(join(b, "project.md"), "project B");
-  const open = (dir) =>
-    createLocalDomain(profile, new DirectoryKnowledgeSource(dir));
+  const open = (dir) => createLocalDomain(profile, new DirectoryKnowledgeSource(dir));
   return { profile, a, b, open };
 };
 
 test("calendar chooses local weekday windows, validates zones and skips DST gaps/repeated local slots", () => {
-  assert.equal(
-    CalendarSchedule.next(calendar(), ms("2026-11-06T02:00:00Z")),
-    ms("2026-11-09T01:00:00Z"),
-  );
-  assert.throws(
-    () => CalendarSchedule.normalize(calendar({ timeZone: "made/up" })),
-    /timezone/,
-  );
+  assert.equal(CalendarSchedule.next(calendar(), ms("2026-11-06T02:00:00Z")), ms("2026-11-09T01:00:00Z"));
+  assert.throws(() => CalendarSchedule.normalize(calendar({ timeZone: "made/up" })), /timezone/);
   const ny = calendar({
     timeZone: "America/New_York",
     weekdays: [0, 1, 2, 3, 4, 5, 6],
     hours: [2],
     minutes: [30],
   });
-  assert.equal(
-    CalendarSchedule.next(ny, ms("2026-03-08T05:00:00Z")),
-    ms("2026-03-09T06:30:00Z"),
-  );
+  assert.equal(CalendarSchedule.next(ny, ms("2026-03-08T05:00:00Z")), ms("2026-03-09T06:30:00Z"));
   const repeated = { ...ny, hours: [1] };
   assert.equal(
-    CalendarSchedule.next(
-      repeated,
-      ms("2026-11-01T05:31:00Z"),
-      ms("2026-11-01T05:30:00Z"),
-    ),
+    CalendarSchedule.next(repeated, ms("2026-11-01T05:31:00Z"), ms("2026-11-01T05:30:00Z")),
     ms("2026-11-02T06:30:00Z"),
   );
 });
@@ -78,10 +64,7 @@ test("calendar/one-shot definitions survive reopen, coalesce downtime and retain
   s = new Store(profile);
   s.app.routines.tick(at + 1000);
   assert.equal(s.app.status().works.length, 1);
-  assert.equal(
-    s.app.status().routines.find((r) => r.id === once.routineId).status,
-    "exhausted",
-  );
+  assert.equal(s.app.status().routines.find((r) => r.id === once.routineId).status, "exhausted");
   s.app.routines.tick(at + 5000);
   assert.equal(s.app.status().works.length, 1);
   assert.equal(s.app.r.routines.get(once.routineId).last_scheduled_at, at);
@@ -151,8 +134,7 @@ test("conditional watches must be bounded and parent finishing disarms future fi
     },
   });
   t.after(() => runner.close());
-  const call = (op, params = {}, id = crypto.randomUUID()) =>
-    request(profile, { op, params, id });
+  const call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
   const r = await call("routine.add", {
     text: "check",
     intervalMs: 1000,
@@ -161,20 +143,14 @@ test("conditional watches must be bounded and parent finishing disarms future fi
     stopWhen: "指定条件已出现",
     notify: "always",
   });
-  const w = await until(() =>
-    runner.app.status().works.find((w) => w.routine_id === r.routineId),
-  );
+  const w = await until(() => runner.app.status().works.find((w) => w.routine_id === r.routineId));
   await completed(profile, w.id);
   assert.equal(runner.app.r.routines.get(r.routineId).status, "exhausted");
   assert.equal(runner.app.detail(w.id).deliveries[0].status, "accepted");
   assert.ok(
     runner.app
       .events()
-      .some(
-        (e) =>
-          e.kind === "routine.condition-observed" &&
-          e.data.verification === "model-reported",
-      ),
+      .some((e) => e.kind === "routine.condition-observed" && e.data.verification === "model-reported"),
   );
 });
 
@@ -210,10 +186,7 @@ test("project/user memories coexist; changed source cannot recall, modify or lea
       }),
     /another project/,
   );
-  assert.throws(
-    () => d.app.memory.learningSnapshot(binding),
-    /binding changed/,
-  );
+  assert.throws(() => d.app.memory.learningSnapshot(binding), /binding changed/);
   const read = d.app.receptionQueries;
   const accepted = d.app.reception.accept("query", { text: "find A" });
   assert.equal(
@@ -253,10 +226,7 @@ test("profile/recent recall is bounded; literal search cites original evidence a
     expectedRevision: 1,
   });
   assert.equal(s.app.memory.recall({ query: "接口" }).items.length, 0);
-  assert.equal(
-    s.app.memory.catalog().find((m) => m.key === "recent").revision,
-    2,
-  );
+  assert.equal(s.app.memory.catalog().find((m) => m.key === "recent").revision, 2);
 });
 
 test("automatic project log keeps evidence and cannot overwrite an explicit project fact", (t) => {
@@ -317,13 +287,7 @@ test("history search recovers canonical older messages, is read-only and never o
   const s = new Store(profileFor(t));
   t.after(() => s.close());
   s.app.reception.accept("old", { text: "青松接口上次约定周五交付" });
-  for (let i = 0; i < 30; i++)
-    s.app.history.append(
-      s.app.history.main.id,
-      `later${i}`,
-      "user",
-      `later ${i}`,
-    );
+  for (let i = 0; i < 30; i++) s.app.history.append(s.app.history.main.id, `later${i}`, "user", `later ${i}`);
   s.app.reception.accept("new", { text: "找上次约定" });
   const session = s.app.receptionQueries.open(s.app.reception.turn("new"));
   const before = s.db.prepare("SELECT total_changes() n").get().n;
@@ -354,9 +318,7 @@ test("schema12 upgrade preserves old snapshot and memory without fabricating dat
     value: "Shanghai",
     expectedRevision: 0,
   });
-  const w = s.app.workRecord(
-    s.app.works.submit("oldwork", { text: "work" }).workId,
-  );
+  const w = s.app.workRecord(s.app.works.submit("oldwork", { text: "work" }).workId);
   const snapshot = s.app.executions.snapshot(w);
   legacyMemoryFixture(p, s.db);
   s.db.exec(
@@ -382,49 +344,20 @@ test("real CLI accepts calendar definitions and scoped recall through the local 
   const exec = promisify(execFile);
   const cli = async (args) =>
     JSON.parse(
-      (
-        await exec(
-          process.execPath,
-          ["bin/assistant.mjs", ...args, "--profile", p.path],
-          { cwd: root },
-        )
-      ).stdout,
+      (await exec(process.execPath, ["bin/assistant.mjs", ...args, "--profile", p.path], { cwd: root })).stdout,
     ).result;
-  await cli([
-    "routine-add",
-    "--text",
-    "weekday digest",
-    "--schedule",
-    JSON.stringify(calendar()),
-    "--max-runs",
-    "2",
-  ]);
-  await cli([
-    "memory-set",
-    "--key",
-    "project-progress",
-    "--value",
-    "接口待验收",
-    "--memory-kind",
-    "log",
-  ]);
+  await cli(["routine-add", "--text", "weekday digest", "--schedule", JSON.stringify(calendar()), "--max-runs", "2"]);
+  await cli(["memory-set", "--key", "project-progress", "--value", "接口待验收", "--memory-kind", "log"]);
   const data = await cli(["memory-search", "--query", "接口"]);
   assert.equal(data.items[0].kind, "log");
   assert.equal(runner.app.status().routines[0].interval_ms, 0);
 });
 
 test("Pi worker actually invokes scoped memory and linked canonical-history tools", async (t) => {
-  const { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } =
-    await import("@earendil-works/pi-ai");
-  const { PiExecutionAdapter } = await import(
-    "../src/adapters/pi/pi-execution-adapter.mjs"
-  );
-  const { createExecutionPorts } = await import(
-    "../src/runtime/execution-ports.mjs"
-  );
-  const { LocalArtifactStore } = await import(
-    "../src/adapters/filesystem/artifact-store.mjs"
-  );
+  const { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } = await import("@earendil-works/pi-ai");
+  const { PiExecutionAdapter } = await import("../src/adapters/pi/pi-execution-adapter.mjs");
+  const { createExecutionPorts } = await import("../src/runtime/execution-ports.mjs");
+  const { LocalArtifactStore } = await import("../src/adapters/filesystem/artifact-store.mjs");
   const profile = profileFor(t),
     s = new Store(profile);
   t.after(() => s.close());
@@ -450,14 +383,8 @@ test("Pi worker actually invokes scoped memory and linked canonical-history tool
     fauxAssistantMessage([fauxToolCall("recall_memory", { query: "接口" })], {
       stopReason: "toolUse",
     }),
-    fauxAssistantMessage(
-      [fauxToolCall("search_history", { query: "历史约定" })],
-      { stopReason: "toolUse" },
-    ),
-    fauxAssistantMessage(
-      [fauxToolCall("publish_note", { body: "原约定：接口周五验收。" })],
-      { stopReason: "toolUse" },
-    ),
+    fauxAssistantMessage([fauxToolCall("search_history", { query: "历史约定" })], { stopReason: "toolUse" }),
+    fauxAssistantMessage([fauxToolCall("publish_note", { body: "原约定：接口周五验收。" })], { stopReason: "toolUse" }),
     fauxAssistantMessage("done"),
   ]);
   models.setProvider(faux.provider);
@@ -496,14 +423,9 @@ test("Pi worker actually invokes scoped memory and linked canonical-history tool
   assert.equal(observed[0].items[0].key, "milestone");
   assert.equal(observed[1].items[0].role, "user");
   assert.match(observed[1].items[0].text, /历史约定/);
-  const unlinked = s.app.workRecord(
-    s.app.works.submit("other", { text: "other" }).workId,
-  );
+  const unlinked = s.app.workRecord(s.app.works.submit("other", { text: "other" }).workId);
   assert.throws(
-    () =>
-      ports
-        .toolsFor(unlinked, s.app.executions.snapshot(unlinked))
-        .searchHistory({ query: "历史" }),
+    () => ports.toolsFor(unlinked, s.app.executions.snapshot(unlinked)).searchHistory({ query: "历史" }),
     /grant/,
   );
 });

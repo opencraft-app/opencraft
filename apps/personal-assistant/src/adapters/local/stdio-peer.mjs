@@ -24,8 +24,7 @@ const refusedCodes = new Set([
 ]);
 function failureStatus(method, error) {
   if (!threadMethods.has(method)) return;
-  if (Number.isInteger(error?.status))
-    return terminalStatuses.has(error.status) ? error.status : undefined;
+  if (Number.isInteger(error?.status)) return terminalStatuses.has(error.status) ? error.status : undefined;
   for (const code of [error?.code, error?.message]) {
     if (deniedCodes.has(code)) return 403;
     if (refusedCodes.has(code)) return 409;
@@ -33,8 +32,7 @@ function failureStatus(method, error) {
 }
 function readFailure(packet) {
   const error = Error("Assistant operation unavailable");
-  if (terminalStatuses.has(packet?.data?.status))
-    error.status = packet.data.status;
+  if (terminalStatuses.has(packet?.data?.status)) error.status = packet.data.status;
   return error;
 }
 
@@ -58,17 +56,13 @@ export function createStdioPeer({
     closed = true;
     input.off("data", receive);
     input.off("end", close);
-    for (const finish of pending.values())
-      finish(Error("Assistant transport closed"));
+    for (const finish of pending.values()) finish(Error("Assistant transport closed"));
     onClose();
   }
   function send(packet) {
     if (closed) throw Error("Assistant transport closed");
     const line = JSON.stringify({ jsonrpc: "2.0", ...packet }) + "\n";
-    if (
-      Buffer.byteLength(line) > maxBytes ||
-      output.writableLength > maxBytes * 2
-    ) {
+    if (Buffer.byteLength(line) > maxBytes || output.writableLength > maxBytes * 2) {
       close();
       throw Error("Assistant transport capacity exceeded");
     }
@@ -78,11 +72,7 @@ export function createStdioPeer({
     if (
       !p ||
       p.jsonrpc !== "2.0" ||
-      (p.id !== undefined &&
-        !(
-          Number.isSafeInteger(p.id) ||
-          (typeof p.id === "string" && p.id.length <= 128)
-        ))
+      (p.id !== undefined && !(Number.isSafeInteger(p.id) || (typeof p.id === "string" && p.id.length <= 128)))
     )
       throw Error("Invalid envelope");
     if (typeof p.method === "string") {
@@ -112,8 +102,7 @@ export function createStdioPeer({
       } finally {
         inflight--;
       }
-    } else if (p.id !== undefined)
-      pending.get(p.id)?.(p.error ? readFailure(p.error) : null, p.result);
+    } else if (p.id !== undefined) pending.get(p.id)?.(p.error ? readFailure(p.error) : null, p.result);
     else throw Error("Invalid envelope");
   }
   function receive(chunk) {
@@ -146,10 +135,8 @@ export function createStdioPeer({
       if (!closed) send({ method, params });
     },
     request(method, params = {}, options = {}) {
-      if (closed || options.signal?.aborted)
-        return Promise.reject(Error("Assistant transport unavailable"));
-      if (pending.size >= 32)
-        return Promise.reject(Error("Assistant request limit"));
+      if (closed || options.signal?.aborted) return Promise.reject(Error("Assistant transport unavailable"));
+      if (pending.size >= 32) return Promise.reject(Error("Assistant request limit"));
       return new Promise((resolve, reject) => {
         const id = ++next;
         const finish = (error, value) => {
@@ -159,10 +146,7 @@ export function createStdioPeer({
           error ? reject(error) : resolve(value);
         };
         const abort = () => finish(Error("Assistant request aborted"));
-        const timer = setTimeout(
-          () => finish(Error("Assistant request timed out")),
-          options.timeoutMs ?? timeoutMs,
-        );
+        const timer = setTimeout(() => finish(Error("Assistant request timed out")), options.timeoutMs ?? timeoutMs);
         pending.set(id, finish);
         options.signal?.addEventListener("abort", abort, { once: true });
         try {

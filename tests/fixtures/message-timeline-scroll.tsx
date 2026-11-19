@@ -1,19 +1,87 @@
-import messages from '../../apps/workbench-web/src/i18n/locales/zh-CN.json';
-import {createComposerController,createClientId} from '@opencraft/composer-core';
-import {createConversationKey} from '@opencraft/chat-core';
-import {OpenCraftComposer} from '@opencraft/composer-editor';
-import '@opencraft/composer-editor/message.web';
-import React from 'react';import {createRoot} from 'react-dom/client';import {IntlProvider} from 'react-intl';
-import {MessageTimeline} from '../../packages/chat-render-web/src/message-timeline';
-import {WebChatDocument} from '@opencraft/chat-render-web';
-import {buildOpenCraftThemeCssProperties,frostThemePalette} from '@opencraft/design-system/theme-engine';
-import '../../apps/workbench-web/src/styles/app.scss';
-import '../../plugins/im/src/channel-chat.scss';
-document.documentElement.dataset.uiDensity = matchMedia('(pointer: coarse)').matches ? 'touch' : 'comfortable';
-const theme=new URLSearchParams(location.search).get('theme')??'light';
-document.documentElement.dataset.theme=theme==="dark"?"dark":"light";
-document.body.style.background="var(--material-reading-background, var(--color-background-surface))";
-for(const [k,v] of Object.entries(buildOpenCraftThemeCssProperties(theme==='dark'?'dark':'light',theme==='frost'?frostThemePalette.light:undefined)))document.documentElement.style.setProperty(k,v);
-const row=(i:number)=>({timelineKey:'message:'+i,i});
-function App(){const [controller]=React.useState(()=>createComposerController({type:"existing-thread",key:createConversationKey("fixture","chat")},{createId:createClientId,now:Date.now}));const [entries,setEntries]=React.useState(Array.from({length:90},(_,i)=>row(i+30)));(window as any).refresh=()=>setEntries(e=>[...e]);(window as any).append=()=>setEntries(e=>[...e,row(e.at(-1)!.i+1)]);(window as any).prepend=()=>setEntries(e=>[...Array.from({length:30},(_,i)=>row(i)),...e]);
-return <IntlProvider locale="zh-CN" messages={messages}><section className="im-channel-chat__conversation" style={{height:'100dvh'}}><header>我的助理</header><MessageTimeline footer={<div className="im-channel-chat__dock"><OpenCraftComposer controller={controller} presentation="message" placeholder="发消息…" modelSelectionPolicy="host-default" isStreaming={false} onSubmit={async()=>true} onCancel={()=>{}} /></div>} latestLabel="Back to latest" entries={entries} label="我的助理" className="im-channel-chat__timeline" onCheckpoint={c=>{(window as any).checkpoint=c;}} renderEntry={e=><div role="listitem" data-self={e.i%3===0}><span>☺</span><div className="im-channel-chat__message"><strong>消息 {e.i}</strong><WebChatDocument documentId={e.timelineKey} conversationId="scroll-repro" dialect="assistant" source={e.i%3===0?'收到。':('这是一段用于检查滚动稳定性的消息。包含说明、执行进度与任务记录。\n\n'.repeat(2+(e.i*17)%12))}/></div></div>}/></section></IntlProvider>};createRoot(document.getElementById('root')!).render(<App/>);
+import messages from "../../apps/workbench-web/src/i18n/locales/zh-CN.json";
+import { createComposerController, createClientId } from "@opencraft/composer-core";
+import { createConversationKey } from "@opencraft/chat-core";
+import { OpenCraftComposer } from "@opencraft/composer-editor";
+import "@opencraft/composer-editor/message.web";
+import React from "react";
+import { createRoot } from "react-dom/client";
+import { IntlProvider } from "react-intl";
+import { MessageTimeline } from "../../packages/chat-render-web/src/message-timeline";
+import { WebChatDocument } from "@opencraft/chat-render-web";
+import { buildOpenCraftThemeCssProperties, frostThemePalette } from "@opencraft/design-system/theme-engine";
+import "../../apps/workbench-web/src/styles/app.scss";
+import "../../plugins/im/src/channel-chat.scss";
+document.documentElement.dataset.uiDensity = matchMedia("(pointer: coarse)").matches ? "touch" : "comfortable";
+const theme = new URLSearchParams(location.search).get("theme") ?? "light";
+document.documentElement.dataset.theme = theme === "dark" ? "dark" : "light";
+document.body.style.background = "var(--material-reading-background, var(--color-background-surface))";
+for (const [k, v] of Object.entries(
+  buildOpenCraftThemeCssProperties(
+    theme === "dark" ? "dark" : "light",
+    theme === "frost" ? frostThemePalette.light : undefined,
+  ),
+))
+  document.documentElement.style.setProperty(k, v);
+const row = (i: number) => ({ timelineKey: "message:" + i, i });
+function App() {
+  const [controller] = React.useState(() =>
+    createComposerController(
+      { type: "existing-thread", key: createConversationKey("fixture", "chat") },
+      { createId: createClientId, now: Date.now },
+    ),
+  );
+  const [entries, setEntries] = React.useState(Array.from({ length: 90 }, (_, i) => row(i + 30)));
+  (window as any).refresh = () => setEntries((e) => [...e]);
+  (window as any).append = () => setEntries((e) => [...e, row(e.at(-1)!.i + 1)]);
+  (window as any).prepend = () => setEntries((e) => [...Array.from({ length: 30 }, (_, i) => row(i)), ...e]);
+  return (
+    <IntlProvider locale="zh-CN" messages={messages}>
+      <section className="im-channel-chat__conversation" style={{ height: "100dvh" }}>
+        <header>我的助理</header>
+        <MessageTimeline
+          footer={
+            <div className="im-channel-chat__dock">
+              <OpenCraftComposer
+                controller={controller}
+                presentation="message"
+                placeholder="发消息…"
+                modelSelectionPolicy="host-default"
+                isStreaming={false}
+                onSubmit={async () => true}
+                onCancel={() => {}}
+              />
+            </div>
+          }
+          latestLabel="Back to latest"
+          entries={entries}
+          label="我的助理"
+          className="im-channel-chat__timeline"
+          onCheckpoint={(c) => {
+            (window as any).checkpoint = c;
+          }}
+          renderEntry={(e) => (
+            <div role="listitem" data-self={e.i % 3 === 0}>
+              <span>☺</span>
+              <div className="im-channel-chat__message">
+                <strong>消息 {e.i}</strong>
+                <WebChatDocument
+                  documentId={e.timelineKey}
+                  conversationId="scroll-repro"
+                  dialect="assistant"
+                  source={
+                    e.i % 3 === 0
+                      ? "收到。"
+                      : "这是一段用于检查滚动稳定性的消息。包含说明、执行进度与任务记录。\n\n".repeat(
+                          2 + ((e.i * 17) % 12),
+                        )
+                  }
+                />
+              </div>
+            </div>
+          )}
+        />
+      </section>
+    </IntlProvider>
+  );
+}
+createRoot(document.getElementById("root")!).render(<App />);

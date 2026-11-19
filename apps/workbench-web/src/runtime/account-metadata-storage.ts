@@ -27,10 +27,18 @@ export function readCommittedMetadata(storage: AccountMetadataStorage, key: stri
 }
 
 export function flushMetadataKey(storage: AccountMetadataStorage, key: string): Promise<void> {
-  return storage.flushKey ? storage.flushKey(key) : storage.flush?.() ?? Promise.resolve();
+  return storage.flushKey ? storage.flushKey(key) : (storage.flush?.() ?? Promise.resolve());
 }
 
-export function observeCommittedMetadata(storage: AccountMetadataStorage, field: string, listener: () => void): () => void {
+export function observeCommittedMetadata(
+  storage: AccountMetadataStorage,
+  field: string,
+  listener: () => void,
+): () => void {
   const observe = storage.onCommittedMetadataChanged?.bind(storage) ?? storage.onMetadataChanged?.bind(storage);
-  return observe?.(changed => { if (changed === field || changed === '*') listener(); }) ?? (() => {});
+  return (
+    observe?.((changed) => {
+      if (changed === field || changed === "*") listener();
+    }) ?? (() => {})
+  );
 }

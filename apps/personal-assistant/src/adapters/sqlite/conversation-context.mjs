@@ -8,9 +8,7 @@ export class SqliteConversationContext {
   anchor(conversationId, messageId) {
     return (
       this.db
-        .prepare(
-          "SELECT seq,id,role,length(text) AS length FROM conversation_message WHERE conversation_id=? AND id=?",
-        )
+        .prepare("SELECT seq,id,role,length(text) AS length FROM conversation_message WHERE conversation_id=? AND id=?")
         .get(conversationId, messageId) ?? null
     );
   }
@@ -32,11 +30,7 @@ export class SqliteConversationContext {
     );
   }
   get(id) {
-    return (
-      this.db
-        .prepare("SELECT * FROM conversation_context WHERE id=?")
-        .get(id) ?? null
-    );
+    return this.db.prepare("SELECT * FROM conversation_context WHERE id=?").get(id) ?? null;
   }
   next(conversationId, cursor, beforeSeq, maxCharacters) {
     const row = this.db
@@ -54,24 +48,17 @@ export class SqliteConversationContext {
   }
   count(conversationId, cursor, beforeSeq) {
     return this.db
-      .prepare(
-        "SELECT count(*) AS count FROM conversation_message WHERE conversation_id=? AND seq>=? AND seq<?",
-      )
+      .prepare("SELECT count(*) AS count FROM conversation_message WHERE conversation_id=? AND seq>=? AND seq<?")
       .get(conversationId, cursor.seq, beforeSeq).count;
   }
   source(conversationId, segment) {
     const row = this.db
-      .prepare(
-        "SELECT id,role,text FROM conversation_message WHERE conversation_id=? AND seq=? AND id=?",
-      )
+      .prepare("SELECT id,role,text FROM conversation_message WHERE conversation_id=? AND seq=? AND id=?")
       .get(conversationId, segment.seq, segment.id);
     return row
       ? {
           ...row,
-          text: row.text.slice(
-            segment.offset,
-            segment.offset + segment.text.length,
-          ),
+          text: row.text.slice(segment.offset, segment.offset + segment.text.length),
           length: row.text.length,
         }
       : null;
@@ -94,11 +81,7 @@ export class SqliteConversationContext {
       );
   }
   attempted(id) {
-    this.db
-      .prepare(
-        "UPDATE conversation_context SET attempts=attempts+1 WHERE id=? AND state='pending'",
-      )
-      .run(id);
+    this.db.prepare("UPDATE conversation_context SET attempts=attempts+1 WHERE id=? AND state='pending'").run(id);
   }
   ready(id, summary, at) {
     this.db
@@ -109,22 +92,11 @@ export class SqliteConversationContext {
   }
   failed(id, error, nextAt, exhausted) {
     this.db
-      .prepare(
-        "UPDATE conversation_context SET state=?,error=?,next_at=? WHERE id=? AND state='pending'",
-      )
-      .run(
-        exhausted ? "failed" : "pending",
-        String(error).slice(0, 1000),
-        nextAt,
-        id,
-      );
+      .prepare("UPDATE conversation_context SET state=?,error=?,next_at=? WHERE id=? AND state='pending'")
+      .run(exhausted ? "failed" : "pending", String(error).slice(0, 1000), nextAt, id);
   }
   superseded(id) {
-    this.db
-      .prepare(
-        "UPDATE conversation_context SET state='superseded' WHERE id=? AND state='pending'",
-      )
-      .run(id);
+    this.db.prepare("UPDATE conversation_context SET state='superseded' WHERE id=? AND state='pending'").run(id);
   }
   pending(conversationId) {
     return (

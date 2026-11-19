@@ -5,22 +5,16 @@ export class SqliteUserMessages {
     this.db = uow.db;
   }
   get(id) {
-    return (
-      this.db.prepare("SELECT * FROM user_message WHERE id=?").get(id) ?? null
-    );
+    return this.db.prepare("SELECT * FROM user_message WHERE id=?").get(id) ?? null;
   }
   add(message, body) {
     this.db
-      .prepare(
-        "INSERT INTO user_message(id,conversation_id,body_json,state,created_at) VALUES(?,?,?,'pending',?)",
-      )
+      .prepare("INSERT INTO user_message(id,conversation_id,body_json,state,created_at) VALUES(?,?,?,'pending',?)")
       .run(message.id, message.conversation_id, stable(body), message.at);
   }
   list(conversationId, after, limit) {
     return this.db
-      .prepare(
-        "SELECT rowid AS cursor,* FROM user_message WHERE conversation_id=? AND rowid>? ORDER BY rowid LIMIT ?",
-      )
+      .prepare("SELECT rowid AS cursor,* FROM user_message WHERE conversation_id=? AND rowid>? ORDER BY rowid LIMIT ?")
       .all(conversationId, after, limit);
   }
   pending(now) {
@@ -40,11 +34,7 @@ export class SqliteUserMessages {
       .run(stable(receipt), at, id);
   }
   withdrawn(id) {
-    this.db
-      .prepare(
-        "UPDATE user_message SET state='withdrawn' WHERE id=? AND state='pending'",
-      )
-      .run(id);
+    this.db.prepare("UPDATE user_message SET state='withdrawn' WHERE id=? AND state='pending'").run(id);
   }
   failed(id, error, nextAt) {
     this.db

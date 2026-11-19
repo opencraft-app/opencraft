@@ -55,22 +55,12 @@ export function validateMemoryBrowser(raw) {
     typeof raw !== "object" ||
     Array.isArray(raw) ||
     !Object.hasOwn(actions, raw.action) ||
-    Object.keys(raw).some(
-      (k) => k !== "action" && !actions[raw.action].includes(k),
-    )
+    Object.keys(raw).some((k) => k !== "action" && !actions[raw.action].includes(k))
   )
     fail();
-  if (
-    raw.query !== undefined &&
-    (typeof raw.query !== "string" || raw.query.length > 200)
-  )
-    fail();
+  if (raw.query !== undefined && (typeof raw.query !== "string" || raw.query.length > 200)) fail();
   if (raw.kind !== undefined && !["profile", "log"].includes(raw.kind)) fail();
-  if (
-    raw.after !== undefined &&
-    (typeof raw.after !== "string" || raw.after.length > 512)
-  )
-    fail();
+  if (raw.after !== undefined && (typeof raw.after !== "string" || raw.after.length > 512)) fail();
   if (
     ["entry", "sources", "set", "forget"].includes(raw.action) &&
     (typeof raw.key !== "string" || !raw.key || raw.key.length > 160)
@@ -93,13 +83,7 @@ export function validateMemoryBrowser(raw) {
       !/^[A-Za-z0-9_-]{8,80}$/.test(raw.requestId))
   )
     fail();
-  if (
-    raw.action === "set" &&
-    (typeof raw.value !== "string" ||
-      !raw.value.trim() ||
-      raw.value.length > 500)
-  )
-    fail();
+  if (raw.action === "set" && (typeof raw.value !== "string" || !raw.value.trim() || raw.value.length > 500)) fail();
   return { ...raw };
 }
 export function createMemoryBrowserView({ rows, images, directory, writable }) {
@@ -115,19 +99,11 @@ export function createMemoryBrowserView({ rows, images, directory, writable }) {
       evidenceIds: (r.evidenceIds ?? []).slice(0, 8),
       document: memoryDocument(r),
     }))
-    .sort(
-      (a, b) => b.updatedAt - a.updatedAt || a.key.localeCompare(b.key, "en"),
-    );
+    .sort((a, b) => b.updatedAt - a.updatedAt || a.key.localeCompare(b.key, "en"));
   const files = new Map();
   for (const [path, text] of images) {
-    const relative = path.startsWith(directory + "/")
-      ? path.slice(directory.length + 1)
-      : "";
-    if (
-      text !== null &&
-      /^(profile\.md|log\/\d{4}-(0[1-9]|1[0-2])\.md)$/.test(relative)
-    )
-      files.set(relative, text);
+    const relative = path.startsWith(directory + "/") ? path.slice(directory.length + 1) : "";
+    if (text !== null && /^(profile\.md|log\/\d{4}-(0[1-9]|1[0-2])\.md)$/.test(relative)) files.set(relative, text);
   }
   const documents = [...files]
     .map(([path, text]) => ({
@@ -137,13 +113,7 @@ export function createMemoryBrowserView({ rows, images, directory, writable }) {
       facts: items.filter((r) => r.document?.path === path).length,
       version: digest(text),
     }))
-    .sort((a, b) =>
-      a.path === "profile.md"
-        ? -1
-        : b.path === "profile.md"
-          ? 1
-          : b.path.localeCompare(a.path),
-    );
+    .sort((a, b) => (a.path === "profile.md" ? -1 : b.path === "profile.md" ? 1 : b.path.localeCompare(a.path)));
   const version = digest({ items, documents });
   return { items, files, documents, version, writable };
 }
@@ -164,32 +134,23 @@ function page(rows, after, identity) {
       cursor[1] < 1
     )
       throw new MemoryBrowserError("invalid");
-    if (cursor[0] !== identity)
-      throw new MemoryBrowserError("snapshot_changed");
+    if (cursor[0] !== identity) throw new MemoryBrowserError("snapshot_changed");
     start = cursor[1];
     if (start > rows.length) throw new MemoryBrowserError("invalid");
   }
   return {
     items: rows.slice(start, start + 30),
-    next:
-      start + 30 < rows.length
-        ? Buffer.from(JSON.stringify([identity, start + 30])).toString(
-            "base64url",
-          )
-        : null,
+    next: start + 30 < rows.length ? Buffer.from(JSON.stringify([identity, start + 30])).toString("base64url") : null,
     total: rows.length,
   };
 }
 export function readMemoryBrowser(view, p, evidence) {
   const common = { version: view.version, writable: view.writable };
-  if (p.action === "status")
-    return { action: p.action, ...common, total: view.items.length };
+  if (p.action === "status") return { action: p.action, ...common, total: view.items.length };
   if (p.action === "list") {
     const q = (p.query ?? "").trim().toLowerCase(),
       rows = view.items.filter(
-        (r) =>
-          (!p.kind || p.kind === r.kind) &&
-          (!q || (r.key + " " + r.value).toLowerCase().includes(q)),
+        (r) => (!p.kind || p.kind === r.kind) && (!q || (r.key + " " + r.value).toLowerCase().includes(q)),
       );
     return {
       action: p.action,
@@ -208,8 +169,7 @@ export function readMemoryBrowser(view, p, evidence) {
     if (text === undefined) throw new MemoryBrowserError("entry_missing");
     const version = digest(text),
       offset = p.offset ?? 0;
-    if (offset > 0 && p.version !== version)
-      throw new MemoryBrowserError("document_changed");
+    if (offset > 0 && p.version !== version) throw new MemoryBrowserError("document_changed");
     if (offset > text.length) throw new MemoryBrowserError("invalid");
     return {
       action: p.action,
@@ -221,8 +181,7 @@ export function readMemoryBrowser(view, p, evidence) {
     };
   }
   const item = view.items.find((r) => r.key === p.key);
-  if (p.action === "entry")
-    return { action: p.action, ...common, item: item ?? null };
+  if (p.action === "entry") return { action: p.action, ...common, item: item ?? null };
   if (p.action === "sources") {
     if (!item) throw new MemoryBrowserError("entry_missing");
     return { action: p.action, item, sources: evidence(item.evidenceIds) };

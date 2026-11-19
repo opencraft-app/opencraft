@@ -8,8 +8,7 @@ export class MessageService {
     uow,
     conversationId,
     requireConversation = (id) => {
-      if (id !== conversationId)
-        throw new Error("Conversation is outside this assistant");
+      if (id !== conversationId) throw new Error("Conversation is outside this assistant");
       return id;
     },
     attachments,
@@ -32,9 +31,7 @@ export class MessageService {
   }
   inConversation(id) {
     this.requireConversation(id);
-    return id === this.conversationId
-      ? this
-      : new MessageService({ ...this, conversationId: id });
+    return id === this.conversationId ? this : new MessageService({ ...this, conversationId: id });
   }
   resolve(raw, interactive = false) {
     const body = userMessage(raw, interactive);
@@ -62,43 +59,32 @@ export class MessageService {
         authorization: "authorization-request",
         handoff: "handoff",
       }[i.kind ?? "question"];
-      if (body.type !== type)
-        throw new Error("Message does not match its interaction kind");
+      if (body.type !== type) throw new Error("Message does not match its interaction kind");
       const meta = JSON.parse(i.metadata_json);
       body.question = {
         prompt: i.question,
         revision: i.revision,
         kind: i.kind ?? "question",
         expiresAt: i.expires_at,
-        ...(meta.choices
-          ? { choices: meta.choices, allowCustom: meta.allowCustom }
-          : {}),
-        ...(["secret", "authorization"].includes(i.kind)
-          ? { provider: meta.provider, secureInput: true }
-          : {}),
+        ...(meta.choices ? { choices: meta.choices, allowCustom: meta.allowCustom } : {}),
+        ...(["secret", "authorization"].includes(i.kind) ? { provider: meta.provider, secureInput: true } : {}),
       };
     }
     return body;
   }
   record(message, body) {
-    if (
-      message.role !== "assistant" ||
-      message.conversation_id !== this.conversationId
-    )
+    if (message.role !== "assistant" || message.conversation_id !== this.conversationId)
       throw new Error("Message is outside the assistant conversation");
     const old = this.repository.get(message.id);
     if (old) {
-      if (old.body_json !== stable(body))
-        throw new Error("Message identity reused with different payload");
+      if (old.body_json !== stable(body)) throw new Error("Message identity reused with different payload");
       return;
     }
     this.repository.add(message, body);
   }
   view(row) {
     const body = JSON.parse(row.body_json);
-    const action = body.interactionId
-      ? this.readInteraction(body.interactionId, row.conversation_id)
-      : null;
+    const action = body.interactionId ? this.readInteraction(body.interactionId, row.conversation_id) : null;
     return {
       id: row.id,
       conversationId: row.conversation_id,
@@ -123,8 +109,7 @@ export class MessageService {
   }
   get(id) {
     const row = this.repository.get(id);
-    if (!row || row.conversation_id !== this.conversationId)
-      throw new Error("Unknown user message");
+    if (!row || row.conversation_id !== this.conversationId) throw new Error("Unknown user message");
     return this.view(row);
   }
   list({ after = 0, limit = 20 } = {}) {
@@ -136,11 +121,7 @@ export class MessageService {
       limit > 50
     )
       throw new Error("Invalid message page");
-    const rows = this.repository.list(
-      this.conversationId,
-      Number(after),
-      limit + 1,
-    );
+    const rows = this.repository.list(this.conversationId, Number(after), limit + 1);
     return {
       items: rows.slice(0, limit).map((r) => this.view(r)),
       next: rows.length > limit ? String(rows[limit - 1].cursor) : null,
@@ -166,16 +147,18 @@ export class MessageService {
       }
       if (body.interactionId) {
         const i = this.readInteraction(body.interactionId, row.conversation_id);
-        if (
-          i.state !== "pending" ||
-          (i.expires_at !== null && i.expires_at <= this.now())
-        ) {
+        if (i.state !== "pending" || (i.expires_at !== null && i.expires_at <= this.now())) {
           this.uow.transaction(() => this.repository.withdrawn(row.id));
           continue;
         }
       }
-      result.push({ ...row, body, ...(meta.receptionPresentation?.origin === 'reception' && typeof meta.receptionPresentation.text === 'string'
-        ? { presentation: meta.receptionPresentation } : {}) });
+      result.push({
+        ...row,
+        body,
+        ...(meta.receptionPresentation?.origin === "reception" && typeof meta.receptionPresentation.text === "string"
+          ? { presentation: meta.receptionPresentation }
+          : {}),
+      });
     }
     return result;
   }
@@ -205,11 +188,7 @@ export class MessageService {
   }
   failed(message, error) {
     this.uow.transaction(() =>
-      this.repository.failed(
-        message.id,
-        error,
-        this.now() + Math.min(30000, 250 * 2 ** Math.min(message.attempts, 7)),
-      ),
+      this.repository.failed(message.id, error, this.now() + Math.min(30000, 250 * 2 ** Math.min(message.attempts, 7))),
     );
   }
   retry(id) {
@@ -218,8 +197,7 @@ export class MessageService {
   }
   replyTarget(id) {
     const m = this.get(id);
-    if (!m.body.interactionId)
-      throw new Error("Message has no pending interaction");
+    if (!m.body.interactionId) throw new Error("Message has no pending interaction");
     return m.body.interactionId;
   }
 }

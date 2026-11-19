@@ -1,6 +1,5 @@
 import type { Duplex } from 'node:stream';
 import WebSocket, { createWebSocketStream } from 'ws';
-import type { Duplex } from 'node:stream';
 /** Idle bound for a relayed stream. Live chat routes carry server heartbeats
  * every few seconds, so only abandoned streams reach it; there is no absolute
  * lifetime that would cut an active conversation on a fixed schedule. */

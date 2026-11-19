@@ -8,20 +8,10 @@ import { execFile } from "node:child_process";
 import { Store } from "../src/store.mjs";
 import { Runner, request } from "../src/runner.mjs";
 import { Conversation } from "../src/domain/conversation.mjs";
-import {
-  CONTEXT_POLICY,
-  emptyContext,
-} from "../src/domain/conversation-context.mjs";
+import { CONTEXT_POLICY, emptyContext } from "../src/domain/conversation-context.mjs";
 import { ConversationContextCoordinator } from "../src/runtime/conversation-context-coordinator.mjs";
 import { ConversationContextModel } from "../src/adapters/models/conversation-context-model.mjs";
-import {
-  profileFor,
-  until,
-  childRunner,
-  nativeEntries,
-  completed,
-  root,
-} from "./helpers.mjs";
+import { profileFor, until, childRunner, nativeEntries, completed, root } from "./helpers.mjs";
 
 const exec = promisify(execFile);
 function setup(t) {
@@ -39,12 +29,7 @@ function setup(t) {
 }
 function seed(app, n = 40, text = (i) => `historic ${i}`) {
   for (let i = 0; i < n; i++)
-    app.history.append(
-      app.history.main.id,
-      `seed-${i}`,
-      i % 2 ? "assistant" : "user",
-      text(i),
-    );
+    app.history.append(app.history.main.id, `seed-${i}`, i % 2 ? "assistant" : "user", text(i));
 }
 function turn(app, id = "current", text = "继续") {
   app.reception.accept(id, { text });
@@ -63,8 +48,7 @@ function save(service, job, value = proposal(job)) {
   assert.ok(service.begin(job));
   assert.equal(service.commit(job, value).accepted, true);
 }
-const call = (p, op, params = {}, id = crypto.randomUUID()) =>
-  request(p, { op, params, id });
+const call = (p, op, params = {}, id = crypto.randomUUID()) => request(p, { op, params, id });
 const settled = (p, id) =>
   until(async () => {
     const t = await call(p, "turn", { inputId: id });
@@ -74,13 +58,9 @@ const settled = (p, id) =>
 
 test("rolling cited working context is injected without rewriting history, facts or work", (t) => {
   const { app, service, store } = setup(t);
-  seed(app, 60, (i) =>
-    i === 0 ? "目标是周五前交付设计；只分析，不部署" : `discussion ${i}`,
-  );
+  seed(app, 60, (i) => (i === 0 ? "目标是周五前交付设计；只分析，不部署" : `discussion ${i}`));
   const current = turn(app);
-  const before = store.db
-    .prepare("SELECT * FROM conversation_message ORDER BY seq")
-    .all();
+  const before = store.db.prepare("SELECT * FROM conversation_message ORDER BY seq").all();
   const a = service.capture(current);
   save(
     service,
@@ -98,23 +78,15 @@ test("rolling cited working context is injected without rewriting history, facts
   assert.equal(b.parent_id, a.id);
   save(service, b, {
     ...emptyContext(),
-    constraints: JSON.parse(
-      store.app.conversationContext.repository.get(a.id).summary_json,
-    ).constraints,
+    constraints: JSON.parse(store.app.conversationContext.repository.get(a.id).summary_json).constraints,
   });
   const input = app.reception.context(current);
-  assert.equal(
-    input.workingContext.summary.constraints[0].text,
-    "只分析，不部署",
-  );
+  assert.equal(input.workingContext.summary.constraints[0].text, "只分析，不部署");
   assert.equal(input.workingContext.summary.sources[0].role, "user");
   assert.ok(input.workingContext.gap.incomplete);
   assert.equal(input.messages.length, 20);
   assert.ok(input.messages.every((m) => m.id && Number.isInteger(m.seq)));
-  assert.deepEqual(
-    store.db.prepare("SELECT * FROM conversation_message ORDER BY seq").all(),
-    before,
-  );
+  assert.deepEqual(store.db.prepare("SELECT * FROM conversation_message ORDER BY seq").all(), before);
   assert.deepEqual(app.memory.list(), []);
   assert.deepEqual(app.pendingWorks(), []);
 });
@@ -123,13 +95,7 @@ test("long Unicode messages are consumed in exact resumable segments without fal
   const { app, service } = setup(t);
   const original = "开头🙂" + "ab🙂中".repeat(12000) + "最后约束：禁止上线";
   seed(app, 1, () => original);
-  for (let i = 0; i < 20; i++)
-    app.history.append(
-      app.history.main.id,
-      `tail${i}`,
-      "assistant",
-      `recent ${i}`,
-    );
+  for (let i = 0; i < 20; i++) app.history.append(app.history.main.id, `tail${i}`, "assistant", `recent ${i}`);
   const current = turn(app),
     pieces = [];
   for (let i = 0; i < 12; i++) {
@@ -137,14 +103,8 @@ test("long Unicode messages are consumed in exact resumable segments without fal
     if (!job) break;
     const input = JSON.parse(job.source_json);
     assert.ok(input.messages.length <= CONTEXT_POLICY.batchMessages);
-    assert.ok(
-      input.messages.every(
-        (m) => m.text.length <= CONTEXT_POLICY.segmentCharacters,
-      ),
-    );
-    pieces.push(
-      ...input.messages.filter((m) => m.seq === 1).map((m) => m.text),
-    );
+    assert.ok(input.messages.every((m) => m.text.length <= CONTEXT_POLICY.segmentCharacters));
+    pieces.push(...input.messages.filter((m) => m.seq === 1).map((m) => m.text));
     save(service, job);
   }
   assert.equal(pieces.join(""), original);
@@ -165,17 +125,10 @@ test("checkpoint and captured proposal input survive reopen; ready checkpoint is
   assert.equal(recovered.attempts, 1);
   assert.equal(recovered.source_json, job.source_json);
   save(second.app.conversationContext, recovered);
-  const saved = second.db
-    .prepare("SELECT summary_json FROM conversation_context WHERE id=?")
-    .get(job.id).summary_json;
+  const saved = second.db.prepare("SELECT summary_json FROM conversation_context WHERE id=?").get(job.id).summary_json;
+  assert.equal(second.app.conversationContext.commit(job, { evil: true }).duplicate, true);
   assert.equal(
-    second.app.conversationContext.commit(job, { evil: true }).duplicate,
-    true,
-  );
-  assert.equal(
-    second.db
-      .prepare("SELECT summary_json FROM conversation_context WHERE id=?")
-      .get(job.id).summary_json,
+    second.db.prepare("SELECT summary_json FROM conversation_context WHERE id=?").get(job.id).summary_json,
     saved,
   );
 });
@@ -195,10 +148,7 @@ test("unknown citations, invented sections and oversized items cannot commit or 
       ),
     /citation/,
   );
-  assert.throws(
-    () => service.commit(job, { ...proposal(job), tools: ["shell"] }),
-    /sections/,
-  );
+  assert.throws(() => service.commit(job, { ...proposal(job), tools: ["shell"] }), /sections/);
   assert.throws(
     () =>
       service.commit(
@@ -224,20 +174,13 @@ test("source changes and SQLite failures roll back checkpoint publication", (t) 
   const job = service.capture(turn(app));
   service.begin(job);
   const id = JSON.parse(job.source_json).messages[0].id;
-  store.db
-    .prepare("UPDATE conversation_message SET text='changed' WHERE id=?")
-    .run(id);
+  store.db.prepare("UPDATE conversation_message SET text='changed' WHERE id=?").run(id);
   assert.throws(() => service.commit(job, proposal(job)), /source changed/);
-  store.db
-    .prepare("UPDATE conversation_message SET text='historic 0' WHERE id=?")
-    .run(id);
+  store.db.prepare("UPDATE conversation_message SET text='historic 0' WHERE id=?").run(id);
   store.db.exec(
     "CREATE TEMP TRIGGER context_fail BEFORE UPDATE OF summary_json ON conversation_context BEGIN SELECT RAISE(ABORT,'injected context failure'); END",
   );
-  assert.throws(
-    () => service.commit(job, proposal(job)),
-    /injected context failure/,
-  );
+  assert.throws(() => service.commit(job, proposal(job)), /injected context failure/);
   assert.equal(service.status().checkpointId, null);
   store.db.exec("DROP TRIGGER context_fail");
   assert.equal(service.commit(job, proposal(job)).accepted, true);
@@ -248,8 +191,7 @@ test("late concurrent candidates cannot replace a newer parent checkpoint", (t) 
   seed(app, 30);
   const early = turn(app, "early");
   const first = service.capture(early);
-  for (let i = 0; i < 40; i++)
-    app.history.append(app.history.main.id, `later-${i}`, "user", `later ${i}`);
+  for (let i = 0; i < 40; i++) app.history.append(app.history.main.id, `later-${i}`, "user", `later ${i}`);
   const later = turn(app, "later");
   const second = service.capture(later);
   assert.notEqual(first.id, second.id);
@@ -281,10 +223,7 @@ test("old queued user and system report contexts do not read future summaries or
     }),
   };
   assert.equal(service.view(reportTurn).checkpointId, null);
-  assert.throws(
-    () => service.view({ ...old, conversation_id: "foreign" }),
-    /outside/,
-  );
+  assert.throws(() => service.view({ ...old, conversation_id: "foreign" }), /outside/);
 });
 
 test("summary errors have bounded durable retries, preserve raw gap and allow explicit reset", async (t) => {
@@ -343,9 +282,7 @@ test("history.read returns cited originals with pagination and rejects future an
   const old = turn(app, "anchor");
   const later = turn(app, "later");
   const session = app.receptionQueries.open(old);
-  const first = store.db
-    .prepare("SELECT id FROM conversation_message ORDER BY seq LIMIT 1")
-    .get().id;
+  const first = store.db.prepare("SELECT id FROM conversation_message ORDER BY seq LIMIT 1").get().id;
   const got = session.execute({
     kind: "query",
     name: "history.read",
@@ -358,11 +295,7 @@ test("history.read returns cited originals with pagination and rejects future an
       kind: "query",
       name: "history.read",
       params: {
-        messageId: Conversation.messageId(
-          app.history.main.id,
-          later.id,
-          "user",
-        ),
+        messageId: Conversation.messageId(app.history.main.id, later.id, "user"),
       },
     }).response.ok,
     false,
@@ -383,11 +316,7 @@ test("history.read returns cited originals with pagination and rejects future an
         name: "history.search",
         params: { query: later.text },
       })
-      .response.data.items.some(
-        (m) =>
-          m.id ===
-          Conversation.messageId(app.history.main.id, later.id, "user"),
-      ),
+      .response.data.items.some((m) => m.id === Conversation.messageId(app.history.main.id, later.id, "user")),
     false,
   );
   assert.equal(store.db.prepare("SELECT total_changes() AS n").get().n, before);
@@ -444,10 +373,7 @@ test("new explicit corrections reach reception alongside the older summary witho
   assert.match(input.text, /下周一/);
   assert.equal(input.messages.at(-1).text, input.text);
   assert.equal(service.repository.get(job.id).summary_json, before);
-  const prompt = readFileSync(
-    join(root, "src/adapters/models/reception-model.mjs"),
-    "utf8",
-  );
+  const prompt = readFileSync(join(root, "src/adapters/models/reception-model.mjs"), "utf8");
   assert.match(prompt, /Apply the latest explicit user correction/);
 });
 
@@ -476,10 +402,7 @@ test("context model failure cannot block the actual reception socket", async (t)
     assert.equal((await call(profile, "status")).healthError, null);
     assert.equal(observed.workingContext.checkpointId, null);
     assert.equal(observed.workingContext.gap.incomplete, true);
-    assert.match(
-      (await call(profile, "conversation.context")).pending.error,
-      /summary unavailable/,
-    );
+    assert.match((await call(profile, "conversation.context")).pending.error, /summary unavailable/);
   } finally {
     await runner.close();
   }
@@ -508,15 +431,8 @@ test("actual reception and Pi delegation receive the frozen cited working contex
   const snapshot = JSON.parse(work.executions[0].context_json);
   assert.deepEqual(snapshot.request.workingContext, observed.workingContext);
   const entries = await nativeEntries(profile, received.work_id);
-  assert.match(
-    JSON.stringify(entries),
-    new RegExp(observed.workingContext.checkpointId),
-  );
-  const cli = await exec(
-    process.execPath,
-    ["bin/assistant.mjs", "context", "--profile", profile.path],
-    { cwd: root },
-  );
+  assert.match(JSON.stringify(entries), new RegExp(observed.workingContext.checkpointId));
+  const cli = await exec(process.execPath, ["bin/assistant.mjs", "context", "--profile", profile.path], { cwd: root });
   assert.ok(JSON.parse(cli.stdout).result.checkpointId);
   assert.equal((await call(profile, "status")).healthError, null);
 });
@@ -546,10 +462,7 @@ test("real model adapter sends the summarization protocol and records a distinct
     },
   });
   assert.deepEqual(
-    await model.summarize(
-      { previous: null, messages: [] },
-      new AbortController().signal,
-    ),
+    await model.summarize({ previous: null, messages: [] }, new AbortController().signal),
     emptyContext(),
   );
   assert.match(payload.systemPrompt, /WORKING CONTEXT/);
@@ -569,17 +482,11 @@ test("schema15 upgrades without modifying canonical messages or inventing a summ
   const second = new Store(profile);
   t.after(() => second.close());
   assert.equal(second.db.prepare("PRAGMA user_version").get().user_version, 21);
-  assert.deepEqual(
-    second.db.prepare("SELECT * FROM conversation_message").all(),
-    raw,
-  );
+  assert.deepEqual(second.db.prepare("SELECT * FROM conversation_message").all(), raw);
   assert.equal(second.app.conversationContext.status().checkpointId, null);
 });
 
-for (const point of [
-  "context-proposed-before-commit",
-  "context-saved-before-reception",
-]) {
+for (const point of ["context-proposed-before-commit", "context-saved-before-reception"]) {
   test(`real process recovery at ${point} preserves raw history and settles input once`, async (t) => {
     const profile = profileFor(t);
     const seedStore = new Store(profile);
@@ -591,14 +498,8 @@ for (const point of [
     const second = await childRunner(t, profile);
     await settled(profile, "crash-input");
     const history = await call(profile, "conversation");
-    assert.equal(
-      history.messages.filter((m) => m.data.inputId === "crash-input").length,
-      1,
-    );
-    assert.equal(
-      history.messages.filter((m) => m.data.kind === "reply").length,
-      1,
-    );
+    assert.equal(history.messages.filter((m) => m.data.inputId === "crash-input").length, 1);
+    assert.equal(history.messages.filter((m) => m.data.kind === "reply").length, 1);
     assert.ok((await call(profile, "conversation.context")).checkpointId);
     await second.stop();
   });
@@ -613,21 +514,29 @@ for (const failure of ["reject", "timeout"]) {
     seed(store.app);
     store.close();
     let release, lateSummary;
-    const held = new Promise(resolve => { release = resolve; });
+    const held = new Promise((resolve) => {
+      release = resolve;
+    });
     let entered = false;
     const runner = await Runner.open(profile, {
-      contextModel: { summarize() {
-        if (failure === "reject") return Promise.reject(Error("summary unavailable"));
-        return new Promise(resolve => { lateSummary = resolve; });
-      } },
-      receptionModel: { async decide() {
-        entered = true;
-        await held;
-        return {kind: "reply", text: "继续接待"};
-      } },
+      contextModel: {
+        summarize() {
+          if (failure === "reject") return Promise.reject(Error("summary unavailable"));
+          return new Promise((resolve) => {
+            lateSummary = resolve;
+          });
+        },
+      },
+      receptionModel: {
+        async decide() {
+          entered = true;
+          await held;
+          return { kind: "reply", text: "继续接待" };
+        },
+      },
     });
     try {
-      await call(profile, "say", {text: "继续"}, "summary-health");
+      await call(profile, "say", { text: "继续" }, "summary-health");
       await until(() => entered);
       // This is exactly when the Host/group observer used to close IPC.
       const status = await call(profile, "status");
@@ -640,6 +549,9 @@ for (const failure of ["reject", "timeout"]) {
       await settled(profile, "summary-health");
       assert.equal((await call(profile, "status")).healthError, null);
       assert.equal((await call(profile, "conversation.context")).checkpointId, null);
-    } finally { release(); await runner.close(); }
+    } finally {
+      release();
+      await runner.close();
+    }
   });
 }

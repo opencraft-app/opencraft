@@ -5,13 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const attributes = (items = []) =>
   Object.fromEntries(
-    items.map(({ key, value }) => [
-      key,
-      value.stringValue ??
-        value.intValue ??
-        value.doubleValue ??
-        value.boolValue,
-    ]),
+    items.map(({ key, value }) => [key, value.stringValue ?? value.intValue ?? value.doubleValue ?? value.boolValue]),
   );
 const identity = (item) => `${item.traceId}:${item.spanId}`;
 export function summarizeTelemetry(envelopes, logs = []) {
@@ -27,8 +21,7 @@ export function summarizeTelemetry(envelopes, logs = []) {
       for (const scope of resource.scopeLogs ?? [])
         for (const log of scope.logRecords ?? []) {
           const body = log.body?.stringValue ?? "";
-          if (body.endsWith(".started"))
-            started.set(identity(log), body.slice(0, -8));
+          if (body.endsWith(".started")) started.set(identity(log), body.slice(0, -8));
           if (body.endsWith(".finished")) finished.add(identity(log));
         }
   const groups = {};
@@ -36,11 +29,8 @@ export function summarizeTelemetry(envelopes, logs = []) {
     const attrs = attributes(span.attributes),
       role = attrs["app.model_role"];
     const key = role ? `${span.name}/${role}` : span.name;
-    const ms =
-      Number(BigInt(span.endTimeUnixNano) - BigInt(span.startTimeUnixNano)) /
-      1e6;
-    if (!Number.isFinite(ms) || ms < 0)
-      throw new Error("Invalid span duration");
+    const ms = Number(BigInt(span.endTimeUnixNano) - BigInt(span.startTimeUnixNano)) / 1e6;
+    if (!Number.isFinite(ms) || ms < 0) throw new Error("Invalid span duration");
     const group = (groups[key] ??= {
       count: 0,
       totalInclusiveMs: 0,
@@ -54,8 +44,7 @@ export function summarizeTelemetry(envelopes, logs = []) {
   }
   const incompleteByStage = {};
   for (const [key, stage] of started)
-    if (!finished.has(key) && !spans.has(key))
-      incompleteByStage[stage] = (incompleteByStage[stage] ?? 0) + 1;
+    if (!finished.has(key) && !spans.has(key)) incompleteByStage[stage] = (incompleteByStage[stage] ?? 0) + 1;
   return {
     completedSpans: spans.size,
     groups,
@@ -70,19 +59,14 @@ async function loadSignal(directory, name) {
   try {
     names = await readdir(directory);
   } catch (error) {
-    if (error.code === "ENOENT")
-      return { requests: [], malformedLines: 0, files: [] };
+    if (error.code === "ENOENT") return { requests: [], malformedLines: 0, files: [] };
     throw error;
   }
   const requests = [],
     files = [];
   let malformedLines = 0;
   for (const file of names
-    .filter(
-      (f) =>
-        f === name ||
-        new RegExp(`^${name.replaceAll(".", "\\.")}\\.[1-3]$`).test(f),
-    )
+    .filter((f) => f === name || new RegExp(`^${name.replaceAll(".", "\\.")}\\.[1-3]$`).test(f))
     .sort()) {
     const bytes = await readFile(join(directory, file));
     files.push({
@@ -110,9 +94,7 @@ export async function profileTelemetry(directory) {
     ...summarizeTelemetry(signals[0].requests, signals[1].requests),
     malformedLines: signals.reduce((n, s) => n + s.malformedLines, 0),
     files: signals.flatMap((s) => s.files),
-    coverage: signals[0].files.length
-      ? "observed-local-window"
-      : "no-trace-files",
+    coverage: signals[0].files.length ? "observed-local-window" : "no-trace-files",
     remoteQueueNetworkAndComputeSeparated: false,
   };
 }
@@ -126,12 +108,7 @@ async function main() {
     const key = createHash("sha256").update(id).digest("hex").slice(0, 24);
     let record;
     try {
-      record = JSON.parse(
-        await readFile(
-          join(directory, "records", key + "-native-assistant.json"),
-          "utf8",
-        ),
-      );
+      record = JSON.parse(await readFile(join(directory, "records", key + "-native-assistant.json"), "utf8"));
     } catch (error) {
       if (error.code !== "ENOENT") throw error;
     }
@@ -154,11 +131,7 @@ async function main() {
       "This report does not introduce OTel metrics or measure provider-internal phases.",
     ],
   };
-  await writeFile(
-    join(directory, "telemetry-summary.json"),
-    JSON.stringify(report, null, 2) + "\n",
-    { mode: 0o600 },
-  );
+  await writeFile(join(directory, "telemetry-summary.json"), JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
   console.log(
     JSON.stringify({
       cases: cases.length,
@@ -167,10 +140,7 @@ async function main() {
     }),
   );
 }
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   main().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;

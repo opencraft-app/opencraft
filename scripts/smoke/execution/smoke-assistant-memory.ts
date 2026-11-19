@@ -16,17 +16,13 @@ import { chromium } from "playwright";
 import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ActorStore } from "../../../packages/access-control/src/actors";
 import { ActorAccess } from "../../../packages/access-control/src/actor-access";
-import {
-  Collaboration,
-  CollaborationHttpApi,
-} from "../../../packages/access-control/src/collaboration";
+import { Collaboration, CollaborationHttpApi } from "../../../packages/access-control/src/collaboration";
 import { parsePrincipal } from "@opencraft/identity-core";
 
 // Actual Workbench extension, native transport, communication authority and DB.
 // Identity admission and worker execution are explicit fixtures. Model selection uses the real repository and RPC.
 const root = await mkdtemp(join(tmpdir(), "personal-assistant-ui-"));
-const evidence =
-  process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/personal-assistant-ui";
+const evidence = process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/personal-assistant-ui";
 const storage = await openServerDatabase(root),
   actors = new ActorStore(storage);
 const principal = parsePrincipal({
@@ -37,11 +33,7 @@ const principal = parsePrincipal({
 })!;
 const human = actors.resolveHuman(principal)!,
   bot = actors.createSession("Review Bot", human.actorId);
-const credential = actors.issueCredential(
-    bot.id,
-    Date.now() + 3600000,
-    human.actorId,
-  ),
+const credential = actors.issueCredential(bot.id, Date.now() + 3600000, human.actorId),
   botContext = actors.authenticateSession(credential.token)!;
 actors.setGrant(human.actorId, bot.id, "message.send", true, "fixture");
 const service = new Collaboration(storage, actors, {
@@ -113,10 +105,7 @@ await models.update(0, (d) => {
     },
   ];
 });
-const claimed = await service.personalAssistant(
-  human,
-  "opencraft/personal-assistant/claim",
-);
+const claimed = await service.personalAssistant(human, "opencraft/personal-assistant/claim");
 let runtimeEnabled = true;
 const assistantHost = await createPersonalAssistantHost({
   directory: root,
@@ -129,49 +118,30 @@ const assistantHost = await createPersonalAssistantHost({
         },
   intervalMs: 25,
 });
-for (
-  let i = 0;
-  assistantHost.state(claimed.assistant.binding.botId).phase !== "running";
-  i++
-) {
+for (let i = 0; assistantHost.state(claimed.assistant.binding.botId).phase !== "running"; i++) {
   if (i > 300) throw Error("Host not ready");
   await new Promise((r) => setTimeout(r, 20));
 }
-const memoryFolder = join(
-  root,
-  "bots",
-  claimed.assistant.binding.botId,
-  "memory",
-);
+const memoryFolder = join(root, "bots", claimed.assistant.binding.botId, "memory");
 await mkdir(memoryFolder, { recursive: true });
 await writeFile(
   join(memoryFolder, "profile.md"),
   "# 私有档案\n\n普通说明不是生效的记忆。\n\n" +
     Array.from(
       { length: 35 },
-      (_, i) =>
-        "- (2026-11-14) 记忆测试 " +
-        String(i).padStart(2, "0") +
-        "：喜欢清淡口味",
+      (_, i) => "- (2026-11-14) 记忆测试 " + String(i).padStart(2, "0") + "：喜欢清淡口味",
     ).join("\n") +
     "\n",
 );
 await mkdir(join(memoryFolder, "log"), { recursive: true });
-await writeFile(
-  join(memoryFolder, "log", "2026-01.md"),
-  "# 纯文档\n只有普通段落，没有已识别事实。\n",
-);
+await writeFile(join(memoryFolder, "log", "2026-01.md"), "# 纯文档\n只有普通段落，没有已识别事实。\n");
 const seeded = [];
 for (let i = 0; i < 5; i++) {
-  const group = await service.communicate(
-    human,
-    "opencraft/channels/group/create",
-    {
-      title: "项目讨论 " + i,
-      memberActorIds: [bot.id],
-      clientRequestId: "directory-" + i,
-    },
-  );
+  const group = await service.communicate(human, "opencraft/channels/group/create", {
+    title: "项目讨论 " + i,
+    memberActorIds: [bot.id],
+    clientRequestId: "directory-" + i,
+  });
   seeded.push(group);
   if (i < 4)
     await service.communicate(botContext, "opencraft/channels/messages/send", {
@@ -246,10 +216,7 @@ const server = await createServer({
   },
   optimizeDeps: {
     ...applicationConfig!.config.optimizeDeps,
-    include: [
-      ...applicationConfig!.config.optimizeDeps!.include!,
-      "@opencraft/browser-core/presentation",
-    ],
+    include: [...applicationConfig!.config.optimizeDeps!.include!, "@opencraft/browser-core/presentation"],
   },
   esbuild: { jsx: "automatic" },
   resolve: { dedupe: ["react", "react-dom"] },
@@ -275,8 +242,7 @@ const server = await createServer({
             );
           } else if (req.url?.startsWith("/__opencraft_im")) {
             void im.handle(req, res, () => true).catch(next);
-          } else if (req.url?.startsWith("/__opencraft_actors/collaboration/"))
-            void api.handle(req, res);
+          } else if (req.url?.startsWith("/__opencraft_actors/collaboration/")) void api.handle(req, res);
           else next();
         });
       },
@@ -307,14 +273,8 @@ try {
       state: "attached",
       timeout: 90000,
     });
-    const sidebar = page
-      .locator('[data-chrome-action-id="sidebar-toggle"]:visible')
-      .first();
-    if (
-      (await sidebar.count()) &&
-      (await sidebar.getAttribute("aria-expanded")) !== "true"
-    )
-      await sidebar.click();
+    const sidebar = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible').first();
+    if ((await sidebar.count()) && (await sidebar.getAttribute("aria-expanded")) !== "true") await sidebar.click();
     await page.getByRole("button", { name: "助理", exact: true }).click();
     const closeSidebar = page.getByRole("button", {
       name: "关闭侧边栏",
@@ -327,23 +287,27 @@ try {
           position: { x: box.width - 8, y: box.height / 2 },
         });
     }
-    await page
-      .getByRole("heading", { name: "我的助理", exact: true })
-      .waitFor();
+    await page.getByRole("heading", { name: "我的助理", exact: true }).waitFor();
     await page.getByRole("button", { name: "记忆", exact: true }).click();
-    await page.waitForFunction(
-      () => document.querySelectorAll(".assistant-memory-item").length === 30,
-    );
+    await page.waitForFunction(() => document.querySelectorAll(".assistant-memory-item").length === 30);
     const memoryView = page.locator(".assistant-memory");
     const firstBox = await memoryView.locator(".assistant-memory-item").first().boundingBox();
     const headerBox = await memoryView.boundingBox();
-    assert.ok(firstBox && headerBox && firstBox.y - headerBox.y < (width < 600 ? 330 : 260), "Content must appear without a wall of explanation");
+    assert.ok(
+      firstBox && headerBox && firstBox.y - headerBox.y < (width < 600 ? 330 : 260),
+      "Content must appear without a wall of explanation",
+    );
     assert.equal(await memoryView.locator(".assistant-memory-about").getAttribute("open"), null);
-    assert.notEqual(await memoryView.locator('.assistant-memory-tabs button[aria-pressed="true"]').evaluate(e => getComputedStyle(e).borderBottomColor), "rgba(0, 0, 0, 0)");
-    await page.screenshot({path:join(evidence,"memory-list-"+width+".png"),fullPage:true});
+    assert.notEqual(
+      await memoryView
+        .locator('.assistant-memory-tabs button[aria-pressed="true"]')
+        .evaluate((e) => getComputedStyle(e).borderBottomColor),
+      "rgba(0, 0, 0, 0)",
+    );
+    await page.screenshot({ path: join(evidence, "memory-list-" + width + ".png"), fullPage: true });
     for (const theme of ["dark", "frost", "light"]) {
-      await page.evaluate(theme => (window as any).proof.theme(theme), theme);
-      await page.screenshot({path:join(evidence,"memory-list-"+width+"-"+theme+".png"),fullPage:true});
+      await page.evaluate((theme) => (window as any).proof.theme(theme), theme);
+      await page.screenshot({ path: join(evidence, "memory-list-" + width + "-" + theme + ".png"), fullPage: true });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     }
     await page.getByRole("button", { name: "加载更多", exact: true }).click();
@@ -352,22 +316,20 @@ try {
       width === 1160 ? 35 : 34,
     );
     const view = page.locator(".assistant-memory");
-    await view
-      .locator(".assistant-memory-item")
-      .filter({ hasText: "记忆测试 05" })
-      .click();
-    if(width < 600) {
-      assert.equal(await view.locator(".assistant-memory-list").isVisible(),false);
-      assert.equal(await view.locator(".assistant-memory-detail").evaluate(e => e === document.activeElement),true);
-      await view.getByRole("button", {name:"返回记忆列表",exact:true}).click();
-      assert.equal(await view.locator(".assistant-memory-list").isVisible(),true);
-      assert.equal(await page.evaluate(() => (document.activeElement as HTMLElement)?.dataset.memoryKey),await view.locator('.assistant-memory-item').filter({hasText:"记忆测试 05"}).getAttribute('data-memory-key'));
-      await view.locator('.assistant-memory-item').filter({hasText:"记忆测试 05"}).click();
+    await view.locator(".assistant-memory-item").filter({ hasText: "记忆测试 05" }).click();
+    if (width < 600) {
+      assert.equal(await view.locator(".assistant-memory-list").isVisible(), false);
+      assert.equal(await view.locator(".assistant-memory-detail").evaluate((e) => e === document.activeElement), true);
+      await view.getByRole("button", { name: "返回记忆列表", exact: true }).click();
+      assert.equal(await view.locator(".assistant-memory-list").isVisible(), true);
+      assert.equal(
+        await page.evaluate(() => (document.activeElement as HTMLElement)?.dataset.memoryKey),
+        await view.locator(".assistant-memory-item").filter({ hasText: "记忆测试 05" }).getAttribute("data-memory-key"),
+      );
+      await view.locator(".assistant-memory-item").filter({ hasText: "记忆测试 05" }).click();
     }
     await view.getByRole("button", { name: "原始文档", exact: true }).click();
-    await page
-      .getByText("普通说明不是生效的记忆。", { exact: false })
-      .waitFor();
+    await page.getByText("普通说明不是生效的记忆。", { exact: false }).waitFor();
     assert.match(await view.locator("pre").innerText(), /# 私有档案/);
     await view.getByRole("button", { name: "来源", exact: true }).click();
     await view.getByText("未记录来源", { exact: true }).last().waitFor();
@@ -375,17 +337,9 @@ try {
       path: join(evidence, "memory-" + width + ".png"),
       fullPage: true,
     });
-    assert.equal(
-      await page.evaluate(
-        () => document.documentElement.scrollWidth > window.innerWidth,
-      ),
-      false,
-    );
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false);
     if (width === 1160) {
-      await view
-        .locator(".assistant-memory-item")
-        .filter({ hasText: "记忆测试 00" })
-        .click();
+      await view.locator(".assistant-memory-item").filter({ hasText: "记忆测试 00" }).click();
       await view.getByRole("button", { name: "纠正", exact: true }).click();
       let editor = view.getByRole("textbox", { name: "纠正", exact: true });
       await editor.fill("纠正后的偏好：不要香菜");
@@ -394,10 +348,7 @@ try {
         guarded++;
         await dialog.dismiss();
       });
-      await view
-        .locator(".assistant-memory-item")
-        .filter({ hasText: "记忆测试 05" })
-        .click();
+      await view.locator(".assistant-memory-item").filter({ hasText: "记忆测试 05" }).click();
       assert.equal(guarded, 1);
       assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
       page.once("dialog", async (dialog) => {
@@ -414,33 +365,34 @@ try {
       await page.getByRole("button", { name: "记忆", exact: true }).click();
       assert.equal(guarded, 3);
       assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
-      page.once("dialog",async dialog=>{guarded++;await dialog.dismiss();});
-      await view.getByRole("button",{name:"返回记忆列表",exact:true}).click();
-      assert.equal(guarded,4);
-      assert.equal(await editor.inputValue(),"纠正后的偏好：不要香菜");
-      page.once("dialog",async dialog=>{guarded++;await dialog.dismiss();});
-      await page.getByRole("button",{name:"助理设置",exact:true}).click();
-      assert.equal(guarded,5);
-      assert.equal(await view.isVisible(),true);
-      assert.equal(await editor.inputValue(),"纠正后的偏好：不要香菜");
+      page.once("dialog", async (dialog) => {
+        guarded++;
+        await dialog.dismiss();
+      });
+      await view.getByRole("button", { name: "返回记忆列表", exact: true }).click();
+      assert.equal(guarded, 4);
+      assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
+      page.once("dialog", async (dialog) => {
+        guarded++;
+        await dialog.dismiss();
+      });
+      await page.getByRole("button", { name: "助理设置", exact: true }).click();
+      assert.equal(guarded, 5);
+      assert.equal(await view.isVisible(), true);
+      assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
       await page.getByRole("button", { name: "Inbox", exact: true }).click();
       await page.getByRole("button", { name: "助理", exact: true }).click();
-      if (!(await view.isVisible()))
-        await page.getByRole("button", { name: "记忆", exact: true }).click();
+      if (!(await view.isVisible())) await page.getByRole("button", { name: "记忆", exact: true }).click();
       editor = view.getByRole("textbox", { name: "纠正", exact: true });
       await editor.waitFor();
       assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
       const binding = claimed.assistant.binding,
         call = (params: any) =>
-          service.personalAssistant(
-            human,
-            "opencraft/personal-assistant/memory",
-            {
-              botId: binding.botId,
-              assignmentId: binding.assignmentId,
-              ...params,
-            },
-          );
+          service.personalAssistant(human, "opencraft/personal-assistant/memory", {
+            botId: binding.botId,
+            assignmentId: binding.assignmentId,
+            ...params,
+          });
       const before = await call({ action: "list", query: "记忆测试 00" }),
         item = before.items[0];
       await call({
@@ -451,9 +403,7 @@ try {
         requestId: "browser-concurrent-0001",
       });
       await page.evaluate(() => window.dispatchEvent(new Event("focus")));
-      await view
-        .getByText("记忆有新变化，当前内容和草稿未被覆盖。", { exact: true })
-        .waitFor();
+      await view.getByText("记忆有新变化，当前内容和草稿未被覆盖。", { exact: true }).waitFor();
       assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
       await view.getByRole("button", { name: "保存纠正", exact: true }).click();
       await view
@@ -466,30 +416,17 @@ try {
         .locator(".assistant-memory-edit")
         .getByRole("button", { name: "读取最新版本（保留草稿）", exact: true })
         .click();
-      await view
-        .locator(".assistant-memory-latest")
-        .getByText("其他地方刚更新的偏好", { exact: true })
-        .waitFor();
+      await view.locator(".assistant-memory-latest").getByText("其他地方刚更新的偏好", { exact: true }).waitFor();
       assert.equal(await editor.inputValue(), "纠正后的偏好：不要香菜");
-      assert.equal(
-        await view
-          .getByRole("button", { name: "保存纠正", exact: true })
-          .isDisabled(),
-        true,
-      );
+      assert.equal(await view.getByRole("button", { name: "保存纠正", exact: true }).isDisabled(), true);
       await page.screenshot({
         path: join(evidence, "draft-conflict-" + width + ".png"),
         fullPage: true,
       });
-      await view
-        .getByRole("button", { name: "以此版本为基础继续纠正", exact: true })
-        .click();
+      await view.getByRole("button", { name: "以此版本为基础继续纠正", exact: true }).click();
       await view.getByRole("button", { name: "保存纠正", exact: true }).click();
       await view.getByText("记忆已更新。", { exact: true }).waitFor();
-      assert.match(
-        await view.locator(".assistant-memory-item").first().innerText(),
-        /纠正后的偏好/,
-      );
+      assert.match(await view.locator(".assistant-memory-item").first().innerText(), /纠正后的偏好/);
       const checked = await call({ action: "list", query: "纠正后的偏好" });
       assert.equal(checked.items.length, 1);
       assert.equal(checked.items[0].revision, item.revision + 2);
@@ -499,90 +436,59 @@ try {
       });
       await search.fill("纠正后的偏好");
       await view.getByRole("button", { name: "搜索", exact: true }).click();
-      await page.waitForFunction(
-        () => document.querySelectorAll(".assistant-memory-item").length === 1,
-      );
+      await page.waitForFunction(() => document.querySelectorAll(".assistant-memory-item").length === 1);
       await view.locator(".assistant-memory-item").click();
       await view.getByRole("button", { name: "忘记", exact: true }).click();
       await view.getByRole("button", { name: "确认忘记", exact: true }).click();
       await view.getByText("已忘记这条记忆。", { exact: true }).waitFor();
-      assert.equal(
-        (await call({ action: "list", query: "纠正后的偏好" })).items.length,
-        0,
-      );
+      assert.equal((await call({ action: "list", query: "纠正后的偏好" })).items.length, 0);
       await view.getByRole("button", { name: "文档", exact: true }).click();
-      await view
-        .locator(".assistant-memory-item")
-        .filter({ hasText: "log/2026-01.md" })
-        .click();
-      await view
-        .locator("pre")
-        .getByText("只有普通段落，没有已识别事实。", { exact: false })
-        .waitFor();
+      await view.locator(".assistant-memory-item").filter({ hasText: "log/2026-01.md" }).click();
+      await view.locator("pre").getByText("只有普通段落，没有已识别事实。", { exact: false }).waitFor();
       runtimeEnabled = false;
-      for (
-        let i = 0;
-        assistantHost.state(binding.botId).phase !== "config_required";
-        i++
-      ) {
+      for (let i = 0; assistantHost.state(binding.botId).phase !== "config_required"; i++) {
         if (i > 300) throw Error("Host did not stop");
         await new Promise((r) => setTimeout(r, 20));
       }
       await view.getByRole("button", { name: "刷新", exact: true }).click();
       await view
-        .getByText(
-          "只读模式：管家尚未运行。无需启动模型即可浏览，修改仍需原管家进程就绪。",
-          { exact: true },
-        )
+        .getByText("只读模式：管家尚未运行。无需启动模型即可浏览，修改仍需原管家进程就绪。", { exact: true })
         .waitFor();
-      await view
-        .locator(".assistant-memory-item")
-        .filter({ hasText: "log/2026-01.md" })
-        .click();
-      await view
-        .locator("pre")
-        .getByText("只有普通段落，没有已识别事实。", { exact: false })
-        .waitFor();
+      await view.locator(".assistant-memory-item").filter({ hasText: "log/2026-01.md" }).click();
+      await view.locator("pre").getByText("只有普通段落，没有已识别事实。", { exact: false }).waitFor();
       await page.screenshot({
         path: join(evidence, "offline-documents-" + width + ".png"),
         fullPage: true,
       });
     } else {
-      assert.equal(
-        await view
-          .getByRole("button", { name: "纠正", exact: true })
-          .isDisabled(),
-        true,
-      );
+      assert.equal(await view.getByRole("button", { name: "纠正", exact: true }).isDisabled(), true);
       await view.getByRole("button", { name: "文档", exact: true }).click();
-      await view
-        .locator(".assistant-memory-item")
-        .filter({ hasText: "log/2026-01.md" })
-        .click();
-      await view
-        .locator("pre")
-        .getByText("只有普通段落，没有已识别事实。", { exact: false })
-        .waitFor();
+      await view.locator(".assistant-memory-item").filter({ hasText: "log/2026-01.md" }).click();
+      await view.locator("pre").getByText("只有普通段落，没有已识别事实。", { exact: false }).waitFor();
     }
     if (width < 600) {
-      await view.getByRole("button", {name:"返回记忆列表",exact:true}).click();
-      await view.getByRole("button", {name:"已记住",exact:true}).click();
-      await page.setViewportSize({width:320,height:740});
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,"320px has no overflow");
-      const submitBox=await view.getByRole("button",{name:"搜索",exact:true}).boundingBox();
-      assert.ok(submitBox && submitBox.height>=32 && submitBox.width>=32);
-      await page.screenshot({path:join(evidence,"memory-list-320.png"),fullPage:true});
-      await page.setViewportSize({width:390,height:900});
-      await view.getByRole("textbox",{name:"搜索记忆",exact:true}).fill("记忆测试 05");
-      await view.getByRole("button",{name:"搜索",exact:true}).click();
-      await page.waitForFunction(()=>document.querySelectorAll(".assistant-memory-item").length===1);
-      await page.screenshot({path:join(evidence,"memory-single-390.png"),fullPage:true});
+      await view.getByRole("button", { name: "返回记忆列表", exact: true }).click();
+      await view.getByRole("button", { name: "已记住", exact: true }).click();
+      await page.setViewportSize({ width: 320, height: 740 });
+      assert.equal(
+        await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),
+        false,
+        "320px has no overflow",
+      );
+      const submitBox = await view.getByRole("button", { name: "搜索", exact: true }).boundingBox();
+      assert.ok(submitBox && submitBox.height >= 32 && submitBox.width >= 32);
+      await page.screenshot({ path: join(evidence, "memory-list-320.png"), fullPage: true });
+      await page.setViewportSize({ width: 390, height: 900 });
+      await view.getByRole("textbox", { name: "搜索记忆", exact: true }).fill("记忆测试 05");
+      await view.getByRole("button", { name: "搜索", exact: true }).click();
+      await page.waitForFunction(() => document.querySelectorAll(".assistant-memory-item").length === 1);
+      await page.screenshot({ path: join(evidence, "memory-single-390.png"), fullPage: true });
       await view.locator(".assistant-memory-about summary").click();
-      await view.getByText("这里只展示你个人管家的私有记忆，不包括群聊或共享记忆。",{exact:true}).waitFor();
-      await view.getByRole("textbox",{name:"搜索记忆",exact:true}).fill("没有这个记忆-empty");
-      await view.getByRole("button",{name:"搜索",exact:true}).click();
-      await view.getByText("没有找到符合条件的记忆。",{exact:true}).waitFor();
-      await page.screenshot({path:join(evidence,"memory-empty-390.png"),fullPage:true});
+      await view.getByText("这里只展示你个人管家的私有记忆，不包括群聊或共享记忆。", { exact: true }).waitFor();
+      await view.getByRole("textbox", { name: "搜索记忆", exact: true }).fill("没有这个记忆-empty");
+      await view.getByRole("button", { name: "搜索", exact: true }).click();
+      await view.getByText("没有找到符合条件的记忆。", { exact: true }).waitFor();
+      await page.screenshot({ path: join(evidence, "memory-empty-390.png"), fullPage: true });
     }
     assert.deepEqual(errors, []);
     await page.close();

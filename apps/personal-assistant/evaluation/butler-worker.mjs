@@ -4,9 +4,7 @@ process.once("message", async (options) => {
     const evidence = await evaluateButlerCase(options);
     process.send({ state: evidence.state }, () => process.disconnect());
   } catch (error) {
-    process.send({ state: "failed", error: error.message }, () =>
-      process.disconnect(),
-    );
+    process.send({ state: "failed", error: error.message }, () => process.disconnect());
     process.exitCode = 1;
   }
 });

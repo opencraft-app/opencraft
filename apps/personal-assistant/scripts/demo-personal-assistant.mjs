@@ -5,9 +5,7 @@ const { values: v } = parseArgs({
   options: { directory: { type: "string" }, scenario: { type: "string" } },
 });
 await personalScenario({
-  directory:
-    v.directory ??
-    join(resolve(import.meta.dirname, "../profiles"), `personal-${Date.now()}`),
+  directory: v.directory ?? join(resolve(import.meta.dirname, "../profiles"), `personal-${Date.now()}`),
   owner: "local:personal-demo",
   mode: "fixture",
   timeoutMs: 15000,

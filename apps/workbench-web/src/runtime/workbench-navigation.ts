@@ -1,3 +1,4 @@
+import { installRandomUuidFallback } from "./web-crypto-compat";
 import { serverPath, serverUrl, serverStorageKey, browserServerContext } from "./server-context";
 import {
   AdaptiveNavigation,
@@ -214,8 +215,8 @@ export function workbenchLocationUrl(
 }
 
 export function createRouteScopeId(): RouteScopeId {
-  const uuid =
-    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+  installRandomUuidFallback();
+  const uuid = globalThis.crypto.randomUUID();
   return asRouteScopeId(`web-route:${uuid}`);
 }
 

@@ -165,7 +165,9 @@ function attachmentName(target: string | null, source: RecordValue, fallback: st
     ?? nonEmptyString(source.displayName);
   if (explicit !== null) return explicit;
   if (target !== null) {
-    const path = target.replace(/[?#].*$/u, "").replace(/\\/gu, "/");
+    const query = target.indexOf("?"), fragment = target.indexOf("#");
+    const cut = Math.min(query < 0 ? target.length : query, fragment < 0 ? target.length : fragment);
+    const path = target.slice(0, cut).replace(/\\/gu, "/");
     const basename = path.split("/").filter(Boolean).at(-1);
     if (basename !== undefined) return basename;
   }

@@ -10,24 +10,12 @@ export function compatibleProvider(config) {
     url.search ||
     url.hash ||
     (url.protocol !== "https:" &&
-      !(
-        url.protocol === "http:" &&
-        ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
-      ))
+      !(url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)))
   )
-    throw new Error(
-      "Compatible endpoint requires HTTPS or loopback HTTP, without credentials/query",
-    );
-  if (
-    typeof config.modelId !== "string" ||
-    !config.modelId.trim() ||
-    config.modelId.length > 200
-  )
+    throw new Error("Compatible endpoint requires HTTPS or loopback HTTP, without credentials/query");
+  if (typeof config.modelId !== "string" || !config.modelId.trim() || config.modelId.length > 200)
     throw new Error("Explicit compatible model ID required");
-  if (
-    config.thinking !== undefined &&
-    !["disabled", "enabled"].includes(config.thinking)
-  )
+  if (config.thinking !== undefined && !["disabled", "enabled"].includes(config.thinking))
     throw new Error("thinking must be enabled or disabled");
   const baseUrl = url.href.replace(/\/+$/, "");
   const api = openAICompletionsApi();
@@ -50,9 +38,7 @@ export function compatibleProvider(config) {
     name: "Explicit OpenAI-compatible endpoint",
     baseUrl,
     auth: {
-      apiKey: envApiKeyAuth("Explicit evaluation API key", [
-        "OPENCRAFT_EVAL_API_KEY",
-      ]),
+      apiKey: envApiKeyAuth("Explicit evaluation API key", ["OPENCRAFT_EVAL_API_KEY"]),
     },
     models: [
       {
@@ -76,10 +62,8 @@ export function compatibleProvider(config) {
       },
     ],
     api: {
-      stream: (model, context, value) =>
-        api.stream(model, context, options(value, model)),
-      streamSimple: (model, context, value) =>
-        api.streamSimple(model, context, options(value, model)),
+      stream: (model, context, value) => api.stream(model, context, options(value, model)),
+      streamSimple: (model, context, value) => api.streamSimple(model, context, options(value, model)),
     },
   });
 }

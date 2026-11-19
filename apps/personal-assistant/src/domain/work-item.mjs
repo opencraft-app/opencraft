@@ -7,17 +7,13 @@ export class WorkItem {
     this.record = { ...record };
   }
   assertCurrent(expected) {
-    if (
-      this.record.revision !== expected.revision ||
-      this.record.status === "cancelled"
-    )
+    if (this.record.revision !== expected.revision || this.record.status === "cancelled")
       throw new Error("Work was cancelled or superseded");
   }
   amend(text, expectedRevision, now, completion) {
     requireText(text, "text");
     requireRevision(expectedRevision, this.record.revision, "work");
-    if (this.record.status === "cancelled")
-      throw new Error("Cancelled work cannot be resumed by amend");
+    if (this.record.status === "cancelled") throw new Error("Cancelled work cannot be resumed by amend");
     return {
       ...this.record,
       text,
@@ -26,10 +22,7 @@ export class WorkItem {
       error: null,
       updated_at: now,
       completion_json: JSON.stringify(
-        CompletionContract.create(
-          text,
-          completion ?? CompletionContract.forWork(this.record),
-        ),
+        CompletionContract.create(text, completion ?? CompletionContract.forWork(this.record)),
       ),
     };
   }
@@ -46,8 +39,7 @@ export class WorkItem {
     return { ...this.record, status: "waiting_input", updated_at: now };
   }
   resumeInput(now) {
-    if (this.record.status !== "waiting_input")
-      throw new Error("Work is not waiting for input");
+    if (this.record.status !== "waiting_input") throw new Error("Work is not waiting for input");
     return { ...this.record, status: "queued", error: null, updated_at: now };
   }
   resultReady(now) {
@@ -66,11 +58,7 @@ export class WorkItem {
     return { ...this.record, status: "awaiting_review", updated_at: now };
   }
   delivered(revision, now) {
-    if (
-      revision !== this.record.revision ||
-      this.record.status !== "awaiting_delivery"
-    )
-      return { ...this.record };
+    if (revision !== this.record.revision || this.record.status !== "awaiting_delivery") return { ...this.record };
     return { ...this.record, status: "completed", updated_at: now };
   }
 }

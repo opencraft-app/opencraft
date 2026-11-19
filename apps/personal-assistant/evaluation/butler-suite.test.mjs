@@ -41,17 +41,10 @@ test("core remains comparable; extended cases are explicit, disjoint and require
   assert.equal(core.length, 6);
   assert.equal(extra.length, 6);
   assert.equal(new Set([...core, ...extra].map((c) => c.id)).size, 12);
-  assert.ok(
-    extra.every(
-      (c) => c.modelOnly && c.inputMode && c.coverage.length && c.review,
-    ),
-  );
+  assert.ok(extra.every((c) => c.modelOnly && c.inputMode && c.coverage.length && c.review));
   assert.deepEqual(selectCases({ only: extra[0].id }), [extra[0]]);
   assert.throws(() => selectCases({ group: "unknown" }), /Unknown group/);
-  assert.throws(
-    () => selectCases({ only: core[0].id, group: "extended" }),
-    /either/,
-  );
+  assert.throws(() => selectCases({ only: core[0].id, group: "extended" }), /either/);
   await assert.rejects(runExtendedCase("unknown", {}, {}), /Unknown scenario/);
 });
 test("extended fixture cases are retained as not_run, never simulated quality passes", async (t) => {
@@ -74,39 +67,16 @@ test("no-write snapshots allow mixed waiting/queued states but detect cancellati
   const goals = [{ id: "g", revision: 2, state: "active" }];
   const before = portfolioState(works, goals);
   assert.deepEqual(before, portfolioState([...works].reverse(), goals));
-  for (const change of [
-    { status: "cancelled" },
-    { revision: 2 },
-    { text: "changed" },
-    { active_execution_id: "new" },
-  ])
-    assert.notDeepEqual(
-      before,
-      portfolioState([{ ...works[0], ...change }, works[1]], goals),
-    );
+  for (const change of [{ status: "cancelled" }, { revision: 2 }, { text: "changed" }, { active_execution_id: "new" }])
+    assert.notDeepEqual(before, portfolioState([{ ...works[0], ...change }, works[1]], goals));
   assert.notDeepEqual(before, portfolioState([...works, { id: "c" }], goals));
-  assert.notDeepEqual(
-    before,
-    portfolioState(works, [{ ...goals[0], revision: 3 }]),
-  );
+  assert.notDeepEqual(before, portfolioState(works, [{ ...goals[0], revision: 3 }]));
 });
 test("butler rejects unknown cases and implicit model credentials before creating outputs", async () => {
-  await assert.rejects(
-    runSuite({ output: "/unused", only: "not-a-case" }),
-    /Unknown case/,
-  );
-  await assert.rejects(
-    runSuite({ output: "/unused", mode: "model" }),
-    /model-profile/,
-  );
-  await assert.rejects(
-    runSuite({ output: "/unused", mode: "fixture", modelProfile: "/unused" }),
-    /does not accept/,
-  );
-  await assert.rejects(
-    runSuite({ output: "/unused", timeoutMs: 0 }),
-    /timeout/,
-  );
+  await assert.rejects(runSuite({ output: "/unused", only: "not-a-case" }), /Unknown case/);
+  await assert.rejects(runSuite({ output: "/unused", mode: "model" }), /model-profile/);
+  await assert.rejects(runSuite({ output: "/unused", mode: "fixture", modelProfile: "/unused" }), /does not accept/);
+  await assert.rejects(runSuite({ output: "/unused", timeoutMs: 0 }), /timeout/);
 });
 test("real worker fixture has no truthfulness score and refuses output reuse", async (t) => {
   const dir = await mkdtemp(join(tmpdir(), "butler-test-"));

@@ -13,21 +13,13 @@ const root = document.getElementById("root")!;
 const style = document.createElement("style");
 style.textContent = styles;
 document.head.append(style);
-const mode =
-  new URLSearchParams(location.search).get("mode") === "dark"
-    ? "dark"
-    : "light";
+const mode = new URLSearchParams(location.search).get("mode") === "dark" ? "dark" : "light";
 for (const [k, v] of Object.entries(
-  themes.buildOpenCraftThemeCssProperties(
-    mode,
-    themes.opencraftNeutralThemePalette[mode],
-  ),
+  themes.buildOpenCraftThemeCssProperties(mode, themes.opencraftNeutralThemePalette[mode]),
 ))
   root.style.setProperty(k, v);
 root.dataset.theme = mode;
-root.dataset.uiDensity = new URLSearchParams(location.search).has("touch")
-  ? "touch"
-  : "compact";
+root.dataset.uiDensity = new URLSearchParams(location.search).has("touch") ? "touch" : "compact";
 root.style.cssText +=
   ";min-height:100vh;background:var(--color-background-surface);padding:20px;color:var(--color-text)";
 const key = createConversationKey("fixture", "thread");
@@ -89,11 +81,7 @@ const receipt = {
 };
 runtime.replaceQueuedSubmissions([], [{ ...row, delivery: receipt }]);
 function App() {
-  const state = useSyncExternalStore(
-    runtime.subscribe,
-    runtime.getSnapshot,
-    runtime.getSnapshot,
-  );
+  const state = useSyncExternalStore(runtime.subscribe, runtime.getSnapshot, runtime.getSnapshot);
   return (
     <WorkbenchPresentationRootProvider target={root}>
       <ConversationDocumentContext.Provider
@@ -104,18 +92,12 @@ function App() {
           theme: mode,
         }}
       >
-        <main
-          style={{ maxWidth: 780, margin: "auto" }}
-          data-active={state.activeTurn?.turnId ?? "none"}
-        >
+        <main style={{ maxWidth: 780, margin: "auto" }} data-active={state.activeTurn?.turnId ?? "none"}>
           {state.timeline.frames
             .flatMap((f) => f.blocks)
             .filter((b) => b.type === "user-message")
             .map((b) => (
-              <UserMessageBlock
-                key={b.id}
-                block={b as Extract<typeof b, { type: "user-message" }>}
-              />
+              <UserMessageBlock key={b.id} block={b as Extract<typeof b, { type: "user-message" }>} />
             ))}
           <div style={{ display: "flex", gap: 12, marginTop: 24 }}>
             <Button
@@ -137,22 +119,11 @@ function App() {
             >
               Stop turn
             </Button>
-            <Button
-              onClick={() =>
-                runtime.replaceQueuedSubmissions(
-                  [],
-                  [{ ...row, delivery: receipt }],
-                )
-              }
-            >
+            <Button onClick={() => runtime.replaceQueuedSubmissions([], [{ ...row, delivery: receipt }])}>
               Deliver late reply
             </Button>
           </div>
-          <textarea
-            aria-label="Draft"
-            placeholder="Draft"
-            style={{ marginTop: 20, width: "100%", minHeight: 80 }}
-          />
+          <textarea aria-label="Draft" placeholder="Draft" style={{ marginTop: 20, width: "100%", minHeight: 80 }} />
         </main>
       </ConversationDocumentContext.Provider>
     </WorkbenchPresentationRootProvider>

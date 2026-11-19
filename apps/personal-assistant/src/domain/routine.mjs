@@ -9,8 +9,7 @@ export class Routine {
     requireText(params.text, "text");
     if (params.schedule !== undefined) {
       CalendarSchedule.normalize(params.schedule);
-      if (params.intervalMs !== undefined)
-        throw new Error("Choose interval or calendar, not both");
+      if (params.intervalMs !== undefined) throw new Error("Choose interval or calendar, not both");
       if (params.startAt !== undefined) epochTime(params.startAt, "startAt");
     } else {
       epochTime(params.startAt, "startAt");
@@ -22,18 +21,11 @@ export class Routine {
       if (params.startAt !== undefined && params.expiresAt <= params.startAt)
         throw new Error("expiresAt must follow startAt");
     }
-    if (
-      params.maxRuns !== undefined &&
-      (!Number.isSafeInteger(params.maxRuns) || params.maxRuns < 1)
-    )
+    if (params.maxRuns !== undefined && (!Number.isSafeInteger(params.maxRuns) || params.maxRuns < 1))
       throw new Error("maxRuns must be positive");
     if (params.stopWhen !== undefined) {
       requireText(params.stopWhen, "stopWhen", 2000);
-      if (
-        params.expiresAt === undefined &&
-        params.maxRuns === undefined &&
-        params.schedule?.kind !== "once"
-      )
+      if (params.expiresAt === undefined && params.maxRuns === undefined && params.schedule?.kind !== "once")
         throw new Error("A conditional watch needs expiresAt or maxRuns");
     }
   }
@@ -63,10 +55,7 @@ export class Routine {
       next_at: next ?? r.next_at,
       last_scheduled_at: r.next_at,
       created_count: count,
-      status:
-        next === null || (r.max_runs !== null && count >= r.max_runs)
-          ? "exhausted"
-          : "active",
+      status: next === null || (r.max_runs !== null && count >= r.max_runs) ? "exhausted" : "active",
     };
   }
 }

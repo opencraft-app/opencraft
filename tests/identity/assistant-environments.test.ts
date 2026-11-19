@@ -15,9 +15,7 @@ async function setup(t: test.TestContext) {
     accesses = new Map();
   const provider = await createSandboxAssistantProvider({
     backendId: "e2b",
-    templates: [
-      { id: "approved", name: "Approved", resources, workspaceRoot: directory },
-    ],
+    templates: [{ id: "approved", name: "Approved", resources, workspaceRoot: directory }],
     capacity: { cpuMillis: 16000, memoryBytes: 32 * 1024 ** 3 },
     createBackend: () => f.backend(),
     spawnLocal: ((options: any) => {
@@ -66,20 +64,12 @@ test("selected Bot gets a lazy isolated workspace, no Host environment, and inde
     client.request("environment/run", { argv, workId: "work", callId });
   const first = await run(
     a,
-    [
-      "/usr/bin/python3",
-      "-c",
-      'open("proof.txt","w").write("only-a");print("only-a")',
-    ],
+    ["/usr/bin/python3", "-c", 'open("proof.txt","w").write("only-a");print("only-a")'],
     "one",
   );
   assert.equal(first.state, "completed");
   assert.equal(first.stdout.trim(), "only-a");
-  const second = await run(
-    b,
-    ["/usr/bin/python3", "-c", 'import os;print(os.path.exists("proof.txt"))'],
-    "two",
-  );
+  const second = await run(b, ["/usr/bin/python3", "-c", 'import os;print(os.path.exists("proof.txt"))'], "two");
   assert.equal(second.stdout.trim(), "False");
   assert.notEqual(first.workspace, second.workspace);
   assert.ok(f.f.calls.every((c) => Object.keys(c.env).length === 0));
@@ -105,22 +95,14 @@ test("current assignment/epoch and cwd are checked before any user command", asy
   );
   assert.equal(f.f.owners.length, 0);
   f.accesses.get("a").epoch = "retired";
-  await assert.rejects(
-    a.request("environment/run", { argv: ["echo"], workId: "w", callId: "c" }),
-    /authority changed/,
-  );
+  await assert.rejects(a.request("environment/run", { argv: ["echo"], workId: "w", callId: "c" }), /authority changed/);
   assert.equal(f.f.owners.length, 0);
 });
 test("command timeout terminates the selected process, bounds output and records effects were not rolled back", async (t) => {
   const f = await setup(t),
     a = await f.start("a");
   const timed = await a.request("environment/run", {
-    argv: [
-      "/usr/bin/python3",
-      "-u",
-      "-c",
-      'import time;print("before-timeout");time.sleep(60)',
-    ],
+    argv: ["/usr/bin/python3", "-u", "-c", 'import time;print("before-timeout");time.sleep(60)'],
     timeoutMs: 1000,
     workId: "w",
     callId: "timeout",
@@ -162,15 +144,9 @@ test("installation configuration is private, optional, and never accepts credent
   assert.deepEqual(await loadAssistantEnvironments(), {});
   const file = join(directory, "config.json");
   await writeFile(file, "{}", { mode: 0o644 });
-  await assert.rejects(
-    loadAssistantEnvironments(file),
-    /configuration unavailable/,
-  );
+  await assert.rejects(loadAssistantEnvironments(file), /configuration unavailable/);
   await chmod(file, 0o600);
-  await assert.rejects(
-    loadAssistantEnvironments(file),
-    /configuration unavailable/,
-  );
+  await assert.rejects(loadAssistantEnvironments(file), /configuration unavailable/);
   const key = join(directory, "key");
   await writeFile(key, "synthetic-only-key", { mode: 0o600 });
   await writeFile(
@@ -194,9 +170,7 @@ test("installation configuration is private, optional, and never accepts credent
     }),
   );
   const providers = await loadAssistantEnvironments(file);
-  assert.deepEqual(await providers.e2b.templates(), [
-    { id: "approved", name: "Approved" },
-  ]);
+  assert.deepEqual(await providers.e2b.templates(), [{ id: "approved", name: "Approved" }]);
   await providers.e2b.close?.();
 });
 
@@ -275,7 +249,7 @@ test("unknown creation is reported with correlation, retains admission and canno
     await assert.rejects(provider.spawn(selection, options), /not retired/);
     assert.equal(creates, 1);
   } finally {
-    await assert.rejects(provider.close(), {code:'SANDBOX_CLEANUP'});
+    await assert.rejects(provider.close(), { code: "SANDBOX_CLEANUP" });
   }
 });
 
@@ -283,18 +257,11 @@ test("authority loss during a command kills its environment and suppresses a lat
   const f = await setup(t),
     a = await f.start("a");
   const run = a.request("environment/run", {
-    argv: [
-      "/usr/bin/python3",
-      "-u",
-      "-c",
-      'import time;print("started");time.sleep(60)',
-    ],
+    argv: ["/usr/bin/python3", "-u", "-c", 'import time;print("started");time.sleep(60)'],
     workId: "w",
     callId: "revoked",
   });
-  while (
-    !f.f.calls.some((c) => c.command.some((v) => v.includes("time.sleep")))
-  )
+  while (!f.f.calls.some((c) => c.command.some((v) => v.includes("time.sleep"))))
     await new Promise((r) => setTimeout(r, 20));
   f.accesses.get("a").epoch = "revoked";
   const result = await run;
@@ -303,18 +270,25 @@ test("authority loss during a command kills its environment and suppresses a lat
   assert.equal(f.f.destroyed, 1);
 });
 
-
 test("derived personal and platform backend IDs fit the native pool ID contract", async () => {
   for (const backendId of ["e2b-" + "a".repeat(40), "e2b-shared-" + "b".repeat(40)]) {
     let allocations = 0;
     const provider = await createSandboxAssistantProvider({
       backendId,
-      templates: [{id:"python",name:"Named environment",resources,workspaceRoot:"/home/user/opencraft"}],
+      templates: [{ id: "python", name: "Named environment", resources, workspaceRoot: "/home/user/opencraft" }],
       capacity: resources,
-      createBackend: () => ({id:backendId,initialize:async()=>{},close:async()=>{},create:async()=>{allocations++;throw Error("not called");}}),
+      createBackend: () => ({
+        id: backendId,
+        initialize: async () => {},
+        close: async () => {},
+        create: async () => {
+          allocations++;
+          throw Error("not called");
+        },
+      }),
     });
-    await provider.validate({kind:"sandbox",backendId,templateId:"python"});
-    assert.equal(allocations,0,"listing/validation cannot allocate a billable sandbox");
+    await provider.validate({ kind: "sandbox", backendId, templateId: "python" });
+    assert.equal(allocations, 0, "listing/validation cannot allocate a billable sandbox");
     await provider.close();
   }
 });

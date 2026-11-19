@@ -4,31 +4,31 @@ import { mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Runner, request } from "../src/runner.mjs";
 import { loadProfile } from "../src/profile.mjs";
-import {
-  running,
-  profileFor,
-  until,
-  completed,
-  files,
-  childRunner,
-} from "./helpers.mjs";
+import { running, profileFor, until, completed, files, childRunner } from "./helpers.mjs";
 
-const call = (profile, op, params = {}, id = crypto.randomUUID()) =>
-  request(profile, { op, params, id });
+const call = (profile, op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
 
 test("native 429 survives planning and settles once with the capacity message", async (t) => {
   const { nativeTurnFailure } = await import("../src/adapters/codex/turn-failure.mjs");
   const profile = profileFor(t);
-  const runner = await Runner.open(profile, { receptionModel: { async decide() {
-    throw nativeTurnFailure({ status: "failed", error: {
-      message: "private provider body", codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 429 } },
-    } });
-  } } });
+  const runner = await Runner.open(profile, {
+    receptionModel: {
+      async decide() {
+        throw nativeTurnFailure({
+          status: "failed",
+          error: {
+            message: "private provider body",
+            codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 429 } },
+          },
+        });
+      },
+    },
+  });
   t.after(() => runner.close());
   await call(profile, "say", { text: "hello" }, "limited");
   await until(async () => (await call(profile, "turn", { inputId: "limited" })).status === "blocked");
   const history = await call(profile, "conversation");
-  const errors = history.messages.filter(message => message.data.kind === "reception-error");
+  const errors = history.messages.filter((message) => message.data.kind === "reception-error");
   assert.equal(errors.length, 1);
   assert.match(errors[0].text, /模型服务当前繁忙/);
   assert.doesNotMatch(JSON.stringify(history), /private provider body/);
@@ -51,10 +51,7 @@ test("ordinary chat remains a conversation and does not create a work item", asy
   assert.equal(history.conversationId, receipt.conversationId);
   assert.equal(history.messages.length, 2);
   assert.equal((await call(profile, "status")).works.length, 0);
-  assert.equal(
-    (await call(profile, "say", { text: "你好" }, "greeting")).duplicate,
-    true,
-  );
+  assert.equal((await call(profile, "say", { text: "你好" }, "greeting")).duplicate, true);
 });
 
 test("reception delegates real local reading and final result returns to the original conversation once", async (t) => {
@@ -62,61 +59,29 @@ test("reception delegates real local reading and final result returns to the ori
   let profile = profileFor(t),
     directory = join(profile.path, "materials");
   mkdirSync(directory);
-  writeFileSync(
-    join(directory, "project.md"),
-    "项目事实：接待与执行分离。下周完成权限接口核对。",
-  );
-  writeFileSync(
-    join(profile.path, "profile.json"),
-    JSON.stringify({ ...profile.config, workspace: directory }),
-  );
+  writeFileSync(join(directory, "project.md"), "项目事实：接待与执行分离。下周完成权限接口核对。");
+  writeFileSync(join(profile.path, "profile.json"), JSON.stringify({ ...profile.config, workspace: directory }));
   profile = loadProfile(profile.path);
   const runner = await Runner.open(profile);
   t.after(() => runner.close());
-  await call(
-    profile,
-    "say",
-    { text: "整理项目资料，列出进展和待跟进项" },
-    inputId,
-  );
+  await call(profile, "say", { text: "整理项目资料，列出进展和待跟进项" }, inputId);
   const turn = await settled(profile, inputId),
     workId = turn.work_id;
   assert.ok(workId);
   const done = await completed(profile, workId),
     history = await call(profile, "conversation");
   assert.equal(history.works.length, 1);
-  assert.equal(
-    history.messages.filter((m) => m.data.kind === "result").length,
-    1,
-  );
-  assert.equal(
-    history.messages.find((m) => m.data.kind === "result").data.deliveryId,
-    done.deliveries[0].id,
-  );
-  const artifact = readFileSync(
-    join(profile.path, "artifacts", files(profile, "artifacts")[0]),
-    "utf8",
-  );
+  assert.equal(history.messages.filter((m) => m.data.kind === "result").length, 1);
+  assert.equal(history.messages.find((m) => m.data.kind === "result").data.deliveryId, done.deliveries[0].id);
+  const artifact = readFileSync(join(profile.path, "artifacts", files(profile, "artifacts")[0]), "utf8");
   assert.match(artifact, /项目事实/);
   assert.match(artifact, /project.md/);
   const delegation = JSON.parse(done.work.delegation_json);
   assert.equal(delegation.actor, profile.config.owner);
   assert.equal(delegation.resources.length, 1);
-  assert.ok(
-    (await call(profile, "events")).some((e) => e.kind === "material.read"),
-  );
-  await call(
-    profile,
-    "say",
-    { text: "整理项目资料，列出进展和待跟进项" },
-    inputId,
-  );
-  assert.equal(
-    (await call(profile, "conversation")).messages.filter(
-      (m) => m.data.kind === "result",
-    ).length,
-    1,
-  );
+  assert.ok((await call(profile, "events")).some((e) => e.kind === "material.read"));
+  await call(profile, "say", { text: "整理项目资料，列出进展和待跟进项" }, inputId);
+  assert.equal((await call(profile, "conversation")).messages.filter((m) => m.data.kind === "result").length, 1);
 });
 
 test("reception stays available while a background worker is busy and handles scoped follow-up", async (t) => {
@@ -135,10 +100,7 @@ test("reception stays available while a background worker is busy and handles sc
   await call(profile, "say", { text: "取消" }, "cancel-chat");
   await settled(profile, "cancel-chat");
   await until(async () => (await call(profile, "status")).active === 0);
-  assert.equal(
-    (await call(profile, "work", { workId: first.work_id })).work.status,
-    "cancelled",
-  );
+  assert.equal((await call(profile, "work", { workId: first.work_id })).work.status, "cancelled");
 });
 
 test("a model proposal cannot target work that is absent from the conversation", async (t) => {
@@ -152,18 +114,14 @@ test("a model proposal cannot target work that is absent from the conversation",
     },
   });
   t.after(() => runner.close());
-  foreign = (await call(profile, "submit", { text: "direct unrelated work" }))
-    .workId;
+  foreign = (await call(profile, "submit", { text: "direct unrelated work" })).workId;
   await call(profile, "say", { text: "stop something" }, "malicious");
   const turn = await until(async () => {
     const r = await call(profile, "turn", { inputId: "malicious" });
     return r.status === "blocked" && r;
   });
   assert.match(turn.reply_text, /outside this conversation/);
-  assert.notEqual(
-    (await call(profile, "work", { workId: foreign })).work.status,
-    "cancelled",
-  );
+  assert.notEqual((await call(profile, "work", { workId: foreign })).work.status, "cancelled");
 });
 
 test("model-supplied grants are discarded and server-owned scope is persisted", async (t) => {
@@ -238,10 +196,7 @@ test("stale model amendment is rejected without silently replacing a newer user 
     expectedRevision: 1,
   });
   release();
-  await until(
-    async () =>
-      (await call(profile, "turn", { inputId: "change" })).status === "blocked",
-  );
+  await until(async () => (await call(profile, "turn", { inputId: "change" })).status === "blocked");
   const work = (await call(profile, "work", { workId: first.work_id })).work;
   assert.equal(work.text, "newer explicit direction");
   assert.equal(work.revision, 2);
@@ -260,9 +215,6 @@ test("reception retries a pure proposal after process exit without duplicating w
   assert.equal((await call(profile, "status")).works.length, 1);
   const history = await call(profile, "conversation");
   assert.equal(history.messages.filter((m) => m.role === "user").length, 1);
-  assert.equal(
-    history.messages.filter((m) => m.data.kind === "delegate").length,
-    1,
-  );
+  assert.equal(history.messages.filter((m) => m.data.kind === "delegate").length, 1);
   await second.stop();
 });

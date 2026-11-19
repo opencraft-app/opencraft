@@ -10,12 +10,7 @@ import { pathToFileURL } from "node:url";
 
 export function visibleReply(messages, after) {
   return messages
-    .filter(
-      (m) =>
-        m.seq > after &&
-        m.role === "assistant" &&
-        !["acknowledgement", "progress"].includes(m.data?.kind),
-    )
+    .filter((m) => m.seq > after && m.role === "assistant" && !["acknowledgement", "progress"].includes(m.data?.kind))
     .map((m) => m.text)
     .filter(Boolean)
     .join("\n\n");
@@ -24,17 +19,14 @@ export function busy(status, conversation) {
   return Boolean(
     (!conversation && (status.active || status.receptionActive)) ||
       (conversation?.works ?? status.works).some((w) =>
-        ["queued", "running", "awaiting_review", "awaiting_delivery"].includes(
-          w.status,
-        ),
+        ["queued", "running", "awaiting_review", "awaiting_delivery"].includes(w.status),
       ),
   );
 }
 
 async function main() {
   const [modelProfile, output] = process.argv.slice(2);
-  if (!modelProfile || !output)
-    throw Error("Explicit model profile and output required");
+  if (!modelProfile || !output) throw Error("Explicit model profile and output required");
   const source = loadProfile(modelProfile);
   if (
     source.config.mode !== "model" ||
@@ -51,8 +43,7 @@ async function main() {
     runPolicy: { modelTimeoutMs: 60000, workTimeoutMs: 120000, maxSteps: 16 },
   });
   const runner = await LocalRunner.open(profile);
-  const call = (op, params = {}, id = crypto.randomUUID()) =>
-    request(profile, { op, params, id });
+  const call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
   const exchanges = [];
   let conversationId = null;
   const conversations = [];
@@ -62,17 +53,9 @@ async function main() {
       exchanges,
       conversations: [],
     };
-    for (const id of conversations)
-      evidence.conversations.push(
-        await call("conversation", { conversationId: id }),
-      );
-    for (const op of ["status", "conversation", "goal.list", "usage", "events"])
-      evidence[op] = await call(op);
-    await writeFile(
-      join(output, "product-evidence.json"),
-      JSON.stringify(evidence, null, 2),
-      { mode: 0o600 },
-    );
+    for (const id of conversations) evidence.conversations.push(await call("conversation", { conversationId: id }));
+    for (const op of ["status", "conversation", "goal.list", "usage", "events"]) evidence[op] = await call(op);
+    await writeFile(join(output, "product-evidence.json"), JSON.stringify(evidence, null, 2), { mode: 0o600 });
   };
   try {
     for await (const line of createInterface({ input: process.stdin })) {
@@ -105,16 +88,11 @@ async function main() {
           let quietSince = 0;
           while (Date.now() < end) {
             const turn = await call("turn", { inputId: id });
-            if (turn.status === "blocked")
-              throw Error("Product reception blocked");
+            if (turn.status === "blocked") throw Error("Product reception blocked");
             const status = await call("status");
             const history = await call("conversation", { conversationId });
             const content = visibleReply(history.messages, cursor);
-            if (
-              turn.status === "settled" &&
-              !busy(status, history) &&
-              content
-            ) {
+            if (turn.status === "settled" && !busy(status, history) && content) {
               quietSince ||= Date.now();
               if (Date.now() - quietSince >= 750) {
                 reply = { content };

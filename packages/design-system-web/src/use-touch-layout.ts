@@ -7,5 +7,9 @@ function subscribe(onChange: () => void) {
 }
 /** Consume the installation preference, rather than guessing from viewport width. */
 export function useTouchLayout(): boolean {
-  return useSyncExternalStore(subscribe, () => document.documentElement.dataset.uiDensity === "touch", () => false);
+  return useSyncExternalStore(
+    subscribe,
+    () => document.documentElement.dataset.uiDensity === "touch",
+    () => false,
+  );
 }

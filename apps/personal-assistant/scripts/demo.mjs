@@ -10,11 +10,8 @@ import { request } from "../src/runner.mjs";
 const root = resolve(import.meta.dirname, ".."),
   evidence = join(root, "evidence");
 mkdirSync(evidence, { recursive: true, mode: 0o700 });
-const path = process.argv[2]
-  ? resolve(process.argv[2])
-  : join(root, "profiles", `demo-${Date.now()}`);
-if (existsSync(join(path, "profile.json")))
-  throw new Error("Demo requires a fresh profile directory");
+const path = process.argv[2] ? resolve(process.argv[2]) : join(root, "profiles", `demo-${Date.now()}`);
+if (existsSync(join(path, "profile.json"))) throw new Error("Demo requires a fresh profile directory");
 const profile = initProfile(path, "local:demo", { fixtureDelayMs: 300 });
 const transcript = [];
 const call = async (op, params = {}, id = crypto.randomUUID()) => {
@@ -23,11 +20,10 @@ const call = async (op, params = {}, id = crypto.randomUUID()) => {
   return result;
 };
 async function start() {
-  const child = spawn(
-    process.execPath,
-    ["bin/assistant.mjs", "run", "--profile", path],
-    { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
-  );
+  const child = spawn(process.execPath, ["bin/assistant.mjs", "run", "--profile", path], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let output = "",
     error = "";
   child.stdout.on("data", (c) => (output += c));
@@ -57,11 +53,7 @@ let handle;
 try {
   handle = await start();
   await call("memory.set", { key: "city", value: "上海" }, "demo-city");
-  const work = await call(
-    "submit",
-    { text: "根据个人资料整理一份本地项目跟进笔记" },
-    "demo-work",
-  );
+  const work = await call("submit", { text: "根据个人资料整理一份本地项目跟进笔记" }, "demo-work");
   await call("status");
   await call(
     "amend",
@@ -76,11 +68,7 @@ try {
   handle.child.kill("SIGTERM");
   await handle.exit;
   handle = await start();
-  const receipt = await call(
-    "submit",
-    { text: "根据个人资料整理一份本地项目跟进笔记" },
-    "demo-work",
-  );
+  const receipt = await call("submit", { text: "根据个人资料整理一份本地项目跟进笔记" }, "demo-work");
   assert.equal(receipt.duplicate, true);
   await call(
     "routine.add",
@@ -95,9 +83,7 @@ try {
   const end = Date.now() + 10000;
   let scheduled;
   while (!scheduled && Date.now() < end) {
-    scheduled = (
-      await request(profile, { op: "status", params: {} })
-    ).works.find((w) => w.source === "routine");
+    scheduled = (await request(profile, { op: "status", params: {} })).works.find((w) => w.source === "routine");
     if (!scheduled) await delay(50);
   }
   assert.ok(scheduled);
@@ -123,13 +109,7 @@ try {
   writeFileSync(target, JSON.stringify(result, null, 2) + "\n", {
     mode: 0o600,
   });
-  console.log(
-    JSON.stringify(
-      { evidence: target, profile: path, assertions: result.assertions },
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify({ evidence: target, profile: path, assertions: result.assertions }, null, 2));
 } finally {
   if (handle?.child.exitCode === null && handle?.child.signalCode === null) {
     handle.child.kill("SIGTERM");

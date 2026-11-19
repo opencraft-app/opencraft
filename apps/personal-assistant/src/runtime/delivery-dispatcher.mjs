@@ -8,8 +8,7 @@ export class DeliveryDispatcher {
   tick() {
     for (const item of this.app.outcomes.pending()) {
       const work = this.app.works.require(item.work_id).record;
-      if (work.status === "cancelled" || work.revision !== item.revision)
-        continue;
+      if (work.status === "cancelled" || work.revision !== item.revision) continue;
       try {
         this.assertWriter();
         this.delivery.deliver(item);

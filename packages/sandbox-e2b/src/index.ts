@@ -1,11 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isAbsolute } from "node:path";
-import {
-  Sandbox as E2BSandbox,
-  SandboxNotFoundError,
-  SandboxError,
-  AuthenticationError,
-} from "e2b";
+import { Sandbox as E2BSandbox, SandboxNotFoundError, SandboxError, AuthenticationError } from "e2b";
 import {
   SandboxCreationFault,
   SandboxFault,
@@ -41,21 +36,12 @@ export interface E2BSandboxOptions {
     onLost(identity: SandboxIdentity): void;
   };
 }
-type Remote = Pick<
-  E2BSandbox,
-  "sandboxId" | "getInfo" | "kill" | "files" | "commands" | "setTimeout"
->;
+type Remote = Pick<E2BSandbox, "sandboxId" | "getInfo" | "kill" | "files" | "commands" | "setTimeout">;
 /** Injectable vendor boundary for deterministic lifecycle tests, not a second allocator. */
 export interface E2BConnection {
-  create: (
-    template: string,
-    options: Parameters<typeof E2BSandbox.create>[1],
-  ) => Promise<Remote>;
+  create: (template: string, options: Parameters<typeof E2BSandbox.create>[1]) => Promise<Remote>;
 }
-const fault = (
-  code: ConstructorParameters<typeof SandboxFault>[0],
-  message: string,
-) => new SandboxFault(code, message);
+const fault = (code: ConstructorParameters<typeof SandboxFault>[0], message: string) => new SandboxFault(code, message);
 const endpoint = (raw: string) => {
   const url = new URL(raw);
   if (
@@ -66,21 +52,15 @@ const endpoint = (raw: string) => {
     url.pathname !== "/" ||
     !(
       url.protocol === "https:" ||
-      (url.protocol === "http:" &&
-        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+      (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
     )
   )
-    throw fault(
-      "SANDBOX_POLICY",
-      "E2B requires a trusted HTTPS endpoint or explicit loopback",
-    );
+    throw fault("SANDBOX_POLICY", "E2B requires a trusted HTTPS endpoint or explicit loopback");
   return url.origin;
 };
 const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 const frame = (value: unknown) =>
-  JSON.stringify(value)
-    .replaceAll("\u2028", "\\u2028")
-    .replaceAll("\u2029", "\\u2029") + "\n";
+  JSON.stringify(value).replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029") + "\n";
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Optional E2B provider for the existing createSandboxPool/createSandbox contract.
@@ -147,24 +127,16 @@ export function e2bSandboxBackend(
   return {
     id: "e2b",
     async initialize(_policy: SandboxPoolPolicy, signal: AbortSignal) {
-      if (closed || signal.aborted || initialized)
-        throw fault("SANDBOX_UNAVAILABLE", "E2B provider is unavailable");
+      if (closed || signal.aborted || initialized) throw fault("SANDBOX_UNAVAILABLE", "E2B provider is unavailable");
       const key = await readApiKey();
-      if (
-        typeof key !== "string" ||
-        !key ||
-        key.length > 4096 ||
-        /\s/u.test(key)
-      )
+      if (typeof key !== "string" || !key || key.length > 4096 || /\s/u.test(key))
         throw fault("SANDBOX_POLICY", "E2B credential is unavailable");
-      if (closed || signal.aborted)
-        throw fault("SANDBOX_UNAVAILABLE", "E2B provider is unavailable");
+      if (closed || signal.aborted) throw fault("SANDBOX_UNAVAILABLE", "E2B provider is unavailable");
       apiKey = key;
       initialized = true;
     },
     async create(identity, _resources, signal) {
-      if (!initialized || closed || signal.aborted)
-        throw new SandboxCreationFault("not-created");
+      if (!initialized || closed || signal.aborted) throw new SandboxCreationFault("not-created");
       // Resolve before submitting create: authorization failure allocated nothing.
       let workspaceId: string | undefined;
       try {
@@ -174,8 +146,7 @@ export function e2bSandboxBackend(
       } catch {
         throw new SandboxCreationFault("not-created");
       }
-      if (signal.aborted || closed)
-        throw new SandboxCreationFault("not-created");
+      if (signal.aborted || closed) throw new SandboxCreationFault("not-created");
       let remote: Remote;
       try {
         // Do not abort a submitted create or retry it: a late ID is needed for reclamation.
@@ -201,11 +172,11 @@ export function e2bSandboxBackend(
             // The JS SDK preserves the HTTP status but drops error_code.
             // Match only this definite pre-allocation refusal; other 409s,
             // including uncertain prior creates, remain unknown.
-            error.message === "409: Workspace has live family members; connect to one, or delete the whole family before rebuilding")
+            error.message ===
+              "409: Workspace has live family members; connect to one, or delete the whole family before rebuilding")
         )
           throw new SandboxCreationFault("not-created");
-        if (error instanceof AuthenticationError)
-          throw new SandboxCreationFault("not-created");
+        if (error instanceof AuthenticationError) throw new SandboxCreationFault("not-created");
         throw new SandboxCreationFault("unknown", identity);
       }
       let info: Awaited<ReturnType<Remote["getInfo"]>>;
@@ -234,23 +205,12 @@ export function e2bSandboxBackend(
         },
         capabilities: { terminal: false },
         spawn(command, onOutput) {
-          if (ended || command.terminal)
-            return Promise.reject(
-              fault("SANDBOX_START", "E2B execution is unavailable"),
-            );
-          const operation = startProcess(
-            remote,
-            identity,
-            command,
-            onOutput,
-            python,
-            requestTimeoutMs,
-            () => environment.close(),
+          if (ended || command.terminal) return Promise.reject(fault("SANDBOX_START", "E2B execution is unavailable"));
+          const operation = startProcess(remote, identity, command, onOutput, python, requestTimeoutMs, () =>
+            environment.close(),
           );
           pending.add(operation);
-          void operation
-            .finally(() => pending.delete(operation))
-            .catch(() => {});
+          void operation.finally(() => pending.delete(operation)).catch(() => {});
           return operation;
         },
         close() {
@@ -274,10 +234,7 @@ export function e2bSandboxBackend(
                   if (Date.now() >= deadline) throw Error();
                   await lease.authorize(identity);
                   if (ended) return;
-                  await remote.setTimeout(
-                    Math.min(timeoutMs, Math.max(1000, deadline - Date.now())),
-                    requestOptions,
-                  );
+                  await remote.setTimeout(Math.min(timeoutMs, Math.max(1000, deadline - Date.now())), requestOptions);
                   if (!ended) schedule();
                 } catch {
                   if (!ended) {
@@ -398,19 +355,16 @@ async function startProcess(
   try {
     await remote.files.write(path, brokerSource, { requestTimeoutMs });
     // Broker receives argv/cwd/payload environment privately through stdin, not shell argv.
-    handle = await remote.commands.run(
-      "exec " + quote(python) + " -u " + quote(path),
-      {
-        background: true,
-        stdin: true,
-        timeoutMs: 0,
-        requestTimeoutMs,
-        shell: ["/bin/sh", "-c"],
-        retainOutput: false,
-        onStdout: accept,
-        onStderr: () => {},
-      },
-    );
+    handle = await remote.commands.run("exec " + quote(python) + " -u " + quote(path), {
+      background: true,
+      stdin: true,
+      timeoutMs: 0,
+      requestTimeoutMs,
+      shell: ["/bin/sh", "-c"],
+      retainOutput: false,
+      onStdout: accept,
+      onStderr: () => {},
+    });
     void handle.wait().then(() => {
       if (!finished) failure();
     }, failure);
@@ -432,8 +386,7 @@ async function startProcess(
     return next;
   };
   const sendFrame = async (value: unknown) => {
-    if (broken || finished)
-      throw fault("SANDBOX_CLOSED", "E2B process is closed");
+    if (broken || finished) throw fault("SANDBOX_CLOSED", "E2B process is closed");
     try {
       await handle.sendStdin(frame(value), { requestTimeoutMs });
     } catch {
@@ -446,16 +399,13 @@ async function startProcess(
     id,
     exited,
     async writeStdin(data) {
-      if (stdinClosed)
-        throw fault("SANDBOX_CLOSED", "E2B process stdin is closed");
+      if (stdinClosed) throw fault("SANDBOX_CLOSED", "E2B process stdin is closed");
       // One bounded chunk at a time; preserve ordering against concurrent writes/EOF.
       return enqueue(async () => {
         for (let offset = 0; offset < data.length; offset += 128 * 1024)
           await sendFrame({
             type: "stdin",
-            data: Buffer.from(
-              data.subarray(offset, offset + 128 * 1024),
-            ).toString("base64"),
+            data: Buffer.from(data.subarray(offset, offset + 128 * 1024)).toString("base64"),
           });
       });
     },
@@ -464,8 +414,11 @@ async function startProcess(
       stdinClosed = true;
       await enqueue(async () => {
         if (finished) return;
-        try { await sendFrame({ type: "eof" }); }
-        catch (error) { if (!finished) throw error; }
+        try {
+          await sendFrame({ type: "eof" });
+        } catch (error) {
+          if (!finished) throw error;
+        }
       });
     },
     async terminate() {
@@ -476,23 +429,14 @@ async function startProcess(
           enqueue(() => sendFrame({ type: "terminate" })).then(() => exited),
           new Promise<never>((_, reject) => {
             timeout = setTimeout(
-              () =>
-                reject(
-                  fault(
-                    "SANDBOX_START",
-                    "E2B termination was not acknowledged",
-                  ),
-                ),
+              () => reject(fault("SANDBOX_START", "E2B termination was not acknowledged")),
               Math.min(requestTimeoutMs, 15000),
             );
           }),
         ]);
       } catch {
         await closeEnvironment();
-        throw fault(
-          "SANDBOX_START",
-          "E2B process termination required environment teardown",
-        );
+        throw fault("SANDBOX_START", "E2B process termination required environment teardown");
       } finally {
         clearTimeout(timeout);
       }

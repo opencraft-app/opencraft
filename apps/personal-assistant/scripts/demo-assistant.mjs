@@ -16,11 +16,11 @@ const profile = initProfile(path, "local:assistant-demo", {
 const transcript = [];
 const cli = (...args) => {
   const value = JSON.parse(
-    execFileSync(
-      process.execPath,
-      ["bin/assistant.mjs", ...args, "--profile", path],
-      { cwd: root, encoding: "utf8", timeout: 5000 },
-    ),
+    execFileSync(process.execPath, ["bin/assistant.mjs", ...args, "--profile", path], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 5000,
+    }),
   );
   transcript.push({ args, value });
   return value.result;
@@ -43,11 +43,10 @@ async function waitTurn(id) {
   });
 }
 async function start() {
-  const child = spawn(
-    process.execPath,
-    ["bin/assistant.mjs", "run", "--profile", path],
-    { cwd: root, stdio: ["ignore", "pipe", "pipe"] },
-  );
+  const child = spawn(process.execPath, ["bin/assistant.mjs", "run", "--profile", path], {
+    cwd: root,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
   let stdout = "",
     stderr = "";
   child.stdout.on("data", (data) => (stdout += data));
@@ -78,13 +77,7 @@ try {
   handle.child.kill("SIGTERM");
   await handle.exited;
   handle = await start();
-  const duplicate = cli(
-    "say",
-    "--text",
-    "整理项目资料，列出进展和待跟进事项",
-    "--id",
-    "project",
-  );
+  const duplicate = cli("say", "--text", "整理项目资料，列出进展和待跟进事项", "--id", "project");
   assert.equal(duplicate.duplicate, true);
   const history = cli("conversation"),
     events = await call("events");
@@ -97,18 +90,13 @@ try {
   const assertions = {
     ordinaryChatCreatesNoWork: true,
     oneWork: history.works.length === 1,
-    resultInOriginalConversation:
-      history.messages.filter((m) => m.data.kind === "result").length === 1,
-    restartPreservesMessages:
-      history.messages.length === before.messages.length,
+    resultInOriginalConversation: history.messages.filter((m) => m.data.kind === "result").length === 1,
+    restartPreservesMessages: history.messages.length === before.messages.length,
     duplicateInputRejected: duplicate.duplicate,
     actualMaterialRead: events.some((e) => e.kind === "material.read"),
-    artifactContainsSource: artifacts.some((a) =>
-      a.text.includes("Tasks、Actor"),
-    ),
+    artifactContainsSource: artifacts.some((a) => a.text.includes("Tasks、Actor")),
   };
-  for (const [name, value] of Object.entries(assertions))
-    assert.ok(value, name);
+  for (const [name, value] of Object.entries(assertions)) assert.ok(value, name);
   mkdirSync(join(root, "evidence"), { recursive: true, mode: 0o700 });
   const target = join(root, "evidence/assistant-demo.json");
   writeFileSync(
@@ -128,13 +116,7 @@ try {
       2,
     ) + "\n",
   );
-  console.log(
-    JSON.stringify(
-      { profile: path, evidence: target, modelMode: "fixture", assertions },
-      null,
-      2,
-    ),
-  );
+  console.log(JSON.stringify({ profile: path, evidence: target, modelMode: "fixture", assertions }, null, 2));
 } finally {
   if (handle?.child.exitCode === null && handle?.child.signalCode === null) {
     handle.child.kill("SIGTERM");

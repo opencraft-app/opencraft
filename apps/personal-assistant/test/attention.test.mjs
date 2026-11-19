@@ -110,12 +110,7 @@ test("guard notice and state rollback together when schedule pause fails", (t) =
   };
   assert.throws(() => app.routines.tick(), /injected/);
   assert.equal(app.attention.status().paused_at, null);
-  assert.equal(
-    app.history
-      .view()
-      .messages.filter((m) => m.data.kind === "routine-guard-paused").length,
-    0,
-  );
+  assert.equal(app.history.view().messages.filter((m) => m.data.kind === "routine-guard-paused").length, 0);
   app.r.routines.save = original;
   app.routines.tick();
   assert.ok(app.attention.status().paused_at);

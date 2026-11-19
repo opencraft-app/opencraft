@@ -13,6 +13,9 @@ export interface BrowserEffectRequest {
  * committed together. Native view destruction is cleanup, even after cancel.
  * Ports must recheck authorize after preparation and before submitting admission. */
 export interface BrowserEffectReceipts {
-  admit(request: BrowserEffectRequest, options?: { readonly authorize?: () => void }): Promise<{ admitted: true; logicalClose?: boolean } | { admitted: false; result: unknown; logicalClose?: boolean }>;
-  settle(request: BrowserEffectRequest, status: 'completed' | 'failed' | 'unknown', result?: unknown): Promise<void>;
+  admit(
+    request: BrowserEffectRequest,
+    options?: { readonly authorize?: () => void },
+  ): Promise<{ admitted: true; logicalClose?: boolean } | { admitted: false; result: unknown; logicalClose?: boolean }>;
+  settle(request: BrowserEffectRequest, status: "completed" | "failed" | "unknown", result?: unknown): Promise<void>;
 }

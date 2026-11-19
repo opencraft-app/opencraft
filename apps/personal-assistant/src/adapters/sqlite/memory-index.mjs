@@ -42,36 +42,18 @@ export class SqliteMemoryIndex {
       p = this.db.prepare("INSERT INTO memory_provenance VALUES(?,?,?,?)"),
       s = this.db.prepare("INSERT INTO memory_shard VALUES(?,?,?,?,?)");
     for (const r of rows) {
-      m.run(
-        r.key,
-        r.deleted ? "" : r.value,
-        r.revision,
-        r.input_id,
-        r.deleted ? 1 : 0,
-      );
+      m.run(r.key, r.deleted ? "" : r.value, r.revision, r.input_id, r.deleted ? 1 : 0);
       d.run(r.key, r.scope, r.projectId, r.kind, r.updatedAt);
-      if (r.origin)
-        p.run(r.key, r.revision, r.origin, stable(r.evidenceIds ?? []));
-      s.run(
-        r.key,
-        r.agentId,
-        r.agentName ?? r.agentId,
-        r.contentId ?? null,
-        r.path ?? null,
-      );
+      if (r.origin) p.run(r.key, r.revision, r.origin, stable(r.evidenceIds ?? []));
+      s.run(r.key, r.agentId, r.agentName ?? r.agentId, r.contentId ?? null, r.path ?? null);
     }
     const t = this.db.prepare("INSERT INTO memory_tombstone VALUES(?,?,?,?,?)");
-    for (const r of tombstones)
-      t.run(r.id, r.scope, r.project_id, "", r.created_at ?? 0);
+    for (const r of tombstones) t.run(r.id, r.scope, r.project_id, "", r.created_at ?? 0);
     const f = this.db.prepare("INSERT INTO memory_refresh VALUES(?,?)");
     for (const r of refreshes) f.run(r.scope, r.next_at);
   }
   grantsHash() {
-    return (
-      this.db
-        .prepare("SELECT value FROM meta WHERE key='memory_file_grants'")
-        .get()?.value ?? null
-    );
+    return this.db.prepare("SELECT value FROM meta WHERE key='memory_file_grants'").get()?.value ?? null;
   }
   saveState(root, agentId, fingerprint, grantsHash) {
     this.db
@@ -80,16 +62,12 @@ export class SqliteMemoryIndex {
       )
       .run(root, agentId, fingerprint, this.hash());
     this.db
-      .prepare(
-        "INSERT INTO meta VALUES('memory_file_grants',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      )
+      .prepare("INSERT INTO meta VALUES('memory_file_grants',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
       .run(grantsHash);
   }
 
   committed(id) {
-    return !!this.db
-      .prepare("SELECT 1 FROM memory_file_commit WHERE id=?")
-      .get(id);
+    return !!this.db.prepare("SELECT 1 FROM memory_file_commit WHERE id=?").get(id);
   }
   markCommit(id) {
     this.db.prepare("INSERT INTO memory_file_commit VALUES(?)").run(id);
@@ -99,28 +77,17 @@ export class SqliteMemoryIndex {
   }
 }
 
-export function memoryFileCommitReceipt(
-  Database,
-  profile,
-  { id, agentId, owner, root },
-) {
+export function memoryFileCommitReceipt(Database, profile, { id, agentId, owner, root }) {
   const db = new Database(`${profile}/assistant.sqlite`, { readOnly: true });
   try {
-    const identity = JSON.parse(
-      db.prepare("SELECT value FROM meta WHERE key='identity'").get()?.value ??
-        "null",
-    );
-    const state = db
-      .prepare("SELECT root,agent_id FROM memory_file_state WHERE id=1")
-      .get();
+    const identity = JSON.parse(db.prepare("SELECT value FROM meta WHERE key='identity'").get()?.value ?? "null");
+    const state = db.prepare("SELECT root,agent_id FROM memory_file_state WHERE id=1").get();
     if (
       identity?.assistantId !== agentId ||
       identity?.owner !== owner ||
       (state && (state.root !== root || state.agent_id !== agentId))
     )
-      throw new Error(
-        "Recovery database identity does not match the memory writer",
-      );
+      throw new Error("Recovery database identity does not match the memory writer");
     if (!state) return false;
     return !!db.prepare("SELECT 1 FROM memory_file_commit WHERE id=?").get(id);
   } finally {

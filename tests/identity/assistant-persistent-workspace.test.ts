@@ -2,12 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createSandboxAssistantProvider } from "../../apps/personal-assistant/src/runtime/sandbox-environment-provider.mjs";
 const resources = { cpuMillis: 8000, memoryBytes: 16 * 1024 ** 3 };
-const access = (
-  botId = "bot-a",
-  owner = "owner",
-  serverId = "deployment",
-  epoch = "one",
-) => ({
+const access = (botId = "bot-a", owner = "owner", serverId = "deployment", epoch = "one") => ({
   binding: {
     serverId,
     botId,
@@ -24,9 +19,7 @@ async function fixture() {
   const provider = await createSandboxAssistantProvider({
     backendId: "e2b",
     persistentWorkspaces: true,
-    templates: [
-      { id: "base", name: "Base", resources, workspaceRoot: "/workspace" },
-    ],
+    templates: [{ id: "base", name: "Base", resources, workspaceRoot: "/workspace" }],
     capacity: { cpuMillis: 32000, memoryBytes: 64 * 1024 ** 3 },
     createBackend: (_, callbacks) => ({
       id: "e2b",
@@ -91,20 +84,13 @@ test("workspace stable across lease epochs and provider restart; Bot, owner, dep
   const id = f.ids.at(-1);
   assert.match(id, /^ws-[a-f0-9]{32}$/);
   assert.equal(f.cwds.at(-1), "/workspace");
-  await assert.rejects(
-    f.start(access("bot-a", "owner", "deployment", "two")),
-    /Prior workspace/,
-  );
+  await assert.rejects(f.start(access("bot-a", "owner", "deployment", "two")), /Prior workspace/);
   await a.handle.close();
   a = await f.start(access("bot-a", "owner", "deployment", "two"));
   await a.run();
   assert.equal(f.ids.at(-1), id);
   await a.handle.close();
-  for (const grant of [
-    access("bot-b"),
-    access("bot-a", "other"),
-    access("bot-a", "owner", "another-deployment"),
-  ]) {
+  for (const grant of [access("bot-b"), access("bot-a", "other"), access("bot-a", "owner", "another-deployment")]) {
     const b = await f.start(grant);
     await b.run();
     assert.notEqual(f.ids.at(-1), id);
@@ -113,9 +99,7 @@ test("workspace stable across lease epochs and provider restart; Bot, owner, dep
   assert.equal(new Set(f.ids).size, 4);
   await f.provider.close();
   const second = await fixture();
-  a = await second.start(
-    access("bot-a", "owner", "deployment", "after-restart"),
-  );
+  a = await second.start(access("bot-a", "owner", "deployment", "after-restart"));
   await a.run();
   assert.equal(second.ids[0], id);
   await second.provider.close();

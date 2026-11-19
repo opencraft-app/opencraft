@@ -12,7 +12,11 @@ export function annotationAgentSource(config: Omit<FrameAgentConfig, "sensitiveP
 }
 
 /** Inline <script> that installs the annotation agent in a sandboxed preview. */
-export function annotationFrameScript(config: { readonly token: string; readonly parentOrigin: string; readonly previewAllowed?: boolean }): string {
+export function annotationFrameScript(config: {
+  readonly token: string;
+  readonly parentOrigin: string;
+  readonly previewAllowed?: boolean;
+}): string {
   return `<script>${annotationAgentSource({ token: config.token, previewAllowed: config.previewAllowed === true, transport: { kind: "parent", parentOrigin: config.parentOrigin } })}</script>`;
 }
 

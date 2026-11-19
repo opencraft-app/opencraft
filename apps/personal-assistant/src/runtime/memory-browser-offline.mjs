@@ -21,24 +21,19 @@ export function readOfflineMemory(directory, binding, raw) {
     const p = validateMemoryBrowser(raw),
       grant = botBinding(binding);
     if (grant.owner.kind !== "human") throw new MemoryBrowserError("invalid");
-    if (["set", "forget"].includes(p.action))
-      throw new MemoryBrowserError("offline");
+    if (["set", "forget"].includes(p.action)) throw new MemoryBrowserError("offline");
     const root = resolve(directory),
       profilePath = join(root, "bots", grant.botId);
     for (const at of [root, join(root, "bots"), profilePath]) {
       if (!existsSync(at)) throw new MemoryBrowserError("not_provisioned");
       const st = lstatSync(at);
-      if (!st.isDirectory() || st.isSymbolicLink())
-        throw new MemoryBrowserError("storage");
+      if (!st.isDirectory() || st.isSymbolicLink()) throw new MemoryBrowserError("storage");
     }
-    if (!existsSync(join(profilePath, "profile.json")))
-      throw new MemoryBrowserError("not_provisioned");
+    if (!existsSync(join(profilePath, "profile.json"))) throw new MemoryBrowserError("not_provisioned");
     const profile = loadProfile(profilePath);
-    if (profile.config.layout !== "bot-v1")
-      throw new MemoryBrowserError("storage");
+    if (profile.config.layout !== "bot-v1") throw new MemoryBrowserError("storage");
     assertBotBinding(profile.config.botBinding, grant);
-    if (!existsSync(join(profilePath, "memory")))
-      throw new MemoryBrowserError("not_provisioned");
+    if (!existsSync(join(profilePath, "memory"))) throw new MemoryBrowserError("not_provisioned");
     const store = new MemoryFileStore(profile, { readOnly: true });
     if (
       store.json(store.ownerPath)?.owner !== profile.config.owner ||
@@ -48,9 +43,7 @@ export function readOfflineMemory(directory, binding, raw) {
       throw new MemoryBrowserError("storage");
     lock = new MemoryFileTransaction(store, {});
     lock.acquire();
-    if (
-      store.read(".transactions/pending.json", false, 64 * 1024 * 1024) !== null
-    )
+    if (store.read(".transactions/pending.json", false, 64 * 1024 * 1024) !== null)
       throw new MemoryBrowserError("recovery_required");
     const snapshot = store.scan(),
       view = createMemoryBrowserView({
@@ -61,18 +54,11 @@ export function readOfflineMemory(directory, binding, raw) {
     return readMemoryBrowser(view, p, (ids) => {
       if (!ids.length) return [];
       const file = store.safe("assistant.sqlite");
-      if (!existsSync(file))
-        return ids.map((id) => ({ id, unavailable: true }));
+      if (!existsSync(file)) return ids.map((id) => ({ id, unavailable: true }));
       const db = new DatabaseSync(file, { readOnly: true });
       try {
-        const identity = JSON.parse(
-          db.prepare("SELECT value FROM meta WHERE key='identity'").get()
-            ?.value ?? "null",
-        );
-        if (
-          identity?.assistantId !== profile.config.assistantId ||
-          identity?.owner !== profile.config.owner
-        )
+        const identity = JSON.parse(db.prepare("SELECT value FROM meta WHERE key='identity'").get()?.value ?? "null");
+        if (identity?.assistantId !== profile.config.assistantId || identity?.owner !== profile.config.owner)
           throw new MemoryBrowserError("storage");
         const get = db.prepare(
           "SELECT m.id,m.text,m.at FROM conversation_message m JOIN conversation c ON c.id=m.conversation_id WHERE c.assistant_id=? AND m.id=? AND m.role='user'",

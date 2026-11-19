@@ -1,9 +1,11 @@
-import { configuredModelGatewayPath, requiresModelGateway, bindModelGatewaySponsor, meteredModelRequest, ModelGatewayError } from "@opencraft/account-pool-host";
 import {
-  createServer,
-  type IncomingMessage,
-  type ServerResponse,
-} from "node:http";
+  configuredModelGatewayPath,
+  requiresModelGateway,
+  bindModelGatewaySponsor,
+  meteredModelRequest,
+  ModelGatewayError,
+} from "@opencraft/account-pool-host";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import {
@@ -62,10 +64,7 @@ export function createAssistantModelGateway(
     admission = options.admission ?? new AssistantModelAdmission();
   const bindings = new Map<string, Binding>(),
     routes = new Map<string, Binding>();
-  const requests = new Map<
-    object,
-    { binding: Binding; wait: ModelWait | null; abort: AbortController }
-  >();
+  const requests = new Map<object, { binding: Binding; wait: ModelWait | null; abort: AbortController }>();
   let listening: Promise<string> | undefined,
     server: ReturnType<typeof createServer> | undefined,
     closed = false;
@@ -81,9 +80,7 @@ export function createAssistantModelGateway(
       return;
     }
     await new Promise<void>((resolve, reject) => {
-      const body = Readable.fromWeb(
-        result.body as import("node:stream/web").ReadableStream,
-      );
+      const body = Readable.fromWeb(result.body as import("node:stream/web").ReadableStream);
       const cleanup = () => {
         response.removeListener("close", close);
         body.removeListener("error", error);
@@ -120,27 +117,16 @@ export function createAssistantModelGateway(
       return;
     }
   }
-  function getBinding(
-    reference: EngineModelReference,
-    context: AssistantModelContext,
-  ) {
+  function getBinding(reference: EngineModelReference, context: AssistantModelContext) {
     const scope = context.scope ?? "operator",
       purpose = context.purpose ?? "reception",
       privateContext = context.scope !== undefined || purpose !== "reception",
-      key = JSON.stringify([
-        scope,
-        context.humanActorId ?? null,
-        purpose,
-        reference.providerId,
-        reference.modelId,
-      ]);
+      key = JSON.stringify([scope, context.humanActorId ?? null, purpose, reference.providerId, reference.modelId]);
     let binding = bindings.get(key);
     if (!binding) {
       if (bindings.size >= 512) {
         const active = new Set([...requests.values()].map((r) => r.binding));
-        const old = [...bindings]
-          .filter(([, b]) => !active.has(b))
-          .sort((a, b) => a[1].usedAt - b[1].usedAt)[0];
+        const old = [...bindings].filter(([, b]) => !active.has(b)).sort((a, b) => a[1].usedAt - b[1].usedAt)[0];
         if (!old) throw Error("Assistant model binding capacity");
         bindings.delete(old[0]);
         for (const [p, b] of routes) if (b === old[1]) routes.delete(p);
@@ -157,10 +143,7 @@ export function createAssistantModelGateway(
       bindings.set(key, binding);
       const root = `/routes/${encodeURIComponent(reference.providerId)}/${encodeURIComponent(reference.modelId)}`;
       const path = privateContext
-        ? root +
-          "/contexts/" +
-          randomBytes(18).toString("hex") +
-          "/v1/responses"
+        ? root + "/contexts/" + randomBytes(18).toString("hex") + "/v1/responses"
         : root + "/v1/responses";
       routes.set(path, binding);
     }
@@ -179,9 +162,7 @@ export function createAssistantModelGateway(
             status,
             headers: retryAt
               ? {
-                  "retry-after": String(
-                    Math.max(1, Math.ceil((retryAt - Date.now()) / 1000)),
-                  ),
+                  "retry-after": String(Math.max(1, Math.ceil((retryAt - Date.now()) / 1000))),
                 }
               : undefined,
           },
@@ -190,8 +171,7 @@ export function createAssistantModelGateway(
     const pathname = new URL(request.url ?? "/", "http://gateway").pathname;
     // Do not resolve arbitrary model references for an unauthenticated visitor.
     let binding = routes.get(pathname);
-    if (!binding && sameToken(request.headers.authorization, token))
-      binding = bindingFor(pathname);
+    if (!binding && sameToken(request.headers.authorization, token)) binding = bindingFor(pathname);
     if (!binding || !sameToken(request.headers.authorization, binding.token)) {
       response.writeHead(401).end();
       request.resume();
@@ -203,11 +183,7 @@ export function createAssistantModelGateway(
     }
     if (requests.size >= 64) {
       request.resume();
-      return json(
-        429,
-        "Assistant model request capacity reached",
-        Date.now() + 2000,
-      );
+      return json(429, "Assistant model request capacity reached", Date.now() + 2000);
     }
     const deadlineAt = Date.now() + (options.requestTimeoutMs ?? 30000);
     const abort = new AbortController(),
@@ -232,8 +208,7 @@ export function createAssistantModelGateway(
       let size = 0;
       for await (const chunk of request) {
         size += (chunk as Buffer).length;
-        if (size > ACCOUNT_POOL_MAX_REQUEST_BYTES)
-          return await json(413, "Request too large");
+        if (size > ACCOUNT_POOL_MAX_REQUEST_BYTES) return await json(413, "Request too large");
         chunks.push(chunk as Buffer);
       }
       const decoded = await decodeResponsesRequestBody(
@@ -244,8 +219,7 @@ export function createAssistantModelGateway(
       let payload: Record<string, unknown>;
       try {
         const value = JSON.parse(new TextDecoder().decode(decoded));
-        if (!value || typeof value !== "object" || Array.isArray(value))
-          throw Error();
+        if (!value || typeof value !== "object" || Array.isArray(value)) throw Error();
         payload = value;
       } catch {
         return await json(400, "Invalid Responses request");
@@ -272,25 +246,41 @@ export function createAssistantModelGateway(
           const current = await resolveRoute(binding.reference);
           if ((current.quotaKey ?? binding.reference.providerId) !== key)
             throw Error("Assistant model connection changed");
-          const sendModel = (onDispatch?: () => void) => forwardConfiguredResponses({
-            configured: current,
-            payload,
-            publicModel:
-              typeof payload.model === "string" ? payload.model : current.model,
-            accept:
-              typeof request.headers.accept === "string"
-                ? request.headers.accept
-                : null,
-            signal: abort.signal,
-            fetch: upstreamFetch,
-            onDispatch,
-          });
+          const sendModel = (onDispatch?: () => void) =>
+            forwardConfiguredResponses({
+              configured: current,
+              payload,
+              publicModel: typeof payload.model === "string" ? payload.model : current.model,
+              accept: typeof request.headers.accept === "string" ? request.headers.accept : null,
+              signal: abort.signal,
+              fetch: upstreamFetch,
+              onDispatch,
+            });
           const path = configuredModelGatewayPath();
-          const gatewayPath = requiresModelGateway("configured/"+encodeURIComponent(binding.reference.providerId)+"/"+encodeURIComponent(binding.reference.modelId),path) ? path : undefined;
+          const gatewayPath = requiresModelGateway(
+            "configured/" +
+              encodeURIComponent(binding.reference.providerId) +
+              "/" +
+              encodeURIComponent(binding.reference.modelId),
+            path,
+          )
+            ? path
+            : undefined;
           const budgetThread = "assistant:" + binding.scope;
           if (gatewayPath) bindModelGatewaySponsor(budgetThread, binding.humanActorId ?? null, undefined, gatewayPath);
-          const result = gatewayPath ? await meteredModelRequest({path:gatewayPath,thread:budgetThread,model:"configured/"+encodeURIComponent(binding.reference.providerId)+"/"+encodeURIComponent(binding.reference.modelId),signal:abort.signal,
-            send: dispatch => sendModel(() => dispatch(binding.reference.providerId))}) : await sendModel();
+          const result = gatewayPath
+            ? await meteredModelRequest({
+                path: gatewayPath,
+                thread: budgetThread,
+                model:
+                  "configured/" +
+                  encodeURIComponent(binding.reference.providerId) +
+                  "/" +
+                  encodeURIComponent(binding.reference.modelId),
+                signal: abort.signal,
+                send: (dispatch) => sendModel(() => dispatch(binding.reference.providerId)),
+              })
+            : await sendModel();
           await binding.authorize?.();
           abort.signal.throwIfAborted();
           if (result.status !== 429) {
@@ -316,9 +306,7 @@ export function createAssistantModelGateway(
                 text += decoder.decode(part.value, { stream: true });
               }
               const e = JSON.parse(text)?.error;
-              quotaExhausted = [e?.code, e?.type].some(
-                (v) => v === "insufficient_quota" || v === "quota_exhausted",
-              );
+              quotaExhausted = [e?.code, e?.type].some((v) => v === "insufficient_quota" || v === "quota_exhausted");
             } catch {
             } finally {
               await reader.cancel().catch(() => {});
@@ -334,10 +322,7 @@ export function createAssistantModelGateway(
             };
             return await json(429, "Assistant model quota is exhausted");
           }
-          const retryAt = admission.cooldown(
-            key,
-            result.headers.get("retry-after"),
-          );
+          const retryAt = admission.cooldown(key, result.headers.get("retry-after"));
           binding.failure = {
             httpStatus: 429,
             kind: "rate_limit",
@@ -356,11 +341,7 @@ export function createAssistantModelGateway(
           await result.body?.cancel();
           release();
           release = undefined;
-          if (
-            backgroundPurpose(binding.purpose) ||
-            attempt >= (options.maxAttempts ?? 3) ||
-            retryAt >= deadlineAt
-          )
+          if (backgroundPurpose(binding.purpose) || attempt >= (options.maxAttempts ?? 3) || retryAt >= deadlineAt)
             return await json(429, "Assistant model service is busy", retryAt);
           entry.wait = { reason: "rate_limit", retryAt };
         } catch (error) {
@@ -371,11 +352,7 @@ export function createAssistantModelGateway(
               retryAt: error.retryAt,
               at: Date.now(),
             };
-            return await json(
-              429,
-              "Assistant model request deferred",
-              error.retryAt,
-            );
+            return await json(429, "Assistant model request deferred", error.retryAt);
           }
           abort.abort(error);
           throw error;
@@ -385,17 +362,17 @@ export function createAssistantModelGateway(
       }
     } catch (error) {
       if (!response.headersSent && !response.destroyed) {
-        if (error instanceof ModelGatewayError) { await json(error.status,error.kind); return; }
+        if (error instanceof ModelGatewayError) {
+          await json(error.status, error.kind);
+          return;
+        }
         const busy =
-          (abort.signal.reason as { code?: string } | undefined)?.code ===
-            "MODEL_REQUEST_DEADLINE" &&
+          (abort.signal.reason as { code?: string } | undefined)?.code === "MODEL_REQUEST_DEADLINE" &&
           binding.failure &&
           binding.failure.at > Date.now() - 60000;
         await json(
           busy ? 429 : 503,
-          busy
-            ? "Assistant model service is busy"
-            : "Assistant model connection is unavailable",
+          busy ? "Assistant model service is busy" : "Assistant model connection is unavailable",
           busy ? binding.failure?.retryAt : undefined,
         );
       } else response.destroy();
@@ -421,10 +398,7 @@ export function createAssistantModelGateway(
   }
   return {
     token,
-    async connection(
-      reference: EngineModelReference,
-      context: AssistantModelContext = {},
-    ) {
+    async connection(reference: EngineModelReference, context: AssistantModelContext = {}) {
       const { binding, path } = getBinding(reference, context);
       return {
         baseUrl: (await origin()) + path.slice(0, -"/responses".length),
@@ -447,11 +421,7 @@ export function createAssistantModelGateway(
     },
     failure(scope: string, purpose: AssistantModelPurpose) {
       const b = [...bindings.values()].find(
-        (b) =>
-          b.scope === scope &&
-          b.purpose === purpose &&
-          b.failure &&
-          b.failure.at > Date.now() - 60000,
+        (b) => b.scope === scope && b.purpose === purpose && b.failure && b.failure.at > Date.now() - 60000,
       );
       return b?.failure
         ? {

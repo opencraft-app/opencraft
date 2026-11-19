@@ -39,8 +39,7 @@ export class OutcomeService {
   record(work, message, options = {}) {
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
-      if (!this.ready(work))
-        throw new Error("Goal paused or dependency no longer valid");
+      if (!this.ready(work)) throw new Error("Goal paused or dependency no longer valid");
       const assessment = this.completion.assess(work, message);
       if (!assessment.passed) {
         const error =
@@ -53,34 +52,15 @@ export class OutcomeService {
         this.executions.mark(work, "blocked");
         this.works.blocked(work, error);
         this.history.completionBlocked(work, assessment);
-        this.r.events.append(
-          "completion.failed",
-          work.id,
-          { revision: work.revision, assessment },
-          this.now(),
-        );
+        this.r.events.append("completion.failed", work.id, { revision: work.revision, assessment }, this.now());
         return { accepted: false, assessment };
       }
-      if (options.userMessage)
-        this.history.prepareMessage(
-          options.userMessage,
-          this.history.destinations(work.id)[0],
-        );
-      const { resultId, deliveryId, existing } = this.ledger.record(
-        work,
-        this.executions.get(work),
-        message,
-        options,
-      );
+      if (options.userMessage) this.history.prepareMessage(options.userMessage, this.history.destinations(work.id)[0]);
+      const { resultId, deliveryId, existing } = this.ledger.record(work, this.executions.get(work), message, options);
       if (!existing) {
         this.executions.mark(work, "succeeded");
         this.works.resultReady(work);
-        this.r.events.append(
-          "result.saved",
-          work.id,
-          { resultId, deliveryId },
-          this.now(),
-        );
+        this.r.events.append("result.saved", work.id, { resultId, deliveryId }, this.now());
       }
       return { resultId, deliveryId, accepted: true, assessment };
     });
@@ -90,8 +70,7 @@ export class OutcomeService {
   }
   accepted(delivery) {
     this.uow.transaction(() => {
-      if (!this.deliverable(delivery) || !this.ledger.accepted(delivery))
-        return;
+      if (!this.deliverable(delivery) || !this.ledger.accepted(delivery)) return;
       this.works.delivered(delivery.work_id, delivery.revision);
       this.notifications.accepted(delivery);
       this.r.events.append(

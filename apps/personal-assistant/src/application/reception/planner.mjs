@@ -1,7 +1,4 @@
-import {
-  RECEPTION_LIMITS,
-  ReceptionQuery,
-} from "../../domain/reception-query.mjs";
+import { RECEPTION_LIMITS, ReceptionQuery } from "../../domain/reception-query.mjs";
 
 /** Model/query protocol only. It cannot settle a turn or invoke a command service. */
 export class ReceptionPlanner {
@@ -14,10 +11,7 @@ export class ReceptionPlanner {
     try {
       // A report retry refreshes previously discovered reads under today's
       // grant. Only host query descriptors are retained, never stale responses.
-      const prior =
-        turn.source_json && turn.decision_json
-          ? (JSON.parse(turn.decision_json).queries ?? [])
-          : [];
+      const prior = turn.source_json && turn.decision_json ? (JSON.parse(turn.decision_json).queries ?? []) : [];
       const seen = new Set();
       for (const q of prior.slice(0, RECEPTION_LIMITS.queries)) {
         signal.throwIfAborted();
@@ -34,20 +28,14 @@ export class ReceptionPlanner {
         const key = JSON.stringify(query);
         if (seen.has(key)) continue;
         seen.add(key);
-        observations.push(
-          await session.executeAsync({ kind: "query", ...query }, signal),
-        );
+        observations.push(await session.executeAsync({ kind: "query", ...query }, signal));
         onTrace(session.trace);
       }
       for (let round = 0; round < RECEPTION_LIMITS.modelRounds; round++) {
         signal.throwIfAborted();
-        const proposal = await this.model.decide(
-          structuredClone({ ...input, observations }),
-          signal,
-        );
+        const proposal = await this.model.decide(structuredClone({ ...input, observations }), signal);
         signal.throwIfAborted();
-        if (proposal?.kind !== "query")
-          return { proposal, queries: session.trace };
+        if (proposal?.kind !== "query") return { proposal, queries: session.trace };
         observations.push(await session.executeAsync(proposal, signal));
         onTrace(session.trace);
       }

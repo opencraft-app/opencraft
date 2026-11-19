@@ -11,8 +11,7 @@ export class PiRunGuard {
     this.root = root;
     this.startedAt = performance.now();
     this.timer = setTimeout(
-      () =>
-        this.stop(new RunLimitError("work-timeout", this.policy.workTimeoutMs)),
+      () => this.stop(new RunLimitError("work-timeout", this.policy.workTimeoutMs)),
       this.policy.workTimeoutMs,
     );
     this.timer.unref?.();
@@ -45,8 +44,7 @@ export class PiRunGuard {
     }
   }
   beforeTool(_call, api) {
-    if (this.error || api.signal.aborted)
-      return { block: this.error?.message ?? "Execution was stopped" };
+    if (this.error || api.signal.aborted) return { block: this.error?.message ?? "Execution was stopped" };
   }
   pause() {
     clearTimeout(this.timer);

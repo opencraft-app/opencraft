@@ -43,15 +43,12 @@ function accept(app, id, params = {}) {
   return app.reception.turn(id);
 }
 const read = (app, turn, name, params = {}) =>
-  app.receptionQueries.open(turn).execute({ kind: "query", name, params })
-    .response;
+  app.receptionQueries.open(turn).execute({ kind: "query", name, params }).response;
 
 test("overview counts every linked work, prioritizes attention beyond closed history and remains read-only across restart", (t) => {
   const d = domain(t),
     app = d.app;
-  const records = Array.from({ length: 14 }, (_, i) =>
-    work(app, `w-${i}`),
-  ).sort((a, b) => a.id.localeCompare(b.id));
+  const records = Array.from({ length: 14 }, (_, i) => work(app, `w-${i}`)).sort((a, b) => a.id.localeCompare(b.id));
   for (const w of records.slice(0, 8)) finish(app, w);
   const [waiting, blocked, running, cancelled, ...queued] = records.slice(8);
   app.interactions.request(waiting, "ask", "Which scope?");
@@ -80,15 +77,8 @@ test("overview counts every linked work, prioritizes attention beyond closed his
   assert.equal(seed.pendingInteractions[0].workId, waiting.id);
   assert.equal(overview.attention[2].session.bound, true);
   assert.equal(overview.attention[2].session.engine, "pi");
-  assert.doesNotMatch(
-    JSON.stringify(seed),
-    /private-native-thread|private-submission|unlinked secret/,
-  );
-  assert.equal(
-    read(app, turn, "work.get", { workId: records[0].id }).data.work.delivery
-      .status,
-    "accepted",
-  );
+  assert.doesNotMatch(JSON.stringify(seed), /private-native-thread|private-submission|unlinked secret/);
+  assert.equal(read(app, turn, "work.get", { workId: records[0].id }).data.work.delivery.status, "accepted");
   assert.equal(d.db.prepare("SELECT total_changes() AS n").get().n, before);
   d.reopen();
   const current = d.app.dispatch({ op: "work.overview", params: {} });
@@ -102,19 +92,14 @@ test("overview counts every linked work, prioritizes attention beyond closed his
 
 test("open pagination/search and closed history are explicit, bounded, and do not leak unlinked work", (t) => {
   const { app } = domain(t);
-  const opened = Array.from({ length: 17 }, (_, i) =>
-    work(app, `open-${i}`, `migration plan ${i}`),
-  );
+  const opened = Array.from({ length: 17 }, (_, i) => work(app, `open-${i}`, `migration plan ${i}`));
   const closed = work(app, "closed", "migration complete");
   finish(app, closed);
   const foreign = app.works.submit("unlinked", {
     text: "migration private",
   }).workId;
   const turn = accept(app, "list");
-  assert.equal(
-    app.reception.context(turn).workOverview.attentionTruncated,
-    true,
-  );
+  assert.equal(app.reception.context(turn).workOverview.attentionTruncated, true);
   let after,
     ids = [];
   do {
@@ -129,24 +114,12 @@ test("open pagination/search and closed history are explicit, bounded, and do no
   } while (after);
   assert.deepEqual(ids, opened.map((w) => w.id).sort());
   assert.deepEqual(
-    read(app, turn, "works.list", { state: "closed" }).data.items.map(
-      (w) => w.id,
-    ),
+    read(app, turn, "works.list", { state: "closed" }).data.items.map((w) => w.id),
     [closed.id],
   );
-  assert.equal(
-    read(app, turn, "works.list", { query: opened[4].id }).data.items[0].id,
-    opened[4].id,
-  );
-  assert.equal(
-    read(app, turn, "works.list", { query: "migration plan 16" }).data.items
-      .length,
-    1,
-  );
-  assert.deepEqual(
-    read(app, turn, "works.list", { query: foreign }).data.items,
-    [],
-  );
+  assert.equal(read(app, turn, "works.list", { query: opened[4].id }).data.items[0].id, opened[4].id);
+  assert.equal(read(app, turn, "works.list", { query: "migration plan 16" }).data.items.length, 1);
+  assert.deepEqual(read(app, turn, "works.list", { query: foreign }).data.items, []);
   assert.equal(read(app, turn, "work.get", { workId: foreign }).ok, false);
   assert.equal(read(app, turn, "works.list", { state: "invented" }).ok, false);
   assert.throws(
@@ -177,29 +150,15 @@ test("targeted intake is durable, checks membership/revision before history, and
   const d = domain(t),
     app = d.app;
   const works = Array.from({ length: 9 }, (_, i) => work(app, `waiting-${i}`));
-  const questions = works.map((w) =>
-    app.interactions.request(w, "ask", "Pick a scope"),
-  );
+  const questions = works.map((w) => app.interactions.request(w, "ask", "Pick a scope"));
   const global = app.reception.context(accept(app, "global"));
-  const hidden = questions.find(
-    (q) => !global.pendingInteractions.some((i) => i.id === q.id),
-  );
+  const hidden = questions.find((q) => !global.pendingInteractions.some((i) => i.id === q.id));
   const target = works.find((w) => w.id === hidden.work_id);
   const foreign = app.works.submit("foreign", { text: "private" });
   const count = app.history.view().messages.length;
-  assert.throws(
-    () => accept(app, "bad-target", { workId: foreign.workId }),
-    /outside/,
-  );
-  assert.throws(
-    () =>
-      accept(app, "bad-revision", { workId: target.id, expectedRevision: 2 }),
-    /Stale/,
-  );
-  assert.throws(
-    () => accept(app, "missing-target", { expectedRevision: 1 }),
-    /target/,
-  );
+  assert.throws(() => accept(app, "bad-target", { workId: foreign.workId }), /outside/);
+  assert.throws(() => accept(app, "bad-revision", { workId: target.id, expectedRevision: 2 }), /Stale/);
+  assert.throws(() => accept(app, "missing-target", { expectedRevision: 1 }), /target/);
   assert.equal(app.history.view().messages.length, count);
   accept(app, "target", { workId: target.id, expectedRevision: 1 });
   d.reopen();
@@ -214,15 +173,10 @@ test("targeted intake is durable, checks membership/revision before history, and
     [hidden.id],
   );
   assert.deepEqual(
-    read(d.app, turn, "questions.list", { workId: target.id }).data.items.map(
-      (q) => q.id,
-    ),
+    read(d.app, turn, "questions.list", { workId: target.id }).data.items.map((q) => q.id),
     [hidden.id],
   );
-  assert.deepEqual(
-    read(d.app, turn, "questions.list", { workId: foreign.workId }).data.items,
-    [],
-  );
+  assert.deepEqual(read(d.app, turn, "questions.list", { workId: foreign.workId }).data.items, []);
 });
 
 test("targeted proposals cannot drift, drop their captured scope, or partially commit a bad batch", (t) => {
@@ -255,10 +209,7 @@ test("targeted proposals cannot drift, drop their captured scope, or partially c
       ],
     },
   ])
-    assert.throws(
-      () => app.reception.apply(turn, proposal),
-      /target|captured|unrelated/,
-    );
+    assert.throws(() => app.reception.apply(turn, proposal), /target|captured|unrelated/);
   const forged = {
     ...turn,
     query_scope_json: JSON.stringify({
@@ -375,32 +326,24 @@ test("real CLI targeted follow-up survives restart, resumes the same Pi session,
   t.after(async () => {
     await runner?.close();
   });
-  const call = (op, params = {}, id = crypto.randomUUID()) =>
-    request(profile, { op, params, id });
+  const call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
   const cli = async (...args) =>
     JSON.parse(
       (
-        await promisify(execFile)(
-          process.execPath,
-          ["bin/assistant.mjs", ...args, "--profile", profile.path],
-          { cwd: root },
-        )
+        await promisify(execFile)(process.execPath, ["bin/assistant.mjs", ...args, "--profile", profile.path], {
+          cwd: root,
+        })
       ).stdout,
     ).result;
   await call("say", { text: "整理资料，先问我范围" }, "create-A");
   const a = await until(async () => {
     const turn = await call("turn", { inputId: "create-A" });
     return (
-      turn.work_id &&
-      (await call("work", { workId: turn.work_id })).work.status ===
-        "waiting_input" &&
-      turn.work_id
+      turn.work_id && (await call("work", { workId: turn.work_id })).work.status === "waiting_input" && turn.work_id
     );
   });
   await call("say", { text: "整理另一份笔记" }, "create-B");
-  const b = await until(
-    async () => (await call("turn", { inputId: "create-B" })).work_id,
-  );
+  const b = await until(async () => (await call("turn", { inputId: "create-B" })).work_id);
   const finished = await completed(profile, b);
   const bound = (await call("work", { workId: a })).executions[0];
   await runner.close();
@@ -410,26 +353,13 @@ test("real CLI targeted follow-up survives restart, resumes the same Pi session,
   assert.equal(overview.total, 2);
   assert.equal(overview.byStatus.completed, 1);
   assert.equal(overview.byStatus.waiting_input, 1);
-  await cli(
-    "say",
-    "--work",
-    a,
-    "--revision",
-    "1",
-    "--id",
-    "answer-A",
-    "--text",
-    "回答：只整理本周",
-  );
+  await cli("say", "--work", a, "--revision", "1", "--id", "answer-A", "--text", "回答：只整理本周");
   const done = await completed(profile, a);
   assert.equal(done.executions.length, 1);
   assert.equal(done.executions[0].conversation_id, bound.conversation_id);
   assert.equal(done.executions[0].submission_id, bound.submission_id);
   assert.equal(done.interactions.length, 1);
   assert.equal(done.interactions[0].state, "answered");
-  assert.equal(
-    (await call("work", { workId: b })).executions[0].id,
-    finished.executions[0].id,
-  );
+  assert.equal((await call("work", { workId: b })).executions[0].id, finished.executions[0].id);
   assert.equal((await cli("overview")).total, 2);
 });

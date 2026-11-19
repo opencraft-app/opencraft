@@ -1,11 +1,6 @@
 import { delegationTools } from "../../domain/assistant.mjs";
 import { executePlatformRead, platformReadFailure } from "../platform-read.mjs";
-import {
-  memoryDocument,
-  memorySearchTerms,
-  memoryRecallTerms,
-  memoryPromptView,
-} from "../../domain/memory-recall.mjs";
+import { memoryDocument, memorySearchTerms, memoryRecallTerms, memoryPromptView } from "../../domain/memory-recall.mjs";
 import { Conversation } from "../../domain/conversation.mjs";
 import {
   ReceptionQuery,
@@ -15,8 +10,7 @@ import {
 } from "../../domain/reception-query.mjs";
 import { CompletionContract } from "../../domain/completion-contract.mjs";
 
-const clip = (value, max) =>
-  typeof value === "string" ? value.slice(0, max) : value;
+const clip = (value, max) => (typeof value === "string" ? value.slice(0, max) : value);
 const workSummary = (w, limit = 400) => ({
   id: w.id,
   goalId: w.goal_id ?? null,
@@ -82,10 +76,7 @@ const memorySummary = (m) =>
 function page(items, limit) {
   return {
     items: items.slice(0, limit),
-    next:
-      items.length > limit
-        ? (items[limit - 1].id ?? items[limit - 1].path)
-        : null,
+    next: items.length > limit ? (items[limit - 1].id ?? items[limit - 1].path) : null,
   };
 }
 
@@ -116,18 +107,19 @@ export class ReceptionQueries {
   availableResources(grant) {
     const current = this.materials?.reference();
     return [
-      ...(this.authority.permits(grant,current) ? [current.id] : []),
-      ...grant.resources.filter(resource =>
-        ["platform.reads", "platform.threads", "execution.environment"].includes(resource.id) &&
-        (resource.id !== "platform.reads" || this.platformReads) &&
-        this.authority.permits(grant, resource)
-      ).map(resource => resource.id),
+      ...(this.authority.permits(grant, current) ? [current.id] : []),
+      ...grant.resources
+        .filter(
+          (resource) =>
+            ["platform.reads", "platform.threads", "execution.environment"].includes(resource.id) &&
+            (resource.id !== "platform.reads" || this.platformReads) &&
+            this.authority.permits(grant, resource),
+        )
+        .map((resource) => resource.id),
     ];
   }
   projectFor(grant) {
-    return this.availableResources(grant).includes("materials")
-      ? this.materials.reference().binding
-      : null;
+    return this.availableResources(grant).includes("materials") ? this.materials.reference().binding : null;
   }
   memoryView(grant) {
     return (
@@ -140,26 +132,18 @@ export class ReceptionQueries {
   seed(grant, { text = "" } = {}) {
     const workOverview = this.overview(grant);
     const questions = page(
-      this.reads
-        .questions(grant.conversationId, null, 7, grant.targetWork?.workId)
-        .map(questionSummary),
+      this.reads.questions(grant.conversationId, null, 7, grant.targetWork?.workId).map(questionSummary),
       6,
     );
     const view = this.memoryView(grant);
     const originalContext = this.reads.prompt(view);
     const initialView = {
       ...view,
-      projectIds:
-        originalContext.projects?.injected.map((p) => p.slug) ??
-        view.projectIds,
+      projectIds: originalContext.projects?.injected.map((p) => p.slug) ?? view.projectIds,
     };
-    let recalled = this.reads
-      .recall(initialView, { limit: 12, text })
-      .map(memorySummary);
+    let recalled = this.reads.recall(initialView, { limit: 12, text }).map(memorySummary);
     const memoryContext = memoryPromptView(originalContext, recalled);
-    const included = new Set(
-      [...memoryContext.profile, ...memoryContext.recent].map((m) => m.key),
-    );
+    const included = new Set([...memoryContext.profile, ...memoryContext.recent].map((m) => m.key));
     recalled = recalled.filter((m) => !included.has(m.key));
     return {
       seedObservedAt: this.now(),
@@ -194,27 +178,23 @@ export class ReceptionQueries {
       memoryContext,
       memoryRecall: recalled,
       memoryRecallPolicy: {
-        strategy: memoryRecallTerms(text).length
-          ? "question-lexical-overlap"
-          : "profile-and-recent",
+        strategy: memoryRecallTerms(text).length ? "question-lexical-overlap" : "profile-and-recent",
         terms: memoryRecallTerms(text),
         textTruncated: text.length > 6000,
         semanticSearch: false,
       },
-      routines: this.reads
-        .routines(12)
-        .map((r) => ({ ...r, text: r.text.slice(0, 300) })),
+      routines: this.reads.routines(12).map((r) => ({ ...r, text: r.text.slice(0, 300) })),
       clock: { now: this.now(), timeZone: this.timeZone },
       capabilities: {
         resources: this.availableResources(grant),
-        delegationTools: delegationTools(grant.resources.filter(resource =>
-          (resource.id !== "platform.reads" || this.platformReads) &&
-          this.authority.permits(grant, resource)
-        )).filter(tool => ["platform_read", "thread_command", "environment_run"].includes(tool)),
+        delegationTools: delegationTools(
+          grant.resources.filter(
+            (resource) =>
+              (resource.id !== "platform.reads" || this.platformReads) && this.authority.permits(grant, resource),
+          ),
+        ).filter((tool) => ["platform_read", "thread_command", "environment_run"].includes(tool)),
         canPublishLocalNote: true,
-        queries: RECEPTION_QUERY_NAMES.filter(
-          (name) => this.platformReads || !name.startsWith("platform."),
-        ),
+        queries: RECEPTION_QUERY_NAMES.filter((name) => this.platformReads || !name.startsWith("platform.")),
         limits: RECEPTION_LIMITS,
       },
     };
@@ -222,16 +202,13 @@ export class ReceptionQueries {
   open(turn) {
     const grant = this.grant(turn);
     const source = turn.source_json ? JSON.parse(turn.source_json) : null;
-    grant.historyAnchor = source
-      ? source.historyAnchor
-      : Conversation.messageId(grant.conversationId, turn.id, "user");
+    grant.historyAnchor = source ? source.historyAnchor : Conversation.messageId(grant.conversationId, turn.id, "user");
     return new ReceptionQuerySession(this, grant);
   }
   reportGoal(grant, source) {
     if (!source.goalId) return null;
     const work = this.reads.work(grant.conversationId, source.workId)?.work;
-    if (!work || work.goal_id !== source.goalId)
-      throw new Error("Report goal does not own this work");
+    if (!work || work.goal_id !== source.goalId) throw new Error("Report goal does not own this work");
     const detail = this.reads.goal(grant.conversationId, source.goalId, {
       limit: 4,
     });
@@ -269,8 +246,7 @@ export class ReceptionQueries {
         "cancelled",
       ].map((s) => [s, 0]),
     );
-    for (const r of this.reads.overview(grant.conversationId))
-      byStatus[r.status] = r.count;
+    for (const r of this.reads.overview(grant.conversationId)) byStatus[r.status] = r.count;
     const total = Object.values(byStatus).reduce((a, b) => a + b, 0),
       open = total - byStatus.completed - byStatus.cancelled;
     return {
@@ -279,9 +255,7 @@ export class ReceptionQueries {
       total,
       open,
       byStatus,
-      attention: this.reads
-        .attentionWorks(grant.conversationId, 6)
-        .map((w) => workSummary(w)),
+      attention: this.reads.attentionWorks(grant.conversationId, 6).map((w) => workSummary(w)),
       attentionTruncated: open > 6,
       nextQuery: {
         kind: "query",
@@ -294,20 +268,16 @@ export class ReceptionQueries {
   }
   target(grant) {
     const row = this.reads.work(grant.conversationId, grant.targetWork.workId);
-    if (!row)
-      throw new Error("Target work is unavailable in this conversation");
+    if (!row) throw new Error("Target work is unavailable in this conversation");
     return {
       ...workSummary(row.work),
       capturedRevision: grant.targetWork.expectedRevision,
-      changedSinceIntake:
-        row.work.revision !== grant.targetWork.expectedRevision,
+      changedSinceIntake: row.work.revision !== grant.targetWork.expectedRevision,
     };
   }
   materialSource(grant, source) {
     if (!this.availableResources(grant).includes(source))
-      throw new Error(
-        "Material source is outside the captured query grant or its binding changed",
-      );
+      throw new Error("Material source is outside the captured query grant or its binding changed");
     return this.materials;
   }
   execute(grant, { name, params: p }) {
@@ -315,10 +285,7 @@ export class ReceptionQueries {
     let data;
     switch (name) {
       case "goals.list":
-        data = page(
-          this.reads.goals(grant.conversationId, p.after, p.limit + 1),
-          p.limit,
-        );
+        data = page(this.reads.goals(grant.conversationId, p.after, p.limit + 1), p.limit);
         break;
       case "goal.get":
         data = this.reads.goal(grant.conversationId, p.goalId, p);
@@ -329,24 +296,20 @@ export class ReceptionQueries {
         break;
       case "report.read": {
         const report = this.reads.report(grant.conversationId, p.workId);
-        if (!report)
-          throw new Error("Report is unavailable in this conversation");
+        if (!report) throw new Error("Report is unavailable in this conversation");
         data = {
           reportId: report.id,
           workId: report.work_id,
           revision: report.revision,
           status: report.status,
           text: report.text.slice(p.offset, p.offset + p.limit),
-          nextOffset:
-            p.offset + p.limit < report.text.length ? p.offset + p.limit : null,
+          nextOffset: p.offset + p.limit < report.text.length ? p.offset + p.limit : null,
         };
         break;
       }
       case "works.list":
         data = page(
-          this.reads
-            .works(grant.conversationId, p.after, p.limit + 1, p)
-            .map((w) => workSummary(w, 120)),
+          this.reads.works(grant.conversationId, p.after, p.limit + 1, p).map((w) => workSummary(w, 120)),
           p.limit,
         );
         break;
@@ -370,17 +333,13 @@ export class ReceptionQueries {
             passed: row.assessment?.passed ?? null,
             detailsMayBeTruncated: true,
           },
-          delivery: row.delivery
-            ? { ...row.delivery, error: clip(row.delivery.error, 120) }
-            : null,
+          delivery: row.delivery ? { ...row.delivery, error: clip(row.delivery.error, 120) } : null,
         };
         break;
       }
       case "questions.list":
         data = page(
-          this.reads
-            .questions(grant.conversationId, p.after, p.limit + 1, p.workId)
-            .map(questionSummary),
+          this.reads.questions(grant.conversationId, p.after, p.limit + 1, p.workId).map(questionSummary),
           p.limit,
         );
         break;
@@ -388,17 +347,8 @@ export class ReceptionQueries {
         data = this.attachments.list(p);
         break;
       case "history.read": {
-        data = this.reads.historyMessage(
-          grant.conversationId,
-          p.messageId,
-          grant.historyAnchor,
-          p.offset,
-          p.limit,
-        );
-        if (!data)
-          throw new Error(
-            "History message is outside this conversation or input anchor",
-          );
+        data = this.reads.historyMessage(grant.conversationId, p.messageId, grant.historyAnchor, p.offset, p.limit);
+        if (!data) throw new Error("History message is outside this conversation or input anchor");
         break;
       }
       case "history.search": {
@@ -451,9 +401,7 @@ export class ReceptionQueries {
           match: p.match,
           next: rows.length > p.limit ? rows[p.limit - 1].key : null,
           semanticSearch: false,
-          ...(!rows.length &&
-          p.match === "terms" &&
-          memorySearchTerms(p.query, p.match).length > 1
+          ...(!rows.length && p.match === "terms" && memorySearchTerms(p.query, p.match).length > 1
             ? {
                 retryHint: {
                   reason:
@@ -463,12 +411,7 @@ export class ReceptionQueries {
                     name: "memory.search",
                     params: {
                       query: memorySearchTerms(p.query, p.match)
-                        .slice(
-                          0,
-                          memorySearchTerms(p.query, p.match).length > 2
-                            ? 2
-                            : 1,
-                        )
+                        .slice(0, memorySearchTerms(p.query, p.match).length > 2 ? 2 : 1)
                         .join(" "),
                       match: "terms",
                     },
@@ -512,10 +455,7 @@ export class ReceptionQueries {
           totalCharacters: material.text.length,
           offset: p.offset,
           text,
-          nextOffset:
-            p.offset + text.length < material.text.length
-              ? p.offset + text.length
-              : null,
+          nextOffset: p.offset + text.length < material.text.length ? p.offset + text.length : null,
         };
         break;
       }
@@ -538,8 +478,7 @@ class ReceptionQuerySession {
   }
   async executeAsync(request, signal) {
     if (!request?.name?.startsWith("platform.")) return this.execute(request);
-    if (this.#calls >= RECEPTION_LIMITS.queries)
-      throw Error("Reception query count exhausted");
+    if (this.#calls >= RECEPTION_LIMITS.queries) throw Error("Reception query count exhausted");
     this.#calls++;
     let query, response;
     try {
@@ -549,12 +488,7 @@ class ReceptionQuerySession {
           code: "PLATFORM_READ_UNAVAILABLE",
         });
       signal?.throwIfAborted();
-      response = await executePlatformRead(
-        this.service.platformReads,
-        query,
-        signal,
-        this.service.now,
-      );
+      response = await executePlatformRead(this.service.platformReads, query, signal, this.service.now);
     } catch (error) {
       signal?.throwIfAborted();
       response = {
@@ -567,8 +501,7 @@ class ReceptionQuerySession {
     return this.record(query, response);
   }
   execute(request) {
-    if (this.#calls >= RECEPTION_LIMITS.queries)
-      throw new Error("Reception query count exhausted");
+    if (this.#calls >= RECEPTION_LIMITS.queries) throw new Error("Reception query count exhausted");
     this.#calls++;
     let query, response;
     try {
@@ -593,8 +526,7 @@ class ReceptionQuerySession {
       };
       bytes = ReceptionQuery.bytes(response);
     }
-    if (this.#bytes + bytes > RECEPTION_LIMITS.totalBytes)
-      throw new Error("Reception query output budget exhausted");
+    if (this.#bytes + bytes > RECEPTION_LIMITS.totalBytes) throw new Error("Reception query output budget exhausted");
     this.#bytes += bytes;
     this.#trace.push({
       name: query?.name ?? "invalid",

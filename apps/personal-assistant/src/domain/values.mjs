@@ -20,11 +20,9 @@ export function requireText(value, name, max = 20000) {
   return value;
 }
 export function epochTime(value, name) {
-  if (!Number.isSafeInteger(value) || value < 0)
-    throw new Error(`${name} must be an epoch millisecond integer`);
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be an epoch millisecond integer`);
   return value;
 }
 export function requireRevision(expected, actual, label) {
-  if (expected !== undefined && expected !== actual)
-    throw new Error(`Stale ${label} revision`);
+  if (expected !== undefined && expected !== actual) throw new Error(`Stale ${label} revision`);
 }

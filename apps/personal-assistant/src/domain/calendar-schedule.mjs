@@ -3,24 +3,18 @@ import { epochTime } from "./values.mjs";
 /** Explicit local wall-clock recurrence. Never guesses the process/user timezone. */
 export class CalendarSchedule {
   static normalize(raw) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw))
-      throw new Error("Invalid schedule");
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid schedule");
     if (raw.kind === "once") {
-      if (Object.keys(raw).some((k) => !["kind", "at"].includes(k)))
-        throw new Error("Unknown one-shot schedule field");
+      if (Object.keys(raw).some((k) => !["kind", "at"].includes(k))) throw new Error("Unknown one-shot schedule field");
       epochTime(raw.at, "schedule.at");
       return { kind: "once", at: raw.at };
     }
     if (
       raw.kind !== "calendar" ||
-      Object.keys(raw).some(
-        (k) =>
-          !["kind", "timeZone", "weekdays", "hours", "minutes"].includes(k),
-      )
+      Object.keys(raw).some((k) => !["kind", "timeZone", "weekdays", "hours", "minutes"].includes(k))
     )
       throw new Error("Use an explicit calendar or once schedule");
-    if (typeof raw.timeZone !== "string" || raw.timeZone.length > 100)
-      throw new Error("Calendar timezone is required");
+    if (typeof raw.timeZone !== "string" || raw.timeZone.length > 100) throw new Error("Calendar timezone is required");
     try {
       new Intl.DateTimeFormat("en-US", { timeZone: raw.timeZone });
     } catch {
@@ -74,11 +68,7 @@ export class CalendarSchedule {
     const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     // At least one weekday is allowed: eight days covers a week and DST transitions.
     const end = after + 8 * 86400000;
-    for (
-      let at = Math.floor(after / 60000) * 60000 + 60000;
-      at <= end;
-      at += 60000
-    ) {
+    for (let at = Math.floor(after / 60000) * 60000 + 60000; at <= end; at += 60000) {
       const wall = this.wall(formatter, at);
       if (
         s.weekdays.includes(days.indexOf(wall.weekday)) &&

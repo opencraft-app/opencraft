@@ -17,17 +17,11 @@ function distribution(values) {
 export function scoreRecords(records, expected) {
   const correct = records.filter((r) => recordVerdict(r) === true).length;
   const infra = records.filter(infrastructureFailure).length;
-  const failed = records.filter(
-    (r) => r.status !== "completed" && !infrastructureFailure(r),
-  ).length;
+  const failed = records.filter((r) => r.status !== "completed" && !infrastructureFailure(r)).length;
   const unresolved = records.filter((r) => recordVerdict(r) === null).length;
-  const judgeFailures = records.filter(
-    (r) => r.status === "completed" && recordVerdict(r) === null,
-  ).length;
+  const judgeFailures = records.filter((r) => r.status === "completed" && recordVerdict(r) === null).length;
   const available = records.filter((r) => !infrastructureFailure(r));
-  const nativeTotals = records.flatMap(
-    (r) => r.evidence?.usage?.totalsByMode ?? [],
-  );
+  const nativeTotals = records.flatMap((r) => r.evidence?.usage?.totalsByMode ?? []);
   return {
     expected,
     finished: records.length,
@@ -38,35 +32,21 @@ export function scoreRecords(records, expected) {
     answerFailures: failed,
     judgeFailures,
     unresolved,
-    accuracy:
-      records.length === expected && unresolved === 0
-        ? correct / expected
-        : null,
+    accuracy: records.length === expected && unresolved === 0 ? correct / expected : null,
     conservativeLowerBound: correct / expected,
     upperBound: (correct + unresolved + expected - records.length) / expected,
-    wilson95:
-      records.length === expected && unresolved === 0
-        ? wilson(correct, expected)
-        : null,
+    wilson95: records.length === expected && unresolved === 0 ? wilson(correct, expected) : null,
     latencyMs: distribution(available.map((r) => r.answerElapsedMs)),
     allObservedLatencyMs: distribution(records.map((r) => r.answerElapsedMs)),
     answerFailureRate: records.length ? failed / records.length : null,
-    answerCompletionRate: expected
-      ? records.filter((r) => r.status === "completed").length / expected
-      : null,
+    answerCompletionRate: expected ? records.filter((r) => r.status === "completed").length / expected : null,
     indexingMs: distribution(records.map((r) => r.evidence?.indexingMs)),
     queryMs: distribution(records.map((r) => r.evidence?.queryMs)),
     knownAnswerTokens: nativeTotals.length
       ? nativeTotals.reduce((n, t) => n + (t.knownTotals.totalTokens ?? 0), 0)
       : records.reduce((n, r) => n + (r.usage?.total_tokens ?? 0), 0),
-    knownNativeHostObservations: nativeTotals.reduce(
-      (n, t) => n + t.observations,
-      0,
-    ),
-    knownJudgeTokens: records.reduce(
-      (n, r) => n + (r.judge?.usage?.total_tokens ?? 0),
-      0,
-    ),
+    knownNativeHostObservations: nativeTotals.reduce((n, t) => n + t.observations, 0),
+    knownJudgeTokens: records.reduce((n, r) => n + (r.judge?.usage?.total_tokens ?? 0), 0),
     costUsd: null,
   };
 }
@@ -92,9 +72,7 @@ async function main() {
   for (const name of await readdir(join(directory, "records"))) {
     if (!name.endsWith(".json")) continue;
     try {
-      records.push(
-        JSON.parse(await readFile(join(directory, "records", name), "utf8")),
-      );
+      records.push(JSON.parse(await readFile(join(directory, "records", name), "utf8")));
     } catch (e) {
       if (!(e instanceof SyntaxError)) throw e;
     }
@@ -141,15 +119,8 @@ async function main() {
     };
   }
   const pairs = plan.selected.map((item) => {
-    const native = records.find(
-        (r) =>
-          r.question_id === item.question_id && r.track === "native-assistant",
-      ),
-      baseline = records.find(
-        (r) =>
-          r.question_id === item.question_id &&
-          r.track === "full-history-baseline",
-      );
+    const native = records.find((r) => r.question_id === item.question_id && r.track === "native-assistant"),
+      baseline = records.find((r) => r.question_id === item.question_id && r.track === "full-history-baseline");
     return {
       question_id: item.question_id,
       native: recordVerdict(native),
@@ -157,21 +128,12 @@ async function main() {
     };
   });
   report.paired = {
-    bothCorrect: pairs.filter((p) => p.native === true && p.baseline === true)
-      .length,
-    nativeOnly: pairs.filter((p) => p.native === true && p.baseline === false)
-      .length,
-    baselineOnly: pairs.filter((p) => p.native === false && p.baseline === true)
-      .length,
-    bothIncorrect: pairs.filter(
-      (p) => p.native === false && p.baseline === false,
-    ).length,
+    bothCorrect: pairs.filter((p) => p.native === true && p.baseline === true).length,
+    nativeOnly: pairs.filter((p) => p.native === true && p.baseline === false).length,
+    baselineOnly: pairs.filter((p) => p.native === false && p.baseline === true).length,
+    bothIncorrect: pairs.filter((p) => p.native === false && p.baseline === false).length,
   };
-  await writeFile(
-    join(directory, "score.json"),
-    JSON.stringify(report, null, 2),
-    { mode: 0o600 },
-  );
+  await writeFile(join(directory, "score.json"), JSON.stringify(report, null, 2), { mode: 0o600 });
   console.log(
     JSON.stringify(
       {
@@ -198,10 +160,7 @@ async function main() {
   );
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   main().catch((e) => {
     console.error(e.message);
     process.exitCode = 1;

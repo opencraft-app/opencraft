@@ -12,7 +12,10 @@ export interface ChannelMessagePresentation {
 }
 
 /** Installation-verified presentation key, never a caller-supplied URL or a grant. */
-export interface ChannelIdentityAvatar { kind: string; name: string }
+export interface ChannelIdentityAvatar {
+  kind: string;
+  name: string;
+}
 export interface ChannelActor {
   actorId: string;
   displayName: string;
@@ -31,7 +34,13 @@ export interface ChannelSummary {
   latestMessage?: import("./actor-inbox.js").ActorInboxMessage | null;
   kind?: "direct" | "group";
   /** Native lifecycle capability; absence means an older/unsupported Server. */
-  lifecycle?: { state: 'active' | 'dissolved'; revision: number; dissolvedAt: number | null; canLeave: boolean; canDissolve: boolean };
+  lifecycle?: {
+    state: "active" | "dissolved";
+    revision: number;
+    dissolvedAt: number | null;
+    canLeave: boolean;
+    canDissolve: boolean;
+  };
   /** Per-actor persisted list preference, never membership or history authority. */
   listState?: { hidden: boolean };
   canManageMembers?: boolean;
@@ -57,16 +66,16 @@ export interface ChannelGroupSyncStatus {
   mentionIngress?: "text-only";
   configured: boolean;
   canRefresh: boolean;
-  state: 'never' | 'idle' | 'pending' | 'syncing' | 'error' | 'paused' | 'disconnected';
+  state: "never" | "idle" | "pending" | "syncing" | "error" | "paused" | "disconnected";
   lastSyncedAt: number | null;
   lastAttemptAt: number | null;
-  name: 'off' | 'inbound' | 'both';
-  members: 'observe' | 'inbound' | 'both';
+  name: "off" | "inbound" | "both";
+  members: "observe" | "inbound" | "both";
   pendingOperations: number;
   /** Outstanding latest-intent delivery failure; no external identities or raw errors. */
   deliveryIssue?: {
-    action: 'rename' | 'add' | 'remove';
-    reason: 'owner_required' | 'rejected' | 'conflict';
+    action: "rename" | "add" | "remove";
+    reason: "owner_required" | "rejected" | "conflict";
   };
 }
 
@@ -86,9 +95,18 @@ export interface ChannelMessageSender {
 }
 
 /** Selected native member identity and UTF-16 offsets into the exact message text. */
-export interface ChannelMentionInput { actorId: string; start: number; end: number }
+export interface ChannelMentionInput {
+  actorId: string;
+  start: number;
+  end: number;
+}
 /** Historical label snapshot; isSelf is projected relative to the authenticated reader. */
-export interface ChannelMention extends ChannelMentionInput { displayName: string; actorKind: "human" | "session"; isSelf?: boolean; isUnread?: boolean }
+export interface ChannelMention extends ChannelMentionInput {
+  displayName: string;
+  actorKind: "human" | "session";
+  isSelf?: boolean;
+  isUnread?: boolean;
+}
 /** Sequence is the stable message identifier within a channel, independent of sync. */
 export interface ChannelMessage {
   sequence: number;
@@ -129,29 +147,85 @@ export interface ChannelChanged {
   subscriptionId: string;
 }
 
-export interface ChannelPerson { actorId: string; displayName: string; kind: 'human' | 'bot'; canMessage: boolean; avatar?: ChannelIdentityAvatar }
+export interface ChannelPerson {
+  actorId: string;
+  displayName: string;
+  kind: "human" | "bot";
+  canMessage: boolean;
+  avatar?: ChannelIdentityAvatar;
+}
 export interface ChannelsMethodMap {
-  'opencraft/channels/group/get': {params:{channelId:string};result:ChannelSummary};
-  'opencraft/channels/group/list-state/set': {params:{channelId:string;hidden:boolean;clientRequestId:string};result:ChannelSummary};
-  'opencraft/channels/group/leave': {params:{channelId:string;clientRequestId:string};result:null};
-  'opencraft/channels/group/dissolve': {params:{channelId:string;expectedRevision:number;clientRequestId:string};result:ChannelSummary};
-  'opencraft/channels/group/sync/status': {params:{channelId:string};result:ChannelGroupSyncStatus|null};
-  'opencraft/channels/group/sync/refresh': {params:{channelId:string;clientRequestId:string};result:ChannelGroupSyncStatus};
-  'opencraft/channels/records/resource/read': {params:{channelId:string;sequence:number;path:string;offset:number};result:{name:string;type:string;size:number;revision:string;base64:string;nextOffset:number}|null};
-  "opencraft/channels/messages/around":{params:{channelId:string;sequence:number};result:ChannelHistoryPage};
-  "opencraft/channels/search": {params:{query:string;before?:number;limit?:number};result:ChannelSearchPage};
-  'opencraft/channels/attachments/upload': {params:{channelId:string;clientMessageId:string;name:string;type:string;text?:string;total:number;offset:number;base64:string};result:{nextOffset:number;receipt?:ChannelMessage}};
-  'opencraft/channels/attachments/send': {params:{channelId:string;clientMessageId:string;name:string;type:string;base64:string;text?:string};result:{receipt:ChannelMessage}};
-  'opencraft/channels/attachments/read': {params:{channelId:string;sequence:number;offset:number};result:{name:string;type:string;size:number;base64:string;nextOffset:number}|null};
-  'opencraft/channels/attachments/get': {params:{channelId:string;sequence:number};result:{name:string;type:string;base64:string}|null};
-  'opencraft/channels/people/list': {params:{after?:string;query?:string};result:{people:ChannelPerson[];next:string|null}};
-  "opencraft/inbox/sync": {params:{cursor?:string;limit?:number};result:import('./actor-inbox.js').ActorInboxPage};
-  "opencraft/channels/mentions/ack": {params:{channelId:string;messageId:string};result:{acknowledged:boolean}};
-  "opencraft/channels/read": {params:{channelId:string;throughSequence:number};result:null};
+  "opencraft/channels/group/get": { params: { channelId: string }; result: ChannelSummary };
+  "opencraft/channels/group/list-state/set": {
+    params: { channelId: string; hidden: boolean; clientRequestId: string };
+    result: ChannelSummary;
+  };
+  "opencraft/channels/group/leave": { params: { channelId: string; clientRequestId: string }; result: null };
+  "opencraft/channels/group/dissolve": {
+    params: { channelId: string; expectedRevision: number; clientRequestId: string };
+    result: ChannelSummary;
+  };
+  "opencraft/channels/group/sync/status": { params: { channelId: string }; result: ChannelGroupSyncStatus | null };
+  "opencraft/channels/group/sync/refresh": {
+    params: { channelId: string; clientRequestId: string };
+    result: ChannelGroupSyncStatus;
+  };
+  "opencraft/channels/records/resource/read": {
+    params: { channelId: string; sequence: number; path: string; offset: number };
+    result: { name: string; type: string; size: number; revision: string; base64: string; nextOffset: number } | null;
+  };
+  "opencraft/channels/messages/around": { params: { channelId: string; sequence: number }; result: ChannelHistoryPage };
+  "opencraft/channels/search": {
+    params: { query: string; before?: number; limit?: number };
+    result: ChannelSearchPage;
+  };
+  "opencraft/channels/attachments/upload": {
+    params: {
+      channelId: string;
+      clientMessageId: string;
+      name: string;
+      type: string;
+      text?: string;
+      total: number;
+      offset: number;
+      base64: string;
+    };
+    result: { nextOffset: number; receipt?: ChannelMessage };
+  };
+  "opencraft/channels/attachments/send": {
+    params: { channelId: string; clientMessageId: string; name: string; type: string; base64: string; text?: string };
+    result: { receipt: ChannelMessage };
+  };
+  "opencraft/channels/attachments/read": {
+    params: { channelId: string; sequence: number; offset: number };
+    result: { name: string; type: string; size: number; base64: string; nextOffset: number } | null;
+  };
+  "opencraft/channels/attachments/get": {
+    params: { channelId: string; sequence: number };
+    result: { name: string; type: string; base64: string } | null;
+  };
+  "opencraft/channels/people/list": {
+    params: { after?: string; query?: string };
+    result: { people: ChannelPerson[]; next: string | null };
+  };
+  "opencraft/inbox/sync": {
+    params: { cursor?: string; limit?: number };
+    result: import("./actor-inbox.js").ActorInboxPage;
+  };
+  "opencraft/channels/mentions/ack": {
+    params: { channelId: string; messageId: string };
+    result: { acknowledged: boolean };
+  };
+  "opencraft/channels/read": { params: { channelId: string; throughSequence: number }; result: null };
   "opencraft/channels/list": { params: Record<string, never>; result: { groups: ChannelSummary[] } };
   "opencraft/channels/direct/open": { params: { actorId: string }; result: ChannelSummary };
   "opencraft/channels/group/create": {
-    params: { title: string; memberActorIds: string[]; clientRequestId: string; /** Also create a linked WeCom group when the installation supports it. */ wecom?: boolean };
+    params: {
+      title: string;
+      memberActorIds: string[];
+      clientRequestId: string;
+      /** Also create a linked WeCom group when the installation supports it. */ wecom?: boolean;
+    };
     result: ChannelSummary;
   };
   "opencraft/channels/group/member/set": {
@@ -167,13 +241,23 @@ export interface ChannelsMethodMap {
     params: { query: string; channelId?: string };
     result: { candidates: ChannelInviteCandidate[] };
   };
-  "opencraft/channels/messages/search": {params:{channelId:string;query:string;before?:number;limit?:number};result:ChannelHistoryPage};
+  "opencraft/channels/messages/search": {
+    params: { channelId: string; query: string; before?: number; limit?: number };
+    result: ChannelHistoryPage;
+  };
   "opencraft/channels/messages/list": { params: { channelId: string; before?: number }; result: ChannelHistoryPage };
   "opencraft/channels/sync": { params: { channelId: string; cursor?: string }; result: ChannelSyncPage };
   "opencraft/channels/subscribe": { params: { channelId?: string; subscriptionId: string }; result: null };
   "opencraft/channels/unsubscribe": { params: { subscriptionId: string }; result: null };
   "opencraft/channels/messages/send": {
-    params: { channelId: string; clientMessageId: string; parts: [{ type: "text"; text: string }]; replyToMessageId?: string; wakeActorIds?: string[]; mentions?: ChannelMentionInput[] };
+    params: {
+      channelId: string;
+      clientMessageId: string;
+      parts: [{ type: "text"; text: string }];
+      replyToMessageId?: string;
+      wakeActorIds?: string[];
+      mentions?: ChannelMentionInput[];
+    };
     result: { receipt: ChannelMessage };
   };
   "opencraft/channels/delivery/get": {

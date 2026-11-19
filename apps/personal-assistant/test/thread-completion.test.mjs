@@ -1,9 +1,6 @@
 import { PassThrough } from "node:stream";
 import { createStdioPeer } from "../src/adapters/local/stdio-peer.mjs";
-import {
-  parseThreadCommand,
-  replaceThreadCommandIdempotencyKey,
-} from "@opencraft/appserver-protocol/thread-command";
+import { parseThreadCommand, replaceThreadCommandIdempotencyKey } from "@opencraft/appserver-protocol/thread-command";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { profileFor } from "./helpers.mjs";
@@ -11,19 +8,9 @@ import { createLocalDomain } from "../src/runtime/create-local-domain.mjs";
 import { ThreadCompletionCoordinator } from "../src/runtime/thread-completion-coordinator.mjs";
 import { WorkCoordinator } from "../src/runtime/work-coordinator.mjs";
 import { createExecutionPorts } from "../src/runtime/execution-ports.mjs";
-const prepare = (app, work, argv) =>
-  app.executions.threads.prepare(work, parseThreadCommand(argv), argv);
+const prepare = (app, work, argv) => app.executions.threads.prepare(work, parseThreadCommand(argv), argv);
 const resource = { id: "platform.threads", binding: "fixed-bot-epoch" };
-const argv = (key) => [
-  "thread",
-  "start",
-  "--profile",
-  "default",
-  "--prompt",
-  "Do the task",
-  "--idempotency-key",
-  key,
-];
+const argv = (key) => ["thread", "start", "--profile", "default", "--prompt", "Do the task", "--idempotency-key", key];
 function fixture(t) {
   const profile = profileFor(t),
     ctx = createLocalDomain(profile, null, { platformThreads: resource });
@@ -64,13 +51,7 @@ function fixture(t) {
   };
 }
 const turns = (app) => app.reception.pending().filter((t) => t.source_json);
-const completion = (
-  work,
-  id = "first",
-  status = "completed",
-  text = "REAL NATIVE RESULT",
-  turnId = "native-turn",
-) => ({
+const completion = (work, id = "first", status = "completed", text = "REAL NATIVE RESULT", turnId = "native-turn") => ({
   operationId: "op-" + id,
   workId: work.id,
   state: "submitted",
@@ -115,10 +96,7 @@ test("submission cannot complete Work; correlated terminal result wakes the orig
   await c.reconcile(new AbortController().signal);
   assert.equal(turns(f.app).length, 1);
   const turn = turns(f.app)[0];
-  assert.equal(
-    f.app.reception.context(turn).request.original.text,
-    "Create a task and tell me when finished",
-  );
+  assert.equal(f.app.reception.context(turn).request.original.text, "Create a task and tell me when finished");
   f.app.reception.apply(turn, {
     kind: "deliver",
     text: "Finished with native evidence",
@@ -148,9 +126,7 @@ test("restart keeps held answer and frees model capacity without repeating its e
   work.tick();
   assert.equal(runs, 0);
   assert.equal(work.active.size, 0);
-  await coordinator(app, async () => completion(f.work)).reconcile(
-    new AbortController().signal,
-  );
+  await coordinator(app, async () => completion(f.work)).reconcile(new AbortController().signal);
   assert.equal(turns(app).length, 1);
   assert.equal(runs, 0);
 });
@@ -158,9 +134,7 @@ test("restart keeps held answer and frees model capacity without repeating its e
 test("native completion before model answer is retained and used when the answer arrives", async (t) => {
   const f = fixture(t);
   f.link();
-  await coordinator(f.app, async () => completion(f.work)).reconcile(
-    new AbortController().signal,
-  );
+  await coordinator(f.app, async () => completion(f.work)).reconcile(new AbortController().signal);
   assert.equal(turns(f.app).length, 0);
   assert.equal(f.app.executions.report(f.work, "Queued it").routed, true);
   assert.equal(turns(f.app).length, 1);
@@ -178,8 +152,7 @@ test("unknown delivery and another Turn cannot fabricate completion", async (t) 
   assert.equal(turns(f.app).length, 0);
   await coordinator(
     f.app,
-    async () =>
-      completion(f.work, "first", "completed", "unrelated", "another-turn"),
+    async () => completion(f.work, "first", "completed", "unrelated", "another-turn"),
     () => errors++,
   ).reconcile(new AbortController().signal);
   assert.equal(errors, 1);
@@ -190,16 +163,13 @@ test("native failure reaches parent review but can never be delivered as success
   const f = fixture(t);
   f.link();
   f.app.executions.report(f.work, "Queued");
-  await coordinator(f.app, async () =>
-    completion(f.work, "first", "failed", "Native task failed"),
-  ).reconcile(new AbortController().signal);
+  await coordinator(f.app, async () => completion(f.work, "first", "failed", "Native task failed")).reconcile(
+    new AbortController().signal,
+  );
   const turn = turns(f.app)[0];
   assert.ok(turn);
   assert.equal(f.app.executions.savedReport(f.work).status, "error");
-  assert.throws(
-    () => f.app.reception.apply(turn, { kind: "deliver", text: "Success" }),
-    /satisf|returned|contract/i,
-  );
+  assert.throws(() => f.app.reception.apply(turn, { kind: "deliver", text: "Success" }), /satisf|returned|contract/i);
   assert.equal(f.app.detail(f.work.id).results.length, 0);
   f.app.reception.apply(turn, {
     kind: "blocked",
@@ -225,10 +195,7 @@ test("lost acceptance reply replays the same durable idempotent intent after res
     return completion(f.work, "stable");
   });
   await c.reconcile(new AbortController().signal);
-  assert.deepEqual(
-    calls[0],
-    app.executions.threads.argv(app.executions.threads.pending()[0]),
-  );
+  assert.deepEqual(calls[0], app.executions.threads.argv(app.executions.threads.pending()[0]));
   assert.notEqual(calls[0].at(-1), "stable");
   assert.equal(turns(app).length, 0);
   await c.reconcile(new AbortController().signal);
@@ -252,11 +219,7 @@ test("multiple inputs wait for all receipts but same-Turn evidence appears once"
   second = true;
   await c.reconcile(new AbortController().signal);
   assert.equal(turns(f.app).length, 1);
-  assert.equal(
-    f.app.executions.savedReport(f.work).text.match(/REAL NATIVE RESULT/g)
-      .length,
-    1,
-  );
+  assert.equal(f.app.executions.savedReport(f.work).text.match(/REAL NATIVE RESULT/g).length, 1);
 });
 
 test("cancelled or superseded Work does not consume a late task result", async (t) => {
@@ -340,12 +303,7 @@ test("real model tool persists intent before I/O and preserves immutable operati
   assert.ok(inspected);
   assert.equal(f.app.executions.threads.pending()[0].operation_id, "op-first");
   await assert.rejects(
-    ports.threadCommand([
-      ...argv("first").slice(0, -4),
-      "different",
-      "--idempotency-key",
-      "first",
-    ]),
+    ports.threadCommand([...argv("first").slice(0, -4), "different", "--idempotency-key", "first"]),
     /identity|intent|argument/,
   );
 });
@@ -354,24 +312,17 @@ test("settled platform report replays do not create another report or parent wak
   const f = fixture(t);
   f.link();
   f.app.executions.report(f.work, "Queued");
-  await coordinator(f.app, async () => completion(f.work)).reconcile(
-    new AbortController().signal,
-  );
+  await coordinator(f.app, async () => completion(f.work)).reconcile(new AbortController().signal);
   assert.equal(f.app.executions.report(f.work, "Queued").duplicate, true);
   const report = f.app.executions.savedReport(f.work);
-  assert.equal(
-    f.app.executions.report(f.work, report.text, report.error).duplicate,
-    true,
-  );
+  assert.equal(f.app.executions.report(f.work, report.text, report.error).duplicate, true);
   assert.equal(turns(f.app).length, 1);
 });
 
 test("schema20 upgrade preserves old data and creates only Execution-owned relationship records", (t) => {
   const f = fixture(t),
     before = f.app.workRecord(f.work.id);
-  f.uow.db.exec(
-    "DROP TABLE execution_thread_answer; DROP TABLE execution_thread_link; PRAGMA user_version=20;",
-  );
+  f.uow.db.exec("DROP TABLE execution_thread_answer; DROP TABLE execution_thread_link; PRAGMA user_version=20;");
   const { app, uow } = f.reopen();
   assert.equal(uow.db.prepare("PRAGMA user_version").get().user_version, 21);
   assert.deepEqual(app.workRecord(f.work.id), before);
@@ -425,8 +376,7 @@ test("unlinked native failure blocks rather than delivering the provisional acce
   const c = new ThreadCompletionCoordinator({
     app: f.app,
     assertOwner() {},
-    command: async () =>
-      completion(work, "unlinked", "failed", "Native failure"),
+    command: async () => completion(work, "unlinked", "failed", "Native failure"),
     settle: (...args) => owner.settleReport(...args),
     onError: (e) => {
       throw e;
@@ -444,14 +394,8 @@ test("same model key in different immutable executions has distinct wire identit
   const secondId = f.app.works.submit("second", { text: "Other task" }).workId,
     second = f.app.workRecord(secondId),
     two = prepare(f.app, second, argv("same"));
-  assert.notEqual(
-    f.app.executions.threads.argv(one).at(-1),
-    f.app.executions.threads.argv(two).at(-1),
-  );
-  assert.deepEqual(
-    f.app.executions.threads.argv(one),
-    f.app.executions.threads.argv(one),
-  );
+  assert.notEqual(f.app.executions.threads.argv(one).at(-1), f.app.executions.threads.argv(two).at(-1));
+  assert.deepEqual(f.app.executions.threads.argv(one), f.app.executions.threads.argv(one));
 });
 
 test("close releases observation that ignores cancellation; late reply cannot publish a result", async (t) => {
@@ -465,12 +409,7 @@ test("close releases observation that ignores cancellation; late reply cannot pu
   const c = coordinator(f.app, () => held);
   c.tick();
   await new Promise(setImmediate);
-  await Promise.race([
-    c.close(),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(Error("close hung")), 1000),
-    ),
-  ]);
+  await Promise.race([c.close(), new Promise((_, reject) => setTimeout(() => reject(Error("close hung")), 1000))]);
   release(completion(f.work));
   await new Promise(setImmediate);
   assert.equal(turns(f.app).length, 0);
@@ -495,11 +434,7 @@ test("ready-report cursor skips paused work instead of starving the next runnabl
         state: "submitted",
       });
       f.app.executions.report(work, "Queued");
-      f.app.executions.threads.observe(
-        work,
-        { ...link, operation_id: "op-n" + i },
-        completion(work, "n" + i),
-      );
+      f.app.executions.threads.observe(work, { ...link, operation_id: "op-n" + i }, completion(work, "n" + i));
       if (i < 64) paused.add(workId);
       else runnable = work;
     }
@@ -525,8 +460,7 @@ test("same native Turn ID in different conversations or Hosts preserves all resu
   };
   const c = coordinator(f.app, async (args) => {
     const key = args[3].slice(3);
-    if (key === "third")
-      return { operationId: args[3], workId: f.work.id, state: "submitted" };
+    if (key === "third") return { operationId: args[3], workId: f.work.id, state: "submitted" };
     return {
       ...completion(f.work, key, "completed", "RESULT_" + key),
       reference: refs[key],
@@ -540,8 +474,7 @@ test("same native Turn ID in different conversations or Hosts preserves all resu
     reference: refs.third,
   })).reconcile(new AbortController().signal);
   const report = app.executions.savedReport(f.work);
-  for (const key of Object.keys(refs))
-    assert.match(report.text, new RegExp("RESULT_" + key));
+  for (const key of Object.keys(refs)) assert.match(report.text, new RegExp("RESULT_" + key));
   assert.equal(turns(app).length, 1);
 });
 
@@ -568,12 +501,7 @@ test("different evidence for the same conversation and Turn is retained includin
   f.app.executions.report(f.work, "Both submitted");
   await coordinator(f.app, async (args) => {
     const key = args[3].slice(3);
-    return completion(
-      f.work,
-      key,
-      key === "first" ? "completed" : "failed",
-      "EVIDENCE_" + key,
-    );
+    return completion(f.work, key, key === "first" ? "completed" : "failed", "EVIDENCE_" + key);
   }).reconcile(new AbortController().signal);
   const report = f.app.executions.savedReport(f.work);
   assert.match(report.text, /EVIDENCE_first/);
@@ -589,10 +517,7 @@ test("unaccepted refusals retain one evidence entry per link even without an ope
   }
   f.app.executions.report(f.work, "Both refused");
   const report = f.app.executions.savedReport(f.work);
-  assert.equal(
-    report.text.match(/The platform refused this task intent/g).length,
-    2,
-  );
+  assert.equal(report.text.match(/The platform refused this task intent/g).length, 2);
   assert.ok(report.error);
 });
 
@@ -613,8 +538,7 @@ function threadPipe(t, handle) {
     a.destroy();
     b.destroy();
   });
-  return () =>
-    client.request("platform/opencraft/personal-assistant/threads/command");
+  return () => client.request("platform/opencraft/personal-assistant/threads/command");
 }
 for (const status of [400, 401, 403, 409])
   test(`real IPC terminal failure ${status} settles held Work once without replacement`, async (t) => {
@@ -630,10 +554,7 @@ for (const status of [400, 401, 403, 409])
     await c.reconcile(new AbortController().signal);
     const report = f.app.executions.savedReport(f.work);
     assert.equal(report.status, "error");
-    assert.match(
-      report.text,
-      status === 401 || status === 403 ? /no longer authorized/ : /refused/,
-    );
+    assert.match(report.text, status === 401 || status === 403 ? /no longer authorized/ : /refused/);
     assert.doesNotMatch(report.text, /private error/);
     assert.equal(turns(f.app).length, 1);
     await c.reconcile(new AbortController().signal);
@@ -647,8 +568,7 @@ test("real IPC transient failure stays unresolved and subsequently completes the
   let calls = 0,
     errors = 0;
   const command = threadPipe(t, () => {
-    if (++calls === 1)
-      throw Object.assign(Error("private unavailable"), { status: 503 });
+    if (++calls === 1) throw Object.assign(Error("private unavailable"), { status: 503 });
     return completion(f.work);
   });
   const c = coordinator(f.app, command, () => errors++);
@@ -748,9 +668,7 @@ test("binding change during observation blocks the Work without accepting late n
 test("binding change after final observation fences the ready report", async (t) => {
   const f = fixture(t);
   f.link();
-  await coordinator(f.app, async () => completion(f.work)).reconcile(
-    new AbortController().signal,
-  );
+  await coordinator(f.app, async () => completion(f.work)).reconcile(new AbortController().signal);
   f.app.scope.resources = [];
   assert.throws(() => f.app.executions.report(f.work, "Submitted"), /binding/);
   assert.equal(f.app.executions.savedReport(f.work), undefined);
@@ -825,25 +743,13 @@ test("retired owner fencing is not converted into a local Work mutation", async 
       throw Error("must not settle");
     },
   });
-  await assert.rejects(
-    c.reconcile(new AbortController().signal),
-    /Retired writer/,
-  );
+  await assert.rejects(c.reconcile(new AbortController().signal), /Retired writer/);
   assert.equal(f.app.workRecord(f.work.id).status, "queued");
   assert.equal(f.app.executions.threads.pending().length, 1);
 });
 
 for (const command of [
-  [
-    "thread",
-    "start",
-    "--prompt",
-    "--idempotency-key",
-    "--profile",
-    "default",
-    "--idempotency-key",
-    "key",
-  ],
+  ["thread", "start", "--prompt", "--idempotency-key", "--profile", "default", "--idempotency-key", "key"],
   [
     "thread",
     "start",
@@ -856,17 +762,7 @@ for (const command of [
     "--profile",
     "default",
   ],
-  [
-    "thread",
-    "tell",
-    "reference",
-    "--message",
-    "--idempotency-key",
-    "--delivery",
-    "queue",
-    "--idempotency-key",
-    "key",
-  ],
+  ["thread", "tell", "reference", "--message", "--idempotency-key", "--delivery", "queue", "--idempotency-key", "key"],
   [
     "thread",
     "tell",
@@ -881,16 +777,7 @@ for (const command of [
     "--idempotency-key",
     "key",
   ],
-  [
-    "thread",
-    "start",
-    "--idempotency-key",
-    "--idempotency-key",
-    "--prompt",
-    "literal",
-    "--profile",
-    "default",
-  ],
+  ["thread", "start", "--idempotency-key", "--idempotency-key", "--prompt", "literal", "--profile", "default"],
 ])
   test(`execution-scoped key rewriting preserves flag-shaped literal values: ${JSON.stringify(command)}`, async (t) => {
     const f = fixture(t);
@@ -917,39 +804,16 @@ for (const command of [
   });
 
 test("shared key replacement validates input and preserves the caller's array", () => {
-  const args = [
-    "thread",
-    "start",
-    "--prompt",
-    "--idempotency-key",
-    "--profile",
-    "default",
-    "--idempotency-key",
-    "old",
-  ];
+  const args = ["thread", "start", "--prompt", "--idempotency-key", "--profile", "default", "--idempotency-key", "old"];
   const copy = [...args],
     result = replaceThreadCommandIdempotencyKey(args, "new");
   assert.deepEqual(args, copy);
   assert.equal(parseThreadCommand(result).idempotencyKey, "new");
   assert.throws(() => replaceThreadCommandIdempotencyKey(args, ""));
-  assert.throws(() =>
-    replaceThreadCommandIdempotencyKey(args, "x".repeat(16385)),
-  );
-  assert.throws(() =>
-    replaceThreadCommandIdempotencyKey(
-      ["thread", "start", "--prompt", "--idempotency-key"],
-      "new",
-    ),
-  );
-  assert.throws(() =>
-    replaceThreadCommandIdempotencyKey(["thread", "profiles"], "new"),
-  );
-  assert.throws(() =>
-    replaceThreadCommandIdempotencyKey(
-      [...args, "--idempotency-key", "duplicate"],
-      "new",
-    ),
-  );
+  assert.throws(() => replaceThreadCommandIdempotencyKey(args, "x".repeat(16385)));
+  assert.throws(() => replaceThreadCommandIdempotencyKey(["thread", "start", "--prompt", "--idempotency-key"], "new"));
+  assert.throws(() => replaceThreadCommandIdempotencyKey(["thread", "profiles"], "new"));
+  assert.throws(() => replaceThreadCommandIdempotencyKey([...args, "--idempotency-key", "duplicate"], "new"));
 });
 
 test("malformed native completion stays unresolved and the original task can later complete", async (t) => {
@@ -1017,10 +881,7 @@ test("cancelled lost-acceptance reply cannot bind or wake a new Work using the s
   });
   const work = f.app.workRecord(f.app.reception.turn("new-request").work_id);
   const next = prepare(f.app, work, argv("shared-key"));
-  assert.notEqual(
-    f.app.executions.threads.argv(oldLink).at(-1),
-    f.app.executions.threads.argv(next).at(-1),
-  );
+  assert.notEqual(f.app.executions.threads.argv(oldLink).at(-1), f.app.executions.threads.argv(next).at(-1));
   f.app.executions.threads.accepted(work, next, {
     operationId: "op-new",
     workId: work.id,
@@ -1033,10 +894,7 @@ test("cancelled lost-acceptance reply cannot bind or wake a new Work using the s
   assert.equal(f.app.executions.savedReport(work), undefined);
   await c.reconcile(new AbortController().signal);
   assert.match(f.app.executions.savedReport(work).text, /REAL NATIVE RESULT/);
-  assert.doesNotMatch(
-    f.app.executions.savedReport(work).text,
-    /old-late-operation|Old submission/,
-  );
+  assert.doesNotMatch(f.app.executions.savedReport(work).text, /old-late-operation|Old submission/);
   assert.equal(f.app.executions.savedReport(f.work), undefined);
   assert.equal(f.app.workRecord(f.work.id).status, "cancelled");
   assert.equal(turns(f.app).length, 1);

@@ -25,9 +25,7 @@ export class SqliteReceptionReadModel {
   }
   history(conversationId, messageId, limit, requireUser = true) {
     const anchor = this.#db
-      .prepare(
-        "SELECT seq,text FROM conversation_message WHERE id=? AND conversation_id=? AND (?=0 OR role='user')",
-      )
+      .prepare("SELECT seq,text FROM conversation_message WHERE id=? AND conversation_id=? AND (?=0 OR role='user')")
       .get(messageId, conversationId, requireUser ? 1 : 0);
     if (!anchor) return null;
     const messages = this.#db
@@ -95,26 +93,15 @@ export class SqliteReceptionReadModel {
         ...w,
         resultId:
           this.#db
-            .prepare(
-              "SELECT id FROM result WHERE execution_id=(SELECT active_execution_id FROM work WHERE id=?)",
-            )
+            .prepare("SELECT id FROM result WHERE execution_id=(SELECT active_execution_id FROM work WHERE id=?)")
             .get(w.id)?.id ?? null,
-        dependsOn: this.#db
-          .prepare(
-            "SELECT upstream_id,revision FROM work_dependency WHERE work_id=?",
-          )
-          .all(w.id),
+        dependsOn: this.#db.prepare("SELECT upstream_id,revision FROM work_dependency WHERE work_id=?").all(w.id),
       })),
-      semanticReview: g.confirmation_json
-        ? JSON.parse(g.confirmation_json).kind
-        : "unverified",
+      semanticReview: g.confirmation_json ? JSON.parse(g.confirmation_json).kind : "unverified",
     };
     let more = value.works.length > limit;
     value.works = value.works.slice(0, limit);
-    while (
-      value.works.length > 1 &&
-      new TextEncoder().encode(JSON.stringify(value)).byteLength > 10500
-    ) {
+    while (value.works.length > 1 && new TextEncoder().encode(JSON.stringify(value)).byteLength > 10500) {
       value.works.pop();
       more = true;
     }
@@ -144,18 +131,7 @@ export class SqliteReceptionReadModel {
          AND (?='' OR instr(lower(w.text),lower(?))>0 OR w.id=?)
          ORDER BY w.id LIMIT ?`,
       )
-      .all(
-        conversationId,
-        after ?? null,
-        after ?? null,
-        state,
-        state,
-        state,
-        query,
-        query,
-        query,
-        limit,
-      );
+      .all(conversationId, after ?? null, after ?? null, state, state, state, query, query, query, limit);
   }
   attentionWorks(conversationId, limit) {
     return this.#db
@@ -170,20 +146,14 @@ export class SqliteReceptionReadModel {
   }
   work(conversationId, id) {
     const work = this.#db
-      .prepare(
-        `SELECT ${workColumns},w.completion_json FROM ${workJoin} WHERE c.conversation_id=? AND w.id=?`,
-      )
+      .prepare(`SELECT ${workColumns},w.completion_json FROM ${workJoin} WHERE c.conversation_id=? AND w.id=?`)
       .get(conversationId, id);
     if (!work) return null;
     const assessment = this.#db
-      .prepare(
-        "SELECT data_json FROM completion_assessment WHERE execution_id=?",
-      )
+      .prepare("SELECT data_json FROM completion_assessment WHERE execution_id=?")
       .get(work.execution_id);
     const delivery = this.#db
-      .prepare(
-        "SELECT status,attempts,error,accepted_at FROM delivery WHERE result_id='result:' || ?",
-      )
+      .prepare("SELECT status,attempts,error,accepted_at FROM delivery WHERE result_id='result:' || ?")
       .get(work.execution_id);
     return {
       work,
@@ -216,12 +186,9 @@ export class SqliteReceptionReadModel {
   memory(key, projectId = null) {
     const get = (address) =>
       this.#db
-        .prepare(
-          `SELECT ${memoryColumns} FROM ${memoryJoin} WHERE m.key=? AND ${memoryVisible}`,
-        )
+        .prepare(`SELECT ${memoryColumns} FROM ${memoryJoin} WHERE m.key=? AND ${memoryVisible}`)
         .get(address, memoryVisibility(projectId));
-    const row =
-      get(key) ?? (!key.startsWith("@") ? get(`@agent/${key}`) : null);
+    const row = get(key) ?? (!key.startsWith("@") ? get(`@agent/${key}`) : null);
     return row ? { ...row, value: row.deleted ? null : row.value } : null;
   }
 }

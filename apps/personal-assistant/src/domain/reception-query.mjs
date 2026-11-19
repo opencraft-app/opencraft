@@ -25,14 +25,7 @@ const fields = Object.freeze({
   "report.read": ["workId", "offset", "limit"],
   "questions.list": ["workId", "after", "limit"],
   "memory.get": ["key"],
-  "memory.file.read": [
-    "scope",
-    "project",
-    "agentId",
-    "path",
-    "offset",
-    "limit",
-  ],
+  "memory.file.read": ["scope", "project", "agentId", "path", "offset", "limit"],
   "memory.search": ["query", "after", "limit", "match"],
   "memory.files.list": ["after", "limit"],
   "history.search": ["query", "after", "limit"],
@@ -43,11 +36,7 @@ const fields = Object.freeze({
 export const RECEPTION_QUERY_NAMES = Object.freeze(Object.keys(fields));
 export class ReceptionQuery {
   static parse(request) {
-    if (
-      !request ||
-      request.kind !== "query" ||
-      !Object.hasOwn(fields, request.name)
-    )
+    if (!request || request.kind !== "query" || !Object.hasOwn(fields, request.name))
       throw new Error("Unsupported reception query");
     const p = request.params ?? {};
     if (
@@ -58,25 +47,20 @@ export class ReceptionQuery {
     )
       throw new Error("Unknown reception query parameters");
     const params = {};
-    if (p.cursor !== undefined)
-      params.cursor = requireText(p.cursor, "cursor", 2048);
+    if (p.cursor !== undefined) params.cursor = requireText(p.cursor, "cursor", 2048);
     if (p.before !== undefined) {
-      if (!Number.isSafeInteger(p.before) || p.before < 1)
-        throw Error("Invalid history cursor");
+      if (!Number.isSafeInteger(p.before) || p.before < 1) throw Error("Invalid history cursor");
       params.before = p.before;
     }
     for (const key of ["channelId", "reference"])
-      if (fields[request.name].includes(key))
-        params[key] = requireText(p[key], key, 2048);
+      if (fields[request.name].includes(key)) params[key] = requireText(p[key], key, 2048);
     if (request.name === "works.list") {
       params.state = p.state ?? "all";
-      if (!["all", "open", "closed"].includes(params.state))
-        throw new Error("Invalid work state filter");
+      if (!["all", "open", "closed"].includes(params.state)) throw new Error("Invalid work state filter");
     }
     if (
       fields[request.name].includes("query") &&
-      (!["works.list", "platform.conversations.list"].includes(request.name) ||
-        p.query !== undefined)
+      (!["works.list", "platform.conversations.list"].includes(request.name) || p.query !== undefined)
     )
       params.query = requireText(p.query, "query", 200);
     if (request.name === "memory.search") {
@@ -87,59 +71,28 @@ export class ReceptionQuery {
       for (const key of ["scope", "project", "agentId"])
         if (p[key] !== undefined) params[key] = requireText(p[key], key, 160);
     }
-    for (const key of [
-      "goalId",
-      "workId",
-      "key",
-      "source",
-      "path",
-      "messageId",
-    ])
+    for (const key of ["goalId", "workId", "key", "source", "path", "messageId"])
       if (fields[request.name].includes(key))
         if (request.name !== "questions.list" || p[key] !== undefined)
           params[key] = requireText(p[key], key, key === "path" ? 1000 : 160);
-    if (p.after !== undefined)
-      params.after = requireText(p.after, "after", 1000);
-    if (fields[request.name].includes("directory"))
-      params.directory = p.directory ?? "";
-    if (
-      params.directory !== undefined &&
-      (typeof params.directory !== "string" || params.directory.length > 1000)
-    )
+    if (p.after !== undefined) params.after = requireText(p.after, "after", 1000);
+    if (fields[request.name].includes("directory")) params.directory = p.directory ?? "";
+    if (params.directory !== undefined && (typeof params.directory !== "string" || params.directory.length > 1000))
       throw new Error("Invalid material directory");
     if (fields[request.name].includes("limit")) {
-      const max = [
-        "material.read",
-        "report.read",
-        "memory.file.read",
-        "history.read",
-      ].includes(request.name)
+      const max = ["material.read", "report.read", "memory.file.read", "history.read"].includes(request.name)
         ? RECEPTION_LIMITS.readCharacters
         : RECEPTION_LIMITS.pageSize;
       params.limit = p.limit ?? (request.name === "goal.get" ? 4 : max);
-      if (
-        !Number.isSafeInteger(params.limit) ||
-        params.limit < 1 ||
-        params.limit > max
-      )
+      if (!Number.isSafeInteger(params.limit) || params.limit < 1 || params.limit > max)
         throw new Error("Reception query limit exceeds its bound");
     }
-    if (
-      [
-        "material.read",
-        "report.read",
-        "memory.file.read",
-        "history.read",
-      ].includes(request.name)
-    ) {
+    if (["material.read", "report.read", "memory.file.read", "history.read"].includes(request.name)) {
       params.offset = p.offset ?? 0;
       if (
         !Number.isSafeInteger(params.offset) ||
         params.offset < 0 ||
-        params.offset >
-          (["report.read", "history.read"].includes(request.name)
-            ? 1000000
-            : 65536)
+        params.offset > (["report.read", "history.read"].includes(request.name) ? 1000000 : 65536)
       )
         throw new Error("Invalid material character offset");
     }
@@ -173,13 +126,9 @@ export class ReceptionQueryGrant {
       turn.conversation_id !== conversationId ||
       grant.inputId !== turn.id ||
       !Array.isArray(grant.resources) ||
-      grant.resources.some(
-        (r) => !r || typeof r.id !== "string" || typeof r.binding !== "string",
-      )
+      grant.resources.some((r) => !r || typeof r.id !== "string" || typeof r.binding !== "string")
     )
-      throw new Error(
-        "Reception query grant is outside this assistant or conversation",
-      );
+      throw new Error("Reception query grant is outside this assistant or conversation");
     if (
       grant.targetWork &&
       (typeof grant.targetWork.workId !== "string" ||

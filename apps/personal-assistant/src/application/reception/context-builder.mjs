@@ -1,7 +1,4 @@
-import {
-  ReceptionQuery,
-  RECEPTION_LIMITS,
-} from "../../domain/reception-query.mjs";
+import { ReceptionQuery, RECEPTION_LIMITS } from "../../domain/reception-query.mjs";
 import { Conversation } from "../../domain/conversation.mjs";
 import { ContinuationDecision } from "../../domain/continuation.mjs";
 
@@ -30,10 +27,7 @@ export class ReceptionContextBuilder {
       })),
       ...this.queries.seed(grant, { text: turn.text }),
     };
-    while (
-      ReceptionQuery.bytes(value) > RECEPTION_LIMITS.contextBytes &&
-      value.messages.length > 1
-    )
+    while (ReceptionQuery.bytes(value) > RECEPTION_LIMITS.contextBytes && value.messages.length > 1)
       value.messages.shift();
     this.boundMemory(value);
     if (ReceptionQuery.bytes(value) > RECEPTION_LIMITS.contextBytes)
@@ -63,15 +57,9 @@ export class ReceptionContextBuilder {
   reportContext(turn, grant) {
     const source = JSON.parse(turn.source_json);
     const report = this.reads.report(turn.conversation_id, source.workId);
-    if (!report || report.id !== source.reportId)
-      throw new Error("Report is no longer current");
+    if (!report || report.id !== source.reportId) throw new Error("Report is no longer current");
     const history = source.historyAnchor
-      ? this.reads.history(
-          turn.conversation_id,
-          source.historyAnchor,
-          20,
-          false,
-        )
+      ? this.reads.history(turn.conversation_id, source.historyAnchor, 20, false)
       : null;
     const summarizeRequest = (r) =>
       r
@@ -93,9 +81,7 @@ export class ReceptionContextBuilder {
       },
       confirmedInputs: source.confirmedInputs ?? { items: [], omitted: true },
       directives: source.directives ?? { items: [], omitted: true },
-      goalContext: source.goalId
-        ? this.queries.reportGoal(grant, source)
-        : null,
+      goalContext: source.goalId ? this.queries.reportGoal(grant, source) : null,
       request: source.request
         ? {
             original: summarizeRequest(source.request.original),
@@ -121,9 +107,7 @@ export class ReceptionContextBuilder {
           resultPresent: source.assessment.resultPresent,
           semanticReview: source.assessment.semanticReview,
           checks: source.assessment.checks,
-          requirements: source.assessment.requirements
-            .slice(0, 4)
-            .map((s) => s.slice(0, 120)),
+          requirements: source.assessment.requirements.slice(0, 4).map((s) => s.slice(0, 120)),
         },
       },
       continuationLimit: ContinuationDecision.maxContinuations,
@@ -136,10 +120,7 @@ export class ReceptionContextBuilder {
       })),
       ...this.queries.seed(grant),
     };
-    while (
-      ReceptionQuery.bytes(value) > RECEPTION_LIMITS.contextBytes &&
-      value.messages.length > 0
-    )
+    while (ReceptionQuery.bytes(value) > RECEPTION_LIMITS.contextBytes && value.messages.length > 0)
       value.messages.shift();
     this.boundMemory(value);
     if (ReceptionQuery.bytes(value) > RECEPTION_LIMITS.contextBytes)

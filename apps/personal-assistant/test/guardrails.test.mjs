@@ -12,16 +12,7 @@ import { ReceptionModel } from "../src/adapters/models/reception-model.mjs";
 import { MemoryLearningModel } from "../src/adapters/models/memory-learning-model.mjs";
 import { readNativeUsage } from "../src/adapters/pi/native-usage.mjs";
 import { withRequestDeadline } from "../src/adapters/local/request-deadline.mjs";
-import {
-  profileFor,
-  running,
-  until,
-  completed,
-  childRunner,
-  files,
-  nativeEntries,
-  root,
-} from "./helpers.mjs";
+import { profileFor, running, until, completed, childRunner, files, nativeEntries, root } from "./helpers.mjs";
 
 const counters = (input, output = 2) => ({
   input,
@@ -69,18 +60,13 @@ test("run policy validates finite local limits and remains separate from a spend
 test("native request step identity survives reopen; recovery of the same task does not consume another step", (t) => {
   const profile = profileFor(t);
   let d = createLocalDomain(profile);
-  const work = d.app.workRecord(
-    d.app.works.submit("steps", { text: "task" }).workId,
-  );
+  const work = d.app.workRecord(d.app.works.submit("steps", { text: "task" }).workId);
   d.app.executions.modelStep(work, "task-1", 1);
   d.uow.close();
   d = createLocalDomain(profile);
   t.after(() => d.uow.close());
   d.app.executions.modelStep(work, "task-1", 1);
-  assert.throws(
-    () => d.app.executions.modelStep(work, "task-2", 1),
-    /model-step limit/,
-  );
+  assert.throws(() => d.app.executions.modelStep(work, "task-2", 1), /model-step limit/);
   const state = JSON.parse(d.app.executions.execution(work).guard_json);
   assert.equal(state.steps, 1);
   assert.equal(state.stopReason, "steps");
@@ -90,11 +76,7 @@ test("native request step identity survives reopen; recovery of the same task do
     text: "new bounded goal",
   });
   d.app.executions.modelStep(d.app.workRecord(work.id), "task-3", 1);
-  assert.equal(
-    JSON.parse(d.app.executions.execution(d.app.workRecord(work.id)).guard_json)
-      .steps,
-    1,
-  );
+  assert.equal(JSON.parse(d.app.executions.execution(d.app.workRecord(work.id)).guard_json).steps, 1);
 });
 
 test("real Pi step guard aborts before another provider request and retains the already published effect", async (t) => {
@@ -102,27 +84,15 @@ test("real Pi step guard aborts before another provider request and retains the 
     runPolicy: { maxSteps: 1 },
   });
   const { workId } = await call("submit", { text: "write a note" });
-  const detail = await until(
-    () =>
-      runner.app.workRecord(workId).status === "blocked" &&
-      runner.app.detail(workId),
-  );
+  const detail = await until(() => runner.app.workRecord(workId).status === "blocked" && runner.app.detail(workId));
   assert.match(detail.work.error, /model-step limit/);
   assert.equal(JSON.parse(detail.executions[0].guard_json).steps, 1);
   assert.equal(detail.results.length, 0);
   assert.equal(detail.deliveries.length, 0);
   assert.equal(files(profile, "artifacts").length, 1);
   assert.equal(detail.reports[0].status, "error");
-  assert.equal(
-    (await nativeEntries(profile, workId)).filter(
-      (e) => e.kind === "pi.assistant",
-    ).length,
-    1,
-  );
-  assert.ok(
-    runner.app.usage.read({ workId }).executions[0].control.lastRun.elapsedMs >=
-      0,
-  );
+  assert.equal((await nativeEntries(profile, workId)).filter((e) => e.kind === "pi.assistant").length, 1);
+  assert.ok(runner.app.usage.read({ workId }).executions[0].control.lastRun.elapsedMs >= 0);
   // More capacity is an explicit configuration change; new revision gets its own bounded run.
   profile.config.runPolicy.maxSteps = 3;
   await call("amend", {
@@ -140,11 +110,7 @@ test("real Pi execution timeout blocks work and leaves cancellation with the nat
     runPolicy: { workTimeoutMs: 80 },
   });
   const { workId } = await call("submit", { text: "slow work" });
-  const detail = await until(
-    () =>
-      runner.app.workRecord(workId).status === "blocked" &&
-      runner.app.detail(workId),
-  );
+  const detail = await until(() => runner.app.workRecord(workId).status === "blocked" && runner.app.detail(workId));
   assert.match(detail.work.error, /work-timeout/);
   assert.equal(detail.results.length, 0);
   assert.equal(files(profile, "artifacts").length, 0);
@@ -172,10 +138,7 @@ test("a reception that ignores cancellation times out, releases its lane and can
   runner.app.reception.accept("next", { text: "next" });
   await until(() => runner.app.reception.turn("next").status === "settled");
   assert.equal(runner.app.status().works.length, 0);
-  assert.match(
-    runner.app.reception.turn("hanging").reply_text,
-    /planning-timeout/,
-  );
+  assert.match(runner.app.reception.turn("hanging").reply_text, /planning-timeout/);
 });
 
 test("an already aborted one-shot request never enters a provider and has no unhandled rejection", async () => {
@@ -212,9 +175,7 @@ test("actual model adapter forwards limits and records usage before JSON parsing
     ),
     { recordUsage: (v) => app.usage.recordCall(v) },
   );
-  await assert.rejects(
-    model.decide({ text: "private wording" }, new AbortController().signal),
-  );
+  await assert.rejects(model.decide({ text: "private wording" }, new AbortController().signal));
   assert.equal(options.timeoutMs, 100);
   assert.equal(options.maxRetries, 0);
   const result = app.usage.read();
@@ -232,10 +193,7 @@ test("model failure and timeout are recorded as unknown counters rather than zer
     }),
     options,
   );
-  await assert.rejects(
-    fail.decide({}, new AbortController().signal),
-    /quota exhausted/,
-  );
+  await assert.rejects(fail.decide({}, new AbortController().signal), /quota exhausted/);
   const slow = new ReceptionModel(
     catalog(async () => new Promise(() => {}), { modelTimeoutMs: 20 }),
     options,
@@ -243,19 +201,13 @@ test("model failure and timeout are recorded as unknown counters rather than zer
   // A referenced timer keeps this isolated no-I/O model test alive until its deadline.
   const keepAlive = setInterval(() => {}, 1000);
   try {
-    await assert.rejects(
-      slow.decide({}, new AbortController().signal),
-      /model-timeout/,
-    );
+    await assert.rejects(slow.decide({}, new AbortController().signal), /model-timeout/);
   } finally {
     clearInterval(keepAlive);
   }
   const usage = app.usage.read();
   assert.equal(usage.items.length, 2);
-  assert.deepEqual(
-    new Set(usage.items.map((r) => r.outcome)),
-    new Set(["error", "timeout"]),
-  );
+  assert.deepEqual(new Set(usage.items.map((r) => r.outcome)), new Set(["error", "timeout"]));
   assert.equal(usage.totalsByMode[0].knownTotals.totalTokens, null);
   assert.equal(usage.totalsByMode[0].unknownObservations.totalTokens, 2);
 });
@@ -276,18 +228,9 @@ test("memory proposal and verification use the same bounded transport and separa
     })),
     { recordUsage: (v) => app.usage.recordCall(v) },
   );
-  await model.propose(
-    { evidence: [], snapshot: {} },
-    new AbortController().signal,
-  );
-  await model.verify(
-    { evidence: [], snapshot: {}, proposal: { changes: [] } },
-    new AbortController().signal,
-  );
-  assert.deepEqual(
-    new Set(app.usage.read().items.map((r) => r.kind)),
-    new Set(["memory-propose", "memory-verify"]),
-  );
+  await model.propose({ evidence: [], snapshot: {} }, new AbortController().signal);
+  await model.verify({ evidence: [], snapshot: {}, proposal: { changes: [] } }, new AbortController().signal);
+  assert.deepEqual(new Set(app.usage.read().items.map((r) => r.kind)), new Set(["memory-propose", "memory-verify"]));
   assert.equal(app.usage.read().totalsByMode[0].knownTotals.totalTokens, 10);
 });
 
@@ -305,14 +248,8 @@ test("Pi usage snapshots replace prior totals, separate fixture from model, and 
   const result = app.usage.read({ workId, limit: 1 });
   assert.ok(result.next);
   assert.equal(result.items.length, 1);
-  assert.equal(
-    result.totalsByMode.find((g) => g.mode === "model").knownTotals.input,
-    20,
-  );
-  assert.equal(
-    result.totalsByMode.find((g) => g.mode === "fixture").knownTotals.input,
-    5,
-  );
+  assert.equal(result.totalsByMode.find((g) => g.mode === "model").knownTotals.input, 20);
+  assert.equal(result.totalsByMode.find((g) => g.mode === "fixture").knownTotals.input, 5);
   assert.equal(app.usage.read({ workId, after: result.next }).items.length, 1);
   assert.throws(() => app.usage.read({ workId: "foreign" }), /Unknown work/);
   assert.throws(() => app.usage.read({ limit: 101 }), /1..100/);
@@ -337,10 +274,7 @@ test("direct observation IDs deduplicate while omitted fields remain unknown", (
   assert.equal(value.items[0].usage.output, null);
   assert.equal(value.totalsByMode[0].knownTotals.input, 4);
   assert.equal(value.totalsByMode[0].unknownObservations.output, 1);
-  assert.throws(
-    () => app.dispatch({ op: "usage.record", params: record }),
-    /Unknown operation/,
-  );
+  assert.throws(() => app.dispatch({ op: "usage.record", params: record }), /Unknown operation/);
 });
 
 test("read-only native usage neither resumes a suspended worker nor duplicates its native input", async (t) => {
@@ -363,20 +297,13 @@ test("read-only native usage neither resumes a suspended worker nor duplicates i
   runner = await Runner.open(profile);
   t.after(() => runner.close());
   await completed(profile, workId);
-  assert.equal(
-    (await nativeEntries(profile, workId)).filter(
-      (e) => e.kind === "superapp.work-input",
-    ).length,
-    1,
-  );
+  assert.equal((await nativeEntries(profile, workId)).filter((e) => e.kind === "superapp.work-input").length, 1);
 });
 
 test("schema11 migrates without fabricating old usage or altering a fixed execution snapshot", (t) => {
   const profile = profileFor(t);
   let d = createLocalDomain(profile);
-  const work = d.app.workRecord(
-      d.app.works.submit("old", { text: "old" }).workId,
-    ),
+  const work = d.app.workRecord(d.app.works.submit("old", { text: "old" }).workId),
     snapshot = d.app.executions.snapshot(work);
   legacyMemoryFixture(profile, d.uow.db);
   d.uow.db.exec(
@@ -386,10 +313,7 @@ test("schema11 migrates without fabricating old usage or altering a fixed execut
   d = createLocalDomain(profile);
   t.after(() => d.uow.close());
   assert.equal(d.uow.db.prepare("PRAGMA user_version").get().user_version, 21);
-  assert.deepEqual(
-    d.app.executions.snapshot(d.app.workRecord(work.id)),
-    snapshot,
-  );
+  assert.deepEqual(d.app.executions.snapshot(d.app.workRecord(work.id)), snapshot);
   assert.equal(d.app.usage.read().items.length, 0);
 });
 
@@ -420,21 +344,18 @@ test("real CLI configures limits and queries persisted Pi counters without prese
     child = await childRunner(t, profile);
   const cli = (...args) =>
     JSON.parse(
-      execFileSync(
-        process.execPath,
-        ["bin/assistant.mjs", ...args, "--profile", path],
-        { cwd: root, encoding: "utf8", timeout: 5000 },
-      ),
+      execFileSync(process.execPath, ["bin/assistant.mjs", ...args, "--profile", path], {
+        cwd: root,
+        encoding: "utf8",
+        timeout: 5000,
+      }),
     ).result;
   const work = cli("submit", "--text", "note", "--id", "usage-cli");
   await completed(profile, work.workId);
   const usage = cli("usage", "--work", work.workId, "--limit", "1");
   assert.equal(usage.items[0].source, "pi.usage");
   assert.equal(usage.totalsByMode[0].mode, "fixture");
-  assert.equal(
-    cli("work", "--work", work.workId).executions[0].guard_json !== null,
-    true,
-  );
+  assert.equal(cli("work", "--work", work.workId).executions[0].guard_json !== null, true);
   await child.stop();
 });
 
@@ -446,9 +367,7 @@ test("usage storage failure does not replace a successful model reply or repeat 
       calls++;
       return {
         stopReason: "stop",
-        content: [
-          { type: "text", text: '{"kind":"reply","text":"actual reply"}' },
-        ],
+        content: [{ type: "text", text: '{"kind":"reply","text":"actual reply"}' }],
         usage: counters(3),
       };
     }),
@@ -461,10 +380,7 @@ test("usage storage failure does not replace a successful model reply or repeat 
       },
     },
   );
-  assert.equal(
-    (await model.decide({}, new AbortController().signal)).text,
-    "actual reply",
-  );
+  assert.equal((await model.decide({}, new AbortController().signal)).text, "actual reply");
   assert.equal(calls, 1);
   assert.equal(observed, 1);
 });
@@ -481,23 +397,12 @@ test("native usage survives restart and repeated post-restart snapshots do not i
   await runner.close();
   runner = await Runner.open(profile);
   t.after(() => runner.close());
-  assert.deepEqual(
-    runner.app.usage.read({ workId }).totalsByMode,
-    before.totalsByMode,
-  );
-  const choice = (await ModelCatalog.open(profile)).forExecution(
-    `${workId}:r1`,
-  );
-  const native = await readNativeUsage(
-    join(profile.path, "executions", `${workId}.sqlite`),
-    choice.models,
-  );
+  assert.deepEqual(runner.app.usage.read({ workId }).totalsByMode, before.totalsByMode);
+  const choice = (await ModelCatalog.open(profile)).forExecution(`${workId}:r1`);
+  const native = await readNativeUsage(join(profile.path, "executions", `${workId}.sqlite`), choice.models);
   runner.app.usage.recordNative(workId, native, "fixture");
   runner.app.usage.recordNative(workId, native, "fixture");
-  assert.deepEqual(
-    runner.app.usage.read({ workId }).totalsByMode,
-    before.totalsByMode,
-  );
+  assert.deepEqual(runner.app.usage.read({ workId }).totalsByMode, before.totalsByMode);
 });
 
 test("waiting for the user's answer does not keep the previous active-run timeout alive", async (t) => {
@@ -507,9 +412,7 @@ test("waiting for the user's answer does not keep the previous active-run timeou
   });
   const { workId } = await call("submit", { text: "先问我，再整理笔记" });
   const question = await until(() =>
-    runner.app.interactions
-      .list()
-      .find((q) => q.work_id === workId && q.state === "pending"),
+    runner.app.interactions.list().find((q) => q.work_id === workId && q.state === "pending"),
   );
   await until(() => runner.work.active.size === 0);
   await new Promise((resolve) => setTimeout(resolve, 1050));
@@ -521,22 +424,13 @@ test("waiting for the user's answer does not keep the previous active-run timeou
     text: "本周进展",
   });
   await completed(profile, workId);
-  assert.equal(
-    runner.app.usage.read({ workId }).executions[0].control.lastRun.outcome,
-    "returned",
-  );
+  assert.equal(runner.app.usage.read({ workId }).executions[0].control.lastRun.outcome, "returned");
 });
 
 test("native quota failure retains the provider detail instead of showing only model_error", async (t) => {
-  const { createModels, fauxProvider, fauxAssistantMessage } = await import(
-    "@earendil-works/pi-ai"
-  );
-  const { PiExecutionAdapter } = await import(
-    "../src/adapters/pi/pi-execution-adapter.mjs"
-  );
-  const { LocalArtifactStore } = await import(
-    "../src/adapters/filesystem/artifact-store.mjs"
-  );
+  const { createModels, fauxProvider, fauxAssistantMessage } = await import("@earendil-works/pi-ai");
+  const { PiExecutionAdapter } = await import("../src/adapters/pi/pi-execution-adapter.mjs");
+  const { LocalArtifactStore } = await import("../src/adapters/filesystem/artifact-store.mjs");
   const { app, profile } = domain(t),
     models = createModels(),
     faux = fauxProvider({ tokensPerSecond: 100000 });
@@ -548,9 +442,7 @@ test("native quota failure retains the provider detail instead of showing only m
   ]);
   models.setProvider(faux.provider);
   profile.config.runPolicy.maxRetries = 0;
-  const work = app.workRecord(
-    app.works.submit("quota", { text: "task" }).workId,
-  );
+  const work = app.workRecord(app.works.submit("quota", { text: "task" }).workId);
   const adapter = new PiExecutionAdapter({
     profile,
     ...createExecutionPorts(app),
@@ -564,18 +456,13 @@ test("native quota failure retains the provider detail instead of showing only m
     knowledgeSource: null,
   });
   app.executions.started(work);
-  await assert.rejects(
-    adapter.run(work, new AbortController().signal),
-    /provider quota exhausted/,
-  );
+  await assert.rejects(adapter.run(work, new AbortController().signal), /provider quota exhausted/);
   assert.equal(files(profile, "artifacts").length, 0);
   assert.equal(app.usage.read({ workId: work.id }).items[0].source, "pi.usage");
 });
 
 test("memory learning releases its slot on an uncooperative verification timeout and keeps the saved proposal", async () => {
-  const { MemoryLearningCoordinator } = await import(
-    "../src/runtime/memory-learning-coordinator.mjs"
-  );
+  const { MemoryLearningCoordinator } = await import("../src/runtime/memory-learning-coordinator.mjs");
   let failed,
     proposed = 0;
   const job = {
@@ -597,12 +484,9 @@ test("memory learning releases its slot on an uncooperative verification timeout
       throw new Error("late verification must not commit");
     },
   };
-  const coordinator = new MemoryLearningCoordinator(
-    service,
-    { verify: async () => new Promise(() => {}) },
-    () => {},
-    { timeoutMs: 20 },
-  );
+  const coordinator = new MemoryLearningCoordinator(service, { verify: async () => new Promise(() => {}) }, () => {}, {
+    timeoutMs: 20,
+  });
   coordinator.tick();
   await until(() => failed && !coordinator.task);
   assert.match(String(failed), /model-timeout/);

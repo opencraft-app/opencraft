@@ -1,10 +1,4 @@
-import {
-  readFile,
-  writeFile,
-  mkdir,
-  readdir,
-  appendFile,
-} from "node:fs/promises";
+import { readFile, writeFile, mkdir, readdir, appendFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
@@ -23,34 +17,16 @@ import { service } from "./processes.mjs";
 import { nativeText } from "./native-text.mjs";
 const lab = resolve(import.meta.dirname, "../.."),
   root = resolve(lab, "..");
-const output = resolve(
-  process.argv[2] ??
-    join(lab, "evaluation/runs/hindsight-comparison-20261110-v1"),
-);
+const output = resolve(process.argv[2] ?? join(lab, "evaluation/runs/hindsight-comparison-20261110-v1"));
 await mkdir(output);
-const codex = JSON.parse(
-    await readFile(join(root, ".private/tokenhub-codex.json"), "utf8"),
-  ),
-  backgroundCodex = JSON.parse(
-    await readFile(
-      join(root, ".private/tokenhub-hy4-nothink-codex.json"),
-      "utf8",
-    ),
-  );
+const codex = JSON.parse(await readFile(join(root, ".private/tokenhub-codex.json"), "utf8")),
+  backgroundCodex = JSON.parse(await readFile(join(root, ".private/tokenhub-hy4-nothink-codex.json"), "utf8"));
 const dataset = join(lab, "evaluation/datasets/personamem-v1-32k");
 const csv = await readFile(join(dataset, "questions_32k.csv"), "utf8"),
   jsonl = await readFile(join(dataset, "shared_contexts_32k.jsonl"), "utf8");
 const contexts = parseContexts(jsonl);
-const previous = JSON.parse(
-  await readFile(
-    join(lab, "evaluation/runs/bm25-paired-20261109-v1/plan.json"),
-    "utf8",
-  ),
-);
-if (
-  hash(csv) !== previous.dataset.questionsSha256 ||
-  hash(jsonl) !== previous.dataset.contextsSha256
-)
+const previous = JSON.parse(await readFile(join(lab, "evaluation/runs/bm25-paired-20261109-v1/plan.json"), "utf8"));
+if (hash(csv) !== previous.dataset.questionsSha256 || hash(jsonl) !== previous.dataset.contextsSha256)
   throw new Error("Dataset hash mismatch");
 const groups = previous.groups,
   seed = "hindsight-comparison-20261110-v1";
@@ -84,11 +60,10 @@ const pin = (dir) => ({
     cwd: join(root, dir),
     encoding: "utf8",
   }).trim(),
-  trackedChanges: execFileSync(
-    "git",
-    ["status", "--porcelain", "--untracked-files=no"],
-    { cwd: join(root, dir), encoding: "utf8" },
-  ).trim(),
+  trackedChanges: execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], {
+    cwd: join(root, dir),
+    encoding: "utf8",
+  }).trim(),
 });
 const configPin = (c) => ({
   model: c.modelId,
@@ -151,9 +126,7 @@ const plan = {
     totalQueryResultBytes: 48000,
     rawHistoryInMemoryArms: false,
     repetitions: 1,
-    readerInstructionSha256: hash(
-      await readFile(join(lab, "evaluation/memory-system-session.mjs")),
-    ),
+    readerInstructionSha256: hash(await readFile(join(lab, "evaluation/memory-system-session.mjs"))),
     limitations: [
       "Known 17-question/3-persona regression, one repetition; not held-out, no leaderboard or significance claim.",
       "All arms are fresh runs. Reader is DeepSeek Flash via native Codex; background is hy4/none via the same native Codex backend. No official frontier-model score reproduction.",
@@ -170,20 +143,12 @@ const plan = {
   },
 };
 await writeFile(join(output, "plan.json"), JSON.stringify(plan, null, 2));
-await writeFile(
-  join(output, "source.json"),
-  JSON.stringify(sourceFiles, null, 2),
-);
+await writeFile(join(output, "source.json"), JSON.stringify(sourceFiles, null, 2));
 await writeFile(
   join(output, "python-environment.txt"),
   execFileSync(
     join(root, ".benchmark-tools/uv-x86_64-unknown-linux-gnu/uv"),
-    [
-      "pip",
-      "freeze",
-      "--python",
-      join(root, ".benchmark-tools/hindsight-env/bin/python"),
-    ],
+    ["pip", "freeze", "--python", join(root, ".benchmark-tools/hindsight-env/bin/python")],
     { encoding: "utf8" },
   ),
 );
@@ -194,9 +159,7 @@ console.log(
     groups: groups.map((g) => ({
       role: g.role,
       questions: g.questions.length,
-      messages: Math.max(
-        ...g.questions.map((q) => Number(q.end_index_in_shared_context)),
-      ),
+      messages: Math.max(...g.questions.map((q) => Number(q.end_index_in_shared_context))),
     })),
   }),
 );
@@ -216,20 +179,11 @@ const save = async () => {
     const records = results.filter((r) => r.system === system),
       answers = records.flatMap((r) =>
         (r.result?.results ?? r.progress.filter((p) => p.type === "answer"))
-          .filter((a) =>
-            system === "full-history" || system === "no-history"
-              ? a.arm === system
-              : a.arm === "memory",
-          )
+          .filter((a) => (system === "full-history" || system === "no-history" ? a.arm === system : a.arm === "memory"))
           .map((a) => ({ ...a, group: r.group })),
       );
     const correct = answers.filter(
-      (a) =>
-        a.status === "completed" &&
-        scoreOption(
-          a.hypothesis,
-          groups[a.group].questions[a.query].correct_answer,
-        ),
+      (a) => a.status === "completed" && scoreOption(a.hypothesis, groups[a.group].questions[a.query].correct_answer),
     ).length;
     score.systems[system] = {
       planned: score.plannedQuestions,
@@ -237,10 +191,7 @@ const save = async () => {
       correct,
       failed: answers.filter((a) => a.status !== "completed").length,
       pending: score.plannedQuestions - answers.length,
-      accuracy:
-        answers.length === score.plannedQuestions
-          ? correct / score.plannedQuestions
-          : null,
+      accuracy: answers.length === score.plannedQuestions ? correct / score.plannedQuestions : null,
       byGroup: groups.map((g, i) => {
         const selected = answers.filter((a) => a.group === i);
         return {
@@ -248,18 +199,12 @@ const save = async () => {
           planned: g.questions.length,
           returned: selected.filter((a) => a.status === "completed").length,
           correct: selected.filter(
-            (a) =>
-              a.status === "completed" &&
-              scoreOption(a.hypothesis, g.questions[a.query].correct_answer),
+            (a) => a.status === "completed" && scoreOption(a.hypothesis, g.questions[a.query].correct_answer),
           ).length,
         };
       }),
-      preparationMs: records.map(
-        (r) => r.result?.preparation?.elapsedMs ?? null,
-      ),
-      readerCalls: records
-        .flatMap((r) => r.result?.calls ?? [])
-        .filter((c) => c.kind === "reception").length,
+      preparationMs: records.map((r) => r.result?.preparation?.elapsedMs ?? null),
+      readerCalls: records.flatMap((r) => r.result?.calls ?? []).filter((c) => c.kind === "reception").length,
     };
   }
   await writeFile(join(output, "score.json"), JSON.stringify(score, null, 2));
@@ -321,10 +266,7 @@ try {
   services.push(bridge);
   const embed = await service(
     join(root, ".benchmark-tools/hy-env/bin/python"),
-    [
-      join(import.meta.dirname, "embedding-server.py"),
-      join(root, ".benchmark-tools/embedding-cache"),
-    ],
+    [join(import.meta.dirname, "embedding-server.py"), join(root, ".benchmark-tools/embedding-cache")],
     {
       cwd: lab,
       log: join(output, "embedding.log"),
@@ -341,10 +283,7 @@ try {
       const progress = [];
       const onRecord = async (p) => {
         progress.push(p);
-        await appendFile(
-          join(directory, "progress.jsonl"),
-          JSON.stringify(p) + "\n",
-        );
+        await appendFile(join(directory, "progress.jsonl"), JSON.stringify(p) + "\n");
         if (["answer", "batch", "checkpoint"].includes(p.type))
           console.log(
             JSON.stringify({
@@ -369,8 +308,7 @@ try {
         const value = await runMemoryGroup(
           {
             ...input,
-            arms:
-              system === "ours" ? ["memory"] : ["full-history", "no-history"],
+            arms: system === "ours" ? ["memory"] : ["full-history", "no-history"],
           },
           {
             directory,
@@ -419,13 +357,9 @@ try {
           };
         }
       }
-      await writeFile(
-        join(directory, "result.json"),
-        JSON.stringify(record, null, 2),
-      );
+      await writeFile(join(directory, "result.json"), JSON.stringify(record, null, 2));
       if (system === "controls") {
-        for (const s of ["full-history", "no-history"])
-          results.push({ ...record, system: s });
+        for (const s of ["full-history", "no-history"]) results.push({ ...record, system: s });
       } else results.push(record);
       await save();
       console.log(
@@ -440,10 +374,7 @@ try {
     }
   }
 } catch (e) {
-  await writeFile(
-    join(output, "fatal.json"),
-    JSON.stringify({ name: e.name, message: e.message.slice(0, 300) }),
-  );
+  await writeFile(join(output, "fatal.json"), JSON.stringify({ name: e.name, message: e.message.slice(0, 300) }));
   process.exitCode = 1;
 } finally {
   services.forEach((s) => s.close());

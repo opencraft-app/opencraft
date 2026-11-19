@@ -9,8 +9,14 @@ export interface AnnotatableGuest {
   capturePage(): Promise<{ toDataURL(): string }>;
   getURL(): string;
   getTitle(): string;
-  addEventListener(type: "console-message" | "did-start-navigation", listener: (event: Event & { message?: string; isMainFrame?: boolean; isInPlace?: boolean }) => void): void;
-  removeEventListener(type: "console-message" | "did-start-navigation", listener: (event: Event & { message?: string; isMainFrame?: boolean; isInPlace?: boolean }) => void): void;
+  addEventListener(
+    type: "console-message" | "did-start-navigation",
+    listener: (event: Event & { message?: string; isMainFrame?: boolean; isInPlace?: boolean }) => void,
+  ): void;
+  removeEventListener(
+    type: "console-message" | "did-start-navigation",
+    listener: (event: Event & { message?: string; isMainFrame?: boolean; isInPlace?: boolean }) => void,
+  ): void;
 }
 
 /**
@@ -21,7 +27,9 @@ export interface AnnotatableGuest {
  * lines, which is why every field is sanitized as untrusted page evidence.
  */
 export function createGuestAnnotator(guest: AnnotatableGuest): BrowserAnnotator & { dispose(): void; refresh(): void } {
-  let generation = 0, navigating = false, disposed = false;
+  let generation = 0,
+    navigating = false,
+    disposed = false;
   const navigationListeners = new Set<() => void>();
   const token = crypto.randomUUID();
   const receiver = JSON.stringify(`opencraft.annotation.${token}`);
@@ -31,7 +39,10 @@ export function createGuestAnnotator(guest: AnnotatableGuest): BrowserAnnotator 
     if (disposed && message.type !== "dispose") return Promise.reject(new Error("Preview closed"));
     if (navigating) return Promise.reject(new Error("Preview navigated"));
     const json = JSON.stringify({ channel: FRAME_CHANNEL, token, ...message });
-    return guest.executeJavaScript(`(() => { const r = window[Symbol.for(${receiver})]; if (!r) { ${install} } window[Symbol.for(${receiver})]?.(${json}); ${message.type === "marks" ? "return new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Annotation overlay did not paint')), 3000); requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(); })); });" : ""} })()`)
+    return guest
+      .executeJavaScript(
+        `(() => { const r = window[Symbol.for(${receiver})]; if (!r) { ${install} } window[Symbol.for(${receiver})]?.(${json}); ${message.type === "marks" ? "return new Promise((resolve, reject) => { const timer = setTimeout(() => reject(new Error('Annotation overlay did not paint')), 3000); requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); resolve(); })); });" : ""} })()`,
+      )
       .then(() => undefined);
   };
   const annotator = createAgentAnnotator({
@@ -43,20 +54,27 @@ export function createGuestAnnotator(guest: AnnotatableGuest): BrowserAnnotator 
         try {
           const data = JSON.parse(line.slice(CONSOLE_PREFIX.length)) as Record<string, unknown>;
           if (data && data.channel === FRAME_CHANNEL && data.token === token) listener(data);
-        } catch { /* not ours */ }
+        } catch {
+          /* not ours */
+        }
       };
       guest.addEventListener("console-message", onConsole);
       return () => guest.removeEventListener("console-message", onConsole);
     },
     document: () => ({ url: guest.getURL(), title: guest.getTitle(), generation: String(generation) }),
-    subscribeNavigation: listener => {
+    subscribeNavigation: (listener) => {
       navigationListeners.add(listener);
       const onNavigation = (event: Event & { isMainFrame?: boolean; isInPlace?: boolean }) => {
         if (event.isMainFrame === false || event.isInPlace === true) return;
-        navigating = true; ++generation; listener();
+        navigating = true;
+        ++generation;
+        listener();
       };
       guest.addEventListener("did-start-navigation", onNavigation);
-      return () => { navigationListeners.delete(listener); guest.removeEventListener("did-start-navigation", onNavigation); };
+      return () => {
+        navigationListeners.delete(listener);
+        guest.removeEventListener("did-start-navigation", onNavigation);
+      };
     },
     capture: async () => (await guest.capturePage()).toDataURL(),
   });
@@ -64,7 +82,16 @@ export function createGuestAnnotator(guest: AnnotatableGuest): BrowserAnnotator 
   // "ready", and the annotator restores interception and markers.
   return {
     ...annotator,
-    dispose: () => { disposed = true; annotator.dispose(); },
-    refresh: () => { if (disposed) return; navigating = false; ++generation; for (const listener of navigationListeners) listener(); void deliver({ type: "ping" }).catch(() => undefined); },
+    dispose: () => {
+      disposed = true;
+      annotator.dispose();
+    },
+    refresh: () => {
+      if (disposed) return;
+      navigating = false;
+      ++generation;
+      for (const listener of navigationListeners) listener();
+      void deliver({ type: "ping" }).catch(() => undefined);
+    },
   };
 }

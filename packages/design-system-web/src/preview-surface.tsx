@@ -1,4 +1,12 @@
-import { useCallback, useLayoutEffect, useRef, useState, type ReactNode, type KeyboardEventHandler, type MouseEventHandler } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type KeyboardEventHandler,
+  type MouseEventHandler,
+} from "react";
 import { usePresentationCompletion } from "./presentation-completion";
 const styles = `
 @keyframes opencraft-preview-enter { from { opacity: 0; } to { opacity: 1; } }
@@ -28,33 +36,78 @@ export interface PreviewSurfaceProps {
 }
 /** Native top-layer preview: preserves the caller's ShadowRoot and shares focus,
  * IME dismissal and completion-driven motion for every read-only content kind. */
-export function PreviewSurface({label, className, styles:contentStyles, children, onClose, returnFocus, openedByPointer, onKeyDown, onClick, dismissOnBackground}: PreviewSurfaceProps) {
+export function PreviewSurface({
+  label,
+  className,
+  styles: contentStyles,
+  children,
+  onClose,
+  returnFocus,
+  openedByPointer,
+  onKeyDown,
+  onClick,
+  dismissOnBackground,
+}: PreviewSurfaceProps) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const latest = useRef({onClose, returnFocus}); latest.current = {onClose, returnFocus};
+  const latest = useRef({ onClose, returnFocus });
+  latest.current = { onClose, returnFocus };
   const [presented, setPresented] = useState(false);
   const [closing, setClosing] = useState(false);
   const requested = useRef(false);
-  const close = useCallback(() => { if (!requested.current) { requested.current = true; setClosing(true); } }, []);
+  const close = useCallback(() => {
+    if (!requested.current) {
+      requested.current = true;
+      setClosing(true);
+    }
+  }, []);
   const complete = useCallback(() => latest.current.onClose(), []);
   usePresentationCompletion(dialog, closing, closing, complete);
   useLayoutEffect(() => {
     const element = dialog.current;
     if (!element) return;
     const origin = activeElement();
-    element.showModal(); setPresented(true);
+    element.showModal();
+    setPresented(true);
     return () => {
       element.close();
       const target = latest.current.returnFocus?.() ?? origin;
-      if (target?.isConnected && !target.closest("[inert]")) target.focus({preventScroll:true});
+      if (target?.isConnected && !target.closest("[inert]")) target.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={dialog} aria-label={label} className={["opencraft-preview-surface",className].filter(Boolean).join(" ")}
-    data-opened-by-pointer={openedByPointer || undefined} data-closing={closing || undefined} inert={closing || undefined}
-    onClick={event => {onClick?.(event);if(dismissOnBackground && event.target === event.currentTarget && !event.defaultPrevented)close();}} onCancel={event => { event.preventDefault(); event.stopPropagation(); close(); }}
-    onKeyDownCapture={event => { if (event.key === "Escape" && (event.nativeEvent.isComposing || event.keyCode === 229)) { event.preventDefault(); event.stopPropagation(); } }}
-    onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); close(); } else onKeyDown?.(event); }}>
-    <style data-opencraft-preview-motion children={styles} />
-    {contentStyles && <style data-opencraft-preview-content children={contentStyles} />}
-    {presented && children(close)}
-  </dialog>;
+  return (
+    <dialog
+      ref={dialog}
+      aria-label={label}
+      className={["opencraft-preview-surface", className].filter(Boolean).join(" ")}
+      data-opened-by-pointer={openedByPointer || undefined}
+      data-closing={closing || undefined}
+      inert={closing || undefined}
+      onClick={(event) => {
+        onClick?.(event);
+        if (dismissOnBackground && event.target === event.currentTarget && !event.defaultPrevented) close();
+      }}
+      onCancel={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }}
+      onKeyDownCapture={(event) => {
+        if (event.key === "Escape" && (event.nativeEvent.isComposing || event.keyCode === 229)) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) {
+          event.preventDefault();
+          event.stopPropagation();
+          close();
+        } else onKeyDown?.(event);
+      }}
+    >
+      <style data-opencraft-preview-motion children={styles} />
+      {contentStyles && <style data-opencraft-preview-content children={contentStyles} />}
+      {presented && children(close)}
+    </dialog>
+  );
 }

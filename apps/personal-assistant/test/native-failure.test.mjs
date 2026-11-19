@@ -24,20 +24,31 @@ test("native failures retain only declared codes and HTTP status, never provider
     { httpConnectionFailed: { httpStatusCode: "secret" } },
   ]) {
     assert.doesNotMatch(
-      nativeTurnFailure(
-        { status: "private-status", error: { codexErrorInfo: info } },
-        telemetry,
-        "reception",
-      ).message,
+      nativeTurnFailure({ status: "private-status", error: { codexErrorInfo: info } }, telemetry, "reception").message,
       /secret|private/,
     );
   }
 });
 
-test('429 keeps typed safe metadata; optional Host cooldown enriches without parsing provider text',async()=>{
-  const {enrichModelFailure}=await import('../src/adapters/codex/turn-failure.mjs');
-  const e=nativeTurnFailure({status:'failed',error:{message:'private body',codexErrorInfo:{responseTooManyFailedAttempts:{httpStatusCode:429}}}});
-  assert.equal(e.httpStatus,429);assert.equal(e.modelFailure.kind,'rate_limit');const retryAt=Date.now()+90000;
-  await enrichModelFailure(e,async purpose=>{assert.equal(purpose,'memory-verify');return {httpStatus:429,retryAt};},'memory-verify');assert.equal(e.modelFailure.retryAt,retryAt);
-  await enrichModelFailure(e,async()=>({kind:'quota_exhausted'}),'memory-verify');assert.equal(e.modelFailure.kind,'quota_exhausted');assert.doesNotMatch(JSON.stringify(e),/private body/);
+test("429 keeps typed safe metadata; optional Host cooldown enriches without parsing provider text", async () => {
+  const { enrichModelFailure } = await import("../src/adapters/codex/turn-failure.mjs");
+  const e = nativeTurnFailure({
+    status: "failed",
+    error: { message: "private body", codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 429 } } },
+  });
+  assert.equal(e.httpStatus, 429);
+  assert.equal(e.modelFailure.kind, "rate_limit");
+  const retryAt = Date.now() + 90000;
+  await enrichModelFailure(
+    e,
+    async (purpose) => {
+      assert.equal(purpose, "memory-verify");
+      return { httpStatus: 429, retryAt };
+    },
+    "memory-verify",
+  );
+  assert.equal(e.modelFailure.retryAt, retryAt);
+  await enrichModelFailure(e, async () => ({ kind: "quota_exhausted" }), "memory-verify");
+  assert.equal(e.modelFailure.kind, "quota_exhausted");
+  assert.doesNotMatch(JSON.stringify(e), /private body/);
 });

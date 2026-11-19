@@ -5,12 +5,7 @@ import { digest } from "../../domain/values.mjs";
 export const isBotProfile = (profile) => profile.config.layout === "bot-v1";
 /** Engine sessions outlive execution attempts. Preserve the original path for legacy profiles. */
 export function codexSessionRoot(profile, sessionRoot) {
-  return join(
-    profile.path,
-    isBotProfile(profile) ? "engines" : "executions",
-    "codex",
-    digest(sessionRoot),
-  );
+  return join(profile.path, isBotProfile(profile) ? "engines" : "executions", "codex", digest(sessionRoot));
 }
 export function piSessionPath(profile, workId) {
   resourceId(workId, "work ID");
@@ -19,9 +14,5 @@ export function piSessionPath(profile, workId) {
     : join(profile.path, "executions", `${workId}.sqlite`);
 }
 export function executionWorkspace(profile, executionId) {
-  return join(
-    profile.path,
-    "executions",
-    resourceId(executionId, "execution ID"),
-  );
+  return join(profile.path, "executions", resourceId(executionId, "execution ID"));
 }

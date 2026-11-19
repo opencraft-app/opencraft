@@ -8,12 +8,17 @@ export function usePersistedRightPanelWidth() {
   const snapshot = useSyncExternalStore(preferences.subscribe, preferences.getSnapshot, preferences.getSnapshot);
   const stored = snapshot.values["shell.rightPanelWidth"].ratio;
   const ratio = useMotionValue<number | null>(stored);
-  useLayoutEffect(() => { ratio.set(stored); }, [ratio, stored]);
-  const commit = useCallback((value: number | null) => {
-    ratio.set(value);
-    void preferences.set("shell.rightPanelWidth", { ratio: value }).catch(error => {
-      console.error("Could not save panel width", error);
-    });
-  }, [preferences, ratio]);
+  useLayoutEffect(() => {
+    ratio.set(stored);
+  }, [ratio, stored]);
+  const commit = useCallback(
+    (value: number | null) => {
+      ratio.set(value);
+      void preferences.set("shell.rightPanelWidth", { ratio: value }).catch((error) => {
+        console.error("Could not save panel width", error);
+      });
+    },
+    [preferences, ratio],
+  );
   return { ratio, commit };
 }

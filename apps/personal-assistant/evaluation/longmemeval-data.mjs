@@ -1,48 +1,31 @@
 import { createHash } from "node:crypto";
 
 export function benchmarkTime(value) {
-  if (typeof value !== "string" || !value.trim())
-    throw new Error("Missing benchmark timestamp");
+  if (typeof value !== "string" || !value.trim()) throw new Error("Missing benchmark timestamp");
   let text = value.replace(/\s*\([A-Za-z]+\)/g, "").trim();
   if (/^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(text))
     text = text.replaceAll("/", "-").replace(" ", "T") + "Z";
   // Other accepted timestamps must carry an explicit UTC offset.
-  if (!/(Z|[+-]\d{2}:\d{2})$/.test(text))
-    throw new Error("Timestamp requires a date and timezone");
+  if (!/(Z|[+-]\d{2}:\d{2})$/.test(text)) throw new Error("Timestamp requires a date and timezone");
   const at = Date.parse(text);
   if (!Number.isFinite(at)) throw new Error("Invalid benchmark timestamp");
   return at;
 }
 
 export function selectCases(rows, limit, { strictTime = false } = {}) {
-  if (!Array.isArray(rows) || !rows.length)
-    throw new Error("Expected a nonempty LongMemEval JSON array");
-  if (!Number.isSafeInteger(limit) || limit < 1)
-    throw new Error("limit must be a positive integer");
+  if (!Array.isArray(rows) || !rows.length) throw new Error("Expected a nonempty LongMemEval JSON array");
+  if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("limit must be a positive integer");
   const seen = new Set();
   for (const row of rows) {
-    if (
-      !row ||
-      typeof row.question_id !== "string" ||
-      !row.question_id ||
-      seen.has(row.question_id)
-    )
+    if (!row || typeof row.question_id !== "string" || !row.question_id || seen.has(row.question_id))
       throw new Error("Missing/duplicate question_id");
     seen.add(row.question_id);
   }
   return rows.slice(0, limit).map((row) => {
-    if (
-      typeof row.question !== "string" ||
-      !row.question.trim() ||
-      row.question.length > 10000
-    )
+    if (typeof row.question !== "string" || !row.question.trim() || row.question.length > 10000)
       throw new Error("Invalid question");
     const queryAt = benchmarkTime(row.question_date);
-    const {
-      haystack_sessions: sessions,
-      haystack_dates: dates,
-      haystack_session_ids: ids,
-    } = row;
+    const { haystack_sessions: sessions, haystack_dates: dates, haystack_session_ids: ids } = row;
     if (
       !Array.isArray(sessions) ||
       !sessions.length ||
@@ -62,8 +45,7 @@ export function selectCases(rows, limit, { strictTime = false } = {}) {
           futureSessionCount++;
           if (strictTime) throw new Error("History contains a future session");
         }
-        if (!Array.isArray(messages) || !messages.length)
-          throw new Error("Empty history session");
+        if (!Array.isArray(messages) || !messages.length) throw new Error("Empty history session");
         return {
           at,
           position: i,
@@ -83,19 +65,13 @@ export function selectCases(rows, limit, { strictTime = false } = {}) {
       })
       .sort((a, b) => a.at - b.at || a.position - b.position);
     if (characters > 20 * 1024 * 1024)
-      throw new Error(
-        "Case exceeds 20 Mi characters; shard explicitly, never silently truncate",
-      );
+      throw new Error("Case exceeds 20 Mi characters; shard explicitly, never silently truncate");
     return {
       id: row.question_id,
       futureSessionCount,
       repeatedSessionIds: ids.length - new Set(ids).size,
-      category:
-        typeof row.question_type === "string" ? row.question_type : "unknown",
-      key: createHash("sha256")
-        .update(row.question_id)
-        .digest("hex")
-        .slice(0, 24),
+      category: typeof row.question_type === "string" ? row.question_type : "unknown",
+      key: createHash("sha256").update(row.question_id).digest("hex").slice(0, 24),
       // This is the complete allowlist sent across the evaluator/assistant boundary.
       input: {
         question: row.question,

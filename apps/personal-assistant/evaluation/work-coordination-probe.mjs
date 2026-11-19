@@ -2,14 +2,7 @@
 // The real main model chooses every proposal; no injected planner or forced retry.
 import assert from "node:assert/strict";
 import { parseArgs } from "node:util";
-import {
-  mkdir,
-  mkdtemp,
-  writeFile,
-  cp,
-  readdir,
-  readFile,
-} from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile, cp, readdir, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFileSync } from "node:child_process";
@@ -26,9 +19,7 @@ const { values } = parseArgs({
   },
 });
 if (!values["codex-config"] || !values.output)
-  throw new Error(
-    "Required: --codex-config PRIVATE_JSON --output NEW_DIRECTORY",
-  );
+  throw new Error("Required: --codex-config PRIVATE_JSON --output NEW_DIRECTORY");
 const selected = await readCodexConfiguration(values["codex-config"]);
 const output = resolve(values.output);
 await mkdir(output, { mode: 0o700 });
@@ -61,14 +52,8 @@ const report = {
   checkpoints: [],
   turns: [],
 };
-const call = (op, params = {}, id = crypto.randomUUID()) =>
-  request(profile, { op, params, id });
-const save = () =>
-  writeFile(
-    join(output, "report.json"),
-    JSON.stringify(report, null, 2) + "\n",
-    { mode: 0o600 },
-  );
+const call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
+const save = () => writeFile(join(output, "report.json"), JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
 async function checkpoint(stage, data = {}) {
   report.stage = stage;
   report.checkpoints.push({ stage, at: new Date().toISOString(), ...data });
@@ -80,17 +65,12 @@ async function waitFor(check) {
   for (;;) {
     const value = await check();
     if (value) return value;
-    if (Date.now() > end)
-      throw new Error(`Deadline exceeded at ${report.stage}`);
+    if (Date.now() > end) throw new Error(`Deadline exceeded at ${report.stage}`);
     await delay(150);
   }
 }
 async function say(id, text, workId, expectedRevision) {
-  await call(
-    "say",
-    { text, ...(workId ? { workId, expectedRevision } : {}) },
-    id,
-  );
+  await call("say", { text, ...(workId ? { workId, expectedRevision } : {}) }, id);
   const turn = await waitFor(async () => {
     const t = await call("turn", { inputId: id });
     if (t.status === "blocked") {
@@ -123,24 +103,15 @@ B 工作名称 COORD-B：立即调用 publish_note 发布一份很短的 Markdow
 两项工作都只用上述本地工具，发布后向父助理报告完成。当前已明确授权创建这两个后台工作，不需要额外确认。`,
   );
   const decision = JSON.parse(turn.decision_json);
-  assert.equal(
-    decision.kind,
-    "batch",
-    "Real main model must create two independent works",
-  );
+  assert.equal(decision.kind, "batch", "Real main model must create two independent works");
   assert.equal(decision.workIds?.length, 2);
-  const details = await Promise.all(
-    decision.workIds.map((workId) => call("work", { workId })),
-  );
+  const details = await Promise.all(decision.workIds.map((workId) => call("work", { workId })));
   const a = details.find((d) => d.work.text.includes("COORD-A"));
   const b = details.find((d) => d.work.text.includes("COORD-B") && d !== a);
   assert.ok(a && b, "The two work goals must remain distinct");
   report.workIds = { A: a.work.id, B: b.work.id };
   await checkpoint("wait-A-while-B-completes");
-  const [waiting, finished] = await Promise.all([
-    workAt(a.work.id, "waiting_input"),
-    workAt(b.work.id, "completed"),
-  ]);
+  const [waiting, finished] = await Promise.all([workAt(a.work.id, "waiting_input"), workAt(b.work.id, "completed")]);
   assert.equal(waiting.interactions.length, 1);
   assert.equal(finished.results.length, 1);
   assert.ok(waiting.executions[0].conversation_id);
@@ -153,10 +124,7 @@ B 工作名称 COORD-B：立即调用 publish_note 发布一份很短的 Markdow
   runner = undefined;
   runner = await LocalRunner.open(loadProfile(directory));
   report.overviewAfterRestart = await call("work.overview");
-  assert.deepEqual(
-    report.overviewAfterRestart.byStatus,
-    report.overviewBeforeRestart.byStatus,
-  );
+  assert.deepEqual(report.overviewAfterRestart.byStatus, report.overviewBeforeRestart.byStatus);
   await checkpoint("targeted-answer-through-real-main");
   const answered = await say(
     "answer-A",
@@ -167,10 +135,7 @@ B 工作名称 COORD-B：立即调用 publish_note 发布一份很短的 Markdow
   assert.equal(JSON.parse(answered.decision_json).kind, "answer");
   const doneA = await workAt(a.work.id, "completed");
   assert.equal(doneA.executions.length, 1);
-  assert.equal(
-    doneA.executions[0].conversation_id,
-    waiting.executions[0].conversation_id,
-  );
+  assert.equal(doneA.executions[0].conversation_id, waiting.executions[0].conversation_id);
   assert.equal(doneA.interactions.length, 1);
   assert.equal(doneA.interactions[0].state, "answered");
   assert.equal(doneA.results.length, 1);
@@ -186,10 +151,7 @@ B 工作名称 COORD-B：立即调用 publish_note 发布一份很短的 Markdow
   const doneB = await workAt(b.work.id, "completed");
   assert.equal(doneB.work.revision, 2);
   assert.equal(doneB.executions.length, 2);
-  assert.notEqual(
-    doneB.executions[0].conversation_id,
-    doneB.executions[1].conversation_id,
-  );
+  assert.notEqual(doneB.executions[0].conversation_id, doneB.executions[1].conversation_id);
   assert.equal((await call("work", { workId: a.work.id })).work.revision, 1);
   report.newNativeThreadAfterGoalRevision = true;
   await checkpoint("status-through-real-main");
@@ -212,9 +174,7 @@ B 工作名称 COORD-B：立即调用 publish_note 发布一份很短的 Markdow
       })),
   );
   assert.equal(report.artifacts.length, 3);
-  assert.ok(
-    report.artifacts.some((a) => /COORD-A/.test(a.text) && /本周/.test(a.text)),
-  );
+  assert.ok(report.artifacts.some((a) => /COORD-A/.test(a.text) && /本周/.test(a.text)));
   assert.ok(report.artifacts.some((a) => /COORD-B2/.test(a.text)));
   report.passed = true;
   await checkpoint("passed");

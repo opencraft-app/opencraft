@@ -9,4 +9,3 @@ export function conversationRecoveryPresentation(input: {
   if (input.authoritative) return "none";
   return `${input.hasVisibleHistory ? "warm" : "cold"}-${input.failed ? "error" : "loading"}`;
 }
-

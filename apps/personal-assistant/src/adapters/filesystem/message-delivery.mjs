@@ -9,13 +9,9 @@ export class LocalMessageDelivery {
     mkdirSync(directory, { recursive: true, mode: 0o700 });
   }
   async deliver(message) {
-    if (process.env.LAB_TEST_MESSAGE_FAIL === "1")
-      throw new Error("Injected user message failure");
+    if (process.env.LAB_TEST_MESSAGE_FAIL === "1") throw new Error("Injected user message failure");
     const files = (message.body.files ?? []).map((f) =>
-      this.attachments.materialize(
-        f.attachmentId,
-        join(this.directory, "assets"),
-      ),
+      this.attachments.materialize(f.attachmentId, join(this.directory, "assets")),
     );
     const file = `${digest(message.id)}.json`;
     publishOnce(

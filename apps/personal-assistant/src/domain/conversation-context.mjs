@@ -10,14 +10,8 @@ export const CONTEXT_POLICY = Object.freeze({
   timeoutMs: 30000,
   maxAttempts: 3,
 });
-export const CONTEXT_SECTIONS = Object.freeze([
-  "goals",
-  "constraints",
-  "decisions",
-  "openItems",
-]);
-export const emptyContext = () =>
-  Object.fromEntries(CONTEXT_SECTIONS.map((k) => [k, []]));
+export const CONTEXT_SECTIONS = Object.freeze(["goals", "constraints", "decisions", "openItems"]);
+export const emptyContext = () => Object.fromEntries(CONTEXT_SECTIONS.map((k) => [k, []]));
 export const contextHash = (value) => digest(value);
 
 /** A cited, lossy projection. Citations establish origin, not semantic correctness or authority. */
@@ -29,22 +23,16 @@ export function parseContext(raw, input) {
     Object.keys(raw).some((k) => !CONTEXT_SECTIONS.includes(k))
   )
     throw new Error("Invalid conversation context sections");
-  const allowed = new Map(
-    (input.previous?.sources ?? []).map((s) => [s.id, s]),
-  );
+  const allowed = new Map((input.previous?.sources ?? []).map((s) => [s.id, s]));
   for (const m of input.messages) allowed.set(m.id, { id: m.id, role: m.role });
   const used = new Map();
   const result = Object.fromEntries(
     CONTEXT_SECTIONS.map((k) => {
-      if (!Array.isArray(raw[k]) || raw[k].length > 8)
-        throw new Error("Conversation context section exceeds 8 items");
+      if (!Array.isArray(raw[k]) || raw[k].length > 8) throw new Error("Conversation context section exceeds 8 items");
       return [
         k,
         raw[k].map((item) => {
-          if (
-            !item ||
-            Object.keys(item).some((x) => !["text", "sourceIds"].includes(x))
-          )
+          if (!item || Object.keys(item).some((x) => !["text", "sourceIds"].includes(x)))
             throw new Error("Invalid context item");
           const text = requireText(item.text, "context item", 400);
           if (

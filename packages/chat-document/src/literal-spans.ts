@@ -4,10 +4,7 @@ import type { ChatDocumentNode, ChatDocumentSourceRange } from "./model";
 /** Syntax-only source spans. The caller owns any identity/presentation metadata.
  * A private lexer token makes selected text literal without searching rendered
  * names or relying on offsets after Markdown/CRLF normalization. */
-export function prepareLiteralSpans(
-  source: string,
-  spans: readonly ChatDocumentSourceRange[],
-) {
+export function prepareLiteralSpans(source: string, spans: readonly ChatDocumentSourceRange[]) {
   if (spans.length > 64) throw RangeError("Too many literal spans");
   let previous = 0;
   for (const s of spans) {
@@ -59,23 +56,19 @@ export function prepareLiteralSpans(
       };
     },
   };
-  const restoreString = (value: string) =>
-    value.replace(pattern, (marker) => byMarker.get(marker)?.text ?? marker);
+  const restoreString = (value: string) => value.replace(pattern, (marker) => byMarker.get(marker)?.text ?? marker);
   // Code, link destinations, math and directive attributes stay their original
   // typed nodes: restore bytes there, never create a mention/action inside them.
   function restoreValue(value: unknown): unknown {
     if (typeof value === "string") return restoreString(value);
     if (Array.isArray(value)) return value.map(restoreValue);
     if (value && typeof value === "object")
-      return Object.fromEntries(
-        Object.entries(value).map(([k, v]) => [k, restoreValue(v)]),
-      );
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, restoreValue(v)]));
     return value;
   }
   return {
     masked,
     extension,
-    restore: (nodes: readonly ChatDocumentNode[]) =>
-      restoreValue(nodes) as readonly ChatDocumentNode[],
+    restore: (nodes: readonly ChatDocumentNode[]) => restoreValue(nodes) as readonly ChatDocumentNode[],
   };
 }

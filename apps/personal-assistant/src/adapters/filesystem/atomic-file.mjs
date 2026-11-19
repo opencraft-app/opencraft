@@ -15,8 +15,7 @@ import { digest } from "../../domain/values.mjs";
 // Immutable local resources: replaying the same identity verifies the existing bytes.
 export function publishOnce(path, body) {
   if (existsSync(path)) {
-    if (readFileSync(path, "utf8") !== body)
-      throw new Error("Resource identity already contains different bytes");
+    if (readFileSync(path, "utf8") !== body) throw new Error("Resource identity already contains different bytes");
     return { path, hash: digest(body), reused: true };
   }
   const temporary = join(dirname(path), `.tmp-${randomUUID()}`);

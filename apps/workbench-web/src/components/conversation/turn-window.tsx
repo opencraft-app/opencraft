@@ -20,9 +20,9 @@ export class ConversationTurnWindow extends Component<TurnWindowProps> {
     const next = this.props;
     if (!previous.naturalFlow || !next.naturalFlow || previous.viewportOwner !== next.viewportOwner) return null;
     const keys = new Set(next.rowKeys);
-    if (!previous.rowKeys.some(key => !keys.has(key))) return null;
+    if (!previous.rowKeys.some((key) => !keys.has(key))) return null;
     this.handoff?.cancel();
-    return this.handoff = next.viewportOwner.protectWindowHandoff(next.elementRef.current);
+    return (this.handoff = next.viewportOwner.protectWindowHandoff(next.elementRef.current));
   }
 
   componentDidUpdate(
@@ -40,8 +40,10 @@ export class ConversationTurnWindow extends Component<TurnWindowProps> {
   }
 
   render() {
-    return <div className="thread-virtualizer-spacer" ref={this.props.elementRef} style={this.props.style}>
-      {this.props.children}
-    </div>;
+    return (
+      <div className="thread-virtualizer-spacer" ref={this.props.elementRef} style={this.props.style}>
+        {this.props.children}
+      </div>
+    );
   }
 }

@@ -1,11 +1,4 @@
-export async function automationsScenario({
-  say,
-  call,
-  check,
-  wait,
-  done,
-  evidence,
-}) {
+export async function automationsScenario({ say, call, check, wait, done, evidence }) {
   const routine = await call(
     "routine.add",
     {
@@ -17,9 +10,7 @@ export async function automationsScenario({
     "routine",
   );
   const occurrence = await wait(async () =>
-    (await call("status")).works.find(
-      (w) => w.routine_id === routine.routineId,
-    ),
+    (await call("status")).works.find((w) => w.routine_id === routine.routineId),
   );
   await done(occurrence.id);
   check("finiteRoutineProducesResult", true);
@@ -38,30 +29,17 @@ export async function automationsScenario({
     },
     "review-rule",
   );
-  const event = await call(
-    "event.emit",
-    { eventType: "project.review", data: { project: "青松" } },
-    "review-event",
-  );
+  const event = await call("event.emit", { eventType: "project.review", data: { project: "青松" } }, "review-event");
   check("localEventCreatesOneWork", event.workIds.length === 1);
   await done(event.workIds[0]);
   await wait(async () =>
     (await call("conversation")).messages.some(
-      (m) =>
-        m.data.kind === "notification" &&
-        m.data.workIds.includes(event.workIds[0]),
+      (m) => m.data.kind === "notification" && m.data.workIds.includes(event.workIds[0]),
     ),
   );
   check("backgroundNotificationReturnsToConversation", true);
-  const replay = await call(
-    "event.emit",
-    { eventType: "project.review", data: { project: "青松" } },
-    "review-event",
-  );
-  check(
-    "duplicateEventKeepsOriginalWork",
-    replay.workIds[0] === event.workIds[0],
-  );
+  const replay = await call("event.emit", { eventType: "project.review", data: { project: "青松" } }, "review-event");
+  check("duplicateEventKeepsOriginalWork", replay.workIds[0] === event.workIds[0]);
   evidence.automation = {
     event,
     replay,

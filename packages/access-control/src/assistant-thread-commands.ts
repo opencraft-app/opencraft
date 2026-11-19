@@ -8,5 +8,7 @@ export class AssistantThreadCommands extends ThreadOrchestrationBroker {
     super(service, execution);
     this.enableAssistantThreads(access);
   }
-  initialize() { return this.initializeAssistantThreads(); }
+  initialize() {
+    return this.initializeAssistantThreads();
+  }
 }

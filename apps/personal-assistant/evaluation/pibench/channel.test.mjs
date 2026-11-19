@@ -27,16 +27,8 @@ test("progress and old messages do not become simulator replies", () => {
   );
 });
 test("delegated review and delivery must finish before reply", () => {
-  for (const status of [
-    "queued",
-    "running",
-    "awaiting_review",
-    "awaiting_delivery",
-  ])
-    assert.equal(
-      busy({ works: [{ status }], active: 0, receptionActive: false }),
-      true,
-    );
+  for (const status of ["queued", "running", "awaiting_review", "awaiting_delivery"])
+    assert.equal(busy({ works: [{ status }], active: 0, receptionActive: false }), true);
   assert.equal(
     busy({
       works: [{ status: "waiting_input" }],
@@ -50,15 +42,6 @@ test("delegated review and delivery must finish before reply", () => {
 });
 
 test("other conversation work cannot hold this conversation reply open", () => {
-  assert.equal(
-    busy(
-      { active: 1, receptionActive: true, works: [{ status: "running" }] },
-      { works: [] },
-    ),
-    false,
-  );
-  assert.equal(
-    busy({ works: [] }, { works: [{ status: "awaiting_review" }] }),
-    true,
-  );
+  assert.equal(busy({ active: 1, receptionActive: true, works: [{ status: "running" }] }, { works: [] }), false);
+  assert.equal(busy({ works: [] }, { works: [{ status: "awaiting_review" }] }), true);
 });

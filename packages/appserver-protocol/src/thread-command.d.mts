@@ -6,5 +6,7 @@ export interface ThreadCommand {
 export function parseThreadCommand(argv: string[]): ThreadCommand;
 export function replaceThreadCommandIdempotencyKey(argv: string[], key: string): string[];
 
-export function threadDeliveryIntent(delivery?: unknown, expectedTurnId?: unknown):
-  {mode:'queue'} | {mode:'steer';expectedTurnId:string};
+export function threadDeliveryIntent(
+  delivery?: unknown,
+  expectedTurnId?: unknown,
+): { mode: "queue" } | { mode: "steer"; expectedTurnId: string };

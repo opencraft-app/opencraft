@@ -20,15 +20,13 @@ function set(store, key, value, extra = {}) {
     ...extra,
   });
 }
-const search = (store, text, view = null, limit = 12) =>
-  recallMemories(store.db, view, { text, limit });
+const search = (store, text, view = null, limit = 12) => recallMemories(store.db, view, { text, limit });
 
 test("BM25 prioritizes a rare topic over frequent generic matches without mutating the store", (t) => {
   const s = fixture(t);
   set(s, "rare", "Enjoys oboe lessons.");
   set(s, "generic", "Enjoys music music music music.");
-  for (let i = 0; i < 18; i++)
-    set(s, "filler-" + i, `Music listening session ${i}.`);
+  for (let i = 0; i < 18; i++) set(s, "filler-" + i, `Music listening session ${i}.`);
   const before = s.db.prepare("SELECT total_changes() AS n").get().n;
   const result = search(s, "music oboe", null, 1);
   assert.equal(result[0].key, "rare");
@@ -72,14 +70,7 @@ test("BM25 tracks corrections and forgetting, rolls back changes, and rebuilds o
   s.close();
   s = new Store(profile);
   assert.equal(search(s, "microscopy").length, 1);
-  assert.equal(
-    s.db
-      .prepare(
-        "SELECT count(*) AS n FROM main.sqlite_master WHERE name LIKE 'memory_bm25%'",
-      )
-      .get().n,
-    0,
-  );
+  assert.equal(s.db.prepare("SELECT count(*) AS n FROM main.sqlite_master WHERE name LIKE 'memory_bm25%'").get().n, 0);
   s.app.memory.change("forget", "memory.forget", {
     key: "fact",
     expectedRevision: 2,
@@ -94,21 +85,14 @@ test("Markdown edits refresh BM25 and an index rebuild never overwrites the sour
   const s = fixture(t);
   set(s, "fact", "Enjoys pottery.");
   // Fixture dates can change. Resolve the actual source document from the index.
-  const rel = s.db
-    .prepare("SELECT path FROM memory_shard WHERE key=?")
-    .get("fact").path;
+  const rel = s.db.prepare("SELECT path FROM memory_shard WHERE key=?").get("fact").path;
   const path = join(s.app.memory.files.locations().root, rel);
-  const raw = readFileSync(path, "utf8").replace(
-    "Enjoys pottery.",
-    "Enjoys birdwatching.",
-  );
+  const raw = readFileSync(path, "utf8").replace("Enjoys pottery.", "Enjoys birdwatching.");
   writeFileSync(path, raw);
   s.app.memory.list();
   assert.deepEqual(search(s, "pottery"), []);
   assert.equal(search(s, "birdwatching").length, 1);
-  s.db
-    .prepare("UPDATE memory SET value=? WHERE key=?")
-    .run("stale pottery cache", "fact");
+  s.db.prepare("UPDATE memory SET value=? WHERE key=?").run("stale pottery cache", "fact");
   s.app.memory.list();
   assert.equal(search(s, "birdwatching").length, 1);
   assert.equal(readFileSync(path, "utf8"), raw);
@@ -137,20 +121,14 @@ test("BM25 filters project grants before applying topK and revocation refreshes 
   s.app.memoryProjects.change("leave", "leave", { slug: "allowed" });
   const value = s.app.reception.context(turn);
   assert.ok(
-    ![
-      ...value.memoryContext.profile,
-      ...value.memoryContext.recent,
-      ...value.memoryRecall,
-    ].some((m) => m.projectId === "allowed"),
+    ![...value.memoryContext.profile, ...value.memoryContext.recent, ...value.memoryRecall].some(
+      (m) => m.projectId === "allowed",
+    ),
   );
   const resultAfterLeave = session.execute({
     kind: "query",
     name: "memory.search",
     params: { query: "ukulele" },
   });
-  assert.ok(
-    !resultAfterLeave.response.data.items.some(
-      (m) => m.projectId === "allowed",
-    ),
-  );
+  assert.ok(!resultAfterLeave.response.data.items.some((m) => m.projectId === "allowed"));
 });

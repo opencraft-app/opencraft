@@ -19,11 +19,7 @@ const proposal = (job, key = "response", value = "concise") => ({
 test("ordinary interaction automatically learns with canonical user evidence and independent review", async (t) => {
   const { runner, call } = await running(t);
   await call("say", { text: "顺便说一下，我喜欢简短回答" }, "preference");
-  await until(
-    () =>
-      runner.app.memoryLearning.get("learning:preference")?.state ===
-      "committed",
-  );
+  await until(() => runner.app.memoryLearning.get("learning:preference")?.state === "committed");
   const job = runner.app.memoryLearning.get("learning:preference");
   const entry = runner.app.memory.list().find((m) => m.value === "简短回答");
   assert.equal(entry.value, "简短回答");
@@ -31,10 +27,7 @@ test("ordinary interaction automatically learns with canonical user evidence and
     job.proposal.changes[0].sourceEvidenceIds[0],
     runner.app.history.view().messages.find((m) => m.role === "user").id,
   );
-  assert.equal(
-    runner.app.memory.learningSnapshot().memories[0].origin,
-    "automatic",
-  );
+  assert.equal(runner.app.memory.learningSnapshot().memories[0].origin, "automatic");
   await call("say", { text: "顺便说一下，我喜欢简短回答" }, "preference");
   assert.equal(runner.app.memory.list()[0].revision, 1);
 });
@@ -47,9 +40,7 @@ test("review rejection and invalid or assistant-only citations cannot mutate mem
   assert.throws(
     () =>
       app.memoryLearning.proposed(job.id, {
-        changes: [
-          { key: "x", value: "invented", evidenceIds: [job.evidence[1].id] },
-        ],
+        changes: [{ key: "x", value: "invented", evidenceIds: [job.evidence[1].id] }],
       }),
     /original user/,
   );
@@ -61,10 +52,7 @@ test("review rejection and invalid or assistant-only citations cannot mutate mem
     /original user/,
   );
   app.memoryLearning.proposed(job.id, proposal(job));
-  assert.equal(
-    app.memoryLearning.finish(job.id, { approved: "true" }).state,
-    "rejected",
-  );
+  assert.equal(app.memoryLearning.finish(job.id, { approved: "true" }).state, "rejected");
   assert.deepEqual(app.memory.list(), []);
 });
 
@@ -78,10 +66,7 @@ test("explicit and forgotten facts are protected; automatic facts can be correct
     expectedRevision: 0,
   });
   let job = capture(app, "first");
-  assert.throws(
-    () => app.memoryLearning.proposed(job.id, proposal(job, "city", "Beijing")),
-    /protected/,
-  );
+  assert.throws(() => app.memoryLearning.proposed(job.id, proposal(job, "city", "Beijing")), /protected/);
   app.memoryLearning.proposed(job.id, proposal(job));
   app.memoryLearning.finish(job.id, { approved: true });
   job = capture(app, "correction", "I now prefer detailed answers");
@@ -93,10 +78,7 @@ test("explicit and forgotten facts are protected; automatic facts can be correct
     expectedRevision: 2,
   });
   job = capture(app, "forgotten");
-  assert.throws(
-    () => app.memoryLearning.proposed(job.id, proposal(job)),
-    /protected/,
-  );
+  assert.throws(() => app.memoryLearning.proposed(job.id, proposal(job)), /protected/);
 });
 
 test("a newer explicit change invalidates the entire pending synthesis", (t) => {
@@ -110,10 +92,7 @@ test("a newer explicit change invalidates the entire pending synthesis", (t) => 
     value: "user choice",
     expectedRevision: 0,
   });
-  assert.equal(
-    app.memoryLearning.finish(job.id, { approved: true }).state,
-    "queued",
-  );
+  assert.equal(app.memoryLearning.finish(job.id, { approved: true }).state, "queued");
   assert.equal(app.memory.list()[0].value, "user choice");
 });
 
@@ -163,19 +142,13 @@ test("batch write failure rolls back every memory, provenance, epoch and job sta
     if (++n === 2) throw new Error("injected write failure");
     original(m);
   };
-  assert.throws(
-    () => app.memoryLearning.finish(job.id, { approved: true }),
-    /injected/,
-  );
+  assert.throws(() => app.memoryLearning.finish(job.id, { approved: true }), /injected/);
   assert.deepEqual(app.memory.list(), []);
   assert.equal(app.memory.epoch(), 0);
   assert.equal(app.r.memories.provenance("response"), undefined);
   assert.equal(app.memoryLearning.get(job.id).state, "proposed");
   app.r.memories.save = original;
-  assert.equal(
-    app.memoryLearning.finish(job.id, { approved: true }).state,
-    "committed",
-  );
+  assert.equal(app.memoryLearning.finish(job.id, { approved: true }).state, "committed");
   assert.equal(app.memory.list().length, 2);
 });
 
@@ -220,17 +193,12 @@ test("queued learning rebases stale snapshots without discarding original eviden
   assert.equal(rebased.snapshot.epoch, 1);
   assert.deepEqual(rebased.evidence, second.evidence);
   app.memoryLearning.proposed(second.id, proposal(rebased, "team", "small"));
-  assert.equal(
-    app.memoryLearning.finish(second.id, { approved: true }).state,
-    "committed",
-  );
+  assert.equal(app.memoryLearning.finish(second.id, { approved: true }).state, "committed");
   assert.equal(app.memory.list().length, 2);
 });
 
 test("production memory adapter uses separate bounded proposal and review exchanges", async (t) => {
-  const { MemoryLearningModel } = await import(
-    "../src/adapters/models/memory-learning-model.mjs"
-  );
+  const { MemoryLearningModel } = await import("../src/adapters/models/memory-learning-model.mjs");
   const store = new Store(profileFor(t));
   t.after(() => store.close());
   const { app } = store,
@@ -272,28 +240,22 @@ test("production memory adapter uses separate bounded proposal and review exchan
   await coordinator.task;
   assert.equal(app.memoryLearning.get(job.id).state, "committed");
   assert.equal(exchanges.length, 2);
-  assert.notEqual(
-    exchanges[0].input.systemPrompt,
-    exchanges[1].input.systemPrompt,
-  );
-  assert.equal(
-    JSON.parse(exchanges[1].input.messages[0].content).proposedChanges[0].value,
-    "concise",
-  );
+  assert.notEqual(exchanges[0].input.systemPrompt, exchanges[1].input.systemPrompt);
+  assert.equal(JSON.parse(exchanges[1].input.messages[0].content).proposedChanges[0].value, "concise");
   assert.equal(exchanges[0].options.maxTokens, 16384);
-  assert.deepEqual(
-    Object.keys(JSON.parse(exchanges[0].input.messages[0].content)).sort(),
-    ["currentMemories", "memoryTarget", "newEvidence", "temporal", "today"],
-  );
+  assert.deepEqual(Object.keys(JSON.parse(exchanges[0].input.messages[0].content)).sort(), [
+    "currentMemories",
+    "memoryTarget",
+    "newEvidence",
+    "temporal",
+    "today",
+  ]);
 });
 
 test("automatic learning does not abort an admitted work, but explicit edits still fence it", async (t) => {
   const { profile, runner, call } = await running(t, { fixtureDelayMs: 500 });
   const receipt = await call("submit", { text: "write an ordinary note" });
-  await until(
-    async () =>
-      (await call("work", { workId: receipt.workId })).inputs[0]?.delivered_at,
-  );
+  await until(async () => (await call("work", { workId: receipt.workId })).inputs[0]?.delivered_at);
   const job = capture(runner.app, "learn-while-running");
   runner.app.memoryLearning.proposed(job.id, proposal(job));
   runner.app.memoryLearning.finish(job.id, { approved: true });
@@ -302,12 +264,31 @@ test("automatic learning does not abort an admitted work, but explicit edits sti
   assert.equal(runner.app.memory.epoch(), 1);
 });
 
-test('model capacity defers queued and saved proposals durably without consuming semantic attempts',t=>{
-  const store=new Store(profileFor(t));t.after(()=>store.close());const {app}=store,job=capture(app,'rate-limited'),retryAt=Date.now()+90000;
-  app.memoryLearning.failed(job.id,Object.assign(new Error('safe model busy'),{modelFailure:{kind:'rate_limit',retryAt}}));
-  let current=app.memoryLearning.get(job.id);assert.equal(current.attempts,0);assert.equal(current.state,'queued');assert.equal(current.next_at,retryAt);
-  current=app.memoryLearning.proposed(job.id,proposal(current));const saved=current.proposal;
-  app.memoryLearning.failed(job.id,Object.assign(new Error('safe model busy'),{modelFailure:{kind:'rate_limit',retryAt:retryAt+1000}}));
-  current=app.memoryLearning.get(job.id);assert.equal(current.attempts,0);assert.equal(current.state,'proposed');assert.deepEqual(current.proposal,saved);assert.equal(current.next_at,retryAt+1000);
-  app.memoryLearning.failed(job.id,Error('invalid content'));assert.equal(app.memoryLearning.get(job.id).attempts,1);
+test("model capacity defers queued and saved proposals durably without consuming semantic attempts", (t) => {
+  const store = new Store(profileFor(t));
+  t.after(() => store.close());
+  const { app } = store,
+    job = capture(app, "rate-limited"),
+    retryAt = Date.now() + 90000;
+  app.memoryLearning.failed(
+    job.id,
+    Object.assign(new Error("safe model busy"), { modelFailure: { kind: "rate_limit", retryAt } }),
+  );
+  let current = app.memoryLearning.get(job.id);
+  assert.equal(current.attempts, 0);
+  assert.equal(current.state, "queued");
+  assert.equal(current.next_at, retryAt);
+  current = app.memoryLearning.proposed(job.id, proposal(current));
+  const saved = current.proposal;
+  app.memoryLearning.failed(
+    job.id,
+    Object.assign(new Error("safe model busy"), { modelFailure: { kind: "rate_limit", retryAt: retryAt + 1000 } }),
+  );
+  current = app.memoryLearning.get(job.id);
+  assert.equal(current.attempts, 0);
+  assert.equal(current.state, "proposed");
+  assert.deepEqual(current.proposal, saved);
+  assert.equal(current.next_at, retryAt + 1000);
+  app.memoryLearning.failed(job.id, Error("invalid content"));
+  assert.equal(app.memoryLearning.get(job.id).attempts, 1);
 });

@@ -9,14 +9,11 @@ export interface ScrollToBottomButtonProps {
   readonly showWorkingDots?: boolean;
 }
 
-export function ScrollToBottomButton({
-  label,
-  onClick,
-  show,
-  showWorkingDots = false,
-}: ScrollToBottomButtonProps) {
+export function ScrollToBottomButton({ label, onClick, show, showWorkingDots = false }: ScrollToBottomButtonProps) {
   return (
-    <IconButton surface="floating" size="toolbar"
+    <IconButton
+      surface="floating"
+      size="toolbar"
       aria-hidden={!show}
       aria-label={label}
       className="thread-scroll-to-bottom-button"
@@ -31,7 +28,9 @@ export function ScrollToBottomButton({
           <i className="thread-scroll-to-bottom-button__dot" />
           <i className="thread-scroll-to-bottom-button__dot" />
         </span>
-      ) : <ArrowUpIcon size={20} strokeWidth={2} className="thread-scroll-to-bottom-button__icon" />}
+      ) : (
+        <ArrowUpIcon size={20} strokeWidth={2} className="thread-scroll-to-bottom-button__icon" />
+      )}
     </IconButton>
   );
 }

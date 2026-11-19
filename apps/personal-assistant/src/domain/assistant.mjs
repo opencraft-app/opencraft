@@ -16,8 +16,7 @@ export class Assistant {
     };
   }
   verifyPersisted(identity) {
-    if (stable(identity) !== stable(this.identity()))
-      throw new Error("Profile identity differs from persisted owner");
+    if (stable(identity) !== stable(this.identity())) throw new Error("Profile identity differs from persisted owner");
   }
 }
 
@@ -36,14 +35,8 @@ export class Delegation {
       throw new Error("Invalid delegation");
   }
   permits(tool, resource) {
-    if (!this.#record.tools.includes(tool))
-      throw new Error(`Delegation does not permit ${tool}`);
-    if (
-      resource &&
-      !this.#record.resources.some(
-        (r) => r.id === resource.id && r.binding === resource.binding,
-      )
-    )
+    if (!this.#record.tools.includes(tool)) throw new Error(`Delegation does not permit ${tool}`);
+    if (resource && !this.#record.resources.some((r) => r.id === resource.id && r.binding === resource.binding))
       throw new Error("Resource binding is outside the original delegation");
   }
   get record() {
@@ -57,27 +50,19 @@ export class Delegation {
 /** Project tools from already captured resources. This does not grant authority. */
 export function delegationTools(resources = []) {
   return [
-        "work_context",
-        ...(resources.some((r) => r.id === "platform.reads")
-          ? ["platform_read"]
-          : []),
-        ...(resources.some((r) => r.id === "platform.threads")
-          ? ["thread_command"]
-          : []),
-        ...(resources.some((r) => r.id === "execution.environment")
-          ? ["environment_run"]
-          : []),
-        "recall_memory",
-        "read_memory_file",
-        "list_memory_files",
-        "search_history",
-        "publish_note",
-        "ask_user",
-        "request_intervention",
-        "list_skills",
-        "load_skill",
-        ...(resources.some((r) => r.id === "materials")
-          ? ["list_materials", "read_material"]
-          : []),
-      ];
+    "work_context",
+    ...(resources.some((r) => r.id === "platform.reads") ? ["platform_read"] : []),
+    ...(resources.some((r) => r.id === "platform.threads") ? ["thread_command"] : []),
+    ...(resources.some((r) => r.id === "execution.environment") ? ["environment_run"] : []),
+    "recall_memory",
+    "read_memory_file",
+    "list_memory_files",
+    "search_history",
+    "publish_note",
+    "ask_user",
+    "request_intervention",
+    "list_skills",
+    "load_skill",
+    ...(resources.some((r) => r.id === "materials") ? ["list_materials", "read_material"] : []),
+  ];
 }

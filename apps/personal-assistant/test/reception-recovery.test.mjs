@@ -5,10 +5,7 @@ import { createLocalDomain } from "../src/runtime/create-local-domain.mjs";
 import { ReceptionPlanner } from "../src/application/reception/planner.mjs";
 import { ReceptionCoordinator } from "../src/runtime/reception-coordinator.mjs";
 import { ReceptionQueries } from "../src/application/reception/query-service.mjs";
-import {
-  ReceptionQuery,
-  RECEPTION_LIMITS,
-} from "../src/domain/reception-query.mjs";
+import { ReceptionQuery, RECEPTION_LIMITS } from "../src/domain/reception-query.mjs";
 import { profileFor } from "./helpers.mjs";
 function domain(t) {
   const d = createLocalDomain(profileFor(t));
@@ -42,11 +39,7 @@ function report(app, id, text) {
   app.executions.report(work, text);
   return app.reception
     .pending()
-    .find(
-      (t) =>
-        t.source_json &&
-        JSON.parse(t.source_json).executionId === work.active_execution_id,
-    );
+    .find((t) => t.source_json && JSON.parse(t.source_json).executionId === work.active_execution_id);
 }
 test("report seed contains fresh scoped criteria and accepted evidence, never treats current candidate as accepted", (t) => {
   const { app, uow } = domain(t),
@@ -63,25 +56,11 @@ test("report seed contains fresh scoped criteria and accepted evidence, never tr
   assert.equal(context.goalContext.criteria[0].id, "criterion-1");
   assert.equal(context.goalContext.evidence.length, 1);
   assert.equal(context.goalContext.evidence[0].text, "FIRST ACCEPTED EVIDENCE");
-  assert.notEqual(
-    context.goalContext.evidence[0].resultId,
-    context.report.candidateResultId,
-  );
+  assert.notEqual(context.goalContext.evidence[0].resultId, context.report.candidateResultId);
   const grant = app.receptionQueries.grant(b),
     source = JSON.parse(b.source_json);
-  assert.throws(
-    () =>
-      app.receptionQueries.reportGoal(grant, { ...source, goalId: "foreign" }),
-    /does not own/,
-  );
-  assert.throws(
-    () =>
-      app.receptionQueries.reportGoal(
-        { ...grant, conversationId: "foreign" },
-        source,
-      ),
-    /does not own/,
-  );
+  assert.throws(() => app.receptionQueries.reportGoal(grant, { ...source, goalId: "foreign" }), /does not own/);
+  assert.throws(() => app.receptionQueries.reportGoal({ ...grant, conversationId: "foreign" }, source), /does not own/);
 });
 test("report projection is bounded and marks omitted evidence/details", () => {
   let detail = {
@@ -97,8 +76,7 @@ test("report projection is bounded and marks omitted evidence/details", () => {
       report: () => ({ execution_id: "e", text: "中".repeat(3000) }),
     },
   });
-  const read = () =>
-    q.reportGoal({ conversationId: "c" }, { goalId: "g", workId: "w" });
+  const read = () => q.reportGoal({ conversationId: "c" }, { goalId: "g", workId: "w" });
   const v = read();
   assert.ok(ReceptionQuery.bytes(v) <= RECEPTION_LIMITS.resultBytes);
   assert.equal(v.evidenceTruncated, true);
@@ -118,8 +96,7 @@ test("planning deadline retains host query progress; retry refreshes it, and a l
   const planner = new ReceptionPlanner(
     {
       async decide() {
-        if (++calls === 1)
-          return { kind: "query", name: "goal.get", params: { goalId: g.id } };
+        if (++calls === 1) return { kind: "query", name: "goal.get", params: { goalId: g.id } };
         return new Promise((resolve) => {
           release = resolve;
         });
@@ -167,11 +144,7 @@ test("planning deadline retains host query progress; retry refreshes it, and a l
     },
     app.receptionQueries,
   );
-  const result = await recovered.plan(
-    retry,
-    app.reception.context(retry),
-    new AbortController().signal,
-  );
+  const result = await recovered.plan(retry, app.reception.context(retry), new AbortController().signal);
   assert.equal(result.queries.length, 1);
   const endless = new ReceptionPlanner(
     {
@@ -183,8 +156,6 @@ test("planning deadline retains host query progress; retry refreshes it, and a l
   );
   await assert.rejects(
     endless.plan(retry, {}, new AbortController().signal),
-    (e) =>
-      /count exhausted/.test(e.message) &&
-      e.queries.length === RECEPTION_LIMITS.queries,
+    (e) => /count exhausted/.test(e.message) && e.queries.length === RECEPTION_LIMITS.queries,
   );
 });

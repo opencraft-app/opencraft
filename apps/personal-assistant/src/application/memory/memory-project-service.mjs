@@ -6,16 +6,11 @@ export class MemoryProjectService {
   }
   change(inputId, action, params) {
     memoryProjectSlug(params.slug);
-    return this.inbox.accept(
-      inputId,
-      `memory.project.${action}`,
-      params,
-      () => {
-        const result = this.files.project(action, params);
-        this.invalidate();
-        return result;
-      },
-    );
+    return this.inbox.accept(inputId, `memory.project.${action}`, params, () => {
+      const result = this.files.project(action, params);
+      this.invalidate();
+      return result;
+    });
   }
   list() {
     return this.files.projects();

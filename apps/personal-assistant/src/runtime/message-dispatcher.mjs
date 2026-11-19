@@ -28,9 +28,7 @@ export class MessageDispatcher {
           this.service.failed(
             message,
             error?.code === "RUN_LIMIT_MODEL_TIMEOUT"
-              ? new Error(
-                  "User message transport timed out; acceptance is unknown",
-                )
+              ? new Error("User message transport timed out; acceptance is unknown")
               : error,
           );
         } catch (failure) {

@@ -1,7 +1,4 @@
-import {
-  parseThreadCommand,
-  replaceThreadCommandIdempotencyKey,
-} from "@opencraft/appserver-protocol/thread-command";
+import { parseThreadCommand, replaceThreadCommandIdempotencyKey } from "@opencraft/appserver-protocol/thread-command";
 import { stable, requireText, digest } from "../domain/values.mjs";
 
 /** Execution-owned links to existing platform operations, never a native task queue. */
@@ -18,14 +15,10 @@ export class ExecutionThreadLinks {
       const old = this.repository.threadLink(execution.id, id),
         encoded = stable(argv);
       if (old) {
-        if (old.argv_json !== encoded)
-          throw Error(
-            "Platform operation identity reused with different intent",
-          );
+        if (old.argv_json !== encoded) throw Error("Platform operation identity reused with different intent");
         return old;
       }
-      if (this.repository.threadLinks(execution.id).length >= 64)
-        throw Error("Platform delegation bound exceeded");
+      if (this.repository.threadLinks(execution.id).length >= 64) throw Error("Platform delegation bound exceeded");
       this.repository.addThreadLink(execution.id, id, encoded);
       return this.repository.threadLink(execution.id, id);
     });
@@ -33,30 +26,19 @@ export class ExecutionThreadLinks {
   argv(link) {
     const argv = JSON.parse(link.argv_json),
       command = parseThreadCommand(argv);
-    return replaceThreadCommandIdempotencyKey(
-      argv,
-      "execution:" + digest([link.execution_id, command.idempotencyKey]),
-    );
+    return replaceThreadCommandIdempotencyKey(argv, "execution:" + digest([link.execution_id, command.idempotencyKey]));
   }
   accepted(work, link, receipt) {
     if (!link) return;
     return this.uow.transaction(() => {
       this.check(work);
       requireText(receipt?.operationId, "platform operation", 256);
-      if (receipt.workId !== work.id)
-        throw Error("Platform receipt belongs to another Work");
-      const current = this.repository.threadLink(
-        this.execution(work).id,
-        link.id,
-      );
+      if (receipt.workId !== work.id) throw Error("Platform receipt belongs to another Work");
+      const current = this.repository.threadLink(this.execution(work).id, link.id);
       if (!current) throw Error("Platform receipt has no recorded intent");
       if (current.operation_id && current.operation_id !== receipt.operationId)
         throw Error("Platform operation identity changed");
-      this.repository.bindThreadLink(
-        current.execution_id,
-        current.id,
-        receipt.operationId,
-      );
+      this.repository.bindThreadLink(current.execution_id, current.id, receipt.operationId);
       if (receipt.state === "rejected")
         this.repository.settleThreadLink(current.execution_id, current.id, {
           status: "rejected",
@@ -71,10 +53,7 @@ export class ExecutionThreadLinks {
   observe(work, link, operation) {
     return this.uow.transaction(() => {
       this.check(work);
-      if (
-        operation.operationId !== link.operation_id ||
-        operation.workId !== work.id
-      )
+      if (operation.operationId !== link.operation_id || operation.workId !== work.id)
         throw Error("Platform observation identity changed");
       const input = operation.input;
       if (input?.deliveryState === "cancelled") {
@@ -84,10 +63,7 @@ export class ExecutionThreadLinks {
         });
         return true;
       }
-      if (
-        operation.state === "rejected" ||
-        input?.deliveryState === "rejected"
-      ) {
+      if (operation.state === "rejected" || input?.deliveryState === "rejected") {
         this.repository.settleThreadLink(link.execution_id, link.id, {
           status: "rejected",
           text: "The platform task input was rejected; it did not establish successful execution.",
@@ -98,9 +74,7 @@ export class ExecutionThreadLinks {
       const completion = input.completion;
       if (
         completion.turnId !== (input.targetTurnId ?? null) ||
-        !["unknown", "completed", "failed", "interrupted"].includes(
-          completion.status,
-        ) ||
+        !["unknown", "completed", "failed", "interrupted"].includes(completion.status) ||
         typeof completion.text !== "string" ||
         completion.text.length > 16000
       )
@@ -120,10 +94,7 @@ export class ExecutionThreadLinks {
         // Core receipts carry the complete server/Thread reference. Turn IDs alone
         // are not globally unique across native Hosts or conversations.
         reference:
-          typeof operation.reference === "string" &&
-          operation.reference.length > 0
-            ? operation.reference
-            : null,
+          typeof operation.reference === "string" && operation.reference.length > 0 ? operation.reference : null,
         text: completion.text,
         truncated: completion.truncated === true,
       });
@@ -164,8 +135,7 @@ export class ExecutionThreadLinks {
       if (!links.length) return { text, error };
       const published = this.repository.report(execution.id),
         base = this.repository.threadAnswer(execution.id);
-      const normalizedError =
-        error == null ? null : String(error).slice(0, 2000);
+      const normalizedError = error == null ? null : String(error).slice(0, 2000);
       if (published) {
         if (
           (text === published.text && normalizedError === published.error) ||
@@ -175,19 +145,14 @@ export class ExecutionThreadLinks {
         throw Error("Immutable execution report identity reused");
       }
       this.check(work);
-      if (!this.ready(work))
-        throw Error("Work is not ready for platform results");
-      if (typeof text !== "string" || text.length > 1000000)
-        throw Error("Provisional answer must be bounded text");
+      if (!this.ready(work)) throw Error("Work is not ready for platform results");
+      if (typeof text !== "string" || text.length > 1000000) throw Error("Provisional answer must be bounded text");
       const original = this.repository.threadAnswer(execution.id);
       const value = {
         text,
         error: error == null ? null : String(error).slice(0, 2000),
       };
-      if (
-        original &&
-        (original.text !== value.text || original.error !== value.error)
-      )
+      if (original && (original.text !== value.text || original.error !== value.error))
         throw Error("Provisional execution answer is immutable");
       if (!original) this.repository.saveThreadAnswer(execution.id, value);
       if (links.some((link) => !link.outcome_json)) return { held: true };
@@ -203,14 +168,7 @@ export class ExecutionThreadLinks {
         results = outcomes.filter((o) => {
           const id =
             o.reference && o.turnId
-              ? stable([
-                  "turn",
-                  o.reference,
-                  o.turnId,
-                  o.status,
-                  o.text,
-                  o.truncated === true,
-                ])
+              ? stable(["turn", o.reference, o.turnId, o.status, o.text, o.truncated === true])
               : stable(["link", o.linkId]);
           if (seen.has(id)) return false;
           seen.add(id);
@@ -232,9 +190,7 @@ export class ExecutionThreadLinks {
             : report,
         error:
           value.error ??
-          (failed
-            ? "One or more delegated platform tasks failed, were interrupted, or could not be confirmed."
-            : null),
+          (failed ? "One or more delegated platform tasks failed, were interrupted, or could not be confirmed." : null),
       };
     });
   }

@@ -22,8 +22,7 @@ function client(t, args = ["bin/assistant.mjs", "serve"]) {
   });
   t.after(async () => {
     peer.close();
-    if (child.exitCode === null && child.signalCode === null)
-      child.kill("SIGKILL");
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
     await exit;
   });
   return { child, peer, exit };
@@ -84,9 +83,7 @@ test("invalid protocol cannot initialize; abrupt death rejects pending requests"
   });
   c.child.kill("SIGKILL");
   await c.exit;
-  await assert.rejects(
-    c.peer.request("dispatch", { op: "status", params: {} }),
-  );
+  await assert.rejects(c.peer.request("dispatch", { op: "status", params: {} }));
 });
 test("framing rejects oversized/malformed input and retires all pending work", async () => {
   for (const content of ["not-json\n", "x".repeat(129)]) {
@@ -145,12 +142,8 @@ test("owner process death closes its child and releases the durable profile lock
   const { existsSync } = await import("node:fs");
   const { until } = await import("./helpers.mjs");
   const profile = profileFor(t, { telemetry: { enabled: false } });
-  const server = new URL("../src/runtime/assistant-server.mjs", import.meta.url)
-    .pathname;
-  const peerModule = new URL(
-    "../src/adapters/local/stdio-peer.mjs",
-    import.meta.url,
-  ).href;
+  const server = new URL("../src/runtime/assistant-server.mjs", import.meta.url).pathname;
+  const peerModule = new URL("../src/adapters/local/stdio-peer.mjs", import.meta.url).href;
   const parent = spawn(
     process.execPath,
     [
@@ -170,8 +163,7 @@ test("owner process death closes its child and releases the durable profile lock
   parent.stderr.resume();
   const exited = once(parent, "exit");
   t.after(async () => {
-    if (parent.exitCode === null && parent.signalCode === null)
-      parent.kill("SIGKILL");
+    if (parent.exitCode === null && parent.signalCode === null) parent.kill("SIGKILL");
     await exited;
   });
   const [ready] = await once(parent.stdout, "data");
@@ -193,9 +185,7 @@ test("shutdown closes intake before a pipelined initialize can start a runner", 
   const profile = profileFor(t, { telemetry: { enabled: false } }),
     c = client(t);
   const stopped = c.peer.request("shutdown");
-  const late = assert.rejects(
-    c.peer.request("initialize", { protocolVersion: 1, profile: profile.path }),
-  );
+  const late = assert.rejects(c.peer.request("initialize", { protocolVersion: 1, profile: profile.path }));
   await stopped;
   await late;
   assert.equal((await c.exit)[0], 0);
@@ -233,18 +223,12 @@ for (const method of ["authorize", "threads/command"]) {
           data: { token: "SYNTHETIC_PRIVATE_TOKEN" },
         });
       });
-      await assert.rejects(
-        client.request("platform/opencraft/personal-assistant/" + method),
-        (error) => {
-          assert.equal(error.message, "Assistant operation unavailable");
-          assert.equal(
-            error.status,
-            [400, 401, 403, 409].includes(status) ? status : undefined,
-          );
-          assert.equal(error.code, undefined);
-          return true;
-        },
-      );
+      await assert.rejects(client.request("platform/opencraft/personal-assistant/" + method), (error) => {
+        assert.equal(error.message, "Assistant operation unavailable");
+        assert.equal(error.status, [400, 401, 403, 409].includes(status) ? status : undefined);
+        assert.equal(error.code, undefined);
+        return true;
+      });
       assert.doesNotMatch(frames.join(""), /SYNTHETIC_PRIVATE/);
     });
   }
@@ -259,23 +243,14 @@ for (const original of [
     const { client } = connectedPeers(t, () => {
       throw original;
     });
-    await assert.rejects(
-      client.request("platform/opencraft/personal-assistant/threads/command"),
-      (e) => {
-        assert.equal(
-          e.status,
-          original.code === "assistant_thread_grant_revoked" ? 403 : 409,
-        );
-        return true;
-      },
-    );
+    await assert.rejects(client.request("platform/opencraft/personal-assistant/threads/command"), (e) => {
+      assert.equal(e.status, original.code === "assistant_thread_grant_revoked" ? 403 : 409);
+      return true;
+    });
   });
 test("unrelated methods and unrecognized symbolic errors retain generic unknown failure", async (t) => {
   const { client, frames } = connectedPeers(t, () => {
-    throw Object.assign(
-      Error("prefix assistant_thread_grant_revoked private"),
-      { status: 403, code: "private" },
-    );
+    throw Object.assign(Error("prefix assistant_thread_grant_revoked private"), { status: 403, code: "private" });
   });
   await assert.rejects(client.request("platform/model"), (e) => {
     assert.equal(e.status, undefined);
@@ -283,27 +258,16 @@ test("unrelated methods and unrecognized symbolic errors retain generic unknown 
   });
   assert.doesNotMatch(frames.join(""), /private|grant_revoked/);
   const second = connectedPeers(t, () => {
-    throw Object.assign(
-      Error("prefix assistant_thread_grant_revoked private"),
-      { code: -32000 },
-    );
+    throw Object.assign(Error("prefix assistant_thread_grant_revoked private"), { code: -32000 });
   });
-  await assert.rejects(
-    second.client.request(
-      "platform/opencraft/personal-assistant/threads/command",
-    ),
-    (e) => {
-      assert.equal(e.status, undefined);
-      return true;
-    },
-  );
+  await assert.rejects(second.client.request("platform/opencraft/personal-assistant/threads/command"), (e) => {
+    assert.equal(e.status, undefined);
+    return true;
+  });
 });
 
 test("terminal Thread error classification crosses actual parent/child OS pipes", async (t) => {
-  const peerModule = new URL(
-    "../src/adapters/local/stdio-peer.mjs",
-    import.meta.url,
-  ).href;
+  const peerModule = new URL("../src/adapters/local/stdio-peer.mjs", import.meta.url).href;
   const code = `import {createStdioPeer} from ${JSON.stringify(peerModule)};
     createStdioPeer({input:process.stdin, output:process.stdout,
       handle(){throw Object.assign(Error('SYNTHETIC_PRIVATE_CHILD_ERROR'), {status:403});},
@@ -325,12 +289,9 @@ test("terminal Thread error classification crosses actual parent/child OS pipes"
     if (child.exitCode === null && child.signalCode === null) child.kill();
     await exit;
   });
-  await assert.rejects(
-    peer.request("platform/opencraft/personal-assistant/threads/command"),
-    (error) => {
-      assert.equal(error.status, 403);
-      assert.equal(error.message, "Assistant operation unavailable");
-      return true;
-    },
-  );
+  await assert.rejects(peer.request("platform/opencraft/personal-assistant/threads/command"), (error) => {
+    assert.equal(error.status, 403);
+    assert.equal(error.message, "Assistant operation unavailable");
+    return true;
+  });
 });

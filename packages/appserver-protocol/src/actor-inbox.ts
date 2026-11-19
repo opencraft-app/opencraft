@@ -1,12 +1,20 @@
 /** Identity-scoped current-state synchronization, not a message event log. */
-export interface ActorInboxMessage { id: string; sequence: string; authorId: string; text: string; at: number }
+export interface ActorInboxMessage {
+  id: string;
+  sequence: string;
+  authorId: string;
+  text: string;
+  at: number;
+}
 export type ActorInboxItem = {
   channelId: string;
   unreadCount: number;
   mentionUnreadCount?: number;
   firstUnreadMentionSequence?: number;
-} & ({ kind: 'direct'; peerActorId: string; latestMessage: ActorInboxMessage | null }
-  | { kind: 'group'; title: string; latestMessage: ActorInboxMessage | null });
+} & (
+  | { kind: "direct"; peerActorId: string; latestMessage: ActorInboxMessage | null }
+  | { kind: "group"; title: string; latestMessage: ActorInboxMessage | null }
+);
 export interface ActorInboxChange {
   channelId: string;
   revision: string;

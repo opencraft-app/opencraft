@@ -1,11 +1,6 @@
 /** Ephemeral request admission for one installation's assistant model source.
  * Business jobs/recovery stay with their application owners. No credentials or payloads enter this owner. */
-export type AssistantModelPurpose =
-  | "reception"
-  | "context-summary"
-  | "execution"
-  | "memory-propose"
-  | "memory-verify";
+export type AssistantModelPurpose = "reception" | "context-summary" | "execution" | "memory-propose" | "memory-verify";
 export const assistantModelPurposes: readonly AssistantModelPurpose[] = [
   "reception",
   "context-summary",
@@ -25,17 +20,11 @@ export class ModelAdmissionDeferred extends Error {
     super("Assistant model request deferred");
   }
 }
-export function retryAfterTime(
-  value: string | null,
-  now: number,
-): number | undefined {
+export function retryAfterTime(value: string | null, now: number): number | undefined {
   if (!value?.trim()) return;
   const seconds = Number(value);
   if (Number.isFinite(seconds) && seconds < 0) return;
-  const at =
-    Number.isFinite(seconds) && seconds >= 0
-      ? now + Math.ceil(seconds * 1000)
-      : Date.parse(value);
+  const at = Number.isFinite(seconds) && seconds >= 0 ? now + Math.ceil(seconds * 1000) : Date.parse(value);
   return Number.isSafeInteger(at) && at >= 0 ? Math.max(now, at) : undefined;
 }
 interface Waiter {
@@ -102,13 +91,8 @@ export class AssistantModelAdmission {
     const r = this.resource(key),
       now = this.now();
     const exponential = Math.min(30000, 2000 * 2 ** Math.min(r.failures++, 4));
-    const delay = Math.round(
-      exponential * (0.5 + (this.options.random ?? Math.random)() * 0.5),
-    );
-    r.notBefore = Math.max(
-      r.notBefore,
-      retryAfterTime(header, now) ?? now + delay,
-    );
+    const delay = Math.round(exponential * (0.5 + (this.options.random ?? Math.random)() * 0.5));
+    r.notBefore = Math.max(r.notBefore, retryAfterTime(header, now) ?? now + delay);
     for (const w of [...r.pending])
       if (backgroundPurpose(w.purpose)) {
         r.pending.splice(r.pending.indexOf(w), 1);
@@ -133,25 +117,15 @@ export class AssistantModelAdmission {
     },
   ): Promise<() => void> {
     request.signal.throwIfAborted();
-    if (this.closed)
-      return Promise.reject(Error("Assistant model source closed"));
+    if (this.closed) return Promise.reject(Error("Assistant model source closed"));
     const r = this.resource(key),
       now = this.now();
     if (request.deadlineAt !== undefined && r.notBefore >= request.deadlineAt)
       return Promise.reject(new ModelAdmissionDeferred(r.notBefore));
-    if (
-      backgroundPurpose(request.purpose) &&
-      (r.notBefore > now || (r.foregroundUntil > now && !r.active))
-    )
-      return Promise.reject(
-        new ModelAdmissionDeferred(
-          Math.max(now + 2000, r.notBefore, r.foregroundUntil),
-        ),
-      );
+    if (backgroundPurpose(request.purpose) && (r.notBefore > now || (r.foregroundUntil > now && !r.active)))
+      return Promise.reject(new ModelAdmissionDeferred(Math.max(now + 2000, r.notBefore, r.foregroundUntil)));
     if (r.pending.length >= (this.options.maxPending ?? 64))
-      return Promise.reject(
-        new ModelAdmissionDeferred(Math.max(now + 2000, r.notBefore)),
-      );
+      return Promise.reject(new ModelAdmissionDeferred(Math.max(now + 2000, r.notBefore)));
     return new Promise((resolve, reject) => {
       const waiter: Waiter = {
         ...request,
@@ -163,9 +137,7 @@ export class AssistantModelAdmission {
           if (i >= 0) r.pending.splice(i, 1);
           request.signal.removeEventListener("abort", waiter.abort);
           request.observe(null);
-          reject(
-            request.signal.reason ?? Error("Assistant model request aborted"),
-          );
+          reject(request.signal.reason ?? Error("Assistant model request aborted"));
           this.pump(r);
         },
       };
@@ -181,17 +153,10 @@ export class AssistantModelAdmission {
     if (this.closed) return;
     const now = this.now();
     for (const w of r.pending)
-      w.observe(
-        r.notBefore > now
-          ? { reason: "rate_limit", retryAt: r.notBefore }
-          : { reason: "capacity" },
-      );
+      w.observe(r.notBefore > now ? { reason: "rate_limit", retryAt: r.notBefore } : { reason: "capacity" });
     if (r.active || !r.pending.length) return;
     if (r.notBefore > now) {
-      r.timer = setTimeout(
-        () => this.pump(r),
-        Math.min(2147483647, r.notBefore - now),
-      );
+      r.timer = setTimeout(() => this.pump(r), Math.min(2147483647, r.notBefore - now));
       return;
     }
     if (
@@ -203,17 +168,9 @@ export class AssistantModelAdmission {
       return;
     }
     const rank = (w: Waiter) =>
-      w.purpose === "reception" || w.purpose === "context-summary"
-        ? 0
-        : w.purpose === "execution"
-          ? 1
-          : 2;
-    let candidates = r.pending.filter(
-      (w) => rank(w) === Math.min(...r.pending.map(rank)),
-    );
-    const aged = r.pending.find(
-      (w) => now - w.enqueued >= 10000 && rank(w) > 0,
-    );
+      w.purpose === "reception" || w.purpose === "context-summary" ? 0 : w.purpose === "execution" ? 1 : 2;
+    let candidates = r.pending.filter((w) => rank(w) === Math.min(...r.pending.map(rank)));
+    const aged = r.pending.find((w) => now - w.enqueued >= 10000 && rank(w) > 0);
     if (r.highStreak >= 3 && aged) candidates = [aged];
     const w = candidates.find((w) => w.owner !== r.lastOwner) ?? candidates[0]!;
     r.pending.splice(r.pending.indexOf(w), 1);
@@ -232,8 +189,7 @@ export class AssistantModelAdmission {
       if (released) return;
       released = true;
       r.active = false;
-      if (rank(w) === 0)
-        r.foregroundUntil = this.now() + (this.options.idleGraceMs ?? 750);
+      if (rank(w) === 0) r.foregroundUntil = this.now() + (this.options.idleGraceMs ?? 750);
       this.pump(r);
     });
   }

@@ -1,23 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  rmSync,
-  existsSync,
-  readFileSync,
-  symlinkSync,
-  writeFileSync,
-  mkdirSync,
-} from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, symlinkSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { provisionBotProfile } from "../src/adapters/local/bot-profile.mjs";
 import { loadProfile, initProfile } from "../src/adapters/local/profile.mjs";
-import {
-  codexSessionRoot,
-  piSessionPath,
-  executionWorkspace,
-} from "../src/adapters/local/profile-layout.mjs";
+import { codexSessionRoot, piSessionPath, executionWorkspace } from "../src/adapters/local/profile-layout.mjs";
 import { createLocalDomain } from "../src/runtime/create-local-domain.mjs";
 import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { SqliteUnitOfWork } from "../src/adapters/sqlite/database.mjs";
@@ -45,10 +33,7 @@ test("Bot private memory is flat, durable across conversations, and cannot imper
     assert.ok(existsSync(join(profile.path, "memory/profile.md")));
     assert.equal(existsSync(join(profile.path, "memory-space")), false);
     assert.equal(existsSync(join(profile.path, "agents")), false);
-    assert.match(
-      readFileSync(join(profile.path, "memory/profile.md"), "utf8"),
-      /喜欢茶/,
-    );
+    assert.match(readFileSync(join(profile.path, "memory/profile.md"), "utf8"), /喜欢茶/);
     const before = domain.app.memory.list();
     domain.app.dispatch({
       op: "conversation.create",
@@ -90,36 +75,17 @@ test("stable binding rejects owner/server/assignment changes and unsafe paths", 
     { assignmentId: "new-assignment" },
     { owner: { kind: "human", id: "another" } },
   ])
-    assert.throws(
-      () => provisionBotProfile(root, { ...binding, ...change }),
-      /binding/,
-    );
-  assert.throws(
-    () => provisionBotProfile(root, { ...binding, botId: "../escape" }),
-    /ID/,
-  );
-  assert.throws(
-    () =>
-      provisionBotProfile(
-        root,
-        { ...binding, botId: "second" },
-        { memoryRoot: "/tmp" },
-      ),
-    /host-owned/,
-  );
-  const config = JSON.parse(
-    readFileSync(join(profile.path, "profile.json"), "utf8"),
-  );
+    assert.throws(() => provisionBotProfile(root, { ...binding, ...change }), /binding/);
+  assert.throws(() => provisionBotProfile(root, { ...binding, botId: "../escape" }), /ID/);
+  assert.throws(() => provisionBotProfile(root, { ...binding, botId: "second" }, { memoryRoot: "/tmp" }), /host-owned/);
+  const config = JSON.parse(readFileSync(join(profile.path, "profile.json"), "utf8"));
   config.botBinding.assignmentId = "changed";
   writeFileSync(join(profile.path, "profile.json"), JSON.stringify(config));
   assert.throws(() => createLocalDomain(loadProfile(profile.path)), /identity/);
   const other = join(root, "elsewhere");
   mkdirSync(other);
   symlinkSync(other, join(root, "bots", "link"));
-  assert.throws(
-    () => provisionBotProfile(root, { ...binding, botId: "link" }),
-    /symlink/,
-  );
+  assert.throws(() => provisionBotProfile(root, { ...binding, botId: "link" }), /symlink/);
 });
 test("execution cleanup never contains the persistent engine root; legacy bindings retain original paths", (t) => {
   const root = fixture(t),
@@ -133,9 +99,7 @@ test("execution cleanup never contains the persistent engine root; legacy bindin
   assert.equal(readFileSync(join(session, "checkpoint"), "utf8"), "saved");
   assert.ok(piSessionPath(profile, "work-one").includes("/engines/pi/"));
   const legacy = initProfile(join(root, "legacy"), "local:owner");
-  assert.ok(
-    codexSessionRoot(legacy, "native-root").includes("/executions/codex/"),
-  );
+  assert.ok(codexSessionRoot(legacy, "native-root").includes("/executions/codex/"));
 });
 test("takeover fences the retired writer before SQLite or Markdown changes", (t) => {
   const root = fixture(t),
@@ -190,9 +154,7 @@ test("Bot runs through the real local runner, closes, and retains identity on re
 });
 
 test("platform history stays native, authorization is checked around await, and search is bounded", async (t) => {
-  const { PlatformChannels } = await import(
-    "../src/application/platform-channels.mjs"
-  );
+  const { PlatformChannels } = await import("../src/application/platform-channels.mjs");
   const calls = [];
   let epoch = "one",
     now = 100;
@@ -217,10 +179,7 @@ test("platform history stays native, authorization is checked around await, and 
     channelId: "group:one",
     messageId: "native-id",
   });
-  assert.throws(
-    () => channels.search("group:one", { query: "budget", limit: 1000 }),
-    /bounded/,
-  );
+  assert.throws(() => channels.search("group:one", { query: "budget", limit: 1000 }), /bounded/);
   port.request = async () => {
     epoch = "two";
     return { messages: ["must not escape"] };
@@ -248,10 +207,7 @@ test("hosted Bot dispatch exposes native channels and revocation blocks all furt
   };
   const runner = await LocalRunner.open(profile, { platformChannelPort: port });
   try {
-    assert.deepEqual(
-      await runner.dispatch({ op: "channels.list", params: {} }),
-      { groups: [{ id: "native-group" }] },
-    );
+    assert.deepEqual(await runner.dispatch({ op: "channels.list", params: {} }), { groups: [{ id: "native-group" }] });
     assert.equal(calls.length, 1);
     epoch = "two";
     await assert.rejects(
@@ -262,10 +218,7 @@ test("hosted Bot dispatch exposes native channels and revocation blocks all furt
       }),
       /retired/,
     );
-    await assert.rejects(
-      runner.dispatch({ op: "status", params: {} }),
-      /retired/,
-    );
+    await assert.rejects(runner.dispatch({ op: "status", params: {} }), /retired/);
   } finally {
     await runner.close();
   }
@@ -290,9 +243,7 @@ test("authority shutdown releases a provider that ignores cancellation and rejec
 });
 
 test("retired writer cannot dispatch an already selected message or run another pump phase", async () => {
-  const { MessageDispatcher } = await import(
-    "../src/runtime/message-dispatcher.mjs"
-  );
+  const { MessageDispatcher } = await import("../src/runtime/message-dispatcher.mjs");
   let delivered = false,
     current = true;
   const guard = () => {
@@ -341,10 +292,7 @@ test("Bot managed engine and database paths reject symlink substitution before o
   assert.throws(() => loadProfile(profile.path), /symlink/);
   assert.equal(existsSync(join(outside, "codex")), false);
   rmSync(join(profile.path, "engines"));
-  symlinkSync(
-    join(outside, "database"),
-    join(profile.path, "assistant.sqlite"),
-  );
+  symlinkSync(join(outside, "database"), join(profile.path, "assistant.sqlite"));
   assert.throws(() => loadProfile(profile.path), /symlink/);
 });
 
@@ -442,8 +390,5 @@ test("hosted channel results and authorization failures cross the real Unix sock
   });
   assert.ok(status && Object.keys(status).length > 0);
   allowed = false;
-  await assert.rejects(
-    request(profile, { op: "channels.list", id: "revoked", params: {} }),
-    /revoked/,
-  );
+  await assert.rejects(request(profile, { op: "channels.list", id: "revoked", params: {} }), /revoked/);
 });

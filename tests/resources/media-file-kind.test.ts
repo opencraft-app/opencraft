@@ -4,7 +4,7 @@ import { chatMediaKind, chatMediaMimeType } from "../../packages/chat-render-rea
 import { builtinPreviewAdapters } from "../../packages/file-preview-web/src/builtin-adapters";
 
 test("every built-in media preview is recognized as audio or video by its file host", () => {
-  const media = builtinPreviewAdapters.find(adapter => adapter.id === "media.readonly")!;
+  const media = builtinPreviewAdapters.find((adapter) => adapter.id === "media.readonly")!;
   for (const extension of media.extensions) {
     assert.ok(["audio", "video"].includes(chatMediaKind(`clip.${extension}`)), extension);
     assert.ok(["audio", "video"].includes(chatMediaKind(`CLIP.${extension.toUpperCase()}`)), extension);

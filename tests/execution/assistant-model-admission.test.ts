@@ -29,16 +29,9 @@ const resolved = {
   apiKey: "synthetic-secret",
 };
 const limited = (after = "0.02") =>
-  Response.json(
-    { error: { message: "synthetic busy" } },
-    { status: 429, headers: { "retry-after": after } },
-  );
+  Response.json({ error: { message: "synthetic busy" } }, { status: 429, headers: { "retry-after": after } });
 const body = { model: "synthetic", input: "hello", stream: false };
-const post = (
-  c: { baseUrl: string; apiKey: string },
-  v = body,
-  signal?: AbortSignal,
-) =>
+const post = (c: { baseUrl: string; apiKey: string }, v = body, signal?: AbortSignal) =>
   fetch(c.baseUrl + "/responses", {
     method: "POST",
     headers: {
@@ -58,10 +51,7 @@ async function until(f: () => boolean) {
 test("Retry-After seconds and HTTP-date are lower bounds and never shortened", () => {
   const now = Date.UTC(2026, 10, 11);
   assert.equal(retryAfterTime("90", now), now + 90000);
-  assert.equal(
-    retryAfterTime(new Date(now + 90000).toUTCString(), now),
-    now + 90000,
-  );
+  assert.equal(retryAfterTime(new Date(now + 90000).toUTCString(), now), now + 90000);
   assert.equal(retryAfterTime("garbage", now), undefined);
   assert.equal(retryAfterTime("-2", now), undefined);
 });
@@ -123,8 +113,7 @@ test("cooldown detaches queued memory; closing rejects waiters and releases time
 test("429→200 retries only rejected HTTP requests; bound scope token cannot access another owner route", async (t) => {
   let calls = 0;
   const g = createAssistantModelGateway(async () => resolved, {
-    fetch: async () =>
-      ++calls === 1 ? limited() : Response.json({ ok: true }),
+    fetch: async () => (++calls === 1 ? limited() : Response.json({ ok: true })),
     requestTimeoutMs: 1000,
   });
   t.after(() => g.close());
@@ -154,19 +143,14 @@ test("cooldown longer than budget returns immediately; background makes one atte
   assert.ok(Date.now() - start < 900);
   await r.text();
   assert.equal(calls, 1);
-  const bg = await post(
-    await g.connection(ref, { scope: "b", purpose: "memory-propose" }),
-  );
+  const bg = await post(await g.connection(ref, { scope: "b", purpose: "memory-propose" }));
   assert.equal(bg.status, 429);
   await bg.text();
   assert.equal(calls, 1);
   const q = createAssistantModelGateway(async () => resolved, {
     fetch: async () => {
       calls++;
-      return Response.json(
-        { error: { code: "insufficient_quota" } },
-        { status: 429 },
-      );
+      return Response.json({ error: { code: "insufficient_quota" } }, { status: 429 });
     },
   });
   t.after(() => q.close());
@@ -208,10 +192,7 @@ test("attempts bounded at three, rejected400 never retried, retry rechecks curre
   const bad = createAssistantModelGateway(async () => resolved, {
     fetch: async () => {
       badCalls++;
-      return Response.json(
-        { error: { message: "invalid schema" } },
-        { status: 400 },
-      );
+      return Response.json({ error: { message: "invalid schema" } }, { status: 400 });
     },
   });
   t.after(() => bad.close());
@@ -261,10 +242,7 @@ test("stream holds its permit until consumed or disconnected; no retry after con
   const c = await g.connection(ref, { scope: "a" }),
     d = await g.connection(ref, { scope: "b" }),
     r = await post(c);
-  assert.equal(
-    new TextDecoder().decode((await r.body!.getReader().read()).value),
-    "first",
-  );
+  assert.equal(new TextDecoder().decode((await r.body!.getReader().read()).value), "first");
   let arrived = false;
   const second = post(d).then(async (x) => {
     arrived = true;
@@ -314,17 +292,13 @@ test(
     const g = createAssistantModelGateway(async () => resolved, {
       fetch: async (_u, init) => {
         const p = JSON.parse(init!.body as string),
-          phase = p.text.format.schema.properties.operations
-            ? "routing"
-            : "parameters";
+          phase = p.text.format.schema.properties.operations ? "routing" : "parameters";
         counts[phase]++;
         return counts[phase] === 1
           ? limited("0.01")
           : sse(
               JSON.stringify(
-                phase === "routing"
-                  ? { operations: ["reply"] }
-                  : { proposal: { kind: "reply", text: "OK" } },
+                phase === "routing" ? { operations: ["reply"] } : { proposal: { kind: "reply", text: "OK" } },
               ),
               counts[phase],
             );
@@ -339,8 +313,7 @@ test(
         modelId: ref.modelId,
       },
       {
-        resolveModel: (_c: any, ctx: any) =>
-          g.connection(ref, { scope: "native", purpose: ctx.purpose }),
+        resolveModel: (_c: any, ctx: any) => g.connection(ref, { scope: "native", purpose: ctx.purpose }),
       },
     );
     t.after(async () => {
@@ -358,9 +331,62 @@ test(
   },
 );
 
-test('revocation during retry delay never dispatches another HTTP call',async t=>{
- let calls=0,valid=true;const g=createAssistantModelGateway(async()=>resolved,{fetch:async()=>{calls++;return limited('0.15');},requestTimeoutMs:1000});t.after(()=>g.close());const c=await g.connection(ref,{scope:'revoked',authorize:async()=>{if(!valid)throw Error('revoked');}});const r=post(c);await until(()=>g.activity('revoked')?.reason==='rate_limit');valid=false;const response=await r;await response.text();assert.equal(calls,1);assert.equal(response.status,503);
+test("revocation during retry delay never dispatches another HTTP call", async (t) => {
+  let calls = 0,
+    valid = true;
+  const g = createAssistantModelGateway(async () => resolved, {
+    fetch: async () => {
+      calls++;
+      return limited("0.15");
+    },
+    requestTimeoutMs: 1000,
+  });
+  t.after(() => g.close());
+  const c = await g.connection(ref, {
+    scope: "revoked",
+    authorize: async () => {
+      if (!valid) throw Error("revoked");
+    },
+  });
+  const r = post(c);
+  await until(() => g.activity("revoked")?.reason === "rate_limit");
+  valid = false;
+  const response = await r;
+  await response.text();
+  assert.equal(calls, 1);
+  assert.equal(response.status, 503);
 });
-test('a credential rotation is re-resolved at dispatch; a held response is fenced after revoke',async t=>{
- let key='first',valid=true;const sent:string[]=[],started=Promise.withResolvers<void>(),release=Promise.withResolvers<void>();const g=createAssistantModelGateway(async()=>({...resolved,apiKey:key}),{fetch:async(_u,init)=>{sent.push(new Headers(init?.headers).get('authorization')!);if(sent.length===1)return limited('0.15');started.resolve();await release.promise;return Response.json({ok:true});},requestTimeoutMs:1000});t.after(()=>g.close());const c=await g.connection(ref,{scope:'rotated',authorize:async()=>{if(!valid)throw Error('revoked');}}),response=post(c);await until(()=>g.activity('rotated')?.reason==='rate_limit');key='second';await started.promise;valid=false;release.resolve();const r=await response;assert.equal(r.status,503);await r.text();assert.deepEqual(sent,['Bearer first','Bearer second']);
+test("a credential rotation is re-resolved at dispatch; a held response is fenced after revoke", async (t) => {
+  let key = "first",
+    valid = true;
+  const sent: string[] = [],
+    started = Promise.withResolvers<void>(),
+    release = Promise.withResolvers<void>();
+  const g = createAssistantModelGateway(async () => ({ ...resolved, apiKey: key }), {
+    fetch: async (_u, init) => {
+      sent.push(new Headers(init?.headers).get("authorization")!);
+      if (sent.length === 1) return limited("0.15");
+      started.resolve();
+      await release.promise;
+      return Response.json({ ok: true });
+    },
+    requestTimeoutMs: 1000,
+  });
+  t.after(() => g.close());
+  const c = await g.connection(ref, {
+      scope: "rotated",
+      authorize: async () => {
+        if (!valid) throw Error("revoked");
+      },
+    }),
+    response = post(c);
+  await until(() => g.activity("rotated")?.reason === "rate_limit");
+  key = "second";
+  await started.promise;
+  valid = false;
+  release.resolve();
+  const r = await response;
+  assert.equal(r.status, 503);
+  await r.text();
+  assert.deepEqual(sent, ["Bearer first", "Bearer second"]);
 });

@@ -1,21 +1,12 @@
 import { stable } from "./values.mjs";
 
 export function resourceId(value, label = "resource ID") {
-  if (
-    typeof value !== "string" ||
-    !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(value)
-  )
-    throw new Error(`Invalid ${label}`);
+  if (typeof value !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(value)) throw new Error(`Invalid ${label}`);
   return value;
 }
 
 export function opaqueIdentity(value, label = "identity") {
-  if (
-    typeof value !== "string" ||
-    !value ||
-    value.length > 256 ||
-    /[\x00-\x20]/u.test(value)
-  )
+  if (typeof value !== "string" || !value || value.length > 256 || /[\x00-\x20]/u.test(value))
     throw Error("Invalid " + label);
   return value;
 }
@@ -25,9 +16,7 @@ export function botBinding(value) {
     !value ||
     typeof value !== "object" ||
     Array.isArray(value) ||
-    Object.keys(value).some(
-      (k) => !["serverId", "botId", "assignmentId", "owner"].includes(k),
-    )
+    Object.keys(value).some((k) => !["serverId", "botId", "assignmentId", "owner"].includes(k))
   )
     throw new Error("Invalid Bot binding");
   if (

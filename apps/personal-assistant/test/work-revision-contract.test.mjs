@@ -70,34 +70,15 @@ test("model amendment requires a full replacement in flat and selected protocols
     expectedRevision: 1,
     goal: "new goal",
   };
-  for (const completion of [
-    undefined,
-    null,
-    {},
-    { output: "text" },
-    { ...contract, checks: null },
-  ]) {
+  for (const completion of [undefined, null, {}, { output: "text" }, { ...contract, checks: null }]) {
     const proposal = { ...base, completion };
-    assert.throws(
-      () => ReceptionDecision.parse(proposal),
-      /complete completion/,
-    );
-    assert.throws(() =>
-      decodeSelected(JSON.stringify({ proposal }), ["amend"], {}),
-    );
-    assert.throws(() =>
-      decodeOutput("reception", JSON.stringify({ proposal }), {}),
-    );
+    assert.throws(() => ReceptionDecision.parse(proposal), /complete completion/);
+    assert.throws(() => decodeSelected(JSON.stringify({ proposal }), ["amend"], {}));
+    assert.throws(() => decodeOutput("reception", JSON.stringify({ proposal }), {}));
   }
   const proposal = { ...base, completion: contract };
-  assert.equal(
-    validateOutput(selectedSchema(["amend"], {}), { proposal }),
-    true,
-  );
-  assert.deepEqual(
-    decodeSelected(JSON.stringify({ proposal }), ["amend"], {}),
-    proposal,
-  );
+  assert.equal(validateOutput(selectedSchema(["amend"], {}), { proposal }), true);
+  assert.deepEqual(decodeSelected(JSON.stringify({ proposal }), ["amend"], {}), proposal);
   assert.deepEqual(
     decodeRoutes(JSON.stringify({ operations: ["amend"] }), {
       targetWork: { id: "w" },
@@ -109,10 +90,10 @@ test("model amendment requires a full replacement in flat and selected protocols
       targetWork: { id: "w" },
     }),
   );
-  assert.deepEqual(
-    decodeRoutes(JSON.stringify({ operations: ["delegate", "delegate"] }), {}),
-    ["delegate", "delegate"],
-  );
+  assert.deepEqual(decodeRoutes(JSON.stringify({ operations: ["delegate", "delegate"] }), {}), [
+    "delegate",
+    "delegate",
+  ]);
 });
 
 test("replacement drops old criteria, retires old questions, preserves the frozen snapshot and settled replay", (t) => {
@@ -153,10 +134,7 @@ test("replacement drops old criteria, retires old questions, preserves the froze
   assert.equal(current.revision, 2);
   assert.doesNotMatch(JSON.stringify(snapshot.completion), /OLD|2026-12-01/);
   assert.match(JSON.stringify(snapshot.completion), /NEW/);
-  assert.deepEqual(
-    JSON.parse(app.executions.execution(w).context_json),
-    original,
-  );
+  assert.deepEqual(JSON.parse(app.executions.execution(w).context_json), original);
   assert.throws(() =>
     app.interactions.answer("late", {
       interactionId: q.id,
@@ -183,10 +161,7 @@ test("explicit partial model amendment carries criteria forward while typed reba
     expectedRevision: 1,
     text: "same acceptance, rebound dependencies",
   });
-  assert.deepEqual(
-    app.executions.snapshot(app.workRecord(w.id)).completion.requirements,
-    keep.requirements,
-  );
+  assert.deepEqual(app.executions.snapshot(app.workRecord(w.id)).completion.requirements, keep.requirements);
   app.reception.apply(intake(app, "partial", w.id), {
     kind: "amend",
     workId: w.id,
@@ -197,10 +172,10 @@ test("explicit partial model amendment carries criteria forward while typed reba
       requirements: [...keep.requirements, "new constraint"],
     },
   });
-  assert.deepEqual(
-    app.executions.snapshot(app.workRecord(w.id)).completion.requirements,
-    [...keep.requirements, "new constraint"],
-  );
+  assert.deepEqual(app.executions.snapshot(app.workRecord(w.id)).completion.requirements, [
+    ...keep.requirements,
+    "new constraint",
+  ]);
 });
 
 test("same-revision continuation preserves ordinary answers with provenance, never old execution authority or old evidence", (t) => {
@@ -214,30 +189,14 @@ test("same-revision continuation preserves ordinary answers with provenance, nev
   const snapshot = app.executions.snapshot(current);
   assert.equal(current.revision, 1);
   assert.notEqual(current.active_execution_id, w.active_execution_id);
-  assert.equal(
-    app.executions.execution(current).session_root,
-    app.executions.execution(w).session_root,
-  );
+  assert.equal(app.executions.execution(current).session_root, app.executions.execution(w).session_root);
   assert.deepEqual(
-    snapshot.confirmedInputs.items.map((i) => [
-      i.interactionId,
-      i.sourceExecutionId,
-      i.answer,
-    ]),
+    snapshot.confirmedInputs.items.map((i) => [i.interactionId, i.sourceExecutionId, i.answer]),
     [[q.id, w.active_execution_id, "2026-12-18"]],
   );
-  assert.deepEqual(
-    JSON.parse(app.executions.execution(w).context_json),
-    original,
-  );
-  assert.throws(
-    () => app.executions.assertAction(w, "publish_note"),
-    /execution|Execution/,
-  );
-  assert.throws(
-    () => app.interactions.request(w, "stale", "Ask again?"),
-    /execution|Execution/,
-  );
+  assert.deepEqual(JSON.parse(app.executions.execution(w).context_json), original);
+  assert.throws(() => app.executions.assertAction(w, "publish_note"), /execution|Execution/);
+  assert.throws(() => app.interactions.request(w, "stale", "Ask again?"), /execution|Execution/);
   assert.throws(
     () =>
       app.interactions.answer("replace-answer", {
@@ -248,34 +207,21 @@ test("same-revision continuation preserves ordinary answers with provenance, nev
     /answered/,
   );
   assert.deepEqual(
-    app
-      .detail(w.id)
-      .completion.executions.find(
-        (e) => e.executionId === current.active_execution_id,
-      )?.evidence ?? [],
+    app.detail(w.id).completion.executions.find((e) => e.executionId === current.active_execution_id)?.evidence ?? [],
     [],
   );
   d.reopen();
   assert.deepEqual(d.app.executions.snapshot(current), snapshot);
   const second = continueWork(d.app, current, "third");
-  assert.equal(
-    d.app.executions.snapshot(second).confirmedInputs.items[0].answer,
-    "2026-12-18",
-  );
+  assert.equal(d.app.executions.snapshot(second).confirmedInputs.items[0].answer, "2026-12-18");
   d.app.works.amend("different-direction", {
     workId: w.id,
     expectedRevision: 1,
     text: "new direction",
     completion: contract,
   });
-  assert.deepEqual(
-    d.app.executions.snapshot(d.app.workRecord(w.id)).confirmedInputs.items,
-    [],
-  );
-  assert.equal(
-    d.app.detail(w.id).interactions.find((i) => i.id === q.id).state,
-    "superseded",
-  );
+  assert.deepEqual(d.app.executions.snapshot(d.app.workRecord(w.id)).confirmedInputs.items, []);
+  assert.equal(d.app.detail(w.id).interactions.find((i) => i.id === q.id).state, "superseded");
 });
 
 test("confirmed inputs exclude expired, sensitive, pending and foreign facts; bounds omit whole answers", (t) => {
@@ -304,19 +250,10 @@ test("confirmed inputs exclude expired, sensitive, pending and foreign facts; bo
   const confirmed = app.executions.snapshot(current).confirmedInputs;
   assert.equal(confirmed.omitted, true);
   assert.equal(confirmed.items.length, 31);
-  assert.doesNotMatch(
-    JSON.stringify(confirmed.items),
-    /expired fact|private approval|foreign fact|not answered|xxxxx/,
-  );
+  assert.doesNotMatch(JSON.stringify(confirmed.items), /expired fact|private approval|foreign fact|not answered|xxxxx/);
   assert.ok(Buffer.byteLength(JSON.stringify(confirmed.items)) < 16000);
-  assert.equal(
-    app.detail(w.id).interactions.find((i) => i.id === handoff.id).state,
-    "superseded",
-  );
-  assert.equal(
-    app.detail(w.id).interactions.find((i) => i.id === pending.id).state,
-    "superseded",
-  );
+  assert.equal(app.detail(w.id).interactions.find((i) => i.id === handoff.id).state, "superseded");
+  assert.equal(app.detail(w.id).interactions.find((i) => i.id === pending.id).state, "superseded");
 });
 
 for (const reverse of [false, true])
@@ -422,9 +359,7 @@ test("report review sees confirmed answers and cumulative directives survive a s
   app.executions.bound(next, "thread", "submission");
   const submitted = app.detail(w.id).directives;
   app.executions.report(next, "result to review");
-  const turn = app.reception
-    .pending()
-    .find((t) => t.source_json && t.work_id === w.id);
+  const turn = app.reception.pending().find((t) => t.source_json && t.work_id === w.id);
   const context = app.reception.context(turn);
   assert.equal(context.confirmedInputs.items[0].interactionId, q.id);
   assert.equal(context.confirmedInputs.items[0].answer, "2026-12-18");
@@ -437,24 +372,15 @@ test("report review sees confirmed answers and cumulative directives survive a s
   assert.equal(thirdSnapshot.confirmedInputs.items[0].answer, "2026-12-18");
   assert.deepEqual(thirdSnapshot.directives, snapshot.directives);
   assert.deepEqual(app.detail(w.id).directives, submitted);
-  assert.deepEqual(
-    JSON.parse(app.executions.execution(w).context_json),
-    initial,
-  );
-  assert.deepEqual(
-    JSON.parse(app.executions.execution(next).context_json),
-    snapshot,
-  );
+  assert.deepEqual(JSON.parse(app.executions.execution(w).context_json), initial);
+  assert.deepEqual(JSON.parse(app.executions.execution(next).context_json), snapshot);
   app.works.amend("new-revision", {
     workId: w.id,
     expectedRevision: 1,
     text: "fresh requirements",
     completion: contract,
   });
-  assert.deepEqual(
-    app.executions.snapshot(app.workRecord(w.id)).directives,
-    [],
-  );
+  assert.deepEqual(app.executions.snapshot(app.workRecord(w.id)).directives, []);
 });
 
 test("cumulative directives are bounded across attempts and do not present queued instructions as admitted", (t) => {

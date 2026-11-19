@@ -14,20 +14,11 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { trace, SpanStatusCode } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import {
-  NodeTracerProvider,
-  SimpleSpanProcessor,
-} from "@opentelemetry/sdk-trace-node";
-import {
-  LoggerProvider,
-  SimpleLogRecordProcessor,
-} from "@opentelemetry/sdk-logs";
+import { NodeTracerProvider, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-node";
+import { LoggerProvider, SimpleLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { SeverityNumber } from "@opentelemetry/api-logs";
 import { resourceFromAttributes } from "@opentelemetry/resources";
-import {
-  JsonTraceSerializer,
-  JsonLogsSerializer,
-} from "@opentelemetry/otlp-transformer";
+import { JsonTraceSerializer, JsonLogsSerializer } from "@opentelemetry/otlp-transformer";
 
 const fields = new Set([
   "app.phase",
@@ -77,21 +68,10 @@ class LocalExporter {
   export(records, callback) {
     let fd;
     try {
-      const bytes = Buffer.concat([
-        Buffer.from(this.serializer.serializeRequest(records)),
-        Buffer.from("\n"),
-      ]);
-      if (bytes.length > this.owner.maxBytes)
-        throw new Error("Telemetry record too large");
+      const bytes = Buffer.concat([Buffer.from(this.serializer.serializeRequest(records)), Buffer.from("\n")]);
+      if (bytes.length > this.owner.maxBytes) throw new Error("Telemetry record too large");
       const path = join(this.directory, this.name);
-      fd = openSync(
-        path,
-        constants.O_WRONLY |
-          constants.O_APPEND |
-          constants.O_CREAT |
-          constants.O_NOFOLLOW,
-        0o600,
-      );
+      fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
       const stat = fstatSync(fd);
       if (!stat.isFile() || stat.uid !== process.getuid() || stat.mode & 0o077)
         throw new Error("Unsafe telemetry file");
@@ -102,20 +82,12 @@ class LocalExporter {
           const from = i === 1 ? path : path + "." + (i - 1);
           if (existsSync(from)) renameSync(from, path + "." + i);
         }
-        fd = openSync(
-          path,
-          constants.O_WRONLY |
-            constants.O_APPEND |
-            constants.O_CREAT |
-            constants.O_NOFOLLOW,
-          0o600,
-        );
+        fd = openSync(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
       }
       const size = fstatSync(fd).size;
       try {
         let offset = 0;
-        while (offset < bytes.length)
-          offset += writeSync(fd, bytes, offset, bytes.length - offset);
+        while (offset < bytes.length) offset += writeSync(fd, bytes, offset, bytes.length - offset);
       } catch (error) {
         // A partial tail is not a valid OTLP envelope. Preserve prior complete lines.
         this.owner.partialWrite = true;
@@ -160,12 +132,7 @@ export function createLocalTelemetry(profile, options = {}) {
     const directory = join(profile.path, "telemetry");
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const stat = lstatSync(directory);
-    if (
-      !stat.isDirectory() ||
-      stat.isSymbolicLink() ||
-      stat.uid !== process.getuid() ||
-      stat.mode & 0o077
-    )
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid() || stat.mode & 0o077)
       throw new Error("Unsafe telemetry directory");
     const resource = resourceFromAttributes({
       "service.name": "opencraft-superapp",
@@ -176,27 +143,13 @@ export function createLocalTelemetry(profile, options = {}) {
     const tracerProvider = new NodeTracerProvider({
       resource,
       spanProcessors: [
-        new SimpleSpanProcessor(
-          new LocalExporter(
-            directory,
-            "traces.otlp.jsonl",
-            JsonTraceSerializer,
-            state,
-          ),
-        ),
+        new SimpleSpanProcessor(new LocalExporter(directory, "traces.otlp.jsonl", JsonTraceSerializer, state)),
       ],
     });
     const loggerProvider = new LoggerProvider({
       resource,
       processors: [
-        new SimpleLogRecordProcessor(
-          new LocalExporter(
-            directory,
-            "logs.otlp.jsonl",
-            JsonLogsSerializer,
-            state,
-          ),
-        ),
+        new SimpleLogRecordProcessor(new LocalExporter(directory, "logs.otlp.jsonl", JsonLogsSerializer, state)),
       ],
     });
     const tracer = tracerProvider.getTracer("superapp", "0.16.0"),
@@ -224,11 +177,7 @@ export function createLocalTelemetry(profile, options = {}) {
         if (closed) return fn(noopSpan);
         let span;
         try {
-          span = tracer.startSpan(
-            name,
-            { attributes: safe(attributes) },
-            context.active(),
-          );
+          span = tracer.startSpan(name, { attributes: safe(attributes) }, context.active());
         } catch {
           state.exportErrors++;
           return fn(noopSpan);
@@ -262,10 +211,7 @@ export function createLocalTelemetry(profile, options = {}) {
       close() {
         return (closing ??= (async () => {
           closed = true;
-          await Promise.allSettled([
-            tracerProvider.shutdown(),
-            loggerProvider.shutdown(),
-          ]);
+          await Promise.allSettled([tracerProvider.shutdown(), loggerProvider.shutdown()]);
           context.disable();
         })());
       },

@@ -23,7 +23,10 @@ function workspaceTarget(target: string, cwd: string | null | undefined): string
   if (windowsAbsolutePath.test(target)) return `file:///${target.replace(/\\/gu, "/")}`;
   if (posixAbsolutePath.test(target)) return `file://${target}`;
   if (cwd == null || cwd.trim().length === 0) return target;
-  const base = cwd.replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const normalized = cwd.replace(/\\/gu, "/");
+  let end = normalized.length;
+  while (end > 0 && normalized[end - 1] === "/") end--;
+  const base = normalized.slice(0, end);
   return `file://${base}/${target.replace(/^\.\//u, "")}`;
 }
 

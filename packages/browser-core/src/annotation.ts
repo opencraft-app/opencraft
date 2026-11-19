@@ -95,11 +95,24 @@ export interface BrowserAnnotationSelection {
 }
 
 export const BROWSER_ANNOTATION_STYLE_PROPERTIES = [
-  "color", "background-color", "font-size", "font-weight", "line-height",
-  "padding", "padding-top", "padding-right", "padding-bottom", "padding-left",
-  "gap", "row-gap", "column-gap", "border-radius", "width", "height",
+  "color",
+  "background-color",
+  "font-size",
+  "font-weight",
+  "line-height",
+  "padding",
+  "padding-top",
+  "padding-right",
+  "padding-bottom",
+  "padding-left",
+  "gap",
+  "row-gap",
+  "column-gap",
+  "border-radius",
+  "width",
+  "height",
 ] as const;
-export type BrowserAnnotationStyleProperty = typeof BROWSER_ANNOTATION_STYLE_PROPERTIES[number];
+export type BrowserAnnotationStyleProperty = (typeof BROWSER_ANNOTATION_STYLE_PROPERTIES)[number];
 export interface BrowserAnnotationStyleIntent {
   readonly selectionId: string;
   readonly property: BrowserAnnotationStyleProperty;
@@ -224,7 +237,10 @@ export interface BrowserAnnotationPreviewRequest {
 
 export const BROWSER_ANNOTATION_TEXT_LIMIT = 80;
 
-export function collapseAnnotationText(value: string | null | undefined, limit = BROWSER_ANNOTATION_TEXT_LIMIT): string | null {
+export function collapseAnnotationText(
+  value: string | null | undefined,
+  limit = BROWSER_ANNOTATION_TEXT_LIMIT,
+): string | null {
   if (typeof value !== "string") return null;
   const text = value.replace(/\s+/g, " ").trim();
   if (text === "") return null;

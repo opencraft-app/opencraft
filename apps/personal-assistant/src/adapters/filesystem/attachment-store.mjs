@@ -19,22 +19,14 @@ import { digest, stable } from "../../domain/values.mjs";
 const MAX_BYTES = 8 * 1024 * 1024;
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 function readRegular(path, max = MAX_BYTES) {
-  const fd = openSync(
-    path,
-    constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-  );
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.size > max)
-      throw new Error("Attachment is not a bounded regular file");
+    if (!stat.isFile() || stat.size > max) throw new Error("Attachment is not a bounded regular file");
     const buffer = Buffer.alloc(Math.min(stat.size + 1, max + 1));
     let size = 0,
       n;
-    while (
-      size < buffer.length &&
-      (n = readSync(fd, buffer, size, buffer.length - size, null)) > 0
-    )
-      size += n;
+    while (size < buffer.length && (n = readSync(fd, buffer, size, buffer.length - size, null)) > 0) size += n;
     if (size !== stat.size || size > max || fstatSync(fd).size !== stat.size)
       throw new Error("Attachment changed during read");
     return buffer.subarray(0, size);
@@ -87,7 +79,8 @@ const mimeFor = (name) =>
 /** Immutable profile-local attachments. Models get IDs, never a path/URL import capability. */
 export class LocalAttachmentStore {
   constructor(root, { maxBytes = MAX_BYTES } = {}) {
-    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 20 * 1024 * 1024) throw Error('Invalid attachment size bound');
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 20 * 1024 * 1024)
+      throw Error("Invalid attachment size bound");
     this.maxBytes = maxBytes;
     this.root = root;
     directory(root);
@@ -126,9 +119,7 @@ export class LocalAttachmentStore {
   }
   describe(id) {
     if (!/^[a-f0-9]{64}$/.test(id)) throw new Error("Invalid attachment ID");
-    const facts = JSON.parse(
-      readRegular(join(this.root, `${id}.json`), 4096).toString("utf8"),
-    );
+    const facts = JSON.parse(readRegular(join(this.root, `${id}.json`), 4096).toString("utf8"));
     if (
       digest(facts) !== id ||
       typeof facts.name !== "string" ||
@@ -148,12 +139,7 @@ export class LocalAttachmentStore {
     return { facts, bytes };
   }
   list({ after = "", limit = 12 } = {}) {
-    if (
-      typeof after !== "string" ||
-      !Number.isSafeInteger(limit) ||
-      limit < 1 ||
-      limit > 50
-    )
+    if (typeof after !== "string" || !Number.isSafeInteger(limit) || limit < 1 || limit > 50)
       throw new Error("Invalid attachment page");
     const ids = [],
       dir = opendirSync(this.root);
@@ -162,10 +148,7 @@ export class LocalAttachmentStore {
     try {
       while ((entry = dir.readSync())) {
         if (++count > 8192) throw new Error("Attachment catalog exceeds bound");
-        if (
-          /^[a-f0-9]{64}\.json$/.test(entry.name) &&
-          entry.name.slice(0, -5) > after
-        )
+        if (/^[a-f0-9]{64}\.json$/.test(entry.name) && entry.name.slice(0, -5) > after)
           ids.push(entry.name.slice(0, -5));
       }
     } finally {

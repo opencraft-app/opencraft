@@ -1,13 +1,7 @@
 import { legacyCoordinationFixture } from "./helpers.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  statSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,11 +20,10 @@ const codex = {
   baseUrl: "http://127.0.0.1:1/v1",
 };
 const profile = (options) =>
-  initProfile(
-    mkdtempSync(join(tmpdir(), "sa-execution-owner-")),
-    "test-owner",
-    { memoryPolicy: { enabled: false }, ...options },
-  );
+  initProfile(mkdtempSync(join(tmpdir(), "sa-execution-owner-")), "test-owner", {
+    memoryPolicy: { enabled: false },
+    ...options,
+  });
 
 test("schema17 upgrade preserves snapshots and pins all historical executions to Pi, with a private pre-upgrade backup", async () => {
   const p = profile();
@@ -48,15 +41,8 @@ test("schema17 upgrade preserves snapshots and pins all historical executions to
     writeFileSync(join(p.path, "profile.json"), JSON.stringify(p.config));
     store = new Store(loadProfile(p.path));
     assert.equal(store.app.detail(id).executions[0].harness, "pi");
-    assert.deepEqual(
-      store.app.executions.snapshot(store.app.workRecord(id)),
-      snapshot,
-    );
-    const backup = join(
-      p.path,
-      "backups",
-      "schema17-before-coordination.sqlite",
-    );
+    assert.deepEqual(store.app.executions.snapshot(store.app.workRecord(id)), snapshot);
+    const backup = join(p.path, "backups", "schema17-before-coordination.sqlite");
     assert.ok(existsSync(backup));
     assert.equal(statSync(backup).mode & 0o077, 0);
     const old = new DatabaseSync(backup, { readOnly: true });
@@ -105,9 +91,7 @@ test("native receipts bind intent to one execution and reject changed outcomes o
         }),
       /Immutable/,
     );
-    const other = store.app.workRecord(
-      store.submit("b", { text: "second" }).workId,
-    );
+    const other = store.app.workRecord(store.submit("b", { text: "second" }).workId);
     assert.equal(
       service.prepareNativeCall(other, "tool:one", "publish_note", {
         body: "other",
@@ -126,10 +110,7 @@ test("native receipts bind intent to one execution and reject changed outcomes o
         }),
       /revision|superseded|current/i,
     );
-    assert.throws(
-      () => service.bound(store.app.workRecord(id), 7, 8),
-      /engine/,
-    );
+    assert.throws(() => service.bound(store.app.workRecord(id), 7, 8), /engine/);
   } finally {
     store.close();
     await rm(p.path, { recursive: true, force: true });
@@ -165,10 +146,7 @@ test("missing Codex configuration cannot silently migrate or block a previously 
     store.close();
     p.config.harnesses = { assistant: "pi", execution: "pi" };
     writeFileSync(join(p.path, "profile.json"), JSON.stringify(p.config));
-    await assert.rejects(
-      LocalRunner.open(loadProfile(p.path)),
-      /Pending Codex/,
-    );
+    await assert.rejects(LocalRunner.open(loadProfile(p.path)), /Pending Codex/);
     store = new Store(loadProfile(p.path));
     const d = store.app.detail(id);
     assert.equal(d.work.status, "queued");
@@ -244,16 +222,7 @@ test("CLI selects the independent execution harness and doctor does not initiali
       ).stdout,
     );
     assert.equal(r.harnesses.execution, "codex");
-    const d = JSON.parse(
-      (
-        await exec(process.execPath, [
-          "bin/assistant.mjs",
-          "doctor",
-          "--profile",
-          path,
-        ])
-      ).stdout,
-    );
+    const d = JSON.parse((await exec(process.execPath, ["bin/assistant.mjs", "doctor", "--profile", path])).stdout);
     assert.match(d.executionCheckpoint, /Codex/);
     assert.equal(existsSync(join(path, "assistant.sqlite")), false);
   } finally {
@@ -284,10 +253,7 @@ test("changing a native backend is rejected before a queued execution can be rep
     store.close();
     p.config.harnesses.codex = { ...codex, modelId: "different-model" };
     writeFileSync(join(p.path, "profile.json"), JSON.stringify(p.config));
-    await assert.rejects(
-      LocalRunner.open(loadProfile(p.path)),
-      /backend differs/,
-    );
+    await assert.rejects(LocalRunner.open(loadProfile(p.path)), /backend differs/);
     store = new Store(loadProfile(p.path));
     assert.equal(store.app.detail(id).executions[0].conversation_id, binding);
     assert.equal(store.app.detail(id).work.status, "queued");
@@ -335,21 +301,12 @@ test("schema18 preserves native receipts, report/result foreign keys and origina
     const after = store.app.detail(work.id);
     assert.equal(after.work.active_execution_id, receipt.executionId);
     assert.equal(after.executions[0].session_root, receipt.executionId);
-    assert.equal(
-      after.executions[0].conversation_id,
-      before.executions[0].conversation_id,
-    );
+    assert.equal(after.executions[0].conversation_id, before.executions[0].conversation_id);
     assert.deepEqual(JSON.parse(after.executions[0].context_json), snapshot);
     assert.deepEqual(after.results, before.results);
     assert.deepEqual(after.reports, before.reports);
-    assert.equal(
-      store.app.executions.nativeCalls(after.work)[0].state,
-      "completed",
-    );
-    assert.equal(
-      store.db.prepare("PRAGMA user_version").get().user_version,
-      21,
-    );
+    assert.equal(store.app.executions.nativeCalls(after.work)[0].state, "completed");
+    assert.equal(store.db.prepare("PRAGMA user_version").get().user_version, 21);
     assert.deepEqual(store.db.prepare("PRAGMA foreign_key_check").all(), []);
     assert.deepEqual(store.app.goals.list(), []);
     store.app.works.continue("next", {
@@ -361,11 +318,7 @@ test("schema18 preserves native receipts, report/result foreign keys and origina
     assert.equal(next.executions.length, 2);
     assert.equal(next.executions[1].revision, 1);
     assert.equal(next.executions[1].session_root, receipt.executionId);
-    assert.ok(
-      existsSync(
-        join(p.path, "backups", "schema18-before-coordination.sqlite"),
-      ),
-    );
+    assert.ok(existsSync(join(p.path, "backups", "schema18-before-coordination.sqlite")));
   } finally {
     store.close();
     await rm(p.path, { recursive: true, force: true });

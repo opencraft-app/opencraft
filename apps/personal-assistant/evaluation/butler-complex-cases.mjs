@@ -55,8 +55,7 @@ export const complexCases = [
 }));
 
 const q = (d) => d.interactions.find((x) => x.state === "pending");
-const active = (d) =>
-  d.executions.find((e) => e.id === d.work.active_execution_id);
+const active = (d) => d.executions.find((e) => e.id === d.work.active_execution_id);
 const target = (w) => ({ workId: w.id, expectedRevision: w.revision });
 const reply = (question, text) => ({
   interactionId: question.id,
@@ -80,17 +79,11 @@ const consumer = (marker, wait = true) =>
 // A historical or unrelated artifact containing the expected words cannot pass.
 export function currentPublishedNote(detail, notes) {
   const id = detail.work.active_execution_id;
-  if (!detail.results.some((r) => r.execution_id === id))
-    throw new Error("No current result for artifact grading");
-  const evidence =
-    detail.completion.executions.find((e) => e.executionId === id)?.evidence ??
-    [];
+  if (!detail.results.some((r) => r.execution_id === id)) throw new Error("No current result for artifact grading");
+  const evidence = detail.completion.executions.find((e) => e.executionId === id)?.evidence ?? [];
   const receipt = evidence.find((e) => e.kind === "note.published")?.data;
   const note = receipt && notes.find((n) => n.name === basename(receipt.path));
-  if (
-    !note ||
-    createHash("sha256").update(note.text).digest("hex") !== receipt.sha256
-  )
+  if (!note || createHash("sha256").update(note.text).digest("hex") !== receipt.sha256)
     throw new Error("Current published artifact missing or hash mismatch");
   return note.text;
 }
@@ -99,17 +92,11 @@ export function fieldEquals(text, field, value) {
   if (!/^[a-z_]+$/.test(field)) throw new Error("Invalid grading field");
   const lines = text.split(/\r?\n/).map((s) => s.replace(/[*`]/g, "").trim());
   const values = lines
-    .map(
-      (s) =>
-        s.match(
-          new RegExp(`^(?:[-+]\\s+)?${field}\\s*[:：]\\s*(.*?)\\s*$`, "i"),
-        )?.[1],
-    )
+    .map((s) => s.match(new RegExp(`^(?:[-+]\\s+)?${field}\\s*[:：]\\s*(.*?)\\s*$`, "i"))?.[1])
     .filter((s) => s !== undefined);
   return values.length === 1 && values[0] === value;
 }
-const published = async (c, detail) =>
-  currentPublishedNote(detail, await c.notes());
+const published = async (c, detail) => currentPublishedNote(detail, await c.notes());
 const getGoal = (c, g) => c.call("goal.get", { goalId: g.id });
 const changeGoal = async (c, g, op) => {
   const current = await getGoal(c, g);
@@ -126,8 +113,7 @@ const rebase = async (c, g, work, upstream) => {
     dependencies: upstream.map((w) => ({ workId: w.id, revision: w.revision })),
   });
 };
-const unstarted = (d) =>
-  !d.executions.some((e) => e.conversation_id) && !d.results.length;
+const unstarted = (d) => !d.executions.some((e) => e.conversation_id) && !d.results.length;
 
 export async function runComplexCase(id, c, { note, pending, done, create }) {
   if (id === "natural-plan-join") {
@@ -138,9 +124,7 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     const goals = await c.call("goal.list");
     c.check(
       "one-goal-four-distinct-deliverables",
-      goals.length === 1 &&
-        goals[0].works.length === 4 &&
-        (await c.call("status")).works.length === 4,
+      goals.length === 1 && goals[0].works.length === 4 && (await c.call("status")).works.length === 4,
     );
     const g = goals[0],
       byKey = Object.fromEntries(g.works.map((w) => [w.key, w]));
@@ -148,25 +132,15 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       "business-node-identities-preserved",
       ["date", "audience", "runbook", "brief"].every((k) => byKey[k]),
     );
-    const [date, audience] = await Promise.all([
-      pending(c, byKey.date.id),
-      pending(c, byKey.audience.id),
-    ]);
+    const [date, audience] = await Promise.all([pending(c, byKey.date.id), pending(c, byKey.audience.id)]);
     c.check(
       "join-and-successor-not-started",
       unstarted(await c.call("work", { workId: byKey.runbook.id })) &&
         unstarted(await c.call("work", { workId: byKey.brief.id })),
     );
-    await c.say(
-      "回答本工作：参与人数是17人。",
-      "audience-answer",
-      audience.work,
-    );
+    await c.say("回答本工作：参与人数是17人。", "audience-answer", audience.work);
     await done(c, audience.work.id);
-    c.check(
-      "one-parent-insufficient-for-join",
-      unstarted(await c.call("work", { workId: byKey.runbook.id })),
-    );
+    c.check("one-parent-insufficient-for-join", unstarted(await c.call("work", { workId: byKey.runbook.id })));
     await c.restart();
     c.check(
       "other-question-survives-first-answer-and-restart",
@@ -186,9 +160,7 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     c.check(
       "successor-pins-join-result",
       JSON.parse(active(brief).context_json).dependencyResults.some(
-        (x) =>
-          x.resultId ===
-          runbook.results.find((r) => r.execution_id === active(runbook).id).id,
+        (x) => x.resultId === runbook.results.find((r) => r.execution_id === active(runbook).id).id,
       ),
     );
     for (const [label, detail] of [
@@ -198,17 +170,15 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       const text = await published(c, detail);
       c.check(
         `${label}-uses-both-confirmed-values`,
-        fieldEquals(text, "date", "2027-01-12") &&
-          fieldEquals(text, "audience", "17"),
+        fieldEquals(text, "date", "2027-01-12") && fieldEquals(text, "audience", "17"),
       );
     }
     c.check(
       "ready-without-invented-owner-attestation",
-      (await getGoal(c, g)).readyForReview &&
-        (await getGoal(c, g)).semanticReview.kind !== "owner-attested",
+      (await getGoal(c, g)).readyForReview && (await getGoal(c, g)).semanticReview.kind !== "owner-attested",
     );
   } else if (id === "interrupt-replan") {
-    let g = await c.call("goal.create", {
+    const g = await c.call("goal.create", {
       definition: definition("周末读书会", [
         task("source", dateNote("WEEKEND")),
         task("flow", consumer("WEEKEND-FLOW", false), ["source"]),
@@ -217,14 +187,8 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     const source = g.works.find((w) => w.key === "source"),
       flow = g.works.find((w) => w.key === "flow");
     const old = await pending(c, source.id);
-    await c.say(
-      "先暂停整个周末读书会目标，保留所有工作，稍后再恢复。",
-      "pause",
-    );
-    c.check(
-      "natural-language-pauses-goal",
-      (await getGoal(c, g)).state === "paused",
-    );
+    await c.say("先暂停整个周末读书会目标，保留所有工作，稍后再恢复。", "pause");
+    c.check("natural-language-pauses-goal", (await getGoal(c, g)).state === "paused");
     const urgent = await create(c, note("URGENT-BRIEF"), "URGENT-BRIEF");
     await done(c, urgent.id);
     await c.say(
@@ -238,26 +202,15 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       changed.work.revision === 2 &&
         changed.results.length === 0 &&
         (await getGoal(c, g)).state === "paused" &&
-        (await c.call("work", { workId: urgent.id })).work.status ===
-          "completed",
+        (await c.call("work", { workId: urgent.id })).work.status === "completed",
     );
-    await c.reject(
-      "late-old-date-rejected",
-      "interaction.answer",
-      reply(q(old), "2027-01-11"),
-    );
+    await c.reject("late-old-date-rejected", "interaction.answer", reply(q(old), "2027-01-11"));
     await c.restart();
     await rebase(c, g, flow, [changed.work]);
-    await c.say(
-      "恢复周末读书会这个暂停目标，按修改后的要求继续，不要新建目标或工作。",
-      "resume",
-    );
+    await c.say("恢复周末读书会这个暂停目标，按修改后的要求继续，不要新建目标或工作。", "resume");
     await done(c, source.id);
     const final = await done(c, flow.id);
-    c.check(
-      "resumed-flow-uses-new-date",
-      fieldEquals(await published(c, final), "date", "2027-01-13"),
-    );
+    c.check("resumed-flow-uses-new-date", fieldEquals(await published(c, final), "date", "2027-01-13"));
     c.check(
       "no-duplicate-goal-or-urgent-work",
       (await c.call("goal.list")).length === 1 &&
@@ -273,10 +226,7 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       w,
     );
     const second = await pending(c, w.id);
-    c.check(
-      "second-revision-new-question",
-      second.work.revision === 2 && q(second).id !== q(first).id,
-    );
+    c.check("second-revision-new-question", second.work.revision === 2 && q(second).id !== q(first).id);
     await c.restart();
     await c.say(
       "再次完整替换本工作：撤销原来的房间提问，改为 BOOK-THREE 阅读准备笔记，无需提问，publish_note 发布三条准备事项。只保留新要求，不另建工作。",
@@ -295,8 +245,7 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       );
       c.check(
         `${label}-snapshot-immutable`,
-        final.executions.find((e) => e.id === active(d).id).context_json ===
-          active(d).context_json,
+        final.executions.find((e) => e.id === active(d).id).context_json === active(d).context_json,
       );
     }
     await c.reject("stale-second-amend-rejected", "amend", {
@@ -311,17 +260,12 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
         final.results.length === 1 &&
         final.deliveries.length === 1 &&
         text.includes("BOOK-THREE") &&
-        !checks.some(
-          (check) =>
-            check.kind === "note_contains" &&
-            /ROOM-TWO|TRAVEL-ONE/.test(check.text),
-        ),
+        !checks.some((check) => check.kind === "note_contains" && /ROOM-TWO|TRAVEL-ONE/.test(check.text)),
     );
     await c.restart();
     c.check(
       "final-version-persists-with-no-extra-work",
-      (await c.call("work", { workId: w.id })).work.revision === 3 &&
-        (await c.call("status")).works.length === 1,
+      (await c.call("work", { workId: w.id })).work.revision === 3 && (await c.call("status")).works.length === 1,
     );
   } else if (id === "crossed-answers") {
     await c.say(
@@ -329,20 +273,9 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       "pair",
     );
     const works = (await c.call("status")).works;
-    c.check(
-      "two-unrelated-works-created",
-      works.length === 2 && (await c.call("goal.list")).length === 0,
-    );
-    const a = works.find(
-        (w) =>
-          w.text.includes("TRAINING-ALPHA") &&
-          !w.text.includes("TRAINING-BETA"),
-      ),
-      b = works.find(
-        (w) =>
-          w.text.includes("TRAINING-BETA") &&
-          !w.text.includes("TRAINING-ALPHA"),
-      );
+    c.check("two-unrelated-works-created", works.length === 2 && (await c.call("goal.list")).length === 0);
+    const a = works.find((w) => w.text.includes("TRAINING-ALPHA") && !w.text.includes("TRAINING-BETA")),
+      b = works.find((w) => w.text.includes("TRAINING-BETA") && !w.text.includes("TRAINING-ALPHA"));
     c.check("pair-requirements-separated", !!a && !!b);
     const [da, db] = await Promise.all([pending(c, a.id), pending(c, b.id)]);
     const instruction = {
@@ -360,15 +293,11 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     );
     await c.say("回答本工作：日期为2027年2月22日。", "beta-date", b);
     const finalB = await done(c, b.id);
-    c.check(
-      "beta-answer-does-not-answer-alpha",
-      q(await c.call("work", { workId: a.id }))?.id === q(da).id,
-    );
+    c.check("beta-answer-does-not-answer-alpha", q(await c.call("work", { workId: a.id }))?.id === q(da).id);
     await c.restart();
     c.check(
       "instruction-replay-is-same-receipt",
-      (await c.call("work.instruct", instruction, "alpha-extra"))
-        .directiveId === receipt.directiveId,
+      (await c.call("work.instruct", instruction, "alpha-extra")).directiveId === receipt.directiveId,
     );
     await c.reject(
       "conflicting-instruction-replay-rejected",
@@ -385,20 +314,14 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       const text = await published(c, d);
       c.check(
         `${label}-current-artifact-owns-date-and-supplement`,
-        fieldEquals(text, "date", date) &&
-          fieldEquals(text, "equipment", equipment),
+        fieldEquals(text, "date", date) && fieldEquals(text, "equipment", equipment),
       );
       c.check(
         `${label}-one-final-delivery`,
-        d.results.length === 1 &&
-          d.deliveries.length === 1 &&
-          d.directives.length === 1,
+        d.results.length === 1 && d.deliveries.length === 1 && d.directives.length === 1,
       );
     }
-    c.check(
-      "native-threads-separate",
-      active(da).conversation_id !== active(db).conversation_id,
-    );
+    c.check("native-threads-separate", active(da).conversation_id !== active(db).conversation_id);
   } else if (id === "diamond-rebase") {
     const g = await c.call("goal.create", {
       definition: definition("活动双分支汇合", [
@@ -412,10 +335,7 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     const root = await pending(c, by.source.id);
     await c.call("interaction.answer", reply(q(root), "2027年3月8日"));
     await done(c, by.source.id);
-    const [left, right] = await Promise.all([
-      pending(c, by.left.id),
-      pending(c, by.right.id),
-    ]);
+    const [left, right] = await Promise.all([pending(c, by.left.id), pending(c, by.right.id)]);
     await changeGoal(c, g, "goal.pause");
     await c.call("amend", {
       ...target(by.source),
@@ -426,38 +346,23 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     const stale = await getGoal(c, g);
     c.check(
       "both-branches-invalidated-and-join-unstarted",
-      [by.left, by.right].every(
-        (w) => stale.works.find((x) => x.id === w.id).waitingOn.length > 0,
-      ) && unstarted(await c.call("work", { workId: by.join.id })),
+      [by.left, by.right].every((w) => stale.works.find((x) => x.id === w.id).waitingOn.length > 0) &&
+        unstarted(await c.call("work", { workId: by.join.id })),
     );
     await rebase(c, g, by.left, [newRoot.work]);
     const freshLeft = await pending(c, by.left.id);
-    await c.reject(
-      "old-left-answer-rejected",
-      "interaction.answer",
-      reply(q(left), "确认发布"),
-    );
+    await c.reject("old-left-answer-rejected", "interaction.answer", reply(q(left), "确认发布"));
     await c.call("interaction.answer", reply(q(freshLeft), "确认发布"));
     const leftDone = await done(c, by.left.id);
-    c.check(
-      "one-rebased-branch-cannot-release-join",
-      unstarted(await c.call("work", { workId: by.join.id })),
-    );
+    c.check("one-rebased-branch-cannot-release-join", unstarted(await c.call("work", { workId: by.join.id })));
     await c.restart();
     await rebase(c, g, by.right, [newRoot.work]);
     const freshRight = await pending(c, by.right.id);
-    await c.reject(
-      "old-right-answer-rejected",
-      "interaction.answer",
-      reply(q(right), "确认发布"),
-    );
+    await c.reject("old-right-answer-rejected", "interaction.answer", reply(q(right), "确认发布"));
     await c.call("interaction.answer", reply(q(freshRight), "确认发布"));
     const rightDone = await done(c, by.right.id);
     // Both upstream work revisions changed; the join's declared edges still need explicit rebase.
-    c.check(
-      "join-requires-explicit-new-edge-versions",
-      unstarted(await c.call("work", { workId: by.join.id })),
-    );
+    c.check("join-requires-explicit-new-edge-versions", unstarted(await c.call("work", { workId: by.join.id })));
     await rebase(c, g, by.join, [leftDone.work, rightDone.work]);
     const final = await done(c, by.join.id);
     for (const [label, old, current] of [
@@ -466,13 +371,11 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     ]) {
       c.check(
         `${label}-old-snapshot-unchanged`,
-        current.executions.find((e) => e.id === active(old).id).context_json ===
-          active(old).context_json,
+        current.executions.find((e) => e.id === active(old).id).context_json === active(old).context_json,
       );
       c.check(
         `${label}-new-source-pinned`,
-        JSON.parse(active(current).context_json).dependencyResults[0]
-          .resultId ===
+        JSON.parse(active(current).context_json).dependencyResults[0].resultId ===
           newRoot.results.find((r) => r.execution_id === active(newRoot).id).id,
       );
     }
@@ -481,24 +384,14 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       "join-pins-both-new-branch-results",
       inputs.length === 2 &&
         [leftDone, rightDone].every((d) =>
-          inputs.some(
-            (x) =>
-              x.resultId ===
-              d.results.find((r) => r.execution_id === active(d).id).id,
-          ),
+          inputs.some((x) => x.resultId === d.results.find((r) => r.execution_id === active(d).id).id),
         ),
     );
-    c.check(
-      "final-artifact-uses-new-date",
-      fieldEquals(await published(c, final), "date", "2027-03-09"),
-    );
+    c.check("final-artifact-uses-new-date", fieldEquals(await published(c, final), "date", "2027-03-09"));
     c.check("all-current-results-ready", (await getGoal(c, g)).readyForReview);
   } else if (id === "reopen-review") {
     let g = await c.call("goal.create", {
-      definition: definition("整理培训交付", [
-        task("guide", note("GUIDE")),
-        task("checklist", note("CHECKLIST")),
-      ]),
+      definition: definition("整理培训交付", [task("guide", note("GUIDE")), task("checklist", note("CHECKLIST"))]),
     });
     const a = g.works[0],
       b = g.works[1];
@@ -516,43 +409,28 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
       expectedRevision: g.revision,
       evidence,
     });
-    c.check(
-      "owner-attestation-explicit",
-      g.semanticReview.kind === "owner-attested",
-    );
+    c.check("owner-attestation-explicit", g.semanticReview.kind === "owner-attested");
     const followup = {
       ...target(oldA.work),
       expectedExecutionId: active(oldA).id,
       text: "续办 GUIDE：先 ask_user 问我培训负责人并等待实际回答。保留原三条准备事项，发布更新 GUIDE 笔记并单独一行 owner: 用户实际回答的负责人。",
     };
-    await c.reject(
-      "closed-goal-rejects-continuation",
-      "work.continue",
-      followup,
-    );
+    await c.reject("closed-goal-rejects-continuation", "work.continue", followup);
     g = await changeGoal(c, g, "goal.reopen");
-    c.check(
-      "reopen-clears-attestation",
-      g.semanticReview.kind === "unverified",
-    );
-    const continuation = await c.call(
-      "work.continue",
-      followup,
-      "owner-followup",
-    );
+    c.check("reopen-clears-attestation", g.semanticReview.kind === "unverified");
+    const continuation = await c.call("work.continue", followup, "owner-followup");
     const waiting = await pending(c, a.id);
     await c.restart();
     c.check(
       "continuation-replay-stable",
-      (await c.call("work.continue", followup, "owner-followup"))
-        .executionId === continuation.executionId,
+      (await c.call("work.continue", followup, "owner-followup")).executionId === continuation.executionId,
     );
     g = await getGoal(c, g);
-    await c.reject(
-      "old-review-cannot-complete-waiting-successor",
-      "goal.confirm",
-      { goalId: g.id, expectedRevision: g.revision, evidence },
-    );
+    await c.reject("old-review-cannot-complete-waiting-successor", "goal.confirm", {
+      goalId: g.id,
+      expectedRevision: g.revision,
+      evidence,
+    });
     await c.call("interaction.answer", reply(q(waiting), "林岚"));
     const final = await done(c, a.id),
       unchanged = await c.call("work", { workId: b.id });
@@ -564,26 +442,18 @@ export async function runComplexCase(id, c, { note, pending, done, create }) {
     c.check(
       "old-result-preserved-with-distinct-successor",
       final.results.length === 2 &&
-        JSON.stringify(
-          final.results.find((r) => r.id === oldA.results[0].id),
-        ) === JSON.stringify(oldA.results[0]) &&
+        JSON.stringify(final.results.find((r) => r.id === oldA.results[0].id)) === JSON.stringify(oldA.results[0]) &&
         active(final).conversation_id === active(oldA).conversation_id,
     );
-    c.check(
-      "new-owner-in-current-artifact",
-      fieldEquals(await published(c, final), "owner", "林岚"),
-    );
+    c.check("new-owner-in-current-artifact", fieldEquals(await published(c, final), "owner", "林岚"));
     g = await getGoal(c, g);
-    c.check(
-      "model-cannot-reuse-owner-attestation",
-      g.semanticReview.kind !== "owner-attested",
-    );
+    c.check("model-cannot-reuse-owner-attestation", g.semanticReview.kind !== "owner-attested");
     if (g.state === "achieved") g = await changeGoal(c, g, "goal.reopen");
-    await c.reject(
-      "old-result-ids-rejected-even-after-success",
-      "goal.confirm",
-      { goalId: g.id, expectedRevision: g.revision, evidence },
-    );
+    await c.reject("old-result-ids-rejected-even-after-success", "goal.confirm", {
+      goalId: g.id,
+      expectedRevision: g.revision,
+      evidence,
+    });
     const finalEvidence = g.criteria.map((criterion) => ({
       criterionId: criterion.id,
       statement: "操作者确认含负责人新版 GUIDE 和未变 CHECKLIST",

@@ -1,13 +1,6 @@
 /** Ephemeral scheduling owner. Durable business state is always queried from application services. */
 export class WorkCoordinator {
-  constructor({
-    app,
-    executor,
-    concurrency,
-    afterResult = () => {},
-    onError = () => {},
-    telemetry,
-  }) {
+  constructor({ app, executor, concurrency, afterResult = () => {}, onError = () => {}, telemetry }) {
     Object.assign(this, { app, executor, concurrency, afterResult, onError });
     this.telemetry = telemetry;
     this.active = new Map();
@@ -27,12 +20,10 @@ export class WorkCoordinator {
     }
     const scheduling = new Set(this.active.keys());
     // Free the local model slot, but do not bypass a Goal's logical parallelism limit.
-    for (const id of this.app.executions.threads?.waitingWorks() ?? [])
-      scheduling.add(id);
+    for (const id of this.app.executions.threads?.waitingWorks() ?? []) scheduling.add(id);
     for (const work of this.app.pendingWorks(scheduling)) {
       if (this.active.size >= this.concurrency) break;
-      if (this.active.has(work.id) || this.app.executions.threads?.held(work))
-        continue;
+      if (this.active.has(work.id) || this.app.executions.threads?.held(work)) continue;
       const controller = new AbortController(),
         task = {
           controller,
@@ -47,9 +38,7 @@ export class WorkCoordinator {
   }
   async execute(work, signal) {
     return this.telemetry
-      ? this.telemetry.run("work.execute", {}, () =>
-          this.executeAttempt(work, signal),
-        )
+      ? this.telemetry.run("work.execute", {}, () => this.executeAttempt(work, signal))
       : this.executeAttempt(work, signal);
   }
   async executeAttempt(work, signal) {
@@ -60,11 +49,7 @@ export class WorkCoordinator {
       this.app.executions.started(work);
       answer = await this.executor.run(work, signal);
     } catch (error) {
-      if (
-        !this.stopping &&
-        !signal.aborted &&
-        this.app.executions.ready(this.app.workRecord(work.id))
-      )
+      if (!this.stopping && !signal.aborted && this.app.executions.ready(this.app.workRecord(work.id)))
         this.settleReport(work, "", error);
       return;
     }
@@ -79,11 +64,8 @@ export class WorkCoordinator {
       this.app.executions.blocked(work, observed.report.error);
       return;
     }
-    const receipt = observed.routed
-      ? { accepted: true }
-      : this.app.outcomes.record(work, observed.report.text);
-    if (receipt.accepted)
-      this.afterResult(observed.routed ? "report" : "result");
+    const receipt = observed.routed ? { accepted: true } : this.app.outcomes.record(work, observed.report.text);
+    if (receipt.accepted) this.afterResult(observed.routed ? "report" : "result");
   }
   async suspend() {
     this.stopping = true;

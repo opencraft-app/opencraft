@@ -30,8 +30,7 @@ export class InteractionLedger {
     this.repository.rejectPending(workId, revision, inputId, now);
   }
   retire(workId, reason, { preserveAnswers = false } = {}) {
-    if (!["cancelled", "superseded"].includes(reason))
-      throw new Error("Invalid interaction retirement");
+    if (!["cancelled", "superseded"].includes(reason)) throw new Error("Invalid interaction retirement");
     this.repository.retire(workId, reason, preserveAnswers);
   }
 }

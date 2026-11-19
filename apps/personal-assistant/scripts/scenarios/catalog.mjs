@@ -35,18 +35,11 @@ export const scenarioCatalog = Object.freeze(
 /** Validate before creating directories or touching provider configuration. */
 export function selectScenarios(names) {
   if (names === undefined) return [...scenarioCatalog];
-  if (
-    !Array.isArray(names) ||
-    !names.length ||
-    new Set(names).size !== names.length
-  )
+  if (!Array.isArray(names) || !names.length || new Set(names).size !== names.length)
     throw new Error("Scenarios must be a nonempty list without duplicates");
   return names.map((id) => {
     const scenario = scenarioCatalog.find((s) => s.id === id);
-    if (!scenario)
-      throw new Error(
-        `Unknown scenario ${String(id)}; choose memory,work,automations,skills`,
-      );
+    if (!scenario) throw new Error(`Unknown scenario ${String(id)}; choose memory,work,automations,skills`);
     return scenario;
   });
 }

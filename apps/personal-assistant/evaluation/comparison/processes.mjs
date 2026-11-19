@@ -30,10 +30,7 @@ export async function service(command, args, { cwd, log, env = {} }) {
     info = await Promise.race([
       first,
       new Promise((_, j) => {
-        const t = setTimeout(
-          () => j(new Error("Service startup timeout")),
-          180000,
-        );
+        const t = setTimeout(() => j(new Error("Service startup timeout")), 180000);
         t.unref();
       }),
     ]);
@@ -76,11 +73,7 @@ export function rpc(command, args, { cwd, log, env = {} }) {
     }
     pending.delete(v.id);
     clearTimeout(p.timer);
-    v.ok
-      ? p.resolve(v.result)
-      : p.reject(
-          Object.assign(new Error(v.message ?? v.error), { code: v.error }),
-        );
+    v.ok ? p.resolve(v.result) : p.reject(Object.assign(new Error(v.message ?? v.error), { code: v.error }));
   });
   const fail = (e) => {
     for (const p of pending.values()) {

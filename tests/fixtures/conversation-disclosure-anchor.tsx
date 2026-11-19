@@ -8,7 +8,8 @@ WebConversationViewportOwner.prototype.setMeasurementListener = function (next) 
   probe.disclosureOwner = this;
   return listener.call(this, next);
 };
-if (!new URLSearchParams(location.search).has("diagnosticsOff")) setTimelineDiagnosticObserver(
-  (kind, fields) => probe.disclosureDiagnostics.push({ at: performance.now(), kind, fields }),
-);
+if (!new URLSearchParams(location.search).has("diagnosticsOff"))
+  setTimelineDiagnosticObserver((kind, fields) =>
+    probe.disclosureDiagnostics.push({ at: performance.now(), kind, fields }),
+  );
 await import("./reasoning-disclosure");

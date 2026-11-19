@@ -1,11 +1,5 @@
 import { randomBytes, createCipheriv, createDecipheriv } from "node:crypto";
-import {
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  chmodSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
 import { join } from "node:path";
 import { digest } from "../../domain/values.mjs";
 
@@ -32,25 +26,12 @@ export class LocalCredentialVault {
   read(reference) {
     if (typeof reference !== "string" || !/^[a-f0-9]{64}$/.test(reference))
       throw new Error("Invalid credential reference");
-    const row = JSON.parse(
-      readFileSync(join(this.path, `${reference}.json`), "utf8"),
-    );
-    const decipher = createDecipheriv(
-      "aes-256-gcm",
-      this.key(),
-      Buffer.from(row.iv, "base64"),
-    );
-    decipher.setAAD(
-      Buffer.from(
-        `${this.profile.config.assistantId}:${this.profile.config.owner}:${reference}`,
-      ),
-    );
+    const row = JSON.parse(readFileSync(join(this.path, `${reference}.json`), "utf8"));
+    const decipher = createDecipheriv("aes-256-gcm", this.key(), Buffer.from(row.iv, "base64"));
+    decipher.setAAD(Buffer.from(`${this.profile.config.assistantId}:${this.profile.config.owner}:${reference}`));
     decipher.setAuthTag(Buffer.from(row.tag, "base64"));
     return JSON.parse(
-      Buffer.concat([
-        decipher.update(Buffer.from(row.ciphertext, "base64")),
-        decipher.final(),
-      ]).toString("utf8"),
+      Buffer.concat([decipher.update(Buffer.from(row.ciphertext, "base64")), decipher.final()]).toString("utf8"),
     );
   }
   put(inputId, kind, provider, secret) {
@@ -66,21 +47,13 @@ export class LocalCredentialVault {
     const reference = digest([this.profile.config.assistantId, inputId]);
     if (existsSync(join(this.path, `${reference}.json`))) {
       const old = this.read(reference);
-      if (
-        old.kind !== kind ||
-        old.provider !== provider ||
-        old.secret !== secret
-      )
+      if (old.kind !== kind || old.provider !== provider || old.secret !== secret)
         throw new Error("Credential identity reused with different intent");
       return this.describe(reference);
     }
     const iv = randomBytes(12),
       cipher = createCipheriv("aes-256-gcm", this.key(), iv);
-    cipher.setAAD(
-      Buffer.from(
-        `${this.profile.config.assistantId}:${this.profile.config.owner}:${reference}`,
-      ),
-    );
+    cipher.setAAD(Buffer.from(`${this.profile.config.assistantId}:${this.profile.config.owner}:${reference}`));
     const ciphertext = Buffer.concat([
       cipher.update(
         JSON.stringify({

@@ -1,26 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import http from "node:http";
-import {
-  existsSync,
-  mkdtempSync,
-  writeFileSync,
-  readFileSync,
-  chmodSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, chmodSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CodexStructuredHarness } from "../src/adapters/codex/structured-harness.mjs";
-import {
-  resolveHarnesses,
-  readCodexKey,
-} from "../src/adapters/codex/config.mjs";
-import {
-  outputSchema,
-  decodeOutput,
-  validateOutput,
-} from "../src/adapters/models/structured-output.mjs";
+import { resolveHarnesses, readCodexKey } from "../src/adapters/codex/config.mjs";
+import { outputSchema, decodeOutput, validateOutput } from "../src/adapters/models/structured-output.mjs";
 import { initProfile, loadProfile } from "../src/adapters/local/profile.mjs";
 import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { request } from "../src/adapters/local/unix-socket.mjs";
@@ -61,12 +48,7 @@ test(
       );
     });
     try {
-      const fixtures = JSON.parse(
-        readFileSync(
-          new URL("../evaluation/smoke-data.json", import.meta.url),
-          "utf8",
-        ),
-      );
+      const fixtures = JSON.parse(readFileSync(new URL("../evaluation/smoke-data.json", import.meta.url), "utf8"));
       const [item] = selectCases(fixtures, 1);
       const result = await runCase(item.input, {
         directory: join(root, "case"),
@@ -96,9 +78,7 @@ const binary =
   process.env.SUPERAPP_TEST_CODEX_BINARY ??
   "/opt/opencraft/runtime/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex";
 const native = {
-  skip: existsSync(binary)
-    ? false
-    : "Set SUPERAPP_TEST_CODEX_BINARY to verified Codex 0.162.1",
+  skip: existsSync(binary) ? false : "Set SUPERAPP_TEST_CODEX_BINARY to verified Codex 0.162.1",
   timeout: 45000,
 };
 const temporary = () => mkdtempSync(join(tmpdir(), "superapp-multi-harness-"));
@@ -121,8 +101,7 @@ function wireSlots(schema, value) {
         Object.hasOwn(value, key) ? wireSlots(field, value[key]) : null,
       ]),
     );
-  if (schema.type === "array")
-    return value.map((v) => wireSlots(schema.items, v));
+  if (schema.type === "array") return value.map((v) => wireSlots(schema.items, v));
   return value;
 }
 function sse(res, text, n, item) {
@@ -190,8 +169,7 @@ async function endpoint(handler) {
     },
   };
 }
-const call = (p, op, params = {}, id = crypto.randomUUID()) =>
-  request(p, { op, params, id });
+const call = (p, op, params = {}, id = crypto.randomUUID()) => request(p, { op, params, id });
 const settled = (p, id) =>
   until(async () => {
     const turn = await call(p, "turn", { inputId: id });
@@ -201,14 +179,8 @@ const settled = (p, id) =>
 
 test("role selection preserves legacy Pi and rejects unsupported checkpoint switching or embedded secrets", () => {
   assert.deepEqual(resolveHarnesses({}), { assistant: "pi", execution: "pi" });
-  assert.throws(
-    () => resolveHarnesses({ harnesses: { execution: "unknown" } }),
-    /checkpoint/,
-  );
-  assert.throws(
-    () => resolveHarnesses({ harnesses: { assistant: "codex" } }),
-    /Explicit/,
-  );
+  assert.throws(() => resolveHarnesses({ harnesses: { execution: "unknown" } }), /checkpoint/);
+  assert.throws(() => resolveHarnesses({ harnesses: { assistant: "codex" } }), /Explicit/);
   assert.throws(
     () =>
       resolveHarnesses({
@@ -242,21 +214,14 @@ test("role selection preserves legacy Pi and rejects unsupported checkpoint swit
 
 test("strict schemas are closed and decode nullable fields without silently dropping unknown authority", () => {
   assert.throws(
-    () =>
-      decodeOutput(
-        "reception",
-        wire({ kind: "continue", goal: "unauthorized background decision" }),
-        {},
-      ),
+    () => decodeOutput("reception", wire({ kind: "continue", goal: "unauthorized background decision" }), {}),
     /schema/,
   );
   assert.throws(
     () =>
-      decodeOutput(
-        "reception",
-        wire({ kind: "delegate", goal: "new request", completion: null }),
-        { source: { kind: "execution-report" } },
-      ),
+      decodeOutput("reception", wire({ kind: "delegate", goal: "new request", completion: null }), {
+        source: { kind: "execution-report" },
+      }),
     /schema/,
   );
   const walk = (schema) => {
@@ -268,39 +233,18 @@ test("strict schemas are closed and decode nullable fields without silently drop
     schema.anyOf?.forEach(walk);
     if (schema.items) walk(schema.items);
   };
-  for (const kind of [
-    "reception",
-    "memory-propose",
-    "memory-verify",
-    "context-summary",
-  ])
-    walk(outputSchema(kind));
-  assert.deepEqual(
-    decodeOutput(
-      "reception",
-      wire({ kind: "query", name: "memory.get", params: { key: "city" } }),
-    ),
-    { kind: "query", name: "memory.get", params: { key: "city" } },
-  );
-  assert.deepEqual(
-    decodeOutput(
-      "reception",
-      wire({ kind: "delegate", goal: "bounded", completion: null }),
-    ),
-    { kind: "delegate", goal: "bounded" },
-  );
-  assert.throws(
-    () =>
-      decodeOutput(
-        "reception",
-        wire({ kind: "reply", text: "hi", shell: "arbitrary" }),
-      ),
-    /schema/,
-  );
-  assert.throws(
-    () => decodeOutput("memory-verify", '{"approved":"true"}'),
-    /schema/,
-  );
+  for (const kind of ["reception", "memory-propose", "memory-verify", "context-summary"]) walk(outputSchema(kind));
+  assert.deepEqual(decodeOutput("reception", wire({ kind: "query", name: "memory.get", params: { key: "city" } })), {
+    kind: "query",
+    name: "memory.get",
+    params: { key: "city" },
+  });
+  assert.deepEqual(decodeOutput("reception", wire({ kind: "delegate", goal: "bounded", completion: null })), {
+    kind: "delegate",
+    goal: "bounded",
+  });
+  assert.throws(() => decodeOutput("reception", wire({ kind: "reply", text: "hi", shell: "arbitrary" })), /schema/);
+  assert.throws(() => decodeOutput("memory-verify", '{"approved":"true"}'), /schema/);
   const sent = decodeOutput(
     "reception",
     wire({
@@ -334,10 +278,7 @@ test("flat reception wire preserves tagged contracts and rejects cross-branch fi
       goal: "publish a note",
       completion: {
         output: "note",
-        checks: [
-          { kind: "note_published" },
-          { kind: "note_contains", text: "literal" },
-        ],
+        checks: [{ kind: "note_published" }, { kind: "note_contains", text: "literal" }],
       },
     },
     {
@@ -353,10 +294,7 @@ test("flat reception wire preserves tagged contracts and rejects cross-branch fi
   for (const proposal of proposals) {
     const raw = wireSlots(schema, { proposal });
     assert.equal(validateOutput(schema, raw), true);
-    assert.deepEqual(
-      decodeOutput("reception", JSON.stringify(raw), {}),
-      proposal,
-    );
+    assert.deepEqual(decodeOutput("reception", JSON.stringify(raw), {}), proposal);
   }
   for (const proposal of [
     { kind: "reply", text: "hello", goal: "also execute this" },
@@ -368,24 +306,14 @@ test("flat reception wire preserves tagged contracts and rejects cross-branch fi
     },
   ]) {
     const raw = wireSlots(schema, { proposal });
-    assert.equal(
-      validateOutput(schema, raw),
-      true,
-      "wire validity must not become command authority",
-    );
-    assert.throws(
-      () => decodeOutput("reception", JSON.stringify(raw), {}),
-      /command contract/,
-    );
+    assert.equal(validateOutput(schema, raw), true, "wire validity must not become command authority");
+    assert.throws(() => decodeOutput("reception", JSON.stringify(raw), {}), /command contract/);
   }
   const unknown = wireSlots(schema, {
     proposal: { kind: "reply", text: "hello" },
   });
   unknown.proposal.shell = null;
-  assert.throws(
-    () => decodeOutput("reception", JSON.stringify(unknown), {}),
-    /schema/,
-  );
+  assert.throws(() => decodeOutput("reception", JSON.stringify(unknown), {}), /schema/);
   const report = { source: { kind: "execution-report" } };
   assert.throws(
     () =>
@@ -446,19 +374,9 @@ test("actual CLI initializes selectable harnesses and offline doctor does not ca
     ]);
     assert.equal(JSON.parse(init.stdout).harnesses.assistant, "codex");
     const doctor = JSON.parse(
-      (
-        await exec(process.execPath, [
-          "bin/assistant.mjs",
-          "doctor",
-          "--profile",
-          directory,
-        ])
-      ).stdout,
+      (await exec(process.execPath, ["bin/assistant.mjs", "doctor", "--profile", directory])).stdout,
     );
-    assert.equal(
-      doctor.assistantModel.protocol,
-      "Responses (not Chat Completions)",
-    );
+    assert.equal(doctor.assistantModel.protocol, "Responses (not Chat Completions)");
     assert.equal(doctor.actualModelRequestPerformed, false);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -495,14 +413,8 @@ test("native subprocess environment excludes inherited credentials and preload h
     });
     const metadata = JSON.parse(readFileSync(capture, "utf8"));
     assert.equal(metadata.explicitKey, true);
-    assert.ok(
-      !metadata.names.includes("OPENAI_API_KEY") &&
-        !metadata.names.includes("NODE_OPTIONS"),
-    );
-    assert.doesNotMatch(
-      JSON.stringify(metadata.argv),
-      /explicit-synthetic-key|inherited-synthetic-key/,
-    );
+    assert.ok(!metadata.names.includes("OPENAI_API_KEY") && !metadata.names.includes("NODE_OPTIONS"));
+    assert.doesNotMatch(JSON.stringify(metadata.argv), /explicit-synthetic-key|inherited-synthetic-key/);
     assert.equal(existsSync(metadata.home), false);
   } finally {
     if (oldKey === undefined) delete process.env.OPENAI_API_KEY;
@@ -518,9 +430,7 @@ test(
   "real Codex app-server forwards schemas, restricts native tools and returns usage with independent concurrent calls",
   native,
   async () => {
-    const server = await endpoint(({ res, n }) =>
-      sse(res, wire({ kind: "reply", text: `reply-${n}` }), n),
-    );
+    const server = await endpoint(({ res, n }) => sse(res, wire({ kind: "reply", text: `reply-${n}` }), n));
     const harness = new CodexStructuredHarness(server.config);
     try {
       const answers = await Promise.all(
@@ -534,10 +444,7 @@ test(
         ),
       );
       assert.equal(server.requests.length, 2);
-      assert.equal(
-        new Set(answers.map((a) => JSON.parse(a.content[0].text).text)).size,
-        2,
-      );
+      assert.equal(new Set(answers.map((a) => JSON.parse(a.content[0].text).text)).size, 2);
       assert.deepEqual(answers[0].usage, {
         input: 10,
         output: 5,
@@ -635,48 +542,30 @@ else {item('t1','{"approved":false}');done('t1');send({id:p.id,result:{turn:{id}
   }
 });
 
-test(
-  "real native context receives one bounded correction; continued invalid output fails closed",
-  native,
-  async () => {
-    const server = await endpoint(({ res, n }) =>
-      sse(
-        res,
-        n === 1
-          ? "plain non-JSON"
-          : n === 2
-            ? wire({ kind: "reply", text: "corrected" })
-            : "still invalid",
-        n,
-      ),
-    );
-    const harness = new CodexStructuredHarness(server.config);
-    const args = {
-      kind: "reception",
-      instruction: "Return a reply",
-      input: { text: "hi" },
-      signal: AbortSignal.timeout(20000),
-    };
-    try {
-      const answer = await harness.complete(args);
-      assert.equal(JSON.parse(answer.content[0].text).text, "corrected");
-      assert.match(
-        JSON.stringify(server.requests[1].body.input),
-        /previous response was invalid/,
-      );
-      assert.match(
-        JSON.stringify(server.requests[1].body.input),
-        /plain non-JSON/,
-      );
-      assert.equal(answer.usage.totalTokens, 30);
-      await assert.rejects(harness.complete(args), /one protocol correction/);
-      assert.equal(server.requests.length, 4);
-    } finally {
-      await harness.close();
-      await server.close();
-    }
-  },
-);
+test("real native context receives one bounded correction; continued invalid output fails closed", native, async () => {
+  const server = await endpoint(({ res, n }) =>
+    sse(res, n === 1 ? "plain non-JSON" : n === 2 ? wire({ kind: "reply", text: "corrected" }) : "still invalid", n),
+  );
+  const harness = new CodexStructuredHarness(server.config);
+  const args = {
+    kind: "reception",
+    instruction: "Return a reply",
+    input: { text: "hi" },
+    signal: AbortSignal.timeout(20000),
+  };
+  try {
+    const answer = await harness.complete(args);
+    assert.equal(JSON.parse(answer.content[0].text).text, "corrected");
+    assert.match(JSON.stringify(server.requests[1].body.input), /previous response was invalid/);
+    assert.match(JSON.stringify(server.requests[1].body.input), /plain non-JSON/);
+    assert.equal(answer.usage.totalTokens, 30);
+    await assert.rejects(harness.complete(args), /one protocol correction/);
+    assert.equal(server.requests.length, 4);
+  } finally {
+    await harness.close();
+    await server.close();
+  }
+});
 
 test(
   "real native correction receives the host field failure without relaxing the command contract",
@@ -717,13 +606,8 @@ test(
       });
       assert.equal(JSON.parse(answer.content[0].text).expectedRevision, 3);
       assert.equal(server.requests.length, 2);
-      const feedback = JSON.stringify(
-        server.requests[1].body.input.filter((i) => i.role === "user").at(-1),
-      );
-      assert.match(
-        feedback,
-        /command_contract\/required at \$\.proposal.expectedRevision/,
-      );
+      const feedback = JSON.stringify(server.requests[1].body.input.filter((i) => i.role === "user").at(-1));
+      assert.match(feedback, /command_contract\/required at \$\.proposal.expectedRevision/);
       assert.match(feedback, /Never guess identifiers or revisions/);
       assert.deepEqual(events[0], {
         name: "codex.schema_rejected",
@@ -781,9 +665,7 @@ test(
       const model = new MemoryLearningModel(catalog, options);
       const proposal = await model.propose(
         {
-          evidence: [
-            { id: "e1", role: "user", text: "I prefer brief responses" },
-          ],
+          evidence: [{ id: "e1", role: "user", text: "I prefer brief responses" }],
           snapshot: { facts: [] },
         },
         signal,
@@ -791,10 +673,7 @@ test(
       assert.equal(proposal.changes[0].content, "brief responses");
       assert.equal(proposal.changes[0].scope, undefined);
       assert.equal((await model.verify({ proposal }, signal)).approved, true);
-      const context = await new ConversationContextModel(
-        catalog,
-        options,
-      ).summarize(
+      const context = await new ConversationContextModel(catalog, options).summarize(
         { messages: [{ id: "m1", role: "user", text: "evaluate memory" }] },
         signal,
       );
@@ -805,10 +684,7 @@ test(
       );
       assert.ok(
         usage.every(
-          (v) =>
-            v.provider === "codex-responses" &&
-            v.usage.totalTokens === 15 &&
-            v.usage.cost === undefined,
+          (v) => v.provider === "codex-responses" && v.usage.totalTokens === 15 && v.usage.cost === undefined,
         ),
       );
     } finally {
@@ -818,84 +694,69 @@ test(
   },
 );
 
-test(
-  "structured failures retain native usage and close aborts active requests",
-  native,
-  async () => {
-    const server = await endpoint(({ res, n }) => {
-      if (n <= 2) sse(res, "invalid", n);
-    });
-    const harness = new CodexStructuredHarness(server.config),
-      rows = [];
-    try {
-      await assert.rejects(
-        modelRequest(
-          { configured: { mode: "model" } },
-          "memory-verify",
-          "Review",
-          {},
-          AbortSignal.timeout(15000),
-          { transport: harness, recordUsage: (v) => rows.push(v) },
-        ),
-        /one protocol correction/,
-      );
-      assert.equal(rows[0].outcome, "error");
-      assert.equal(rows[0].usage.totalTokens, 30);
-      const active = harness.complete({
-        kind: "memory-verify",
-        instruction: "Review",
-        input: {},
-        signal: AbortSignal.timeout(15000),
-      });
-      const rejection = assert.rejects(active, /closing/);
-      await until(() => server.requests.length === 3);
-      await harness.close();
-      await rejection;
-      assert.equal(harness.active.size, 0);
-    } finally {
-      await harness.close();
-      await server.close();
-    }
-  },
-);
-
-test(
-  "real Codex rejects unregistered shell calls instead of executing them",
-  native,
-  async () => {
-    const root = temporary(),
-      marker = join(root, "must-not-exist");
-    const server = await endpoint(({ res, n }) =>
-      n === 1
-        ? sse(res, "", n, {
-            type: "function_call",
-            name: "exec_command",
-            call_id: "unauthorized",
-            arguments: JSON.stringify({ cmd: `touch ${marker}` }),
-          })
-        : sse(res, wire({ kind: "reply", text: "no shell authority" }), n),
+test("structured failures retain native usage and close aborts active requests", native, async () => {
+  const server = await endpoint(({ res, n }) => {
+    if (n <= 2) sse(res, "invalid", n);
+  });
+  const harness = new CodexStructuredHarness(server.config),
+    rows = [];
+  try {
+    await assert.rejects(
+      modelRequest({ configured: { mode: "model" } }, "memory-verify", "Review", {}, AbortSignal.timeout(15000), {
+        transport: harness,
+        recordUsage: (v) => rows.push(v),
+      }),
+      /one protocol correction/,
     );
-    const harness = new CodexStructuredHarness(server.config);
-    try {
-      await harness.complete({
-        kind: "reception",
-        instruction: "Return a reply",
-        input: {},
-        signal: AbortSignal.timeout(15000),
-      });
-      assert.equal(existsSync(marker), false);
-      assert.equal(server.requests.length, 2);
-      assert.match(
-        JSON.stringify(server.requests[1].body.input),
-        /unsupported|unknown|not found/i,
-      );
-    } finally {
-      await harness.close();
-      await server.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  },
-);
+    assert.equal(rows[0].outcome, "error");
+    assert.equal(rows[0].usage.totalTokens, 30);
+    const active = harness.complete({
+      kind: "memory-verify",
+      instruction: "Review",
+      input: {},
+      signal: AbortSignal.timeout(15000),
+    });
+    const rejection = assert.rejects(active, /closing/);
+    await until(() => server.requests.length === 3);
+    await harness.close();
+    await rejection;
+    assert.equal(harness.active.size, 0);
+  } finally {
+    await harness.close();
+    await server.close();
+  }
+});
+
+test("real Codex rejects unregistered shell calls instead of executing them", native, async () => {
+  const root = temporary(),
+    marker = join(root, "must-not-exist");
+  const server = await endpoint(({ res, n }) =>
+    n === 1
+      ? sse(res, "", n, {
+          type: "function_call",
+          name: "exec_command",
+          call_id: "unauthorized",
+          arguments: JSON.stringify({ cmd: `touch ${marker}` }),
+        })
+      : sse(res, wire({ kind: "reply", text: "no shell authority" }), n),
+  );
+  const harness = new CodexStructuredHarness(server.config);
+  try {
+    await harness.complete({
+      kind: "reception",
+      instruction: "Return a reply",
+      input: {},
+      signal: AbortSignal.timeout(15000),
+    });
+    assert.equal(existsSync(marker), false);
+    assert.equal(server.requests.length, 2);
+    assert.match(JSON.stringify(server.requests[1].body.input), /unsupported|unknown|not found/i);
+  } finally {
+    await harness.close();
+    await server.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test(
   "abort and close reap real native requests; a new call remains usable after one cancellation",
@@ -942,12 +803,7 @@ test(
     const server = await endpoint(({ body, res, n }) => {
       const schema = body.text.format.schema;
       if (schema.properties.changes) return sse(res, '{"changes":[]}', n);
-      if (schema.properties.goals)
-        return sse(
-          res,
-          '{"goals":[],"constraints":[],"decisions":[],"openItems":[]}',
-          n,
-        );
+      if (schema.properties.goals) return sse(res, '{"goals":[],"constraints":[],"decisions":[],"openItems":[]}', n);
       const last = body.input.findLast((v) => v.role === "user");
       const raw = last.content.map((c) => c.text).join("");
       const input = JSON.parse(raw);
@@ -973,17 +829,9 @@ test(
           n,
         );
       if (!input.observations.length)
-        return sse(
-          res,
-          wire({ kind: "query", name: "memory.get", params: { key: "city" } }),
-          n,
-        );
+        return sse(res, wire({ kind: "query", name: "memory.get", params: { key: "city" } }), n);
       assert.match(JSON.stringify(input.observations), /Shanghai/);
-      return sse(
-        res,
-        wire({ kind: "reply", text: "Shanghai from authorized query" }),
-        n,
-      );
+      return sse(res, wire({ kind: "reply", text: "Shanghai from authorized query" }), n);
     });
     const profile = initProfile(join(root, "profile"), "test", {
       memoryDefaultScope: "user",
@@ -993,30 +841,17 @@ test(
     let runner;
     try {
       runner = await LocalRunner.open(profile);
-      await call(
-        profile,
-        "memory.set",
-        { key: "city", value: "Shanghai", expectedRevision: 0 },
-        "city",
-      );
+      await call(profile, "memory.set", { key: "city", value: "Shanghai", expectedRevision: 0 }, "city");
       await call(profile, "say", { text: "where?" }, "greeting");
       assert.match((await settled(profile, "greeting")).reply_text, /Shanghai/);
       const turn = await call(profile, "turn", { inputId: "greeting" });
       assert.match(JSON.stringify(turn), /memory.get/);
-      await call(
-        profile,
-        "say",
-        { text: "delegate a bounded task" },
-        "delegate",
-      );
+      await call(profile, "say", { text: "delegate a bounded task" }, "delegate");
       const delegated = await settled(profile, "delegate");
       const done = await completed(profile, delegated.work_id);
       assert.equal(done.work.status, "completed");
       await until(
-        async () =>
-          (await call(profile, "conversation")).messages.some(
-            (m) => m.text === "Pi report received",
-          ),
+        async () => (await call(profile, "conversation")).messages.some((m) => m.text === "Pi report received"),
         15000,
       );
       const usage = await call(profile, "usage", {});
@@ -1027,17 +862,8 @@ test(
         execution: "pi",
       });
       await runner.close();
-      const traceText = readFileSync(
-        join(profile.path, "telemetry", "traces.otlp.jsonl"),
-        "utf8",
-      );
-      for (const name of [
-        "gen_ai.operation",
-        "codex.startup",
-        "codex.version_check",
-        "codex.rpc",
-        "codex.turn",
-      ])
+      const traceText = readFileSync(join(profile.path, "telemetry", "traces.otlp.jsonl"), "utf8");
+      for (const name of ["gen_ai.operation", "codex.startup", "codex.version_check", "codex.rpc", "codex.turn"])
         assert.ok(traceText.includes('"name":"' + name + '"'), name);
       assert.equal(runner.telemetry.health().exportErrors, 0);
       runner = await LocalRunner.open(loadProfile(profile.path));
@@ -1052,35 +878,31 @@ test(
   },
 );
 
-test(
-  "native reasoningEffort=none reaches the actual Responses HTTP request",
-  native,
-  async () => {
-    const server = await endpoint(({ body, res, n }) => {
-      assert.equal(body.model, "hy4");
-      assert.equal(body.reasoning?.effort, "none");
-      sse(res, '{"changes":[]}', n);
+test("native reasoningEffort=none reaches the actual Responses HTTP request", native, async () => {
+  const server = await endpoint(({ body, res, n }) => {
+    assert.equal(body.model, "hy4");
+    assert.equal(body.reasoning?.effort, "none");
+    sse(res, '{"changes":[]}', n);
+  });
+  const harness = new CodexStructuredHarness({
+    ...server.config,
+    modelId: "hy4",
+    reasoningEffort: "none",
+  });
+  try {
+    const output = await harness.complete({
+      kind: "memory-propose",
+      instruction: "Return empty changes.",
+      input: {},
+      signal: AbortSignal.timeout(15000),
     });
-    const harness = new CodexStructuredHarness({
-      ...server.config,
-      modelId: "hy4",
-      reasoningEffort: "none",
-    });
-    try {
-      const output = await harness.complete({
-        kind: "memory-propose",
-        instruction: "Return empty changes.",
-        input: {},
-        signal: AbortSignal.timeout(15000),
-      });
-      assert.deepEqual(JSON.parse(output.content[0].text), { changes: [] });
-      assert.equal(server.requests.length, 1);
-    } finally {
-      await harness.close();
-      await server.close();
-    }
-  },
-);
+    assert.deepEqual(JSON.parse(output.content[0].text), { changes: [] });
+    assert.equal(server.requests.length, 1);
+  } finally {
+    await harness.close();
+    await server.close();
+  }
+});
 
 test("background model selection is explicit and rejects unvalidated reasoning configuration", () => {
   const codex = { binary, modelId: "main", baseUrl: "http://127.0.0.1:1/v1" };
@@ -1135,9 +957,7 @@ test(
       const props = body.text.format.schema.properties;
       if (props.changes) {
         const user = body.input.filter((m) => m.role === "user").at(-1);
-        const input = JSON.parse(
-          user.content.find((c) => c.type === "input_text").text,
-        );
+        const input = JSON.parse(user.content.find((c) => c.type === "input_text").text);
         sse(
           res,
           JSON.stringify({
@@ -1155,12 +975,7 @@ test(
           n,
         );
       } else if (props.approved) sse(res, '{"approved":true}', n);
-      else
-        sse(
-          res,
-          '{"goals":[],"constraints":[],"decisions":[],"openItems":[]}',
-          n,
-        );
+      else sse(res, '{"goals":[],"constraints":[],"decisions":[],"openItems":[]}', n);
     });
     let runner;
     try {
@@ -1179,22 +994,10 @@ test(
         },
       });
       runner = await LocalRunner.open(profile);
-      await call(
-        profile,
-        "say",
-        { text: "I prefer brief responses." },
-        "background-role-test",
-      );
+      await call(profile, "say", { text: "I prefer brief responses." }, "background-role-test");
       await settled(profile, "background-role-test");
-      await until(
-        () =>
-          runner.app.memory.list().some((m) => m.value === "brief responses"),
-        15000,
-      );
-      await runner.reception.context.model.summarize(
-        { previous: {}, messages: [] },
-        AbortSignal.timeout(10000),
-      );
+      await until(() => runner.app.memory.list().some((m) => m.value === "brief responses"), 15000);
+      await runner.reception.context.model.summarize({ previous: {}, messages: [] }, AbortSignal.timeout(10000));
       assert.equal(main.requests.length, 1);
       assert.equal(background.requests.length, 3);
       const status = await inspectLocalConfiguration(profile);
@@ -1214,90 +1017,84 @@ test(
   },
 );
 
-test(
-  "isolated memory evaluation worker keeps reader and non-thinking background models separate",
-  native,
-  async () => {
-    const { runMemoryGroup } = await import("../evaluation/memory-system.mjs");
-    const root = temporary();
-    const main = await endpoint(({ body, res, n }) => {
-      assert.equal(body.model, "reader-model");
-      sse(res, wire({ kind: "reply", text: "(a)" }), n);
-    });
-    const background = await endpoint(({ body, res, n }) => {
-      assert.equal(body.model, "hy4");
-      assert.equal(body.reasoning?.effort, "none");
-      const props = body.text.format.schema.properties;
-      if (props.changes) {
-        const user = body.input.filter((m) => m.role === "user").at(-1);
-        const data = JSON.parse(
-          user.content.find((c) => c.type === "input_text").text,
-        );
-        sse(
-          res,
-          JSON.stringify({
-            changes: [
-              {
-                action: "create",
-                content: "brief responses",
-                kind: "profile",
-                sourceEvidenceIds: [data.newEvidence[0].id],
-                scope: null,
-                project: null,
-              },
-            ],
-          }),
-          n,
-        );
-      } else sse(res, '{"approved":true}', n);
-    });
-    try {
-      const result = await runMemoryGroup(
-        {
-          history: [
-            { role: "user", content: "I prefer brief responses." },
-            { role: "assistant", content: "Okay." },
-          ],
-          queries: [
+test("isolated memory evaluation worker keeps reader and non-thinking background models separate", native, async () => {
+  const { runMemoryGroup } = await import("../evaluation/memory-system.mjs");
+  const root = temporary();
+  const main = await endpoint(({ body, res, n }) => {
+    assert.equal(body.model, "reader-model");
+    sse(res, wire({ kind: "reply", text: "(a)" }), n);
+  });
+  const background = await endpoint(({ body, res, n }) => {
+    assert.equal(body.model, "hy4");
+    assert.equal(body.reasoning?.effort, "none");
+    const props = body.text.format.schema.properties;
+    if (props.changes) {
+      const user = body.input.filter((m) => m.role === "user").at(-1);
+      const data = JSON.parse(user.content.find((c) => c.type === "input_text").text);
+      sse(
+        res,
+        JSON.stringify({
+          changes: [
             {
-              end: 2,
-              question: "What style?",
-              options: "(a) brief (b) long (c) formal (d) playful",
+              action: "create",
+              content: "brief responses",
+              kind: "profile",
+              sourceEvidenceIds: [data.newEvidence[0].id],
+              scope: null,
+              project: null,
             },
           ],
-          arms: ["memory"],
-        },
-        {
-          directory: join(root, "case"),
-          codex: { ...main.config, modelId: "reader-model" },
-          backgroundCodex: {
-            ...background.config,
-            modelId: "hy4",
-            reasoningEffort: "none",
-          },
-          timeoutMs: 20000,
-          onRecord: () => {},
-        },
+        }),
+        n,
       );
-      assert.equal(result.status, "completed");
-      assert.equal(result.result.preparation.activeFacts, 1);
-      assert.equal(main.requests.length, 1);
-      assert.equal(background.requests.length, 2);
-      assert.deepEqual(
-        result.result.calls.map((c) => [c.kind, c.model]),
-        [
-          ["memory-propose", "hy4"],
-          ["memory-verify", "hy4"],
-          ["reception", "reader-model"],
+    } else sse(res, '{"approved":true}', n);
+  });
+  try {
+    const result = await runMemoryGroup(
+      {
+        history: [
+          { role: "user", content: "I prefer brief responses." },
+          { role: "assistant", content: "Okay." },
         ],
-      );
-    } finally {
-      await main.close();
-      await background.close();
-      await rm(root, { recursive: true, force: true });
-    }
-  },
-);
+        queries: [
+          {
+            end: 2,
+            question: "What style?",
+            options: "(a) brief (b) long (c) formal (d) playful",
+          },
+        ],
+        arms: ["memory"],
+      },
+      {
+        directory: join(root, "case"),
+        codex: { ...main.config, modelId: "reader-model" },
+        backgroundCodex: {
+          ...background.config,
+          modelId: "hy4",
+          reasoningEffort: "none",
+        },
+        timeoutMs: 20000,
+        onRecord: () => {},
+      },
+    );
+    assert.equal(result.status, "completed");
+    assert.equal(result.result.preparation.activeFacts, 1);
+    assert.equal(main.requests.length, 1);
+    assert.equal(background.requests.length, 2);
+    assert.deepEqual(
+      result.result.calls.map((c) => [c.kind, c.model]),
+      [
+        ["memory-propose", "hy4"],
+        ["memory-verify", "hy4"],
+        ["reception", "reader-model"],
+      ],
+    );
+  } finally {
+    await main.close();
+    await background.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
 test(
   "real native planner discovers authorized memory documents and follows a file reference through the host",
@@ -1307,9 +1104,7 @@ test(
     let runner;
     const server = await endpoint(({ body, res, n }) => {
       const user = body.input.filter((m) => m.role === "user").at(-1);
-      const input = JSON.parse(
-        user.content.find((c) => c.type === "input_text").text,
-      );
+      const input = JSON.parse(user.content.find((c) => c.type === "input_text").text);
       assert.ok(input.queryContracts["memory.files.list"]);
       if (!input.observations.length)
         return sse(
@@ -1341,15 +1136,8 @@ test(
           n,
         );
       }
-      assert.match(
-        input.observations[1].response.data.content,
-        /Retrieval sentinel/,
-      );
-      return sse(
-        res,
-        wire({ kind: "reply", text: "Read the authorized memory document." }),
-        n,
-      );
+      assert.match(input.observations[1].response.data.content, /Retrieval sentinel/);
+      return sse(res, wire({ kind: "reply", text: "Read the authorized memory document." }), n);
     });
     try {
       const profile = initProfile(join(root, "profile"), "test", {
@@ -1361,18 +1149,8 @@ test(
         },
       });
       runner = await LocalRunner.open(profile);
-      await call(
-        profile,
-        "memory.set",
-        { key: "sentinel", value: "Retrieval sentinel", expectedRevision: 0 },
-        "set",
-      );
-      await call(
-        profile,
-        "say",
-        { text: "Read my stored fact via the file catalogue." },
-        "read-doc",
-      );
+      await call(profile, "memory.set", { key: "sentinel", value: "Retrieval sentinel", expectedRevision: 0 }, "set");
+      await call(profile, "say", { text: "Read my stored fact via the file catalogue." }, "read-doc");
       const done = await settled(profile, "read-doc");
       assert.match(done.reply_text, /authorized/);
       assert.equal(server.requests.length, 3);
@@ -1409,19 +1187,8 @@ test("goal wire contracts retain old deliveries and reject cross-branch authorit
     },
   };
   const raw = wireSlots(outputSchema("reception", input), { proposal });
-  assert.deepEqual(
-    decodeOutput("reception", JSON.stringify(raw), input),
-    proposal,
-  );
-  assert.throws(
-    () =>
-      decodeOutput(
-        "reception",
-        wire({ ...proposal, arbitraryGrant: true }),
-        input,
-      ),
-    /schema/,
-  );
+  assert.deepEqual(decodeOutput("reception", JSON.stringify(raw), input), proposal);
+  assert.throws(() => decodeOutput("reception", wire({ ...proposal, arbitraryGrant: true }), input), /schema/);
   assert.throws(
     () =>
       decodeOutput(
@@ -1452,44 +1219,97 @@ test("goal wire contracts retain old deliveries and reject cross-branch authorit
   );
 });
 
-test('native Codex receives verified image bytes and bounded text file content, not just attachment labels',native,async()=>{
- const server=await endpoint(({body,res,n})=>sse(res,wire({kind:'reply',text:'read attached data'}),n));
- const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==','base64'),text=Buffer.from('file-content-sentinel');
- const harness=new CodexStructuredHarness(server.config,{readAttachment(id){return id==='picture'?{facts:{name:'picture.png',mimeType:'image/png'},bytes:image}:{facts:{name:'notes.txt',mimeType:'text/plain'},bytes:text};}});
- try{
-   await harness.complete({kind:'reception',instruction:'Reply to the user',input:{text:'Read both',attachments:[{attachmentId:'picture'},{attachmentId:'notes'}]}});
-   const body=JSON.stringify(server.requests[0].body);
-   assert.match(body,/file-content-sentinel/);
-   assert.match(body,/input_image/);
-   assert.match(body,/data:image\//);
- }finally{await harness.close();await server.close();}
-});
+test(
+  "native Codex receives verified image bytes and bounded text file content, not just attachment labels",
+  native,
+  async () => {
+    const server = await endpoint(({ body, res, n }) =>
+      sse(res, wire({ kind: "reply", text: "read attached data" }), n),
+    );
+    const image = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+      text = Buffer.from("file-content-sentinel");
+    const harness = new CodexStructuredHarness(server.config, {
+      readAttachment(id) {
+        return id === "picture"
+          ? { facts: { name: "picture.png", mimeType: "image/png" }, bytes: image }
+          : { facts: { name: "notes.txt", mimeType: "text/plain" }, bytes: text };
+      },
+    });
+    try {
+      await harness.complete({
+        kind: "reception",
+        instruction: "Reply to the user",
+        input: { text: "Read both", attachments: [{ attachmentId: "picture" }, { attachmentId: "notes" }] },
+      });
+      const body = JSON.stringify(server.requests[0].body);
+      assert.match(body, /file-content-sentinel/);
+      assert.match(body, /input_image/);
+      assert.match(body, /data:image\//);
+    } finally {
+      await harness.close();
+      await server.close();
+    }
+  },
+);
 
 // Real native app-server echoes image URLs on userMessage item notifications.
 // The old 2 MB frame ceiling rejected a perfectly valid two-picture request.
-test('native image echoes reserve bounded framing space without changing text-only limits', native, async () => {
- const server=await endpoint(({body,res,n})=>sse(res,wire({kind:'reply',text:'read two pictures'}),n));
- const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==','base64');
- const bytes=Buffer.concat([png,Buffer.alloc(1500000)]);
- const harness=new CodexStructuredHarness(server.config,{readAttachment(){return{facts:{name:'large.png',mimeType:'image/png'},bytes};}});
- try{
-   const answer=await harness.complete({kind:'reception',instruction:'Reply to the user',input:{text:'Read both pictures',attachments:[{attachmentId:'one'},{attachmentId:'two'}]}});
-   assert.match(answer.content[0].text,/read two pictures/);
-   const images=server.requests[0].body.input.flatMap(m=>m.content??[]).filter(p=>p.type==='input_image');
-   assert.equal(images.length,2);
-   assert.ok(JSON.stringify(images).length>2000000);
- }finally{await harness.close();await server.close();}
+test("native image echoes reserve bounded framing space without changing text-only limits", native, async () => {
+  const server = await endpoint(({ body, res, n }) => sse(res, wire({ kind: "reply", text: "read two pictures" }), n));
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const bytes = Buffer.concat([png, Buffer.alloc(1500000)]);
+  const harness = new CodexStructuredHarness(server.config, {
+    readAttachment() {
+      return { facts: { name: "large.png", mimeType: "image/png" }, bytes };
+    },
+  });
+  try {
+    const answer = await harness.complete({
+      kind: "reception",
+      instruction: "Reply to the user",
+      input: { text: "Read both pictures", attachments: [{ attachmentId: "one" }, { attachmentId: "two" }] },
+    });
+    assert.match(answer.content[0].text, /read two pictures/);
+    const images = server.requests[0].body.input
+      .flatMap((m) => m.content ?? [])
+      .filter((p) => p.type === "input_image");
+    assert.equal(images.length, 2);
+    assert.ok(JSON.stringify(images).length > 2000000);
+  } finally {
+    await harness.close();
+    await server.close();
+  }
 });
 
-test('native framing budget counts only sent images and rejects unbounded image sessions',async()=>{
- const {NativeCodexSession}=await import('../src/adapters/codex/native-session.mjs');
- const config={binary:'/verified/codex',managed:true,providerId:'test',modelId:'test'};
- const make=imageInput=>new NativeCodexSession(config,{home:'/unused',cwd:'/unused',imageInput});
- const s=make(true);s.child={stdin:{write(){}},kill(){}};
- const sent=s.rawRpc('turn/start',{input:[{type:'image',url:'data:image/png;base64,'+'x'.repeat(3000000)}]});
- assert.ok(s.outputFrameLimit>5000000);assert.ok(s.outputStreamLimit>22000000);
- s.fail(Error('test finished'));await assert.rejects(sent,/test finished/);
- const plain=make(false);assert.equal(plain.outputFrameLimit,2000000);assert.equal(plain.outputStreamLimit,16000000);
- const many=make(true);await assert.rejects(many.rawRpc('turn/start',{input:Array.from({length:9},()=>({type:'image',url:'data:image/png;base64,x'}))}),/protocol budget/);
- assert.equal(many.pending.size,0);assert.equal(many.imageEchoBudget,0);
+test("native framing budget counts only sent images and rejects unbounded image sessions", async () => {
+  const { NativeCodexSession } = await import("../src/adapters/codex/native-session.mjs");
+  const config = { binary: "/verified/codex", managed: true, providerId: "test", modelId: "test" };
+  const make = (imageInput) => new NativeCodexSession(config, { home: "/unused", cwd: "/unused", imageInput });
+  const s = make(true);
+  s.child = { stdin: { write() {} }, kill() {} };
+  const sent = s.rawRpc("turn/start", {
+    input: [{ type: "image", url: "data:image/png;base64," + "x".repeat(3000000) }],
+  });
+  assert.ok(s.outputFrameLimit > 5000000);
+  assert.ok(s.outputStreamLimit > 22000000);
+  s.fail(Error("test finished"));
+  await assert.rejects(sent, /test finished/);
+  const plain = make(false);
+  assert.equal(plain.outputFrameLimit, 2000000);
+  assert.equal(plain.outputStreamLimit, 16000000);
+  const many = make(true);
+  await assert.rejects(
+    many.rawRpc("turn/start", {
+      input: Array.from({ length: 9 }, () => ({ type: "image", url: "data:image/png;base64,x" })),
+    }),
+    /protocol budget/,
+  );
+  assert.equal(many.pending.size, 0);
+  assert.equal(many.imageEchoBudget, 0);
 });

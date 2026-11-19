@@ -1,7 +1,4 @@
-import {
-  CONTEXT_SECTIONS,
-  emptyContext,
-} from "../../domain/conversation-context.mjs";
+import { CONTEXT_SECTIONS, emptyContext } from "../../domain/conversation-context.mjs";
 import { modelRequest } from "./model-request.mjs";
 
 export const contextInstruction = `Maintain a compact WORKING CONTEXT for a personal assistant's main conversation. Return JSON only: {"goals":[],"constraints":[],"decisions":[],"openItems":[]}.
@@ -19,12 +16,7 @@ export class ConversationContextModel {
       // Extractive offline mechanism probe, not a simulated semantic summarization result.
       const value = {
         ...emptyContext(),
-        ...Object.fromEntries(
-          CONTEXT_SECTIONS.map((k) => [
-            k,
-            (input.previous?.[k] ?? []).slice(0, 8),
-          ]),
-        ),
+        ...Object.fromEntries(CONTEXT_SECTIONS.map((k) => [k, (input.previous?.[k] ?? []).slice(0, 8)])),
       };
       value.goals = [
         ...value.goals,
@@ -34,14 +26,10 @@ export class ConversationContextModel {
       ].slice(-8);
       return value;
     }
-    const result = await modelRequest(
-      this.catalog,
-      "context-summary",
-      contextInstruction,
-      input,
-      signal,
-      { ...this.options, maxTokens: 5000 },
-    );
+    const result = await modelRequest(this.catalog, "context-summary", contextInstruction, input, signal, {
+      ...this.options,
+      maxTokens: 5000,
+    });
     const text = result.content
       .filter((c) => c.type === "text")
       .map((c) => c.text)

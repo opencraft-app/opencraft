@@ -1,12 +1,7 @@
 import { botBinding, assertBotBinding } from "../domain/bot-binding.mjs";
 
 const id = (value) => {
-  if (
-    typeof value !== "string" ||
-    value.length > 256 ||
-    !value ||
-    /[\0\r\n]/u.test(value)
-  )
+  if (typeof value !== "string" || value.length > 256 || !value || /[\0\r\n]/u.test(value))
     throw Error("Invalid channel identity");
   return value;
 };
@@ -40,15 +35,9 @@ export class PlatformChannels {
   }
   async call(method, params, signal) {
     const before = await this.authorized(signal);
-    const result = await this.port.request(
-      this.binding,
-      method,
-      params,
-      signal,
-    );
+    const result = await this.port.request(this.binding, method, params, signal);
     const after = await this.authorized(signal);
-    if (before.epoch !== after.epoch)
-      throw Error("Bot authority changed during request");
+    if (before.epoch !== after.epoch) throw Error("Bot authority changed during request");
     return result;
   }
   list(signal) {
@@ -94,17 +83,9 @@ export class PlatformChannels {
       case "platform.groups.search":
         return this.search(params.channelId, params, signal);
       case "platform.conversations.list":
-        return this.call(
-          "opencraft/personal-assistant/conversations/list",
-          params,
-          signal,
-        );
+        return this.call("opencraft/personal-assistant/conversations/list", params, signal);
       case "platform.conversations.history":
-        return this.call(
-          "opencraft/personal-assistant/conversations/history",
-          params,
-          signal,
-        );
+        return this.call("opencraft/personal-assistant/conversations/history", params, signal);
       default:
         throw Error("Unknown platform read operation");
     }

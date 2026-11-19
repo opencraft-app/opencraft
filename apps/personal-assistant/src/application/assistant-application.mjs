@@ -59,16 +59,8 @@ export class AssistantApplication {
     if (persisted) assistant.verifyPersisted(persisted);
     this.r.meta.bind(assistant.identity());
     const deps = { uow, repositories, now, scope };
-    this.inbox = new InputInbox(
-      uow,
-      repositories.inputs,
-      repositories.events,
-      now,
-    );
-    this.executionLedger = new ExecutionLedger(
-      repositories.executions,
-      executionHarness,
-    );
+    this.inbox = new InputInbox(uow, repositories.inputs, repositories.events, now);
+    this.executionLedger = new ExecutionLedger(repositories.executions, executionHarness);
     this.outcomeLedger = new OutcomeLedger(repositories.outcomes, now);
     this.interactionLedger = new InteractionLedger(repositories.interactions);
     this.works = new WorkService({
@@ -100,10 +92,7 @@ export class AssistantApplication {
         memoryFiles &&
         Object.freeze(
           Object.fromEntries(
-            ["synchronize", "projects", "locations", "read", "browserFiles"].map((k) => [
-              k,
-              memoryFiles[k],
-            ]),
+            ["synchronize", "projects", "locations", "read", "browserFiles"].map((k) => [k, memoryFiles[k]]),
           ),
         ),
       agentId: assistant.id,
@@ -127,12 +116,8 @@ export class AssistantApplication {
         rebaseSnapshot: (snapshot) => this.memory.rebaseSnapshot(snapshot),
         captureSnapshot: (turn) =>
           this.memory.learningSnapshot(
-            this.memory.projectFor(
-              scope.queryScope(turn, this.history.require(turn.conversation_id))
-                .resources,
-            ),
-            scope.queryScope(turn, this.history.require(turn.conversation_id))
-              .resources,
+            this.memory.projectFor(scope.queryScope(turn, this.history.require(turn.conversation_id)).resources),
+            scope.queryScope(turn, this.history.require(turn.conversation_id)).resources,
           ),
         snapshotCurrent: (...args) => this.memory.snapshotCurrent(...args),
         reviewDue: (...args) => this.memory.reviewDue(...args),
@@ -151,25 +136,16 @@ export class AssistantApplication {
       conversationId: Conversation.main(assistant).id,
       requireConversation: (id) => this.history.require(id),
       attachments,
-      readMessage: (id, conversationId) =>
-        repositories.conversations.message(
-          this.history.require(conversationId),
-          id,
-        ),
+      readMessage: (id, conversationId) => repositories.conversations.message(this.history.require(conversationId), id),
       readWork: (id) => this.works.require(id).record,
       readInteraction: (id, conversationId) =>
-        this.interactions.assertInConversation(
-          id,
-          this.history.require(conversationId),
-        ),
+        this.interactions.assertInConversation(id, this.history.require(conversationId)),
       now,
     });
-    this.history = new ConversationHistory(
-      assistant,
-      repositories.conversations,
-      now,
-      { uow, messages: this.messages },
-    );
+    this.history = new ConversationHistory(assistant, repositories.conversations, now, {
+      uow,
+      messages: this.messages,
+    });
     this.conversationContext = new ConversationContextService({
       repository: repositories.conversationContext,
       uow,
@@ -182,14 +158,7 @@ export class AssistantApplication {
       repository: repositories.attention,
       uow,
       now,
-      notice: (identity, text, data) =>
-        this.history.append(
-          this.history.main.id,
-          identity,
-          "assistant",
-          text,
-          data,
-        ),
+      notice: (identity, text, data) => this.history.append(this.history.main.id, identity, "assistant", text, data),
     });
     this.notifications = new NotificationService({
       attention: Object.freeze({ notified: () => this.attention.notified() }),
@@ -246,8 +215,7 @@ export class AssistantApplication {
       }),
       ledger: this.executionLedger,
       inbox: this.inbox,
-      reportReceiver: (report, work) =>
-        this.reception.acceptReport(report, work),
+      reportReceiver: (report, work) => this.reception.acceptReport(report, work),
     });
     this.completion = new CompletionService({
       ...deps,
@@ -291,21 +259,18 @@ export class AssistantApplication {
         cancel: (...args) => this.works.cancelWork(...args),
       }),
       history: Object.freeze({
-        link: (id, conversationId) =>
-          this.history.link(this.history.require(conversationId), id),
+        link: (id, conversationId) => this.history.link(this.history.require(conversationId), id),
         origin: (workId) => this.history.destinations(workId)[0],
       }),
       resources: (id) => scope.delegate(id).resources,
     });
     this.receptionQueries = new ReceptionQueries({
       authority: Object.freeze({
-        forTurn: (turn) =>
-          scope.queryScope(turn, this.history.require(turn.conversation_id)),
+        forTurn: (turn) => scope.queryScope(turn, this.history.require(turn.conversation_id)),
         permits: (grant, resource) => scope.querySourceAllowed(grant, resource),
         memoryView: (grant) => this.memory.view(grant.resources),
         memoryDefaultScope: this.memory.defaultScope,
-        readMemoryFile: (grant, params) =>
-          this.memory.readFile(params, grant.resources),
+        readMemoryFile: (grant, params) => this.memory.readFile(params, grant.resources),
       }),
       reads: receptionReads,
       platformReads,
@@ -359,9 +324,7 @@ export class AssistantApplication {
       works: this.r.works.list(),
       routines: this.r.routines.list(),
       memoryEpoch: this.memory.epoch(),
-      pendingInteractions: this.interactions
-        .list()
-        .filter((i) => i.state === "pending"),
+      pendingInteractions: this.interactions.list().filter((i) => i.state === "pending"),
     };
   }
   detail(id) {
@@ -437,9 +400,7 @@ export class AssistantApplication {
       case "message.retry":
         return this.inbox.accept(id, op, p, () => messages.retry(p.messageId));
       case "message.send":
-        if (
-          Object.keys(p).some((k) => !["message", "conversationId"].includes(k))
-        )
+        if (Object.keys(p).some((k) => !["message", "conversationId"].includes(k)))
           throw new Error("Only a message envelope is accepted");
         return this.inbox.accept(id, op, p, () => ({
           messageId: this.history.send(conversationId, id, p.message),
@@ -447,14 +408,7 @@ export class AssistantApplication {
       case "message.respond":
         if (
           Object.keys(p).some(
-            (k) =>
-              ![
-                "messageId",
-                "expectedRevision",
-                "value",
-                "reject",
-                "conversationId",
-              ].includes(k),
+            (k) => !["messageId", "expectedRevision", "value", "reject", "conversationId"].includes(k),
           ) ||
           (p.reject === true && p.value !== undefined)
         )
@@ -462,8 +416,7 @@ export class AssistantApplication {
         return this.inbox.accept(id, op, p, () => {
           const interactionId = messages.replyTarget(p.messageId);
           const child = `message-response:${digest(id)}`;
-          if (p.reject !== undefined && typeof p.reject !== "boolean")
-            throw new Error("Invalid rejection");
+          if (p.reject !== undefined && typeof p.reject !== "boolean") throw new Error("Invalid rejection");
           const receipt = p.reject
             ? this.interactions.reject(child, {
                 interactionId,
@@ -474,17 +427,11 @@ export class AssistantApplication {
                 expectedRevision: p.expectedRevision,
                 text: p.value,
               });
-          this.history.append(
-            conversationId,
-            id,
-            "user",
-            p.reject ? "已拒绝这项请求" : p.value,
-            {
-              kind: "interaction-response",
-              interactionId,
-              replyTo: p.messageId,
-            },
-          );
+          this.history.append(conversationId, id, "user", p.reject ? "已拒绝这项请求" : p.value, {
+            kind: "interaction-response",
+            interactionId,
+            replyTo: p.messageId,
+          });
           return receipt;
         });
       case "attachments.list":
@@ -516,9 +463,7 @@ export class AssistantApplication {
       case "status":
         return this.status();
       case "work.overview":
-        return this.receptionQueries.overview(
-          this.scope.queryGrant("local-overview", conversationId),
-        );
+        return this.receptionQueries.overview(this.scope.queryGrant("local-overview", conversationId));
       case "work":
         return this.detail(p.workId);
       case "events":
@@ -561,13 +506,9 @@ export class AssistantApplication {
       case "say":
         return this.reception.accept(id, p);
       case "conversation.context":
-        return this.conversationContext
-          .forConversation(conversationId)
-          .status();
+        return this.conversationContext.forConversation(conversationId).status();
       case "conversation.context.retry":
-        return this.inbox.accept(id, op, p, () =>
-          this.conversationContext.forConversation(conversationId).retry(),
-        );
+        return this.inbox.accept(id, op, p, () => this.conversationContext.forConversation(conversationId).retry());
       case "conversation":
         this.attention.active(true);
         return this.history.view({ conversationId });

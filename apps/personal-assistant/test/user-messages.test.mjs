@@ -12,18 +12,10 @@ import { LocalMessageDelivery } from "../src/adapters/filesystem/message-deliver
 import { MessageDispatcher } from "../src/runtime/message-dispatcher.mjs";
 import { createExecutionPorts } from "../src/runtime/execution-ports.mjs";
 import { digest } from "../src/domain/values.mjs";
-import {
-  profileFor,
-  running,
-  until,
-  childRunner,
-  completed,
-  root,
-} from "./helpers.mjs";
+import { profileFor, running, until, childRunner, completed, root } from "./helpers.mjs";
 
 const exec = promisify(execFile);
-const call = (p, op, params = {}, id = crypto.randomUUID()) =>
-  request(p, { op, params, id });
+const call = (p, op, params = {}, id = crypto.randomUUID()) => request(p, { op, params, id });
 const getStore = (t) => {
   const s = new Store(profileFor(t));
   t.after(() => {
@@ -58,34 +50,15 @@ test("every assistant-visible history write creates one atomic typed outbox item
   s.db.exec(
     "CREATE TEMP TRIGGER message_fail BEFORE INSERT ON user_message BEGIN SELECT RAISE(ABORT,'outbox failed'); END",
   );
-  assert.throws(
-    () =>
-      a.history.append(
-        a.history.main.id,
-        "atomic",
-        "assistant",
-        "must roll back",
-      ),
-    /outbox failed/,
-  );
-  assert.equal(
-    s.db
-      .prepare(
-        "SELECT count(*) AS n FROM conversation_message WHERE text='must roll back'",
-      )
-      .get().n,
-    0,
-  );
+  assert.throws(() => a.history.append(a.history.main.id, "atomic", "assistant", "must roll back"), /outbox failed/);
+  assert.equal(s.db.prepare("SELECT count(*) AS n FROM conversation_message WHERE text='must roll back'").get().n, 0);
 });
 
 test("text, attachment IDs and same-conversation reply references are immutable and cannot grant a destination", (t) => {
   const s = getStore(t),
     a = s.app;
   const assets = new LocalAttachmentStore(join(s.profile.path, "attachments"));
-  const file = assets.importBytes(
-    "report.txt",
-    Buffer.from("real report bytes"),
-  );
+  const file = assets.importBytes("report.txt", Buffer.from("real report bytes"));
   const parent = a.history.append(a.history.main.id, "u", "user", "原请求");
   const id = a.history.send(a.history.main.id, "rich", {
     type: "text",
@@ -145,32 +118,19 @@ test("binary attachments export exact bytes, reject symlinks/tampering and do no
     store = new LocalAttachmentStore(join(s.profile.path, "attachments"));
   const bytes = Buffer.from([0, 255, 1, 2, 3]),
     asset = store.importBytes("image.png", bytes);
-  assert.equal(
-    store.importBytes("image.png", bytes).attachmentId,
-    asset.attachmentId,
-  );
+  assert.equal(store.importBytes("image.png", bytes).attachmentId, asset.attachmentId);
   const id = a.history.send(a.history.main.id, "asset", {
     type: "attachment",
     attachmentId: asset.attachmentId,
   });
   const row = a.messages.pending()[0],
-    delivery = new LocalMessageDelivery(
-      join(s.profile.path, "outgoing"),
-      store,
-    );
+    delivery = new LocalMessageDelivery(join(s.profile.path, "outgoing"), store);
   const receipt = await delivery.deliver(row);
   a.messages.accepted(row, receipt);
-  const written = JSON.parse(
-    readFileSync(join(s.profile.path, "outgoing", receipt.remoteId)),
-  );
-  assert.deepEqual(
-    readFileSync(join(s.profile.path, "outgoing", written.files[0].path)),
-    bytes,
-  );
+  const written = JSON.parse(readFileSync(join(s.profile.path, "outgoing", receipt.remoteId)));
+  assert.deepEqual(readFileSync(join(s.profile.path, "outgoing", written.files[0].path)), bytes);
   assert.equal(a.messages.get(id).state, "accepted");
-  const other = new LocalAttachmentStore(
-    join(profileFor(t).path, "attachments"),
-  );
+  const other = new LocalAttachmentStore(join(profileFor(t).path, "attachments"));
   assert.throws(() => other.describe(asset.attachmentId), /ENOENT/);
   const source = join(s.profile.path, "source.txt"),
     link = join(s.profile.path, "link.txt");
@@ -210,10 +170,7 @@ test("transport failure persists only delivery retry and preserves order across 
   t.after(() => reopened.close());
   reopened.app.messages.now = () => Date.now() + 60000;
   const ids = [],
-    real = new LocalMessageDelivery(
-      join(p.path, "outgoing"),
-      new LocalAttachmentStore(join(p.path, "attachments")),
-    );
+    real = new LocalMessageDelivery(join(p.path, "outgoing"), new LocalAttachmentStore(join(p.path, "attachments")));
   const resumed = new MessageDispatcher(reopened.app.messages, {
     async deliver(m) {
       ids.push(m.id);
@@ -285,13 +242,11 @@ test("queued revision-bound messages are withdrawn when a newer work instruction
     a = s.app;
   const receipt = a.works.submit("revision-work", { text: "original" });
   a.history.link(a.history.main.id, receipt.workId);
-  const id = a.history.append(
-    a.history.main.id,
-    "progress",
-    "assistant",
-    "旧进度",
-    { kind: "progress", workId: receipt.workId, revision: 1 },
-  );
+  const id = a.history.append(a.history.main.id, "progress", "assistant", "旧进度", {
+    kind: "progress",
+    workId: receipt.workId,
+    revision: 1,
+  });
   a.works.amend("new-revision", {
     workId: receipt.workId,
     text: "new instructions",
@@ -343,14 +298,7 @@ test("choice cards reuse Interaction, validate real offered values and atomicall
     }).duplicate,
     true,
   );
-  assert.equal(
-    a.history
-      .view()
-      .messages.filter(
-        (m) => m.data.interactionId === q.id && m.role === "user",
-      ).length,
-    1,
-  );
+  assert.equal(a.history.view().messages.filter((m) => m.data.interactionId === q.id && m.role === "user").length, 1);
   assert.equal(a.messages.pending().length, 0);
   assert.equal(a.messages.get(message.id).state, "withdrawn");
 });
@@ -410,35 +358,16 @@ test("secret and authorization envelopes contain metadata only and ordinary mess
       }),
     /typed intervention/,
   );
-  assert.doesNotMatch(
-    JSON.stringify(s.db.prepare("SELECT * FROM user_message").all()),
-    /SYNTHETIC-SECRET/,
-  );
+  assert.doesNotMatch(JSON.stringify(s.db.prepare("SELECT * FROM user_message").all()), /SYNTHETIC-SECRET/);
 });
 
 test("only accepted user transport is reported; sending a progress message never completes a work", async (t) => {
   const { profile, runner } = await running(t, { fixtureDelayMs: 1500 });
   const work = await call(profile, "submit", { text: "original work" }, "work");
-  const reply = await call(
-    profile,
-    "message.send",
-    { message: { type: "text", content: "正在处理" } },
-    "progress",
-  );
-  await until(
-    async () =>
-      (await call(profile, "message.get", { messageId: reply.messageId }))
-        .state === "accepted",
-  );
-  assert.notEqual(
-    (await call(profile, "work", { workId: work.workId })).work.status,
-    "completed",
-  );
-  assert.equal(
-    (await call(profile, "message.get", { messageId: reply.messageId }))
-      .readStatus,
-    "unknown",
-  );
+  const reply = await call(profile, "message.send", { message: { type: "text", content: "正在处理" } }, "progress");
+  await until(async () => (await call(profile, "message.get", { messageId: reply.messageId })).state === "accepted");
+  assert.notEqual((await call(profile, "work", { workId: work.workId })).work.status, "completed");
+  assert.equal((await call(profile, "message.get", { messageId: reply.messageId })).readStatus, "unknown");
   const ports = createExecutionPorts(runner.app).toolsFor(
     runner.app.workRecord(work.workId),
     runner.app.executions.snapshot(runner.app.workRecord(work.workId)),
@@ -449,16 +378,9 @@ test("only accepted user transport is reported; sending a progress message never
 
 test("real Pi choice wait resumes the original submission through the actual message response CLI", async (t) => {
   const { profile } = await running(t);
-  const receipt = await call(
-    profile,
-    "say",
-    { text: "整理一份笔记，先问我范围 [choice]" },
-    "native-choice",
-  );
+  const receipt = await call(profile, "say", { text: "整理一份笔记，先问我范围 [choice]" }, "native-choice");
   const card = await until(async () =>
-    (await call(profile, "messages.list")).items.find(
-      (m) => m.body.type === "question",
-    ),
+    (await call(profile, "messages.list")).items.find((m) => m.body.type === "question"),
   );
   assert.equal(card.body.question.choices[0].value, "week");
   const turn = await call(profile, "turn", { inputId: "native-choice" });
@@ -485,10 +407,7 @@ test("real Pi choice wait resumes the original submission through the actual mes
   ).result;
   assert.equal(answer.workId, turn.work_id);
   const done = await completed(profile, turn.work_id);
-  assert.equal(
-    done.executions[0].submission_id,
-    before.executions[0].submission_id,
-  );
+  assert.equal(done.executions[0].submission_id, before.executions[0].submission_id);
   assert.equal(done.interactions[0].answer, "week");
   assert.equal(done.executions.length, 1);
 });
@@ -501,26 +420,16 @@ test("actual main-model query, SendMessage proposal and CLI import/export use ex
     writeFileSync(path, Buffer.from([0, 1, 2, 255]));
     const imported = JSON.parse(
       (
-        await exec(
-          process.execPath,
-          [
-            "bin/assistant.mjs",
-            "attachment-import",
-            "--profile",
-            p.path,
-            "--file",
-            path,
-          ],
-          { cwd: root },
-        )
+        await exec(process.execPath, ["bin/assistant.mjs", "attachment-import", "--profile", p.path, "--file", path], {
+          cwd: root,
+        })
       ).stdout,
     ).result;
     let seen = false;
     runner = await Runner.open(p, {
       receptionModel: {
         async decide(input) {
-          if (!input.observations.length)
-            return { kind: "query", name: "attachments.list", params: {} };
+          if (!input.observations.length) return { kind: "query", name: "attachments.list", params: {} };
           const files = input.observations[0].response.data.items;
           seen = true;
           return {
@@ -543,21 +452,11 @@ test("actual main-model query, SendMessage proposal and CLI import/export use ex
     assert.equal(seen, true);
     const items = await until(async () => {
       const data = await call(p, "messages.list");
-      return (
-        data.items.find(
-          (m) => m.body.type === "attachment" && m.state === "accepted",
-        ) && data.items
-      );
+      return data.items.find((m) => m.body.type === "attachment" && m.state === "accepted") && data.items;
     });
     assert.equal(items[0].body.attachmentId, imported.attachmentId);
     const output = JSON.parse(
-      (
-        await exec(
-          process.execPath,
-          ["bin/assistant.mjs", "messages", "--profile", p.path],
-          { cwd: root },
-        )
-      ).stdout,
+      (await exec(process.execPath, ["bin/assistant.mjs", "messages", "--profile", p.path], { cwd: root })).stdout,
     ).result;
     assert.equal(output.items.length, 1);
   } finally {
@@ -573,8 +472,7 @@ test("a final typed attachment stays behind the original completion and result d
     receptionModel: {
       async decide(input) {
         if (!input.source) return { kind: "delegate", goal: "生成一份笔记" };
-        if (!input.observations.length)
-          return { kind: "query", name: "attachments.list", params: {} };
+        if (!input.observations.length) return { kind: "query", name: "attachments.list", params: {} };
         attachment = input.observations[0].response.data.items[0].attachmentId;
         return {
           kind: "deliver",
@@ -591,15 +489,10 @@ test("a final typed attachment stays behind the original completion and result d
   });
   await completed(p, accepted.work_id);
   const result = await until(async () =>
-    (await call(p, "messages.list")).items.find(
-      (m) => m.body.type === "attachment" && m.state === "accepted",
-    ),
+    (await call(p, "messages.list")).items.find((m) => m.body.type === "attachment" && m.state === "accepted"),
   );
   assert.equal(result.body.attachmentId, attachment);
-  assert.equal(
-    (await call(p, "work", { workId: accepted.work_id })).reports.length,
-    1,
-  );
+  assert.equal((await call(p, "work", { workId: accepted.work_id })).reports.length, 1);
 });
 
 test("notification batching preserves all attachment references instead of dropping files beyond one envelope", (t) => {
@@ -650,26 +543,14 @@ test("a slow transport leaves the socket available and preserves one in-flight m
   };
   const runner = await Runner.open(p, { messageTransport: transport });
   t.after(() => runner.close());
-  await call(
-    p,
-    "message.send",
-    { message: { type: "text", content: "one" } },
-    "first",
-  );
-  await call(
-    p,
-    "message.send",
-    { message: { type: "text", content: "two" } },
-    "second",
-  );
+  await call(p, "message.send", { message: { type: "text", content: "one" } }, "first");
+  await call(p, "message.send", { message: { type: "text", content: "two" } }, "second");
   await until(() => calls === 1);
   assert.equal((await call(p, "status")).mode, "fixture");
   release();
   await until(() => calls === 2);
   release();
-  await until(async () =>
-    (await call(p, "messages.list")).items.every((m) => m.state === "accepted"),
-  );
+  await until(async () => (await call(p, "messages.list")).items.every((m) => m.state === "accepted"));
 });
 
 test("schema16 migration keeps historical conversations unchanged and does not replay old messages", (t) => {
@@ -685,14 +566,8 @@ test("schema16 migration keeps historical conversations unchanged and does not r
   s.close();
   const reopened = new Store(p);
   t.after(() => reopened.close());
-  assert.equal(
-    reopened.db.prepare("PRAGMA user_version").get().user_version,
-    21,
-  );
-  assert.deepEqual(
-    reopened.db.prepare("SELECT * FROM conversation_message").all(),
-    before,
-  );
+  assert.equal(reopened.db.prepare("PRAGMA user_version").get().user_version, 21);
+  assert.deepEqual(reopened.db.prepare("SELECT * FROM conversation_message").all(), before);
   assert.equal(list(reopened.app).length, 0);
 });
 
@@ -701,31 +576,14 @@ test("real process exit after outgoing file write reconciles the same message wi
     first = await childRunner(t, p, {
       LAB_TEST_CRASH_AT: "message-written-before-receipt",
     });
-  const receipt = await call(
-    p,
-    "message.send",
-    { message: { type: "text", content: "durable" } },
-    "crash-message",
-  );
+  const receipt = await call(p, "message.send", { message: { type: "text", content: "durable" } }, "crash-message");
   assert.equal((await first.exited).code, 86);
   const file = join(p.path, "outgoing", `${digest(receipt.messageId)}.json`),
     before = readFileSync(file);
   const next = await childRunner(t, p);
-  await until(
-    async () =>
-      (await call(p, "message.get", { messageId: receipt.messageId })).state ===
-      "accepted",
-  );
+  await until(async () => (await call(p, "message.get", { messageId: receipt.messageId })).state === "accepted");
   assert.deepEqual(readFileSync(file), before);
-  assert.equal(
-    readdirSync(join(p.path, "outgoing")).filter((f) => f.endsWith(".json"))
-      .length,
-    1,
-  );
-  assert.equal(
-    (await call(p, "conversation")).messages.filter((m) => m.text === "durable")
-      .length,
-    1,
-  );
+  assert.equal(readdirSync(join(p.path, "outgoing")).filter((f) => f.endsWith(".json")).length, 1);
+  assert.equal((await call(p, "conversation")).messages.filter((m) => m.text === "durable").length, 1);
   await next.stop();
 });

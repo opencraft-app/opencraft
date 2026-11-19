@@ -32,20 +32,14 @@ export class CodexExecutionAdapter {
   }
   async run(work, signal) {
     const execution = this.executions.execution(work);
-    if (execution.harness !== "codex")
-      throw new Error("Codex cannot take over another harness execution");
+    if (execution.harness !== "codex") throw new Error("Codex cannot take over another harness execution");
     const policy = RunPolicy.resolve(this.profile.config.runPolicy),
       controller = new AbortController(),
-      combined = signal
-        ? AbortSignal.any([signal, controller.signal])
-        : controller.signal;
+      combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     const entry = { controller };
     this.sessions.set(execution.id, entry);
     const timer = setTimeout(
-      () =>
-        controller.abort(
-          new RunLimitError("work-timeout", policy.workTimeoutMs),
-        ),
+      () => controller.abort(new RunLimitError("work-timeout", policy.workTimeoutMs)),
       policy.workTimeoutMs,
     );
     timer.unref?.();
@@ -67,11 +61,7 @@ export class CodexExecutionAdapter {
             attempt < policy.maxRetries
           )
             continue;
-          outcome = this.suspending
-            ? "suspended"
-            : combined.aborted
-              ? "aborted"
-              : "error";
+          outcome = this.suspending ? "suspended" : combined.aborted ? "aborted" : "error";
           throw error;
         }
       }
@@ -89,18 +79,13 @@ export class CodexExecutionAdapter {
     if (this.suspending) throw new Error("Runner is suspending");
     this.executions.assertCurrent(work);
     let rows = this.executions.nativeCalls(work);
-    const saved = rows.find(
-      (r) => r.call_id === "__final__" && r.state === "completed",
-    );
+    const saved = rows.find((r) => r.call_id === "__final__" && r.state === "completed");
     if (saved) return JSON.parse(saved.output_json).text;
     const ioController = new AbortController(),
       ioSignal = AbortSignal.any([signal, ioController.signal]);
     const predecessor = this.executions.predecessor(work);
-    const inheritedBinding =
-      execution.conversation_id ?? predecessor?.conversation_id;
-    const previousBinding = inheritedBinding
-      ? JSON.parse(inheritedBinding)
-      : null;
+    const inheritedBinding = execution.conversation_id ?? predecessor?.conversation_id;
+    const previousBinding = inheritedBinding ? JSON.parse(inheritedBinding) : null;
     // A durable work owns its accepted route, even after the owner's next-task choice changes.
     const config =
       this.config.managed && previousBinding?.providerId
@@ -112,10 +97,7 @@ export class CodexExecutionAdapter {
         : this.config;
     const snapshot = this.executions.snapshot(work),
       ports = this.toolsFor(work, snapshot),
-      root = codexSessionRoot(
-        this.profile,
-        execution.session_root ?? execution.id,
-      );
+      root = codexSessionRoot(this.profile, execution.session_root ?? execution.id);
     let session,
       threadId,
       turnId,
@@ -169,8 +151,7 @@ export class CodexExecutionAdapter {
       ioSignal.throwIfAborted();
       this.executions.assertCurrent(work);
       const tool = byName.get(name);
-      if (!tool || !validArguments(tool.parameters, args))
-        throw new Error("Unknown host tool or invalid arguments");
+      if (!tool || !validArguments(tool.parameters, args)) throw new Error("Unknown host tool or invalid arguments");
       // Guard even cached results: a receipt cannot widen the original grant.
       try {
         ports.assertAction(
@@ -178,9 +159,7 @@ export class CodexExecutionAdapter {
           name === "list_materials" || name === "read_material"
             ? this.knowledgeSource?.reference()
             : name === "environment_run"
-              ? snapshot.delegation.resources.find(
-                  (r) => r.id === "execution.environment",
-                )
+              ? snapshot.delegation.resources.find((r) => r.id === "execution.environment")
               : undefined,
           name === "publish_note"
             ? snapshot.explicitMemoryEpoch === undefined
@@ -192,37 +171,17 @@ export class CodexExecutionAdapter {
         boundaryError = error;
         throw error;
       }
-      const known = this.executions
-        .nativeCalls(work)
-        .some((row) => row.call_id === callId);
-      const receipt = this.executions.prepareNativeCall(
-        work,
-        callId,
-        name,
-        args,
-      );
+      const known = this.executions.nativeCalls(work).some((row) => row.call_id === callId);
+      const receipt = this.executions.prepareNativeCall(work, callId, name, args);
       if (receipt.state === "completed") {
-        if (
-          ![
-            "publish_note",
-            "ask_user",
-            "request_intervention",
-            "thread_command",
-            "environment_run",
-          ].includes(name)
-        )
-          throw new Error(
-            "This read already completed; use a new call ID for a freshly authorized read",
-          );
+        if (!["publish_note", "ask_user", "request_intervention", "thread_command", "environment_run"].includes(name))
+          throw new Error("This read already completed; use a new call ID for a freshly authorized read");
         return JSON.parse(receipt.output_json);
       }
       if (tool.replay !== "safe" && !(tool.replay === "once" && !known))
-        throw Object.assign(
-          new Error(
-            "Unknown native tool outcome requires explicit reconciliation",
-          ),
-          { code: "ENVIRONMENT_OUTCOME_UNKNOWN" },
-        );
+        throw Object.assign(new Error("Unknown native tool outcome requires explicit reconciliation"), {
+          code: "ENVIRONMENT_OUTCOME_UNKNOWN",
+        });
       try {
         const result = await tool.execute(
           args,
@@ -248,12 +207,7 @@ export class CodexExecutionAdapter {
           work,
           callId,
           "completed",
-          [
-            "publish_note",
-            "ask_user",
-            "request_intervention",
-            "environment_run",
-          ].includes(name)
+          ["publish_note", "ask_user", "request_intervention", "environment_run"].includes(name)
             ? output
             : { success: true, read: true, outputHash: digest(output) },
         );
@@ -275,9 +229,7 @@ export class CodexExecutionAdapter {
         )
           throw error;
         const output = {
-          contentItems: [
-            { type: "inputText", text: String(error.message).slice(0, 1000) },
-          ],
+          contentItems: [{ type: "inputText", text: String(error.message).slice(0, 1000) }],
           success: false,
         };
         this.executions.nativeOutcome(work, callId, "completed", output);
@@ -313,11 +265,7 @@ export class CodexExecutionAdapter {
           rejectTurn(e);
         }
       }
-      if (
-        p.method === "item/completed" &&
-        v.item?.type === "agentMessage" &&
-        v.item.phase !== "commentary"
-      )
+      if (p.method === "item/completed" && v.item?.type === "agentMessage" && v.item.phase !== "commentary")
         currentText = v.item.text;
     };
     let currentText = "";
@@ -343,10 +291,7 @@ export class CodexExecutionAdapter {
               saveUsage();
             }
           }
-          if (
-            runningTurn &&
-            ["item/completed", "turn/completed"].includes(p.method)
-          )
+          if (runningTurn && ["item/completed", "turn/completed"].includes(p.method))
             turnId ? nativeEvent(p) : early.push(p);
         },
         onRequest: (p) => {
@@ -354,17 +299,12 @@ export class CodexExecutionAdapter {
             throw new Error("Unexpected native host authority request");
           const job = queue.then(async () => {
             const id = await accepted;
-            if (p.params.turnId !== id)
-              throw new Error("Native tool belongs to a different turn");
+            if (p.params.turnId !== id) throw new Error("Native tool belongs to a different turn");
             if (waiting) throw waiting;
             const { callId: nativeCallId, tool, arguments: args } = p.params;
             const callId = "tool:" + p.params.turnId + ":" + nativeCallId;
             const reply = (output) => {
-              this.executions.modelStep(
-                work,
-                "codex-reply:" + p.params.turnId + ":" + p.id,
-                policy.maxSteps,
-              );
+              this.executions.modelStep(work, "codex-reply:" + p.params.turnId + ":" + p.id, policy.maxSteps);
               return output;
             };
             try {
@@ -382,12 +322,7 @@ export class CodexExecutionAdapter {
                 session.fail(error);
                 throw error;
               }
-              if (
-                boundaryError ||
-                ioSignal.aborted ||
-                error.code?.startsWith("RUN_LIMIT_")
-              )
-                throw error;
+              if (boundaryError || ioSignal.aborted || error.code?.startsWith("RUN_LIMIT_")) throw error;
               return reply({
                 contentItems: [
                   {
@@ -412,9 +347,7 @@ export class CodexExecutionAdapter {
           binding.baseUrl !== config.baseUrl ||
           (binding.providerId ?? null) !== (config.providerId ?? null)
         )
-          throw new Error(
-            "Codex execution backend binding differs; restore its explicit configuration",
-          );
+          throw new Error("Codex execution backend binding differs; restore its explicit configuration");
         threadId = binding.threadId;
         native = (
           await session.rpc("thread/resume", {
@@ -432,12 +365,7 @@ export class CodexExecutionAdapter {
           })
         ).thread;
         if (!execution.conversation_id)
-          this.executions.bound(
-            work,
-            binding,
-            { engine: "codex", requestId: execution.id },
-            { admitted: false },
-          );
+          this.executions.bound(work, binding, { engine: "codex", requestId: execution.id }, { admitted: false });
       } else {
         native = (
           await session.rpc("thread/start", {
@@ -472,9 +400,7 @@ export class CodexExecutionAdapter {
             engine: "codex",
             threadId,
             modelId: config.modelId,
-            ...(config.managed
-              ? { providerId: config.providerId }
-              : { baseUrl: config.baseUrl }),
+            ...(config.managed ? { providerId: config.providerId } : { baseUrl: config.baseUrl }),
           },
           { engine: "codex", requestId: execution.id },
           { admitted: false },
@@ -483,9 +409,7 @@ export class CodexExecutionAdapter {
       }
       // Reconcile received host calls before any new model request. Native pending RPCs
       // do not survive app-server restart; continuation uses these owner-checked receipts.
-      for (const row of rows.filter(
-        (r) => !r.tool.startsWith("__") && r.state !== "completed",
-      ))
+      for (const row of rows.filter((r) => !r.tool.startsWith("__") && r.state !== "completed"))
         await runTool(row.call_id, row.tool, JSON.parse(row.args_json));
       rows = this.executions.nativeCalls(work);
       const last = execution.conversation_id
@@ -526,19 +450,11 @@ export class CodexExecutionAdapter {
       if (
         last?.status === "completed" &&
         envelope?.executionId === execution.id &&
-        rows.some(
-          (r) => r.call_id === envelope.hostRequestId && r.tool === "__turn__",
-        )
+        rows.some((r) => r.call_id === envelope.hostRequestId && r.tool === "__turn__")
       ) {
-        const final = last.items.findLast(
-          (i) => i.type === "agentMessage" && i.phase !== "commentary",
-        );
+        const final = last.items.findLast((i) => i.type === "agentMessage" && i.phase !== "commentary");
         if (final && typeof final.text === "string") {
-          this.executions.bound(
-            work,
-            JSON.parse(execution.conversation_id),
-            JSON.parse(execution.submission_id),
-          );
+          this.executions.bound(work, JSON.parse(execution.conversation_id), JSON.parse(execution.submission_id));
           this.executions.prepareNativeCall(work, "__final__", "__final__", {
             threadId,
             executionId: execution.id,
@@ -558,15 +474,12 @@ export class CodexExecutionAdapter {
           callId: r.call_id,
           tool: r.tool,
           state: r.state,
-          output: ["publish_note", "ask_user", "request_intervention"].includes(
-            r.tool,
-          )
+          output: ["publish_note", "ask_user", "request_intervention"].includes(r.tool)
             ? r.output_json?.slice(0, 2000)
             : "Previous read completed; request a fresh authorized read if native history is insufficient.",
           truncated:
-            ["publish_note", "ask_user", "request_intervention"].includes(
-              r.tool,
-            ) && (r.output_json?.length ?? 0) > 2000,
+            ["publish_note", "ask_user", "request_intervention"].includes(r.tool) &&
+            (r.output_json?.length ?? 0) > 2000,
         }));
       const input = {
         executionId: execution.id,
@@ -577,38 +490,26 @@ export class CodexExecutionAdapter {
       this.executions.prepareNativeCall(work, hostRequestId, "__turn__", {
         inputHash: digest(input),
       });
-      this.executions.modelStep(
-        work,
-        `codex:${hostRequestId}`,
-        policy.maxSteps,
-      );
+      this.executions.modelStep(work, `codex:${hostRequestId}`, policy.maxSteps);
       runningTurn = true;
       turnTimer = setTimeout(
-        () =>
-          session.fail(
-            new RunLimitError("model-timeout", policy.modelTimeoutMs),
-          ),
+        () => session.fail(new RunLimitError("model-timeout", policy.modelTimeoutMs)),
         policy.modelTimeoutMs,
       );
       turnTimer.unref?.();
       const started = await session.rpc("turn/start", {
         threadId,
-        input: [
-          { type: "text", text: JSON.stringify(input), text_elements: [] },
-        ],
+        input: [{ type: "text", text: JSON.stringify(input), text_elements: [] }],
       });
       turnId = started.turn?.id;
-      if (!turnId)
-        throw new Error("Codex did not return a native turn identity");
+      if (!turnId) throw new Error("Codex did not return a native turn identity");
       this.executions.bound(
         work,
         {
           engine: "codex",
           threadId,
           modelId: config.modelId,
-          ...(config.managed
-            ? { providerId: config.providerId }
-            : { baseUrl: config.baseUrl }),
+          ...(config.managed ? { providerId: config.providerId } : { baseUrl: config.baseUrl }),
         },
         { engine: "codex", requestId: execution.id },
       );
@@ -639,7 +540,6 @@ export class CodexExecutionAdapter {
   }
   async suspendAll() {
     this.suspending = true;
-    for (const e of this.sessions.values())
-      e.controller.abort(new Error("Runner is suspending"));
+    for (const e of this.sessions.values()) e.controller.abort(new Error("Runner is suspending"));
   }
 }

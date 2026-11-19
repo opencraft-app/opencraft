@@ -8,10 +8,7 @@ await mkdir(output, { recursive: true });
 let label = "setup",
   chain = Promise.resolve();
 const record = (o) =>
-  appendFile(
-    output + "/calls.jsonl",
-    JSON.stringify({ at: new Date().toISOString(), label, ...o }) + "\n",
-  );
+  appendFile(output + "/calls.jsonl", JSON.stringify({ at: new Date().toISOString(), label, ...o }) + "\n");
 const server = createServer(async (req, res) => {
   try {
     let raw = "";
@@ -30,8 +27,7 @@ const server = createServer(async (req, res) => {
       res.end("{}");
       return;
     }
-    if (body.stream)
-      throw new Error("Streaming not supported by comparison bridge");
+    if (body.stream) throw new Error("Streaming not supported by comparison bridge");
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 120000);
     res.on("close", () => {
@@ -83,20 +79,14 @@ const server = createServer(async (req, res) => {
           instruction,
           messages: tools.length
             ? {
-                messages: body.messages.filter(
-                  (m) => !["system", "developer"].includes(m.role),
-                ),
+                messages: body.messages.filter((m) => !["system", "developer"].includes(m.role)),
                 tools,
               }
-            : body.messages.filter(
-                (m) => !["system", "developer"].includes(m.role),
-              ),
+            : body.messages.filter((m) => !["system", "developer"].includes(m.role)),
           schema,
           signal: controller.signal,
         });
-        const decoded = tools.length
-          ? JSON.parse(result.text)
-          : { content: result.text, tool_calls: [] };
+        const decoded = tools.length ? JSON.parse(result.text) : { content: result.text, tool_calls: [] };
         const tool_calls = decoded.tool_calls.map((t) => ({
           id: "call_" + randomUUID().replaceAll("-", ""),
           type: "function",
@@ -141,8 +131,7 @@ const server = createServer(async (req, res) => {
           toolDefinitions: body.tools?.length ?? 0,
           responseFormat: body.response_format?.type ?? null,
           requestedTemperature: body.temperature ?? null,
-          requestedMaxTokens:
-            body.max_tokens ?? body.max_completion_tokens ?? null,
+          requestedMaxTokens: body.max_tokens ?? body.max_completion_tokens ?? null,
         });
       }
     };

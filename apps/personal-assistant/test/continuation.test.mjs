@@ -9,15 +9,7 @@ import { ReceptionCoordinator } from "../src/runtime/reception-coordinator.mjs";
 import { Runner, request } from "../src/runner.mjs";
 import { CompletionContract } from "../src/domain/completion-contract.mjs";
 import { DirectoryKnowledgeSource } from "../src/adapters/filesystem/knowledge-source.mjs";
-import {
-  profileFor,
-  until,
-  completed,
-  childRunner,
-  files,
-  nativeEntries,
-  publishTestNote,
-} from "./helpers.mjs";
+import { profileFor, until, completed, childRunner, files, nativeEntries, publishTestNote } from "./helpers.mjs";
 
 function domain(t) {
   const profile = profileFor(t),
@@ -37,17 +29,11 @@ function delegate(app, id = "user", completion = { output: "text" }) {
 }
 function reportTurn(app, work, text = "worker report", error = null) {
   const receipt = app.executions.report(work, text, error);
-  const turn = app.reception
-    .pending()
-    .find((t) => t.source_json && t.work_id === work.id);
+  const turn = app.reception.pending().find((t) => t.source_json && t.work_id === work.id);
   return { receipt, turn };
 }
 const systemTurns = (uow) =>
-  uow.db
-    .prepare(
-      "SELECT * FROM reception WHERE source_json IS NOT NULL ORDER BY rowid",
-    )
-    .all();
+  uow.db.prepare("SELECT * FROM reception WHERE source_json IS NOT NULL ORDER BY rowid").all();
 
 // These exercise real owners and SQLite; the model decisions remain controlled inputs.
 test("a report is durable before parent decision; text results need no note, and delivery is still owed", (t) => {
@@ -75,10 +61,7 @@ test("a report is durable before parent decision; text results need no note, and
   app.outcomes.accepted(delivery);
   app.outcomes.accepted(delivery);
   assert.equal(app.workRecord(work.id).status, "completed");
-  assert.equal(
-    app.history.view().messages.filter((m) => m.data.kind === "result").length,
-    1,
-  );
+  assert.equal(app.history.view().messages.filter((m) => m.data.kind === "result").length, 1);
   assert.equal(systemTurns(uow).length, 1);
 });
 
@@ -87,10 +70,7 @@ test("default note contracts remain enforced; an incomplete report can continue 
     work = delegate(app, "note", {});
   const { turn } = reportTurn(app, work, "I claim it is done");
   assert.equal(app.reception.context(turn).report.assessment.passed, false);
-  assert.throws(
-    () => app.reception.apply(turn, { kind: "deliver" }),
-    /completion contract/,
-  );
+  assert.throws(() => app.reception.apply(turn, { kind: "deliver" }), /completion contract/);
   assert.equal(app.detail(work.id).results.length, 0);
   app.reception.apply(turn, {
     kind: "continue",
@@ -164,10 +144,7 @@ test("duplicate report and repeated parent settlement preserve one event, revisi
   const first = reportTurn(app, work);
   app.executions.report(work, "worker report");
   assert.equal(systemTurns(uow).length, 1);
-  assert.equal(
-    app.events().filter((e) => e.kind === "execution.reported").length,
-    1,
-  );
+  assert.equal(app.events().filter((e) => e.kind === "execution.reported").length, 1);
   const proposal = {
     kind: "continue",
     goal: "finish the remaining comparison",
@@ -176,10 +153,7 @@ test("duplicate report and repeated parent settlement preserve one event, revisi
   app.reception.apply(first.turn, proposal);
   assert.equal(app.workRecord(work.id).revision, 1);
   assert.equal(app.executions.report(work, "worker report").stale, true);
-  assert.throws(
-    () => app.executions.report(work, "different report"),
-    /Immutable/,
-  );
+  assert.throws(() => app.executions.report(work, "different report"), /Immutable/);
   assert.equal(app.status().works.length, 1);
 });
 
@@ -193,10 +167,7 @@ test("cancelled or amended work retires old wakes before calling a model; late r
     text: "new goal",
   });
   assert.equal(app.reception.started(turn.id), false);
-  assert.equal(
-    JSON.parse(app.reception.turn(turn.id).decision_json).kind,
-    "retired",
-  );
+  assert.equal(JSON.parse(app.reception.turn(turn.id).decision_json).kind, "retired");
   const current = app.workRecord(work.id);
   app.works.cancel("cancel", { workId: work.id, expectedRevision: 2 });
   const late = app.executions.report(current, "late answer");
@@ -271,10 +242,7 @@ test("parent failure retries a saved report without rerunning work, then stops a
   let at = Date.now();
   app.reception.now = () => at;
   for (let i = 0; i < 3; i++) {
-    app.reception.failed(
-      app.reception.turn(turn.id),
-      new Error("parent unavailable"),
-    );
+    app.reception.failed(app.reception.turn(turn.id), new Error("parent unavailable"));
     assert.equal(app.reception.turn(turn.id).attempts, i + 1);
     at += 1000;
   }
@@ -294,21 +262,13 @@ test("automatic continuation is bounded across revisions and survives reopen", (
     work = app.workRecord(work.id);
   }
   const { turn } = reportTurn(app, work, "still partial");
-  assert.throws(
-    () => app.reception.apply(turn, { kind: "continue", goal: "forever" }),
-    /limit/,
-  );
+  assert.throws(() => app.reception.apply(turn, { kind: "continue", goal: "forever" }), /limit/);
   app.reception.apply(turn, {
     kind: "blocked",
     text: "需要补充范围后才能继续。",
   });
   assert.equal(app.workRecord(work.id).status, "blocked");
-  assert.equal(
-    app.history
-      .view()
-      .messages.filter((m) => m.data.kind === "continuation-blocked").length,
-    1,
-  );
+  assert.equal(app.history.view().messages.filter((m) => m.data.kind === "continuation-blocked").length, 1);
 });
 
 test("parent decision, result and turn settlement roll back together", (t) => {
@@ -319,10 +279,7 @@ test("parent decision, result and turn settlement roll back together", (t) => {
   app.r.reception.settled = () => {
     throw new Error("commit fault");
   };
-  assert.throws(
-    () => app.reception.apply(turn, { kind: "deliver" }),
-    /commit fault/,
-  );
+  assert.throws(() => app.reception.apply(turn, { kind: "deliver" }), /commit fault/);
   assert.equal(app.workRecord(work.id).status, "awaiting_review");
   assert.equal(app.detail(work.id).results.length, 0);
   assert.equal(app.reception.turn(turn.id).status, "queued");
@@ -342,10 +299,7 @@ test("saved reports, grants and unsettled turns survive SQLite reopen without na
   t.after(() => uow.close());
   assert.equal(app.pendingWorks().length, 0);
   assert.equal(app.reception.pending().length, 1);
-  assert.equal(
-    app.reception.context(app.reception.turn(turn.id)).report.text,
-    "worker report",
-  );
+  assert.equal(app.reception.context(app.reception.turn(turn.id)).report.text, "worker report");
   app.reception.apply(app.reception.turn(turn.id), { kind: "deliver" });
   assert.equal(app.detail(work.id).results.length, 1);
 });
@@ -506,14 +460,10 @@ test("reception schedules user input ahead of background reports while reserving
   assert.deepEqual(picked, ["u", "u", "u", "b", "u"]);
 });
 
-for (const boundary of [
-  "report-saved-before-reception",
-  "report-proposed-before-commit",
-])
+for (const boundary of ["report-saved-before-reception", "report-proposed-before-commit"])
   test(`real process crash at ${boundary} resumes the parent and delivers once without repeating Pi work`, async (t) => {
     const profile = profileFor(t),
-      call = (op, params = {}, id = crypto.randomUUID()) =>
-        request(profile, { op, params, id });
+      call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
     const first = await childRunner(t, profile, {
       LAB_TEST_CRASH_AT: boundary,
     });
@@ -526,17 +476,9 @@ for (const boundary of [
     assert.equal(done.deliveries.length, 1);
     assert.equal(files(profile, "artifacts").length, 1);
     assert.equal(files(profile, "mailbox").length, 1);
-    assert.equal(
-      (await call("conversation")).messages.filter(
-        (m) => m.data.kind === "result",
-      ).length,
-      1,
-    );
+    assert.equal((await call("conversation")).messages.filter((m) => m.data.kind === "result").length, 1);
     const entries = await nativeEntries(profile, turn.work_id);
-    assert.equal(
-      entries.filter((e) => e.kind === "superapp.work-input").length,
-      1,
-    );
+    assert.equal(entries.filter((e) => e.kind === "superapp.work-input").length, 1);
     await second.stop();
   });
 
@@ -564,18 +506,10 @@ test("real Pi completion reaches a new main-model round which controls the final
   assert.equal(seen.length, 2);
   assert.equal(seen[1].request.original.text, "原始请求，不要只给一个收到");
   assert.equal(seen[1].report.assessment.passed, true);
-  const result = runner.app.history
-    .view()
-    .messages.find((m) => m.data.kind === "result");
+  const result = runner.app.history.view().messages.find((m) => m.data.kind === "result");
   assert.equal(result.text, "已完成比较，具体材料见本地结果。");
   assert.notEqual(done.results[0].text, result.text);
-  assert.match(
-    readFileSync(
-      join(profile.path, "mailbox", files(profile, "mailbox")[0]),
-      "utf8",
-    ),
-    /已完成比较/,
-  );
+  assert.match(readFileSync(join(profile.path, "mailbox", files(profile, "mailbox")[0]), "utf8"), /已完成比较/);
 });
 
 test("an execution error remains a failed report and cannot be delivered as success", (t) => {
@@ -583,20 +517,14 @@ test("an execution error remains a failed report and cannot be delivered as succ
     work = delegate(app);
   const { turn } = reportTurn(app, work, "", new Error("tool unavailable"));
   assert.equal(app.detail(work.id).reports[0].status, "error");
-  assert.throws(
-    () => app.reception.apply(turn, { kind: "deliver", text: "success" }),
-    /completion contract/,
-  );
+  assert.throws(() => app.reception.apply(turn, { kind: "deliver", text: "success" }), /completion contract/);
   app.reception.apply(turn, {
     kind: "blocked",
     text: "工具不可用，需要恢复连接后继续。",
   });
   assert.equal(app.workRecord(work.id).status, "blocked");
   assert.equal(app.detail(work.id).results.length, 0);
-  assert.equal(
-    app.history.view().messages.at(-1).text,
-    "工具不可用，需要恢复连接后继续。",
-  );
+  assert.equal(app.history.view().messages.at(-1).text, "工具不可用，需要恢复连接后继续。");
 });
 
 test("a quiet failed report can settle silently while remaining blocked with no delivery receipt", (t) => {
@@ -638,9 +566,7 @@ test("an expired routine retains its late report but cannot wake the parent or c
 });
 
 test("actual model-mode adapter sends continuation and routine instructions to the model request", async () => {
-  const { ReceptionModel } = await import(
-    "../src/adapters/models/reception-model.mjs"
-  );
+  const { ReceptionModel } = await import("../src/adapters/models/reception-model.mjs");
   let request;
   const model = new ReceptionModel({
     configured: {
@@ -673,10 +599,7 @@ test("actual model-mode adapter sends continuation and routine instructions to t
   assert.match(request.systemPrompt, /SYSTEM wake/);
   assert.match(request.systemPrompt, /routine.create/);
   assert.match(request.systemPrompt, /output:"text"/);
-  assert.equal(
-    JSON.parse(request.messages[0].content).source.kind,
-    "execution-report",
-  );
+  assert.equal(JSON.parse(request.messages[0].content).source.kind, "execution-report");
 });
 
 test("real Pi text-output work finishes with no artifact and returns through the parent", async (t) => {
@@ -701,10 +624,7 @@ test("real Pi text-output work finishes with no artifact and returns through the
   await until(() => runner.app.status().works[0]?.status === "completed");
   assert.equal(files(profile, "artifacts").length, 0);
   assert.equal(files(profile, "mailbox").length, 1);
-  assert.equal(
-    runner.app.history.view().messages.at(-1).text,
-    "这是一条文本结果。",
-  );
+  assert.equal(runner.app.history.view().messages.at(-1).text, "这是一条文本结果。");
 });
 
 test("the real say CLI creates an interval routine through the configured reception path", async (t) => {
@@ -714,16 +634,7 @@ test("the real say CLI creates an interval routine through the configured recept
     child = await childRunner(t, profile);
   execFileSync(
     process.execPath,
-    [
-      "bin/assistant.mjs",
-      "say",
-      "--profile",
-      profile.path,
-      "--text",
-      "每隔30秒提醒我检查项目",
-      "--id",
-      "cli-routine",
-    ],
+    ["bin/assistant.mjs", "say", "--profile", profile.path, "--text", "每隔30秒提醒我检查项目", "--id", "cli-routine"],
     { cwd: root, timeout: 5000 },
   );
   const turn = await until(async () => {
@@ -762,14 +673,8 @@ test("schema10 upgrade preserves an old snapshot and routine receipt without fab
   d = createLocalDomain(profile);
   t.after(() => d.uow.close());
   assert.equal(d.uow.db.prepare("PRAGMA user_version").get().user_version, 21);
-  assert.deepEqual(
-    d.app.executions.snapshot(d.app.workRecord(work.id)),
-    snapshot,
-  );
-  assert.equal(
-    d.app.routines.add("old-routine", params).routineId,
-    routine.routineId,
-  );
+  assert.deepEqual(d.app.executions.snapshot(d.app.workRecord(work.id)), snapshot);
+  assert.equal(d.app.routines.add("old-routine", params).routineId, routine.routineId);
   assert.equal(d.app.routines.add("old-routine", params).duplicate, true);
   assert.equal(d.app.detail(work.id).reports.length, 0);
   assert.equal(systemTurns(d.uow).length, 0);
@@ -817,10 +722,7 @@ test("one user input can create two independent works atomically and amend only 
   assert.equal(app.workRecord(ids[0]).revision, 1);
   assert.equal(app.workRecord(ids[1]).revision, 2);
   assert.equal(app.status().works.length, 2);
-  assert.equal(
-    app.executions.snapshot(app.workRecord(ids[1])).request.original.inputId,
-    "two",
-  );
+  assert.equal(app.executions.snapshot(app.workRecord(ids[1])).request.original.inputId, "two");
 });
 
 test("a failure in the second batch command rolls back the first command and its receipt", (t) => {
@@ -874,9 +776,7 @@ test("real Pi handles a batch in two independent streams and the parent closes e
     text: "比较方案，同时整理风险",
   });
   await until(
-    () =>
-      runner.app.status().works.length === 2 &&
-      runner.app.status().works.every((w) => w.status === "completed"),
+    () => runner.app.status().works.length === 2 && runner.app.status().works.every((w) => w.status === "completed"),
   );
   const messages = runner.app.history.view().messages;
   assert.equal(messages.filter((m) => m.role === "user").length, 1);
@@ -919,20 +819,13 @@ test("automatic continuation count and latest user direction persist across a re
     expectedRevision: work.revision,
     text: "new explicit direction",
   });
-  assert.equal(
-    d.app.executions.snapshot(d.app.workRecord(work.id)).request.continuations,
-    0,
-  );
+  assert.equal(d.app.executions.snapshot(d.app.workRecord(work.id)).request.continuations, 0);
 });
 
 test("a saved unlinked failure retries only settlement after an owner fault, never the executor", async (t) => {
-  const { WorkCoordinator } = await import(
-    "../src/runtime/work-coordinator.mjs"
-  );
+  const { WorkCoordinator } = await import("../src/runtime/work-coordinator.mjs");
   const { app } = domain(t),
-    work = app.workRecord(
-      app.works.submit("unlinked-fault", { text: "work" }).workId,
-    );
+    work = app.workRecord(app.works.submit("unlinked-fault", { text: "work" }).workId);
   let executions = 0;
   const coordinator = new WorkCoordinator({
     app,
@@ -948,16 +841,10 @@ test("a saved unlinked failure retries only settlement after an owner fault, nev
   app.executions.blocked = () => {
     throw new Error("settlement unavailable");
   };
-  await assert.rejects(
-    coordinator.execute(work, new AbortController().signal),
-    /settlement unavailable/,
-  );
+  await assert.rejects(coordinator.execute(work, new AbortController().signal), /settlement unavailable/);
   assert.equal(app.detail(work.id).reports.length, 1);
   app.executions.blocked = original;
-  await coordinator.execute(
-    app.workRecord(work.id),
-    new AbortController().signal,
-  );
+  await coordinator.execute(app.workRecord(work.id), new AbortController().signal);
   assert.equal(executions, 1);
   assert.equal(app.workRecord(work.id).status, "blocked");
 });

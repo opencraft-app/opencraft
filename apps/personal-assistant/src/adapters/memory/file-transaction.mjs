@@ -1,21 +1,11 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  rmdirSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { stable } from "../../domain/values.mjs";
 
 /** Recoverable local file participant; SQL receipt decides rollback versus roll-forward. */
 export class MemoryFileTransaction {
-  constructor(
-    store,
-    { committed, markCommit, forgetCommit, fault = () => {} },
-  ) {
+  constructor(store, { committed, markCommit, forgetCommit, fault = () => {} }) {
     Object.assign(this, { store, committed, markCommit, forgetCommit, fault });
     this.lock = join(store.root, ".write-lock");
   }
@@ -36,20 +26,15 @@ export class MemoryFileTransaction {
         if (error.code !== "EEXIST") throw error;
         let owner;
         try {
-          owner = JSON.parse(
-            readFileSync(join(this.lock, "owner.json"), "utf8"),
-          );
+          owner = JSON.parse(readFileSync(join(this.lock, "owner.json"), "utf8"));
         } catch {
           if (Date.now() < until) {
             Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
             continue;
           }
-          throw new Error(
-            "Memory root lock has incomplete metadata; recovery required",
-          );
+          throw new Error("Memory root lock has incomplete metadata; recovery required");
         }
-        if (!Number.isSafeInteger(owner.pid) || owner.pid < 1)
-          throw new Error("Invalid memory lock owner");
+        if (!Number.isSafeInteger(owner.pid) || owner.pid < 1) throw new Error("Invalid memory lock owner");
         try {
           process.kill(owner.pid, 0);
         } catch (e) {
@@ -87,11 +72,7 @@ export class MemoryFileTransaction {
     this.held = false;
   }
   readJournal() {
-    const text = this.store.read(
-      ".transactions/pending.json",
-      false,
-      64 * 1024 * 1024,
-    );
+    const text = this.store.read(".transactions/pending.json", false, 64 * 1024 * 1024);
     if (text === null) return null;
     const j = JSON.parse(text);
     if (
@@ -121,14 +102,11 @@ export class MemoryFileTransaction {
     for (const c of j.changes) {
       const actual = this.store.read(c.path, false);
       if (actual !== c.before && actual !== c.after)
-        throw new Error(
-          `Memory recovery conflicts with external edit: ${c.path}`,
-        );
+        throw new Error(`Memory recovery conflicts with external edit: ${c.path}`);
     }
     for (const c of j.changes) {
       const target = forward ? c.after : c.before;
-      if (this.store.read(c.path, false) !== target)
-        this.store.atomic(c.path, target);
+      if (this.store.read(c.path, false) !== target) this.store.atomic(c.path, target);
     }
   }
   recover() {
@@ -160,8 +138,7 @@ export class MemoryFileTransaction {
     this.journal = j;
     this.markCommit(j.id);
     for (const c of changes) {
-      if (this.store.read(c.path, false) !== c.before)
-        throw new Error("Memory file changed before replacement");
+      if (this.store.read(c.path, false) !== c.before) throw new Error("Memory file changed before replacement");
       this.store.atomic(c.path, c.after);
     }
     this.fault("memory-files-before-sql-commit");

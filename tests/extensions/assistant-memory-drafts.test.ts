@@ -1,9 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  memoryDraft,
-  clearMemoryDrafts,
-} from "../../plugins/im/src/assistant-memory-drafts";
+import { memoryDraft, clearMemoryDrafts } from "../../plugins/im/src/assistant-memory-drafts";
 import type { ChannelRpc } from "../../plugins/im/src/channel-client";
 import type { PersonalAssistantBinding } from "@opencraft/appserver-protocol";
 test("private drafts are session-only, owner/binding/transport scoped, bounded and expiring", () => {
@@ -39,10 +36,7 @@ test("private drafts are session-only, owner/binding/transport scoped, bounded a
   draft.value = "outside mutation";
   assert.equal(memoryDraft(rpc, b)?.value, "unsaved");
   assert.equal(memoryDraft(other, b), null);
-  assert.equal(
-    memoryDraft(rpc, { ...b, owner: { kind: "human", id: "bob" } }),
-    null,
-  );
+  assert.equal(memoryDraft(rpc, { ...b, owner: { kind: "human", id: "bob" } }), null);
   assert.equal(memoryDraft(rpc, { ...b, assignmentId: "new" }), null);
   assert.equal(memoryDraft(rpc, b)?.pending?.requestId, "stable-retry-01");
   disconnected();
@@ -53,8 +47,7 @@ test("private drafts are session-only, owner/binding/transport scoped, bounded a
   memoryDraft(rpc, b, draft);
   clearMemoryDrafts(rpc);
   assert.equal(memoryDraft(rpc, b), null);
-  for (let i = 0; i < 10; i++)
-    memoryDraft(rpc, { ...b, botId: "bot" + i }, draft);
+  for (let i = 0; i < 10; i++) memoryDraft(rpc, { ...b, botId: "bot" + i }, draft);
   assert.equal(memoryDraft(rpc, { ...b, botId: "bot0" }), null);
   assert.ok(memoryDraft(rpc, { ...b, botId: "bot9" }));
   const now = Date.now;

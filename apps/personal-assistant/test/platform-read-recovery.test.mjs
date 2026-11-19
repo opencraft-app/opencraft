@@ -27,8 +27,7 @@ function setup(t) {
     async request(_b, _m, p) {
       calls++;
       if (mode === "revoke") epoch = "two";
-      if (mode === "denied")
-        throw Object.assign(Error("not visible"), { status: 403 });
+      if (mode === "denied") throw Object.assign(Error("not visible"), { status: 403 });
       return {
         messages: [{ sequence: 5, messageId: "m", text: "hello" }],
         hasEarlier: !p.before,
@@ -68,12 +67,7 @@ test("delegated reads retain pagination evidence; report cannot replace host fac
     work = delegate(d.app, "lookup"),
     snap = d.app.executions.snapshot(work);
   assert.ok(snap.delegation.tools.includes("platform_read"));
-  const ports = createExecutionPorts(
-    d.app,
-    () => {},
-    undefined,
-    d.channels,
-  ).toolsFor(work, snap);
+  const ports = createExecutionPorts(d.app, () => {}, undefined, d.channels).toolsFor(work, snap);
   const tool = assistantTools({
     ports,
     snapshot: snap,
@@ -82,12 +76,7 @@ test("delegated reads retain pagination evidence; report cannot replace host fac
     },
   }).find((t) => t.name === "platform_read");
   const result = JSON.parse(
-    (
-      await tool.execute(
-        { name: "platform.groups.history", params: { channelId: "g" } },
-        {},
-      )
-    ).output[0].text,
+    (await tool.execute({ name: "platform.groups.history", params: { channelId: "g" } }, {})).output[0].text,
   );
   assert.equal(result.ok, true);
   assert.equal(result.coverage.next, 5);
@@ -104,10 +93,7 @@ test("delegated reads retain pagination evidence; report cannot replace host fac
   const report = d.app.reception.context(turn).report;
   assert.equal(report.platformReadEvidence.items.length, 2);
   assert.ok(report.platformReadEvidence.items.every((e) => e.ok));
-  assert.equal(
-    JSON.stringify(report.platformReadEvidence).includes("hello"),
-    false,
-  );
+  assert.equal(JSON.stringify(report.platformReadEvidence).includes("hello"), false);
 });
 test("old grants do not inherit reads; binding changes and cancellation reject results", async (t) => {
   const d = setup(t);
@@ -116,34 +102,18 @@ test("old grants do not inherit reads; binding changes and cancellation reject r
   const old = delegate(d.app, "old");
   d.app.scope.resources = resources;
   const snapshot = d.app.executions.snapshot(old),
-    ports = createExecutionPorts(
-      d.app,
-      () => {},
-      undefined,
-      d.channels,
-    ).toolsFor(old, snapshot);
+    ports = createExecutionPorts(d.app, () => {}, undefined, d.channels).toolsFor(old, snapshot);
   assert.equal(
     assistantTools({ ports, snapshot }).some((t) => t.name === "platform_read"),
     false,
   );
-  await assert.rejects(
-    ports.platformRead({ name: "platform.groups.list", params: {} }),
-    /outside/,
-  );
+  await assert.rejects(ports.platformRead({ name: "platform.groups.list", params: {} }), /outside/);
   assert.equal(d.calls(), 0);
   const work = delegate(d.app, "new"),
     snap = d.app.executions.snapshot(work),
-    current = createExecutionPorts(
-      d.app,
-      () => {},
-      undefined,
-      d.channels,
-    ).toolsFor(work, snap);
+    current = createExecutionPorts(d.app, () => {}, undefined, d.channels).toolsFor(work, snap);
   d.app.scope.resources = [];
-  await assert.rejects(
-    current.platformRead({ name: "platform.groups.list", params: {} }),
-    /binding changed/,
-  );
+  await assert.rejects(current.platformRead({ name: "platform.groups.list", params: {} }), /binding changed/);
   d.app.scope.resources = resources;
   d.mode("revoke");
   const revoked = await current.platformRead({
@@ -154,20 +124,11 @@ test("old grants do not inherit reads; binding changes and cancellation reject r
   assert.equal(revoked.data, undefined);
   const c = new AbortController();
   c.abort();
-  await assert.rejects(
-    current.platformRead(
-      { name: "platform.groups.list", params: {} },
-      c.signal,
-    ),
-    /abort/i,
-  );
+  await assert.rejects(current.platformRead({ name: "platform.groups.list", params: {} }, c.signal), /abort/i);
 });
 test("unavailable, denied, transport failure and empty page remain distinct; no arbitrary operations", async () => {
   const q = { name: "platform.groups.list", params: {} };
-  assert.equal(
-    (await executePlatformRead(null, q)).failure,
-    "tool_unavailable",
-  );
+  assert.equal((await executePlatformRead(null, q)).failure, "tool_unavailable");
   assert.equal(
     (
       await executePlatformRead(
@@ -194,44 +155,22 @@ test("unavailable, denied, transport failure and empty page remain distinct; no 
     ).failure,
     "read_failed",
   );
-  const empty = await executePlatformRead(
-    { query: async () => ({ groups: [], nextCursor: null }) },
-    q,
-  );
+  const empty = await executePlatformRead({ query: async () => ({ groups: [], nextCursor: null }) }, q);
   assert.equal(empty.ok, true);
   assert.equal(empty.coverage.scope, "returned-page");
   assert.equal(
-    (
-      await executePlatformRead(
-        { query: async () => ({ text: "x".repeat(13000) }) },
-        q,
-      )
-    ).failure,
+    (await executePlatformRead({ query: async () => ({ text: "x".repeat(13000) }) }, q)).failure,
     "result_too_large",
   );
-  await assert.rejects(
-    executePlatformRead(null, { name: "platform.groups.send", params: {} }),
-    /Unsupported/,
-  );
-  await assert.rejects(
-    executePlatformRead(null, { ...q, params: { owner: "another" } }),
-    /Unknown/,
-  );
+  await assert.rejects(executePlatformRead(null, { name: "platform.groups.send", params: {} }), /Unsupported/);
+  await assert.rejects(executePlatformRead(null, { ...q, params: { owner: "another" } }), /Unknown/);
 });
 
 test("Pi proposal correction keeps original confirmation context and settles only once; exhaustion is typed", async (t) => {
-  const { ReceptionModel } = await import(
-    "../src/adapters/models/reception-model.mjs"
-  );
-  const { ReceptionPlanner } = await import(
-    "../src/application/reception/planner.mjs"
-  );
-  const { ReceptionCoordinator } = await import(
-    "../src/runtime/reception-coordinator.mjs"
-  );
-  const { createModels, fauxProvider, fauxAssistantMessage } = await import(
-    "@earendil-works/pi-ai"
-  );
+  const { ReceptionModel } = await import("../src/adapters/models/reception-model.mjs");
+  const { ReceptionPlanner } = await import("../src/application/reception/planner.mjs");
+  const { ReceptionCoordinator } = await import("../src/runtime/reception-coordinator.mjs");
+  const { createModels, fauxProvider, fauxAssistantMessage } = await import("@earendil-works/pi-ai");
   const d = setup(t),
     models = createModels(),
     faux = fauxProvider({ tokensPerSecond: 100000 });
@@ -252,17 +191,13 @@ test("Pi proposal correction keeps original confirmation context and settles onl
   });
   d.app.reception.accept("confirm", { text: "查" });
   const turn = d.app.reception.turn("confirm");
-  assert.deepEqual(d.app.reception.context(turn).capabilities.delegationTools, [
-    "platform_read",
-  ]);
+  assert.deepEqual(d.app.reception.context(turn).capabilities.delegationTools, ["platform_read"]);
   let corrections = 0;
   faux.setResponses([
     fauxAssistantMessage(JSON.stringify({ kind: "delegate", goal: "  " })),
     async (transcript) => {
       corrections++;
-      const input = JSON.parse(
-        transcript.messages.findLast((m) => m.role === "user").content,
-      );
+      const input = JSON.parse(transcript.messages.findLast((m) => m.role === "user").content);
       assert.equal(input.text, "查");
       assert.equal(input.validationFeedback.code, "text_constraint");
       assert.equal(d.app.status().works.length, 0);
@@ -285,20 +220,12 @@ test("Pi proposal correction keeps original confirmation context and settles onl
     fauxAssistantMessage('{"kind":"delegate","goal":""}'),
     fauxAssistantMessage('{"kind":"delegate","goal":""}'),
   ]);
-  await coordinator.process(
-    d.app.reception.turn("bad"),
-    new AbortController().signal,
-  );
+  await coordinator.process(d.app.reception.turn("bad"), new AbortController().signal);
   assert.equal(d.app.reception.turn("bad").status, "blocked");
   assert.equal(d.app.status().works.length, 1);
-  assert.match(
-    d.app.history.view().messages.at(-1).text,
-    /自动纠正.*尚未开始执行/,
-  );
+  assert.match(d.app.history.view().messages.at(-1).text, /自动纠正.*尚未开始执行/);
   const event = d.uow.db
-    .prepare(
-      "SELECT data FROM event WHERE kind='reception.blocked' ORDER BY seq DESC LIMIT 1",
-    )
+    .prepare("SELECT data FROM event WHERE kind='reception.blocked' ORDER BY seq DESC LIMIT 1")
     .get();
   assert.equal(JSON.parse(event.data).proposalFailure.code, "text_constraint");
 });

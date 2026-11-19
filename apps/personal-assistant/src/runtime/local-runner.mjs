@@ -63,12 +63,8 @@ export class LocalRunner {
       if (profile.config.botBinding && !overrides.platformChannelPort)
         throw Error("Managed Bot requires its Host authority port");
       if (overrides.platformChannelPort) {
-        if (!profile.config.botBinding)
-          throw Error("Platform channel access requires a Bot binding");
-        runner.authority = new BotAuthority(
-          profile.config.botBinding,
-          overrides.platformChannelPort,
-        );
+        if (!profile.config.botBinding) throw Error("Platform channel access requires a Bot binding");
+        runner.authority = new BotAuthority(profile.config.botBinding, overrides.platformChannelPort);
         await runner.authority.refresh();
       }
       if (overrides.managedHarnesses) {
@@ -91,13 +87,9 @@ export class LocalRunner {
           overrides.executionEnvironment.id !== "execution.environment" ||
           typeof overrides.executionEnvironment.binding !== "string")
       )
-        throw Error(
-          "Isolated environment requires an authorized Codex execution binding",
-        );
+        throw Error("Isolated environment requires an authorized Codex execution binding");
       runner.telemetry = createLocalTelemetry(profile);
-      const knowledgeSource = profile.config.workspace
-        ? new DirectoryKnowledgeSource(profile.config.workspace)
-        : null;
+      const knowledgeSource = profile.config.workspace ? new DirectoryKnowledgeSource(profile.config.workspace) : null;
       Object.assign(
         runner,
         createLocalDomain(profile, knowledgeSource, {
@@ -113,17 +105,13 @@ export class LocalRunner {
           platformReads: overrides.platformChannelPort
             ? { query: (...args) => runner.platformChannels.query(...args) }
             : null,
-          assertAuthority: runner.authority
-            ? () => runner.authority.assertCurrent()
-            : undefined,
+          assertAuthority: runner.authority ? () => runner.authority.assertCurrent() : undefined,
         }),
       );
       if (runner.authority) {
-        runner.platformChannels = new PlatformChannels(
-          profile.config.botBinding,
-          overrides.platformChannelPort,
-          { assertWriter: () => runner.uow.assertWriter() },
-        );
+        runner.platformChannels = new PlatformChannels(profile.config.botBinding, overrides.platformChannelPort, {
+          assertWriter: () => runner.uow.assertWriter(),
+        });
         runner.authorityTimer = setInterval(() => {
           void runner.authority.refresh().catch(onError);
         }, 2000);
@@ -138,16 +126,9 @@ export class LocalRunner {
       const harnesses = resolveHarnesses(profile.config);
       const required = runner.app.executions.requiredHarnesses();
       if (required.includes("codex") && !harnesses.codex)
-        throw new Error(
-          "Pending Codex executions require their explicit Codex configuration",
-        );
-      for (const binding of runner.app.executions
-        .requiredNativeBindings()
-        .filter((binding) => !binding.providerId))
-        if (
-          binding.modelId !== harnesses.codex?.modelId ||
-          binding.baseUrl !== harnesses.codex?.baseUrl
-        )
+        throw new Error("Pending Codex executions require their explicit Codex configuration");
+      for (const binding of runner.app.executions.requiredNativeBindings().filter((binding) => !binding.providerId))
+        if (binding.modelId !== harnesses.codex?.modelId || binding.baseUrl !== harnesses.codex?.baseUrl)
           throw new Error(
             "Pending Codex execution backend differs; restore its explicit model/endpoint or explicitly revise that work",
           );
@@ -167,14 +148,11 @@ export class LocalRunner {
           readAttachment: (id) => runner.attachmentStore.read(id),
         });
       if (harnesses.backgroundCodex)
-        runner.backgroundHarness = new CodexStructuredHarness(
-          harnesses.backgroundCodex,
-          { telemetry: runner.telemetry },
-        );
+        runner.backgroundHarness = new CodexStructuredHarness(harnesses.backgroundCodex, {
+          telemetry: runner.telemetry,
+        });
       // Fixture execution remains independent from an explicitly selected native assistant.
-      const assistantCatalog = runner.assistantHarness
-        ? { profile, configured: { mode: "model" } }
-        : catalog;
+      const assistantCatalog = runner.assistantHarness ? { profile, configured: { mode: "model" } } : catalog;
       const modelOptions = {
         telemetry: runner.telemetry,
         transport: runner.assistantHarness,
@@ -229,12 +207,8 @@ export class LocalRunner {
         onUsageError: onError,
         ...executionPorts,
         knowledgeSource,
-        artifactStore: new LocalArtifactStore(
-          join(profile.path, "artifacts"),
-          runner.attachmentStore,
-        ),
-        afterInteractionRequest: () =>
-          fault(profile, "interaction-saved-before-suspend"),
+        artifactStore: new LocalArtifactStore(join(profile.path, "artifacts"), runner.attachmentStore),
+        afterInteractionRequest: () => fault(profile, "interaction-saved-before-suspend"),
       };
       const executor = new ExecutionRouter({
         executions: executionPorts.executions,
@@ -243,22 +217,18 @@ export class LocalRunner {
             new PiExecutionAdapter({
               ...commonExecution,
               catalog: catalog ?? (await ModelCatalog.open(profile)),
-              afterAdmission: () =>
-                fault(profile, "pi-admitted-before-binding"),
+              afterAdmission: () => fault(profile, "pi-admitted-before-binding"),
             }),
           codex: () => {
-            if (!harnesses.codex)
-              throw new Error("Codex execution configuration is required");
+            if (!harnesses.codex) throw new Error("Codex execution configuration is required");
             return new CodexExecutionAdapter({
               ...commonExecution,
               config: harnesses.codex,
               resolveModel: overrides.resolveModel,
               resolveModelFailure: overrides.resolveModelFailure,
               afterAdmission: () => fault(profile, "codex-bound-before-turn"),
-              afterToolEffect: () =>
-                fault(profile, "codex-tool-effect-before-receipt"),
-              afterNativeResult: () =>
-                fault(profile, "codex-result-before-report"),
+              afterToolEffect: () => fault(profile, "codex-tool-effect-before-receipt"),
+              afterNativeResult: () => fault(profile, "codex-result-before-report"),
             });
           },
         },
@@ -269,12 +239,7 @@ export class LocalRunner {
         executor,
         concurrency: profile.config.concurrency,
         afterResult: (kind) =>
-          fault(
-            profile,
-            kind === "report"
-              ? "report-saved-before-reception"
-              : "result-saved-before-delivery",
-          ),
+          fault(profile, kind === "report" ? "report-saved-before-reception" : "result-saved-before-delivery"),
         onError,
       });
       if (threadCommand)
@@ -294,24 +259,16 @@ export class LocalRunner {
       runner.reception = new ReceptionCoordinator(
         runner.app.reception,
         new ReceptionPlanner(
-          overrides.receptionModel ??
-            new ReceptionModel(assistantCatalog, modelOptions),
+          overrides.receptionModel ?? new ReceptionModel(assistantCatalog, modelOptions),
           runner.app.receptionQueries,
         ),
         {
           context: new ConversationContextCoordinator(
             runner.app.conversationContext,
-            overrides.contextModel ??
-              new ConversationContextModel(
-                backgroundCatalog,
-                backgroundOptions,
-              ),
+            overrides.contextModel ?? new ConversationContextModel(backgroundCatalog, backgroundOptions),
             {
               telemetry: runner.telemetry,
-              timeoutMs: Math.min(
-                30000,
-                profile.config.runPolicy.modelTimeoutMs,
-              ),
+              timeoutMs: Math.min(30000, profile.config.runPolicy.modelTimeoutMs),
               // The coordinator durably records a failed best-effort summary and
               // reception continues with the bounded original-history gap. Do not
               // poison runtime health: Host/group observers would retire its
@@ -321,19 +278,12 @@ export class LocalRunner {
                 runner.telemetry?.event("context.summary-unavailable", {
                   "app.error_type": "summary_unavailable",
                 }),
-              afterProposal: () =>
-                fault(profile, "context-proposed-before-commit"),
-              afterCommit: () =>
-                fault(profile, "context-saved-before-reception"),
+              afterProposal: () => fault(profile, "context-proposed-before-commit"),
+              afterCommit: () => fault(profile, "context-saved-before-reception"),
             },
           ),
           afterProposal: (turn) =>
-            fault(
-              profile,
-              turn.source_json
-                ? "report-proposed-before-commit"
-                : "reception-proposed-before-commit",
-            ),
+            fault(profile, turn.source_json ? "report-proposed-before-commit" : "reception-proposed-before-commit"),
           onError,
           telemetry: runner.telemetry,
           timeoutMs: profile.config.runPolicy.modelTimeoutMs,
@@ -341,15 +291,11 @@ export class LocalRunner {
       );
       runner.learning = new MemoryLearningCoordinator(
         runner.app.memoryLearning,
-        overrides.memoryLearningModel ??
-          new MemoryLearningModel(backgroundCatalog, backgroundOptions),
+        overrides.memoryLearningModel ?? new MemoryLearningModel(backgroundCatalog, backgroundOptions),
         onError,
         {
           telemetry: runner.telemetry,
-          timeoutMs: Math.min(
-            profile.config.memoryPolicy.deadlineMs,
-            profile.config.runPolicy.modelTimeoutMs,
-          ),
+          timeoutMs: Math.min(profile.config.memoryPolicy.deadlineMs, profile.config.runPolicy.modelTimeoutMs),
         },
       );
       runner.delivery = new DeliveryDispatcher(
@@ -362,21 +308,14 @@ export class LocalRunner {
       runner.messages = new MessageDispatcher(
         runner.app.messages,
         overrides.messageTransport ??
-          new LocalMessageDelivery(
-            join(profile.path, "outgoing"),
-            runner.attachmentStore,
-            {
-              afterWrite: () =>
-                fault(profile, "message-written-before-receipt"),
-            },
-          ),
+          new LocalMessageDelivery(join(profile.path, "outgoing"), runner.attachmentStore, {
+            afterWrite: () => fault(profile, "message-written-before-receipt"),
+          }),
         onError,
         () => runner.uow.assertWriter(),
       );
       if (overrides.localSocket !== false) {
-        runner.gateway = new UnixSocketGateway(profile.socket, (request) =>
-          runner.dispatch(request),
-        );
+        runner.gateway = new UnixSocketGateway(profile.socket, (request) => runner.dispatch(request));
         await runner.gateway.open();
       }
       runner.timer = setInterval(() => runner.pump(), 50);
@@ -388,8 +327,7 @@ export class LocalRunner {
     }
   }
   dispatch(raw) {
-    if (this.authority)
-      return this.authority.refresh().then(() => this.dispatchCurrent(raw));
+    if (this.authority) return this.authority.refresh().then(() => this.dispatchCurrent(raw));
     return this.dispatchCurrent(raw);
   }
   dispatchCurrent(raw) {
@@ -398,25 +336,20 @@ export class LocalRunner {
     const request = validateRequest(raw);
     if (request.op === "thread.command") {
       if (!this.threadCommand) throw Error("Platform threads unavailable");
-      if (Object.keys(request.params).some((k) => k !== "argv"))
-        throw Error("Invalid thread command");
+      if (Object.keys(request.params).some((k) => k !== "argv")) throw Error("Invalid thread command");
       return withRequestDeadline(
         (signal) => this.threadCommand(request.params.argv, undefined, signal),
         this.authority.controller.signal,
         30000,
       );
     }
-    if (
-      request.op.startsWith("channels.") ||
-      request.op.startsWith("platform.")
-    ) {
+    if (request.op.startsWith("channels.") || request.op.startsWith("platform.")) {
       const c = this.platformChannels,
         p = request.params;
       if (!c) throw Error("Platform channels unavailable");
       return withRequestDeadline(
         (signal) => {
-          if (request.op.startsWith("platform."))
-            return c.query(request.op, p, signal);
+          if (request.op.startsWith("platform.")) return c.query(request.op, p, signal);
           switch (request.op) {
             case "channels.list":
               return c.list(signal);
@@ -483,17 +416,14 @@ export class LocalRunner {
           const previous = this.phaseErrors[name];
           delete this.phaseErrors[name];
           if (previous && this.healthError === previous.error)
-            this.healthError =
-              Object.values(this.phaseErrors).at(-1)?.error ?? null;
+            this.healthError = Object.values(this.phaseErrors).at(-1)?.error ?? null;
         } catch (error) {
           const attempts = (this.phaseErrors[name]?.attempts ?? 0) + 1;
           this.healthError = String(error);
           this.phaseErrors[name] = {
             error: String(error),
             attempts,
-            nextAt:
-              Date.now() +
-              Math.min(30000, 250 * 2 ** Math.min(attempts - 1, 7)),
+            nextAt: Date.now() + Math.min(30000, 250 * 2 ** Math.min(attempts - 1, 7)),
           };
         }
       }
@@ -531,11 +461,7 @@ export class LocalRunner {
         this.release = null;
         await close(release);
       }
-      if (errors.length)
-        throw new AggregateError(
-          errors,
-          "Runner cleanup failed after releasing owned resources",
-        );
+      if (errors.length) throw new AggregateError(errors, "Runner cleanup failed after releasing owned resources");
     })();
     return this.closing;
   }

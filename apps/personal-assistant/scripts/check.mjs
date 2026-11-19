@@ -24,6 +24,4 @@ for (const directory of ["src", "bin", "test", "scripts"]) {
     count++;
   }
 }
-console.log(
-  `Syntax checked ${count} modules. This is not a TypeScript typecheck.`,
-);
+console.log(`Syntax checked ${count} modules. This is not a TypeScript typecheck.`);

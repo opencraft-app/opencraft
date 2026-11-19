@@ -15,9 +15,7 @@ export function WorkbenchPresentationRootProvider({
   readonly target: HTMLElement;
 }) {
   return (
-    <WorkbenchPresentationRootContext.Provider value={target}>
-      {children}
-    </WorkbenchPresentationRootContext.Provider>
+    <WorkbenchPresentationRootContext.Provider value={target}>{children}</WorkbenchPresentationRootContext.Provider>
   );
 }
 

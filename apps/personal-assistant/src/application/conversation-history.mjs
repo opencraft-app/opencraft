@@ -5,18 +5,19 @@ import { Conversation } from "../domain/conversation.mjs";
 /** Canonical history owner. Pi transcripts are execution evidence, not a second writable copy. */
 export class ConversationHistory {
   memoryEvidence(ids) {
-    if(!Array.isArray(ids)||ids.length>8||ids.some(id=>typeof id!=='string'||id.length>160))throw Error('Invalid memory evidence');
-    return ids.map(id=>{const m=this.repository.memoryEvidence(this.main.assistant_id,id);return m?{id:m.id,text:m.text.slice(0,4000),at:m.at,truncated:m.text.length>4000}:{id,unavailable:true};});
+    if (!Array.isArray(ids) || ids.length > 8 || ids.some((id) => typeof id !== "string" || id.length > 160))
+      throw Error("Invalid memory evidence");
+    return ids.map((id) => {
+      const m = this.repository.memoryEvidence(this.main.assistant_id, id);
+      return m
+        ? { id: m.id, text: m.text.slice(0, 4000), at: m.at, truncated: m.text.length > 4000 }
+        : { id, unavailable: true };
+    });
   }
   link(conversationId, workId) {
     this.repository.link(conversationId, workId);
   }
-  constructor(
-    assistant,
-    repository,
-    now = Date.now,
-    { uow = null, messages = null } = {},
-  ) {
+  constructor(assistant, repository, now = Date.now, { uow = null, messages = null } = {}) {
     Object.assign(this, { uow, messages });
     this.repository = repository;
     this.now = now;
@@ -26,13 +27,11 @@ export class ConversationHistory {
   require(id = this.main.id) {
     requireText(id, "conversationId", 160);
     const row = this.repository.get(id);
-    if (!row || row.assistant_id !== this.main.assistant_id)
-      throw new Error("Conversation is outside this assistant");
+    if (!row || row.assistant_id !== this.main.assistant_id) throw new Error("Conversation is outside this assistant");
     return row.id;
   }
   create(inputId, params, inbox) {
-    if (Object.keys(params).length)
-      throw new Error("New conversation accepts no fields");
+    if (Object.keys(params).length) throw new Error("New conversation accepts no fields");
     return inbox.accept(inputId, "conversation.create", params, () => {
       const id = `conversation_${digest([this.main.assistant_id, inputId]).slice(0, 32)}`;
       this.repository.ensure({ id, assistant_id: this.main.assistant_id });
@@ -41,13 +40,7 @@ export class ConversationHistory {
     });
   }
   list({ after = "", limit = 20 } = {}) {
-    if (
-      typeof after !== "string" ||
-      after.length > 160 ||
-      !Number.isSafeInteger(limit) ||
-      limit < 1 ||
-      limit > 50
-    )
+    if (typeof after !== "string" || after.length > 160 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50)
       throw new Error("Invalid conversation page");
     const rows = this.repository.list(this.main.assistant_id, after, limit + 1);
     return {
@@ -57,19 +50,10 @@ export class ConversationHistory {
   }
   append(conversationId, identity, role, text, data = {}) {
     this.require(conversationId);
-    const message = Conversation.message(
-      conversationId,
-      identity,
-      role,
-      text,
-      this.now(),
-      data,
-    );
+    const message = Conversation.message(conversationId, identity, role, text, this.now(), data);
     const body =
       role === "assistant" && this.messages
-        ? this.messages
-            .inConversation(conversationId)
-            .resolve(data.message ?? { type: "text", content: text }, true)
+        ? this.messages.inConversation(conversationId).resolve(data.message ?? { type: "text", content: text }, true)
         : null;
     if (body) {
       message.data = { ...data, messageId: message.id };
@@ -77,22 +61,18 @@ export class ConversationHistory {
     }
     const write = () => {
       this.repository.append(message);
-      if (body)
-        this.messages.inConversation(conversationId).record(message, body);
+      if (body) this.messages.inConversation(conversationId).record(message, body);
     };
     if (this.uow) this.uow.transaction(write);
     else write();
     return message.id;
   }
   prepareMessage(raw, conversationId = this.main.id) {
-    return this.messages
-      .inConversation(this.require(conversationId))
-      .resolve(raw);
+    return this.messages.inConversation(this.require(conversationId)).resolve(raw);
   }
   send(conversationId, identity, raw, data = {}) {
     const body = this.prepareMessage(raw, conversationId);
-    const text =
-      body.type === "text" ? body.content : `附件：${body.files[0].name}`;
+    const text = body.type === "text" ? body.content : `附件：${body.files[0].name}`;
     return this.append(conversationId, identity, "assistant", text, {
       ...data,
       message: raw,
@@ -131,29 +111,19 @@ export class ConversationHistory {
         )
         .join("\n\n");
       const files = batch.flatMap(attachments);
-      this.append(
-        batch[0].conversation_id,
-        `notification:${digest(batch.map((n) => n.id))}`,
-        "assistant",
-        text,
-        {
-          kind: "notification",
-          deliveryIds: batch.map((n) => n.delivery_id),
-          workIds: batch.map((n) => n.work_id),
-          ...(files.length
-            ? { message: { type: "text", content: text, attachments: files } }
-            : {}),
-        },
-      );
+      this.append(batch[0].conversation_id, `notification:${digest(batch.map((n) => n.id))}`, "assistant", text, {
+        kind: "notification",
+        deliveryIds: batch.map((n) => n.delivery_id),
+        workIds: batch.map((n) => n.work_id),
+        ...(files.length ? { message: { type: "text", content: text, attachments: files } } : {}),
+      });
     }
   }
 
   result(delivery) {
     for (const id of this.repository.destinations(delivery.work_id))
       this.append(id, delivery.id, "assistant", delivery.text, {
-        ...(delivery.user_message_json
-          ? { message: JSON.parse(delivery.user_message_json) }
-          : {}),
+        ...(delivery.user_message_json ? { message: JSON.parse(delivery.user_message_json) } : {}),
         kind: "result",
         revision: delivery.revision,
         workId: delivery.work_id,
@@ -168,17 +138,11 @@ export class ConversationHistory {
         ? `这项工作仍在处理中：${work.id}。尚未产生可交付结果。`
         : `这项工作暂时无法继续：${work.id}。可查看工作详情并修改目标后继续。`;
     for (const id of this.repository.destinations(work.id))
-      this.append(
-        id,
-        `${work.id}:r${work.revision}:${kind}`,
-        "assistant",
-        text,
-        {
-          kind,
-          workId: work.id,
-          revision: work.revision,
-        },
-      );
+      this.append(id, `${work.id}:r${work.revision}:${kind}`, "assistant", text, {
+        kind,
+        workId: work.id,
+        revision: work.revision,
+      });
   }
   completionBlocked(work, assessment) {
     for (const id of this.repository.destinations(work.id))
@@ -202,11 +166,7 @@ export class ConversationHistory {
   question(request) {
     const options = JSON.parse(request.metadata_json ?? "{}").choices;
     const prompt =
-      request.question +
-      (options
-        ? "\n可选项：" +
-          options.map((c) => `${c.label}（${c.value}）`).join("、")
-        : "");
+      request.question + (options ? "\n可选项：" + options.map((c) => `${c.label}（${c.value}）`).join("、") : "");
     for (const id of this.repository.destinations(request.work_id))
       this.append(
         id,
@@ -236,15 +196,11 @@ export class ConversationHistory {
   }
   search(options = {}, workId) {
     const conversationId = this.require(
-      options.conversationId ??
-        (workId ? this.destinations(workId)[0] : this.main.id),
+      options.conversationId ?? (workId ? this.destinations(workId)[0] : this.main.id),
     );
     const p = recallOptions(options);
     if (!p.query) throw new Error("History search needs literal query text");
-    if (
-      workId &&
-      !this.repository.destinations(workId).includes(conversationId)
-    )
+    if (workId && !this.repository.destinations(workId).includes(conversationId))
       throw new Error("Work has no conversation history grant");
     const rows = this.repository.search(conversationId, {
       ...p,
@@ -262,16 +218,13 @@ export class ConversationHistory {
   }
   view({ conversationId = this.main.id, limit = 100 } = {}) {
     this.require(conversationId);
-    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
-      throw new Error("Invalid history limit");
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw new Error("Invalid history limit");
     const messages = this.messages?.inConversation(conversationId);
     return {
       conversationId,
       messages: this.repository.messages(conversationId, limit).map((m) => ({
         ...m,
-        ...(messages && m.role === "assistant" && messages.has(m.id)
-          ? { message: messages.get(m.id) }
-          : {}),
+        ...(messages && m.role === "assistant" && messages.has(m.id) ? { message: messages.get(m.id) } : {}),
       })),
       works: this.repository.works(conversationId),
     };

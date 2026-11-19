@@ -17,8 +17,7 @@ test("native Pi provider uses explicit compatible endpoint/model/key, parses SSE
       body: JSON.parse(Buffer.concat(chunks)),
     };
     res.writeHead(200, { "content-type": "text/event-stream" });
-    const send = (value) =>
-      res.write("data: " + JSON.stringify(value) + "\n\n");
+    const send = (value) => res.write("data: " + JSON.stringify(value) + "\n\n");
     send({
       id: "test",
       object: "chat.completion.chunk",
@@ -70,19 +69,12 @@ test("native Pi provider uses explicit compatible endpoint/model/key, parses SSE
     },
   });
   let usage;
-  const result = await modelRequest(
-    catalog,
-    "test",
-    "Return JSON.",
-    { query: "hello" },
-    AbortSignal.timeout(10000),
-    {
-      maxTokens: 64,
-      recordUsage: (value) => {
-        usage = value.usage;
-      },
+  const result = await modelRequest(catalog, "test", "Return JSON.", { query: "hello" }, AbortSignal.timeout(10000), {
+    maxTokens: 64,
+    recordUsage: (value) => {
+      usage = value.usage;
     },
-  );
+  });
   assert.equal(received.url, "/v1/chat/completions");
   assert.equal(received.authorization, "Bearer synthetic-key");
   assert.equal(received.body.model, "explicit-test-model");

@@ -259,9 +259,9 @@ function projectTurnFrames(
     const legacyBlock = legacyDiff === undefined ? null
       : registry.project(legacyDiff, { turn, itemIndex: turn.items.indexOf(legacyDiff) }).block;
     const changeSummary = createTurnChangeSummary(turn.id, turn.status, turn.unifiedDiff ?? null)
-      ?? recoverTurnChangeSummary(turn)
       ?? (turn.unifiedDiff === undefined && legacyBlock?.type === "turn-diff"
-        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null);
+        ? { ...legacyBlock, id: `${turn.id}:turn-diff`, sourceItemIds: [] } : null)
+      ?? recoverTurnChangeSummary(turn);
     const initialFrameCount = frames.length;
     let pendingLane: TimelineLane | null = null;
     let pendingBlocks: TimelineBlock[] = [];

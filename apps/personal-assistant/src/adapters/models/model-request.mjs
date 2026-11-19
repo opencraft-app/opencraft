@@ -25,23 +25,19 @@ export async function modelRequest(
       {
         "app.model_role": kind,
         "app.harness": transport ? "codex" : "pi",
-        "gen_ai.request.model":
-          transport?.modelId ?? catalog.configured.model?.modelId ?? "fixture",
+        "gen_ai.request.model": transport?.modelId ?? catalog.configured.model?.modelId ?? "fixture",
       },
       async (span) => {
-        const result = await modelRequest(
-          catalog,
-          kind,
-          instruction,
-          input,
-          signal,
-          { recordUsage, onUsageError, policy, maxTokens, transport },
-        );
+        const result = await modelRequest(catalog, kind, instruction, input, signal, {
+          recordUsage,
+          onUsageError,
+          policy,
+          maxTokens,
+          transport,
+        });
         const usage = result.usage;
-        if (Number.isFinite(usage?.input))
-          span.setAttribute("gen_ai.usage.input_tokens", usage.input);
-        if (Number.isFinite(usage?.output))
-          span.setAttribute("gen_ai.usage.output_tokens", usage.output);
+        if (Number.isFinite(usage?.input)) span.setAttribute("gen_ai.usage.input_tokens", usage.input);
+        if (Number.isFinite(usage?.output)) span.setAttribute("gen_ai.usage.output_tokens", usage.output);
         return result;
       },
     );
@@ -56,9 +52,7 @@ export async function modelRequest(
     started = performance.now();
   let answer, error;
   try {
-    const model = transport
-      ? null
-      : choice.models.getModel(choice.model.provider, choice.model.modelId);
+    const model = transport ? null : choice.models.getModel(choice.model.provider, choice.model.modelId);
     answer = await withRequestDeadline(
       (requestSignal) =>
         transport

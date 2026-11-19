@@ -1,4 +1,4 @@
-import { SERVER_MIGRATIONS } from './migrations.generated.js';
+import { ACTOR_INBOX_LEGACY_SQL, NATIVE_CHANNEL_SYNC_LEGACY_SQL } from './legacy-channel-migrations.js';
 import type { Migration } from "@opencraft/sqlite-node";
 import { createMissingLegacyObjects } from "@opencraft/sqlite-node";
 
@@ -218,8 +218,8 @@ export const SERVER_LEGACY_MIGRATIONS = {
     { version: 4, name: "thread-orchestration-authority", sql: ORCHESTRATION_AUTHORITY_SCHEMA },
     { version: 5, name: "thread-orchestration-views", sql: ORCHESTRATION_VIEW_SCHEMA },
     { version: 6, name: "native-channels", sql: NATIVE_CHANNEL_SCHEMA },
-    { version: 7, name: "actor-inbox", sql: SERVER_MIGRATIONS[3]!.sql },
-    { version: 8, name: "native-channel-sync", sql: SERVER_MIGRATIONS[4]!.sql },
+    { version: 7, name: "actor-inbox", sql: ACTOR_INBOX_LEGACY_SQL },
+    { version: 8, name: "native-channel-sync", sql: NATIVE_CHANNEL_SYNC_LEGACY_SQL },
   ],
 
   "session-capabilities": [

@@ -2,25 +2,14 @@ import { withRequestDeadline } from "../adapters/local/request-deadline.mjs";
 import { parseInputCompletion } from "@opencraft/appserver-protocol/input-completion";
 /** Temporary I/O only; links, provisional answers and report dedupe belong to Execution. */
 export class ThreadCompletionCoordinator {
-  constructor({
-    app,
-    command,
-    settle,
-    assertOwner,
-    onError = () => {},
-    now = Date.now,
-  }) {
+  constructor({ app, command, settle, assertOwner, onError = () => {}, now = Date.now }) {
     Object.assign(this, { app, command, settle, assertOwner, onError, now });
     this.nextAt = 0;
     this.stopping = false;
   }
   tick() {
     if (this.stopping || this.running || this.now() < this.nextAt) return;
-    if (
-      !this.app.executions.threads.pending().length &&
-      !this.app.executions.threads.readyReports().length
-    )
-      return;
+    if (!this.app.executions.threads.pending().length && !this.app.executions.threads.readyReports().length) return;
     this.controller = new AbortController();
     this.running = this.reconcile(this.controller.signal)
       .catch((error) => {
@@ -84,14 +73,8 @@ export class ThreadCompletionCoordinator {
         if (!work) continue;
         if (link.operation_id) {
           if (result.input?.completion) {
-            const completion = parseInputCompletion(
-              result.input.completion,
-              result.input.targetTurnId ?? null,
-            );
-            if (!completion)
-              throw Error(
-                "Platform completion does not match the admitted Turn",
-              );
+            const completion = parseInputCompletion(result.input.completion, result.input.targetTurnId ?? null);
+            if (!completion) throw Error("Platform completion does not match the admitted Turn");
             result.input = { ...result.input, completion };
           }
           this.app.executions.threads.observe(work, link, result);
@@ -117,11 +100,8 @@ export class ThreadCompletionCoordinator {
         else this.onError(error); // Unknown effects remain unresolved, never resubmitted with a new key.
       }
     }
-    const reports = this.app.executions.threads.readyReports(
-      this.reportAfterRowid ?? 0,
-    );
-    if (!reports.length)
-      reports.push(...this.app.executions.threads.readyReports());
+    const reports = this.app.executions.threads.readyReports(this.reportAfterRowid ?? 0);
+    if (!reports.length) reports.push(...this.app.executions.threads.readyReports());
     for (const answer of reports) {
       this.reportAfterRowid = answer.scan_id;
       signal.throwIfAborted();

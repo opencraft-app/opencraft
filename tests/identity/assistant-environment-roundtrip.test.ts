@@ -55,11 +55,7 @@ test(
           const environment = await create(...args),
             spawn = environment.spawn.bind(environment);
           environment.spawn = async (command, output) => {
-            if (
-              command.command.some((v) =>
-                v.includes("isolated-environment-proof"),
-              )
-            ) {
+            if (command.command.some((v) => v.includes("isolated-environment-proof"))) {
               effects++;
               const child = await spawn(command, output);
               if (child.kind === "process") await child.closeStdin();

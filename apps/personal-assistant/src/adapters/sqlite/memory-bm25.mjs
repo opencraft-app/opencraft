@@ -2,9 +2,7 @@ import { memoryLexicalTokens } from "../../domain/memory-recall.mjs";
 
 /** Connection-local derived cache. Files remain authoritative; no persistent schema change. */
 export function initializeMemoryBm25(db) {
-  db.function("memory_fts_tokens", { deterministic: true }, (text) =>
-    memoryLexicalTokens(text).join(" "),
-  );
+  db.function("memory_fts_tokens", { deterministic: true }, (text) => memoryLexicalTokens(text).join(" "));
   db.exec(`
     CREATE VIRTUAL TABLE temp.memory_bm25 USING fts5(key UNINDEXED, tokens);
     INSERT INTO memory_bm25(key,tokens)
@@ -26,7 +24,5 @@ export function initializeMemoryBm25(db) {
 
 // Query tokens are bounded by the caller and quoted as literal FTS terms.
 export function memoryBm25Match(terms) {
-  return terms
-    .map((term) => '"' + term.replaceAll('"', '""') + '"')
-    .join(" OR ");
+  return terms.map((term) => '"' + term.replaceAll('"', '""') + '"').join(" OR ");
 }

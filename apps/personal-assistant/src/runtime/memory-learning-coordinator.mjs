@@ -1,12 +1,7 @@
 import { withRequestDeadline } from "../adapters/local/request-deadline.mjs";
 /** One ephemeral model request; all proposals/retries/evidence live with the service. */
 export class MemoryLearningCoordinator {
-  constructor(
-    service,
-    model,
-    onError = () => {},
-    { timeoutMs = 90000, telemetry } = {},
-  ) {
+  constructor(service, model, onError = () => {}, { timeoutMs = 90000, telemetry } = {}) {
     Object.assign(this, { service, model, onError, timeoutMs, telemetry });
     this.task = null;
     this.stopping = false;
@@ -25,10 +20,8 @@ export class MemoryLearningCoordinator {
   }
   async process(job, signal) {
     return this.telemetry
-      ? this.telemetry.run(
-          "memory.prepare",
-          { "app.phase": "learning", "app.batch_attempts": job.attempts ?? 0 },
-          () => this.processAttempt(job, signal),
+      ? this.telemetry.run("memory.prepare", { "app.phase": "learning", "app.batch_attempts": job.attempts ?? 0 }, () =>
+          this.processAttempt(job, signal),
         )
       : this.processAttempt(job, signal);
   }

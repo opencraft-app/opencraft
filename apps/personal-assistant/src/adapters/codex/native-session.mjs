@@ -47,9 +47,7 @@ export class NativeCodexSession {
   static async open(config, options) {
     const s = new NativeCodexSession(config, options);
     try {
-      await (s.telemetry
-        ? s.telemetry.run("codex.startup", {}, () => s.start())
-        : s.start());
+      await (s.telemetry ? s.telemetry.run("codex.startup", {}, () => s.start()) : s.start());
       return s;
     } catch (e) {
       await s.close();
@@ -91,8 +89,7 @@ export class NativeCodexSession {
     this.imageEchoBudget = 0;
     this.pending = new Map();
     this.nextId = 0;
-    this.stop = () =>
-      this.fail(signal.reason ?? new Error("Codex request aborted"));
+    this.stop = () => this.fail(signal.reason ?? new Error("Codex request aborted"));
     signal?.addEventListener("abort", this.stop, { once: true });
   }
   fail(error) {
@@ -108,9 +105,9 @@ export class NativeCodexSession {
     this.signal?.throwIfAborted();
     await mkdir(this.home, { recursive: true, mode: 0o700 });
     await mkdir(this.cwd, { recursive: true, mode: 0o700 });
-    if(this.config.managed && !this.resolveModel)throw Error('Managed Codex resolver required');
-    this.resolvedModel=this.config.managed ? await this.resolveModel(this.config, { purpose: this.modelRole }) : null;
-    const key = this.resolvedModel?.apiKey ?? (this.config.managed?undefined:readCodexKey(this.config)),
+    if (this.config.managed && !this.resolveModel) throw Error("Managed Codex resolver required");
+    this.resolvedModel = this.config.managed ? await this.resolveModel(this.config, { purpose: this.modelRole }) : null;
+    const key = this.resolvedModel?.apiKey ?? (this.config.managed ? undefined : readCodexKey(this.config)),
       env = {
         PATH: "/usr/local/bin:/usr/bin:/bin",
         HOME: this.home,
@@ -132,24 +129,19 @@ export class NativeCodexSession {
       const [code] = await once(this.versionProcess, "close");
       this.signal?.throwIfAborted();
       if (code !== 0 || version.trim() !== SUPPORTED_CODEX_VERSION)
-        throw new Error(
-          `Codex binary must be the verified ${SUPPORTED_CODEX_VERSION}`,
-        );
+        throw new Error(`Codex binary must be the verified ${SUPPORTED_CODEX_VERSION}`);
     };
-    if (this.telemetry)
-      await this.telemetry.run("codex.version_check", {}, checkVersion);
+    if (this.telemetry) await this.telemetry.run("codex.version_check", {}, checkVersion);
     else await checkVersion();
     await writeFile(
       join(this.home, "models.json"),
       JSON.stringify({ models: [restrictedModel(this.config.modelId, this.imageInput)] }),
       { mode: 0o600 },
     );
-    const runtimeConfig={...this.config,...this.resolvedModel};
+    const runtimeConfig = { ...this.config, ...this.resolvedModel };
     const settings = {
       model: this.config.modelId,
-      ...(runtimeConfig.reasoningEffort !== undefined
-        ? { model_reasoning_effort: runtimeConfig.reasoningEffort }
-        : {}),
+      ...(runtimeConfig.reasoningEffort !== undefined ? { model_reasoning_effort: runtimeConfig.reasoningEffort } : {}),
       model_provider: "superapp",
       model_catalog_json: join(this.home, "models.json"),
       approval_policy: "never",
@@ -186,50 +178,33 @@ export class NativeCodexSession {
       "model_providers.superapp.request_max_retries": 0,
       "model_providers.superapp.stream_max_retries": 0,
       "model_providers.superapp.stream_idle_timeout_ms": this.modelTimeoutMs,
-      ...(key
-        ? { "model_providers.superapp.env_key": "SUPERAPP_CODEX_API_KEY" }
-        : {}),
+      ...(key ? { "model_providers.superapp.env_key": "SUPERAPP_CODEX_API_KEY" } : {}),
     };
     this.settings = settings;
     this.signal?.throwIfAborted();
     this.child = spawn(
       this.config.binary,
-      [
-        "app-server",
-        "--stdio",
-        ...Object.entries(settings).flatMap(([k, v]) => [
-          "-c",
-          `${k}=${JSON.stringify(v)}`,
-        ]),
-      ],
+      ["app-server", "--stdio", ...Object.entries(settings).flatMap(([k, v]) => ["-c", `${k}=${JSON.stringify(v)}`])],
       { env, cwd: this.cwd, stdio: ["pipe", "pipe", "ignore"] },
     );
     this.exited = new Promise((r) => this.child.once("close", r));
-    this.child.on("error", () =>
-      this.fail(new Error("Codex app-server could not start")),
-    );
+    this.child.on("error", () => this.fail(new Error("Codex app-server could not start")));
     this.child.on("close", () => {
-      const error = new Error(
-        "Codex app-server exited before request completion",
-      );
+      const error = new Error("Codex app-server exited before request completion");
       error.code = "CODEX_NATIVE_EXITED";
       this.fail(error);
     });
-    this.child.stdin.on("error", () =>
-      this.fail(new Error("Codex app-server input closed")),
-    );
+    this.child.stdin.on("error", () => this.fail(new Error("Codex app-server input closed")));
     let bytes = 0;
     this.child.stdout.on("data", (c) => {
       bytes += c.length;
-      if (bytes > this.outputStreamLimit)
-        this.fail(new Error("Codex protocol stream exceeded limit"));
+      if (bytes > this.outputStreamLimit) this.fail(new Error("Codex protocol stream exceeded limit"));
     });
     this.lines = createInterface({ input: this.child.stdout });
     this.lines.on("line", (line) => {
       if (this.failure) return;
       try {
-        if (Buffer.byteLength(line) > this.outputFrameLimit)
-          throw new Error("Codex protocol output exceeded limit");
+        if (Buffer.byteLength(line) > this.outputFrameLimit) throw new Error("Codex protocol output exceeded limit");
         const p = JSON.parse(line);
         if (p.method && p.id !== undefined) {
           if (!this.onRequest) {
@@ -252,11 +227,7 @@ export class NativeCodexSession {
           const call = this.pending.get(p.id);
           if (!call) return;
           this.pending.delete(p.id);
-          p.error
-            ? call.reject(
-                new Error(`Codex RPC failed (${p.error.code ?? "unknown"})`),
-              )
-            : call.resolve(p.result);
+          p.error ? call.reject(new Error(`Codex RPC failed (${p.error.code ?? "unknown"})`)) : call.resolve(p.result);
         } else this.onNotification(p);
       } catch (e) {
         this.fail(e);
@@ -272,17 +243,14 @@ export class NativeCodexSession {
     if (!this.failure) this.child.stdin.write(JSON.stringify(packet) + "\n");
   }
   async rpc(method, params) {
-    if(method==='turn/start' && this.config.managed) {
-      const current=await this.resolveModel(this.config, { purpose: this.modelRole });
-      if(JSON.stringify(current)!==JSON.stringify(this.resolvedModel))throw Error('Assistant model connection changed; retry with a fresh session');
+    if (method === "turn/start" && this.config.managed) {
+      const current = await this.resolveModel(this.config, { purpose: this.modelRole });
+      if (JSON.stringify(current) !== JSON.stringify(this.resolvedModel))
+        throw Error("Assistant model connection changed; retry with a fresh session");
       this.signal?.throwIfAborted();
     }
     if (this.telemetry)
-      return this.telemetry.run(
-        "codex.rpc",
-        { "app.native_method": method },
-        () => this.rawRpc(method, params),
-      );
+      return this.telemetry.run("codex.rpc", { "app.native_method": method }, () => this.rawRpc(method, params));
     return this.rawRpc(method, params);
   }
   rawRpc(method, params) {
@@ -291,10 +259,9 @@ export class NativeCodexSession {
       // Native item/started and item/completed echo user image data URLs.
       // Reserve only for actual transmitted images, not arbitrary model output;
       // text-only sessions retain the original limits. All budgets stay finite.
-      const images = (params.input ?? []).filter(p => p.type === "image");
+      const images = (params.input ?? []).filter((p) => p.type === "image");
       const imageBytes = images.reduce((sum, p) => sum + Buffer.byteLength(p.url ?? ""), 0);
-      if (images.length > 8 || imageBytes > 96 * 1024 * 1024 ||
-          this.imageEchoBudget + imageBytes > 128 * 1024 * 1024)
+      if (images.length > 8 || imageBytes > 96 * 1024 * 1024 || this.imageEchoBudget + imageBytes > 128 * 1024 * 1024)
         return Promise.reject(Error("Codex image input exceeded protocol budget"));
       this.imageEchoBudget += imageBytes;
       this.outputFrameLimit = Math.max(this.outputFrameLimit, 2000000 + imageBytes);
@@ -312,11 +279,7 @@ export class NativeCodexSession {
       this.fail(new Error("Codex native session closed"));
       this.lines?.close();
       if (this.exited) await this.exited;
-      if (
-        this.versionProcess &&
-        this.versionProcess.exitCode === null &&
-        this.versionProcess.signalCode === null
-      ) {
+      if (this.versionProcess && this.versionProcess.exitCode === null && this.versionProcess.signalCode === null) {
         const ended = once(this.versionProcess, "close").catch(() => {});
         this.versionProcess.kill("SIGKILL");
         await ended;

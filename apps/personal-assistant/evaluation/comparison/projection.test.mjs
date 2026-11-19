@@ -40,15 +40,12 @@ test("TDB injects only original prompt contexts, not duplicated metrics", () => 
     prependContext: "fact",
     appendSystemContext: "profile",
   });
-  assert.deepEqual(
-    presentMemory("tdb", { error: { code: 123 }, partial: true }),
-    {
-      prependContext: "",
-      appendSystemContext: "",
-      error: { code: 123 },
-      partial: true,
-    },
-  );
+  assert.deepEqual(presentMemory("tdb", { error: { code: 123 }, partial: true }), {
+    prependContext: "",
+    appendSystemContext: "",
+    error: { code: 123 },
+    partial: true,
+  });
 });
 test("HY preserves original facts, profile and evolution chains, excludes diagnostics", () => {
   const fact = { content: "current", evolution_chain: [{ content: "past" }] },
@@ -82,8 +79,7 @@ test("common reader awaits asynchronous foreign queries without adding learning 
     decide: async (v) => {
       calls++;
       return v.observations.length
-        ? (assert.equal(v.observations[0].result, "evidence"),
-          { kind: "reply", text: "(a)" })
+        ? (assert.equal(v.observations[0].result, "evidence"), { kind: "reply", text: "(a)" })
         : { kind: "query", name: "memory.search", params: { query: "x" } };
     },
   });

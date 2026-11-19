@@ -4,11 +4,7 @@ import { rpc } from "./processes.mjs";
 import { hindsightProcess, presentHindsight } from "./hindsight-process.mjs";
 import { CodexStructuredHarness } from "../../src/adapters/codex/structured-harness.mjs";
 import { modelRequest } from "../../src/adapters/models/model-request.mjs";
-import {
-  READER_INSTRUCTION,
-  readerInput,
-  readMemoryQuestion,
-} from "../memory-system-session.mjs";
+import { READER_INSTRUCTION, readerInput, readMemoryQuestion } from "../memory-system-session.mjs";
 const lab = resolve(import.meta.dirname, "../.."),
   root = resolve(lab, "..");
 export function presentMemory(name, raw) {
@@ -17,9 +13,7 @@ export function presentMemory(name, raw) {
     return {
       prependContext: raw?.prependContext ?? "",
       appendSystemContext: raw?.appendSystemContext ?? "",
-      ...(raw?.error
-        ? { error: raw.error, partial: raw.partial ?? false }
-        : {}),
+      ...(raw?.error ? { error: raw.error, partial: raw.partial ?? false } : {}),
     };
   return {
     profile: raw?.profile ?? null,
@@ -32,39 +26,23 @@ export function presentMemory(name, raw) {
 }
 export async function foreignSession(
   input,
-  {
-    name,
-    directory,
-    codex,
-    bridge,
-    embedding,
-    backgroundModel,
-    signal,
-    onRecord = () => {},
-  },
+  { name, directory, codex, bridge, embedding, backgroundModel, signal, onRecord = () => {} },
 ) {
   await mkdir(directory, { recursive: true });
   const worker =
     name === "hindsight"
       ? hindsightProcess(directory)
       : name === "hy"
-        ? rpc(
-            join(root, ".benchmark-tools/hy-env/bin/python"),
-            [join(import.meta.dirname, "hy-worker.py")],
-            {
-              cwd: lab,
-              log: join(directory, "upstream.log"),
-              env: { HOME: join(directory, "home") },
-            },
-          )
+        ? rpc(join(root, ".benchmark-tools/hy-env/bin/python"), [join(import.meta.dirname, "hy-worker.py")], {
+            cwd: lab,
+            log: join(directory, "upstream.log"),
+            env: { HOME: join(directory, "home") },
+          })
         : rpc(
             "/opt/opencraft/bin/node",
             [
               "--import",
-              join(
-                root,
-                "tencentdb-agent-memory/MemoryCore/node_modules/tsx/dist/loader.mjs",
-              ),
+              join(root, "tencentdb-agent-memory/MemoryCore/node_modules/tsx/dist/loader.mjs"),
               join(import.meta.dirname, "tdb-worker.mjs"),
             ],
             {
@@ -119,9 +97,7 @@ export async function foreignSession(
         const response = await worker.call({
           op: "add",
           messages,
-          timestamp: new Date(
-            Date.parse("2026-11-09T00:00:00Z") + begin * 100,
-          ).toISOString(),
+          timestamp: new Date(Date.parse("2026-11-09T00:00:00Z") + begin * 100).toISOString(),
         });
         batches.push({
           begin,
@@ -134,10 +110,7 @@ export async function foreignSession(
       if (name === "tdb") await worker.call({ op: "drain" });
       preparationMs += performance.now() - startedPrep;
       const snapshot = await worker.call({ op: "snapshot" });
-      await writeFile(
-        join(directory, `checkpoint-${q}.json`),
-        JSON.stringify(snapshot, null, 2),
-      );
+      await writeFile(join(directory, `checkpoint-${q}.json`), JSON.stringify(snapshot, null, 2));
       checkpoints.push({ query: q, end: query.end, preparationMs });
       const started = performance.now();
       let row;
@@ -159,16 +132,8 @@ export async function foreignSession(
           },
           memoryRecall: [],
         };
-        const value = readerInput(
-          input.history.slice(0, query.end),
-          query,
-          "memory",
-          seed,
-        );
-        value.availableQueries = [
-          "memory.search",
-          ...(name === "tdb" ? ["memory.file.read"] : []),
-        ];
+        const value = readerInput(input.history.slice(0, query.end), query, "memory", seed);
+        value.availableQueries = ["memory.search", ...(name === "tdb" ? ["memory.file.read"] : [])];
         value.queryContracts = {
           "memory.search": {
             description:
@@ -189,8 +154,7 @@ export async function foreignSession(
               }
             : {}),
         };
-        if (Buffer.byteLength(JSON.stringify(value)) > 128000)
-          throw new Error("Initial context budget exceeded");
+        if (Buffer.byteLength(JSON.stringify(value)) > 128000) throw new Error("Initial context budget exceeded");
         const session = {
           trace,
           execute: async (p) => {
@@ -198,8 +162,7 @@ export async function foreignSession(
             const params = p.params ?? {};
             let result;
             if (p.name === "memory.search") {
-              if (typeof params.query !== "string" || params.query.length > 200)
-                throw new Error("Query text bound");
+              if (typeof params.query !== "string" || params.query.length > 200) throw new Error("Query text bound");
               result = await worker.call({ op: "search", query: params.query });
             } else if (name === "tdb" && p.name === "memory.file.read")
               result = await worker.call({
@@ -211,18 +174,10 @@ export async function foreignSession(
             const observation = {
               name: p.name,
               params,
-              result:
-                p.name === "memory.search"
-                  ? presentMemory(name, result)
-                  : result,
+              result: p.name === "memory.search" ? presentMemory(name, result) : result,
             };
-            if (Buffer.byteLength(JSON.stringify(observation)) > 12000)
-              throw new Error("Query result budget exceeded");
-            if (
-              trace.reduce((n, t) => n + t.bytes, 0) +
-                Buffer.byteLength(JSON.stringify(observation)) >
-              48000
-            )
+            if (Buffer.byteLength(JSON.stringify(observation)) > 12000) throw new Error("Query result budget exceeded");
+            if (trace.reduce((n, t) => n + t.bytes, 0) + Buffer.byteLength(JSON.stringify(observation)) > 48000)
               throw new Error("Total query result budget exceeded");
             trace.push({
               name: p.name,
@@ -287,8 +242,7 @@ export async function foreignSession(
   } finally {
     signal.removeEventListener("abort", abortWorker);
     try {
-      if (worker.child.exitCode === null && !signal.aborted)
-        await worker.call({ op: "close" }, 10000);
+      if (worker.child.exitCode === null && !signal.aborted) await worker.call({ op: "close" }, 10000);
     } catch {}
     await worker.close();
     await transport.close();

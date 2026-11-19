@@ -1,28 +1,15 @@
 import { parseArgs } from "node:util";
 import { createHash } from "node:crypto";
-import {
-  mkdir,
-  readFile,
-  writeFile,
-  readdir,
-  copyFile,
-  link,
-  unlink,
-} from "node:fs/promises";
+import { mkdir, readFile, writeFile, readdir, copyFile, link, unlink } from "node:fs/promises";
 import { resolve, join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { selectCases } from "./longmemeval-data.mjs";
-import {
-  readModelConfiguration,
-  readCodexConfiguration,
-  runCase,
-} from "./longmemeval.mjs";
+import { readModelConfiguration, readCodexConfiguration, runCase } from "./longmemeval.mjs";
 import { serviceStatus, recoveryAction } from "./benchmark-failures.mjs";
 
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const OFFICIAL_REVISION = "9e0b455f4ef0e2ab8f2e582289761153549043fc";
-const OFFICIAL_SCORER_SHA =
-  "ecce9c4c79dc89d99534ac17b383a5cbb5b9f0c69ee98adaf0684742e3d95251";
+const OFFICIAL_SCORER_SHA = "ecce9c4c79dc89d99534ac17b383a5cbb5b9f0c69ee98adaf0684742e3d95251";
 const PILOT_IDS = new Set(["c8c3f81d", "5c40ec5b", "8077ef71", "f4f1d8a4_abs"]);
 
 // Interrupted publication is not a model answer. Preserve its original bytes in
@@ -44,10 +31,7 @@ export function decodeRecoveryRecord(bytes, file) {
 }
 
 export async function publishRecord(file, record) {
-  const pending = join(
-    dirname(dirname(file)),
-    `.record-${basename(file)}-${crypto.randomUUID()}.pending`,
-  );
+  const pending = join(dirname(dirname(file)), `.record-${basename(file)}-${crypto.randomUUID()}.pending`);
   await writeFile(pending, JSON.stringify(record, null, 2), {
     mode: 0o600,
     flag: "wx",
@@ -56,12 +40,10 @@ export async function publishRecord(file, record) {
   await unlink(pending);
 }
 
-export const stratum = (row) =>
-  row.question_id.includes("_abs") ? "abstention" : row.question_type;
+export const stratum = (row) => (row.question_id.includes("_abs") ? "abstention" : row.question_type);
 
 export function sampleRows(rows, perStratum, seed, excludedIds = []) {
-  if (!Number.isSafeInteger(perStratum) || perStratum < 1)
-    throw new Error("Invalid per-stratum count");
+  if (!Number.isSafeInteger(perStratum) || perStratum < 1) throw new Error("Invalid per-stratum count");
   const groups = new Map();
   const excluded = new Set([...PILOT_IDS, ...excludedIds]);
   for (const row of rows) {
@@ -70,48 +52,32 @@ export function sampleRows(rows, perStratum, seed, excludedIds = []) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(row);
   }
-  if (groups.size !== 7)
-    throw new Error("Expected six official categories plus abstention");
+  if (groups.size !== 7) throw new Error("Expected six official categories plus abstention");
   const result = [];
   for (const key of [...groups.keys()].sort()) {
     const group = groups
       .get(key)
-      .sort((a, b) =>
-        sha(`${seed}:${a.question_id}`).localeCompare(
-          sha(`${seed}:${b.question_id}`),
-        ),
-      );
-    if (group.length < perStratum)
-      throw new Error("Insufficient cases in " + key);
+      .sort((a, b) => sha(`${seed}:${a.question_id}`).localeCompare(sha(`${seed}:${b.question_id}`)));
+    if (group.length < perStratum) throw new Error("Insufficient cases in " + key);
     result.push(...group.slice(0, perStratum));
   }
   // Interleave strata without looking at history length, answers or previous results.
   return result.sort((a, b) =>
-    sha(`${seed}:order:${a.question_id}`).localeCompare(
-      sha(`${seed}:order:${b.question_id}`),
-    ),
+    sha(`${seed}:order:${a.question_id}`).localeCompare(sha(`${seed}:order:${b.question_id}`)),
   );
 }
 
 export function exclusionIds(plan) {
   const ids = plan?.identity?.selectedIds;
-  if (
-    !Array.isArray(ids) ||
-    !ids.length ||
-    ids.some((id) => typeof id !== "string" || !id)
-  )
+  if (!Array.isArray(ids) || !ids.length || ids.some((id) => typeof id !== "string" || !id))
     throw new Error("Exclusion plan requires nonempty identity.selectedIds");
   return ids;
 }
 
 export function officialTemplates(source) {
-  if (sha(source) !== OFFICIAL_SCORER_SHA)
-    throw new Error("Official scorer snapshot hash mismatch");
-  const templates = [...source.matchAll(/template = "((?:[^"\\]|\\.)*)"/g)].map(
-    (m) => JSON.parse('"' + m[1] + '"'),
-  );
-  if (templates.length !== 5)
-    throw new Error("Unexpected official scorer template count");
+  if (sha(source) !== OFFICIAL_SCORER_SHA) throw new Error("Official scorer snapshot hash mismatch");
+  const templates = [...source.matchAll(/template = "((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse('"' + m[1] + '"'));
+  if (templates.length !== 5) throw new Error("Unexpected official scorer template count");
   return templates;
 }
 
@@ -126,17 +92,8 @@ export function judgePrompt(templates, row, hypothesis) {
           ? 3
           : 0;
   const parts = templates[index].split("{}");
-  if (parts.length !== 4)
-    throw new Error("Unexpected official prompt placeholders");
-  return (
-    parts[0] +
-    row.question +
-    parts[1] +
-    row.answer +
-    parts[2] +
-    hypothesis +
-    parts[3]
-  );
+  if (parts.length !== 4) throw new Error("Unexpected official prompt placeholders");
+  return parts[0] + row.question + parts[1] + row.answer + parts[2] + hypothesis + parts[3];
 }
 
 export async function pool(items, concurrency, fn) {
@@ -157,14 +114,8 @@ export function validateRecovery(previous, identity, sourceFiles) {
   const { sourceCodeSha256: newHarness, ...newIdentity } = identity;
   if (JSON.stringify(oldIdentity) !== JSON.stringify(newIdentity))
     throw new Error("Recovery model/dataset/selection/protocol differs");
-  const product = (files) =>
-    files.filter(
-      (f) => f.file.startsWith("src/") || f.file === "package-lock.json",
-    );
-  if (
-    JSON.stringify(product(previous.sourceFiles)) !==
-    JSON.stringify(product(sourceFiles))
-  )
+  const product = (files) => files.filter((f) => f.file.startsWith("src/") || f.file === "package-lock.json");
+  if (JSON.stringify(product(previous.sourceFiles)) !== JSON.stringify(product(sourceFiles)))
     throw new Error("Recovery assistant product source differs");
   return { oldHarness, newHarness, productSourceUnchanged: true };
 }
@@ -185,8 +136,7 @@ async function sourceFingerprint(root) {
     if (name.endsWith(".mjs")) files.push(join("evaluation", name));
   files.push("package-lock.json");
   const manifest = [];
-  for (const file of files.sort())
-    manifest.push({ file, sha256: sha(await readFile(join(root, file))) });
+  for (const file of files.sort()) manifest.push({ file, sha256: sha(await readFile(join(root, file))) });
   return { sha256: sha(JSON.stringify(manifest)), files: manifest };
 }
 
@@ -195,25 +145,22 @@ async function completion(config, messages, maxTokens) {
   for (let attempt = 0; attempt < 3; attempt++) {
     let response;
     try {
-      response = await fetch(
-        config.baseUrl.replace(/\/+$/, "") + "/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${config.apiKey}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            model: config.modelId,
-            messages,
-            temperature: 0,
-            max_tokens: maxTokens,
-            stream: false,
-            ...(config.thinking ? { thinking: { type: config.thinking } } : {}),
-          }),
-          signal: AbortSignal.timeout(120000),
+      response = await fetch(config.baseUrl.replace(/\/+$/, "") + "/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${config.apiKey}`,
+          "Content-Type": "application/json",
         },
-      );
+        body: JSON.stringify({
+          model: config.modelId,
+          messages,
+          temperature: 0,
+          max_tokens: maxTokens,
+          stream: false,
+          ...(config.thinking ? { thinking: { type: config.thinking } } : {}),
+        }),
+        signal: AbortSignal.timeout(120000),
+      });
     } catch (error) {
       if (attempt < 2) {
         await new Promise((r) => setTimeout(r, 1000 * 2 ** attempt));
@@ -231,12 +178,9 @@ async function completion(config, messages, maxTokens) {
     }
     const body = await response.json();
     const answer = body.choices?.[0]?.message?.content;
-    if (typeof answer !== "string" || !answer.trim())
-      throw new Error("Empty model completion");
-    if (body.model !== config.modelId)
-      throw new Error("Returned model differs from requested model");
-    if (body.choices[0].finish_reason === "length")
-      throw new Error("Model completion truncated at token cap");
+    if (typeof answer !== "string" || !answer.trim()) throw new Error("Empty model completion");
+    if (body.model !== config.modelId) throw new Error("Returned model differs from requested model");
+    if (body.choices[0].finish_reason === "length") throw new Error("Model completion truncated at token cap");
     return {
       text: answer.trim(),
       usage: body.usage ?? null,
@@ -298,50 +242,30 @@ async function main() {
     if (!v[key]) throw new Error("Missing --" + key);
   const concurrency = Number(v.concurrency),
     timeoutMs = Number(v["timeout-ms"]);
-  if (!["oracle", "s", "m"].includes(v.variant))
-    throw new Error("variant must be oracle, s or m");
-  const failureLimit =
-    v["native-failure-limit"] === undefined
-      ? null
-      : Number(v["native-failure-limit"]);
-  if (
-    failureLimit !== null &&
-    (!Number.isSafeInteger(failureLimit) || failureLimit < 1)
-  )
+  if (!["oracle", "s", "m"].includes(v.variant)) throw new Error("variant must be oracle, s or m");
+  const failureLimit = v["native-failure-limit"] === undefined ? null : Number(v["native-failure-limit"]);
+  if (failureLimit !== null && (!Number.isSafeInteger(failureLimit) || failureLimit < 1))
     throw new Error("native-failure-limit must be positive");
   if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 4)
     throw new Error("Concurrency must be 1..4");
-  if (
-    !Number.isSafeInteger(timeoutMs) ||
-    timeoutMs < 1000 ||
-    timeoutMs > 3600000
-  )
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 3600000)
     throw new Error("Invalid timeout-ms");
   const config = await readModelConfiguration(v["model-config"]);
   if (config.provider !== "openai-compatible")
-    throw new Error(
-      "This benchmark driver requires the explicit compatible provider",
-    );
+    throw new Error("This benchmark driver requires the explicit compatible provider");
   const { apiKey, ...model } = config;
-  if (!["pi", "codex"].includes(v["assistant-harness"]))
-    throw new Error("assistant-harness must be pi or codex");
+  if (!["pi", "codex"].includes(v["assistant-harness"])) throw new Error("assistant-harness must be pi or codex");
   if ((v["assistant-harness"] === "codex") !== !!v["codex-config"])
-    throw new Error(
-      "Codex assistant requires --codex-config; Pi must not use it",
-    );
-  const harnesses = v["codex-config"]
-    ? await readCodexConfiguration(v["codex-config"])
-    : undefined;
-  if (!["pi", "codex"].includes(v["execution-harness"]))
-    throw new Error("execution-harness must be pi or codex");
+    throw new Error("Codex assistant requires --codex-config; Pi must not use it");
+  const harnesses = v["codex-config"] ? await readCodexConfiguration(v["codex-config"]) : undefined;
+  if (!["pi", "codex"].includes(v["execution-harness"])) throw new Error("execution-harness must be pi or codex");
   if (v["execution-harness"] === "codex" && !harnesses)
     throw new Error("Codex execution configuration requires --codex-config");
   if (harnesses) harnesses.execution = v["execution-harness"];
   if (
     harnesses &&
     (harnesses.codex.modelId !== model.modelId ||
-      harnesses.codex.baseUrl.replace(/\/$/, "") !==
-        model.baseUrl.replace(/\/$/, ""))
+      harnesses.codex.baseUrl.replace(/\/$/, "") !== model.baseUrl.replace(/\/$/, ""))
   )
     throw new Error(
       "Paired benchmark requires the same explicit model and endpoint for Codex assistant and Pi baseline/judge",
@@ -356,12 +280,7 @@ async function main() {
     for (const id of ids) excludedIds.add(id);
     exclusions.push({ sha256: sha(bytes), selectedIds: ids });
   }
-  const rows = sampleRows(
-    allRows,
-    Number(v["per-stratum"]),
-    v.seed,
-    excludedIds,
-  );
+  const rows = sampleRows(allRows, Number(v["per-stratum"]), v.seed, excludedIds);
   const cases = selectCases(rows, rows.length);
   const scorer = await readFile(resolve(v["official-scorer"]), "utf8");
   const templates = officialTemplates(scorer);
@@ -406,25 +325,15 @@ async function main() {
     stratum: stratum(r),
     sessions: cases[i].input.history.length,
     messages: cases[i].input.history.flatMap((s) => s.messages).length,
-    characters: cases[i].input.history.reduce(
-      (n, s) => n + s.messages.reduce((m, x) => m + x.content.length, 0),
-      0,
-    ),
+    characters: cases[i].input.history.reduce((n, s) => n + s.messages.reduce((m, x) => m + x.content.length, 0), 0),
     futureSessions: cases[i].futureSessionCount,
     repeatedSessionIds: cases[i].repeatedSessionIds,
   }));
   if (v.plan) {
-    console.log(
-      JSON.stringify(
-        { identity, selected: selectedMetadata, modelCallsPerformed: false },
-        null,
-        2,
-      ),
-    );
+    console.log(JSON.stringify({ identity, selected: selectedMetadata, modelCallsPerformed: false }, null, 2));
     return;
   }
-  if (v.resume && v["recover-from"])
-    throw new Error("Use resume or recover-from, not both");
+  if (v.resume && v["recover-from"]) throw new Error("Use resume or recover-from, not both");
   let recovery;
   if (v["recover-from"]) {
     const from = resolve(v["recover-from"]);
@@ -437,13 +346,9 @@ async function main() {
     };
   }
   if (v.resume) {
-    const old = JSON.parse(
-      await readFile(join(directory, "plan.json"), "utf8"),
-    );
+    const old = JSON.parse(await readFile(join(directory, "plan.json"), "utf8"));
     if (JSON.stringify(old.identity) !== JSON.stringify(identity))
-      throw new Error(
-        "Resume plan/model/source differs; use a new output directory",
-      );
+      throw new Error("Resume plan/model/source differs; use a new output directory");
   } else {
     await mkdir(directory, { mode: 0o700 });
     await mkdir(join(directory, "records"), { mode: 0o700 });
@@ -469,40 +374,21 @@ async function main() {
       ),
       { mode: 0o600, flag: "wx" },
     );
-    await copyFile(
-      resolve(v["official-scorer"]),
-      join(directory, "official-evaluate_qa.py"),
-    );
+    await copyFile(resolve(v["official-scorer"]), join(directory, "official-evaluate_qa.py"));
   }
-  const selected = new Map(
-    rows.map((r, i) => [r.question_id, { row: r, item: cases[i] }]),
-  );
+  const selected = new Map(rows.map((r, i) => [r.question_id, { row: r, item: cases[i] }]));
   let circuit;
   let nativeFailures = 0,
     nativeGate;
   if (v.resume || recovery) {
     try {
-      nativeGate = JSON.parse(
-        await readFile(
-          join(recovery?.from ?? directory, "native-gate.json"),
-          "utf8",
-        ),
-      );
-      if (
-        nativeGate.reason !== "predeclared-native-failure-limit" ||
-        nativeGate.limit !== failureLimit
-      )
-        throw new Error(
-          "Recovered native gate differs from the frozen failure policy",
-        );
+      nativeGate = JSON.parse(await readFile(join(recovery?.from ?? directory, "native-gate.json"), "utf8"));
+      if (nativeGate.reason !== "predeclared-native-failure-limit" || nativeGate.limit !== failureLimit)
+        throw new Error("Recovered native gate differs from the frozen failure policy");
       if (recovery)
         await writeFile(
           join(directory, "native-gate.json"),
-          JSON.stringify(
-            { ...nativeGate, inheritedFrom: recovery.from },
-            null,
-            2,
-          ),
+          JSON.stringify({ ...nativeGate, inheritedFrom: recovery.from }, null, 2),
           { mode: 0o600, flag: "wx" },
         );
     } catch (error) {
@@ -522,23 +408,13 @@ async function main() {
       }
       let previous, incomplete;
       if (recovery) {
-        const previousFile = join(
-          recovery.from,
-          "records",
-          `${item.key}-${track}.json`,
-        );
+        const previousFile = join(recovery.from, "records", `${item.key}-${track}.json`);
         try {
-          ({ record: previous, incomplete } = decodeRecoveryRecord(
-            await readFile(previousFile),
-            previousFile,
-          ));
+          ({ record: previous, incomplete } = decodeRecoveryRecord(await readFile(previousFile), previousFile));
         } catch (e) {
           if (e.code !== "ENOENT") throw e;
         }
-        if (
-          previous &&
-          (previous.question_id !== item.id || previous.track !== track)
-        )
+        if (previous && (previous.question_id !== item.id || previous.track !== track))
           throw new Error("Recovery record identity mismatch");
         if (recoveryAction(previous) === "reuse") {
           await publishRecord(file, {
@@ -556,11 +432,7 @@ async function main() {
       const record = judgeOnly
         ? {
             ...previous,
-            recoveredFrom: join(
-              recovery.from,
-              "records",
-              `${item.key}-${track}.json`,
-            ),
+            recoveredFrom: join(recovery.from, "records", `${item.key}-${track}.json`),
           }
         : {
             question_id: item.id,
@@ -584,8 +456,7 @@ async function main() {
             apiKey,
             timeoutMs,
           });
-          if (!answer.hypothesis?.trim())
-            throw new Error("Empty assistant hypothesis");
+          if (!answer.hypothesis?.trim()) throw new Error("Empty assistant hypothesis");
           record.hypothesis = answer.hypothesis;
           record.evidence = answer.evidence;
         } else {
@@ -623,8 +494,7 @@ async function main() {
             10,
           );
           const label = judged.text.toLowerCase();
-          if (!/^(yes|no)[.!]?$/.test(label))
-            throw new Error("Judge returned an invalid yes/no verdict");
+          if (!/^(yes|no)[.!]?$/.test(label)) throw new Error("Judge returned an invalid yes/no verdict");
           record.judge = {
             status: "completed",
             correct: label.startsWith("yes"),
@@ -647,16 +517,10 @@ async function main() {
               at: new Date().toISOString(),
             };
         }
-      } else
-        record.judge = { status: "not-called-answer-failed", correct: false };
+      } else record.judge = { status: "not-called-answer-failed", correct: false };
       await publishRecord(file, record);
-      if (track === "native-assistant" && record.status === "completed")
-        nativeFailures = 0;
-      if (
-        track === "native-assistant" &&
-        record.status !== "completed" &&
-        !serviceStatus(record.error)
-      ) {
+      if (track === "native-assistant" && record.status === "completed") nativeFailures = 0;
+      if (track === "native-assistant" && record.status !== "completed" && !serviceStatus(record.error)) {
         nativeFailures++;
         if (failureLimit !== null && nativeFailures >= failureLimit) {
           nativeGate = {
@@ -665,11 +529,7 @@ async function main() {
             limit: failureLimit,
             at: new Date().toISOString(),
           };
-          await writeFile(
-            join(directory, "native-gate.json"),
-            JSON.stringify(nativeGate, null, 2),
-            { mode: 0o600 },
-          );
+          await writeFile(join(directory, "native-gate.json"), JSON.stringify(nativeGate, null, 2), { mode: 0o600 });
         }
       }
       console.log(
@@ -685,11 +545,7 @@ async function main() {
       if (circuit) {
         await writeFile(
           join(directory, "stop.json"),
-          JSON.stringify(
-            { reason: "service-unavailable", ...circuit },
-            null,
-            2,
-          ),
+          JSON.stringify({ reason: "service-unavailable", ...circuit }, null, 2),
           { mode: 0o600 },
         );
         return false;
@@ -699,14 +555,8 @@ async function main() {
   }
   const records = [];
   for (const name of (await readdir(join(directory, "records"))).sort())
-    records.push(
-      JSON.parse(await readFile(join(directory, "records", name), "utf8")),
-    );
-  await writeFile(
-    join(directory, "records.json"),
-    JSON.stringify(records, null, 2),
-    { mode: 0o600 },
-  );
+    records.push(JSON.parse(await readFile(join(directory, "records", name), "utf8")));
+  await writeFile(join(directory, "records.json"), JSON.stringify(records, null, 2), { mode: 0o600 });
   for (const track of ["native-assistant", "full-history-baseline"]) {
     const selectedRecords = records.filter((r) => r.track === track);
     await writeFile(
@@ -734,10 +584,7 @@ async function main() {
   if (circuit || nativeGate) process.exitCode = 2;
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   main().catch((e) => {
     console.error(e.message);
     process.exitCode = 1;

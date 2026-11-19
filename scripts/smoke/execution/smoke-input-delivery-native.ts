@@ -7,10 +7,7 @@ import { AccountPoolStore } from "@opencraft/account-pool-host";
 import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { CodexEngineAdapter } from "../../../apps/opencraft-daemon/src/codex-engine-adapter.js";
 const executable = process.env.OPENCRAFT_CODEX_EXECUTABLE;
-if (!executable)
-  throw new Error(
-    "Set OPENCRAFT_CODEX_EXECUTABLE to the isolated native CLI under test",
-  );
+if (!executable) throw new Error("Set OPENCRAFT_CODEX_EXECUTABLE to the isolated native CLI under test");
 const root = await mkdtemp(join(tmpdir(), "input-delivery-native-")),
   dataDirectory = join(root, "codex");
 const store = new AccountPoolStore({
@@ -58,9 +55,7 @@ const upstream = createServer((req, res) => {
     type: "message",
     role: "assistant",
     status: "completed",
-    content: [
-      { type: "output_text", text: "new-intent-complete", annotations: [] },
-    ],
+    content: [{ type: "output_text", text: "new-intent-complete", annotations: [] }],
   };
   for (const event of [
     {
@@ -104,8 +99,7 @@ const create = () =>
 let adapter = create();
 let seq = 0;
 const frames: any[] = [];
-const subscribe = () =>
-  adapter.subscribeMessage((line) => frames.push(JSON.parse(line)));
+const subscribe = () => adapter.subscribeMessage((line) => frames.push(JSON.parse(line)));
 subscribe();
 const wait = async (predicate: () => any) => {
   const deadline = Date.now() + 25000;
@@ -115,15 +109,12 @@ const wait = async (predicate: () => any) => {
     await new Promise((r) => setTimeout(r, 10));
   }
   throw new Error(
-    "Native input delivery observation timed out: " +
-      JSON.stringify({ requests, frames: frames.slice(-5) }),
+    "Native input delivery observation timed out: " + JSON.stringify({ requests, frames: frames.slice(-5) }),
   );
 };
 const rpc = async (method: string, params: object) => {
   const id = "native:" + ++seq;
-  await adapter.send(
-    JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "probe" }),
-  );
+  await adapter.send(JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: "probe" }));
   const f = await wait(() => frames.find((f) => f.id === id));
   if (f.error) throw new Error(JSON.stringify(f.error));
   return f.result;
@@ -162,40 +153,25 @@ try {
   assert.equal(ack.delivery.custody, "accepted");
   assert.equal(ack.delivery.nativeAdmission, "accepted");
   await rpc("turn/interrupt", { threadId, turnId });
-  await wait(() =>
-    frames.find(
-      (f) => f.method === "turn/completed" && f.params.turn.id === turnId,
-    ),
-  );
+  await wait(() => frames.find((f) => f.method === "turn/completed" && f.params.turn.id === turnId));
   await rpc("thread/queue/list", { threadId, receiptTurnIds: [turnId] });
-  const receipt = (adapter as any)
-    .queueStore()
-    .findByClientId(threadId, "follow").delivery;
+  const receipt = (adapter as any).queueStore().findByClientId(threadId, "follow").delivery;
   assert.equal(receipt.execution, "interrupted");
   assert.equal(receipt.custody, "accepted");
   const stoppedTurns = await rpc("thread/turns/list", {
     threadId,
     itemsView: "notLoaded",
   });
-  assert.equal(
-    stoppedTurns.data.length,
-    1,
-    "stop alone never restarts the follow-up",
-  );
+  assert.equal(stoppedTurns.data.length, 1, "stop alone never restarts the follow-up");
   allowCompletion = true;
   await rpc("thread/queue/add", {
     threadId,
     clientUserMessageId: "next",
     input: [{ type: "text", text: "New intention" }],
   });
-  await wait(() =>
-    frames.find(
-      (f) => f.method === "turn/completed" && f.params.turn.id !== turnId,
-    ),
-  );
+  await wait(() => frames.find((f) => f.method === "turn/completed" && f.params.turn.id !== turnId));
   assert.equal(
-    (await rpc("thread/turns/list", { threadId, itemsView: "notLoaded" })).data
-      .length,
+    (await rpc("thread/turns/list", { threadId, itemsView: "notLoaded" })).data.length,
     2,
     "exactly one fresh user Turn",
   );
@@ -205,15 +181,9 @@ try {
   await initialize();
   await rpc("thread/resume", { threadId, excludeTurns: true });
   await rpc("thread/queue/list", { threadId, receiptTurnIds: [turnId] });
-  const recovered = (adapter as any)
-    .queueStore()
-    .findByClientId(threadId, "follow").delivery;
+  const recovered = (adapter as any).queueStore().findByClientId(threadId, "follow").delivery;
   assert.equal(recovered.execution, "interrupted");
-  assert.equal(
-    (await rpc("thread/turns/list", { threadId, itemsView: "notLoaded" })).data
-      .length,
-    2,
-  );
+  assert.equal((await rpc("thread/turns/list", { threadId, itemsView: "notLoaded" })).data.length, 2);
   console.log(
     JSON.stringify({
       native: true,

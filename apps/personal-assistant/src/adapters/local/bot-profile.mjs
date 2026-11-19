@@ -16,8 +16,7 @@ export function privateDirectory(path) {
       if (error.code !== "EEXIST") throw error;
     }
     const stat = lstatSync(current);
-    if (!stat.isDirectory() || stat.isSymbolicLink())
-      throw Error("Bot directory cannot traverse a symlink or file");
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw Error("Bot directory cannot traverse a symlink or file");
   }
   return realpathSync(path);
 }
@@ -25,19 +24,13 @@ export function privateDirectory(path) {
 /** Trusted host entry. Does not authenticate a human or invent an assignment. */
 export function provisionBotProfile(serverDirectory, rawBinding, options = {}) {
   if (
-    [
-      "assistantId",
-      "owner",
-      "botBinding",
-      "layout",
-      "memoryRoot",
-      "memoryDefaultScope",
-    ].some((k) => Object.hasOwn(options, k))
+    ["assistantId", "owner", "botBinding", "layout", "memoryRoot", "memoryDefaultScope"].some((k) =>
+      Object.hasOwn(options, k),
+    )
   )
     throw Error("Bot identity and private memory layout are host-owned");
   const binding = botBinding(rawBinding);
-  if (binding.owner.kind !== "human")
-    throw Error("Only personal assistants can be provisioned");
+  if (binding.owner.kind !== "human") throw Error("Only personal assistants can be provisioned");
   const root = privateDirectory(serverDirectory);
   const path = privateDirectory(join(root, "bots", binding.botId));
   if (existsSync(join(path, "profile.json"))) {

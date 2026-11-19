@@ -33,11 +33,7 @@ function report(app, w, text = "Evidence result") {
   app.executions.report(w, text);
   return app.reception
     .pending()
-    .find(
-      (t) =>
-        t.source_json &&
-        JSON.parse(t.source_json).executionId === w.active_execution_id,
-    );
+    .find((t) => t.source_json && JSON.parse(t.source_json).executionId === w.active_execution_id);
 }
 function acceptResult(app, w, text = "Evidence result") {
   const t = report(app, w, text);
@@ -83,25 +79,14 @@ test("same-requirement continuation preserves immutable history and rejects a la
   assert.equal(next.revision, 1);
   assert.equal(next.text, w.text);
   assert.notEqual(next.active_execution_id, w.active_execution_id);
-  assert.throws(
-    () => d.app.executions.assertAction(w, "publish_note"),
-    /no longer owns/,
-  );
+  assert.throws(() => d.app.executions.assertAction(w, "publish_note"), /no longer owns/);
   assert.equal(d.app.executions.report(w, "partial evidence").stale, true);
   assert.equal(d.app.works.blocked(w, "late failure"), false);
   d.reopen();
-  assert.equal(
-    d.app.executions.execution(next).predecessor_id,
-    w.active_execution_id,
-  );
+  assert.equal(d.app.executions.execution(next).predecessor_id, w.active_execution_id);
   acceptResult(d.app, next, "complete evidence");
   assert.equal(d.app.detail(w.id).reports.length, 2);
-  assert.equal(
-    d.app.receptionQueries.overview(
-      d.app.scope.queryGrant("q", d.app.history.main.id),
-    ).total,
-    1,
-  );
+  assert.equal(d.app.receptionQueries.overview(d.app.scope.queryGrant("q", d.app.history.main.id)).total, 1);
 });
 
 test("ordered instructions survive reopen and become submitted only at native admission", (t) => {
@@ -112,10 +97,7 @@ test("ordered instructions survive reopen and become submitted only at native ad
   const first = d.app.works.instruct("first", p);
   d.app.works.instruct("second", { ...p, text: "Also include sources" });
   assert.equal(d.app.works.instruct("first", p).directiveId, first.directiveId);
-  assert.throws(
-    () => d.app.works.instruct("first", { ...p, text: "different" }),
-    /reused|conflict/i,
-  );
+  assert.throws(() => d.app.works.instruct("first", { ...p, text: "different" }), /reused|conflict/i);
   d.reopen();
   assert.equal(d.app.detail(w.id).directives.length, 2);
   d.app.executions.report(w, "first turn done");
@@ -126,23 +108,14 @@ test("ordered instructions survive reopen and become submitted only at native ad
     ["Add dates", "Also include sources"],
   );
   assert.equal(next.revision, 1);
-  assert.equal(
-    d.app.reception.pending().filter((t) => t.source_json).length,
-    0,
-  );
-  assert.ok(
-    d.app.detail(w.id).directives.every((x) => x.state === "scheduled"),
-  );
+  assert.equal(d.app.reception.pending().filter((t) => t.source_json).length, 0);
+  assert.ok(d.app.detail(w.id).directives.every((x) => x.state === "scheduled"));
   d.app.executions.bound(next, "native-thread", "native-request", {
     admitted: false,
   });
-  assert.ok(
-    d.app.detail(w.id).directives.every((x) => x.state === "scheduled"),
-  );
+  assert.ok(d.app.detail(w.id).directives.every((x) => x.state === "scheduled"));
   d.app.executions.bound(next, "native-thread", "native-request");
-  assert.ok(
-    d.app.detail(w.id).directives.every((x) => x.state === "submitted"),
-  );
+  assert.ok(d.app.detail(w.id).directives.every((x) => x.state === "submitted"));
 });
 
 test("amend supersedes queued instructions; rollback retains original ownership", (t) => {
@@ -159,10 +132,7 @@ test("amend supersedes queued instructions; rollback retains original ownership"
     text: "new requirements",
   });
   assert.equal(d.app.detail(w.id).directives[0].state, "superseded");
-  assert.deepEqual(
-    d.app.executions.snapshot(d.app.workRecord(w.id)).directives,
-    [],
-  );
+  assert.deepEqual(d.app.executions.snapshot(d.app.workRecord(w.id)).directives, []);
   assert.throws(
     () =>
       d.app.works.instruct("late", {
@@ -180,10 +150,7 @@ test("DAG releases successors from accepted results before message delivery and 
   const [a, b, c] = ["research", "build", "independent"].map((key) =>
     d.app.workRecord(g.works.find((w) => w.key === key).id),
   );
-  assert.deepEqual(
-    new Set(d.app.pendingWorks().map((w) => w.id)),
-    new Set([a.id, c.id]),
-  );
+  assert.deepEqual(new Set(d.app.pendingWorks().map((w) => w.id)), new Set([a.id, c.id]));
   const result = acceptResult(d.app, a, "comparison with sources");
   assert.equal(d.app.workRecord(a.id).status, "awaiting_delivery");
   assert.ok(d.app.pendingWorks().some((w) => w.id === b.id));
@@ -191,20 +158,14 @@ test("DAG releases successors from accepted results before message delivery and 
   assert.equal(snapshot.dependencyResults[0].resultId, result.id);
   assert.equal(snapshot.dependencyResults[0].text, "comparison with sources");
   d.reopen();
-  assert.equal(
-    d.app.executions.snapshot(b).dependencyResults[0].resultId,
-    result.id,
-  );
+  assert.equal(d.app.executions.snapshot(b).dependencyResults[0].resultId, result.id);
   d.app.works.amend("change-source", {
     workId: a.id,
     expectedRevision: 1,
     text: "different comparison",
   });
   assert.ok(d.app.goals.reasons(b).some((x) => x.startsWith("stale-input:")));
-  assert.throws(
-    () => d.app.executions.assertAction(b, "publish_note"),
-    /dependency/,
-  );
+  assert.throws(() => d.app.executions.assertAction(b, "publish_note"), /dependency/);
   assert.ok(d.app.pendingWorks().some((w) => w.id === c.id));
   assert.equal(d.app.goals.detail(g.id).readyForReview, false);
 });
@@ -233,10 +194,7 @@ test("plan validation is atomic, goal CAS and pause gate execution without chang
     expectedRevision: 1,
   });
   assert.equal(d.app.pendingWorks().length, 0);
-  assert.throws(
-    () => d.app.executions.assertAction(w, "publish_note"),
-    /paused/,
-  );
+  assert.throws(() => d.app.executions.assertAction(w, "publish_note"), /paused/);
   assert.throws(
     () =>
       d.app.goals.change("stale", "goal.resume", {
@@ -310,10 +268,7 @@ test("completed subtasks do not assert semantic goal success; explicit evidence 
   });
   assert.equal(confirmed.state, "achieved");
   assert.equal(confirmed.semanticReview.kind, "owner-attested");
-  assert.throws(
-    () => ReceptionDecision.parse({ kind: "goal.confirm" }),
-    /Unsupported/,
-  );
+  assert.throws(() => ReceptionDecision.parse({ kind: "goal.confirm" }), /Unsupported/);
 });
 
 test("goal parallelism and query views use live owned state", (t) => {
@@ -326,10 +281,7 @@ test("goal parallelism and query views use live owned state", (t) => {
   });
   const first = d.app.pendingWorks();
   assert.ok(other.works.some((w) => w.id === first[0].id));
-  assert.equal(
-    first.filter((w) => g.works.some((x) => x.id === w.id)).length,
-    1,
-  );
+  assert.equal(first.filter((w) => g.works.some((x) => x.id === w.id)).length, 1);
   d.app.reception.accept("query", { text: "show goals" });
   const turn = d.app.reception.turn("query"),
     session = d.app.receptionQueries.open(turn);
@@ -367,8 +319,7 @@ test(
     for (const w of g.works)
       await until(async () => {
         const detail = await call("work", { workId: w.id });
-        if (detail.work.status === "blocked")
-          throw new Error(detail.work.error);
+        if (detail.work.status === "blocked") throw new Error(detail.work.error);
         return detail.work.status === "completed";
       }, 15000);
     const final = await call("goal.get", { goalId: g.id });
@@ -377,10 +328,7 @@ test(
     const b = await call("work", {
       workId: g.works.find((w) => w.key === "build").id,
     });
-    assert.equal(
-      JSON.parse(b.executions[0].context_json).dependencyResults.length,
-      1,
-    );
+    assert.equal(JSON.parse(b.executions[0].context_json).dependencyResults.length, 1);
   },
 );
 
@@ -428,10 +376,7 @@ test("report delivery, plan extension and criterion review commit atomically und
     {
       criterionId: "criterion-1",
       statement: "Checked both results against the criterion",
-      resultIds: [
-        `result:${w.active_execution_id}`,
-        `result:${next.active_execution_id}`,
-      ],
+      resultIds: [`result:${w.active_execution_id}`, `result:${next.active_execution_id}`],
     },
   ];
   assert.throws(
@@ -493,9 +438,7 @@ test("explicit dependency rebase preserves old snapshots and invalidates transit
     expectedRevision: 1,
     text: "new input contract",
   });
-  assert.ok(
-    d.app.goals.reasons(c).some((x) => x.startsWith("invalid-upstream:")),
-  );
+  assert.ok(d.app.goals.reasons(c).some((x) => x.startsWith("invalid-upstream:")));
   assert.throws(() => d.app.outcomes.record(b, "obsolete"), /dependency/);
   assert.throws(
     () =>
@@ -518,10 +461,7 @@ test("explicit dependency rebase preserves old snapshots and invalidates transit
   });
   assert.equal(g2.revision, 2);
   assert.equal(d.app.workRecord(b.id).revision, 2);
-  assert.deepEqual(
-    JSON.parse(d.app.detail(b.id).executions[0].context_json),
-    old,
-  );
+  assert.deepEqual(JSON.parse(d.app.detail(b.id).executions[0].context_json), old);
   acceptResult(d.app, d.app.workRecord(a.id), "new comparison");
   assert.ok(d.app.pendingWorks().some((w) => w.id === b.id));
   acceptResult(d.app, d.app.workRecord(b.id), "new implementation");
@@ -560,10 +500,7 @@ test("pause retains a late report without accepting it, resumes once, and fences
     goalId: g.id,
     expectedRevision: 3,
   });
-  assert.throws(
-    () => d.app.reception.apply(turn, { kind: "deliver" }),
-    /paused/,
-  );
+  assert.throws(() => d.app.reception.apply(turn, { kind: "deliver" }), /paused/);
   assert.equal(d.app.reception.pending().length, 0);
   d.app.goals.change("resume-again", "goal.resume", {
     goalId: g.id,
@@ -587,10 +524,7 @@ test("explicit supplemental instructions reset only the automatic continuation s
   }
   assert.equal(w.revision, 1);
   assert.equal(d.app.detail(w.id).executions.length, 5);
-  assert.equal(
-    JSON.parse(d.app.executions.execution(w).request_json).continuations,
-    0,
-  );
+  assert.equal(JSON.parse(d.app.executions.execution(w).request_json).continuations, 0);
 });
 
 test("late reception failure cannot block a same-revision successor and step budget is cumulative", (t) => {
@@ -608,10 +542,7 @@ test("late reception failure cannot block a same-revision successor and step bud
   assert.equal(d.app.workRecord(w.id).status, "queued");
   assert.equal(d.app.reception.turn(turn.id).status, "settled");
   assert.throws(() => d.app.executions.modelStep(next, "turn:0", 1), /limit/i);
-  assert.equal(
-    JSON.parse(d.app.executions.execution(next).guard_json).steps,
-    1,
-  );
+  assert.equal(JSON.parse(d.app.executions.execution(next).guard_json).steps, 1);
 });
 
 test("bounded goal queries page all plan members without leaking resource grants", (t) => {
@@ -718,11 +649,7 @@ test("supplement and dependency input totals stay bounded without losing evidenc
     },
   });
   for (const key of ["research", "independent"])
-    acceptResult(
-      d.app,
-      d.app.workRecord(g.works.find((w) => w.key === key).id),
-      "e".repeat(12000),
-    );
+    acceptResult(d.app, d.app.workRecord(g.works.find((w) => w.key === key).id), "e".repeat(12000));
   const next = d.app.workRecord(g.works.find((w) => w.key === "build").id),
     s = d.app.executions.snapshot(next);
   assert.equal(s.dependencyResults.length, 2);
@@ -733,53 +660,42 @@ test("supplement and dependency input totals stay bounded without losing evidenc
   assert.ok(s.dependencyResults.every((r) => r.truncated && r.resultId));
 });
 
-test(
-  "real CLI goal commands use the same receipt, revision and child-input owners",
-  { timeout: 30000 },
-  async (t) => {
-    const { execFile } = await import("node:child_process"),
-      { promisify } = await import("node:util");
-    const { root } = await import("./helpers.mjs");
-    const { profile, call } = await running(t);
-    const cli = async (...args) =>
-      JSON.parse(
-        (
-          await promisify(execFile)(
-            process.execPath,
-            [`${root}/bin/assistant.mjs`, ...args, "--profile", profile.path],
-            { timeout: 10000 },
-          )
-        ).stdout,
-      ).result;
-    const g = await cli(
-      "goal-create",
-      "--id",
-      "cli-goal",
-      "--definition",
-      JSON.stringify({ ...definition, tasks: [definition.tasks[0]] }),
-    );
-    const paused = await cli("goal-pause", "--goal", g.id, "--revision", "1");
-    assert.equal(paused.state, "paused");
-    const duplicate = await cli(
-      "goal-create",
-      "--id",
-      "cli-goal",
-      "--definition",
-      JSON.stringify({ ...definition, tasks: [definition.tasks[0]] }),
-    );
-    assert.equal(duplicate.duplicate, true);
-    assert.equal(duplicate.id, g.id);
-    await cli("goal-resume", "--goal", g.id, "--revision", "2");
-    await until(
-      async () =>
-        (await call("work", { workId: g.works[0].id })).work.status ===
-        "completed",
-      10000,
-    );
-    const read = await cli("goal-get", "--goal", g.id);
-    assert.equal(read.readyForReview, true);
-    const detail = await call("work", { workId: g.works[0].id });
-    assert.equal(detail.inputs.length, 1);
-    assert.notEqual(detail.inputs[0].delivered_at, null);
-  },
-);
+test("real CLI goal commands use the same receipt, revision and child-input owners", { timeout: 30000 }, async (t) => {
+  const { execFile } = await import("node:child_process"),
+    { promisify } = await import("node:util");
+  const { root } = await import("./helpers.mjs");
+  const { profile, call } = await running(t);
+  const cli = async (...args) =>
+    JSON.parse(
+      (
+        await promisify(execFile)(process.execPath, [`${root}/bin/assistant.mjs`, ...args, "--profile", profile.path], {
+          timeout: 10000,
+        })
+      ).stdout,
+    ).result;
+  const g = await cli(
+    "goal-create",
+    "--id",
+    "cli-goal",
+    "--definition",
+    JSON.stringify({ ...definition, tasks: [definition.tasks[0]] }),
+  );
+  const paused = await cli("goal-pause", "--goal", g.id, "--revision", "1");
+  assert.equal(paused.state, "paused");
+  const duplicate = await cli(
+    "goal-create",
+    "--id",
+    "cli-goal",
+    "--definition",
+    JSON.stringify({ ...definition, tasks: [definition.tasks[0]] }),
+  );
+  assert.equal(duplicate.duplicate, true);
+  assert.equal(duplicate.id, g.id);
+  await cli("goal-resume", "--goal", g.id, "--revision", "2");
+  await until(async () => (await call("work", { workId: g.works[0].id })).work.status === "completed", 10000);
+  const read = await cli("goal-get", "--goal", g.id);
+  assert.equal(read.readyForReview, true);
+  const detail = await call("work", { workId: g.works[0].id });
+  assert.equal(detail.inputs.length, 1);
+  assert.notEqual(detail.inputs[0].delivered_at, null);
+});

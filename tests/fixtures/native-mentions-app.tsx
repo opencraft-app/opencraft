@@ -18,10 +18,7 @@ import { WorkbenchPresentationRootProvider } from "/apps/workbench-web/src/compo
 import { useUiPreferencesRuntime } from "/apps/workbench-web/src/runtime/ui-preferences-runtime";
 import { bindInteractionDensity } from "/apps/workbench-web/src/runtime/interaction-density";
 import { createClientRuntime } from "/apps/workbench-web/src/runtime/client-runtime";
-import {
-  initializeAppearanceTheme,
-  setThemePreference,
-} from "/apps/workbench-web/src/appearance-theme.ts";
+import { initializeAppearanceTheme, setThemePreference } from "/apps/workbench-web/src/appearance-theme.ts";
 import "/apps/workbench-web/src/styles/app.scss";
 const params = new URLSearchParams(location.search);
 initializeAppearanceTheme();
@@ -138,10 +135,8 @@ const rpc = {
     }
     if (method === "opencraft/channels/list") return { groups };
     if (method === "opencraft/channels/group/members/list") return { members };
-    if (method === "opencraft/channels/people/list")
-      return { people: [], next: null };
-    if (method === "opencraft/personal-assistant/get")
-      return { assistant: null, runtime: { phase: "stopped" } };
+    if (method === "opencraft/channels/people/list") return { people: [], next: null };
+    if (method === "opencraft/personal-assistant/get") return { assistant: null, runtime: { phase: "stopped" } };
     if (method === "opencraft/channels/mentions/ack") {
       window.control.ackAttempts++;
       if (window.control.failAckOnce) {
@@ -156,13 +151,10 @@ const rpc = {
           });
       groups[0].mentionUnreadCount = 0;
       delete groups[0].firstUnreadMentionSequence;
-      queueMicrotask(() =>
-        subscriptions.forEach((id) => changes.forEach((fn) => fn(id))),
-      );
+      queueMicrotask(() => subscriptions.forEach((id) => changes.forEach((fn) => fn(id))));
       return { acknowledged: true };
     }
-    if (method === "opencraft/channels/messages/around")
-      return { messages: messages.slice(0, 20), hasEarlier: false };
+    if (method === "opencraft/channels/messages/around") return { messages: messages.slice(0, 20), hasEarlier: false };
     if (method === "opencraft/channels/sync")
       return {
         kind: "snapshot",
@@ -236,10 +228,7 @@ await createImExtension(
 const navigation = createApplicationNavigation(null, {
   mode: "browser",
   resolveParentRoute: (route) => {
-    const p =
-      route.kind === "extension-view"
-        ? views.get(route.viewId)?.navigationParent
-        : null;
+    const p = route.kind === "extension-view" ? views.get(route.viewId)?.navigationParent : null;
     return p
       ? {
           kind: "extension-view",
@@ -263,15 +252,11 @@ window.installNativeBridge = () => {
 function App() {
   const preferences = useUiPreferencesRuntime();
   useEffect(() => bindInteractionDensity(document, preferences), [preferences]);
-  const state = useSyncExternalStore(
-      navigation.subscribe,
-      navigation.getSnapshot,
-    ),
+  const state = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot),
     route = state.applicationRoute;
   const [open, setOpen] = useState(false);
   window.sidebarProbe = () => open;
-  const active =
-      route.kind === "extension-view" ? views.get(route.viewId) : undefined,
+  const active = route.kind === "extension-view" ? views.get(route.viewId) : undefined,
     Component = active ? renderers.get(active.viewType) : undefined;
   const host = {
     platform: "web",
@@ -289,10 +274,7 @@ function App() {
     back = returning ? navigation.returnToParent : navigation.back;
   return (
     <QueryClientProvider client={query}>
-      <AppShellRouteRegionsProvider
-        controller={routeHeader.controller}
-        target={routeHeader.target}
-      >
+      <AppShellRouteRegionsProvider controller={routeHeader.controller} target={routeHeader.target}>
         <AppShell
           routeStack={routeStackPresentation(state, "synthetic-account")}
           navigation={{
@@ -311,8 +293,7 @@ function App() {
                 id: "inbox",
                 title: "Inbox",
                 icon: "messages",
-                onInvoke: () =>
-                  navigation.openExtensionView("opencraft.im.people"),
+                onInvoke: () => navigation.openExtensionView("opencraft.im.people"),
               },
             ],
             onOpenSettings: () => navigation.openSettings(),
@@ -388,22 +369,12 @@ function App() {
             </RouteViewStack>
           ) : (
             <div style={{ padding: 24 }}>
-              <button
-                onClick={() =>
-                  navigation.openExtensionView("opencraft.im.people")
-                }
-              >
-                Open Inbox
-              </button>
+              <button onClick={() => navigation.openExtensionView("opencraft.im.people")}>Open Inbox</button>
             </div>
           )}
           <dialog id="gesture-dialog">
             <p>Modal owns this gesture</p>
-            <button
-              onClick={() => document.getElementById("gesture-dialog").close()}
-            >
-              Close modal
-            </button>
+            <button onClick={() => document.getElementById("gesture-dialog").close()}>Close modal</button>
           </dialog>
         </AppShell>
       </AppShellRouteRegionsProvider>

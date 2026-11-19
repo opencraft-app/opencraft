@@ -6,15 +6,8 @@ import { basename, join } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { SandboxNotFoundError, AuthenticationError, SandboxError } from "e2b";
-import {
-  createSandboxPool,
-  createSandbox,
-  SandboxCreationFault,
-} from "@opencraft/sandbox";
-import {
-  e2bSandboxBackend,
-  type E2BConnection,
-} from "../../packages/sandbox-e2b/src/index";
+import { createSandboxPool, createSandbox, SandboxCreationFault } from "@opencraft/sandbox";
+import { e2bSandboxBackend, type E2BConnection } from "../../packages/sandbox-e2b/src/index";
 const resources = { cpuMillis: 8000, memoryBytes: 16 * 1024 ** 3 };
 const policy = {
   id: "e2b-test",
@@ -58,10 +51,7 @@ async function fixture(t: test.TestContext) {
     },
     commands: {
       async run(command: string, options: any) {
-        const rewritten = command.replace(
-          /\/tmp\/opencraft-exec-/g,
-          directory + "/opencraft-exec-",
-        );
+        const rewritten = command.replace(/\/tmp\/opencraft-exec-/g, directory + "/opencraft-exec-");
         controls.push({ command, options });
         const child = spawn("/bin/sh", ["-c", rewritten], {
           stdio: ["pipe", "pipe", "pipe"],
@@ -69,17 +59,11 @@ async function fixture(t: test.TestContext) {
         children.add(child);
         const done = once(child, "close");
         void done.then(() => children.delete(child));
-        child.stdout.on("data", (data) =>
-          options.onStdout(data.toString("ascii")),
-        );
-        child.stderr.on("data", (data) =>
-          options.onStderr(data.toString("utf8")),
-        );
+        child.stdout.on("data", (data) => options.onStdout(data.toString("ascii")));
+        child.stderr.on("data", (data) => options.onStderr(data.toString("utf8")));
         return {
           sendStdin: (data: string) =>
-            new Promise<void>((resolve, reject) =>
-              child.stdin.write(data, (e) => (e ? reject(e) : resolve())),
-            ),
+            new Promise<void>((resolve, reject) => child.stdin.write(data, (e) => (e ? reject(e) : resolve()))),
           wait: async () => {
             const [code] = await done;
             if (code !== 0) throw Error("transport stopped");
@@ -142,18 +126,14 @@ test("E2B adapter preserves binary pipes, literal argv, stdin EOF, environment a
         cwd: f.directory,
         env: { PAYLOAD: "payload-not-launcher" },
       },
-      (v) =>
-        (v.stream === "stdout" ? stdout : stderr).push(Buffer.from(v.data)),
+      (v) => (v.stream === "stdout" ? stdout : stderr).push(Buffer.from(v.data)),
     );
     assert.equal(child.kind, "process");
     assert.notEqual(child.id, "test-only-id");
     await child.writeStdin(Buffer.from([0, 255, 128, 10, 13, 0]));
     if (child.kind === "process") await child.closeStdin();
     assert.equal((await child.exited).code, 0);
-    assert.deepEqual(
-      Buffer.concat(stdout),
-      Buffer.from([0, 255, 128, 10, 13, 0]),
-    );
+    assert.deepEqual(Buffer.concat(stdout), Buffer.from([0, 255, 128, 10, 13, 0]));
     assert.equal(Buffer.concat(stderr).toString(), "payload-not-launcher");
     const second = await sandbox.spawn({
       command: ["/usr/bin/printf", "second"],
@@ -165,11 +145,7 @@ test("E2B adapter preserves binary pipes, literal argv, stdin EOF, environment a
     assert.ok(
       f.controls
         .filter((c) => c.command)
-        .every(
-          (c) =>
-            !c.command.includes("payload-not-launcher") &&
-            !c.command.includes("synthetic-only-key"),
-        ),
+        .every((c) => !c.command.includes("payload-not-launcher") && !c.command.includes("synthetic-only-key")),
     );
     assert.ok(f.controls[0].options.metadata["opencraft-correlation"]);
   } finally {
@@ -207,10 +183,7 @@ test("E2B termination waits for the remote child exit and never advertises unsup
 test("mismatched template resources are destroyed before admission", async (t) => {
   const f = await fixture(t);
   f.mismatch();
-  await assert.rejects(
-    createSandbox(f.pool, { owner: "wrong-resources" }),
-    /resources differ/,
-  );
+  await assert.rejects(createSandbox(f.pool, { owner: "wrong-resources" }), /resources differ/);
   assert.equal(f.kills, 1);
   await f.pool.close();
 });
@@ -225,15 +198,9 @@ test("unconfirmed creation retains capacity, never replays, and never echoes ven
     pool = await createSandboxPool(policy, backend);
   await assert.rejects(
     createSandbox(pool, { owner: "first" }),
-    (e) =>
-      e instanceof SandboxCreationFault &&
-      e.outcome === "unknown" &&
-      !e.message.includes("vendor-secret"),
+    (e) => e instanceof SandboxCreationFault && e.outcome === "unknown" && !e.message.includes("vendor-secret"),
   );
-  await assert.rejects(
-    createSandbox(pool, { owner: "second" }),
-    /admission queue/,
-  );
+  await assert.rejects(createSandbox(pool, { owner: "second" }), /admission queue/);
   assert.equal(creates, 1);
   await assert.rejects(pool.close(), /unverified/);
 });
@@ -242,10 +209,7 @@ test("unconfirmed deletion does not return capacity", async (t) => {
     sandbox = await createSandbox(f.pool, { owner: "first" });
   f.failCleanup();
   await assert.rejects(sandbox.close(), /destruction is unconfirmed/);
-  await assert.rejects(
-    createSandbox(f.pool, { owner: "second" }),
-    /admission queue/,
-  );
+  await assert.rejects(createSandbox(f.pool, { owner: "second" }), /admission queue/);
   await assert.rejects(f.pool.close(), /unverified/);
 });
 test("cancelled late creation is reclaimed and cannot become a ready environment", async (t) => {
@@ -275,10 +239,7 @@ test("cancelled late creation is reclaimed and cannot become a ready environment
   await f.pool.close();
 });
 test("explicit credential and endpoint policy fail closed without provisioning", async () => {
-  assert.throws(
-    () => e2bSandboxBackend({ ...opts, apiUrl: "http://remote.example.test" }),
-    /HTTPS/,
-  );
+  assert.throws(() => e2bSandboxBackend({ ...opts, apiUrl: "http://remote.example.test" }), /HTTPS/);
   let calls = 0;
   const pool = await createSandboxPool(
     policy,
@@ -292,10 +253,7 @@ test("explicit credential and endpoint policy fail closed without provisioning",
       },
     ),
   );
-  await assert.rejects(
-    createSandbox(pool, { owner: "missing-key" }),
-    /could not initialize/,
-  );
+  await assert.rejects(createSandbox(pool, { owner: "missing-key" }), /could not initialize/);
   assert.equal(calls, 0);
   await pool.close();
 });
@@ -317,11 +275,7 @@ test("large binary writes preserve order against concurrent EOF", async (t) => {
     const output: Buffer[] = [];
     const child = await sandbox.spawn(
       {
-        command: [
-          "/usr/bin/python3",
-          "-c",
-          "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())",
-        ],
+        command: ["/usr/bin/python3", "-c", "import sys;sys.stdout.buffer.write(sys.stdin.buffer.read())"],
         cwd: f.directory,
         env: {},
       },
@@ -461,10 +415,7 @@ test("trusted persistent binding is sent without volume mounts and verified befo
     ...(await info()),
     metadata: { workspace_id: id },
   });
-  const backend = e2bSandboxBackend(
-    { ...opts, readWorkspaceId: async () => id },
-    f.driver,
-  );
+  const backend = e2bSandboxBackend({ ...opts, readWorkspaceId: async () => id }, f.driver);
   const pool = await createSandboxPool(policy, backend);
   const sb = await createSandbox(pool, { owner: "bot:trusted" });
   const call = f.controls.find((c) => c.options?.metadata);
@@ -479,10 +430,7 @@ test("workspace mismatch is reclaimed; resolver failure submits no create", asyn
   const f = await fixture(t);
   const pool = await createSandboxPool(
     policy,
-    e2bSandboxBackend(
-      { ...opts, readWorkspaceId: async () => "ws-" + "a".repeat(32) },
-      f.driver,
-    ),
+    e2bSandboxBackend({ ...opts, readWorkspaceId: async () => "ws-" + "a".repeat(32) }, f.driver),
   );
   await assert.rejects(createSandbox(pool, { owner: "bot:trusted" }));
   assert.equal(f.kills, 1);
@@ -503,26 +451,35 @@ test("workspace mismatch is reclaimed; resolver failure submits no create", asyn
   assert.equal(f.creates, 1);
   await blocked.close();
 });
-test('closing stdin after a fast command exited preserves its successful result',async(t)=>{
- const f=await fixture(t);const sb=await createSandbox(f.pool,{owner:'bot:quick'});
- const p=await sb.spawn({command:['/bin/true'],cwd:'/tmp',env:{}});
- assert.equal((await p.exited).code,0);if(p.kind==='process')await p.closeStdin();
- await sb.close();await f.pool.close();
+test("closing stdin after a fast command exited preserves its successful result", async (t) => {
+  const f = await fixture(t);
+  const sb = await createSandbox(f.pool, { owner: "bot:quick" });
+  const p = await sb.spawn({ command: ["/bin/true"], cwd: "/tmp", env: {} });
+  assert.equal((await p.exited).code, 0);
+  if (p.kind === "process") await p.closeStdin();
+  await sb.close();
+  await f.pool.close();
 });
-
 
 test("SDK occupancy response releases only the rejected create admission", async () => {
   let creates = 0;
   const backend = e2bSandboxBackend(opts, {
     create: async () => {
       creates++;
-      throw Object.assign(new SandboxError("409: Workspace has live family members; connect to one, or delete the whole family before rebuilding"), { statusCode: 409 });
+      throw Object.assign(
+        new SandboxError(
+          "409: Workspace has live family members; connect to one, or delete the whole family before rebuilding",
+        ),
+        { statusCode: 409 },
+      );
     },
   });
   const pool = await createSandboxPool(policy, backend);
   for (let attempt = 0; attempt < 2; attempt++)
-    await assert.rejects(createSandbox(pool, { owner: "same-workspace" }),
-      (error) => error instanceof SandboxCreationFault && error.outcome === "not-created");
+    await assert.rejects(
+      createSandbox(pool, { owner: "same-workspace" }),
+      (error) => error instanceof SandboxCreationFault && error.outcome === "not-created",
+    );
   assert.equal(creates, 2);
   await pool.close();
 });
@@ -532,12 +489,19 @@ test("other conflict responses retain uncertain create admission", async () => {
   const backend = e2bSandboxBackend(opts, {
     create: async () => {
       creates++;
-      throw Object.assign(new SandboxError("409: A previous creation has an uncertain result; reconcile its workspace_request_id before retrying"), { statusCode: 409 });
+      throw Object.assign(
+        new SandboxError(
+          "409: A previous creation has an uncertain result; reconcile its workspace_request_id before retrying",
+        ),
+        { statusCode: 409 },
+      );
     },
   });
   const pool = await createSandboxPool(policy, backend);
-  await assert.rejects(createSandbox(pool, { owner: "pending-workspace" }),
-    (error) => error instanceof SandboxCreationFault && error.outcome === "unknown");
+  await assert.rejects(
+    createSandbox(pool, { owner: "pending-workspace" }),
+    (error) => error instanceof SandboxCreationFault && error.outcome === "unknown",
+  );
   await assert.rejects(createSandbox(pool, { owner: "pending-workspace" }), /admission queue/);
   assert.equal(creates, 1);
   await assert.rejects(pool.close(), /unverified/);

@@ -8,8 +8,7 @@ export class ExecutionRouter {
   async run(work, signal) {
     if (this.stopping) throw new Error("Execution router is suspending");
     const engine = this.executions.execution(work)?.harness;
-    if (!Object.hasOwn(this.factories, engine))
-      throw new Error("Unknown persisted execution harness");
+    if (!Object.hasOwn(this.factories, engine)) throw new Error("Unknown persisted execution harness");
     if (!this.instances.has(engine)) {
       const entry = {};
       entry.promise = Promise.resolve()
@@ -22,10 +21,7 @@ export class ExecutionRouter {
     return adapter.run(work, signal);
   }
   activeSessionCount() {
-    return [...this.instances.values()].reduce(
-      (n, e) => n + (e.adapter?.activeSessionCount() ?? 0),
-      0,
-    );
+    return [...this.instances.values()].reduce((n, e) => n + (e.adapter?.activeSessionCount() ?? 0), 0);
   }
   async suspendAll() {
     this.stopping = true;

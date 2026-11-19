@@ -1,5 +1,5 @@
 import { createMemoryBrowser } from "./memory-browser.mjs";
-import { assistantHostExtension } from './host-extension.mjs';
+import { assistantHostExtension } from "./host-extension.mjs";
 import { LocalAttachmentStore } from "../adapters/filesystem/attachment-store.mjs";
 import { join } from "node:path";
 import { workObservation } from "./work-observation.mjs";
@@ -10,14 +10,19 @@ import { platformAssistantPort } from "../adapters/local/platform-assistant-port
 
 /** One runtime lifetime; transport and platform authorization remain separate owners. */
 export function createAssistantSession(peer, onStopped) {
-  let auxiliary, runner, memoryBrowser,
+  let auxiliary,
+    runner,
+    memoryBrowser,
     stopping = false,
     timer,
     work,
     start;
   const lifetime = new AbortController();
   const request = (method, params, signal = lifetime.signal) =>
-    peer.request("platform/" + method, params, { signal, ...(method === "environment/run" ? {timeoutMs:180000} : {}) });
+    peer.request("platform/" + method, params, {
+      signal,
+      ...(method === "environment/run" ? { timeoutMs: 180000 } : {}),
+    });
   async function close() {
     if (stopping) return;
     stopping = true;
@@ -26,7 +31,7 @@ export function createAssistantSession(peer, onStopped) {
     await start?.catch(() => {});
     await work?.catch(() => {});
     try {
-      await Promise.allSettled([auxiliary?.close(),runner?.close()]);
+      await Promise.allSettled([auxiliary?.close(), runner?.close()]);
     } finally {
       onStopped();
     }
@@ -38,8 +43,7 @@ export function createAssistantSession(peer, onStopped) {
         if (start || stopping) throw Error("Already initialized");
         if (
           params?.protocolVersion !== 1 ||
-          (typeof params.profile === "string") ===
-            (typeof params.directory === "string")
+          (typeof params.profile === "string") === (typeof params.directory === "string")
         )
           throw Error("Invalid initialization");
         start = launch(params);
@@ -51,10 +55,9 @@ export function createAssistantSession(peer, onStopped) {
           pid: process.pid,
         };
       }
-      if(method==='memory'&&memoryBrowser&&!stopping)return memoryBrowser(params);
+      if (method === "memory" && memoryBrowser && !stopping) return memoryBrowser(params);
       if (method === "observe" && runner && !stopping) return observe();
-      if (method === "dispatch" && runner && !stopping)
-        return runner.dispatch(params);
+      if (method === "dispatch" && runner && !stopping) return runner.dispatch(params);
       throw Error("Method unavailable");
     },
   };
@@ -92,12 +95,9 @@ export function createAssistantSession(peer, onStopped) {
                       try {
                         return await request("environment/run", params, signal);
                       } catch {
-                        throw Object.assign(
-                          Error(
-                            "Environment command outcome is unknown; do not replay",
-                          ),
-                          { code: "ENVIRONMENT_OUTCOME_UNKNOWN" },
-                        );
+                        throw Object.assign(Error("Environment command outcome is unknown; do not replay"), {
+                          code: "ENVIRONMENT_OUTCOME_UNKNOWN",
+                        });
                       } finally {
                         signal?.removeEventListener("abort", cancel);
                       }
@@ -110,8 +110,7 @@ export function createAssistantSession(peer, onStopped) {
                   modelId: config.modelId,
                   purpose: context?.purpose ?? "execution",
                 }),
-              resolveModelFailure: (purpose) =>
-                request("model-failure", { purpose }),
+              resolveModelFailure: (purpose) => request("model-failure", { purpose }),
               messageTransport: {
                 async deliver(message, signal) {
                   if (
@@ -119,18 +118,10 @@ export function createAssistantSession(peer, onStopped) {
                     message.body.type === "secret-request" ||
                     message.body.type === "authorization-request"
                   )
-                    throw Error(
-                      "This message requires a dedicated secure or attachment transport",
-                    );
-                  const text =
-                    message.body.content ?? message.body.question?.prompt;
-                  if (typeof text !== "string" || !text.trim())
-                    throw Error("No native text representation");
-                  const receipt = await request(
-                    "reply",
-                    { id: message.id, text },
-                    signal,
-                  );
+                    throw Error("This message requires a dedicated secure or attachment transport");
+                  const text = message.body.content ?? message.body.question?.prompt;
+                  if (typeof text !== "string" || !text.trim()) throw Error("No native text representation");
+                  const receipt = await request("reply", { id: message.id, text }, signal);
                   return {
                     messageId: message.id,
                     channel: message.body.channel,
@@ -141,19 +132,29 @@ export function createAssistantSession(peer, onStopped) {
               },
             },
           });
-      if(!config.profile)memoryBrowser=createMemoryBrowser({memory:runner.app.memory,history:runner.app.history,transact:f=>runner.uow.transaction(f),authorize:()=>request('opencraft/personal-assistant/authorize',{})});
+      if (!config.profile)
+        memoryBrowser = createMemoryBrowser({
+          memory: runner.app.memory,
+          history: runner.app.history,
+          transact: (f) => runner.uow.transaction(f),
+          authorize: () => request("opencraft/personal-assistant/authorize", {}),
+        });
       if (stopping) {
         await runner.close();
         onStopped();
       } else {
-        if(!config.profile)auxiliary=assistantHostExtension()?.createRuntime?.({directory:config.directory,profileOptions:config.profileOptions,request,signal:lifetime.signal});
+        if (!config.profile)
+          auxiliary = assistantHostExtension()?.createRuntime?.({
+            directory: config.directory,
+            profileOptions: config.profileOptions,
+            request,
+            signal: lifetime.signal,
+          });
         const cursorKey = "host:native-inbox:sequence";
         async function poll() {
           if (!config.profile) {
             const after = Number(
-              runner.uow.db
-                .prepare("SELECT value FROM meta WHERE key=?")
-                .get(cursorKey)?.value ?? 0,
+              runner.uow.db.prepare("SELECT value FROM meta WHERE key=?").get(cursorKey)?.value ?? 0,
             );
             let rows;
             try {
@@ -162,10 +163,7 @@ export function createAssistantSession(peer, onStopped) {
               // A failed read is not runtime corruption. Keep the durable cursor and
               // retry on the next poll only if the original binding is still authorized.
               if (runner.stopping) throw Error("Assistant runtime unavailable");
-              await port.authorize(
-                runner.profile.config.botBinding,
-                lifetime.signal,
-              );
+              await port.authorize(runner.profile.config.botBinding, lifetime.signal);
               peer.notify("activity-unavailable");
               return;
             }
@@ -173,26 +171,46 @@ export function createAssistantSession(peer, onStopped) {
               if (stopping) return;
               if (row.author_id === runner.profile.config.botBinding.owner.id) {
                 let attachments;
-                if(row.attachment){
-                  let offset=0,name,expectedSize,total=0;const chunks=[];
-                  do{
-                    const file=await request('attachment',{messageId:row.id,offset});
-                    if(!file||file.size>8*1024*1024||file.size<0||(expectedSize!==undefined&&expectedSize!==file.size))throw Error('Attachment unavailable');
-                    name=file.name;expectedSize=file.size;const chunk=Buffer.from(file.base64,'base64');total+=chunk.length;
-                    if(total>expectedSize||file.next!==null&&(file.next!==offset+65536||chunk.length!==65536))throw Error('Invalid attachment chunk');
-                    chunks.push(chunk);offset=file.next;
-                  }while(offset!==null);
-                  if(total!==expectedSize)throw Error('Incomplete attachment');
-                  const stored=new LocalAttachmentStore(join(runner.profile.path,'attachments')).importBytes(name,Buffer.concat(chunks,total));
-                  attachments=[stored.attachmentId];
+                if (row.attachment) {
+                  let offset = 0,
+                    name,
+                    expectedSize,
+                    total = 0;
+                  const chunks = [];
+                  do {
+                    const file = await request("attachment", { messageId: row.id, offset });
+                    if (
+                      !file ||
+                      file.size > 8 * 1024 * 1024 ||
+                      file.size < 0 ||
+                      (expectedSize !== undefined && expectedSize !== file.size)
+                    )
+                      throw Error("Attachment unavailable");
+                    name = file.name;
+                    expectedSize = file.size;
+                    const chunk = Buffer.from(file.base64, "base64");
+                    total += chunk.length;
+                    if (
+                      total > expectedSize ||
+                      (file.next !== null && (file.next !== offset + 65536 || chunk.length !== 65536))
+                    )
+                      throw Error("Invalid attachment chunk");
+                    chunks.push(chunk);
+                    offset = file.next;
+                  } while (offset !== null);
+                  if (total !== expectedSize) throw Error("Incomplete attachment");
+                  const stored = new LocalAttachmentStore(join(runner.profile.path, "attachments")).importBytes(
+                    name,
+                    Buffer.concat(chunks, total),
+                  );
+                  attachments = [stored.attachmentId];
                 }
                 const response = await runner.dispatch({
                   op: "say",
                   id: "native:" + row.id,
-                  params: { text: row.content, ...(attachments?{attachments}:{}) },
+                  params: { text: row.content, ...(attachments ? { attachments } : {}) },
                 });
-                if (response?.ok === false)
-                  throw Error("Assistant intake rejected");
+                if (response?.ok === false) throw Error("Assistant intake rejected");
               }
               runner.uow.transaction(() =>
                 runner.uow.db
@@ -222,9 +240,13 @@ export function createAssistantSession(peer, onStopped) {
         peer.notify("ready");
       }
     } catch (error) {
-      peer.notify("startup-failure",{reason:String(error?.message??error).replace(/\s+/gu," ").slice(0,200)});
+      peer.notify("startup-failure", {
+        reason: String(error?.message ?? error)
+          .replace(/\s+/gu, " ")
+          .slice(0, 200),
+      });
       peer.notify("failed");
-      await Promise.allSettled([auxiliary?.close(),runner?.close()]);
+      await Promise.allSettled([auxiliary?.close(), runner?.close()]);
       onStopped();
     }
   }

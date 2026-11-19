@@ -1,9 +1,9 @@
-import assert from 'node:assert/strict';
-import {mkdir,readFile,writeFile} from 'node:fs/promises';
-import {createServer} from 'vite';
-import {chromium} from 'playwright';
-const output=process.env.OPENCRAFT_SMOKE_OUTPUT??'.local/browser-diagnostics';
-const source=`
+import assert from "node:assert/strict";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "vite";
+import { chromium } from "playwright";
+const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/browser-diagnostics";
+const source = `
 import React,{useState,useEffect} from 'react';
 import{QueryClient,QueryClientProvider}from'@tanstack/react-query';
 import{createIntlTestRoot}from'/tests/fixtures/intl-root.tsx';
@@ -58,51 +58,179 @@ createIntlTestRoot(document.getElementById('root'),undefined,window.fixtureLocal
 window.diagnosticWarning=()=>recordRuntimeDiagnosticConsole("console.warn",["synthetic diagnostic warning"]);
 
 `;
-const vite=await createServer({configFile:false,root:process.cwd(),logLevel:'error',resolve:{dedupe:['react','react-dom','react-intl']},cacheDir:'node_modules/.vite-browser-diagnostics',esbuild:{jsx:'automatic'},optimizeDeps:{entries:[]},server:{host:'127.0.0.1',port:0,hmr:false},plugins:[{name:'diagnostic-fixture',resolveId:id=>id==='/fixture.tsx'?id:null,load:id=>id==='/fixture.tsx'?source:null,configureServer(server){server.middlewares.use((req,res,next)=>{if(req.url==='/__opencraft_apphost_diagnostic'){res.statusCode=202;res.end('{}');return}if(req.url!=='/')return next();res.setHeader('content-type','text/html');res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="opencraft-source-revision" content="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><div id="root"></div><script type="module" src="/fixture.tsx"></script>')})}}]});
+const vite = await createServer({
+  configFile: false,
+  root: process.cwd(),
+  logLevel: "error",
+  resolve: { dedupe: ["react", "react-dom", "react-intl"] },
+  cacheDir: "node_modules/.vite-browser-diagnostics",
+  esbuild: { jsx: "automatic" },
+  optimizeDeps: { entries: [] },
+  server: { host: "127.0.0.1", port: 0, hmr: false },
+  plugins: [
+    {
+      name: "diagnostic-fixture",
+      resolveId: (id) => (id === "/fixture.tsx" ? id : null),
+      load: (id) => (id === "/fixture.tsx" ? source : null),
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === "/__opencraft_apphost_diagnostic") {
+            res.statusCode = 202;
+            res.end("{}");
+            return;
+          }
+          if (req.url !== "/") return next();
+          res.setHeader("content-type", "text/html");
+          res.end(
+            '<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="opencraft-source-revision" content="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"><div id="root"></div><script type="module" src="/fixture.tsx"></script>',
+          );
+        });
+      },
+    },
+  ],
+});
 let browser;
-const evidence=[];
+const evidence = [];
 try {
- await mkdir(output,{recursive:true}); await vite.listen();
- browser=await chromium.launch({headless:true,executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});
- for(const item of [{width:390,touch:true,theme:'light',locale:'en-US'},{width:1440,touch:false,theme:'dark',locale:'en-US'},{width:390,touch:true,theme:'light',locale:'zh-CN'}]){
-  const context=await browser.newContext({viewport:{width:item.width,height:900},hasTouch:item.touch,isMobile:item.touch,userAgent:item.touch?'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148':'diagnostic-desktop'});
-  const page=await context.newPage(); const errors:string[]=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGEERROR',e.message)});page.on('response',response=>{if(response.status()>=400)console.error('HTTP',response.status(),response.url())});page.on('console',message=>{if(message.type()==='error')console.error('BROWSER',message.text())});
-  await page.addInitScript(locale=>{(window as any).__name=(v:any)=>v;(window as any).fixtureLocale=locale;},item.locale); await page.goto(vite.resolvedUrls!.local[0]!,{waitUntil:'commit'});
-  const draft=page.getByRole('textbox',{name:'Draft',exact:true}); await draft.waitFor({timeout:30000}).catch(async error=>{await writeFile(output+'/failed.html',await page.content());await page.screenshot({path:output+'/failed.png'});throw error});
-  await page.evaluate(item=>{const w=window as any;w.fixture.setDensity(item.touch?'on':'off');w.fixture.setThemePreference(item.theme);w.draft=document.querySelector('[aria-label=Draft]');},item);
-  const more=page.getByRole('button',{name:item.locale==='zh-CN'?'会话操作':'Conversation actions',exact:true});
-  const openMenu=async()=>{if(item.touch)await more.tap();else{await more.focus();await page.keyboard.press('Enter');}};
-  assert.equal(await page.evaluate(()=>(window as any).diagnosticState().enabled),false);
-  const uploads:string[]=[];page.on('request',req=>{if(/__opencraft_(apphost_diagnostic|runtime_error|observe\/events)/.test(req.url()))uploads.push(req.url());});
-  await page.evaluate(()=>(window as any).exerciseScroll());
-  assert.equal(await page.evaluate(()=>(window as any).localDiagnostics().samples.length),0);
-  await openMenu();
-  const enable=page.getByRole('menuitem',{name:item.locale==='zh-CN'?'启用本地诊断':'Enable local diagnostics',exact:true});
-  if(item.touch)await enable.tap();else await enable.click();
-  await page.waitForFunction(()=>(window as any).diagnosticState().enabled);
-  await page.evaluate(()=>{(window as any).diagnosticWarning();(window as any).exerciseScroll();});
-  await draft.focus(); await draft.fill('private draft survives export');
-  if(item.touch){await draft.tap();await page.waitForFunction(()=>Boolean((window as any).readViewportHistory().lastEditing));}
-  await page.waitForFunction(()=>document.querySelector('html')?.dataset.timelineTracksVisualViewport==='true'||window.innerWidth>600);
-  await openMenu();
-  const download=page.getByRole('menuitem',{name:item.locale==='zh-CN'?'下载诊断信息':'Download diagnostics',exact:true});await download.waitFor();
-  await page.screenshot({path:output+'/'+item.width+'-'+item.theme+'-'+item.locale+'-menu.png'});
-  const waiting=page.waitForEvent('download');if(item.touch) await download.tap();else{await download.focus();await page.keyboard.press('Enter');}
-  const file=await waiting;assert.match(file.suggestedFilename(),/^opencraft-diagnostics-.*\.json$/);
-  const report=JSON.parse(await readFile((await file.path())!,'utf8'));
-  assert.equal(report.schemaVersion,2);assert.equal(report.diagnostics.enabled,true);assert.equal(report.diagnostics.upload,false);assert.ok(report.diagnostics.samples.some((x:any)=>x.kind==='scroll-write'));assert.ok(!JSON.stringify(report.diagnostics).includes('private-turn-id'));assert.ok(report.current.layout.elements.shell);
-  assert.ok(report.runtime.errors.some((entry:any)=>entry.message==='synthetic diagnostic warning'));
-  assert.ok(!JSON.stringify(report).includes('private draft survives export'));
-  if(item.touch){assert.equal(report.viewport.lastEditing.geometry.editing,1);assert.ok(report.viewport.lastEditing);assert.ok(report.viewport.samples.length>0);}
-  assert.equal(await page.locator('[aria-label=Draft]').inputValue(),'private draft survives export');assert.equal(await page.locator('[aria-label=Draft]').evaluate(e=>e===(window as any).draft),true);
-  await openMenu();const disable=page.getByRole('menuitem',{name:item.locale==='zh-CN'?'停用本地诊断':'Disable local diagnostics',exact:true});if(item.touch)await disable.tap();else await disable.click();
-  assert.equal(await page.evaluate(()=>(window as any).diagnosticState().enabled),false);
-  const count=await page.evaluate(()=>(window as any).localDiagnostics().samples.length);
-  await page.evaluate(()=>(window as any).exerciseScroll());
-  assert.equal(await page.evaluate(()=>(window as any).localDiagnostics().samples.length),count);
-  assert.deepEqual(uploads,[]);
-  assert.deepEqual(errors,[]);await page.screenshot({path:output+'/'+item.width+'-'+item.theme+'-'+item.locale+'.png'});
-  evidence.push({...item,download:true,preservedEditing:Boolean(report.viewport.lastEditing),errors});await context.close();
- }
- await writeFile(output+'/result.json',JSON.stringify(evidence,null,2));console.log(JSON.stringify({ok:true,evidence}));
-} finally {await browser?.close();await vite.close();}
+  await mkdir(output, { recursive: true });
+  await vite.listen();
+  browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,
+    args: ["--no-sandbox"],
+  });
+  for (const item of [
+    { width: 390, touch: true, theme: "light", locale: "en-US" },
+    { width: 1440, touch: false, theme: "dark", locale: "en-US" },
+    { width: 390, touch: true, theme: "light", locale: "zh-CN" },
+  ]) {
+    const context = await browser.newContext({
+      viewport: { width: item.width, height: 900 },
+      hasTouch: item.touch,
+      isMobile: item.touch,
+      userAgent: item.touch
+        ? "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148"
+        : "diagnostic-desktop",
+    });
+    const page = await context.newPage();
+    const errors: string[] = [];
+    page.on("pageerror", (e) => {
+      errors.push(e.message);
+      console.error("PAGEERROR", e.message);
+    });
+    page.on("response", (response) => {
+      if (response.status() >= 400) console.error("HTTP", response.status(), response.url());
+    });
+    page.on("console", (message) => {
+      if (message.type() === "error") console.error("BROWSER", message.text());
+    });
+    await page.addInitScript((locale) => {
+      (window as any).__name = (v: any) => v;
+      (window as any).fixtureLocale = locale;
+    }, item.locale);
+    await page.goto(vite.resolvedUrls!.local[0]!, { waitUntil: "commit" });
+    const draft = page.getByRole("textbox", { name: "Draft", exact: true });
+    await draft.waitFor({ timeout: 30000 }).catch(async (error) => {
+      await writeFile(output + "/failed.html", await page.content());
+      await page.screenshot({ path: output + "/failed.png" });
+      throw error;
+    });
+    await page.evaluate((item) => {
+      const w = window as any;
+      w.fixture.setDensity(item.touch ? "on" : "off");
+      w.fixture.setThemePreference(item.theme);
+      w.draft = document.querySelector("[aria-label=Draft]");
+    }, item);
+    const more = page.getByRole("button", {
+      name: item.locale === "zh-CN" ? "会话操作" : "Conversation actions",
+      exact: true,
+    });
+    const openMenu = async () => {
+      if (item.touch) await more.tap();
+      else {
+        await more.focus();
+        await page.keyboard.press("Enter");
+      }
+    };
+    assert.equal(await page.evaluate(() => (window as any).diagnosticState().enabled), false);
+    const uploads: string[] = [];
+    page.on("request", (req) => {
+      if (/__opencraft_(apphost_diagnostic|runtime_error|observe\/events)/.test(req.url())) uploads.push(req.url());
+    });
+    await page.evaluate(() => (window as any).exerciseScroll());
+    assert.equal(await page.evaluate(() => (window as any).localDiagnostics().samples.length), 0);
+    await openMenu();
+    const enable = page.getByRole("menuitem", {
+      name: item.locale === "zh-CN" ? "启用本地诊断" : "Enable local diagnostics",
+      exact: true,
+    });
+    if (item.touch) await enable.tap();
+    else await enable.click();
+    await page.waitForFunction(() => (window as any).diagnosticState().enabled);
+    await page.evaluate(() => {
+      (window as any).diagnosticWarning();
+      (window as any).exerciseScroll();
+    });
+    await draft.focus();
+    await draft.fill("private draft survives export");
+    if (item.touch) {
+      await draft.tap();
+      await page.waitForFunction(() => Boolean((window as any).readViewportHistory().lastEditing));
+    }
+    await page.waitForFunction(
+      () => document.querySelector("html")?.dataset.timelineTracksVisualViewport === "true" || window.innerWidth > 600,
+    );
+    await openMenu();
+    const download = page.getByRole("menuitem", {
+      name: item.locale === "zh-CN" ? "下载诊断信息" : "Download diagnostics",
+      exact: true,
+    });
+    await download.waitFor();
+    await page.screenshot({ path: output + "/" + item.width + "-" + item.theme + "-" + item.locale + "-menu.png" });
+    const waiting = page.waitForEvent("download");
+    if (item.touch) await download.tap();
+    else {
+      await download.focus();
+      await page.keyboard.press("Enter");
+    }
+    const file = await waiting;
+    assert.match(file.suggestedFilename(), /^opencraft-diagnostics-.*\.json$/);
+    const report = JSON.parse(await readFile((await file.path())!, "utf8"));
+    assert.equal(report.schemaVersion, 2);
+    assert.equal(report.diagnostics.enabled, true);
+    assert.equal(report.diagnostics.upload, false);
+    assert.ok(report.diagnostics.samples.some((x: any) => x.kind === "scroll-write"));
+    assert.ok(!JSON.stringify(report.diagnostics).includes("private-turn-id"));
+    assert.ok(report.current.layout.elements.shell);
+    assert.ok(report.runtime.errors.some((entry: any) => entry.message === "synthetic diagnostic warning"));
+    assert.ok(!JSON.stringify(report).includes("private draft survives export"));
+    if (item.touch) {
+      assert.equal(report.viewport.lastEditing.geometry.editing, 1);
+      assert.ok(report.viewport.lastEditing);
+      assert.ok(report.viewport.samples.length > 0);
+    }
+    assert.equal(await page.locator("[aria-label=Draft]").inputValue(), "private draft survives export");
+    assert.equal(await page.locator("[aria-label=Draft]").evaluate((e) => e === (window as any).draft), true);
+    await openMenu();
+    const disable = page.getByRole("menuitem", {
+      name: item.locale === "zh-CN" ? "停用本地诊断" : "Disable local diagnostics",
+      exact: true,
+    });
+    if (item.touch) await disable.tap();
+    else await disable.click();
+    assert.equal(await page.evaluate(() => (window as any).diagnosticState().enabled), false);
+    const count = await page.evaluate(() => (window as any).localDiagnostics().samples.length);
+    await page.evaluate(() => (window as any).exerciseScroll());
+    assert.equal(await page.evaluate(() => (window as any).localDiagnostics().samples.length), count);
+    assert.deepEqual(uploads, []);
+    assert.deepEqual(errors, []);
+    await page.screenshot({ path: output + "/" + item.width + "-" + item.theme + "-" + item.locale + ".png" });
+    evidence.push({ ...item, download: true, preservedEditing: Boolean(report.viewport.lastEditing), errors });
+    await context.close();
+  }
+  await writeFile(output + "/result.json", JSON.stringify(evidence, null, 2));
+  console.log(JSON.stringify({ ok: true, evidence }));
+} finally {
+  await browser?.close();
+  await vite.close();
+}

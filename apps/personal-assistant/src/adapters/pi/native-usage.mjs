@@ -7,11 +7,7 @@ export async function readNativeUsage(path, models) {
   const storage = await openNodeSqliteStorage(path);
   let harness;
   try {
-    harness = await Harness.open(
-      storage,
-      { models, registry: createRegistry() },
-      context,
-    );
+    harness = await Harness.open(storage, { models, registry: createRegistry() }, context);
     return await harness.usage(context);
   } finally {
     if (harness) await harness.close(context);

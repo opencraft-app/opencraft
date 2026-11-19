@@ -5,16 +5,7 @@ import { digest, requireRevision } from "../domain/values.mjs";
 
 /** Owns definitions and occurrence creation; the runtime only asks it to tick. */
 export class RoutineService {
-  constructor({
-    uow,
-    repositories: r,
-    inbox,
-    works,
-    history,
-    attention,
-    scope,
-    now = Date.now,
-  }) {
+  constructor({ uow, repositories: r, inbox, works, history, attention, scope, now = Date.now }) {
     Object.assign(this, {
       uow,
       r,
@@ -29,30 +20,19 @@ export class RoutineService {
   add(inputId, params, resources) {
     Routine.validate(params);
     const notify = notificationPolicy(params.notify);
-    const schedule =
-      params.schedule === undefined
-        ? null
-        : CalendarSchedule.normalize(params.schedule);
+    const schedule = params.schedule === undefined ? null : CalendarSchedule.normalize(params.schedule);
     return this.inbox.accept(
       inputId,
       "routine.add",
-      resources === undefined
-        ? params
-        : { ...params, capturedResources: resources },
+      resources === undefined ? params : { ...params, capturedResources: resources },
       () => {
         const captured = this.scope.delegate(inputId, resources).resources;
         this.attention.active();
         const id = `routine_${digest(inputId).slice(0, 24)}`;
         const nextAt = schedule
-          ? CalendarSchedule.next(
-              schedule,
-              Math.max(this.now() - 1, (params.startAt ?? this.now()) - 1),
-            )
+          ? CalendarSchedule.next(schedule, Math.max(this.now() - 1, (params.startAt ?? this.now()) - 1))
           : params.startAt;
-        if (
-          nextAt === null ||
-          (params.expiresAt !== undefined && nextAt >= params.expiresAt)
-        )
+        if (nextAt === null || (params.expiresAt !== undefined && nextAt >= params.expiresAt))
           throw new Error("Schedule has no occurrence before its deadline");
         this.r.routines.add({
           id,
@@ -70,12 +50,7 @@ export class RoutineService {
           notify,
           resources_json: JSON.stringify(captured),
         });
-        this.r.events.append(
-          "routine.created",
-          null,
-          { routineId: id },
-          this.now(),
-        );
+        this.r.events.append("routine.created", null, { routineId: id }, this.now());
         return { routineId: id, revision: 1 };
       },
     );
@@ -84,21 +59,14 @@ export class RoutineService {
     const r = this.r.routines.get(id);
     if (!r) throw new Error("Unknown routine");
     this.r.routines.save({ ...r, status, revision: r.revision + 1 });
-    for (const w of this.r.works.forRoutine(id))
-      this.works.cancelWork(w.id, w.revision);
-    this.r.events.append(
-      `routine.${status}`,
-      null,
-      { routineId: id },
-      this.now(),
-    );
+    for (const w of this.r.works.forRoutine(id)) this.works.cancelWork(w.id, w.revision);
+    this.r.events.append(`routine.${status}`, null, { routineId: id }, this.now());
   }
   pause(inputId, params) {
     return this.inbox.accept(inputId, "routine.pause", params, () => {
       const record = this.r.routines.get(params.routineId);
       if (!record) throw new Error("Unknown routine");
-      if (params.expectedRevision !== undefined)
-        requireRevision(params.expectedRevision, record.revision, "routine");
+      if (params.expectedRevision !== undefined) requireRevision(params.expectedRevision, record.revision, "routine");
       this.stop(params.routineId, "paused");
       return { routineId: params.routineId, status: "paused" };
     });
@@ -108,26 +76,15 @@ export class RoutineService {
       const record = this.r.routines.get(params.routineId);
       if (record && params.expectedRevision !== undefined)
         requireRevision(params.expectedRevision, record.revision, "routine");
-      if (!record || record.status !== "paused")
-        throw new Error("Only paused routines can resume");
-      if (record.expires_at !== null && record.expires_at <= this.now())
-        throw new Error("Routine has expired");
+      if (!record || record.status !== "paused") throw new Error("Only paused routines can resume");
+      if (record.expires_at !== null && record.expires_at <= this.now()) throw new Error("Routine has expired");
       if (record.max_runs !== null && record.created_count >= record.max_runs)
         throw new Error("Routine run limit exhausted");
       const nextAt = record.schedule_json
-        ? CalendarSchedule.next(
-            JSON.parse(record.schedule_json),
-            this.now() - 1,
-            record.last_scheduled_at,
-          )
+        ? CalendarSchedule.next(JSON.parse(record.schedule_json), this.now() - 1, record.last_scheduled_at)
         : this.now();
-      if (
-        nextAt === null ||
-        (record.expires_at !== null && nextAt >= record.expires_at)
-      )
-        throw new Error(
-          "Schedule has no future occurrence before its deadline",
-        );
+      if (nextAt === null || (record.expires_at !== null && nextAt >= record.expires_at))
+        throw new Error("Schedule has no future occurrence before its deadline");
       this.r.routines.save({
         ...record,
         status: "active",
@@ -146,18 +103,12 @@ export class RoutineService {
     return this.inbox.accept(inputId, "routine.update", params, () => {
       const record = this.r.routines.get(params.routineId);
       if (!record) throw new Error("Unknown routine");
-      if (
-        !Number.isSafeInteger(params.expectedRevision) ||
-        params.expectedRevision < 1
-      )
+      if (!Number.isSafeInteger(params.expectedRevision) || params.expectedRevision < 1)
         throw new Error("Routine update needs an explicit revision");
       requireRevision(params.expectedRevision, record.revision, "routine");
       const definition = params.definition;
       Routine.validate(definition);
-      const schedule =
-        definition.schedule === undefined
-          ? null
-          : CalendarSchedule.normalize(definition.schedule);
+      const schedule = definition.schedule === undefined ? null : CalendarSchedule.normalize(definition.schedule);
       const nextAt = schedule
         ? CalendarSchedule.next(
             schedule,
@@ -165,14 +116,10 @@ export class RoutineService {
             record.last_scheduled_at,
           )
         : definition.startAt;
-      if (
-        nextAt === null ||
-        (definition.expiresAt !== undefined && nextAt >= definition.expiresAt)
-      )
+      if (nextAt === null || (definition.expiresAt !== undefined && nextAt >= definition.expiresAt))
         throw new Error("Schedule has no occurrence before its deadline");
       // Retire pending/active work from the old instruction, preserving its history.
-      for (const w of this.r.works.forRoutine(record.id))
-        this.works.cancelWork(w.id, w.revision);
+      for (const w of this.r.works.forRoutine(record.id)) this.works.cancelWork(w.id, w.revision);
       this.r.routines.save({
         ...record,
         text: definition.text,
@@ -199,11 +146,7 @@ export class RoutineService {
   finishWatch(work) {
     this.works.assertCurrent(work);
     const record = this.r.routines.get(work.routine_id);
-    if (
-      !record ||
-      !record.stop_when ||
-      record.revision !== work.routine_revision
-    )
+    if (!record || !record.stop_when || record.revision !== work.routine_revision)
       throw new Error("Only the current conditional watch can be finished");
     // Disarm future occurrences while allowing this run's original delivery to settle.
     this.r.routines.save({
@@ -227,12 +170,8 @@ export class RoutineService {
     // every pump when no routine exists. The transaction re-reads before acting.
     if (!this.r.routines.active().length) return;
     this.uow.transaction(() => {
-      if (
-        this.r.routines.active().length &&
-        this.attention.assess() === "pause"
-      ) {
-        for (const record of this.r.routines.active())
-          this.stop(record.id, "paused");
+      if (this.r.routines.active().length && this.attention.assess() === "pause") {
+        for (const record of this.r.routines.active()) this.stop(record.id, "paused");
         return;
       }
       for (const record of this.r.routines.active()) {
@@ -272,8 +211,7 @@ export class RoutineService {
                 observedAt: now,
               },
             );
-            if (record.notify !== "never" || record.stop_when)
-              this.history.link(this.history.main.id, workId);
+            if (record.notify !== "never" || record.stop_when) this.history.link(this.history.main.id, workId);
             return { workId, revision: 1, occurrenceId };
           },
         );

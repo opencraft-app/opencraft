@@ -13,8 +13,13 @@ import { running, until } from "./helpers.mjs";
 test("an idle runner does not rescan memory files on every pump", async (t) => {
   const original = MemoryFileStore.prototype.scan;
   let scans = 0;
-  MemoryFileStore.prototype.scan = function (...args) { scans++; return original.apply(this, args); };
-  t.after(() => { MemoryFileStore.prototype.scan = original; });
+  MemoryFileStore.prototype.scan = function (...args) {
+    scans++;
+    return original.apply(this, args);
+  };
+  t.after(() => {
+    MemoryFileStore.prototype.scan = original;
+  });
   await running(t);
   await delay(500);
   scans = 0;
@@ -31,8 +36,10 @@ test("an external memory file edit is still noticed without user activity", asyn
   const changes = () => db.prepare("SELECT count(*) AS n FROM event WHERE kind='memory.files.changed'").get().n;
   await delay(MEMORY_FILE_SYNC_MS + 200);
   const before = changes();
-  writeFileSync(join(runner.app.memory.files.locations().user, "profile.md"),
-    "# User\n\n- (2026-11-03) Lives in Shenzhen\n");
+  writeFileSync(
+    join(runner.app.memory.files.locations().user, "profile.md"),
+    "# User\n\n- (2026-11-03) Lives in Shenzhen\n",
+  );
   const noticed = await until(() => changes() > before, MEMORY_FILE_SYNC_MS * 2 + 1000);
   assert.ok(noticed);
 });

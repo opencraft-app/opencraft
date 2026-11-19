@@ -4,12 +4,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  complexCases,
-  currentPublishedNote,
-  fieldEquals,
-  runComplexCase,
-} from "./butler-complex-cases.mjs";
+import { complexCases, currentPublishedNote, fieldEquals, runComplexCase } from "./butler-complex-cases.mjs";
 import { selectCases, runSuite } from "./butler-suite.mjs";
 
 test("complex cases are separate from unchanged core and extended groups", async () => {
@@ -18,11 +13,7 @@ test("complex cases are separate from unchanged core and extended groups", async
   assert.equal(selectCases({ group: "complex" }).length, 6);
   assert.equal(new Set(selectCases().map((x) => x.id)).size, 18);
   assert.deepEqual(selectCases({ group: "complex" }), complexCases);
-  assert.ok(
-    complexCases.every(
-      (c) => c.modelOnly && c.inputMode && c.review && c.coverage.length,
-    ),
-  );
+  assert.ok(complexCases.every((c) => c.modelOnly && c.inputMode && c.review && c.coverage.length));
   await assert.rejects(runComplexCase("unknown", {}, {}), /Unknown complex/);
 });
 
@@ -50,58 +41,24 @@ test("current publication grading rejects historical, unrelated, modified, and u
     },
   };
   assert.equal(currentPublishedNote(d, [old, current]), current.text);
+  assert.throws(() => currentPublishedNote(d, [old]), /missing or hash mismatch/);
+  assert.throws(() => currentPublishedNote(d, [old, { ...current, text: "desired answer" }]), /hash mismatch/);
   assert.throws(
-    () => currentPublishedNote(d, [old]),
-    /missing or hash mismatch/,
-  );
-  assert.throws(
-    () =>
-      currentPublishedNote(d, [old, { ...current, text: "desired answer" }]),
-    /hash mismatch/,
-  );
-  assert.throws(
-    () =>
-      currentPublishedNote({ ...d, results: [{ execution_id: "old" }] }, [
-        old,
-        current,
-      ]),
+    () => currentPublishedNote({ ...d, results: [{ execution_id: "old" }] }, [old, current]),
     /No current result/,
   );
   assert.throws(
-    () =>
-      currentPublishedNote(
-        { ...d, completion: { executions: [d.completion.executions[0]] } },
-        [old, current],
-      ),
+    () => currentPublishedNote({ ...d, completion: { executions: [d.completion.executions[0]] } }, [old, current]),
     /missing/,
   );
 });
 
 test("current fields permit obsolete-date explanation but reject duplicated or wrong current values", () => {
-  assert.equal(
-    fieldEquals(
-      "此前 2027-03-08 已作废。\n**date:** 2027-03-09",
-      "date",
-      "2027-03-09",
-    ),
-    true,
-  );
-  assert.equal(
-    fieldEquals("date: 2027-03-08\n新建议 2027-03-09", "date", "2027-03-09"),
-    false,
-  );
-  assert.equal(
-    fieldEquals("date: 2027-03-09\ndate: 2027-03-08", "date", "2027-03-09"),
-    false,
-  );
-  assert.equal(
-    fieldEquals("previous_date: 2027-03-09", "date", "2027-03-09"),
-    false,
-  );
-  assert.equal(
-    fieldEquals("date: 2027-03-09\ndate: 2027-03-09", "date", "2027-03-09"),
-    false,
-  );
+  assert.equal(fieldEquals("此前 2027-03-08 已作废。\n**date:** 2027-03-09", "date", "2027-03-09"), true);
+  assert.equal(fieldEquals("date: 2027-03-08\n新建议 2027-03-09", "date", "2027-03-09"), false);
+  assert.equal(fieldEquals("date: 2027-03-09\ndate: 2027-03-08", "date", "2027-03-09"), false);
+  assert.equal(fieldEquals("previous_date: 2027-03-09", "date", "2027-03-09"), false);
+  assert.equal(fieldEquals("date: 2027-03-09\ndate: 2027-03-09", "date", "2027-03-09"), false);
   assert.equal(fieldEquals("- equipment：雨具", "equipment", "雨具"), true);
   assert.equal(fieldEquals("owner: 林岚（待确认）", "owner", "林岚"), false);
   assert.throws(() => fieldEquals("", ".*", ""), /Invalid grading/);

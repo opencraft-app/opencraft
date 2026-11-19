@@ -14,7 +14,7 @@ export function measureViewportProbes(): Record<string, number> {
     }
     reference.append(probe);
   }
-  const [dynamic, small, large] = Array.from(probe.children, child => getComputedStyle(child));
+  const [dynamic, small, large] = Array.from(probe.children, (child) => getComputedStyle(child));
   return {
     cssDynamicHeight: Number.parseFloat(dynamic?.height ?? "") || 0,
     cssSmallHeight: Number.parseFloat(small?.height ?? "") || 0,

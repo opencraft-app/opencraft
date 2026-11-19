@@ -7,8 +7,7 @@ export class LocalMailboxDelivery {
     this.afterWrite = afterWrite;
   }
   deliver(d) {
-    if (process.env.LAB_TEST_DELIVERY_FAIL === "1")
-      throw new Error("Injected local mailbox failure");
+    if (process.env.LAB_TEST_DELIVERY_FAIL === "1") throw new Error("Injected local mailbox failure");
     publishOnce(
       join(this.directory, `${digest(d.id)}.json`),
       stable({
@@ -17,9 +16,7 @@ export class LocalMailboxDelivery {
         workId: d.work_id,
         revision: d.revision,
         text: d.text,
-        ...(d.user_message_json
-          ? { message: JSON.parse(d.user_message_json) }
-          : {}),
+        ...(d.user_message_json ? { message: JSON.parse(d.user_message_json) } : {}),
       }) + "\n",
     );
     this.afterWrite();

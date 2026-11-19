@@ -23,11 +23,7 @@ test("Pi adapters cannot reach application owners or import the composition root
     if (!name.endsWith(".mjs")) continue;
     const source = readFileSync(join(root, "src/adapters/pi", name), "utf8");
     assert.doesNotMatch(source, /\b(?:this\.)?app\s*[.,:]/, name);
-    assert.doesNotMatch(
-      source,
-      /from\s*["'][^"']*(?:runtime|application)\//,
-      name,
-    );
+    assert.doesNotMatch(source, /from\s*["'][^"']*(?:runtime|application)\//, name);
     assert.doesNotMatch(source, /\b(?:repository|uow)\s*[.,:]/, name);
   }
 });
@@ -43,16 +39,7 @@ test("work-bound tool ports preserve original work identity and cancel checks wi
   const tools = ports.toolsFor(work, ports.executions.snapshot(work));
   for (const item of [ports, ports.executions, tools]) {
     assert.ok(Object.isFrozen(item));
-    for (const key of [
-      "app",
-      "r",
-      "uow",
-      "works",
-      "memory",
-      "skills",
-      "credentials",
-      "outcomes",
-    ])
+    for (const key of ["app", "r", "uow", "works", "memory", "skills", "credentials", "outcomes"])
       assert.equal(item[key], undefined, key);
   }
   assert.equal(ports.executions.started, undefined);
@@ -62,36 +49,21 @@ test("work-bound tool ports preserve original work identity and cancel checks wi
   tools.assertAction("ask_user");
   const question = tools.requestInteraction("one-call", "本周还是本月？");
   assert.equal(question.work_id, first.workId);
-  assert.equal(
-    tools.requestInteraction("one-call", "本周还是本月？").id,
-    question.id,
-  );
+  assert.equal(tools.requestInteraction("one-call", "本周还是本月？").id, question.id);
   assert.equal(app.detail(second.workId).interactions.length, 0);
   app.works.cancel("cancel-first", {
     workId: first.workId,
     expectedRevision: 1,
   });
-  assert.throws(
-    () => tools.assertAction("publish_note"),
-    /current|cancelled|owns|active/i,
-  );
-  assert.throws(
-    () => tools.requestInteraction("late", "旧问题"),
-    /current|cancelled|owns|active/i,
-  );
+  assert.throws(() => tools.assertAction("publish_note"), /current|cancelled|owns|active/i);
+  assert.throws(() => tools.requestInteraction("late", "旧问题"), /current|cancelled|owns|active/i);
   assert.equal(app.detail(second.workId).work.status, "queued");
 });
 
 test("capability scenarios use public protocol helpers and selection is finite before setup", () => {
   for (const id of ["memory", "work", "automations", "skills"]) {
-    const source = readFileSync(
-      join(root, `scripts/scenarios/${id}.mjs`),
-      "utf8",
-    );
-    assert.doesNotMatch(
-      source,
-      /LocalRunner|DatabaseSync|\.app\b|repository|\.prepare\s*\(/,
-    );
+    const source = readFileSync(join(root, `scripts/scenarios/${id}.mjs`), "utf8");
+    assert.doesNotMatch(source, /LocalRunner|DatabaseSync|\.app\b|repository|\.prepare\s*\(/);
     assert.doesNotMatch(source, /from\s*["'][^"']*(?:src\/|context\.mjs)/);
     assert.equal(selectScenarios([id])[0].id, id);
   }
@@ -105,18 +77,10 @@ for (const scenario of ["memory", "work", "automations", "skills"]) {
     const directory = join(temporary(t), scenario);
     await exec(
       process.execPath,
-      [
-        "scripts/demo-personal-assistant.mjs",
-        "--directory",
-        directory,
-        "--scenario",
-        scenario,
-      ],
+      ["scripts/demo-personal-assistant.mjs", "--directory", directory, "--scenario", scenario],
       { cwd: root, timeout: 30000 },
     );
-    const result = JSON.parse(
-      readFileSync(join(directory, "evidence.json"), "utf8"),
-    );
+    const result = JSON.parse(readFileSync(join(directory, "evidence.json"), "utf8"));
     assert.equal(result.mode, "fixture");
     assert.equal(result.automatedScenarioPassed, true);
     assert.equal(result.productQualityVerified, false);
@@ -169,9 +133,7 @@ test("a scenario failure preserves partial evidence, marks later cases not_run a
       timeout: 30000,
     }),
   );
-  const result = JSON.parse(
-    readFileSync(join(directory, "evidence.json"), "utf8"),
-  );
+  const result = JSON.parse(readFileSync(join(directory, "evidence.json"), "utf8"));
   assert.equal(result.automatedScenarioPassed, false);
   assert.equal(result.scenarios.work.status, "failed");
   assert.equal(result.scenarios.skills.status, "not_run");
@@ -205,9 +167,7 @@ test("missing explicit real-model credential leaves selected cases not_run witho
       { cwd: root, env: environment },
     ),
   );
-  const result = JSON.parse(
-    readFileSync(join(directory, "evidence.json"), "utf8"),
-  );
+  const result = JSON.parse(readFileSync(join(directory, "evidence.json"), "utf8"));
   assert.match(result.error, /explicit API key/);
   assert.equal(result.scenarios.skills.status, "not_run");
   assert.equal(result.configuration.actualModelRequestPerformed, false);

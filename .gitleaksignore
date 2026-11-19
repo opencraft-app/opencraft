@@ -3,3 +3,7 @@ ea463f3cf3113b5544cfe82368e6d497bf4d7115:tests/identity/git-identity-broker.test
 
 # Adjacent PEM header validation literals, not key material; exact historical finding.
 a99ce34d47ae3e534ccb6ebff566ee0795f03b02:scripts/employee-git-vault-store.ts:private-key:45
+
+# Exact historical synthetic-token fixture matches; no production-token patterns are excluded.
+bead2c7876667fde52e875e5888e14ea24954b53:apps/personal-assistant/test/personal-assistant.test.mjs:generic-api-key:108
+bead2c7876667fde52e875e5888e14ea24954b53:apps/personal-assistant/test/personal-assistant.test.mjs:generic-api-key:129

@@ -4,7 +4,12 @@ import { sidebarActivityIndicator, summarizeSidebarActivity } from "../../apps/w
 import { sidebarThreadTree } from "../../apps/workbench-web/src/sidebar-thread-tree";
 
 const row = (id: string, state: Record<string, unknown> = {}) => ({
-  id, connectionHostId: "local", updatedAt: 1, status: "ready", unread: false, goalActive: false,
+  id,
+  connectionHostId: "local",
+  updatedAt: 1,
+  status: "ready",
+  unread: false,
+  goalActive: false,
   ...state,
 });
 
@@ -16,7 +21,8 @@ test("activity summaries share mutually exclusive row precedence", () => {
     [{ status: "error", unread: true }, "attention"],
     [{ status: "ready", unread: true, goalActive: true }, "goal"],
     [{ status: "ready", unread: false }, "none"],
-  ] as const) assert.equal(sidebarActivityIndicator(state), expected);
+  ] as const)
+    assert.equal(sidebarActivityIndicator(state), expected);
 });
 
 test("full group trees include folded descendants, distinguish Hosts and deduplicate roots", () => {
@@ -30,7 +36,10 @@ test("full group trees include folded descendants, distinguish Hosts and dedupli
     row("hidden", { visibility: "hidden", status: "running" }),
     row("nonparticipant", { unread: true }),
   ]);
-  const summary = summarizeSidebarActivity([...tree.roots, ...tree.roots], thread => thread.unread && thread.id !== "nonparticipant");
+  const summary = summarizeSidebarActivity(
+    [...tree.roots, ...tree.roots],
+    (thread) => thread.unread && thread.id !== "nonparticipant",
+  );
   assert.deepEqual(summary, { unread: 2, attention: 2, running: 2 });
 });
 

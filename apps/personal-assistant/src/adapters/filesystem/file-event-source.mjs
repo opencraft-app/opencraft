@@ -1,12 +1,6 @@
 /** Bounded polling of explicitly configured material paths, with business-owned baselines. */
 export class FileEventSource {
-  constructor({
-    source,
-    watchedPaths,
-    observe,
-    onError = () => {},
-    now = Date.now,
-  }) {
+  constructor({ source, watchedPaths, observe, onError = () => {}, now = Date.now }) {
     Object.assign(this, { source, watchedPaths, observe, onError, now });
     this.nextAt = 0;
   }

@@ -1,22 +1,47 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureLocalDiagnostics, getLocalDiagnosticsState, isLocalDiagnosticsEnabled,
-  LOCAL_DIAGNOSTICS_BYTES, LOCAL_DIAGNOSTICS_FRAME_BYTES, LOCAL_DIAGNOSTICS_FRAME_LIMIT,
-  LOCAL_DIAGNOSTICS_KEY, LOCAL_DIAGNOSTICS_LIMIT, recordLocalDiagnostic,
-  setLocalDiagnosticsEnabled } from "../../apps/workbench-web/src/runtime/local-diagnostics";
-import { clearRuntimeDiagnostics, getRuntimeDiagnosticsSnapshot, recordRuntimeDiagnosticConsole,
-  startRuntimeDiagnosticCollection } from "../../apps/workbench-web/src/runtime-diagnostics";
-import { captureViewportHistory, recordViewportDiagnostic } from "../../apps/workbench-web/src/runtime/viewport-history";
+import {
+  captureLocalDiagnostics,
+  getLocalDiagnosticsState,
+  isLocalDiagnosticsEnabled,
+  LOCAL_DIAGNOSTICS_BYTES,
+  LOCAL_DIAGNOSTICS_FRAME_BYTES,
+  LOCAL_DIAGNOSTICS_FRAME_LIMIT,
+  LOCAL_DIAGNOSTICS_KEY,
+  LOCAL_DIAGNOSTICS_LIMIT,
+  recordLocalDiagnostic,
+  setLocalDiagnosticsEnabled,
+} from "../../apps/workbench-web/src/runtime/local-diagnostics";
+import {
+  clearRuntimeDiagnostics,
+  getRuntimeDiagnosticsSnapshot,
+  recordRuntimeDiagnosticConsole,
+  startRuntimeDiagnosticCollection,
+} from "../../apps/workbench-web/src/runtime-diagnostics";
+import {
+  captureViewportHistory,
+  recordViewportDiagnostic,
+} from "../../apps/workbench-web/src/runtime/viewport-history";
 import { createViewportDiagnostics } from "../../apps/workbench-web/src/runtime/viewport-diagnostics";
 
-test("off by default, device-local opt-in, oldest eviction and frozen evidence on disable", t => {
+test("off by default, device-local opt-in, oldest eviction and frozen evidence on disable", (t) => {
   assert.equal(isLocalDiagnosticsEnabled(), false);
-  const values = new Map<string,string>();
+  const values = new Map<string, string>();
   const previous = Object.getOwnPropertyDescriptor(globalThis, "window");
-  Object.defineProperty(globalThis, "window", { configurable: true, value: {
-    localStorage: { getItem: (key: string) => values.get(key), setItem: (key: string, value: string) => values.set(key, value) },
-  } });
-  t.after(() => { setLocalDiagnosticsEnabled(false); if (previous) Object.defineProperty(globalThis,"window",previous); else Reflect.deleteProperty(globalThis,"window"); });
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      localStorage: {
+        getItem: (key: string) => values.get(key),
+        setItem: (key: string, value: string) => values.set(key, value),
+      },
+    },
+  });
+  t.after(() => {
+    setLocalDiagnosticsEnabled(false);
+    if (previous) Object.defineProperty(globalThis, "window", previous);
+    else Reflect.deleteProperty(globalThis, "window");
+  });
   recordLocalDiagnostic("off", { value: 1 });
   assert.equal(captureLocalDiagnostics().samples.length, 0);
   setLocalDiagnosticsEnabled(true);
@@ -26,7 +51,8 @@ test("off by default, device-local opt-in, oldest eviction and frozen evidence o
   let report = captureLocalDiagnostics();
   assert.equal(report.samples.length, LOCAL_DIAGNOSTICS_LIMIT);
   assert.equal(report.samples[0]!.fields.sequence, 10);
-  for (let i = 0; i < 500; i++) recordLocalDiagnostic("large", { sequence: i, a: "界".repeat(512), b: "界".repeat(512) });
+  for (let i = 0; i < 500; i++)
+    recordLocalDiagnostic("large", { sequence: i, a: "界".repeat(512), b: "界".repeat(512) });
   report = captureLocalDiagnostics();
   assert.ok(report.bytes <= LOCAL_DIAGNOSTICS_BYTES);
   assert.ok(report.samples.length < LOCAL_DIAGNOSTICS_LIMIT);
@@ -48,8 +74,9 @@ test("off by default, device-local opt-in, oldest eviction and frozen evidence o
   assert.equal(captureViewportHistory().samples.length, 0);
 });
 
-test("frame evidence has an isolated, bounded partition under the existing total byte cap", t => {
-  setLocalDiagnosticsEnabled(false); setLocalDiagnosticsEnabled(true);
+test("frame evidence has an isolated, bounded partition under the existing total byte cap", (t) => {
+  setLocalDiagnosticsEnabled(false);
+  setLocalDiagnosticsEnabled(true);
   t.after(() => setLocalDiagnosticsEnabled(false));
   recordLocalDiagnostic("scroll-write", { sequence: 1 });
   const events = captureLocalDiagnostics().samples;
@@ -59,8 +86,10 @@ test("frame evidence has an isolated, bounded partition under the existing total
   assert.equal(report.frames.samples.length, LOCAL_DIAGNOSTICS_FRAME_LIMIT);
   assert.equal(report.frames.samples[0]!.fields.sequence, 10);
   assert.equal(report.frames.evicted, 10);
-  for (let i = 0; i < 500; i++) recordLocalDiagnostic("scroll-frame", { sequence: i, a: "界".repeat(512), b: "界".repeat(512) });
-  for (let i = 0; i < 500; i++) recordLocalDiagnostic("sample", { sequence: i, a: "界".repeat(512), b: "界".repeat(512) });
+  for (let i = 0; i < 500; i++)
+    recordLocalDiagnostic("scroll-frame", { sequence: i, a: "界".repeat(512), b: "界".repeat(512) });
+  for (let i = 0; i < 500; i++)
+    recordLocalDiagnostic("sample", { sequence: i, a: "界".repeat(512), b: "界".repeat(512) });
   report = captureLocalDiagnostics();
   assert.ok(report.frames.bytes <= LOCAL_DIAGNOSTICS_FRAME_BYTES);
   assert.ok(report.bytes <= LOCAL_DIAGNOSTICS_BYTES);
@@ -75,14 +104,23 @@ test("frame evidence has an isolated, bounded partition under the existing total
   assert.equal(captureLocalDiagnostics().frames.bytes, 0);
 });
 
-test("runtime wrappers detach on disable and discard delayed fetch failures across collection sessions", async t => {
-  setLocalDiagnosticsEnabled(false); clearRuntimeDiagnostics();
-  const originalFetch = globalThis.fetch, originalError = console.error, originalWarn = console.warn;
+test("runtime wrappers detach on disable and discard delayed fetch failures across collection sessions", async (t) => {
+  setLocalDiagnosticsEnabled(false);
+  clearRuntimeDiagnostics();
+  const originalFetch = globalThis.fetch,
+    originalError = console.error,
+    originalWarn = console.warn;
   let resolve!: (response: Response) => void;
-  const request = new Promise<Response>(done => { resolve = done; });
+  const request = new Promise<Response>((done) => {
+    resolve = done;
+  });
   const fake = (() => request) as typeof fetch;
   globalThis.fetch = fake;
-  t.after(() => { setLocalDiagnosticsEnabled(false); globalThis.fetch = originalFetch; clearRuntimeDiagnostics(); });
+  t.after(() => {
+    setLocalDiagnosticsEnabled(false);
+    globalThis.fetch = originalFetch;
+    clearRuntimeDiagnostics();
+  });
   startRuntimeDiagnosticCollection();
   assert.equal(globalThis.fetch, fake);
   assert.equal(console.warn, originalWarn);
@@ -100,6 +138,7 @@ test("runtime wrappers detach on disable and discard delayed fetch failures acro
   assert.equal(console.error, originalError);
   assert.equal(console.warn, originalWarn);
   setLocalDiagnosticsEnabled(true);
-  resolve(new Response("failure", { status: 503 })); await pending;
+  resolve(new Response("failure", { status: 503 }));
+  await pending;
   assert.equal(getRuntimeDiagnosticsSnapshot().network.length, 0, "an old request cannot leak into a new recording");
 });

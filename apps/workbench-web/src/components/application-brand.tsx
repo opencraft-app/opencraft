@@ -1,7 +1,7 @@
 import { DEFAULT_APPLICATION_BRANDING, type ApplicationBrandingContribution } from "@opencraft/extension-contract";
 import { useIntl } from "@opencraft/i18n/react";
 import type { ReactNode } from "react";
-import { ArrowLeftRight } from "lucide-react";
+import { ServerIcon } from "@opencraft/design-system-web/action-icons";
 import { Button } from "@opencraft/design-system-web/button";
 import { browserServerContext, serverUrl } from "../runtime/server-context";
 import { useDismissSidebarAfterSelection } from "./shell-presentation";
@@ -22,7 +22,7 @@ export function ApplicationBrand({ branding = DEFAULT_APPLICATION_BRANDING, onHo
       data-mobile-mark={branding.showMarkOnMobile === false ? "hidden" : undefined}
       aria-label={`${label} · ${server.name}`} title={`${server.name} · ${label}`}
       onClick={() => window.location.assign(server.selectorPath)}>
-      {content}<ArrowLeftRight aria-hidden="true" size={16} className="application-brand__switch-icon" />
+      {content}<ServerIcon aria-hidden="true" size={16} className="application-brand__switch-icon" />
     </Button>;
   }
   return onHome ? <HomeBrand branding={branding} onHome={onHome}>{content}</HomeBrand>

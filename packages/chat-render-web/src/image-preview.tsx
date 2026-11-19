@@ -27,8 +27,14 @@ export interface ImagePreviewProps {
 
 // Opening a gallery activates its dialog, gestures and stylesheet together.
 // Merely importing chat renderers must not put optional viewer CSS on startup.
-const LazyImagePreview = lazy(() => import("./image-preview-view").then(module => ({ default: module.ImagePreviewView })));
+const LazyImagePreview = lazy(() =>
+  import("./image-preview-view").then((module) => ({ default: module.ImagePreviewView })),
+);
 
 export function ImagePreview(props: ImagePreviewProps) {
-  return <Suspense fallback={<PendingPreview onClose={props.onClose} />}><LazyImagePreview {...props} /></Suspense>;
+  return (
+    <Suspense fallback={<PendingPreview onClose={props.onClose} />}>
+      <LazyImagePreview {...props} />
+    </Suspense>
+  );
 }

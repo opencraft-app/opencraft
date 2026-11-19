@@ -9,7 +9,11 @@ export interface ChatMediaLayout {
 export const ChatMediaLayoutContext = createContext<Map<string, ChatMediaLayout> | null>(null);
 
 /** Keep a previously measured resource's space while its new consumer lease resolves. */
-export function ChatMediaLayoutBoundary({ resourceKey, settled, children }: {
+export function ChatMediaLayoutBoundary({
+  resourceKey,
+  settled,
+  children,
+}: {
   readonly resourceKey: string;
   readonly settled: boolean;
   readonly children: ReactNode;
@@ -39,5 +43,9 @@ export function ChatMediaLayoutBoundary({ resourceKey, settled, children }: {
     observer.observe(element);
     return () => observer.disconnect();
   }, [layouts, resourceKey, settled]);
-  return <span ref={root} style={{ display: "flow-root" }}>{children}</span>;
+  return (
+    <span ref={root} style={{ display: "flow-root" }}>
+      {children}
+    </span>
+  );
 }

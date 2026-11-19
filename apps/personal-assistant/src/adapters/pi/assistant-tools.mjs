@@ -9,8 +9,7 @@ export function assistantTools(options) {
           ...context,
           suspend: async () => {
             const signal = context.abortSignal;
-            if (!signal)
-              throw new Error("Pi tool cancellation context is required");
+            if (!signal) throw new Error("Pi tool cancellation context is required");
             const stopped = new Promise((_, reject) => {
               if (signal.aborted) reject(signal.reason);
               else

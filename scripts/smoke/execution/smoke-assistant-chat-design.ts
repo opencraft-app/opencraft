@@ -1,55 +1,154 @@
-import {ImChannelService} from '../../im-channel-service.mjs';
-import {AppHostServer} from '@opencraft/app-host-server';
-import {ImChannelsAppServer} from '../../im-channels-appserver.mjs';
-import {createWorkbenchWebServer} from '../../serve-workbench-web.mjs';
-import assert from 'node:assert/strict';
-import {mkdtemp,mkdir,rm} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
-import {join} from 'node:path';
-import {createServer,loadConfigFromFile} from 'vite';
-import {chromium} from 'playwright';
-import {openServerDatabase} from '@opencraft/storage-node/server';
-import {ActorStore} from '../../../packages/access-control/src/actors';
-import {ActorAccess} from '../../../packages/access-control/src/actor-access';
-import {Collaboration,CollaborationHttpApi} from '../../../packages/access-control/src/collaboration';
-import {parsePrincipal} from '@opencraft/identity-core';
+import { ImChannelService } from "../../im-channel-service.mjs";
+import { AppHostServer } from "@opencraft/app-host-server";
+import { ImChannelsAppServer } from "../../im-channels-appserver.mjs";
+import { createWorkbenchWebServer } from "../../serve-workbench-web.mjs";
+import assert from "node:assert/strict";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createServer, loadConfigFromFile } from "vite";
+import { chromium } from "playwright";
+import { openServerDatabase } from "@opencraft/storage-node/server";
+import { ActorStore } from "../../../packages/access-control/src/actors";
+import { ActorAccess } from "../../../packages/access-control/src/actor-access";
+import { Collaboration, CollaborationHttpApi } from "../../../packages/access-control/src/collaboration";
+import { parsePrincipal } from "@opencraft/identity-core";
 
 // Actual Workbench extension, native transport, communication authority and DB.
 // Only identity admission is synthetic; no model or external IM service is used.
-const root=await mkdtemp(join(tmpdir(),'native-channel-ui-'));
-const evidence=process.env.OPENCRAFT_SMOKE_OUTPUT??'.local/assistant-chat-design';
-const storage=await openServerDatabase(root),actors=new ActorStore(storage);
-const principal=parsePrincipal({provider:'local',subject:'ui-human',displayName:'Human',expiresAt:Date.now()+3600000})!;
-const human=actors.resolveHuman(principal)!,bot=actors.createSession('Review Bot',human.actorId);
-const credential=actors.issueCredential(bot.id,Date.now()+3600000,human.actorId),botContext=actors.authenticateSession(credential.token)!;
-actors.setGrant(human.actorId,bot.id,'message.send',true,'fixture');
-const service=new Collaboration(storage,actors,{hostId:'fixture',serverId:'fixture',async validate(){},async receipt(){return null;},async add(){throw Error('fixture execution unavailable');},async steer(){throw Error('fixture execution unavailable');},async cancel(){return false;}});
-actors.setGrant(human.actorId,bot.id,'execution.queue',true,'fixture');
-await service.bind(bot.id,'fixture-review',0,()=>{});
-const claimed=await service.personalAssistant(human,'opencraft/personal-assistant/claim');
-const assistantChannel=(await service.personalAssistant(human,'opencraft/personal-assistant/open')).channel;
-let runtime:any={phase:'running',reception:{running:1,queued:0},works:[{id:'week',title:'本周进展摘要',status:'running',updatedAt:Date.now()}]};
-service.attachPersonalAssistantHost({state:()=>runtime,wake(){}});
-await service.communicate(human,'opencraft/channels/messages/send',{channelId:assistantChannel.id,clientMessageId:'hello',parts:[{type:'text',text:'帮我看看今天还有什么没完成'}]});
-const assistantCredential=await service.provisionPersonalAssistant(human);
-const assistantActor=actors.authenticateSession(assistantCredential.credential.token)!;
-await service.communicate(assistantActor,'opencraft/channels/messages/send',{channelId:assistantChannel.id,clientMessageId:'response',parts:[{type:'text',text:'还有两件事需要你关注。\n\n1. **确认官网方案**\n\n   设计稿已更新，等你确认\n\n2. **整理本周进展**\n\n   我正在汇总相关会话\n\n整理好后，我会把摘要发在这里。'}]});
-await service.communicate(human,'opencraft/channels/messages/send',{channelId:assistantChannel.id,clientMessageId:'followup',parts:[{type:'text',text:'好，把需要我决定的单独列出来'}]});
-const colleague=actors.resolveHuman(parsePrincipal({provider:'local',subject:'colleague',displayName:'小林',expiresAt:Date.now()+3600000})!)!;
-let discussion=await service.communicate(human,'opencraft/channels/group/create',{title:'产品方案讨论',memberActorIds:[colleague.actorId,bot.id],clientRequestId:'group-one'});
-await service.communicate(colleague,'opencraft/channels/messages/send',{channelId:discussion.id,clientMessageId:'discussion-human',parts:[{type:'text',text:'设计稿更新好了，大家看看这个方案。'}]});
-await service.communicate(botContext,'opencraft/channels/messages/send',{channelId:discussion.id,clientMessageId:'discussion-bot',parts:[{type:'text',text:'已整理好待确认项：\n\n- **导航**：统一入口\n- **排版**：保持阅读轴线'}]});
-await service.communicate(human,'opencraft/channels/messages/send',{channelId:discussion.id,clientMessageId:'discussion-self',parts:[{type:'text',text:'收到，下午一起确认。'}]});
-await service.communicate(human,'opencraft/channels/group/create',{title:'下周工作计划',memberActorIds:[],clientRequestId:'group-two'});
-const archive=await service.communicate(human,'opencraft/channels/group/create',{title:'历史归档',memberActorIds:[colleague.actorId],clientRequestId:'group-history'});
-for(let i=0;i<240;i++) await service.communicate(colleague,'opencraft/channels/messages/send',{channelId:archive.id,clientMessageId:'archive-'+i,parts:[{type:'text',text:'历史消息 '+i+'：'+('验证长内容的测量与阅读锚点。'.repeat(i%5+1))}]});
-const access=new ActorAccess(actors,{authenticateHuman:()=>principal,admitted:()=>true,administrator:()=>false});
-const api=new CollaborationHttpApi(service,access);
-const im=await ImChannelService.open([],{dataDirectory:root,actors,actorAccess:access,collaboration:service,getAppHost:()=>null});
-const host=new AppHostServer({logicalClientRouting:true,physicalHostLifetime:'server',createTransport:()=>new ImChannelsAppServer(()=>service)});
-const backend=await createWorkbenchWebServer({root,appServerTarget:null,appHostServer:host,actorService:access,allowSessionChannels:true,actorCollaborationService:api,loopbackOnly:true,onAppHostDiagnostic(){}});
-const {port:backendPort}=await backend.listen({host:'127.0.0.1',port:0});
-const source=`
+const root = await mkdtemp(join(tmpdir(), "native-channel-ui-"));
+const evidence = process.env.OPENCRAFT_SMOKE_OUTPUT ?? ".local/assistant-chat-design";
+const storage = await openServerDatabase(root),
+  actors = new ActorStore(storage);
+const principal = parsePrincipal({
+  provider: "local",
+  subject: "ui-human",
+  displayName: "Human",
+  expiresAt: Date.now() + 3600000,
+})!;
+const human = actors.resolveHuman(principal)!,
+  bot = actors.createSession("Review Bot", human.actorId);
+const credential = actors.issueCredential(bot.id, Date.now() + 3600000, human.actorId),
+  botContext = actors.authenticateSession(credential.token)!;
+actors.setGrant(human.actorId, bot.id, "message.send", true, "fixture");
+const service = new Collaboration(storage, actors, {
+  hostId: "fixture",
+  serverId: "fixture",
+  async validate() {},
+  async receipt() {
+    return null;
+  },
+  async add() {
+    throw Error("fixture execution unavailable");
+  },
+  async steer() {
+    throw Error("fixture execution unavailable");
+  },
+  async cancel() {
+    return false;
+  },
+});
+actors.setGrant(human.actorId, bot.id, "execution.queue", true, "fixture");
+await service.bind(bot.id, "fixture-review", 0, () => {});
+const claimed = await service.personalAssistant(human, "opencraft/personal-assistant/claim");
+const assistantChannel = (await service.personalAssistant(human, "opencraft/personal-assistant/open")).channel;
+let runtime: any = {
+  phase: "running",
+  reception: { running: 1, queued: 0 },
+  works: [{ id: "week", title: "本周进展摘要", status: "running", updatedAt: Date.now() }],
+};
+service.attachPersonalAssistantHost({ state: () => runtime, wake() {} });
+await service.communicate(human, "opencraft/channels/messages/send", {
+  channelId: assistantChannel.id,
+  clientMessageId: "hello",
+  parts: [{ type: "text", text: "帮我看看今天还有什么没完成" }],
+});
+const assistantCredential = await service.provisionPersonalAssistant(human);
+const assistantActor = actors.authenticateSession(assistantCredential.credential.token)!;
+await service.communicate(assistantActor, "opencraft/channels/messages/send", {
+  channelId: assistantChannel.id,
+  clientMessageId: "response",
+  parts: [
+    {
+      type: "text",
+      text: "还有两件事需要你关注。\n\n1. **确认官网方案**\n\n   设计稿已更新，等你确认\n\n2. **整理本周进展**\n\n   我正在汇总相关会话\n\n整理好后，我会把摘要发在这里。",
+    },
+  ],
+});
+await service.communicate(human, "opencraft/channels/messages/send", {
+  channelId: assistantChannel.id,
+  clientMessageId: "followup",
+  parts: [{ type: "text", text: "好，把需要我决定的单独列出来" }],
+});
+const colleague = actors.resolveHuman(
+  parsePrincipal({ provider: "local", subject: "colleague", displayName: "小林", expiresAt: Date.now() + 3600000 })!,
+)!;
+let discussion = await service.communicate(human, "opencraft/channels/group/create", {
+  title: "产品方案讨论",
+  memberActorIds: [colleague.actorId, bot.id],
+  clientRequestId: "group-one",
+});
+await service.communicate(colleague, "opencraft/channels/messages/send", {
+  channelId: discussion.id,
+  clientMessageId: "discussion-human",
+  parts: [{ type: "text", text: "设计稿更新好了，大家看看这个方案。" }],
+});
+await service.communicate(botContext, "opencraft/channels/messages/send", {
+  channelId: discussion.id,
+  clientMessageId: "discussion-bot",
+  parts: [{ type: "text", text: "已整理好待确认项：\n\n- **导航**：统一入口\n- **排版**：保持阅读轴线" }],
+});
+await service.communicate(human, "opencraft/channels/messages/send", {
+  channelId: discussion.id,
+  clientMessageId: "discussion-self",
+  parts: [{ type: "text", text: "收到，下午一起确认。" }],
+});
+await service.communicate(human, "opencraft/channels/group/create", {
+  title: "下周工作计划",
+  memberActorIds: [],
+  clientRequestId: "group-two",
+});
+const archive = await service.communicate(human, "opencraft/channels/group/create", {
+  title: "历史归档",
+  memberActorIds: [colleague.actorId],
+  clientRequestId: "group-history",
+});
+for (let i = 0; i < 240; i++)
+  await service.communicate(colleague, "opencraft/channels/messages/send", {
+    channelId: archive.id,
+    clientMessageId: "archive-" + i,
+    parts: [{ type: "text", text: "历史消息 " + i + "：" + "验证长内容的测量与阅读锚点。".repeat((i % 5) + 1) }],
+  });
+const access = new ActorAccess(actors, {
+  authenticateHuman: () => principal,
+  admitted: () => true,
+  administrator: () => false,
+});
+const api = new CollaborationHttpApi(service, access);
+const im = await ImChannelService.open([], {
+  dataDirectory: root,
+  actors,
+  actorAccess: access,
+  collaboration: service,
+  getAppHost: () => null,
+});
+const host = new AppHostServer({
+  logicalClientRouting: true,
+  physicalHostLifetime: "server",
+  createTransport: () => new ImChannelsAppServer(() => service),
+});
+const backend = await createWorkbenchWebServer({
+  root,
+  appServerTarget: null,
+  appHostServer: host,
+  actorService: access,
+  allowSessionChannels: true,
+  actorCollaborationService: api,
+  loopbackOnly: true,
+  onAppHostDiagnostic() {},
+});
+const { port: backendPort } = await backend.listen({ host: "127.0.0.1", port: 0 });
+const source = `
 import React from 'react';
 import {createIntlTestRoot} from '/tests/fixtures/intl-root.tsx';
 import {createWebWorkbenchApplication,WorkbenchRoot} from '/apps/workbench-web/src/workbench-root.tsx';
@@ -70,244 +169,462 @@ const wire=connectWebSocketAppHost();
 await application.supervisor.extensions.activateOptional(createImExtension(fetch.bind(window),signal=>createChannelsRpc(wire.createTransport(CHANNELS_HOST_ID),signal)));
 createIntlTestRoot(document.getElementById('app'),undefined,'zh-CN').render(<WorkbenchRoot application={application}/>);
 window.proof={theme:setThemePreference,stallStatus:()=>{ChannelsClient.prototype.assistantStatus=()=>new Promise(()=>{});}};document.body.dataset.ready='true';`;
-const applicationConfig=await loadConfigFromFile({command:'serve',mode:'development'},'apps/workbench-web/vite.config.ts');
-const server=await createServer({configFile:false,root:process.cwd(),cacheDir:'.local/assistant-chat-design-vite',logLevel:'error',
- define:{'process.env.NEXT_PUBLIC_REGION':'"cn"','process.env.NEXT_PUBLIC_PREVIEW_LOCALES':'""','import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN':'"false"','import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN':'"false"'},
- optimizeDeps:{...applicationConfig!.config.optimizeDeps,include:[...applicationConfig!.config.optimizeDeps!.include!,'@opencraft/browser-core/presentation']},esbuild:{jsx:'automatic'},resolve:{dedupe:['react','react-dom']},server:{host:'127.0.0.1',port:0,hmr:false,proxy:{'/apphost':{target:'http://127.0.0.1:'+backendPort,ws:true}}},plugins:[{
- name:'native-channel-proof',resolveId:id=>id==='/native-channel-proof.tsx'?id:null,load:id=>id==='/native-channel-proof.tsx'?source:null,
- configureServer(vite){vite.middlewares.use((req,res,next)=>{
-  if(req.url==='/'){res.setHeader('content-type','text/html');res.end('<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/native-channel-proof.tsx"></script></body></html>');}
-  else if(req.url?.startsWith('/__opencraft_im')){void im.handle(req,res,()=>true).catch(next);}
-  else if(req.url?.startsWith('/__opencraft_actors/collaboration/'))void api.handle(req,res);
-  else next();
- });}
- }]});
-let browser:Awaited<ReturnType<typeof chromium.launch>>|undefined;
+const applicationConfig = await loadConfigFromFile(
+  { command: "serve", mode: "development" },
+  "apps/workbench-web/vite.config.ts",
+);
+const server = await createServer({
+  configFile: false,
+  root: process.cwd(),
+  cacheDir: ".local/assistant-chat-design-vite",
+  logLevel: "error",
+  define: {
+    "process.env.NEXT_PUBLIC_REGION": '"cn"',
+    "process.env.NEXT_PUBLIC_PREVIEW_LOCALES": '""',
+    "import.meta.env.VITE_INCLUDE_HYPERNODE_PLUGIN": '"false"',
+    "import.meta.env.VITE_INCLUDE_BUILTIN_AGENTS_PLUGIN": '"false"',
+  },
+  optimizeDeps: {
+    ...applicationConfig!.config.optimizeDeps,
+    include: [...applicationConfig!.config.optimizeDeps!.include!, "@opencraft/browser-core/presentation"],
+  },
+  esbuild: { jsx: "automatic" },
+  resolve: { dedupe: ["react", "react-dom"] },
+  server: {
+    host: "127.0.0.1",
+    port: 0,
+    hmr: false,
+    proxy: { "/apphost": { target: "http://127.0.0.1:" + backendPort, ws: true } },
+  },
+  plugins: [
+    {
+      name: "native-channel-proof",
+      resolveId: (id) => (id === "/native-channel-proof.tsx" ? id : null),
+      load: (id) => (id === "/native-channel-proof.tsx" ? source : null),
+      configureServer(vite) {
+        vite.middlewares.use((req, res, next) => {
+          if (req.url === "/") {
+            res.setHeader("content-type", "text/html");
+            res.end(
+              '<html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="app"></div><script type="module" src="/native-channel-proof.tsx"></script></body></html>',
+            );
+          } else if (req.url?.startsWith("/__opencraft_im")) {
+            void im.handle(req, res, () => true).catch(next);
+          } else if (req.url?.startsWith("/__opencraft_actors/collaboration/")) void api.handle(req, res);
+          else next();
+        });
+      },
+    },
+  ],
+});
+let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
- await server.listen();await mkdir(evidence,{recursive:true});
- browser=await chromium.launch({headless:true,executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});
- for(const [width,theme]of [[1160,'light'],[390,'light'],[390,'dark'],[820,'dark']]as const) {
-  const groupTitle='产品方案讨论 '+width+'-'+theme;
-  discussion=await service.communicate(human,'opencraft/channels/group/create',{title:groupTitle,memberActorIds:[colleague.actorId,bot.id],clientRequestId:'group-'+width+'-'+theme});
-  await service.communicate(colleague,'opencraft/channels/messages/send',{channelId:discussion.id,clientMessageId:'discussion-human-'+width+'-'+theme,parts:[{type:'text',text:'设计稿更新好了，大家看看这个方案。'}]});
-  await service.communicate(botContext,'opencraft/channels/messages/send',{channelId:discussion.id,clientMessageId:'discussion-bot-'+width+'-'+theme,parts:[{type:'text',text:'已整理好待确认项：\n\n- **导航**：统一入口\n- **排版**：保持阅读轴线'}]});
-  runtime={phase:'running',reception:{running:1,queued:0},works:[{id:'week',title:'本周进展摘要',status:'running',updatedAt:Date.now()}]};
-  const page=await browser.newPage({viewport:{width,height:900},hasTouch:width<1000});
-  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
-  const activate=(locator:import('playwright').Locator)=>width<1000?locator.tap():locator.click();
-  await page.addInitScript('window.__name = target => target;');
-  await page.goto(server.resolvedUrls!.local[0],{waitUntil:'domcontentloaded',timeout:90000});
-  await page.waitForSelector('body[data-ready="true"]',{state:'attached',timeout:90000});
-  await page.evaluate(theme=>(window as any).proof.theme(theme),theme);
-  const sidebar=page.locator('[data-chrome-action-id="sidebar-toggle"]:visible').first();
-  if(await sidebar.count()&&(await sidebar.getAttribute('aria-expanded'))!=='true')await activate(sidebar);
-  await activate(page.getByRole('button',{name:'Inbox',exact:true}));
-  await activate(page.getByRole('button',{name:'打开助理',exact:true}));
-  const close=page.getByRole('button',{name:'关闭侧边栏',exact:true});
-  if(width<1000&&await close.count()){const box=await close.boundingBox();if(box)await close.tap({position:{x:box.width-8,y:box.height/2}});}
-  await page.getByText('正在回复…',{exact:true}).waitFor({timeout:15000});
-  await page.getByText('确认官网方案',{exact:true}).waitFor({timeout:60000});
-  const editor=page.locator('[contenteditable="true"]:visible').last();
-  await page.waitForTimeout(600);
-  await page.screenshot({path:join(evidence,theme+'-'+width+'.png'),fullPage:true});
-  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
-  const heading=page.locator('.im-channel-chat__heading h2');
-  assert.ok(Number.parseFloat(await heading.evaluate(el=>getComputedStyle(el).fontSize))<=20);
-  const shell = await page.locator('.opencraft-composer-shell').boundingBox();
-  assert.ok(shell!.height <= 70, 'empty message composer stays compact');
-  const original = page.locator('[role="listitem"][data-direct="true"]').first();
-  if (width < 1000) {
-    const session = await page.context().newCDPSession(page), bounds = await original.boundingBox();
-    await session.send('Input.dispatchTouchEvent', {type:'touchStart', touchPoints:[{x:bounds!.x+bounds!.width-20,y:bounds!.y+bounds!.height-15}]});
-    await page.waitForTimeout(800);
-    await session.send('Input.dispatchTouchEvent', {type:'touchEnd', touchPoints:[]});
-    await session.detach();
-  } else { await original.focus(); await page.keyboard.press('Shift+F10'); }
-  await activate(page.getByRole('menuitem',{name:'回复',exact:true}));
-  await page.getByRole('button',{name:'取消回复',exact:true}).waitFor();
-  await activate(page.getByRole('button',{name:'取消回复',exact:true}));
-  const oldEditor=await editor.elementHandle();
-  const switcher=page.getByRole('button',{name:'切换聊天',exact:true});
-  const before=await switcher.boundingBox();
-  await editor.fill('保留我的草稿');
-  await activate(switcher);
-  await page.getByRole('dialog').waitFor();
-  assert.equal(await page.locator('input:focus,[contenteditable=true]:focus').count(),0);
-  const overview=page.locator('.im-chat-overview');
-  await overview.locator('.im-chat-overview__card').first().waitFor();
-  assert.equal(await overview.locator('[aria-current="page"]').count(),1,'one current chat');
-  const done=overview.getByRole('button',{name:'完成',exact:true});
-  const doneBox=await done.boundingBox();
-  if(width<640)assert.ok(doneBox&&doneBox.y>780&&doneBox.x>width-90,'overview exit stays at bottom right');
-  await page.screenshot({path:join(evidence,theme+'-'+width+'-overview.png'),fullPage:true});
-  const search=overview.getByRole('searchbox',{name:'搜索聊天'});
-  await search.fill(groupTitle);
-  await page.waitForFunction(()=>document.querySelectorAll('.im-chat-overview__card').length===1);
-  assert.equal(await overview.locator('.im-chat-overview__card').count(),1);
-  await search.fill('no matching chat');await overview.getByRole('status').filter({hasText:'没有匹配的聊天'}).waitFor();
-  await search.fill('');
-
-  await page.keyboard.press('Escape');
-  assert.equal(await editor.innerText(),'保留我的草稿');
-  assert.equal(await editor.evaluate((e,old)=>e===old,oldEditor),true);
-  const work=page.locator('.im-channel-chat__work-summary');
-  await activate(work);await page.getByRole('dialog').getByText('本周进展摘要',{exact:true}).waitFor();
-  await page.keyboard.press('Escape');
-  runtime={phase:'running',reception:{running:1,queued:0},modelWait:{reason:'rate_limit',retryAt:Date.now()+90000}};
-  await page.getByText('模型服务繁忙，等待重试…',{exact:true}).waitFor({timeout:15000});
-  assert.equal(await editor.innerText(),'保留我的草稿');
-  assert.equal(await page.locator('.im-channel-chat__current-work').count(),0);
-  const after=await switcher.boundingBox();assert.ok(Math.abs(after!.y-before!.y)<2,'status must not move dock');
-  runtime={phase:'running',reception:{running:0,queued:0}};
-  await page.waitForFunction(()=>document.querySelector('.im-assistant-activity')?.textContent==='');
-  await editor.fill('第一行\n第二行\n第三行');
-  assert.ok((await editor.boundingBox())!.height>40,'multiline draft must grow');
-  await page.screenshot({path:join(evidence,theme+'-'+width+'-multiline.png'),fullPage:true});
-  await activate(switcher);await activate(page.getByRole('dialog').getByRole('button',{name:new RegExp('^'+groupTitle)}));
-  await page.locator('.im-channel-chat__conversation[data-presentation="group"]').waitFor();
-  await page.locator('[data-message-timeline]').evaluate(el=>{el.scrollTop=-el.scrollHeight;});
-  await page.locator('.im-channel-chat__sender').filter({hasText:'小林'}).waitFor();
-  await page.locator('.im-channel-chat__message p').filter({hasText:'设计稿更新好了，大家看看这个方案。'}).first().waitFor();
-  assert.ok((await page.locator('.opencraft-composer-shell').boundingBox())!.height <= 70);
-  assert.ok(Number.parseFloat(await heading.evaluate(el=>getComputedStyle(el).fontSize))<=20);
-  assert.equal(await page.locator('.im-channel-chat__sender').filter({hasText:'小林'}).count(),1);
-  assert.equal(await page.locator('.im-channel-chat__sender').filter({hasText:'Review Bot'}).count(),1);
-  assert.equal(await page.locator('.im-assistant-activity,.im-channel-chat__current-work').count(),0);
-  await page.screenshot({path:join(evidence,theme+'-'+width+'-group.png'),fullPage:true});
-  await activate(page.getByRole('button',{name:'成员',exact:true}));
-  await page.getByRole('dialog').getByText('小林',{exact:true}).waitFor();
-  await page.keyboard.press('Escape');
-  await editor.fill(''); await editor.pressSequentially('@');
-  await page.getByRole('option').filter({hasText:'Review Bot'}).waitFor();
-  await activate(page.getByRole('option').filter({hasText:'Review Bot'}));
-  assert.ok((await editor.innerText()).includes('Review Bot'));
-  await editor.fill('群聊草稿');
-  const groupMessage=page.locator('[role="listitem"][data-direct="false"][data-self="false"]').filter({hasText:'设计稿更新好了'});
-  await groupMessage.click({button:'right'});
-  await activate(page.getByRole('menuitem',{name:'回复',exact:true}));
-  await page.getByRole('button',{name:'取消回复',exact:true}).waitFor();
-  await activate(switcher);
-  await activate(page.getByRole('dialog').getByRole('button',{name:'我的助理',exact:true}));
-  await page.locator('.im-channel-chat__conversation[data-presentation="direct"]').waitFor();
-  assert.equal((await editor.innerText()).replace(/\n+/g,'\n'),'第一行\n第二行\n第三行');
-  await activate(switcher);
-  await activate(page.getByRole('dialog').getByRole('button',{name:new RegExp('^'+groupTitle)}));
-  assert.equal(await editor.innerText(),'群聊草稿');
-  await page.getByRole('button',{name:'取消回复',exact:true}).waitFor();
-  await page.locator('[data-message-timeline]').evaluate(el=>{el.scrollTop=0;});
-  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-  await editor.fill('群聊引用回复 '+theme+' '+width);
-  await activate(page.getByRole('button',{name:'发送消息',exact:true}));
-  await page.locator('.im-channel-chat__message').filter({hasText:'群聊引用回复 '+theme+' '+width}).waitFor();
-  assert.equal(await page.getByRole('button',{name:'取消回复',exact:true}).count(),0);
-  assert.equal((await editor.innerText()).trim(),'');
-  const history=await service.communicate(human,'opencraft/channels/messages/list',{channelId:discussion.id});
-  const sent=history.messages.find(m=>m.text==='群聊引用回复 '+theme+' '+width);
-  assert.equal(sent?.replyTo?.text,'设计稿更新好了，大家看看这个方案。');
-  await activate(switcher);
-  await activate(page.getByRole('dialog').getByRole('button',{name:'我的助理',exact:true}));
-  if (width === 1160 || width === 390 && theme === 'dark') {
-    await activate(switcher);await activate(page.getByRole('dialog').getByRole('button',{name:/^历史归档/}));
-    await page.getByText(/^历史消息 239：/).waitFor();
-    const timeline=page.locator('[data-message-timeline]');
-    assert.ok(await timeline.locator('[data-timeline-entry]').count()<45,'long history must not mount every message');
-    await timeline.evaluate(el=>{el.scrollTop=-el.scrollHeight;});
-    await page.getByRole('button',{name:'加载更早的消息',exact:true}).waitFor();
-    await page.getByRole('button',{name:'加载更早的消息',exact:true}).scrollIntoViewIfNeeded();
-    await page.waitForTimeout(400);
-    const anchor=page.locator('[data-timeline-entry]').filter({hasText:/历史消息/}).first();
-    const anchorKey=await anchor.getAttribute('data-timeline-entry');
-    const anchorY=(await anchor.locator('.im-channel-chat__message').boundingBox())!.y;
-    await activate(page.getByRole('button',{name:'加载更早的消息',exact:true}));
-    await page.waitForTimeout(500);
-    const nextAnchorY=(await page.locator('[data-timeline-entry="'+anchorKey+'"] .im-channel-chat__message').boundingBox())!.y;
-    assert.ok(Math.abs(nextAnchorY-anchorY)<4,`prepend preserves visible row: ${anchorKey} ${anchorY} -> ${nextAnchorY}`);
-    await timeline.evaluate(el=>{el.scrollTop=-Math.min(600,el.scrollHeight-el.clientHeight);});
-    await page.waitForTimeout(350);
-    const distance=await timeline.evaluate(el=>-el.scrollTop);
-    await activate(switcher);await activate(page.getByRole('dialog').getByRole('button',{name:'我的助理',exact:true}));
-    await activate(switcher);await activate(page.getByRole('dialog').getByRole('button',{name:/^历史归档/}));
-    await page.waitForTimeout(400);
-    assert.ok(Math.abs(await timeline.evaluate(el=>-el.scrollTop)-distance)<4,'route restores measured reading distance');
-    const reading=await timeline.evaluate(el=>{const row=Array.from(el.querySelectorAll<HTMLElement>('[data-timeline-entry]')).find(row=>row.getBoundingClientRect().top>=el.getBoundingClientRect().top)!;return {key:row.dataset.timelineEntry,y:row.getBoundingClientRect().y};});
-    await service.communicate(colleague,'opencraft/channels/messages/send',{channelId:archive.id,clientMessageId:'new-'+width,parts:[{type:'text',text:'新消息 '+width}]});
-    await page.waitForTimeout(600);
-    assert.ok(Math.abs((await page.locator('[data-timeline-entry="'+reading.key+'"]').boundingBox())!.y-reading.y)<4,'incoming message must not move the reader');
-    // Late row geometry (e.g. image decode) must not move older-history reading.
-    const growthAnchor = await timeline.evaluate(el => {
-      const top = el.getBoundingClientRect().top;
-      const rows = Array.from(el.querySelectorAll<HTMLElement>('[data-timeline-entry]'));
-      const visible = rows.find(row => row.getBoundingClientRect().top >= top)!;
-      const preceding = rows.find(row => row.getBoundingClientRect().bottom < top);
-      if (!preceding) throw Error('expected an overscan row above the viewport');
-      const result = {key: visible.dataset.timelineEntry, y: visible.getBoundingClientRect().y};
-      preceding.style.paddingBottom = '80px';
-      return result;
+  await server.listen();
+  await mkdir(evidence, { recursive: true });
+  browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,
+    args: ["--no-sandbox"],
+  });
+  for (const [width, theme] of [
+    [1160, "light"],
+    [390, "light"],
+    [390, "dark"],
+    [820, "dark"],
+  ] as const) {
+    const groupTitle = "产品方案讨论 " + width + "-" + theme;
+    discussion = await service.communicate(human, "opencraft/channels/group/create", {
+      title: groupTitle,
+      memberActorIds: [colleague.actorId, bot.id],
+      clientRequestId: "group-" + width + "-" + theme,
     });
-    await page.waitForTimeout(400);
-    assert.ok(Math.abs((await page.locator('[data-timeline-entry="'+growthAnchor.key+'"]').boundingBox())!.y-growthAnchor.y)<4,'late geometry preserves the reader');
-    const retained = page.locator('[data-timeline-entry="'+growthAnchor.key+'"] [role=listitem]');
-    const retainedHandle = await retained.elementHandle();
-    await retained.evaluate(el=>el.focus({preventScroll:true}));
-    await timeline.evaluate(el=>{el.scrollTop=0;});
-    await page.waitForTimeout(200);
-    assert.equal(await retainedHandle!.evaluate(el=>el.isConnected && document.activeElement===el),true,'focus survives virtual window movement');
-    await editor.focus();
-    await timeline.locator('[role=listitem]').last().evaluate(el=>{const range=document.createRange();range.selectNodeContents(el);const selection=document.getSelection()!;selection.removeAllRanges();selection.addRange(range);});
-    const selected = await page.evaluate(()=>document.getSelection()!.toString());
-    await timeline.evaluate(el=>{el.scrollTop=-el.scrollHeight;});
-    await page.waitForTimeout(200);
-    assert.equal(await page.evaluate(()=>document.getSelection()!.toString()),selected,'selection survives virtual window movement');
-    await page.evaluate(()=>document.getSelection()!.removeAllRanges());
-    await timeline.evaluate(el=>{el.scrollTop=0;});
-    await page.screenshot({path:join(evidence,theme+'-'+width+'-history.png'),fullPage:true});
-    await activate(switcher);await activate(page.getByRole('dialog').getByRole('button',{name:'我的助理',exact:true}));
+    await service.communicate(colleague, "opencraft/channels/messages/send", {
+      channelId: discussion.id,
+      clientMessageId: "discussion-human-" + width + "-" + theme,
+      parts: [{ type: "text", text: "设计稿更新好了，大家看看这个方案。" }],
+    });
+    await service.communicate(botContext, "opencraft/channels/messages/send", {
+      channelId: discussion.id,
+      clientMessageId: "discussion-bot-" + width + "-" + theme,
+      parts: [{ type: "text", text: "已整理好待确认项：\n\n- **导航**：统一入口\n- **排版**：保持阅读轴线" }],
+    });
+    runtime = {
+      phase: "running",
+      reception: { running: 1, queued: 0 },
+      works: [{ id: "week", title: "本周进展摘要", status: "running", updatedAt: Date.now() }],
+    };
+    const page = await browser.newPage({ viewport: { width, height: 900 }, hasTouch: width < 1000 });
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    const activate = (locator: import("playwright").Locator) => (width < 1000 ? locator.tap() : locator.click());
+    await page.addInitScript("window.__name = target => target;");
+    await page.goto(server.resolvedUrls!.local[0], { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForSelector('body[data-ready="true"]', { state: "attached", timeout: 90000 });
+    await page.evaluate((theme) => (window as any).proof.theme(theme), theme);
+    const sidebar = page.locator('[data-chrome-action-id="sidebar-toggle"]:visible').first();
+    if ((await sidebar.count()) && (await sidebar.getAttribute("aria-expanded")) !== "true") await activate(sidebar);
+    await activate(page.getByRole("button", { name: "Inbox", exact: true }));
+    await activate(page.getByRole("button", { name: "打开助理", exact: true }));
+    const close = page.getByRole("button", { name: "关闭侧边栏", exact: true });
+    if (width < 1000 && (await close.count())) {
+      const box = await close.boundingBox();
+      if (box) await close.tap({ position: { x: box.width - 8, y: box.height / 2 } });
+    }
+    await page.getByText("正在回复…", { exact: true }).waitFor({ timeout: 15000 });
+    await page.getByText("确认官网方案", { exact: true }).waitFor({ timeout: 60000 });
+    const editor = page.locator('[contenteditable="true"]:visible').last();
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: join(evidence, theme + "-" + width + ".png"), fullPage: true });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+    const heading = page.locator(".im-channel-chat__heading h2");
+    assert.ok(Number.parseFloat(await heading.evaluate((el) => getComputedStyle(el).fontSize)) <= 20);
+    const shell = await page.locator(".opencraft-composer-shell").boundingBox();
+    assert.ok(shell!.height <= 70, "empty message composer stays compact");
+    const original = page.locator('[role="listitem"][data-direct="true"]').first();
+    if (width < 1000) {
+      const session = await page.context().newCDPSession(page),
+        bounds = await original.boundingBox();
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchStart",
+        touchPoints: [{ x: bounds!.x + bounds!.width - 20, y: bounds!.y + bounds!.height - 15 }],
+      });
+      await page.waitForTimeout(800);
+      await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await session.detach();
+    } else {
+      await original.focus();
+      await page.keyboard.press("Shift+F10");
+    }
+    await activate(page.getByRole("menuitem", { name: "回复", exact: true }));
+    await page.getByRole("button", { name: "取消回复", exact: true }).waitFor();
+    await activate(page.getByRole("button", { name: "取消回复", exact: true }));
+    const oldEditor = await editor.elementHandle();
+    const switcher = page.getByRole("button", { name: "切换聊天", exact: true });
+    const before = await switcher.boundingBox();
+    await editor.fill("保留我的草稿");
+    await activate(switcher);
+    await page.getByRole("dialog").waitFor();
+    assert.equal(await page.locator("input:focus,[contenteditable=true]:focus").count(), 0);
+    const overview = page.locator(".im-chat-overview");
+    await overview.locator(".im-chat-overview__card").first().waitFor();
+    assert.equal(await overview.locator('[aria-current="page"]').count(), 1, "one current chat");
+    const done = overview.getByRole("button", { name: "完成", exact: true });
+    const doneBox = await done.boundingBox();
+    if (width < 640)
+      assert.ok(doneBox && doneBox.y > 780 && doneBox.x > width - 90, "overview exit stays at bottom right");
+    await page.screenshot({ path: join(evidence, theme + "-" + width + "-overview.png"), fullPage: true });
+    const search = overview.getByRole("searchbox", { name: "搜索聊天" });
+    await search.fill(groupTitle);
+    await page.waitForFunction(() => document.querySelectorAll(".im-chat-overview__card").length === 1);
+    assert.equal(await overview.locator(".im-chat-overview__card").count(), 1);
+    await search.fill("no matching chat");
+    await overview.getByRole("status").filter({ hasText: "没有匹配的聊天" }).waitFor();
+    await search.fill("");
+
+    await page.keyboard.press("Escape");
+    assert.equal(await editor.innerText(), "保留我的草稿");
+    assert.equal(await editor.evaluate((e, old) => e === old, oldEditor), true);
+    const work = page.locator(".im-channel-chat__work-summary");
+    await activate(work);
+    await page.getByRole("dialog").getByText("本周进展摘要", { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    runtime = {
+      phase: "running",
+      reception: { running: 1, queued: 0 },
+      modelWait: { reason: "rate_limit", retryAt: Date.now() + 90000 },
+    };
+    await page.getByText("模型服务繁忙，等待重试…", { exact: true }).waitFor({ timeout: 15000 });
+    assert.equal(await editor.innerText(), "保留我的草稿");
+    assert.equal(await page.locator(".im-channel-chat__current-work").count(), 0);
+    const after = await switcher.boundingBox();
+    assert.ok(Math.abs(after!.y - before!.y) < 2, "status must not move dock");
+    runtime = { phase: "running", reception: { running: 0, queued: 0 } };
+    await page.waitForFunction(() => document.querySelector(".im-assistant-activity")?.textContent === "");
+    await editor.fill("第一行\n第二行\n第三行");
+    assert.ok((await editor.boundingBox())!.height > 40, "multiline draft must grow");
+    await page.screenshot({ path: join(evidence, theme + "-" + width + "-multiline.png"), fullPage: true });
+    await activate(switcher);
+    await activate(page.getByRole("dialog").getByRole("button", { name: new RegExp("^" + groupTitle) }));
+    await page.locator('.im-channel-chat__conversation[data-presentation="group"]').waitFor();
+    await page.locator("[data-message-timeline]").evaluate((el) => {
+      el.scrollTop = -el.scrollHeight;
+    });
+    await page.locator(".im-channel-chat__sender").filter({ hasText: "小林" }).waitFor();
+    await page
+      .locator(".im-channel-chat__message p")
+      .filter({ hasText: "设计稿更新好了，大家看看这个方案。" })
+      .first()
+      .waitFor();
+    assert.ok((await page.locator(".opencraft-composer-shell").boundingBox())!.height <= 70);
+    assert.ok(Number.parseFloat(await heading.evaluate((el) => getComputedStyle(el).fontSize)) <= 20);
+    assert.equal(await page.locator(".im-channel-chat__sender").filter({ hasText: "小林" }).count(), 1);
+    assert.equal(await page.locator(".im-channel-chat__sender").filter({ hasText: "Review Bot" }).count(), 1);
+    assert.equal(await page.locator(".im-assistant-activity,.im-channel-chat__current-work").count(), 0);
+    await page.screenshot({ path: join(evidence, theme + "-" + width + "-group.png"), fullPage: true });
+    await activate(page.getByRole("button", { name: "成员", exact: true }));
+    await page.getByRole("dialog").getByText("小林", { exact: true }).waitFor();
+    await page.keyboard.press("Escape");
+    await editor.fill("");
+    await editor.pressSequentially("@");
+    await page.getByRole("option").filter({ hasText: "Review Bot" }).waitFor();
+    await activate(page.getByRole("option").filter({ hasText: "Review Bot" }));
+    assert.ok((await editor.innerText()).includes("Review Bot"));
+    await editor.fill("群聊草稿");
+    const groupMessage = page
+      .locator('[role="listitem"][data-direct="false"][data-self="false"]')
+      .filter({ hasText: "设计稿更新好了" });
+    await groupMessage.click({ button: "right" });
+    await activate(page.getByRole("menuitem", { name: "回复", exact: true }));
+    await page.getByRole("button", { name: "取消回复", exact: true }).waitFor();
+    await activate(switcher);
+    await activate(page.getByRole("dialog").getByRole("button", { name: "我的助理", exact: true }));
+    await page.locator('.im-channel-chat__conversation[data-presentation="direct"]').waitFor();
+    assert.equal((await editor.innerText()).replace(/\n+/g, "\n"), "第一行\n第二行\n第三行");
+    await activate(switcher);
+    await activate(page.getByRole("dialog").getByRole("button", { name: new RegExp("^" + groupTitle) }));
+    assert.equal(await editor.innerText(), "群聊草稿");
+    await page.getByRole("button", { name: "取消回复", exact: true }).waitFor();
+    await page.locator("[data-message-timeline]").evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await editor.fill("群聊引用回复 " + theme + " " + width);
+    await activate(page.getByRole("button", { name: "发送消息", exact: true }));
+    await page
+      .locator(".im-channel-chat__message")
+      .filter({ hasText: "群聊引用回复 " + theme + " " + width })
+      .waitFor();
+    assert.equal(await page.getByRole("button", { name: "取消回复", exact: true }).count(), 0);
+    assert.equal((await editor.innerText()).trim(), "");
+    const history = await service.communicate(human, "opencraft/channels/messages/list", { channelId: discussion.id });
+    const sent = history.messages.find((m) => m.text === "群聊引用回复 " + theme + " " + width);
+    assert.equal(sent?.replyTo?.text, "设计稿更新好了，大家看看这个方案。");
+    await activate(switcher);
+    await activate(page.getByRole("dialog").getByRole("button", { name: "我的助理", exact: true }));
+    if (width === 1160 || (width === 390 && theme === "dark")) {
+      await activate(switcher);
+      await activate(page.getByRole("dialog").getByRole("button", { name: /^历史归档/ }));
+      await page.getByText(/^历史消息 239：/).waitFor();
+      const timeline = page.locator("[data-message-timeline]");
+      assert.ok(
+        (await timeline.locator("[data-timeline-entry]").count()) < 45,
+        "long history must not mount every message",
+      );
+      await timeline.evaluate((el) => {
+        el.scrollTop = -el.scrollHeight;
+      });
+      await page.getByRole("button", { name: "加载更早的消息", exact: true }).waitFor();
+      await page.getByRole("button", { name: "加载更早的消息", exact: true }).scrollIntoViewIfNeeded();
+      await page.waitForTimeout(400);
+      const anchor = page
+        .locator("[data-timeline-entry]")
+        .filter({ hasText: /历史消息/ })
+        .first();
+      const anchorKey = await anchor.getAttribute("data-timeline-entry");
+      const anchorY = (await anchor.locator(".im-channel-chat__message").boundingBox())!.y;
+      await activate(page.getByRole("button", { name: "加载更早的消息", exact: true }));
+      await page.waitForTimeout(500);
+      const nextAnchorY = (await page
+        .locator('[data-timeline-entry="' + anchorKey + '"] .im-channel-chat__message')
+        .boundingBox())!.y;
+      assert.ok(
+        Math.abs(nextAnchorY - anchorY) < 4,
+        `prepend preserves visible row: ${anchorKey} ${anchorY} -> ${nextAnchorY}`,
+      );
+      await timeline.evaluate((el) => {
+        el.scrollTop = -Math.min(600, el.scrollHeight - el.clientHeight);
+      });
+      await page.waitForTimeout(350);
+      const distance = await timeline.evaluate((el) => -el.scrollTop);
+      await activate(switcher);
+      await activate(page.getByRole("dialog").getByRole("button", { name: "我的助理", exact: true }));
+      await activate(switcher);
+      await activate(page.getByRole("dialog").getByRole("button", { name: /^历史归档/ }));
+      await page.waitForTimeout(400);
+      assert.ok(
+        Math.abs((await timeline.evaluate((el) => -el.scrollTop)) - distance) < 4,
+        "route restores measured reading distance",
+      );
+      const reading = await timeline.evaluate((el) => {
+        const row = Array.from(el.querySelectorAll<HTMLElement>("[data-timeline-entry]")).find(
+          (row) => row.getBoundingClientRect().top >= el.getBoundingClientRect().top,
+        )!;
+        return { key: row.dataset.timelineEntry, y: row.getBoundingClientRect().y };
+      });
+      await service.communicate(colleague, "opencraft/channels/messages/send", {
+        channelId: archive.id,
+        clientMessageId: "new-" + width,
+        parts: [{ type: "text", text: "新消息 " + width }],
+      });
+      await page.waitForTimeout(600);
+      assert.ok(
+        Math.abs((await page.locator('[data-timeline-entry="' + reading.key + '"]').boundingBox())!.y - reading.y) < 4,
+        "incoming message must not move the reader",
+      );
+      // Late row geometry (e.g. image decode) must not move older-history reading.
+      const growthAnchor = await timeline.evaluate((el) => {
+        const top = el.getBoundingClientRect().top;
+        const rows = Array.from(el.querySelectorAll<HTMLElement>("[data-timeline-entry]"));
+        const visible = rows.find((row) => row.getBoundingClientRect().top >= top)!;
+        const preceding = rows.find((row) => row.getBoundingClientRect().bottom < top);
+        if (!preceding) throw Error("expected an overscan row above the viewport");
+        const result = { key: visible.dataset.timelineEntry, y: visible.getBoundingClientRect().y };
+        preceding.style.paddingBottom = "80px";
+        return result;
+      });
+      await page.waitForTimeout(400);
+      assert.ok(
+        Math.abs(
+          (await page.locator('[data-timeline-entry="' + growthAnchor.key + '"]').boundingBox())!.y - growthAnchor.y,
+        ) < 4,
+        "late geometry preserves the reader",
+      );
+      const retained = page.locator('[data-timeline-entry="' + growthAnchor.key + '"] [role=listitem]');
+      const retainedHandle = await retained.elementHandle();
+      await retained.evaluate((el) => el.focus({ preventScroll: true }));
+      await timeline.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await page.waitForTimeout(200);
+      assert.equal(
+        await retainedHandle!.evaluate((el) => el.isConnected && document.activeElement === el),
+        true,
+        "focus survives virtual window movement",
+      );
+      await editor.focus();
+      await timeline
+        .locator("[role=listitem]")
+        .last()
+        .evaluate((el) => {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const selection = document.getSelection()!;
+          selection.removeAllRanges();
+          selection.addRange(range);
+        });
+      const selected = await page.evaluate(() => document.getSelection()!.toString());
+      await timeline.evaluate((el) => {
+        el.scrollTop = -el.scrollHeight;
+      });
+      await page.waitForTimeout(200);
+      assert.equal(
+        await page.evaluate(() => document.getSelection()!.toString()),
+        selected,
+        "selection survives virtual window movement",
+      );
+      await page.evaluate(() => document.getSelection()!.removeAllRanges());
+      await timeline.evaluate((el) => {
+        el.scrollTop = 0;
+      });
+      await page.screenshot({ path: join(evidence, theme + "-" + width + "-history.png"), fullPage: true });
+      await activate(switcher);
+      await activate(page.getByRole("dialog").getByRole("button", { name: "我的助理", exact: true }));
+    }
+    await activate(switcher);
+    await activate(page.getByRole("dialog").getByRole("button", { name: new RegExp("^" + groupTitle) }));
+    // Native attachments use the same Composer settlement and receipt authority.
+    const photo = {
+      name: "photo.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==",
+        "base64",
+      ),
+    };
+    const attachPhoto = async () => {
+      const chooser = page.waitForEvent("filechooser");
+      await activate(page.locator(".im-channel-chat__dock .opencraft-composer-footer__attachment button").first());
+      await (await chooser).setFiles(photo);
+    };
+    const communicate = service.communicate.bind(service);
+    const attempts: string[] = [];
+    let fault: "sending" | "lost-ack" | "before-write" | undefined = "sending";
+    (service as any).communicate = async (c: any, m: string, p: any) => {
+      if (m !== "opencraft/channels/attachments/send") return communicate(c, m, p);
+      attempts.push(p.clientMessageId);
+      if (fault === "before-write") {
+        fault = undefined;
+        throw Error("fixture: disconnected before native write");
+      }
+      const result = await communicate(c, m, p);
+      if (fault === "lost-ack") throw Error("fixture: ACK lost after native commit");
+      return fault === "sending" ? { ...result, receipt: { ...result.receipt, status: "sending" } } : result;
+    };
+    await editor.fill("图片之后再发送的文字");
+    await attachPhoto();
+    await activate(page.getByRole("button", { name: "发送附件", exact: true }));
+    await page.waitForFunction(() => !document.querySelector(".opencraft-composer-attachments"));
+    await page.waitForFunction(
+      () => document.querySelector(".im-channel-chat__dock [contenteditable=true]")?.textContent?.trim() === "",
+    );
+    const imageHistory = await service.communicate(human, "opencraft/channels/messages/list", {
+      channelId: discussion.id,
+    });
+    assert.equal(imageHistory.messages.filter((m) => m.attachment || m.image).length, 1);
+    assert.ok(imageHistory.messages.some((m) => m.text === "图片之后再发送的文字"));
+    fault = "lost-ack";
+    attempts.length = 0;
+    await attachPhoto();
+    await activate(page.getByRole("button", { name: "发送附件", exact: true }));
+    await page.waitForFunction(() => !document.querySelector(".opencraft-composer-attachments"));
+    assert.equal(attempts.length, 1, "lost ACK is reconciled by read, without replay");
+    const recovered = await service.communicate(human, "opencraft/channels/messages/list", {
+      channelId: discussion.id,
+    });
+    assert.equal(recovered.messages.filter((m) => m.attachment || m.image).length, 2);
+    fault = "before-write";
+    attempts.length = 0;
+    await attachPhoto();
+    await activate(page.getByRole("button", { name: "发送附件", exact: true }));
+    await page.waitForFunction(
+      () =>
+        document.querySelector(".opencraft-composer-stack")?.getAttribute("aria-busy") !== "true" &&
+        !!document.querySelector(".opencraft-composer-attachments"),
+    );
+    assert.equal(attempts.length, 1);
+    await activate(page.getByRole("button", { name: "发送附件", exact: true }));
+    await page.waitForFunction(() => !document.querySelector(".opencraft-composer-attachments"));
+    assert.equal(attempts.length, 2);
+    assert.equal(attempts[0], attempts[1]);
+    (service as any).communicate = communicate;
+    await activate(switcher);
+    await activate(page.getByRole("dialog").getByRole("button", { name: "我的助理", exact: true }));
+    if (width === 820) {
+      await page.evaluate(() => (window as any).proof.stallStatus());
+      await page.getByText("助理状态暂不可用", { exact: true }).waitFor({ timeout: 15000 });
+      assert.equal(await page.locator(".im-channel-chat__current-work,.im-channel-chat__presence").count(), 0);
+    }
+    assert.deepEqual(errors, []);
+    await page.close();
   }
-  await activate(switcher); await activate(page.getByRole('dialog').getByRole('button',{name:new RegExp('^'+groupTitle)}));
-  // Native attachments use the same Composer settlement and receipt authority.
-  const photo={name:'photo.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAGUlEQVR4AWP8DwQMSICJAQ0wMaABJgY0AAAGXQQEOHaWpAAAAABJRU5ErkJggg==','base64')};
-  const attachPhoto=async()=>{const chooser=page.waitForEvent('filechooser');await activate(page.locator('.im-channel-chat__dock .opencraft-composer-footer__attachment button').first());await(await chooser).setFiles(photo);};
-  const communicate=service.communicate.bind(service);
-  const attempts:string[]=[];
-  let fault:'sending'|'lost-ack'|'before-write'|undefined='sending';
-  (service as any).communicate=async(c:any,m:string,p:any)=>{
-    if(m!=='opencraft/channels/attachments/send')return communicate(c,m,p);
-    attempts.push(p.clientMessageId);
-    if(fault==='before-write'){fault=undefined;throw Error('fixture: disconnected before native write');}
-    const result=await communicate(c,m,p);
-    if(fault==='lost-ack')throw Error('fixture: ACK lost after native commit');
-    return fault==='sending'?{...result,receipt:{...result.receipt,status:'sending'}}:result;
-  };
-  await editor.fill('图片之后再发送的文字');await attachPhoto();
-  await activate(page.getByRole('button',{name:'发送附件',exact:true}));
-  await page.waitForFunction(()=>!document.querySelector('.opencraft-composer-attachments'));
-  await page.waitForFunction(()=>document.querySelector('.im-channel-chat__dock [contenteditable=true]')?.textContent?.trim()==='');
-  const imageHistory=await service.communicate(human,'opencraft/channels/messages/list',{channelId:discussion.id});
-  assert.equal(imageHistory.messages.filter(m=>m.attachment||m.image).length,1);
-  assert.ok(imageHistory.messages.some(m=>m.text==='图片之后再发送的文字'));
-  fault='lost-ack';attempts.length=0;await attachPhoto();
-  await activate(page.getByRole('button',{name:'发送附件',exact:true}));
-  await page.waitForFunction(()=>!document.querySelector('.opencraft-composer-attachments'));
-  assert.equal(attempts.length,1,'lost ACK is reconciled by read, without replay');
-  const recovered=await service.communicate(human,'opencraft/channels/messages/list',{channelId:discussion.id});
-  assert.equal(recovered.messages.filter(m=>m.attachment||m.image).length,2);
-  fault='before-write';attempts.length=0;await attachPhoto();
-  await activate(page.getByRole('button',{name:'发送附件',exact:true}));
-  await page.waitForFunction(()=>document.querySelector('.opencraft-composer-stack')?.getAttribute('aria-busy')!=='true'&&!!document.querySelector('.opencraft-composer-attachments'));
-  assert.equal(attempts.length,1);
-  await activate(page.getByRole('button',{name:'发送附件',exact:true}));
-  await page.waitForFunction(()=>!document.querySelector('.opencraft-composer-attachments'));
-  assert.equal(attempts.length,2);assert.equal(attempts[0],attempts[1]);
-  (service as any).communicate=communicate;
-  await activate(switcher); await activate(page.getByRole('dialog').getByRole('button',{name:'我的助理',exact:true}));
-  if (width === 820) {
-    await page.evaluate(() => (window as any).proof.stallStatus());
-    await page.getByText('助理状态暂不可用',{exact:true}).waitFor({timeout:15000});
-    assert.equal(await page.locator('.im-channel-chat__current-work,.im-channel-chat__presence').count(),0);
+  console.log(
+    "PASS: actual unified native channels; light/dark desktop/phone/tablet; mentions, membership, reply delivery, draft continuity; 240-message virtualization, prepend, route recovery, late geometry, incoming messages, selection and focus retention. Identity and Host work observations are fixtures.",
+  );
+} catch (error) {
+  const page = browser?.contexts().at(-1)?.pages().at(-1);
+  if (page) {
+    console.error(await page.locator("body").innerText());
+    console.error(
+      "editor",
+      await page.locator("[contenteditable=true]").evaluateAll((es) => es.map((e) => e.outerHTML)),
+    );
+    console.error(
+      "members",
+      await service
+        .communicate(human, "opencraft/channels/group/members/list", { channelId: discussion.id })
+        .catch((e) => e.message),
+    );
+    await page.screenshot({ path: join(evidence, "failure.png"), fullPage: true });
   }
-  assert.deepEqual(errors,[]);await page.close();
- }
- console.log('PASS: actual unified native channels; light/dark desktop/phone/tablet; mentions, membership, reply delivery, draft continuity; 240-message virtualization, prepend, route recovery, late geometry, incoming messages, selection and focus retention. Identity and Host work observations are fixtures.');
-} catch(error) {
- const page=browser?.contexts().at(-1)?.pages().at(-1);if(page){console.error(await page.locator('body').innerText());console.error('editor',await page.locator('[contenteditable=true]').evaluateAll(es=>es.map(e=>e.outerHTML)));console.error('members',await service.communicate(human,'opencraft/channels/group/members/list',{channelId:discussion.id}).catch(e=>e.message));await page.screenshot({path:join(evidence,'failure.png'),fullPage:true});}throw error;
-} finally {await browser?.close();await server.close();await backend.close();await host.close();await im.close();await service.close();actors.close();await storage.close();await rm(root,{recursive:true,force:true});}
+  throw error;
+} finally {
+  await browser?.close();
+  await server.close();
+  await backend.close();
+  await host.close();
+  await im.close();
+  await service.close();
+  actors.close();
+  await storage.close();
+  await rm(root, { recursive: true, force: true });
+}

@@ -1,13 +1,7 @@
 import { legacyMemoryFixture } from "./helpers.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  existsSync,
-  symlinkSync,
-} from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync, execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -24,9 +18,7 @@ test("new shard metadata is initialized under the existing root write lock", (t)
   let observed = 0,
     store;
   MemoryFileStore.prototype.initialize = function () {
-    const owner = JSON.parse(
-      readFileSync(join(this.root, ".write-lock", "owner.json"), "utf8"),
-    );
+    const owner = JSON.parse(readFileSync(join(this.root, ".write-lock", "owner.json"), "utf8"));
     assert.equal(owner.pid, process.pid);
     observed++;
     return original.call(this);
@@ -34,10 +26,7 @@ test("new shard metadata is initialized under the existing root write lock", (t)
   try {
     store = new Store(profile);
     assert.equal(observed, 1);
-    assert.equal(
-      existsSync(join(profile.path, "memory-space", ".write-lock")),
-      false,
-    );
+    assert.equal(existsSync(join(profile.path, "memory-space", ".write-lock")), false);
   } finally {
     store?.close();
     MemoryFileStore.prototype.initialize = original;
@@ -66,10 +55,7 @@ test("reclaiming a known-dead lock gets one immediate acquisition attempt even i
       throw error;
     };
     transaction.acquire();
-    assert.equal(
-      JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).pid,
-      process.pid,
-    );
+    assert.equal(JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).pid, process.pid);
     transaction.release();
   } finally {
     Date.now = originalNow;
@@ -79,10 +65,7 @@ test("reclaiming a known-dead lock gets one immediate acquisition attempt even i
   mkdirSync(lock);
   writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: process.pid }));
   assert.throws(() => transaction.acquire(), /busy/);
-  assert.equal(
-    JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).pid,
-    process.pid,
-  );
+  assert.equal(JSON.parse(readFileSync(join(lock, "owner.json"), "utf8")).pid, process.pid);
 });
 const open = (t, p) => {
   const s = new Store(p);
@@ -117,10 +100,8 @@ const create = (app, slug) =>
     slug,
     name: `Project ${slug}`,
   });
-const joinProject = (app, slug) =>
-  app.memoryProjects.change(crypto.randomUUID(), "join", { slug });
-const leave = (app, slug) =>
-  app.memoryProjects.change(crypto.randomUUID(), "leave", { slug });
+const joinProject = (app, slug) => app.memoryProjects.change(crypto.randomUUID(), "join", { slug });
+const leave = (app, slug) => app.memoryProjects.change(crypto.randomUUID(), "leave", { slug });
 
 test("new profiles default to private agent memory; old configuration keeps user scope", (t) => {
   const p = profileFor(t, { memoryDefaultScope: "agent" }),
@@ -133,10 +114,7 @@ test("new profiles default to private agent memory; old configuration keeps user
   assert.equal(result.key, "@agent/role");
   assert.equal(app.memory.list()[0].scope, "agent");
   assert.match(
-    readFileSync(
-      join(app.memory.files.locations().agent, "profile.md"),
-      "utf8",
-    ),
+    readFileSync(join(app.memory.files.locations().agent, "profile.md"), "utf8"),
     /Prefers technical details/,
   );
   const config = join(p.path, "profile.json"),
@@ -146,10 +124,7 @@ test("new profiles default to private agent memory; old configuration keeps user
   // Read-only configuration load must not rewrite the missing setting into the file.
   return import("../src/profile.mjs").then(({ loadProfile }) => {
     assert.equal(loadProfile(p.path).config.memoryDefaultScope, "user");
-    assert.equal(
-      JSON.parse(readFileSync(config)).memoryDefaultScope,
-      undefined,
-    );
+    assert.equal(JSON.parse(readFileSync(config)).memoryDefaultScope, undefined);
   });
 });
 
@@ -157,17 +132,12 @@ test("Markdown edits are authoritative; stale SQL rows rebuild from files and ne
   const { app, db } = open(t, profileFor(t));
   set(app, "city", "Lives in Shanghai");
   const path = join(app.memory.files.locations().user, "profile.md");
-  writeFileSync(
-    path,
-    "# User\n\nKeep this unparsed human note.\n\n- (2026-11-03) Lives in Shenzhen\n",
-  );
+  writeFileSync(path, "# User\n\nKeep this unparsed human note.\n\n- (2026-11-03) Lives in Shenzhen\n");
   assert.deepEqual(
     app.memory.list().map((m) => m.value),
     ["Lives in Shenzhen"],
   );
-  db.exec(
-    "DELETE FROM memory_shard; DELETE FROM memory_detail; DELETE FROM memory_provenance; DELETE FROM memory;",
-  );
+  db.exec("DELETE FROM memory_shard; DELETE FROM memory_detail; DELETE FROM memory_provenance; DELETE FROM memory;");
   assert.deepEqual(
     app.memory.list().map((m) => m.value),
     ["Lives in Shenzhen"],
@@ -207,16 +177,9 @@ test("two assistants share user facts with provenance, keep private facts isolat
     /not shared/,
   );
   set(b.app, "same", "Prefers concise answers");
+  assert.equal(a.app.memory.list().filter((m) => m.value === "Prefers concise answers").length, 2);
   assert.equal(
-    a.app.memory.list().filter((m) => m.value === "Prefers concise answers")
-      .length,
-    2,
-  );
-  assert.equal(
-    readFileSync(
-      join(a.app.memory.files.locations().agent, "profile.md"),
-      "utf8",
-    ).includes("Private A role"),
+    readFileSync(join(a.app.memory.files.locations().agent, "profile.md"), "utf8").includes("Private A role"),
     true,
   );
   const sharedFile = b.app.memory.readFile({
@@ -250,11 +213,7 @@ test("project membership gates other-agent facts; create-is-join preserves descr
   assert.equal(b.app.memory.prompt(before).projects.injected.length, 0);
   assert.equal(b.app.memory.prompt().projects.injected.length, 1);
   assert.throws(
-    () =>
-      b.app.memory.readFile(
-        { scope: "project", project: "alpha", path: "profile.md" },
-        before,
-      ),
+    () => b.app.memory.readFile({ scope: "project", project: "alpha", path: "profile.md" }, before),
     /original grant/,
   );
 });
@@ -271,45 +230,30 @@ test("up to three joined projects are injected with agent provenance and other m
   const context = b.app.memory.prompt();
   assert.equal(context.projects.injected.length, 3);
   assert.equal(context.projects.alsoMemberOf.length, 1);
-  assert.equal(
-    context.projects.injected[0].profile[0].agentId,
-    f.a.config.assistantId,
-  );
+  assert.equal(context.projects.injected[0].profile[0].agentId, f.a.config.assistantId);
   assert.deepEqual(context.precedence, ["agent", "project", "user"]);
   b.app.reception.accept("remember-context", {
     text: "Compare the projects and their plan",
   });
-  const initial = b.app.reception.context(
-    b.app.reception.turn("remember-context"),
-  );
+  const initial = b.app.reception.context(b.app.reception.turn("remember-context"));
   assert.equal(initial.memoryContext.projects.injected.length, 3);
   const initialProjects = new Set(
-    [
-      ...initial.memoryContext.profile,
-      ...initial.memoryContext.recent,
-      ...initial.memoryRecall,
-    ]
+    [...initial.memoryContext.profile, ...initial.memoryContext.recent, ...initial.memoryRecall]
       .filter((m) => m.scope === "project")
       .map((m) => m.projectId),
   );
   assert.equal(initialProjects.size, 3);
   const omitted = initial.memoryContext.projects.alsoMemberOf[0].slug;
   assert.ok(!initialProjects.has(omitted));
-  const explicit = b.app.receptionQueries
-    .open(b.app.reception.turn("remember-context"))
-    .execute({
-      kind: "query",
-      name: "memory.search",
-      params: { query: "Plan for " + omitted },
-    });
+  const explicit = b.app.receptionQueries.open(b.app.reception.turn("remember-context")).execute({
+    kind: "query",
+    name: "memory.search",
+    params: { query: "Plan for " + omitted },
+  });
   assert.ok(explicit.response.data.items.some((m) => m.projectId === omitted));
   assert.equal(initial.capabilities.resources.includes("materials"), false);
-  assert.ok(
-    !b.app.scope.delegate("project-only").tools.includes("read_material"),
-  );
-  assert.ok(
-    !b.app.scope.delegate("project-only").tools.includes("list_materials"),
-  );
+  assert.ok(!b.app.scope.delegate("project-only").tools.includes("read_material"));
+  assert.ok(!b.app.scope.delegate("project-only").tools.includes("list_materials"));
 });
 
 test("automatic learning cannot update another agent shard; can write its own joined project shard", (t) => {
@@ -347,14 +291,8 @@ test("automatic learning cannot update another agent shard; can write its own jo
       },
     ],
   });
-  assert.equal(
-    b.app.memoryLearning.finish(job.id, { approved: true }).state,
-    "committed",
-  );
-  assert.equal(
-    a.app.memory.list().find((m) => m.value.includes("deadline")).agentId,
-    f.b.config.assistantId,
-  );
+  assert.equal(b.app.memoryLearning.finish(job.id, { approved: true }).state, "committed");
+  assert.equal(a.app.memory.list().find((m) => m.value.includes("deadline")).agentId, f.b.config.assistantId);
 });
 
 test("membership revocation while a proposal is being reviewed cannot apply a project change", (t) => {
@@ -375,10 +313,7 @@ test("membership revocation while a proposal is being reviewed cannot apply a pr
     ],
   });
   leave(a.app, "alpha");
-  assert.throws(
-    () => a.app.memoryLearning.finish(job.id, { approved: true }),
-    /membership changed/,
-  );
+  assert.throws(() => a.app.memoryLearning.finish(job.id, { approved: true }), /membership changed/);
   assert.deepEqual(a.app.memory.list(), []);
 });
 
@@ -439,33 +374,21 @@ test("nested rollback discards staged membership and file effects while the oute
     s.app.memory.list().map((m) => m.value),
     ["A stable fact"],
   );
-  assert.equal(
-    existsSync(
-      join(s.profile.path, "memory-space/projects/temporary/identity.json"),
-    ),
-    false,
-  );
+  assert.equal(existsSync(join(s.profile.path, "memory-space/projects/temporary/identity.json")), false);
 });
 
-for (const window of [
-  "memory-files-before-sql-commit",
-  "memory-files-after-sql-commit",
-])
+for (const window of ["memory-files-before-sql-commit", "memory-files-after-sql-commit"])
   test(`real process crash recovers ${window} without replaying a committed write`, (t) => {
     const profile = profileFor(t);
     let s = new Store(profile);
     set(s.app, "existing", "Keep this fact");
     s.close();
     const script = `import {Store} from './src/store.mjs';import {loadProfile} from './src/profile.mjs';const s=new Store(loadProfile(process.argv[1]));s.app.memory.change('crash-input','memory.set',{key:'crash',value:'Crash fact',expectedRevision:0});`;
-    const child = spawnSync(
-      process.execPath,
-      ["--input-type=module", "--eval", script, profile.path],
-      {
-        cwd: root,
-        env: { ...process.env, LAB_TEST_CRASH_AT: window },
-        encoding: "utf8",
-      },
-    );
+    const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script, profile.path], {
+      cwd: root,
+      env: { ...process.env, LAB_TEST_CRASH_AT: window },
+      encoding: "utf8",
+    });
     assert.equal(child.status, 86, child.stderr);
     s = new Store(profile);
     t.after(() => s.close());
@@ -482,31 +405,24 @@ for (const window of [
     });
     assert.equal(!!result.duplicate, committed);
     assert.equal(result.revision, 1);
-    assert.equal(
-      existsSync(join(profile.path, "memory-space/.transactions/pending.json")),
-      false,
-    );
+    assert.equal(existsSync(join(profile.path, "memory-space/.transactions/pending.json")), false);
   });
 
 test("recovery detects a third-party file edit and preserves it instead of overwriting", (t) => {
   const profile = profileFor(t);
-  let s = new Store(profile);
+  const s = new Store(profile);
   set(s.app, "existing", "Keep fact");
   const path = join(s.app.memory.files.locations().user, "profile.md");
   s.close();
   const script = `import {Store} from './src/store.mjs';import {loadProfile} from './src/profile.mjs';const s=new Store(loadProfile(process.argv[1]));s.app.memory.change('crash','memory.set',{key:'new',value:'Pending fact',expectedRevision:0});`;
-  const child = spawnSync(
-    process.execPath,
-    ["--input-type=module", "--eval", script, profile.path],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        LAB_TEST_CRASH_AT: "memory-files-before-sql-commit",
-      },
-      encoding: "utf8",
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script, profile.path], {
+    cwd: root,
+    env: {
+      ...process.env,
+      LAB_TEST_CRASH_AT: "memory-files-before-sql-commit",
     },
-  );
+    encoding: "utf8",
+  });
   assert.equal(child.status, 86, child.stderr);
   const edit = "- (2026-11-03) External edit must survive\n";
   writeFileSync(path, edit);
@@ -517,10 +433,7 @@ test("recovery detects a third-party file edit and preserves it instead of overw
 test("memory paths reject symlinks, traversal and malformed metadata; errors never replace files with an empty database", (t) => {
   const s = open(t, profileFor(t));
   set(s.app, "fact", "Known fact");
-  assert.throws(
-    () => s.app.memory.readFile({ path: "../../profile.json" }),
-    /Only memory/,
-  );
+  assert.throws(() => s.app.memory.readFile({ path: "../../profile.json" }), /Only memory/);
   const own = s.app.memory.files.locations().user;
   writeFileSync(join(own, ".dreaming/records.json"), "{broken");
   assert.throws(() => s.app.memory.list(), /Malformed memory/);
@@ -537,18 +450,12 @@ test("a foreign owner cannot join a shared root", (t) => {
 test("real CLI creates/joins a project, writes its own file-backed shard and reads Markdown through the socket", async (t) => {
   const { profile, runner } = await running(t);
   const cli = async (args) => {
-    const { stdout } = await execute(
-      process.execPath,
-      ["bin/assistant.mjs", ...args, "--profile", profile.path],
-      { cwd: root },
-    );
+    const { stdout } = await execute(process.execPath, ["bin/assistant.mjs", ...args, "--profile", profile.path], {
+      cwd: root,
+    });
     return JSON.parse(stdout).result;
   };
-  assert.equal(
-    (await cli(["project-create", "--project", "alpha", "--name", "Alpha"]))
-      .joined,
-    true,
-  );
+  assert.equal((await cli(["project-create", "--project", "alpha", "--name", "Alpha"])).joined, true);
   await cli([
     "memory-set",
     "--scope",
@@ -561,17 +468,7 @@ test("real CLI creates/joins a project, writes its own file-backed shard and rea
     "Deadline is November 10",
   ]);
   assert.match(
-    (
-      await cli([
-        "memory-file",
-        "--scope",
-        "project",
-        "--project",
-        "alpha",
-        "--path",
-        "profile.md",
-      ])
-    ).content,
+    (await cli(["memory-file", "--scope", "project", "--project", "alpha", "--path", "profile.md"])).content,
     /Deadline is November 10/,
   );
   await cli(["project-leave", "--project", "alpha"]);
@@ -589,12 +486,7 @@ test("private-agent daily review and projects named user keep separate refresh m
   });
   assert.equal(app.memory.reviewDue(null), false);
   assert.equal(app.memory.reviewDue("user"), false);
-  assert.equal(
-    existsSync(
-      join(app.memory.files.locations().agent, ".dreaming/next-refresh-at"),
-    ),
-    true,
-  );
+  assert.equal(existsSync(join(app.memory.files.locations().agent, ".dreaming/next-refresh-at")), true);
   assert.equal(
     existsSync(
       join(
@@ -616,10 +508,7 @@ test("symlinked monthly logs are rejected without reading the linked target", (t
   mkdirSync(log);
   symlinkSync(join(p.path, "profile.json"), join(log, "2026-11.md"));
   assert.throws(() => app.memory.list(), /symlinks|Invalid memory directory/);
-  assert.equal(
-    JSON.parse(readFileSync(join(p.path, "profile.json"))).assistantId,
-    p.config.assistantId,
-  );
+  assert.equal(JSON.parse(readFileSync(join(p.path, "profile.json"))).assistantId, p.config.assistantId);
 });
 
 test("another agent can recover the shared root after its writer crashed", (t) => {
@@ -630,39 +519,24 @@ test("another agent can recover the shared root after its writer crashed", (t) =
   a.close();
   b.close();
   const script = `import {Store} from './src/store.mjs';import {loadProfile} from './src/profile.mjs';const s=new Store(loadProfile(process.argv[1]));s.app.memory.change('crash','memory.set',{key:'new',value:'Committed shared fact',scope:'user',expectedRevision:0});`;
-  const child = spawnSync(
-    process.execPath,
-    ["--input-type=module", "--eval", script, f.a.path],
-    {
-      cwd: root,
-      env: {
-        ...process.env,
-        LAB_TEST_CRASH_AT: "memory-files-after-sql-commit",
-      },
-      encoding: "utf8",
+  const child = spawnSync(process.execPath, ["--input-type=module", "--eval", script, f.a.path], {
+    cwd: root,
+    env: {
+      ...process.env,
+      LAB_TEST_CRASH_AT: "memory-files-after-sql-commit",
     },
-  );
+    encoding: "utf8",
+  });
   assert.equal(child.status, 86, child.stderr);
   const recovered = open(t, f.b);
-  assert.ok(
-    recovered.app.memory
-      .list()
-      .some((m) => m.value === "Committed shared fact"),
-  );
+  assert.ok(recovered.app.memory.list().some((m) => m.value === "Committed shared fact"));
 });
 
 test("Pi actually reads the Markdown tool and receives joined project memory in its immutable snapshot", async (t) => {
-  const { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } =
-    await import("@earendil-works/pi-ai");
-  const { PiExecutionAdapter } = await import(
-    "../src/adapters/pi/pi-execution-adapter.mjs"
-  );
-  const { createExecutionPorts } = await import(
-    "../src/runtime/execution-ports.mjs"
-  );
-  const { LocalArtifactStore } = await import(
-    "../src/adapters/filesystem/artifact-store.mjs"
-  );
+  const { createModels, fauxProvider, fauxAssistantMessage, fauxToolCall } = await import("@earendil-works/pi-ai");
+  const { PiExecutionAdapter } = await import("../src/adapters/pi/pi-execution-adapter.mjs");
+  const { createExecutionPorts } = await import("../src/runtime/execution-ports.mjs");
+  const { LocalArtifactStore } = await import("../src/adapters/filesystem/artifact-store.mjs");
   const profile = profileFor(t),
     s = open(t, profile);
   create(s.app, "alpha");
@@ -768,35 +642,18 @@ test("schema14 migrates once, preserves keys/revisions/provenance/unknown dates 
   });
   legacyMemoryFixture(profile, s.db);
   s.db.prepare("UPDATE memory_detail SET updated_at=0 WHERE key=?").run("city");
-  s.db
-    .prepare("INSERT INTO memory VALUES(?,?,1,?,0)")
-    .run("legacy-long", "x".repeat(2000), "legacy");
-  s.db.exec(
-    "DROP TABLE execution_native_receipt; ALTER TABLE execution DROP COLUMN harness; PRAGMA user_version=14",
-  );
+  s.db.prepare("INSERT INTO memory VALUES(?,?,1,?,0)").run("legacy-long", "x".repeat(2000), "legacy");
+  s.db.exec("DROP TABLE execution_native_receipt; ALTER TABLE execution DROP COLUMN harness; PRAGMA user_version=14");
   s.close();
   s = new Store(profile);
   t.after(() => s.close());
   const city = s.app.memory.list().find((m) => m.key === "city");
   assert.equal(city.revision, 1);
   assert.equal(city.updatedAt, 0);
-  assert.equal(
-    s.app.memory
-      .learningSnapshot()
-      .facts.find((f) => f.content === "Lives in Shanghai").origin,
-    "explicit",
-  );
-  const backup = JSON.parse(
-    readFileSync(join(profile.path, "memory-migration-schema14.json")),
-  );
-  assert.equal(
-    backup.rows.find((m) => m.key === "legacy-long").value.length,
-    2000,
-  );
-  assert.equal(
-    s.app.memory.list().find((m) => m.key === "legacy-long").value.length,
-    500,
-  );
+  assert.equal(s.app.memory.learningSnapshot().facts.find((f) => f.content === "Lives in Shanghai").origin, "explicit");
+  const backup = JSON.parse(readFileSync(join(profile.path, "memory-migration-schema14.json")));
+  assert.equal(backup.rows.find((m) => m.key === "legacy-long").value.length, 2000);
+  assert.equal(s.app.memory.list().find((m) => m.key === "legacy-long").value.length, 500);
   const job = capture(s.app);
   s.app.memoryLearning.proposed(job.id, {
     changes: [
@@ -810,13 +667,7 @@ test("schema14 migrates once, preserves keys/revisions/provenance/unknown dates 
   });
   s.app.memoryLearning.finish(job.id, { approved: true });
   assert.ok(!s.app.memory.list().some((m) => m.value === "Old forgotten fact"));
-  assert.match(
-    readFileSync(
-      join(s.app.memory.files.locations().user, "profile.md"),
-      "utf8",
-    ),
-    /0000-00-00/,
-  );
+  assert.match(readFileSync(join(s.app.memory.files.locations().user, "profile.md"), "utf8"), /0000-00-00/);
 });
 
 test("another agent automatic learning refreshes shared context without fencing active work; explicit correction still fences", (t) => {
@@ -840,9 +691,7 @@ test("another agent automatic learning refreshes shared context without fencing 
     ],
   });
   a.app.memoryLearning.finish(job.id, { approved: true });
-  assert.ok(
-    b.app.memory.list().some((m) => m.value === "Prefers concise replies"),
-  );
+  assert.ok(b.app.memory.list().some((m) => m.value === "Prefers concise replies"));
   assert.equal(b.app.memory.guardEpoch(), epoch);
   b.app.executions.assertAction(work, "publish_note", undefined, {
     epoch: snapshot.explicitMemoryEpoch,
@@ -864,11 +713,7 @@ test("two fresh processes can initialize and write separate shards in the same r
   const script = `import {Store} from './src/store.mjs';import {loadProfile} from './src/profile.mjs';const s=new Store(loadProfile(process.argv[1]));s.app.memory.change('init-fact','memory.set',{key:'fact',value:process.argv[2],scope:'user',expectedRevision:0});s.close();`;
   const results = await Promise.allSettled(
     [f.a, f.b].map((p, i) =>
-      execute(
-        process.execPath,
-        ["--input-type=module", "--eval", script, p.path, `Fact from ${i}`],
-        { cwd: root },
-      ),
+      execute(process.execPath, ["--input-type=module", "--eval", script, p.path, `Fact from ${i}`], { cwd: root }),
     ),
   );
   assert.ok(
@@ -905,34 +750,20 @@ test("file catalogue pages authorized shards and rejects revoked project referen
   } while (after);
   assert.equal(all.length, 3);
   assert.equal(
-    all.some(
-      (d) => d.scope === "agent" && d.agentId === f.a.config.assistantId,
-    ),
+    all.some((d) => d.scope === "agent" && d.agentId === f.a.config.assistantId),
     false,
   );
   const project = all.find((d) => d.scope === "project");
   assert.equal(project.project, "alpha");
-  const params = Object.fromEntries(
-    Object.entries(project).filter(
-      ([k, v]) => k !== "documentId" && v !== null,
-    ),
-  );
-  assert.match(
-    b.app.memory.readFile(params, resources).content,
-    /Alpha project fact/,
-  );
+  const params = Object.fromEntries(Object.entries(project).filter(([k, v]) => k !== "documentId" && v !== null));
+  assert.match(b.app.memory.readFile(params, resources).content, /Alpha project fact/);
   leave(b.app, "alpha");
   joinProject(b.app, "alpha");
   assert.equal(
-    b.app.memory
-      .listFiles({}, resources)
-      .items.some((d) => d.scope === "project"),
+    b.app.memory.listFiles({}, resources).items.some((d) => d.scope === "project"),
     false,
   );
-  assert.throws(
-    () => b.app.memory.readFile(params, resources),
-    /original grant/,
-  );
+  assert.throws(() => b.app.memory.readFile(params, resources), /original grant/);
   assert.equal(
     b.app.memory.listFiles().items.some((d) => d.scope === "project"),
     true,

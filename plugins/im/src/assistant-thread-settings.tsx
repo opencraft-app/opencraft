@@ -62,24 +62,21 @@ export function AssistantThreadSettings({
   botId,
 }: {
   rpc: ChannelRpc;
-  botId?:string;
+  botId?: string;
   reportError: ExtensionSettingsViewProps["reportError"];
 }) {
   const intl = useIntl();
   const f = (key: keyof typeof messages) => intl.formatMessage(messages[key]);
   const [profile, setProfile] = useState<AssistantThreadProfile | null>(null),
     [selection, setSelection] = useState("");
-  const [sources, setSources] = useState<{ value: string; label: string }[]>(
-      [],
-    ),
+  const [sources, setSources] = useState<{ value: string; label: string }[]>([]),
     [cursor, setCursor] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false),
     [loading, setLoading] = useState(false),
     [saving, setSaving] = useState(false);
   const life = useRef<AbortController | null>(null),
     busy = useRef<AbortController | null>(null);
-  const warn = () =>
-    reportError?.({ key: "assistant-thread-settings", message: f("error") });
+  const warn = () => reportError?.({ key: "assistant-thread-settings", message: f("error") });
   async function load(more = false) {
     const c = life.current;
     if (!c || busy.current === c) return;
@@ -88,14 +85,10 @@ export function AssistantThreadSettings({
     try {
       await rpc.connect();
       const [grants, result] = await Promise.all([
-        rpc.request(
-          "opencraft/personal-assistant/threads/profiles",
-          botId?{botId}:{},
-          c.signal,
-        ),
+        rpc.request("opencraft/personal-assistant/threads/profiles", botId ? { botId } : {}, c.signal),
         rpc.request(
           "opencraft/personal-assistant/threads/sources",
-          {...(botId?{botId}:{}),...(more&&cursor?{cursor}:{})},
+          { ...(botId ? { botId } : {}), ...(more && cursor ? { cursor } : {}) },
           c.signal,
         ),
       ]);
@@ -109,12 +102,7 @@ export function AssistantThreadSettings({
       if (current && !rows.some((v) => v.value === current.source))
         rows.unshift({ value: current.source, label: f("saved") });
       setSources((previous) =>
-        more
-          ? [
-              ...previous,
-              ...rows.filter((r) => !previous.some((p) => p.value === r.value)),
-            ]
-          : rows,
+        more ? [...previous, ...rows.filter((r) => !previous.some((p) => p.value === r.value))] : rows,
       );
       setSelection((previous) => previous || current?.source || "");
       setCursor(result.nextCursor);
@@ -144,15 +132,14 @@ export function AssistantThreadSettings({
       if (revoke)
         await rpc.request(
           "opencraft/personal-assistant/threads/profile/revoke",
-          { ...(botId?{botId}:{}),
-            id: "default", expectedRevision: profile?.revision ?? 0 },
+          { ...(botId ? { botId } : {}), id: "default", expectedRevision: profile?.revision ?? 0 },
           c.signal,
         );
       else
         await rpc.request(
           "opencraft/personal-assistant/threads/profile/set",
           {
-            ...(botId?{botId}:{}),
+            ...(botId ? { botId } : {}),
             id: "default",
             reference: selection,
             expectedRevision: profile?.revision ?? 0,
@@ -162,11 +149,10 @@ export function AssistantThreadSettings({
       if (c.signal.aborted) return;
       const result = await rpc.request(
         "opencraft/personal-assistant/threads/profiles",
-        botId?{botId}:{},
+        botId ? { botId } : {},
         c.signal,
       );
-      if (!c.signal.aborted)
-        setProfile(result.profiles.find((p) => p.id === "default") ?? null);
+      if (!c.signal.aborted) setProfile(result.profiles.find((p) => p.id === "default") ?? null);
     } catch {
       if (!c.signal.aborted) {
         setLoaded(false);
@@ -200,10 +186,7 @@ export function AssistantThreadSettings({
             </SettingsButton>
           ) : null}
           {profile?.enabled ? (
-            <SettingsButton
-              disabled={saving || loading}
-              onClick={() => void save(true)}
-            >
+            <SettingsButton disabled={saving || loading} onClick={() => void save(true)}>
               {f("disable")}
             </SettingsButton>
           ) : null}

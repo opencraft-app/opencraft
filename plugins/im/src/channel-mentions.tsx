@@ -1,26 +1,15 @@
 import React from "react";
-import {
-  composerDocumentToPlainText,
-  type ComposerDocument,
-  type ComposerBlockNode,
-} from "@opencraft/composer-core";
-import type {
-  ChannelMessage,
-  ChannelMentionInput,
-} from "@opencraft/appserver-protocol";
+import { composerDocumentToPlainText, type ComposerDocument, type ComposerBlockNode } from "@opencraft/composer-core";
+import type { ChannelMessage, ChannelMentionInput } from "@opencraft/appserver-protocol";
 /** Use the exact plain-text serializer, including nested quotes/list prefixes.
  * Identity comes only from selected same-channel tokens, never an @name regex. */
-export function channelComposerPayload(
-  document: ComposerDocument,
-  channelId: string,
-) {
+export function channelComposerPayload(document: ComposerDocument, channelId: string) {
   let text = "";
   const mentions: ChannelMentionInput[] = [],
     wake = new Set<string>(),
     nativeOnly = new Set<string>(),
     referenceOnlyBots = new Set<string>();
-  const one = (block: ComposerBlockNode) =>
-    composerDocumentToPlainText({ version: 1, blocks: [block] });
+  const one = (block: ComposerBlockNode) => composerDocumentToPlainText({ version: 1, blocks: [block] });
   const blocks = (values: readonly ComposerBlockNode[]) =>
     values.forEach((v, i) => {
       if (i) text += "\n";
@@ -37,18 +26,9 @@ export function channelComposerPayload(
           ["person", "agent"].includes(inline.mentionKind)
         ) {
           mentions.push({ actorId: inline.id, start, end: text.length });
-          if (inline.metadata?.mentionDelivery === "native-only")
-            nativeOnly.add(inline.id);
-          if (
-            inline.mentionKind === "agent" &&
-            inline.metadata?.canWake === false
-          )
-            referenceOnlyBots.add(inline.id);
-          if (
-            inline.mentionKind === "agent" &&
-            inline.metadata?.canWake !== false
-          )
-            wake.add(inline.id);
+          if (inline.metadata?.mentionDelivery === "native-only") nativeOnly.add(inline.id);
+          if (inline.mentionKind === "agent" && inline.metadata?.canWake === false) referenceOnlyBots.add(inline.id);
+          if (inline.mentionKind === "agent" && inline.metadata?.canWake !== false) wake.add(inline.id);
         }
       }
     else if (b.type === "quote") blocks(b.children);
@@ -85,8 +65,7 @@ export function ChannelMentionText({ message }: { message: ChannelMessage }) {
       previous = m.end;
       return ok;
     });
-  if (!valid)
-    return <span className="im-channel-mentions">{message.text}</span>;
+  if (!valid) return <span className="im-channel-mentions">{message.text}</span>;
   let offset = 0;
   const parts = mentions.map((m) => {
     const plain = message.text.slice(offset, m.start);
@@ -94,11 +73,7 @@ export function ChannelMentionText({ message }: { message: ChannelMessage }) {
     return (
       <span key={m.start}>
         {plain}
-        <strong
-          className="im-channel-mention"
-          data-self={m.isSelf || undefined}
-          data-actor-id={m.actorId}
-        >
+        <strong className="im-channel-mention" data-self={m.isSelf || undefined} data-actor-id={m.actorId}>
           {message.text.slice(m.start, m.end)}
         </strong>
       </span>
@@ -135,17 +110,11 @@ export function channelMentionSpans(message: ChannelMessage) {
 /** Only explicit parser literals can become native highlights. Rendered @names,
  * including duplicate labels and decoded entities, never resolve an identity. */
 export function channelMentionRenderer(message: ChannelMessage) {
-  return (node: {
-    text: string;
-    literalSourceRange?: { start: number; end: number };
-  }) => {
+  return (node: { text: string; literalSourceRange?: { start: number; end: number } }) => {
     const range = node.literalSourceRange;
     if (!range) return node.text;
-    const mention = message.mentions?.find(
-      (m) => m.start === range.start && m.end === range.end,
-    );
-    if (!mention || message.text.slice(range.start, range.end) !== node.text)
-      return node.text;
+    const mention = message.mentions?.find((m) => m.start === range.start && m.end === range.end);
+    if (!mention || message.text.slice(range.start, range.end) !== node.text) return node.text;
     return (
       <ChannelMentionText
         message={{

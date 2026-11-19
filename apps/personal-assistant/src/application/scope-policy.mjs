@@ -9,28 +9,16 @@ export class ScopePolicy {
     this.memoryResources = memoryResources;
   }
   set resources(value) {
-    this.baseResources = structuredClone(value).filter(
-      (r) => !r.id.startsWith("memory.project/"),
-    );
+    this.baseResources = structuredClone(value).filter((r) => !r.id.startsWith("memory.project/"));
   }
   get resources() {
     return [...structuredClone(this.baseResources), ...this.memoryResources()];
   }
   queryGrant(inputId, conversationId) {
-    return ReceptionQueryGrant.create(
-      this.assistant,
-      conversationId,
-      inputId,
-      this.resources,
-    );
+    return ReceptionQueryGrant.create(this.assistant, conversationId, inputId, this.resources);
   }
   reportGrant(inputId, conversationId, work) {
-    return ReceptionQueryGrant.create(
-      this.assistant,
-      conversationId,
-      inputId,
-      this.forWork(work).record.resources,
-    );
+    return ReceptionQueryGrant.create(this.assistant, conversationId, inputId, this.forWork(work).record.resources);
   }
   receptionResources(turn, conversationId) {
     return this.queryScope(turn, conversationId).resources;
@@ -41,32 +29,18 @@ export class ScopePolicy {
   querySourceAllowed(grant, resource) {
     return (
       !!resource &&
-      grant.resources.some(
-        (r) => r.id === resource.id && r.binding === resource.binding,
-      ) &&
-      this.resources.some(
-        (r) => r.id === resource.id && r.binding === resource.binding,
-      )
+      grant.resources.some((r) => r.id === resource.id && r.binding === resource.binding) &&
+      this.resources.some((r) => r.id === resource.id && r.binding === resource.binding)
     );
   }
   canObserve(resources) {
     return resources.some(
       (r) =>
-        r.id === "materials" &&
-        this.resources.some(
-          (current) => current.id === r.id && current.binding === r.binding,
-        ),
+        r.id === "materials" && this.resources.some((current) => current.id === r.id && current.binding === r.binding),
     );
   }
   delegate(inputId, resources = this.resources) {
-    if (
-      resources.some(
-        (r) =>
-          !this.resources.some(
-            (current) => r.id === current.id && r.binding === current.binding,
-          ),
-      )
-    )
+    if (resources.some((r) => !this.resources.some((current) => r.id === current.id && r.binding === current.binding)))
       throw new Error("Captured resource binding changed before delegation");
     return new Delegation({
       assistantId: this.assistant.id,
@@ -92,18 +66,10 @@ export class ScopePolicy {
   }
   check(work, tool, resource) {
     const delegation = this.forWork(work);
-    if (
-      delegation.record.assistantId !== this.assistant.id ||
-      delegation.record.actor !== this.assistant.owner
-    )
+    if (delegation.record.assistantId !== this.assistant.id || delegation.record.actor !== this.assistant.owner)
       throw new Error("Work delegation belongs to another assistant or owner");
     delegation.permits(tool, resource);
-    if (
-      resource &&
-      !this.resources.some(
-        (r) => r.id === resource.id && r.binding === resource.binding,
-      )
-    )
+    if (resource && !this.resources.some((r) => r.id === resource.id && r.binding === resource.binding))
       throw new Error("Configured resource binding changed");
   }
 }

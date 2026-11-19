@@ -2,16 +2,10 @@ import fs from "node:fs";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 const root = process.cwd(),
-  task =
-    process.env.OPENCRAFT_MENTIONS_OUTPUT ??
-    root + "/.local/native-mentions-evidence/";
+  task = process.env.OPENCRAFT_MENTIONS_OUTPUT ?? root + "/.local/native-mentions-evidence/";
 fs.mkdirSync(task, { recursive: true });
-const { createServer } = await import(
-    pathToFileURL(root + "/node_modules/vite/dist/node/index.js")
-  ),
-  { chromium } = await import(
-    pathToFileURL(root + "/node_modules/playwright/index.mjs")
-  );
+const { createServer } = await import(pathToFileURL(root + "/node_modules/vite/dist/node/index.js")),
+  { chromium } = await import(pathToFileURL(root + "/node_modules/playwright/index.mjs"));
 const server = await createServer({
   root,
   configFile: false,
@@ -55,10 +49,7 @@ const server = await createServer({
       resolveId: (id) => (id === "/navigation-probe.tsx" ? id : null),
       load: (id) =>
         id === "/navigation-probe.tsx"
-          ? fs.readFileSync(
-              root + "/tests/fixtures/native-mentions-app.tsx",
-              "utf8",
-            )
+          ? fs.readFileSync(root + "/tests/fixtures/native-mentions-app.tsx", "utf8")
           : null,
       configureServer(s) {
         s.middlewares.use((req, res, next) => {
@@ -105,15 +96,8 @@ try {
         errors = [];
       page.on("pageerror", (e) => errors.push(e.message));
       page.setDefaultTimeout(60000);
-      await page.goto(
-        "http://127.0.0.1:" +
-          server.httpServer.address().port +
-          "/?theme=" +
-          theme,
-      );
-      await page
-        .getByRole("button", { name: "Open Inbox", exact: true })
-        .click();
+      await page.goto("http://127.0.0.1:" + server.httpServer.address().port + "/?theme=" + theme);
+      await page.getByRole("button", { name: "Open Inbox", exact: true }).click();
       const live = page.locator(".page-stack > .page-stack__live");
       await live.getByText("Mentioned you", { exact: true }).waitFor();
       const enter = live.getByRole("button", {
@@ -125,11 +109,7 @@ try {
       const editor = live.locator("[contenteditable=true]").first();
       await editor.waitFor();
       const submit = () =>
-        touch
-          ? live
-              .getByRole("button", { name: "Send message", exact: true })
-              .tap()
-          : editor.press("Enter");
+        touch ? live.getByRole("button", { name: "Send message", exact: true }).tap() : editor.press("Enter");
       // Latest-page reads do not consume an old mention outside the 50-message snapshot.
       await editor.click();
       await live.locator("[data-message-timeline]").evaluate((el) => {
@@ -178,24 +158,15 @@ try {
         document.dispatchEvent(new Event("visibilitychange"));
       });
       await page
-        .waitForFunction(
-          () => window.control.ackAttempts === 1,
-          {},
-          { timeout: 15000 },
-        )
+        .waitForFunction(() => window.control.ackAttempts === 1, {}, { timeout: 15000 })
         .catch(async (error) => {
           await page.screenshot({ path: task + "ack-failure.png" });
           const debug = await page.evaluate(() => ({
             control: window.control,
             focus: document.hasFocus(),
-            targets: [
-              ...document.querySelectorAll("[data-unread-mention-message]"),
-            ].map((el) => ({
+            targets: [...document.querySelectorAll("[data-unread-mention-message]")].map((el) => ({
               box: el.getBoundingClientRect().toJSON(),
-              root: el
-                .closest("[data-message-timeline]")
-                ?.getBoundingClientRect()
-                .toJSON(),
+              root: el.closest("[data-message-timeline]")?.getBoundingClientRect().toJSON(),
               id: el.dataset.unreadMentionMessage,
               hidden: !!el.closest('[inert],[hidden],[aria-hidden="true"]'),
             })),
@@ -212,10 +183,7 @@ try {
         .filter({ hasText: /^bold$/ })
         .waitFor();
       await editor.fill("");
-      await live
-        .locator(".im-channel-mention[data-self=true]")
-        .getByText("@Alice", { exact: true })
-        .waitFor();
+      await live.locator(".im-channel-mention[data-self=true]").getByText("@Alice", { exact: true }).waitFor();
       if (touch) await editor.tap();
       else await editor.click();
       await editor.pressSequentially("@");
@@ -226,25 +194,17 @@ try {
       await picker.waitFor();
       await picker.getByRole("option").filter({ hasText: "Bob" }).waitFor();
       await page.screenshot({
-        path:
-          task +
-          "picker-" +
-          (touch ? "touch" : "desktop") +
-          "-" +
-          theme +
-          ".png",
+        path: task + "picker-" + (touch ? "touch" : "desktop") + "-" + theme + ".png",
       });
-      if (touch)
-        await picker.getByRole("option").filter({ hasText: "Bob" }).tap();
+      if (touch) await picker.getByRole("option").filter({ hasText: "Bob" }).tap();
       else {
         await editor.pressSequentially("Bob");
         await editor.press("Enter");
       }
       await live
-        .getByText(
-          "Some mentions stay in this app; the external service has no verified matching account.",
-          { exact: true },
-        )
+        .getByText("Some mentions stay in this app; the external service has no verified matching account.", {
+          exact: true,
+        })
         .waitFor();
       await editor.pressSequentially(" please review");
       await submit();
@@ -257,12 +217,8 @@ try {
       if (touch) await editor.tap();
       else await editor.click();
       await editor.pressSequentially("@Build");
-      await picker
-        .getByRole("option")
-        .filter({ hasText: "Build Bot" })
-        .waitFor();
-      if (touch)
-        await picker.getByRole("option").filter({ hasText: "Build Bot" }).tap();
+      await picker.getByRole("option").filter({ hasText: "Build Bot" }).waitFor();
+      if (touch) await picker.getByRole("option").filter({ hasText: "Build Bot" }).tap();
       else await editor.press("Enter");
       await editor.pressSequentially(" run tests");
       await submit();
@@ -271,12 +227,8 @@ try {
       assert.deepEqual(sent.wakeActorIds, ["bot"]);
       assert.equal(sent.mentions[0].actorId, "bot");
       await editor.pressSequentially("@Quiet");
-      await picker
-        .getByRole("option")
-        .filter({ hasText: "Quiet Bot" })
-        .waitFor();
-      if (touch)
-        await picker.getByRole("option").filter({ hasText: "Quiet Bot" }).tap();
+      await picker.getByRole("option").filter({ hasText: "Quiet Bot" }).waitFor();
+      if (touch) await picker.getByRole("option").filter({ hasText: "Quiet Bot" }).tap();
       else await editor.press("Enter");
       await live
         .getByText(
@@ -290,10 +242,7 @@ try {
       await editor.press("Escape");
       await submit();
       await page.waitForFunction(() => window.control.sent.length === 3);
-      assert.deepEqual(
-        (await page.evaluate(() => window.control.sent[2])).mentions,
-        [],
-      );
+      assert.deepEqual((await page.evaluate(() => window.control.sent[2])).mentions, []);
       // A stale member rejection retains the structured draft, rather than silently downgrading it.
       await page.evaluate(() => (window.control.failSend = true));
       await editor.pressSequentially("@Bob");
@@ -305,18 +254,10 @@ try {
       assert.equal(await page.evaluate(() => window.control.sent.length), 3);
       assert.ok((await editor.innerText()).includes("@Bob"));
       assert.ok((await editor.innerText()).includes("retained draft"));
-      const density = await page
-        .locator("html")
-        .getAttribute("data-ui-density");
+      const density = await page.locator("html").getAttribute("data-ui-density");
       assert.equal(density, touch ? "touch" : "compact");
       await page.screenshot({
-        path:
-          task +
-          "messages-" +
-          (touch ? "touch" : "desktop") +
-          "-" +
-          theme +
-          ".png",
+        path: task + "messages-" + (touch ? "touch" : "desktop") + "-" + theme + ".png",
       });
       assert.deepEqual(errors, []);
       console.log(

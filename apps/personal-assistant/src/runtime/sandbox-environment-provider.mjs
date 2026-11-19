@@ -1,18 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { posix } from "node:path";
-import {
-  createSandboxPool,
-  createSandbox,
-  SandboxCreationFault,
-} from "@opencraft/sandbox";
+import { createSandboxPool, createSandbox, SandboxCreationFault } from "@opencraft/sandbox";
 import { assertBotBinding, botBinding } from "../domain/bot-binding.mjs";
 import { spawnAssistant } from "./host-supervisor.mjs";
 const authorizeMethod = "opencraft/personal-assistant/authorize";
 const invalid = () => {
   throw Error("Invalid isolated environment request");
 };
-const digest = (value) =>
-  createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const digest = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
 /** Installation composition for isolated execution only. The assistant brain, profile,
  * task ledger and model gateway stay local. The shared pool is the only allocator. */
@@ -59,8 +54,7 @@ export async function createSandboxAssistantProvider({
     if (
       template.resources.cpuMillis > capacity?.cpuMillis ||
       template.resources.memoryBytes > capacity?.memoryBytes ||
-      (template.python !== undefined &&
-        (!posix.isAbsolute(template.python) || template.python.includes("\0")))
+      (template.python !== undefined && (!posix.isAbsolute(template.python) || template.python.includes("\0")))
     )
       invalid();
     const copy = structuredClone(template);
@@ -78,8 +72,7 @@ export async function createSandboxAssistantProvider({
     poolSignal,
     closing;
   const authority = async (lease) => {
-    if (stopped || lease.closed || lease.failed)
-      throw Error("Isolated execution retired");
+    if (stopped || lease.closed || lease.failed) throw Error("Isolated execution retired");
     const current = await lease.request(authorizeMethod, {});
     assertBotBinding(current.binding, lease.binding);
     if (current.epoch !== lease.epoch || current.expiresAt <= Date.now())
@@ -110,9 +103,7 @@ export async function createSandboxAssistantProvider({
     {
       // Pool IDs have a smaller public bound than backend binding IDs.
       // Preserve short installation IDs; compact derived account/platform IDs.
-      id:
-        "assistant-" +
-        (backendId.length <= 22 ? backendId : digest([backendId]).slice(0, 22)),
+      id: "assistant-" + (backendId.length <= 22 ? backendId : digest([backendId]).slice(0, 22)),
       capacity,
       defaults: [...approved.values()][0].resources,
       queueLimit: 0,
@@ -130,9 +121,7 @@ export async function createSandboxAssistantProvider({
         if (!initializing.has(lease.template.id))
           initializing.set(
             lease.template.id,
-            Promise.resolve().then(() =>
-              backend.initialize(poolPolicy, poolSignal),
-            ),
+            Promise.resolve().then(() => backend.initialize(poolPolicy, poolSignal)),
           );
         try {
           await initializing.get(lease.template.id);
@@ -143,9 +132,7 @@ export async function createSandboxAssistantProvider({
         return backend.create(identity, resources, signal);
       },
       async close() {
-        await Promise.all(
-          [...initializing.keys()].map((id) => backends.get(id).close()),
-        );
+        await Promise.all([...initializing.keys()].map((id) => backends.get(id).close()));
       },
     },
   );
@@ -182,8 +169,7 @@ export async function createSandboxAssistantProvider({
         throw error;
       }
     }
-    if (lease.uncertain)
-      throw Error("Isolated environment requires operator reconciliation");
+    if (lease.uncertain) throw Error("Isolated environment requires operator reconciliation");
   };
   const ensure = (lease) =>
     (lease.creating ??= (async () => {
@@ -205,16 +191,12 @@ export async function createSandboxAssistantProvider({
           cwd: "/tmp",
           env: {},
         });
-        if ((await prepare.exited).code !== 0)
-          throw Error("Isolated workspace unavailable");
+        if ((await prepare.exited).code !== 0) throw Error("Isolated workspace unavailable");
         await authority(lease);
         return lease.sandbox;
       } catch (error) {
         lease.failed = true;
-        if (
-          error?.code === "SANDBOX_CREATION_UNCONFIRMED" ||
-          error?.code === "SANDBOX_CLEANUP"
-        )
+        if (error?.code === "SANDBOX_CREATION_UNCONFIRMED" || error?.code === "SANDBOX_CLEANUP")
           reportUncertain(lease, error.identity);
         if (lease.sandbox)
           try {
@@ -233,9 +215,7 @@ export async function createSandboxAssistantProvider({
       !Array.isArray(params.argv) ||
       !params.argv.length ||
       params.argv.length > 64 ||
-      params.argv.some(
-        (a) => typeof a !== "string" || a.includes("\0") || a.length > 16384,
-      ) ||
+      params.argv.some((a) => typeof a !== "string" || a.includes("\0") || a.length > 16384) ||
       JSON.stringify(params.argv).length > 32768 ||
       typeof params.workId !== "string" ||
       !params.workId ||
@@ -312,23 +292,16 @@ export async function createSandboxAssistantProvider({
         active.controller.signal.throwIfAborted();
         await authority(lease);
         submitted = true;
-        active.child = await sandbox.spawn(
-          { command: params.argv, cwd, env: {} },
-          (event) => {
-            const bytes = Buffer.from(event.data),
-              name = event.stream,
-              remaining = Math.max(0, 32768 - sizes[name]);
-            hashes[name].update(bytes);
-            if (remaining)
-              (name === "stdout" ? stdout : stderr).push(
-                bytes.subarray(0, remaining),
-              );
-            sizes[name] += bytes.length;
-          },
-        );
+        active.child = await sandbox.spawn({ command: params.argv, cwd, env: {} }, (event) => {
+          const bytes = Buffer.from(event.data),
+            name = event.stream,
+            remaining = Math.max(0, 32768 - sizes[name]);
+          hashes[name].update(bytes);
+          if (remaining) (name === "stdout" ? stdout : stderr).push(bytes.subarray(0, remaining));
+          sizes[name] += bytes.length;
+        });
         if (active.controller.signal.aborted) await active.child.terminate();
-        else if (active.child.kind === "process")
-          await active.child.closeStdin();
+        else if (active.child.kind === "process") await active.child.closeStdin();
         const exit = await active.child.exited;
         await authority(lease);
         return {
@@ -354,9 +327,7 @@ export async function createSandboxAssistantProvider({
         }
         return {
           state: submitted ? "unknown" : "rejected",
-          reason: submitted
-            ? "effect_requires_reconciliation"
-            : "environment_unavailable",
+          reason: submitted ? "effect_requires_reconciliation" : "environment_unavailable",
         };
       } finally {
         clearTimeout(timer);
@@ -379,18 +350,14 @@ export async function createSandboxAssistantProvider({
         await lease.active?.done;
         await destroy(lease);
         leases.delete(lease.owner);
-        if (byAssignment.get(lease.key) === lease)
-          byAssignment.delete(lease.key);
-        if (lease.workspaceId && byWorkspace.get(lease.workspaceId) === lease)
-          byWorkspace.delete(lease.workspaceId);
+        if (byAssignment.get(lease.key) === lease) byAssignment.delete(lease.key);
+        if (lease.workspaceId && byWorkspace.get(lease.workspaceId) === lease) byWorkspace.delete(lease.workspaceId);
       }
     })());
   }
   return {
     async templates() {
-      return stopped
-        ? []
-        : [...approved.values()].map((t) => ({ id: t.id, name: t.name }));
+      return stopped ? [] : [...approved.values()].map((t) => ({ id: t.id, name: t.name }));
     },
     async validate(environment) {
       validate(environment);
@@ -399,8 +366,7 @@ export async function createSandboxAssistantProvider({
       validate(environment);
       const access = await options.request(authorizeMethod, {}),
         key = digest([access.binding, access.epoch]);
-      if (byAssignment.has(key))
-        throw Error("Prior isolated execution is not retired");
+      if (byAssignment.has(key)) throw Error("Prior isolated execution is not retired");
       const binding = botBinding(access.binding);
       // Server/Bot/owner are authenticated persisted identities. Epochs, assignments
       // and execution incarnations are leases, not durable workspace identities.
@@ -415,8 +381,7 @@ export async function createSandboxAssistantProvider({
             binding.owner.id,
           ]).slice(0, 32)
         : undefined;
-      if (workspaceId && byWorkspace.has(workspaceId))
-        throw Error("Prior workspace execution is not retired");
+      if (workspaceId && byWorkspace.has(workspaceId)) throw Error("Prior workspace execution is not retired");
       const owner = "assistant:" + randomUUID(),
         template = approved.get(environment.templateId),
         incarnation = randomUUID();
@@ -429,9 +394,7 @@ export async function createSandboxAssistantProvider({
         epoch: access.epoch,
         request: options.request,
         controller: new AbortController(),
-        workspace: persistentWorkspaces
-          ? template.workspaceRoot
-          : posix.join(template.workspaceRoot, incarnation),
+        workspace: persistentWorkspaces ? template.workspaceRoot : posix.join(template.workspaceRoot, incarnation),
         failed: false,
         closed: false,
         uncertain: false,
@@ -441,13 +404,7 @@ export async function createSandboxAssistantProvider({
       if (workspaceId) byWorkspace.set(workspaceId, lease);
       const descriptor = {
         id: "execution.environment",
-        binding: digest([
-          access.binding,
-          access.epoch,
-          backendId,
-          template.id,
-          incarnation,
-        ]),
+        binding: digest([access.binding, access.epoch, backendId, template.id, incarnation]),
         backendId,
         templateId: template.id,
         ephemeral: true,
@@ -460,10 +417,7 @@ export async function createSandboxAssistantProvider({
             if (method === "environment/run") return run(lease, params);
             if (method === "environment/cancel") {
               await authority(lease);
-              if (
-                params?.workId === lease.active?.workId &&
-                params?.callId === lease.active?.callId
-              )
+              if (params?.workId === lease.active?.workId && params?.callId === lease.active?.callId)
                 lease.active.controller.abort();
               return { accepted: true };
             }
@@ -484,12 +438,9 @@ export async function createSandboxAssistantProvider({
       if (closing) return closing;
       stopped = true;
       return (closing = (async () => {
-        const results = await Promise.allSettled(
-          [...leases.values()].map(closeLease),
-        );
+        const results = await Promise.allSettled([...leases.values()].map(closeLease));
         await pool.close();
-        if (results.some((r) => r.status === "rejected"))
-          throw Error("Isolated assistant cleanup is unconfirmed");
+        if (results.some((r) => r.status === "rejected")) throw Error("Isolated assistant cleanup is unconfirmed");
       })());
     },
   };

@@ -1,3 +1,3 @@
-import { register } from 'tsx/esm/api';
+import { register } from "tsx/esm/api";
 register();
-await import('./dsh-consumer-receipts.worker.ts');
+await import("./dsh-consumer-receipts.worker.ts");

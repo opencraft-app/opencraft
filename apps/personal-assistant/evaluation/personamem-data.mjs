@@ -52,11 +52,9 @@ export function parseCsv(text) {
     rows.push(row);
   }
   const header = rows.shift();
-  if (!header || new Set(header).size !== header.length)
-    throw new Error("Invalid CSV header");
+  if (!header || new Set(header).size !== header.length) throw new Error("Invalid CSV header");
   return rows.map((r) => {
-    if (r.length !== header.length)
-      throw new Error("CSV column count mismatch");
+    if (r.length !== header.length) throw new Error("CSV column count mismatch");
     return Object.fromEntries(header.map((h, i) => [h, r[i]]));
   });
 }
@@ -65,17 +63,12 @@ export function parseContexts(text) {
   const contexts = new Map();
   for (const line of text.trim().split(/\r?\n/)) {
     const entries = Object.entries(JSON.parse(line));
-    if (entries.length !== 1)
-      throw new Error("Expected one shared context per line");
+    if (entries.length !== 1) throw new Error("Expected one shared context per line");
     const [id, messages] = entries[0];
     if (contexts.has(id) || !Array.isArray(messages) || !messages.length)
       throw new Error("Invalid or duplicate shared context");
     for (const m of messages) {
-      if (
-        !["system", "user", "assistant"].includes(m.role) ||
-        typeof m.content !== "string" ||
-        !m.content.trim()
-      )
+      if (!["system", "user", "assistant"].includes(m.role) || typeof m.content !== "string" || !m.content.trim())
         throw new Error("Unsupported PersonaMem message or modality");
     }
     contexts.set(
@@ -92,21 +85,11 @@ export function validateQuestions(rows, contexts) {
   for (const row of rows) {
     const messages = contexts.get(row.shared_context_id),
       end = Number(row.end_index_in_shared_context);
-    if (!row.question_id || seen.has(row.question_id))
-      throw new Error("Duplicate or missing question identity");
+    if (!row.question_id || seen.has(row.question_id)) throw new Error("Duplicate or missing question identity");
     seen.add(row.question_id);
-    if (
-      !row.persona_id ||
-      !messages ||
-      !Number.isSafeInteger(end) ||
-      end < 1 ||
-      end > messages.length
-    )
+    if (!row.persona_id || !messages || !Number.isSafeInteger(end) || end < 1 || end > messages.length)
       throw new Error("Invalid causal context boundary");
-    if (
-      owners.has(row.shared_context_id) &&
-      owners.get(row.shared_context_id) !== row.persona_id
-    )
+    if (owners.has(row.shared_context_id) && owners.get(row.shared_context_id) !== row.persona_id)
       throw new Error("Shared context crosses personas");
     owners.set(row.shared_context_id, row.persona_id);
     if (
@@ -125,8 +108,7 @@ export function selectQuestions(rows, count, seed) {
     throw new Error("Expected 1..10 contexts and an explicit seed");
   const groups = new Map();
   for (const row of rows) {
-    if (!groups.has(row.shared_context_id))
-      groups.set(row.shared_context_id, []);
+    if (!groups.has(row.shared_context_id)) groups.set(row.shared_context_id, []);
     groups.get(row.shared_context_id).push(row);
   }
   if (groups.size < count) throw new Error("Insufficient contexts");
@@ -135,29 +117,19 @@ export function selectQuestions(rows, count, seed) {
     .sort((a, b) => hash(`${seed}:${a}`).localeCompare(hash(`${seed}:${b}`)))
     .slice(0, count);
   return ids.map((id) => {
-    const presentTypes = PERSONAMEM_TYPES.filter((type) =>
-      groups.get(id).some((r) => r.question_type === type),
-    );
+    const presentTypes = PERSONAMEM_TYPES.filter((type) => groups.get(id).some((r) => r.question_type === type));
     const questions = presentTypes
       .map((type) => {
         const candidates = groups
           .get(id)
           .filter((r) => r.question_type === type)
-          .sort((a, b) =>
-            hash(`${seed}:${a.question_id}`).localeCompare(
-              hash(`${seed}:${b.question_id}`),
-            ),
-          );
-        if (!candidates.length)
-          throw new Error(
-            `Selected context lacks category ${type}; no replacement selection`,
-          );
+          .sort((a, b) => hash(`${seed}:${a.question_id}`).localeCompare(hash(`${seed}:${b.question_id}`)));
+        if (!candidates.length) throw new Error(`Selected context lacks category ${type}; no replacement selection`);
         return candidates[0];
       })
       .sort(
         (a, b) =>
-          Number(a.end_index_in_shared_context) -
-            Number(b.end_index_in_shared_context) ||
+          Number(a.end_index_in_shared_context) - Number(b.end_index_in_shared_context) ||
           a.question_id.localeCompare(b.question_id),
       );
     return { id, persona: questions[0].persona_id, questions };
@@ -169,12 +141,7 @@ export function selectQuestions(rows, count, seed) {
 export function projectGroup(group, contexts) {
   const messages = contexts.get(group.id);
   return {
-    history: messages.slice(
-      0,
-      Math.max(
-        ...group.questions.map((r) => Number(r.end_index_in_shared_context)),
-      ),
-    ),
+    history: messages.slice(0, Math.max(...group.questions.map((r) => Number(r.end_index_in_shared_context)))),
     queries: group.questions.map((r) => ({
       end: Number(r.end_index_in_shared_context),
       question: r.user_question_or_message,
@@ -188,14 +155,11 @@ export function scoreOption(predicted, correct) {
   const options = (text) => {
     const s = text.toLowerCase();
     const parens = [...s.matchAll(/\(([a-d])\)/g)].map((m) => m[1]);
-    return new Set(
-      parens.length ? parens : [...s.matchAll(/\b([a-d])\b/g)].map((m) => m[1]),
-    );
+    return new Set(parens.length ? parens : [...s.matchAll(/\b([a-d])\b/g)].map((m) => m[1]));
   };
   const target = correct.toLowerCase().replace(/^[() ]+|[() ]+$/g, "");
   let text = predicted.trim();
-  if (text.includes("<final_answer>"))
-    text = text.split("<final_answer>").at(-1).trim();
+  if (text.includes("<final_answer>")) text = text.split("<final_answer>").at(-1).trim();
   if (text.endsWith("</final_answer>")) text = text.slice(0, -15).trim();
   const matches = (value) => {
     const set = options(value);

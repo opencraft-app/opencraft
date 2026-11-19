@@ -7,10 +7,25 @@ import type { BrowserAnnotationAnchor } from "@opencraft/browser-core";
 import { createComposerAnnotationSink } from "../../apps/workbench-web/src/browser-annotation/composer-sink-runtime";
 
 const anchor: BrowserAnnotationAnchor = {
-  kind: "element", bindingKey: "document:button", url: "https://example.test/", title: "Example",
-  revision: 1, ref: "e1", selector: "#button", elementPath: "button", tag: "button", role: "button",
-  name: "Save", text: "Save", nearbyText: null, childCount: 0, sensitive: false,
-  rect: { x: 10, y: 20, width: 80, height: 30 }, isFixed: false, source: null, frame: "main",
+  kind: "element",
+  bindingKey: "document:button",
+  url: "https://example.test/",
+  title: "Example",
+  revision: 1,
+  ref: "e1",
+  selector: "#button",
+  elementPath: "button",
+  tag: "button",
+  role: "button",
+  name: "Save",
+  text: "Save",
+  nearbyText: null,
+  childCount: 0,
+  sensitive: false,
+  rect: { x: 10, y: 20, width: 80, height: 30 },
+  isFixed: false,
+  source: null,
+  frame: "main",
 };
 const target = (id: string) => ({ type: "existing-thread" as const, key: createConversationKey("local", id) });
 function fixture(t: { after(fn: () => void): void }) {
@@ -23,7 +38,7 @@ function fixture(t: { after(fn: () => void): void }) {
   return { controller, sink, original };
 }
 
-test("editing replaces one annotation atomically; cancel and duplicate commits leave original intact", t => {
+test("editing replaces one annotation atomically; cancel and duplicate commits leave original intact", (t) => {
   const { controller, sink, original } = fixture(t);
   const before = controller.getSnapshot().draft.context;
   assert.equal(sink.prepareEdit!(original.id)(null), false);
@@ -39,9 +54,10 @@ test("editing replaces one annotation atomically; cancel and duplicate commits l
   release();
 });
 
-test("stale editors cannot overwrite a newer edit or restore a deleted annotation", t => {
+test("stale editors cannot overwrite a newer edit or restore a deleted annotation", (t) => {
   const { sink, original } = fixture(t);
-  const stale = sink.prepareEdit!(original.id), fresh = sink.prepareEdit!(original.id);
+  const stale = sink.prepareEdit!(original.id),
+    fresh = sink.prepareEdit!(original.id);
   assert.equal(fresh({ ...original, comment: "Newer" }), true);
   assert.equal(stale({ ...original, comment: "Older" }), false);
   assert.equal(sink.list()[0]?.comment, "Newer");
@@ -51,7 +67,7 @@ test("stale editors cannot overwrite a newer edit or restore a deleted annotatio
   assert.equal(sink.prepareEdit!("missing")({ ...original, id: "missing" }), false);
 });
 
-test("edit transactions are fenced across draft switches, including returning to the original draft", t => {
+test("edit transactions are fenced across draft switches, including returning to the original draft", (t) => {
   const { controller, sink, original } = fixture(t);
   const commit = sink.prepareEdit!(original.id);
   controller.dispatch({ type: "switch-target", target: target("b") });
@@ -59,7 +75,7 @@ test("edit transactions are fenced across draft switches, including returning to
   assert.equal(commit({ ...original, comment: "Late" }), false);
 });
 
-test("full annotation tray can edit in place without allocating a new number", t => {
+test("full annotation tray can edit in place without allocating a new number", (t) => {
   const { sink, original } = fixture(t);
   for (let i = 2; i <= 8; i++) assert.equal(sink.prepareAdd()({ ...original, id: `a${i}`, number: i }), true);
   assert.equal(sink.prepareAdd()({ ...original, id: "overflow", number: 9 }), false);
@@ -67,15 +83,18 @@ test("full annotation tray can edit in place without allocating a new number", t
   assert.equal(sink.list().length, 8);
 });
 
-test("aggregate persistence budget refuses addition without mutating the existing draft", t => {
+test("aggregate persistence budget refuses addition without mutating the existing draft", (t) => {
   const { controller, sink, original } = fixture(t);
-  controller.dispatch({ type: "add-context", reference: { id: "large", kind: "file", title: "Large", metadata: { content: "x".repeat(4 * 1024 * 1024) } } });
+  controller.dispatch({
+    type: "add-context",
+    reference: { id: "large", kind: "file", title: "Large", metadata: { content: "x".repeat(4 * 1024 * 1024) } },
+  });
   const before = controller.getSnapshot().draft.context;
   assert.equal(sink.prepareAdd()({ ...original, id: "another", number: 2 }), false);
   assert.equal(controller.getSnapshot().draft.context, before);
 });
 
-test("edit can retry a correctable validation failure without losing optimistic fence", t => {
+test("edit can retry a correctable validation failure without losing optimistic fence", (t) => {
   const { sink, original } = fixture(t);
   const commit = sink.prepareEdit!(original.id);
   assert.equal(commit({ ...original, comment: "x".repeat(100000) }), false);

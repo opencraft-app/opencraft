@@ -56,11 +56,7 @@ test("hosted assistant CLI uses its live Bot socket without shell expansion or c
     "--idempotency-key",
     "stable",
   ];
-  const result = await promisify(execFile)(
-    process.execPath,
-    ["bin/assistant.mjs", ...argv],
-    { cwd: root },
-  );
+  const result = await promisify(execFile)(process.execPath, ["bin/assistant.mjs", ...argv], { cwd: root });
   assert.equal(JSON.parse(result.stdout).state, "submitted");
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
@@ -78,9 +74,40 @@ test("hosted assistant CLI uses its live Bot socket without shell expansion or c
       ],
     },
   });
-  const live=['thread','--profile-dir',profile.path,'tell','reference','--delivery','steer','--expected-turn','running-turn','--message','只追加这条原话','--idempotency-key','live-1'];
-  await promisify(execFile)(process.execPath,['bin/assistant.mjs',...live],{cwd:root});
-  assert.deepEqual(calls[1],{method:'opencraft/personal-assistant/threads/command',params:{argv:['thread','tell','reference','--delivery','steer','--expected-turn','running-turn','--message','只追加这条原话','--idempotency-key','live-1']}});
+  const live = [
+    "thread",
+    "--profile-dir",
+    profile.path,
+    "tell",
+    "reference",
+    "--delivery",
+    "steer",
+    "--expected-turn",
+    "running-turn",
+    "--message",
+    "只追加这条原话",
+    "--idempotency-key",
+    "live-1",
+  ];
+  await promisify(execFile)(process.execPath, ["bin/assistant.mjs", ...live], { cwd: root });
+  assert.deepEqual(calls[1], {
+    method: "opencraft/personal-assistant/threads/command",
+    params: {
+      argv: [
+        "thread",
+        "tell",
+        "reference",
+        "--delivery",
+        "steer",
+        "--expected-turn",
+        "running-turn",
+        "--message",
+        "只追加这条原话",
+        "--idempotency-key",
+        "live-1",
+      ],
+    },
+  });
   await assert.rejects(
     runner.dispatch({
       op: "thread.command",
@@ -108,21 +135,13 @@ test("model tool uses the Work captured platform capability and denies old or re
       return { state: "submitted" };
     },
   ).toolsFor(work, snapshot);
-  const tool = assistantTools({ ports, snapshot, onBoundaryError() {} }).find(
-    (t) => t.name === "thread_command",
-  );
+  const tool = assistantTools({ ports, snapshot, onBoundaryError() {} }).find((t) => t.name === "thread_command");
   assert.ok(tool);
-  assert.match(tool.description,/--delivery steer --expected-turn/);
-  assert.match(
-    (await tool.execute({ argv: ["thread", "profiles"] })).output[0].text,
-    /submitted/,
-  );
+  assert.match(tool.description, /--delivery steer --expected-turn/);
+  assert.match((await tool.execute({ argv: ["thread", "profiles"] })).output[0].text, /submitted/);
   assert.equal(calls[0].workId, id);
   app.scope.resources = [{ ...resource, binding: "other-owner" }];
-  await assert.rejects(
-    tool.execute({ argv: ["thread", "profiles"] }),
-    /binding/,
-  );
+  await assert.rejects(tool.execute({ argv: ["thread", "profiles"] }), /binding/);
   assert.equal(calls.length, 1);
   const old = {
     ...snapshot,
@@ -132,33 +151,38 @@ test("model tool uses the Work captured platform capability and denies old or re
     },
   };
   assert.equal(
-    assistantTools({ ports, snapshot: old, onBoundaryError() {} }).some(
-      (t) => t.name === "thread_command",
-    ),
+    assistantTools({ ports, snapshot: old, onBoundaryError() {} }).some((t) => t.name === "thread_command"),
     false,
   );
 });
 
-
 test("one resource catalog drives reception discovery and execution delegation without granting old turns new tools", async (t) => {
-  const {profileFor} = await import('./helpers.mjs');
-  const {createLocalDomain} = await import('../src/runtime/create-local-domain.mjs');
-  const {receptionRoutingInstruction,threadRoutingInstruction} = await import('../src/adapters/models/reception-routing.mjs');
+  const { profileFor } = await import("./helpers.mjs");
+  const { createLocalDomain } = await import("../src/runtime/create-local-domain.mjs");
+  const { receptionRoutingInstruction, threadRoutingInstruction } = await import(
+    "../src/adapters/models/reception-routing.mjs"
+  );
   const profile = profileFor(t);
-  const {app,uow} = createLocalDomain(profile,null,{platformThreads:{id:'platform.threads',binding:'original'}});
-  t.after(()=>uow.close());
-  const accept=id=>{app.reception.accept(id,{text:'Create a real Thread and follow up'});return app.reception.turn(id);};
-  const turn=accept('authorized'),context=app.reception.context(turn);
-  assert.deepEqual(context.capabilities.resources,['platform.threads']);
-  assert.deepEqual(context.capabilities.delegationTools,['thread_command']);
-  assert.ok(app.scope.delegate('authorized').tools.includes('thread_command'));
+  const { app, uow } = createLocalDomain(profile, null, {
+    platformThreads: { id: "platform.threads", binding: "original" },
+  });
+  t.after(() => uow.close());
+  const accept = (id) => {
+    app.reception.accept(id, { text: "Create a real Thread and follow up" });
+    return app.reception.turn(id);
+  };
+  const turn = accept("authorized"),
+    context = app.reception.context(turn);
+  assert.deepEqual(context.capabilities.resources, ["platform.threads"]);
+  assert.deepEqual(context.capabilities.delegationTools, ["thread_command"]);
+  assert.ok(app.scope.delegate("authorized").tools.includes("thread_command"));
   assert.ok(receptionRoutingInstruction.includes(threadRoutingInstruction));
-  assert.ok(threadRoutingInstruction.includes('thread_command'));
-  app.scope.resources=[];
-  assert.deepEqual(app.reception.context(turn).capabilities.delegationTools,[]);
-  const old=accept('without-grant');
-  app.scope.resources=[{id:'platform.threads',binding:'replacement'}];
-  assert.deepEqual(app.reception.context(old).capabilities.delegationTools,[]);
-  assert.deepEqual(app.reception.context(turn).capabilities.delegationTools,[]);
-  assert.deepEqual(app.reception.context(accept('new-grant')).capabilities.delegationTools,['thread_command']);
+  assert.ok(threadRoutingInstruction.includes("thread_command"));
+  app.scope.resources = [];
+  assert.deepEqual(app.reception.context(turn).capabilities.delegationTools, []);
+  const old = accept("without-grant");
+  app.scope.resources = [{ id: "platform.threads", binding: "replacement" }];
+  assert.deepEqual(app.reception.context(old).capabilities.delegationTools, []);
+  assert.deepEqual(app.reception.context(turn).capabilities.delegationTools, []);
+  assert.deepEqual(app.reception.context(accept("new-grant")).capabilities.delegationTools, ["thread_command"]);
 });

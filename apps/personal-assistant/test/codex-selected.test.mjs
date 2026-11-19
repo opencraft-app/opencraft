@@ -112,12 +112,7 @@ test("selected schemas enforce branch requirements before generation and preserv
     { kind: "answer", interactionId: "q", expectedRevision: 3, text: "yes" },
   );
   assert.throws(
-    () =>
-      decodeSelected(
-        wire({ kind: "cancel", workId: "w", expectedRevision: 1 }),
-        ["reply"],
-        {},
-      ),
+    () => decodeSelected(wire({ kind: "cancel", workId: "w", expectedRevision: 1 }), ["reply"], {}),
     /contract/,
   );
   assert.throws(
@@ -156,23 +151,12 @@ test("selected schemas enforce branch requirements before generation and preserv
       ],
     },
   );
-  for (const names of [
-    [],
-    Array(5).fill("reply"),
-    ["query:memory.get", "reply"],
-    ["send", "reply"],
-  ])
+  for (const names of [[], Array(5).fill("reply"), ["query:memory.get", "reply"], ["send", "reply"]])
     assert.throws(() => decodeRoutes(selection(...names), {}), /invalid_batch/);
   const report = { source: { kind: "execution-report" } };
   assert.throws(() => selectedSchema(["delegate"], report), /schema|contract/);
-  assert.ok(
-    !routingSchema(report).properties.operations.items.enum.includes(
-      "goal.create",
-    ),
-  );
-  assert.ok(
-    Buffer.byteLength(JSON.stringify(selectedSchema(["answer"], {}))) < 600,
-  );
+  assert.ok(!routingSchema(report).properties.operations.items.enum.includes("goal.create"));
+  assert.ok(Buffer.byteLength(JSON.stringify(selectedSchema(["answer"], {}))) < 600);
 });
 
 test(
@@ -214,11 +198,7 @@ test(
   native,
   async () => {
     const server = await endpoint((_b, n) =>
-      n === 1
-        ? "invalid"
-        : n === 2
-          ? selection("reply")
-          : wire({ kind: "reply" }),
+      n === 1 ? "invalid" : n === 2 ? selection("reply") : wire({ kind: "reply" }),
     );
     const harness = new CodexStructuredHarness(server.config);
     try {
@@ -231,64 +211,50 @@ test(
   },
 );
 
-test(
-  "selected parameter correction retains the chosen branch and rejects cross-branch writes",
-  native,
-  async () => {
-    const server = await endpoint((body, n) => {
-      if (n === 1) return selection("reply");
-      assert.deepEqual(
-        body.text.format.schema.properties.proposal.properties.kind.enum,
-        ["reply"],
-      );
-      return n === 2
-        ? wire({ kind: "delegate", goal: "unrequested" })
-        : wire({ kind: "reply", text: "safe" });
+test("selected parameter correction retains the chosen branch and rejects cross-branch writes", native, async () => {
+  const server = await endpoint((body, n) => {
+    if (n === 1) return selection("reply");
+    assert.deepEqual(body.text.format.schema.properties.proposal.properties.kind.enum, ["reply"]);
+    return n === 2 ? wire({ kind: "delegate", goal: "unrequested" }) : wire({ kind: "reply", text: "safe" });
+  });
+  const harness = new CodexStructuredHarness(server.config);
+  try {
+    const result = await harness.complete(args());
+    assert.deepEqual(JSON.parse(result.content[0].text), {
+      kind: "reply",
+      text: "safe",
     });
-    const harness = new CodexStructuredHarness(server.config);
-    try {
-      const result = await harness.complete(args());
-      assert.deepEqual(JSON.parse(result.content[0].text), {
-        kind: "reply",
-        text: "safe",
-      });
-      assert.equal(server.requests.length, 3);
-    } finally {
-      await harness.close();
-      await server.close();
-    }
-  },
-);
+    assert.equal(server.requests.length, 3);
+  } finally {
+    await harness.close();
+    await server.close();
+  }
+});
 
-test(
-  "selected cancellation stops the native parameter request and close is reusable/idempotent",
-  native,
-  async () => {
-    let entered;
-    const pending = new Promise((r) => {
-      entered = r;
-    });
-    const server = await endpoint((body) => {
-      if (body.text.format.schema.properties.operations)
-        return selection("reply");
-      entered();
-      return undefined;
-    });
-    const harness = new CodexStructuredHarness(server.config);
-    const controller = new AbortController();
-    const job = harness.complete({ ...args(), signal: controller.signal });
-    const rejected = assert.rejects(job, /stop-selected/);
-    try {
-      await pending;
-      controller.abort(new Error("stop-selected"));
-      await rejected;
-    } finally {
-      await harness.close();
-      await harness.close();
-      await server.close();
-    }
-  },
-);
+test("selected cancellation stops the native parameter request and close is reusable/idempotent", native, async () => {
+  let entered;
+  const pending = new Promise((r) => {
+    entered = r;
+  });
+  const server = await endpoint((body) => {
+    if (body.text.format.schema.properties.operations) return selection("reply");
+    entered();
+    return undefined;
+  });
+  const harness = new CodexStructuredHarness(server.config);
+  const controller = new AbortController();
+  const job = harness.complete({ ...args(), signal: controller.signal });
+  const rejected = assert.rejects(job, /stop-selected/);
+  try {
+    await pending;
+    controller.abort(new Error("stop-selected"));
+    await rejected;
+  } finally {
+    await harness.close();
+    await harness.close();
+    await server.close();
+  }
+});
 
 test(
   "LocalRunner socket uses the default selected protocol and settles ordinary chat without creating work",
@@ -329,27 +295,21 @@ test(
 
 test("delivery selection encodes exclusive message/text and plan/review before business submission", () => {
   const input = { source: { kind: "execution-report" } };
-  const routes = routingSchema(input).properties.operations.items.enum.filter(
-    (s) => s.startsWith("deliver"),
-  );
+  const routes = routingSchema(input).properties.operations.items.enum.filter((s) => s.startsWith("deliver"));
   assert.equal(routes.length, 6);
   for (const route of routes) {
-    const fields = selectedSchema([route], input).properties.proposal
-      .properties;
+    const fields = selectedSchema([route], input).properties.proposal.properties;
     assert.equal(!!fields.text, !route.includes(":message"));
     assert.equal(!!fields.message, route.includes(":message"));
     assert.equal(!!fields.goalPlan, route.includes(":goalPlan"));
     assert.equal(!!fields.goalReview, route.includes(":goalReview"));
     assert.throws(() => selectedSchema([route], {}), /enum/);
-    assert.throws(
-      () => decodeRoutes(selection(route, route), input),
-      /invalid_batch/,
-    );
+    assert.throws(() => decodeRoutes(selection(route, route), input), /invalid_batch/);
   }
-  assert.deepEqual(
-    decodeSelected(wire({ kind: "deliver", text: "done" }), ["deliver"], input),
-    { kind: "deliver", text: "done" },
-  );
+  assert.deepEqual(decodeSelected(wire({ kind: "deliver", text: "done" }), ["deliver"], input), {
+    kind: "deliver",
+    text: "done",
+  });
   assert.throws(
     () =>
       decodeSelected(
@@ -363,22 +323,9 @@ test("delivery selection encodes exclusive message/text and plan/review before b
       ),
     /unexpected/,
   );
+  assert.throws(() => decodeSelected(wire({ kind: "deliver", message: null }), ["deliver:message"], input), /contract/);
   assert.throws(
-    () =>
-      decodeSelected(
-        wire({ kind: "deliver", message: null }),
-        ["deliver:message"],
-        input,
-      ),
-    /contract/,
-  );
-  assert.throws(
-    () =>
-      decodeSelected(
-        wire({ kind: "deliver", goalReview: null }),
-        ["deliver:goalReview"],
-        input,
-      ),
+    () => decodeSelected(wire({ kind: "deliver", goalReview: null }), ["deliver:goalReview"], input),
     /contract/,
   );
   const value = {
@@ -387,15 +334,10 @@ test("delivery selection encodes exclusive message/text and plan/review before b
     goalReview: {
       goalId: "g",
       expectedRevision: 2,
-      evidence: [
-        { criterionId: "c", statement: "verified", resultIds: ["result:r"] },
-      ],
+      evidence: [{ criterionId: "c", statement: "verified", resultIds: ["result:r"] }],
     },
   };
-  assert.deepEqual(
-    decodeSelected(wire(value), ["deliver:message:goalReview"], input),
-    value,
-  );
+  assert.deepEqual(decodeSelected(wire(value), ["deliver:message:goalReview"], input), value);
   assert.throws(
     () =>
       decodeSelected(
@@ -410,61 +352,50 @@ test("delivery selection encodes exclusive message/text and plan/review before b
   );
 });
 
-test(
-  "real native ordinary replies keep the full command manual out of both model requests",
-  native,
-  async () => {
-    const { ReceptionModel } = await import(
-      "../src/adapters/models/reception-model.mjs"
-    );
-    let original;
-    const capture = {
-      provider: "test",
-      modelId: "synthetic",
-      async complete(args) {
-        original = args;
-        return {
-          content: [{ type: "text", text: '{"kind":"reply","text":"hello"}' }],
-          stopReason: "stop",
-        };
-      },
-    };
-    await new ReceptionModel(
-      { configured: { mode: "model" } },
-      { transport: capture },
-    ).decide({ text: "hello" }, AbortSignal.timeout(10000));
-    const server = await endpoint((_body, n) =>
-      n === 1 ? selection("reply") : wire({ kind: "reply", text: "hello" }),
-    );
-    const harness = new CodexStructuredHarness(server.config);
-    try {
-      await harness.complete({
-        ...original,
-        signal: AbortSignal.timeout(15000),
-      });
-      for (const body of server.requests) {
-        const bytes = Buffer.byteLength(JSON.stringify(body));
-        assert.ok(
-          bytes < Buffer.byteLength(original.instruction),
-          "ordinary chat request should be smaller than the old manual alone",
-        );
-        assert.doesNotMatch(
-          JSON.stringify(body),
-          /Calendar schedules need no startAt/,
-        );
-      }
-      console.log(
-        "ordinary chat request bytes:",
-        server.requests.map((b) => Buffer.byteLength(JSON.stringify(b))),
-        "previous instruction bytes:",
-        Buffer.byteLength(original.instruction),
+test("real native ordinary replies keep the full command manual out of both model requests", native, async () => {
+  const { ReceptionModel } = await import("../src/adapters/models/reception-model.mjs");
+  let original;
+  const capture = {
+    provider: "test",
+    modelId: "synthetic",
+    async complete(args) {
+      original = args;
+      return {
+        content: [{ type: "text", text: '{"kind":"reply","text":"hello"}' }],
+        stopReason: "stop",
+      };
+    },
+  };
+  await new ReceptionModel({ configured: { mode: "model" } }, { transport: capture }).decide(
+    { text: "hello" },
+    AbortSignal.timeout(10000),
+  );
+  const server = await endpoint((_body, n) => (n === 1 ? selection("reply") : wire({ kind: "reply", text: "hello" })));
+  const harness = new CodexStructuredHarness(server.config);
+  try {
+    await harness.complete({
+      ...original,
+      signal: AbortSignal.timeout(15000),
+    });
+    for (const body of server.requests) {
+      const bytes = Buffer.byteLength(JSON.stringify(body));
+      assert.ok(
+        bytes < Buffer.byteLength(original.instruction),
+        "ordinary chat request should be smaller than the old manual alone",
       );
-    } finally {
-      await harness.close();
-      await server.close();
+      assert.doesNotMatch(JSON.stringify(body), /Calendar schedules need no startAt/);
     }
-  },
-);
+    console.log(
+      "ordinary chat request bytes:",
+      server.requests.map((b) => Buffer.byteLength(JSON.stringify(b))),
+      "previous instruction bytes:",
+      Buffer.byteLength(original.instruction),
+    );
+  } finally {
+    await harness.close();
+    await server.close();
+  }
+});
 
 test(
   "goal text is checked before submission and one native parameter correction repairs a short confirmation",
@@ -472,12 +403,7 @@ test(
   async () => {
     for (const goal of ["", " \n\t", "x".repeat(20001)])
       assert.throws(
-        () =>
-          decodeSelected(
-            wire({ kind: "delegate", goal, completion: null }),
-            ["delegate"],
-            {},
-          ),
+        () => decodeSelected(wire({ kind: "delegate", goal, completion: null }), ["delegate"], {}),
         /text_constraint/,
       );
     const server = await endpoint((_body, n) =>
@@ -485,10 +411,7 @@ test(
         ? selection("delegate")
         : wire({
             kind: "delegate",
-            goal:
-              n === 2
-                ? " "
-                : "Search currently visible groups for our prior conversations and report coverage",
+            goal: n === 2 ? " " : "Search currently visible groups for our prior conversations and report coverage",
             completion: null,
           }),
     );

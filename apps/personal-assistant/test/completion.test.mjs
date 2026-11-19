@@ -8,17 +8,8 @@ import { Runner, request } from "../src/runner.mjs";
 import { CompletionContract } from "../src/domain/completion-contract.mjs";
 import { ReceptionDecision } from "../src/domain/conversation.mjs";
 import { digest } from "../src/domain/values.mjs";
-import {
-  profileFor,
-  running,
-  completed,
-  until,
-  publishTestNote,
-  childRunner,
-  nativeEntries,
-} from "./helpers.mjs";
-const call = (p, op, params = {}, id = crypto.randomUUID()) =>
-  request(p, { op, params, id });
+import { profileFor, running, completed, until, publishTestNote, childRunner, nativeEntries } from "./helpers.mjs";
+const call = (p, op, params = {}, id = crypto.randomUUID()) => request(p, { op, params, id });
 const blocked = (p, workId) =>
   until(async () => {
     const d = await call(p, "work", { workId });
@@ -54,18 +45,12 @@ test("a final model statement without a published artifact is blocked with a dur
   const s = new Store(profileFor(t));
   t.after(() => s.close());
   const work = s.work(s.submit("w", { text: "produce useful work" }).workId);
-  const receipt = s.completedExecution(
-    work,
-    "I finished everything successfully",
-  );
+  const receipt = s.completedExecution(work, "I finished everything successfully");
   assert.equal(receipt.accepted, false);
   assert.equal(s.work(work.id).status, "blocked");
   assert.equal(s.detail(work.id).results.length, 0);
   assert.equal(s.detail(work.id).deliveries.length, 0);
-  assert.equal(
-    s.detail(work.id).completion.executions[0].assessment.data.passed,
-    false,
-  );
+  assert.equal(s.detail(work.id).completion.executions[0].assessment.data.passed, false);
 });
 
 test("machine checks pass independently of semantic review and delivery acceptance", async (t) => {
@@ -89,10 +74,7 @@ test("machine checks pass independently of semantic review and delivery acceptan
     true,
   );
   assert.equal(s.work(work.id).status, "awaiting_delivery");
-  assert.equal(
-    s.detail(work.id).completion.executions[0].evidence[0].data.sha256,
-    artifact.sha256,
-  );
+  assert.equal(s.detail(work.id).completion.executions[0].evidence[0].data.sha256, artifact.sha256);
   s.deliveryAccepted(s.deliveries()[0]);
   assert.equal(s.work(work.id).status, "completed");
 });
@@ -111,10 +93,7 @@ test("checking literal content uses published bytes rather than the final model 
   await publishTestNote(s, work, "note missing the required content");
   const result = s.completedExecution(work, "required-in-artifact");
   assert.equal(result.accepted, false);
-  assert.equal(
-    result.assessment.checks.find((c) => c.kind === "note_contains").passed,
-    false,
-  );
+  assert.equal(result.assessment.checks.find((c) => c.kind === "note_contains").passed, false);
   assert.equal(s.deliveries().length, 0);
 });
 
@@ -144,10 +123,7 @@ test("source receipts must belong to this execution and match an explicitly requ
     sha256: digest("changed source"),
   });
   const result = s.completedExecution(second, "done");
-  assert.equal(
-    result.assessment.checks.find((c) => c.kind === "material_read").passed,
-    false,
-  );
+  assert.equal(result.assessment.checks.find((c) => c.kind === "material_read").passed, false);
 });
 
 test("amend preserves criteria, creates an immutable new contract snapshot and does not reuse old evidence", async (t) => {
@@ -180,15 +156,8 @@ test("amend preserves criteria, creates an immutable new contract snapshot and d
   assert.equal(oldSnapshot.completion.objective, "first");
   const result = s.completedExecution(revised, "new statement");
   assert.equal(result.accepted, false);
-  assert.equal(
-    s.detail(original.id).completion.executions[1].evidence.length,
-    0,
-  );
-  assert.equal(
-    s.detail(original.id).completion.executions[0].assessment.data.contract
-      .objective,
-    "first",
-  );
+  assert.equal(s.detail(original.id).completion.executions[1].evidence.length, 0);
+  assert.equal(s.detail(original.id).completion.executions[0].assessment.data.contract.objective, "first");
 });
 
 test("evidence is immutable, replay idempotent, and cannot be submitted through the user protocol", async (t) => {
@@ -199,12 +168,7 @@ test("evidence is immutable, replay idempotent, and cannot be submitted through 
   s.app.completion.publishedNote(work, artifact, "body");
   assert.equal(s.detail(work.id).completion.executions[0].evidence.length, 1);
   assert.throws(
-    () =>
-      s.app.completion.publishedNote(
-        work,
-        { ...artifact, sha256: "0".repeat(64) },
-        "body",
-      ),
+    () => s.app.completion.publishedNote(work, { ...artifact, sha256: "0".repeat(64) }, "body"),
     /does not match/,
   );
   assert.throws(
@@ -217,12 +181,7 @@ test("evidence is immutable, replay idempotent, and cannot be submitted through 
     /Unknown operation/,
   );
   assert.throws(
-    () =>
-      s.app.completion.publishedNote(
-        work,
-        { ...artifact, path: "a different artifact" },
-        "body",
-      ),
+    () => s.app.completion.publishedNote(work, { ...artifact, path: "a different artifact" }, "body"),
     /Immutable/,
   );
 });
@@ -233,9 +192,7 @@ test("schema-3 work and its snapshot preserve their original completion semantic
   const work = s.work(s.submit("legacy", { text: "legacy goal" }).workId);
   const oldSnapshot = s.executionContext(work);
   delete oldSnapshot.completion;
-  s.db
-    .prepare("UPDATE execution SET context_json=? WHERE work_id=?")
-    .run(JSON.stringify(oldSnapshot), work.id);
+  s.db.prepare("UPDATE execution SET context_json=? WHERE work_id=?").run(JSON.stringify(oldSnapshot), work.id);
   legacyMemoryFixture(p, s.db);
   s.db.exec(
     "DROP TABLE IF EXISTS execution_native_receipt; ALTER TABLE execution DROP COLUMN harness; DROP TABLE memory_tombstone; DROP TABLE memory_refresh; DROP TABLE memory_learning_control; ALTER TABLE memory_learning DROP COLUMN batch_ids_json; ALTER TABLE memory_learning DROP COLUMN temporal; ALTER TABLE memory_learning DROP COLUMN today; DROP TABLE memory_detail; ALTER TABLE routine DROP COLUMN schedule_json; ALTER TABLE routine DROP COLUMN last_scheduled_at; ALTER TABLE routine DROP COLUMN stop_when; DROP TABLE usage_observation; ALTER TABLE execution DROP COLUMN guard_json; DROP TABLE execution_report; ALTER TABLE execution DROP COLUMN request_json; ALTER TABLE reception DROP COLUMN source_json; ALTER TABLE reception DROP COLUMN attempts; ALTER TABLE reception DROP COLUMN next_at; ALTER TABLE delivery DROP COLUMN message_text; ALTER TABLE delivery DROP COLUMN suppress_notification; ALTER TABLE routine DROP COLUMN resources_json; ALTER TABLE interaction DROP COLUMN kind; ALTER TABLE interaction DROP COLUMN expires_at; ALTER TABLE interaction DROP COLUMN metadata_json; ALTER TABLE work DROP COLUMN origin_json; ALTER TABLE routine DROP COLUMN notify; DROP TABLE trigger_rule; DROP TABLE assistant_event; DROP TABLE trigger_occurrence; DROP TABLE file_observation; DROP TABLE notification; ALTER TABLE reception DROP COLUMN query_scope_json; DROP TABLE completion_assessment; DROP TABLE completion_evidence; ALTER TABLE work DROP COLUMN completion_json; PRAGMA user_version=3",
@@ -245,29 +202,20 @@ test("schema-3 work and its snapshot preserve their original completion semantic
   t.after(() => s.close());
   assert.deepEqual(s.executionContext(s.work(work.id)), oldSnapshot);
   assert.equal(s.detail(work.id).completion.contract.origin, "legacy");
-  assert.equal(
-    s.completedExecution(s.work(work.id), "old engine result").accepted,
-    true,
-  );
+  assert.equal(s.completedExecution(s.work(work.id), "old engine result").accepted, true);
   s.amend("new", {
     workId: work.id,
     text: "explicitly revised goal",
     expectedRevision: 1,
   });
-  assert.equal(
-    s.completedExecution(s.work(work.id), "statement only").accepted,
-    false,
-  );
+  assert.equal(s.completedExecution(s.work(work.id), "statement only").accepted, false);
 });
 
 test("real Pi records source and note evidence and checks them before a result can be delivered", async (t) => {
   const p = profileFor(t),
     materials = join(p.path, "materials");
   mkdirSync(materials);
-  writeFileSync(
-    join(materials, "project.md"),
-    "定量指标：7\n里程碑：已完成导入。",
-  );
+  writeFileSync(join(materials, "project.md"), "定量指标：7\n里程碑：已完成导入。");
   // Reuse explicit initialization: no shared material roots or credentials.
   const { initProfile } = await import("../src/profile.mjs");
   const profile = initProfile(join(p.path, "nested"), "local:test-owner", {
@@ -326,12 +274,7 @@ test("crash after result persistence preserves the same evidence and assessment 
   const first = await childRunner(t, profile, {
     LAB_TEST_CRASH_AT: "result-saved-before-delivery",
   });
-  const receipt = await call(
-    profile,
-    "submit",
-    { text: "整理一份笔记" },
-    "completion-crash",
-  );
+  const receipt = await call(profile, "submit", { text: "整理一份笔记" }, "completion-crash");
   assert.equal((await first.exited).code, 86);
   const second = await childRunner(t, profile);
   const done = await completed(profile, receipt.workId);
@@ -340,9 +283,7 @@ test("crash after result persistence preserves the same evidence and assessment 
   assert.equal(done.results.length, 1);
   await second.stop();
   assert.equal(
-    (await nativeEntries(profile, receipt.workId)).filter(
-      (e) => e.kind === "superapp.work-input",
-    ).length,
+    (await nativeEntries(profile, receipt.workId)).filter((e) => e.kind === "superapp.work-input").length,
     1,
   );
 });

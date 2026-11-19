@@ -21,14 +21,8 @@ export class RunPolicy {
       modelTimeoutMs: 3600000,
       maxRetries: 5,
     }))
-      if (
-        !Number.isSafeInteger(policy[key]) ||
-        policy[key] < (key === "maxRetries" ? 0 : 1) ||
-        policy[key] > max
-      )
-        throw new Error(
-          `runPolicy.${key} must be ${key === "maxRetries" ? 0 : 1}..${max}`,
-        );
+      if (!Number.isSafeInteger(policy[key]) || policy[key] < (key === "maxRetries" ? 0 : 1) || policy[key] > max)
+        throw new Error(`runPolicy.${key} must be ${key === "maxRetries" ? 0 : 1}..${max}`);
     return policy;
   }
 }

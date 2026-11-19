@@ -32,11 +32,7 @@ export class AttentionService {
     this.repository.save({ ...s, unread_count: s.unread_count + 1 });
   }
   snooze(inputId, params) {
-    if (
-      !Number.isSafeInteger(params.durationMs) ||
-      params.durationMs < 1000 ||
-      params.durationMs > 30 * DAY
-    )
+    if (!Number.isSafeInteger(params.durationMs) || params.durationMs < 1000 || params.durationMs > 30 * DAY)
       throw new Error("Snooze duration must be 1000ms..30days");
     return this.inbox.accept(inputId, "attention.snooze", params, () => {
       const until = this.now() + params.durationMs;
@@ -47,12 +43,7 @@ export class AttentionService {
   assess() {
     const s = this.status(),
       now = this.now();
-    if (
-      s.paused_at !== null ||
-      now < s.snoozed_until ||
-      now - s.last_active_at < 3 * DAY
-    )
-      return "none";
+    if (s.paused_at !== null || now < s.snoozed_until || now - s.last_active_at < 3 * DAY) return "none";
     if (s.nudged_at !== null) {
       if (now - s.nudged_at < 3 * DAY) return "none";
       this.repository.save({ ...s, paused_at: now });

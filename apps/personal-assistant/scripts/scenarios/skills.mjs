@@ -23,22 +23,16 @@ export async function skillsScenario({ call, say, done, check, evidence }) {
   const result = await done(work.work_id);
   check(
     "pinnedSkillActuallyLoaded",
-    result.skills.some(
-      (s) =>
-        s.skill_id === skillId && s.version === installed.installed[0].version,
-    ),
+    result.skills.some((s) => s.skill_id === skillId && s.version === installed.installed[0].version),
   );
   check(
     "skillWorkHasSourceEvidence",
-    result.completion.executions.some((e) =>
-      e.evidence.some((r) => r.kind === "material.read"),
-    ),
+    result.completion.executions.some((e) => e.evidence.some((r) => r.kind === "material.read")),
   );
   evidence.skillReview = {
     workId: work.work_id,
     installed,
     loads: result.skills,
-    limitation:
-      "Explicit skill request; autonomous relevant-skill selection and usefulness require separate review.",
+    limitation: "Explicit skill request; autonomous relevant-skill selection and usefulness require separate review.",
   };
 }

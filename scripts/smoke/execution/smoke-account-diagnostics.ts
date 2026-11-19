@@ -37,64 +37,119 @@ window.legacy=async()=>{account={...account,maintenance:undefined};await service
 const View=createCodexAccountsView(service);
 createRoot(document.getElementById('root')).render(<IntlRuntimeProvider runtime={locale}><View/></IntlRuntimeProvider>);
 `;
-const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", resolve: { dedupe: ["react", "react-dom"] }, esbuild: { jsx: "automatic" },
-  server: { host: "127.0.0.1", port: 0, hmr: false }, plugins: [{ name: "account-diagnostic-fixture", resolveId: id => id === "/reference.tsx" ? id : null,
-    load: id => id === "/reference.tsx" ? source : null,
-    configureServer(server) { server.middlewares.use((request, response, next) => {
-      if (request.url !== "/") return next();
-      response.setHeader("content-type", "text/html");
-      response.end('<html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:var(--color-background-surface);color:var(--color-text)}#root{container:settings-panel/inline-size;min-height:100vh;padding:16px;box-sizing:border-box}</style><div id="root"></div><script type="module" src="/reference.tsx"></script></html>');
-    }); },
-  }],
+const vite = await createServer({
+  configFile: false,
+  root: process.cwd(),
+  logLevel: "error",
+  resolve: { dedupe: ["react", "react-dom"] },
+  esbuild: { jsx: "automatic" },
+  server: { host: "127.0.0.1", port: 0, hmr: false },
+  plugins: [
+    {
+      name: "account-diagnostic-fixture",
+      resolveId: (id) => (id === "/reference.tsx" ? id : null),
+      load: (id) => (id === "/reference.tsx" ? source : null),
+      configureServer(server) {
+        server.middlewares.use((request, response, next) => {
+          if (request.url !== "/") return next();
+          response.setHeader("content-type", "text/html");
+          response.end(
+            '<html lang="zh-CN"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;background:var(--color-background-surface);color:var(--color-text)}#root{container:settings-panel/inline-size;min-height:100vh;padding:16px;box-sizing:border-box}</style><div id="root"></div><script type="module" src="/reference.tsx"></script></html>',
+          );
+        });
+      },
+    },
+  ],
 });
 let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
   await vite.listen();
-  browser = await chromium.launch({ headless: true, executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE, args: ["--no-sandbox"] });
-  for (const width of [390, 1000]) for (const colorScheme of ["light", "dark"] as const) {
-    const touch = width === 390;
-    const page = await browser.newPage({ viewport: { width, height: 1000 }, colorScheme, hasTouch: touch, isMobile: touch });
-    const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
-    await page.goto(vite.resolvedUrls!.local[0]!);
-    const row = page.locator('.engine-account');
-    await row.locator('.engine-account__status-copy').filter({ hasText: /^可用/ }).waitFor();
-    const openMenu = async () => {
-      const trigger = row.getByRole('button', { name: /的操作/ });
-      if (touch) await trigger.tap(); else { await trigger.focus(); await page.keyboard.press('Enter'); }
-    };
-    const choose = async (name: string) => {
-      const item = page.getByRole('menuitem', { name, exact: true });
-      if (touch) await item.tap(); else { await item.focus(); await page.keyboard.press('Enter'); }
-    };
-    await openMenu(); await choose('刷新用量');
-    await row.getByText('续期未返回有效凭据，账号尚未恢复。', { exact: true }).waitFor();
-    assert.equal(await row.getAttribute('data-status'), 'held');
-    assert.equal(await row.getByText('认证异常', { exact: true }).count(), 0);
-    assert.equal(await row.locator('.engine-account__status-copy').filter({ hasText: /^可用/ }).count(), 0);
-    assert.equal(await row.getByText('renewal-incomplete', { exact: true }).count(), 1);
-    assert.equal(await page.getByText(/private-provider-body|synthetic-secret/).count(), 0);
-    const copy = row.getByRole('button', { name: '复制诊断编号', exact: true });
-    if (touch) { assert.ok((await copy.boundingBox())!.height >= 44); await copy.tap(); } else await copy.click();
-    await row.getByText('诊断编号已复制', { exact: true }).waitFor();
-    await page.locator('.engine-account-menu').waitFor({ state: 'detached' });
-    await page.screenshot({ path: join(output, `${width}-${colorScheme}-renewal.png`), fullPage: true });
-    await page.evaluate(() => (window as any).recover());
-    await row.locator('.engine-account__status-copy').filter({ hasText: /^可用/ }).waitFor();
-    assert.equal(await row.locator('.engine-account__action-error,.engine-account__diagnostic').count(), 0, 'confirmed recovery resolves only refresh feedback');
-    await openMenu(); await choose('停用账户');
-    await row.getByText('上次操作未完成；账号可用不代表该操作已成功。', { exact: true }).waitFor();
-    await page.evaluate(() => (window as any).recover());
-    assert.equal(await row.locator('.engine-account__action-error').count(), 1, 'a state read must not hide a failed mutation');
-    await page.evaluate(() => (window as any).legacy());
-    assert.equal(await row.locator('.engine-account__action-error').count(), 1, 'older Host absence is not evidence of success');
-    await row.getByRole('button', { name: '关闭提示', exact: true }).click();
-    assert.equal(await row.locator('.engine-account__action-error').count(), 0);
-    const calls = await page.evaluate(() => (window as any).calls);
-    assert.equal(calls.filter((c: any) => c.method.endsWith('/refresh')).length, 1);
-    assert.equal(calls.filter((c: any) => c.method.endsWith('/setEnabled')).length, 1);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-    assert.deepEqual(errors, []);
-    await page.close();
-  }
-  console.log('Actual account Settings: safe renewal diagnostics, copied correlation ID, false-green prevention, recovered refresh feedback, retained mutation failure, old Host fallback; phone touch/desktop keyboard, light/dark passed (synthetic Host).');
-} finally { await browser?.close(); await vite.close(); }
+  browser = await chromium.launch({
+    headless: true,
+    executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,
+    args: ["--no-sandbox"],
+  });
+  for (const width of [390, 1000])
+    for (const colorScheme of ["light", "dark"] as const) {
+      const touch = width === 390;
+      const page = await browser.newPage({
+        viewport: { width, height: 1000 },
+        colorScheme,
+        hasTouch: touch,
+        isMobile: touch,
+      });
+      const errors: string[] = [];
+      page.on("pageerror", (e) => errors.push(e.message));
+      await page.goto(vite.resolvedUrls!.local[0]!);
+      const row = page.locator(".engine-account");
+      await row.locator(".engine-account__status-copy").filter({ hasText: /^可用/ }).waitFor();
+      const openMenu = async () => {
+        const trigger = row.getByRole("button", { name: /的操作/ });
+        if (touch) await trigger.tap();
+        else {
+          await trigger.focus();
+          await page.keyboard.press("Enter");
+        }
+      };
+      const choose = async (name: string) => {
+        const item = page.getByRole("menuitem", { name, exact: true });
+        if (touch) await item.tap();
+        else {
+          await item.focus();
+          await page.keyboard.press("Enter");
+        }
+      };
+      await openMenu();
+      await choose("刷新用量");
+      await row.getByText("续期未返回有效凭据，账号尚未恢复。", { exact: true }).waitFor();
+      assert.equal(await row.getAttribute("data-status"), "held");
+      assert.equal(await row.getByText("认证异常", { exact: true }).count(), 0);
+      assert.equal(await row.locator(".engine-account__status-copy").filter({ hasText: /^可用/ }).count(), 0);
+      assert.equal(await row.getByText("renewal-incomplete", { exact: true }).count(), 1);
+      assert.equal(await page.getByText(/private-provider-body|synthetic-secret/).count(), 0);
+      const copy = row.getByRole("button", { name: "复制诊断编号", exact: true });
+      if (touch) {
+        assert.ok((await copy.boundingBox())!.height >= 44);
+        await copy.tap();
+      } else await copy.click();
+      await row.getByText("诊断编号已复制", { exact: true }).waitFor();
+      await page.locator(".engine-account-menu").waitFor({ state: "detached" });
+      await page.screenshot({ path: join(output, `${width}-${colorScheme}-renewal.png`), fullPage: true });
+      await page.evaluate(() => (window as any).recover());
+      await row.locator(".engine-account__status-copy").filter({ hasText: /^可用/ }).waitFor();
+      assert.equal(
+        await row.locator(".engine-account__action-error,.engine-account__diagnostic").count(),
+        0,
+        "confirmed recovery resolves only refresh feedback",
+      );
+      await openMenu();
+      await choose("停用账户");
+      await row.getByText("上次操作未完成；账号可用不代表该操作已成功。", { exact: true }).waitFor();
+      await page.evaluate(() => (window as any).recover());
+      assert.equal(
+        await row.locator(".engine-account__action-error").count(),
+        1,
+        "a state read must not hide a failed mutation",
+      );
+      await page.evaluate(() => (window as any).legacy());
+      assert.equal(
+        await row.locator(".engine-account__action-error").count(),
+        1,
+        "older Host absence is not evidence of success",
+      );
+      await row.getByRole("button", { name: "关闭提示", exact: true }).click();
+      assert.equal(await row.locator(".engine-account__action-error").count(), 0);
+      const calls = await page.evaluate(() => (window as any).calls);
+      assert.equal(calls.filter((c: any) => c.method.endsWith("/refresh")).length, 1);
+      assert.equal(calls.filter((c: any) => c.method.endsWith("/setEnabled")).length, 1);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
+  console.log(
+    "Actual account Settings: safe renewal diagnostics, copied correlation ID, false-green prevention, recovered refresh feedback, retained mutation failure, old Host fallback; phone touch/desktop keyboard, light/dark passed (synthetic Host).",
+  );
+} finally {
+  await browser?.close();
+  await vite.close();
+}

@@ -21,8 +21,10 @@ function useCalendarDayClock(): number {
       if (timer !== undefined) clearTimeout(timer);
       const now = Date.now();
       setDay(sidebarCalendarDay(now));
-      timer = document.visibilityState === "hidden" ? undefined
-        : setTimeout(refresh, Math.max(1, sidebarNextCalendarDay(now) - now));
+      timer =
+        document.visibilityState === "hidden"
+          ? undefined
+          : setTimeout(refresh, Math.max(1, sidebarNextCalendarDay(now) - now));
     };
     refresh();
     document.addEventListener("visibilitychange", refresh);

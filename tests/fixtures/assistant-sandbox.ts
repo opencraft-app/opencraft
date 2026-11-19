@@ -1,10 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import type {
-  SandboxBackend,
-  SandboxProcess,
-  SandboxResources,
-} from "@opencraft/sandbox";
+import type { SandboxBackend, SandboxProcess, SandboxResources } from "@opencraft/sandbox";
 export function localSandboxFixture(resources: SandboxResources) {
   const calls: {
       command: readonly string[];
@@ -39,12 +35,8 @@ export function localSandboxFixture(resources: SandboxResources) {
               stdio: ["pipe", "pipe", "pipe"],
             });
             children.add(child);
-            child.stdout.on("data", (data) =>
-              onOutput?.({ stream: "stdout", data }),
-            );
-            child.stderr.on("data", (data) =>
-              onOutput?.({ stream: "stderr", data }),
-            );
+            child.stdout.on("data", (data) => onOutput?.({ stream: "stdout", data }));
+            child.stderr.on("data", (data) => onOutput?.({ stream: "stderr", data }));
             const exited = new Promise<any>((resolve, reject) => {
               child.once("error", reject);
               child.once("close", (code, signal) => {
@@ -74,11 +66,7 @@ export function localSandboxFixture(resources: SandboxResources) {
             ended = true;
             destroyed++;
             for (const child of children) child.kill("SIGKILL");
-            await Promise.all(
-              [...children].map(
-                (child) => new Promise((r) => child.once("close", r)),
-              ),
-            );
+            await Promise.all([...children].map((child) => new Promise((r) => child.once("close", r))));
           },
         };
       },

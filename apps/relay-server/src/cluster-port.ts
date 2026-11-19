@@ -1,10 +1,13 @@
-import type { IncomingMessage } from 'node:http';
-import type { Duplex } from 'node:stream';
-import type { HubNetwork } from '../../../packages/hub-network/src/node.js';
-import type { RelaySessionStore } from './session-store.js';
+import type { IncomingMessage } from "node:http";
+import type { Duplex } from "node:stream";
+import type { HubNetwork } from "../../../packages/hub-network/src/node.js";
+import type { RelaySessionStore } from "./session-store.js";
 
-export type RelayHub = Pick<HubNetwork, 'snapshot' | 'routes' | 'open' | 'handleUpgrade'> & {
-  command(input: Record<string, unknown>, operator: string): ReturnType<HubNetwork['command']> | Promise<ReturnType<HubNetwork['command']>>;
+export type RelayHub = Pick<HubNetwork, "snapshot" | "routes" | "open" | "handleUpgrade"> & {
+  command(
+    input: Record<string, unknown>,
+    operator: string,
+  ): ReturnType<HubNetwork["command"]> | Promise<ReturnType<HubNetwork["command"]>>;
 };
 export interface RelayClusterPort {
   readonly sessions: RelaySessionStore;

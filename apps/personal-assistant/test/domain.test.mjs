@@ -13,10 +13,7 @@ test("input identity survives reopen; conflicting payload is refused", (t) => {
     const again = store.submit("stable-id", { text: "original" });
     assert.equal(again.workId, first.workId);
     assert.equal(again.duplicate, true);
-    assert.throws(
-      () => store.submit("stable-id", { text: "other" }),
-      /different payload/,
-    );
+    assert.throws(() => store.submit("stable-id", { text: "other" }), /different payload/);
     assert.equal(store.status().works.length, 1);
   } finally {
     store.close();
@@ -26,16 +23,10 @@ test("input identity survives reopen; conflicting payload is refused", (t) => {
 test("failed command rolls back and can reuse its uncommitted input identity", (t) => {
   const s = new Store(profileFor(t));
   t.after(() => s.close());
-  assert.throws(
-    () => s.amend("amend", { workId: "missing", text: "change" }),
-    /Unknown work/,
-  );
+  assert.throws(() => s.amend("amend", { workId: "missing", text: "change" }), /Unknown work/);
   assert.equal(s.db.prepare("SELECT COUNT(*) AS n FROM input").get().n, 0);
   const w = s.submit("create", { text: "work" });
-  assert.equal(
-    s.amend("amend", { workId: w.workId, text: "change" }).revision,
-    2,
-  );
+  assert.equal(s.amend("amend", { workId: w.workId, text: "change" }).revision, 2);
 });
 
 test("result persistence and delivery acceptance are distinct completion levels", async (t) => {
@@ -65,11 +56,7 @@ test("amend fences old execution and withdraws its pending delivery", async (t) 
   s.amend("change", { workId: old.id, text: "new scope", expectedRevision: 1 });
   assert.throws(() => s.completedExecution(old, "late"), /superseded/);
   assert.equal(s.detail(old.id).deliveries[0].status, "withdrawn");
-  assert.throws(
-    () =>
-      s.amend("stale", { workId: old.id, text: "stale", expectedRevision: 1 }),
-    /Stale/,
-  );
+  assert.throws(() => s.amend("stale", { workId: old.id, text: "stale", expectedRevision: 1 }), /Stale/);
 });
 
 test("cancel preserves produced result and stops pending delivery", async (t) => {
@@ -83,10 +70,7 @@ test("cancel preserves produced result and stops pending delivery", async (t) =>
   assert.equal(s.work(w.id).status, "cancelled");
   assert.equal(s.detail(w.id).results[0].text, "produced");
   assert.equal(s.detail(w.id).deliveries[0].status, "withdrawn");
-  assert.throws(
-    () => s.amend("revive", { workId: w.id, text: "revive" }),
-    /Cancelled/,
-  );
+  assert.throws(() => s.amend("revive", { workId: w.id, text: "revive" }), /Cancelled/);
 });
 
 test("explicit memory correction and forget retain revision and block stale updates", (t) => {
@@ -173,8 +157,5 @@ test("paused and expired routines invalidate queued occurrences before any actio
   });
   s.tick(now);
   assert.equal(s.status().works.length, 1);
-  assert.equal(
-    s.status().routines.find((x) => x.text === "late").status,
-    "expired",
-  );
+  assert.equal(s.status().routines.find((x) => x.text === "late").status, "expired");
 });

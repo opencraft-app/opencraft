@@ -3,22 +3,38 @@
 // and stay invisible to automation (inspect/readContext/revision)?
 //
 //   OPENCRAFT_ELECTRON_EXECUTABLE=/path/to/electron node scripts/smoke/browser/smoke-annotation-overlay.mjs
-import assert from 'node:assert/strict';
-import { mkdtemp, cp, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { spawn } from 'node:child_process';
-import { build } from 'esbuild';
+import assert from "node:assert/strict";
+import { mkdtemp, cp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { spawn } from "node:child_process";
+import { build } from "esbuild";
 
 const executable = process.env.OPENCRAFT_ELECTRON_EXECUTABLE;
-if (!executable) throw Error('Set OPENCRAFT_ELECTRON_EXECUTABLE to a local Electron runtime');
-const dir = await mkdtemp(join(tmpdir(), 'annotation-overlay-'));
-await build({entryPoints:[resolve('scripts/remote-browser/annotation-preload.cjs')],outfile:join(dir,'annotation-preload.cjs'),bundle:true,platform:'node',format:'cjs',external:['electron']});
-await build({ entryPoints: [resolve('packages/browser-preview-bridge/src/index.ts')], outfile: join(dir, 'preview-bridge.js'),
-  bundle: true, platform: 'browser', format: 'iife', globalName: 'OpenCraftPreviewBridgeRuntime', logLevel: 'silent' });
+if (!executable) throw Error("Set OPENCRAFT_ELECTRON_EXECUTABLE to a local Electron runtime");
+const dir = await mkdtemp(join(tmpdir(), "annotation-overlay-"));
+await build({
+  entryPoints: [resolve("scripts/remote-browser/annotation-preload.cjs")],
+  outfile: join(dir, "annotation-preload.cjs"),
+  bundle: true,
+  platform: "node",
+  format: "cjs",
+  external: ["electron"],
+});
+await build({
+  entryPoints: [resolve("packages/browser-preview-bridge/src/index.ts")],
+  outfile: join(dir, "preview-bridge.js"),
+  bundle: true,
+  platform: "browser",
+  format: "iife",
+  globalName: "OpenCraftPreviewBridgeRuntime",
+  logLevel: "silent",
+});
 
 // Same webPreferences as worker.cjs createPage().
-await writeFile(join(dir, 'main.cjs'), String.raw`
+await writeFile(
+  join(dir, "main.cjs"),
+  String.raw`
 const { app, BrowserWindow } = require('electron');
 const { readFileSync } = require('fs'); const { join } = require('path');
 app.disableHardwareAcceleration();
@@ -131,17 +147,40 @@ app.whenReady().then(async () => {
   results.preloadActiveAfterNavigation = await js('!!document.getElementById("opencraft-annotation-host")');
   console.log(JSON.stringify(results)); app.exit(0);
 }).catch(fail);
-`);
+`,
+);
 
-const child = spawn(executable, ['--no-sandbox', '--ozone-platform=headless', '--ozone-override-screen-size=1920,1080', '--disable-gpu', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--disable-dev-shm-usage', join(dir, 'main.cjs')],
-  { env: { ...process.env, ELECTRON_RUN_AS_NODE: '' }, stdio: ['ignore', 'pipe', 'pipe'] });
-let out = ''; child.stdout.on('data', d => { out += d; }); child.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(d); });
-const code = await new Promise(r => child.on('exit', r));
+const child = spawn(
+  executable,
+  [
+    "--no-sandbox",
+    "--ozone-platform=headless",
+    "--ozone-override-screen-size=1920,1080",
+    "--disable-gpu",
+    "--use-angle=swiftshader",
+    "--enable-unsafe-swiftshader",
+    "--disable-dev-shm-usage",
+    join(dir, "main.cjs"),
+  ],
+  { env: { ...process.env, ELECTRON_RUN_AS_NODE: "" }, stdio: ["ignore", "pipe", "pipe"] },
+);
+let out = "";
+child.stdout.on("data", (d) => {
+  out += d;
+});
+child.stderr.on("data", (d) => {
+  if (process.env.DEBUG) process.stderr.write(d);
+});
+const code = await new Promise((r) => child.on("exit", r));
 await rm(dir, { recursive: true, force: true });
-const line = out.trim().split('\n').filter(l => l.startsWith('{')).pop();
+const line = out
+  .trim()
+  .split("\n")
+  .filter((l) => l.startsWith("{"))
+  .pop();
 assert.ok(line, `no result (exit ${code})`);
 const results = JSON.parse(line);
 if (results.error) throw Error(results.error);
 console.table(results);
-for (const [k, v] of Object.entries(results)) assert.equal(v, k === 'hostBeforeAnnotation' ? false : true, k);
-console.log('annotation overlay spike: ok');
+for (const [k, v] of Object.entries(results)) assert.equal(v, k === "hostBeforeAnnotation" ? false : true, k);
+console.log("annotation overlay spike: ok");

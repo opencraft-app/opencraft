@@ -4,25 +4,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { Runner, request } from "../src/runner.mjs";
 import { Store } from "../src/store.mjs";
-import {
-  running,
-  profileFor,
-  until,
-  completed,
-  childRunner,
-  nativeEntries,
-  files,
-} from "./helpers.mjs";
+import { running, profileFor, until, completed, childRunner, nativeEntries, files } from "./helpers.mjs";
 
-const call = (p, op, params = {}, id = crypto.randomUUID()) =>
-  request(p, { op, params, id });
+const call = (p, op, params = {}, id = crypto.randomUUID()) => request(p, { op, params, id });
 const question = (p, workId) =>
   until(async () => {
     const detail = await call(p, "work", { workId });
-    return (
-      detail.work.status === "waiting_input" &&
-      detail.interactions.find((i) => i.state === "pending")
-    );
+    return detail.work.status === "waiting_input" && detail.interactions.find((i) => i.state === "pending");
   });
 const idle = (p) => until(async () => (await call(p, "status")).active === 0);
 const settled = (p, id) =>
@@ -40,25 +28,15 @@ test("pending question releases the only slot; answer resumes the same native su
   assert.equal(runner.work.executor.activeSessionCount(), 0);
   const second = await call(profile, "submit", { text: "整理另一份笔记" });
   await completed(profile, second.workId);
-  const binding = (await call(profile, "work", { workId: first.workId }))
-    .executions[0];
+  const binding = (await call(profile, "work", { workId: first.workId })).executions[0];
   const params = {
     interactionId: q.id,
     expectedRevision: 1,
     text: "只整理本周",
   };
-  const accepted = await call(
-    profile,
-    "interaction.answer",
-    params,
-    "answer-once",
-  );
+  const accepted = await call(profile, "interaction.answer", params, "answer-once");
   assert.equal(accepted.state, "answered");
-  assert.equal(
-    (await call(profile, "interaction.answer", params, "answer-once"))
-      .duplicate,
-    true,
-  );
+  assert.equal((await call(profile, "interaction.answer", params, "answer-once")).duplicate, true);
   await assert.rejects(
     call(profile, "interaction.answer", params, "another-answer"),
     /Interaction is answered|waiting/,
@@ -76,10 +54,7 @@ test("pending question releases the only slot; answer resumes the same native su
   assert.match(artifact, /只整理本周/);
   await runner.close();
   const entries = await nativeEntries(profile, first.workId);
-  assert.equal(
-    entries.filter((e) => e.kind === "superapp.work-input").length,
-    1,
-  );
+  assert.equal(entries.filter((e) => e.kind === "superapp.work-input").length, 1);
 });
 
 test("restart preserves a question without reopening a waiting native harness", async (t) => {
@@ -99,12 +74,7 @@ test("restart preserves a question without reopening a waiting native harness", 
   });
   await completed(profile, work.workId);
   await second.stop();
-  assert.equal(
-    (await nativeEntries(profile, work.workId)).filter(
-      (e) => e.kind === "superapp.work-input",
-    ).length,
-    1,
-  );
+  assert.equal((await nativeEntries(profile, work.workId)).filter((e) => e.kind === "superapp.work-input").length, 1);
 });
 
 for (const action of ["amend", "cancel"])
@@ -129,13 +99,8 @@ for (const action of ["amend", "cancel"])
       /superseded|cancelled|revision/,
     );
     const detail =
-      action === "amend"
-        ? await completed(profile, work.workId)
-        : await call(profile, "work", { workId: work.workId });
-    assert.equal(
-      detail.interactions[0].state,
-      action === "amend" ? "superseded" : "cancelled",
-    );
+      action === "amend" ? await completed(profile, work.workId) : await call(profile, "work", { workId: work.workId });
+    assert.equal(detail.interactions[0].state, action === "amend" ? "superseded" : "cancelled");
     assert.equal(
       detail.results.some((r) => r.revision === 1),
       false,
@@ -166,16 +131,11 @@ test("rejecting a question blocks work; a revised goal can continue", async (t) 
 test("all pending questions must be answered, and effects cannot run while waiting", (t) => {
   const store = new Store(profileFor(t));
   t.after(() => store.close());
-  const work = store.work(
-    store.submit("work", { text: "two questions" }).workId,
-  );
+  const work = store.work(store.submit("work", { text: "two questions" }).workId);
   store.started(work);
   const first = store.app.interactions.request(work, "q1", "哪个项目？");
   const second = store.app.interactions.request(work, "q2", "哪个时间范围？");
-  assert.throws(
-    () => store.app.executions.assertAction(work, "publish_note"),
-    /pending information/,
-  );
+  assert.throws(() => store.app.executions.assertAction(work, "publish_note"), /pending information/);
   store.app.interactions.answer("a1", {
     interactionId: first.id,
     expectedRevision: 1,
@@ -195,12 +155,7 @@ test("a committed question survives a process exit before native suspension", as
   const first = await childRunner(t, profile, {
     LAB_TEST_CRASH_AT: "interaction-saved-before-suspend",
   });
-  const work = await call(
-    profile,
-    "submit",
-    { text: "整理资料，先问我范围" },
-    "question-crash",
-  );
+  const work = await call(profile, "submit", { text: "整理资料，先问我范围" }, "question-crash");
   assert.equal((await first.exited).code, 86);
   const second = await childRunner(t, profile);
   const q = await question(profile, work.workId);
@@ -213,12 +168,7 @@ test("a committed question survives a process exit before native suspension", as
   assert.equal(done.interactions.length, 1);
   assert.equal(done.executions.length, 1);
   await second.stop();
-  assert.equal(
-    (await nativeEntries(profile, work.workId)).filter(
-      (e) => e.kind === "superapp.work-input",
-    ).length,
-    1,
-  );
+  assert.equal((await nativeEntries(profile, work.workId)).filter((e) => e.kind === "superapp.work-input").length, 1);
 });
 
 test("main conversation receives the question and routes the user answer to its original work", async (t) => {
@@ -227,10 +177,7 @@ test("main conversation receives the question and routes the user answer to its 
   const turn = await settled(profile, "work-turn");
   const q = await question(profile, turn.work_id);
   const history = await call(profile, "conversation");
-  assert.equal(
-    history.messages.filter((m) => m.data.interactionId === q.id).length,
-    1,
-  );
+  assert.equal(history.messages.filter((m) => m.data.interactionId === q.id).length, 1);
   await call(profile, "say", { text: "回答：只整理本周" }, "answer-turn");
   const answer = await settled(profile, "answer-turn");
   assert.equal(answer.work_id, turn.work_id);
@@ -304,11 +251,7 @@ test("a reception proposal cannot answer a question from unlinked direct work", 
     return r.status === "blocked" && r;
   });
   assert.match(turn.reply_text, /outside this conversation/);
-  assert.equal(
-    (await call(profile, "work", { workId: work.workId })).interactions[0]
-      .answer,
-    null,
-  );
+  assert.equal((await call(profile, "work", { workId: work.workId })).interactions[0].answer, null);
 });
 
 test("a stale memory proposal cannot overwrite a newer explicit change or emit a success reply", async (t) => {
@@ -341,16 +284,10 @@ test("a stale memory proposal cannot overwrite a newer explicit change or emit a
     expectedRevision: 0,
   });
   release();
-  await until(
-    async () =>
-      (await call(profile, "turn", { inputId: "stale-memory" })).status ===
-      "blocked",
-  );
+  await until(async () => (await call(profile, "turn", { inputId: "stale-memory" })).status === "blocked");
   assert.equal((await call(profile, "memory.list"))[0].value, "深圳");
   assert.equal(
-    (await call(profile, "conversation")).messages.some(
-      (m) => m.data.kind === "remember",
-    ),
+    (await call(profile, "conversation")).messages.some((m) => m.data.kind === "remember"),
     false,
   );
 });

@@ -18,14 +18,12 @@ import { randomUUID } from "node:crypto";
 import { resolveHarnesses } from "../codex/config.mjs";
 
 function resolveConcurrency(value = 8) {
-  if (!Number.isInteger(value) || value < 1 || value > 8)
-    throw new Error("concurrency must be 1..8");
+  if (!Number.isInteger(value) || value < 1 || value > 8) throw new Error("concurrency must be 1..8");
   return value;
 }
 
 export function initProfile(directory, owner, options = {}) {
-  if (!owner || typeof owner !== "string")
-    throw new Error("An explicit local owner label is required");
+  if (!owner || typeof owner !== "string") throw new Error("An explicit local owner label is required");
   const concurrency = resolveConcurrency(options.concurrency);
   const path = resolve(directory);
   mkdirSync(path, { recursive: true, mode: 0o700 });
@@ -59,24 +57,17 @@ export function initProfile(directory, owner, options = {}) {
   });
   if (config.workspace !== undefined) {
     config.workspace = realpathSync(resolve(config.workspace));
-    if (!statSync(config.workspace).isDirectory())
-      throw new Error("workspace must be an explicit existing directory");
+    if (!statSync(config.workspace).isDirectory()) throw new Error("workspace must be an explicit existing directory");
   }
-  writeFileSync(
-    join(path, "profile.json"),
-    JSON.stringify(config, null, 2) + "\n",
-    { flag: "wx", mode: 0o600 },
-  );
+  writeFileSync(join(path, "profile.json"), JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   return loadProfile(path);
 }
 
 export function loadProfile(directory) {
   const path = realpathSync(resolve(directory));
-  if (lstatSync(join(path, "profile.json")).isSymbolicLink())
-    throw Error("Profile cannot be a symlink");
+  if (lstatSync(join(path, "profile.json")).isSymbolicLink()) throw Error("Profile cannot be a symlink");
   const config = JSON.parse(readFileSync(join(path, "profile.json"), "utf8"));
-  if (config.layout !== undefined && config.layout !== "bot-v1")
-    throw Error("Unsupported profile layout");
+  if (config.layout !== undefined && config.layout !== "bot-v1") throw Error("Unsupported profile layout");
   if (config.layout === "bot-v1") {
     const binding = botBinding(config.botBinding);
     if (
@@ -86,20 +77,13 @@ export function loadProfile(directory) {
       config.memoryDefaultScope !== "agent"
     )
       throw Error("Bot profile binding or memory scope differs");
-  } else if (config.botBinding !== undefined)
-    throw Error("Bot binding requires bot-v1 layout");
-  if (config.schema !== 1 || !config.assistantId || !config.owner)
-    throw new Error("Unsupported or incomplete profile");
+  } else if (config.botBinding !== undefined) throw Error("Bot binding requires bot-v1 layout");
+  if (config.schema !== 1 || !config.assistantId || !config.owner) throw new Error("Unsupported or incomplete profile");
   resolveHarnesses(config);
   validateTelemetry(config.telemetry);
-  if (!["fixture", "model"].includes(config.mode))
-    throw new Error("mode must be fixture or model");
+  if (!["fixture", "model"].includes(config.mode)) throw new Error("mode must be fixture or model");
   config.concurrency = resolveConcurrency(config.concurrency);
-  if (
-    !Number.isInteger(config.fixtureDelayMs) ||
-    config.fixtureDelayMs < 0 ||
-    config.fixtureDelayMs > 60000
-  )
+  if (!Number.isInteger(config.fixtureDelayMs) || config.fixtureDelayMs < 0 || config.fixtureDelayMs > 60000)
     throw new Error("fixtureDelayMs must be 0..60000");
   config.runPolicy = RunPolicy.resolve(config.runPolicy);
   config.memoryPolicy = MemorySynthesisPolicy.resolve(config.memoryPolicy);
@@ -119,12 +103,9 @@ export function loadProfile(directory) {
   });
   if (config.workspace !== undefined) {
     if (!isAbsolute(config.workspace))
-      throw new Error(
-        "Persisted workspace must be absolute; init resolves relative bindings",
-      );
+      throw new Error("Persisted workspace must be absolute; init resolves relative bindings");
     config.workspace = realpathSync(resolve(config.workspace));
-    if (!statSync(config.workspace).isDirectory())
-      throw new Error("workspace must be an explicit existing directory");
+    if (!statSync(config.workspace).isDirectory()) throw new Error("workspace must be an explicit existing directory");
   }
   chmodSync(path, 0o700);
   for (const name of [
@@ -132,16 +113,7 @@ export function loadProfile(directory) {
     "artifacts",
     "mailbox",
     ...(config.layout === "bot-v1"
-      ? [
-          "engines",
-          "engines/codex",
-          "engines/pi",
-          "memory",
-          "tmp",
-          "outgoing",
-          "attachments",
-          "telemetry",
-        ]
+      ? ["engines", "engines/codex", "engines/pi", "memory", "tmp", "outgoing", "attachments", "telemetry"]
       : []),
   ]) {
     const directory = join(path, name);
@@ -151,18 +123,12 @@ export function loadProfile(directory) {
       if (error.code !== "EEXIST") throw error;
     }
     const stat = lstatSync(directory);
-    if (stat.isSymbolicLink() || !stat.isDirectory())
-      throw Error("Profile directory cannot be a symlink or file");
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw Error("Profile directory cannot be a symlink or file");
   }
   if (config.layout === "bot-v1") {
-    for (const name of [
-      "assistant.sqlite",
-      "assistant.sqlite-wal",
-      "assistant.sqlite-shm",
-    ]) {
+    for (const name of ["assistant.sqlite", "assistant.sqlite-wal", "assistant.sqlite-shm"]) {
       try {
-        if (lstatSync(join(path, name)).isSymbolicLink())
-          throw Error("Bot database cannot be a symlink");
+        if (lstatSync(join(path, name)).isSymbolicLink()) throw Error("Bot database cannot be a symlink");
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }

@@ -3,18 +3,22 @@ import { sidebarToggleGlyphs } from "@opencraft/design-system/sidebar-toggle-gly
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
 const playwright = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
-const browserName = process.env.OPENCRAFT_SMOKE_BROWSER ?? 'chromium';
-assert(['chromium', 'webkit'].includes(browserName), 'Select chromium or webkit');
-const mobile = process.argv.includes('--mobile-browser');
-const pagePresentation = process.argv.includes('--page-presentation');
+const browserName = process.env.OPENCRAFT_SMOKE_BROWSER ?? "chromium";
+assert(["chromium", "webkit"].includes(browserName), "Select chromium or webkit");
+const mobile = process.argv.includes("--mobile-browser");
+const pagePresentation = process.argv.includes("--page-presentation");
 const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-workspace-presentation";
 async function settleMobileViewport(page: any) {
-  await page.waitForFunction(() => {
-    const panel = document.querySelector('.browser-panel[data-mobile-browser="true"]');
-    if (!panel) return false;
-    const bounds = panel.getBoundingClientRect();
-    return Math.abs(bounds.width - innerWidth) < 1 && Math.abs(bounds.height - innerHeight) < 1;
-  }, undefined, { timeout: 5000 });
+  await page.waitForFunction(
+    () => {
+      const panel = document.querySelector('.browser-panel[data-mobile-browser="true"]');
+      if (!panel) return false;
+      const bounds = panel.getBoundingClientRect();
+      return Math.abs(bounds.width - innerWidth) < 1 && Math.abs(bounds.height - innerHeight) < 1;
+    },
+    undefined,
+    { timeout: 5000 },
+  );
 }
 const source = `
 import React,{useSyncExternalStore,useState} from 'react';import{createIntlTestRoot as createRoot}from'/tests/fixtures/intl-root.tsx';
@@ -70,25 +74,102 @@ return <AppShell navigation={navigation} layoutScope='scope' mainContentLayout='
 <div className='thread-composer-region'><OpenCraftComposer controller={controller} entryActions={<ComposerPanelToggle/>} onSubmit={async intent=>{submitted.push(intent.target)}} onCancel={()=>{}} /></div>
 </ThreadComposerPresentation></div></AppShell>}
 createRoot(document.getElementById('root'),undefined,params.get('locale')??'en-US').render(<AsyncNoticesProvider><TimelineBlockRendererProvider registry={ctx.timelineBlockRenderers}><BrowserEnvironmentProvider pages={pages} surfaces={surfaces} presentations={presentations} workbench={workbench}><App/><BrowserPresentationRoot/></BrowserEnvironmentProvider></TimelineBlockRendererProvider></AsyncNoticesProvider>);`;
-const vite = await createServer({ configFile: false, root: process.cwd(), logLevel: "error", cacheDir: "node_modules/.vite-workspace-presentation", resolve: { dedupe: ["react", "react-dom"] }, esbuild: { jsx: "automatic" }, server: { host: "127.0.0.1", port: 0 }, optimizeDeps: { include: ["react", "react-dom/client", "@radix-ui/react-dialog", "@radix-ui/react-dropdown-menu", "@radix-ui/react-popover", "@tanstack/react-query"] }, plugins: [{ name: "workspace-presentation-fixture", resolveId: id => id === "/workspace-probe.tsx" ? id : null, load: id => id === "/workspace-probe.tsx" ? source : null, configureServer(server) { server.middlewares.use((req,res,next) => { if (req.url === "/browser-fixture") { res.setHeader("content-type","text/html"); res.end('<title>Fixture web page</title><button onclick="this.textContent=String.fromCharCode(80,97,103,101,32,99,111,117,110,116,32)+(++window.count)">Page count 0</button><script>window.count=0</script>'); return; } if(req.url?.split("?")[0] !== "/") return next();res.setHeader("content-type","text/html");res.end('<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/workspace-probe.tsx"></script>'); }); } }] });
+const vite = await createServer({
+  configFile: false,
+  root: process.cwd(),
+  logLevel: "error",
+  cacheDir: "node_modules/.vite-workspace-presentation",
+  resolve: { dedupe: ["react", "react-dom"] },
+  esbuild: { jsx: "automatic" },
+  server: { host: "127.0.0.1", port: 0 },
+  optimizeDeps: {
+    include: [
+      "react",
+      "react-dom/client",
+      "@radix-ui/react-dialog",
+      "@radix-ui/react-dropdown-menu",
+      "@radix-ui/react-popover",
+      "@tanstack/react-query",
+    ],
+  },
+  plugins: [
+    {
+      name: "workspace-presentation-fixture",
+      resolveId: (id) => (id === "/workspace-probe.tsx" ? id : null),
+      load: (id) => (id === "/workspace-probe.tsx" ? source : null),
+      configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+          if (req.url === "/browser-fixture") {
+            res.setHeader("content-type", "text/html");
+            res.end(
+              '<title>Fixture web page</title><button onclick="this.textContent=String.fromCharCode(80,97,103,101,32,99,111,117,110,116,32)+(++window.count)">Page count 0</button><script>window.count=0</script>',
+            );
+            return;
+          }
+          if (req.url?.split("?")[0] !== "/") return next();
+          res.setHeader("content-type", "text/html");
+          res.end(
+            '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="/workspace-probe.tsx"></script>',
+          );
+        });
+      },
+    },
+  ],
+});
 let browser;
 try {
- await mkdir(output,{recursive:true});await vite.listen();
- browser=await playwright.chromium.launch({headless:true,executablePath:process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,args:['--no-sandbox']});
- for(const [width,touch] of [[390,true],[1280,false],[390,false],[1024,true]] as const){
-  const page=await browser.newPage({viewport:{width,height:844},hasTouch:touch,isMobile:touch&&width<768,reducedMotion:'reduce'});
-  page.on('pageerror',e=>{throw e});await page.addInitScript('window.__name=value=>value');
-  await page.goto(vite.resolvedUrls!.local[0]!+(touch?'?mobile=1':''));await page.waitForFunction(()=>Boolean((window as any).fixture));
-  await page.evaluate(()=>(window as any).fixture.panels.dispatch('scope',{type:'set-region-open',region:'right',open:false}));
-  const button=page.getByTestId('composer-panel-toggle'),header=page.locator('button.app-shell-header__right-panel-toggle');
-  if(touch&&width<768){
-   await button.waitFor({state:'visible'});assert.equal(await header.count(),0);
-   const box=(await button.boundingBox())!;assert.ok(box.width>=44&&box.height>=44,JSON.stringify(box));
-   const editor=page.locator('.opencraft-composer-editor');await editor.click();await page.keyboard.insertText('Keep my draft');
-   await page.screenshot({path:output+'/mobile-input.png'});
-   await button.tap();await header.waitFor({state:'visible'});await page.getByRole('button',{name:'Back to workspace',exact:true}).tap();await button.waitFor({state:'visible'});
-   assert.equal(await editor.textContent(),'Keep my draft');
-  } else {assert.equal(await button.count(),0);await header.waitFor({state:'visible'});}
-  console.log('PASS',width,touch?'touch':'pointer');await page.close();
- }
-} finally {await browser?.close();await vite.close();}
+  await mkdir(output, { recursive: true });
+  await vite.listen();
+  browser = await playwright.chromium.launch({
+    headless: true,
+    executablePath: process.env.OPENCRAFT_CHROMIUM_EXECUTABLE,
+    args: ["--no-sandbox"],
+  });
+  for (const [width, touch] of [
+    [390, true],
+    [1280, false],
+    [390, false],
+    [1024, true],
+  ] as const) {
+    const page = await browser.newPage({
+      viewport: { width, height: 844 },
+      hasTouch: touch,
+      isMobile: touch && width < 768,
+      reducedMotion: "reduce",
+    });
+    page.on("pageerror", (e) => {
+      throw e;
+    });
+    await page.addInitScript("window.__name=value=>value");
+    await page.goto(vite.resolvedUrls!.local[0]! + (touch ? "?mobile=1" : ""));
+    await page.waitForFunction(() => Boolean((window as any).fixture));
+    await page.evaluate(() =>
+      (window as any).fixture.panels.dispatch("scope", { type: "set-region-open", region: "right", open: false }),
+    );
+    const button = page.getByTestId("composer-panel-toggle"),
+      header = page.locator("button.app-shell-header__right-panel-toggle");
+    if (touch && width < 768) {
+      await button.waitFor({ state: "visible" });
+      assert.equal(await header.count(), 0);
+      const box = (await button.boundingBox())!;
+      assert.ok(box.width >= 44 && box.height >= 44, JSON.stringify(box));
+      const editor = page.locator(".opencraft-composer-editor");
+      await editor.click();
+      await page.keyboard.insertText("Keep my draft");
+      await page.screenshot({ path: output + "/mobile-input.png" });
+      await button.tap();
+      await header.waitFor({ state: "visible" });
+      await page.getByRole("button", { name: "Back to workspace", exact: true }).tap();
+      await button.waitFor({ state: "visible" });
+      assert.equal(await editor.textContent(), "Keep my draft");
+    } else {
+      assert.equal(await button.count(), 0);
+      await header.waitFor({ state: "visible" });
+    }
+    console.log("PASS", width, touch ? "touch" : "pointer");
+    await page.close();
+  }
+} finally {
+  await browser?.close();
+  await vite.close();
+}

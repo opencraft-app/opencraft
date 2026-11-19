@@ -2,8 +2,12 @@
  * Keep propagation intact: image/diagram/browser surfaces still own their input.
  */
 export function preventPagePinchZoom(document: Document): () => void {
-  const prevent = (event: Event) => { if (event.cancelable) event.preventDefault(); };
-  const wheel = (event: WheelEvent) => { if (event.ctrlKey) prevent(event); };
+  const prevent = (event: Event) => {
+    if (event.cancelable) event.preventDefault();
+  };
+  const wheel = (event: WheelEvent) => {
+    if (event.ctrlKey) prevent(event);
+  };
   const options = { capture: true, passive: false };
   document.addEventListener("wheel", wheel, options);
   document.addEventListener("gesturestart", prevent, options);

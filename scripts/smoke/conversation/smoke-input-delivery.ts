@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createServer } from "vite";
-const { chromium } = await import(
-  process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright"
-);
-const output =
-  process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-input-delivery";
+const { chromium } = await import(process.env.OPENCRAFT_PLAYWRIGHT_MODULE ?? "playwright");
+const output = process.env.OPENCRAFT_SMOKE_OUTPUT ?? "/tmp/opencraft-input-delivery";
 const vite = await createServer({
   configFile: false,
   root: process.cwd(),
@@ -63,30 +60,13 @@ try {
         await page.keyboard.press("Enter");
       }
       await page.getByText("已接收，本轮已停止", { exact: true }).waitFor();
-      assert.equal(
-        await page.locator("main").getAttribute("data-active"),
-        "none",
-      );
+      assert.equal(await page.locator("main").getAttribute("data-active"), "none");
       await page.getByRole("button", { name: "Deliver late reply" }).click();
-      assert.equal(
-        await page.locator("main").getAttribute("data-active"),
-        "none",
-      );
-      assert.equal(
-        await page.getByText("发送待确认", { exact: true }).count(),
-        0,
-      );
-      assert.equal(
-        await page.getByRole("textbox", { name: "Draft" }).inputValue(),
-        "保留这条草稿",
-      );
+      assert.equal(await page.locator("main").getAttribute("data-active"), "none");
+      assert.equal(await page.getByText("发送待确认", { exact: true }).count(), 0);
+      assert.equal(await page.getByRole("textbox", { name: "Draft" }).inputValue(), "保留这条草稿");
       assert.equal(await page.getByText("继续", { exact: true }).count(), 1);
-      assert.equal(
-        await page.evaluate(
-          () => document.documentElement.scrollWidth > innerWidth,
-        ),
-        false,
-      );
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
       await page.screenshot({
         path: `${output}/${touch ? "touch" : "desktop"}-${mode}.png`,
       });

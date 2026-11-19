@@ -55,8 +55,7 @@ export class UnixSocketGateway {
             } finally {
               pending--;
             }
-            if (!socket.destroyed)
-              socket.write(JSON.stringify(response) + "\n");
+            if (!socket.destroyed) socket.write(JSON.stringify(response) + "\n");
           })
           .catch(() => socket.destroy());
       }
@@ -66,8 +65,7 @@ export class UnixSocketGateway {
   }
   async close() {
     for (const socket of this.connections) socket.destroy();
-    if (this.server?.listening)
-      await new Promise((resolve) => this.server.close(resolve));
+    if (this.server?.listening) await new Promise((resolve) => this.server.close(resolve));
   }
 }
 
@@ -76,9 +74,7 @@ export function request(profile, message, timeoutMs = 5000) {
     const socket = net.connect(profile.socket);
     let buffer = "";
     socket.setEncoding("utf8");
-    socket.setTimeout(timeoutMs, () =>
-      socket.destroy(new Error("Runner request timed out")),
-    );
+    socket.setTimeout(timeoutMs, () => socket.destroy(new Error("Runner request timed out")));
     socket.on("connect", () => socket.write(JSON.stringify(message) + "\n"));
     socket.on("data", (chunk) => {
       buffer += chunk;
@@ -87,17 +83,14 @@ export function request(profile, message, timeoutMs = 5000) {
       socket.end();
       try {
         const response = JSON.parse(buffer.slice(0, at));
-        response.ok
-          ? resolve(response.result)
-          : reject(new Error(response.error));
+        response.ok ? resolve(response.result) : reject(new Error(response.error));
       } catch (error) {
         reject(error);
       }
     });
     socket.on("error", reject);
     socket.on("end", () => {
-      if (!buffer.includes("\n"))
-        reject(new Error("Runner closed before replying"));
+      if (!buffer.includes("\n")) reject(new Error("Runner closed before replying"));
     });
   });
 }

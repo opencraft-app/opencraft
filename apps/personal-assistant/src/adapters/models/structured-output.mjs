@@ -17,17 +17,13 @@ function object(properties, optional = []) {
   return {
     type: "object",
     properties: Object.fromEntries(
-      Object.entries(properties).map(([k, v]) => [
-        k,
-        optional.includes(k) ? either(v, { type: "null" }) : v,
-      ]),
+      Object.entries(properties).map(([k, v]) => [k, optional.includes(k) ? either(v, { type: "null" }) : v]),
     ),
     required: Object.keys(properties),
     additionalProperties: false,
   };
 }
-const variant = (kind, properties = {}, optional = []) =>
-  object({ kind: enumeration(kind), ...properties }, optional);
+const variant = (kind, properties = {}, optional = []) => object({ kind: enumeration(kind), ...properties }, optional);
 const refs = list(str);
 const attachment = object({ attachmentId: str, alt: str }, ["alt"]);
 const message = either(
@@ -68,10 +64,7 @@ const completion = object(
 );
 const replacementCompletion = object(
   Object.fromEntries(
-    Object.entries(completion.properties).map(([key, value]) => [
-      key,
-      value.anyOf.find((s) => s.type !== "null"),
-    ]),
+    Object.entries(completion.properties).map(([key, value]) => [key, value.anyOf.find((s) => s.type !== "null")]),
   ),
 );
 const schedule = either(
@@ -98,19 +91,9 @@ const routine = object(
     notify: enumeration("never", "always", "changed"),
     stopWhen: str,
   },
-  [
-    "startAt",
-    "intervalMs",
-    "schedule",
-    "expiresAt",
-    "maxRuns",
-    "notify",
-    "stopWhen",
-  ],
+  ["startAt", "intervalMs", "schedule", "expiresAt", "maxRuns", "notify", "stopWhen"],
 );
-const goalTask = object({ key: str, text: str, dependsOn: refs, completion }, [
-  "completion",
-]);
+const goalTask = object({ key: str, text: str, dependsOn: refs, completion }, ["completion"]);
 const goalDefinition = object(
   {
     objective: str,
@@ -149,14 +132,11 @@ const commands = [
   ...["goal.reopen", "goal.pause", "goal.resume", "goal.cancel"].map((kind) =>
     variant(kind, { goalId: str, expectedRevision: int }),
   ),
-  variant(
-    "goal.update",
-    { goalId: str, expectedRevision: int, priority: int, maxParallel: int },
-    ["priority", "maxParallel"],
-  ),
-  ...["instruct", "resume"].map((kind) =>
-    variant(kind, { workId: str, expectedRevision: int, text: str }),
-  ),
+  variant("goal.update", { goalId: str, expectedRevision: int, priority: int, maxParallel: int }, [
+    "priority",
+    "maxParallel",
+  ]),
+  ...["instruct", "resume"].map((kind) => variant(kind, { workId: str, expectedRevision: int, text: str })),
   variant("reply", { text: str }),
   variant("clarify", { text: str }),
   variant("delegate", { goal: goalText, completion }, ["completion"]),
@@ -192,9 +172,7 @@ const commands = [
     },
     ["scope", "project", "memoryKind"],
   ),
-  variant("project.create", { project: str, name: str, description: str }, [
-    "description",
-  ]),
+  variant("project.create", { project: str, name: str, description: str }, ["description"]),
   variant("project.join", { project: str }),
   variant("project.leave", { project: str }),
   variant("routine.create", { params: routine }),
@@ -248,9 +226,7 @@ const queries = Object.entries(queryFields).map(([name, fields]) => {
               limit: {
                 type: "integer",
                 minimum: 1,
-                maximum: read
-                  ? RECEPTION_LIMITS.readCharacters
-                  : RECEPTION_LIMITS.pageSize,
+                maximum: read ? RECEPTION_LIMITS.readCharacters : RECEPTION_LIMITS.pageSize,
               },
               [read ? "offset" : "after"]: read ? int : str,
             }
@@ -288,17 +264,15 @@ const schemas = {
       ...commands,
       ...queries,
       variant("batch", {
-        commands: list(
-          either(
-            ...commands.filter((c) => c.properties.kind.enum[0] !== "send"),
-          ),
-        ),
+        commands: list(either(...commands.filter((c) => c.properties.kind.enum[0] !== "send"))),
       }),
-      variant(
-        "deliver",
-        { text: str, message, finishRoutine: bool, goalPlan, goalReview },
-        ["text", "message", "finishRoutine", "goalPlan", "goalReview"],
-      ),
+      variant("deliver", { text: str, message, finishRoutine: bool, goalPlan, goalReview }, [
+        "text",
+        "message",
+        "finishRoutine",
+        "goalPlan",
+        "goalReview",
+      ]),
       variant("silent", { finishRoutine: bool }, ["finishRoutine"]),
       variant("continue", { goal: goalText }),
       variant("blocked", { text: str }),
@@ -307,27 +281,19 @@ const schemas = {
   "memory-propose": object({ changes: list(change) }),
   "memory-verify": object({ approved: bool }),
   "context-summary": object(
-    Object.fromEntries(
-      ["goals", "constraints", "decisions", "openItems"].map((k) => [
-        k,
-        list(contextItem),
-      ]),
-    ),
+    Object.fromEntries(["goals", "constraints", "decisions", "openItems"].map((k) => [k, list(contextItem)])),
   ),
 };
 function contractSchema(kind, input) {
-  if (!Object.hasOwn(schemas, kind))
-    throw new Error("Unsupported structured inference role");
+  if (!Object.hasOwn(schemas, kind)) throw new Error("Unsupported structured inference role");
   const schema = structuredClone(schemas[kind]);
   if (kind === "reception" && input !== undefined) {
     const continuation = new Set(["deliver", "silent", "continue", "blocked"]);
     const isReport = input.source?.kind === "execution-report";
-    schema.properties.proposal.anyOf = schema.properties.proposal.anyOf.filter(
-      (s) => {
-        const decision = s.properties.kind.enum[0];
-        return decision === "query" || continuation.has(decision) === isReport;
-      },
-    );
+    schema.properties.proposal.anyOf = schema.properties.proposal.anyOf.filter((s) => {
+      const decision = s.properties.kind.enum[0];
+      return decision === "query" || continuation.has(decision) === isReport;
+    });
   }
   return schema;
 }
@@ -341,37 +307,22 @@ function wireRecord(schema) {
   if (schema.type === "object")
     return {
       ...schema,
-      properties: Object.fromEntries(
-        Object.entries(schema.properties).map(([key, value]) => [
-          key,
-          wireRecord(value),
-        ]),
-      ),
+      properties: Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, wireRecord(value)])),
     };
-  if (schema.type === "array")
-    return { ...schema, items: wireRecord(schema.items) };
+  if (schema.type === "array") return { ...schema, items: wireRecord(schema.items) };
   return structuredClone(schema);
 }
 function wireUnion(options) {
-  const choices = [
-    ...new Map(options.map((s) => [JSON.stringify(s), s])).values(),
-  ];
+  const choices = [...new Map(options.map((s) => [JSON.stringify(s), s])).values()];
   if (choices.length === 1) return choices[0];
   const objects = choices.filter((s) => s.type === "object");
   if (objects.length > 1) {
-    const keys = [
-      ...new Set(objects.flatMap((s) => Object.keys(s.properties))),
-    ];
+    const keys = [...new Set(objects.flatMap((s) => Object.keys(s.properties)))];
     return wireUnion([
       {
         type: "object",
         properties: Object.fromEntries(
-          keys.map((key) => [
-            key,
-            wireUnion(
-              objects.map((s) => s.properties[key] ?? { type: "null" }),
-            ),
-          ]),
+          keys.map((key) => [key, wireUnion(objects.map((s) => s.properties[key] ?? { type: "null" }))]),
         ),
         required: keys,
         additionalProperties: false,
@@ -397,33 +348,25 @@ export function outputSchema(kind, input) {
 function receptionBranches(input) {
   return new Map(
     contractSchema("reception", input)
-      .properties.proposal.anyOf.filter(
-        (s) => s.properties.kind.enum[0] !== "batch",
-      )
+      .properties.proposal.anyOf.filter((s) => s.properties.kind.enum[0] !== "batch")
       .flatMap((s) => {
         const kind = s.properties.kind.enum[0];
         if (kind === "deliver") return deliveryBranches(s);
-        return [
-          [kind === "query" ? `query:${s.properties.name.enum[0]}` : kind, s],
-        ];
+        return [[kind === "query" ? `query:${s.properties.name.enum[0]}` : kind, s]];
       }),
   );
 }
 // ContinuationDecision permits text OR typed message, and plan OR review.
 // Select these shapes before generation rather than silently discarding one.
 function deliveryBranches(schema) {
-  const required = (field) =>
-    schema.properties[field].anyOf.find((s) => s.type !== "null");
+  const required = (field) => schema.properties[field].anyOf.find((s) => s.type !== "null");
   return ["text", "message"].flatMap((channel) =>
     [null, "goalPlan", "goalReview"].map((effect) => [
-      ["deliver", channel === "message" ? channel : null, effect]
-        .filter(Boolean)
-        .join(":"),
+      ["deliver", channel === "message" ? channel : null, effect].filter(Boolean).join(":"),
       object({
         kind: schema.properties.kind,
         finishRoutine: schema.properties.finishRoutine,
-        [channel]:
-          channel === "text" ? schema.properties.text : required(channel),
+        [channel]: channel === "text" ? schema.properties.text : required(channel),
         ...(effect ? { [effect]: required(effect) } : {}),
       }),
     ]),
@@ -446,11 +389,7 @@ export function decodeRoutes(text, input) {
     routes.length > (input?.targetWork ? 1 : 4) ||
     (routes.length > 1 &&
       routes.some(
-        (r) =>
-          r.startsWith("query:") ||
-          ["send", "deliver", "silent", "continue", "blocked"].includes(
-            r.split(":")[0],
-          ),
+        (r) => r.startsWith("query:") || ["send", "deliver", "silent", "continue", "blocked"].includes(r.split(":")[0]),
       ))
   )
     throw new StructuredOutputError("routing", {
@@ -465,11 +404,7 @@ export function selectedSchema(routes, input) {
   const branches = receptionBranches(input);
   return routes.length === 1
     ? object({ proposal: branches.get(routes[0]) })
-    : object(
-        Object.fromEntries(
-          routes.map((r, i) => [`command${i + 1}`, branches.get(r)]),
-        ),
-      );
+    : object(Object.fromEntries(routes.map((r, i) => [`command${i + 1}`, branches.get(r)])));
 }
 export function decodeSelected(text, routes, input) {
   const value = decodeContract(selectedSchema(routes, input), text);
@@ -491,10 +426,7 @@ function decodeContract(schema, text) {
     });
   }
   if (!validateCanonical(schema, value))
-    throw new StructuredOutputError(
-      "selected_contract",
-      schemaIssue(schema, value),
-    );
+    throw new StructuredOutputError("selected_contract", schemaIssue(schema, value));
   return omitNulls(value);
 }
 // Small validator for precisely this schema vocabulary; no repair or coercion.
@@ -509,8 +441,7 @@ export function validateOutput(schema, value) {
         typeof value === "string" &&
         value.length >= (schema.minLength ?? 0) &&
         value.length <= (schema.maxLength ?? Infinity) &&
-        (schema.pattern === undefined ||
-          new RegExp(schema.pattern, "u").test(value))
+        (schema.pattern === undefined || new RegExp(schema.pattern, "u").test(value))
       );
     case "integer":
       return (
@@ -521,10 +452,7 @@ export function validateOutput(schema, value) {
     case "boolean":
       return typeof value === "boolean";
     case "array":
-      return (
-        Array.isArray(value) &&
-        value.every((v) => validateOutput(schema.items, v))
-      );
+      return Array.isArray(value) && value.every((v) => validateOutput(schema.items, v));
     case "object":
       return (
         value !== null &&
@@ -532,9 +460,7 @@ export function validateOutput(schema, value) {
         !Array.isArray(value) &&
         schema.required.every((k) => Object.hasOwn(value, k)) &&
         Object.keys(value).every(
-          (k) =>
-            Object.hasOwn(schema.properties, k) &&
-            validateOutput(schema.properties[k], value[k]),
+          (k) => Object.hasOwn(schema.properties, k) && validateOutput(schema.properties[k], value[k]),
         )
       );
     default:
@@ -555,29 +481,18 @@ function omitNulls(value) {
 // Non-null fields belonging to a different branch remain invalid, as do unknown
 // fields. No coercion, guessed intent or command correction occurs here.
 function validateCanonical(schema, value) {
-  if (schema.anyOf)
-    return schema.anyOf.some((s) => validateCanonical(s, value));
+  if (schema.anyOf) return schema.anyOf.some((s) => validateCanonical(s, value));
   if (schema.type === "object")
     return (
       value !== null &&
       typeof value === "object" &&
       !Array.isArray(value) &&
-      schema.required.every(
-        (key) =>
-          Object.hasOwn(value, key) ||
-          validateOutput(schema.properties[key], null),
-      ) &&
+      schema.required.every((key) => Object.hasOwn(value, key) || validateOutput(schema.properties[key], null)) &&
       Object.keys(value).every(
-        (key) =>
-          Object.hasOwn(schema.properties, key) &&
-          validateCanonical(schema.properties[key], value[key]),
+        (key) => Object.hasOwn(schema.properties, key) && validateCanonical(schema.properties[key], value[key]),
       )
     );
-  if (schema.type === "array")
-    return (
-      Array.isArray(value) &&
-      value.every((v) => validateCanonical(schema.items, v))
-    );
+  if (schema.type === "array") return Array.isArray(value) && value.every((v) => validateCanonical(schema.items, v));
   return validateOutput(schema, value);
 }
 // Diagnostic-only traversal. Acceptance stays with the validators above. Paths
@@ -605,43 +520,27 @@ function schemaIssue(schema, value) {
         for (const key of ["kind", "name", "action", "type"]) {
           const tagged = branches.filter((b) => b.properties[key]?.enum);
           if (!tagged.length) continue;
-          const matches = tagged.filter((b) =>
-            b.properties[key].enum.includes(v[key]),
-          );
+          const matches = tagged.filter((b) => b.properties[key].enum.includes(v[key]));
           if (matches.length) branches = matches;
           else if (tagged.length === branches.length)
-            return issue(
-              Object.hasOwn(v, key) ? "enum" : "required",
-              `${path}.${key}`,
-            );
+            return issue(Object.hasOwn(v, key) ? "enum" : "required", `${path}.${key}`);
         }
       } else {
         branches = branches.filter((b) => b.type !== "null" || v === null);
       }
-      return branches.length
-        ? visit(branches[0], v, path, depth + 1)
-        : issue("union");
+      return branches.length ? visit(branches[0], v, path, depth + 1) : issue("union");
     }
     if (s.enum && !s.enum.includes(v)) return issue("enum");
     if (s.type === "object") {
-      if (v === null || typeof v !== "object" || Array.isArray(v))
-        return issue("type");
+      if (v === null || typeof v !== "object" || Array.isArray(v)) return issue("type");
       for (const key of s.required) {
         if (!Object.hasOwn(v, key) && !validateOutput(s.properties[key], null))
           return issue("required", `${path}.${key}`);
       }
       for (const key of Object.keys(v)) {
         if (!Object.hasOwn(s.properties, key))
-          return issue(
-            "unexpected",
-            `${path}.${names.has(key) ? key : "<unknown>"}`,
-          );
-        const found = visit(
-          s.properties[key],
-          v[key],
-          `${path}.${key}`,
-          depth + 1,
-        );
+          return issue("unexpected", `${path}.${names.has(key) ? key : "<unknown>"}`);
+        const found = visit(s.properties[key], v[key], `${path}.${key}`, depth + 1);
         if (found) return found;
       }
       return null;
@@ -656,11 +555,7 @@ function schemaIssue(schema, value) {
     }
     return validateOutput(s, v)
       ? null
-      : issue(
-          s.type === "string" && typeof v === "string"
-            ? "text_constraint"
-            : "type",
-        );
+      : issue(s.type === "string" && typeof v === "string" ? "text_constraint" : "type");
   };
   return visit(schema, value) ?? { code: "wire_shape", path: "$" };
 }
@@ -687,19 +582,10 @@ export function decodeOutput(kind, text, input) {
   // Accept canonical/older branch records too: newly introduced nullable slots
   // may be absent. Required fields, foreign non-null slots and unknown keys
   // still pass the exact tagged-union validator; nothing is inferred/coerced.
-  if (
-    !validateOutput(outputSchema(kind, input), value) &&
-    !validateCanonical(contract, value)
-  )
-    throw new StructuredOutputError(
-      "wire",
-      schemaIssue(contract, omitNulls(value)),
-    );
+  if (!validateOutput(outputSchema(kind, input), value) && !validateCanonical(contract, value))
+    throw new StructuredOutputError("wire", schemaIssue(contract, omitNulls(value)));
   const canonical = omitNulls(value);
   if (!validateCanonical(contract, canonical))
-    throw new StructuredOutputError(
-      "command_contract",
-      schemaIssue(contract, canonical),
-    );
+    throw new StructuredOutputError("command_contract", schemaIssue(contract, canonical));
   return kind === "reception" ? canonical.proposal : canonical;
 }

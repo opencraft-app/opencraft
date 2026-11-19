@@ -14,18 +14,12 @@ export class InputInbox {
       const previous = this.inputs.get(id),
         payload = { op, params };
       if (previous) {
-        if (previous.payload !== stable(payload))
-          throw new Error("Input id reused with different payload");
+        if (previous.payload !== stable(payload)) throw new Error("Input id reused with different payload");
         return { ...JSON.parse(previous.response), duplicate: true };
       }
       const response = apply();
       this.inputs.add(id, payload, response, this.now());
-      this.events.append(
-        "input.received",
-        response.workId,
-        { inputId: id, op },
-        this.now(),
-      );
+      this.events.append("input.received", response.workId, { inputId: id, op }, this.now());
       return response;
     });
   }

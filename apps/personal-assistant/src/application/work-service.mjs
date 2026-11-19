@@ -56,9 +56,7 @@ export class WorkService {
         error: null,
         origin_json: JSON.stringify(origin),
         delegation: this.scope.delegate(inputId, resources),
-        completion_json: JSON.stringify(
-          CompletionContract.create(message, completion),
-        ),
+        completion_json: JSON.stringify(CompletionContract.create(message, completion)),
       };
     this.r.works.add(w);
     const executionId = this.ledger.create(id, 1, inputId, request);
@@ -71,9 +69,7 @@ export class WorkService {
     return this.inbox.accept(
       inputId,
       "submit",
-      resources === undefined
-        ? params
-        : { ...params, capturedResources: resources, request },
+      resources === undefined ? params : { ...params, capturedResources: resources, request },
       () =>
         this.create(
           `w_${digest(inputId).slice(0, 24)}`,
@@ -90,155 +86,108 @@ export class WorkService {
   }
   amend(inputId, params, request = null) {
     requireText(params.text, "text");
-    return this.inbox.accept(
-      inputId,
-      "amend",
-      request ? { ...params, request } : params,
-      () => {
-        this.assertEditable(params.workId);
-        const current = this.require(params.workId),
-          previousRequest = this.ledger.get(current.record)?.request_json,
-          w = current.amend(
-            params.text,
-            params.expectedRevision,
-            this.now(),
-            params.completion,
-          ),
-          executionId = `${w.id}:r${w.revision}`;
-        this.ledger.retire(w.id, "superseded");
-        this.outcomes.withdraw(w.id);
-        this.interactions.retire(w.id, "superseded");
-        this.r.works.save(w);
-        const previous = previousRequest ? JSON.parse(previousRequest) : null;
-        const nextRequest = request
+    return this.inbox.accept(inputId, "amend", request ? { ...params, request } : params, () => {
+      this.assertEditable(params.workId);
+      const current = this.require(params.workId),
+        previousRequest = this.ledger.get(current.record)?.request_json,
+        w = current.amend(params.text, params.expectedRevision, this.now(), params.completion),
+        executionId = `${w.id}:r${w.revision}`;
+      this.ledger.retire(w.id, "superseded");
+      this.outcomes.withdraw(w.id);
+      this.interactions.retire(w.id, "superseded");
+      this.r.works.save(w);
+      const previous = previousRequest ? JSON.parse(previousRequest) : null;
+      const nextRequest = request
+        ? {
+            ...request,
+            ...(previous?.original
+              ? {
+                  original: previous.original,
+                  latest:
+                    request.original?.inputId !== previous.original.inputId
+                      ? request.original
+                      : (request.latest ?? previous.latest),
+                }
+              : {}),
+          }
+        : previous
           ? {
-              ...request,
-              ...(previous?.original
-                ? {
-                    original: previous.original,
-                    latest:
-                      request.original?.inputId !== previous.original.inputId
-                        ? request.original
-                        : (request.latest ?? previous.latest),
-                  }
-                : {}),
+              ...previous,
+              continuations: 0,
+              latest: { inputId, text: params.text },
             }
-          : previous
-            ? {
-                ...previous,
-                continuations: 0,
-                latest: { inputId, text: params.text },
-              }
-            : null;
-        this.ledger.create(w.id, w.revision, inputId, nextRequest);
-        this.r.works.activate(w.id, executionId);
-        this.r.events.append(
-          "work.amended",
-          w.id,
-          { revision: w.revision, inputId },
-          this.now(),
-        );
-        return {
-          workId: w.id,
-          executionId,
-          revision: w.revision,
-          status: w.status,
-        };
-      },
-    );
+          : null;
+      this.ledger.create(w.id, w.revision, inputId, nextRequest);
+      this.r.works.activate(w.id, executionId);
+      this.r.events.append("work.amended", w.id, { revision: w.revision, inputId }, this.now());
+      return {
+        workId: w.id,
+        executionId,
+        revision: w.revision,
+        status: w.status,
+      };
+    });
   }
   continue(inputId, params, request = null) {
     requireText(params.text, "continuation text");
-    return this.inbox.accept(
-      inputId,
-      "work.continue",
-      { ...params, request },
-      () => {
-        this.assertEditable(params.workId);
-        const w = this.require(params.workId).record;
-        if (
-          !Number.isSafeInteger(params.expectedRevision) ||
-          params.expectedRevision < 1
-        )
-          throw new Error("Work revision is required");
-        requireRevision(params.expectedRevision, w.revision, "work");
-        if (
-          params.expectedExecutionId &&
-          params.expectedExecutionId !== w.active_execution_id
-        )
-          throw new Error("Execution has changed");
-        if (
-          ![
-            "awaiting_review",
-            "blocked",
-            "completed",
-            "awaiting_delivery",
-          ].includes(w.status)
-        )
-          throw new Error("Work must settle before continuation");
-        const old = this.ledger.get(w);
-        // A failed process with unresolved host effects cannot be silently adopted.
-        if (
-          this.r.executions
-            .nativeCalls(old.id)
-            .some((c) => !c.tool.startsWith("__") && c.state !== "completed")
-        )
-          throw new Error("Unresolved native effects require reconciliation");
-        const previous = old.request_json ? JSON.parse(old.request_json) : {};
-        const next = {
-          ...previous,
-          ...request,
-          continuation: { inputId, text: params.text },
-          continuations: request?.continuations ?? 0,
-        };
-        if (next.continuations > 3)
-          throw new Error(
-            "Automatic continuation limit reached; amend the work explicitly",
-          );
-        const executionId = this.ledger.continue(w, inputId, next);
-        this.r.works.activate(w.id, executionId);
-        this.outcomes.withdraw(w.id);
-        // Execution ownership changes; same-requirement user answers remain facts.
-        this.interactions.retire(w.id, "superseded", { preserveAnswers: true });
-        this.r.works.save({
-          ...w,
-          status: "queued",
-          error: null,
-          updated_at: this.now(),
-        });
-        this.r.events.append(
-          "work.continued",
-          w.id,
-          { executionId, predecessorId: old.id, revision: w.revision },
-          this.now(),
-        );
-        return {
-          workId: w.id,
-          revision: w.revision,
-          executionId,
-          status: "queued",
-        };
-      },
-    );
+    return this.inbox.accept(inputId, "work.continue", { ...params, request }, () => {
+      this.assertEditable(params.workId);
+      const w = this.require(params.workId).record;
+      if (!Number.isSafeInteger(params.expectedRevision) || params.expectedRevision < 1)
+        throw new Error("Work revision is required");
+      requireRevision(params.expectedRevision, w.revision, "work");
+      if (params.expectedExecutionId && params.expectedExecutionId !== w.active_execution_id)
+        throw new Error("Execution has changed");
+      if (!["awaiting_review", "blocked", "completed", "awaiting_delivery"].includes(w.status))
+        throw new Error("Work must settle before continuation");
+      const old = this.ledger.get(w);
+      // A failed process with unresolved host effects cannot be silently adopted.
+      if (this.r.executions.nativeCalls(old.id).some((c) => !c.tool.startsWith("__") && c.state !== "completed"))
+        throw new Error("Unresolved native effects require reconciliation");
+      const previous = old.request_json ? JSON.parse(old.request_json) : {};
+      const next = {
+        ...previous,
+        ...request,
+        continuation: { inputId, text: params.text },
+        continuations: request?.continuations ?? 0,
+      };
+      if (next.continuations > 3) throw new Error("Automatic continuation limit reached; amend the work explicitly");
+      const executionId = this.ledger.continue(w, inputId, next);
+      this.r.works.activate(w.id, executionId);
+      this.outcomes.withdraw(w.id);
+      // Execution ownership changes; same-requirement user answers remain facts.
+      this.interactions.retire(w.id, "superseded", { preserveAnswers: true });
+      this.r.works.save({
+        ...w,
+        status: "queued",
+        error: null,
+        updated_at: this.now(),
+      });
+      this.r.events.append(
+        "work.continued",
+        w.id,
+        { executionId, predecessorId: old.id, revision: w.revision },
+        this.now(),
+      );
+      return {
+        workId: w.id,
+        revision: w.revision,
+        executionId,
+        status: "queued",
+      };
+    });
   }
   instruct(inputId, params) {
     requireText(params.text, "instruction", 10000);
     return this.inbox.accept(inputId, "work.instruct", params, () => {
       this.assertEditable(params.workId);
       const w = this.require(params.workId).record;
-      if (
-        !Number.isSafeInteger(params.expectedRevision) ||
-        params.expectedRevision < 1
-      )
+      if (!Number.isSafeInteger(params.expectedRevision) || params.expectedRevision < 1)
         throw new Error("Work revision is required");
       requireRevision(params.expectedRevision, w.revision, "work");
-      if (w.status === "cancelled")
-        throw new Error("Cancelled work cannot receive instructions");
+      if (w.status === "cancelled") throw new Error("Cancelled work cannot receive instructions");
       const pending = this.ledger.directives(w.id, "accepted");
-      if (
-        pending.length >= 32 ||
-        pending.reduce((n, d) => n + d.text.length, params.text.length) > 24000
-      )
+      if (pending.length >= 32 || pending.reduce((n, d) => n + d.text.length, params.text.length) > 24000)
         throw new Error("Pending instruction limit reached");
       const directiveId = `directive:${inputId}`;
       this.ledger.acceptDirective({
@@ -248,14 +197,7 @@ export class WorkService {
         text: params.text,
         at: this.now(),
       });
-      if (
-        [
-          "awaiting_review",
-          "blocked",
-          "completed",
-          "awaiting_delivery",
-        ].includes(w.status)
-      )
+      if (["awaiting_review", "blocked", "completed", "awaiting_delivery"].includes(w.status))
         this.continue(`instruct:${digest(inputId)}`, {
           workId: w.id,
           expectedRevision: w.revision,
@@ -273,8 +215,7 @@ export class WorkService {
   cancelWork(id, expectedRevision) {
     const current = this.require(id);
     requireRevision(expectedRevision, current.record.revision, "work");
-    if (current.record.status === "completed")
-      return { workId: id, status: "completed", alreadyCompleted: true };
+    if (current.record.status === "completed") return { workId: id, status: "completed", alreadyCompleted: true };
     this.assertEditable(id);
     this.r.works.save(current.cancel(this.now()));
     this.ledger.retire(id, "cancelled");
@@ -284,17 +225,12 @@ export class WorkService {
     return { workId: id, status: "cancelled" };
   }
   cancel(inputId, params) {
-    return this.inbox.accept(inputId, "cancel", params, () =>
-      this.cancelWork(params.workId, params.expectedRevision),
-    );
+    return this.inbox.accept(inputId, "cancel", params, () => this.cancelWork(params.workId, params.expectedRevision));
   }
   assertCurrent(work) {
     const current = this.require(work.id);
     current.assertCurrent(work);
-    if (
-      work.active_execution_id &&
-      work.active_execution_id !== current.record.active_execution_id
-    )
+    if (work.active_execution_id && work.active_execution_id !== current.record.active_execution_id)
       throw new Error("Execution no longer owns this work");
     if (work.routine_id) {
       const r = this.r.routines.get(work.routine_id);
@@ -312,9 +248,7 @@ export class WorkService {
     this.r.works.save(new WorkItem(current).resultReady(this.now()));
   }
   awaitingReview(work) {
-    this.r.works.save(
-      new WorkItem(this.assertCurrent(work)).awaitingReview(this.now()),
-    );
+    this.r.works.save(new WorkItem(this.assertCurrent(work)).awaitingReview(this.now()));
   }
   waitForInput(work) {
     const current = this.assertCurrent(work);
@@ -333,15 +267,8 @@ export class WorkService {
     if (
       !current ||
       current.revision !== work.revision ||
-      (work.active_execution_id &&
-        work.active_execution_id !== current.active_execution_id) ||
-      ![
-        "queued",
-        "running",
-        "blocked",
-        "waiting_input",
-        "awaiting_review",
-      ].includes(current.status)
+      (work.active_execution_id && work.active_execution_id !== current.active_execution_id) ||
+      !["queued", "running", "blocked", "waiting_input", "awaiting_review"].includes(current.status)
     )
       return false;
     this.r.works.save({

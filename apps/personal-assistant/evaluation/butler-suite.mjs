@@ -13,8 +13,7 @@ import { complexCases } from "./butler-complex-cases.mjs";
 const root = resolve(import.meta.dirname, "..");
 export function summarize(results, selected) {
   const counts = { passed: 0, failed: 0, timeout: 0, not_run: 0 };
-  for (const c of selected)
-    counts[results.find((r) => r.id === c.id)?.state ?? "not_run"]++;
+  for (const c of selected) counts[results.find((r) => r.id === c.id)?.state ?? "not_run"]++;
   return {
     counts,
     total: selected.length,
@@ -24,8 +23,7 @@ export function summarize(results, selected) {
 }
 const hash = (data) => createHash("sha256").update(data).digest("hex");
 export function selectCases({ only, group = "all" } = {}) {
-  if (!["all", "core", "extended", "complex"].includes(group))
-    throw new Error("Unknown group");
+  if (!["all", "core", "extended", "complex"].includes(group)) throw new Error("Unknown group");
   if (only && group !== "all") throw new Error("Use either case or group");
   const selected = only
     ? cases.filter((c) => c.id === only)
@@ -48,27 +46,14 @@ export async function runSuite({
   timeoutMs = 240000,
   failureLimit = 2,
 }) {
-  if (!["fixture", "model"].includes(mode))
-    throw new Error("mode must be fixture or model");
+  if (!["fixture", "model"].includes(mode)) throw new Error("mode must be fixture or model");
   const selected = selectCases({ only, group });
-  if (
-    !Number.isSafeInteger(timeoutMs) ||
-    timeoutMs < 1000 ||
-    timeoutMs > 900000
-  )
-    throw new Error("Invalid timeout-ms");
-  if (
-    !Number.isSafeInteger(failureLimit) ||
-    failureLimit < 1 ||
-    failureLimit > cases.length
-  )
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 900000) throw new Error("Invalid timeout-ms");
+  if (!Number.isSafeInteger(failureLimit) || failureLimit < 1 || failureLimit > cases.length)
     throw new Error("Invalid failure-limit");
   let harnesses;
   if (mode === "model") {
-    if (!modelProfile)
-      throw new Error(
-        "Model mode requires --model-profile; no implicit credentials",
-      );
+    if (!modelProfile) throw new Error("Model mode requires --model-profile; no implicit credentials");
     const source = loadProfile(modelProfile);
     if (
       source.config.mode !== "model" ||
@@ -77,27 +62,16 @@ export async function runSuite({
     )
       throw new Error("Explicit all-Codex model profile required");
     harnesses = source.config.harnesses;
-  } else if (modelProfile)
-    throw new Error("Fixture mode does not accept model credentials");
+  } else if (modelProfile) throw new Error("Fixture mode does not accept model credentials");
   const files = execFileSync(
     "git",
-    [
-      "ls-files",
-      "-co",
-      "--exclude-standard",
-      "src",
-      "bin",
-      "evaluation/*.mjs",
-      "package.json",
-      "package-lock.json",
-    ],
+    ["ls-files", "-co", "--exclude-standard", "src", "bin", "evaluation/*.mjs", "package.json", "package-lock.json"],
     { cwd: root, encoding: "utf8" },
   )
     .trim()
     .split("\n");
   const fingerprints = {};
-  for (const path of [...new Set(files)].sort())
-    fingerprints[path] = hash(await readFile(join(root, path)));
+  for (const path of [...new Set(files)].sort()) fingerprints[path] = hash(await readFile(join(root, path)));
   const plan = {
     suite: "synthetic-butler-v5",
     group: only ? "single" : (group ?? "all"),
@@ -139,18 +113,13 @@ export async function runSuite({
     memoryLearningEnabled: false,
     concurrency: 2,
     caseConcurrency: 1,
-    retryPolicy:
-      "No evaluator retry or corrective hints; original production retries remain",
+    retryPolicy: "No evaluator retry or corrective hints; original production retries remain",
     nativeProfileIsolation: true,
     runPolicy: { modelTimeoutMs: 60000, workTimeoutMs: 120000, maxSteps: 16 },
   };
   output = resolve(output);
   await mkdir(output, { mode: 0o700 });
-  await writeFile(
-    join(output, "plan.json"),
-    JSON.stringify(plan, null, 2) + "\n",
-    { mode: 0o600 },
-  );
+  await writeFile(join(output, "plan.json"), JSON.stringify(plan, null, 2) + "\n", { mode: 0o600 });
   const results = [];
   let failures = 0;
   for (const c of selected) {
@@ -165,9 +134,7 @@ export async function runSuite({
     console.log(JSON.stringify({ case: c.id, state: "started", mode }));
     const outcome = await new Promise((resolveRun) => {
       const env = Object.fromEntries(
-        Object.entries(process.env).filter(([k]) =>
-          ["PATH", "HOME", "TMPDIR", "LANG", "TZ"].includes(k),
-        ),
+        Object.entries(process.env).filter(([k]) => ["PATH", "HOME", "TMPDIR", "LANG", "TZ"].includes(k)),
       );
       const child = fork(join(import.meta.dirname, "butler-worker.mjs"), [], {
         cwd: root,
@@ -223,24 +190,16 @@ export async function runSuite({
     else if (outcome.state === "passed") failures = 0;
     await writeFile(
       join(output, "summary.json"),
-      JSON.stringify({ ...summarize(results, selected), results }, null, 2) +
-        "\n",
+      JSON.stringify({ ...summarize(results, selected), results }, null, 2) + "\n",
       { mode: 0o600 },
     );
     console.log(JSON.stringify({ case: c.id, state: outcome.state }));
   }
   const summary = { ...summarize(results, selected), results };
-  await writeFile(
-    join(output, "summary.json"),
-    JSON.stringify(summary, null, 2) + "\n",
-    { mode: 0o600 },
-  );
+  await writeFile(join(output, "summary.json"), JSON.stringify(summary, null, 2) + "\n", { mode: 0o600 });
   return summary;
 }
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-) {
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { values: v } = parseArgs({
     options: {
       mode: { type: "string", default: "fixture" },

@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { sidebarAnchoredScrollTop } from "../../apps/workbench-web/src/components/use-sidebar-accordion";
-const input = { scrollTop: 350, maxScrollTop: 2000, headingTop: 300, headingHeight: 40,
-  anchorTop: 500, viewportTop: 100, viewportBottom: 800, readingRoom: 44 };
+const input = {
+  scrollTop: 350,
+  maxScrollTop: 2000,
+  headingTop: 300,
+  headingHeight: 40,
+  anchorTop: 500,
+  viewportTop: 100,
+  viewportBottom: 800,
+  readingRoom: 44,
+};
 test("collapse above the activated heading is compensated without adding a spacer", () => {
   assert.equal(sidebarAnchoredScrollTop(input), 150);
 });
@@ -25,5 +33,8 @@ test("a short viewport still keeps its heading at the top", () => {
 });
 
 test("the shared safe viewport excludes floating footer clearance", () => {
-  assert.equal(sidebarAnchoredScrollTop({ ...input, headingTop: 720, anchorTop: 720, viewportTop: 120, viewportBottom: 700 }), 454);
+  assert.equal(
+    sidebarAnchoredScrollTop({ ...input, headingTop: 720, anchorTop: 720, viewportTop: 120, viewportBottom: 700 }),
+    454,
+  );
 });

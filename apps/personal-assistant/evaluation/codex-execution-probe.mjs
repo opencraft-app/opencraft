@@ -1,14 +1,7 @@
 // Explicit opt-in real model smoke; synthetic work only, no external delivery.
 import assert from "node:assert/strict";
 import { parseArgs } from "node:util";
-import {
-  mkdir,
-  writeFile,
-  readdir,
-  readFile,
-  mkdtemp,
-  cp,
-} from "node:fs/promises";
+import { mkdir, writeFile, readdir, readFile, mkdtemp, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -25,9 +18,7 @@ const { values } = parseArgs({
   },
 });
 if (!values["codex-config"] || !values.output)
-  throw new Error(
-    "Required: --codex-config PRIVATE_JSON --output NEW_DIRECTORY",
-  );
+  throw new Error("Required: --codex-config PRIVATE_JSON --output NEW_DIRECTORY");
 const selected = await readCodexConfiguration(values["codex-config"]);
 const output = resolve(values.output);
 await mkdir(output, { mode: 0o700 });
@@ -52,8 +43,7 @@ const report = {
   benchmarkScore: null,
   profileDirectory: directory,
 };
-const call = (op, params = {}, id = crypto.randomUUID()) =>
-  request(profile, { op, params, id });
+const call = (op, params = {}, id = crypto.randomUUID()) => request(profile, { op, params, id });
 async function waitFor(workId, predicate) {
   const deadline = Date.now() + 180000;
   while (Date.now() < deadline) {
@@ -83,16 +73,11 @@ try {
     for (;;) {
       const turn = await call("turn", { inputId });
       report.nativeReceptionTurn = turn;
-      if (turn.status === "blocked")
-        throw new Error("Native reception blocked");
+      if (turn.status === "blocked") throw new Error("Native reception blocked");
       if (turn.status === "settled") {
         report.nativeReceptionTurn = turn;
         report.receptionTurns.push(turn);
-        if (
-          !turn.work_id &&
-          JSON.parse(turn.decision_json).kind === "clarify" &&
-          report.receptionTurns.length === 1
-        ) {
+        if (!turn.work_id && JSON.parse(turn.decision_json).kind === "clarify" && report.receptionTurns.length === 1) {
           inputId = "native-execution-confirmation";
           await call(
             "say",
@@ -103,23 +88,16 @@ try {
           );
           continue;
         }
-        assert.ok(
-          turn.work_id,
-          "The real native assistant must delegate this task",
-        );
+        assert.ok(turn.work_id, "The real native assistant must delegate this task");
         workId = turn.work_id;
         report.nativeReceptionDelegated = true;
         break;
       }
-      if (Date.now() > deadline)
-        throw new Error("Native reception deadline exceeded");
+      if (Date.now() > deadline) throw new Error("Native reception deadline exceeded");
       await delay(100);
     }
   }
-  const pending = await waitFor(
-    workId,
-    (d) => d.work.status === "waiting_input",
-  );
+  const pending = await waitFor(workId, (d) => d.work.status === "waiting_input");
   const original = pending.executions[0].conversation_id;
   assert.equal(pending.interactions.length, 1);
   await runner.close();
@@ -142,14 +120,9 @@ try {
   assert.equal(done.interactions[0].state, "answered");
   assert.equal(done.results.length, 1);
   assert.equal(done.deliveries.length, 1);
-  const artifacts = (await readdir(join(directory, "artifacts"))).filter(
-    (name) => name.endsWith(".md"),
-  );
+  const artifacts = (await readdir(join(directory, "artifacts"))).filter((name) => name.endsWith(".md"));
   assert.equal(artifacts.length, 1);
-  const note = await readFile(
-    join(directory, "artifacts", artifacts[0]),
-    "utf8",
-  );
+  const note = await readFile(join(directory, "artifacts", artifacts[0]), "utf8");
   assert.match(note, /week/i);
   report.note = note;
   report.artifactCount = artifacts.length;
@@ -187,11 +160,7 @@ try {
       force: false,
     });
     report.finishedAt = new Date().toISOString();
-    await writeFile(
-      join(output, "report.json"),
-      JSON.stringify(report, null, 2) + "\n",
-      { flag: "wx", mode: 0o600 },
-    );
+    await writeFile(join(output, "report.json"), JSON.stringify(report, null, 2) + "\n", { flag: "wx", mode: 0o600 });
   }
 }
 console.log(

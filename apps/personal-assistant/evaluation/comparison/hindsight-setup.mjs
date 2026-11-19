@@ -3,30 +3,21 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { service, rpc } from "./processes.mjs";
 const lab = resolve(import.meta.dirname, "../.."),
   root = resolve(lab, ".."),
-  out = resolve(
-    process.argv[2] ?? join(lab, "evidence/hindsight-20261110/setup-v1"),
-  );
+  out = resolve(process.argv[2] ?? join(lab, "evidence/hindsight-20261110/setup-v1"));
 await mkdir(out, { recursive: true });
 const services = [],
   workers = [];
 try {
   const bridge = await service(
     "/opt/opencraft/bin/node",
-    [
-      join(import.meta.dirname, "bridge.mjs"),
-      join(root, ".private/tokenhub-hy4-nothink-codex.json"),
-      out,
-    ],
+    [join(import.meta.dirname, "bridge.mjs"), join(root, ".private/tokenhub-hy4-nothink-codex.json"), out],
     { cwd: lab, log: join(out, "bridge.log") },
   );
   services.push(bridge);
   console.log("bridge", bridge.info);
   const embed = await service(
     join(root, ".benchmark-tools/hy-env/bin/python"),
-    [
-      join(import.meta.dirname, "embedding-server.py"),
-      join(root, ".benchmark-tools/embedding-cache"),
-    ],
+    [join(import.meta.dirname, "embedding-server.py"), join(root, ".benchmark-tools/embedding-cache")],
     {
       cwd: lab,
       log: join(out, "embedding.log"),
@@ -44,10 +35,7 @@ try {
         log: join(out, "hindsight.log"),
         env: {
           HOME: join(out, "home"),
-          LD_PRELOAD: join(
-            root,
-            ".benchmark-tools/nss/lib/usr/lib/x86_64-linux-gnu/libnss_wrapper.so",
-          ),
+          LD_PRELOAD: join(root, ".benchmark-tools/nss/lib/usr/lib/x86_64-linux-gnu/libnss_wrapper.so"),
           NSS_WRAPPER_PASSWD: join(root, ".benchmark-tools/nss/passwd"),
           NSS_WRAPPER_GROUP: join(root, ".benchmark-tools/nss/group"),
         },
@@ -70,8 +58,7 @@ try {
       messages: [
         {
           role: "user",
-          content:
-            "I prefer jasmine tea, and I do not drink coffee because caffeine keeps me awake.",
+          content: "I prefer jasmine tea, and I do not drink coffee because caffeine keeps me awake.",
         },
         {
           role: "assistant",
@@ -86,10 +73,7 @@ try {
       query: "What drink do I prefer?",
     });
     record.snapshot = await worker.call({ op: "snapshot" });
-    await writeFile(
-      join(out, name + "-probe.json"),
-      JSON.stringify(record, null, 2),
-    );
+    await writeFile(join(out, name + "-probe.json"), JSON.stringify(record, null, 2));
     console.log(name, "add/search/snapshot completed");
     await worker.call({ op: "close" });
     await worker.close();

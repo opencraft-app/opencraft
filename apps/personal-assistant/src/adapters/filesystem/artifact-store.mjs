@@ -14,10 +14,7 @@ export class LocalArtifactStore {
       bytes: Buffer.byteLength(body),
       ...(this.attachments
         ? {
-            attachment: this.attachments.importBytes(
-              `${digest(executionId)}.md`,
-              Buffer.from(body),
-            ),
+            attachment: this.attachments.importBytes(`${digest(executionId)}.md`, Buffer.from(body)),
           }
         : {}),
     };

@@ -3,10 +3,7 @@ import { mkdir, writeFile, mkdtemp, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import {
-  readModelConfiguration,
-  readCodexConfiguration,
-} from "./longmemeval.mjs";
+import { readModelConfiguration, readCodexConfiguration } from "./longmemeval.mjs";
 import { initProfile, loadProfile } from "../src/adapters/local/profile.mjs";
 import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { request } from "../src/adapters/local/unix-socket.mjs";
@@ -19,16 +16,10 @@ const { values: v } = parseArgs({
   },
 });
 if (!v["model-config"] === !v["codex-config"] || !v.output)
-  throw new Error(
-    "Expected exactly one --model-config or --codex-config and --output NEW_DIR",
-  );
-const harnesses = v["codex-config"]
-  ? await readCodexConfiguration(v["codex-config"])
-  : undefined;
+  throw new Error("Expected exactly one --model-config or --codex-config and --output NEW_DIR");
+const harnesses = v["codex-config"] ? await readCodexConfiguration(v["codex-config"]) : undefined;
 if (harnesses) harnesses.execution = "codex";
-const config = v["model-config"]
-  ? await readModelConfiguration(v["model-config"])
-  : harnesses.codex;
+const config = v["model-config"] ? await readModelConfiguration(v["model-config"]) : harnesses.codex;
 const variable = {
   deepseek: "DEEPSEEK_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
@@ -43,11 +34,11 @@ const model = {
 };
 const directory = resolve(v.output);
 await mkdir(directory, { mode: 0o700 });
-const profile = initProfile(
-  await mkdtemp(join(tmpdir(), "sa-lifecycle-")),
-  "synthetic-lifecycle-human",
-  { mode: "model", ...(harnesses ? { harnesses } : { model }), concurrency: 1 },
-);
+const profile = initProfile(await mkdtemp(join(tmpdir(), "sa-lifecycle-")), "synthetic-lifecycle-human", {
+  mode: "model",
+  ...(harnesses ? { harnesses } : { model }),
+  concurrency: 1,
+});
 const report = {
   schemaVersion: 1,
   model,
@@ -82,8 +73,7 @@ try {
       if (["settled", "blocked"].includes(turn.status)) break;
       await delay(100);
     }
-    if (!["settled", "blocked"].includes(turn?.status))
-      throw new Error("Lifecycle turn timed out");
+    if (!["settled", "blocked"].includes(turn?.status)) throw new Error("Lifecycle turn timed out");
     const memories = await request(profile, {
       op: "memory.list",
       id: "memories-" + id,
@@ -99,30 +89,17 @@ try {
       memoryCatalog: runner.app.memory.catalog(),
       elapsedMs: Date.now() - start,
     });
-    if (i === 0)
-      report.mechanisms.rememberStored = active.some((m) =>
-        m.value?.includes("Kyoto"),
-      );
+    if (i === 0) report.mechanisms.rememberStored = active.some((m) => m.value?.includes("Kyoto"));
     if (i === 1)
       report.mechanisms.correctionStored =
-        active.some((m) => m.value?.includes("Sapporo")) &&
-        !active.some((m) => m.value?.includes("Kyoto"));
+        active.some((m) => m.value?.includes("Sapporo")) && !active.some((m) => m.value?.includes("Kyoto"));
     if (i === 2) {
-      report.mechanisms.activeMemoryForgotten = !active.some((m) =>
-        /Kyoto|Sapporo/.test(m.value ?? ""),
-      );
-      report.mechanisms.forgottenTombstonePreserved = memories.some(
-        (m) => m.deleted,
-      );
+      report.mechanisms.activeMemoryForgotten = !active.some((m) => /Kyoto|Sapporo/.test(m.value ?? ""));
+      report.mechanisms.forgottenTombstonePreserved = memories.some((m) => m.deleted);
     }
-    if (i === 3)
-      report.mechanisms.forgottenValueMentionedInReply = /Sapporo|Kyoto/i.test(
-        turn.reply_text ?? "",
-      );
-    if (turn.status === "blocked")
-      throw new Error("Original assistant blocked the lifecycle turn");
-    if (turn.work_id)
-      throw new Error("Assistant delegated work instead of a memory operation");
+    if (i === 3) report.mechanisms.forgottenValueMentionedInReply = /Sapporo|Kyoto/i.test(turn.reply_text ?? "");
+    if (turn.status === "blocked") throw new Error("Original assistant blocked the lifecycle turn");
+    if (turn.work_id) throw new Error("Assistant delegated work instead of a memory operation");
     if (i === 2) {
       await runner.close();
       runner = await LocalRunner.open(loadProfile(profile.path));
@@ -141,15 +118,11 @@ try {
     id: "usage-report",
     params: { limit: 100 },
   });
-  report.passed = [
-    "rememberStored",
-    "correctionStored",
-    "activeMemoryForgotten",
-    "forgottenTombstonePreserved",
-  ].every((k) => report.mechanisms[k] === true);
+  report.passed = ["rememberStored", "correctionStored", "activeMemoryForgotten", "forgottenTombstonePreserved"].every(
+    (k) => report.mechanisms[k] === true,
+  );
   if (!report.passed) process.exitCode = 1;
-  report.replyDisclosureContract =
-    "observed-separately-history-retained-no-physical-erasure-claim";
+  report.replyDisclosureContract = "observed-separately-history-retained-no-physical-erasure-claim";
 } catch (error) {
   report.passed = false;
   report.error = String(error.message).split(config.apiKey).join("[redacted]");
@@ -158,9 +131,7 @@ try {
   try {
     await runner?.close();
   } catch (error) {
-    report.closeError = String(error.message)
-      .split(config.apiKey)
-      .join("[redacted]");
+    report.closeError = String(error.message).split(config.apiKey).join("[redacted]");
     process.exitCode = 1;
   }
   report.finishedAt = new Date().toISOString();
@@ -169,11 +140,7 @@ try {
     errorOnExist: true,
     force: false,
   });
-  await writeFile(
-    join(directory, "report.json"),
-    JSON.stringify(report, null, 2) + "\n",
-    { mode: 0o600 },
-  );
+  await writeFile(join(directory, "report.json"), JSON.stringify(report, null, 2) + "\n", { mode: 0o600 });
   console.log(
     JSON.stringify({
       directory,

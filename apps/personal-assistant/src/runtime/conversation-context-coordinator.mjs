@@ -26,9 +26,7 @@ export class ConversationContextCoordinator {
   }
   async prepare(turn, signal) {
     return this.telemetry
-      ? this.telemetry.run("context.prepare", { "app.phase": "summary" }, () =>
-          this.prepareAttempt(turn, signal),
-        )
+      ? this.telemetry.run("context.prepare", { "app.phase": "summary" }, () => this.prepareAttempt(turn, signal))
       : this.prepareAttempt(turn, signal);
   }
   async prepareAttempt(turn, signal) {

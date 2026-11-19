@@ -236,7 +236,7 @@
   [role="alert"] { color: var(--color-status-danger); }
   .assistant-memory-latest { padding: 16px; border: 1px solid var(--color-border-default); border-radius: var(--radius-md); margin-block: 12px; }
 }
-@media (hover: hover) { .assistant-memory-item:not(:disabled):hover { background: var(--color-bg-hover); border-radius: var(--radius-md); } }
+@include interaction.hover-capable { .assistant-memory-item:not(:disabled):hover { background: var(--color-bg-hover); border-radius: var(--radius-md); } }
 // Container size controls allocation, not touch capability. Shared controls own hit targets.
 @container assistant-card (max-width: 660px) {
   .people-assistant--memory > .people-assistant-summary { padding: 12px; gap: 4px; grid-template-columns: 28px minmax(0, 1fr) auto auto auto; }
@@ -332,7 +332,8 @@
   // ObjectRowButton's quiet hover has :not(:disabled):not(:active) specificity.
   // Keep route selection above that shared reset, even when lazy CSS loads later.
   .people-stream .people-group.ui-object-row-button[aria-current="page"] {
-    &, &:hover:not(:disabled):not(:active) { background: var(--color-background-navigation-current); }
+    background: var(--color-background-navigation-current);
+    @include interaction.hover-capable { &:hover:not(:disabled):not(:active) { background: var(--color-background-navigation-current); } }
     &:active:not(:disabled):not([data-touch-press="false"]) { background: var(--color-background-navigation-pressed); }
   }
 }

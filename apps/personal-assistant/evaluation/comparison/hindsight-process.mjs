@@ -12,10 +12,7 @@ export function hindsightProcess(directory) {
       log: join(directory, "upstream.log"),
       env: {
         HOME: join(directory, "home"),
-        LD_PRELOAD: join(
-          root,
-          ".benchmark-tools/nss/lib/usr/lib/x86_64-linux-gnu/libnss_wrapper.so",
-        ),
+        LD_PRELOAD: join(root, ".benchmark-tools/nss/lib/usr/lib/x86_64-linux-gnu/libnss_wrapper.so"),
         NSS_WRAPPER_PASSWD: join(root, ".benchmark-tools/nss/passwd"),
         NSS_WRAPPER_GROUP: join(root, ".benchmark-tools/nss/group"),
       },
@@ -24,30 +21,19 @@ export function hindsightProcess(directory) {
 }
 
 export function presentHindsight(raw) {
-  if (!Array.isArray(raw?.results))
-    throw new Error("Invalid Hindsight recall response");
+  if (!Array.isArray(raw?.results)) throw new Error("Invalid Hindsight recall response");
   return {
     memories: raw.results
       .slice(0, 12)
-      .map(
-        ({
-          id,
-          text,
-          fact_type,
-          context,
-          occurred_start,
-          occurred_end,
-          mentioned_at,
-        }) => ({
-          id,
-          text,
-          fact_type,
-          context,
-          occurred_start,
-          occurred_end,
-          mentioned_at,
-        }),
-      ),
+      .map(({ id, text, fact_type, context, occurred_start, occurred_end, mentioned_at }) => ({
+        id,
+        text,
+        fact_type,
+        context,
+        occurred_start,
+        occurred_end,
+        mentioned_at,
+      })),
     truncated: raw.results.length > 12,
   };
 }

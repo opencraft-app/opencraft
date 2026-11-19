@@ -1,14 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  NativeCodexSession,
-  nativeUsage,
-} from "../../src/adapters/codex/native-session.mjs";
-export async function nativeText(
-  config,
-  { instruction, messages, signal, schema, tools = [], execute },
-) {
+import { NativeCodexSession, nativeUsage } from "../../src/adapters/codex/native-session.mjs";
+export async function nativeText(config, { instruction, messages, signal, schema, tools = [], execute }) {
   const root = await mkdtemp(join(tmpdir(), "memory-compare-"));
   let toolCalls = 0;
   let session,
@@ -22,22 +16,14 @@ export async function nativeText(
   const event = (p) => {
     const v = p.params;
     if ((v.turnId ?? v.turn?.id) !== turnId) return;
-    if (
-      p.method === "item/completed" &&
-      v.item?.type === "agentMessage" &&
-      v.item.phase !== "commentary"
-    )
+    if (p.method === "item/completed" && v.item?.type === "agentMessage" && v.item.phase !== "commentary")
       text = v.item.text;
     if (p.method === "turn/completed")
       v.turn.status === "completed"
         ? resolveTurn?.()
         : rejectTurn?.(
             Object.assign(
-              new Error(
-                "Native turn " +
-                  v.turn.status +
-                  (v.turn.error?.message ? ": " + v.turn.error.message : ""),
-              ),
+              new Error("Native turn " + v.turn.status + (v.turn.error?.message ? ": " + v.turn.error.message : "")),
               { nativeError: v.turn.error ?? null },
             ),
           );
@@ -50,15 +36,13 @@ export async function nativeText(
       onRequest: async (p) => {
         if (p.method !== "item/tool/call" || p.params.threadId !== threadId)
           throw new Error("Unexpected native tool request");
-        if (++toolCalls > 20)
-          throw new Error("Native tool-call budget exceeded");
+        if (++toolCalls > 20) throw new Error("Native tool-call budget exceeded");
         const result = await execute(p.params.tool, p.params.arguments);
         return {
           contentItems: [
             {
               type: "inputText",
-              text:
-                typeof result === "string" ? result : JSON.stringify(result),
+              text: typeof result === "string" ? result : JSON.stringify(result),
             },
           ],
           success: true,
@@ -67,10 +51,8 @@ export async function nativeText(
       onFailure: (e) => rejectTurn?.(e),
       onNotification: (p) => {
         if (p.params?.threadId !== threadId) return;
-        if (p.method === "thread/tokenUsage/updated")
-          usage = p.params.tokenUsage?.total ?? usage;
-        if (["item/completed", "turn/completed"].includes(p.method))
-          turnId ? event(p) : early.push(p);
+        if (p.method === "thread/tokenUsage/updated") usage = p.params.tokenUsage?.total ?? usage;
+        if (["item/completed", "turn/completed"].includes(p.method)) turnId ? event(p) : early.push(p);
       },
     });
     const start = await session.rpc("thread/start", {
@@ -93,9 +75,7 @@ export async function nativeText(
     completed.catch(() => {});
     const accepted = await session.rpc("turn/start", {
       threadId,
-      input: [
-        { type: "text", text: JSON.stringify(messages), text_elements: [] },
-      ],
+      input: [{ type: "text", text: JSON.stringify(messages), text_elements: [] }],
       ...(schema ? { outputSchema: schema } : {}),
     });
     turnId = accepted.turn?.id;

@@ -54,26 +54,18 @@ export class ReceptionService {
     return this.inbox.accept(inputId, "say", params, () => {
       const queryScope = this.scope.queryGrant(inputId, conversationId);
       if (params.attachments !== undefined) {
-        if (
-          !Array.isArray(params.attachments) ||
-          params.attachments.length > 8 ||
-          !this.attachments
-        )
+        if (!Array.isArray(params.attachments) || params.attachments.length > 8 || !this.attachments)
           throw Error("Invalid attachments");
-        queryScope.attachments = params.attachments.map((id) =>
-          this.attachments.describe(id),
-        );
+        queryScope.attachments = params.attachments.map((id) => this.attachments.describe(id));
       }
       if (params.workId !== undefined) {
         const workId = requireText(params.workId, "workId", 160);
         if (!this.r.conversations.linked(conversationId, workId))
           throw new Error("Target work is outside this conversation");
         const work = this.works.require(workId).record;
-        if (params.expectedRevision !== undefined)
-          requireRevision(params.expectedRevision, work.revision, "work");
+        if (params.expectedRevision !== undefined) requireRevision(params.expectedRevision, work.revision, "work");
         queryScope.targetWork = { workId, expectedRevision: work.revision };
-      } else if (params.expectedRevision !== undefined)
-        throw new Error("A work target is required for its revision");
+      } else if (params.expectedRevision !== undefined) throw new Error("A work target is required for its revision");
       this.attention.active();
       this.history.append(conversationId, inputId, "user", params.text, {
         inputId,
@@ -94,11 +86,7 @@ export class ReceptionService {
   pending() {
     return this.r.reception
       .pending(this.now())
-      .filter(
-        (turn) =>
-          !turn.source_json ||
-          !this.goals.reasons(this.works.require(turn.work_id).record).length,
-      );
+      .filter((turn) => !turn.source_json || !this.goals.reasons(this.works.require(turn.work_id).record).length);
   }
   activity() {
     return this.r.reception.activity(this.history.main.id);
@@ -116,8 +104,7 @@ export class ReceptionService {
       if (!current) throw new Error("Unknown reception input");
       if (current.status === "settled") return current;
       const proposal = ReceptionDecision.parse(rawProposal);
-      const commands =
-        proposal.kind === "batch" ? proposal.commands : [proposal];
+      const commands = proposal.kind === "batch" ? proposal.commands : [proposal];
       this.assertIndependentCommands(current, commands);
       const applied = commands.map((command, index) =>
         this.applyObservedCommand(
@@ -131,26 +118,26 @@ export class ReceptionService {
       const text = applied.map((a) => a.text).join("\n\n");
       const messages = applied.map((a) => a.message).filter(Boolean);
       if (messages.length && applied.length !== 1)
-        throw new Error(
-          "Typed user messages must be a single reception decision",
-        );
+        throw new Error("Typed user messages must be a single reception decision");
       const workIds = applied.map((a) => a.workId).filter(Boolean);
       const workId = workIds[0];
-      this.history.append(
-        turn.conversation_id,
-        `${turn.id}:reply`,
-        "assistant",
-        text,
-        {
-          kind: proposal.kind,
-          // Typed host provenance, not guessed words; model replies remain intact.
-          ...(!commands.some(c => ['instruct','resume','answer','delegate','amend'].includes(c.kind)) ? {} : {
-            receptionPresentation: { origin: 'reception', text: applied.filter((a,i) => !['instruct','resume','answer','delegate','amend'].includes(commands[i].kind)).map(a=>a.text).join('\n\n') },
-          }),
-          ...(messages[0] ? { message: messages[0] } : {}),
-          ...(workId ? { workId } : {}),
-        },
-      );
+      this.history.append(turn.conversation_id, `${turn.id}:reply`, "assistant", text, {
+        kind: proposal.kind,
+        // Typed host provenance, not guessed words; model replies remain intact.
+        ...(!commands.some((c) => ["instruct", "resume", "answer", "delegate", "amend"].includes(c.kind))
+          ? {}
+          : {
+              receptionPresentation: {
+                origin: "reception",
+                text: applied
+                  .filter((a, i) => !["instruct", "resume", "answer", "delegate", "amend"].includes(commands[i].kind))
+                  .map((a) => a.text)
+                  .join("\n\n"),
+              },
+            }),
+        ...(messages[0] ? { message: messages[0] } : {}),
+        ...(workId ? { workId } : {}),
+      });
       this.memoryLearning.capture(turn, text);
       this.r.reception.settled(
         turn.id,
@@ -162,12 +149,7 @@ export class ReceptionService {
         text,
         workId,
       );
-      this.r.events.append(
-        "reception.settled",
-        workId,
-        { inputId: turn.id, kind: proposal.kind },
-        this.now(),
-      );
+      this.r.events.append("reception.settled", workId, { inputId: turn.id, kind: proposal.kind }, this.now());
       return this.r.reception.get(turn.id);
     });
   }
@@ -199,11 +181,7 @@ export class ReceptionService {
         "conflicting_commands",
       );
     };
-    if (
-      this.scope.queryScope(turn, this.history.require(turn.conversation_id))
-        .targetWork
-    )
-      fail(0);
+    if (this.scope.queryScope(turn, this.history.require(turn.conversation_id)).targetWork) fail(0);
     const workEffects = new Map(),
       interactions = new Set(),
       goals = new Set(),
@@ -218,22 +196,16 @@ export class ReceptionService {
       if (["answer", "reject"].includes(kind)) {
         if (interactions.has(command.interactionId)) fail(index);
         interactions.add(command.interactionId);
-        id = this.interactions.assertInConversation(
-          command.interactionId,
-          turn.conversation_id,
-        ).work_id;
+        id = this.interactions.assertInConversation(command.interactionId, turn.conversation_id).work_id;
       }
       if (!id) continue;
       // Goal changes and member-work commands are not independent effects.
       const goalId = this.goals.forWork(id);
-      if (goalId && plannedGoals.has(goalId) && command.goalId !== goalId)
-        fail(index);
+      if (goalId && plannedGoals.has(goalId) && command.goalId !== goalId) fail(index);
       const prior = workEffects.get(id) ?? [];
       if (
         prior.length &&
-        [kind, ...prior].some((k) =>
-          ["amend", "cancel", "resume", "reject", "goal.rebase"].includes(k),
-        )
+        [kind, ...prior].some((k) => ["amend", "cancel", "resume", "reject", "goal.rebase"].includes(k))
       )
         fail(index);
       workEffects.set(id, [...prior, kind]);
@@ -241,44 +213,22 @@ export class ReceptionService {
   }
   applyUserCommand(turn, proposal, childInput) {
     let text, workId;
-    const target = this.scope.queryScope(
-      turn,
-      this.history.require(turn.conversation_id),
-    ).targetWork;
+    const target = this.scope.queryScope(turn, this.history.require(turn.conversation_id)).targetWork;
     if (target) {
       if (
-        ![
-          "reply",
-          "clarify",
-          "send",
-          "amend",
-          "instruct",
-          "resume",
-          "cancel",
-          "answer",
-          "reject",
-        ].includes(proposal.kind)
+        !["reply", "clarify", "send", "amend", "instruct", "resume", "cancel", "answer", "reject"].includes(
+          proposal.kind,
+        )
       )
-        throw new Error(
-          "A targeted follow-up cannot create unrelated work or commands",
-        );
+        throw new Error("A targeted follow-up cannot create unrelated work or commands");
       if (
         ["amend", "cancel", "instruct", "resume"].includes(proposal.kind) &&
-        (proposal.workId !== target.workId ||
-          proposal.expectedRevision !== target.expectedRevision)
+        (proposal.workId !== target.workId || proposal.expectedRevision !== target.expectedRevision)
       )
-        throw new Error(
-          "Follow-up does not match its captured work and revision",
-        );
+        throw new Error("Follow-up does not match its captured work and revision");
       if (["answer", "reject"].includes(proposal.kind)) {
-        const interaction = this.interactions.assertInConversation(
-          proposal.interactionId,
-          turn.conversation_id,
-        );
-        if (
-          interaction.work_id !== target.workId ||
-          interaction.revision !== target.expectedRevision
-        )
+        const interaction = this.interactions.assertInConversation(proposal.interactionId, turn.conversation_id);
+        if (interaction.work_id !== target.workId || interaction.revision !== target.expectedRevision)
           throw new Error("Follow-up interaction is outside its target work");
       }
     }
@@ -329,38 +279,26 @@ export class ReceptionService {
       }
       case "instruct":
       case "resume": {
-        const result = this.works[
-          proposal.kind === "instruct" ? "instruct" : "continue"
-        ](childInput, {
+        const result = this.works[proposal.kind === "instruct" ? "instruct" : "continue"](childInput, {
           workId: proposal.workId,
           expectedRevision: proposal.expectedRevision,
           text: proposal.text,
         });
         return {
           workId: result.workId,
-          text:
-            proposal.kind === "instruct"
-              ? "收到，我会按这个调整。"
-              : "好，继续做。",
+          text: proposal.kind === "instruct" ? "收到，我会按这个调整。" : "好，继续做。",
         };
       }
       case "send": {
-        const body = this.history.prepareMessage(
-          proposal.message,
-          turn.conversation_id,
-        );
+        const body = this.history.prepareMessage(proposal.message, turn.conversation_id);
         return {
-          text:
-            body.type === "text" ? body.content : `附件：${body.files[0].name}`,
+          text: body.type === "text" ? body.content : `附件：${body.files[0].name}`,
           message: proposal.message,
         };
       }
       case "answer":
       case "reject": {
-        this.interactions.assertInConversation(
-          proposal.interactionId,
-          turn.conversation_id,
-        );
+        this.interactions.assertInConversation(proposal.interactionId, turn.conversation_id);
         const params = {
           interactionId: proposal.interactionId,
           expectedRevision: proposal.expectedRevision,
@@ -368,20 +306,13 @@ export class ReceptionService {
         };
         const receipt = this.interactions[proposal.kind](childInput, params);
         workId = receipt.workId;
-        text =
-          proposal.kind === "answer"
-            ? "收到，继续。"
-            : "好，这项先不提供，这件事暂停；改了要求我再继续。";
+        text = proposal.kind === "answer" ? "收到，继续。" : "好，这项先不提供，这件事暂停；改了要求我再继续。";
         break;
       }
       case "project.create":
       case "project.join":
       case "project.leave": {
-        const result = this.memoryProjects.change(
-          childInput,
-          proposal.kind.split(".")[1],
-          proposal.params,
-        );
+        const result = this.memoryProjects.change(childInput, proposal.kind.split(".")[1], proposal.params);
         text = `项目 ${result.slug}：${result.joined ? "已加入记忆共享" : "已退出记忆共享"}。`;
         break;
       }
@@ -398,14 +329,9 @@ export class ReceptionService {
             expectedRevision: proposal.expectedRevision,
             ...(proposal.kind === "remember" ? { value: proposal.value } : {}),
           },
-          this.scope.receptionResources(
-            turn,
-            this.history.require(turn.conversation_id),
-          ),
+          this.scope.receptionResources(turn, this.history.require(turn.conversation_id)),
         );
-        text = receipt.deleted
-          ? `已忘记：${receipt.key}。`
-          : `已记住：${receipt.key} = ${proposal.value}。`;
+        text = receipt.deleted ? `已忘记：${receipt.key}。` : `已记住：${receipt.key} = ${proposal.value}。`;
         break;
       }
       case "delegate": {
@@ -413,14 +339,9 @@ export class ReceptionService {
           childInput,
           {
             text: proposal.goal,
-            ...(proposal.completion === undefined
-              ? {}
-              : { completion: proposal.completion }),
+            ...(proposal.completion === undefined ? {} : { completion: proposal.completion }),
           },
-          this.scope.receptionResources(
-            turn,
-            this.history.require(turn.conversation_id),
-          ),
+          this.scope.receptionResources(turn, this.history.require(turn.conversation_id)),
           this.requestContext(turn),
         );
         workId = receipt.workId;
@@ -435,9 +356,7 @@ export class ReceptionService {
             workId: proposal.workId,
             text: proposal.goal,
             expectedRevision: proposal.expectedRevision,
-            ...(proposal.completion === undefined
-              ? {}
-              : { completion: proposal.completion }),
+            ...(proposal.completion === undefined ? {} : { completion: proposal.completion }),
           },
           this.requestContext(turn),
         );
@@ -451,19 +370,14 @@ export class ReceptionService {
           expectedRevision: proposal.expectedRevision,
         });
         workId = receipt.workId;
-        text = receipt.alreadyCompleted
-          ? "这件事已经做完了，结果还在。"
-          : "好，停下了。";
+        text = receipt.alreadyCompleted ? "这件事已经做完了，结果还在。" : "好，停下了。";
         break;
       }
       case "routine.create": {
         const receipt = this.routines.add(
           childInput,
           proposal.params,
-          this.scope.receptionResources(
-            turn,
-            this.history.require(turn.conversation_id),
-          ),
+          this.scope.receptionResources(turn, this.history.require(turn.conversation_id)),
         );
         text = "好，安排上了。";
         break;
@@ -498,12 +412,7 @@ export class ReceptionService {
       if (current?.status === "settled") return;
       if (turn.source_json) {
         if (this.retireStale(current)) return;
-        this.r.reception.retry(
-          turn.id,
-          error,
-          queries,
-          this.now() + Math.min(30000, 250 * 2 ** current.attempts),
-        );
+        this.r.reception.retry(turn.id, error, queries, this.now() + Math.min(30000, 250 * 2 ** current.attempts));
         this.r.events.append(
           "reception.report-failed",
           turn.work_id,
@@ -518,10 +427,7 @@ export class ReceptionService {
           const { source, work } = this.reportSource(current);
           if (
             work.revision === source.revision &&
-            this.works.blocked(
-              work,
-              "Main assistant could not process the saved execution report",
-            )
+            this.works.blocked(work, "Main assistant could not process the saved execution report")
           )
             this.history.workNotice(work, "execution-blocked");
         }
@@ -547,12 +453,8 @@ export class ReceptionService {
         {
           inputId: turn.id,
           error: String(error),
-          ...(error.proposalFailure
-            ? { proposalFailure: error.proposalFailure }
-            : {}),
-          ...(error.commandFailure
-            ? { commandFailure: error.commandFailure }
-            : {}),
+          ...(error.proposalFailure ? { proposalFailure: error.proposalFailure } : {}),
+          ...(error.commandFailure ? { commandFailure: error.commandFailure } : {}),
         },
         this.now(),
       );
@@ -576,15 +478,11 @@ export class ReceptionService {
     const conversationId = this.history.require(
       this.reports.request(work)?.original?.conversationId ?? destinations[0],
     );
-    if (!destinations.includes(conversationId))
-      throw new Error("Report destination changed");
+    if (!destinations.includes(conversationId)) throw new Error("Report destination changed");
     const id = `wake_${digest(report.id).slice(0, 40)}`;
     const existing = this.r.reception.get(id);
     if (existing) {
-      if (
-        !existing.source_json ||
-        JSON.parse(existing.source_json).reportId !== report.id
-      )
+      if (!existing.source_json || JSON.parse(existing.source_json).reportId !== report.id)
         throw new Error("Report turn identity collision");
       return true;
     }
@@ -616,9 +514,7 @@ export class ReceptionService {
         origin,
         waitingForResult: origin.kind === "direct",
         assessment,
-        platformReadEvidence: this.completion.platformReadEvidence(
-          report.execution_id,
-        ),
+        platformReadEvidence: this.completion.platformReadEvidence(report.execution_id),
         confirmedInputs: this.interactions.confirmedInputs(work),
         directives: this.reports.directives(work),
         request: this.reports.request(work),
@@ -642,9 +538,7 @@ export class ReceptionService {
       !this.history.require(turn.conversation_id) ||
       !this.history.destinations(source.workId).includes(turn.conversation_id)
     )
-      throw new Error(
-        "Report source is outside this assistant or conversation",
-      );
+      throw new Error("Report source is outside this assistant or conversation");
     return { source, report, work: this.works.require(source.workId).record };
   }
   retireStale(turn) {
@@ -661,14 +555,7 @@ export class ReceptionService {
       }
     }
     if (!stale) return false;
-    this.uow.transaction(() =>
-      this.r.reception.settled(
-        turn.id,
-        { kind: "retired" },
-        null,
-        source.workId,
-      ),
-    );
+    this.uow.transaction(() => this.r.reception.settled(turn.id, { kind: "retired" }, null, source.workId));
     return true;
   }
   applyReport(turn, raw, queries) {
@@ -683,12 +570,8 @@ export class ReceptionService {
       const request = this.reports.request(work);
       const childId = `continuation:${digest(turn.id)}`;
       if (proposal.kind === "continue") {
-        if (
-          (request?.continuations ?? 0) >= ContinuationDecision.maxContinuations
-        )
-          throw new Error(
-            "Automatic continuation limit reached; user direction is required",
-          );
+        if ((request?.continuations ?? 0) >= ContinuationDecision.maxContinuations)
+          throw new Error("Automatic continuation limit reached; user direction is required");
         this.works.continue(
           childId,
           {
@@ -711,19 +594,11 @@ export class ReceptionService {
       } else if (proposal.kind === "deliver" || proposal.kind === "silent") {
         if (proposal.kind === "silent" && source.waitingForResult)
           throw new Error("A user-awaited result cannot be silently discarded");
-        if (
-          proposal.kind === "silent" &&
-          (report.status === "error" || !source.assessment.passed)
-        ) {
-          this.works.blocked(
-            work,
-            "Background report did not satisfy the completion contract",
-          );
+        if (proposal.kind === "silent" && (report.status === "error" || !source.assessment.passed)) {
+          this.works.blocked(work, "Background report did not satisfy the completion contract");
         } else {
           if (report.status !== "returned" || !source.assessment.passed)
-            throw new Error(
-              "Execution report has not satisfied the completion contract",
-            );
+            throw new Error("Execution report has not satisfied the completion contract");
           if (proposal.finishRoutine) this.routines.finishWatch(work);
           const receipt = this.outcomes.record(work, report.text, {
             deliveryText: proposal.text,
@@ -741,27 +616,15 @@ export class ReceptionService {
           }
         }
       } else {
-        if (!source.waitingForResult)
-          throw new Error("Quiet blockers require silence or continued work");
+        if (!source.waitingForResult) throw new Error("Quiet blockers require silence or continued work");
         this.works.blocked(work, "Main assistant reported a blocker");
-        this.history.append(
-          turn.conversation_id,
-          `${turn.id}:blocked`,
-          "assistant",
-          proposal.text,
-          {
-            kind: "continuation-blocked",
-            workId: work.id,
-            revision: work.revision,
-          },
-        );
+        this.history.append(turn.conversation_id, `${turn.id}:blocked`, "assistant", proposal.text, {
+          kind: "continuation-blocked",
+          workId: work.id,
+          revision: work.revision,
+        });
       }
-      this.r.reception.settled(
-        turn.id,
-        { ...proposal, queries },
-        proposal.text ?? null,
-        source.workId,
-      );
+      this.r.reception.settled(turn.id, { ...proposal, queries }, proposal.text ?? null, source.workId);
       this.r.events.append(
         "reception.report-settled",
         source.workId,

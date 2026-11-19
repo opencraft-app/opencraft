@@ -7,10 +7,7 @@ import { createHash } from "node:crypto";
 import { selectCases } from "./longmemeval-data.mjs";
 import { resolveHarnesses } from "../src/adapters/codex/config.mjs";
 
-export function runCase(
-  input,
-  { directory, mode, model, apiKey, timeoutMs, harnesses },
-) {
+export function runCase(input, { directory, mode, model, apiKey, timeoutMs, harnesses }) {
   return new Promise((resolvePromise, reject) => {
     // No inherited provider credentials, account homes, custom Node loaders or preload scripts.
     const child = fork(new URL("./assistant-worker.mjs", import.meta.url), [], {
@@ -25,9 +22,7 @@ export function runCase(
     const stopTree = () => {
       if (!child.pid) return;
       try {
-        process.platform === "win32"
-          ? child.kill("SIGKILL")
-          : process.kill(-child.pid, "SIGKILL");
+        process.platform === "win32" ? child.kill("SIGKILL") : process.kill(-child.pid, "SIGKILL");
       } catch (error) {
         if (error.code !== "ESRCH") throw error;
       }
@@ -49,13 +44,7 @@ export function runCase(
       settled = true;
       clearTimeout(timeout);
       if (signal || code !== 0 || !message)
-        reject(
-          new Error(
-            signal
-              ? `Assistant process terminated (${signal})`
-              : "Assistant process failed",
-          ),
-        );
+        reject(new Error(signal ? `Assistant process terminated (${signal})` : "Assistant process failed"));
       else if (!message.ok) reject(new Error(message.error));
       else resolvePromise(message.result);
     });
@@ -64,16 +53,11 @@ export function runCase(
 }
 
 export async function readCodexConfiguration(path) {
-  const file = await open(
-    resolve(path),
-    constants.O_RDONLY | constants.O_NOFOLLOW,
-  );
+  const file = await open(resolve(path), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || stat.size > 16384 || stat.mode & 0o077)
-      throw new Error(
-        "Codex config must be a private regular file (chmod 600)",
-      );
+      throw new Error("Codex config must be a private regular file (chmod 600)");
     const codex = JSON.parse(await file.readFile("utf8"));
     return resolveHarnesses({
       harnesses: { assistant: "codex", execution: "pi", codex },
@@ -84,35 +68,23 @@ export async function readCodexConfiguration(path) {
 }
 
 export async function readModelConfiguration(path) {
-  const file = await open(
-    resolve(path),
-    constants.O_RDONLY | constants.O_NOFOLLOW,
-  );
+  const file = await open(resolve(path), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const stat = await file.stat();
     if (!stat.isFile() || stat.size > 16384 || stat.mode & 0o077)
-      throw new Error(
-        "Model config must be a private regular file (chmod 600)",
-      );
+      throw new Error("Model config must be a private regular file (chmod 600)");
     const value = JSON.parse(await file.readFile("utf8"));
     if (
-      !["deepseek", "anthropic", "openai-compatible"].includes(
-        value.provider,
-      ) ||
+      !["deepseek", "anthropic", "openai-compatible"].includes(value.provider) ||
       typeof value.modelId !== "string" ||
       !value.modelId ||
       typeof value.apiKey !== "string" ||
       !value.apiKey ||
-      Object.keys(value).some(
-        (k) =>
-          !["provider", "modelId", "apiKey", "baseUrl", "thinking"].includes(k),
-      )
+      Object.keys(value).some((k) => !["provider", "modelId", "apiKey", "baseUrl", "thinking"].includes(k))
     )
       throw new Error("Expected explicit provider, modelId and apiKey");
     if (value.provider === "openai-compatible") {
-      const { compatibleProvider } = await import(
-        "../src/adapters/models/openai-compatible.mjs"
-      );
+      const { compatibleProvider } = await import("../src/adapters/models/openai-compatible.mjs");
       compatibleProvider(value);
     } else if (value.baseUrl !== undefined || value.thinking !== undefined)
       throw new Error("Endpoint overrides require openai-compatible provider");
@@ -146,33 +118,20 @@ async function main() {
   }
   if (!v.dataset || !v.output || !["fixture", "model"].includes(v.mode))
     throw new Error("dataset, output and a valid mode are required");
-  if (!["pi", "codex"].includes(v["assistant-harness"]))
-    throw new Error("assistant-harness must be pi or codex");
+  if (!["pi", "codex"].includes(v["assistant-harness"])) throw new Error("assistant-harness must be pi or codex");
   const codexSelected = v["assistant-harness"] === "codex";
-  if (
-    codexSelected &&
-    (v.mode !== "model" || !v["codex-config"] || v["model-config"])
-  )
-    throw new Error(
-      "Codex requires --mode model --codex-config and no Pi --model-config",
-    );
-  if (!codexSelected && v["codex-config"])
-    throw new Error("codex-config requires --assistant-harness codex");
+  if (codexSelected && (v.mode !== "model" || !v["codex-config"] || v["model-config"]))
+    throw new Error("Codex requires --mode model --codex-config and no Pi --model-config");
+  if (!codexSelected && v["codex-config"]) throw new Error("codex-config requires --assistant-harness codex");
   const timeoutMs = Number(v["timeout-ms"]);
-  if (
-    !Number.isSafeInteger(timeoutMs) ||
-    timeoutMs < 1000 ||
-    timeoutMs > 3600000
-  )
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 3600000)
     throw new Error("timeout-ms must be 1000..3600000 per case");
   const handle = await open(resolve(v.dataset), "r");
   let buffer;
   try {
     const stat = await handle.stat();
     if (!stat.isFile() || stat.size > 512 * 1024 * 1024)
-      throw new Error(
-        "Dataset must be a JSON file no larger than 512 MiB; shard larger datasets first",
-      );
+      throw new Error("Dataset must be a JSON file no larger than 512 MiB; shard larger datasets first");
     buffer = await handle.readFile();
   } finally {
     await handle.close();
@@ -192,9 +151,7 @@ async function main() {
           total: rows.length,
           datasetSha256,
           historyMessages: cases.reduce(
-            (n, c) =>
-              n +
-              c.input.history.reduce((sum, s) => sum + s.messages.length, 0),
+            (n, c) => n + c.input.history.reduce((sum, s) => sum + s.messages.length, 0),
             0,
           ),
           futureSessions: cases.reduce((n, c) => n + c.futureSessionCount, 0),
@@ -209,18 +166,10 @@ async function main() {
     return;
   }
   if (v.mode === "model" && !codexSelected && !v["model-config"])
-    throw new Error(
-      "Real evaluation requires an explicit private --model-config; inherited credentials are not used",
-    );
-  if (v.mode === "fixture" && v["model-config"])
-    throw new Error("Fixture runs do not accept model credentials");
-  const config =
-    v.mode === "model" && !codexSelected
-      ? await readModelConfiguration(v["model-config"])
-      : null;
-  const harnesses = codexSelected
-    ? await readCodexConfiguration(v["codex-config"])
-    : undefined;
+    throw new Error("Real evaluation requires an explicit private --model-config; inherited credentials are not used");
+  if (v.mode === "fixture" && v["model-config"]) throw new Error("Fixture runs do not accept model credentials");
+  const config = v.mode === "model" && !codexSelected ? await readModelConfiguration(v["model-config"]) : null;
+  const harnesses = codexSelected ? await readCodexConfiguration(v["codex-config"]) : undefined;
   const directory = resolve(v.output);
   await mkdir(directory, { mode: 0o700 }); // Refuse existing paths; never replace prior evidence/profiles.
   const model = config
@@ -247,9 +196,7 @@ async function main() {
           baseUrl: harnesses.codex.baseUrl,
         }
       : (model ?? { provider: "fixture" }),
-    timestampPolicy: v["strict-time"]
-      ? "reject-future"
-      : "preserve-official-input",
+    timestampPolicy: v["strict-time"] ? "reject-future" : "preserve-official-input",
     futureSessions: cases.reduce((n, c) => n + c.futureSessionCount, 0),
     timeoutMsPerCase: timeoutMs,
     completed: 0,
@@ -268,11 +215,10 @@ async function main() {
       "LongMemEval knowledge updates/abstention do not certify privacy erasure. Canonical history remains accessible.",
     ],
   };
-  await writeFile(
-    join(directory, "summary.json"),
-    JSON.stringify(summary, null, 2) + "\n",
-    { mode: 0o600, flag: "wx" },
-  );
+  await writeFile(join(directory, "summary.json"), JSON.stringify(summary, null, 2) + "\n", {
+    mode: 0o600,
+    flag: "wx",
+  });
   await writeFile(join(directory, "hypotheses.jsonl"), "", {
     mode: 0o600,
     flag: "wx",
@@ -316,15 +262,8 @@ async function main() {
     });
     group[record.status]++;
     // Failures remain in the denominator, with empty answers. No gold labels are exported.
-    await appendFile(
-      join(directory, "hypotheses.jsonl"),
-      JSON.stringify({ question_id: item.id, hypothesis }) + "\n",
-    );
-    await writeFile(
-      join(directory, "summary.json"),
-      JSON.stringify(summary, null, 2) + "\n",
-      { mode: 0o600 },
-    );
+    await appendFile(join(directory, "hypotheses.jsonl"), JSON.stringify({ question_id: item.id, hypothesis }) + "\n");
+    await writeFile(join(directory, "summary.json"), JSON.stringify(summary, null, 2) + "\n", { mode: 0o600 });
     console.log(
       JSON.stringify({
         question_id: item.id,
@@ -346,10 +285,7 @@ async function main() {
   if (summary.failed) process.exitCode = 1;
 }
 
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === new URL(import.meta.url).pathname
-) {
+if (process.argv[1] && resolve(process.argv[1]) === new URL(import.meta.url).pathname) {
   main().catch((error) => {
     console.error(error.message);
     process.exitCode = 1;

@@ -34,25 +34,17 @@ export async function evaluateAssistant(
   try {
     const replay = async () => {
       const selected = resolveHarnesses(profile.config);
-      if (selected.assistant === "codex")
-        transport = new CodexStructuredHarness(selected.codex, { telemetry });
+      if (selected.assistant === "codex") transport = new CodexStructuredHarness(selected.codex, { telemetry });
       if (selected.backgroundCodex)
-        backgroundTransport = new CodexStructuredHarness(
-          selected.backgroundCodex,
-          { telemetry },
-        );
-      const catalog = transport
-        ? { profile, configured: { mode: "model" } }
-        : await ModelCatalog.open(profile);
+        backgroundTransport = new CodexStructuredHarness(selected.backgroundCodex, { telemetry });
+      const catalog = transport ? { profile, configured: { mode: "model" } } : await ModelCatalog.open(profile);
       const options = {
         telemetry,
         transport,
         recordUsage: (value) => app.usage.recordCall(value),
         policy: profile.config.runPolicy,
       };
-      const backgroundCatalog = backgroundTransport
-        ? { profile, configured: { mode: "model" } }
-        : catalog;
+      const backgroundCatalog = backgroundTransport ? { profile, configured: { mode: "model" } } : catalog;
       const backgroundOptions = {
         ...options,
         transport: backgroundTransport ?? transport,
@@ -68,10 +60,7 @@ export async function evaluateAssistant(
         new ConversationContextModel(backgroundCatalog, backgroundOptions),
         { telemetry },
       );
-      const planner = new ReceptionPlanner(
-        new ReceptionModel(catalog, options),
-        app.receptionQueries,
-      );
+      const planner = new ReceptionPlanner(new ReceptionModel(catalog, options), app.receptionQueries);
       const learningStates = {};
       let messages = 0,
         exchanges = 0;
@@ -84,13 +73,9 @@ export async function evaluateAssistant(
             identity = `replay:${s}:${i}`;
           clock = session.at;
           if (message.role === "assistant") {
-            app.history.append(
-              app.history.main.id,
-              identity,
-              "assistant",
-              message.content,
-              { kind: "historical-replay" },
-            );
+            app.history.append(app.history.main.id, identity, "assistant", message.content, {
+              kind: "historical-replay",
+            });
             messages++;
             continue;
           }
@@ -99,29 +84,17 @@ export async function evaluateAssistant(
             conversation_id: app.history.main.id,
             text: message.content,
             created_at: clock,
-            query_scope_json: JSON.stringify(
-              app.scope.queryGrant(identity, app.history.main.id),
-            ),
+            query_scope_json: JSON.stringify(app.scope.queryGrant(identity, app.history.main.id)),
           };
-          app.history.append(
-            app.history.main.id,
-            identity,
-            "user",
-            message.content,
-            { kind: "historical-replay" },
-          );
+          app.history.append(app.history.main.id, identity, "user", message.content, { kind: "historical-replay" });
           messages++;
           await context.prepare(turn, signal);
           const next = session.messages[i + 1];
           const reply = next?.role === "assistant" ? next.content : "";
           if (reply) {
-            app.history.append(
-              app.history.main.id,
-              `${identity}:reply`,
-              "assistant",
-              reply,
-              { kind: "historical-replay" },
-            );
+            app.history.append(app.history.main.id, `${identity}:reply`, "assistant", reply, {
+              kind: "historical-replay",
+            });
             messages++;
             i++;
           }
@@ -132,17 +105,13 @@ export async function evaluateAssistant(
             const state = app.memoryLearning.get(id);
             if (!state || !["queued", "proposed"].includes(state.state)) break;
             clock = Math.max(clock, state.next_at ?? clock);
-            const job = app.memoryLearning
-              .pending()
-              .find((row) => row.id === id);
-            if (!job)
-              throw new Error("Native learning job did not become ready");
+            const job = app.memoryLearning.pending().find((row) => row.id === id);
+            if (!job) throw new Error("Native learning job did not become ready");
             await learning.process(job, signal);
             signal.throwIfAborted();
           }
           const state = app.memoryLearning.get(id)?.state ?? "disabled";
-          if (["queued", "proposed"].includes(state))
-            throw new Error("Native learning retry budget exhausted");
+          if (["queued", "proposed"].includes(state)) throw new Error("Native learning retry budget exhausted");
           learningStates[state] = (learningStates[state] ?? 0) + 1;
           exchanges++;
         }
@@ -153,11 +122,7 @@ export async function evaluateAssistant(
       app.reception.accept("evaluation-query", { text: input.question });
       const turn = app.reception.turn("evaluation-query");
       await context.prepare(turn, signal);
-      const plan = await planner.plan(
-        turn,
-        app.reception.context(turn),
-        signal,
-      );
+      const plan = await planner.plan(turn, app.reception.context(turn), signal);
       signal.throwIfAborted();
       // This adapter benchmarks memory QA only. A task/command decision is recorded as a failure, never fabricated into an answer.
       if (!["reply", "clarify"].includes(plan.proposal?.kind))
@@ -192,11 +157,7 @@ export async function evaluateAssistant(
         },
       };
     };
-    return await telemetry.run(
-      "evaluation.replay",
-      { "app.mode": mode },
-      replay,
-    );
+    return await telemetry.run("evaluation.replay", { "app.mode": mode }, replay);
   } finally {
     await learning?.suspend();
     await transport?.close();

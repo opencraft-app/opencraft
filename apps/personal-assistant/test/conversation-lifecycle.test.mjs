@@ -20,10 +20,8 @@ function setup(t) {
     },
   };
 }
-const call = (app, op, params = {}, id = crypto.randomUUID()) =>
-  app.dispatch({ op, params, id });
-const fresh = (app, id) =>
-  call(app, "conversation.create", {}, id).conversationId;
+const call = (app, op, params = {}, id = crypto.randomUUID()) => app.dispatch({ op, params, id });
+const fresh = (app, id) => call(app, "conversation.create", {}, id).conversationId;
 const input = (app, conversationId, id, text = "hello") => {
   call(app, "say", { conversationId, text }, id);
   return app.reception.turn(id);
@@ -32,26 +30,15 @@ test("new conversation is durable, idempotent, scoped and does not reset memory 
   const s = setup(t),
     a = s.app,
     original = call(a, "conversation").conversationId;
-  call(
-    a,
-    "memory.set",
-    { key: "drink", value: "tea", expectedRevision: 0 },
-    "memory",
-  );
+  call(a, "memory.set", { key: "drink", value: "tea", expectedRevision: 0 }, "memory");
   const epoch = a.memory.epoch(),
     first = fresh(a, "first"),
     second = fresh(a, "second");
   assert.notEqual(first, second);
   assert.equal(fresh(a, "first"), first);
   assert.equal(call(a, "conversation.create", {}, "first").duplicate, true);
-  assert.throws(
-    () => call(a, "conversation.create", { actor: "foreign" }, "bad"),
-    /no fields/,
-  );
-  assert.throws(
-    () => call(a, "say", { conversationId: "foreign", text: "x" }),
-    /outside/,
-  );
+  assert.throws(() => call(a, "conversation.create", { actor: "foreign" }, "bad"), /no fields/);
+  assert.throws(() => call(a, "say", { conversationId: "foreign", text: "x" }), /outside/);
   const t1 = input(a, first, "one", "first only"),
     t2 = input(a, second, "two", "second only");
   a.reception.apply(t2, { kind: "reply", text: "second answer" });
@@ -64,17 +51,11 @@ test("new conversation is durable, idempotent, scoped and does not reset memory 
   const page = call(a, "conversation.list", { limit: 1 });
   assert.equal(page.items.length, 1);
   assert.ok(page.next);
-  assert.equal(
-    call(a, "conversation.list", { after: page.next }).items.length,
-    2,
-  );
+  assert.equal(call(a, "conversation.list", { after: page.next }).items.length, 2);
   s.reopen();
   assert.equal(call(s.app, "conversation").conversationId, original);
   assert.equal(fresh(s.app, "first"), first);
-  assert.equal(
-    s.app.history.view({ conversationId: first }).messages.length,
-    2,
-  );
+  assert.equal(s.app.history.view({ conversationId: first }).messages.length, 2);
   assert.equal(s.app.memory.epoch(), epoch);
   assert.match(JSON.stringify(call(s.app, "memory.list")), /tea/);
 });
@@ -92,57 +73,28 @@ test("queued work, late report, delivery and work history remain with their orig
     other = fresh(a, "other");
   input(a, other, "other-input", "unrelated new task");
   assert.throws(
-    () =>
-      call(
-        a,
-        "say",
-        { text: "modify", conversationId: other, workId: work.id },
-        "bad-target",
-      ),
+    () => call(a, "say", { text: "modify", conversationId: other, workId: work.id }, "bad-target"),
     /outside/,
   );
-  assert.match(
-    JSON.stringify(a.history.search({ query: "original" }, work.id)),
-    /original request/,
-  );
-  assert.throws(
-    () =>
-      a.history.search({ query: "original", conversationId: other }, work.id),
-    /grant/,
-  );
+  assert.match(JSON.stringify(a.history.search({ query: "original" }, work.id)), /original request/);
+  assert.throws(() => a.history.search({ query: "original", conversationId: other }, work.id), /grant/);
   state.reopen();
   a = state.app;
-  assert.equal(
-    a.executions.report(work, "finished original work").routed,
-    true,
-  );
+  assert.equal(a.executions.report(work, "finished original work").routed, true);
   const report = a.reception.pending().find((t) => t.source_json);
   assert.equal(report.conversation_id, origin);
-  assert.ok(
-    !JSON.stringify(a.reception.context(report)).includes("unrelated new task"),
-  );
+  assert.ok(!JSON.stringify(a.reception.context(report)).includes("unrelated new task"));
   a.reception.apply(report, { kind: "deliver", text: "original result" });
   a.outcomes.accepted(a.outcomes.pending()[0]);
-  assert.equal(
-    a.history
-      .view({ conversationId: origin })
-      .messages.filter((m) => m.data.kind === "result").length,
-    1,
-  );
-  assert.equal(
-    a.history
-      .view({ conversationId: other })
-      .messages.filter((m) => m.role === "assistant").length,
-    0,
-  );
+  assert.equal(a.history.view({ conversationId: origin }).messages.filter((m) => m.data.kind === "result").length, 1);
+  assert.equal(a.history.view({ conversationId: other }).messages.filter((m) => m.role === "assistant").length, 0);
   assert.ok(a.messages.pending().some((m) => m.conversation_id === origin));
 });
 test("message replies, query checkpoints and summaries cannot cross conversation boundaries", (t) => {
   const { app: a } = setup(t),
     one = fresh(a, "one"),
     two = fresh(a, "two");
-  for (let i = 0; i < 42; i++)
-    a.history.append(one, `old-${i}`, i % 2 ? "assistant" : "user", `one-${i}`);
+  for (let i = 0; i < 42; i++) a.history.append(one, `old-${i}`, i % 2 ? "assistant" : "user", `one-${i}`);
   const t1 = input(a, one, "anchor"),
     t2 = input(a, two, "new-anchor");
   const service = a.conversationContext,
@@ -152,26 +104,15 @@ test("message replies, query checkpoints and summaries cannot cross conversation
   assert.ok(service.begin(job));
   service.commit(job, {
     ...emptyContext(),
-    goals: [
-      { text: "one", sourceIds: [JSON.parse(job.source_json).messages[0].id] },
-    ],
+    goals: [{ text: "one", sourceIds: [JSON.parse(job.source_json).messages[0].id] }],
   });
-  assert.ok(
-    call(a, "conversation.context", { conversationId: one }).checkpointId,
-  );
-  assert.equal(
-    call(a, "conversation.context", { conversationId: two }).checkpointId,
-    null,
-  );
+  assert.ok(call(a, "conversation.context", { conversationId: one }).checkpointId);
+  assert.equal(call(a, "conversation.context", { conversationId: two }).checkpointId, null);
   const sent = call(a, "message.send", {
     conversationId: one,
     message: { type: "text", content: "one reply" },
   });
-  assert.equal(
-    call(a, "message.get", { conversationId: one, messageId: sent.messageId })
-      .conversationId,
-    one,
-  );
+  assert.equal(call(a, "message.get", { conversationId: one, messageId: sent.messageId }).conversationId, one);
   assert.throws(
     () =>
       call(a, "message.get", {
@@ -188,10 +129,7 @@ test("message replies, query checkpoints and summaries cannot cross conversation
       }),
     /outside/,
   );
-  assert.equal(
-    call(a, "messages.list", { conversationId: two }).items.length,
-    0,
-  );
+  assert.equal(call(a, "messages.list", { conversationId: two }).items.length, 0);
 });
 test("goal creation and extension inherit original conversation rather than default main", (t) => {
   const { app: a } = setup(t),
@@ -237,43 +175,19 @@ test("goal creation and extension inherit original conversation rather than defa
   assert.equal(a.history.view({ conversationId: origin }).works.length, 2);
   assert.equal(a.history.view().works.length, 0);
   for (const w of a.history.view({ conversationId: origin }).works)
-    assert.equal(
-      JSON.parse(a.executionLedger.get(w).request_json).original.conversationId,
-      origin,
-    );
+    assert.equal(JSON.parse(a.executionLedger.get(w).request_json).original.conversationId, origin);
 });
 test("actual CLI and socket create separate conversations and keep default compatible", async (t) => {
   const { profile, call } = await running(t);
   const cli = async (...args) =>
     JSON.parse(
-      (
-        await exec(
-          process.execPath,
-          ["bin/assistant.mjs", ...args, "--profile", profile.path],
-          { cwd: root },
-        )
-      ).stdout,
+      (await exec(process.execPath, ["bin/assistant.mjs", ...args, "--profile", profile.path], { cwd: root })).stdout,
     ).result;
   const { conversationId } = await cli("conversation-new", "--id", "cli-new");
-  const receipt = await cli(
-    "say",
-    "--conversation",
-    conversationId,
-    "--text",
-    "你好",
-    "--id",
-    "cli-hello",
-  );
+  const receipt = await cli("say", "--conversation", conversationId, "--text", "你好", "--id", "cli-hello");
   assert.equal(receipt.conversationId, conversationId);
-  await until(
-    async () =>
-      (await call("turn", { inputId: "cli-hello" })).status === "settled",
-  );
-  assert.equal(
-    (await cli("conversation", "--conversation", conversationId)).messages
-      .length,
-    2,
-  );
+  await until(async () => (await call("turn", { inputId: "cli-hello" })).status === "settled");
+  assert.equal((await cli("conversation", "--conversation", conversationId)).messages.length, 2);
   assert.equal((await cli("conversation")).messages.length, 0);
   assert.equal((await cli("conversations")).items.length, 2);
 });

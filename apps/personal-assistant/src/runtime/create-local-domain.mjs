@@ -2,10 +2,7 @@ import { LocalAttachmentStore } from "../adapters/filesystem/attachment-store.mj
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { MemoryFileAuthority } from "../adapters/memory/file-authority.mjs";
-import {
-  SqliteMemoryIndex,
-  memoryFileCommitReceipt,
-} from "../adapters/sqlite/memory-index.mjs";
+import { SqliteMemoryIndex, memoryFileCommitReceipt } from "../adapters/sqlite/memory-index.mjs";
 import { fault } from "../adapters/local/profile.mjs";
 import { LocalCredentialVault } from "../adapters/local/credential-vault.mjs";
 import { Assistant } from "../domain/assistant.mjs";
@@ -74,10 +71,9 @@ export function createLocalDomain(
           ]),
       ),
     );
-    const attachmentStore = new LocalAttachmentStore(
-      join(profile.path, "attachments"),
-      { maxBytes: attachmentMaxBytes },
-    );
+    const attachmentStore = new LocalAttachmentStore(join(profile.path, "attachments"), {
+      maxBytes: attachmentMaxBytes,
+    });
     app = new AssistantApplication({
       now,
       attachments: Object.freeze({
@@ -86,15 +82,10 @@ export function createLocalDomain(
       }),
       memoryFiles: Object.freeze(
         Object.fromEntries(
-          [
-            "synchronize",
-            "resources",
-            "projects",
-            "project",
-            "locations",
-            "browserFiles",
-            "read",
-          ].map((k) => [k, (...args) => memoryFiles[k](...args)]),
+          ["synchronize", "resources", "projects", "project", "locations", "browserFiles", "read"].map((k) => [
+            k,
+            (...args) => memoryFiles[k](...args),
+          ]),
         ),
       ),
       memoryDefaultScope: profile.config.memoryDefaultScope,

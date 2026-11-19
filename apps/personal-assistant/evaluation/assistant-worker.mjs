@@ -3,8 +3,7 @@ let active = false;
 process.on("message", async (message) => {
   if (active) return;
   active = true;
-  const { input, directory, mode, model, apiKey, timeoutMs, harnesses } =
-    message;
+  const { input, directory, mode, model, apiKey, timeoutMs, harnesses } = message;
   const variable = {
     deepseek: "DEEPSEEK_API_KEY",
     "openai-compatible": "OPENCRAFT_EVAL_API_KEY",

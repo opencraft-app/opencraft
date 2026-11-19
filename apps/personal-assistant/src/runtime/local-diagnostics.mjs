@@ -3,10 +3,7 @@ import { DirectoryKnowledgeSource } from "../adapters/filesystem/knowledge-sourc
 import { resolveHarnesses, readCodexKey } from "../adapters/codex/config.mjs";
 
 /** Offline configuration probe. Never submits a model request or reads shared credential files. */
-export async function inspectLocalConfiguration(
-  profile,
-  environment = process.env,
-) {
+export async function inspectLocalConfiguration(profile, environment = process.env) {
   const harnesses = resolveHarnesses(profile.config);
   const { configured } =
     profile.config.mode === "model" &&
@@ -20,9 +17,7 @@ export async function inspectLocalConfiguration(
     "openai-compatible": "OPENCRAFT_EVAL_API_KEY",
     anthropic: "ANTHROPIC_API_KEY",
   }[configured.model?.provider];
-  const source = profile.config.workspace
-    ? new DirectoryKnowledgeSource(profile.config.workspace)
-    : null;
+  const source = profile.config.workspace ? new DirectoryKnowledgeSource(profile.config.workspace) : null;
   return {
     stage: "development",
     profile: profile.path,
@@ -34,9 +29,7 @@ export async function inspectLocalConfiguration(
       execution: harnesses.execution,
     },
     executionCheckpoint:
-      harnesses.execution === "codex"
-        ? "Codex native thread with host-effect receipts"
-        : "Pi durable",
+      harnesses.execution === "codex" ? "Codex native thread with host-effect receipts" : "Pi durable",
     executionModel:
       harnesses.execution === "codex"
         ? { provider: "codex-responses", modelId: harnesses.codex.modelId }
@@ -47,9 +40,7 @@ export async function inspectLocalConfiguration(
             provider: "codex-responses",
             modelId: harnesses.codex.modelId,
             credentialConfigured: !!harnesses.codex.credentialFile,
-            credentialFileValid: harnesses.codex.credentialFile
-              ? !!readCodexKey(harnesses.codex)
-              : null,
+            credentialFileValid: harnesses.codex.credentialFile ? !!readCodexKey(harnesses.codex) : null,
             protocol: "Responses (not Chat Completions)",
           }
         : (configured.model ?? { provider: "faux", modelId: "faux-1" }),
@@ -66,8 +57,7 @@ export async function inspectLocalConfiguration(
       : { inheritsAssistantModel: true },
     runPolicy: profile.config.runPolicy,
     usage: {
-      source:
-        "Native counters and assistant inference observations; endpoint prices remain unknown unless provided",
+      source: "Native counters and assistant inference observations; endpoint prices remain unknown unless provided",
       billingVerified: false,
     },
     configurationValid: true,
@@ -81,9 +71,7 @@ export async function inspectLocalConfiguration(
           present: !!environment[credentialName],
         }
       : null,
-    materials: source
-      ? { configured: true, entries: source.list().length }
-      : { configured: false },
+    materials: source ? { configured: true, entries: source.list().length } : { configured: false },
     actualModelRequestPerformed: false,
     productQualityVerified: false,
     next:

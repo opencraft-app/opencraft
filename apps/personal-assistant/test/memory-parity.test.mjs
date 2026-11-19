@@ -5,11 +5,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/store.mjs";
 import { profileFor, running, until } from "./helpers.mjs";
-import {
-  MemorySynthesisPolicy,
-  boundMemoryEvidence,
-  memoryTombstoneId,
-} from "../src/domain/memory-synthesis.mjs";
+import { MemorySynthesisPolicy, boundMemoryEvidence, memoryTombstoneId } from "../src/domain/memory-synthesis.mjs";
 import { MemoryLearningCoordinator } from "../src/runtime/memory-learning-coordinator.mjs";
 
 function capture(app, id = "input", text = "I now live in Shenzhen") {
@@ -75,7 +71,7 @@ test("explicit forget protects normalized content across new keys and reopen; ex
   let s = new Store(profile);
   let job = capture(s.app);
   commit(s.app, job);
-  let entry = s.app.memory.list()[0];
+  const entry = s.app.memory.list()[0];
   s.app.memory.change("forget", "memory.forget", {
     key: entry.key,
     expectedRevision: entry.revision,
@@ -104,12 +100,7 @@ test("explicit forget protects normalized content across new keys and reopen; ex
     expectedRevision: 0,
   });
   assert.equal(s.app.memory.list().length, 1);
-  assert.equal(
-    s.app.r.memories.tombstoned(
-      memoryTombstoneId("user", null, "Lives in Shenzhen"),
-    ),
-    false,
-  );
+  assert.equal(s.app.r.memories.tombstoned(memoryTombstoneId("user", null, "Lives in Shenzhen")), false);
 });
 
 test("synthesis updates and removes obsolete facts; automatic removal does not become a user forget", (t) => {
@@ -150,18 +141,11 @@ test("legacy facts may be corrected by cited evidence while explicit entries rem
   const { app, db } = local(t);
   const dir = app.memory.files.locations().user;
   mkdirSync(dir, { recursive: true });
-  writeFileSync(
-    join(dir, "profile.md"),
-    "# User\n\n- (2026-11-01) Lives in Shanghai\n",
-  );
+  writeFileSync(join(dir, "profile.md"), "# User\n\n- (2026-11-01) Lives in Shanghai\n");
   const fact = app.memory.learningSnapshot().facts[0];
   assert.equal(fact.origin, "legacy");
   const job = capture(app);
-  commit(
-    app,
-    job,
-    proposal(job, "Lives in Shenzhen", { action: "update", id: fact.id }),
-  );
+  commit(app, job, proposal(job, "Lives in Shenzhen", { action: "update", id: fact.id }));
   assert.equal(app.memory.list()[0].value, "Lives in Shenzhen");
   assert.equal(app.memory.learningSnapshot().facts[0].origin, "synthesis");
 });
@@ -172,15 +156,9 @@ test("a duplicate merge keeps the existing fact and retires only the superseded 
   commit(app, job);
   job = capture(app, "additional");
   commit(app, job, proposal(job, "Lives in China"));
-  const target = app.memory
-    .learningSnapshot()
-    .facts.find((f) => f.content === "Lives in Shenzhen");
+  const target = app.memory.learningSnapshot().facts.find((f) => f.content === "Lives in Shenzhen");
   job = capture(app, "merge");
-  commit(
-    app,
-    job,
-    proposal(job, "Lives in China", { action: "update", id: target.id }),
-  );
+  commit(app, job, proposal(job, "Lives in China", { action: "update", id: target.id }));
   assert.deepEqual(
     app.memory.list().map((m) => m.value),
     ["Lives in China"],
@@ -209,11 +187,7 @@ test("real default debounce is 15 seconds; restart merges only the latest 12 exc
   assert.equal(batch.evidence[0].text, "Fact 2");
   assert.equal(batch.evidence.at(-2).text, "Fact 13");
   assert.equal(s.app.memoryLearning.get("learning:e13").state, "merged");
-  assert.equal(
-    s.app.history.view({ limit: 100 }).messages.filter((m) => m.role === "user")
-      .length,
-    14,
-  );
+  assert.equal(s.app.history.view({ limit: 100 }).messages.filter((m) => m.role === "user").length, 14);
 });
 
 test("evidence truncation preserves both ends; per-fact content is normalized and bounded to 500", (t) => {
@@ -233,11 +207,7 @@ test("hourly polling queues a daily persisted clock review; clock-only create is
   let now = Date.UTC(2026, 10, 3);
   app.memoryLearning.now = app.memory.now = () => now;
   let job = capture(app);
-  commit(
-    app,
-    job,
-    proposal(job, "Plans to travel on November 3", { kind: "log" }),
-  );
+  commit(app, job, proposal(job, "Plans to travel on November 3", { kind: "log" }));
   app.memoryLearning.queueTemporal();
   assert.equal(app.memoryLearning.pending().length, 0);
   now += 86400000;
@@ -299,23 +269,13 @@ test("fact IDs must come from the captured snapshot; one target can change at mo
   commit(app, job);
   job = capture(app, "new");
   assert.throws(
-    () =>
-      app.memoryLearning.proposed(
-        job.id,
-        proposal(job, "other", { action: "update", id: "unknown" }),
-      ),
+    () => app.memoryLearning.proposed(job.id, proposal(job, "other", { action: "update", id: "unknown" })),
     /Unknown/,
   );
   const id = job.snapshot.facts[0].id,
     c = { action: "remove", id, sourceEvidenceIds: [job.evidence[0].id] };
-  assert.throws(
-    () => app.memoryLearning.proposed(job.id, { changes: [c, c] }),
-    /Duplicate/,
-  );
-  assert.throws(
-    () => app.memoryLearning.proposed(job.id, { changes: Array(65).fill(c) }),
-    /64/,
-  );
+  assert.throws(() => app.memoryLearning.proposed(job.id, { changes: [c, c] }), /Duplicate/);
+  assert.throws(() => app.memoryLearning.proposed(job.id, { changes: Array(65).fill(c) }), /64/);
 });
 
 test("synthesis snapshot is capped at 512 and prioritizes explicit profile facts over dated legacy entries", (t) => {
@@ -339,10 +299,7 @@ test("full synthesis batch and job settlement roll back together on a late write
   const { app } = local(t),
     job = capture(app);
   app.memoryLearning.proposed(job.id, {
-    changes: [
-      ...proposal(job).changes,
-      ...proposal(job, "Works in a small team").changes,
-    ],
+    changes: [...proposal(job).changes, ...proposal(job, "Works in a small team").changes],
   });
   const save = app.r.memories.save.bind(app.r.memories);
   let calls = 0;
@@ -350,18 +307,12 @@ test("full synthesis batch and job settlement roll back together on a late write
     if (++calls === 2) throw new Error("late write failure");
     save(m);
   };
-  assert.throws(
-    () => app.memoryLearning.finish(job.id, { approved: true }),
-    /late write/,
-  );
+  assert.throws(() => app.memoryLearning.finish(job.id, { approved: true }), /late write/);
   assert.deepEqual(app.memory.list(), []);
   assert.equal(app.memory.epoch(), 0);
   assert.equal(app.memoryLearning.get(job.id).state, "proposed");
   app.r.memories.save = save;
-  assert.equal(
-    app.memoryLearning.finish(job.id, { approved: true }).state,
-    "committed",
-  );
+  assert.equal(app.memoryLearning.finish(job.id, { approved: true }).state, "committed");
 });
 
 test("the 90-second policy is a whole attempt deadline, including proposal plus review; late review cannot commit", async (t) => {
@@ -419,26 +370,13 @@ test("profile/recent prompt is installed in real execution snapshots and recepti
   runner.app.reception.accept("query-context", {
     text: "What do you know about me?",
   });
-  const context = runner.app.reception.context(
-    runner.app.reception.turn("query-context"),
-  );
+  const context = runner.app.reception.context(runner.app.reception.turn("query-context"));
   assert.equal(context.memoryContext.profile[0].content, "Lives in Shenzhen");
-  const memories = [
-    ...context.memoryContext.profile,
-    ...context.memoryContext.recent,
-    ...context.memoryRecall,
-  ];
-  assert.equal(
-    memories.filter(
-      (m) => (m.content ?? m.value) === "Plans to travel November 3",
-    ).length,
-    1,
-  );
+  const memories = [...context.memoryContext.profile, ...context.memoryContext.recent, ...context.memoryRecall];
+  assert.equal(memories.filter((m) => (m.content ?? m.value) === "Plans to travel November 3").length, 1);
   const work = await call("submit", { text: "write a useful note" });
   await until(() => runner.app.r.executions.list(work.workId)[0]?.context_json);
-  const snapshot = JSON.parse(
-    runner.app.r.executions.list(work.workId)[0].context_json,
-  );
+  const snapshot = JSON.parse(runner.app.r.executions.list(work.workId)[0].context_json);
   assert.equal(snapshot.memoryContext.profile[0].content, "Lives in Shenzhen");
   assert.equal(snapshot.memoryContext.semanticSearch, false);
 });
@@ -552,10 +490,7 @@ test("schema13 upgrade preserves explicit provenance, original dates and queued 
   assert.equal(s.app.memory.list()[0].updatedAt, before.updatedAt);
   assert.equal(s.app.memory.learningSnapshot().facts[0].origin, "explicit");
   assert.equal(s.app.memoryLearning.get(job.id).state, "proposed");
-  assert.equal(
-    s.app.memoryLearning.finish(job.id, { approved: true }).state,
-    "committed",
-  );
+  assert.equal(s.app.memoryLearning.finish(job.id, { approved: true }).state, "committed");
 });
 
 test("imported memories without a refresh marker are immediately eligible for a temporal review", (t) => {
@@ -570,10 +505,7 @@ test("imported memories without a refresh marker are immediately eligible for a 
   assert.equal(job.temporal, 1);
   assert.deepEqual(job.evidence, []);
   app.memoryLearning.proposed(job.id, { changes: [] });
-  assert.equal(
-    app.memoryLearning.finish(job.id, { approved: true }).state,
-    "no-change",
-  );
+  assert.equal(app.memoryLearning.finish(job.id, { approved: true }).state, "no-change");
   assert.equal(app.memory.reviewDue(null), false);
 });
 
@@ -592,11 +524,7 @@ test("updating an obsolete automatic fact toward forgotten content retires the o
   commit(app, job, proposal(job, "Lives in Shanghai"));
   const target = app.memory.learningSnapshot().facts[0];
   job = capture(app, "update");
-  commit(
-    app,
-    job,
-    proposal(job, "Lives in Shenzhen", { action: "update", id: target.id }),
-  );
+  commit(app, job, proposal(job, "Lives in Shenzhen", { action: "update", id: target.id }));
   assert.deepEqual(app.memory.list(), []);
 });
 
@@ -604,11 +532,7 @@ test("large pre-migration facts cannot make every future synthesis skip due to a
   const { app, db } = local(t);
   const dir = app.memory.files.locations().user;
   mkdirSync(dir, { recursive: true });
-  const raw =
-    Array.from(
-      { length: 280 },
-      (_, i) => `- (2026-11-01) ${i}:` + "x".repeat(19000),
-    ).join("\n") + "\n";
+  const raw = Array.from({ length: 280 }, (_, i) => `- (2026-11-01) ${i}:` + "x".repeat(19000)).join("\n") + "\n";
   writeFileSync(join(dir, "profile.md"), raw);
   const job = capture(app);
   assert.equal(job.state, "queued");

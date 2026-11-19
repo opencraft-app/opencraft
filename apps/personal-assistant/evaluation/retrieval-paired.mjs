@@ -5,12 +5,7 @@ import { join, resolve, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { parseArgs } from "node:util";
 import { runMemoryGroup, summarizeCalls } from "./memory-system.mjs";
-import {
-  parseContexts,
-  projectGroup,
-  scoreOption,
-  hash,
-} from "./personamem-data.mjs";
+import { parseContexts, projectGroup, scoreOption, hash } from "./personamem-data.mjs";
 const { values } = parseArgs({
   options: {
     plan: { type: "string" },
@@ -21,20 +16,12 @@ const { values } = parseArgs({
     "background-codex-config": { type: "string" },
   },
 });
-for (const key of [
-  "plan",
-  "contexts",
-  "output",
-  "reference",
-  "codex-config",
-  "background-codex-config",
-])
+for (const key of ["plan", "contexts", "output", "reference", "codex-config", "background-codex-config"])
   if (!values[key]) throw new Error("Missing explicit --" + key);
 const lab = resolve(import.meta.dirname, ".."),
   reference = resolve(values.reference),
   output = resolve(values.output);
-const git = (cwd, ...args) =>
-  execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+const git = (cwd, ...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 if (
   git(lab, "status", "--porcelain", "--untracked-files=no") ||
   git(reference, "status", "--porcelain", "--untracked-files=no")
@@ -42,13 +29,10 @@ if (
   throw new Error("Committed clean source required");
 const prior = JSON.parse(await readFile(values.plan));
 const contextRaw = await readFile(values.contexts, "utf8");
-if (hash(contextRaw) !== prior.dataset.contextsSha256)
-  throw new Error("Context hash changed");
+if (hash(contextRaw) !== prior.dataset.contextsSha256) throw new Error("Context hash changed");
 const contexts = parseContexts(contextRaw),
   codex = JSON.parse(await readFile(values["codex-config"])),
-  backgroundCodex = JSON.parse(
-    await readFile(values["background-codex-config"]),
-  );
+  backgroundCodex = JSON.parse(await readFile(values["background-codex-config"]));
 const identity = async (c) => ({
   model: c.modelId,
   baseUrl: c.baseUrl,
@@ -112,14 +96,10 @@ await writeFile(join(output, "source.json"), JSON.stringify(sources, null, 2));
 const records = [];
 const save = async () => {
   const all = records.flatMap((r) =>
-    (r.result?.results ?? r.progress.filter((p) => p.type === "answer")).map(
-      (a) => ({ ...a, group: r.group }),
-    ),
+    (r.result?.results ?? r.progress.filter((p) => p.type === "answer")).map((a) => ({ ...a, group: r.group })),
   );
   const calls = records.flatMap(
-    (r) =>
-      r.result?.calls ??
-      r.progress.filter((p) => p.type === "usage").map((p) => p.call),
+    (r) => r.result?.calls ?? r.progress.filter((p) => p.type === "usage").map((p) => p.call),
   );
   const summary = {
     at: new Date().toISOString(),
@@ -127,9 +107,7 @@ const save = async () => {
     planned: 17,
     groupsCompleted: records.filter((r) => r.status === "completed").length,
     variants: {},
-    preparationUsage: summarizeCalls(
-      calls.filter((c) => c.kind !== "reception"),
-    ),
+    preparationUsage: summarizeCalls(calls.filter((c) => c.kind !== "reception")),
     preparations: records.map((r) => ({
       group: r.group,
       status: r.status,
@@ -143,10 +121,7 @@ const save = async () => {
       ids = new Set(rows.flatMap((a) => a.callIds ?? []));
     const completed = rows.filter((a) => a.status === "completed");
     const correct = completed.filter((a) =>
-      scoreOption(
-        a.hypothesis,
-        plan.groups[a.group].questions[a.query].correct_answer,
-      ),
+      scoreOption(a.hypothesis, plan.groups[a.group].questions[a.query].correct_answer),
     ).length;
     summary.variants[variant] = {
       planned: 17,
@@ -161,12 +136,7 @@ const save = async () => {
         group: i,
         planned: g.questions.length,
         correct: completed.filter(
-          (a) =>
-            a.group === i &&
-            scoreOption(
-              a.hypothesis,
-              plan.groups[a.group].questions[a.query].correct_answer,
-            ),
+          (a) => a.group === i && scoreOption(a.hypothesis, plan.groups[a.group].questions[a.query].correct_answer),
         ).length,
       })),
     };
@@ -174,12 +144,7 @@ const save = async () => {
   for (let group = 0; group < plan.groups.length; group++)
     for (let query = 0; query < plan.groups[group].questions.length; query++) {
       const answers = Object.fromEntries(
-        ["before", "after"].map((v) => [
-          v,
-          all.find(
-            (a) => a.group === group && a.query === query && a.variant === v,
-          ),
-        ]),
+        ["before", "after"].map((v) => [v, all.find((a) => a.group === group && a.query === query && a.variant === v)]),
       );
       summary.pairs.push({
         group,
@@ -193,10 +158,7 @@ const save = async () => {
                   status: a.status,
                   correct:
                     a.status === "completed" &&
-                    scoreOption(
-                      a.hypothesis,
-                      plan.groups[group].questions[query].correct_answer,
-                    ),
+                    scoreOption(a.hypothesis, plan.groups[group].questions[query].correct_answer),
                   hypothesis: a.hypothesis,
                   error: a.error ?? null,
                   queries: a.queries?.length ?? 0,
@@ -206,10 +168,7 @@ const save = async () => {
         ),
       });
     }
-  await writeFile(
-    join(output, "summary.json"),
-    JSON.stringify(summary, null, 2),
-  );
+  await writeFile(join(output, "summary.json"), JSON.stringify(summary, null, 2));
 };
 try {
   for (let group = 0; group < plan.groups.length; group++) {
@@ -228,10 +187,7 @@ try {
         timeoutMs: 900000,
         onRecord: (p) => {
           progress.push(p);
-          appendFileSync(
-            join(directory, "progress.jsonl"),
-            JSON.stringify(p) + "\n",
-          );
+          appendFileSync(join(directory, "progress.jsonl"), JSON.stringify(p) + "\n");
           if (["batch", "answer", "checkpoint"].includes(p.type))
             console.log(
               JSON.stringify({
@@ -253,23 +209,14 @@ try {
       elapsedMs: performance.now() - started,
     };
     records.push(record);
-    await writeFile(
-      join(directory, "result.json"),
-      JSON.stringify(record, null, 2),
-    );
+    await writeFile(join(directory, "result.json"), JSON.stringify(record, null, 2));
     await save();
-    console.log(
-      JSON.stringify({ event: "finished", group, status: record.status }),
-    );
+    console.log(JSON.stringify({ event: "finished", group, status: record.status }));
   }
 } finally {
   await save();
   await writeFile(
     join(output, "completed.json"),
-    JSON.stringify(
-      { at: new Date().toISOString(), allGroupsSettled: records.length === 3 },
-      null,
-      2,
-    ),
+    JSON.stringify({ at: new Date().toISOString(), allGroupsSettled: records.length === 3 }, null, 2),
   );
 }

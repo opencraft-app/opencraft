@@ -62,8 +62,7 @@ export class PiExecutionAdapter {
     const policy = RunPolicy.resolve(this.profile.config.runPolicy);
     const runGuard = new PiRunGuard({
       policy,
-      step: (taskId) =>
-        this.executions.modelStep(work, taskId, policy.maxSteps),
+      step: (taskId) => this.executions.modelStep(work, taskId, policy.maxSteps),
     });
     const registry = createRegistry();
     registry.install(
@@ -96,17 +95,13 @@ export class PiExecutionAdapter {
         }),
       }),
     );
-    const storage = await openNodeSqliteStorage(
-      piSessionPath(this.profile, work.id),
-    );
+    const storage = await openNodeSqliteStorage(piSessionPath(this.profile, work.id));
     let harness, root, samplingTask, usageTimer;
     const sampleUsage = () => {
       if (samplingTask || !harness) return samplingTask;
       samplingTask = harness
         .usage(context)
-        .then((state) =>
-          this.recordUsage(work.id, state, this.profile.config.mode),
-        )
+        .then((state) => this.recordUsage(work.id, state, this.profile.config.mode))
         .catch((error) => {
           if (!this.suspending && !interactionPause) this.onUsageError(error);
         })
@@ -140,16 +135,11 @@ export class PiExecutionAdapter {
       usageTimer = setInterval(sampleUsage, 2000);
       usageTimer.unref?.();
       void sampleUsage();
-      const existing = await storage.submissionByRequest(
-        root.id,
-        execution.id,
-        context,
-      );
+      const existing = await storage.submissionByRequest(root.id, execution.id, context);
       if (!existing) await root.abort(context);
       await root.configure({ model: choice.model }, context);
       this.executions.assertCurrent(work);
-      if (signal.aborted)
-        throw new Error("Execution superseded before admission");
+      if (signal.aborted) throw new Error("Execution superseded before admission");
       const onAbort = () => {
         runGuard.abort();
       };
@@ -181,15 +171,10 @@ export class PiExecutionAdapter {
           throw new Error(
             `Pi submission did not finish: ${settled.reason ?? settled.status}${typeof settled.detail === "string" ? `: ${settled.detail.slice(0, 2000)}` : ""}`,
           );
-        const answer = await root.commit(
-          (tx) => tx.entry(AssistantEntry, settled.answer),
-          context,
-        );
+        const answer = await root.commit((tx) => tx.entry(AssistantEntry, settled.answer), context);
         const text = (answer?.model ?? [])
           .flatMap((m) =>
-            Array.isArray(m.content)
-              ? m.content.filter((v) => v.type === "text").map((v) => v.text)
-              : [],
+            Array.isArray(m.content) ? m.content.filter((v) => v.type === "text").map((v) => v.text) : [],
           )
           .join("\n");
         this.executions.assertCurrent(work);
@@ -200,8 +185,7 @@ export class PiExecutionAdapter {
       }
     } catch (error) {
       runError = runGuard.error ?? error;
-      if (interactionPause && !signal.aborted)
-        return { status: "waiting_input", workId: work.id };
+      if (interactionPause && !signal.aborted) return { status: "waiting_input", workId: work.id };
       throw runGuard.error ?? error;
     } finally {
       clearInterval(usageTimer);
@@ -227,10 +211,7 @@ export class PiExecutionAdapter {
       if (harness) await harness.close(context);
       else await storage.close(context);
       try {
-        const state = await readNativeUsage(
-          piSessionPath(this.profile, work.id),
-          choice.models,
-        );
+        const state = await readNativeUsage(piSessionPath(this.profile, work.id), choice.models);
         this.recordUsage(work.id, state, this.profile.config.mode);
       } catch (error) {
         this.onUsageError(error);

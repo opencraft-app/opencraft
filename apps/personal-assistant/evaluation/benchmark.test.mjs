@@ -14,17 +14,10 @@ import {
   exclusionIds,
 } from "./benchmark.mjs";
 import { scoreRecords } from "./benchmark-report.mjs";
-import {
-  recoveryAction,
-  recordVerdict,
-  serviceStatus,
-} from "./benchmark-failures.mjs";
+import { recoveryAction, recordVerdict, serviceStatus } from "./benchmark-failures.mjs";
 
 test("recovery identifies truncated publications without converting recorded model failures into retries", () => {
-  const interrupted = decodeRecoveryRecord(
-    Buffer.from('{"status":'),
-    "old/records/case.json",
-  );
+  const interrupted = decodeRecoveryRecord(Buffer.from('{"status":'), "old/records/case.json");
   assert.equal(interrupted.record, undefined);
   assert.equal(interrupted.incomplete.reason, "incomplete-record-publication");
   assert.equal(interrupted.incomplete.bytes, 10);
@@ -33,13 +26,7 @@ test("recovery identifies truncated publications without converting recorded mod
     error: "The operation was aborted due to timeout",
     judge: { correct: false },
   };
-  assert.equal(
-    recoveryAction(
-      decodeRecoveryRecord(Buffer.from(JSON.stringify(failed)), "old.json")
-        .record,
-    ),
-    "reuse",
-  );
+  assert.equal(recoveryAction(decodeRecoveryRecord(Buffer.from(JSON.stringify(failed)), "old.json").record), "reuse");
 });
 
 test("record publication is complete and atomic and cannot replace an existing judgment", async () => {
@@ -118,31 +105,16 @@ test("recovery permits harness fixes but rejects changed assistant/model/selecti
   const previous = { identity, sourceFiles: files };
   const updated = { ...identity, sourceCodeSha256: "new" };
   assert.equal(
-    validateRecovery(previous, updated, [
-      files[0],
-      { ...files[1], sha256: "fixed" },
-    ]).productSourceUnchanged,
+    validateRecovery(previous, updated, [files[0], { ...files[1], sha256: "fixed" }]).productSourceUnchanged,
     true,
   );
+  assert.throws(() => validateRecovery(previous, { ...updated, seed: "another" }, files), /differs/);
   assert.throws(
-    () => validateRecovery(previous, { ...updated, seed: "another" }, files),
+    () => validateRecovery(previous, { ...updated, assistantHarness: { assistant: "codex" } }, files),
     /differs/,
   );
   assert.throws(
-    () =>
-      validateRecovery(
-        previous,
-        { ...updated, assistantHarness: { assistant: "codex" } },
-        files,
-      ),
-    /differs/,
-  );
-  assert.throws(
-    () =>
-      validateRecovery(previous, updated, [
-        { ...files[0], sha256: "changed" },
-        files[1],
-      ]),
+    () => validateRecovery(previous, updated, [{ ...files[0], sha256: "changed" }, files[1]]),
     /product source differs/,
   );
 });
@@ -168,9 +140,7 @@ test("stratified selection is deterministic, ignores answers/length, and exclude
   rows.push({ question_id: "c8c3f81d", question_type: "single-session-user" });
   const a = sampleRows(rows, 3, "seed");
   const b = sampleRows(
-    [...rows]
-      .reverse()
-      .map((r) => ({ ...r, answer: "changed", haystack_sessions: [[{}, {}]] })),
+    [...rows].reverse().map((r) => ({ ...r, answer: "changed", haystack_sessions: [[{}, {}]] })),
     3,
     "seed",
   );
@@ -183,8 +153,7 @@ test("stratified selection is deterministic, ignores answers/length, and exclude
     a.some((r) => r.question_id === "c8c3f81d"),
     false,
   );
-  for (const type of types)
-    assert.equal(a.filter((r) => stratum(r) === type).length, 3);
+  for (const type of types) assert.equal(a.filter((r) => stratum(r) === type).length, 3);
 });
 
 test("official prompt substitution never treats braces in answers as placeholders", () => {
@@ -226,14 +195,8 @@ test("held-out selection excludes all prior-plan IDs before ranking, independent
   assert.equal(fresh.length, 14);
   assert.ok(fresh.every((row) => !old.includes(row.question_id)));
   assert.deepEqual(fresh, sampleRows([...rows].reverse(), 2, "new", excluded));
-  assert.throws(
-    () => exclusionIds({ identity: { selectedIds: [] } }),
-    /Exclusion plan/,
-  );
-  assert.throws(
-    () => exclusionIds({ identity: { selectedIds: [7] } }),
-    /Exclusion plan/,
-  );
+  assert.throws(() => exclusionIds({ identity: { selectedIds: [] } }), /Exclusion plan/);
+  assert.throws(() => exclusionIds({ identity: { selectedIds: [7] } }), /Exclusion plan/);
   assert.throws(() => sampleRows(rows, 5, "new", excluded), /Insufficient/);
 });
 
@@ -245,17 +208,9 @@ test("changed long-history variant or failure gate cannot reuse old answers", ()
     sourceCodeSha256: "one",
   };
   const previous = { identity, sourceFiles: [] };
+  assert.throws(() => validateRecovery(previous, { ...identity, variant: "oracle" }, []), /differs/);
   assert.throws(
-    () => validateRecovery(previous, { ...identity, variant: "oracle" }, []),
-    /differs/,
-  );
-  assert.throws(
-    () =>
-      validateRecovery(
-        previous,
-        { ...identity, scheduling: { concurrency: 2, nativeFailureLimit: 2 } },
-        [],
-      ),
+    () => validateRecovery(previous, { ...identity, scheduling: { concurrency: 2, nativeFailureLimit: 2 } }, []),
     /differs/,
   );
 });

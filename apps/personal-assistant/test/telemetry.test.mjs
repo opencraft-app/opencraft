@@ -1,15 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  symlinkSync,
-  mkdirSync,
-  statSync,
-  existsSync,
-} from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, mkdirSync, statSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -40,17 +31,10 @@ function envelopes(path, name) {
     .map(JSON.parse);
 }
 const spans = (p) =>
-  envelopes(p, "traces").flatMap((x) =>
-    x.resourceSpans.flatMap((r) => r.scopeSpans.flatMap((s) => s.spans)),
-  );
+  envelopes(p, "traces").flatMap((x) => x.resourceSpans.flatMap((r) => r.scopeSpans.flatMap((s) => s.spans)));
 const logs = (p) =>
-  envelopes(p, "logs").flatMap((x) =>
-    x.resourceLogs.flatMap((r) => r.scopeLogs.flatMap((s) => s.logRecords)),
-  );
-const attributes = (x) =>
-  Object.fromEntries(
-    (x.attributes ?? []).map((a) => [a.key, Object.values(a.value)[0]]),
-  );
+  envelopes(p, "logs").flatMap((x) => x.resourceLogs.flatMap((r) => r.scopeLogs.flatMap((s) => s.logRecords)));
+const attributes = (x) => Object.fromEntries((x.attributes ?? []).map((a) => [a.key, Object.values(a.value)[0]]));
 
 test("official OTLP JSON exports correlated logs and concurrent parent/child spans without global state", async (t) => {
   const a = fixture(t),
@@ -58,13 +42,9 @@ test("official OTLP JSON exports correlated logs and concurrent parent/child spa
   await Promise.all([
     a.telemetry.run("root.a", {}, async () => {
       await delay(5);
-      await a.telemetry.run("child.a", {}, async () =>
-        a.telemetry.event("inside.a", { "app.phase": "synthetic" }),
-      );
+      await a.telemetry.run("child.a", {}, async () => a.telemetry.event("inside.a", { "app.phase": "synthetic" }));
     }),
-    b.telemetry.run("root.b", {}, () =>
-      b.telemetry.run("child.b", {}, async () => {}),
-    ),
+    b.telemetry.run("root.b", {}, () => b.telemetry.run("child.b", {}, async () => {})),
   ]);
   await Promise.all([a.telemetry.close(), b.telemetry.close()]);
   const sa = spans(a.profile.path),
@@ -76,16 +56,11 @@ test("official OTLP JSON exports correlated logs and concurrent parent/child spa
   assert.equal(child.parentSpanId, root.spanId);
   assert.equal(child.traceId, root.traceId);
   assert.notEqual(root.traceId, sb[0].traceId);
-  const log = logs(a.profile.path).find(
-    (l) => l.body.stringValue === "inside.a",
-  );
+  const log = logs(a.profile.path).find((l) => l.body.stringValue === "inside.a");
   assert.equal(log.traceId, child.traceId);
   assert.equal(log.spanId, child.spanId);
   assert.ok(BigInt(child.endTimeUnixNano) >= BigInt(child.startTimeUnixNano));
-  assert.equal(
-    statSync(join(a.profile.path, "telemetry", "logs.otlp.jsonl")).mode & 0o777,
-    0o600,
-  );
+  assert.equal(statSync(join(a.profile.path, "telemetry", "logs.otlp.jsonl")).mode & 0o777, 0o600);
 });
 
 test("model timeout is correlated, safely classified, and cannot export prompts or raw failures", async (t) => {
@@ -120,13 +95,8 @@ test("model timeout is correlated, safely classified, and cannot export prompts 
   await telemetry.close();
   assert.equal(calls, 1);
   assert.equal(spans(profile.path)[0].status.code, 2);
-  assert.equal(
-    attributes(spans(profile.path)[0])["app.error_type"],
-    "TimeoutError",
-  );
-  const bytes = envelopes(profile.path, "logs").concat(
-    envelopes(profile.path, "traces"),
-  );
+  assert.equal(attributes(spans(profile.path)[0])["app.error_type"], "TimeoutError");
+  const bytes = envelopes(profile.path, "logs").concat(envelopes(profile.path, "traces"));
   assert.doesNotMatch(JSON.stringify(bytes), /PRIVATE_.*_TOKEN/);
 });
 
@@ -165,8 +135,7 @@ test("structured failures export schema-owned paths and codes without arbitrary 
 
 test("bounded rotation retains valid OTLP envelopes and never grows without a limit", async (t) => {
   const { profile, telemetry } = fixture(t, { exporter: { maxBytes: 4096 } });
-  for (let i = 0; i < 30; i++)
-    await telemetry.run("rotation", { "app.attempt": i }, async () => {});
+  for (let i = 0; i < 30; i++) await telemetry.run("rotation", { "app.attempt": i }, async () => {});
   await telemetry.close();
   const files = readdirSync(join(profile.path, "telemetry"));
   assert.ok(files.length <= 8);
@@ -245,23 +214,35 @@ test("evaluation replay uses the same local exporter and preserves its outcome",
   );
   assert.ok(result.hypothesis);
   assert.ok(spans(path).some((s) => s.name === "memory.prepare"));
-  assert.equal(
-    JSON.stringify(envelopes(path, "logs")).includes("我喜欢茶"),
-    false,
-  );
+  assert.equal(JSON.stringify(envelopes(path, "logs")).includes("我喜欢茶"), false);
 });
 
-test('native failure diagnosis reaches OTLP without provider error bodies',async t=>{
-  const {nativeTurnFailure}=await import('../src/adapters/codex/turn-failure.mjs');
-  const {profile,telemetry}=fixture(t);
-  await assert.rejects(telemetry.run('codex.turn',{'app.queue_wait_ms':1200},async()=>{
-    throw nativeTurnFailure({status:'failed',error:{message:'private-provider-prompt',additionalDetails:'Bearer private-secret',codexErrorInfo:{httpConnectionFailed:{httpStatusCode:429}}}},telemetry,'reception');
-  }),/HTTP 429/);
+test("native failure diagnosis reaches OTLP without provider error bodies", async (t) => {
+  const { nativeTurnFailure } = await import("../src/adapters/codex/turn-failure.mjs");
+  const { profile, telemetry } = fixture(t);
+  await assert.rejects(
+    telemetry.run("codex.turn", { "app.queue_wait_ms": 1200 }, async () => {
+      throw nativeTurnFailure(
+        {
+          status: "failed",
+          error: {
+            message: "private-provider-prompt",
+            additionalDetails: "Bearer private-secret",
+            codexErrorInfo: { httpConnectionFailed: { httpStatusCode: 429 } },
+          },
+        },
+        telemetry,
+        "reception",
+      );
+    }),
+    /HTTP 429/,
+  );
   await telemetry.close();
-  const entries=logs(profile.path),event=entries.find(v=>v.body.stringValue==='codex.turn_failed');
-  assert.equal(attributes(event)['app.native_error'],'httpConnectionFailed');
-  assert.equal(Number(attributes(event)['http.response.status_code']),429);
-  assert.ok(spans(profile.path).some(v=>attributes(v)['app.error_type']==='native_turn_failed'));
-  assert.ok(spans(profile.path).some(v=>Number(attributes(v)['app.queue_wait_ms'])===1200));
-  assert.doesNotMatch(JSON.stringify(entries),/private-provider-prompt|private-secret/);
+  const entries = logs(profile.path),
+    event = entries.find((v) => v.body.stringValue === "codex.turn_failed");
+  assert.equal(attributes(event)["app.native_error"], "httpConnectionFailed");
+  assert.equal(Number(attributes(event)["http.response.status_code"]), 429);
+  assert.ok(spans(profile.path).some((v) => attributes(v)["app.error_type"] === "native_turn_failed"));
+  assert.ok(spans(profile.path).some((v) => Number(attributes(v)["app.queue_wait_ms"]) === 1200));
+  assert.doesNotMatch(JSON.stringify(entries), /private-provider-prompt|private-secret/);
 });

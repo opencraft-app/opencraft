@@ -417,7 +417,7 @@ test('installation launcher restores its broker connection when callers filter i
     assert.equal(result.code, 0, result.err);
     assert.equal((await f.native('log', '-1', '--format=%an <%ae>')).out, 'Employee <employee@example.test>');
   }
-  assert.ok(f.opens.includes('github.com'), 'the real wrapper must contact the installed broker');
+  assert.equal(f.opens.some(host => host === 'github.com'), true, 'the real wrapper must contact the installed broker');
 });
 
 test('installation launcher applies an explicit read policy to already-running callers', async t => {

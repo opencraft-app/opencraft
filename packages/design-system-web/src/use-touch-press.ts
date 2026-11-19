@@ -9,28 +9,43 @@ const TOUCH_ROW_PRESS_DELAY_MS = 100;
 export function useTouchPress(disabled: boolean) {
   const [eligible, setEligible] = useState<boolean | undefined>(undefined);
   const cleanup = useRef<(() => void) | undefined>(undefined);
-  const retire = () => { cleanup.current?.(); cleanup.current = undefined; };
+  const retire = () => {
+    cleanup.current?.();
+    cleanup.current = undefined;
+  };
   useEffect(() => {
     if (disabled) setEligible(false);
     return retire;
   }, [disabled]);
   return {
     "data-touch-press": eligible,
-    onKeyDown() { retire(); setEligible(undefined); },
+    onKeyDown() {
+      retire();
+      setEligible(undefined);
+    },
     onPointerDown(event: PointerEvent<HTMLButtonElement>) {
       retire();
       const touch = event.pointerType === "touch" || event.pointerType === "pen";
       setEligible(touch ? false : undefined);
       if (!touch || disabled || event.defaultPrevented || !event.isPrimary || event.button !== 0) return;
-      const document = event.currentTarget.ownerDocument, window = document.defaultView;
+      const document = event.currentTarget.ownerDocument,
+        window = document.defaultView;
       const { pointerId, clientX: x, clientY: y } = event;
       const timer = setTimeout(() => setEligible(true), TOUCH_ROW_PRESS_DELAY_MS);
-      const cancel = () => { retire(); setEligible(false); };
-      const move = (next: globalThis.PointerEvent) => {
-        if (next.pointerId === pointerId && Math.hypot(next.clientX - x, next.clientY - y) >= TOUCH_PAN_DEADZONE) cancel();
+      const cancel = () => {
+        retire();
+        setEligible(false);
       };
-      const end = (next: globalThis.PointerEvent) => { if (next.pointerId === pointerId) cancel(); };
-      const another = (next: globalThis.PointerEvent) => { if (next.pointerId !== pointerId) cancel(); };
+      const move = (next: globalThis.PointerEvent) => {
+        if (next.pointerId === pointerId && Math.hypot(next.clientX - x, next.clientY - y) >= TOUCH_PAN_DEADZONE)
+          cancel();
+      };
+      const end = (next: globalThis.PointerEvent) => {
+        if (next.pointerId === pointerId) cancel();
+      };
+      const another = (next: globalThis.PointerEvent) => {
+        if (next.pointerId !== pointerId) cancel();
+      };
       document.addEventListener("pointermove", move, true);
       document.addEventListener("pointerup", end, true);
       document.addEventListener("pointercancel", end, true);

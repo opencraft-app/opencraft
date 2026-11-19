@@ -3,10 +3,7 @@ import { mkdir, readFile, writeFile, appendFile } from "node:fs/promises";
 import { join, resolve, relative } from "node:path";
 import { pathToFileURL } from "node:url";
 import { nativeText } from "./native-text.mjs";
-const root = resolve(
-  import.meta.dirname,
-  "../../../tencentdb-agent-memory/MemoryCore",
-);
+const root = resolve(import.meta.dirname, "../../../tencentdb-agent-memory/MemoryCore");
 const load = (p) => import(pathToFileURL(join(root, "src", p)).href);
 const originalLog = console.log;
 console.log = (...args) => console.error(...args);
@@ -54,21 +51,13 @@ async function init(r) {
   });
   const factory = await load("utils/pipeline-factory.ts");
   factory.initDataDirectories(r.directory);
-  ({ vectorStore: store, embeddingService: embedding } =
-    await factory.initStores(cfg, r.directory, logger));
+  ({ vectorStore: store, embeddingService: embedding } = await factory.initStores(cfg, r.directory, logger));
   if (!store?.isFtsAvailable()) throw new Error("TDB FTS5 unavailable");
-  const { StandaloneLLMRunnerFactory } = await load(
-    "adapters/standalone/llm-runner.ts",
-  );
+  const { StandaloneLLMRunnerFactory } = await load("adapters/standalone/llm-runner.ts");
   const rf = new StandaloneLLMRunnerFactory({ config: cfg.llm, logger });
-  const { createSandboxedTools } = await load(
-    "adapters/standalone/llm-runner.eval-tools.ts",
-  );
+  const { createSandboxedTools } = await load("adapters/standalone/llm-runner.eval-tools.ts");
   const nativeConfig = JSON.parse(
-    await readFile(
-      resolve(root, "../../.private/tokenhub-hy4-nothink-codex.json"),
-      "utf8",
-    ),
+    await readFile(resolve(root, "../../.private/tokenhub-hy4-nothink-codex.json"), "utf8"),
   );
   const nativeRunner = {
     run: async (params) => {
@@ -84,20 +73,13 @@ async function init(r) {
         result = await nativeText(nativeConfig, {
           instruction: params.systemPrompt ?? "",
           messages: [{ role: "user", content: params.prompt }],
-          signal: AbortSignal.timeout(
-            Math.min(params.timeoutMs ?? 120000, 180000),
-          ),
+          signal: AbortSignal.timeout(Math.min(params.timeoutMs ?? 120000, 180000)),
           tools: definitions,
           execute: async (name, args) => {
-            if (!Object.hasOwn(localTools, name))
-              throw new Error("Unknown file tool");
+            if (!Object.hasOwn(localTools, name)) throw new Error("Unknown file tool");
             const value = typeof args === "string" ? JSON.parse(args) : args;
-            const rel = relative(
-              resolve(params.workspaceDir),
-              resolve(params.workspaceDir, value.path ?? ""),
-            );
-            if (rel.startsWith("..") || rel.startsWith("/"))
-              throw new Error("Tool path escapes workspace");
+            const rel = relative(resolve(params.workspaceDir), resolve(params.workspaceDir, value.path ?? ""));
+            if (rel.startsWith("..") || rel.startsWith("/")) throw new Error("Tool path escapes workspace");
             return localTools[name].execute(value, {
               toolCallId: "native-comparison",
               messages: [],
@@ -205,8 +187,7 @@ async function perform(r) {
   if (r.op === "file") {
     const file = resolve(opts.directory, r.path);
     const rel = relative(opts.directory, file);
-    if (!rel.startsWith("scene_blocks/") || rel.includes(".."))
-      throw new Error("Only scene documents are readable");
+    if (!rel.startsWith("scene_blocks/") || rel.includes("..")) throw new Error("Only scene documents are readable");
     const content = await readFile(file, "utf8");
     const offset = r.offset ?? 0;
     return {

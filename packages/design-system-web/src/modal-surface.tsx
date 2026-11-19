@@ -1,10 +1,7 @@
-import { usePresence } from 'motion/react';
-import { usePresentationCompletion } from './presentation-completion';
+import { usePresence } from "motion/react";
+import { usePresentationCompletion } from "./presentation-completion";
 import { CloseIcon as X } from "@opencraft/design-system-web/action-icons";
-import type {
-  ModalDescriptor,
-  ModalDismissReason,
-} from "@opencraft/design-system/modal";
+import type { ModalDescriptor, ModalDismissReason } from "@opencraft/design-system/modal";
 import * as Dialog from "@radix-ui/react-dialog";
 
 import { useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
@@ -56,15 +53,19 @@ export function ModalSurface({
   const contentRef = useRef<HTMLDivElement>(null);
   const [present, remove] = usePresence();
   useLayoutEffect(() => {
-    if (present) contentRef.current?.style.removeProperty('--modal-sheet-offset');
+    if (present) contentRef.current?.style.removeProperty("--modal-sheet-offset");
   }, [present]);
   usePresentationCompletion(contentRef, !present, present, remove ?? (() => {}));
   const presentationRoot = useWorkbenchPresentationRoot();
   const dismissReason = useRef<ModalDismissReason>("system");
-  const opener = useRef((() => {let target:Element|null=document.activeElement;while(target?.shadowRoot?.activeElement)target=target.shadowRoot.activeElement;return target instanceof HTMLElement?target:null;})());
-  const surfaceClassName = className === undefined
-    ? "modal-surface"
-    : `modal-surface ${className}`;
+  const opener = useRef(
+    (() => {
+      let target: Element | null = document.activeElement;
+      while (target?.shadowRoot?.activeElement) target = target.shadowRoot.activeElement;
+      return target instanceof HTMLElement ? target : null;
+    })(),
+  );
+  const surfaceClassName = className === undefined ? "modal-surface" : `modal-surface ${className}`;
   const layerStyle: ModalLayerStyle = {
     "--modal-stack-offset": stackIndex * 2,
   };
@@ -89,7 +90,7 @@ export function ModalSurface({
         />
         <Dialog.Content
           ref={contentRef}
-          onOpenAutoFocus={event => {
+          onOpenAutoFocus={(event) => {
             if (initialFocus === "surface") {
               event.preventDefault();
               contentRef.current?.focus({ preventScroll: true });
@@ -117,7 +118,7 @@ export function ModalSurface({
             }
             dismissReason.current = "outside-press";
           }}
-          onCloseAutoFocus={event => {
+          onCloseAutoFocus={(event) => {
             if (deferReturnFocus) {
               event.preventDefault();
               deferReturnFocus(() => returnFocus?.() ?? opener.current);
@@ -125,13 +126,12 @@ export function ModalSurface({
             }
             const target = returnFocus?.() ?? opener.current;
             if (target?.isConnected && !target.closest("[inert]")) {
-              event.preventDefault(); target.focus({ preventScroll: true });
+              event.preventDefault();
+              target.focus({ preventScroll: true });
             }
           }}
         >
-          <Dialog.Title className="modal-surface__accessible-title">
-            {label}
-          </Dialog.Title>
+          <Dialog.Title className="modal-surface__accessible-title">{label}</Dialog.Title>
           {children}
           {showCloseButton ? (
             <Dialog.Close asChild>
@@ -152,4 +152,3 @@ export function ModalSurface({
     </Dialog.Root>
   );
 }
-

@@ -36,10 +36,7 @@ test("compact model contract commits a cited time-bound log through independent 
           if (kind === "memory-propose") {
             assert.equal(input.newEvidence.length, 1);
             assert.equal(input.newEvidence[0].id, job.evidence[0].id);
-            assert.equal(
-              JSON.stringify(input).includes(job.evidence[1].id),
-              false,
-            );
+            assert.equal(JSON.stringify(input).includes(job.evidence[1].id), false);
             return {
               stopReason: "stop",
               content: [
@@ -49,8 +46,7 @@ test("compact model contract commits a cited time-bound log through independent 
                     changes: [
                       {
                         action: "create",
-                        content:
-                          "Plans to submit a project proposal next Wednesday.",
+                        content: "Plans to submit a project proposal next Wednesday.",
                         kind: "log",
                         sourceEvidenceIds: [input.newEvidence[0].id],
                       },
@@ -104,9 +100,7 @@ test("model projection preserves writable identity and read-only shared provenan
           projectId: null,
         },
       ],
-      memories: [
-        { key: "legacy-key", value: "DUPLICATE", contentId: "wrong-id" },
-      ],
+      memories: [{ key: "legacy-key", value: "DUPLICATE", contentId: "wrong-id" }],
       sharedMemories: [
         {
           id: "shared",
@@ -136,18 +130,13 @@ test("model projection preserves writable identity and read-only shared provenan
   assert.equal(wire.memoryTarget.sharedMemories[0].agentId, "other");
   assert.equal(wire.memoryTarget.sharedMemories[0].writable, false);
   assert.deepEqual(wire.proposedChanges[0].sourceEvidenceIds, ["clock"]);
-  assert.doesNotMatch(
-    JSON.stringify(wire),
-    /host-only|DUPLICATE|wrong-id|private-binding|guardEpoch/,
-  );
+  assert.doesNotMatch(JSON.stringify(wire), /host-only|DUPLICATE|wrong-id|private-binding|guardEpoch/);
   wire.proposedChanges[0].content = "mutated copy";
   assert.equal(JSON.stringify(input), before);
 });
 
 test("literal and terms searches keep null deleted values out of matching results even in a tombstone catalogue", async (t) => {
-  const { readMemories } = await import(
-    "../src/adapters/sqlite/memory-read.mjs"
-  );
+  const { readMemories } = await import("../src/adapters/sqlite/memory-read.mjs");
   const store = new Store(profileFor(t));
   t.after(() => store.close());
   store.app.memory.change("set", "memory.set", {

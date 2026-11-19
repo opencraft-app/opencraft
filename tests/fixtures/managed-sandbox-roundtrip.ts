@@ -11,10 +11,7 @@ import { createSandboxAssistantProvider } from "../../apps/personal-assistant/sr
 const prefix = "opencraft/personal-assistant/";
 const binary =
   "/opt/opencraft/runtime/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex";
-const wait = async (
-  check: () => Promise<boolean> | boolean,
-  timeout = 35000,
-) => {
+const wait = async (check: () => Promise<boolean> | boolean, timeout = 35000) => {
   const end = Date.now() + timeout;
   while (Date.now() < end) {
     if (await check()) return;
@@ -66,9 +63,7 @@ export async function managedSandboxRoundtrip({
       let item: any;
       if (tools.includes("environment_run")) {
         const outputs = body.input.filter(
-          (v: any) =>
-            v.type === "function_call_output" &&
-            v.call_id === "run-isolated-once",
+          (v: any) => v.type === "function_call_output" && v.call_id === "run-isolated-once",
         );
         if (outputs.length) {
           assert.ok(JSON.stringify(outputs).includes(proof));
@@ -110,9 +105,7 @@ export async function managedSandboxRoundtrip({
         const blocked = expectUnknown && toolRequests > 0;
         const value = schema?.properties?.operations
           ? {
-              operations: [
-                blocked ? "blocked" : completedTool ? "deliver" : "delegate",
-              ],
+              operations: [blocked ? "blocked" : completedTool ? "deliver" : "delegate"],
             }
           : {
               proposal: blocked
@@ -192,16 +185,12 @@ export async function managedSandboxRoundtrip({
         close: async () => {},
       },
     });
-    const created = await service.personalAssistant(
-        human,
-        prefix + "bots/create",
-        {
-          name: "Environment verifier",
-          duties: "Verify only authorized isolated execution.",
-          environment: { kind: "sandbox", backendId: "e2b", templateId },
-          clientRequestId: "create-isolated-bot",
-        },
-      ),
+    const created = await service.personalAssistant(human, prefix + "bots/create", {
+        name: "Environment verifier",
+        duties: "Verify only authorized isolated execution.",
+        environment: { kind: "sandbox", backendId: "e2b", templateId },
+        clientRequestId: "create-isolated-bot",
+      }),
       bot = created.assistant;
     await service.personalAssistant(human, prefix + "model/set", {
       botId: bot.binding.botId,
@@ -218,24 +207,16 @@ export async function managedSandboxRoundtrip({
     );
     await service.send(human, {
       targetActorId: bot.actorId,
-      content:
-        "Please verify command execution in your configured isolated environment.",
+      content: "Please verify command execution in your configured isolated environment.",
       idempotencyKey: "sandbox-intake",
     });
     if (expectUnknown) {
       await wait(() => toolRequests === 1);
       await new Promise((r) => setTimeout(r, 2500));
       const { DatabaseSync } = await import("node:sqlite");
-      const db = new DatabaseSync(
-        join(directory, "bots", bot.binding.botId, "assistant.sqlite"),
-        { readOnly: true },
-      );
+      const db = new DatabaseSync(join(directory, "bots", bot.binding.botId, "assistant.sqlite"), { readOnly: true });
       try {
-        const rows = db
-          .prepare(
-            "SELECT state FROM execution_native_receipt WHERE tool='environment_run'",
-          )
-          .all();
+        const rows = db.prepare("SELECT state FROM execution_native_receipt WHERE tool='environment_run'").all();
         assert.equal(rows.length, 1);
         assert.equal(rows[0].state, "pending");
       } finally {
@@ -246,22 +227,13 @@ export async function managedSandboxRoundtrip({
     } else {
       await wait(async () => {
         const rows = await service.messages(human, bot.actorId, 0, 100);
-        return (
-          completedTool &&
-          rows.some(
-            (m: any) =>
-              m.author_id === bot.actorId && m.content.includes(proof),
-          )
-        );
+        return completedTool && rows.some((m: any) => m.author_id === bot.actorId && m.content.includes(proof));
       });
       assert.equal(toolRequests, 1);
       assert.equal(completedTool, true);
     }
     assert.deepEqual(errors, []);
-    const stored = await readFile(
-      join(directory, "bots", bot.binding.botId, "profile.json"),
-      "utf8",
-    );
+    const stored = await readFile(join(directory, "bots", bot.binding.botId, "profile.json"), "utf8");
     assert.ok(!stored.includes("synthetic-model-only"));
     assert.ok(!stored.includes("execution.environment"));
     await service.personalAssistant(human, prefix + "bots/pause", {
@@ -283,10 +255,9 @@ export async function managedSandboxRoundtrip({
   } catch (error) {
     // Only bounded schema/tool names are retained for debugging, never messages or credentials.
     if (errors.length) throw errors[0];
-    throw Object.assign(
-      error instanceof Error ? error : Error("Round-trip failed"),
-      { observations: observations.slice(-12) },
-    );
+    throw Object.assign(error instanceof Error ? error : Error("Round-trip failed"), {
+      observations: observations.slice(-12),
+    });
   } finally {
     await host?.close();
     await provider?.close();

@@ -1,12 +1,6 @@
 import { parseArgs } from "node:util";
 import { fork } from "node:child_process";
-import {
-  readFile,
-  mkdir,
-  writeFile,
-  readdir,
-  copyFile,
-} from "node:fs/promises";
+import { readFile, mkdir, writeFile, readdir, copyFile } from "node:fs/promises";
 import { appendFileSync } from "node:fs";
 import { resolve, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,35 +21,25 @@ import {
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 export function summarizeMemoryRun(plan, records) {
   const all = records.flatMap((r) =>
-    (r.result?.results ?? r.progress.filter((p) => p.type === "answer")).map(
-      (a) => ({ ...a, group: r.group }),
-    ),
+    (r.result?.results ?? r.progress.filter((p) => p.type === "answer")).map((a) => ({ ...a, group: r.group })),
   );
   const arms = Object.fromEntries(
     MEMORY_ARMS.map((arm) => {
       const rows = all.filter((r) => r.arm === arm),
         returned = rows.filter((r) => r.status === "completed");
       const correct = returned.filter((a) =>
-        scoreOption(
-          a.hypothesis,
-          plan.groups[a.group].questions[a.query].correct_answer,
-        ),
+        scoreOption(a.hypothesis, plan.groups[a.group].questions[a.query].correct_answer),
       ).length;
       const completedIds = new Set(rows.map((r) => `${r.group}:${r.query}`));
-      if (completedIds.size !== rows.length)
-        throw new Error("Duplicate question result");
+      if (completedIds.size !== rows.length) throw new Error("Duplicate question result");
       const planned = plan.groups.reduce((n, g) => n + g.questions.length, 0);
       const deadlineCensored = rows.filter(
-        (r) =>
-          r.status === "failed" &&
-          (r.failureType === "group-deadline" || r.error === 23),
+        (r) => r.status === "failed" && (r.failureType === "group-deadline" || r.error === 23),
       ).length;
       const failed = rows.length - returned.length - deadlineCensored,
         pending = planned - rows.length;
       const calls = records.flatMap(
-        (r) =>
-          r.result?.calls ??
-          r.progress.filter((p) => p.type === "usage").map((p) => p.call),
+        (r) => r.result?.calls ?? r.progress.filter((p) => p.type === "usage").map((p) => p.call),
       );
       const callIds = new Set(rows.flatMap((r) => r.callIds));
       const usage = calls.filter((c) => callIds.has(c.id));
@@ -82,11 +66,7 @@ export function summarizeMemoryRun(plan, records) {
     }),
   );
   const prepCalls = records
-    .flatMap(
-      (r) =>
-        r.result?.calls ??
-        r.progress.filter((p) => p.type === "usage").map((p) => p.call),
-    )
+    .flatMap((r) => r.result?.calls ?? r.progress.filter((p) => p.type === "usage").map((p) => p.call))
     .filter((c) => c.kind !== "reception");
   return {
     schemaVersion: 1,
@@ -121,9 +101,7 @@ export function summarizeCalls(calls) {
     hostCalls: calls.length,
     callsWithKnownTokens: known.length,
     callsWithUnknownTokens: calls.length - known.length,
-    knownTokens: known.length
-      ? known.reduce((n, c) => n + c.usage.totalTokens, 0)
-      : null,
+    knownTokens: known.length ? known.reduce((n, c) => n + c.usage.totalTokens, 0) : null,
     elapsedMsInclusive: calls.reduce((n, c) => n + c.elapsedMs, 0),
     outcomes: calls.reduce((o, c) => {
       o[c.outcome] = (o[c.outcome] ?? 0) + 1;
@@ -141,36 +119,23 @@ async function fingerprint() {
     }
   };
   await walk("src");
-  for (const f of await readdir(join(ROOT, "evaluation")))
-    if (f.endsWith(".mjs")) files.push(join("evaluation", f));
+  for (const f of await readdir(join(ROOT, "evaluation"))) if (f.endsWith(".mjs")) files.push(join("evaluation", f));
   files.push("package.json", "package-lock.json");
   const manifest = [];
-  for (const file of files.sort())
-    manifest.push({ file, sha256: hash(await readFile(join(ROOT, file))) });
+  for (const file of files.sort()) manifest.push({ file, sha256: hash(await readFile(join(ROOT, file))) });
   return { sha256: hash(JSON.stringify(manifest)), files: manifest };
 }
 export async function runMemoryGroup(
   input,
-  {
-    directory,
-    codex,
-    backgroundCodex,
-    timeoutMs,
-    onRecord,
-    referenceDirectory,
-  },
+  { directory, codex, backgroundCodex, timeoutMs, onRecord, referenceDirectory },
 ) {
   return new Promise((resolvePromise) => {
-    const worker = fork(
-      new URL("./memory-system-worker.mjs", import.meta.url),
-      [],
-      {
-        execArgv: [],
-        detached: true,
-        env: { PATH: process.env.PATH ?? "", HOME: directory, LANG: "C.UTF-8" },
-        stdio: ["ignore", "ignore", "ignore", "ipc"],
-      },
-    );
+    const worker = fork(new URL("./memory-system-worker.mjs", import.meta.url), [], {
+      execArgv: [],
+      detached: true,
+      env: { PATH: process.env.PATH ?? "", HOME: directory, LANG: "C.UTF-8" },
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+    });
     let result, workerError;
     const stop = () => {
       if (!Number.isSafeInteger(worker.pid)) return;
@@ -196,13 +161,7 @@ export async function runMemoryGroup(
           ? { status: "completed", result: result.result }
           : {
               status: "failed",
-              error:
-                result?.error ??
-                (signal
-                  ? "worker-terminated"
-                  : workerError
-                    ? "worker-error"
-                    : "worker-exit"),
+              error: result?.error ?? (signal ? "worker-terminated" : workerError ? "worker-error" : "worker-exit"),
             },
       );
     });
@@ -218,11 +177,7 @@ export async function runMemoryGroup(
 }
 // Controls have a separate process/profile/deadline so slow memory ingestion
 // cannot consume their evaluation window. No state is shared between the legs.
-export async function runMemoryGroupWithControls(
-  input,
-  options,
-  run = runMemoryGroup,
-) {
+export async function runMemoryGroupWithControls(input, options, run = runMemoryGroup) {
   const legs = [];
   for (const [name, arms, timeoutMs] of [
     ["controls", ["full-history", "no-history"], options.controlTimeoutMs],
@@ -244,15 +199,10 @@ export async function runMemoryGroupWithControls(
     legs.push({ name, ...result, progress });
   }
   const extract = (leg, field, type) =>
-    leg.result?.[field] ??
-    leg.progress
-      .filter((p) => p.type === type)
-      .map((p) => (type === "usage" ? p.call : p));
+    leg.result?.[field] ?? leg.progress.filter((p) => p.type === type).map((p) => (type === "usage" ? p.call : p));
   const memory = legs[1];
   return {
-    status: legs.every((leg) => leg.status === "completed")
-      ? "completed"
-      : "failed",
+    status: legs.every((leg) => leg.status === "completed") ? "completed" : "failed",
     result: {
       ...(memory.result ?? {}),
       results: legs.flatMap((leg) => extract(leg, "results", "answer")),
@@ -279,9 +229,7 @@ async function main() {
     },
   });
   if (!v.dataset || !v.output || !v["codex-config"])
-    throw new Error(
-      "Explicit dataset, new output and private codex-config required",
-    );
+    throw new Error("Explicit dataset, new output and private codex-config required");
   const timeoutMs = Number(v["timeout-ms"]),
     controlTimeoutMs = Number(v["control-timeout-ms"]);
   if (
@@ -298,10 +246,7 @@ async function main() {
   const questionsBytes = await readFile(join(dataset, "questions_32k.csv")),
     contextsBytes = await readFile(join(dataset, "shared_contexts_32k.jsonl"));
   const contexts = parseContexts(contextsBytes.toString("utf8"));
-  const rows = validateQuestions(
-    parseCsv(questionsBytes.toString("utf8")),
-    contexts,
-  );
+  const rows = validateQuestions(parseCsv(questionsBytes.toString("utf8")), contexts);
   const groups = selectQuestions(rows, Number(v.contexts), v.seed);
   const { codex } = await readCodexConfiguration(v["codex-config"]);
   const backgroundCodex = v["background-codex-config"]
@@ -320,14 +265,10 @@ async function main() {
     dataset: {
       questionsSha256: hash(questionsBytes),
       contextsSha256: hash(contextsBytes),
-      provenance: JSON.parse(
-        await readFile(join(dataset, "source.json"), "utf8"),
-      ),
+      provenance: JSON.parse(await readFile(join(dataset, "source.json"), "utf8")),
       totalQuestions: rows.length,
       totalContexts: contexts.size,
-      scorerSha256: hash(
-        await readFile(join(dataset, "official-inference.py")),
-      ),
+      scorerSha256: hash(await readFile(join(dataset, "official-inference.py"))),
     },
     source,
     model: {
@@ -353,19 +294,15 @@ async function main() {
       arms: MEMORY_ARMS,
       readerInstructionSha256: hash(READER_INSTRUCTION),
       sameReaderAcrossArms: true,
-      controlScheduling:
-        "independent-profile-and-deadline-controls-before-memory",
-      learning:
-        "original-MemoryLearningService-MemoryLearningModel-independent-verifier-file-authority",
-      ingestion:
-        "chronological-bursts-at-most-12-exchanges-native-default-policy-virtual-idle-drain-at-query-prefix",
+      controlScheduling: "independent-profile-and-deadline-controls-before-memory",
+      learning: "original-MemoryLearningService-MemoryLearningModel-independent-verifier-file-authority",
+      ingestion: "chronological-bursts-at-most-12-exchanges-native-default-policy-virtual-idle-drain-at-query-prefix",
       questionWritesMemory: false,
       goldToWorker: false,
       rawHistoryFallbackInMemoryArm: false,
       contextSummary: false,
       temporalMaintenance: false,
-      systemPersona:
-        "causal-prefix-context-shared-identically-across-all-arms-not-user-evidence",
+      systemPersona: "causal-prefix-context-shared-identically-across-all-arms-not-user-evidence",
       scoring: "official-extract_answer-JavaScript-port-no-LLM-judge",
       limitations: [
         "One or a few conversation groups are a wiring pilot, not representative benchmark or leaderboard evidence.",
@@ -382,9 +319,7 @@ async function main() {
     },
     groups: groups.map((g) => ({
       ...g,
-      missingCategories: PERSONAMEM_TYPES.filter(
-        (t) => !g.questions.some((q) => q.question_type === t),
-      ),
+      missingCategories: PERSONAMEM_TYPES.filter((t) => !g.questions.some((q) => q.question_type === t)),
       plannedMessages: projectGroup(g, contexts).history.length,
     })),
   };
@@ -406,45 +341,36 @@ async function main() {
     await copyFile(join(dataset, file), join(directory, file));
   const records = [];
   const save = () =>
-    writeFile(
-      join(directory, "score.json"),
-      JSON.stringify(summarizeMemoryRun(plan, records), null, 2),
-      { mode: 0o600 },
-    );
+    writeFile(join(directory, "score.json"), JSON.stringify(summarizeMemoryRun(plan, records), null, 2), {
+      mode: 0o600,
+    });
   await save();
   for (let group = 0; group < groups.length; group++) {
     const progress = [],
       started = Date.now();
-    const result = await runMemoryGroupWithControls(
-      projectGroup(groups[group], contexts),
-      {
-        directory: join(directory, `profile-${group}`),
-        codex,
-        backgroundCodex,
-        timeoutMs,
-        controlTimeoutMs,
-        onRecord: (record) => {
-          progress.push(record);
-          appendFileSync(
-            join(directory, `progress-${group}.jsonl`),
-            JSON.stringify(record) + "\n",
-            { mode: 0o600 },
+    const result = await runMemoryGroupWithControls(projectGroup(groups[group], contexts), {
+      directory: join(directory, `profile-${group}`),
+      codex,
+      backgroundCodex,
+      timeoutMs,
+      controlTimeoutMs,
+      onRecord: (record) => {
+        progress.push(record);
+        appendFileSync(join(directory, `progress-${group}.jsonl`), JSON.stringify(record) + "\n", { mode: 0o600 });
+        if (["batch", "answer"].includes(record.type))
+          console.log(
+            JSON.stringify({
+              group,
+              type: record.type,
+              state: record.state,
+              arm: record.arm,
+              query: record.query,
+              status: record.status,
+              elapsedMs: record.elapsedMs,
+            }),
           );
-          if (["batch", "answer"].includes(record.type))
-            console.log(
-              JSON.stringify({
-                group,
-                type: record.type,
-                state: record.state,
-                arm: record.arm,
-                query: record.query,
-                status: record.status,
-                elapsedMs: record.elapsedMs,
-              }),
-            );
-        },
       },
-    );
+    });
     const record = {
       group,
       ...result,
@@ -452,34 +378,20 @@ async function main() {
       elapsedMs: Date.now() - started,
     };
     records.push(record);
-    await writeFile(
-      join(directory, `group-${group}.json`),
-      JSON.stringify(record, null, 2),
-      { flag: "wx", mode: 0o600 },
-    );
+    await writeFile(join(directory, `group-${group}.json`), JSON.stringify(record, null, 2), {
+      flag: "wx",
+      mode: 0o600,
+    });
     await save();
   }
   const after = await fingerprint();
   if (after.sha256 !== source.sha256)
-    throw new Error(
-      "Source changed during evaluation; retained evidence requires review",
-    );
-  console.log(
-    JSON.stringify({ directory, ...summarizeMemoryRun(plan, records) }),
-  );
-  if (
-    records.some(
-      (r) =>
-        r.status !== "completed" ||
-        r.result.results.some((a) => a.status !== "completed"),
-    )
-  )
+    throw new Error("Source changed during evaluation; retained evidence requires review");
+  console.log(JSON.stringify({ directory, ...summarizeMemoryRun(plan, records) }));
+  if (records.some((r) => r.status !== "completed" || r.result.results.some((a) => a.status !== "completed")))
     process.exitCode = 2;
 }
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url))
   main().catch((e) => {
     console.error(e.message);
     process.exitCode = 1;

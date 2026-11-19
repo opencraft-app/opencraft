@@ -18,14 +18,8 @@ export const extendedCases = [
     id: "continue-completed",
     title: "已交付工作继续补充，要求版本不变且不重复执行重放请求",
     inputMode: "typed-lifecycle-real-execution",
-    coverage: [
-      "continuation",
-      "idempotency",
-      "immutable-evidence",
-      "native-continuity",
-    ],
-    review:
-      "续办产物是否保留原上下文并满足补充要求；不把两次合法交付当成重复交付。",
+    coverage: ["continuation", "idempotency", "immutable-evidence", "native-continuity"],
+    review: "续办产物是否保留原上下文并满足补充要求；不把两次合法交付当成重复交付。",
   },
   {
     id: "cancel-goal-isolation",
@@ -38,12 +32,7 @@ export const extendedCases = [
     id: "dependency-rebase",
     title: "上游日期更正，已消费旧结果的下游必须显式改版",
     inputMode: "typed-lifecycle-real-execution",
-    coverage: [
-      "dependency-invalidation",
-      "rebase",
-      "immutable-snapshot",
-      "revision",
-    ],
+    coverage: ["dependency-invalidation", "rebase", "immutable-snapshot", "revision"],
     review: "新流程必须采用新日期；旧输入快照须保留，不能悄悄重写成新证据。",
   },
   {
@@ -69,8 +58,7 @@ const goalDefinition = (objective, tasks) => ({
   maxParallel: 2,
   tasks,
 });
-const active = (d) =>
-  d.executions.find((e) => e.id === d.work.active_execution_id);
+const active = (d) => d.executions.find((e) => e.id === d.work.active_execution_id);
 const hasAll = (text, markers) => markers.every((s) => text.includes(s));
 
 export async function runExtendedCase(id, c, { note, pending, done, create }) {
@@ -97,22 +85,14 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     );
     c.check(
       "old-question-retired",
-      after.interactions.find((q) => q.id === question(before).id)?.state ===
-        "superseded",
+      after.interactions.find((q) => q.id === question(before).id)?.state === "superseded",
     );
-    await c.reject(
-      "old-answer-rejected",
-      "interaction.answer",
-      answer(question(before)),
-    );
+    await c.reject("old-answer-rejected", "interaction.answer", answer(question(before)));
     await c.reject("stale-change-rejected", "amend", {
       ...target(a),
       text: "stale requirement",
     });
-    c.check(
-      "current-result-only",
-      after.results.length === 1 && after.results[0].revision === 2,
-    );
+    c.check("current-result-only", after.results.length === 1 && after.results[0].revision === 2);
     c.check(
       "replacement-in-artifact",
       (await c.notes()).some((n) => n.text.includes("BOOK-NEW")),
@@ -121,15 +101,11 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     const restored = await c.call("work", { workId: a.id });
     c.check(
       "new-version-survives-restart",
-      restored.work.revision === 2 &&
-        restored.work.status === "completed" &&
-        restored.results.length === 1,
+      restored.work.revision === 2 && restored.work.status === "completed" && restored.results.length === 1,
     );
   } else if (id === "paused-instructions") {
     let g = await c.call("goal.create", {
-      definition: goalDefinition("准备 PACK 笔记", [
-        { key: "pack", text: note("PACK", true), dependsOn: [] },
-      ]),
+      definition: goalDefinition("准备 PACK 笔记", [{ key: "pack", text: note("PACK", true), dependsOn: [] }]),
     });
     const a = g.works[0],
       before = await pending(c, a.id);
@@ -153,8 +129,7 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     await c.restart();
     c.check(
       "directive-replay-stable",
-      (await c.call("work.instruct", first, "instruction-one")).directiveId ===
-        receipt.directiveId,
+      (await c.call("work.instruct", first, "instruction-one")).directiveId === receipt.directiveId,
     );
     let current = await c.call("work", { workId: a.id });
     c.check(
@@ -177,15 +152,12 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     current = await done(c, a.id);
     c.check(
       "instructions-admitted-without-requirement-change",
-      current.work.revision === 1 &&
-        current.directives.every((d) => d.state === "submitted"),
+      current.work.revision === 1 && current.directives.every((d) => d.state === "submitted"),
     );
     c.check(
       "native-thread-retained",
       current.executions.length >= 2 &&
-        current.executions.every(
-          (e) => e.conversation_id === active(before).conversation_id,
-        ),
+        current.executions.every((e) => e.conversation_id === active(before).conversation_id),
     );
     const directives = JSON.parse(active(current).context_json).directives;
     c.check(
@@ -196,14 +168,9 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     );
     c.check(
       "both-supplements-in-real-artifact",
-      (await c.notes()).some((n) =>
-        hasAll(n.text, ["PACK", "EXTRA-ONE", "EXTRA-TWO"]),
-      ),
+      (await c.notes()).some((n) => hasAll(n.text, ["PACK", "EXTRA-ONE", "EXTRA-TWO"])),
     );
-    c.check(
-      "one-final-result-after-instructions",
-      current.results.length === 1 && current.deliveries.length === 1,
-    );
+    c.check("one-final-result-after-instructions", current.results.length === 1 && current.deliveries.length === 1);
   } else if (id === "continue-completed") {
     const r = await c.call("submit", { text: note("BRIEF-BASE") });
     const before = await done(c, r.workId);
@@ -230,9 +197,7 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     );
     c.check(
       "old-result-immutable",
-      JSON.stringify(
-        after.results.find((r) => r.id === before.results[0].id),
-      ) === JSON.stringify(before.results[0]),
+      JSON.stringify(after.results.find((r) => r.id === before.results[0].id)) === JSON.stringify(before.results[0]),
     );
     c.check(
       "one-result-per-authorized-execution",
@@ -242,38 +207,23 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     );
     c.check(
       "followup-in-artifact",
-      (await c.notes()).some((n) =>
-        hasAll(n.text, ["BRIEF-BASE", "EXTRA-FOLLOWUP"]),
-      ),
+      (await c.notes()).some((n) => hasAll(n.text, ["BRIEF-BASE", "EXTRA-FOLLOWUP"])),
     );
-    await c.reject(
-      "stale-execution-cannot-continue",
-      "work.continue",
-      params,
-      "stale-continue",
-    );
+    await c.reject("stale-execution-cannot-continue", "work.continue", params, "stale-continue");
   } else if (id === "cancel-goal-isolation") {
     const goals = [];
     for (const marker of ["GOAL-A", "GOAL-B"])
       goals.push(
         await c.call("goal.create", {
-          definition: goalDefinition(marker, [
-            { key: "confirm", text: note(marker, true), dependsOn: [] },
-          ]),
+          definition: goalDefinition(marker, [{ key: "confirm", text: note(marker, true), dependsOn: [] }]),
         }),
       );
-    const [a, b] = await Promise.all(
-      goals.map((g) => pending(c, g.works[0].id)),
-    );
+    const [a, b] = await Promise.all(goals.map((g) => pending(c, g.works[0].id)));
     await c.call("goal.cancel", {
       goalId: goals[0].id,
       expectedRevision: goals[0].revision,
     });
-    await c.reject(
-      "cancelled-goal-answer-rejected",
-      "interaction.answer",
-      answer(question(a)),
-    );
+    await c.reject("cancelled-goal-answer-rejected", "interaction.answer", answer(question(a)));
     await c.restart();
     const ga = await c.call("goal.get", { goalId: goals[0].id });
     const gb = await c.call("goal.get", { goalId: goals[1].id });
@@ -286,16 +236,13 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     );
     c.check(
       "other-goal-question-preserved",
-      (await c.call("interaction.list")).some(
-        (q) => q.id === question(b).id && q.state === "pending",
-      ),
+      (await c.call("interaction.list")).some((q) => q.id === question(b).id && q.state === "pending"),
     );
     await c.call("interaction.answer", answer(question(b)));
     const final = await done(c, b.work.id);
     c.check(
       "other-goal-finishes",
-      final.results.length === 1 &&
-        (await c.call("goal.get", { goalId: gb.id })).readyForReview,
+      final.results.length === 1 && (await c.call("goal.get", { goalId: gb.id })).readyForReview,
     );
     c.check(
       "cancelled-goal-never-delivered",
@@ -334,13 +281,8 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
       expectedRevision: g.revision,
     });
     const newSource = await done(c, a.id);
-    const stale = (await c.call("goal.get", { goalId: g.id })).works.find(
-      (w) => w.id === b.id,
-    );
-    c.check(
-      "old-dependency-blocks-consumer",
-      stale.waitingOn.length > 0 && !stale.resultId,
-    );
+    const stale = (await c.call("goal.get", { goalId: g.id })).works.find((w) => w.id === b.id);
+    c.check("old-dependency-blocks-consumer", stale.waitingOn.length > 0 && !stale.resultId);
     await c.reject("old-dependency-version-rebase-rejected", "goal.rebase", {
       goalId: g.id,
       expectedRevision: g.revision,
@@ -355,25 +297,18 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
       expectedWorkRevision: 1,
       dependencies: [{ workId: a.id, revision: 2 }],
     });
-    await c.reject(
-      "old-consumer-answer-rejected",
-      "interaction.answer",
-      answer(question(downstream), "确认发布"),
-    );
+    await c.reject("old-consumer-answer-rejected", "interaction.answer", answer(question(downstream), "确认发布"));
     const fresh = await pending(c, b.id);
     c.check(
       "old-snapshot-preserved",
-      fresh.executions.find((e) => e.id === active(downstream).id)
-        .context_json === oldSnapshot,
+      fresh.executions.find((e) => e.id === active(downstream).id).context_json === oldSnapshot,
     );
-    const dependency = JSON.parse(active(fresh).context_json)
-      .dependencyResults[0];
+    const dependency = JSON.parse(active(fresh).context_json).dependencyResults[0];
     c.check(
       "consumer-pins-new-result",
       fresh.work.revision === 2 &&
         dependency.revision === 2 &&
-        dependency.resultId ===
-          newSource.results.find((r) => r.revision === 2).id,
+        dependency.resultId === newSource.results.find((r) => r.revision === 2).id,
     );
     await c.call("interaction.answer", answer(question(fresh), "确认发布"));
     await done(c, b.id);
@@ -381,9 +316,7 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
       "new-date-in-consumer-artifact",
       (await c.notes()).some(
         (n) =>
-          n.text.includes("FLOW-RESULT") &&
-          /2026.{0,3}12.{0,3}19/.test(n.text) &&
-          !/2026.{0,3}12.{0,3}18/.test(n.text),
+          n.text.includes("FLOW-RESULT") && /2026.{0,3}12.{0,3}19/.test(n.text) && !/2026.{0,3}12.{0,3}18/.test(n.text),
       ),
     );
   } else if (id === "batch-target-amend") {
@@ -392,16 +325,9 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
       "two-works",
     );
     let works = (await c.call("status")).works;
-    c.check(
-      "one-request-two-distinct-works",
-      works.length === 2 && (await c.call("goal.list")).length === 0,
-    );
-    const a = works.find(
-      (w) => w.text.includes("BATCH-A") && !w.text.includes("BATCH-B"),
-    );
-    const b = works.find(
-      (w) => w.text.includes("BATCH-B") && !w.text.includes("BATCH-A"),
-    );
+    c.check("one-request-two-distinct-works", works.length === 2 && (await c.call("goal.list")).length === 0);
+    const a = works.find((w) => w.text.includes("BATCH-A") && !w.text.includes("BATCH-B"));
+    const b = works.find((w) => w.text.includes("BATCH-B") && !w.text.includes("BATCH-A"));
     c.check("separate-requirements", !!a && !!b);
     const [da, db] = await Promise.all([pending(c, a.id), pending(c, b.id)]);
     await c.say(
@@ -424,16 +350,8 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
         unchanged.work.active_execution_id === db.work.active_execution_id &&
         question(unchanged)?.id === question(db).id,
     );
-    await c.reject(
-      "old-batch-question-rejected",
-      "interaction.answer",
-      answer(question(da)),
-    );
-    await c.say(
-      "回答本工作：日期为2026年12月18日，继续原要求。",
-      "answer-other",
-      b,
-    );
+    await c.reject("old-batch-question-rejected", "interaction.answer", answer(question(da)));
+    await c.say("回答本工作：日期为2026年12月18日，继续原要求。", "answer-other", b);
     await done(c, b.id);
     works = (await c.call("status")).works;
     c.check(
@@ -446,10 +364,7 @@ export async function runExtendedCase(id, c, { note, pending, done, create }) {
     c.check(
       "distinct-artifacts-have-correct-directions",
       notes.some((n) => n.text.includes("BATCH-REVISED")) &&
-        notes.some(
-          (n) =>
-            n.text.includes("BATCH-B") && /2026.{0,3}12.{0,3}18/.test(n.text),
-        ),
+        notes.some((n) => n.text.includes("BATCH-B") && /2026.{0,3}12.{0,3}18/.test(n.text)),
     );
   } else throw new Error("Unknown scenario");
 }

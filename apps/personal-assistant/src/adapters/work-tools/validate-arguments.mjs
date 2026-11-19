@@ -9,11 +9,7 @@ export function validArguments(s, v) {
       typeof v === "object" &&
       !Array.isArray(v) &&
       (s.required ?? []).every((k) => Object.hasOwn(v, k)) &&
-      Object.keys(v).every(
-        (k) =>
-          Object.hasOwn(s.properties ?? {}, k) &&
-          validArguments(s.properties[k], v[k]),
-      )
+      Object.keys(v).every((k) => Object.hasOwn(s.properties ?? {}, k) && validArguments(s.properties[k], v[k]))
     );
   if (s.type === "array")
     return (
@@ -23,11 +19,7 @@ export function validArguments(s, v) {
       v.every((x) => validArguments(s.items, x))
     );
   if (s.type === "string")
-    return (
-      typeof v === "string" &&
-      v.length >= (s.minLength ?? 0) &&
-      v.length <= (s.maxLength ?? 150000)
-    );
+    return typeof v === "string" && v.length >= (s.minLength ?? 0) && v.length <= (s.maxLength ?? 150000);
   if (s.type === "integer" || s.type === "number")
     return (
       typeof v === "number" &&

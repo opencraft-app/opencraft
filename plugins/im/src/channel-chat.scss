@@ -1,3 +1,4 @@
+@use "@opencraft/design-system/interaction-mixins.web" as interaction;
 @use '@opencraft/design-system/channel-chat.web';
 @use '@opencraft/design-system/overview.web' as overview;
 @use '@opencraft/design-system/material.web' as material;
@@ -416,7 +417,7 @@
   border: 1.5px dashed var(--color-border-default);
   background: transparent; color: var(--color-text-tertiary);
   > svg { inline-size: 45%; block-size: 45%; border-radius: 0; }
-  &:hover:not(:disabled) { color: var(--color-text-secondary); border-color: var(--color-text-tertiary); }
+  @include interaction.hover-capable { &:hover:not(:disabled) { color: var(--color-text-secondary); border-color: var(--color-text-tertiary); } }
   &[aria-pressed="true"] { border-style: solid; color: var(--color-text); }
   &:focus-visible { outline: var(--width-control-focus-ring) solid var(--color-border-focus); outline-offset: 2px; }
 }

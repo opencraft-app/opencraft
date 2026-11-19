@@ -8,26 +8,56 @@ function fixture() {
   const style = {
     getPropertyValue: (key: string) => values.get(key)?.[0] ?? "",
     getPropertyPriority: (key: string) => values.get(key)?.[1] ?? "",
-    setProperty(key: string, value: string, priority = "") { events.push(`set:${key}`); values.set(key, [value, priority]); },
-    removeProperty(key: string) { events.push(`remove:${key}`); values.delete(key); return ""; },
+    setProperty(key: string, value: string, priority = "") {
+      events.push(`set:${key}`);
+      values.set(key, [value, priority]);
+    },
+    removeProperty(key: string) {
+      events.push(`remove:${key}`);
+      values.delete(key);
+      return "";
+    },
   } as unknown as CSSStyleDeclaration;
-  let height = 17042, connected = true, fail = false, reads = 0;
-  const spacer = { style, get offsetHeight() {
-    reads++;
-    events.push("measure");
-    if (fail) throw new Error("measurement failed");
-    return height;
-  } } as HTMLElement;
-  const root = { clientHeight: 690, scrollHeight: 17208, scrollTop: -16518, style,
+  let height = 17042,
+    connected = true,
+    fail = false,
+    reads = 0;
+  const spacer = {
+    style,
+    get offsetHeight() {
+      reads++;
+      events.push("measure");
+      if (fail) throw new Error("measurement failed");
+      return height;
+    },
+  } as HTMLElement;
+  const root = {
+    clientHeight: 690,
+    scrollHeight: 17208,
+    scrollTop: -16518,
+    style,
     contains: (element: unknown) => connected && element === spacer,
     scrollTo: () => assert.fail("handoffs must not acquire scroll-write ownership"),
   } as unknown as HTMLDivElement;
   const owner = new WebConversationViewportOwner(16518);
   owner.scrollElementRef.current = root;
-  return { owner, root, spacer, events, get reads() { return reads; },
-    resize: (next: number) => { height = next; },
-    detach: () => { connected = false; },
-    fail: () => { fail = true; },
+  return {
+    owner,
+    root,
+    spacer,
+    events,
+    get reads() {
+      return reads;
+    },
+    resize: (next: number) => {
+      height = next;
+    },
+    detach: () => {
+      connected = false;
+    },
+    fail: () => {
+      fail = true;
+    },
   };
 }
 
@@ -41,7 +71,8 @@ test("a window handoff resolves replacement layout before releasing its height, 
   assert.equal(f.root.scrollTop, -16478);
   assert.equal(f.spacer.style.getPropertyValue("min-height"), "");
   assert.deepEqual(f.events, ["measure", "set:min-height", "measure", "remove:min-height"]);
-  lease.complete(); lease.cancel();
+  lease.complete();
+  lease.cancel();
   assert.equal(f.reads, 2, "completion/cancellation is idempotent");
   f.owner.dispose();
 });
@@ -62,7 +93,8 @@ test("a replaced handoff cannot retire the replacement's protection", () => {
   const previous = f.owner.protectWindowHandoff(f.spacer)!;
   f.resize(20000);
   const replacement = f.owner.protectWindowHandoff(f.spacer)!;
-  previous.complete(); previous.cancel();
+  previous.complete();
+  previous.cancel();
   assert.equal(f.spacer.style.getPropertyValue("min-height"), "20000px");
   replacement.complete();
   assert.equal(f.spacer.style.getPropertyValue("min-height"), "");

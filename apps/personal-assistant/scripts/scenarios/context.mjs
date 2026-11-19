@@ -7,8 +7,7 @@ import { request } from "../../src/adapters/local/unix-socket.mjs";
 /** Temporary test process/session ownership. No business writes bypass the socket. */
 export function createScenarioContext({ profile, evidence, timeoutMs }) {
   let runner;
-  const call = (op, params = {}, id = randomUUID()) =>
-    request(profile, { op, params, id });
+  const call = (op, params = {}, id = randomUUID()) => request(profile, { op, params, id });
   const wait = async (condition) => {
     const end = Date.now() + timeoutMs;
     for (;;) {
@@ -42,8 +41,7 @@ export function createScenarioContext({ profile, evidence, timeoutMs }) {
       };
     },
     forScenario(id) {
-      const scopedCall = (op, params, key) =>
-        call(op, params, key ? `${id}:${key}` : undefined);
+      const scopedCall = (op, params, key) => call(op, params, key ? `${id}:${key}` : undefined);
       return {
         call: scopedCall,
         wait,
@@ -68,22 +66,15 @@ export function createScenarioContext({ profile, evidence, timeoutMs }) {
         pending: (workId) =>
           wait(async () => {
             const detail = await call("work", { workId });
-            if (detail.work.status === "blocked")
-              throw new Error(detail.work.error);
+            if (detail.work.status === "blocked") throw new Error(detail.work.error);
             if (detail.work.status === "completed")
-              throw new Error(
-                "Model completed without asking the explicitly requested question",
-              );
-            return (
-              detail.work.status === "waiting_input" &&
-              detail.interactions.find((i) => i.state === "pending")
-            );
+              throw new Error("Model completed without asking the explicitly requested question");
+            return detail.work.status === "waiting_input" && detail.interactions.find((i) => i.state === "pending");
           }),
         done: (workId) =>
           wait(async () => {
             const detail = await call("work", { workId });
-            if (detail.work.status === "blocked")
-              throw new Error(detail.work.error);
+            if (detail.work.status === "blocked") throw new Error(detail.work.error);
             return detail.work.status === "completed" && detail;
           }),
         restart: async () => {

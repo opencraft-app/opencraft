@@ -8,13 +8,7 @@ import { LocalRunner } from "../src/runtime/local-runner.mjs";
 import { request } from "../src/adapters/local/unix-socket.mjs";
 import { cases, runCase } from "./butler-cases.mjs";
 
-export async function evaluateButlerCase({
-  id,
-  mode,
-  harnesses,
-  output,
-  timeoutMs = 180000,
-}) {
+export async function evaluateButlerCase({ id, mode, harnesses, output, timeoutMs = 180000 }) {
   const spec = cases.find((s) => s.id === id);
   if (!spec) throw new Error("Unknown case");
   const evidence = {
@@ -29,16 +23,10 @@ export async function evaluateButlerCase({
     semanticReview: { status: "unverified", rubric: spec.review },
     modelQualityScore: null,
   };
-  const save = () =>
-    writeFile(
-      join(output, `${id}.json`),
-      JSON.stringify(evidence, null, 2) + "\n",
-      { mode: 0o600 },
-    );
+  const save = () => writeFile(join(output, `${id}.json`), JSON.stringify(evidence, null, 2) + "\n", { mode: 0o600 });
   if (spec.modelOnly && mode === "fixture") {
     evidence.state = "not_run";
-    evidence.reason =
-      "This scenario requires real model intent or execution; fixture is not quality evidence";
+    evidence.reason = "This scenario requires real model intent or execution; fixture is not quality evidence";
     await save();
     return evidence;
   }
@@ -107,11 +95,7 @@ export async function evaluateButlerCase({
       } catch (e) {
         error = e.message;
       }
-      context.check(
-        name,
-        !!error && !/ECONN|socket|timed out|Runner closed/i.test(error),
-        { error },
-      );
+      context.check(name, !!error && !/ECONN|socket|timed out|Runner closed/i.test(error), { error });
     },
     async say(text, key, work) {
       await context.call(

@@ -8,14 +8,8 @@ import { openServerDatabase } from "@opencraft/storage-node/server";
 import { ActorStore } from "../../packages/access-control/src/actors";
 import { Collaboration } from "../../packages/access-control/src/collaboration";
 import { parsePrincipal } from "@opencraft/identity-core";
-import {
-  channelComposerPayload,
-  ChannelMentionText,
-} from "../../plugins/im/src/channel-mentions";
-import {
-  composerDocumentToPlainText,
-  type ComposerDocument,
-} from "@opencraft/composer-core";
+import { channelComposerPayload, ChannelMentionText } from "../../plugins/im/src/channel-mentions";
+import { composerDocumentToPlainText, type ComposerDocument } from "@opencraft/composer-core";
 import { renderToStaticMarkup } from "react-dom/server";
 async function fixture(t: test.TestContext) {
   const dir = await mkdtemp(join(tmpdir(), "native-mention-")),
@@ -34,8 +28,7 @@ async function fixture(t: test.TestContext) {
   const alice = human("Alice"),
     bob = human("Bob"),
     outsider = human("Outsider"),
-    call = (c: typeof alice, m: string, p: any = {}) =>
-      service.communicate(c, "opencraft/channels/" + m, p);
+    call = (c: typeof alice, m: string, p: any = {}) => service.communicate(c, "opencraft/channels/" + m, p);
   const group = await call(alice, "group/create", {
     title: "Room",
     memberActorIds: [bob.actorId],
@@ -97,47 +90,25 @@ test("human mentions persist with identity, viewer-relative highlighting, unread
   const page = await f.call(f.bob, "messages/list", { channelId: f.group.id });
   assert.equal(page.messages[0].mentions[0].isSelf, true);
   const inbox = await f.service.communicate(f.bob, "inbox/sync", {});
-  assert.equal(
-    inbox.changes.find((c: any) => c.channelId === f.group.id).item
-      .mentionUnreadCount,
-    1,
-  );
+  assert.equal(inbox.changes.find((c: any) => c.channelId === f.group.id).item.mentionUnreadCount, 1);
   assert.equal(page.messages[0].executionRequests, undefined);
-  assert.equal(
-    (await f.send("mention")).receipt.messageId,
-    r.receipt.messageId,
-  );
-  await assert.rejects(
-    f.send("mention", "Hi @Bob", []),
-    /idempotency_key_reused/,
-  );
+  assert.equal((await f.send("mention")).receipt.messageId, r.receipt.messageId);
+  await assert.rejects(f.send("mention", "Hi @Bob", []), /idempotency_key_reused/);
   await f.send("plain", "Hi @Bob", null);
   const next = await f.service.communicate(f.bob, "inbox/sync", {});
-  assert.equal(
-    next.changes.find((c: any) => c.channelId === f.group.id).item
-      .mentionUnreadCount,
-    1,
-  );
+  assert.equal(next.changes.find((c: any) => c.channelId === f.group.id).item.mentionUnreadCount, 1);
   await f.call(f.bob, "read", {
     channelId: f.group.id,
     throughSequence: r.receipt.sequence,
   });
   const stillPending = await f.service.communicate(f.bob, "inbox/sync", {});
-  assert.equal(
-    stillPending.changes.find((c: any) => c.channelId === f.group.id).item
-      .mentionUnreadCount,
-    1,
-  );
+  assert.equal(stillPending.changes.find((c: any) => c.channelId === f.group.id).item.mentionUnreadCount, 1);
   await f.call(f.bob, "mentions/ack", {
     channelId: f.group.id,
     messageId: r.receipt.messageId,
   });
   const read = await f.service.communicate(f.bob, "inbox/sync", {});
-  assert.equal(
-    read.changes.find((c: any) => c.channelId === f.group.id).item
-      .mentionUnreadCount,
-    0,
-  );
+  assert.equal(read.changes.find((c: any) => c.channelId === f.group.id).item.mentionUnreadCount, 0);
 });
 test("forged members, ranges, stale labels, overlapping spans, unknown fields and human wakes fail atomically", async (t) => {
   const f = await fixture(t);
@@ -160,11 +131,7 @@ test("forged members, ranges, stale labels, overlapping spans, unknown fields an
       wakeActorIds: [f.bob.actorId],
     }),
   );
-  assert.equal(
-    (await f.call(f.alice, "messages/list", { channelId: f.group.id })).messages
-      .length,
-    0,
-  );
+  assert.equal((await f.call(f.alice, "messages/list", { channelId: f.group.id })).messages.length, 0);
   await assert.rejects(
     f.call(f.outsider, "messages/send", {
       channelId: f.group.id,
@@ -185,10 +152,7 @@ test("removal/rejoin does not resurrect old mention alerts; lost-ack retries can
     clientRequestId: "remove",
   });
   await assert.rejects(f.send("new"), /channel_mention_unavailable/);
-  assert.equal(
-    (await f.send("once")).receipt.messageId,
-    first.receipt.messageId,
-  );
+  assert.equal((await f.send("once")).receipt.messageId, first.receipt.messageId);
   await f.call(f.alice, "group/member/set", {
     channelId: f.group.id,
     actorId: f.bob.actorId,
@@ -196,11 +160,7 @@ test("removal/rejoin does not resurrect old mention alerts; lost-ack retries can
     clientRequestId: "join",
   });
   const inbox = await f.service.communicate(f.bob, "inbox/sync", {});
-  assert.equal(
-    inbox.changes.find((c: any) => c.channelId === f.group.id).item
-      .mentionUnreadCount,
-    0,
-  );
+  assert.equal(inbox.changes.find((c: any) => c.channelId === f.group.id).item.mentionUnreadCount, 0);
 });
 test("reopening the database retains native mention identity and read scope", async (t) => {
   const f = await fixture(t);
@@ -218,11 +178,7 @@ test("reopening the database retains native mention identity and read scope", as
         expiresAt: Date.now() + 60000,
       })!,
     )!;
-    const page = await service.communicate(
-      bob,
-      "opencraft/channels/messages/list",
-      { channelId: f.group.id },
-    );
+    const page = await service.communicate(bob, "opencraft/channels/messages/list", { channelId: f.group.id });
     assert.equal(page.messages[0].mentions[0].actorId, bob.actorId);
     assert.equal(page.messages[0].mentions[0].isSelf, true);
   } finally {
@@ -232,12 +188,7 @@ test("reopening the database retains native mention identity and read scope", as
   }
 });
 test("composer preserves exact nested text/emoji offsets and separates person mentions from bot wakes", () => {
-  const mention = (
-    id: string,
-    label: string,
-    kind: "person" | "agent",
-    channelId = "g",
-  ): any => ({
+  const mention = (id: string, label: string, kind: "person" | "agent", channelId = "g"): any => ({
     type: "mention",
     id,
     label,
@@ -249,11 +200,7 @@ test("composer preserves exact nested text/emoji offsets and separates person me
     blocks: [
       {
         type: "paragraph",
-        children: [
-          { type: "text", text: "😀 " },
-          mention("human", "同事", "person"),
-          { type: "text", text: " @手打" },
-        ],
+        children: [{ type: "text", text: "😀 " }, mention("human", "同事", "person"), { type: "text", text: " @手打" }],
       },
       {
         type: "quote",
@@ -325,9 +272,7 @@ test("the previous populated schema upgrades additively and a changed mention mi
     }),
     actors = new ActorStore(previous),
     actor = actors.createSession("Retained identity", "fixture");
-  const ledger = previous.database
-    .prepare("SELECT * FROM schema_migrations ORDER BY version")
-    .all();
+  const ledger = previous.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   actors.close();
   previous.database.close();
   const upgraded = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS });
@@ -337,18 +282,11 @@ test("the previous populated schema upgrades additively and a changed mention mi
     restored.close();
     assert.deepEqual(
       upgraded.database
-        .prepare(
-          "SELECT * FROM schema_migrations WHERE version<? ORDER BY version",
-        )
+        .prepare("SELECT * FROM schema_migrations WHERE version<? ORDER BY version")
         .all(SERVER_MIGRATIONS.at(-1)!.version),
       ledger,
     );
-    assert.equal(
-      upgraded.database
-        .prepare("SELECT count(*) AS n FROM actor_channel_mentions")
-        .get()!.n,
-      0,
-    );
+    assert.equal(upgraded.database.prepare("SELECT count(*) AS n FROM actor_channel_mentions").get()!.n, 0);
   } finally {
     upgraded.database.close();
   }
@@ -357,10 +295,7 @@ test("the previous populated schema upgrades additively and a changed mention mi
     .prepare("UPDATE schema_migrations SET checksum='changed' WHERE version=?")
     .run(SERVER_MIGRATIONS.at(-1)!.version);
   tampered.close();
-  assert.throws(
-    () => openManagedDatabase({ path, migrations: SERVER_MIGRATIONS }),
-    /checksum|history/i,
-  );
+  assert.throws(() => openManagedDatabase({ path, migrations: SERVER_MIGRATIONS }), /checksum|history/i);
 });
 test("selected bot identity and wake grants remain separate; denied execution is atomic", async (t) => {
   const f = await fixture(t),
@@ -390,11 +325,7 @@ test("selected bot identity and wake grants remain separate; denied execution is
       wakeActorIds: [bot.id],
     }),
   );
-  assert.equal(
-    (await f.call(f.alice, "messages/list", { channelId: f.group.id })).messages
-      .length,
-    1,
-  );
+  assert.equal((await f.call(f.alice, "messages/list", { channelId: f.group.id })).messages.length, 1);
 });
 
 test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempotent and durable", async (t) => {
@@ -403,59 +334,37 @@ test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempo
   for (let i = 0; i < 55; i++) await f.send("plain-" + i, "later " + i, null);
   const second = await f.send("second");
   const inbox = async () =>
-    (await f.service.communicate(f.bob, "inbox/sync", {})).changes.find(
-      (c: any) => c.channelId === f.group.id,
-    ).item;
+    (await f.service.communicate(f.bob, "inbox/sync", {})).changes.find((c: any) => c.channelId === f.group.id).item;
   const page = await f.call(f.bob, "messages/list", { channelId: f.group.id });
   assert.equal(page.messages.length, 50);
-  assert.ok(
-    !page.messages.some((m: any) => m.messageId === first.receipt.messageId),
-  );
+  assert.ok(!page.messages.some((m: any) => m.messageId === first.receipt.messageId));
   await f.call(f.bob, "read", {
     channelId: f.group.id,
     throughSequence: second.receipt.sequence,
   });
   assert.equal((await inbox()).unreadCount, 0);
   assert.equal((await inbox()).mentionUnreadCount, 2);
-  assert.equal(
-    (await inbox()).firstUnreadMentionSequence,
-    first.receipt.sequence,
-  );
+  assert.equal((await inbox()).firstUnreadMentionSequence, first.receipt.sequence);
   const ack = (who: any, id: string, extra: any = {}) =>
     f.call(who, "mentions/ack", {
       channelId: f.group.id,
       messageId: id,
       ...extra,
     });
-  await assert.rejects(
-    ack(f.outsider, first.receipt.messageId),
-    /channel_denied/,
-  );
-  await assert.rejects(
-    ack(f.alice, first.receipt.messageId),
-    /channel_mention_unavailable/,
-  );
+  await assert.rejects(ack(f.outsider, first.receipt.messageId), /channel_denied/);
+  await assert.rejects(ack(f.alice, first.receipt.messageId), /channel_mention_unavailable/);
   await assert.rejects(ack(f.bob, "absent"), /channel_mention_unavailable/);
-  await assert.rejects(
-    ack(f.bob, first.receipt.messageId, { actorId: f.alice.actorId }),
-  );
+  await assert.rejects(ack(f.bob, first.receipt.messageId, { actorId: f.alice.actorId }));
   await ack(f.bob, first.receipt.messageId);
   await ack(f.bob, first.receipt.messageId);
   assert.equal((await inbox()).mentionUnreadCount, 1);
-  assert.equal(
-    (await inbox()).firstUnreadMentionSequence,
-    second.receipt.sequence,
-  );
-  let history = await f.call(f.bob, "messages/around", {
+  assert.equal((await inbox()).firstUnreadMentionSequence, second.receipt.sequence);
+  const history = await f.call(f.bob, "messages/around", {
     channelId: f.group.id,
     sequence: first.receipt.sequence,
   });
   // The current viewer alone gets the receipt projection.
-  assert.equal(
-    history.messages.find((m: any) => m.messageId === first.receipt.messageId)
-      .mentions[0].isUnread,
-    false,
-  );
+  assert.equal(history.messages.find((m: any) => m.messageId === first.receipt.messageId).mentions[0].isUnread, false);
   await f.call(f.alice, "group/member/set", {
     channelId: f.group.id,
     actorId: f.bob.actorId,
@@ -468,10 +377,7 @@ test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempo
     present: true,
     clientRequestId: "rejoin",
   });
-  await assert.rejects(
-    ack(f.bob, second.receipt.messageId),
-    /channel_mention_unavailable/,
-  );
+  await assert.rejects(ack(f.bob, second.receipt.messageId), /channel_mention_unavailable/);
   assert.equal((await inbox()).mentionUnreadCount, 0);
   const fresh = await f.send("fresh");
   await ack(f.bob, fresh.receipt.messageId);
@@ -489,11 +395,7 @@ test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempo
       })!,
     )!;
     const result: any = await service.communicate(bob, "inbox/sync", {});
-    assert.equal(
-      result.changes.find((c: any) => c.channelId === f.group.id).item
-        .mentionUnreadCount,
-      0,
-    );
+    assert.equal(result.changes.find((c: any) => c.channelId === f.group.id).item.mentionUnreadCount, 0);
   } finally {
     await service.close();
     actors.close();
@@ -523,36 +425,13 @@ test("mention-read migration preserves the old read watermark but not unseen ale
   const alice = human("Alice"),
     bob = human("Bob"),
     db = old.database;
-  db.prepare("INSERT INTO actor_channels(id,owner_id,title) VALUES(?,?,?)").run(
-    "room",
-    alice.actorId,
-    "Room",
-  );
-  db.prepare("INSERT INTO actor_channel_members VALUES(?,?,?)").run(
-    "room",
-    bob.actorId,
-    "epoch",
-  );
-  db.prepare("INSERT INTO actor_channel_reads VALUES(?,?,?,?,?)").run(
-    "room",
-    bob.actorId,
-    "epoch",
-    0,
-    1,
-  );
+  db.prepare("INSERT INTO actor_channels(id,owner_id,title) VALUES(?,?,?)").run("room", alice.actorId, "Room");
+  db.prepare("INSERT INTO actor_channel_members VALUES(?,?,?)").run("room", bob.actorId, "epoch");
+  db.prepare("INSERT INTO actor_channel_reads VALUES(?,?,?,?,?)").run("room", bob.actorId, "epoch", 0, 1);
   for (const seq of [1, 2]) {
     db.prepare(
       "INSERT INTO actor_messages(id,seq,channel_id,author_id,target_id,content,created_at,target_kind) VALUES(?,?,?,?,?,?,?,?)",
-    ).run(
-      "m" + seq,
-      seq,
-      "room",
-      alice.actorId,
-      "room",
-      "Hi @Bob",
-      Date.now(),
-      "channel",
-    );
+    ).run("m" + seq, seq, "room", alice.actorId, "room", "Hi @Bob", Date.now(), "channel");
     db.prepare("INSERT INTO actor_channel_mentions VALUES(?,?,?,?,?,?)").run(
       "m" + seq,
       bob.actorId,
@@ -562,27 +441,21 @@ test("mention-read migration preserves the old read watermark but not unseen ale
       "human",
     );
   }
-  const ledger = db
-    .prepare("SELECT * FROM schema_migrations ORDER BY version")
-    .all();
+  const ledger = db.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   actors.close();
   db.close();
   const upgraded = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS });
   try {
     assert.deepEqual(
       upgraded.database
-        .prepare(
-          "SELECT message_id FROM actor_channel_mention_reads ORDER BY message_id",
-        )
+        .prepare("SELECT message_id FROM actor_channel_mention_reads ORDER BY message_id")
         .all()
         .map((r: any) => r.message_id),
       ["m1"],
     );
     assert.deepEqual(
       upgraded.database
-        .prepare(
-          "SELECT * FROM schema_migrations WHERE version<? ORDER BY version",
-        )
+        .prepare("SELECT * FROM schema_migrations WHERE version<? ORDER BY version")
         .all(SERVER_MIGRATIONS.at(-1)!.version),
       ledger,
     );

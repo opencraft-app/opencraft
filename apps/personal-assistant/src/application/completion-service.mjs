@@ -4,27 +4,17 @@ import { digest, requireText } from "../domain/values.mjs";
 
 /** Records host I/O receipts and evaluates contracts. No model-callable "mark completed" command exists. */
 export class CompletionService {
-  constructor({
-    uow,
-    repositories: r,
-    works,
-    executions,
-    ledger,
-    now = Date.now,
-  }) {
+  constructor({ uow, repositories: r, works, executions, ledger, now = Date.now }) {
     Object.assign(this, { uow, r, works, executions, ledger, now });
   }
   publishedNote(work, artifact, body) {
     requireText(body, "note", 100000);
     const sha256 = createHash("sha256").update(body).digest("hex");
-    if (artifact.sha256 !== sha256)
-      throw new Error("Artifact receipt does not match published bytes");
+    if (artifact.sha256 !== sha256) throw new Error("Artifact receipt does not match published bytes");
     requireText(artifact.path, "artifact path");
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
-      const contract = CompletionContract.forWork(
-          this.works.require(work.id).record,
-        ),
+      const contract = CompletionContract.forWork(this.works.require(work.id).record),
         executionId = this.executions.get(work).id;
       return this.ledger.record({
         id: `evidence:${executionId}:note`,
@@ -43,8 +33,7 @@ export class CompletionService {
   }
   materialRead(work, material) {
     requireText(material.path, "material path");
-    if (!/^[a-f0-9]{64}$/.test(material.sha256))
-      throw new Error("Material evidence needs a SHA256");
+    if (!/^[a-f0-9]{64}$/.test(material.sha256)) throw new Error("Material evidence needs a SHA256");
     return this.uow.transaction(() => {
       this.works.assertCurrent(work);
       const executionId = this.executions.get(work).id;
@@ -70,9 +59,7 @@ export class CompletionService {
         query: receipt.query,
         ok: receipt.ok,
         observedAt: receipt.observedAt,
-        ...(receipt.ok
-          ? { coverage: receipt.coverage }
-          : { failure: receipt.failure }),
+        ...(receipt.ok ? { coverage: receipt.coverage } : { failure: receipt.failure }),
       };
       return this.ledger.record({
         id: `evidence:${executionId}:platform:${digest(data)}`,
@@ -84,9 +71,7 @@ export class CompletionService {
     });
   }
   platformReadEvidence(executionId) {
-    const all = this.ledger
-      .evidence(executionId)
-      .filter((e) => e.kind === "platform.read");
+    const all = this.ledger.evidence(executionId).filter((e) => e.kind === "platform.read");
     return {
       items: all.slice(-20).map((e) => e.data),
       total: all.length,
@@ -98,11 +83,7 @@ export class CompletionService {
     const current = this.works.assertCurrent(work),
       executionId = this.executions.get(work).id,
       contract = CompletionContract.forWork(current);
-    const data = CompletionContract.evaluate(
-      contract,
-      this.ledger.evidence(executionId),
-      result,
-    );
+    const data = CompletionContract.evaluate(contract, this.ledger.evidence(executionId), result);
     return this.ledger.assess({
       executionId,
       workId: work.id,

@@ -1,9 +1,16 @@
 import type { RefObject } from "react";
 
 /** Preview-only mouse contacts feed the Shell's existing gesture owner. */
-export function bindPreviewMouseGesture({root, gesture, start, move, end, cancel}: {
+export function bindPreviewMouseGesture({
+  root,
+  gesture,
+  start,
+  move,
+  end,
+  cancel,
+}: {
   root: RefObject<HTMLElement | null>;
-  gesture: {current: {owner: string} | null};
+  gesture: { current: { owner: string } | null };
   start(event: PointerEvent): void;
   move(event: PointerEvent): void;
   end(event: PointerEvent): void;
@@ -12,12 +19,22 @@ export function bindPreviewMouseGesture({root, gesture, start, move, end, cancel
   let pointer: number | null = null;
   let capture: HTMLElement | null = null;
   const release = () => {
-    const element = capture, id = pointer;
-    capture = null; pointer = null;
+    const element = capture,
+      id = pointer;
+    capture = null;
+    pointer = null;
     if (element && id !== null && element.hasPointerCapture(id)) element.releasePointerCapture(id);
   };
   const down = (event: PointerEvent) => {
-    if (event.pointerType !== "mouse" || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+    if (
+      event.pointerType !== "mouse" ||
+      event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey
+    )
+      return;
     start(event);
     if (gesture.current) pointer = event.pointerId;
   };
@@ -26,9 +43,16 @@ export function bindPreviewMouseGesture({root, gesture, start, move, end, cancel
   };
   const drag = (event: PointerEvent) => {
     if (event.pointerId !== pointer) return;
-    if (event.buttons !== 1) { cancel(); release(); return; }
+    if (event.buttons !== 1) {
+      cancel();
+      release();
+      return;
+    }
     move(event);
-    if (!gesture.current) { release(); return; }
+    if (!gesture.current) {
+      release();
+      return;
+    }
     if (gesture.current.owner !== "pending" && !capture && root.current) {
       capture = root.current;
       capture.setPointerCapture(event.pointerId);
@@ -36,11 +60,15 @@ export function bindPreviewMouseGesture({root, gesture, start, move, end, cancel
   };
   const up = (event: PointerEvent) => {
     if (event.pointerId !== pointer) return;
-    end(event); release();
+    end(event);
+    release();
   };
   const interrupt = (event: Event) => {
     if (event instanceof PointerEvent && event.pointerId !== pointer) return;
-    if (pointer !== null) { cancel(true); release(); }
+    if (pointer !== null) {
+      cancel(true);
+      release();
+    }
   };
   document.addEventListener("pointerdown", down, true);
   document.addEventListener("mousedown", preventSelection, true);

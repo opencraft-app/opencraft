@@ -63,8 +63,7 @@ export class ReceptionModel {
     this.options = options;
   }
   async decide(input, signal) {
-    if (this.catalog.configured.mode === "fixture")
-      return fixtureReception(this.catalog, input, signal);
+    if (this.catalog.configured.mode === "fixture") return fixtureReception(this.catalog, input, signal);
     let feedback = null;
     for (let attempt = 0; attempt < 2; attempt++) {
       signal?.throwIfAborted();
@@ -89,8 +88,7 @@ export class ReceptionModel {
       } catch (error) {
         if (!(error instanceof StructuredOutputError)) throw error;
         // Native transport owns its existing single correction; never restart it.
-        if (this.options.transport || attempt === 1)
-          throw Object.assign(error, { proposalFailure: error.diagnostic });
+        if (this.options.transport || attempt === 1) throw Object.assign(error, { proposalFailure: error.diagnostic });
         feedback = {
           ...error.diagnostic,
           instruction:
