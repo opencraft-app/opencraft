@@ -9,18 +9,14 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<main id="page">
-  <nav id="tabs"></nav>
-  <header id="head"></header>
-  <section class="card" id="board">
-    <div id="lead"></div>
-    <div id="stagewrap"><div id="stage"><svg id="lines" width="1" height="1" overflow="visible"></svg><div id="nodes"></div><div id="chip" hidden></div></div></div>
-    <div id="dock" aria-live="polite"></div>
-  </section>
-  <section class="card" id="log"></section>
-</main>
-<div id="scrim" hidden data-a="close"></div>
-<aside id="sheet" hidden></aside>
+<div id="app">
+  <header id="top" aria-live="polite"></header>
+  <main id="main">
+    <section class="card" id="bots"></section>
+    <section class="card" id="phone"></section>
+    <section class="card" id="pc"></section>
+  </main>
+</div>
 <script src="scenario.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>
