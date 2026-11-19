@@ -4,7 +4,7 @@ window.Office = (function () {
   'use strict';
   var THREE = window.THREE, gsap = window.gsap;
   var renderer, scene, camera, canvas, labelBox, onPick, calm = false;
-  var pets = {}, model = { nodes: [], links: [], boss: [] }, rel, arcBox, selId = null, selReach = [], moving = null;
+  var pets = {}, model = { nodes: [], links: [], boss: [] }, rel, arcBox, selId = null, selReach = [], selIn = [], moving = null;
   var face = .5, CAM = [7, 9, 10], LOOK = [.8, .5, 0], CREAM = 0xf7efe2, LILAC = 0xb9a8ee;
   var PAL = [[0xa9dcc9, 0x58b596], [0xc3b5ee, 0x8a73d9], [0xa9c8f2, 0x5b93df], [0xfbe39c, 0xe0b63a], [0xf9cdb0, 0xe39a63], [0xbfe3ee, 0x4fa9c4], [0xd9e8a6, 0x9db53c]];
   var SHAPES = ['cube', 'round', 'drop', 'cloud'], EXTRA = ['', 'beanie', 'glasses', ''];
@@ -60,10 +60,14 @@ window.Office = (function () {
     clear(rel); clear(arcBox);
     model.boss.forEach(function (e) { if (!pets[e[0]] || !pets[e[1]] || (e[0] !== selId && e[1] !== selId)) return; /* 归谁管的线只在选中这个人时画 */ var a = pets[e[0]].g.position, b = pets[e[1]].g.position, l = part(rel, BOX, clay(0xd3c9f0), (a.x + b.x) / 2, .01, (a.z + b.z) / 2, .05, .012, Math.max(.05, (a.distanceTo(b) - 1.9) / 2)); l.rotation.y = Math.atan2(b.x - a.x, b.z - a.z); l.castShadow = false; });
     var me = pets[selId]; if (!me) return;
-    selReach.forEach(function (j) { if (!pets[j]) return; var a = me.g.position.clone().setY(1.5), b = pets[j].g.position.clone().setY(1.5), mid = a.clone().add(b).multiplyScalar(.5).setY(1.9 + a.distanceTo(b) * .28), m = new THREE.MeshStandardMaterial({ color: me.arc, emissive: me.arc, emissiveIntensity: .35, roughness: .5 });
-      add(arcBox, new THREE.TubeGeometry(new THREE.QuadraticBezierCurve3(a, mid, b), 32, .045, 8), m).castShadow = false; part(arcBox, BALL, m, b.x, b.y, b.z, .1).castShadow = false; });
+    /* 联系是单向的：他能主动找的人，用他的颜色画高一点的弧线，箭头指向对方；能主动找他的人，用灰色画低一点的弧线，箭头指向他 */
+    function arc(from, to, color, lift, r) { var a = from.g.position.clone().setY(1.5), b = to.g.position.clone().setY(1.5), curve = new THREE.QuadraticBezierCurve3(a, a.clone().add(b).multiplyScalar(.5).setY(1.5 + lift + a.distanceTo(b) * .28), b), m = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: .35, roughness: .5 });
+      add(arcBox, new THREE.TubeGeometry(curve, 32, r, 8), m).castShadow = false;
+      var tip = add(arcBox, new THREE.ConeGeometry(r * 4.5, r * 10, 16), m, 0, 0, 0); tip.castShadow = false; tip.position.copy(curve.getPoint(.93)); tip.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), curve.getTangent(.93)); }
+    selReach.forEach(function (j) { if (pets[j]) arc(me, pets[j], me.arc, .45, .045); });
+    selIn.forEach(function (j) { if (pets[j]) arc(pets[j], me, 0x8d87a3, -.05, .036); });
   }
-  function dim() { Object.keys(pets).forEach(function (k) { var on = !selId || !pets[selId] || k === selId || selReach.indexOf(k) >= 0; pets[k].mats.forEach(function (m) { gsap.to(m, { opacity: on ? 1 : .28, duration: dur(.3) }); }); pets[k].el.classList.toggle('dim', !on); }); }
+  function dim() { Object.keys(pets).forEach(function (k) { var on = !selId || !pets[selId] || k === selId || selReach.indexOf(k) >= 0 || selIn.indexOf(k) >= 0; pets[k].mats.forEach(function (m) { gsap.to(m, { opacity: on ? 1 : .28, duration: dur(.3) }); }); pets[k].el.classList.toggle('dim', !on); }); }
   /* 视角：off 是镜头在自己平面里的偏移，zoom 是放大倍数。选人时镜头靠过去；手指拖动和双指缩放直接改它。画面始终按屏幕像素重画，所以放大不糊。 */
   var view = { x: 0, y: 0, z: 0, zoom: 1 }, half = 4.7, resetBtn;
   function applyView() { camera.position.set(CAM[0] + view.x, CAM[1] + view.y, CAM[2] + view.z); camera.zoom = view.zoom; camera.updateProjectionMatrix(); if (resetBtn) resetBtn.hidden = view.zoom < 1.05 && Math.hypot(view.x, view.y, view.z) < .3; }
@@ -129,7 +133,7 @@ window.Office = (function () {
       Object.keys(pos).forEach(function (k) { gsap.to(pets[k].g.position, { x: pos[k].x, z: pos[k].z, duration: d, ease: 'power2.inOut', overwrite: true }); });
       moving = gsap.delayedCall(d + .03, function () { drawRel(); rel.visible = arcBox.visible = true; aim(); }); dim();
     },
-    select: function (id, reach) { var hop = id && id !== selId; selId = id; selReach = reach || []; if (!moving || !moving.isActive()) drawRel(); dim(); aim();
+    select: function (id, reach, incoming) { var hop = id && id !== selId; selId = id; selReach = reach || []; selIn = incoming || []; if (!moving || !moving.isActive()) drawRel(); dim(); aim();
       if (hop && pets[id]) gsap.fromTo(pets[id].sp.scale, { x: 1.25, y: .75, z: 1.25 }, { x: 1, y: 1, z: 1, duration: dur(.7), ease: 'elastic.out(1,.4)' }); },
     resize: function () { resize(); }
   };

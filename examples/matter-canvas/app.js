@@ -4,7 +4,7 @@
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.matter-canvas.v7', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.matter-canvas.v8', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var KIND = { pc: ['电脑', '台', '他在哪台机器上干活', '添加一台，例如：办公室的 Mac mini'], env: ['云环境', '个', '给他一个单独的环境，试东西不会碰到正式的', '添加一个，例如：测试环境'], conn: ['连接器', '个', '他能用的账号，比如飞书、邮箱、网盘', '添加一个，例如：飞书'] };
   /* 招募时的常见岗位：点一下就填好岗位和一段岗位提示，不用从空白写起 */
@@ -22,7 +22,7 @@
     person('y', '言禾', '合同与验收', 'me', '你保管合同和验收文件。别人来要文件，先确认是哪个版本，再给盖章的那一份。', 'r1', null, ['r5', 'r8'], ['a', 'c'], '');
     person('c', '沐川', '行政与账号', 'me', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 'r2', null, ['r5', 'r6', 'r7'], ['y'], '在企业邮箱里翻 10 月的报销邮件，一封封登记到表里');
     person('z', '小折', '文档核对', 'a', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 'r2', 'r3', ['r8'], [], '');
-    person('t', '秋池', '对账', 'c', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, null, ['r6'], ['n'], '');
+    person('t', '秋池', '对账', 'c', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, null, ['r6'], [], '');
     person('n', '北野', '采购', 'c', '你负责买办公用品和订场地。超过预算先问沐川。', null, null, [], ['t'], '');
     function msg(min, from, to, text, more) { d.msgs.push(Object.assign({ id: 'm' + d.msgs.length, ts: now - min * 60000, who: from, to: to, text: text }, more || {})); }
     msg(200, 'me', 'c', '周三下午客户来访，订个大会议室，要能投影。'); msg(170, 'c', 'me', '周三下午 2 点到 4 点的大会议室订好了，投影也借了。');
@@ -47,6 +47,7 @@
   function partners(id) { var o = []; db.msgs.slice().sort(function (x, y) { return y.ts - x.ts; }).forEach(function (x) { var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && o.indexOf(p) < 0) o.push(p); }); return o; }
   function kin(id) { var p = P(id), o = []; if (p && p.boss) o.push(p.boss); db.people.forEach(function (x) { if (x.boss === id) o.push(x.id); }); return o; } /* 上级和直接下属：归谁管就总能联系 */
   function below(id) { var o = []; db.people.forEach(function (x) { if (x.boss === id) o.push(x.id); }); o.slice().forEach(function (j) { o = o.concat(below(j)); }); return o; }
+  function reachers(id) { var o = kin(id); db.people.forEach(function (x) { if (x.id !== id && x.reach.indexOf(id) >= 0 && o.indexOf(x.id) < 0) o.push(x.id); }); return o; } /* 谁能主动找他 */
   function canTalk(id, j) { return kin(id).indexOf(j) >= 0 || ((P(id) || {}).reach || []).indexOf(j) >= 0; }
   function asks(id) { return db.msgs.filter(function (x) { return x.to === 'me' && x.ask === 'open' && (!id || x.who === id); }); }
   function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
@@ -64,8 +65,8 @@
     db.outs.forEach(function (o) { nodes.push({ id: o.id, name: o.name, kind: 'out' }); });
     return { nodes: nodes, links: links, boss: boss };
   }
-  function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? reachOf(ui.sel) : []); } }
-  function pick(id) { if (id && id !== 'me' && !P(id) && !O(id)) id = null; ui.sel = id; if (has3d) window.Office.select(id, id ? reachOf(id) : []); draw(); }
+  function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? reachOf(ui.sel) : [], ui.sel ? reachers(ui.sel) : []); } }
+  function pick(id) { if (id && id !== 'me' && !P(id) && !O(id)) id = null; ui.sel = id; if (has3d) window.Office.select(id, id ? reachOf(id) : [], id ? reachers(id) : []); draw(); }
   function go(page) { ui.sub = null; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); } /* 对话和资料来回点，不越叠越深 */
 
   function av(id, n) { var p = P(id); return '<span class="av" style="--c:' + (id === 'me' ? '#e9e6f0' : p ? AVC[(p.look || 0) % AVC.length] : '#f6c1c7') + '">' + (n ? '<i class="badge">' + n + '</i>' : '') + '</span>'; }
@@ -99,7 +100,7 @@
   /* 标签三：办公室。三维画面在 .stage 里，这里只出底部那张卡片 */
   function card() {
     var id = ui.sel, p = P(id), o = O(id);
-    if (!id) return '<p class="hint">点一个小家伙看他能联系谁。拖动、双指缩放可以凑近看。</p>';
+    if (!id) return '<p class="hint">点一个小家伙：彩色箭头是他能主动找的人，灰色箭头是能主动找他的人。</p>';
     if (id === 'me') return '<div class="pcard">' + av('me') + '<span class="t"><b>你</b><span>这间办公室的老板</span></span><button class="btn ok" data-do="tab" data-id="chats">看消息</button></div>';
     if (o) return '<div class="pcard">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span><button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'out', id: o.id })) + '\'>查看</button></div>';
     return '<div class="pcard">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span></span>' + (p.boss === 'me' ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>对话</button>' : '') + '<button class="btn" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>手机和电脑</button></div>';
@@ -118,9 +119,9 @@
     if (ui.sub) { var t = thread(p.id, ui.sub); return '<div class="body chat"><button class="lk" data-do="sub" data-id="">‹ 回到他的手机</button><p class="cap">' + esc(p.name) + ' 和 ' + esc(N(ui.sub)) + ' 的聊天记录（只读）</p>' + bubbles(t, p.id) + '</div>'; }
     var ps = partners(p.id), k = kin(p.id), all = db.people.filter(function (x) { return x.id !== p.id && k.indexOf(x.id) < 0; }).concat(db.outs);
     function tagOf(j) { return j === p.boss ? '<em>他的上级</em>' : k.indexOf(j) >= 0 ? '<em>他的下属</em>' : O(j) ? '<em>公司外</em>' : ''; }
-    return '<div class="body">' + sec('mint', '他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + tagOf(j) + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id && !l.sys ? '他：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : none('他还没有联系过别人。')) +
-      sec('mint', '他能联系谁', k.map(function (j) { return '<div class="sw fixed"><input type="checkbox" checked disabled><span>' + esc(N(j)) + tagOf(j) + '</span></div>'; }).join('') + (k.length ? '<p class="cap">上级和下属总能互相联系，不用勾。</p>' : '') + (all.length ? all.map(function (x) { return '<label class="sw"><input type="checkbox" data-sw="reach" data-id="' + x.id + '"' + (p.reach.indexOf(x.id) >= 0 ? ' checked' : '') + '><span>' + esc(x.name) + (O(x.id) ? '<em>公司外</em>' : '') + '</span></label>'; }).join('') : none('还没有别人可以联系。')) +
-        '<form class="inl" data-do="out"><input id="out" autocomplete="off" placeholder="加一位公司外的人，例如：客户周姐" aria-label="公司外的人"><button class="btn">添加</button></form><p class="cap">勾选后，办公室里他会自己挪到这些人附近。</p>') + '</div>';
+    return '<div class="body">' + sec('mint', '他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="cell" data-do="sub" data-id="' + j + '">' + av(j) + '<span class="t"><b>' + esc(N(j)) + tagOf(j) + (canTalk(p.id, j) ? '' : canTalk(j, p.id) ? '<em>只能等对方来找</em>' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id && !l.sys ? '他：' : '') + l.text) + '</span></span><span class="rt">' + hhmm(l.ts) + '</span></button>'; }).join('') : none('他还没有联系过别人。')) +
+      sec('mint', '他能主动联系谁', k.map(function (j) { return '<div class="sw fixed"><input type="checkbox" checked disabled><span>' + esc(N(j)) + tagOf(j) + '</span></div>'; }).join('') + (k.length ? '<p class="cap">上级和下属总能互相联系，不用勾。其余的人，勾上他才能主动找对方；对方能不能找他，要在对方那边勾。</p>' : '<p class="cap">勾上他才能主动找对方；对方能不能找他，要在对方那边勾。</p>') + (all.length ? all.map(function (x) { return '<label class="sw"><input type="checkbox" data-sw="reach" data-id="' + x.id + '"' + (p.reach.indexOf(x.id) >= 0 ? ' checked' : '') + '><span>' + esc(x.name) + (O(x.id) ? '<em>公司外</em>' : '') + '</span></label>'; }).join('') : none('还没有别人可以联系。')) +
+        '<form class="inl" data-do="out"><input id="out" autocomplete="off" placeholder="加一位公司外的人，例如：客户周姐" aria-label="公司外的人"><button class="btn">添加</button></form><p class="cap">勾选后，办公室里他会自己挪到这些人附近。</p>') + sec('mint', '谁能主动联系他', (function () { var ins = reachers(p.id).filter(function (j) { return k.indexOf(j) < 0; }); return ins.length ? ins.map(function (j) { var mut = p.reach.indexOf(j) >= 0; return '<button class="cell" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: j, tab: 'phone' })) + '\'>' + av(j) + '<span class="t"><b>' + esc(N(j)) + '</b><span>' + (mut ? '互相能联系' : '对方能找他，他不能主动找对方') + '</span></span></button>'; }).join('') : none('除了上级和下属，没有别人能主动找他。'); })()) + '</div>';
   }
   function pc(p) {
     var has = R('pc', p.pc) || R('env', p.env);
