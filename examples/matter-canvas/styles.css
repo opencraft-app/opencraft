@@ -87,6 +87,7 @@ em { font-style: normal; font-size: 11px; font-weight: 700; margin-left: 6px; pa
 .chip.ck input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .chip.ck:has(input:focus-visible) { outline: 2px solid var(--ink-2); outline-offset: 2px; }
 .sw { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 12px; border-radius: 14px; background: var(--card); cursor: pointer; }
+.sw.fixed { cursor: default; opacity: .85; }
 .sw input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
 .fld { display: flex; align-items: center; gap: 10px; } .fld.col { flex-direction: column; align-items: stretch; gap: 6px; }
 .fld > .chips { flex: 1; min-width: 0; }

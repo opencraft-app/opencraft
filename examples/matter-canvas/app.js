@@ -4,7 +4,7 @@
    这是结构原型，没有接真实的 Bot：你发出去的话不会有人回。示例内容是一份静态快照，清空后各处如实显示为空。 */
 (function () {
   'use strict';
-  var KEY = 'opencraft.matter-canvas.v6', $ = function (id) { return document.getElementById(id); };
+  var KEY = 'opencraft.matter-canvas.v7', $ = function (id) { return document.getElementById(id); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
   var KIND = { pc: ['电脑', '例如：办公室的 Mac mini'], env: ['云环境', '例如：测试环境'], conn: ['连接器', '例如：飞书、邮箱'] };
   var TABS = [['talk', '对话'], ['phone', '手机'], ['pc', '电脑'], ['role', '岗位']];
@@ -15,22 +15,21 @@
     [['pc', 'r1', '办公室的 Mac mini'], ['pc', 'r2', '机房的 Linux 主机'], ['env', 'r3', '测试环境'], ['env', 'r4', '客户演示环境'], ['conn', 'r5', '飞书'], ['conn', 'r6', '企业邮箱'], ['conn', 'r7', 'GitHub'], ['conn', 'r8', '公司网盘']].forEach(function (r) { d.res[r[0]].push({ id: r[1], name: r[2] }); });
     d.outs.push({ id: 'o1', name: '客户周姐' });
     function person(id, name, role, boss, prompt, pc, env, conn, reach, doing) { d.people.push({ id: id, name: name, role: role, boss: boss, prompt: prompt, pc: pc, env: env, conn: conn, reach: reach, doing: doing || '', look: look++ }); }
-    person('a', '阿岚', '项目交付', 'me', '你负责把版本按时交到客户手里。缺什么材料自己找同事要，拿不准的事先问老板。交付前一定让人核对签字页。', 'r1', 'r4', ['r5', 'r6', 'r8'], ['y', 'z', 'o1'], '');
+    person('a', '阿岚', '项目交付', 'me', '你负责把版本按时交到客户手里。缺什么材料自己找同事要，拿不准的事先问老板。交付前一定让人核对签字页。', 'r1', 'r4', ['r5', 'r6', 'r8'], ['y', 'o1'], '');
     person('y', '言禾', '合同与验收', 'me', '你保管合同和验收文件。别人来要文件，先确认是哪个版本，再给盖章的那一份。', 'r1', null, ['r5', 'r8'], ['a', 'c'], '');
-    person('c', '沐川', '行政与账号', 'me', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 'r2', null, ['r5', 'r6', 'r7'], ['y', 't', 'n'], '在企业邮箱里翻 10 月的报销邮件，一封封登记到表里');
-    person('z', '小折', '文档核对', 'a', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 'r2', 'r3', ['r8'], ['a'], '');
-    person('t', '秋池', '对账', 'c', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, null, ['r6'], ['c', 'n'], '');
-    person('n', '北野', '采购', 'c', '你负责买办公用品和订场地。超过预算先问沐川。', null, null, [], ['c', 't'], '');
+    person('c', '沐川', '行政与账号', 'me', '你负责开账号、订会议室、收报销单。办完告诉交办的人。', 'r2', null, ['r5', 'r6', 'r7'], ['y'], '在企业邮箱里翻 10 月的报销邮件，一封封登记到表里');
+    person('z', '小折', '文档核对', 'a', '你只做核对：版本、页码、签章。核完写清楚看的是哪一份、结论是什么。', 'r2', 'r3', ['r8'], [], '');
+    person('t', '秋池', '对账', 'c', '你核对每一笔报销和发票是否对得上，对不上的列出来交给沐川。', null, null, ['r6'], ['n'], '');
+    person('n', '北野', '采购', 'c', '你负责买办公用品和订场地。超过预算先问沐川。', null, null, [], ['t'], '');
     function msg(min, from, to, text, more) { d.msgs.push(Object.assign({ id: 'm' + d.msgs.length, ts: now - min * 60000, who: from, to: to, text: text }, more || {})); }
-    msg(170, 'c', 'me', '周三下午 2 点到 4 点的大会议室订好了，投影也借了。');
+    msg(200, 'me', 'c', '周三下午客户来访，订个大会议室，要能投影。'); msg(170, 'c', 'me', '周三下午 2 点到 4 点的大会议室订好了，投影也借了。');
     msg(94, 'me', 'a', '周五要把 2.3 版本交给客户，你来负责。缺什么自己找人。');
     msg(80, 'a', 'y', '言禾，客户盖章的验收签字页在你那吗？周五交付要用。'); msg(62, 'y', 'a', '在，发你了。有两个附件页码不一样，盖章的是其中一份，你最好找人核一下。');
     msg(55, 'a', 'z', '帮我核一下这两份签字页：哪份是盖章的，版本对不对。'); msg(30, 'z', 'a', '核完了。盖章的是第 3 页那份，版本 2.3，和交付清单一致。');
     msg(26, 'a', 'o1', '周姐，2.3 版本周五上午发您，签字页我们已经核对过了。');
     msg(49, 'me', 'c', '下周一有新同事入职，账号提前开好。'); msg(22, 'c', 'me', '邮箱和飞书开好了。GitHub 要等他把用户名发我，我已经问了。');
     msg(17, 'a', 'me', '签字页核对好了，交付包齐了。你看一眼核对单，没问题我就发给客户。', { ask: 'open', file: '2.3 版本签字页核对单', body: '盖章的是第 3 页那一份。\n版本号 2.3，和交付清单一致。\n核对人：小折。\n交付包里的三样都齐了：安装包、测试回执、验收签字页。' });
-    msg(12, 'c', 't', '10 月的报销我登记到一半，登完发你对账。');
-    msg(8, 'me', 'c', '把 10 月的报销单整理一下，周五前给我。');
+    msg(40, 'me', 'c', '把 10 月的报销单整理一下，周五前给我。'); msg(12, 'c', 't', '10 月的报销我登记到一半，登完发你对账。');
     d.n = 100; d.sample = true; return d;
   }
   var db = sample();
@@ -42,7 +41,10 @@
   function N(id) { return id === 'me' ? '你' : (P(id) || O(id) || {}).name || '已移出的人'; }
   function R(k, id) { return db.res[k].filter(function (x) { return x.id === id; })[0]; }
   function thread(a, b) { return db.msgs.filter(function (x) { return (x.who === a && x.to === b) || (x.who === b && x.to === a); }).sort(function (x, y) { return x.ts - y.ts; }); }
-  function partners(id) { var o = []; db.msgs.slice().sort(function (x, y) { return y.ts - x.ts; }).forEach(function (x) { var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && p !== 'me' && o.indexOf(p) < 0) o.push(p); }); return o; }
+  function partners(id) { var o = []; db.msgs.slice().sort(function (x, y) { return y.ts - x.ts; }).forEach(function (x) { var p = x.who === id ? x.to : x.to === id ? x.who : null; if (p && o.indexOf(p) < 0) o.push(p); }); return o; }
+  function kin(id) { var p = P(id), o = []; if (p && p.boss) o.push(p.boss); db.people.forEach(function (x) { if (x.boss === id) o.push(x.id); }); return o; } /* 上级和直接下属：归谁管就总能联系 */
+  function below(id) { var o = []; db.people.forEach(function (x) { if (x.boss === id) o.push(x.id); }); o.slice().forEach(function (j) { o = o.concat(below(j)); }); return o; }
+  function canTalk(id, j) { return kin(id).indexOf(j) >= 0 || ((P(id) || {}).reach || []).indexOf(j) >= 0; }
   function asks(id) { return db.msgs.filter(function (x) { return x.to === 'me' && x.ask === 'open' && (!id || x.who === id); }); }
   function hhmm(ts) { var d = new Date(ts); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
 
@@ -52,16 +54,16 @@
   var ui = { tab: 'chats', stack: [], sel: null, sub: null }, has3d = false;
   function top() { return ui.stack[ui.stack.length - 1]; }
   function cur() { var t = top(); return t && (t.k === 'chat' || t.k === 'profile') ? P(t.id) : null; }
-  function reachOf(id) { if (id === 'me') return db.people.filter(function (p) { return p.boss === 'me'; }).map(function (p) { return p.id; }); var p = P(id); return p ? p.reach.slice() : []; }
+  function reachOf(id) { var p = P(id), o = kin(id); if (p) p.reach.forEach(function (j) { if (o.indexOf(j) < 0) o.push(j); }); return o; }
   function toScene() {
-    var nodes = [{ id: 'me', name: '你', kind: 'me' }], links = [], boss = [];
-    db.people.forEach(function (p) { nodes.push({ id: p.id, name: p.name, kind: 'bot', look: p.look, badge: asks(p.id).length, busy: !!p.doing }); boss.push([p.boss, p.id]); if (p.boss === 'me') links.push(['me', p.id]); p.reach.forEach(function (j) { if (P(j) || O(j)) links.push([p.id, j]); }); });
+    var nodes = [{ id: 'me', name: '你', kind: 'me', pc: true }], links = [], boss = [];
+    db.people.forEach(function (p) { nodes.push({ id: p.id, name: p.name, kind: 'bot', look: p.look, badge: asks(p.id).length, busy: !!p.doing, pc: !!(p.pc || p.env) }); boss.push([p.boss, p.id]); links.push([p.boss, p.id]); p.reach.forEach(function (j) { if (P(j) || O(j)) links.push([p.id, j]); }); });
     db.outs.forEach(function (o) { nodes.push({ id: o.id, name: o.name, kind: 'out' }); });
     return { nodes: nodes, links: links, boss: boss };
   }
   function sync() { if (has3d) { window.Office.sync(toScene()); window.Office.select(ui.sel, ui.sel ? reachOf(ui.sel) : []); } }
   function pick(id) { if (id && id !== 'me' && !P(id) && !O(id)) id = null; ui.sel = id; if (has3d) window.Office.select(id, id ? reachOf(id) : []); draw(); }
-  function go(page) { ui.sub = null; ui.stack.push(page); draw(); }
+  function go(page) { ui.sub = null; var prev = ui.stack[ui.stack.length - 2]; if (prev && prev.id === page.id && prev.k === page.k) ui.stack.pop(); else ui.stack.push(page); draw(); } /* 对话和资料来回点，不越叠越深 */
 
   function av(id) { var p = P(id); return '<span class="av" style="--c:' + (id === 'me' ? '#f4f1f6' : p ? AVC[(p.look || 0) % AVC.length] : '#f6c1c7') + '"></span>'; }
   function nav(title, right) { return '<header class="nav"><button class="back" data-do="back">‹ 返回</button><h1>' + esc(title) + '</h1><span class="r">' + (right || '') + '</span></header>'; }
@@ -73,11 +75,11 @@
 
   /* 标签一：消息。老板自己的手机，只有直接归你管的人 */
   function chats() {
-    var mine = db.people.filter(function (p) { return p.boss === 'me'; });
+    var mine = db.people.filter(function (p) { return p.boss === 'me' || thread('me', p.id).length; });
     function last(p) { var l = thread('me', p.id).pop(); return l ? l.ts : 0; }
     mine.sort(function (a, b) { return (asks(b.id).length - asks(a.id).length) || (last(b) - last(a)); });
     return '<header class="bar"><h1>消息</h1><button class="btn ok" data-go=\'{"k":"recruit"}\'>招募</button></header><div class="body">' + (mine.length ? mine.map(function (p) { var l = thread('me', p.id).pop(), n = asks(p.id).length;
-      return cell({ k: 'chat', id: p.id }, p.id, esc(p.name) + '<em>' + esc(p.role || '未填岗位') + '</em>', (n ? '<i class="dot">' + n + '</i>' : '') + esc(l ? (l.who === 'me' ? '你：' : '') + l.text : '还没有说过话'), l ? hhmm(l.ts) : ''); }).join('') : sec('', '还没有人', none('手机里还没有人。点右上角「招募」，招第一位员工。'))) +
+      return cell({ k: 'chat', id: p.id }, p.id, esc(p.name) + '<em>' + esc(p.boss === 'me' ? p.role || '未填岗位' : '归' + N(p.boss) + '管') + '</em>', (n ? '<i class="dot">' + n + '</i>' : '') + esc(l ? (l.who === 'me' ? '你：' : '') + l.text : '还没有说过话'), l ? hhmm(l.ts) : ''); }).join('') : sec('', '还没有人', none('手机里还没有人。点右上角「招募」，招第一位员工。'))) +
       '<p class="foot">这是原型，没有接真实的 Bot，你发出去的话不会有人回。<button class="lk" data-do="' + (db.sample ? 'clear">清空示例' : 'sample">放回示例') + '</button></p></div>';
   }
   /* 标签二：通讯录。所有人都在，管理从这里进 */
@@ -98,29 +100,30 @@
 
   /* 整页：对话 */
   function chat(p) { var t = thread('me', p.id);
-    return nav(p.name, '<button class="lk" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>资料</button>') + '<div class="body chat" id="chat">' + (t.length ? t.map(function (m) { return bubble(m, 'me'); }).join('') : none('还没有对话。对他说第一件要办的事。')) + '</div><form class="say" data-do="say"><input id="say" autocomplete="off" placeholder="对' + esc(p.name) + '说要办什么" aria-label="对' + esc(p.name) + '说"><button class="btn ok">发送</button></form>'; }
+    return nav(p.name, '<button class="lk" data-go=\'' + esc(JSON.stringify({ k: 'profile', id: p.id, tab: 'phone' })) + '\'>资料</button>') + '<div class="body chat" id="chat">' + (t.length ? t.map(function (m) { return bubble(m, 'me'); }).join('') : none('还没有对话。对他说第一件要办的事。')) + '</div>' + (p.boss === 'me' ? '<form class="say" data-do="say"><input id="say" autocomplete="off" placeholder="对' + esc(p.name) + '说要办什么" aria-label="对' + esc(p.name) + '说"><button class="btn ok">发送</button></form>' : '<p class="say cap">' + esc(p.name) + '现在归' + esc(N(p.boss)) + '管。以前的话还在，新的事请对' + esc(N(p.boss)) + '说。</p>'); }
   /* 整页：员工资料。手机 / 电脑 / 岗位 */
   function profile(p, page) {
     var body = ({ phone: phone, pc: pc, role: role })[page.tab](p);
-    return nav('员工资料') + '<div class="who">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span></span></div><div class="acts pad">' + (p.boss === 'me' ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>发消息</button>' : '<span class="cap">他归' + esc(N(p.boss)) + '管，要交办事情请对' + esc(N(p.boss)) + '说。</span>') + '<button class="btn" data-do="see" data-id="' + p.id + '">在办公室里看他</button></div>' +
+    return nav('员工资料') + '<div class="who">' + av(p.id) + '<span class="t"><b>' + esc(p.name) + '</b><span>' + esc(p.role || '未填岗位') + ' · 归' + esc(N(p.boss)) + '管</span></span></div><div class="acts pad">' + (p.boss === 'me' || thread('me', p.id).length ? '<button class="btn ok" data-go=\'' + esc(JSON.stringify({ k: 'chat', id: p.id })) + '\'>' + (p.boss === 'me' ? '发消息' : '看你们以前的对话') + '</button>' : '') + (p.boss === 'me' ? '' : '<span class="cap">他归' + esc(N(p.boss)) + '管，要交办事情请对' + esc(N(p.boss)) + '说。</span>') + '<button class="btn" data-do="see" data-id="' + p.id + '">在办公室里看他</button></div>' +
       '<div class="tabs" role="tablist">' + [['phone', '手机'], ['pc', '电脑'], ['role', '岗位']].map(function (t) { return '<button role="tab" aria-selected="' + (page.tab === t[0]) + '" data-tab="' + t[0] + '">' + t[1] + '</button>'; }).join('') + '</div>' + body;
   }
   function phone(p) {
     if (ui.sub) { var t = thread(p.id, ui.sub); return '<div class="body chat"><button class="lk" data-do="sub" data-id="">‹ 回到他的手机</button><p class="cap">' + esc(p.name) + ' 和 ' + esc(N(ui.sub)) + ' 的聊天记录（只读）</p>' + t.map(function (m) { return bubble(m, p.id); }).join('') + '</div>'; }
-    var ps = partners(p.id), all = db.people.filter(function (x) { return x.id !== p.id; }).concat(db.outs);
-    return '<div class="body">' + sec('mint', '他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="row" data-do="sub" data-id="' + j + '"><b>' + esc(N(j)) + (O(j) ? '<em>公司外</em>' : '') + '</b><span>' + esc((l.who === p.id ? '他：' : '') + l.text) + '</span></button>'; }).join('') : none('他还没有联系过别人。')) +
-      sec('mint', '他能联系谁', (all.length ? all.map(function (x) { return '<label class="sw"><input type="checkbox" data-sw="reach" data-id="' + x.id + '"' + (p.reach.indexOf(x.id) >= 0 ? ' checked' : '') + '><span>' + esc(x.name) + (O(x.id) ? '<em>公司外</em>' : '') + '</span></label>'; }).join('') : none('还没有别人可以联系。')) +
+    var ps = partners(p.id), k = kin(p.id), all = db.people.filter(function (x) { return x.id !== p.id && k.indexOf(x.id) < 0; }).concat(db.outs);
+    function tagOf(j) { return j === p.boss ? '<em>他的上级</em>' : k.indexOf(j) >= 0 ? '<em>他的下属</em>' : O(j) ? '<em>公司外</em>' : ''; }
+    return '<div class="body">' + sec('mint', '他在联系谁', ps.length ? ps.map(function (j) { var l = thread(p.id, j).pop(); return '<button class="row" data-do="sub" data-id="' + j + '"><b>' + esc(N(j)) + tagOf(j) + (canTalk(p.id, j) ? '' : '<em>现在不能联系</em>') + '</b><span>' + esc((l.who === p.id ? '他：' : '') + l.text) + '</span></button>'; }).join('') : none('他还没有联系过别人。')) +
+      sec('mint', '他能联系谁', k.map(function (j) { return '<div class="sw fixed"><input type="checkbox" checked disabled><span>' + esc(N(j)) + tagOf(j) + '</span></div>'; }).join('') + (k.length ? '<p class="cap">上级和下属总能互相联系，不用勾。</p>' : '') + (all.length ? all.map(function (x) { return '<label class="sw"><input type="checkbox" data-sw="reach" data-id="' + x.id + '"' + (p.reach.indexOf(x.id) >= 0 ? ' checked' : '') + '><span>' + esc(x.name) + (O(x.id) ? '<em>公司外</em>' : '') + '</span></label>'; }).join('') : none('还没有别人可以联系。')) +
         '<form class="inl" data-do="out"><input id="out" autocomplete="off" placeholder="加一位公司外的人，例如：客户周姐" aria-label="公司外的人"><button class="btn">添加</button></form><p class="cap">勾选后，办公室里他会自己挪到这些人附近。</p>') + '</div>';
   }
   function pc(p) {
     function one(k) { return '<label class="fld"><span>' + KIND[k][0] + '</span><select data-sw="' + k + '"><option value="">不分配</option>' + db.res[k].map(function (r) { return '<option value="' + r.id + '"' + (p[k] === r.id ? ' selected' : '') + '>' + esc(r.name) + '</option>'; }).join('') + '</select></label>'; }
     return '<div class="body">' + sec('sky', '他在做什么', p.doing ? '<div class="doing"><i></i>' + esc(p.doing) + '</div><p class="cap">用的是：' + esc([R('pc', p.pc), R('env', p.env)].filter(Boolean).map(function (r) { return r.name; }).join('、') || '还没有分配电脑') + '</p>' : none('他的电脑现在空着。')) +
       sec('sky', '他能做什么', one('pc') + one('env') + '<div class="fld"><span>连接器</span><div class="chips">' + (db.res.conn.map(function (r) { return '<label class="chip ck"><input type="checkbox" data-sw="conn" data-id="' + r.id + '"' + (p.conn.indexOf(r.id) >= 0 ? ' checked' : '') + '>' + esc(r.name) + '</label>'; }).join('') || '<span class="none">还没有登记连接器。</span>') + '</div></div>' +
-        '<form class="inl" data-do="res"><select id="resk" aria-label="类型">' + Object.keys(KIND).map(function (k) { return '<option value="' + k + '">' + KIND[k][0] + '</option>'; }).join('') + '</select><input id="resn" autocomplete="off" placeholder="登记一个新的" aria-label="名称"><button class="btn">登记</button></form>') + '</div>';
+        '<form class="inl" data-do="res"><select id="resk" aria-label="类型">' + Object.keys(KIND).map(function (k) { return '<option value="' + k + '">' + KIND[k][0] + '</option>'; }).join('') + '</select><input id="resn" autocomplete="off" placeholder="登记一个新的给他" aria-label="名称"><button class="btn">登记</button></form>') + '</div>';
   }
   function role(p) {
     return '<form class="body" data-do="role"><label class="fld"><span>名字</span><input id="rname" value="' + esc(p.name) + '" autocomplete="off"></label><label class="fld"><span>岗位</span><input id="rrole" value="' + esc(p.role) + '" autocomplete="off" placeholder="例如：项目交付"></label><label class="fld"><span>归谁管</span><select id="rboss"><option value="me">你</option>' +
-      db.people.filter(function (x) { return x.id !== p.id && x.boss !== p.id; }).map(function (x) { return '<option value="' + x.id + '"' + (p.boss === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></label><label class="fld col"><span>岗位提示</span><textarea id="rprompt" rows="5" placeholder="告诉他这个岗位该怎么做事">' + esc(p.prompt) + '</textarea></label><div class="acts"><button class="btn ok">保存</button><button type="button" class="btn danger" data-do="drop">移出办公室</button></div></form>';
+      db.people.filter(function (x) { return x.id !== p.id && below(p.id).indexOf(x.id) < 0; }).map(function (x) { return '<option value="' + x.id + '"' + (p.boss === x.id ? ' selected' : '') + '>' + esc(x.name) + '</option>'; }).join('') + '</select></label><label class="fld col"><span>岗位提示</span><textarea id="rprompt" rows="5" placeholder="告诉他这个岗位该怎么做事">' + esc(p.prompt) + '</textarea></label><div class="acts"><button class="btn ok">保存</button><button type="button" class="btn danger" data-do="drop">移出办公室</button></div></form>';
   }
   function outside(o) { var who = db.people.filter(function (p) { return p.reach.indexOf(o.id) >= 0; });
     return nav(o.name) + '<div class="who">' + av(o.id) + '<span class="t"><b>' + esc(o.name) + '</b><span>公司外的人</span></span></div><div class="body">' + sec('mint', '谁能联系他', who.length ? who.map(function (p) { return cell({ k: 'profile', id: p.id, tab: 'phone' }, p.id, esc(p.name), esc(p.role || '未填岗位')); }).join('') : none('现在没有人能联系他。')) + '<p><button class="btn danger" data-do="dropout" data-id="' + o.id + '">从门外移走</button></p></div>'; }
@@ -142,11 +145,11 @@
     back: function () { if (ui.sub && top() && top().k === 'profile') ui.sub = null; else ui.stack.pop(); draw(); },
     see: function (el) { ui.stack = []; ui.tab = 'office'; draw(); pick(el.getAttribute('data-id')); },
     sub: function (el) { ui.sub = el.getAttribute('data-id') || null; draw(); },
-    say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p) return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); save(); $('view').removeAttribute('data-key'); draw(); $('say').focus(); },
+    say: function () { var v = $('say').value.trim(), p = cur(); if (!v || !p || p.boss !== 'me') return; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: p.id, text: v }); save(); $('view').removeAttribute('data-key'); draw(); $('say').focus(); },
     accept: function (el) { answer(el.getAttribute('data-id'), 'ok', '可以，就这样。'); },
     reject: function (el) { answer(el.getAttribute('data-id'), 'no', '不行，退回，再看看。'); },
     out: function () { var v = $('out').value.trim(), p = cur(); if (!v || !p) return; var o = { id: uid('o'), name: v }; db.outs.push(o); p.reach.push(o.id); save(); sync(); draw(); },
-    res: function () { var v = $('resn').value.trim(), k = $('resk').value; if (!v) return; db.res[k].push({ id: uid('r'), name: v }); save(); draw(); },
+    res: function () { var v = $('resn').value.trim(), k = $('resk').value, p = cur(); if (!v) return; var r = { id: uid('r'), name: v }; db.res[k].push(r); if (p) { if (k === 'conn') p.conn.push(r.id); else p[k] = r.id; } save(); sync(); draw(); },
     role: function () { var p = cur(); if (!p) return; p.name = $('rname').value.trim() || p.name; p.role = $('rrole').value.trim(); p.prompt = $('rprompt').value.trim(); p.boss = $('rboss').value; save(); sync(); draw(); },
     drop: function () { var p = cur(); if (!p || !window.confirm('把' + p.name + '移出办公室？他的聊天记录也会一起删掉。')) return; var id = p.id; db.people = db.people.filter(function (x) { return x.id !== id; }); db.people.forEach(function (x) { if (x.boss === id) x.boss = p.boss; x.reach = x.reach.filter(function (j) { return j !== id; }); }); db.msgs = db.msgs.filter(function (m) { return m.who !== id && m.to !== id; }); if (ui.sel === id) ui.sel = null; ui.stack = []; ui.tab = 'people'; save(); sync(); draw(); },
     dropout: function (el) { var id = el.getAttribute('data-id'); db.outs = db.outs.filter(function (x) { return x.id !== id; }); db.people.forEach(function (x) { x.reach = x.reach.filter(function (j) { return j !== id; }); }); db.msgs = db.msgs.filter(function (m) { return m.who !== id && m.to !== id; }); if (ui.sel === id) ui.sel = null; ui.stack = []; save(); sync(); draw(); },
@@ -156,9 +159,9 @@
   };
   function answer(id, state, text) { var m = db.msgs.filter(function (x) { return x.id === id; })[0]; if (!m) return; m.ask = state; db.msgs.push({ id: uid('m'), ts: Date.now(), who: 'me', to: m.who, text: text }); save(); sync(); $('view').removeAttribute('data-key'); draw(); }
   var SW = {
-    reach: function (el, p) { var id = el.getAttribute('data-id'); p.reach = p.reach.filter(function (j) { return j !== id; }); if (el.checked) p.reach.push(id); sync(); },
+    reach: function (el, p) { var id = el.getAttribute('data-id'); p.reach = p.reach.filter(function (j) { return j !== id; }); if (el.checked) p.reach.push(id); sync(); draw(); },
     conn: function (el, p) { var id = el.getAttribute('data-id'); p.conn = p.conn.filter(function (j) { return j !== id; }); if (el.checked) p.conn.push(id); },
-    pc: function (el, p) { p.pc = el.value || null; }, env: function (el, p) { p.env = el.value || null; }
+    pc: function (el, p) { p.pc = el.value || null; sync(); }, env: function (el, p) { p.env = el.value || null; sync(); }
   };
 
   document.addEventListener('click', function (e) {

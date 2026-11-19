@@ -5,7 +5,7 @@ window.Office = (function () {
   var THREE = window.THREE, gsap = window.gsap;
   var renderer, scene, camera, canvas, labelBox, onPick, calm = false;
   var pets = {}, model = { nodes: [], links: [], boss: [] }, rel, arcBox, selId = null, selReach = [], moving = null;
-  var CAM = [7, 9, 10], LOOK = [.8, .5, 0], CREAM = 0xf7efe2, LILAC = 0xb9a8ee;
+  var face = .5, CAM = [7, 9, 10], LOOK = [.8, .5, 0], CREAM = 0xf7efe2, LILAC = 0xb9a8ee;
   var PAL = [[0xa9dcc9, 0x58b596], [0xc3b5ee, 0x8a73d9], [0xa9c8f2, 0x5b93df], [0xfbe39c, 0xe0b63a], [0xf9cdb0, 0xe39a63], [0xbfe3ee, 0x4fa9c4], [0xd9e8a6, 0x9db53c]];
   var SHAPES = ['cube', 'round', 'drop', 'cloud'], EXTRA = ['', 'beanie', 'glasses', ''];
   var BOX, CUBE, BALL;
@@ -22,9 +22,9 @@ window.Office = (function () {
     var i = node.look || 0; return { c: PAL[i % PAL.length][0], arc: PAL[i % PAL.length][1], shape: SHAPES[i % SHAPES.length], extra: EXTRA[i % EXTRA.length] };
   }
   function makePet(node, x, z) {
-    var L = look(node), g = new THREE.Group(), sp = new THREE.Group(), m = clay(L.c), dark = clay(0x1d1b26, { roughness: .15 }), white = clay(0xffffff, { roughness: .2 }), acc = clay(L.extra === 'beanie' ? CREAM : LILAC), mats = [m, dark, white, acc], screen = null, top = .82, front = .42;
-    g.position.set(x, 0, z); g.rotation.y = .5 + ((x * 7 + z * 13) % 1) * .5 - .4; scene.add(g); g.add(sp);
-    if (node.kind !== 'out') { part(g, BOX, clay(CREAM), 0, .42, -.85, .6, .07, .34); add(g, new THREE.CylinderGeometry(.09, .16, .4, 20), clay(0xe9dfcd), 0, .2, -.85); part(g, BOX, clay(0xf4f1f6), 0, .78, -.95, .34, .24, .05); add(g, new THREE.CylinderGeometry(.04, .04, .14, 12), clay(0xf4f1f6), 0, .54, -.95); screen = part(g, BOX, clay(LILAC, { emissive: 0x000000 }), 0, .78, -.9, .27, .17, .015).material; }
+    var mon = null, L = look(node), g = new THREE.Group(), sp = new THREE.Group(), m = clay(L.c), dark = clay(0x1d1b26, { roughness: .15 }), white = clay(0xffffff, { roughness: .2 }), acc = clay(L.extra === 'beanie' ? CREAM : LILAC), mats = [m, dark, white, acc], screen = null, top = .82, front = .42;
+    var jit = ((x * 7 + z * 13) % 1) * .5 - .4; g.position.set(x, 0, z); g.rotation.y = face + jit; scene.add(g); g.add(sp);
+    if (node.kind !== 'out') { part(g, BOX, clay(CREAM), 0, .42, -.85, .6, .07, .34); add(g, new THREE.CylinderGeometry(.09, .16, .4, 20), clay(0xe9dfcd), 0, .2, -.85); mon = new THREE.Group(); g.add(mon); part(mon, BOX, clay(0xf4f1f6), 0, .78, -.95, .34, .24, .05); add(mon, new THREE.CylinderGeometry(.04, .04, .14, 12), clay(0xf4f1f6), 0, .54, -.95); screen = part(mon, BOX, clay(LILAC, { emissive: 0x000000 }), 0, .78, -.9, .27, .17, .015).material; mon.visible = !!node.pc; } /* 没分配电脑或云环境，桌上就没有电脑 */
     if (L.shape === 'cube') { part(sp, CUBE, m, 0, .4, 0, .4, .4, .38); front = .4; }
     else if (L.shape === 'drop') { add(sp, new THREE.LatheGeometry(new THREE.SplineCurve([[0, 0], [.3, .03], [.43, .22], [.4, .44], [.26, .68], [.1, .86], [0, .9]].map(function (p) { return new THREE.Vector2(p[0], p[1]); })).getPoints(28), 36), m, 0, 0, 0); top = .9; }
     else { part(sp, BALL, m, 0, .4, 0, .43, .4, .43); if (L.shape === 'cloud') { part(sp, BALL, m, -.2, .7, 0, .2); part(sp, BALL, m, .2, .7, 0, .2); part(sp, BALL, m, 0, .78, 0, .22); top = .98; } }
@@ -40,7 +40,7 @@ window.Office = (function () {
     var el = document.createElement('span'); labelBox.appendChild(el);
     var bob = calm ? null : gsap.to(sp.position, { y: .1, duration: .7 + Math.abs(x * 3 + z) % 1 * .5, ease: 'sine.inOut', yoyo: true, repeat: -1 });
     g.scale.setScalar(.01); gsap.to(g.scale, { x: 1.4, y: 1.4, z: 1.4, duration: dur(.5), ease: 'back.out(1.6)' });
-    return { g: g, sp: sp, mats: mats, hit: hit, phone: phone, screen: screen, el: el, bob: bob, arc: L.arc, top: top > .85 ? 1.5 : 1.3, glow: null };
+    return { jit: jit, g: g, mon: mon, sp: sp, mats: mats, hit: hit, phone: phone, screen: screen, el: el, bob: bob, arc: L.arc, top: top > .85 ? 1.5 : 1.3, glow: null };
   }
   function dropPet(id) { var p = pets[id]; delete pets[id]; p.el.remove(); if (p.bob) p.bob.kill(); if (p.glow) p.glow.kill(); gsap.to(p.g.scale, { x: .01, y: .01, z: .01, duration: dur(.3), onComplete: function () { scene.remove(p.g); } }); }
 
@@ -84,7 +84,14 @@ window.Office = (function () {
     return function () { return moved >= 8; };
   }
 
-  function resize() { var w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); var a = w / h, s = half = Math.max(4.7, 8.2 / a); camera.left = -s * a; camera.right = s * a; camera.top = s; camera.bottom = -s; camera.updateProjectionMatrix(); }
+  /* 取景：按画面比例选镜头方向（竖屏时把办公室长的一边竖过来），再按办公室的实际外框算缩放，让它铺满可用空间 */
+  var BOUND = [[-6, -4.7], [4.8, -4.7], [7.6, -3.8], [7.6, 0.6], [4.8, 4.7], [-6, 4.7]];
+  function resize() { var w = canvas.clientWidth, h = canvas.clientHeight; if (!w || !h) return; renderer.setSize(w, h, false); var a = w / h;
+    var off = a < .9 ? [-9, 11, 3.5] : [6.2, 8.5, 10]; face = Math.atan2(off[0], off[2]); Object.keys(pets).forEach(function (k) { pets[k].g.rotation.y = face + pets[k].jit; }); /* 人都朝着镜头 */ CAM = [LOOK[0] + off[0], LOOK[1] + off[1], LOOK[2] + off[2]];
+    camera.position.set(CAM[0], CAM[1], CAM[2]); camera.lookAt(LOOK[0], LOOK[1], LOOK[2]); camera.updateMatrixWorld();
+    var inv = camera.matrixWorldInverse, mx = 0, my = 0, q = new THREE.Vector3(), c = new THREE.Vector3(LOOK[0], LOOK[1], LOOK[2]).applyMatrix4(inv);
+    BOUND.forEach(function (b) { [0, 2.4].forEach(function (y) { q.set(b[0], y, b[1]).applyMatrix4(inv); mx = Math.max(mx, Math.abs(q.x - c.x)); my = Math.max(my, Math.abs(q.y - c.y)); }); });
+    var s = half = Math.max(my, mx / a) * 1.06; camera.left = -s * a; camera.right = s * a; camera.top = s; camera.bottom = -s; applyView(); }
   var v;
   function frame() { requestAnimationFrame(frame); if (document.hidden) return; renderer.render(scene, camera); var w = canvas.clientWidth, h = canvas.clientHeight;
     Object.keys(pets).forEach(function (k) { var p = pets[k]; p.g.getWorldPosition(v); v.y += p.top * p.g.scale.y + .25; v.project(camera); p.el.style.left = (v.x * .5 + .5) * w + 'px'; p.el.style.top = (-v.y * .5 + .5) * h + 'px'; }); }
@@ -115,6 +122,7 @@ window.Office = (function () {
       var first = !Object.keys(pets).length, ids = {}; model = m;
       m.nodes.forEach(function (n, i) { ids[n.id] = 1; if (!pets[n.id]) { var t = i * 2.4; pets[n.id] = makePet(n, n.kind === 'me' ? .2 : -.8 + Math.cos(t) * 2.6, n.kind === 'me' ? 2.6 : Math.sin(t) * 2.6); }
         var p = pets[n.id]; p.el.textContent = n.name; p.el.className = (n.kind === 'me' ? 'me' : '') + (n.badge ? ' wait' : ''); if (n.badge) p.el.setAttribute('data-n', n.badge); else p.el.removeAttribute('data-n');
+        if (p.mon) p.mon.visible = !!n.pc;
         if (p.screen) { if (p.glow) { p.glow.kill(); p.glow = null; } p.screen.emissive.setRGB(n.busy ? .3 : 0, n.busy ? .26 : 0, n.busy ? .55 : 0); if (n.busy && !calm) p.glow = gsap.to(p.screen.emissive, { r: .1, g: .08, b: .2, duration: .9, yoyo: true, repeat: -1, ease: 'sine.inOut' }); } });
       Object.keys(pets).forEach(function (k) { if (!ids[k]) dropPet(k); });
       var pos = solve(), d = first ? 0 : dur(.9); if (moving) moving.kill(); rel.visible = arcBox.visible = false;
