@@ -56,6 +56,9 @@
   function did(c, f) { var sb = E.nodeOf(c, 'sandbox'); return f.kind === 'submission' ? (sb ? sb.text.replace(/。$/, '') : f.name) : c.steps[f.step].reaction; }
   function ownsOf(id) { return dsl.cases.filter(function (c) { return ownerOf(c) === id; }); }
   function onDuty(id) { return E.comp(W0, id).work; }
+  function matesOf(id) { var o = []; each(function (c, w, st) { var x = st.hired === id ? ownerOf(c) : ownerOf(c) === id ? st.hired : null; if (x && o.indexOf(x) < 0 && !E.knows(W0, id, x)) o.push(x); }); return o; }
+  var ALLOW = [['work', '处理文件', '关掉后，他收到消息也不会开工'], ['send', '对外发消息', '关掉后，他做完也发不出去'], ['hire', '找帮手', '关掉后，他不能请临时帮手'], ['web', '用浏览器', '打开网页查资料'], ['cloud', '用云电脑', '在云端桌面里操作软件']];
+  function allowed(id, k) { var c = E.comp(W0, id); return k in c ? !!c[k] : k === 'web'; }
   function busyIn(id) { return dsl.cases.some(function (c) { return castOf(c).indexOf(id) >= 0; }); }
   function status(c) { /* 待办跟着事情走 */
     var w = worlds[c.id], st = c.steps[w.state.idx];
@@ -132,12 +135,12 @@
     },
     one: function (g) {
       var own = ownsOf(g.id), on = onDuty(g.id);
-      return nav('') + '<div class="body"><div class="cells"><div class="cell big a">' + av(g.id, 'l') + '<span class="t"><b>' + esc(N(g.id)) + '</b><span>' + (on ? '在岗' : '已停工') + ' · ' + esc(job(g.id)) + '</span></span></div></div>' +
+      return nav('') + '<div class="body"><div class="cells"><div class="cell big a">' + av(g.id, 'l') + '<span class="t"><b>' + esc(N(g.id)) + '</b><span>' + (on ? '' : '已停工 · ') + esc(job(g.id)) + '</span></span></div></div>' +
         (own.length ? '<div class="sec">负责的事</div><div class="cells">' + own.map(function (c) { var st = status(c); return cell({ p: 'thing', c: c.id }, '', c.title, '', st[0]); }).join('') + '</div>' : '') +
-        '<div class="sec">看他在做什么</div><div class="cells">' + cell({ p: 'phone', id: g.id }, '', '手机', '', chatsOf(g.id).length + ' 个聊天') + cell({ p: 'pc', id: g.id }, '', '电脑', '', jobsOf(g.id).length + ' 件事') + '</div>' +
-        '<div class="sec">管理</div><div class="cells">' + cell({ p: 'role', id: g.id }, '', '岗位', '', job(g.id)) +
-        '<button class="cell text"' + go({ p: 'prompt', id: g.id }) + '><small>岗位提示 · 点开修改</small><p>' + esc(promptOf(g.id)) + '</p></button>' +
-        '<label class="cell sw"><span class="t"><b>在岗</b><span>关掉后，他收到消息也不会处理</span></span><input type="checkbox" data-sw="duty" data-id="' + g.id + '"' + (on ? ' checked' : '') + '></label></div>' +
+        '<div class="sec">手机</div><div class="cells">' + cell({ p: 'phone', id: g.id }, '', '他在联系谁', '', chatsOf(g.id).length + ' 个聊天') + cell({ p: 'reach', id: g.id }, '', '他能联系谁', '', (E.contactsOf(W0, g.id).filter(function (o) { return E.granted(W0, g.id, o); }).length + matesOf(g.id).length) + ' 人') + '</div>' +
+        '<div class="sec">电脑</div><div class="cells">' + cell({ p: 'pc', id: g.id }, '', '他在做什么', '', jobsOf(g.id).length + ' 个任务') + cell({ p: 'allow', id: g.id }, '', '允许他做什么', '', ALLOW.filter(function (x) { return allowed(g.id, x[0]); }).length + ' / ' + ALLOW.length + ' 项') + '</div>' +
+        '<div class="sec">岗位</div><div class="cells">' + cell({ p: 'role', id: g.id }, '', '岗位', '', job(g.id)) +
+        '<button class="cell text"' + go({ p: 'prompt', id: g.id }) + '><small>岗位提示 · 点开修改</small><p>' + esc(promptOf(g.id)) + '</p></button></div>' +
         (busyIn(g.id) ? '' : '<div class="gap"></div><div class="cells"><button class="cell c warn"' + go({ p: 'drop', id: g.id }) + '><b>移出团队</b></button></div>') + '<div class="gap"></div></div>';
     },
     role: function (g) {
@@ -156,11 +159,18 @@
     prompt: function (g) {
       return nav(N(g.id) + '的岗位提示') + '<div class="body"><div class="sec">告诉' + esc(N(g.id)) + '这个岗位该怎么做事</div><textarea id="pt" aria-label="岗位提示">' + esc(promptOf(g.id)) + '</textarea><div class="act"><button class="go" data-do="prompt" data-id="' + g.id + '">保存</button></div></div>';
     },
-    phone: function (g) {
-      var list = chatsOf(g.id), people = E.contactsOf(W0, g.id);
-      return nav(N(g.id) + '的手机') + '<div class="body">' + (list.length ? '<div class="sec">聊天</div><div class="cells">' + list.map(function (o) { return botRow(o, msgsOf(g.id, o).pop().text, { p: 'chat', id: g.id, o: o }); }).join('') + '</div>' : '') +
-        '<div class="sec">联系人 · 开关决定他能不能发消息给对方</div><div class="cells">' + people.map(function (o) { return '<label class="cell a sw">' + av(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>' + esc(job(o)) + '</span></span><input type="checkbox" data-sw="grant" data-id="' + g.id + '" data-b="' + o + '"' + (E.granted(W0, g.id, o) ? ' checked' : '') + '></label>'; }).join('') +
+    phone: function (g) { /* 他在联系谁 */
+      var list = chatsOf(g.id);
+      return nav(N(g.id) + '在联系谁') + '<div class="body">' + (list.length ? '<div class="cells">' + list.map(function (o) { return botRow(o, msgsOf(g.id, o).pop().text, { p: 'chat', id: g.id, o: o }); }).join('') + '</div>' : '<p class="none">还没有聊天记录</p>') + '</div>';
+    },
+    reach: function (g) { /* 他能联系谁 */
+      var people = E.contactsOf(W0, g.id);
+      return nav(N(g.id) + '能联系谁') + '<div class="body"><div class="sec">打开的人，他可以主动发消息</div><div class="cells">' + people.map(function (o) { return '<label class="cell a sw">' + av(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>' + esc(job(o)) + '</span></span><input type="checkbox" data-sw="grant" data-id="' + g.id + '" data-b="' + o + '"' + (E.granted(W0, g.id, o) ? ' checked' : '') + '></label>'; }).join('') +
+        matesOf(g.id).map(function (o) { return '<div class="cell a">' + av(o) + '<span class="t"><b>' + esc(N(o)) + '</b><span>只为这次委托：交办和回传结果</span></span><span class="r">临时</span></div>'; }).join('') +
         cell({ p: 'addc', id: g.id }, '<span class="av q">+</span>', '添加联系人', '', '') + '</div><div class="gap"></div></div>';
+    },
+    allow: function (g) { /* 允许他做什么 */
+      return nav('允许' + N(g.id) + '做什么') + '<div class="body"><div class="gap"></div><div class="cells">' + ALLOW.map(function (x) { return '<label class="cell sw"><span class="t"><b>' + x[1] + '</b><span>' + x[2] + '</span></span><input type="checkbox" data-sw="comp" data-id="' + g.id + '" data-b="' + x[0] + '"' + (allowed(g.id, x[0]) ? ' checked' : '') + '></label>'; }).join('') + '</div><p class="foot">前三项会直接影响他手上的事；浏览器和云电脑还没有接通，这里先记下你的决定。</p></div>';
     },
     chat: function (g) {
       return nav(N(g.o)) + '<div class="body"><div class="chat">' + msgsOf(g.id, g.o).map(function (m) { return '<div class="line' + (m.from === g.id ? ' me' : '') + '">' + av(m.from) + '<div class="msg">' + esc(m.text) + '</div></div>'; }).join('') + '</div><p class="foot">这是' + esc(N(g.id)) + '的手机，绿色是' + esc(N(g.id)) + '发的。</p></div>';
@@ -180,7 +190,8 @@
         '<p style="margin:0">' + esc(did(c, f)) + '，已完成。' + (sub ? '核对通过，结果交回给' + esc(N(c.owner)) + '。' : '') + '</p>' +
         '<button class="diff" data-t="file"><span class="mono">+ 新文件</span><b>' + esc(f.name) + '</b>' + GO.replace('<svg', '<svg width="16" height="16"') + '</button></div>';
       else if (t === 'file') body = '<div class="doc"><h2>' + esc(f.name) + '</h2><p>' + esc(f.body) + '</p>' + (vals.length ? '<table>' + vals.map(function (k) { return '<tr><td>' + esc(k) + '</td><td>' + esc(E.show(f.values[k])) + '</td></tr>'; }).join('') + '</table>' : '') + '</div>';
-      else if (t === 'web') body = '<div class="frame"><div class="bar"><i></i><i></i><i></i><span class="mono">about:blank</span></div><div class="blank">这个任务没有用到浏览器。<br>接通后，他打开过的网页会显示在这里。</div></div>';
+      else if (t === 'web') body = '<div class="frame"><div class="bar"><i></i><i></i><i></i><span class="mono">about:blank</span></div><div class="blank">' + (allowed(f.owner, 'web') ? '这个任务没有用到浏览器。<br>接通后，他打开过的网页会显示在这里。' : '你没有允许' + esc(N(f.owner)) + '用浏览器。') + '</div></div>';
+      else if (!allowed(f.owner, 'cloud')) body = '<div class="frame"><div class="blank">你没有允许' + esc(N(f.owner)) + '用云电脑。<br>在「允许他做什么」里可以打开。</div></div>';
       else body = '<div class="frame"><div class="desk"><div class="winx"><div class="bar"><i></i><i></i><i></i><span class="mono">' + esc(f.name) + '</span></div><p>' + esc(f.body) + '</p></div><div class="dockx"></div></div></div><p class="foot">示意画面：云电脑还没有接通。接通后可以在这里看他的屏幕。</p>';
       return nav(did(c, f)) + '<div class="body codex"><div class="tools">' + [['chat', '对话'], ['file', '文件'], ['web', '浏览器'], ['cloud', '云电脑']].map(function (x) { return '<button data-t="' + x[0] + '" aria-current="' + (t === x[0]) + '">' + x[1] + '</button>'; }).join('') + '</div>' + body +
         '<div class="cells" style="margin-top:auto;border-top:1px solid var(--line)">' + cell({ p: 'thing', c: c.id }, '', c.title, '这件事', '') + '</div></div>';
@@ -225,7 +236,7 @@
   document.addEventListener('change', function (e) {
     var d = e.target.dataset; if (!d.sw) return;
     if (d.sw === 'grant') book.grants[d.id + '>' + d.b] = e.target.checked;
-    else { var o = book.comp[d.id] = book.comp[d.id] || {}; o.work = e.target.checked; o.send = e.target.checked; note('user', e.target.checked ? '让他回岗了' : '让他停工了'); notes[notes.length - 1].who = d.id; notes[notes.length - 1].text = e.target.checked ? '被老板安排回岗' : '被老板安排停工'; }
+    else { var o = book.comp[d.id] = book.comp[d.id] || {}; o[d.b] = e.target.checked; }
     save(); draw();
   });
   draw();
