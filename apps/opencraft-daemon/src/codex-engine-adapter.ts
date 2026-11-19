@@ -4459,8 +4459,11 @@ export class CodexEngineAdapter implements DuplexTransport {
     if (allocated) {
       const current = record(await this.requestPhysical("thread/loaded/list", {}));
       if (!Array.isArray(current.data) || !current.data.includes(threadId)) return null;
-      if (!existsSync(live.path as string))
-        await this.materializeCreation({ ...result, thread: { ...thread, path: live.path } }, {});
+      // Older allocations may have persisted session_meta before their native
+      // pagination index was confirmed. File existence alone is not readiness.
+      const historyMode = live.historyMode ?? thread.historyMode;
+      if (!existsSync(live.path as string) || historyMode === "paginated")
+        await this.materializeCreation({ ...result, thread: { ...thread, path: live.path, historyMode } }, {});
     }
     if (this.provisionalThreads !== store || store?.get(threadId)?.phase !== "created") return null;
     // Never hide a file that has appeared since creation. Normal history remains authoritative.

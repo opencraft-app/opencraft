@@ -2777,3 +2777,51 @@ test("scheduled lost acknowledgement recovers only an exact native client ID wit
     assert.equal(queue.find(run.threadId, row.id).targetTurnId, "exact-turn");
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+for (const outcome of ['confirmed', 'unconfirmed', 'stale-generation', 'missing-mode', 'null-mode', 'peer-turn'] as const)
+  test(`metadata-only paginated creation rechecks its index on recovery (${outcome})`, async () => {
+    const root = await mkdtemp(join(tmpdir(), 'codex-index-recovery-'));
+    const path = join(root, 'rollout.jsonl');
+    const thread = { id: 'created-before-index', path, historyMode: 'paginated', ephemeral: false,
+      projectId: 'original-project', status: { type: 'idle' }, turns: [] };
+    await writeFile(path, JSON.stringify({ type: 'session_meta', payload: { id: thread.id } }) + '\n');
+    const creation = { phase: 'created', result: { thread } };
+    const calls: string[] = [];
+    let indexed = false;
+    const adapter: any = Object.create(CodexEngineAdapter.prototype);
+    Object.assign(adapter, {
+      sessionMcpGeneration: 1,
+      provisionalThreads: { get: () => creation },
+      async requestPhysical(method: string, params: Record<string, unknown>) {
+        calls.push(method);
+        if (method === 'thread/loaded/list') return { data: [thread.id] };
+        if (method === 'thread/read') {
+          assert.equal(params.includeTurns, false);
+          return { thread: { ...thread, ...(outcome === 'missing-mode' ? { historyMode: undefined } : outcome === 'null-mode' ? { historyMode: null } : {}) } };
+        }
+        if (method === 'thread/turns/list') {
+          if (!indexed) throw Object.assign(new Error('list_turns is not supported yet'), { code: -32601 });
+          return { data: outcome === 'peer-turn' ? [{ id: 'concurrent-native-turn' }] : [], nextCursor: null };
+        }
+        assert.equal(method, 'thread/metadata/update', 'no resume, execution or credential mutation during index recovery');
+        assert.deepEqual(params, { threadId: thread.id, projectId: thread.projectId });
+        indexed = outcome !== 'unconfirmed';
+        if (outcome === 'stale-generation') adapter.sessionMcpGeneration++;
+        return { thread };
+      },
+    });
+    try {
+      if (outcome === 'confirmed') {
+        assert.equal((await adapter.provisionalResult(thread.id))?.thread.creationPhase, 'created');
+        assert.equal(indexed, true, 'metadata-only persistence must not bypass index confirmation');
+        assert.equal(calls.filter(method => method === 'thread/turns/list').length, 2);
+      } else {
+        await assert.rejects(adapter.provisionalResult(thread.id),
+          outcome === 'unconfirmed' ? /list_turns is not supported yet/ : outcome === 'peer-turn' ? /already has turns/
+            : outcome === 'missing-mode' || outcome === 'null-mode' ? /cannot safely confirm its index/ : /Native creation owner changed/);
+      }
+      assert.equal(calls.filter(method => method === 'thread/metadata/update').length, outcome === 'missing-mode' || outcome === 'null-mode' ? 0 : 1);
+      assert.equal(await readFile(path, 'utf8'), JSON.stringify({ type: 'session_meta', payload: { id: thread.id } }) + '\n');
+      assert.equal(creation.phase, 'created');
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });

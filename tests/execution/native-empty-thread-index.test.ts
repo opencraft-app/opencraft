@@ -49,3 +49,16 @@ test("changed metadata is not reported ready",async()=>{
 test("malformed successful pagination is not ready",async()=>{
   await assert.rejects(ensureNativeCreationIndex("new",async()=>({})),/index was not confirmed/);
 });
+
+for (const repaired of [false, true]) test(`existing turns never certify an empty creation (repaired=${repaired})`, async () => {
+  let probes = 0, writes = 0;
+  await assert.rejects(ensureNativeCreationIndex("new", async method => {
+    if (method === "thread/turns/list") {
+      if (++probes === 1 && repaired) throw missing();
+      return { data: [{ id: "peer-turn" }] };
+    }
+    if (method === "thread/metadata/update") writes++;
+    return { thread: thread() };
+  }), /already has turns/);
+  assert.equal(writes, repaired ? 1 : 0);
+});

@@ -8,6 +8,7 @@ export async function ensureNativeCreationIndex(threadId: string, request: Nativ
   const probe = async () => {
     const page = record(await request("thread/turns/list", { threadId, limit: 1, sortDirection: "desc", itemsView: "notLoaded" }));
     if (!Array.isArray(page.data)) throw new Error("Native creation index was not confirmed");
+    if (page.data.length !== 0) throw new Error("Native creation already has turns");
   };
   try { await probe(); return; }
   catch (cause) {
