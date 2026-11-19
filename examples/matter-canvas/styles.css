@@ -45,3 +45,12 @@ button.cell:active { background: var(--press); }
 .stamp { align-self: center; font-size: 12px; color: var(--ink-3); }
 .none { padding: 56px 16px; text-align: center; color: var(--ink-2); font-size: 14px; }
 .foot { padding: 14px 16px 20px; color: var(--ink-3); font-size: 12px; text-align: center; }
+.st { font-size: 13px; color: var(--ink-2); white-space: nowrap; } .st.you { color: var(--red); font-weight: 600; } .st.ok { color: var(--green); } .st.no { color: var(--ink-3); }
+.av.q { background: none; border: 1.5px dashed var(--ink-3); color: var(--ink-3); }
+.cell.step { min-height: 46px; align-items: flex-start; } .cell.step i { width: 20px; height: 20px; margin-top: 1px; border-radius: 50%; border: 1.5px solid var(--ink-3); flex: none; display: grid; place-items: center; font-style: normal; font-size: 12px; color: #fff; }
+.cell.step.d i { background: var(--green); border-color: var(--green); } .cell.step.n i { border-color: var(--green); box-shadow: inset 0 0 0 4px var(--cell), inset 0 0 0 10px var(--green); } .cell.step.w { color: var(--ink-2); }
+.cell.step .t span { white-space: normal; }
+.cell.text p { margin: 0; white-space: pre-wrap; }
+.act { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.go { min-height: 48px; border-radius: 8px; background: var(--green); color: #fff; font-weight: 600; text-align: center; } .go.alt { background: var(--cell); color: var(--ink); }
+textarea { display: block; width: 100%; min-height: 180px; padding: 14px 16px; border: 0; background: var(--cell); color: var(--ink); font: inherit; line-height: 1.6; resize: vertical; } textarea:focus { outline: none; }
