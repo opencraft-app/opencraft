@@ -154,20 +154,10 @@ test("E2B adapter preserves binary pipes, literal argv, stdin EOF, environment a
   }
   assert.equal(f.kills, 1);
 });
-test("E2B termination waits for the remote child exit and never advertises unsupported PTY", async (t) => {
+test("E2B termination waits for the remote child exit", async (t) => {
   const f = await fixture(t),
     sandbox = await createSandbox(f.pool, { owner: "bot:test" });
   try {
-    assert.equal(sandbox.capabilities.terminal, false);
-    await assert.rejects(
-      sandbox.spawn({
-        command: ["echo"],
-        cwd: f.directory,
-        env: {},
-        terminal: { cols: 80, rows: 24 },
-      }),
-      /terminals/,
-    );
     const child = await sandbox.spawn({
       command: ["/bin/sleep", "60"],
       cwd: f.directory,
@@ -505,4 +495,219 @@ test("other conflict responses retain uncertain create admission", async () => {
   await assert.rejects(createSandbox(pool, { owner: "pending-workspace" }), /admission queue/);
   assert.equal(creates, 1);
   await assert.rejects(pool.close(), /unverified/);
+});
+
+test("E2B PTY controls size, literal input and controlling terminal", { timeout: 10000 }, async (t) => {
+  const f = await fixture(t),
+    sandbox = await createSandbox(f.pool, { owner: "bot:pty" });
+  let output = "";
+  try {
+    assert.equal(sandbox.capabilities.terminal, true);
+    const child = await sandbox.spawn(
+      {
+        command: [
+          "/usr/bin/python3",
+          "-u",
+          "-c",
+          "import os; assert all(os.isatty(i) for i in range(3)); assert os.tcgetpgrp(0)==os.getpgrp(); print('READY',*os.get_terminal_size()); data=input(); print('RESIZED',*os.get_terminal_size()); print('INPUT='+data)",
+        ],
+        cwd: f.directory,
+        env: {},
+        terminal: { cols: 80, rows: 24 },
+      },
+      (e) => {
+        output += Buffer.from(e.data).toString();
+      },
+    );
+    if (child.kind !== "terminal") throw Error("not terminal");
+    const deadline = Date.now() + 3000;
+    while (!output.includes("READY 80 24")) {
+      assert.ok(Date.now() < deadline);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await assert.rejects(child.resize({ cols: 0, rows: 20 }), /terminal size/);
+    await child.resize({ cols: 110, rows: 72 });
+    await child.writeStdin(Buffer.from("hello-资料\n"));
+    assert.equal((await child.exited).code, 0);
+    assert.match(output, /RESIZED 110 72/);
+    assert.match(output, /INPUT=hello-资料/);
+  } finally {
+    await sandbox.close();
+    await f.pool.close();
+  }
+});
+
+test("E2B PTY control-C and termination reach remote process group", { timeout: 10000 }, async (t) => {
+  const f = await fixture(t),
+    sandbox = await createSandbox(f.pool, { owner: "bot:pty-stop" });
+  try {
+    let output = "";
+    const child = await sandbox.spawn(
+      {
+        command: ["/usr/bin/python3", "-u", "-c", "import time; print('READY'); time.sleep(60)"],
+        cwd: f.directory,
+        env: {},
+        terminal: { cols: 80, rows: 24 },
+      },
+      (e) => {
+        output += Buffer.from(e.data).toString();
+      },
+    );
+    const deadline = Date.now() + 3000;
+    while (!output.includes("READY")) {
+      assert.ok(Date.now() < deadline);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await child.writeStdin(Buffer.from([3]));
+    assert.equal((await child.exited).signal, "SIGINT");
+    const second = await sandbox.spawn({
+      command: ["/bin/sleep", "60"],
+      cwd: f.directory,
+      env: {},
+      terminal: { cols: 80, rows: 24 },
+    });
+    await second.terminate();
+    assert.equal((await second.exited).signal, "SIGKILL");
+  } finally {
+    await sandbox.close();
+    await f.pool.close();
+  }
+});
+test("private creation receipt identifies the verified remote instance and lease owner", async (t) => {
+  const f = await fixture(t);
+  let receipt: any;
+  const pool = await createSandboxPool(
+    policy,
+    e2bSandboxBackend(
+      {
+        ...opts,
+        onCreated: async (r) => {
+          receipt = r;
+        },
+      },
+      f.driver,
+    ),
+  );
+  const sandbox = await createSandbox(pool, { owner: "ordinary-lease-owner" });
+  assert.equal(receipt.instanceId, "test-only-id");
+  assert.equal(receipt.identity.owner, "ordinary-lease-owner");
+  assert.equal(receipt.identity.id, sandbox.identity.id);
+  assert.equal("instanceId" in sandbox, false);
+  await sandbox.close();
+  await pool.close();
+  await f.pool.close();
+});
+test("receipt persistence failure reclaims only the created instance and hides callback details", async (t) => {
+  const f = await fixture(t),
+    pool = await createSandboxPool(
+      policy,
+      e2bSandboxBackend(
+        {
+          ...opts,
+          onCreated: async () => {
+            throw Error("private-journal-detail");
+          },
+        },
+        f.driver,
+      ),
+    );
+  await assert.rejects(createSandbox(pool, { owner: "ordinary-lease-owner" }), (error) => {
+    assert.ok(error instanceof SandboxCreationFault);
+    assert.equal(error.outcome, "not-created");
+    assert.ok(!error.message.includes("private-journal-detail"));
+    return true;
+  });
+  assert.equal(f.kills, 1);
+  await pool.close();
+  await f.pool.close();
+});
+
+for (const code of [0, 7])
+  test(`EOF transport rejection may reconcile only an authoritative exit frame (code ${code})`, async (t) => {
+    const f = await fixture(t);
+    let writes = 0;
+    f.remote.commands.run = (async (_command: string, options: any) => {
+      let settle!: () => void;
+      const done = new Promise<void>((resolve) => (settle = resolve));
+      return {
+        async sendStdin(data: string) {
+          const message = JSON.parse(data);
+          writes++;
+          if (message.type === "start") options.onStdout(JSON.stringify({ type: "started" }) + "\n");
+          else if (message.type === "eof") {
+            setTimeout(() => {
+              options.onStdout(JSON.stringify({ type: "exit", code }) + "\n");
+              settle();
+            }, 20);
+            throw Error("SDK process already exited before stream drained");
+          } else throw Error("unexpected input");
+        },
+        async wait() {
+          await done;
+          return { exitCode: 0 };
+        },
+      };
+    }) as any;
+    const sandbox = await createSandbox(f.pool, { owner: "eof-reconcile" });
+    try {
+      const process = await sandbox.spawn({ command: ["/bin/true"], cwd: "/tmp", env: {} });
+      await process.closeStdin();
+      assert.equal((await process.exited).code, code);
+      assert.equal(writes, 2, "EOF must not be replayed");
+      assert.equal(f.kills, 0, "confirmed child exit must not destroy the sandbox");
+    } finally {
+      await sandbox.close();
+      await f.pool.close();
+    }
+  });
+
+test("EOF rejection without an exit frame remains transport failure", async (t) => {
+  const f = await fixture(t);
+  let writes = 0;
+  f.remote.commands.run = (async (_command: string, options: any) => ({
+    async sendStdin(data: string) {
+      const m = JSON.parse(data);
+      writes++;
+      if (m.type === "start") options.onStdout(JSON.stringify({ type: "started" }) + "\n");
+      else throw Error("transport lost");
+    },
+    wait: () => new Promise(() => {}),
+  })) as any;
+  const sandbox = await createSandbox(f.pool, { owner: "eof-unknown" });
+  try {
+    const process = await sandbox.spawn({ command: ["/bin/true"], cwd: "/tmp", env: {} });
+    await assert.rejects(process.closeStdin(), /input transport failed/);
+    await assert.rejects(process.exited, /execution transport failed/);
+    assert.equal(writes, 2);
+  } finally {
+    await sandbox.close();
+    await f.pool.close();
+  }
+});
+
+test("ordinary stdin failure cannot be acknowledged by a later exit", async (t) => {
+  const f = await fixture(t);
+  let writes = 0;
+  f.remote.commands.run = (async (_command: string, options: any) => ({
+    async sendStdin(data: string) {
+      const m = JSON.parse(data);
+      writes++;
+      if (m.type === "start") options.onStdout(JSON.stringify({ type: "started" }) + "\n");
+      else {
+        setTimeout(() => options.onStdout(JSON.stringify({ type: "exit", code: 0 }) + "\n"), 20);
+        throw Error("input outcome unknown");
+      }
+    },
+    wait: () => new Promise(() => {}),
+  })) as any;
+  const sandbox = await createSandbox(f.pool, { owner: "stdin-unknown" });
+  try {
+    const process = await sandbox.spawn({ command: ["/bin/cat"], cwd: "/tmp", env: {} });
+    await assert.rejects(process.writeStdin(Buffer.from("effect")), /input transport failed/);
+    await assert.rejects(process.exited, /execution transport failed/);
+    assert.equal(writes, 2);
+  } finally {
+    await sandbox.close();
+    await f.pool.close();
+  }
 });

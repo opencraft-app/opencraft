@@ -57,6 +57,35 @@ export function createHandsTerminalService(options: {
   });
 }
 
+/** Structural service port: local durable owner or one already-admitted sandbox.
+ * Selection is trusted composition, never a service ID accepted from an RPC. */
+export type HostTerminalService = Pick<DurableHostProcessService, "probe" | "subscribe" | "dispatch">;
+/** Context is the private authenticated ingress object, never process params. */
+export type HostTerminalServiceSelector = (
+  scope: EnvironmentExecutionScope,
+  context: TransportSubmissionContext,
+) => Promise<HostTerminalService>;
+
+// Created once per ingress so product selectors can retain stable service wrappers.
+export function composeHostTerminalSelector(
+  hostId: string,
+  service: HostTerminalService,
+  select:
+    | ((
+        scope: EnvironmentExecutionScope,
+        context: TransportSubmissionContext,
+        local: HostTerminalServiceSelector,
+      ) => Promise<HostTerminalService>)
+    | undefined,
+): HostTerminalServiceSelector | undefined {
+  if (!select) return undefined;
+  const local: HostTerminalServiceSelector = async (scope) => {
+    if (scope.hostId !== hostId) throw Error("Local terminal Host mismatch");
+    return service;
+  };
+  return (scope, context) => select(scope, context, local);
+}
+
 /** Shared routing for leased AppHost and the existing raw AppServer ingress. */
 export class HostTerminalSession {
   private readonly listeners = new Set<(frame: string) => void>();
@@ -69,26 +98,36 @@ export class HostTerminalSession {
         params: Record<string, any>;
         scope: EnvironmentExecutionScope;
         clientId: unknown;
+        service: HostTerminalService;
       }
     >
   >();
   private readonly initialized = new Set<string>();
   private readonly initializing = new Set<string>();
-  private readonly remove: () => void;
+  private readonly removes = new Map<HostTerminalService, () => void>();
   private closed = false;
   private available = false;
   constructor(
-    private readonly service: DurableHostProcessService,
+    private readonly service: HostTerminalService,
     private readonly authorize: (
       context: TransportSubmissionContext,
       params: Record<string, any>,
     ) => EnvironmentExecutionScope,
+    private readonly selectService?: HostTerminalServiceSelector,
   ) {
-    this.remove = service.subscribe((method, params) => {
+    this.watchService(service);
+  }
+  private watchService(service: HostTerminalService) {
+    if (this.removes.has(service)) return;
+    if (this.removes.size >= 128) throw new Error("Too many terminal bindings");
+    this.removes.set(
+      service,
+      service.subscribe((method, params) => {
       const handle = object(params).processHandle;
       const watchers = this.watched.get(handle);
       for (const [key, watcher] of watchers ?? []) {
-        try {
+          if (watcher.service !== service) continue;
+          try {
           const current = this.authorize(watcher.context, watcher.params);
           if (JSON.stringify(current) !== JSON.stringify(watcher.scope)) {
             watchers?.delete(key);
@@ -98,9 +137,11 @@ export class HostTerminalSession {
         } catch {
           watchers?.delete(key);
         }
-      }
-      if (method === "process/exited") this.watched.delete(handle);
-    });
+          if (method === "process/exited") watchers?.delete(key);
+        }
+        if (watchers?.size === 0) this.watched.delete(handle);
+      }),
+    );
   }
   private emit(message: unknown) {
     for (const listener of this.listeners) listener(JSON.stringify(message));
@@ -114,7 +155,8 @@ export class HostTerminalSession {
   }
   close() {
     this.closed = true;
-    this.remove();
+    for (const remove of this.removes.values()) remove();
+    this.removes.clear();
     this.watched.clear();
     this.initialized.clear();
     this.initializing.clear();
@@ -148,13 +190,15 @@ export class HostTerminalSession {
                     methods: [
                       ...new Set([
                         ...access.methods.filter((method: string) => !method.startsWith("process/")),
-                        ...(this.available ? HOST_TERMINAL_METHODS : []),
+                        ...(this.available || this.selectService ? HOST_TERMINAL_METHODS : []),
                       ]),
                     ],
                   },
                 }
               : {}),
-            "opencraft/terminal": { version: 1, available: this.available, recovery: this.available },
+            "opencraft/terminal": { version: 1, available: this.available, recovery: this.available,
+              ...(this.selectService ? { selection: "per-request" } : {}),
+            },
           },
         },
       };
@@ -173,7 +217,8 @@ export class HostTerminalSession {
     }
     try {
       signal?.throwIfAborted();
-      if (this.closed || !this.available || !this.initialized.has(String(clientId ?? "")) || !methods.has(value.method))
+      if (this.closed ||
+        (!this.available && !this.selectService) || !this.initialized.has(String(clientId ?? "")) || !methods.has(value.method))
         throw new Error("Terminal unavailable");
       const scope = this.authorize(context, params);
       const current = () => {
@@ -181,11 +226,23 @@ export class HostTerminalSession {
         if (this.closed || JSON.stringify(scope) !== JSON.stringify(this.authorize(context, params)))
           throw new Error("Terminal authority changed");
       };
-      const result = await this.service.dispatch(value.method, params, scope, current, () => {
+      // Resolution failure must reject, never fall back to the local owner. The
+      // selector resolves an already-authorized durable binding; it must not
+      // provision a sandbox from untrusted request metadata.
+      const service = this.selectService ? await this.selectService(scope, context) : this.service;
+      current();
+      // The default local probe is not evidence about a selected workspace.
+      // Recheck authorization after the asynchronous probe before dispatch.
+      if (this.selectService) {
+        await service.probe();
+        current();
+      }
+      this.watchService(service);
+      const result = await service.dispatch(value.method, params, scope, current, () => {
         if (typeof params.processHandle !== "string" || !["process/spawn", "process/attach"].includes(value.method))
           return;
         const watchers = this.watched.get(params.processHandle) ?? new Map();
-        watchers.set(String(clientId ?? ""), { context, params, scope, clientId });
+        watchers.set(JSON.stringify([clientId ?? "", scope]), { context, params, scope, clientId, service });
         this.watched.set(params.processHandle, watchers);
       });
       current();
@@ -213,10 +270,11 @@ export class HostTerminalTransport implements DuplexTransport {
   private closed = false;
   constructor(
     private readonly inner: DuplexTransport,
-    service: DurableHostProcessService,
+    service: HostTerminalService,
     authorize: (context: TransportSubmissionContext, params: Record<string, any>) => EnvironmentExecutionScope,
+    selectService?: HostTerminalServiceSelector,
   ) {
-    this.terminal = new HostTerminalSession(service, authorize);
+    this.terminal = new HostTerminalSession(service, authorize, selectService);
   }
   get status() {
     return this.inner.status;

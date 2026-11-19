@@ -3,6 +3,37 @@ import { LOGICAL_CLIENT_FIELD } from "@opencraft/app-host-protocol";
 import { OPENCRAFT_METHOD_ACCESS_EXTENSION } from "@opencraft/appserver-protocol";
 import { HOST_FILESYSTEM_METHODS, type HostFileSystem } from "./host-filesystem.js";
 
+/** Trusted owner selection; raw path/thread hints are never authorization. The
+ * selector must resolve through current principal/resource grants and must throw
+ * for a missing remote binding instead of returning local files. */
+export type HostFileService = Pick<HostFileSystem, "request">;
+export interface HostFileBinding {
+  files: HostFileService;
+  /** Rechecks that the same lease and authority still own this request. */
+  assertCurrent(): void | Promise<void>;
+}
+export type HostFileSelector = (context: TransportSubmissionContext, params: unknown) => Promise<HostFileBinding>;
+
+// The composition receives the actual local port with the same request authority,
+// not an invented controller filesystem. Remote failures are never caught here.
+export function composeHostFileSelector(
+  files: HostFileService,
+  authorize: (context: TransportSubmissionContext) => void,
+  select:
+    | ((context: TransportSubmissionContext, params: unknown, local: HostFileSelector) => Promise<HostFileBinding>)
+    | undefined,
+): HostFileSelector | undefined {
+  if (!select) return undefined;
+  const local: HostFileSelector = async (context, params) => {
+    if (params && typeof params === "object" && Object.hasOwn(params, "workspaceThreadId"))
+      throw Error("Workspace files cannot use the local binding");
+    const assertCurrent = () => authorize(context);
+    assertCurrent();
+    return { files, assertCurrent };
+  };
+  return (context, params) => select(context, params, local);
+}
+
 /** Selected Host files never fall through to an engine's controller filesystem. */
 export class HostFileSystemSession {
   private readonly listeners = new Set<(frame: string) => void>();
@@ -11,8 +42,9 @@ export class HostFileSystemSession {
   private readonly active = new Map<AbortController, string>();
   private closed = false;
   constructor(
-    private readonly files: HostFileSystem,
+    private readonly files: HostFileService,
     private readonly authorize: (context: TransportSubmissionContext) => void,
+    private readonly selectFiles?: HostFileSelector,
   ) {}
   project(frame: string): string | null {
     const value = JSON.parse(frame),
@@ -79,7 +111,30 @@ export class HostFileSystemSession {
       }
       this.authorize(context);
       combined.throwIfAborted();
-      const result = await this.files.request(value.method, value.params, combined);
+      // This is a routing hint, not identity. It never reaches a filesystem
+      // implementation; a configured trusted selector must resolve its authority.
+      const scoped =
+        value.params && typeof value.params === "object" && Object.hasOwn(value.params, "workspaceThreadId");
+      if (
+        scoped &&
+        (!this.selectFiles ||
+          typeof value.params.workspaceThreadId !== "string" ||
+          !value.params.workspaceThreadId ||
+          value.params.workspaceThreadId.length > 512 ||
+          /[\x00-\x1f\x7f]/u.test(value.params.workspaceThreadId))
+      )
+        throw Error("Invalid workspace file scope");
+      const selectedParams = scoped ? Object.freeze({ ...value.params }) : value.params;
+      const binding = this.selectFiles ? await this.selectFiles(context, selectedParams) : undefined;
+      const requestParams = scoped
+        ? Object.fromEntries(Object.entries(value.params).filter(([key]) => key !== "workspaceThreadId"))
+        : value.params;
+      if (this.selectFiles && !binding) throw Error("File binding unavailable");
+      if (binding) await binding.assertCurrent();
+      this.authorize(context);
+      combined.throwIfAborted();
+      const result = await (binding ? binding.files : this.files).request(value.method, requestParams, combined);
+      if (binding) await binding.assertCurrent();
       if (!current() || this.closed || !this.clients.has(client)) return true;
       this.authorize(context);
       combined.throwIfAborted();
@@ -110,10 +165,11 @@ export class HostFileSystemTransport implements DuplexTransport {
   private readonly removeStatus: () => void;
   constructor(
     private readonly inner: DuplexTransport,
-    files: HostFileSystem,
+    files: HostFileService,
     authorize: (context: TransportSubmissionContext) => void,
+    selectFiles?: HostFileSelector,
   ) {
-    this.session = new HostFileSystemSession(files, authorize);
+    this.session = new HostFileSystemSession(files, authorize, selectFiles);
     this.removeStatus = inner.subscribeStatus((status) => {
       if (["closed", "closing", "failed"].includes(status.state)) this.session.reset();
     });

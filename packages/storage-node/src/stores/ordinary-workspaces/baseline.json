@@ -1,0 +1,44 @@
+{
+  "legacy": [
+    {
+      "version": 1,
+      "name": "ordinary-workspace-identity",
+      "checksum": "ed812867f2bbf48625e49e4c4646ec3e4fe8bfab4b36499048471634b8144818"
+    },
+    {
+      "version": 2,
+      "name": "ordinary-workspace-selection",
+      "checksum": "d3846928ef767146822be9d07c2c59e567447319144ca6659ee48df6022dfaeb"
+    },
+    {
+      "version": 3,
+      "name": "ordinary-workspace-native-start",
+      "checksum": "0e91db7d3af30563c9ac885e15bd15103ebbe6b4fe69eff04d47dbcd2c147b55"
+    },
+    {
+      "version": 4,
+      "name": "ordinary-workspace-volume",
+      "checksum": "5f54a703a4f3980cf71b7a96b37a9d70e66f6046fec7f1d8c75d11e939707c5f"
+    }
+  ],
+  "tableOptions": {
+    "workspace_journal_meta": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "ordinary_workspace_selections": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "ordinary_workspace_thread_starts": {
+      "strict": false,
+      "withoutRowid": false
+    },
+    "ordinary_workspaces": {
+      "strict": false,
+      "withoutRowid": false
+    }
+  },
+  "baselineSqlChecksum": "bcf1f99b6349d7a780b9e05e0b77211a7a48ab433d589d59fbc94c196b1fae1d",
+  "baselineSnapshotChecksum": "6c758a6dcd98ff15ba86d05e2bc4a94f9af755f072342a329dde75c427a813e6"
+}

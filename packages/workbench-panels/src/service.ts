@@ -8,7 +8,8 @@ import {
   type ConversationPanelState,
 } from "./model";
 
-export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>> {
+export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unknown>> = Readonly<Record<string, unknown>>,
+> {
   readonly kind: string;
   readonly initialTab?: {
     readonly order: number;
@@ -30,6 +31,7 @@ export interface PanelTypeDefinition<TParams extends Readonly<Record<string, unk
 }
 
 export interface PanelToolbarActionContext {
+  readonly workspaceFileThreadId?: string;
   readonly threadId?: string | null;
   readonly projectId?: string | null;
   readonly ownerId: string;
@@ -256,7 +258,7 @@ export class WorkbenchPanelService extends Service {
     this.hydrationTokens.set(ownerId, token);
     for (const definition of this.definitions.values()) {
       if (!definition.hydrateTabs) continue;
-      void Promise.resolve().then(() => definition.hydrateTabs!(ownerId)).then(tabs => {
+      void Promise.resolve().then(() => definition.hydrateTabs!(ownerId)).then((tabs) => {
         if (this.hydrationTokens.get(ownerId) !== token || this.definitions.get(definition.kind) !== definition) return;
         if (definition.tabDirectory) {
           this.reconcileDirectory(ownerId, definition);
@@ -264,7 +266,7 @@ export class WorkbenchPanelService extends Service {
         }
         for (const tab of tabs) {
           const state = this.ownerStates.get(ownerId);
-          if (!state || this.closedTabs.get(ownerId)?.has(tab.id) || tab.kind !== definition.kind || [...state.right.tabs, ...state.bottom.tabs].some(existing => existing.id === tab.id)) continue;
+          if (!state || this.closedTabs.get(ownerId)?.has(tab.id) || tab.kind !== definition.kind || [...state.right.tabs, ...state.bottom.tabs].some((existing) => existing.id === tab.id)) continue;
           this.dispatch(ownerId, { type: "open-tab", tab, activate: false });
         }
       }).catch(() => {
@@ -310,7 +312,7 @@ export class WorkbenchPanelService extends Service {
     try { tabs = definition.tabDirectory!.read(ownerId); } catch { return; } // Unavailable is not empty.
     const current = this.ownerStates.get(ownerId);
     if (!current) return;
-    const existingById = new Map([...current.right.tabs, ...current.bottom.tabs].map(tab => [tab.id, tab]));
+    const existingById = new Map([...current.right.tabs, ...current.bottom.tabs].map((tab) => [tab.id, tab]));
     const incoming = new Map<string, PanelTabDescriptor>();
     for (const tab of tabs) {
       if (tab.kind !== definition.kind || incoming.has(tab.id)) return;

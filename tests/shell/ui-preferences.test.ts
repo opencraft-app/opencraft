@@ -317,3 +317,15 @@ test("Agent choices merge across two windows after a CAS conflict and discard a 
   assert.deepEqual(restored.get("chat.agentAvailability")[scope], { pi: false, codex: false });
   await first.close(); await second.close(); await restored.close();
 });
+test("collection navigation width is scoped, bounded and supports automatic sizing", async () => {
+  const runtime = await UiPreferencesRuntime.open({installation:new MemoryUiPreferenceStore()});
+  try {
+    assert.deepEqual(runtime.get("shell.collectionNavigationWidth"), {width:null});
+    await runtime.set("shell.collectionNavigationWidth", {width:320});
+    assert.deepEqual(runtime.get("shell.collectionNavigationWidth"), {width:320});
+    await assert.rejects(runtime.set("shell.collectionNavigationWidth", {width:441}));
+    assert.deepEqual(runtime.get("shell.collectionNavigationWidth"), {width:320});
+    await runtime.set("shell.collectionNavigationWidth", {width:null});
+    assert.deepEqual(runtime.get("shell.collectionNavigationWidth"), {width:null});
+  } finally { await runtime.close(); }
+});

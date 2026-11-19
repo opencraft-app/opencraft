@@ -1,5 +1,6 @@
 import {
   encodeComposerTarget,
+  assertComposerPlacement,
   isComposerDocumentEmpty,
   type ComposerController,
   type ComposerContextReference,
@@ -35,7 +36,9 @@ function textInline(value: unknown): boolean {
     case "mention": return typeof value.id === "string" && typeof value.label === "string" && typeof value.mentionKind === "string";
     case "command": return typeof value.name === "string";
     case "resource": return typeof value.id === "string" && typeof value.title === "string" && typeof value.uri === "string";
-    case "link": return typeof value.href === "string" && Array.isArray(value.children) && value.children.every(child => record(child) && child.type === "text" && typeof child.text === "string");
+    case "link": return (
+        typeof value.href === "string" && Array.isArray(value.children) && value.children.every((child) => record(child) && child.type === "text" && typeof child.text === "string")
+      );
     case "hard-break": return true;
     default: return false;
   }
@@ -46,8 +49,10 @@ function block(value: unknown, depth: number): boolean {
   switch (value.type) {
     case "paragraph": return Array.isArray(value.children) && value.children.every(textInline);
     case "code-block": return typeof value.text === "string" && (value.language === undefined || typeof value.language === "string");
-    case "quote": return Array.isArray(value.children) && value.children.every(child => block(child, depth + 1));
-    case "list": return typeof value.ordered === "boolean" && Array.isArray(value.items) && value.items.every(item => record(item) && typeof item.id === "string" && Array.isArray(item.children) && item.children.every(child => block(child, depth + 1)));
+    case "quote": return Array.isArray(value.children) && value.children.every((child) => block(child, depth + 1));
+    case "list": return (
+        typeof value.ordered === "boolean" && Array.isArray(value.items) && value.items.every(
+          (item) => record(item) && typeof item.id === "string" && Array.isArray(item.children) && item.children.every((child) => block(child, depth + 1))));
     case "divider": return true;
     default: return false;
   }
@@ -59,29 +64,32 @@ export function parseConversationDraftDocument(value: string | null): ComposerDo
     const envelope: unknown = JSON.parse(value);
     if (!record(envelope) || envelope.version !== VERSION || !record(envelope.document)) return null;
     const draftDocument = envelope.document;
-    if (draftDocument.version !== 1 || !Array.isArray(draftDocument.blocks) || draftDocument.blocks.length > 1000 || !draftDocument.blocks.every(item => block(item, 0))) return null;
+    if (draftDocument.version !== 1 || !Array.isArray(draftDocument.blocks) || draftDocument.blocks.length > 1000 || !draftDocument.blocks.every((item) => block(item, 0))) return null;
     return draftDocument as unknown as ComposerDocument;
   } catch { return null; }
 }
 
 type SavedModelSelection = Pick<ComposerSelections, "model" | "effort" | "serviceTier">;
 function historyReference(value: unknown): value is ComposerContextReference {
-  return record(value) && value.kind === "file" && typeof value.id === "string" && value.id.length <= 512
+  return (
+    record(value) && value.kind === "file" && typeof value.id === "string" && value.id.length <= 512
     && typeof value.title === "string" && value.title.length <= 1024 && typeof value.uri === "string" && value.uri.startsWith("file:")
     && typeof value.visible === "boolean" && record(value.metadata)
     && typeof value.metadata.conversationSourceThreadId === "string" && value.metadata.conversationSourceThreadId.length <= 256
-    && value.metadata.additionalContextKind === "untrusted" && typeof value.metadata.value === "string" && value.metadata.value.length <= 16384;
+    && value.metadata.additionalContextKind === "untrusted" && typeof value.metadata.value === "string" && value.metadata.value.length <= 16384
+  );
 }
 function modelSelection(value: unknown): SavedModelSelection {
   if (!record(value)) return {};
   return {
     ...(typeof value.model === "string" && value.model.length <= 8192 ? { model: value.model } : {}),
     ...(typeof value.effort === "string" && value.effort.length <= 128 ? { effort: value.effort } : {}),
-    ...(value.serviceTier === null || typeof value.serviceTier === "string" && value.serviceTier.length <= 128 ? { serviceTier: value.serviceTier } : {}),
+    ...(value.serviceTier === null || (typeof value.serviceTier === "string" && value.serviceTier.length <= 128)
+      ? { serviceTier: value.serviceTier } : {}),
   };
 }
 function draftReferences(value: unknown): ComposerContextReference[] {
-  return Array.isArray(value) && value.length <= 32 ? value.filter(historyReference).map(reference => ({
+  return Array.isArray(value) && value.length <= 32 ? value.filter(historyReference).map((reference) => ({
     id: reference.id, kind: "file", title: reference.title, uri: reference.uri, visible: reference.visible,
     metadata: { conversationSourceThreadId: reference.metadata!.conversationSourceThreadId, additionalContextKind: "untrusted", value: reference.metadata!.value },
   })) : [];
@@ -107,8 +115,16 @@ export function parseConversationDraftTarget(value: string | null): Extract<Comp
     if(spaceId!==undefined&&(typeof spaceId!=="string"||!spaceId||spaceId.length>256))return null;
     const workspace = target.execution.workspace;
     if (!(workspace.cwd === null || typeof workspace.cwd === "string")
-      || !Array.isArray(workspace.runtimeWorkspaceRoots) || !workspace.runtimeWorkspaceRoots.every(root => typeof root === "string")
+      || !Array.isArray(workspace.runtimeWorkspaceRoots) || !workspace.runtimeWorkspaceRoots.every((root) => typeof root === "string")
       || !(workspace.projectId === undefined || workspace.projectId === null || typeof workspace.projectId === "string")) return null;
+    assertComposerPlacement({
+      environment: target.execution.environment,
+      workspace: {
+        cwd: workspace.cwd,
+        runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots,
+        source: workspace.source,
+      },
+    });
     return target as unknown as Extract<ComposerTarget, { type: "new-thread" }>;
   } catch { return null; }
 }
@@ -139,7 +155,7 @@ export function createConversationDraftContinuity(input: {
   };
   const write = (key: string, draft: ComposerDraft) => {
     const value = serializeConversationDraftDocument(draft.document, draft.target, draft);
-    enqueue(key, () => value === null ? input.storage.remove(key) : input.storage.save(key, value));
+    enqueue(key, () => (value === null ? input.storage.remove(key) : input.storage.save(key, value)));
   };
   return {
     attach(viewId, controller) {

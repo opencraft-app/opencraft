@@ -1,3 +1,6 @@
+import { supportsWorkspaceFiles } from "@opencraft/appserver-protocol";
+import { useWorkspaceCatalog } from "./runtime/use-workspace-catalog";
+import { placementProblem } from "./runtime/workspace-placement-model";
 import { recordQueueError } from "./runtime/queue-error-history";
 import { routeStackPresentation } from "./components/route-stack-motion";
 import { RouteViewStack } from "./components/route-view-stack";
@@ -175,7 +178,7 @@ import { ComposerPanelToggle } from "./components/composer-panel-toggle";
 import { shouldPresentMainComposerOverlay } from "./components/thread-composer-presentation-model";
 import { ThreadGoalSurface } from "./components/thread-goal-surface";
 import { ThreadRecoveryNotice } from "./components/thread-recovery-notice";
-const TurnDiffReviewDialog = lazy(() => import("./components/conversation/turn-diff-review-dialog").then(module => ({ default: module.TurnDiffReviewDialog })));
+const TurnDiffReviewDialog = lazy(() => import("./components/conversation/turn-diff-review-dialog").then((module) => ({ default: module.TurnDiffReviewDialog })));
 import { ComposerTurnChangeSummary } from "./components/conversation/turn-diff-resource";
 import { Button } from "./components/ui/button";
 import { HostAgentOnboarding } from "./components/agent-management";
@@ -196,7 +199,9 @@ import { PendingConversationPage } from "./components/pending-conversation-page"
 import { sideChatCloseRequest } from "./components/side-chat-close-request";
 import { Sidebar } from "./components/sidebar";
 import { useSidebarCommands } from "./components/use-sidebar-commands";
-import { WorkspaceDirectoryPicker } from "./components/workspace-directory-picker";
+const WorkspaceDirectoryPicker = lazy(() =>
+  import("./components/workspace-directory-picker").then((module) => ({ default: module.WorkspaceDirectoryPicker })),
+);
 import { useWorkbenchPresentationRoot } from "./components/workbench-presentation-root";
 import { useResponsiveSidebarDock } from "./components/use-responsive-sidebar-dock";
 import { usePersistedSidebarWidth } from "./components/use-persisted-sidebar-width";
@@ -280,11 +285,9 @@ function humanizeCatalogValue(value: string): string {
     .replace(/^:/, "")
     .split(/[-_\s]+/u)
     .filter(Boolean)
-    .map((part) =>
-      part.length <= 3
+    .map((part) => (part.length <= 3
         ? part.toUpperCase()
-        : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`,
-    )
+        : `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`))
     .join(" ");
 }
 
@@ -313,9 +316,9 @@ export interface EmbeddedWorkbenchAppPresentation {
   readonly onConfigureModels?: () => void;
   readonly panelHost?: {
     readonly target: HTMLElement;
-    readonly presentation?: { subscribe: (listener: () => void) => (() => void); getSnapshot: () => boolean };
+    readonly presentation?: { subscribe: (listener: () => void) => () => void; getSnapshot: () => boolean };
     readonly publish: (state: HostPanelState) => void;
-    readonly bind: (command: (command: HostPanelCommand) => boolean) => (() => void);
+    readonly bind: (command: (command: HostPanelCommand) => boolean) => () => void;
   };
   readonly hostId: string;
   /** The conversation surface has painted; the Host may still be connecting. */
@@ -331,7 +334,7 @@ export interface EmbeddedWorkbenchAppPresentation {
     readonly selectedChatId: string | null;
     readonly isDraft: boolean;
   }) => void;
-  readonly bindActions: (actions: EmbeddedWorkbenchAppActions) => (() => void);
+  readonly bindActions: (actions: EmbeddedWorkbenchAppActions) => () => void;
 }
 
 const EMPTY_IMAGE_EDITOR = Object.freeze({ contribution: null });
@@ -357,7 +360,9 @@ export function App({
   const [accountOpen, setAccountOpen] = useState(false);
   const [conversationSearchOpen, setConversationSearchOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const [conversationSearchTarget, setConversationSearchTarget] = useState<(ConversationSearchTarget & { hostId: string; threadId: string }) | null>(null);
+  const [conversationSearchTarget, setConversationSearchTarget] = useState<
+    (ConversationSearchTarget & { hostId: string; threadId: string }) | null
+  >(null);
   const [closingSideChat, setClosingSideChat] = useState<{ ownerId: string; tab: PanelTabDescriptor } | null>(null);
   const [restoringArchivedThread, setRestoringArchivedThread] = useState(false);
   const appearanceTheme = useAppearanceTheme();
@@ -372,37 +377,47 @@ export function App({
   const draft =
     draftSnapshot.activeDraftId === null
       ? null
-      : (draftSnapshot.drafts.find(
-          (candidate) => candidate.id === draftSnapshot.activeDraftId,
-        ) ?? null);
+      : (draftSnapshot.drafts.find((candidate) => candidate.id === draftSnapshot.activeDraftId) ?? null);
   const composerController = useRootComposerController();
   const composerHandle = useRef<OpenCraftComposerHandle>(null);
   const defaultFollowUpAction = useDefaultFollowUpAction();
   const hostCatalog = useAppServerHosts();
-  const selectSearchedThread = useCallback((hostId: string, id: string, target?: ConversationSearchTarget) => {
-    setConversationSearchTarget(null);
-    void hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, id)).then(activated => {
-      if (activated && target) setConversationSearchTarget({ ...target, hostId, threadId: id });
-    }).catch(error => console.error("Failed to activate searched Thread", error));
-  }, [hostCatalog]);
+  const selectSearchedThread = useCallback(
+    (hostId: string, id: string, target?: ConversationSearchTarget) => {
+      setConversationSearchTarget(null);
+      void hostCatalog
+        .selectConversation(createWorkbenchThreadLocation(hostId, id))
+        .then((activated) => {
+          if (activated && target) setConversationSearchTarget({ ...target, hostId, threadId: id });
+        })
+        .catch((error) => console.error("Failed to activate searched Thread", error));
+    },
+    [hostCatalog],
+  );
   const attentionScope = hostCatalog.threadAttention.getScope();
   const conversationViewIdentity = useConversationViewIdentity();
-  const extensionPlatform = (
-    globalThis as typeof globalThis & {
-      opencraftDesktop?: { readonly kind?: string };
-    }
-  ).opencraftDesktop?.kind === "electron"
-    ? "electron"
-    : "web";
+  const extensionPlatform =
+    (
+      globalThis as typeof globalThis & {
+        opencraftDesktop?: { readonly kind?: string };
+      }
+    ).opencraftDesktop?.kind === "electron"
+      ? "electron"
+      : "web";
   const conversationViewActivation = useConversationViewActivation();
   const snapshot = useAppServerSnapshot();
   const serverSpaces = useServerSpaces(snapshot.hostId);
-  const [serverDrawerOpen,setServerDrawerOpen]=useState(()=>typeof window!=="undefined"&&new URL(window.location.href).searchParams.has("serverInvite"));
-  const [serverDrawerVisited,setServerDrawerVisited]=useState(serverDrawerOpen);
-  useEffect(()=>{if(serverDrawerOpen)setServerDrawerVisited(true);},[serverDrawerOpen]);
+  const [serverDrawerOpen, setServerDrawerOpen] = useState(
+    () => typeof window !== "undefined" && new URL(window.location.href).searchParams.has("serverInvite"),
+  );
+  const [serverDrawerVisited, setServerDrawerVisited] = useState(serverDrawerOpen);
   useEffect(() => {
-    setConversationSearchTarget(current => current
-      && (current.hostId !== snapshot.hostId || current.threadId !== snapshot.activeThreadId) ? null : current);
+    if (serverDrawerOpen) setServerDrawerVisited(true);
+  }, [serverDrawerOpen]);
+  useEffect(() => {
+    setConversationSearchTarget((current) =>
+      current && (current.hostId !== snapshot.hostId || current.threadId !== snapshot.activeThreadId) ? null : current,
+    );
   }, [snapshot.hostId, snapshot.activeThreadId]);
   const activeHostConnectionPhase = useHostConnectionPhase(snapshot.hostId);
   const environmentSnapshot = useSyncExternalStore(
@@ -411,57 +426,95 @@ export function App({
     hostCatalog.environmentDirectory.getSnapshot,
   );
   const engineExtensions = runtime.resources.host.getInitializeResult()?.capabilities?.extensions;
-  const queueExtension = executionEngineExtension(engineExtensions, snapshot.activeThreadId, OPENCRAFT_THREAD_QUEUE_EXTENSION);
-  const followUpCapability = executionEngineExtension(engineExtensions, snapshot.activeThreadId, "opencraft/thread-follow-up") as { queue?: boolean; steer?: boolean } | undefined;
-  const permissionModesExtension = executionEngineExtension(engineExtensions, snapshot.activeThreadId, OPENCRAFT_PERMISSION_MODES_EXTENSION);
-  const supportsPermissionModes = typeof permissionModesExtension === "object"
-    && permissionModesExtension !== null
-    && "version" in permissionModesExtension
-    && permissionModesExtension.version === 1;
+  const queueExtension = executionEngineExtension(
+    engineExtensions,
+    snapshot.activeThreadId,
+    OPENCRAFT_THREAD_QUEUE_EXTENSION,
+  );
+  const followUpCapability = executionEngineExtension(
+    engineExtensions,
+    snapshot.activeThreadId,
+    "opencraft/thread-follow-up",
+  ) as { queue?: boolean; steer?: boolean } | undefined;
+  const permissionModesExtension = executionEngineExtension(
+    engineExtensions,
+    snapshot.activeThreadId,
+    OPENCRAFT_PERMISSION_MODES_EXTENSION,
+  );
+  const supportsPermissionModes =
+    typeof permissionModesExtension === "object" &&
+    permissionModesExtension !== null &&
+    "version" in permissionModesExtension &&
+    permissionModesExtension.version === 1;
   const queueAtomicSteer = supportsAtomicQueuedSteer(queueExtension);
-  const queueUnconfirmedDeliveryRetry = supportsUnconfirmedDeliveryRetry(queueExtension)
-    && runtime.resources.host.canRequest?.("thread/queue/retry") !== false;
+  const queueUnconfirmedDeliveryRetry =
+    supportsUnconfirmedDeliveryRetry(queueExtension) &&
+    runtime.resources.host.canRequest?.("thread/queue/retry") !== false;
   const queueReorderable = !(
     typeof queueExtension === "object" &&
     queueExtension !== null &&
     "reorder" in queueExtension &&
     queueExtension.reorder === false
   );
-  const activeHost =
-    hostCatalog.hosts.find((host) => host.hostId === snapshot.hostId) ??
-    hostCatalog.hosts[0]!;
-  const machines = useMemo(() => groupWorkInMachines(hostCatalog.profiles, environmentSnapshot.entries), [hostCatalog.profiles, environmentSnapshot.entries]);
-  const activeMachine = machines.find(machine => machine.hosts.some(host => host.hostId === snapshot.hostId));
-  const newConversationMachines = useMemo(() => groupNewConversationMachines(hostCatalog.profiles.filter(host => host.hideFromNewChat !== true), environmentSnapshot.entries), [hostCatalog.profiles, environmentSnapshot.entries]);
-  const composerHostOptions = useMemo(() => newConversationMachines.map(machine => ({
-    id: machine.id,
-    hostIds: machine.hosts.map(host => host.hostId),
-    label: machineName(machine, extensionPlatform, intl),
-    role: machineRole(machine, extensionPlatform),
-    platform: machine.identity?.platform ?? null,
-    resource: machine.resource,
-    cloud: machine.cloud,
-    connectable: machine.hosts.some(host => host.enabled),
-  })), [newConversationMachines, extensionPlatform, intl]);
-  const engineCatalog = useWorkInEngineCatalog(workInAgentHosts(activeMachine, snapshot.hostId).filter(host => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId).map(host => host.hostId), snapshot.hostId, draft === null);
+  const activeHost = hostCatalog.hosts.find((host) => host.hostId === snapshot.hostId) ?? hostCatalog.hosts[0]!;
+  const machines = useMemo(
+    () => groupWorkInMachines(hostCatalog.profiles, environmentSnapshot.entries),
+    [hostCatalog.profiles, environmentSnapshot.entries],
+  );
+  const activeMachine = machines.find((machine) => machine.hosts.some((host) => host.hostId === snapshot.hostId));
+  const newConversationMachines = useMemo(
+    () =>
+      groupNewConversationMachines(
+        hostCatalog.profiles.filter((host) => host.hideFromNewChat !== true),
+        environmentSnapshot.entries,
+      ),
+    [hostCatalog.profiles, environmentSnapshot.entries],
+  );
+  const composerHostOptions = useMemo(
+    () =>
+      newConversationMachines.map((machine) => ({
+        id: machine.id,
+        hostIds: machine.hosts.map((host) => host.hostId),
+        label: machineName(machine, extensionPlatform, intl),
+        role: machineRole(machine, extensionPlatform),
+        platform: machine.identity?.platform ?? null,
+        resource: machine.resource,
+        cloud: machine.cloud,
+        connectable: machine.hosts.some((host) => host.enabled),
+      })),
+    [newConversationMachines, extensionPlatform, intl],
+  );
+  const engineCatalog = useWorkInEngineCatalog(
+    workInAgentHosts(activeMachine, snapshot.hostId)
+      .filter((host) => draft === null || host.hideFromNewChat !== true || host.hostId === snapshot.hostId)
+      .map((host) => host.hostId),
+    snapshot.hostId,
+    draft === null,
+  );
   const queryClient = useQueryClient();
   const blobs = useBlobResources();
   const images = useImageProcessing();
   const loadMediaSource = useMemo(
-    () =>
-      createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
+    () => createAppServerMediaSourceLoader(runtime, blobs, snapshot.hostId),
     [blobs, runtime, snapshot.hostId, snapshot.connectionGeneration],
   );
   const resolveActiveHostAttachment = useCallback(
-    (file: File, pending: ComposerAttachment, signal?: AbortSignal, onProgress?: (progress: AttachmentProgress | null) => void) =>
-      resolveBrowserAttachmentForHost(runtime, file, pending, images, signal, onProgress),
+    (
+      file: File,
+      pending: ComposerAttachment,
+      signal?: AbortSignal,
+      onProgress?: (progress: AttachmentProgress | null) => void,
+    ) => resolveBrowserAttachmentForHost(runtime, file, pending, images, signal, onProgress),
     [runtime, images],
   );
   const removeActiveHostAttachment = useCallback(
     async (attachment: ComposerAttachment) => {
       const ref = attachment.metadata?.attachmentRef;
       if (typeof ref !== "object" || ref === null || !("id" in ref) || typeof ref.id !== "string") return;
-      const ownerHostId = typeof attachment.metadata?.attachmentHostId === "string" ? attachment.metadata.attachmentHostId : snapshot.hostId;
+      const ownerHostId =
+        typeof attachment.metadata?.attachmentHostId === "string"
+          ? attachment.metadata.attachmentHostId
+          : snapshot.hostId;
       if (ownerHostId === snapshot.hostId) await runtime.resources.attachments.remove(ref.id);
       else await hostCatalog.agentRuntimes.request(ownerHostId, "attachment/remove", { id: ref.id });
     },
@@ -470,14 +523,46 @@ export function App({
   const rawCatalog = useThreadCatalog();
   const rawMultiHostCatalog = useMultiHostThreadCatalog();
   const threadPinWriter = useThreadPinWriter();
-  const pinRevision = useSyncExternalStore(threadPinWriter.subscribe, threadPinWriter.getSnapshot, threadPinWriter.getSnapshot);
-  const catalog = { ...rawCatalog, threads: useMemo(() => rawCatalog.threads.map(thread =>
-    threadPinWriter.project({ hostId: snapshot.hostId, threadId: thread.id }, thread)),
-  [rawCatalog.threads, threadPinWriter, pinRevision, snapshot.hostId, snapshot.connectionGeneration, snapshot.phase]) };
-  const multiHostCatalog = { ...rawMultiHostCatalog, threads: useMemo(() => rawMultiHostCatalog.threads.map(thread =>
-    threadPinWriter.project({ hostId: thread.connectionHostId, threadId: thread.id }, thread)),
-  [rawMultiHostCatalog.threads, threadPinWriter, pinRevision]) };
+  const pinRevision = useSyncExternalStore(
+    threadPinWriter.subscribe,
+    threadPinWriter.getSnapshot,
+    threadPinWriter.getSnapshot,
+  );
+  const catalog = {
+    ...rawCatalog,
+    threads: useMemo(
+      () =>
+        rawCatalog.threads.map((thread) =>
+          threadPinWriter.project({ hostId: snapshot.hostId, threadId: thread.id }, thread),
+        ),
+      [
+        rawCatalog.threads,
+        threadPinWriter,
+        pinRevision,
+        snapshot.hostId,
+        snapshot.connectionGeneration,
+        snapshot.phase,
+      ],
+    ),
+  };
+  const multiHostCatalog = {
+    ...rawMultiHostCatalog,
+    threads: useMemo(
+      () =>
+        rawMultiHostCatalog.threads.map((thread) =>
+          threadPinWriter.project({ hostId: thread.connectionHostId, threadId: thread.id }, thread),
+        ),
+      [rawMultiHostCatalog.threads, threadPinWriter, pinRevision],
+    ),
+  };
   const projectCatalog = useProjectCatalog();
+  const workspaceCatalog = useWorkspaceCatalog();
+  const selectedPlacementProblem =
+    draft && (draft.target.execution.environment || draft.target.execution.workspace.source)
+      ? !workspaceCatalog.selectable
+        ? "Workspace choices must be refreshed before sending. Your draft is retained."
+        : placementProblem(draft.target.execution, workspaceCatalog.data)
+      : null;
   const [workspacePickerOpen, setWorkspacePickerOpen] = useState(false);
   const { sidebarOpen, setSidebarOpen } = useResponsiveSidebarDock();
   const { width: sidebarWidth, commit: commitSidebarWidth } = usePersistedSidebarWidth(presentation.shellNavigation);
@@ -485,14 +570,9 @@ export function App({
   // route-local widths, so switching routes cannot move the content boundary.
   useLayoutEffect(() => {
     if (!presentation.contextSidebar) return;
-    document.documentElement.style.setProperty(
-      "--opencraft-sidebar-preferred-width",
-      `${sidebarWidth}px`,
-    );
+    document.documentElement.style.setProperty("--opencraft-sidebar-preferred-width", `${sidebarWidth}px`);
     return () => {
-      document.documentElement.style.removeProperty(
-        "--opencraft-sidebar-preferred-width",
-      );
+      document.documentElement.style.removeProperty("--opencraft-sidebar-preferred-width");
     };
   }, [presentation.contextSidebar, sidebarWidth]);
   const timelineSurfaceCapabilities = useMemo<TimelineSurfaceCapabilities>(
@@ -507,10 +587,7 @@ export function App({
     }),
     [],
   );
-  const routeRestoreCheckpoints = hostCatalog.routeCheckpoints as Map<
-    string,
-    ConversationRestoreSnapshot
-  >;
+  const routeRestoreCheckpoints = hostCatalog.routeCheckpoints as Map<string, ConversationRestoreSnapshot>;
   const conversationScrollApiRef = useRef<ConversationScrollApi | null>(null);
   const pendingLatestTurnPlacementRef = useRef<LatestTurnPlacementSnapshot | null>(null);
   const captureLatestTurnPlacement = useCallback(() => {
@@ -532,9 +609,14 @@ export function App({
   const activeThreadId = snapshot.activeThreadId;
   const displayKey = useConversationViewDisplayKey();
   const localThreadId = activeThreadId ?? (displayKey?.hostId === snapshot.hostId ? displayKey.threadId : null);
-  const localOutbox = useMemo(() => localThreadId === null ? null : runtime.localOutbox?.(localThreadId) ?? null,
-    [runtime, localThreadId]);
-  const subscribeLocalOutbox = useCallback((listener: () => void) => localOutbox?.subscribe(listener) ?? (() => {}), [localOutbox]);
+  const localOutbox = useMemo(
+    () => (localThreadId === null ? null : (runtime.localOutbox?.(localThreadId) ?? null)),
+    [runtime, localThreadId],
+  );
+  const subscribeLocalOutbox = useCallback(
+    (listener: () => void) => localOutbox?.subscribe(listener) ?? (() => {}),
+    [localOutbox],
+  );
   const localOutboxRevision = useSyncExternalStore(subscribeLocalOutbox, localOutbox?.getRevision ?? (() => 0));
   const localQueuedSubmissions = useMemo(() => localOutbox?.project() ?? [], [localOutbox, localOutboxRevision]);
   const workbenchNavigation = hostCatalog.navigation;
@@ -543,15 +625,17 @@ export function App({
     workbenchNavigation.getPendingLocation,
     workbenchNavigation.getPendingLocation,
   );
-  const navigationTransition = useSyncExternalStore(workbenchNavigation.subscribeTransition, workbenchNavigation.getTransition, workbenchNavigation.getTransition);
+  const navigationTransition = useSyncExternalStore(
+    workbenchNavigation.subscribeTransition,
+    workbenchNavigation.getTransition,
+    workbenchNavigation.getTransition,
+  );
   const workbenchNavigationSnapshot = useSyncExternalStore(
     workbenchNavigation.subscribe,
     workbenchNavigation.getSnapshot,
     workbenchNavigation.getSnapshot,
   );
-  const routeHeader = useAppShellRouteHeader(
-    workbenchNavigationSnapshot.routeScopeId,
-  );
+  const routeHeader = useAppShellRouteHeader(workbenchNavigationSnapshot.routeScopeId);
   const desktopBackdrop = useApplicationDesktopBackdrop(workbenchNavigationSnapshot.applicationRoute);
   const canReturn = workbenchNavigationSnapshot.canReturn === true && !routeHeader.suppressReturn;
   const returnToParent = canReturn ? workbenchNavigation.returnToParent : workbenchNavigation.back;
@@ -559,10 +643,8 @@ export function App({
   const canGoForward = workbenchNavigationSnapshot.canGoForward;
   const settingsOpen =
     presentation.machineManagement && workbenchNavigationSnapshot.applicationRoute.kind === "settings";
-  const extensionViewOpen =
-    workbenchNavigationSnapshot.applicationRoute.kind === "extension-view";
-  const conversationRouteOpen =
-    workbenchNavigationSnapshot.applicationRoute.kind === "conversation";
+  const extensionViewOpen = workbenchNavigationSnapshot.applicationRoute.kind === "extension-view";
+  const conversationRouteOpen = workbenchNavigationSnapshot.applicationRoute.kind === "conversation";
   const pendingFirstSubmission = draft?.submission ?? null;
   useEffect(() => {
     if (pendingFirstSubmission === null || !conversationRouteOpen) return;
@@ -583,70 +665,115 @@ export function App({
     hostCatalog.extensionContributions.getSnapshot,
     hostCatalog.extensionContributions.getSnapshot,
   );
-  const selectedSettingsContribution = settingsContributionSnapshot.settingsPages.find(
-    ({ contribution }) => contribution.id === settingsSection,
-  )?.contribution ?? null;
-  const managementSettingsOpen = settingsOpen
-    && selectedSettingsContribution?.management !== undefined;
-  const standaloneManagementOpen = managementSettingsOpen
-    && isWorkbenchToolPage(selectedSettingsContribution);
+  const selectedSettingsContribution =
+    settingsContributionSnapshot.settingsPages.find(({ contribution }) => contribution.id === settingsSection)
+      ?.contribution ?? null;
+  const managementSettingsOpen = settingsOpen && selectedSettingsContribution?.management !== undefined;
+  const standaloneManagementOpen = managementSettingsOpen && isWorkbenchToolPage(selectedSettingsContribution);
   const routeSettingsOpen = settingsOpen && !managementSettingsOpen;
   // A target-management route is a modal semantic surface. The underlying
   // conversation keeps its physical shell and geometry, but is inert while
   // the dialog owns interaction and focus.
-  const conversationSurfaceVisible = conversationRouteOpen
-    || (managementSettingsOpen && !standaloneManagementOpen);
+  const conversationSurfaceVisible = conversationRouteOpen || (managementSettingsOpen && !standaloneManagementOpen);
   const shellSidebarOpen = presentation.contextSidebar ? sidebarOpen : false;
   const openConversationSidebar = useCallback(() => {
     setSidebarDestination("context");
-    void workbenchNavigation.openChat({ sidebar: 'preserve' });
+    void workbenchNavigation.openChat({ sidebar: "preserve" });
   }, [workbenchNavigation]);
-  useEffect(() => { if (routeSettingsOpen) setSidebarDestination("context"); }, [routeSettingsOpen]);
-  const openSettingsFromConversation = useCallback((slug?: string) => {
-    setSidebarDestination("context");
-    const focusedElement = document.activeElement;
-    if (
-      focusedElement instanceof HTMLElement &&
-      focusedElement.closest(".workbench-conversation-route") !== null
-    ) {
-      focusedElement.blur();
-    }
-    workbenchNavigation.openSettings(slug);
-  }, [workbenchNavigation]);
-  const extensionViewHost = useMemo<PlatformViewHost>(() => ({
-    authentication: hostCatalog.authenticationFlows,
-    platform: extensionPlatform,
-    activeHostId: snapshot.hostId,
-    profiles: hostCatalog.profiles,
-    ensureRuntimeReady: async (hostId) => { await hostCatalog.agentRuntimes.ensureReady(hostId); },
-    provisionHost: hostCatalog.provisionHost,
-    removeHost: hostCatalog.removeHost,
-    openView: workbenchNavigation.openExtensionView,
-    openConversation: async (serverId, threadId) => {
-      const profile = hostCatalog.profiles.find(profile => legacyDirectServerProjectionFromHost({
-        hostId: profile.hostId, hostKind: profile.hostKind, label: profile.displayName,
-      }).serverOrigin.serverId === serverId);
-      if (!profile) throw new Error("Conversation Server is not connected");
-      await workbenchNavigation.selectConversation(createWorkbenchThreadLocation(profile.hostId, threadId));
+  useEffect(() => {
+    if (routeSettingsOpen) setSidebarDestination("context");
+  }, [routeSettingsOpen]);
+  const openSettingsFromConversation = useCallback(
+    (slug?: string) => {
+      setSidebarDestination("context");
+      const focusedElement = document.activeElement;
+      if (focusedElement instanceof HTMLElement && focusedElement.closest(".workbench-conversation-route") !== null) {
+        focusedElement.blur();
+      }
+      workbenchNavigation.openSettings(slug);
     },
-    openSettings: (section: string) => { setAccountOpen(false); workbenchNavigation.openSettings(section); },
-    registerNavigationGuard: workbenchNavigation.registerNavigationGuard,
-    pushViewResource: workbenchNavigation.pushExtensionViewResource,
-    replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
-    prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
-  }), [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation]);
-  const imageEditor = useSyncExternalStore(hostCatalog.imageEditors?.subscribe ?? NO_IMAGE_EDITOR_SUBSCRIPTION, hostCatalog.imageEditors?.getSnapshot ?? NO_IMAGE_EDITOR_SNAPSHOT).contribution;
-  const identityAvatar = useSyncExternalStore(hostCatalog.identityAvatars.subscribe, hostCatalog.identityAvatars.getSnapshot).contribution;
-  const threadListGrouping = useSyncExternalStore(hostCatalog.threadListGrouping.subscribe, hostCatalog.threadListGrouping.getSnapshot).contribution;
-  const branding = useSyncExternalStore(hostCatalog.applicationBranding.subscribe, hostCatalog.applicationBranding.getSnapshot).contribution ?? DEFAULT_APPLICATION_BRANDING;
+    [workbenchNavigation],
+  );
+  const extensionViewHost = useMemo<PlatformViewHost>(
+    () => ({
+      authentication: hostCatalog.authenticationFlows,
+      platform: extensionPlatform,
+      activeHostId: snapshot.hostId,
+      profiles: hostCatalog.profiles,
+      ensureRuntimeReady: async (hostId) => {
+        await hostCatalog.agentRuntimes.ensureReady(hostId);
+      },
+      provisionHost: hostCatalog.provisionHost,
+      removeHost: hostCatalog.removeHost,
+      openView: workbenchNavigation.openExtensionView,
+      openConversation: async (serverId, threadId) => {
+        const profile = hostCatalog.profiles.find(
+          (profile) =>
+            legacyDirectServerProjectionFromHost({
+              hostId: profile.hostId,
+              hostKind: profile.hostKind,
+              label: profile.displayName,
+            }).serverOrigin.serverId === serverId,
+        );
+        if (!profile) throw new Error("Conversation Server is not connected");
+        await workbenchNavigation.selectConversation(createWorkbenchThreadLocation(profile.hostId, threadId));
+      },
+      openSettings: (section: string) => {
+        setAccountOpen(false);
+        workbenchNavigation.openSettings(section);
+      },
+      registerNavigationGuard: workbenchNavigation.registerNavigationGuard,
+      pushViewResource: workbenchNavigation.pushExtensionViewResource,
+      replaceViewResource: workbenchNavigation.replaceExtensionViewResource,
+      prepareImageUpload: async (blob) => (await images.compress(blob)).blob,
+    }),
+    [extensionPlatform, hostCatalog, images, snapshot.hostId, workbenchNavigation],
+  );
+  const imageEditor = useSyncExternalStore(
+    hostCatalog.imageEditors?.subscribe ?? NO_IMAGE_EDITOR_SUBSCRIPTION,
+    hostCatalog.imageEditors?.getSnapshot ?? NO_IMAGE_EDITOR_SNAPSHOT,
+  ).contribution;
+  const identityAvatar = useSyncExternalStore(
+    hostCatalog.identityAvatars.subscribe,
+    hostCatalog.identityAvatars.getSnapshot,
+  ).contribution;
+  const threadListGrouping = useSyncExternalStore(
+    hostCatalog.threadListGrouping.subscribe,
+    hostCatalog.threadListGrouping.getSnapshot,
+  ).contribution;
+  const branding =
+    useSyncExternalStore(hostCatalog.applicationBranding.subscribe, hostCatalog.applicationBranding.getSnapshot)
+      .contribution ?? DEFAULT_APPLICATION_BRANDING;
   useEffect(() => {
     if (embedded !== undefined || extensionPlatform !== "web") return;
     return applyApplicationBranding(document, branding);
   }, [branding, embedded, extensionPlatform]);
-  const nativeSearch = useSyncExternalStore(hostCatalog.channelSearch.subscribe,hostCatalog.channelSearch.getSnapshot).contribution;
-  const searchSources=useMemo(()=>nativeSearch?[...multiHostCatalog.searchSources,channelSearchSource(nativeSearch,intl.formatMessage({id:'im.search.source',defaultMessage:'Group messages'}))]:multiHostCatalog.searchSources,[multiHostCatalog.searchSources,nativeSearch,intl]);
-  const threadBadge = useSyncExternalStore(hostCatalog.threadBadges.subscribe, hostCatalog.threadBadges.getSnapshot).contribution;
-  const extensionViewRegions = useAppShellViewRegions(hostCatalog.composerActionRenderers, presentation.composerActions, extensionViewHost);
+  const nativeSearch = useSyncExternalStore(
+    hostCatalog.channelSearch.subscribe,
+    hostCatalog.channelSearch.getSnapshot,
+  ).contribution;
+  const searchSources = useMemo(
+    () =>
+      nativeSearch
+        ? [
+            ...multiHostCatalog.searchSources,
+            channelSearchSource(
+              nativeSearch,
+              intl.formatMessage({ id: "im.search.source", defaultMessage: "Group messages" }),
+            ),
+          ]
+        : multiHostCatalog.searchSources,
+    [multiHostCatalog.searchSources, nativeSearch, intl],
+  );
+  const threadBadge = useSyncExternalStore(
+    hostCatalog.threadBadges.subscribe,
+    hostCatalog.threadBadges.getSnapshot,
+  ).contribution;
+  const extensionViewRegions = useAppShellViewRegions(
+    hostCatalog.composerActionRenderers,
+    presentation.composerActions,
+    extensionViewHost,
+  );
   const extensionProjection = useExtensionWorkbenchProjection({
     regions: extensionViewRegions,
     contributions: hostCatalog.extensionContributions,
@@ -658,57 +785,93 @@ export function App({
     openSettings: workbenchNavigation.openSettings,
     openView: workbenchNavigation.openExtensionView,
   });
-  const miniAppSettingsOpen = projectMiniApps(settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
-    type => hostCatalog.platformViewRenderers.resolve(type) !== null).some(app => app.target.kind === "settings"
-      && workbenchNavigationSnapshot.applicationRoute.kind === "settings"
-      && app.target.pageId === workbenchNavigationSnapshot.applicationRoute.slug);
-  const connectorPresentation = useConnectorPresentation(hostCatalog.connectorManager, hostCatalog.connectorApprovals,
-    { hostId: hostCatalog.selectedHostId, scopeId: conversationViewIdentity.scopeId }, extensionProjection.manageConnectors);
+  const miniAppSettingsOpen = projectMiniApps(
+    settingsContributionSnapshot,
+    extensionPlatform,
+    internalDeveloperMode,
+    (type) => hostCatalog.platformViewRenderers.resolve(type) !== null,
+  ).some(
+    (app) =>
+      app.target.kind === "settings" &&
+      workbenchNavigationSnapshot.applicationRoute.kind === "settings" &&
+      app.target.pageId === workbenchNavigationSnapshot.applicationRoute.slug,
+  );
+  const connectorPresentation = useConnectorPresentation(
+    hostCatalog.connectorManager,
+    hostCatalog.connectorApprovals,
+    { hostId: hostCatalog.selectedHostId, scopeId: conversationViewIdentity.scopeId },
+    extensionProjection.manageConnectors,
+  );
   const composerEndActions = (
-    <>{presentation.connectorLauncher ? connectorPresentation.launcher : null}<ComposerExtensionActions
-      actionIds={presentation.composerActions}
-      controller={composerController}
-      disabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
-      platform={extensionPlatform}
-      registry={hostCatalog.composerActionRenderers}
-    /></>
+    <>
+      {presentation.connectorLauncher ? connectorPresentation.launcher : null}
+      <ComposerExtensionActions
+        actionIds={presentation.composerActions}
+        controller={composerController}
+        disabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
+        platform={extensionPlatform}
+        registry={hostCatalog.composerActionRenderers}
+      />
+    </>
   );
-  const composerAddMenuContent = presentation.connectorLauncher
-    ? connectorPresentation.addMenuContent
-    : null;
+  const composerAddMenuContent = presentation.connectorLauncher ? connectorPresentation.addMenuContent : null;
   useEffect(() => {
-    if (extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId) setAccountOpen(false);
+    if (
+      extensionProjection.account?.snapshot.phase === "anonymous" &&
+      extensionProjection.account.provider.signInViewId
+    )
+      setAccountOpen(false);
   }, [extensionProjection.account?.snapshot.phase, extensionProjection.account?.provider]);
-  const authenticationPresentation = useAuthenticationPresentation(hostCatalog.authenticationFlows, extensionProjection.account,
-    JSON.stringify([hostCatalog.currentLocation, workbenchNavigationSnapshot.applicationRoute]));
-  const hostConnectionIntervention = findHostConnectionInterventionError(
-    conversationViewActivation.error,
+  const authenticationPresentation = useAuthenticationPresentation(
+    hostCatalog.authenticationFlows,
+    extensionProjection.account,
+    JSON.stringify([hostCatalog.currentLocation, workbenchNavigationSnapshot.applicationRoute]),
   );
+  const hostConnectionIntervention = findHostConnectionInterventionError(conversationViewActivation.error);
   useEffect(() => {
-    if (activeThreadLease === null || conversationViewActivation.phase !== "error"
-      || conversationViewActivation.error === null || hostConnectionIntervention !== null) return;
-    notices.error({ key: "conversation-open", message: intl.formatMessage({
-      id: "chat.openFailed", defaultMessage: "Could not open this conversation. Try again.",
-    }) });
-  }, [activeThreadLease, conversationViewActivation.phase, conversationViewActivation.error, hostConnectionIntervention, intl, notices]);
-  const activeHostProviderId = hostCatalog.profiles.find(
-    (profile) => profile.hostId === activeHost.hostId,
-  )?.providerId ?? null;
-  const hostShortcutCommands = activeHost.hostId === snapshot.hostId
-    ? runtime.resources.composerCommands?.commands.map(command => ({
-      name: command.name, description: intl.formatMessage(command.description),
-    })) : undefined;
+    if (
+      activeThreadLease === null ||
+      conversationViewActivation.phase !== "error" ||
+      conversationViewActivation.error === null ||
+      hostConnectionIntervention !== null
+    )
+      return;
+    notices.error({
+      key: "conversation-open",
+      message: intl.formatMessage({
+        id: "chat.openFailed",
+        defaultMessage: "Could not open this conversation. Try again.",
+      }),
+    });
+  }, [
+    activeThreadLease,
+    conversationViewActivation.phase,
+    conversationViewActivation.error,
+    hostConnectionIntervention,
+    intl,
+    notices,
+  ]);
+  const activeHostProviderId =
+    hostCatalog.profiles.find((profile) => profile.hostId === activeHost.hostId)?.providerId ?? null;
+  const hostShortcutCommands =
+    activeHost.hostId === snapshot.hostId
+      ? runtime.resources.composerCommands?.commands.map((command) => ({
+          name: command.name,
+          description: intl.formatMessage(command.description),
+        }))
+      : undefined;
   // Account/catalog availability never owns the working conversation surface.
   // Only the selected Host's actual connection failure may request intervention.
-  const connectionIntervention = hostConnectionIntervention?.providerId === activeHostProviderId
-      ? hostConnectionIntervention
-      : null;
-  const connectionInterventionNode = connectionIntervention === null
-    ? null
-    : extensionProjection.connectionInterventions.find(
-      (surface) => surface.providerId === connectionIntervention.providerId
-        && surface.intervention === connectionIntervention.code,
-    )?.node ?? null;
+  const connectionIntervention =
+    hostConnectionIntervention?.providerId === activeHostProviderId ? hostConnectionIntervention : null;
+  const connectionInterventionNode =
+    connectionIntervention === null
+      ? null
+      : (extensionProjection.connectionInterventions.find(
+          (surface) =>
+            surface.providerId === connectionIntervention.providerId &&
+            surface.intervention === connectionIntervention.code,
+        )?.node ?? null);
   useEffect(() => {
     if (extensionViewOpen && extensionProjection.activeView === null) {
       workbenchNavigation.closeExtensionView();
@@ -717,12 +880,20 @@ export function App({
   const activeConversationRestoreKey = conversationViewIdentity.viewId;
   const [interactionDraftStore] = useState(() => new InteractionDraftStore());
   const [mcpAppWidgetStates] = useState<McpAppWidgetStateStore>(() => new Map());
-  useObservedReadiness(draft === null ? activeConversationRestoreKey : null, snapshot.phase === 'ready' && activeThreadLease !== null
-    && snapshot.conversation?.authoritative === true && runtime.resources.host.canRequest?.('turn/start') === true);
-  useEffect(() => () => {
-    pendingLatestTurnPlacementRef.current = null;
-    conversationScrollApiRef.current?.releaseLatestTurnSubmitPlacementCapture();
-  }, [activeConversationRestoreKey]);
+  useObservedReadiness(
+    draft === null ? activeConversationRestoreKey : null,
+    snapshot.phase === "ready" &&
+      activeThreadLease !== null &&
+      snapshot.conversation?.authoritative === true &&
+      runtime.resources.host.canRequest?.("turn/start") === true,
+  );
+  useEffect(
+    () => () => {
+      pendingLatestTurnPlacementRef.current = null;
+      conversationScrollApiRef.current?.releaseLatestTurnSubmitPlacementCapture();
+    },
+    [activeConversationRestoreKey],
+  );
   const lastDraftWorkspaceRef = useRef(
     draft?.target.execution.workspace ?? {
       cwd: null,
@@ -761,33 +932,66 @@ export function App({
   const panelRenderers = usePanelRendererSnapshot();
   const allPanelToolbarActions = usePanelToolbarActions();
   const panelToolbarActions = allPanelToolbarActions
-    .filter(action => presentation.panelActions === "all" || presentation.panelActions.includes(action.id))
-    .map(action => action.id === "opencraft.browser.new-tab" ? { ...action,
-      label: intl.formatMessage({ id: "panel.newBrowser", defaultMessage: "New browser tab" }),
-      creationLabel: intl.formatMessage({ id: "panel.browser", defaultMessage: "Browser" }),
-    } : action.id === "opencraft.cloud-desktop.open" ? { ...action,
-      label: intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" }),
-      creationLabel: intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" }),
-    } : action.id === "workspace.files.open" ? { ...action,
-      label: intl.formatMessage({ id: "panel.openFiles", defaultMessage: "Open files" }),
-      creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
-    } : action);
+    .filter((action) => presentation.panelActions === "all" || presentation.panelActions.includes(action.id))
+    .map((action) =>
+      action.id === "opencraft.browser.new-tab"
+        ? {
+            ...action,
+            label: intl.formatMessage({ id: "panel.newBrowser", defaultMessage: "New browser tab" }),
+            creationLabel: intl.formatMessage({ id: "panel.browser", defaultMessage: "Browser" }),
+          }
+        : action.id === "opencraft.cloud-desktop.open"
+          ? {
+              ...action,
+              label: intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" }),
+              creationLabel: intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" }),
+            }
+          : action.id === "workspace.files.open"
+            ? {
+                ...action,
+                label: intl.formatMessage({ id: "panel.openFiles", defaultMessage: "Open files" }),
+                creationLabel: intl.formatMessage({ id: "panel.files", defaultMessage: "Files" }),
+              }
+            : action,
+    );
+  const workspaceFileCapability =
+    runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/workspace-placement"];
+  const workspaceFileThreadId =
+    !draft && activeThreadId && supportsWorkspaceFiles(workspaceFileCapability) ? activeThreadId : undefined;
   const panelToolbarContext: PanelToolbarActionContext = {
+    workspaceFileThreadId,
     threadId: draft ? null : activeThreadId,
-    projectId: draft?.target.execution.workspace.projectId ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.projectId ?? null,
-    ownerId: panelOwnerId, resourceOwnerId: conversationResourceOwnerId, hostId: snapshot.hostId,
-    cwd: snapshot.conversation?.execution.cwd ?? catalog.protocolThreads.find(thread => thread.id === activeThreadId)?.cwd
-      ?? draft?.target.execution.workspace.cwd ?? activeHost.workspaceBrowseRoots[0] ?? null,
+    projectId:
+      draft?.target.execution.workspace.projectId ??
+      catalog.protocolThreads.find((thread) => thread.id === activeThreadId)?.projectId ??
+      null,
+    ownerId: panelOwnerId,
+    resourceOwnerId: conversationResourceOwnerId,
+    hostId: snapshot.hostId,
+    cwd:
+      snapshot.conversation?.execution.cwd ??
+      catalog.protocolThreads.find((thread) => thread.id === activeThreadId)?.cwd ??
+      draft?.target.execution.workspace.cwd ??
+      activeHost.workspaceBrowseRoots[0] ??
+      null,
   };
-  const sideChatAction = panelToolbarActions.find(action => action.id === "sidechat.new");
-  const threadShortcutCommands = activeThreadLease !== null && sideChatAction
-    && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
-    ? [{ name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
-      ...(hostShortcutCommands ?? []).filter(command => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name)]
-    : hostShortcutCommands;
+  const sideChatAction = panelToolbarActions.find((action) => action.id === "sidechat.new");
+  const threadShortcutCommands =
+    activeThreadLease !== null && sideChatAction && (sideChatAction.isAvailable?.(panelToolbarContext) ?? true)
+      ? [
+          { name: SIDE_CHAT_COMPOSER_COMMAND.name, description: sideChatAction.label, submitOnSelect: true },
+          ...(hostShortcutCommands ?? []).filter((command) => command.name !== SIDE_CHAT_COMPOSER_COMMAND.name),
+        ]
+      : hostShortcutCommands;
   const presentedPanelRenderers = presentation.filePreviewOnly
-    ? panelRenderers.filter(renderer => renderer.kind === "browser" || renderer.kind === "resource" || renderer.kind === "cloud-desktop")
-      .map(renderer => renderer.kind === "resource" ? { ...renderer, Component: WorkspaceResourcePreviewPanel } : renderer)
+    ? panelRenderers
+        .filter(
+          (renderer) =>
+            renderer.kind === "browser" || renderer.kind === "resource" || renderer.kind === "cloud-desktop",
+        )
+        .map((renderer) =>
+          renderer.kind === "resource" ? { ...renderer, Component: WorkspaceResourcePreviewPanel } : renderer,
+        )
     : panelRenderers;
   const requestClosePanel = (tab: PanelTabDescriptor) => {
     if (tab.kind === "sidechat" && tab.resource && panelRuntime.context.sideChats?.hasContent(tab.resource)) {
@@ -820,83 +1024,181 @@ export function App({
       allowEmpty: panelState.right.tabs.length === 0,
     });
   }, [dispatchPanel, panelState.right.open, panelState.right.tabs.length]);
-  const activeThread = catalog.threads.find(thread => thread.id === activeThreadId);
-  const displayCatalogThread = displayKey === null ? undefined : multiHostCatalog.threads.find(thread =>
-    thread.id === displayKey.threadId && thread.connectionHostId === displayKey.hostId);
-  const titleSource = displayKey?.hostId === snapshot.hostId && displayKey?.threadId === activeThreadId
-    ? activeThread ?? displayCatalogThread : displayCatalogThread;
+  const activeThread = catalog.threads.find((thread) => thread.id === activeThreadId);
+  const displayCatalogThread =
+    displayKey === null
+      ? undefined
+      : multiHostCatalog.threads.find(
+          (thread) => thread.id === displayKey.threadId && thread.connectionHostId === displayKey.hostId,
+        );
+  const titleSource =
+    displayKey?.hostId === snapshot.hostId && displayKey?.threadId === activeThreadId
+      ? (activeThread ?? displayCatalogThread)
+      : displayCatalogThread;
   const timeline = snapshot.conversation?.timeline ?? null;
   // The committed View has a display identity before network lease acquisition.
   // This local binding never grants execution or authoritative history access.
-  const { selection: display, scope: displayScope, hasSubmission, header: cachedHeader } = useConversationDisplay(hostCatalog.displayContinuity, displayKey, timeline, snapshot.conversation?.history.hasOlder,
-    titleSource ? { title: titleSource.title, project: titleSource.project } : undefined);
+  const {
+    selection: display,
+    scope: displayScope,
+    hasSubmission,
+    header: cachedHeader,
+  } = useConversationDisplay(
+    hostCatalog.displayContinuity,
+    displayKey,
+    timeline,
+    snapshot.conversation?.history.hasOlder,
+    titleSource ? { title: titleSource.title, project: titleSource.project } : undefined,
+  );
   const displayHeader = titleSource ?? cachedHeader;
   const displayHostId = displayKey?.hostId ?? null;
   const displayThreadId = displayKey?.threadId ?? null;
   const unavailableHostId = displayHostId ?? snapshot.hostId;
   const unavailableThreadId = displayThreadId ?? activeThreadId;
-  const unavailableThreadReason = unavailableHostId === snapshot.hostId && unavailableThreadId !== null
-    ? runtime.resources.threads.getUnavailableReason?.(unavailableThreadId) ?? null
-    : null;
+  const unavailableThreadReason =
+    unavailableHostId === snapshot.hostId && unavailableThreadId !== null
+      ? (runtime.resources.threads.getUnavailableReason?.(unavailableThreadId) ?? null)
+      : null;
   const archivePresentation = conversationArchivePresentation(
-    unavailableThreadReason, (display.timeline?.frames.length ?? 0) > 0);
+    unavailableThreadReason,
+    (display.timeline?.frames.length ?? 0) > 0,
+  );
   const visibleTimeline = useThreadOrchestrationTimeline(
-    archivePresentation.showHistory ? display.timeline : null, runtime.resources.orchestration,
-    unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open");
-  const showingDisplayCache = unavailableThreadReason === null
-    && display.source !== "history" && display.source !== "mixed" && display.source !== "empty";
+    archivePresentation.showHistory ? display.timeline : null,
+    runtime.resources.orchestration,
+    unavailableThreadReason === null && displayHostId === snapshot.hostId && snapshot.transport.state === "open",
+  );
+  const showingDisplayCache =
+    unavailableThreadReason === null &&
+    display.source !== "history" &&
+    display.source !== "mixed" &&
+    display.source !== "empty";
   const deliveryRecovery = submissionRecoveryPresentation(
-    showingDisplayCache ? [] : snapshot.conversation?.pendingSubmissions ?? [],
-    showingDisplayCache ? [] : snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
-    visibleTimeline);
+    showingDisplayCache ? [] : (snapshot.conversation?.pendingSubmissions ?? []),
+    showingDisplayCache ? [] : (snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions),
+    visibleTimeline,
+  );
   const deliveryRecoveryActions = {
     byClientId: deliveryRecovery.byClientId,
     onAbandon: async (id: string) => {
       if (activeThreadLease) await activeThreadLease.abandonUnknownSubmission(id);
       else if (localOutbox) await localOutbox.abandon(id);
-      else throw new Error('No local submission owner');
+      else throw new Error("No local submission owner");
     },
     onRetry: async (id: string) => {
       if (activeThreadLease) await activeThreadLease.retryQueuedSubmission(id);
-      else if (!localOutbox || !await localOutbox.retry(id)) throw new Error('No failed local submission');
+      else if (!localOutbox || !(await localOutbox.retry(id))) throw new Error("No failed local submission");
     },
   };
   const historyPaintObserver = workbenchNavigation.historyFirstPaint;
-  const historyPaintAttempt = useSyncExternalStore(historyPaintObserver.subscribe, historyPaintObserver.getSnapshot, historyPaintObserver.getSnapshot);
+  const historyPaintAttempt = useSyncExternalStore(
+    historyPaintObserver.subscribe,
+    historyPaintObserver.getSnapshot,
+    historyPaintObserver.getSnapshot,
+  );
   useEffect(() => {
-    const onVisibility = () => { if (document.visibilityState === "hidden") historyPaintObserver.abort(); };
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") historyPaintObserver.abort();
+    };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [historyPaintObserver]);
   const historyPaintOwnsView = historyPaintAttempt?.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
-  const transitionOwnsView = navigationTransition?.phase === 'committed' && navigationTransition.viewId === conversationViewIdentity.viewId && conversationRouteOpen;
-  const historyPaintTurns = historyPaintOwnsView || transitionOwnsView ? new Set(visibleTimeline?.frames.map(frame => frame.turnId) ?? []).size : 0;
-  const historyPaintLength = historyLengthBucket(historyPaintTurns,
-    !showingDisplayCache && snapshot.conversation?.authoritative === true && snapshot.conversation.history.hasOlder === false, visibleTimeline?.historyTurnCount);
+  const transitionOwnsView =
+    navigationTransition?.phase === "committed" &&
+    navigationTransition.viewId === conversationViewIdentity.viewId &&
+    conversationRouteOpen;
+  const historyPaintTurns =
+    historyPaintOwnsView || transitionOwnsView
+      ? new Set(visibleTimeline?.frames.map((frame) => frame.turnId) ?? []).size
+      : 0;
+  const historyPaintLength = historyLengthBucket(
+    historyPaintTurns,
+    !showingDisplayCache &&
+      snapshot.conversation?.authoritative === true &&
+      snapshot.conversation.history.hasOlder === false,
+    visibleTimeline?.historyTurnCount,
+  );
   const historyPaintEngine = historyEngine(engineExtensions, displayThreadId);
   const historyPaintReady = historyPaintOwnsView && (visibleTimeline?.frames.length ?? 0) > 0;
   const visibleContentReady = (historyPaintOwnsView || transitionOwnsView) && (visibleTimeline?.frames.length ?? 0) > 0;
   useLayoutEffect(() => {
-    if (navigationTransition?.phase !== 'committed' || navigationTransition.location.kind !== 'draft'
-      || !conversationRouteOpen || navigationTransition.viewId !== conversationViewIdentity.viewId) return;
+    if (
+      navigationTransition?.phase !== "committed" ||
+      navigationTransition.location.kind !== "draft" ||
+      !conversationRouteOpen ||
+      navigationTransition.viewId !== conversationViewIdentity.viewId
+    )
+      return;
     workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
   }, [navigationTransition, conversationRouteOpen, conversationViewIdentity.viewId, workbenchNavigation]);
   const onHistoryVisibleContentReady = useCallback(() => {
     if (historyPaintAttempt && historyPaintReady) {
-      historyPaintObserver.settle(historyPaintAttempt, "ok", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
+      historyPaintObserver.settle(historyPaintAttempt, "ok", {
+        lengthBucket: historyPaintLength,
+        engine: historyPaintEngine,
+      });
     }
-    if (transitionOwnsView && navigationTransition) workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintReady, historyPaintLength, historyPaintEngine, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition, transitionOwnsView]);
+    if (transitionOwnsView && navigationTransition)
+      workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+  }, [
+    historyPaintObserver,
+    historyPaintAttempt,
+    historyPaintReady,
+    historyPaintLength,
+    historyPaintEngine,
+    workbenchNavigation,
+    conversationViewIdentity.viewId,
+    navigationTransition,
+    transitionOwnsView,
+  ]);
   useEffect(() => {
     if (!historyPaintOwnsView && !transitionOwnsView) return;
-    if ((unavailableThreadReason !== null && archivePresentation.banner !== "alongside") || snapshot.phase === "error" || conversationViewActivation.phase === "error" || snapshot.conversation?.error || snapshot.conversation?.history.error ) {
-      if (historyPaintAttempt && historyPaintOwnsView) historyPaintObserver.settle(historyPaintAttempt, "failed", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
-      if (navigationTransition?.phase === 'committed') workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
-    } else if (!showingDisplayCache && snapshot.conversation?.authoritative && historyPaintTurns === 0 && !snapshot.conversation.history.hasOlder) {
-      if (historyPaintAttempt && historyPaintOwnsView) historyPaintObserver.settle(historyPaintAttempt, "empty", {lengthBucket: historyPaintLength, engine: historyPaintEngine});
-      if (navigationTransition?.phase === 'committed') workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+    if (
+      (unavailableThreadReason !== null && archivePresentation.banner !== "alongside") ||
+      snapshot.phase === "error" ||
+      conversationViewActivation.phase === "error" ||
+      snapshot.conversation?.error ||
+      snapshot.conversation?.history.error
+    ) {
+      if (historyPaintAttempt && historyPaintOwnsView)
+        historyPaintObserver.settle(historyPaintAttempt, "failed", {
+          lengthBucket: historyPaintLength,
+          engine: historyPaintEngine,
+        });
+      if (navigationTransition?.phase === "committed")
+        workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
+    } else if (
+      !showingDisplayCache &&
+      snapshot.conversation?.authoritative &&
+      historyPaintTurns === 0 &&
+      !snapshot.conversation.history.hasOlder
+    ) {
+      if (historyPaintAttempt && historyPaintOwnsView)
+        historyPaintObserver.settle(historyPaintAttempt, "empty", {
+          lengthBucket: historyPaintLength,
+          engine: historyPaintEngine,
+        });
+      if (navigationTransition?.phase === "committed")
+        workbenchNavigation.acknowledgePresented(navigationTransition.id, conversationViewIdentity.viewId);
     }
-  }, [historyPaintObserver, historyPaintAttempt, historyPaintOwnsView, conversationViewActivation.phase, snapshot.phase, snapshot.conversation, unavailableThreadReason, historyPaintLength, historyPaintEngine, showingDisplayCache, historyPaintTurns, archivePresentation.banner, workbenchNavigation, conversationViewIdentity.viewId, navigationTransition]);
+  }, [
+    historyPaintObserver,
+    historyPaintAttempt,
+    historyPaintOwnsView,
+    conversationViewActivation.phase,
+    snapshot.phase,
+    snapshot.conversation,
+    unavailableThreadReason,
+    historyPaintLength,
+    historyPaintEngine,
+    showingDisplayCache,
+    historyPaintTurns,
+    archivePresentation.banner,
+    workbenchNavigation,
+    conversationViewIdentity.viewId,
+    navigationTransition,
+  ]);
 
   const displayCounts = useMemo(() => displayTimingCounts(visibleTimeline), [visibleTimeline]);
   const displaySignature = JSON.stringify(displayCounts);
@@ -907,47 +1209,77 @@ export function App({
     // The signature reports coverage transitions, not every streaming delta.
   }, [displaySignature, displayScope, displayHostId, displayThreadId]);
 
-
   const [turnDiffReview, setTurnDiffReview] = useState<{
     readonly block: TurnDiffTimelineBlock;
     readonly hostId: string | null;
     readonly path: string | null;
     readonly threadId: string;
   } | null>(null);
-  const openTurnDiffReview = useCallback((block: TurnDiffTimelineBlock, path?: string) => {
-    if (activeThreadId !== null) setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId, hostId: snapshot.hostId });
-  }, [activeThreadId, snapshot.hostId]);
-  const reviewedBlock = turnDiffReview?.hostId === snapshot.hostId && turnDiffReview?.threadId === activeThreadId
-    ? timeline?.frames.flatMap((frame) => frame.changeSummary == null ? frame.blocks : [frame.changeSummary, ...frame.blocks]).find((block): block is TurnDiffTimelineBlock =>
-      block.type === "turn-diff" && block.id === turnDiffReview.block.id) ?? turnDiffReview.block
-    : null;
+  const openTurnDiffReview = useCallback(
+    (block: TurnDiffTimelineBlock, path?: string) => {
+      if (activeThreadId !== null)
+        setTurnDiffReview({ block, path: path ?? null, threadId: activeThreadId, hostId: snapshot.hostId });
+    },
+    [activeThreadId, snapshot.hostId],
+  );
+  const reviewedBlock =
+    turnDiffReview?.hostId === snapshot.hostId && turnDiffReview?.threadId === activeThreadId
+      ? (timeline?.frames
+          .flatMap((frame) => (frame.changeSummary == null ? frame.blocks : [frame.changeSummary, ...frame.blocks]))
+          .find(
+            (block): block is TurnDiffTimelineBlock =>
+              block.type === "turn-diff" && block.id === turnDiffReview.block.id,
+          ) ?? turnDiffReview.block)
+      : null;
   const recoveryRequiresUpdate = snapshot.transport.failure?.code === "APP_HOST_PROTOCOL_MISMATCH";
-  const recoveryAccessFailure = snapshot.transport.failure?.code === 'APP_HOST_AUTH_REQUIRED' ? 'authentication'
-    : snapshot.transport.failure?.code === 'APP_HOST_ACCESS_DENIED' ? 'permission' : null;
-  const retryConnectionAdmission = () => { void runtime.reconnect().catch(() => undefined); };
+  const recoveryAccessFailure =
+    snapshot.transport.failure?.code === "APP_HOST_AUTH_REQUIRED"
+      ? "authentication"
+      : snapshot.transport.failure?.code === "APP_HOST_ACCESS_DENIED"
+        ? "permission"
+        : null;
+  const retryConnectionAdmission = () => {
+    void runtime.reconnect().catch(() => undefined);
+  };
   const recoveryPresentation = conversationRecoveryPresentation({
     authoritative: snapshot.conversation?.authoritative === true,
     hasVisibleHistory: (visibleTimeline?.frames.length ?? 0) > 0,
-    failed: snapshot.phase === "error" || (activeThreadLease === null
-      ? conversationViewActivation.phase === "error"
-      : snapshot.conversation?.error != null),
+    failed:
+      snapshot.phase === "error" ||
+      (activeThreadLease === null
+        ? conversationViewActivation.phase === "error"
+        : snapshot.conversation?.error != null),
   });
   const recoveryDiagnostic = useConversationRecoveryDiagnostic({
     scope: JSON.stringify([displayScope, snapshot.hostId, activeThreadId]),
     failed: recoveryPresentation === "cold-error" || recoveryPresentation === "warm-error",
     active: recoveryPresentation !== "none",
-    progress: snapshot.phase !== "ready" ? snapshot.recovery
-      : snapshot.residentThreads.find(thread => thread.threadId === activeThreadId)?.recovery,
-    stage: snapshot.phase !== "ready" ? "connection"
-      : activeThreadLease === null ? "activation" : "history",
-    error: snapshot.phase === "error" ? snapshot.error
-      : activeThreadLease === null ? conversationViewActivation.error : snapshot.conversation?.error,
+    progress:
+      snapshot.phase !== "ready"
+        ? snapshot.recovery
+        : snapshot.residentThreads.find((thread) => thread.threadId === activeThreadId)?.recovery,
+    stage: snapshot.phase !== "ready" ? "connection" : activeThreadLease === null ? "activation" : "history",
+    error:
+      snapshot.phase === "error"
+        ? snapshot.error
+        : activeThreadLease === null
+          ? conversationViewActivation.error
+          : snapshot.conversation?.error,
     runtime: snapshot.phase,
     transport: snapshot.transport,
   });
-  const conversationRecovering = activeThreadId !== null
-    && conversationRecoveryIsPending(recoveryPresentation, recoveryDiagnostic, recoveryRequiresUpdate || recoveryAccessFailure !== null);
-  const connectionRecovering = connectionRecoveryIsPending(snapshot.phase, recoveryDiagnostic, recoveryRequiresUpdate || recoveryAccessFailure !== null);
+  const conversationRecovering =
+    activeThreadId !== null &&
+    conversationRecoveryIsPending(
+      recoveryPresentation,
+      recoveryDiagnostic,
+      recoveryRequiresUpdate || recoveryAccessFailure !== null,
+    );
+  const connectionRecovering = connectionRecoveryIsPending(
+    snapshot.phase,
+    recoveryDiagnostic,
+    recoveryRequiresUpdate || recoveryAccessFailure !== null,
+  );
   const recoveryPlaceholder = connectionRecovering
     ? snapshot.phase === "connecting"
       ? intl.formatMessage({ id: "settings.connection.connecting", defaultMessage: "Connecting" })
@@ -967,50 +1299,74 @@ export function App({
   }, [recoveryPresentation, snapshot.hostId, activeThreadId, snapshot.phase, conversationViewActivation.phase]);
   const navigationSource = activeThreadLease?.getNavigation() ?? null;
   const pendingInteraction = useMemo(
-    () => unavailableThreadReason === null ? findPendingInteraction(timeline) : null,
+    () => (unavailableThreadReason === null ? findPendingInteraction(timeline) : null),
     [timeline, unavailableThreadReason],
   );
-  const isStreaming =
-    snapshot.conversation?.activeTurn !== null &&
-    snapshot.conversation?.activeTurn !== undefined;
+  const isStreaming = snapshot.conversation?.activeTurn !== null && snapshot.conversation?.activeTurn !== undefined;
   const stopOwnerRef = useRef(activeThreadLease);
   stopOwnerRef.current = activeThreadLease;
-  const cancelStream = useCallback((context: {
-    readonly trigger: "pointer" | "keyboard";
-    readonly isTrusted: boolean;
-    readonly occurredAt: number;
-  }) => {
-    const turnId = activeThreadLease?.getSnapshot().activeTurn?.turnId;
-    if (turnId !== undefined) void activeThreadLease?.interrupt(turnId, {
-      source: "composer-stop",
-      ...context,
-    }).catch(() => {
-      if (stopOwnerRef.current !== activeThreadLease || activeThreadLease?.getSnapshot().activeTurn?.turnId !== turnId) return;
-      notices.error({ key: `stop:${snapshot.hostId}:${activeThreadId}:${turnId}`,
-        message: intl.formatMessage({ id: "chat.stop.failed", defaultMessage: "Could not stop the response. Try again." }) });
-    });
-  }, [activeThreadLease, notices, intl, snapshot.hostId, activeThreadId]);
-  const queueOperation = useCallback((action: string, id: string, operation: () => Promise<void>) => withQueueFailureFeedback(operation, (error) => {
-    recordQueueError({ action, hostId: snapshot.hostId, threadId: activeThreadId, queueId: id, ...queueFailureFields(error) });
-    notices.error({ key: `queue:${snapshot.hostId}:${activeThreadId}:${id}`,
-      message: intl.formatMessage({ id: "chat.queue.operationFailed", defaultMessage: "Could not change this queued message. Refresh the conversation and try again." }) });
-  }), [notices, intl, snapshot.hostId, activeThreadId]);
+  const cancelStream = useCallback(
+    (context: {
+      readonly trigger: "pointer" | "keyboard";
+      readonly isTrusted: boolean;
+      readonly occurredAt: number;
+    }) => {
+      const turnId = activeThreadLease?.getSnapshot().activeTurn?.turnId;
+      if (turnId !== undefined)
+        void activeThreadLease
+          ?.interrupt(turnId, {
+            source: "composer-stop",
+            ...context,
+          })
+          .catch(() => {
+            if (
+              stopOwnerRef.current !== activeThreadLease ||
+              activeThreadLease?.getSnapshot().activeTurn?.turnId !== turnId
+            )
+              return;
+            notices.error({
+              key: `stop:${snapshot.hostId}:${activeThreadId}:${turnId}`,
+              message: intl.formatMessage({
+                id: "chat.stop.failed",
+                defaultMessage: "Could not stop the response. Try again.",
+              }),
+            });
+          });
+    },
+    [activeThreadLease, notices, intl, snapshot.hostId, activeThreadId],
+  );
+  const queueOperation = useCallback(
+    (action: string, id: string, operation: () => Promise<void>) =>
+      withQueueFailureFeedback(operation, (error) => {
+        recordQueueError({
+          action,
+          hostId: snapshot.hostId,
+          threadId: activeThreadId,
+          queueId: id,
+          ...queueFailureFields(error),
+        });
+        notices.error({
+          key: `queue:${snapshot.hostId}:${activeThreadId}:${id}`,
+          message: intl.formatMessage({
+            id: "chat.queue.operationFailed",
+            defaultMessage: "Could not change this queued message. Refresh the conversation and try again.",
+          }),
+        });
+      }),
+    [notices, intl, snapshot.hostId, activeThreadId],
+  );
   const updateQueuedSubmission = useCallback(
     async (id: string, intent: SubmitIntent) => {
-      if (activeThreadLease === null)
-        throw new Error("No active Thread owns this queue");
+      if (activeThreadLease === null) throw new Error("No active Thread owns this queue");
       const { compileSubmitIntent } = await import("@opencraft/composer-appserver/compiler");
-      await activeThreadLease.updateQueuedSubmission(
-        id,
-        compileSubmitIntent(intent).input,
-      );
+      await activeThreadLease.updateQueuedSubmission(id, compileSubmitIntent(intent).input);
     },
     [activeThreadLease],
   );
   const deleteQueuedSubmission = useCallback(
     async (id: string) => {
       if (activeThreadLease === null) {
-        if (localOutbox && await localOutbox.remove(id)) return;
+        if (localOutbox && (await localOutbox.remove(id))) return;
         throw new Error("No active Thread owns this queue");
       }
       await activeThreadLease.deleteQueuedSubmission(id);
@@ -1019,31 +1375,27 @@ export function App({
   );
   const retryUnconfirmedSteer = useCallback(
     async (id: string, expectedTurnId: string) => {
-      if (activeThreadLease === null)
-        throw new Error("No active Thread owns this steering claim");
+      if (activeThreadLease === null) throw new Error("No active Thread owns this steering claim");
       await activeThreadLease.retryUnconfirmedSteer(id, asTurnId(expectedTurnId));
     },
     [activeThreadLease],
   );
   const reorderQueuedSubmissions = useCallback(
     async (ids: readonly string[]) => {
-      if (activeThreadLease === null)
-        throw new Error("No active Thread owns this queue");
+      if (activeThreadLease === null) throw new Error("No active Thread owns this queue");
       await activeThreadLease.reorderQueuedSubmissions(ids);
     },
     [activeThreadLease],
   );
   const steerQueuedSubmission = useCallback(
     async (id: string) => {
-      if (activeThreadLease === null)
-        throw new Error("No active Thread owns this queue");
+      if (activeThreadLease === null) throw new Error("No active Thread owns this queue");
       await activeThreadLease.steerQueuedSubmission(id);
     },
     [activeThreadLease],
   );
   const resumeQueuedSubmissions = useCallback(async () => {
-    if (activeThreadLease === null)
-      throw new Error("No active Thread owns this queue");
+    if (activeThreadLease === null) throw new Error("No active Thread owns this queue");
     await activeThreadLease.startQueuedSubmission();
   }, [activeThreadLease]);
   const mcpAppOwnerRef = useRef<ReturnType<typeof createMcpAppOwner> | null>(null);
@@ -1052,68 +1404,122 @@ export function App({
       intent: SubmitIntent,
       context: { readonly followUpAction: ComposerFollowUpAction | null },
     ): boolean | Promise<boolean> => {
-      if (intent.handoff) return hostCatalog.submit(intent).then(() => true, () => {
-        notices.error({ key: `agent-handoff:${intent.commandId}`, message: intl.formatMessage({ id: "chat.agentHandoff.failed", defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again." }) });
-        throw new Error(intl.formatMessage({ id: "chat.agentHandoff.failed", defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again." }));
-      });
+      if (intent.handoff)
+        return hostCatalog.submit(intent).then(
+          () => true,
+          () => {
+            notices.error({
+              key: `agent-handoff:${intent.commandId}`,
+              message: intl.formatMessage({
+                id: "chat.agentHandoff.failed",
+                defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again.",
+              }),
+            });
+            throw new Error(
+              intl.formatMessage({
+                id: "chat.agentHandoff.failed",
+                defaultMessage: "Could not continue with this Agent. Your draft is preserved. Try again.",
+              }),
+            );
+          },
+        );
       const sideChatSnapshot = activeThreadLease?.getSnapshot() ?? null;
       const sideChatCommand = runSideChatComposerCommand(intent, {
         key: sideChatSnapshot?.key ?? null,
         authoritative: snapshot.phase === "ready" && sideChatSnapshot?.authoritative === true,
-        action: sideChatAction, context: panelToolbarContext,
+        action: sideChatAction,
+        context: panelToolbarContext,
       });
       if (sideChatCommand !== null) return sideChatCommand;
-      if (activeThreadLease === null && localOutbox && intent.target.type !== "new-thread"
-        && intent.target.key.hostId === snapshot.hostId && intent.target.key.threadId === localThreadId) {
+      if (
+        activeThreadLease === null &&
+        localOutbox &&
+        intent.target.type !== "new-thread" &&
+        intent.target.key.hostId === snapshot.hostId &&
+        intent.target.key.threadId === localThreadId
+      ) {
         return localOutbox.admit(intent).then(() => true);
       }
       // Host connectivity gates command admission, never Draft editability.
       // Re-check at the semantic boundary as the status can change between a
       // rendered enabled button and its click handler.
-      const localQueueAdmission = intent.target.type !== "new-thread" && activeThreadLease !== null
-        && (snapshot.phase !== "ready" || activeThreadLease.getSnapshot().authoritative !== true
-          || activeThreadLease.getSnapshot().queuedSubmissions.some(item => item.local));
+      const localQueueAdmission =
+        intent.target.type !== "new-thread" &&
+        activeThreadLease !== null &&
+        (snapshot.phase !== "ready" ||
+          activeThreadLease.getSnapshot().authoritative !== true ||
+          activeThreadLease.getSnapshot().queuedSubmissions.some((item) => item.local));
       if (snapshot.phase !== "ready" && !localQueueAdmission) return false;
-      if (!localQueueAdmission && context.followUpAction !== null && runtime.resources.host.canRequest?.(
-        context.followUpAction === "queue" ? "thread/queue/add" : "turn/steer",
-      ) === false) return false;
+      if (
+        !localQueueAdmission &&
+        context.followUpAction !== null &&
+        runtime.resources.host.canRequest?.(context.followUpAction === "queue" ? "thread/queue/add" : "turn/steer") ===
+          false
+      )
+        return false;
       const currentConversation = activeThreadLease?.getSnapshot() ?? null;
-      const intentHostId = intent.target.type === "new-thread"
-        ? intent.target.execution.hostId
-        : intent.target.key.hostId;
+      const intentHostId =
+        intent.target.type === "new-thread" ? intent.target.execution.hostId : intent.target.key.hostId;
       const hostCommandPort = runtime.resources.composerCommands;
-      const hostAction = hostCommandPort === undefined ? null
-        : findStandaloneHostComposerAction(intent, hostCommandPort.commands);
+      const hostAction =
+        hostCommandPort === undefined ? null : findStandaloneHostComposerAction(intent, hostCommandPort.commands);
       if (!localQueueAdmission && intentHostId === snapshot.hostId && hostAction !== null && hostCommandPort) {
         const threadId = intent.target.type === "new-thread" ? null : intent.target.key.threadId;
-        const expectedTurnId = threadId !== null
-          && currentConversation?.key.hostId === intentHostId
-          && currentConversation.key.threadId === threadId
-          ? currentConversation.activeTurn?.turnId ?? null
-          : null;
+        const expectedTurnId =
+          threadId !== null &&
+          currentConversation?.key.hostId === intentHostId &&
+          currentConversation.key.threadId === threadId
+            ? (currentConversation.activeTurn?.turnId ?? null)
+            : null;
         const invoking = hostCommandPort.invoke(hostAction.name, {
           threadId,
           expectedTurnId,
         });
         if (context.followUpAction !== null) {
-          void invoking.catch(error => {
+          void invoking.catch((error) => {
             const target = composerController.getSnapshot().draft.target;
-            if (target.type === "existing-thread" && target.key.hostId === intentHostId && target.key.threadId === threadId) {
-              composerController.dispatch({ type: "set-lifecycle", phase: "failed", error: error instanceof Error ? error.message : String(error) });
+            if (
+              target.type === "existing-thread" &&
+              target.key.hostId === intentHostId &&
+              target.key.threadId === threadId
+            ) {
+              composerController.dispatch({
+                type: "set-lifecycle",
+                phase: "failed",
+                error: error instanceof Error ? error.message : String(error),
+              });
             }
           });
         }
         return invoking.then(() => true);
       }
       let submittedIntent = intent;
-      if(intent.target.type==='new-thread'&&intent.target.execution.hostId===serverSpaces.hostId) {
-        const spaceId=intent.target.execution.collaborationSpaceId??'myself';
-        const supported=runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.['opencraft/server-spaces'];
-        if((!supported&&spaceId!=='myself')||(serverSpaces.directory&&!serverSpaces.directory.spaces.some(space=>space.id===spaceId))){
-          composerController.dispatch({type:'set-lifecycle',phase:'failed',error:intl.formatMessage({id:'serverSpaces.scopeUnavailable',defaultMessage:'This Server is unavailable. Start a new conversation in an available Server.'})});return false;
+      if (intent.target.type === "new-thread" && intent.target.execution.hostId === serverSpaces.hostId) {
+        const spaceId = intent.target.execution.collaborationSpaceId ?? "myself";
+        const supported =
+          runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/server-spaces"];
+        if (
+          (!supported && spaceId !== "myself") ||
+          (serverSpaces.directory && !serverSpaces.directory.spaces.some((space) => space.id === spaceId))
+        ) {
+          composerController.dispatch({
+            type: "set-lifecycle",
+            phase: "failed",
+            error: intl.formatMessage({
+              id: "serverSpaces.scopeUnavailable",
+              defaultMessage: "This Server is unavailable. Start a new conversation in an available Server.",
+            }),
+          });
+          return false;
         }
-        const {collaborationSpaceId:ignored,...placement}=intent.target.execution;
-        submittedIntent={...intent,target:{...intent.target,execution:{...placement,...(supported?{collaborationSpaceId:spaceId}:{})}}};
+        const { collaborationSpaceId: ignored, ...placement } = intent.target.execution;
+        submittedIntent = {
+          ...intent,
+          target: {
+            ...intent.target,
+            execution: { ...placement, ...(supported ? { collaborationSpaceId: spaceId } : {}) },
+          },
+        };
       }
       let submittedPlacement: LatestTurnPlacementSnapshot | null = null;
       const followsActiveTurn =
@@ -1128,10 +1534,7 @@ export function App({
           context.followUpAction!,
         );
       }
-      if (
-        intent.target.type !== "new-thread"
-        && (!followsActiveTurn || context.followUpAction === "steer")
-      ) {
+      if (intent.target.type !== "new-thread" && (!followsActiveTurn || context.followUpAction === "steer")) {
         // The response may finish between the render and the click. In that
         // race the user's message becomes a normal next turn instead of being
         // rejected or lost. Steering also creates a new latest Activity inside
@@ -1140,8 +1543,11 @@ export function App({
       }
       let submission: ReturnType<typeof hostCatalog.submit>;
       try {
-        if (intent.target.type !== "new-thread" && intent.target.key.hostId === snapshot.hostId
-          && intent.target.key.threadId === activeThreadLease?.getSnapshot().key.threadId) {
+        if (
+          intent.target.type !== "new-thread" &&
+          intent.target.key.hostId === snapshot.hostId &&
+          intent.target.key.threadId === activeThreadLease?.getSnapshot().key.threadId
+        ) {
           submittedIntent = mcpAppOwnerRef.current?.augment(submittedIntent) ?? submittedIntent;
         }
         submission = hostCatalog.submit(submittedIntent);
@@ -1151,8 +1557,9 @@ export function App({
       }
 
       if (intent.target.type !== "new-thread") {
-        return completeConversationComposerSubmission(submittedIntent, submission,
-          () => clearLatestTurnPlacement(submittedPlacement));
+        return completeConversationComposerSubmission(submittedIntent, submission, () =>
+          clearLatestTurnPlacement(submittedPlacement),
+        );
       }
 
       // The Conversation Scope synchronously owns the immutable first Turn,
@@ -1165,12 +1572,14 @@ export function App({
       return true;
     },
     [
-      notices, intl,
+      notices,
+      intl,
       conversationScopes,
       sideChatAction,
       panelToolbarContext,
       hostCatalog,
-      serverSpaces.hostId,serverSpaces.directory,
+      serverSpaces.hostId,
+      serverSpaces.directory,
       queryClient,
       activeThreadLease,
       localThreadId,
@@ -1187,148 +1596,198 @@ export function App({
   appSendMessageRef.current = sendMessage;
   const mcpAppsAuthoritative = snapshot.conversation?.authoritative === true;
   const mcpAppOwner = useMemo(() => {
-    if (activeThreadId === null || activeThreadLease === null || showingDisplayCache || !mcpAppsAuthoritative || snapshot.phase !== "ready") return null;
+    if (
+      activeThreadId === null ||
+      activeThreadLease === null ||
+      showingDisplayCache ||
+      !mcpAppsAuthoritative ||
+      snapshot.phase !== "ready"
+    )
+      return null;
     const generation = runtime.resources.host.getConnectionGeneration?.() ?? 0;
     const assertCurrent = () => {
       const current = activeThreadLease.getSnapshot();
-      if (mcpAppOwnerRef.current !== owner || runtime.getSnapshot().phase !== "ready" || !current.authoritative
-        || current.key.hostId !== snapshot.hostId || current.key.threadId !== activeThreadId
-        || (runtime.resources.host.getConnectionGeneration?.() ?? 0) !== generation) throw new Error("MCP App owner is no longer current");
+      if (
+        mcpAppOwnerRef.current !== owner ||
+        runtime.getSnapshot().phase !== "ready" ||
+        !current.authoritative ||
+        current.key.hostId !== snapshot.hostId ||
+        current.key.threadId !== activeThreadId ||
+        (runtime.resources.host.getConnectionGeneration?.() ?? 0) !== generation
+      )
+        throw new Error("MCP App owner is no longer current");
     };
     const owner: ReturnType<typeof createMcpAppOwner> = createMcpAppOwner({
-      key: `${snapshot.hostId}:${activeThreadId}:${generation}`, threadId: activeThreadId, assertCurrent,
+      key: `${snapshot.hostId}:${activeThreadId}:${generation}`,
+      threadId: activeThreadId,
+      assertCurrent,
       widgetStateStore: { scope: JSON.stringify([snapshot.hostId, activeThreadId]), entries: mcpAppWidgetStates },
       request: (method, params) => runtime.resources.protocol.request(method, params),
-      openLink: url => { window.open(url, "_blank", "noopener,noreferrer"); },
-      sendMessage: async text => {
+      openLink: (url) => {
+        window.open(url, "_blank", "noopener,noreferrer");
+      },
+      sendMessage: async (text) => {
         assertCurrent();
         const draft = composerController.getSnapshot().draft;
         const id = createClientId();
-        const intent: SubmitIntent = { commandId: id, clientMessageId: id,
+        const intent: SubmitIntent = {
+          commandId: id,
+          clientMessageId: id,
           target: { type: "existing-thread", key: activeThreadLease.getSnapshot().key },
           document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text }] }] },
-          attachments: [], context: [], selections: draft.selections, options: { autoContext: false }, createdAt: Date.now() };
-        const accepted = await appSendMessageRef.current(intent, { followUpAction: activeThreadLease.getSnapshot().activeTurn ? "steer" : null });
+          attachments: [],
+          context: [],
+          selections: draft.selections,
+          options: { autoContext: false },
+          createdAt: Date.now(),
+        };
+        const accepted = await appSendMessageRef.current(intent, {
+          followUpAction: activeThreadLease.getSnapshot().activeTurn ? "steer" : null,
+        });
         if (!accepted) throw new Error("App message was not admitted");
       },
     });
     return owner;
-  }, [activeThreadId, activeThreadLease, showingDisplayCache, mcpAppsAuthoritative, snapshot.phase, snapshot.hostId, runtime, composerController, mcpAppWidgetStates]);
+  }, [
+    activeThreadId,
+    activeThreadLease,
+    showingDisplayCache,
+    mcpAppsAuthoritative,
+    snapshot.phase,
+    snapshot.hostId,
+    runtime,
+    composerController,
+    mcpAppWidgetStates,
+  ]);
   mcpAppOwnerRef.current = mcpAppOwner;
-  const answerAsyncQuestion = useCallback(async (question: AsyncQuestion, answer: string) => {
-    if (snapshot.phase !== "ready" || activeThreadLease === null) throw new Error("Reconnect to answer this question");
-    const conversation = activeThreadLease.getSnapshot();
-    if (!conversation.authoritative || deriveAsyncQuestionStates(conversation.timeline).get(question.id) !== "pending") {
-      throw new Error("This question is no longer available");
-    }
-    const currentDraft = composerController.getSnapshot().draft;
-    if (currentDraft.target.type !== "existing-thread"
-      || currentDraft.target.key.hostId !== conversation.key.hostId
-      || currentDraft.target.key.threadId !== conversation.key.threadId) {
-      throw new Error("The composer is attached to a different conversation");
-    }
-    const reply = renderAsyncQuestionReply(question, answer);
-    const baseIntent: SubmitIntent = {
-      commandId: createClientId(),
-      clientMessageId: createClientId(),
-      target: { type: "existing-thread", key: conversation.key },
-      document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: reply }] }] },
-      attachments: [],
-      context: [],
-      selections: currentDraft.selections,
-      options: currentDraft.options,
-      createdAt: Date.now(),
-    };
-    const intent = conversation.activeTurn === null ? baseIntent : retargetSubmitIntentForFollowUp(
-      baseIntent, conversation.key, conversation.activeTurn.turnId, "steer",
-    );
-    await hostCatalog.submit(intent);
-  }, [snapshot.phase, activeThreadLease, composerController, hostCatalog]);
-  const queuedAsyncQuestionIds = useMemo(() => (snapshot.conversation?.queuedSubmissions ?? []).flatMap((submission) => {
-    if (submission.input.length !== 1) return [];
-    const input = submission.input[0];
-    return input?.type === "text" ? (parseAsyncQuestionReply(input.text)?.map((reply) => reply.questionItemId) ?? []) : [];
-  }), [snapshot.conversation?.queuedSubmissions]);
+  const answerAsyncQuestion = useCallback(
+    async (question: AsyncQuestion, answer: string) => {
+      if (snapshot.phase !== "ready" || activeThreadLease === null)
+        throw new Error("Reconnect to answer this question");
+      const conversation = activeThreadLease.getSnapshot();
+      if (
+        !conversation.authoritative ||
+        deriveAsyncQuestionStates(conversation.timeline).get(question.id) !== "pending"
+      ) {
+        throw new Error("This question is no longer available");
+      }
+      const currentDraft = composerController.getSnapshot().draft;
+      if (
+        currentDraft.target.type !== "existing-thread" ||
+        currentDraft.target.key.hostId !== conversation.key.hostId ||
+        currentDraft.target.key.threadId !== conversation.key.threadId
+      ) {
+        throw new Error("The composer is attached to a different conversation");
+      }
+      const reply = renderAsyncQuestionReply(question, answer);
+      const baseIntent: SubmitIntent = {
+        commandId: createClientId(),
+        clientMessageId: createClientId(),
+        target: { type: "existing-thread", key: conversation.key },
+        document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: reply }] }] },
+        attachments: [],
+        context: [],
+        selections: currentDraft.selections,
+        options: currentDraft.options,
+        createdAt: Date.now(),
+      };
+      const intent =
+        conversation.activeTurn === null
+          ? baseIntent
+          : retargetSubmitIntentForFollowUp(baseIntent, conversation.key, conversation.activeTurn.turnId, "steer");
+      await hostCatalog.submit(intent);
+    },
+    [snapshot.phase, activeThreadLease, composerController, hostCatalog],
+  );
+  const queuedAsyncQuestionIds = useMemo(
+    () =>
+      (snapshot.conversation?.queuedSubmissions ?? []).flatMap((submission) => {
+        if (submission.input.length !== 1) return [];
+        const input = submission.input[0];
+        return input?.type === "text"
+          ? (parseAsyncQuestionReply(input.text)?.map((reply) => reply.questionItemId) ?? [])
+          : [];
+      }),
+    [snapshot.conversation?.queuedSubmissions],
+  );
   const respondToInteraction = useCallback(
     async (requestId: string, action: ConversationInteractionAction) => {
       const interaction = activeThreadLease
         ?.getSnapshot()
-        .pendingInteractions.find(
-          (candidate) => candidate.requestId === requestId,
-        );
-      if (interaction === undefined)
-        throw new Error("This request is no longer pending");
-      if (activeThreadLease === null)
-        throw new Error("No active Thread is available");
-      await activeThreadLease.respond(
-        createInteractionResponse(interaction, action),
-      );
+        .pendingInteractions.find((candidate) => candidate.requestId === requestId);
+      if (interaction === undefined) throw new Error("This request is no longer pending");
+      if (activeThreadLease === null) throw new Error("No active Thread is available");
+      await activeThreadLease.respond(createInteractionResponse(interaction, action));
     },
     [activeThreadLease],
   );
-  const navigateToHomeForSpace = useCallback((collaborationSpaceId:string) => {
-    const activeProtocolThread = catalog.protocolThreads.find(
-      (thread) => thread.id === activeThreadLease?.threadId,
-    );
-    const activeProject =
-      activeProtocolThread?.projectId == null
-        ? undefined
-        : projectCatalog.projects.find(
-            (project) => project.id === activeProtocolThread.projectId,
-          );
-    const persistedProjectId = readLocalPreference(
-      selectedProjectStorageKey(snapshot.hostId),
-    );
-    const persistedProject =
-      persistedProjectId === null
-        ? undefined
-        : projectCatalog.projects.find(
-            (project) => project.id === persistedProjectId,
-          );
-    const project =
-      activeProject ?? persistedProject ?? projectCatalog.projects[0];
-    const cwd = project?.roots[0]?.path ?? null;
-    const workspace =
-      project === undefined || cwd === null
-        ? { cwd: null, runtimeWorkspaceRoots: [] as readonly string[] }
-        : {
-            cwd,
-            runtimeWorkspaceRoots: project.roots.map((root) => root.path),
-            projectId: project.id,
-          };
-    lastDraftWorkspaceRef.current = workspace;
-    const hostId = asHostId(hostCatalog.selectedHostId);
-    try {
-      hostCatalog.navigateToHome({
-        execution: { hostId, workspace,collaborationSpaceId },
-        entrypoint: "new-chat",
-      });
-    } catch (error) {
-      console.error("Failed to navigate to New chat Home", error);
-    }
-  }, [
-    catalog.protocolThreads,
-    conversationScopes,
-    hostCatalog,
-    projectCatalog.projects,
-    runtime,
-    setSidebarOpen,
-    snapshot.hostId,
-  ]);
+  const navigateToHomeForSpace = useCallback(
+    (collaborationSpaceId: string) => {
+      const activeProtocolThread = catalog.protocolThreads.find((thread) => thread.id === activeThreadLease?.threadId);
+      const activeProject =
+        activeProtocolThread?.projectId == null
+          ? undefined
+          : projectCatalog.projects.find((project) => project.id === activeProtocolThread.projectId);
+      const persistedProjectId = readLocalPreference(selectedProjectStorageKey(snapshot.hostId));
+      const persistedProject =
+        persistedProjectId === null
+          ? undefined
+          : projectCatalog.projects.find((project) => project.id === persistedProjectId);
+      const project = activeProject ?? persistedProject ?? projectCatalog.projects[0];
+      const cwd = project?.roots[0]?.path ?? null;
+      const workspace =
+        project === undefined || cwd === null
+          ? { cwd: null, runtimeWorkspaceRoots: [] as readonly string[] }
+          : {
+              cwd,
+              runtimeWorkspaceRoots: project.roots.map((root) => root.path),
+              projectId: project.id,
+            };
+      lastDraftWorkspaceRef.current = workspace;
+      const hostId = asHostId(hostCatalog.selectedHostId);
+      try {
+        hostCatalog.navigateToHome({
+          execution: { hostId, workspace, collaborationSpaceId },
+          entrypoint: "new-chat",
+        });
+      } catch (error) {
+        console.error("Failed to navigate to New chat Home", error);
+      }
+    },
+    [
+      catalog.protocolThreads,
+      conversationScopes,
+      hostCatalog,
+      projectCatalog.projects,
+      runtime,
+      setSidebarOpen,
+      snapshot.hostId,
+    ],
+  );
 
-  const navigateToHome=useCallback(()=>navigateToHomeForSpace(serverSpaces.unavailable?'myself':serverSpaces.selected),[navigateToHomeForSpace,serverSpaces.selected,serverSpaces.unavailable]);
-  const serverViewKey=conversationRouteOpen?JSON.stringify([serverSpaces.ownerKey,draft?.id??activeThreadId]):null;
-  useEffect(()=>{
-    if(!serverViewKey||serverSpaces.unavailable)return;
-    let active=true;const expected=serverSpaces.selectionGeneration();
-    void serverSpaces.refresh().then(result=>{
-      if(!active||result.isError||!result.data)return;
-      const scope=draft?draft.target.execution.collaborationSpaceId??'myself'
-        :result.data.assignments.find(row=>row.threadId===activeThreadId)?.spaceId??'myself';
-      if(result.data.spaces.some(space=>space.id===scope))void serverSpaces.select(scope,expected).catch(()=>{});
+  const navigateToHome = useCallback(
+    () => navigateToHomeForSpace(serverSpaces.unavailable ? "myself" : serverSpaces.selected),
+    [navigateToHomeForSpace, serverSpaces.selected, serverSpaces.unavailable],
+  );
+  const serverViewKey = conversationRouteOpen
+    ? JSON.stringify([serverSpaces.ownerKey, draft?.id ?? activeThreadId])
+    : null;
+  useEffect(() => {
+    if (!serverViewKey || serverSpaces.unavailable) return;
+    let active = true;
+    const expected = serverSpaces.selectionGeneration();
+    void serverSpaces.refresh().then((result) => {
+      if (!active || result.isError || !result.data) return;
+      const scope = draft
+        ? (draft.target.execution.collaborationSpaceId ?? "myself")
+        : (result.data.assignments.find((row) => row.threadId === activeThreadId)?.spaceId ?? "myself");
+      if (result.data.spaces.some((space) => space.id === scope))
+        void serverSpaces.select(scope, expected).catch(() => {});
     });
-    return()=>{active=false;};
-  },[serverViewKey,serverSpaces.unavailable]);
+    return () => {
+      active = false;
+    };
+  }, [serverViewKey, serverSpaces.unavailable]);
 
   const openBrowserTab = useCallback(
     (initialUrl?: string, background = false) => {
@@ -1370,24 +1829,52 @@ export function App({
           ?.scrollIntoView({ behavior: "smooth", block: "center" });
         return;
       }
-      panelRuntime.panels.open(panelOwnerId, "resource", { resource: target });
+      panelRuntime.panels.open(panelOwnerId, "resource", { resource: target, workspaceFileThreadId });
     },
-    [openBrowserTab, panelRuntime.panels, panelOwnerId],
+    [openBrowserTab, panelRuntime.panels, panelOwnerId, workspaceFileThreadId],
   );
-  const loadItemDetails = useStableEvent((ids: readonly string[], signal: AbortSignal) => activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve());
-  const loadOlderConversation = useStableEvent(
-    () => activeThreadLease?.loadOlder() ?? Promise.resolve(),
+  const loadItemDetails = useStableEvent(
+    (ids: readonly string[], signal: AbortSignal) =>
+      activeThreadLease?.loadItemDetails(ids, signal) ?? Promise.resolve(),
   );
+  const loadOlderConversation = useStableEvent(() => activeThreadLease?.loadOlder() ?? Promise.resolve());
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (canHandleWorkbenchShortcut(event)) {
-        const matches = (command: Parameters<typeof matchesWorkbenchShortcut>[1]) => matchesWorkbenchShortcut(event, command, navigator.platform);
-        if (matches("newChat")) { event.preventDefault(); navigateToHome(); return; }
-        if (presentation.shellNavigation && matches("settings")) { event.preventDefault(); openSettingsFromConversation(); return; }
-        if (presentation.rightPanel && !embedded?.panelHost && conversationSurfaceVisible && (embedded === undefined || (draft === null && activeThreadId !== null)) && matches("panel")) { event.preventDefault(); toggleRightPanel(); return; }
-        if (conversationRouteOpen && matches("composer")) { event.preventDefault(); composerController.focus(); return; }
-        if (presentation.shellNavigation && matches("help")) { event.preventDefault(); setShortcutHelpOpen(true); return; }
+        const matches = (command: Parameters<typeof matchesWorkbenchShortcut>[1]) =>
+          matchesWorkbenchShortcut(event, command, navigator.platform);
+        if (matches("newChat")) {
+          event.preventDefault();
+          navigateToHome();
+          return;
+        }
+        if (presentation.shellNavigation && matches("settings")) {
+          event.preventDefault();
+          openSettingsFromConversation();
+          return;
+        }
+        if (
+          presentation.rightPanel &&
+          !embedded?.panelHost &&
+          conversationSurfaceVisible &&
+          (embedded === undefined || (draft === null && activeThreadId !== null)) &&
+          matches("panel")
+        ) {
+          event.preventDefault();
+          toggleRightPanel();
+          return;
+        }
+        if (conversationRouteOpen && matches("composer")) {
+          event.preventDefault();
+          composerController.focus();
+          return;
+        }
+        if (presentation.shellNavigation && matches("help")) {
+          event.preventDefault();
+          setShortcutHelpOpen(true);
+          return;
+        }
       }
       // transfer to Composer when no editable surface, menu or dialog owns
       // the event; browser shortcuts and IME composition remain untouched.
@@ -1398,22 +1885,39 @@ export function App({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [composerController, navigateToHome, toggleRightPanel, presentation.shellNavigation, presentation.rightPanel, conversationRouteOpen, conversationSurfaceVisible, openSettingsFromConversation, embedded, draft, activeThreadId]);
-
+  }, [
+    composerController,
+    navigateToHome,
+    toggleRightPanel,
+    presentation.shellNavigation,
+    presentation.rightPanel,
+    conversationRouteOpen,
+    conversationSurfaceVisible,
+    openSettingsFromConversation,
+    embedded,
+    draft,
+    activeThreadId,
+  ]);
 
   const collapseSidebar = useCallback(() => setSidebarOpen(false), []);
   const expandSidebar = useCallback(() => setSidebarOpen(true), []);
 
-  const activeProtocolThread = catalog.protocolThreads.find(
-    (thread) => thread.id === activeThreadId,
-  );
+  const activeProtocolThread = catalog.protocolThreads.find((thread) => thread.id === activeThreadId);
   const queueImageCwd = snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? null;
-  const loadQueuedImage = useMemo(() => createQueuedImageLoader(loadMediaSource, {
-    conversationId: activeThreadId, hostId: snapshot.hostId, cwd: queueImageCwd,
-  }), [loadMediaSource, activeThreadId, snapshot.hostId, queueImageCwd]);
-  const explicitSetupModel = useSyncExternalStore(composerController.subscribe,
+  const loadQueuedImage = useMemo(
+    () =>
+      createQueuedImageLoader(loadMediaSource, {
+        conversationId: activeThreadId,
+        hostId: snapshot.hostId,
+        cwd: queueImageCwd,
+      }),
+    [loadMediaSource, activeThreadId, snapshot.hostId, queueImageCwd],
+  );
+  const explicitSetupModel = useSyncExternalStore(
+    composerController.subscribe,
     () => composerController.getSnapshot().draft.selections.model,
-    () => composerController.getSnapshot().draft.selections.model);
+    () => composerController.getSnapshot().draft.selections.model,
+  );
   const composerCatalog = useComposerCatalog(
     snapshot.conversation?.execution.cwd ??
       activeProtocolThread?.cwd ??
@@ -1426,36 +1930,63 @@ export function App({
   );
   const setupModelPage = resolveHostModelSettingsPage(
     settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
-    snapshot.hostId, extensionPlatform, internalDeveloperMode,
+    snapshot.hostId,
+    extensionPlatform,
+    internalDeveloperMode,
   );
   const draftConnectionObservation = useRef({ hostId: snapshot.hostId, wasReady: false });
-  if (draftConnectionObservation.current.hostId !== snapshot.hostId) draftConnectionObservation.current = { hostId: snapshot.hostId, wasReady: false };
+  if (draftConnectionObservation.current.hostId !== snapshot.hostId)
+    draftConnectionObservation.current = { hostId: snapshot.hostId, wasReady: false };
   useEffect(() => {
     if (activeHostConnectionPhase === "ready") draftConnectionObservation.current.wasReady = true;
   }, [activeHostConnectionPhase, snapshot.hostId]);
   const initialConnectionFailed = snapshot.error !== null && !draftConnectionObservation.current.wasReady;
-  const supportsModelSetup = !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
-  const setupSelectedModel = explicitSetupModel ?? composerCatalog.newThreadDefaults?.model
-    ?? composerCatalog.models.find(model => model.isDefault)?.model ?? null;
+  const supportsModelSetup =
+    !embedded && presentation.runtimeHostConfiguration && setupModelPage?.modelReadiness === true;
+  const setupSelectedModel =
+    explicitSetupModel ??
+    composerCatalog.newThreadDefaults?.model ??
+    composerCatalog.models.find((model) => model.isDefault)?.model ??
+    null;
   const modelReadiness = useQuery({
     queryKey: [...composerCapabilitiesKey(snapshot.hostId), "setup", snapshot.connectionGeneration, setupSelectedModel],
     enabled: draft !== null && supportsModelSetup && activeHostConnectionPhase === "ready",
-    retry: false, staleTime: 60_000,
+    retry: false,
+    staleTime: 60_000,
     queryFn: async ({ signal }) => {
-      const ready = await readHostModelReadiness((hostId, method, params) => hostCatalog.agentRuntimes.request(hostId, method, params), snapshot.hostId, setupSelectedModel);
+      const ready = await readHostModelReadiness(
+        (hostId, method, params) => hostCatalog.agentRuntimes.request(hostId, method, params),
+        snapshot.hostId,
+        setupSelectedModel,
+      );
       signal.throwIfAborted();
       return ready;
     },
   });
-  const noUsableModels = (composerCatalog.modelsReady && composerCatalog.models.length === 0)
-    || (supportsModelSetup && modelReadiness.data === false);
-  const draftSetupKind = !embedded && presentation.runtimeHostConfiguration && draft !== null
-    ? (activeHostConnectionPhase === "error" || (activeHostConnectionPhase !== "ready" && initialConnectionFailed)) ? "connection" as const
-      : activeHostConnectionPhase === "ready" && ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error) ? "catalog-error" as const
-        : activeHostConnectionPhase === "ready" && noUsableModels && !composerCatalog.modelError && !modelReadiness.error ? "models" as const : null
-    : null;
+  const noUsableModels =
+    (composerCatalog.modelsReady && composerCatalog.models.length === 0) ||
+    (supportsModelSetup && modelReadiness.data === false);
+  const draftSetupKind =
+    !embedded && presentation.runtimeHostConfiguration && draft !== null
+      ? activeHostConnectionPhase === "error" || (activeHostConnectionPhase !== "ready" && initialConnectionFailed)
+        ? ("connection" as const)
+        : activeHostConnectionPhase === "ready" &&
+            ((composerCatalog.modelError && composerCatalog.models.length === 0) || modelReadiness.error)
+          ? ("catalog-error" as const)
+          : activeHostConnectionPhase === "ready" &&
+              noUsableModels &&
+              !composerCatalog.modelError &&
+              !modelReadiness.error
+            ? ("models" as const)
+            : null
+      : null;
   const onboardingFinishEpoch = useRef(0);
-  useEffect(() => () => { onboardingFinishEpoch.current += 1; }, []);
+  useEffect(
+    () => () => {
+      onboardingFinishEpoch.current += 1;
+    },
+    [],
+  );
   const [onboardingOverlay, setOnboardingOverlay] = useState<"gate" | "sheet" | "history" | null>(null);
   const finishOnboarding = async (modelId?: string) => {
     const epoch = ++onboardingFinishEpoch.current;
@@ -1463,19 +1994,40 @@ export function App({
       const revision = hostCatalog.navigation.getSnapshot().revision;
       const account = hostCatalog.threadAttention.getScope();
       const display = hostCatalog.displayContinuity.getScope();
-      const latest = await queryClient.fetchQuery({ ...composerCapabilitiesOptions(snapshot.hostId, null, runtime.resources.composerCatalog), staleTime: 0 });
+      const latest = await queryClient.fetchQuery({
+        ...composerCapabilitiesOptions(snapshot.hostId, null, runtime.resources.composerCatalog),
+        staleTime: 0,
+      });
       if (epoch !== onboardingFinishEpoch.current) return;
-      if (revision !== hostCatalog.navigation.getSnapshot().revision || account !== hostCatalog.threadAttention.getScope()
-        || display !== hostCatalog.displayContinuity.getScope()) throw new Error("Onboarding selection scope changed");
-      if (!latest.models.some(model => model.id === modelId || model.model === modelId)) throw new Error("Selected agent model is unavailable");
+      if (
+        revision !== hostCatalog.navigation.getSnapshot().revision ||
+        account !== hostCatalog.threadAttention.getScope() ||
+        display !== hostCatalog.displayContinuity.getScope()
+      )
+        throw new Error("Onboarding selection scope changed");
+      if (!latest.models.some((model) => model.id === modelId || model.model === modelId))
+        throw new Error("Selected agent model is unavailable");
     }
     if (modelId && draft === null) {
-      hostCatalog.navigateToHome({ execution: { collaborationSpaceId:serverSpaces.selected,hostId: asHostId(snapshot.hostId), workspace: { cwd: activeHost.workspaceBrowseRoots[0] ?? null, runtimeWorkspaceRoots: activeHost.workspaceBrowseRoots } }, entrypoint: "new-chat" });
+      hostCatalog.navigateToHome({
+        execution: {
+          collaborationSpaceId: serverSpaces.selected,
+          hostId: asHostId(snapshot.hostId),
+          workspace: {
+            cwd: activeHost.workspaceBrowseRoots[0] ?? null,
+            runtimeWorkspaceRoots: activeHost.workspaceBrowseRoots,
+          },
+        },
+        entrypoint: "new-chat",
+      });
       await hostCatalog.selectHost(snapshot.hostId, { model: modelId, effort: null, serviceTier: null });
       if (epoch !== onboardingFinishEpoch.current) return;
     }
-    try { localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString()); }
-    catch { /* The gate can still close when storage is unavailable. */ }
+    try {
+      localStorage.setItem("opencraft.onboarding.completedAt", new Date().toISOString());
+    } catch {
+      /* The gate can still close when storage is unavailable. */
+    }
     const remembered = onboardingNewThreadSelection(modelId);
     if (remembered) composerCatalog.rememberModelDefaults?.(remembered);
     if (modelId && draft !== null) composerController.dispatch({ type: "set-selections", patch: { model: modelId } });
@@ -1484,31 +2036,50 @@ export function App({
   useEffect(() => {
     const replay = (event: Event) => {
       onboardingFinishEpoch.current += 1;
-      const presentation = event instanceof CustomEvent && event.detail?.intent === "history" ? "history" : event instanceof CustomEvent && event.detail?.presentation === "sheet" ? "sheet" : "gate";
+      const presentation =
+        event instanceof CustomEvent && event.detail?.intent === "history"
+          ? "history"
+          : event instanceof CustomEvent && event.detail?.presentation === "sheet"
+            ? "sheet"
+            : "gate";
       setOnboardingOverlay(presentation);
     };
     window.addEventListener("opencraft:replay-agent-onboarding", replay);
     return () => window.removeEventListener("opencraft:replay-agent-onboarding", replay);
   }, []);
-  const visibleOnboardingOverlay = recoveryAccessFailure === null && (onboardingOverlay === "sheet" || onboardingOverlay === "history" || conversationRouteOpen) ? onboardingOverlay : null;
-  const draftSetupNotice = draftSetupKind === null || draftSetupKind === "models" || visibleOnboardingOverlay !== null ? undefined : <DraftSetupNotice
-    kind={draftSetupKind} hostName={activeHost.label}
-    onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
-    onConnectionSettings={() => openSettingsFromConversation("machines")}
-    onConnectAgents={() => window.dispatchEvent(new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "gate" } }))}
-    onRetry={() => {
-      if (draftSetupKind === "connection") void runtime.reconnect().catch(() => undefined);
-      else { composerCatalog.retryModels(); void modelReadiness.refetch(); }
-    }}
-  />;
+  const visibleOnboardingOverlay =
+    recoveryAccessFailure === null &&
+    (onboardingOverlay === "sheet" || onboardingOverlay === "history" || conversationRouteOpen)
+      ? onboardingOverlay
+      : null;
+  const draftSetupNotice =
+    draftSetupKind === null || draftSetupKind === "models" || visibleOnboardingOverlay !== null ? undefined : (
+      <DraftSetupNotice
+        kind={draftSetupKind}
+        hostName={activeHost.label}
+        onConfigure={setupModelPage ? () => openSettingsFromConversation(setupModelPage.id) : undefined}
+        onConnectionSettings={() => openSettingsFromConversation("machines")}
+        onConnectAgents={() =>
+          window.dispatchEvent(
+            new CustomEvent("opencraft:replay-agent-onboarding", { detail: { presentation: "gate" } }),
+          )
+        }
+        onRetry={() => {
+          if (draftSetupKind === "connection") void runtime.reconnect().catch(() => undefined);
+          else {
+            composerCatalog.retryModels();
+            void modelReadiness.refetch();
+          }
+        }}
+      />
+    );
   const composerWorkspaceRoots = useMemo<readonly string[]>(() => {
     if (draft !== null) {
       return draft.target.execution.workspace.runtimeWorkspaceRoots;
     }
     const roots = snapshot.conversation?.execution.runtimeWorkspaceRoots ?? [];
     if (roots.length > 0) return roots;
-    const cwd =
-      snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd;
+    const cwd = snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd;
     return cwd == null ? [] : [cwd];
   }, [
     activeProtocolThread?.cwd,
@@ -1516,108 +2087,263 @@ export function App({
     snapshot.conversation?.execution.runtimeWorkspaceRoots,
     draft,
   ]);
-  const composerSuggestionCatalog = useAppServerComposerCatalog(
-    composerWorkspaceRoots,
-  );
+  const composerSuggestionCatalog = useAppServerComposerCatalog(composerWorkspaceRoots);
   const agentAvailability = useAgentAvailability();
-  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-access"] as { agentHandoff?: boolean } | undefined;
-  const executionEngines = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/execution-engines"] as { defaultEngine?: string; providers?: readonly { id: string; threadPrefix?: string; modelPrefix?: string }[] } | undefined;
-  const conversationAgent = activeThreadId === null ? null : executionEngines?.providers?.find(engine =>
-    (engine.threadPrefix && activeThreadId.startsWith(engine.threadPrefix)) || (engine.modelPrefix && activeThreadId.startsWith(engine.modelPrefix)))?.id
-    ?? [...composerCatalog.models, ...composerCatalog.displayModels, ...engineCatalog.groups.flatMap(group => group.hostId === snapshot.hostId ? group.models : [])].find(model => model.id === snapshot.conversation?.execution.model || model.model === snapshot.conversation?.execution.model)?.agentId
-    ?? executionEngines?.defaultEngine ?? null;
-  const canContinueWithAgent = !embedded && draft === null && conversationAgent !== null
-    && continuationCapability?.agentHandoff === true && presentation.executionSelection !== "fixed";
-  const filterNewAgents = !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
+  const continuationCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[
+    "opencraft/thread-access"
+  ] as { agentHandoff?: boolean } | undefined;
+  const executionEngines = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[
+    "opencraft/execution-engines"
+  ] as
+    | { defaultEngine?: string; providers?: readonly { id: string; threadPrefix?: string; modelPrefix?: string }[] }
+    | undefined;
+  const conversationAgent =
+    activeThreadId === null
+      ? null
+      : (executionEngines?.providers?.find(
+          (engine) =>
+            (engine.threadPrefix && activeThreadId.startsWith(engine.threadPrefix)) ||
+            (engine.modelPrefix && activeThreadId.startsWith(engine.modelPrefix)),
+        )?.id ??
+        [
+          ...composerCatalog.models,
+          ...composerCatalog.displayModels,
+          ...engineCatalog.groups.flatMap((group) => (group.hostId === snapshot.hostId ? group.models : [])),
+        ].find(
+          (model) =>
+            model.id === snapshot.conversation?.execution.model ||
+            model.model === snapshot.conversation?.execution.model,
+        )?.agentId ??
+        executionEngines?.defaultEngine ??
+        null);
+  const canContinueWithAgent =
+    !embedded &&
+    draft === null &&
+    conversationAgent !== null &&
+    continuationCapability?.agentHandoff === true &&
+    presentation.executionSelection !== "fixed";
+  const filterNewAgents =
+    !embedded && draft !== null && modelSelectionPolicy === "user" && presentation.executionSelection !== "fixed";
   // Existing conversations always identify their Agent; cross-Agent continuation
   // is a separate Host capability and must not gate the identity marker.
   const currentThreadAgent = useMemo(() => {
     if (draft !== null || activeThreadId === null) return null;
     const modelValue = snapshot.conversation?.execution.model;
-    const hostModels = engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? [];
-    const model = modelValue == null ? undefined
-      : [...composerCatalog.models, ...composerCatalog.displayModels, ...hostModels].find(candidate => candidate.model === modelValue || candidate.id === modelValue);
+    const hostModels = engineCatalog.groups.find((group) => group.hostId === snapshot.hostId)?.models ?? [];
+    const model =
+      modelValue == null
+        ? undefined
+        : [...composerCatalog.models, ...composerCatalog.displayModels, ...hostModels].find(
+            (candidate) => candidate.model === modelValue || candidate.id === modelValue,
+          );
     const agentId = conversationAgent ?? model?.agentId ?? null;
     return agentId === null ? null : { id: agentId, label: model?.agentLabel ?? null };
-  }, [draft, activeThreadId, conversationAgent, composerCatalog.models, composerCatalog.displayModels, engineCatalog.groups, snapshot.hostId, snapshot.conversation?.execution.model]);
-  const hostGroupLabel = useCallback((hostId: string) =>
-    hostCatalog.profiles.find(host => host.hostId === hostId)?.agent
-    ?? hostCatalog.hosts.find(host => host.hostId === hostId)?.label
-    ?? hostId, [hostCatalog]);
-  const hostGroupAgentId = useCallback((hostId: string) => agentIdForHostLabel(hostGroupLabel(hostId)), [hostGroupLabel]);
+  }, [
+    draft,
+    activeThreadId,
+    conversationAgent,
+    composerCatalog.models,
+    composerCatalog.displayModels,
+    engineCatalog.groups,
+    snapshot.hostId,
+    snapshot.conversation?.execution.model,
+  ]);
+  const hostGroupLabel = useCallback(
+    (hostId: string) =>
+      hostCatalog.profiles.find((host) => host.hostId === hostId)?.agent ??
+      hostCatalog.hosts.find((host) => host.hostId === hostId)?.label ??
+      hostId,
+    [hostCatalog],
+  );
+  const hostGroupAgentId = useCallback(
+    (hostId: string) => agentIdForHostLabel(hostGroupLabel(hostId)),
+    [hostGroupLabel],
+  );
   const composerSelectionCatalog = useMemo<ComposerSelectionCatalog>(
     () => ({
       currentAgentId: currentThreadAgent?.id ?? null,
       currentAgentLabel: currentThreadAgent?.label ?? null,
       agentContinuation: canContinueWithAgent ? { startsNewThread: true } : undefined,
-      agentsDisabled: filterNewAgents && newDraftAgentsDisabled(
-        engineCatalog.groups.map(group => ({ hostId: group.hostId, agentId: hostGroupAgentId(group.hostId), models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models })),
-        snapshot.hostId, agentAvailability.enabled,
+      agentsDisabled:
+        filterNewAgents &&
+        newDraftAgentsDisabled(
+          engineCatalog.groups.map((group) => ({
+            hostId: group.hostId,
+            agentId: hostGroupAgentId(group.hostId),
+            models: group.hostId === snapshot.hostId ? composerCatalog.models : group.models,
+          })),
+          snapshot.hostId,
+          agentAvailability.enabled,
+        ),
+      policyRestricted: composerCatalog.models.some((model) => model.policyRestricted),
+      models: projectComposerModelChoices(
+        (canContinueWithAgent
+          ? (engineCatalog.groups.find((group) => group.hostId === snapshot.hostId)?.models ?? composerCatalog.models)
+          : composerCatalog.models
+        ).filter(
+          (model) =>
+            !filterNewAgents ||
+            agentAvailability.enabled(snapshot.hostId, model.agentId ?? hostGroupAgentId(snapshot.hostId) ?? "host"),
+        ),
       ),
-      policyRestricted: composerCatalog.models.some(model => model.policyRestricted),
-      models: projectComposerModelChoices((canContinueWithAgent ? engineCatalog.groups.find(group => group.hostId === snapshot.hostId)?.models ?? composerCatalog.models : composerCatalog.models).filter(model => !filterNewAgents || agentAvailability.enabled(snapshot.hostId, model.agentId ?? hostGroupAgentId(snapshot.hostId) ?? "host"))),
       displayModels: projectComposerModelChoices(composerCatalog.displayModels),
-      permissionProfiles: composerCatalog.permissionProfiles.map((rawProfile) => {
-        const profile = rawProfile as OpenCraftPermissionProfile;
-        return {
-          id: profile.id,
-          value: profile.id,
-          label: supportsPermissionModes ? profile.openCraftLabel ?? humanizeCatalogValue(profile.id) : humanizeCatalogValue(profile.id),
-          description: profile.description,
-          disabled: !profile.allowed,
-          mode: supportsPermissionModes ? profile.openCraftMode ?? null : null,
-          nativeProfileId: supportsPermissionModes ? profile.openCraftNativeProfileId ?? null : null,
-        };
-      }).sort((left, right) => {
-        const rank = { "read-only": 0, "accept-edits": 1, auto: 2, full: 3 } as const;
-        return (left.mode === null ? 4 : rank[left.mode]) - (right.mode === null ? 4 : rank[right.mode]);
-      }),
+      permissionProfiles: composerCatalog.permissionProfiles
+        .map((rawProfile) => {
+          const profile = rawProfile as OpenCraftPermissionProfile;
+          return {
+            id: profile.id,
+            value: profile.id,
+            label: supportsPermissionModes
+              ? (profile.openCraftLabel ?? humanizeCatalogValue(profile.id))
+              : humanizeCatalogValue(profile.id),
+            description: profile.description,
+            disabled: !profile.allowed,
+            mode: supportsPermissionModes ? (profile.openCraftMode ?? null) : null,
+            nativeProfileId: supportsPermissionModes ? (profile.openCraftNativeProfileId ?? null) : null,
+          };
+        })
+        .sort((left, right) => {
+          const rank = { "read-only": 0, "accept-edits": 1, auto: 2, full: 3 } as const;
+          return (left.mode === null ? 4 : rank[left.mode]) - (right.mode === null ? 4 : rank[right.mode]);
+        }),
       isFetching: composerCatalog.isFetching,
       modelError: composerCatalog.modelError?.message ?? null,
       modelErrorKind: composerCatalog.modelErrorKind,
       onRememberModelDefaults: modelSelectionPolicy === "user" ? composerCatalog.rememberModelDefaults : undefined,
       onConfigureModels: embedded?.onConfigureModels,
       onConfigureAgents: filterNewAgents ? () => openSettingsFromConversation("chat") : undefined,
-      onModelMenuOpen: modelSelectionPolicy === "session" ? composerCatalog.retryModels : () => { composerCatalog.onModelMenuOpen(); engineCatalog.open(); },
-      agentGroups: !filterNewAgents && !canContinueWithAgent ? undefined : engineCatalog.groups.filter(group => !canContinueWithAgent || group.hostId === snapshot.hostId).map(group => ({
-        id: group.hostId,
-        label: hostGroupLabel(group.hostId),
-        active: group.hostId === snapshot.hostId,
-        models: projectComposerModelChoices((canContinueWithAgent ? group.models.length ? group.models : composerCatalog.models : group.hostId === snapshot.hostId ? composerCatalog.models : group.models).filter(model => canContinueWithAgent
-          ? model.agentId === conversationAgent || agentAvailability.enabled(group.hostId, model.agentId ?? hostGroupAgentId(group.hostId) ?? "host")
-          : filterModelsForNewDraft([model], group.hostId, snapshot.hostId, agentAvailability.enabled, hostGroupAgentId(group.hostId)).length > 0)),
-        loading: canContinueWithAgent ? group.loading : group.hostId === snapshot.hostId ? composerCatalog.isFetching : group.loading,
-        error: canContinueWithAgent ? group.error : group.hostId === snapshot.hostId ? composerCatalog.modelError?.message : group.error,
-        errorKind: group.hostId === snapshot.hostId ? composerCatalog.modelErrorKind : undefined,
-        retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
-        select: async (model) => {
-          if (canContinueWithAgent && model.agentId === conversationAgent) composerController.dispatch({ type: "cancel-agent-handoff" });
-          if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
-            try {
-              await hostCatalog.continueWithAgent({ hostId: snapshot.hostId, threadId: activeThreadId, historyTitle: intl.formatMessage({ id: "composer.context.conversationHistory", defaultMessage: "Conversation history" }), agentId: model.agentId!, model: model.value, effort: model.defaultEffort, permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null, serviceTier: null });
-            } catch (error) {
-              throw new Error(intl.formatMessage({ id: "chat.continueWithAgent.failed", defaultMessage: "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again." }));
-            }
-            return { selection: "handled" as const };
-          }
-          const currentTier = composerController.getSnapshot().draft.selections.serviceTier;
-          const requestedTier = currentTier !== undefined ? currentTier : composerCatalog.newThreadDefaults?.serviceTier;
-          const serviceTier = model.serviceTiers?.some(tier => tier.id === requestedTier) ? requestedTier ?? null : null;
-          await hostCatalog.selectHost(group.hostId, group.hostId === snapshot.hostId ? undefined : { model: model.value, effort: model.defaultEffort, serviceTier });
-          if (group.hostId !== snapshot.hostId) composerCatalog.rememberModelDefaults?.({ model: model.value, effort: model.defaultEffort, serviceTier }, group.hostId);
-        },
-        manage: (() => {
-          const page = resolveHostModelSettingsPage(settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution), group.hostId, extensionPlatform, internalDeveloperMode);
-          return page ? () => hostCatalog.navigation.openSettings(page.id) : undefined;
-        })(),
-      })),
+      onModelMenuOpen:
+        modelSelectionPolicy === "session"
+          ? composerCatalog.retryModels
+          : () => {
+              composerCatalog.onModelMenuOpen();
+              engineCatalog.open();
+            },
+      agentGroups:
+        !filterNewAgents && !canContinueWithAgent
+          ? undefined
+          : engineCatalog.groups
+              .filter((group) => !canContinueWithAgent || group.hostId === snapshot.hostId)
+              .map((group) => ({
+                id: group.hostId,
+                label: hostGroupLabel(group.hostId),
+                active: group.hostId === snapshot.hostId,
+                models: projectComposerModelChoices(
+                  (canContinueWithAgent
+                    ? group.models.length
+                      ? group.models
+                      : composerCatalog.models
+                    : group.hostId === snapshot.hostId
+                      ? composerCatalog.models
+                      : group.models
+                  ).filter((model) =>
+                    canContinueWithAgent
+                      ? model.agentId === conversationAgent ||
+                        agentAvailability.enabled(
+                          group.hostId,
+                          model.agentId ?? hostGroupAgentId(group.hostId) ?? "host",
+                        )
+                      : filterModelsForNewDraft(
+                          [model],
+                          group.hostId,
+                          snapshot.hostId,
+                          agentAvailability.enabled,
+                          hostGroupAgentId(group.hostId),
+                        ).length > 0,
+                  ),
+                ),
+                loading: canContinueWithAgent
+                  ? group.loading
+                  : group.hostId === snapshot.hostId
+                    ? composerCatalog.isFetching
+                    : group.loading,
+                error: canContinueWithAgent
+                  ? group.error
+                  : group.hostId === snapshot.hostId
+                    ? composerCatalog.modelError?.message
+                    : group.error,
+                errorKind: group.hostId === snapshot.hostId ? composerCatalog.modelErrorKind : undefined,
+                retry: group.hostId === snapshot.hostId ? composerCatalog.retryModels : group.retry,
+                select: async (model) => {
+                  if (canContinueWithAgent && model.agentId === conversationAgent)
+                    composerController.dispatch({ type: "cancel-agent-handoff" });
+                  if (canContinueWithAgent && activeThreadId && model.agentId !== conversationAgent) {
+                    try {
+                      await hostCatalog.continueWithAgent({
+                        hostId: snapshot.hostId,
+                        threadId: activeThreadId,
+                        historyTitle: intl.formatMessage({
+                          id: "composer.context.conversationHistory",
+                          defaultMessage: "Conversation history",
+                        }),
+                        agentId: model.agentId!,
+                        model: model.value,
+                        effort: model.defaultEffort,
+                        permissionProfile: snapshot.conversation?.execution.permissionProfile ?? null,
+                        serviceTier: null,
+                      });
+                    } catch (error) {
+                      throw new Error(
+                        intl.formatMessage({
+                          id: "chat.continueWithAgent.failed",
+                          defaultMessage:
+                            "Could not prepare the conversation for this Agent. Your original conversation and draft are unchanged. Finish any active response and try again.",
+                        }),
+                      );
+                    }
+                    return { selection: "handled" as const };
+                  }
+                  const currentTier = composerController.getSnapshot().draft.selections.serviceTier;
+                  const requestedTier =
+                    currentTier !== undefined ? currentTier : composerCatalog.newThreadDefaults?.serviceTier;
+                  const serviceTier = model.serviceTiers?.some((tier) => tier.id === requestedTier)
+                    ? (requestedTier ?? null)
+                    : null;
+                  await hostCatalog.selectHost(
+                    group.hostId,
+                    group.hostId === snapshot.hostId
+                      ? undefined
+                      : { model: model.value, effort: model.defaultEffort, serviceTier },
+                  );
+                  if (group.hostId !== snapshot.hostId)
+                    composerCatalog.rememberModelDefaults?.(
+                      { model: model.value, effort: model.defaultEffort, serviceTier },
+                      group.hostId,
+                    );
+                },
+                manage: (() => {
+                  const page = resolveHostModelSettingsPage(
+                    settingsContributionSnapshot.settingsPages.map(({ contribution }) => contribution),
+                    group.hostId,
+                    extensionPlatform,
+                    internalDeveloperMode,
+                  );
+                  return page ? () => hostCatalog.navigation.openSettings(page.id) : undefined;
+                })(),
+              })),
       retryModels: composerCatalog.retryModels,
-      permissionProfileError:
-        composerCatalog.permissionProfileError?.message ?? null,
+      permissionProfileError: composerCatalog.permissionProfileError?.message ?? null,
     }),
     [
-      filterNewAgents, canContinueWithAgent, conversationAgent, currentThreadAgent, activeThreadId, agentAvailability, openSettingsFromConversation, modelSelectionPolicy, embedded?.onConfigureModels, presentation.executionSelection, engineCatalog, draft, hostCatalog, snapshot.hostId, hostGroupLabel, hostGroupAgentId,
-      settingsContributionSnapshot, extensionPlatform, internalDeveloperMode,
+      filterNewAgents,
+      canContinueWithAgent,
+      conversationAgent,
+      currentThreadAgent,
+      activeThreadId,
+      agentAvailability,
+      openSettingsFromConversation,
+      modelSelectionPolicy,
+      embedded?.onConfigureModels,
+      presentation.executionSelection,
+      engineCatalog,
+      draft,
+      hostCatalog,
+      snapshot.hostId,
+      hostGroupLabel,
+      hostGroupAgentId,
+      settingsContributionSnapshot,
+      extensionPlatform,
+      internalDeveloperMode,
       composerCatalog.isFetching,
       composerCatalog.modelError,
       composerCatalog.modelErrorKind,
@@ -1633,33 +2359,55 @@ export function App({
       supportsPermissionModes,
     ],
   );
-  const selectedPermissionProfile = useSyncExternalStore(composerController.subscribe,
+  const selectedPermissionProfile = useSyncExternalStore(
+    composerController.subscribe,
     () => composerController.getSnapshot().draft.selections.permissionProfile,
-    () => composerController.getSnapshot().draft.selections.permissionProfile);
+    () => composerController.getSnapshot().draft.selections.permissionProfile,
+  );
   useEffect(() => {
     if (draft?.target.type !== "new-thread" || selectedPermissionProfile == null) return;
     const profiles = composerSelectionCatalog.permissionProfiles;
-    if (profiles.length === 0 || profiles.some(profile => profile.value === selectedPermissionProfile || profile.nativeProfileId === selectedPermissionProfile)) return;
-    const fallback = profiles.find(profile => profile.mode === "full" && !profile.disabled) ?? profiles.find(profile => !profile.disabled);
+    if (
+      profiles.length === 0 ||
+      profiles.some(
+        (profile) =>
+          profile.value === selectedPermissionProfile || profile.nativeProfileId === selectedPermissionProfile,
+      )
+    )
+      return;
+    const fallback =
+      profiles.find((profile) => profile.mode === "full" && !profile.disabled) ??
+      profiles.find((profile) => !profile.disabled);
     if (!fallback) return;
     composerController.dispatch({ type: "set-selections", patch: { permissionProfile: fallback.value } });
   }, [composerController, composerSelectionCatalog.permissionProfiles, draft?.target.type, selectedPermissionProfile]);
   const draftWorkspaceOptions = useMemo(() => {
     return buildDraftWorkspaceOptions(projectCatalog.projects);
   }, [projectCatalog.projects]);
-  const threadTitleWriter = useMemo(() => new ThreadTitleWriter({
-    read: key => readCachedThreadName(queryClient, key),
-    write: (key, value) => writeCachedThreadName(queryClient, key, value),
-    persist: async (key, value) => {
-      await hostCatalog.threadManagement.rename(key.hostId, key.threadId, value);
-      void queryClient.invalidateQueries({ queryKey: ["appserver", key.hostId, "threads"] }).catch(() => undefined);
+  const threadTitleWriter = useMemo(
+    () =>
+      new ThreadTitleWriter({
+        read: (key) => readCachedThreadName(queryClient, key),
+        write: (key, value) => writeCachedThreadName(queryClient, key, value),
+        persist: async (key, value) => {
+          await hostCatalog.threadManagement.rename(key.hostId, key.threadId, value);
+          void queryClient.invalidateQueries({ queryKey: ["appserver", key.hostId, "threads"] }).catch(() => undefined);
+        },
+      }),
+    [hostCatalog.threadManagement, queryClient],
+  );
+  const pendingTitleRevision = useSyncExternalStore(
+    threadTitleWriter.subscribe,
+    threadTitleWriter.getSnapshot,
+    threadTitleWriter.getSnapshot,
+  );
+  const restoreArchivedThread = useCallback(
+    async (hostId: string, threadId: string) => {
+      await hostCatalog.threadManagement.unarchive(hostId, threadId);
+      await queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
     },
-  }), [hostCatalog.threadManagement, queryClient]);
-  const pendingTitleRevision = useSyncExternalStore(threadTitleWriter.subscribe, threadTitleWriter.getSnapshot, threadTitleWriter.getSnapshot);
-  const restoreArchivedThread = useCallback(async (hostId: string, threadId: string) => {
-    await hostCatalog.threadManagement.unarchive(hostId, threadId);
-    await queryClient.invalidateQueries({ queryKey: ["appserver", hostId, "threads"] });
-  }, [hostCatalog.threadManagement, queryClient]);
+    [hostCatalog.threadManagement, queryClient],
+  );
   const restoreUnavailableThread = useCallback(async () => {
     if (unavailableThreadReason !== "archived" || unavailableThreadId === null || restoringArchivedThread) return;
     setRestoringArchivedThread(true);
@@ -1669,11 +2417,24 @@ export function App({
     } finally {
       setRestoringArchivedThread(false);
     }
-  }, [hostCatalog, restoreArchivedThread, restoringArchivedThread, unavailableHostId, unavailableThreadId, unavailableThreadReason]);
-  const loadArchivedThreads = useCallback(async (hostId: string) => {
-    return hostCatalog.threadManagement.listArchived(hostId);
-  }, [hostCatalog.threadManagement]);
-  const archivedConversationsAvailable = hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).archive;
+  }, [
+    hostCatalog,
+    restoreArchivedThread,
+    restoringArchivedThread,
+    unavailableHostId,
+    unavailableThreadId,
+    unavailableThreadReason,
+  ]);
+  const loadArchivedThreads = useCallback(
+    async (hostId: string) => {
+      return hostCatalog.threadManagement.listArchived(hostId);
+    },
+    [hostCatalog.threadManagement],
+  );
+  const archivedConversationsAvailable = hostCatalog.threadManagement.capabilities(
+    snapshot.hostId,
+    activeThreadId ?? undefined,
+  ).archive;
   const embeddedSessions = useMemo(() => {
     if (embedded === undefined) return [];
     return catalog.threads.map((thread): EmbeddedWorkbenchAppSession => {
@@ -1695,14 +2456,32 @@ export function App({
     embedded.onSessionsChange({
       sessions: embeddedSessions,
       loading: (catalog.isPending && snapshot.phase !== "error") || catalog.isFetching,
-      error: catalog.isError || snapshot.phase === "error"
-        ? intl.formatMessage({ id: "sidebar.catalog.discoveryError", defaultMessage: "Couldn't load remote connections" }) : null,
+      error:
+        catalog.isError || snapshot.phase === "error"
+          ? intl.formatMessage({
+              id: "sidebar.catalog.discoveryError",
+              defaultMessage: "Couldn't load remote connections",
+            })
+          : null,
       hasMoreSessions: catalog.hasNextPage,
       pinSupported: hostCatalog.threadManagement.capabilities(embedded.hostId).pin === true,
       selectedChatId: snapshot.hostId === embedded.hostId ? activeThreadId : null,
       isDraft: draft !== null && draft.submission === null,
     });
-  }, [activeThreadId, catalog.hasNextPage, catalog.isError, catalog.isFetching, catalog.isPending, draft, embedded, embeddedSessions, hostCatalog.threadManagement, intl, snapshot.hostId, snapshot.phase]);
+  }, [
+    activeThreadId,
+    catalog.hasNextPage,
+    catalog.isError,
+    catalog.isFetching,
+    catalog.isPending,
+    draft,
+    embedded,
+    embeddedSessions,
+    hostCatalog.threadManagement,
+    intl,
+    snapshot.hostId,
+    snapshot.phase,
+  ]);
   // The local Draft paints before the Host connects (the Composer stays
   // submission-disabled until ready); a restored Thread paints when ready.
   const painted = isEmbeddedConversationPainted(draft, conversationViewActivation.phase);
@@ -1713,9 +2492,7 @@ export function App({
   useEffect(() => {
     if (embedded === undefined) return;
     if (conversationViewActivation.phase === "error") {
-      embedded.onError(
-        conversationViewActivation.error ?? new Error("Embedded Workbench conversation failed"),
-      );
+      embedded.onError(conversationViewActivation.error ?? new Error("Embedded Workbench conversation failed"));
       return;
     }
     if (conversationViewActivation.phase === "ready" && snapshot.hostId === embedded.hostId) {
@@ -1730,13 +2507,20 @@ export function App({
           navigateToHome();
           return false;
         }
-        return submitEmbeddedPrompt(composerController, embedded.hostId, snapshot.phase === "ready", text,
-          intent => sendMessage(intent, { followUpAction: null }) === true);
+        return submitEmbeddedPrompt(
+          composerController,
+          embedded.hostId,
+          snapshot.phase === "ready",
+          text,
+          (intent) => sendMessage(intent, { followUpAction: null }) === true,
+        );
       },
       selectThread: async (threadId) => {
         await hostCatalog.navigate(createWorkbenchThreadLocation(embedded.hostId, threadId));
       },
-      createThread: async () => { navigateToHome(); },
+      createThread: async () => {
+        navigateToHome();
+      },
       loadMoreThreads: async () => {
         const result = await catalog.fetchNextPage();
         if (result !== null && typeof result === "object" && "isError" in result && result.isError) {
@@ -1745,37 +2529,65 @@ export function App({
       },
       renameThread: async (threadId, title) => {
         await hostCatalog.threadManagement.rename(embedded.hostId, threadId, title);
-        void queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] }).catch(() => undefined);
+        void queryClient
+          .invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] })
+          .catch(() => undefined);
       },
       deleteThread: async (threadId) => {
         await hostCatalog.threadManagement.delete(embedded.hostId, threadId);
-        void queryClient.invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] }).catch(() => undefined);
+        void queryClient
+          .invalidateQueries({ queryKey: ["appserver", embedded.hostId, "threads"] })
+          .catch(() => undefined);
         if (activeThreadId === threadId) navigateToHome();
       },
       setThreadPinned: async (threadId, pinned) => {
         await threadPinWriter.set({ hostId: embedded.hostId, threadId }, pinned);
       },
     });
-  }, [activeThreadId, catalog.fetchNextPage, composerController, embedded, hostCatalog, threadPinWriter, navigateToHome, queryClient, sendMessage, snapshot.phase]);
+  }, [
+    activeThreadId,
+    catalog.fetchNextPage,
+    composerController,
+    embedded,
+    hostCatalog,
+    threadPinWriter,
+    navigateToHome,
+    queryClient,
+    sendMessage,
+    snapshot.phase,
+  ]);
   const workspaceSelectionEpoch = useRef(0);
   useLayoutEffect(() => {
     workspaceSelectionEpoch.current++;
-    return () => { workspaceSelectionEpoch.current++; };
-  }, [draft?.id, draft?.phase, draft?.target.execution.hostId,
-    draft?.target.execution.workspace.cwd, runtime, snapshot.hostId, conversationRouteOpen, settingsOpen]);
+    return () => {
+      workspaceSelectionEpoch.current++;
+    };
+  }, [
+    draft?.id,
+    draft?.phase,
+    draft?.target.execution.hostId,
+    draft?.target.execution.workspace.cwd,
+    draft?.target.execution.environment,
+    draft?.target.execution.workspace.source,
+    runtime,
+    snapshot.hostId,
+    conversationRouteOpen,
+    settingsOpen,
+  ]);
   const readWorkspaceDirectory = useCallback(
-    async (path: string) =>
-      (await runtime.resources.fileSystem.readDirectory(path)).entries,
+    async (path: string) => (await runtime.resources.fileSystem.readDirectory(path)).entries,
     [runtime],
   );
   const chooseWorkspaceDirectory = useCallback(
     async (path: string) => {
-      if (draft === null || draftSubmissionOwnsNavigation(draft.phase) || !conversationRouteOpen || settingsOpen) return;
+      if (draft === null || draftSubmissionOwnsNavigation(draft.phase) || !conversationRouteOpen || settingsOpen)
+        return;
       const epoch = workspaceSelectionEpoch.current;
-      const selected = await resolveDraftDirectorySelection({ path,
+      const selected = await resolveDraftDirectorySelection({
+        path,
         projects: projectCatalog.projects,
         projectCatalogError: projectCatalog.error,
-        createProject: params => runtime.resources.projects.create(params),
+        createProject: (params) => runtime.resources.projects.create(params),
       });
       if (selected.createdProject) {
         await queryClient.invalidateQueries({
@@ -1798,8 +2610,8 @@ export function App({
       settingsOpen,
     ],
   );
-  const workspaceBrowseRoot = activeHost.workspaceBrowseRoots[0]
-    ?? draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ?? "/";
+  const workspaceBrowseRoot =
+    activeHost.workspaceBrowseRoots[0] ?? draft?.target.execution.workspace.runtimeWorkspaceRoots[0] ?? "/";
   const localProjectPicker = nativeProjectPicker(activeHost);
   const browseWorkspace = useCallback(async () => {
     if (localProjectPicker === null) {
@@ -1817,30 +2629,34 @@ export function App({
   const closeSettings = useCallback(() => {
     workbenchNavigation.closeSettings();
   }, [workbenchNavigation]);
-  const selectSettingsSection = useCallback((section: string, mode?: "push" | "replace") => {
-    setSidebarDestination("context");
-    workbenchNavigation.openSettings(section, mode);
-  }, [workbenchNavigation]);
+  const selectSettingsSection = useCallback(
+    (section: string, mode?: "push" | "replace") => {
+      setSidebarDestination("context");
+      workbenchNavigation.openSettings(section, mode);
+    },
+    [workbenchNavigation],
+  );
   const workNavigationActions = useWorkbenchToolActions({
     section: standaloneManagementOpen ? settingsSection : null,
     extensionContributions: hostCatalog.extensionContributions,
     onSectionChange: selectSettingsSection,
   });
-  const settingsNavigation = settingsOpen || sidebarDestination === "settings" ? (
-    <Suspense fallback={null}>
-      <SettingsNavigation
-        section={sidebarDestination === "settings" ? "" : settingsSection}
-        onSectionChange={selectSettingsSection}
-        extensionContributions={hostCatalog.extensionContributions}
-        profiles={hostCatalog.profiles}
-        machines={machines}
-        activeHostId={snapshot.hostId}
-        showArchivedConversations={archivedConversationsAvailable}
-        onBack={openConversationSidebar}
-        presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
-      />
-    </Suspense>
-  ) : null;
+  const settingsNavigation =
+    settingsOpen || sidebarDestination === "settings" ? (
+      <Suspense fallback={null}>
+        <SettingsNavigation
+          section={sidebarDestination === "settings" ? "" : settingsSection}
+          onSectionChange={selectSettingsSection}
+          extensionContributions={hostCatalog.extensionContributions}
+          profiles={hostCatalog.profiles}
+          machines={machines}
+          activeHostId={snapshot.hostId}
+          showArchivedConversations={archivedConversationsAvailable}
+          onBack={openConversationSidebar}
+          presentation={sidebarDestination === "settings" ? "sidebar" : managementSettingsOpen ? "dialog" : "sidebar"}
+        />
+      </Suspense>
+    ) : null;
   const settingsContent = settingsOpen ? (
     <Suspense
       fallback={
@@ -1857,11 +2673,27 @@ export function App({
         activeHostId={snapshot.hostId}
         onRemove={hostCatalog.removeHost}
         onProvisionHost={hostCatalog.provisionHost}
-        onConnectDesktopServer={desktopServerPort() ? async (origin, signal) => {
-          const profile = await configureDesktopServer({ origin, signal, port: desktopServerPort()!, profiles: hostCatalog.profiles, provision: hostCatalog.provisionHost });
-          signal.throwIfAborted();
-          hostCatalog.navigateToHome({ execution: { collaborationSpaceId:serverSpaces.selected,hostId: profile.hostId as import('@opencraft/chat-core').HostId, workspace: { cwd: null, runtimeWorkspaceRoots: [] } } });
-        } : undefined}
+        onConnectDesktopServer={
+          desktopServerPort()
+            ? async (origin, signal) => {
+                const profile = await configureDesktopServer({
+                  origin,
+                  signal,
+                  port: desktopServerPort()!,
+                  profiles: hostCatalog.profiles,
+                  provision: hostCatalog.provisionHost,
+                });
+                signal.throwIfAborted();
+                hostCatalog.navigateToHome({
+                  execution: {
+                    collaborationSpaceId: serverSpaces.selected,
+                    hostId: profile.hostId as import("@opencraft/chat-core").HostId,
+                    workspace: { cwd: null, runtimeWorkspaceRoots: [] },
+                  },
+                });
+              }
+            : undefined
+        }
         onOpenView={workbenchNavigation.openExtensionView}
         onPushViewResource={workbenchNavigation.pushExtensionViewResource}
         onReplaceViewResource={workbenchNavigation.replaceExtensionViewResource}
@@ -1870,10 +2702,14 @@ export function App({
         extensionManager={hostCatalog.extensionManager}
         platformViewRenderers={hostCatalog.platformViewRenderers}
         regions={appShellPlatformViewRegions}
-        archivedConversations={archivedConversationsAvailable ? {
-          load: loadArchivedThreads,
-          restore: restoreArchivedThread,
-        } : undefined}
+        archivedConversations={
+          archivedConversationsAvailable
+            ? {
+                load: loadArchivedThreads,
+                restore: restoreArchivedThread,
+              }
+            : undefined
+        }
         themes={appearanceTheme.availableThemes}
         themeId={appearanceTheme.themeId}
         themePreference={appearanceTheme.preference}
@@ -1891,12 +2727,21 @@ export function App({
     </section>
   ) : null;
   const modalRequests: ModalRequest[] = [];
-  if (closingSideChat) modalRequests.push(sideChatCloseRequest(intl, () => {
-    const current = panelRuntime.panels.getOwnerSnapshot(closingSideChat.ownerId);
-    const tab = [...current.right.tabs, ...current.bottom.tabs].find(entry => entry.id === closingSideChat.tab.id);
-    if (tab) panelRuntime.panels.close(closingSideChat.ownerId, tab.region, tab.id);
-    setClosingSideChat(null);
-  }, () => setClosingSideChat(null)));
+  if (closingSideChat)
+    modalRequests.push(
+      sideChatCloseRequest(
+        intl,
+        () => {
+          const current = panelRuntime.panels.getOwnerSnapshot(closingSideChat.ownerId);
+          const tab = [...current.right.tabs, ...current.bottom.tabs].find(
+            (entry) => entry.id === closingSideChat.tab.id,
+          );
+          if (tab) panelRuntime.panels.close(closingSideChat.ownerId, tab.region, tab.id);
+          setClosingSideChat(null);
+        },
+        () => setClosingSideChat(null),
+      ),
+    );
   const announcementModalRequests = useAnnouncementModalRequests(hostCatalog.announcements);
   if (managementSettingsOpen && !standaloneManagementOpen) {
     modalRequests.push({
@@ -1905,11 +2750,7 @@ export function App({
       size: "workspace",
       className: "management-settings-dialog",
       dismissOnOutsidePress: false,
-      content: (
-        <ManagementSettingsContent navigation={settingsNavigation}>
-          {settingsContent}
-        </ManagementSettingsContent>
-      ),
+      content: <ManagementSettingsContent navigation={settingsNavigation}>{settingsContent}</ManagementSettingsContent>,
       onDismiss: closeSettings,
     });
   }
@@ -1918,7 +2759,10 @@ export function App({
       id: "account",
       label: "Account Settings",
       appearance: "utility",
-      returnFocus: () => [...document.querySelectorAll<HTMLButtonElement>('.shell-navigation__entrance[data-surface="account"]')].find(button => button.getClientRects().length > 0) ?? null,
+      returnFocus: () =>
+        [...document.querySelectorAll<HTMLButtonElement>('.shell-navigation__entrance[data-surface="account"]')].find(
+          (button) => button.getClientRects().length > 0,
+        ) ?? null,
       size: "wide",
       dismissOnOutsidePress: false,
       content: extensionProjection.account.content,
@@ -1930,85 +2774,156 @@ export function App({
   if (authenticationPresentation.modal) modalRequests.push(authenticationPresentation.modal);
   modalRequests.push(...announcementModalRequests);
   modalRequests.push(...connectorPresentation.requests);
-  const presentedRightPanelOpen =
-    presentation.rightPanel && panelState.right.open;
-  const presentedRightPanelFullWidth =
-    presentation.rightPanel && panelState.rightPanelFullWidth;
-  const conversationRightPanelAvailable = conversationSurfaceVisible
-    && (embedded === undefined || (draft === null && activeThreadId !== null));
+  const presentedRightPanelOpen = presentation.rightPanel && panelState.right.open;
+  const presentedRightPanelFullWidth = presentation.rightPanel && panelState.rightPanelFullWidth;
+  const conversationRightPanelAvailable =
+    conversationSurfaceVisible && (embedded === undefined || (draft === null && activeThreadId !== null));
   const panelHost = embedded?.panelHost;
-  const hostPanelActive = useSyncExternalStore(panelHost?.presentation?.subscribe ?? (() => () => {}),
-    panelHost?.presentation?.getSnapshot ?? (() => false), () => false);
+  const hostPanelActive = useSyncExternalStore(
+    panelHost?.presentation?.subscribe ?? (() => () => {}),
+    panelHost?.presentation?.getSnapshot ?? (() => false),
+    () => false,
+  );
   // The installed adapter owns availability and rechecks authority on launch.
-  const cloudDesktopAction = panelToolbarActions.find(action => action.id === "opencraft.cloud-desktop.open");
-  const composerDesktopEntry = presentation.composerDesktopEntry === true && conversationRouteOpen && cloudDesktopAction
-    && (cloudDesktopAction.isAvailable?.(panelToolbarContext) ?? true) ? (
-    <button type="button" className="opencraft-composer-shortcut-trigger" data-testid="composer-cloud-desktop-entry"
-      onClick={() => {
-        try {
-          void Promise.resolve(cloudDesktopAction.run(panelToolbarContext)).catch(() => {
+  const cloudDesktopAction = panelToolbarActions.find((action) => action.id === "opencraft.cloud-desktop.open");
+  const composerDesktopEntry =
+    presentation.composerDesktopEntry === true &&
+    conversationRouteOpen &&
+    cloudDesktopAction &&
+    (cloudDesktopAction.isAvailable?.(panelToolbarContext) ?? true) ? (
+      <button
+        type="button"
+        className="opencraft-composer-shortcut-trigger"
+        data-testid="composer-cloud-desktop-entry"
+        onClick={() => {
+          try {
+            void Promise.resolve(cloudDesktopAction.run(panelToolbarContext)).catch(() => {
+              window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
+            });
+          } catch {
             window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
-          });
-        } catch { window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed")); }
-      }}>
-      <Monitor size={15} aria-hidden="true" />
-      <span>{intl.formatMessage({ id: "composer.cloudComputer", defaultMessage: "Cloud computer" })}</span>
-    </button>
-  ) : null;
+          }
+        }}
+      >
+        <Monitor size={15} aria-hidden="true" />
+        <span>{intl.formatMessage({ id: "composer.cloudComputer", defaultMessage: "Cloud computer" })}</span>
+      </button>
+    ) : null;
   const panelHostProjection: HostPanelState = {
-    ownerId: panelOwnerId, available: conversationRightPanelAvailable,
-    open: panelState.right.open, fullWidth: panelState.rightPanelFullWidth,
+    ownerId: panelOwnerId,
+    available: conversationRightPanelAvailable,
+    open: panelState.right.open,
+    fullWidth: panelState.rightPanelFullWidth,
     activeTabId: panelState.right.activeTabId,
-    tabs: panelState.right.tabs.map(tab => ({ id: tab.id,
-      title: tab.kind === "cloud-desktop" ? intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" })
-        : tab.kind === "browser" && tab.title === "New tab"
-        ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" }) : tab.title.slice(0, 512),
-      kind: tab.kind, closable: tab.closable, preview: tab.preview })),
-    actions: (conversationRouteOpen ? panelToolbarActions : []).filter(action => action.region === "right"
-      && (action.isAvailable?.(panelToolbarContext) ?? true))
-      .map(action => ({ id: action.id, label: action.creationLabel ?? action.label, icon: action.icon })),
+    tabs: panelState.right.tabs.map((tab) => ({
+      id: tab.id,
+      title:
+        tab.kind === "cloud-desktop"
+          ? intl.formatMessage({ id: "panel.desktopEntry", defaultMessage: "Cloud computer" })
+          : tab.kind === "browser" && tab.title === "New tab"
+            ? intl.formatMessage({ id: "panel.newTab", defaultMessage: "New tab" })
+            : tab.title.slice(0, 512),
+      kind: tab.kind,
+      closable: tab.closable,
+      preview: tab.preview,
+    })),
+    actions: (conversationRouteOpen ? panelToolbarActions : [])
+      .filter((action) => action.region === "right" && (action.isAvailable?.(panelToolbarContext) ?? true))
+      .map((action) => ({ id: action.id, label: action.creationLabel ?? action.label, icon: action.icon })),
   };
   const panelHostWire = JSON.stringify(panelHostProjection);
-  useEffect(() => { panelHost?.publish(JSON.parse(panelHostWire) as HostPanelState); }, [panelHost, panelHostWire]);
+  useEffect(() => {
+    panelHost?.publish(JSON.parse(panelHostWire) as HostPanelState);
+  }, [panelHost, panelHostWire]);
   // The same panel owner admits Web and native actions. Retired owner commands
   // cannot select/close a resource in the next conversation.
   const invokeHostPanel = useStableEvent((command: HostPanelCommand) => {
     if (!conversationRouteOpen || !canInvokeHostPanelCommand(panelHostProjection, command)) return false;
-    const tab = "tabId" in command ? panelState.right.tabs.find(tab => tab.id === command.tabId) : undefined;
+    const tab = "tabId" in command ? panelState.right.tabs.find((tab) => tab.id === command.tabId) : undefined;
     switch (command.action) {
-      case "open": dispatchPanel({ type: "set-region-open", region: "right", open: command.open, reason: "manual", allowEmpty: true }); return true;
-      case "full-width": dispatchPanel({ type: "toggle-right-full-width" }); return true;
-      case "select": if (!tab) return false; dispatchPanel({ type: "activate-tab", region: "right", tabId: tab.id }); return true;
-      case "close": if (!tab?.closable) return false; requestClosePanel(tab); return true;
-      case "move": if (!tab || (command.beforeTabId !== null && !panelState.right.tabs.some(tab => tab.id === command.beforeTabId))) return false;
-        dispatchPanel({ type: "move-tab", region: "right", tabId: tab.id, beforeTabId: command.beforeTabId }); return true;
+      case "open":
+        dispatchPanel({
+          type: "set-region-open",
+          region: "right",
+          open: command.open,
+          reason: "manual",
+          allowEmpty: true,
+        });
+        return true;
+      case "full-width":
+        dispatchPanel({ type: "toggle-right-full-width" });
+        return true;
+      case "select":
+        if (!tab) return false;
+        dispatchPanel({ type: "activate-tab", region: "right", tabId: tab.id });
+        return true;
+      case "close":
+        if (!tab?.closable) return false;
+        requestClosePanel(tab);
+        return true;
+      case "move":
+        if (
+          !tab ||
+          (command.beforeTabId !== null && !panelState.right.tabs.some((tab) => tab.id === command.beforeTabId))
+        )
+          return false;
+        dispatchPanel({ type: "move-tab", region: "right", tabId: tab.id, beforeTabId: command.beforeTabId });
+        return true;
       case "launch": {
-        const action = panelToolbarActions.find(action => action.id === command.actionId && action.region === "right"
-          && (action.isAvailable?.(panelToolbarContext) ?? true));
+        const action = panelToolbarActions.find(
+          (action) =>
+            action.id === command.actionId &&
+            action.region === "right" &&
+            (action.isAvailable?.(panelToolbarContext) ?? true),
+        );
         if (!action) return false;
         try {
           void Promise.resolve(action.run(panelToolbarContext)).catch(() => {
             window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
           });
-        } catch { window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed")); }
+        } catch {
+          window.dispatchEvent(new CustomEvent("opencraft-panel-action-failed"));
+        }
         return true;
       }
     }
   });
   useEffect(() => panelHost?.bind(invokeHostPanel), [panelHost, invokeHostPanel]);
-  const rightPanelView = !presentation.rightPanel ? null : <WorkbenchPresentationActivityProvider active={conversationRouteOpen}><RightPanel
-    hostPresentationActive={panelHost ? conversationRightPanelAvailable && (panelState.right.open || hostPanelActive) : undefined}
-    emptyHint={presentation.filePreviewOnly ? intl.formatMessage({ id: "panel.fileHint", defaultMessage: "Click a file in the conversation to preview it here." }) : undefined}
-    state={panelState} presentationId={panelPresentationId} renderers={presentedPanelRenderers}
-    toolbarActions={conversationRouteOpen ? panelToolbarActions : []} toolbarActionContext={panelToolbarContext}
-    onAction={dispatchPanel} onCloseTab={requestClosePanel} portalContainer={portalContainer} /></WorkbenchPresentationActivityProvider>;
+  const rightPanelView = !presentation.rightPanel ? null : (
+    <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
+      <RightPanel
+        hostPresentationActive={
+          panelHost ? conversationRightPanelAvailable && (panelState.right.open || hostPanelActive) : undefined
+        }
+        emptyHint={
+          presentation.filePreviewOnly
+            ? intl.formatMessage({
+                id: "panel.fileHint",
+                defaultMessage: "Click a file in the conversation to preview it here.",
+              })
+            : undefined
+        }
+        state={panelState}
+        presentationId={panelPresentationId}
+        renderers={presentedPanelRenderers}
+        toolbarActions={conversationRouteOpen ? panelToolbarActions : []}
+        toolbarActionContext={panelToolbarContext}
+        onAction={dispatchPanel}
+        onCloseTab={requestClosePanel}
+        portalContainer={portalContainer}
+      />
+    </WorkbenchPresentationActivityProvider>
+  );
   // Applications replace context/content, never the Shell control plane.
   // Target management remains an independent modal semantic surface.
   const headerNavigationActions = chromePolicy.leadingNavigationActions;
-  const applicationDesktopOpen = workbenchNavigationSnapshot.applicationRoute.kind === "extension-view"
-    && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID;
+  const applicationDesktopOpen =
+    workbenchNavigationSnapshot.applicationRoute.kind === "extension-view" &&
+    workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID;
   const presentedHeaderNavigationActions = presentation.shellNavigation
-    ? headerNavigationActions.map(action => applicationDesktopOpen && action === "sidebar-toggle" ? "home" as const : action)
+    ? headerNavigationActions.map((action) =>
+        applicationDesktopOpen && action === "sidebar-toggle" ? ("home" as const) : action,
+      )
     : [];
   const invokeHeaderHome = applicationDesktopOpen ? workbenchNavigation.openChat : navigateToHome;
   const viewTitleMessage = extensionProjection.activeView?.titleMessage;
@@ -2016,8 +2931,10 @@ export function App({
   const pageTitle = routeSettingsOpen
     ? null
     : extensionViewOpen
-      ? (workbenchNavigationSnapshot.applicationRoute.kind === "extension-view" && workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID
-        ? intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }) : viewTitle ?? null)
+      ? workbenchNavigationSnapshot.applicationRoute.kind === "extension-view" &&
+        workbenchNavigationSnapshot.applicationRoute.viewId === OVERHOME_VIEW_ID
+        ? intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" })
+        : (viewTitle ?? null)
       : draft === null
         ? (displayHeader?.title ?? null)
         : null;
@@ -2029,91 +2946,184 @@ export function App({
   }, [documentTitle, embedded]);
   useEffect(() => {
     if (embedded !== undefined) return;
-    return () => { document.title = applicationName; };
+    return () => {
+      document.title = applicationName;
+    };
   }, [embedded, applicationName]);
-  const scheduleCapability = executionEngineExtension(runtime.resources.host.getInitializeResult()?.capabilities?.extensions, activeThreadId, "opencraft/conversation-schedules") as { version?: number } | undefined;
-  const nativeSessionCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/agent-session"] as { version?: number } | undefined;
+  const scheduleCapability = executionEngineExtension(
+    runtime.resources.host.getInitializeResult()?.capabilities?.extensions,
+    activeThreadId,
+    "opencraft/conversation-schedules",
+  ) as { version?: number } | undefined;
+  const nativeSessionCapability = runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.[
+    "opencraft/agent-session"
+  ] as { version?: number } | undefined;
   const nativeSession = useQuery({
     queryKey: ["appserver", snapshot.hostId, "native-session", activeThreadId],
-    enabled: nativeSessionCapability?.version === 1 && activeThreadId?.startsWith("codex_") === true && snapshot.phase === "ready",
-    queryFn: () => hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/status", { threadId: activeThreadId! }),
+    enabled:
+      nativeSessionCapability?.version === 1 &&
+      activeThreadId?.startsWith("codex_") === true &&
+      snapshot.phase === "ready",
+    queryFn: () =>
+      hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/status", {
+        threadId: activeThreadId!,
+      }),
     retry: false,
   });
-  const schedulesAvailable = scheduleCapability?.version === 1 && runtime.resources.host.canRequest?.("opencraft/schedules/read") === true;
+  const schedulesAvailable =
+    scheduleCapability?.version === 1 && runtime.resources.host.canRequest?.("opencraft/schedules/read") === true;
   const conversationMenuAvailable = conversationSurfaceVisible && draft === null && activeThreadId !== null;
-  const refreshConversationCatalog = useCallback(() => queryClient.invalidateQueries({
-    queryKey: ["appserver", snapshot.hostId, "threads"],
-  }), [queryClient, snapshot.hostId]);
-  const conversationContribution = conversationSurfaceVisible && draft === null && activeThreadId !== null
-    ? conversationPresentation?.({
-      hostId: snapshot.hostId, threadId: activeThreadId, extra: activeProtocolThread?.extra,
-      ready: snapshot.phase === "ready", authoritative: snapshot.conversation?.authoritative === true,
-      canFork: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork,
-      readExtra: async () => (await hostCatalog.agentRuntimes.request(snapshot.hostId, "thread/read", {
-        threadId: activeThreadId, includeTurns: false,
-      })).thread.extra,
-      fork: () => forkAndOpenThread({
-        routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
-        fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, activeThreadId),
-        refreshThreads: refreshConversationCatalog,
-        openThread: childId => hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, childId)),
+  const refreshConversationCatalog = useCallback(
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: ["appserver", snapshot.hostId, "threads"],
       }),
-    }) : null;
-  useConversationHistoryRefresh(activeThreadLease,
-    conversationContribution?.refreshHistory === true && snapshot.phase === "ready", refreshConversationCatalog);
+    [queryClient, snapshot.hostId],
+  );
+  const conversationContribution =
+    conversationSurfaceVisible && draft === null && activeThreadId !== null
+      ? conversationPresentation?.({
+          hostId: snapshot.hostId,
+          threadId: activeThreadId,
+          extra: activeProtocolThread?.extra,
+          ready: snapshot.phase === "ready",
+          authoritative: snapshot.conversation?.authoritative === true,
+          canFork: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork,
+          readExtra: async () =>
+            (
+              await hostCatalog.agentRuntimes.request(snapshot.hostId, "thread/read", {
+                threadId: activeThreadId,
+                includeTurns: false,
+              })
+            ).thread.extra,
+          fork: () =>
+            forkAndOpenThread({
+              routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
+              fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, activeThreadId),
+              refreshThreads: refreshConversationCatalog,
+              openThread: (childId) => hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, childId)),
+            }),
+        })
+      : null;
+  useConversationHistoryRefresh(
+    activeThreadLease,
+    conversationContribution?.refreshHistory === true && snapshot.phase === "ready",
+    refreshConversationCatalog,
+  );
   const headerThreadId = activeThreadId ?? "";
   const conversationToolbarProps: import("./components/conversation-task-menu").ConversationTaskMenuProps = {
     appearanceHostId: snapshot.hostId,
-    access: headerThreadId ? {
-      read:() => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/read",{threadId:headerThreadId}),
-      set:(accessMode,expectedRevision) => hostCatalog.agentRuntimes.request(snapshot.hostId,"opencraft/thread-access/set",{threadId:headerThreadId,accessMode,expectedRevision}),
-    } : undefined,
+    access: headerThreadId
+      ? {
+          read: () =>
+            hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/thread-access/read", {
+              threadId: headerThreadId,
+            }),
+          set: (accessMode, expectedRevision) =>
+            hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/thread-access/set", {
+              threadId: headerThreadId,
+              accessMode,
+              expectedRevision,
+            }),
+        }
+      : undefined,
     port: hostCatalog.tasks ?? undefined,
-    schedules: schedulesAvailable ? { request: (method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params) } : undefined,
+    schedules: schedulesAvailable
+      ? { request: (method, params) => hostCatalog.agentRuntimes.request(snapshot.hostId, method, params) }
+      : undefined,
     scope: displayScope,
-    serverId: legacyDirectServerProjectionFromHost({ hostId: activeHost.hostId, hostKind: activeHost.kind, label: activeHost.label }).serverOrigin.serverId,
+    serverId: legacyDirectServerProjectionFromHost({
+      hostId: activeHost.hostId,
+      hostKind: activeHost.kind,
+      label: activeHost.label,
+    }).serverOrigin.serverId,
     threadId: headerThreadId,
-    shareUrl: !embedded && headerThreadId && ["https:", "http:"].includes(window.location.protocol)
-      ? new URL(serverUrl(workbenchLocationUrl(createWorkbenchThreadLocation(snapshot.hostId, headerThreadId))), window.location.origin).href : undefined,
+    shareUrl:
+      !embedded && headerThreadId && ["https:", "http:"].includes(window.location.protocol)
+        ? new URL(
+            serverUrl(workbenchLocationUrl(createWorkbenchThreadLocation(snapshot.hostId, headerThreadId))),
+            window.location.origin,
+          ).href
+        : undefined,
     title: activeThread?.title ?? pageTitle ?? "",
     pinned: activeThread?.pinned,
     project: activeThread?.project,
     workspaceDirectory: snapshot.conversation?.execution.cwd ?? activeProtocolThread?.cwd ?? undefined,
     onRename: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename
-              ? title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: headerThreadId }, title) : undefined,
+      ? (title) => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: headerThreadId }, title)
+      : undefined,
     onSetPinned: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).pin
-              ? async pinned => {
-                await threadPinWriter.set({ hostId: snapshot.hostId, threadId: headerThreadId }, pinned);
-              } : undefined,
+      ? async (pinned) => {
+          await threadPinWriter.set({ hostId: snapshot.hostId, threadId: headerThreadId }, pinned);
+        }
+      : undefined,
     onArchive: hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).archive
-              ? () => archiveThread({
-                archive: () => hostCatalog.threadManagement.archive(snapshot.hostId, headerThreadId),
-                refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }),
-              }) : undefined,
-    onReleaseNativeSession: nativeSession.data?.release ? async () => {
-      await hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/release", { threadId: headerThreadId });
-      await nativeSession.refetch();
-    } : undefined,
-    onFork: (activeThreadId?.startsWith("codex_") ? nativeSession.data?.fork === true : hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork)
-              ? () => forkAndOpenThread({
-                routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
-                fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, headerThreadId),
-                refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }),
-                openThread: childId => hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, childId)),
-              }) : undefined,
-    verifyConversation: async () => { await hostCatalog.agentRuntimes.request(snapshot.hostId, "thread/read", { threadId: headerThreadId, includeTurns: false }); },
+      ? () =>
+          archiveThread({
+            archive: () => hostCatalog.threadManagement.archive(snapshot.hostId, headerThreadId),
+            refreshThreads: () =>
+              queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }),
+          })
+      : undefined,
+    onReleaseNativeSession: nativeSession.data?.release
+      ? async () => {
+          await hostCatalog.agentRuntimes.request(snapshot.hostId, "opencraft/agent-session/release", {
+            threadId: headerThreadId,
+          });
+          await nativeSession.refetch();
+        }
+      : undefined,
+    onFork: (
+      activeThreadId?.startsWith("codex_")
+        ? nativeSession.data?.fork === true
+        : hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).fork
+    )
+      ? () =>
+          forkAndOpenThread({
+            routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
+            fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, headerThreadId),
+            refreshThreads: () =>
+              queryClient.invalidateQueries({ queryKey: ["appserver", snapshot.hostId, "threads"] }),
+            openThread: (childId) => hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, childId)),
+          })
+      : undefined,
+    verifyConversation: async () => {
+      await hostCatalog.agentRuntimes.request(snapshot.hostId, "thread/read", {
+        threadId: headerThreadId,
+        includeTurns: false,
+      });
+    },
     onOpenTasks: () => workbenchNavigation.openExtensionView("opencraft.tasks.board"),
   };
   const summaryScopeKey = JSON.stringify([displayScope, displayHostId, displayThreadId]);
-  const summary = useConversationSummary(summaryScopeKey, conversationSurfaceVisible && draft === null && displayThreadId !== null);
-  const summaryGoal = useSummaryGoal(runtime.resources.goals, displayHostId === snapshot.hostId && displayThreadId === activeThreadId ? displayThreadId : null);
+  const summary = useConversationSummary(
+    summaryScopeKey,
+    conversationSurfaceVisible && draft === null && displayThreadId !== null,
+  );
+  const summaryGoal = useSummaryGoal(
+    runtime.resources.goals,
+    displayHostId === snapshot.hostId && displayThreadId === activeThreadId ? displayThreadId : null,
+  );
   const summaryCurrent = !showingDisplayCache && snapshot.phase === "ready" && visibleTimeline?.authoritative === true;
   const noteAccount = extensionProjection.account;
-  const noteAccountKey = JSON.stringify([noteAccount?.provider.id, noteAccount?.snapshot.phase === "anonymous", noteAccount?.snapshot.identity?.id, noteAccount?.snapshot.readStateScope]);
+  const noteAccountKey = JSON.stringify([
+    noteAccount?.provider.id,
+    noteAccount?.snapshot.phase === "anonymous",
+    noteAccount?.snapshot.identity?.id,
+    noteAccount?.snapshot.readStateScope,
+  ]);
   const noteAccountCurrent = useRef(noteAccountKey);
   noteAccountCurrent.current = noteAccountKey;
-  const summaryNotePorts = useMemo(() => new Map<string, {exchange(update: string, vector: string): Promise<{update: string}>}>(), [hostCatalog, noteAccountKey]);
-  const summaryNoteSupported = (runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-note"] as {version?: unknown} | undefined)?.version === 1;
+  const summaryNotePorts = useMemo(
+    () => new Map<string, { exchange(update: string, vector: string): Promise<{ update: string }> }>(),
+    [hostCatalog, noteAccountKey],
+  );
+  const summaryNoteSupported =
+    (
+      runtime.resources.host.getInitializeResult()?.capabilities?.extensions?.["opencraft/thread-note"] as
+        | { version?: unknown }
+        | undefined
+    )?.version === 1;
   const summaryNote = useMemo(() => {
     if (!summaryNoteSupported || !displayHostId || !displayThreadId) return undefined;
     const existing = summaryNotePorts.get(summaryScopeKey);
@@ -2122,10 +3132,23 @@ export function App({
       exchange: async (update: string, vector: string) => {
         const assertAccount = () => {
           const account = noteAccount?.provider.getSnapshot();
-          if (noteAccountCurrent.current !== noteAccountKey || JSON.stringify([noteAccount?.provider.id, account?.phase === "anonymous", account?.identity?.id, account?.readStateScope]) !== noteAccountKey) throw new Error("Note account changed");
+          if (
+            noteAccountCurrent.current !== noteAccountKey ||
+            JSON.stringify([
+              noteAccount?.provider.id,
+              account?.phase === "anonymous",
+              account?.identity?.id,
+              account?.readStateScope,
+            ]) !== noteAccountKey
+          )
+            throw new Error("Note account changed");
         };
         assertAccount();
-        const result = await hostCatalog.agentRuntimes.request(displayHostId, "opencraft/thread-note/exchange", {threadId:displayThreadId, update, vector});
+        const result = await hostCatalog.agentRuntimes.request(displayHostId, "opencraft/thread-note/exchange", {
+          threadId: displayThreadId,
+          update,
+          vector,
+        });
         assertAccount();
         return result;
       },
@@ -2133,36 +3156,102 @@ export function App({
     summaryNotePorts.set(summaryScopeKey, port);
     return port;
   }, [hostCatalog, summaryScopeKey, noteAccountKey, summaryNoteSupported, summaryNotePorts]);
-  const conversationMenuSizing = <ConversationToolbarSizing scope={displayScope} actionIds={conversationToolbarActionIds(conversationToolbarProps)} />;
+  const conversationMenuSizing = (
+    <ConversationToolbarSizing
+      scope={displayScope}
+      actionIds={conversationToolbarActionIds(conversationToolbarProps)}
+    />
+  );
   const header = (
     <AppShellHeader
       conversationHeader={conversationSurfaceVisible}
       subtitle={conversationContribution?.subtitle}
       primaryActionFixedSlots={(summary.enabled ? 1 : 0) + (conversationMenuAvailable ? 1 : 0)}
-      navigationBrand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
-      primaryAction={<span className="conversation-header-actions"><ConversationSummaryButton controller={summary} />{conversationMenuAvailable ? (
-        <Suspense fallback={conversationMenuSizing}>
-          <ConversationTaskMenu
-            key={JSON.stringify([displayScope, snapshot.hostId, activeThreadId])}
-            im={settingsContributionSnapshot.settingsPages.some(page => page.contribution.id === "opencraft.im.channels") ? {
-              fetcher: serverFetch, openSettings: () => workbenchNavigation.openSettings("opencraft.im.channels"),
-            } : undefined}
-            {...conversationToolbarProps}
-          />
-        </Suspense>
-      ) : null}</span>}
-      titleContent={conversationSurfaceVisible && draft === null && activeThread !== undefined
-        && displayKey?.hostId === snapshot.hostId && displayKey?.threadId === activeThread.id ? (
-        <span className="conversation-appearance-heading"><ConversationAppearanceButton hostId={snapshot.hostId} threadId={activeThread.id} title={activeThread.title} />{hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename ? <EditableThreadTitle
-          key={JSON.stringify([snapshot.hostId, activeThread.id])}
-          title={activeThread.title}
-          project={embedded === undefined ? (activeThread.project ?? "OpenCraft") : undefined}
-          onRename={title => threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThread.id }, title)}
-        /> : <span className="thread-header-copy"><strong>{activeThread.title}</strong>{embedded === undefined ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: activeThread.project ?? "OpenCraft", branch: "main" })}</small> : null}</span>}</span>
-      ) : conversationSurfaceVisible && draft === null && displayHeader && displayKey ? (
-        <span className="conversation-appearance-heading"><ConversationAppearanceButton readOnly hostId={displayKey.hostId} threadId={displayKey.threadId} title={displayHeader.title} /><span className="thread-header-copy"><strong>{displayHeader.title}</strong>{embedded === undefined
-          ? <small>{intl.formatMessage({ id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" }, { project: displayHeader.project || "OpenCraft", branch: "main" })}</small> : null}</span></span>
-      ) : undefined}
+      navigationBrand={
+        embedded === undefined && extensionPlatform === "web" ? (
+          <ApplicationBrand branding={branding} onHome={openConversationSidebar} />
+        ) : undefined
+      }
+      primaryAction={
+        <span className="conversation-header-actions">
+          <ConversationSummaryButton controller={summary} />
+          {conversationMenuAvailable ? (
+            <Suspense fallback={conversationMenuSizing}>
+              <ConversationTaskMenu
+                key={JSON.stringify([displayScope, snapshot.hostId, activeThreadId])}
+                im={
+                  settingsContributionSnapshot.settingsPages.some(
+                    (page) => page.contribution.id === "opencraft.im.channels",
+                  )
+                    ? {
+                        fetcher: serverFetch,
+                        openSettings: () => workbenchNavigation.openSettings("opencraft.im.channels"),
+                      }
+                    : undefined
+                }
+                {...conversationToolbarProps}
+              />
+            </Suspense>
+          ) : null}
+        </span>
+      }
+      titleContent={
+        conversationSurfaceVisible &&
+        draft === null &&
+        activeThread !== undefined &&
+        displayKey?.hostId === snapshot.hostId &&
+        displayKey?.threadId === activeThread.id ? (
+          <span className="conversation-appearance-heading">
+            <ConversationAppearanceButton
+              hostId={snapshot.hostId}
+              threadId={activeThread.id}
+              title={activeThread.title}
+            />
+            {hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId ?? undefined).rename ? (
+              <EditableThreadTitle
+                key={JSON.stringify([snapshot.hostId, activeThread.id])}
+                title={activeThread.title}
+                project={embedded === undefined ? (activeThread.project ?? "OpenCraft") : undefined}
+                onRename={(title) =>
+                  threadTitleWriter.rename({ hostId: snapshot.hostId, threadId: activeThread.id }, title)
+                }
+              />
+            ) : (
+              <span className="thread-header-copy">
+                <strong>{activeThread.title}</strong>
+                {embedded === undefined ? (
+                  <small>
+                    {intl.formatMessage(
+                      { id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" },
+                      { project: activeThread.project ?? "OpenCraft", branch: "main" },
+                    )}
+                  </small>
+                ) : null}
+              </span>
+            )}
+          </span>
+        ) : conversationSurfaceVisible && draft === null && displayHeader && displayKey ? (
+          <span className="conversation-appearance-heading">
+            <ConversationAppearanceButton
+              readOnly
+              hostId={displayKey.hostId}
+              threadId={displayKey.threadId}
+              title={displayHeader.title}
+            />
+            <span className="thread-header-copy">
+              <strong>{displayHeader.title}</strong>
+              {embedded === undefined ? (
+                <small>
+                  {intl.formatMessage(
+                    { id: "chat.header.projectBranch", defaultMessage: "{project} · {branch}" },
+                    { project: displayHeader.project || "OpenCraft", branch: "main" },
+                  )}
+                </small>
+              ) : null}
+            </span>
+          </span>
+        ) : undefined
+      }
       title={standaloneManagementOpen || extensionViewOpen ? null : pageTitle}
       project={
         embedded !== undefined || routeSettingsOpen || extensionViewOpen
@@ -2175,15 +3264,16 @@ export function App({
       rightPanelOpen={conversationRightPanelAvailable && presentedRightPanelOpen}
       rightPanelFullWidth={conversationRightPanelAvailable && presentedRightPanelFullWidth}
       showRightPanelAction={!panelHost && conversationRightPanelAvailable && presentation.rightPanel}
-      rightPanelActionInComposer={conversationRouteOpen && connectionInterventionNode === null && pendingInteraction === null}
+      rightPanelActionInComposer={
+        conversationRouteOpen && connectionInterventionNode === null && pendingInteraction === null
+      }
       canGoBack={canGoBack}
-              canReturn={canReturn}
+      canReturn={canReturn}
       canGoForward={canGoForward}
       onToggleSidebar={() => setSidebarOpen((value) => !value)}
       onToggleRightPanel={toggleRightPanel}
       onHome={invokeHeaderHome}
       onBack={returnToParent}
-
       onForward={workbenchNavigation.forward}
       navigationActions={presentedHeaderNavigationActions}
       routeHeaderActive={routeHeader.active}
@@ -2191,15 +3281,28 @@ export function App({
     />
   );
 
-  const beginConversationImageEdit = conversationRouteOpen && activeThreadId !== null ? () => {
-    const target = composerController.getSnapshot().draft.target;
-    if (target.type !== "existing-thread" || target.key.hostId !== snapshot.hostId || target.key.threadId !== activeThreadId) return null;
-    const session = composerHandle.current?.beginImageEdit();
-    if (!session) return null;
-    const routeScopeId = workbenchNavigationSnapshot.routeScopeId;
-    const current = () => workbenchNavigation.getSnapshot().routeScopeId === routeScopeId;
-    return { complete: (file: File) => current() && session.complete(file), focus: () => { if (current()) session.focus(); } };
-  } : undefined;
+  const beginConversationImageEdit =
+    conversationRouteOpen && activeThreadId !== null
+      ? () => {
+          const target = composerController.getSnapshot().draft.target;
+          if (
+            target.type !== "existing-thread" ||
+            target.key.hostId !== snapshot.hostId ||
+            target.key.threadId !== activeThreadId
+          )
+            return null;
+          const session = composerHandle.current?.beginImageEdit();
+          if (!session) return null;
+          const routeScopeId = workbenchNavigationSnapshot.routeScopeId;
+          const current = () => workbenchNavigation.getSnapshot().routeScopeId === routeScopeId;
+          return {
+            complete: (file: File) => current() && session.complete(file),
+            focus: () => {
+              if (current()) session.focus();
+            },
+          };
+        }
+      : undefined;
 
   const composerChangeSummary = (
     <ComposerTurnChangeSummary
@@ -2225,33 +3328,56 @@ export function App({
     },
     onNewTask: navigateToHome,
     onOpenSettings: openSettingsFromConversation,
-    onRetryThreadCatalog: hostId => { void multiHostCatalog.retry(hostId); },
-    onRetryThreadCatalogDiscovery: () => { void multiHostCatalog.retryDiscovery(); },
+    onRetryThreadCatalog: (hostId) => {
+      void multiHostCatalog.retry(hostId);
+    },
+    onRetryThreadCatalogDiscovery: () => {
+      void multiHostCatalog.retryDiscovery();
+    },
     threadActions: {
-      onReadAccess: target => hostCatalog.agentRuntimes.request(target.hostId,"opencraft/thread-access/read",{threadId:target.threadId}),
-      onSetAccess: (target,accessMode,expectedRevision) => hostCatalog.agentRuntimes.request(target.hostId,"opencraft/thread-access/set",{threadId:target.threadId,accessMode,expectedRevision}),
-      onCopyReference: target => copyConversationReference(body=>hostCatalog.agentRuntimes.request(target.hostId,"opencraft/collaboration",body),window.location.href,target),
+      onReadAccess: (target) =>
+        hostCatalog.agentRuntimes.request(target.hostId, "opencraft/thread-access/read", { threadId: target.threadId }),
+      onSetAccess: (target, accessMode, expectedRevision) =>
+        hostCatalog.agentRuntimes.request(target.hostId, "opencraft/thread-access/set", {
+          threadId: target.threadId,
+          accessMode,
+          expectedRevision,
+        }),
+      onCopyReference: (target) =>
+        copyConversationReference(
+          (body) => hostCatalog.agentRuntimes.request(target.hostId, "opencraft/collaboration", body),
+          window.location.href,
+          target,
+        ),
       onSetPinned: async (target, pinned) => {
         await threadPinWriter.set(target, pinned);
       },
       onRename: (target, title) => threadTitleWriter.rename(target, title),
-      onFork: target => forkAndOpenThread({
-        routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
-        fork: () => hostCatalog.threadManagement.fork(target.hostId, target.threadId),
-        refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }),
-        openThread: childId => hostCatalog.navigate(createWorkbenchThreadLocation(target.hostId, childId)),
-      }),
-      onArchive: target => archiveThread({
-        archive: () => hostCatalog.threadManagement.archive(target.hostId, target.threadId),
-        refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }),
-      }),
-      onDelete: async target => {
+      onFork: (target) =>
+        forkAndOpenThread({
+          routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
+          fork: () => hostCatalog.threadManagement.fork(target.hostId, target.threadId),
+          refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }),
+          openThread: (childId) => hostCatalog.navigate(createWorkbenchThreadLocation(target.hostId, childId)),
+        }),
+      onArchive: (target) =>
+        archiveThread({
+          archive: () => hostCatalog.threadManagement.archive(target.hostId, target.threadId),
+          refreshThreads: () => queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }),
+        }),
+      onDelete: async (target) => {
         const routeScopeId = workbenchNavigation.getSnapshot().routeScopeId;
         await hostCatalog.threadManagement.delete(target.hostId, target.threadId);
-        void queryClient.invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] }).catch(() => undefined);
+        void queryClient
+          .invalidateQueries({ queryKey: ["appserver", target.hostId, "threads"] })
+          .catch(() => undefined);
         // Deleting the thread the workbench currently shows would
         // leave the route pointing at a missing thread; go home.
-        if (workbenchNavigation.getSnapshot().routeScopeId === routeScopeId && snapshot.hostId === target.hostId && (draft === null ? activeThreadId ?? "" : "") === target.threadId) {
+        if (
+          workbenchNavigation.getSnapshot().routeScopeId === routeScopeId &&
+          snapshot.hostId === target.hostId &&
+          (draft === null ? (activeThreadId ?? "") : "") === target.threadId
+        ) {
           navigateToHome();
         }
       },
@@ -2266,616 +3392,1176 @@ export function App({
     (hostId: string, threadId: string) => threadTitleWriter.pendingTitle({ hostId, threadId }),
     [threadTitleWriter, pendingTitleRevision],
   );
-  const sidebarManagementNavigation = useMemo(() =>
-    !presentation.shellNavigation && (conversationRouteOpen || standaloneManagementOpen) ? (
-      <WorkbenchToolNavigation
-        section={standaloneManagementOpen ? settingsSection : null}
-        extensionContributions={hostCatalog.extensionContributions}
-        onSectionChange={selectSettingsSection}
-      />
-    ) : null,
-  [presentation.shellNavigation, conversationRouteOpen, standaloneManagementOpen, settingsSection,
-    hostCatalog.extensionContributions, selectSettingsSection]);
+  const sidebarManagementNavigation = useMemo(
+    () =>
+      !presentation.shellNavigation && (conversationRouteOpen || standaloneManagementOpen) ? (
+        <WorkbenchToolNavigation
+          section={standaloneManagementOpen ? settingsSection : null}
+          extensionContributions={hostCatalog.extensionContributions}
+          onSectionChange={selectSettingsSection}
+        />
+      ) : null,
+    [
+      presentation.shellNavigation,
+      conversationRouteOpen,
+      standaloneManagementOpen,
+      settingsSection,
+      hostCatalog.extensionContributions,
+      selectSettingsSection,
+    ],
+  );
 
-  const composerEnvironment = useMemo<WorkbenchComposerEnvironment>(() => ({
-    actionIds: presentation.composerActions,
-    registry: hostCatalog.composerActionRenderers,
-    platform: extensionPlatform,
-    navigationEnabled: !panelHost && conversationRightPanelAvailable && presentation.rightPanel,
-  }), [presentation.composerActions, hostCatalog.composerActionRenderers, extensionPlatform, panelHost, conversationRightPanelAvailable, presentation.rightPanel]);
+  const composerEnvironment = useMemo<WorkbenchComposerEnvironment>(
+    () => ({
+      actionIds: presentation.composerActions,
+      registry: hostCatalog.composerActionRenderers,
+      platform: extensionPlatform,
+      navigationEnabled: !panelHost && conversationRightPanelAvailable && presentation.rightPanel,
+    }),
+    [
+      presentation.composerActions,
+      hostCatalog.composerActionRenderers,
+      extensionPlatform,
+      panelHost,
+      conversationRightPanelAvailable,
+      presentation.rightPanel,
+    ],
+  );
   return (
     <WorkbenchComposerProvider value={composerEnvironment}>
-    <BrowserAnnotationSinkProvider controller={composerController}>
-    <ConversationAppearanceProvider scope={displayScope} routeKey={workbenchNavigationSnapshot.routeScopeId}>
-    <ImageEditorContext.Provider value={imageEditor}>
-    <ScheduledTaskCatalogContext.Provider value={{ ...multiHostCatalog,
-      openConversation: (hostId, threadId) => hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, threadId)),
-    }}>
-    <ConversationReferenceSurface catalog={hostCatalog} hostId={snapshot.hostId}>
-      <InternalDeveloperModeGate />
-      <AppShellRouteRegionsProvider
-        controller={routeHeader.controller}
-        target={routeHeader.target}
-      >
-        <AppShell
-          navigationPresentation={workbenchNavigation}
-          routeStack={routeStackPresentation(workbenchNavigationSnapshot, JSON.stringify([extensionProjection.account?.provider.id ?? null, extensionProjection.account?.snapshot.readStateScope ?? extensionProjection.account?.snapshot.identity?.id ?? null]), extensionProjection.routeFamilies)}
-          navigationReturn={canReturn ? { key: workbenchNavigationSnapshot.navigationPath?.at(-1)?.historyKey ?? workbenchNavigationSnapshot.url, invoke: workbenchNavigation.returnToParent } : undefined}
-          navigationFailure={navigationTransition?.phase === 'failed' ? <>
-            <span>{intl.formatMessage({ id: "navigation.conversationFailed", defaultMessage: "Could not open the conversation. Your previous conversation is still available." })}</span>
-            <Button size="sm" variant="ghost" onClick={() => { void workbenchNavigation.selectConversation(navigationTransition.location).catch(() => undefined); }}>{intl.formatMessage({ id: "sidebar.search.retry", defaultMessage: "Retry" })}</Button>
-          </> : null}
-          serverDrawer={serverSpaces.unavailable ? undefined : {
-            open:serverDrawerOpen,onOpenChange:setServerDrawerOpen,
-            label:intl.formatMessage({id:'serverSpaces.title',defaultMessage:'Servers'}),
-            closeLabel:intl.formatMessage({id:'serverSpaces.closeDrawer',defaultMessage:'Close Servers'}),
-            openLabel:intl.formatMessage({id:'serverSpaces.openDrawer',defaultMessage:'Open Servers'}),
-            content:(serverDrawerOpen||serverDrawerVisited)?<Suspense fallback={null}><ServerSpacesContent key={serverSpaces.ownerKey} controller={serverSpaces} open={serverDrawerOpen} onClose={()=>setServerDrawerOpen(false)} onSelected={spaceId=>{setServerDrawerOpen(false);navigateToHomeForSpace(spaceId);}}/></Suspense>:null,
-          }}
-          surface={desktopBackdrop ? "application-desktop" : "default"}
-          navigation={!presentation.shellNavigation ? undefined : {
-            layout: "unified",
-            applicationsInSidebar: true,
-            settingsInSidebar: true,
-            settingsActive: sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
-            updatesActive: routeSettingsOpen && !applicationsSelected && workbenchNavigationSnapshot.applicationRoute.kind === 'settings' && workbenchNavigationSnapshot.applicationRoute.slug === 'updates',
-            actions: [
-              { id: "shell.home", title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }), icon: "home", active: conversationRouteOpen && sidebarDestination === "context",
-                onInvoke: openConversationSidebar },
-              { id: "shell.applications", title: intl.formatMessage({ id: "navigation.applications", defaultMessage: "Applications" }),
-                icon: "grid", active: applicationsSelected,
-                onInvoke: () => setSidebarDestination("applications") },
-              ...extensionProjection.footerActions, ...workNavigationActions,
-              { id: "shell.search", title: intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" }) + ` (${shortcutLabel("search")})`, icon: "search", onInvoke: () => setConversationSearchOpen(true) },
-            ],
-            account: extensionProjection.account === null ? null : {
-              providerId: extensionProjection.account.provider.id,
-              snapshot: extensionProjection.account.snapshot,
-              signIn: authenticationPresentation.signIn,
-              onOpen: () => extensionProjection.account?.snapshot.phase === "anonymous" && extensionProjection.account.provider.signInViewId ? authenticationPresentation.open() : setAccountOpen(true),
-              onRefresh: extensionProjection.account.provider.refresh,
-              onSignOut: extensionProjection.account.provider.signOut ? async () => {
-                await turnNotifications?.beforeSignOut();
-                await extensionProjection.account?.provider.signOut?.();
-              } : undefined,
-            },
-            onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
-            onOpenUpdates: () => openSettingsFromConversation('updates'),
-          }}
-          layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
-          mainContentLayout={conversationSurfaceVisible ? "thread-edge-scroll" : "default"}
-          primaryReading={conversationSurfaceVisible && connectionInterventionNode === null && !(draft !== null && draft.submission === null)}
-          sidebarOpen={shellSidebarOpen}
-          sidebarSuppressed={applicationDesktopOpen}
-          sidebarWidth={presentation.contextSidebar ? sidebarWidth : 0}
-          sidebarCollapsible={presentation.contextSidebar}
-          sidebarTransientEnabled={presentation.contextSidebar}
-          sidebarResizable={presentation.contextSidebar}
-          windowChrome={windowChrome}
-          onSidebarCollapse={collapseSidebar}
-          onSidebarExpand={expandSidebar}
-          onSidebarResizeEnd={commitSidebarWidth}
-          sceneOwnerId={panelOwnerId}
-          foreground={panelState.foreground}
-          onForegroundChange={foreground => dispatchPanel({ type: 'select-foreground', foreground })}
-          rightPanelOpen={!panelHost && conversationRightPanelAvailable && presentedRightPanelOpen}
-          rightPanelKeepMounted={!panelHost && presentation.rightPanel && panelState.right.tabs.some(tab =>
-            presentedPanelRenderers.some(renderer => renderer.kind === tab.kind && renderer.residency === "while-tab-open"))}
-          rightPanelFullWidth={!panelHost && conversationRightPanelAvailable && presentedRightPanelFullWidth}
-          rightPanelDefaultSize={presentation.rightPanelDefaultSize}
-          onRightPanelOpenChange={(open) =>
-            dispatchPanel({
-              type: "set-region-open",
-              region: "right",
-              open,
-              reason: "manual",
-              allowEmpty: true,
-            })
-          }
-          header={embedded !== undefined && draft !== null && draft.submission === null && !presentation.rightPanel ? null : header}
-          floatingSidebarHeader={(onDock) => !presentation.contextSidebar ? null : (
-            <AppShellNavigationControls
-              brand={embedded === undefined && extensionPlatform === "web" ? <ApplicationBrand branding={branding} onHome={openConversationSidebar} /> : undefined}
-              hostRole="transient"
-              sidebarOpen={false}
-              canGoBack={canGoBack}
-              canReturn={canReturn}
-              canGoForward={canGoForward}
-              onToggleSidebar={onDock}
-              onHome={invokeHeaderHome}
-              onBack={returnToParent}
-
-              onForward={workbenchNavigation.forward}
-              actions={presentedHeaderNavigationActions}
-            />
-          )}
-          leftPanel={!presentation.contextSidebar ? null : <ApplicationsSidebarFrame settingsContent={sidebarDestination === "settings" ? settingsNavigation : null} onReturnToChat={openConversationSidebar}
-            selected={applicationsSelected} actions={extensionProjection.primaryActions}
-            contributions={hostCatalog.extensionContributions} renderers={hostCatalog.platformViewRenderers}
-            host={extensionViewHost} route={workbenchNavigationSnapshot.applicationRoute}>
-            {miniAppSettingsOpen ? null : routeSettingsOpen ? settingsNavigation : (conversationSurfaceVisible || standaloneManagementOpen || extensionProjection.activeView?.keepConversationSidebar) ? <Sidebar
-              searchInDialog={presentation.shellNavigation}
-              threads={serverSpaces.filter(ordinaryThreads)}
-              threadCatalogs={multiHostCatalog.catalogs}
-              threadCatalogDiscovery={multiHostCatalog.discovery}
-              {...sidebarCommands}
-              managementNavigation={sidebarManagementNavigation}
-              showFooter={false}
-              footerAccessory={<AgentUsage hostId={snapshot.hostId} threadId={draft === null ? activeThreadId ?? null : null} busy={isStreaming} />}
-              showNewChat={presentation.shellNavigation}
-              showStart={!presentation.shellNavigation}
-              threadCapabilities={sidebarThreadCapabilities}
-              threadBadge={threadBadge}
-              threadListGrouping={threadListGrouping}
-              pendingTitle={sidebarPendingTitle}
-
-              catalogs={extensionProjection.catalogs}
-              bots={extensionProjection.bots}
-              sidebarLayout={hostCatalog.sidebarLayout}
-              activeHostId={workbenchNavigationSnapshot.location?.kind === "thread"
-                ? workbenchNavigationSnapshot.location.key.hostId : snapshot.hostId}
-              activeThreadId={conversationSurfaceVisible && workbenchNavigationSnapshot.location?.kind === "thread"
-                ? workbenchNavigationSnapshot.location.key.threadId : ""}
-              pendingHostId={
-                pendingConversationLocation?.kind === "thread"
-                  ? pendingConversationLocation.key.hostId
-                  : null
-              }
-              pendingThreadId={
-                pendingConversationLocation?.kind === "thread"
-                  ? pendingConversationLocation.key.threadId
-                  : null
-              }
-
-            /> : null}
-          </ApplicationsSidebarFrame>}
-          rightPanel={panelHost ? null : rightPanelView}
-        >
-        {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
-        <div className="workbench-route-stage">
-          {!embedded && visibleOnboardingOverlay !== null ? <HostAgentOnboarding
-            key={snapshot.hostId}
-            presentation={visibleOnboardingOverlay}
-            onImported={async () => { await serverSpaces.select("myself"); }}
-            onFinish={finishOnboarding}
-            onUseModels={() => finishOnboarding()}
-            onClose={() => { onboardingFinishEpoch.current += 1; setOnboardingOverlay(null); }}
-          /> : null}
-          <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
-          <div
-            aria-hidden={!conversationRouteOpen || undefined}
-            className="workbench-conversation-route"
-            hidden={!conversationSurfaceVisible}
-            inert={!conversationRouteOpen || undefined}
-          >
-        <ExecutionRecoveryNotice hostId={snapshot.hostId} execution={executionStatusForThread(snapshot.transport, snapshot.activeThreadId)} />
-        {connectionInterventionNode !== null ? (
-          <div className="hostless-workbench__empty-stage">
-            {connectionInterventionNode}
-          </div>
-        ) : draft !== null && draft.submission === null ? (
-          <NewThreadDraftPage
-            key={draft.id}
-            setupNotice={recoveryAccessFailure !== null ? <div className="thread-layout-width new-thread-draft-composer-width"><ConversationRecoveryNotice
-              failed accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission} /></div> : draftSetupNotice}
-            setupBlocksSubmission={recoveryAccessFailure !== null || draftSetupKind === "models" || (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) || (supportsModelSetup && modelReadiness.isPending)}
-            activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
-            composerPresentationEnabled={conversationRouteOpen}
-            draft={draft}
-            controller={composerController}
-            modelSelectionPolicy={modelSelectionPolicy}
-            showExecutionControls={presentation.executionSelection === "selectable"}
-            heading={embedded ? intl.formatMessage({
-              id: "chat.companionHeading",
-              defaultMessage: "What would you like to do together today?",
-            }) : undefined}
-            placeholderPending={recoveryPlaceholder !== undefined}
-                        placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
-              id: "chat.companionPlaceholder",
-              defaultMessage: "Share your thoughts, or ask me to help with something",
-            }) : undefined)}
-            selectionCatalog={composerSelectionCatalog}
-            catalog={composerSuggestionCatalog}
-            effectiveSelections={modelSelectionPolicy === "session" ? undefined : composerCatalog.newThreadDefaults ?? undefined}
-            resolveAgentCycleShortcut={resolveAgentCycleShortcut}
-            personalDefaultsPending={composerCatalog.personalDefaultsPending}
-            workspaceOptions={draftWorkspaceOptions}
-            workspaceOptionsLoading={projectCatalog.isFetching}
-            nativeWorkspacePicking={localProjectPicker !== null}
-            activeHostId={snapshot.hostId}
-            hostOptions={composerHostOptions}
-            connectionPhase={activeHostConnectionPhase}
-            onSelectHost={async (machineId) => {
-              setWorkspacePickerOpen(false);
-              const machine = newConversationMachines.find(machine => machine.id === machineId);
-              if (!machine) return;
-              const currentAgent = hostCatalog.profiles.find(host => host.hostId === snapshot.hostId)?.agent;
-              const target = chooseWorkInHost(machine, currentAgent, snapshot.hostId);
-              await hostCatalog.selectHost(target.hostId);
-            }}
-            onSelectWorkspace={(workspace) => {
-              selectDraftWorkspace({
-                cwd: workspace.cwd,
-                runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots,
-                projectId: workspace.projectId,
-              });
-            }}
-            onBrowseWorkspace={browseWorkspace}
-            onResolveAttachment={resolveActiveHostAttachment}
-            onRemoveAttachment={removeActiveHostAttachment}
-            goals={runtime.resources.goals}
-            onCreateGoal={async objective => {
-              const content = composerController.getSnapshot().draft;
-              await hostCatalog.createGoal({
-                commandId: crypto.randomUUID(),
-                clientMessageId: crypto.randomUUID(),
-                target: draft.target,
-                document: { version: 1, blocks: [{ type: "paragraph", children: [{ type: "text", text: objective }] }] },
-                attachments: [], context: [], selections: {
-                  ...(composerCatalog.newThreadDefaults?.serviceTier === undefined ? {} : { serviceTier: composerCatalog.newThreadDefaults.serviceTier }),
-                  ...(composerCatalog.newThreadDefaults?.model ? { model: composerCatalog.newThreadDefaults.model, ...(composerCatalog.newThreadDefaults.effort === null ? {} : { effort: composerCatalog.newThreadDefaults.effort }) } : {}),
-                  ...content.selections,
-                }, options: content.options,
-                createdAt: Date.now(),
-              }, objective);
-            }}
-            composerAddMenuContent={composerAddMenuContent}
-            composerTrailingActions={!panelHost && conversationRightPanelAvailable && presentation.rightPanel ? <ComposerPanelToggle /> : null}
-            composerEndActions={composerEndActions}
-            shortcutCommands={hostShortcutCommands}
-            onSubmit={sendMessage}
-          />
-        ) : (
-          <div className="local-conversation-page">
-            <ConversationSummaryLayout controller={summary}>
-            <div className="conversation-summary-reading">
-                <Conversation
-                  historyPresentation={recoveryPresentation}
-                  active={!shouldPresentMainComposerOverlay(
-                    conversationRouteOpen && presentedRightPanelOpen && presentedRightPanelFullWidth,
-                    panelState.right.activeTabId,
-                  )}
-                  onVisibleContentReady={visibleContentReady ? onHistoryVisibleContentReady : undefined}
-                  visibleContentReadyKey={transitionOwnsView ? navigationTransition ?? undefined : historyPaintAttempt ?? undefined}
-                  scrollPolicy="natural"
-                  onAddSelectionToChat={conversationRouteOpen && activeThreadId !== null ? (text) => {
-                    const target = composerController.getSnapshot().draft.target;
-                    if (target.type === "new-thread" || target.key.hostId !== snapshot.hostId
-                      || target.key.threadId !== activeThreadId) return false;
-                    return composerController.appendQuote(text);
-                  } : undefined}
-                  onTerminalResultVisible={showingDisplayCache ? undefined : (turnId) => {
-                    if (activeThreadId !== null) hostCatalog.threadAttention.acknowledge(
-                      attentionScope, snapshot.hostId, activeThreadId, turnId);
-                  }}
-                  hasPendingSubmission={unavailableThreadReason === null && draft !== null}
-                  emptyState={archivePresentation.banner === "replace" ? <ConversationUnavailableState
-                      reason={unavailableThreadReason === "not-found" ? "not-found" : "archived"}
-                      onRestore={unavailableThreadReason === "archived" ? restoreUnavailableThread : undefined}
-                      restoring={restoringArchivedThread}
-                    /> : draft !== null ? <PendingConversationPage
-                      embedded
-                      conversation={draft}
-                      documentContext={{ conversationId: null, cwd: draft.target.execution.workspace.cwd,
-                        hostId: draft.target.execution.hostId, theme: appearanceTheme.resolvedTheme,
-                        loadMediaSource, onOpenResource: openChatResource }}
-                      onRetry={(intent) => hostCatalog.submit(intent).then(() => undefined)}
-                    /> : recoveryPresentation === "cold-loading" || recoveryPresentation === "cold-error"
-                    ? <ConversationRecoveryEmptyState
-                        failed={recoveryPresentation === "cold-error"}
-                        requiresUpdate={recoveryRequiresUpdate}
-                        accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission}
-                      />
-                    : undefined}
-                  key={activeConversationRestoreKey ?? "empty"}
-                  documentContext={{
-                    conversationId: activeThreadId,
-                    submissionRecovery: showingDisplayCache ? undefined : deliveryRecoveryActions,
-                    beginImageEdit: beginConversationImageEdit,
-                    mcpApps: mcpAppOwner ?? undefined,
-                    cwd: activeProtocolThread?.cwd ?? null,
-                    hostId: snapshot.hostId,
-                    loadMediaSource,
-                    onOpenResource: openChatResource,
-                    onReviewTurnDiff: openTurnDiffReview,
-                    composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
-                    turnActions: { fork: activeThreadId !== null && hostCatalog.threadManagement.capabilities(snapshot.hostId).fork, reviewDiff: true },
-                    onForkConversation: !showingDisplayCache && nativeSession.data?.fork ? conversationToolbarProps.onFork : undefined,
-                    onForkTurn: !showingDisplayCache && snapshot.conversation?.authoritative === true
-                      && activeThreadId !== null && !activeThreadId.startsWith("codex_") && hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
-                      ? turnId => forkAndOpenThread({
-                          routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
-                          fork: () => hostCatalog.threadManagement.fork(snapshot.hostId, activeThreadId, turnId),
-                          refreshThreads: refreshConversationCatalog,
-                          openThread: childId => hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, childId)),
-                        }) : undefined,
-                    theme: appearanceTheme.resolvedTheme,
-                  }}
-                  timeline={draft === null && archivePresentation.showHistory ? visibleTimeline : null}
-                  readOnlyTurnIds={display.source === "mixed" ? display.cachedTurnIds : undefined}
-                  consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
-                  navigationSource={showingDisplayCache ? null : navigationSource}
-                  searchTarget={conversationSearchTarget?.hostId === snapshot.hostId && conversationSearchTarget.threadId === snapshot.activeThreadId ? conversationSearchTarget : null}
-                  initialRestoreSnapshot={
-                    routeRestoreCheckpoints.get(activeConversationRestoreKey)
-                  }
-                  onRestoreSnapshotChange={(restoreSnapshot) => {
-                    if (activeConversationRestoreKey !== null)
-                      routeRestoreCheckpoints.set(
-                        activeConversationRestoreKey,
-                        restoreSnapshot,
-                      );
-                  }}
-                  onLoadItemDetails={loadItemDetails}
-                  onLoadOlder={
-                    !showingDisplayCache && snapshot.conversation?.history.hasOlder
-                      ? loadOlderConversation
-                      : undefined
-                  }
-                  onHistoryViewportDiagnostic={showingDisplayCache ? undefined : (event: ConversationHistoryViewportDiagnostic) => {
-                    const history = snapshot.conversation?.history;
-                    observeEvent({
-                      kind: "history_viewport",
-                      phase: event.phase,
-                      reason: event.reason ?? null,
-                      generation: event.generation,
-                      timelineRevision: event.timelineRevision,
-                      renderedTurnCount: event.renderedTurnCount,
-                      historyTurnCount: event.historyTurnCount,
-                      loadingOlder: Number(event.loadingOlder),
-                      authoritative: Number(snapshot.conversation?.authoritative === true),
-                      historyHasOlder: Number(history?.hasOlder === true),
-                      historyLoading: Number(history?.loading === true),
-                      historyCursorPresent: Number(history?.cursor !== null && history?.cursor !== undefined),
-                      historyError: Number(history?.error !== null && history?.error !== undefined),
-                      beforeDistanceFromBottomPx: event.before.distanceFromBottomPx,
-                      beforeViewportHeightPx: event.before.viewportHeightPx,
-                      beforeScrollHeightPx: event.before.scrollHeightPx,
-                      ...(event.after === undefined ? {} : {
-                        afterDistanceFromBottomPx: event.after?.distanceFromBottomPx ?? null,
-                        afterViewportHeightPx: event.after?.viewportHeightPx ?? null,
-                        afterScrollHeightPx: event.after?.scrollHeightPx ?? null,
-                      }),
-                    });
-                  }}
-                  history={!showingDisplayCache ? snapshot.conversation?.history : null}
-                  onOpenSubagent={showingDisplayCache ? undefined : (threadId) => {
-                    void hostCatalog.navigate(
-                      createWorkbenchThreadLocation(snapshot.hostId, threadId),
-                    );
-                  }}
-                  continuableTurnId={showingDisplayCache ? null : snapshot.conversation?.continuation.turnId}
-                  onContinueTurn={showingDisplayCache ? undefined : (turnId) => {
-                    const placement = captureLatestTurnPlacement();
-                    void activeThreadLease?.continueTurn(turnId).catch(() => {
-                      clearLatestTurnPlacement(placement);
-                    });
-                  }}
-                  onRespondInteraction={showingDisplayCache ? undefined : respondToInteraction}
-                  onAnswerAsyncQuestion={!showingDisplayCache && snapshot.phase === "ready" ? answerAsyncQuestion : undefined}
-                  queuedAsyncQuestionIds={queuedAsyncQuestionIds}
-                  onConversationScrollApiChange={(api) => {
-                    conversationScrollApiRef.current = api;
-                  }}
-                  surfaceCapabilities={timelineSurfaceCapabilities}
-                  footer={archivePresentation.banner === "alongside" ? (
-                    <div className="thread-composer-region">
-                      <ConversationUnavailableState
-                        reason="archived"
-                        onRestore={restoreUnavailableThread}
-                        restoring={restoringArchivedThread}
-                      />
-                    </div>
-                  ) : unavailableThreadReason !== null ? null : (
-                    <ThreadComposerPresentation
-                      key={panelOwnerId}
-                      scopeId={panelOwnerId}
-                      forceExpanded={pendingInteraction !== null}
-                      controller={composerController}
-                      activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
-                      enabled={conversationRouteOpen}
-                      timeline={draft === null ? visibleTimeline : null}
-                      conversationProps={{
-                        readOnlyTurnIds: display.source === "mixed" ? display.cachedTurnIds : undefined,
-                        onLoadItemDetails: showingDisplayCache ? undefined : loadItemDetails,
-                        onLoadOlder: !showingDisplayCache && snapshot.conversation?.history.hasOlder ? loadOlderConversation : undefined,
-                        history: !showingDisplayCache ? snapshot.conversation?.history : null,
-                        onRespondInteraction: showingDisplayCache ? undefined : respondToInteraction,
-                        onAnswerAsyncQuestion: !showingDisplayCache && snapshot.phase === 'ready' ? answerAsyncQuestion : undefined,
-                        queuedAsyncQuestionIds,
-                        onOpenSubagent: showingDisplayCache ? undefined : threadId => {
-                          void hostCatalog.navigate(createWorkbenchThreadLocation(snapshot.hostId, threadId));
-                        },
-                        continuableTurnId: showingDisplayCache ? null : snapshot.conversation?.continuation.turnId,
-                        onContinueTurn: showingDisplayCache ? undefined : turnId => {
-                          void activeThreadLease?.continueTurn(turnId).catch(() => {});
-                        },
-                        onAddSelectionToChat: conversationRouteOpen && activeThreadId !== null ? text => {
-                          const target = composerController.getSnapshot().draft.target;
-                          if (target.type === 'new-thread' || target.key.hostId !== snapshot.hostId || target.key.threadId !== activeThreadId) return false;
-                          return composerController.appendQuote(text);
-                        } : undefined,
-                      }}
-                      documentContext={{ conversationId: activeThreadId, beginImageEdit: beginConversationImageEdit, cwd: activeProtocolThread?.cwd ?? null, hostId: snapshot.hostId, loadMediaSource, onOpenResource: openChatResource, onReviewTurnDiff: openTurnDiffReview, composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null, theme: appearanceTheme.resolvedTheme }}
-                    >
-                    <div
-                      className="thread-composer-region"
-                      data-thread-find-composer="true"
-                    >
-                    {(draft === null && recoveryPresentation === "warm-error") || (recoveryAccessFailure !== null && (draft !== null || recoveryPresentation !== 'cold-error')) ? <ConversationRecoveryNotice
-                      failed requiresUpdate={recoveryRequiresUpdate}
-                      accessFailure={recoveryAccessFailure} onRetry={retryConnectionAdmission}
-                    /> : null}
-                    {conversationContribution?.beforeComposer}
-                    <ContinuationFailureNotice scope={JSON.stringify([snapshot.hostId, activeThreadId])}
-                      error={snapshot.conversation?.continuation.error} />
-                    {deliveryRecovery.detached.map(item => (
-                      <div className="submission-recovery-detached thread-layout-width" key={JSON.stringify([snapshot.hostId, activeThreadId, item.commandId])}>
-                        <span>{item.preview}</span>
-                        <SubmissionRecoveryNotice submission={item} onAbandon={deliveryRecoveryActions.onAbandon} onRetry={deliveryRecoveryActions.onRetry} />
-                      </div>
-                    ))}
-                    {pendingInteraction === null ? (
-                      <ThreadGoalSurface
-                        threadId={snapshot.phase === "ready" ? activeThreadId : null}
-                        goals={runtime.resources.goals}
-                        portalContainer={portalContainer}
-                      >{(goalMenuItem, _goalBusy, goalContent) => (
-                      <ThreadRecoveryNotice threadId={snapshot.phase === "ready" ? activeThreadId : null} resource={runtime.resources.turnRecovery}>{recoveryContent => (
-                      <WorkbenchComposer
-                        ref={composerHandle}
-                        attachedContent={goalContent || recoveryContent ? <>{goalContent}{recoveryContent}</> : null}
-                        floatingContent={composerChangeSummary}
-                        controller={composerController}
-                        defaultFollowUpAction={embedded ? "queue" : defaultFollowUpAction}
-                        availableFollowUpActions={followUpCapability?.queue === false && followUpCapability?.steer === false ? [] : snapshot.phase !== "ready" || snapshot.conversation?.authoritative !== true
-                          || snapshot.conversation.queuedSubmissions.some(item => item.local && item.state === "unknown")
-                          ? ["queue"]
-                          : (["steer", "queue"] as const).filter(action => followUpCapability?.[action] !== false && runtime.resources.host.canRequest?.(action === "queue" ? "thread/queue/add" : "turn/steer") !== false)}
-                        portalContainer={portalContainer}
-                        isUnstable={snapshot.phase === "reconnecting" || (activeThreadId !== null
-                          && conversationRecoveryIsUnstable(recoveryPresentation, recoveryDiagnostic))}
-                        isRecovering={connectionRecovering || conversationRecovering}
-                        isStreaming={draft === null && isStreaming}
-                        isStopping={snapshot.conversation?.activeTurn?.status === "interrupting"}
-                        awaitSubmission
-                        submissionDisabled={draft !== null || (activeThreadLease === null && localOutbox === null)}
-                        loadQueuedImage={loadQueuedImage}
-                        queuedSubmissions={[
-                          ...visibleQueuedSubmissions(snapshot.conversation?.queuedSubmissions ?? localQueuedSubmissions,
-                            visibleTimeline).filter(submission => !deliveryRecovery.byClientId.has(submission.clientMessageId)).map((submission) =>
-                            queuedSubmissionPresentation(submission, queueReorderable, identityAvatar, intl)),
-                          ...(snapshot.conversation?.unconfirmedSteers ?? []).map((claim) => ({
-                            id: claim.id,
-                            sender: queueSenderPresentation(claim.sender, identityAvatar),
-                            preview: claim.input.find((input) => input.type === "text")?.text ?? "Unconfirmed steering message",
-                            state: "unknown" as const,
-                            operation: claim.pausedReason === "delivery-retry-requested" ? "starting" as const : "idle" as const,
-                            actionable: false,
-                            reorderable: false,
-                            editableContent: restoreQueuedInput(claim.input),
-                            pausedReason: null,
-                            error: null,
-                            unconfirmedTargetTurnId: claim.targetTurnId,
-                            retryable: claim.retryable === true,
-                          })),
-                        ]}
-                        onUpdateQueuedSubmission={(id, intent) => queueOperation("update", id, () => updateQueuedSubmission(id, intent))}
-                        onDeleteQueuedSubmission={(id) => queueOperation("delete", id, () => deleteQueuedSubmission(id))}
-                        onReorderQueuedSubmissions={(ids) => queueOperation("reorder", "order", () => reorderQueuedSubmissions(ids))}
-                        onSteerQueuedSubmission={(id) => queueOperation("steer", id, () => steerQueuedSubmission(id))}
-                        onRetryUnconfirmedSteer={queueUnconfirmedDeliveryRetry ? retryUnconfirmedSteer : undefined}
-                        supportsQueuedSteer={queueAtomicSteer}
-                        onResumeQueuedSubmissions={() => queueOperation("resume", "resume", () => resumeQueuedSubmissions())}
-                        onResolveAttachment={resolveActiveHostAttachment}
-                        onRemoveAttachment={removeActiveHostAttachment}
-                        addMenuContent={goalMenuItem === null ? composerAddMenuContent : (closeMenu) => <>
-                          {typeof composerAddMenuContent === "function" ? composerAddMenuContent(closeMenu) : composerAddMenuContent}
-                          {goalMenuItem(closeMenu)}
-                        </>}
-                        shortcutCommands={threadShortcutCommands}
-                        entryActions={composerDesktopEntry}
-                        endActions={presentation.connectorLauncher ? connectorPresentation.launcher : null}
-                        actionsDisabled={draft !== null && draftSubmissionOwnsNavigation(draft.phase)}
-                        modelSelectionPolicy={modelSelectionPolicy}
-                        placeholderPending={recoveryPlaceholder !== undefined}
-                        placeholder={recoveryPlaceholder ?? (embedded ? intl.formatMessage({
-                          id: "chat.companionFollowupPlaceholder",
-                          defaultMessage: "Tell me what you'd like to do next",
-                        }) : undefined)}
-                        selectionCatalog={composerSelectionCatalog}
-                        catalog={composerSuggestionCatalog}
-                        resolveAgentCycleShortcut={resolveAgentCycleShortcut}
-                        mentionSuggestionsEnabled={false}
-                        effectiveSelections={{
-                          model: snapshot.conversation?.execution.model,
-                          effort: snapshot.conversation?.execution.effort,
-                          serviceTier: snapshot.conversation?.execution.serviceTier,
-                          permissionProfile:
-                            snapshot.conversation?.execution.permissionProfile,
-                        }}
-                        onSubmit={sendMessage}
-                        onCancel={cancelStream}
-                      />
-                      )}</ThreadRecoveryNotice>
-                      )}</ThreadGoalSurface>
-                    ) : (
-                      <div className="opencraft-composer-stack">
-                        {composerChangeSummary}
-                        <ConversationPendingInteractionPanel
-                          block={pendingInteraction}
-                          draftStore={interactionDraftStore}
-                          draftScope={activeThreadId === null ? undefined : JSON.stringify([snapshot.hostId, activeThreadId, activeConversationRestoreKey])}
-                          requestTurnId={snapshot.conversation?.pendingInteractions.find(interaction => interaction.requestId === pendingInteraction?.requestId)?.turnId}
-                          onRespondInteraction={respondToInteraction}
+      <BrowserAnnotationSinkProvider controller={composerController}>
+        <ConversationAppearanceProvider scope={displayScope} routeKey={workbenchNavigationSnapshot.routeScopeId}>
+          <ImageEditorContext.Provider value={imageEditor}>
+            <ScheduledTaskCatalogContext.Provider
+              value={{
+                ...multiHostCatalog,
+                openConversation: (hostId, threadId) =>
+                  hostCatalog.selectConversation(createWorkbenchThreadLocation(hostId, threadId)),
+              }}
+            >
+              <ConversationReferenceSurface catalog={hostCatalog} hostId={snapshot.hostId}>
+                <InternalDeveloperModeGate />
+                <AppShellRouteRegionsProvider controller={routeHeader.controller} target={routeHeader.target}>
+                  <AppShell
+                    navigationPresentation={workbenchNavigation}
+                    routeStack={routeStackPresentation(
+                      workbenchNavigationSnapshot,
+                      JSON.stringify([
+                        extensionProjection.account?.provider.id ?? null,
+                        extensionProjection.account?.snapshot.readStateScope ??
+                          extensionProjection.account?.snapshot.identity?.id ??
+                          null,
+                      ]),
+                      extensionProjection.routeFamilies,
+                    )}
+                    navigationReturn={
+                      canReturn
+                        ? {
+                            key:
+                              workbenchNavigationSnapshot.navigationPath?.at(-1)?.historyKey ??
+                              workbenchNavigationSnapshot.url,
+                            invoke: workbenchNavigation.returnToParent,
+                          }
+                        : undefined
+                    }
+                    navigationFailure={
+                      navigationTransition?.phase === "failed" ? (
+                        <>
+                          <span>
+                            {intl.formatMessage({
+                              id: "navigation.conversationFailed",
+                              defaultMessage:
+                                "Could not open the conversation. Your previous conversation is still available.",
+                            })}
+                          </span>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              void workbenchNavigation
+                                .selectConversation(navigationTransition.location)
+                                .catch(() => undefined);
+                            }}
+                          >
+                            {intl.formatMessage({ id: "sidebar.search.retry", defaultMessage: "Retry" })}
+                          </Button>
+                        </>
+                      ) : null
+                    }
+                    serverDrawer={
+                      serverSpaces.unavailable
+                        ? undefined
+                        : {
+                            open: serverDrawerOpen,
+                            onOpenChange: setServerDrawerOpen,
+                            label: intl.formatMessage({ id: "serverSpaces.title", defaultMessage: "Servers" }),
+                            closeLabel: intl.formatMessage({
+                              id: "serverSpaces.closeDrawer",
+                              defaultMessage: "Close Servers",
+                            }),
+                            openLabel: intl.formatMessage({
+                              id: "serverSpaces.openDrawer",
+                              defaultMessage: "Open Servers",
+                            }),
+                            content:
+                              serverDrawerOpen || serverDrawerVisited ? (
+                                <Suspense fallback={null}>
+                                  <ServerSpacesContent
+                                    key={serverSpaces.ownerKey}
+                                    controller={serverSpaces}
+                                    open={serverDrawerOpen}
+                                    onClose={() => setServerDrawerOpen(false)}
+                                    onSelected={(spaceId) => {
+                                      setServerDrawerOpen(false);
+                                      navigateToHomeForSpace(spaceId);
+                                    }}
+                                  />
+                                </Suspense>
+                              ) : null,
+                          }
+                    }
+                    surface={desktopBackdrop ? "application-desktop" : "default"}
+                    navigation={
+                      !presentation.shellNavigation
+                        ? undefined
+                        : {
+                            layout: "unified",
+                            applicationsInSidebar: true,
+                            settingsInSidebar: true,
+                            settingsActive:
+                              sidebarDestination === "settings" || (routeSettingsOpen && !applicationsSelected),
+                            updatesActive:
+                              routeSettingsOpen &&
+                              !applicationsSelected &&
+                              workbenchNavigationSnapshot.applicationRoute.kind === "settings" &&
+                              workbenchNavigationSnapshot.applicationRoute.slug === "updates",
+                            actions: [
+                              {
+                                id: "shell.home",
+                                title: intl.formatMessage({ id: "navigation.home", defaultMessage: "Home" }),
+                                icon: "home",
+                                active: conversationRouteOpen && sidebarDestination === "context",
+                                onInvoke: openConversationSidebar,
+                              },
+                              {
+                                id: "shell.applications",
+                                title: intl.formatMessage({
+                                  id: "navigation.applications",
+                                  defaultMessage: "Applications",
+                                }),
+                                icon: "grid",
+                                active: applicationsSelected,
+                                onInvoke: () => setSidebarDestination("applications"),
+                              },
+                              ...extensionProjection.footerActions,
+                              ...workNavigationActions,
+                              {
+                                id: "shell.search",
+                                title:
+                                  intl.formatMessage({ id: "sidebar.search", defaultMessage: "Search conversations" }) +
+                                  ` (${shortcutLabel("search")})`,
+                                icon: "search",
+                                onInvoke: () => setConversationSearchOpen(true),
+                              },
+                            ],
+                            account:
+                              extensionProjection.account === null
+                                ? null
+                                : {
+                                    providerId: extensionProjection.account.provider.id,
+                                    snapshot: extensionProjection.account.snapshot,
+                                    signIn: authenticationPresentation.signIn,
+                                    onOpen: () =>
+                                      extensionProjection.account?.snapshot.phase === "anonymous" &&
+                                      extensionProjection.account.provider.signInViewId
+                                        ? authenticationPresentation.open()
+                                        : setAccountOpen(true),
+                                    onRefresh: extensionProjection.account.provider.refresh,
+                                    onSignOut: extensionProjection.account.provider.signOut
+                                      ? async () => {
+                                          await turnNotifications?.beforeSignOut();
+                                          await extensionProjection.account?.provider.signOut?.();
+                                        }
+                                      : undefined,
+                                  },
+                            onOpenSettings: () => setSidebarDestination(routeSettingsOpen ? "context" : "settings"),
+                            onOpenUpdates: () => openSettingsFromConversation("updates"),
+                          }
+                    }
+                    layoutScope={`${managementSettingsOpen ? "conversation" : workbenchNavigationSnapshot.applicationRoute.kind}:${panelOwnerId}`}
+                    mainContentLayout={conversationSurfaceVisible ? "thread-edge-scroll" : "default"}
+                    primaryReading={
+                      conversationSurfaceVisible &&
+                      connectionInterventionNode === null &&
+                      !(draft !== null && draft.submission === null)
+                    }
+                    sidebarOpen={shellSidebarOpen}
+                    sidebarSuppressed={applicationDesktopOpen}
+                    sidebarWidth={presentation.contextSidebar ? sidebarWidth : 0}
+                    sidebarCollapsible={presentation.contextSidebar}
+                    sidebarTransientEnabled={presentation.contextSidebar}
+                    sidebarResizable={presentation.contextSidebar}
+                    windowChrome={windowChrome}
+                    onSidebarCollapse={collapseSidebar}
+                    onSidebarExpand={expandSidebar}
+                    onSidebarResizeEnd={commitSidebarWidth}
+                    sceneOwnerId={panelOwnerId}
+                    foreground={panelState.foreground}
+                    onForegroundChange={(foreground) => dispatchPanel({ type: "select-foreground", foreground })}
+                    rightPanelOpen={!panelHost && conversationRightPanelAvailable && presentedRightPanelOpen}
+                    rightPanelKeepMounted={
+                      !panelHost &&
+                      presentation.rightPanel &&
+                      panelState.right.tabs.some((tab) =>
+                        presentedPanelRenderers.some(
+                          (renderer) => renderer.kind === tab.kind && renderer.residency === "while-tab-open",
+                        ),
+                      )
+                    }
+                    rightPanelFullWidth={!panelHost && conversationRightPanelAvailable && presentedRightPanelFullWidth}
+                    rightPanelDefaultSize={presentation.rightPanelDefaultSize}
+                    onRightPanelOpenChange={(open) =>
+                      dispatchPanel({
+                        type: "set-region-open",
+                        region: "right",
+                        open,
+                        reason: "manual",
+                        allowEmpty: true,
+                      })
+                    }
+                    header={
+                      embedded !== undefined && draft !== null && draft.submission === null && !presentation.rightPanel
+                        ? null
+                        : header
+                    }
+                    floatingSidebarHeader={(onDock) =>
+                      !presentation.contextSidebar ? null : (
+                        <AppShellNavigationControls
+                          brand={
+                            embedded === undefined && extensionPlatform === "web" ? (
+                              <ApplicationBrand branding={branding} onHome={openConversationSidebar} />
+                            ) : undefined
+                          }
+                          hostRole="transient"
+                          sidebarOpen={false}
+                          canGoBack={canGoBack}
+                          canReturn={canReturn}
+                          canGoForward={canGoForward}
+                          onToggleSidebar={onDock}
+                          onHome={invokeHeaderHome}
+                          onBack={returnToParent}
+                          onForward={workbenchNavigation.forward}
+                          actions={presentedHeaderNavigationActions}
                         />
-                      </div>
-                        )}
-                    {conversationContribution?.afterComposer}
+                      )
+                    }
+                    leftPanel={
+                      !presentation.contextSidebar ? null : (
+                        <ApplicationsSidebarFrame
+                          settingsContent={sidebarDestination === "settings" ? settingsNavigation : null}
+                          onReturnToChat={openConversationSidebar}
+                          selected={applicationsSelected}
+                          actions={extensionProjection.primaryActions}
+                          contributions={hostCatalog.extensionContributions}
+                          renderers={hostCatalog.platformViewRenderers}
+                          host={extensionViewHost}
+                          route={workbenchNavigationSnapshot.applicationRoute}
+                        >
+                          {miniAppSettingsOpen ? null : routeSettingsOpen ? (
+                            settingsNavigation
+                          ) : conversationSurfaceVisible ||
+                            standaloneManagementOpen ||
+                            extensionProjection.activeView?.keepConversationSidebar ? (
+                            <Sidebar
+                              searchInDialog={presentation.shellNavigation}
+                              threads={serverSpaces.filter(ordinaryThreads)}
+                              threadCatalogs={multiHostCatalog.catalogs}
+                              threadCatalogDiscovery={multiHostCatalog.discovery}
+                              {...sidebarCommands}
+                              managementNavigation={sidebarManagementNavigation}
+                              showFooter={false}
+                              footerAccessory={
+                                <AgentUsage
+                                  hostId={snapshot.hostId}
+                                  threadId={draft === null ? (activeThreadId ?? null) : null}
+                                  busy={isStreaming}
+                                />
+                              }
+                              showNewChat={presentation.shellNavigation}
+                              showStart={!presentation.shellNavigation}
+                              threadCapabilities={sidebarThreadCapabilities}
+                              threadBadge={threadBadge}
+                              threadListGrouping={threadListGrouping}
+                              pendingTitle={sidebarPendingTitle}
+                              catalogs={extensionProjection.catalogs}
+                              bots={extensionProjection.bots}
+                              sidebarLayout={hostCatalog.sidebarLayout}
+                              activeHostId={
+                                workbenchNavigationSnapshot.location?.kind === "thread"
+                                  ? workbenchNavigationSnapshot.location.key.hostId
+                                  : snapshot.hostId
+                              }
+                              activeThreadId={
+                                conversationSurfaceVisible && workbenchNavigationSnapshot.location?.kind === "thread"
+                                  ? workbenchNavigationSnapshot.location.key.threadId
+                                  : ""
+                              }
+                              pendingHostId={
+                                pendingConversationLocation?.kind === "thread"
+                                  ? pendingConversationLocation.key.hostId
+                                  : null
+                              }
+                              pendingThreadId={
+                                pendingConversationLocation?.kind === "thread"
+                                  ? pendingConversationLocation.key.threadId
+                                  : null
+                              }
+                            />
+                          ) : null}
+                        </ApplicationsSidebarFrame>
+                      )
+                    }
+                    rightPanel={panelHost ? null : rightPanelView}
+                  >
+                    {panelHost ? createPortal(rightPanelView, panelHost.target) : null}
+                    <div className="workbench-route-stage">
+                      {!embedded && visibleOnboardingOverlay !== null ? (
+                        <HostAgentOnboarding
+                          key={snapshot.hostId}
+                          presentation={visibleOnboardingOverlay}
+                          onImported={async () => {
+                            await serverSpaces.select("myself");
+                          }}
+                          onFinish={finishOnboarding}
+                          onUseModels={() => finishOnboarding()}
+                          onClose={() => {
+                            onboardingFinishEpoch.current += 1;
+                            setOnboardingOverlay(null);
+                          }}
+                        />
+                      ) : null}
+                      <WorkbenchPresentationActivityProvider active={conversationRouteOpen}>
+                        <div
+                          aria-hidden={!conversationRouteOpen || undefined}
+                          className="workbench-conversation-route"
+                          hidden={!conversationSurfaceVisible}
+                          inert={!conversationRouteOpen || undefined}
+                        >
+                          <ExecutionRecoveryNotice
+                            hostId={snapshot.hostId}
+                            execution={executionStatusForThread(snapshot.transport, snapshot.activeThreadId)}
+                          />
+                          {connectionInterventionNode !== null ? (
+                            <div className="hostless-workbench__empty-stage">{connectionInterventionNode}</div>
+                          ) : draft !== null && draft.submission === null ? (
+                            <NewThreadDraftPage
+                              key={draft.id}
+                              setupNotice={
+                                <>
+                                  {selectedPlacementProblem ? (
+                                    <div className="thread-layout-width new-thread-draft-composer-width" role="alert">
+                                      {selectedPlacementProblem}
+                                    </div>
+                                  ) : null}
+                                  {recoveryAccessFailure !== null ? (
+                                    <div className="thread-layout-width new-thread-draft-composer-width">
+                                      <ConversationRecoveryNotice
+                                        failed
+                                        accessFailure={recoveryAccessFailure}
+                                        onRetry={retryConnectionAdmission}
+                                      />
+                                    </div>
+                                  ) : (
+                                    draftSetupNotice
+                                  )}
+                                </>
+                              }
+                              setupBlocksSubmission={
+                                selectedPlacementProblem !== null ||
+                                recoveryAccessFailure !== null ||
+                                draftSetupKind === "models" ||
+                                (draftSetupKind === "catalog-error" && composerCatalog.models.length === 0) ||
+                                (supportsModelSetup && modelReadiness.isPending)
+                              }
+                              activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
+                              composerPresentationEnabled={conversationRouteOpen}
+                              draft={draft}
+                              controller={composerController}
+                              modelSelectionPolicy={modelSelectionPolicy}
+                              showExecutionControls={presentation.executionSelection === "selectable"}
+                              heading={
+                                embedded
+                                  ? intl.formatMessage({
+                                      id: "chat.companionHeading",
+                                      defaultMessage: "What would you like to do together today?",
+                                    })
+                                  : undefined
+                              }
+                              placeholderPending={recoveryPlaceholder !== undefined}
+                              placeholder={
+                                recoveryPlaceholder ??
+                                (embedded
+                                  ? intl.formatMessage({
+                                      id: "chat.companionPlaceholder",
+                                      defaultMessage: "Share your thoughts, or ask me to help with something",
+                                    })
+                                  : undefined)
+                              }
+                              selectionCatalog={composerSelectionCatalog}
+                              catalog={composerSuggestionCatalog}
+                              effectiveSelections={
+                                modelSelectionPolicy === "session"
+                                  ? undefined
+                                  : (composerCatalog.newThreadDefaults ?? undefined)
+                              }
+                              resolveAgentCycleShortcut={resolveAgentCycleShortcut}
+                              personalDefaultsPending={composerCatalog.personalDefaultsPending}
+                              placement={
+                                workspaceCatalog.available ||
+                                draft.target.execution.environment ||
+                                draft.target.execution.workspace.source
+                                  ? {
+                                      catalog: workspaceCatalog.data,
+                                      available: workspaceCatalog.available,
+                                      selectable: workspaceCatalog.selectable,
+                                      loading: workspaceCatalog.loading,
+                                      error: workspaceCatalog.error,
+                                      problem: selectedPlacementProblem,
+                                      refresh: workspaceCatalog.refresh,
+                                      select: (execution) => hostCatalog.retargetDraft(draft.id, execution),
+                                    }
+                                  : undefined
+                              }
+                              workspaceOptions={draftWorkspaceOptions}
+                              workspaceOptionsLoading={projectCatalog.isFetching}
+                              nativeWorkspacePicking={localProjectPicker !== null}
+                              activeHostId={snapshot.hostId}
+                              hostOptions={composerHostOptions}
+                              connectionPhase={activeHostConnectionPhase}
+                              onSelectHost={async (machineId) => {
+                                setWorkspacePickerOpen(false);
+                                const machine = newConversationMachines.find((machine) => machine.id === machineId);
+                                if (!machine) return;
+                                const currentAgent = hostCatalog.profiles.find(
+                                  (host) => host.hostId === snapshot.hostId,
+                                )?.agent;
+                                const target = chooseWorkInHost(machine, currentAgent, snapshot.hostId);
+                                await hostCatalog.selectHost(target.hostId);
+                              }}
+                              onSelectWorkspace={(workspace) => {
+                                selectDraftWorkspace({
+                                  cwd: workspace.cwd,
+                                  runtimeWorkspaceRoots: workspace.runtimeWorkspaceRoots,
+                                  projectId: workspace.projectId,
+                                });
+                              }}
+                              onBrowseWorkspace={browseWorkspace}
+                              onResolveAttachment={resolveActiveHostAttachment}
+                              onRemoveAttachment={removeActiveHostAttachment}
+                              goals={runtime.resources.goals}
+                              onCreateGoal={async (objective) => {
+                                const content = composerController.getSnapshot().draft;
+                                await hostCatalog.createGoal(
+                                  {
+                                    commandId: crypto.randomUUID(),
+                                    clientMessageId: crypto.randomUUID(),
+                                    target: draft.target,
+                                    document: {
+                                      version: 1,
+                                      blocks: [{ type: "paragraph", children: [{ type: "text", text: objective }] }],
+                                    },
+                                    attachments: [],
+                                    context: [],
+                                    selections: {
+                                      ...(composerCatalog.newThreadDefaults?.serviceTier === undefined
+                                        ? {}
+                                        : { serviceTier: composerCatalog.newThreadDefaults.serviceTier }),
+                                      ...(composerCatalog.newThreadDefaults?.model
+                                        ? {
+                                            model: composerCatalog.newThreadDefaults.model,
+                                            ...(composerCatalog.newThreadDefaults.effort === null
+                                              ? {}
+                                              : { effort: composerCatalog.newThreadDefaults.effort }),
+                                          }
+                                        : {}),
+                                      ...content.selections,
+                                    },
+                                    options: content.options,
+                                    createdAt: Date.now(),
+                                  },
+                                  objective,
+                                );
+                              }}
+                              composerAddMenuContent={composerAddMenuContent}
+                              composerTrailingActions={
+                                !panelHost && conversationRightPanelAvailable && presentation.rightPanel ? (
+                                  <ComposerPanelToggle />
+                                ) : null
+                              }
+                              composerEndActions={composerEndActions}
+                              shortcutCommands={hostShortcutCommands}
+                              onSubmit={sendMessage}
+                            />
+                          ) : (
+                            <div className="local-conversation-page">
+                              <ConversationSummaryLayout controller={summary}>
+                                <div className="conversation-summary-reading">
+                                  <Conversation
+                                    historyPresentation={recoveryPresentation}
+                                    active={
+                                      !shouldPresentMainComposerOverlay(
+                                        conversationRouteOpen &&
+                                          presentedRightPanelOpen &&
+                                          presentedRightPanelFullWidth,
+                                        panelState.right.activeTabId,
+                                      )
+                                    }
+                                    onVisibleContentReady={
+                                      visibleContentReady ? onHistoryVisibleContentReady : undefined
+                                    }
+                                    visibleContentReadyKey={
+                                      transitionOwnsView
+                                        ? (navigationTransition ?? undefined)
+                                        : (historyPaintAttempt ?? undefined)
+                                    }
+                                    scrollPolicy="natural"
+                                    onAddSelectionToChat={
+                                      conversationRouteOpen && activeThreadId !== null
+                                        ? (text) => {
+                                            const target = composerController.getSnapshot().draft.target;
+                                            if (
+                                              target.type === "new-thread" ||
+                                              target.key.hostId !== snapshot.hostId ||
+                                              target.key.threadId !== activeThreadId
+                                            )
+                                              return false;
+                                            return composerController.appendQuote(text);
+                                          }
+                                        : undefined
+                                    }
+                                    onTerminalResultVisible={
+                                      showingDisplayCache
+                                        ? undefined
+                                        : (turnId) => {
+                                            if (activeThreadId !== null)
+                                              hostCatalog.threadAttention.acknowledge(
+                                                attentionScope,
+                                                snapshot.hostId,
+                                                activeThreadId,
+                                                turnId,
+                                              );
+                                          }
+                                    }
+                                    hasPendingSubmission={unavailableThreadReason === null && draft !== null}
+                                    emptyState={
+                                      archivePresentation.banner === "replace" ? (
+                                        <ConversationUnavailableState
+                                          reason={unavailableThreadReason === "not-found" ? "not-found" : "archived"}
+                                          onRestore={
+                                            unavailableThreadReason === "archived"
+                                              ? restoreUnavailableThread
+                                              : undefined
+                                          }
+                                          restoring={restoringArchivedThread}
+                                        />
+                                      ) : draft !== null ? (
+                                        <PendingConversationPage
+                                          embedded
+                                          conversation={draft}
+                                          documentContext={{
+                                            conversationId: null,
+                                            cwd: draft.target.execution.workspace.cwd,
+                                            hostId: draft.target.execution.hostId,
+                                            theme: appearanceTheme.resolvedTheme,
+                                            loadMediaSource,
+                                            onOpenResource: openChatResource,
+                                          }}
+                                          onRetry={(intent) => hostCatalog.submit(intent).then(() => undefined)}
+                                        />
+                                      ) : recoveryPresentation === "cold-loading" ||
+                                        recoveryPresentation === "cold-error" ? (
+                                        <ConversationRecoveryEmptyState
+                                          failed={recoveryPresentation === "cold-error"}
+                                          requiresUpdate={recoveryRequiresUpdate}
+                                          accessFailure={recoveryAccessFailure}
+                                          onRetry={retryConnectionAdmission}
+                                        />
+                                      ) : undefined
+                                    }
+                                    key={activeConversationRestoreKey ?? "empty"}
+                                    documentContext={{
+                                      conversationId: activeThreadId,
+                                      submissionRecovery: showingDisplayCache ? undefined : deliveryRecoveryActions,
+                                      beginImageEdit: beginConversationImageEdit,
+                                      mcpApps: mcpAppOwner ?? undefined,
+                                      cwd: activeProtocolThread?.cwd ?? null,
+                                      hostId: snapshot.hostId,
+                                      loadMediaSource,
+                                      onOpenResource: openChatResource,
+                                      onReviewTurnDiff: openTurnDiffReview,
+                                      composerChangeSummaryTurnId: snapshot.conversation?.activeTurn?.turnId ?? null,
+                                      turnActions: {
+                                        fork:
+                                          activeThreadId !== null &&
+                                          hostCatalog.threadManagement.capabilities(snapshot.hostId).fork,
+                                        reviewDiff: true,
+                                      },
+                                      onForkConversation:
+                                        !showingDisplayCache && nativeSession.data?.fork
+                                          ? conversationToolbarProps.onFork
+                                          : undefined,
+                                      onForkTurn:
+                                        !showingDisplayCache &&
+                                        snapshot.conversation?.authoritative === true &&
+                                        activeThreadId !== null &&
+                                        !activeThreadId.startsWith("codex_") &&
+                                        hostCatalog.threadManagement.capabilities(snapshot.hostId, activeThreadId).fork
+                                          ? (turnId) =>
+                                              forkAndOpenThread({
+                                                routeScopeId: () => workbenchNavigation.getSnapshot().routeScopeId,
+                                                fork: () =>
+                                                  hostCatalog.threadManagement.fork(
+                                                    snapshot.hostId,
+                                                    activeThreadId,
+                                                    turnId,
+                                                  ),
+                                                refreshThreads: refreshConversationCatalog,
+                                                openThread: (childId) =>
+                                                  hostCatalog.navigate(
+                                                    createWorkbenchThreadLocation(snapshot.hostId, childId),
+                                                  ),
+                                              })
+                                          : undefined,
+                                      theme: appearanceTheme.resolvedTheme,
+                                    }}
+                                    timeline={
+                                      draft === null && archivePresentation.showHistory ? visibleTimeline : null
+                                    }
+                                    readOnlyTurnIds={display.source === "mixed" ? display.cachedTurnIds : undefined}
+                                    consumePendingLatestTurnSubmitPlacement={consumeLatestTurnPlacement}
+                                    navigationSource={showingDisplayCache ? null : navigationSource}
+                                    searchTarget={
+                                      conversationSearchTarget?.hostId === snapshot.hostId &&
+                                      conversationSearchTarget.threadId === snapshot.activeThreadId
+                                        ? conversationSearchTarget
+                                        : null
+                                    }
+                                    initialRestoreSnapshot={routeRestoreCheckpoints.get(activeConversationRestoreKey)}
+                                    onRestoreSnapshotChange={(restoreSnapshot) => {
+                                      if (activeConversationRestoreKey !== null)
+                                        routeRestoreCheckpoints.set(activeConversationRestoreKey, restoreSnapshot);
+                                    }}
+                                    onLoadItemDetails={loadItemDetails}
+                                    onLoadOlder={
+                                      !showingDisplayCache && snapshot.conversation?.history.hasOlder
+                                        ? loadOlderConversation
+                                        : undefined
+                                    }
+                                    onHistoryViewportDiagnostic={
+                                      showingDisplayCache
+                                        ? undefined
+                                        : (event: ConversationHistoryViewportDiagnostic) => {
+                                            const history = snapshot.conversation?.history;
+                                            observeEvent({
+                                              kind: "history_viewport",
+                                              phase: event.phase,
+                                              reason: event.reason ?? null,
+                                              generation: event.generation,
+                                              timelineRevision: event.timelineRevision,
+                                              renderedTurnCount: event.renderedTurnCount,
+                                              historyTurnCount: event.historyTurnCount,
+                                              loadingOlder: Number(event.loadingOlder),
+                                              authoritative: Number(snapshot.conversation?.authoritative === true),
+                                              historyHasOlder: Number(history?.hasOlder === true),
+                                              historyLoading: Number(history?.loading === true),
+                                              historyCursorPresent: Number(
+                                                history?.cursor !== null && history?.cursor !== undefined,
+                                              ),
+                                              historyError: Number(
+                                                history?.error !== null && history?.error !== undefined,
+                                              ),
+                                              beforeDistanceFromBottomPx: event.before.distanceFromBottomPx,
+                                              beforeViewportHeightPx: event.before.viewportHeightPx,
+                                              beforeScrollHeightPx: event.before.scrollHeightPx,
+                                              ...(event.after === undefined
+                                                ? {}
+                                                : {
+                                                    afterDistanceFromBottomPx:
+                                                      event.after?.distanceFromBottomPx ?? null,
+                                                    afterViewportHeightPx: event.after?.viewportHeightPx ?? null,
+                                                    afterScrollHeightPx: event.after?.scrollHeightPx ?? null,
+                                                  }),
+                                            });
+                                          }
+                                    }
+                                    history={!showingDisplayCache ? snapshot.conversation?.history : null}
+                                    onOpenSubagent={
+                                      showingDisplayCache
+                                        ? undefined
+                                        : (threadId) => {
+                                            void hostCatalog.navigate(
+                                              createWorkbenchThreadLocation(snapshot.hostId, threadId),
+                                            );
+                                          }
+                                    }
+                                    continuableTurnId={
+                                      showingDisplayCache ? null : snapshot.conversation?.continuation.turnId
+                                    }
+                                    onContinueTurn={
+                                      showingDisplayCache
+                                        ? undefined
+                                        : (turnId) => {
+                                            const placement = captureLatestTurnPlacement();
+                                            void activeThreadLease?.continueTurn(turnId).catch(() => {
+                                              clearLatestTurnPlacement(placement);
+                                            });
+                                          }
+                                    }
+                                    onRespondInteraction={showingDisplayCache ? undefined : respondToInteraction}
+                                    onAnswerAsyncQuestion={
+                                      !showingDisplayCache && snapshot.phase === "ready"
+                                        ? answerAsyncQuestion
+                                        : undefined
+                                    }
+                                    queuedAsyncQuestionIds={queuedAsyncQuestionIds}
+                                    onConversationScrollApiChange={(api) => {
+                                      conversationScrollApiRef.current = api;
+                                    }}
+                                    surfaceCapabilities={timelineSurfaceCapabilities}
+                                    footer={
+                                      archivePresentation.banner === "alongside" ? (
+                                        <div className="thread-composer-region">
+                                          <ConversationUnavailableState
+                                            reason="archived"
+                                            onRestore={restoreUnavailableThread}
+                                            restoring={restoringArchivedThread}
+                                          />
+                                        </div>
+                                      ) : unavailableThreadReason !== null ? null : (
+                                        <ThreadComposerPresentation
+                                          key={panelOwnerId}
+                                          scopeId={panelOwnerId}
+                                          forceExpanded={pendingInteraction !== null}
+                                          controller={composerController}
+                                          activeTabId={presentation.rightPanel ? panelState.right.activeTabId : null}
+                                          enabled={conversationRouteOpen}
+                                          timeline={draft === null ? visibleTimeline : null}
+                                          conversationProps={{
+                                            readOnlyTurnIds:
+                                              display.source === "mixed" ? display.cachedTurnIds : undefined,
+                                            onLoadItemDetails: showingDisplayCache ? undefined : loadItemDetails,
+                                            onLoadOlder:
+                                              !showingDisplayCache && snapshot.conversation?.history.hasOlder
+                                                ? loadOlderConversation
+                                                : undefined,
+                                            history: !showingDisplayCache ? snapshot.conversation?.history : null,
+                                            onRespondInteraction: showingDisplayCache
+                                              ? undefined
+                                              : respondToInteraction,
+                                            onAnswerAsyncQuestion:
+                                              !showingDisplayCache && snapshot.phase === "ready"
+                                                ? answerAsyncQuestion
+                                                : undefined,
+                                            queuedAsyncQuestionIds,
+                                            onOpenSubagent: showingDisplayCache
+                                              ? undefined
+                                              : (threadId) => {
+                                                  void hostCatalog.navigate(
+                                                    createWorkbenchThreadLocation(snapshot.hostId, threadId),
+                                                  );
+                                                },
+                                            continuableTurnId: showingDisplayCache
+                                              ? null
+                                              : snapshot.conversation?.continuation.turnId,
+                                            onContinueTurn: showingDisplayCache
+                                              ? undefined
+                                              : (turnId) => {
+                                                  void activeThreadLease?.continueTurn(turnId).catch(() => {});
+                                                },
+                                            onAddSelectionToChat:
+                                              conversationRouteOpen && activeThreadId !== null
+                                                ? (text) => {
+                                                    const target = composerController.getSnapshot().draft.target;
+                                                    if (
+                                                      target.type === "new-thread" ||
+                                                      target.key.hostId !== snapshot.hostId ||
+                                                      target.key.threadId !== activeThreadId
+                                                    )
+                                                      return false;
+                                                    return composerController.appendQuote(text);
+                                                  }
+                                                : undefined,
+                                          }}
+                                          documentContext={{
+                                            conversationId: activeThreadId,
+                                            beginImageEdit: beginConversationImageEdit,
+                                            cwd: activeProtocolThread?.cwd ?? null,
+                                            hostId: snapshot.hostId,
+                                            loadMediaSource,
+                                            onOpenResource: openChatResource,
+                                            onReviewTurnDiff: openTurnDiffReview,
+                                            composerChangeSummaryTurnId:
+                                              snapshot.conversation?.activeTurn?.turnId ?? null,
+                                            theme: appearanceTheme.resolvedTheme,
+                                          }}
+                                        >
+                                          <div className="thread-composer-region" data-thread-find-composer="true">
+                                            {(draft === null && recoveryPresentation === "warm-error") ||
+                                            (recoveryAccessFailure !== null &&
+                                              (draft !== null || recoveryPresentation !== "cold-error")) ? (
+                                              <ConversationRecoveryNotice
+                                                failed
+                                                requiresUpdate={recoveryRequiresUpdate}
+                                                accessFailure={recoveryAccessFailure}
+                                                onRetry={retryConnectionAdmission}
+                                              />
+                                            ) : null}
+                                            {conversationContribution?.beforeComposer}
+                                            <ContinuationFailureNotice
+                                              scope={JSON.stringify([snapshot.hostId, activeThreadId])}
+                                              error={snapshot.conversation?.continuation.error}
+                                            />
+                                            {deliveryRecovery.detached.map((item) => (
+                                              <div
+                                                className="submission-recovery-detached thread-layout-width"
+                                                key={JSON.stringify([snapshot.hostId, activeThreadId, item.commandId])}
+                                              >
+                                                <span>{item.preview}</span>
+                                                <SubmissionRecoveryNotice
+                                                  submission={item}
+                                                  onAbandon={deliveryRecoveryActions.onAbandon}
+                                                  onRetry={deliveryRecoveryActions.onRetry}
+                                                />
+                                              </div>
+                                            ))}
+                                            {pendingInteraction === null ? (
+                                              <ThreadGoalSurface
+                                                threadId={snapshot.phase === "ready" ? activeThreadId : null}
+                                                goals={runtime.resources.goals}
+                                                portalContainer={portalContainer}
+                                              >
+                                                {(goalMenuItem, _goalBusy, goalContent) => (
+                                                  <ThreadRecoveryNotice
+                                                    threadId={snapshot.phase === "ready" ? activeThreadId : null}
+                                                    resource={runtime.resources.turnRecovery}
+                                                  >
+                                                    {(recoveryContent) => (
+                                                      <WorkbenchComposer
+                                                        ref={composerHandle}
+                                                        attachedContent={
+                                                          goalContent || recoveryContent ? (
+                                                            <>
+                                                              {goalContent}
+                                                              {recoveryContent}
+                                                            </>
+                                                          ) : null
+                                                        }
+                                                        floatingContent={composerChangeSummary}
+                                                        controller={composerController}
+                                                        defaultFollowUpAction={
+                                                          embedded ? "queue" : defaultFollowUpAction
+                                                        }
+                                                        availableFollowUpActions={
+                                                          followUpCapability?.queue === false &&
+                                                          followUpCapability?.steer === false
+                                                            ? []
+                                                            : snapshot.phase !== "ready" ||
+                                                                snapshot.conversation?.authoritative !== true ||
+                                                                snapshot.conversation.queuedSubmissions.some(
+                                                                  (item) => item.local && item.state === "unknown",
+                                                                )
+                                                              ? ["queue"]
+                                                              : (["steer", "queue"] as const).filter(
+                                                                  (action) =>
+                                                                    followUpCapability?.[action] !== false &&
+                                                                    runtime.resources.host.canRequest?.(
+                                                                      action === "queue"
+                                                                        ? "thread/queue/add"
+                                                                        : "turn/steer",
+                                                                    ) !== false,
+                                                                )
+                                                        }
+                                                        portalContainer={portalContainer}
+                                                        isUnstable={
+                                                          snapshot.phase === "reconnecting" ||
+                                                          (activeThreadId !== null &&
+                                                            conversationRecoveryIsUnstable(
+                                                              recoveryPresentation,
+                                                              recoveryDiagnostic,
+                                                            ))
+                                                        }
+                                                        isRecovering={connectionRecovering || conversationRecovering}
+                                                        isStreaming={draft === null && isStreaming}
+                                                        isStopping={
+                                                          snapshot.conversation?.activeTurn?.status === "interrupting"
+                                                        }
+                                                        awaitSubmission
+                                                        submissionDisabled={
+                                                          draft !== null ||
+                                                          (activeThreadLease === null && localOutbox === null)
+                                                        }
+                                                        loadQueuedImage={loadQueuedImage}
+                                                        queuedSubmissions={[
+                                                          ...visibleQueuedSubmissions(
+                                                            snapshot.conversation?.queuedSubmissions ??
+                                                              localQueuedSubmissions,
+                                                            visibleTimeline,
+                                                          )
+                                                            .filter(
+                                                              (submission) =>
+                                                                !deliveryRecovery.byClientId.has(
+                                                                  submission.clientMessageId,
+                                                                ),
+                                                            )
+                                                            .map((submission) =>
+                                                              queuedSubmissionPresentation(
+                                                                submission,
+                                                                queueReorderable,
+                                                                identityAvatar,
+                                                                intl,
+                                                              ),
+                                                            ),
+                                                          ...(snapshot.conversation?.unconfirmedSteers ?? []).map(
+                                                            (claim) => ({
+                                                              id: claim.id,
+                                                              sender: queueSenderPresentation(
+                                                                claim.sender,
+                                                                identityAvatar,
+                                                              ),
+                                                              preview:
+                                                                claim.input.find((input) => input.type === "text")
+                                                                  ?.text ?? "Unconfirmed steering message",
+                                                              state: "unknown" as const,
+                                                              operation:
+                                                                claim.pausedReason === "delivery-retry-requested"
+                                                                  ? ("starting" as const)
+                                                                  : ("idle" as const),
+                                                              actionable: false,
+                                                              reorderable: false,
+                                                              editableContent: restoreQueuedInput(claim.input),
+                                                              pausedReason: null,
+                                                              error: null,
+                                                              unconfirmedTargetTurnId: claim.targetTurnId,
+                                                              retryable: claim.retryable === true,
+                                                            }),
+                                                          ),
+                                                        ]}
+                                                        onUpdateQueuedSubmission={(id, intent) =>
+                                                          queueOperation("update", id, () =>
+                                                            updateQueuedSubmission(id, intent),
+                                                          )
+                                                        }
+                                                        onDeleteQueuedSubmission={(id) =>
+                                                          queueOperation("delete", id, () => deleteQueuedSubmission(id))
+                                                        }
+                                                        onReorderQueuedSubmissions={(ids) =>
+                                                          queueOperation("reorder", "order", () =>
+                                                            reorderQueuedSubmissions(ids),
+                                                          )
+                                                        }
+                                                        onSteerQueuedSubmission={(id) =>
+                                                          queueOperation("steer", id, () => steerQueuedSubmission(id))
+                                                        }
+                                                        onRetryUnconfirmedSteer={
+                                                          queueUnconfirmedDeliveryRetry
+                                                            ? retryUnconfirmedSteer
+                                                            : undefined
+                                                        }
+                                                        supportsQueuedSteer={queueAtomicSteer}
+                                                        onResumeQueuedSubmissions={() =>
+                                                          queueOperation("resume", "resume", () =>
+                                                            resumeQueuedSubmissions(),
+                                                          )
+                                                        }
+                                                        onResolveAttachment={resolveActiveHostAttachment}
+                                                        onRemoveAttachment={removeActiveHostAttachment}
+                                                        addMenuContent={
+                                                          goalMenuItem === null
+                                                            ? composerAddMenuContent
+                                                            : (closeMenu) => (
+                                                                <>
+                                                                  {typeof composerAddMenuContent === "function"
+                                                                    ? composerAddMenuContent(closeMenu)
+                                                                    : composerAddMenuContent}
+                                                                  {goalMenuItem(closeMenu)}
+                                                                </>
+                                                              )
+                                                        }
+                                                        shortcutCommands={threadShortcutCommands}
+                                                        entryActions={composerDesktopEntry}
+                                                        endActions={
+                                                          presentation.connectorLauncher
+                                                            ? connectorPresentation.launcher
+                                                            : null
+                                                        }
+                                                        actionsDisabled={
+                                                          draft !== null && draftSubmissionOwnsNavigation(draft.phase)
+                                                        }
+                                                        modelSelectionPolicy={modelSelectionPolicy}
+                                                        placeholderPending={recoveryPlaceholder !== undefined}
+                                                        placeholder={
+                                                          recoveryPlaceholder ??
+                                                          (embedded
+                                                            ? intl.formatMessage({
+                                                                id: "chat.companionFollowupPlaceholder",
+                                                                defaultMessage: "Tell me what you'd like to do next",
+                                                              })
+                                                            : undefined)
+                                                        }
+                                                        selectionCatalog={composerSelectionCatalog}
+                                                        catalog={composerSuggestionCatalog}
+                                                        resolveAgentCycleShortcut={resolveAgentCycleShortcut}
+                                                        mentionSuggestionsEnabled={false}
+                                                        effectiveSelections={{
+                                                          model: snapshot.conversation?.execution.model,
+                                                          effort: snapshot.conversation?.execution.effort,
+                                                          serviceTier: snapshot.conversation?.execution.serviceTier,
+                                                          permissionProfile:
+                                                            snapshot.conversation?.execution.permissionProfile,
+                                                        }}
+                                                        onSubmit={sendMessage}
+                                                        onCancel={cancelStream}
+                                                      />
+                                                    )}
+                                                  </ThreadRecoveryNotice>
+                                                )}
+                                              </ThreadGoalSurface>
+                                            ) : (
+                                              <div className="opencraft-composer-stack">
+                                                {composerChangeSummary}
+                                                <ConversationPendingInteractionPanel
+                                                  block={pendingInteraction}
+                                                  draftStore={interactionDraftStore}
+                                                  draftScope={
+                                                    activeThreadId === null
+                                                      ? undefined
+                                                      : JSON.stringify([
+                                                          snapshot.hostId,
+                                                          activeThreadId,
+                                                          activeConversationRestoreKey,
+                                                        ])
+                                                  }
+                                                  requestTurnId={
+                                                    snapshot.conversation?.pendingInteractions.find(
+                                                      (interaction) =>
+                                                        interaction.requestId === pendingInteraction?.requestId,
+                                                    )?.turnId
+                                                  }
+                                                  onRespondInteraction={respondToInteraction}
+                                                />
+                                              </div>
+                                            )}
+                                            {conversationContribution?.afterComposer}
+                                          </div>
+                                        </ThreadComposerPresentation>
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <ConversationSummarySurface
+                                  controller={summary}
+                                  context={{
+                                    scopeKey: summaryScopeKey,
+                                    title: activeThread?.title ?? undefined,
+                                    timeline: visibleTimeline,
+                                    goal: summaryGoal,
+                                    current: summaryCurrent,
+                                    note: summaryNote,
+                                    onOpenResource: (path) => {
+                                      if (summaryCurrent)
+                                        panelRuntime.panels.open(panelOwnerId, "resource", {
+                                          resource: path,
+                                          workspaceFileThreadId,
+                                        });
+                                    },
+                                    onOpenThread: (threadId) => {
+                                      if (summaryCurrent && displayHostId)
+                                        hostCatalog.navigate(createWorkbenchThreadLocation(displayHostId, threadId));
+                                    },
+                                  }}
+                                />
+                              </ConversationSummaryLayout>
+                            </div>
+                          )}
+                        </div>
+                      </WorkbenchPresentationActivityProvider>
+                      <ApplicationRouteMotion route={workbenchNavigationSnapshot.applicationRoute}>
+                        {standaloneManagementOpen ? (
+                          <section className="workbench-tool-route" aria-label="Account management">
+                            {settingsContent}
+                          </section>
+                        ) : null}
+                        {settingsRoute}
+                        {extensionViewOpen ? (
+                          <RouteViewStack
+                            key={JSON.stringify([
+                              extensionProjection.account?.provider.id ?? null,
+                              extensionProjection.account?.snapshot.readStateScope ??
+                                extensionProjection.account?.snapshot.identity?.id ??
+                                null,
+                            ])}
+                            navigation={workbenchNavigationSnapshot}
+                            routeFamilies={extensionProjection.routeFamilies}
+                          >
+                            {extensionProjection.activeViewNode}
+                          </RouteViewStack>
+                        ) : null}
+                      </ApplicationRouteMotion>
                     </div>
-                    </ThreadComposerPresentation>
-                  )}
-                />
-            </div>
-            <ConversationSummarySurface controller={summary} context={{ scopeKey: summaryScopeKey, title: activeThread?.title ?? undefined, timeline: visibleTimeline, goal: summaryGoal, current: summaryCurrent, note: summaryNote,
-              onOpenResource: path => { if (summaryCurrent) panelRuntime.panels.open(panelOwnerId, "resource", { resource: path }); },
-              onOpenThread: threadId => { if (summaryCurrent && displayHostId) hostCatalog.navigate(createWorkbenchThreadLocation(displayHostId, threadId)); },
-            }} />
-            </ConversationSummaryLayout>
-          </div>
-        )}
-          </div>
-          </WorkbenchPresentationActivityProvider>
-          <ApplicationRouteMotion route={workbenchNavigationSnapshot.applicationRoute}>
-          {standaloneManagementOpen ? (
-            <section className="workbench-tool-route" aria-label="Account management">
-              {settingsContent}
-            </section>
-          ) : null}
-          {settingsRoute}
-          {extensionViewOpen ? (
-            <RouteViewStack key={JSON.stringify([extensionProjection.account?.provider.id ?? null, extensionProjection.account?.snapshot.readStateScope ?? extensionProjection.account?.snapshot.identity?.id ?? null])} navigation={workbenchNavigationSnapshot} routeFamilies={extensionProjection.routeFamilies}>
-              {extensionProjection.activeViewNode}
-            </RouteViewStack>
-          ) : null}
-          </ApplicationRouteMotion>
-        </div>
-        {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
-        <ConversationSearch enabled={presentation.shellNavigation} open={conversationSearchOpen} onOpenChange={setConversationSearchOpen}
-          sources={searchSources} onSelectView={workbenchNavigation.openExtensionView}
-          incomplete={multiHostCatalog.discovery === "error" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "error" || catalog.phase === "unavailable" || catalog.partial)}
-          threads={ordinaryThreads} loading={multiHostCatalog.discovery === "loading" || multiHostCatalog.catalogs.some(catalog => catalog.phase === "loading")}
-          onSelectThread={selectSearchedThread} />
-        </AppShell>
-      </AppShellRouteRegionsProvider>
-        <ModalHost requests={modalRequests} />
-      {reviewedBlock === null ? null : <Suspense fallback={null}><TurnDiffReviewDialog
-        block={reviewedBlock}
-        onLoadItemDetails={loadItemDetails}
-        initialPath={turnDiffReview?.path ?? null}
-        key={`${turnDiffReview?.hostId}:${turnDiffReview?.threadId}:${reviewedBlock.id}:${turnDiffReview?.path ?? "all"}`}
-        onClose={() => setTurnDiffReview(null)}
-      /></Suspense>}
-      <WorkspaceDirectoryPicker
-          open={
-            !settingsOpen &&
-            workspacePickerOpen &&
-            draft !== null
-          }
-          rootPath={workspaceBrowseRoot}
-          initialPath={draft?.target.execution.workspace.cwd}
-          title="Choose a folder"
-          description={`Browse folders on ${activeHost.label}.`}
-          confirmLabel="Use folder"
-          onReadDirectory={readWorkspaceDirectory}
-          onCancel={() => setWorkspacePickerOpen(false)}
-          onChoose={chooseWorkspaceDirectory}
-        />
-    </ConversationReferenceSurface>
-    </ScheduledTaskCatalogContext.Provider>
-    </ImageEditorContext.Provider>
-    </ConversationAppearanceProvider>
-    </BrowserAnnotationSinkProvider>
+                    {shortcutHelpOpen ? <WorkbenchShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
+                    <ConversationSearch
+                      enabled={presentation.shellNavigation}
+                      open={conversationSearchOpen}
+                      onOpenChange={setConversationSearchOpen}
+                      sources={searchSources}
+                      onSelectView={workbenchNavigation.openExtensionView}
+                      incomplete={
+                        multiHostCatalog.discovery === "error" ||
+                        multiHostCatalog.catalogs.some(
+                          (catalog) => catalog.phase === "error" || catalog.phase === "unavailable" || catalog.partial,
+                        )
+                      }
+                      threads={ordinaryThreads}
+                      loading={
+                        multiHostCatalog.discovery === "loading" ||
+                        multiHostCatalog.catalogs.some((catalog) => catalog.phase === "loading")
+                      }
+                      onSelectThread={selectSearchedThread}
+                    />
+                  </AppShell>
+                </AppShellRouteRegionsProvider>
+                <ModalHost requests={modalRequests} />
+                {reviewedBlock === null ? null : (
+                  <Suspense fallback={null}>
+                    <TurnDiffReviewDialog
+                      block={reviewedBlock}
+                      onLoadItemDetails={loadItemDetails}
+                      initialPath={turnDiffReview?.path ?? null}
+                      key={`${turnDiffReview?.hostId}:${turnDiffReview?.threadId}:${reviewedBlock.id}:${turnDiffReview?.path ?? "all"}`}
+                      onClose={() => setTurnDiffReview(null)}
+                    />
+                  </Suspense>
+                )}
+                {!settingsOpen && workspacePickerOpen && draft !== null ? (
+                  <Suspense fallback={null}>
+                    <WorkspaceDirectoryPicker
+                      open={true}
+                      rootPath={workspaceBrowseRoot}
+                      initialPath={draft?.target.execution.workspace.cwd}
+                      title="Choose a folder"
+                      description={`Browse folders on ${activeHost.label}.`}
+                      confirmLabel="Use folder"
+                      onReadDirectory={readWorkspaceDirectory}
+                      onCancel={() => setWorkspacePickerOpen(false)}
+                      onChoose={chooseWorkspaceDirectory}
+                    />
+                  </Suspense>
+                ) : null}
+              </ConversationReferenceSurface>
+            </ScheduledTaskCatalogContext.Provider>
+          </ImageEditorContext.Provider>
+        </ConversationAppearanceProvider>
+      </BrowserAnnotationSinkProvider>
     </WorkbenchComposerProvider>
   );
 }

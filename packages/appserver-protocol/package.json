@@ -25,7 +25,8 @@
     "./server-spaces": "./src/server-spaces.ts"
   },
   "dependencies": {
-    "@opencraft/document-storage": "0.1.0"
+    "@opencraft/document-storage": "0.1.0",
+    "@opencraft/chat-core": "0.1.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -21,6 +21,7 @@ export interface UiPreferenceValues {
   readonly "shell.lastVisibleNavigationDetent": ShellNavigationVisibleDetent;
   readonly "shell.navigationWidth": number;
   readonly "shell.contextSidebarWidth": number;
+  readonly "shell.collectionNavigationWidth": { readonly width: number | null };
   readonly "shell.rightPanelWidth": { readonly ratio: number | null };
   readonly "sidebar.scheduledCollapsed": boolean;
   readonly "sidebar.collaborationServers": Readonly<Record<string,string>>;
@@ -185,6 +186,17 @@ export const uiPreferenceDefinitions = Object.freeze({
       const ratio = value.ratio;
       return ratio === null || (typeof ratio === "number" && Number.isFinite(ratio) && ratio >= 0 && ratio <= 1)
         ? { ratio } : null;
+    },
+  },
+  "shell.collectionNavigationWidth": {
+    key: "shell.collectionNavigationWidth",
+    scope: "installation",
+    defaultValue: { width: null },
+    parse(value: unknown) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      const width = (value as Record<string, unknown>).width;
+      if (Object.keys(value).length !== 1 || (width !== null && (typeof width !== "number" || !Number.isFinite(width) || width < 240 || width > 440))) return null;
+      return {width: width as number | null};
     },
   },
   "shell.contextSidebarWidth": {

@@ -300,6 +300,18 @@ Cloud resources remain visible but unselectable while not connectable.
 Manage models links are exposed only for the matching registered Settings owner
 (`local` Model Services / `local-codex` Codex Accounts).
 
+Hosts advertising `opencraft/workspace-placement` expose configured environments and
+library references in the existing New chat context toolbar. Host runtime owns
+`workspace/catalog/read`; its query is scoped to Host, runtime instance and connection
+generation. Disconnects and replaced readers cancel publication; menus refresh the
+catalog without replacing the editor. Configured does not mean provisioned or running.
+Environment and source selections retarget the same Draft/Scope/controller. Logical
+placement has `cwd: null` and no native runtime roots. A library choice sends its ID
+and relative path, never a client-invented mount path or permission policy. Incompatible
+selections remain visible and block the change; only the explicit empty-workspace
+choice discards the source. Switching Host with logical placement requires an explicit
+return to an empty Host workspace so Host-local catalog IDs cannot leak across Hosts.
+
 Changing Host creates a new Host-owned Draft/View through the application Router,
 transferring its current document, attachments, context, options and selections
 after activation. Inline images and same-machine staged files remain usable;
@@ -356,8 +368,6 @@ Standalone clients, hostless deployments, and malformed stored configuration
 retain the startup failure boundary. This recovery does not bypass server login,
 Host authorization or desktop input grants.
 
-
-
 ### Configured unknown-machine display names
 
 Managed Web operators may set `OPENCRAFT_MACHINE_DISPLAY_NAMES` to a JSON map
@@ -370,7 +380,6 @@ never supply a machineId/platform/Agent or affect grouping, routing or authoriza
 The application reads this immutable presentation configuration once; no browser
 profile or backend connection recipe is rewritten. Unconfigured Hosts keep the
 localized unknown label.
-
 
 ### Local connection diagnostic propagation
 
@@ -485,7 +494,6 @@ physical connection or interrupt executions. If no eligible target exists, the
 client exposes its existing hostless/management surface instead of silently
 selecting a hidden Host. Visibility is not an authorization policy.
 
-
 ## Live conversation directory
 
 Server lifecycle adapters publish `opencraft/thread-catalog/changed` metadata
@@ -564,3 +572,13 @@ Peers without the extension continue using ordinary WebSocket frames. Internal
 engine links and desktop media transport retain their own transport policy.
 Compression does not acknowledge a request, cancel a mutation or establish
 application reachability; those remain owned by RPC receipts and route probes.
+
+Workspace routing composition supplies `workspaceTurnContext(threadId, turnId)`
+when it restores native execution or reads turn-owned output. The identity
+provider must restore the exact durable delegation and its principal, validate
+current resource access, and return a revocable `TransportSubmissionContext`.
+Core never selects an enterprise provider or infers a principal from an actor's
+other bindings. The ordinary workspace journal is asynchronous: its dedicated
+storage Worker owns filesystem checks, managed migrations and SQL; callers await
+commits before provider creation or Native dispatch and drain it during shutdown.
+Collection-list width uses `UiPreferencesRuntime`, not view-owned browser storage.

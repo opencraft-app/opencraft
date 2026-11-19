@@ -2244,5 +2244,17 @@
   "im.record.unavailable": "Attachment unavailable or expired. Retry",
   "im.record.voice": "Voice message",
   "people.memory.title": "Memory",
-  "modal.closeLabel": "Close {label}"
+  "modal.closeLabel": "Close {label}",
+  "workspacePlacement.empty": "Use an empty workspace",
+  "workspacePlacement.loading": "Refreshing workspaces…",
+  "workspacePlacement.unavailable": "Workspace choices are unavailable. Your selection is retained.",
+  "workspacePlacement.refresh": "Refresh workspaces",
+  "workspacePlacement.environment": "Run environment",
+  "workspacePlacement.host": "Host workspace",
+  "workspacePlacement.configured": "Configured",
+  "workspacePlacement.source": "Workspace source",
+  "workspacePlacement.emptyLabel": "Empty workspace",
+  "workspacePlacement.incompatible": "Unavailable in this environment",
+  "workspacePlacement.resources": "{cpu} CPU · {memory} GiB",
+  "workspacePlacement.selectionRetained": "Your selection is retained. Choose an empty workspace before changing environments."
 }

@@ -2211,5 +2211,17 @@
   "settings.serverInformation.title": "ข้อมูลเซิร์ฟเวอร์",
   "settings.serverInformation.placeholder": "https://example.com/servers/server-id",
   "settings.management.search": "ค้นหาการตั้งค่า Agent",
-  "modal.closeLabel": "ปิด{label}"
+  "modal.closeLabel": "ปิด{label}",
+  "workspacePlacement.empty": "ใช้พื้นที่ทำงานว่าง",
+  "workspacePlacement.loading": "กำลังรีเฟรชพื้นที่ทำงาน…",
+  "workspacePlacement.unavailable": "ตัวเลือกพื้นที่ทำงานไม่พร้อมใช้งาน ระบบเก็บตัวเลือกเดิมไว้แล้ว",
+  "workspacePlacement.refresh": "รีเฟรชพื้นที่ทำงาน",
+  "workspacePlacement.environment": "สภาพแวดล้อมการทำงาน",
+  "workspacePlacement.host": "พื้นที่ทำงานของโฮสต์",
+  "workspacePlacement.configured": "กำหนดค่าแล้ว",
+  "workspacePlacement.source": "แหล่งพื้นที่ทำงาน",
+  "workspacePlacement.emptyLabel": "พื้นที่ทำงานว่าง",
+  "workspacePlacement.incompatible": "ไม่พร้อมใช้งานในสภาพแวดล้อมนี้",
+  "workspacePlacement.resources": "CPU {cpu} · {memory} GiB",
+  "workspacePlacement.selectionRetained": "ระบบเก็บตัวเลือกเดิมไว้แล้ว โปรดเลือกพื้นที่ทำงานว่างก่อนเปลี่ยนสภาพแวดล้อม"
 }

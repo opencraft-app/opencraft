@@ -4,6 +4,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -12,7 +13,11 @@ import { resolveShellSpace } from "@opencraft/workbench-runtime";
 import { frame } from "@opencraft/design-system/tokens";
 import { AppShellRouteHeaderRegion } from "./app-shell-route-regions";
 import "./app-shell-master-detail.scss";
+import { useOptionalUiPreferencesRuntime } from "../runtime/ui-preferences-runtime";
 import { RouteStackFocusContext } from "./route-stack-motion";
+
+const minList = frame.collectionNavigationMinWidth, maxList = frame.collectionNavigationMaxWidth, minChat = frame.collectionDetailMinWidth;
+const noSubscribe = () => () => {};
 
 const SplitContext = createContext(false);
 /** Only Header chrome changes owner: the conversation/editor subtree never moves. */
@@ -31,6 +36,22 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
     masterRef = useRef<HTMLElement>(null),
     detailRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const preferences = useOptionalUiPreferencesRuntime();
+  const persisted = useSyncExternalStore(preferences?.subscribe ?? noSubscribe,
+    () => preferences?.getSnapshot().values["shell.collectionNavigationWidth"].width ?? null,
+    () => null);
+  const [preferred, setPreferred] = useState<number | null>(persisted);
+  useLayoutEffect(() => setPreferred(persisted), [persisted]);
+  const [preview, setPreview] = useState<number | null>(null);
+  const drag = useRef<{ x: number; width: number; direction: number } | null>(null);
+  const limit = Math.max(minList, Math.min(maxList, width - minChat));
+  const clamp = (value: number) => Math.max(minList, Math.min(limit, Math.round(value)));
+  const defaultWidth = frame.collectionNavigationWidth;
+  const listWidth = clamp(preview ?? preferred ?? defaultWidth);
+  const save = (value: number | null) => {
+    setPreferred(value);
+    if (preferences) void preferences.set("shell.collectionNavigationWidth", {width:value});
+  };
   const previousLevel = useRef<number | undefined>(undefined);
   const space = resolveShellSpace({
     width,
@@ -43,7 +64,7 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
     rightFullWidth: false,
     previousLevel: previousLevel.current,
   });
-  const split = width > 0 && space.contextOpen;
+  const split = width >= minList + minChat && space.contextOpen;
   const masterVisible = split || !detailSelected,
     detailVisible = split || detailSelected;
   const mode = split ? "split" : detailSelected ? "detail" : "master";
@@ -88,7 +109,7 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
         className="app-shell-master-detail"
         data-presentation={mode}
         data-route-stack-presentation={split ? "in-place" : "page"}
-        style={{ "--master-detail-navigation-width": `${frame.collectionNavigationWidth}px` } as CSSProperties}
+        style={{ "--master-detail-navigation-width": `${listWidth}px` } as CSSProperties}
       >
         <aside
           onFocusCapture={(event) => {
@@ -105,6 +126,48 @@ export function AppShellMasterDetailRegion({ master, masterLabel, detailSelected
         >
           {master}
         </aside>
+        {split && (
+          <div
+            className="app-shell-master-detail__resize"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={masterLabel}
+            aria-valuemin={minList}
+            aria-valuemax={limit}
+            aria-valuenow={listWidth}
+            tabIndex={0}
+            onDoubleClick={() => save(null)}
+            onKeyDown={(event) => {
+              const direction = getComputedStyle(event.currentTarget).direction === "rtl" ? -1 : 1;
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+              event.preventDefault();
+              save(clamp(listWidth + (event.key === "ArrowRight" ? 8 : -8) * direction));
+            }}
+            onPointerDown={(event) => {
+              if (!event.isPrimary || event.button !== 0) return;
+              event.currentTarget.setPointerCapture(event.pointerId);
+              drag.current = {
+                x: event.clientX,
+                width: listWidth,
+                direction: getComputedStyle(event.currentTarget).direction === "rtl" ? -1 : 1,
+              };
+            }}
+            onPointerMove={(event) => {
+              const start = drag.current;
+              if (start && event.currentTarget.hasPointerCapture(event.pointerId))
+                setPreview(clamp(start.width + (event.clientX - start.x) * start.direction));
+            }}
+            onPointerUp={(event) => {
+              const start = drag.current;
+              if (start && event.currentTarget.hasPointerCapture(event.pointerId) && event.clientX !== start.x)
+                save(clamp(start.width + (event.clientX - start.x) * start.direction));
+            }}
+            onLostPointerCapture={() => {
+              drag.current = null;
+              setPreview(null);
+            }}
+          />
+        )}
         <div
           onFocusCapture={() => {
             focusedPane.current = "detail";

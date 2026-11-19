@@ -2211,5 +2211,17 @@
   "settings.serverInformation.title": "Maklumat pelayan",
   "settings.serverInformation.placeholder": "https://example.com/servers/server-id",
   "settings.management.search": "Cari tetapan Agent",
-  "modal.closeLabel": "Tutup {label}"
+  "modal.closeLabel": "Tutup {label}",
+  "workspacePlacement.empty": "Gunakan ruang kerja kosong",
+  "workspacePlacement.loading": "Sedang memuat semula ruang kerja…",
+  "workspacePlacement.unavailable": "Pilihan ruang kerja tidak tersedia. Pilihan anda dikekalkan.",
+  "workspacePlacement.refresh": "Muat semula ruang kerja",
+  "workspacePlacement.environment": "Persekitaran pelaksanaan",
+  "workspacePlacement.host": "Ruang kerja hos",
+  "workspacePlacement.configured": "Dikonfigurasi",
+  "workspacePlacement.source": "Sumber ruang kerja",
+  "workspacePlacement.emptyLabel": "Ruang kerja kosong",
+  "workspacePlacement.incompatible": "Tidak tersedia dalam persekitaran ini",
+  "workspacePlacement.resources": "{cpu} CPU · {memory} GiB",
+  "workspacePlacement.selectionRetained": "Pilihan anda dikekalkan. Pilih ruang kerja kosong sebelum menukar persekitaran."
 }

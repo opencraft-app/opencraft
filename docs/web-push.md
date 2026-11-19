@@ -59,7 +59,18 @@ unknown submission produces no notification unless its exact input is later
 proven in history. External/SSH Hosts are outside this version's coverage.
 
 There are at most 4096 outstanding watches, eight inspected per sweep, at most
-five 100-entry pages per history phase, and at most eight outbox sends per sweep.
+500 entries per history phase, and at most eight outbox sends per sweep.
+History pages start at 100 entries. Only a typed oversized-history response
+halves that page size, retrying the same opaque cursor without skipping evidence.
+Each phase permits at most 20 successful pages and 27 total read attempts;
+ordinary reads still use at most five 100-entry pages. A single oversized item
+remains an explicit failure at page size one; the history size limit is not raised.
+The smaller-page bounds can leave an input unresolved rather than infer a match.
+An incomplete scan that hits the smaller-page budget reports degraded health
+with `reason: history_budget_exceeded`; an unreadable single item reports
+`history_response_too_large`. No raw engine text enters these health reasons.
+The sweep's shared read cache retains only input/turn identifiers, item types
+and terminal status, not tool output, images or message bodies.
 Reads for the same thread/page share one request within the sweep. Each internal
 history request has a ten-second lease deadline. Watches expire after 24 hours;
 inputs beyond the bounded history window are left unresolved rather than matched

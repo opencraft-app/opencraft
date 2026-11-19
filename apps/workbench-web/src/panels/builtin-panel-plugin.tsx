@@ -52,17 +52,19 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
   await ctx.inject(["filePreviews", "workbenchPanels", "workbenchPanelRenderers"], async (ctx) => {
     await ctx.plugin(OfficePreviewPlugin);
     await ctx.plugin(StructuredPreviewPlugin);
-    const ResourcePanel = (props: PanelRendererProps) => <WorkspaceResourcePanel {...props} sessions={sessions}
+    const ResourcePanel = (props: PanelRendererProps) => (
+        <WorkspaceResourcePanel {...props} sessions={sessions}
       onSessionChange={(location, dirty) => {
-        const current = ctx.workbenchPanels.getOwnerSnapshot(props.ownerId)[props.tab.region].tabs.find(tab => tab.id === props.tab.id);
+        const current = ctx.workbenchPanels.getOwnerSnapshot(props.ownerId)[props.tab.region].tabs.find((tab) => tab.id === props.tab.id);
         if (!current) return;
         const resource = workspaceLocationResource(location);
         const title = workspaceResourceBasename(location.path) + (dirty ? " •" : "");
         if (current.title === title && current.closable === !dirty && current.durableRoute?.params.location === resource) return;
         ctx.workbenchPanels.dispatch(props.ownerId, { type: "update-tab", region: props.tab.region, tabId: props.tab.id,
           patch: { title, closable: !dirty, preview: dirty ? false : current.preview,
-            durableRoute: { kind: "workspace-resource", payloadVersion: 1, params: { resource: props.tab.resource, location: resource } } } });
-      }} />;
+            durableRoute: { kind: "workspace-resource", payloadVersion: 1, params: { ...current.durableRoute?.params, resource: props.tab.resource, location: resource } } } });
+      }} />
+      );
     const remove = [
       ctx.workbenchPanels.register({
         kind: "changes",
@@ -78,10 +80,14 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
           durableRoute: { kind: "changes", params: {}, payloadVersion: 1 },
         }),
       }),
-      ctx.workbenchPanels.register<{ readonly resource: string; readonly preview?: boolean; readonly location?: string }>({
+      ctx.workbenchPanels.register<{ readonly resource: string; readonly preview?: boolean; readonly location?: string;
+          readonly workspaceFileThreadId?: string;
+        }>({
         kind: "resource",
-        createTab: ({ resource, preview = true, location }) => ({
-          id: `resource:${resource}`,
+        createTab: ({ resource, preview = true, location, workspaceFileThreadId }) => ({
+            id: workspaceFileThreadId
+              ? `resource:${JSON.stringify([workspaceFileThreadId, resource])}`
+              : `resource:${resource}`,
           kind: "resource",
           region: "right",
           title: workspaceResourceBasename(parseWorkspaceResource(location ?? resource).path),
@@ -92,7 +98,8 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
           preview,
           durableRoute: {
             kind: "workspace-resource",
-            params: { resource, ...(location ? { location } : {}) },
+            params: { resource, ...(location ? { location } : {}),
+                ...(workspaceFileThreadId ? { workspaceFileThreadId } : {}) },
             payloadVersion: 1,
           },
         }),
@@ -110,7 +117,8 @@ export const BuiltinWorkbenchPanelPlugin = Object.assign(async function BuiltinW
           if (!context.cwd?.trim()) return;
           ctx.workbenchPanels.open(context.ownerId, "resource", {
             resource: context.cwd,
-            preview: false,
+              workspaceFileThreadId: context.workspaceFileThreadId,
+              preview: false,
           });
         },
       }),

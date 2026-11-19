@@ -1,3 +1,5 @@
+import { isWorkspacePlacement, type WorkspacePlacement } from "@opencraft/chat-core";
+import { assertComposerPlacement } from "@opencraft/composer-core";
 import { parseInputDeliveryReceipt } from "@opencraft/appserver-protocol";
 import { AppServerClientError, AppServerRpcError, type AppServerClient, type AppServerClientRequestOptions } from "@opencraft/appserver-client";
 import { ContinuationCommandError, SubmissionNotDispatchedError, SubmissionOutcomeUnknownError } from "@opencraft/chat-runtime";
@@ -41,6 +43,8 @@ export interface AppServerConversationCommandPortConfig {
   readonly queueAtomicSteer?: boolean;
   readonly queueUnconfirmedSteerDiscard?: boolean;
   readonly queueUnconfirmedDeliveryRetry?: boolean;
+  /** Read current authenticated Host capability; absent is unsupported. */
+  readonly supportsWorkspacePlacement?: () => boolean;
   readonly canRequest?: (method: AppServerMethod) => boolean;
   readonly compiler?: SubmitCompilerOptions;
   /** Host defaults supersede persisted Composer model and effort choices. */
@@ -64,7 +68,7 @@ export interface AppServerConversationCommandPortConfig {
 }
 
 export class AppServerConversationCommandError extends Error {
-  readonly code: "HOST_MISMATCH";
+  readonly code: "HOST_MISMATCH" | "UNSUPPORTED_PLACEMENT";
 
   constructor(
     code: AppServerConversationCommandError["code"],
@@ -131,7 +135,7 @@ export function createAppServerConversationCommandPort(
     try {
       resolved = await Promise.race([
         config.resolveCompilerOptions?.(intent),
-        new Promise<SubmitCompilerOptions>(resolve => { capabilityTimer = setTimeout(() => resolve({ reasoning: undefined }), 2000); }),
+        new Promise<SubmitCompilerOptions>((resolve) => { capabilityTimer = setTimeout(() => resolve({ reasoning: undefined }), 2000); }),
       ]);
     }
     catch (cause) {
@@ -201,6 +205,27 @@ export function createAppServerConversationCommandPort(
     }
   };
 
+  const placementFor = (intent: SubmitIntent): WorkspacePlacement | undefined => {
+    if (intent.target.type !== "new-thread") return undefined;
+    const execution = intent.target.execution;
+    assertComposerPlacement(execution);
+    if (execution.environment === undefined && execution.workspace.source === undefined) return undefined;
+    if (!config.supportsWorkspacePlacement?.() || execution.environment === undefined)
+      throw new AppServerConversationCommandError("UNSUPPORTED_PLACEMENT", "此连接尚不支持所选运行环境或资料来源");
+    const placement = {
+      version: 1 as const,
+      intentId: String(intent.commandId),
+      environment: execution.environment,
+      ...(execution.workspace.source === undefined ? {} : { source: execution.workspace.source }),
+    };
+    if (!isWorkspacePlacement(placement)) throw Error("Invalid workspace placement");
+    return structuredClone(placement);
+  };
+  const assertPlacementCurrent = (placement: WorkspacePlacement | undefined) => {
+    if (placement && !config.supportsWorkspacePlacement?.())
+      throw new AppServerConversationCommandError("UNSUPPORTED_PLACEMENT", "运行环境能力已变更，请重新连接后重试");
+  };
+
   const execute = async (
     intent: SubmitIntent,
     options?: { readonly canDispatch: () => boolean },
@@ -217,9 +242,13 @@ export function createAppServerConversationCommandPort(
         `SubmitIntent host ${hostId} cannot be sent through AppServer host ${config.hostId}`,
       );
     }
+    const placement = placementFor(intent);
     const compiled = await compile(intent);
-    const requestOptions = options ? { beforeSend: () => {
-      if (!options.canDispatch()) throw new SubmissionNotDispatchedError();
+    const requestOptions = options || placement
+        ? {
+            beforeSend: () => {
+              assertPlacementCurrent(placement);
+              if (options && !options.canDispatch()) throw new SubmissionNotDispatchedError();
       onAdmission?.();
     } } : undefined;
     if (options?.canDispatch() === false) throw new SubmissionNotDispatchedError();
@@ -244,7 +273,9 @@ export function createAppServerConversationCommandPort(
       case "new-thread": {
         const started = await config.client.request("thread/start", {
           ...compiled.threadOptions,
-          ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
+          ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId }
+              : {}),
+            ...(placement ? { workspacePlacement: placement }:{}),
           ...(config.dynamicTools === undefined
             ? {}
             : { dynamicTools: [...config.dynamicTools] }),
@@ -370,13 +401,15 @@ export function createAppServerConversationCommandPort(
         `SubmitIntent host ${hostId} cannot be sent through AppServer host ${config.hostId}`,
       );
     }
+    const placement = placementFor(intent);
     const compiled = await compile(intent);
     for (const diagnostic of compiled.diagnostics)
       config.onDiagnostic?.(diagnostic, intent);
     const started = await config.client.request("thread/start", {
       ...compiled.threadOptions,
           ...(intent.target.type==="new-thread"&&intent.target.execution.collaborationSpaceId!==undefined?{collaborationSpaceId:intent.target.execution.collaborationSpaceId}:{}),
-      ...(config.dynamicTools === undefined
+      ...(placement ? { workspacePlacement: placement } : {}),
+        ...(config.dynamicTools === undefined
         ? {}
         : { dynamicTools: [...config.dynamicTools] }),
       ...(intent.target.execution.workspace.cwd === null
@@ -388,7 +421,9 @@ export function createAppServerConversationCommandPort(
       ...(intent.target.execution.workspace.projectId == null
         ? {}
         : { projectId: intent.target.execution.workspace.projectId }),
-    });
+    },
+      placement ? { beforeSend: () => assertPlacementCurrent(placement) } : undefined,
+    );
     return {
       commandId: intent.commandId,
       clientMessageId: intent.clientMessageId,

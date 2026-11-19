@@ -1,3 +1,4 @@
+import type { WorkspacePlacement } from "@opencraft/chat-core";
 import type { AppServerBotMethodMap } from "./bot-conversations";
 import type { PersonalAssistantMethodMap } from "./personal-assistant";
 import type { ServerSpaceCommand } from "./server-spaces";
@@ -216,6 +217,9 @@ export type ThreadTurnsListResponse = CursorPage<AppServerTurn> & {
 export type ThreadItemsListResponse = CursorPage<ThreadItemPageEntry | AppServerThreadItem>;
 
 export type ThreadStartParams = GeneratedThreadStartParams & {
+  /** Only with advertised ordinary-workspace placement support. Logical IDs,
+   * never provider credentials, sandbox/volume IDs or caller-resolved paths. */
+  readonly workspacePlacement?: WorkspacePlacement;
   /** Explicit new-thread opt-in; IDs remain stable across transport retries. */
   readonly agentBridge?: { readonly threadId: string; readonly clientRequestId: string };
   /** Host-owned execution Agent. Omitted means the Host default. */
@@ -256,9 +260,9 @@ export type ProjectCreateParams = GeneratedProjectCreateParams;
 export type ProjectCreateResponse = GeneratedProjectCreateResponse;
 export type ProjectListParams = GeneratedProjectListParams;
 export type ProjectListResponse = GeneratedProjectListResponse;
-export type FsReadDirectoryParams = GeneratedFsReadDirectoryParams;
+export type FsReadDirectoryParams = GeneratedFsReadDirectoryParams & WorkspaceFileScope;
 export type FsReadDirectoryResponse = GeneratedFsReadDirectoryResponse;
-export type FsReadFileParams = GeneratedFsReadFileParams;
+export type FsReadFileParams = GeneratedFsReadFileParams & WorkspaceFileScope;
 export type FsReadFileResponse = GeneratedFsReadFileResponse;
 export type ThreadForkParams = GeneratedThreadForkParams;
 export type ThreadForkResponse = GeneratedThreadForkResponse;
@@ -353,13 +357,13 @@ export interface ThreadQueueSteerParams {
 export interface ThreadQueueSteerResponse {
   readonly turnId: string;
 }
-export type FsGetMetadataParams = GeneratedFsGetMetadataParams;
+export type FsGetMetadataParams = GeneratedFsGetMetadataParams & WorkspaceFileScope;
 export type FsGetMetadataResponse = GeneratedFsGetMetadataResponse;
 export type FsWatchParams = GeneratedFsWatchParams;
 export type FsWatchResponse = GeneratedFsWatchResponse;
 export type FsUnwatchParams = GeneratedFsUnwatchParams;
 export type FsUnwatchResponse = GeneratedFsUnwatchResponse;
-export type FsWriteFileParams = GeneratedFsWriteFileParams;
+export type FsWriteFileParams = GeneratedFsWriteFileParams & WorkspaceFileScope;
 export type FsWriteFileResponse = GeneratedFsWriteFileResponse;
 export type CommandExecParams = GeneratedCommandExecParams;
 export type CommandExecResponse = GeneratedCommandExecResponse;
@@ -385,8 +389,16 @@ import type {
 } from "./generated/v2";
 
 export interface AppServerMethodMap extends AppServerBotMethodMap, ThreadAccessMethodMap, AgentUsageMethodMap, AgentOnboardingMethodMap, ThreadNoteMethodMap, SharedInteractionMethodMap, TurnRecoveryMethodMap, AppServerCodexAccountMethodMap, AppServerProcessMethodMap, AppServerAttachmentMethodMap, ProfileSkillsMethodMap, ThreadPinsMethodMap, TasksMethodMap, ConversationSchedulesMethodMap, SkillCatalogMethodMap, ChannelsMethodMap, PersonalAssistantMethodMap {
-  "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number} };
-  "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot };
+  "workspace/files/scope": {
+    params: { threadId: string };
+    result: import("./workspace-catalog").WorkspaceFileLocation;
+  };
+  "workspace/catalog/read": { params: Record<string, never>; result: import("./workspace-catalog").WorkspaceCatalog };
+
+  "opencraft/token-usage/configure": { params: {enabled:boolean}; result: {enabled:boolean;enabledAt:number;revision:number};
+  };
+  "opencraft/token-usage/query": { params: Record<string, unknown>; result: import("./token-usage.js").TokenUsageSnapshot;
+  };
   /** Additive per-input steer evidence status; only served to declaring clients. */
   "opencraft/steer/status": {
     params: import("./steer-evidence").OpenCraftSteerStatusParams;
@@ -718,4 +730,10 @@ export interface AppServerServerRequest<TParams = unknown> {
   id: string | number;
   method: string;
   params: TParams;
+}
+
+/** Logical workspace routing only; Gateway must resolve current principal and
+ * durable Thread ownership. Never interpreted by Native/Host-local filesystems. */
+export interface WorkspaceFileScope {
+  readonly workspaceThreadId?: string;
 }

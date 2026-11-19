@@ -68,7 +68,7 @@ function Fixture() {
   </div>
   {params.has("pickerFocus") && <input id="outside-input" aria-label="Outside input" style={{position:"fixed",left:4,top:4,width:60}} />}
   <TouchDensitySetting />
-  <ChatSettings />
+  {!params.has("composerBounds") && <ChatSettings />}
  </main>;
 }
 function EntryFixture() {

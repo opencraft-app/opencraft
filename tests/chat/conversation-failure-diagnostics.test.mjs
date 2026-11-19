@@ -120,7 +120,7 @@ test("oversized history is a typed read failure without leaking provider error d
     message: "private content",
     data: { code: "HISTORY_RESPONSE_TOO_LARGE", retryable: false, secret: "private" },
   };
-  for (const method of ["thread/read", "thread/items/list"]) {
+  for (const method of ["thread/read", "thread/items/list", "thread/turns/list"]) {
     await assert.rejects(callConversationHost(fakeHost("operation", failure), binding, "read", method, {}), (error) => {
       assert.equal(error.code, "HISTORY_RESPONSE_TOO_LARGE");
       assert.equal(error.status, 413);

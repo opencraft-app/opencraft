@@ -32,3 +32,5 @@ export { applyThreadOrchestrationView } from "./thread-orchestration-view";
 export * from "./conversation-preview";
 
 export * from "./conversation-recovery";
+
+export * from "./execution-placement";

@@ -642,5 +642,30 @@ export const STORE_MIGRATIONS = {
       }
     ],
     "migrations": []
+  },
+  "ordinary-workspaces": {
+    "baseline": [
+      {
+        "version": 1,
+        "name": "ordinary-workspace-identity",
+        "checksum": "ed812867f2bbf48625e49e4c4646ec3e4fe8bfab4b36499048471634b8144818"
+      },
+      {
+        "version": 2,
+        "name": "ordinary-workspace-selection",
+        "checksum": "d3846928ef767146822be9d07c2c59e567447319144ca6659ee48df6022dfaeb"
+      },
+      {
+        "version": 3,
+        "name": "ordinary-workspace-native-start",
+        "checksum": "0e91db7d3af30563c9ac885e15bd15103ebbe6b4fe69eff04d47dbcd2c147b55"
+      },
+      {
+        "version": 4,
+        "name": "ordinary-workspace-volume",
+        "checksum": "5f54a703a4f3980cf71b7a96b37a9d70e66f6046fec7f1d8c75d11e939707c5f"
+      }
+    ],
+    "migrations": []
   }
 } as const;

@@ -256,6 +256,8 @@
     white-space: nowrap;
   }
   .opencraft-composer-footer {
+    // The compact flex row must measure its visible button, not just padding.
+    container-type: normal;
     flex: 0 0 auto;
     padding: 0 calc(var(--spacing) * 2) 0 0;
   }

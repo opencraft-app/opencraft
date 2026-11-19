@@ -2332,9 +2332,6 @@
   "onboard.history.open": "导入本地会话",
   "sidebar.nativeProjects": "项目",
   "onboard.history.projects": "导入时会保留原有的项目分组。",
-  "composer.attachment.uploading": "正在上传 {name}",
-  "composer.attachment.confirming": "正在处理…",
-  "composer.attachment.preparing": "正在准备…",
   "codexAccounts.credits.notReported": "未报告",
   "codexAccounts.credits.unlimited": "不限量",
   "codexAccounts.credits.available": "可用",
@@ -2346,5 +2343,17 @@
   "codexAccounts.credits.lastConfirmed": "上次确认：{date}",
   "codexAccounts.credits.title": "积分",
   "codexAccounts.credits.lastConfirmedLabel": "积分最近确认",
-  "modal.closeLabel": "关闭{label}"
+  "modal.closeLabel": "关闭{label}",
+  "workspacePlacement.empty": "使用空工作区",
+  "workspacePlacement.loading": "正在刷新工作区…",
+  "workspacePlacement.unavailable": "工作区选项暂不可用，已保留当前选择。",
+  "workspacePlacement.refresh": "刷新工作区",
+  "workspacePlacement.environment": "运行环境",
+  "workspacePlacement.host": "主机工作区",
+  "workspacePlacement.configured": "已配置",
+  "workspacePlacement.source": "工作区来源",
+  "workspacePlacement.emptyLabel": "空工作区",
+  "workspacePlacement.incompatible": "在此环境中不可用",
+  "workspacePlacement.resources": "{cpu} 核 · {memory} GiB",
+  "workspacePlacement.selectionRetained": "已保留当前选择。请先选择空工作区，再更换运行环境。"
 }

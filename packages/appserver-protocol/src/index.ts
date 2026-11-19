@@ -50,3 +50,5 @@ export * from "./catalog-merkle";
 export * from "./catalog-merkle-pages";
 
 export * from "./native-conversation-project";
+
+export * from "./workspace-catalog";

@@ -20,3 +20,5 @@ export * from "./input-capability";
 export * from "./input-interaction";
 
 export { isComposerSavedContent } from "./saved-content";
+
+export * from "./execution-placement";

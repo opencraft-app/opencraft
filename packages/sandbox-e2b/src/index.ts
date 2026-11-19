@@ -24,6 +24,9 @@ export interface E2BSandboxOptions {
   readApiKey(): Promise<string>;
   /** Trusted provider resolves this from an authorized persistent Bot binding. */
   readWorkspaceId?(identity: SandboxIdentity): Promise<string | undefined>;
+  /** Private Host lifecycle receipt after remote identity verification. Failure
+   * reclaims the exact created instance before reporting creation failure. */
+  onCreated?(receipt: { identity: SandboxIdentity; workspaceId?: string; instanceId: string }): Promise<void>;
   timeoutMs?: number;
   requestTimeoutMs?: number;
   /** This template must provide Python 3 at this absolute path. */
@@ -184,6 +187,7 @@ export function e2bSandboxBackend(
         info = await remote.getInfo(requestOptions);
         if (workspaceId && info.metadata?.workspace_id !== workspaceId)
           throw Error("Remote workspace binding mismatch");
+        await options.onCreated?.({ identity, ...(workspaceId ? { workspaceId } : {}), instanceId: remote.sandboxId });
       } catch {
         try {
           await destroy(remote);
@@ -203,9 +207,9 @@ export function e2bSandboxBackend(
           cpuMillis: info.cpuCount * 1000,
           memoryBytes: info.memoryMB * 1024 ** 2,
         },
-        capabilities: { terminal: false },
+        capabilities: { terminal: true },
         spawn(command, onOutput) {
-          if (ended || command.terminal) return Promise.reject(fault("SANDBOX_START", "E2B execution is unavailable"));
+          if (ended) return Promise.reject(fault("SANDBOX_START", "E2B execution is unavailable"));
           const operation = startProcess(remote, identity, command, onOutput, python, requestTimeoutMs, () =>
             environment.close(),
           );
@@ -385,20 +389,37 @@ async function startProcess(
     input = next.catch(() => {});
     return next;
   };
-  const sendFrame = async (value: unknown) => {
+  const sendFrame = async (value: unknown, reconcileEofExit = false) => {
     if (broken || finished) throw fault("SANDBOX_CLOSED", "E2B process is closed");
     try {
       await handle.sendStdin(frame(value), { requestTimeoutMs });
     } catch {
+      // The SDK can reject EOF after a short-lived broker has exited while
+      // its final stdout frame is still in flight. Only that framed exit is
+      // authoritative; SDK absence alone cannot confirm completion. Never
+      // retry EOF, acknowledge ordinary input this way, or revive a broken pipe.
+      if (reconcileEofExit && !broken) {
+        let deadline: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            exited.catch(() => {}),
+            new Promise<void>((resolve) => {
+              deadline = setTimeout(resolve, Math.min(1000, requestTimeoutMs));
+            }),
+          ]);
+        } finally {
+          clearTimeout(deadline);
+        }
+        if (finished && !broken) return;
+      }
       failure();
       throw fault("SANDBOX_START", "E2B input transport failed");
     }
   };
-  return {
-    kind: "process",
+  const process = {
     id,
     exited,
-    async writeStdin(data) {
+    async writeStdin(data: Uint8Array) {
       if (stdinClosed) throw fault("SANDBOX_CLOSED", "E2B process stdin is closed");
       // One bounded chunk at a time; preserve ordering against concurrent writes/EOF.
       return enqueue(async () => {
@@ -415,7 +436,7 @@ async function startProcess(
       await enqueue(async () => {
         if (finished) return;
         try {
-          await sendFrame({ type: "eof" });
+          await sendFrame({ type: "eof" }, true);
         } catch (error) {
           if (!finished) throw error;
         }
@@ -442,4 +463,17 @@ async function startProcess(
       }
     },
   };
+  if (!command.terminal) return { kind: "process", ...process };
+  const { closeStdin: _closeStdin, ...terminal } = process;
+  return {
+    kind: "terminal",
+    ...terminal,
+    async resize(size: { cols: number; rows: number }) {
+      if (![size.cols, size.rows].every((v) => Number.isInteger(v) && v > 0 && v <= 1000))
+        throw fault("SANDBOX_POLICY", "Invalid terminal size");
+      await enqueue(() => sendFrame({ type: "resize", size }));
+    },
+  };
 }
+
+export { createE2BPersistentWorkspaceInspector } from "./workspace-inspector.js";

@@ -30,7 +30,7 @@ test("stock Native restart preserves a never-dispatched creation for its first i
   skip: !process.env.OPENCRAFT_TEST_NATIVE_CLI,
 }, async () => {
   let modelPosts = 0;
-  const f = await fixture(async options => ({ ...options,
+  const f = await fixture(async (options) => ({ ...options,
     executable: process.env.OPENCRAFT_TEST_NATIVE_CLI!, spawnAppServer: undefined,
     fetch: async (input, init) => {
       const url = new URL(input instanceof Request ? input.url : String(input));
@@ -45,7 +45,7 @@ test("stock Native restart preserves a never-dispatched creation for its first i
         { type: "response.output_item.done", output_index: 0, item },
         { type: "response.completed", response: { ...response, status: "completed", output: [item],
           usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } }];
-      return new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""),
+      return new Response(events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join(""),
         { headers: { "content-type": "text/event-stream" } });
     },
   }));
@@ -74,11 +74,12 @@ test("stock Native restart preserves a never-dispatched creation for its first i
     const started = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "stock-first-after-restart",
       input: [{ type: "text", text: "synthetic first input" }] });
     assert.equal(typeof started.turn.id, "string");
-    for (let n = 0; n < 500 && !b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id); n++) await delay(10);
-    const completed = b.frames.find(frame => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id);
+    for (let n = 0; n < 500 && !b.frames.some((frame) => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id); n++) await delay(10);
+    const completed = b.frames.find(
+        (frame) => frame.method === "turn/completed" && frame.params.turn.id === started.turn.id);
     assert.equal(completed?.params.threadId, thread.id);
     assert.equal(completed?.params.turn.status, "completed");
-    assert.equal(b.frames.filter(frame => frame.method === "turn/started" && frame.params.turn.id === started.turn.id).length, 1);
+    assert.equal(b.frames.filter((frame) => frame.method === "turn/started" && frame.params.turn.id === started.turn.id).length, 1);
     assert.equal(modelPosts, 1, "the first input must reach the synthetic upstream exactly once");
   } finally { await replacement?.close(); await f.close(); }
 });
@@ -108,7 +109,7 @@ test("standalone Core records the real native process on execution leases across
 
 for (const overlays of [false, true]) test(`admission rejection diagnostics survive Host restart without recording input (overlays=${overlays})`, async () => {
   const f = await fixture(), audit = join(f.root, "admission-audit.jsonl"), client = "audit-client";
-  const a = await f.adapter(overlays, entry => {
+  const a = await f.adapter(overlays, (entry) => {
     if (entry.event === "codex-admission-rejected") appendFileSync(audit, JSON.stringify(entry) + "\n");
   });
   const flag = join(overlays ? f.options.dataDirectory : join(f.root, "forbidden"), "codex-admission.paused");
@@ -123,10 +124,11 @@ for (const overlays of [false, true]) test(`admission rejection diagnostics surv
       ["turn/start", { threadId: content, input: [] }],
     ] as const) await assert.rejects(a.rpc(client, method, params), /temporarily unavailable/);
     assert.equal((await a.rpc(client, "opencraft/codex/maintenance/read")).rejectedAdmissions, 4);
-    const rows = readFileSync(audit, "utf8").trim().split("\n").map(line => JSON.parse(line));
-    assert.deepEqual(rows.map(row => row.rejectedAdmissions), [1, 2, 3, 4]);
-    assert.deepEqual(rows.map(row => row.threadId), [threadId, threadId, null, null]);
-    assert.ok(rows.every(row => row.clientId === client && row.reason === "maintenance" && Number.isFinite(Date.parse(row.at))));
+    const rows = readFileSync(audit, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    assert.deepEqual(rows.map((row) => row.rejectedAdmissions), [1, 2, 3, 4]);
+    assert.deepEqual(rows.map((row) => row.threadId), [threadId, threadId, null, null]);
+    assert.ok(rows.every(
+          (row) => row.clientId === client && row.reason === "maintenance" && Number.isFinite(Date.parse(row.at))));
     assert.equal(readFileSync(audit, "utf8").includes(content), false);
     await a.engine.close();
     const b = await f.adapter(overlays); await b.rpc(client, "initialize");
@@ -136,7 +138,7 @@ for (const overlays of [false, true]) test(`admission rejection diagnostics surv
 });
 
 test("a diagnostic sink failure does not admit work or suppress the maintenance error", async () => {
-  const f = await fixture(), a = await f.adapter(true, entry => {
+  const f = await fixture(), a = await f.adapter(true, (entry) => {
     if (entry.event === "codex-admission-rejected") throw new Error("synthetic unavailable sink");
   });
   const flag = join(f.options.dataDirectory, "codex-admission.paused");
@@ -213,14 +215,14 @@ test("maintenance observes submissions accepted before the fence and defers new 
 test("Core reconnect publishes ready only after the new native initialize finishes", async () => {
   const f = await fixture();
   let hold = false, entered = false, release!: () => void;
-  const gate = new Promise<void>(resolve => { release = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
   const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
-    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: (native) => ({
       get status() { return native.status; },
-      connect: signal => native.connect(signal), close: () => native.close(),
-      subscribeMessage: listener => native.subscribeMessage(listener),
-      subscribeStatus: listener => native.subscribeStatus(listener),
-      send: async frame => {
+      connect: (signal) => native.connect(signal), close: () => native.close(),
+      subscribeMessage: (listener) => native.subscribeMessage(listener),
+      subscribeStatus: (listener) => native.subscribeStatus(listener),
+      send: async (frame) => {
         if (hold && JSON.parse(frame).method === "initialize") { entered = true; await gate; }
         await native.send(frame);
       },
@@ -228,13 +230,13 @@ test("Core reconnect publishes ready only after the new native initialize finish
   let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
   const frames: any[] = [];
   const states: string[] = [];
-  engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
-  engine.subscribeStatus(status => states.push(status.state));
+  engine.subscribeMessage((frame) => frames.push(JSON.parse(frame)));
+  engine.subscribeStatus((status) => states.push(status.state));
   try {
     await engine.connect();
     await engine.send(JSON.stringify({ id: "first", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "view" }));
-    for (let n = 0; n < 300 && !frames.some(frame => frame.id === "first"); n++) await delay(10);
-    assert.ok(frames.some(frame => frame.id === "first"));
+    for (let n = 0; n < 300 && !frames.some((frame) => frame.id === "first"); n++) await delay(10);
+    assert.ok(frames.some((frame) => frame.id === "first"));
     hold = true;
     await f.core.close();
     replacement = await startCodexCore(f.options);
@@ -247,20 +249,21 @@ test("Core reconnect publishes ready only after the new native initialize finish
     for (let n = 0; n < 300 && engine.status.state !== "open"; n++) await delay(10);
     assert.equal(engine.status.state, "open");
     await engine.send(JSON.stringify({ id: "after", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "next" }));
-    assert.ok(frames.some(frame => frame.id === "after" && frame.result));
+    assert.ok(frames.some((frame) => frame.id === "after" && frame.result));
   } finally { release(); await engine.close(); await replacement?.close(); await f.close(); }
 });
 test("failed Core initialize discards that connection and remains unavailable until a fresh handshake", async () => {
   const f = await fixture();
   let recovery = false, rejected = false, entered = false, release!: () => void, nativeOpens = 0;
-  const gate = new Promise<void>(resolve => { release = resolve; });
+  const gate = new Promise<void>((resolve) => { release = resolve; });
   const listeners = new Set<(frame: string) => void>();
   const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
-    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
-      get status() { return native.status; }, connect: signal => native.connect(signal), close: () => native.close(),
-      subscribeMessage: listener => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
-      subscribeStatus: listener => native.subscribeStatus(status => { if (status.state === "open") nativeOpens++; listener(status); }),
-      send: async frame => {
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: (native) => ({
+      get status() { return native.status; }, connect: (signal) => native.connect(signal), close: () => native.close(),
+      subscribeMessage: (listener) => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
+      subscribeStatus: (listener) =>
+        native.subscribeStatus((status) => { if (status.state === "open") nativeOpens++; listener(status); }),
+      send: async (frame) => {
         const message = JSON.parse(frame);
         if (recovery && message.method === "initialize") {
           if (!rejected) {
@@ -274,11 +277,11 @@ test("failed Core initialize discards that connection and remains unavailable un
       },
     }) });
   let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
-  const frames: any[] = []; engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  const frames: any[] = []; engine.subscribeMessage((frame) => frames.push(JSON.parse(frame)));
   try {
     await engine.connect();
     await engine.send(JSON.stringify({ id: "first", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "view" }));
-    for (let n = 0; n < 300 && !frames.some(frame => frame.id === "first"); n++) await delay(10);
+    for (let n = 0; n < 300 && !frames.some((frame) => frame.id === "first"); n++) await delay(10);
     recovery = true; await f.core.close(); replacement = await startCodexCore(f.options);
     for (let n = 0; n < 600 && !entered; n++) await delay(10);
     assert.equal(rejected, true); assert.equal(entered, true);
@@ -293,9 +296,9 @@ test("failed Core initialize discards that connection and remains unavailable un
 test("split account Core restarts with stable launch credentials while the independent runtime survives", async () => {
   const root = await mkdtemp(join(temporaryDirectory, "oc-core-split-"));
   const reservation = createTcpServer();
-  await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve));
   const port = (reservation.address() as import("node:net").AddressInfo).port;
-  await new Promise<void>(resolve => reservation.close(() => resolve()));
+  await new Promise<void>((resolve) => reservation.close(() => resolve()));
   const options: CodexCoreOptions = { endpoint: join(root, "accounts/control.sock"), appServerEndpoint: join(root, "execution/control.sock"),
     authToken: token, executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "data"),
     nativeCodexHomeDirectory: join(root, "native"), proxyPort: port, fetch: async () => Response.json({ plan_type: "pro" }) };
@@ -334,9 +337,9 @@ test("split account Core restarts with stable launch credentials while the indep
 test("two generation runtimes have independent HOME writers and share one account Core", async () => {
   const root = await mkdtemp(join(temporaryDirectory, "oc-core-generations-"));
   const reservation = createTcpServer();
-  await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+  await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve));
   const port = (reservation.address() as import("node:net").AddressInfo).port;
-  await new Promise<void>(resolve => reservation.close(() => resolve()));
+  await new Promise<void>((resolve) => reservation.close(() => resolve()));
   const options: CodexCoreOptions = { endpoint: join(root, "accounts/control.sock"), appServerEndpoint: join(root, "g0/control.sock"),
     authToken: token, executable: process.execPath, runtimeDirectory: root, dataDirectory: join(root, "accounts-data"),
     nativeCodexHomeDirectory: join(root, "native"), proxyPort: port, fetch: async () => Response.json({ plan_type: "pro" }) };
@@ -350,8 +353,8 @@ test("two generation runtimes have independent HOME writers and share one accoun
       { cwd, env, stdio: ["pipe", "pipe", "pipe"] }) });
   try {
     runtimes.push(await create("g0"), await create("g1"));
-    const readers = ["g0", "g1"].map(id => new CodexCoreControlClient(join(root, id, "control.sock"), token));
-    const before = await Promise.all(readers.map(client => client.appServerHealth()));
+    const readers = ["g0", "g1"].map((id) => new CodexCoreControlClient(join(root, id, "control.sock"), token));
+    const before = await Promise.all(readers.map((client) => client.appServerHealth()));
     assert.notEqual(before[0]!.codexPid, before[1]!.codexPid);
     assert.notEqual(before[0]!.codexHome, before[1]!.codexHome);
     for (const h of before) {
@@ -361,14 +364,15 @@ test("two generation runtimes have independent HOME writers and share one accoun
       assert.ok((await stat(h.nativeSocket)).isSocket(), "public endpoint is a real socket across mount namespaces");
       const connection = new WebSocket(`ws+unix://${h.nativeSocket}:/`);
       await new Promise<void>((resolve, reject) => { connection.once("open", resolve); connection.once("error", reject); });
-      const initialized = new Promise<any>(resolve => connection.once("message", raw => resolve(JSON.parse(String(raw)))));
+      const initialized = new Promise<any>((resolve) =>
+        connection.once("message", (raw) => resolve(JSON.parse(String(raw)))));
       connection.send(JSON.stringify({ id: 1, method: "initialize", params: { clientInfo: { name: "relay-test", version: "1" } } }));
       assert.ok((await initialized).result); connection.terminate();
     }
     await assert.rejects(create("duplicate", before[0]!.runtimeDataDirectory), /already owned/);
     const initialLaunch = await launch.appServerLaunch();
     await core.close();
-    assert.deepEqual(await Promise.all(readers.map(client => client.appServerHealth())), before);
+    assert.deepEqual(await Promise.all(readers.map((client) => client.appServerHealth())), before);
     core = await startCodexCore(options);
     assert.deepEqual(await launch.appServerLaunch(), initialLaunch);
     assert.deepEqual(await launch.accountRequest("opencraft/codex/accounts/list", {}), { accounts: [] });
@@ -378,18 +382,18 @@ test("two generation runtimes have independent HOME writers and share one accoun
 test("proxy drain continues serving other Turns until its long response reaches an idle point", async () => {
   let stream!: ReadableStreamDefaultController<Uint8Array>;
   let baseUrl = "", hostToken = "", modelRequests = 0;
-  const f = await fixture(async options => {
+  const f = await fixture(async (options) => {
     const store = new AccountPoolStore({ databasePath: join(options.dataDirectory, "account-pool.sqlite"), secretsDirectory: join(options.dataDirectory, "secrets") });
     store.addAccount({ id: "drain", provider: "codex", label: "drain", upstreamAccountId: "drain", priority: 0, enabled: true },
       { accessToken: "synthetic-drain", refreshToken: null, expiresAt: null }); store.close();
-    return { ...options, fetch: async input => {
+    return { ...options, fetch: async (input) => {
       if (String(input).includes("/wham/usage")) return Response.json({ plan_type: "pro" });
       if (++modelRequests > 1) return new Response("other Turn completed");
       return new Response(new ReadableStream<Uint8Array>({ start(controller) {
         stream = controller; controller.enqueue(new TextEncoder().encode("long response"));
       } }));
     }, spawnAppServer(input) {
-      const setting = input.args.find(arg => arg.startsWith("model_providers.opencraft-account-pool.base_url="))!;
+      const setting = input.args.find((arg) => arg.startsWith("model_providers.opencraft-account-pool.base_url="))!;
       baseUrl = JSON.parse(setting.slice(setting.indexOf("=") + 1)); hostToken = input.env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN!;
       return options.spawnAppServer!(input);
     } };
@@ -421,9 +425,9 @@ test("runtime bootstrap waits for delayed Core, cancels cleanly and fails perman
   try {
     const cancelled = assert.rejects(startCodexAppServer({ ...options, signal: abort.signal }), /abort/i);
     await delay(50); abort.abort(); await cancelled;
-    const reservation = createTcpServer(); await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+    const reservation = createTcpServer(); await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve));
     const port = (reservation.address() as import("node:net").AddressInfo).port;
-    await new Promise<void>(resolve => reservation.close(() => resolve()));
+    await new Promise<void>((resolve) => reservation.close(() => resolve()));
     const waiting = startCodexAppServer(options);
     await delay(800);
     core = await startCodexCore({ ...options, endpoint, appServerEndpoint, proxyPort: port,
@@ -448,9 +452,9 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
   if (configure) options = await configure(options);
   if (options.appServerEndpoint && !options.proxyPort) {
     const reservation = createTcpServer();
-    await new Promise<void>(resolve => reservation.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) => reservation.listen(0, "127.0.0.1", resolve));
     const port = (reservation.address() as import("node:net").AddressInfo).port;
-    await new Promise<void>(resolve => reservation.close(() => resolve()));
+    await new Promise<void>((resolve) => reservation.close(() => resolve()));
     options = { ...options, proxyPort: port };
   }
   const core = await startCodexCore(options);
@@ -465,7 +469,7 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
       spawnAppServer: () => { throw new Error("Remote mode spawned a writer"); } });
     adapters.push(engine);
     const frames: any[] = [];
-    engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+    engine.subscribeMessage((frame) => frames.push(JSON.parse(frame)));
     await engine.connect();
     let sequence = 0;
     async function rpc(client: string, method: string, params: object = {}, context?: Parameters<CodexEngineAdapter["sendWithContext"]>[1]) {
@@ -473,7 +477,8 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
       const frame = JSON.stringify({ id, method, params, [LOGICAL_CLIENT_FIELD]: client });
       if (context) await engine.sendWithContext(frame, context); else await engine.send(frame);
       for (let i = 0; i < 300; i++) {
-        const frame = frames.find(value => value.id === id && !value.method && value[LOGICAL_CLIENT_FIELD] === client);
+        const frame = frames.find(
+          (value) => value.id === id && !value.method && value[LOGICAL_CLIENT_FIELD] === client);
         if (frame) { if (frame.error) throw new Error(frame.error.message); return frame.result; }
         await delay(10);
       }
@@ -482,7 +487,7 @@ async function fixture(configure?: (options: CodexCoreOptions) => Promise<CodexC
     return { engine, rpc, frames };
   }
   return { root, options, core, control, adapter, async close() {
-    await Promise.all(adapters.map(engine => engine.close()));
+    await Promise.all(adapters.map((engine) => engine.close()));
     await runtime?.close(); await core.close(); await rm(root, { recursive: true, force: true });
   } };
 }
@@ -531,7 +536,7 @@ test("logical unsubscribe/disconnect preserves another subscriber, including pen
     await pending;
     await independent.rpc("c", "fixture/publish", { ...params, delta: "still subscribed" });
     await delay(30);
-    assert.ok(a.frames.some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "b"));
+    assert.ok(a.frames.some((frame) => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "b"));
     assert.equal((await independent.rpc("c", "fixture/subscribers", params)).count, 2);
     await a.engine.send(JSON.stringify({ method: "runtime/client/disconnect", [LOGICAL_CLIENT_FIELD]: "b" }));
     await delay(30);
@@ -570,16 +575,16 @@ test("failed pending resume releases the native subscription after its last prio
     assert.equal((await observer.rpc("observer", "fixture/subscribers", params)).count, 0);
     await observer.rpc("observer", "fixture/publish", { ...params, delta: "must not leak to unrelated client" });
     await delay(30);
-    assert.equal(a.frames.some(frame => frame.method === "item/agentMessage/delta"), false);
+    assert.equal(a.frames.some((frame) => frame.method === "item/agentMessage/delta"), false);
   } finally { await f.close(); }
 });
 
 test("core shutdown retains writer ownership until an aborted proxy refresh persists its rotated credential", async () => {
   let finishRefresh!: () => void, startedRefresh!: () => void;
-  const heldRefresh = new Promise<void>(resolve => { finishRefresh = resolve; });
-  const refreshStarted = new Promise<void>(resolve => { startedRefresh = resolve; });
+  const heldRefresh = new Promise<void>((resolve) => { finishRefresh = resolve; });
+  const refreshStarted = new Promise<void>((resolve) => { startedRefresh = resolve; });
   let baseUrl = "", hostToken = "", maintenanceClosed = false;
-  const f = await fixture(async options => {
+  const f = await fixture(async (options) => {
     const store = new AccountPoolStore({ databasePath: join(options.dataDirectory, "account-pool.sqlite"),
       secretsDirectory: join(options.dataDirectory, "secrets") });
     store.addAccount({ id: "fixture", provider: "codex", label: "fixture", upstreamAccountId: "fixture", priority: 1, enabled: true },
@@ -589,7 +594,7 @@ test("core shutdown retains writer ownership until an aborted proxy refresh pers
       fetch: async (input, init) => String(input).includes("/wham/usage") ? Response.json({ plan_type: "fixture" })
         : new Headers(init?.headers).get("authorization") === "Bearer initial-synthetic"
           ? new Response(null, { status: 401 }) : Response.json({ ok: true }),
-      createMaintenanceClient: async profile => ({
+      createMaintenanceClient: async (profile) => ({
         async request<T>() {
           startedRefresh(); await heldRefresh;
           await writeFile(join(profile, "auth.json"), JSON.stringify({ tokens: {
@@ -601,7 +606,7 @@ test("core shutdown retains writer ownership until an aborted proxy refresh pers
         async close() { maintenanceClosed = true; },
       }),
       spawnAppServer(input) {
-        const setting = input.args.find(arg => arg.startsWith("model_providers.opencraft-account-pool.base_url="))!;
+        const setting = input.args.find((arg) => arg.startsWith("model_providers.opencraft-account-pool.base_url="))!;
         baseUrl = JSON.parse(setting.slice(setting.indexOf("=") + 1));
         hostToken = input.env.OPENCRAFT_CODEX_POOL_AUTH_TOKEN!;
         return options.spawnAppServer!(input);
@@ -638,15 +643,16 @@ test("Headless core mode retains overlay stores, sender and unique owner across 
     const initialized = await a.rpc("a", "initialize");
     assert.equal(initialized.capabilities.extensions["opencraft/bot-conversations"], undefined);
     assert.equal(initialized.capabilities.extensions["vela/bot-conversations"], undefined);
-    assert.ok(a.engine.storageOutcomes.some(row => row.name === "opencraft-host-state" && row.outcome.appliedVersion === OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version));
-    assert.ok(!a.engine.storageOutcomes.some(row => row.name === "account-pool"), "core is the sole account owner");
+    assert.ok(a.engine.storageOutcomes.some(
+        (row) => row.name === "opencraft-host-state" && row.outcome.appliedVersion === OPENCRAFT_HOST_STATE_MIGRATIONS.at(-1)!.version));
+    assert.ok(!a.engine.storageOutcomes.some((row) => row.name === "account-pool"), "core is the sole account owner");
     const { thread } = await a.rpc("a", "thread/start", { cwd: "/synthetic" });
     const sendId = "verified-send";
     await a.engine.sendWithContext(JSON.stringify({ id: sendId, method: "turn/start", params: {
       threadId: thread.id, clientUserMessageId: "verified-message", input: [{ type: "text", text: "synthetic" }],
     }, [LOGICAL_CLIENT_FIELD]: "a" }), { sender: { kind: "employee", loginName: "fixture" }, validUntil: Date.now() + 60000 });
-    for (let n = 0; n < 200 && !a.frames.some(row => row.id === sendId); n++) await delay(10);
-    assert.ok(a.frames.find(row => row.id === sendId)?.result);
+    for (let n = 0; n < 200 && !a.frames.some((row) => row.id === sendId); n++) await delay(10);
+    assert.ok(a.frames.find((row) => row.id === sendId)?.result);
     const { DatabaseSync } = await import("node:sqlite");
     const read = new DatabaseSync(join(f.options.dataDirectory, "opencraft-host-state.sqlite"), { readOnly: true });
     assert.match(String(read.prepare("SELECT sender_json FROM message_senders WHERE client_message_id='verified-message'").get()?.sender_json), /fixture/); read.close();
@@ -716,7 +722,7 @@ test("Headless restart restores native active Goal subscription before original 
 });
 
 test("managed Headless initializes its queue owner without a browser and drains after the core turn completes", async () => {
-  const f = await fixture(async options => ({ ...options, dataDirectory: join(options.runtimeDirectory, "headless/codex") }));
+  const f = await fixture(async (options) => ({ ...options, dataDirectory: join(options.runtimeDirectory, "headless/codex") }));
   let headless: any;
   try {
     const a = await f.adapter(true); await a.rpc("a", "initialize");
@@ -780,7 +786,7 @@ test("conversation schedules declare Host capability, persist across overlay res
 });
 
 test('Actor collaboration survives Headless overlay restart while native Core retains the active Turn', async () => {
-  const f = await fixture(async options => ({ ...options, dataDirectory: join(options.runtimeDirectory, 'headless/codex') }));
+  const f = await fixture(async (options) => ({ ...options, dataDirectory: join(options.runtimeDirectory, 'headless/codex') }));
   let headless: any;
   try {
     const { ActorStore } = await import("../../packages/access-control/src/actors.js");
@@ -806,14 +812,14 @@ test('Actor collaboration survives Headless overlay restart while native Core re
     const call = (path: string, body?: any) => fetch(headless.url + '/__opencraft_actors/collaboration/' + path, {
       headers: { authorization: 'Bearer ' + credential.token, ...(body ? { 'content-type': 'application/json' } : {}) }, ...(body ? { method: 'POST', body: JSON.stringify(body) } : {}) });
     const response = await call('messages', { targetActorId: b.id, content: 'after current Turn', idempotencyKey: 'one', execution: { mode: 'queue' } });
-    assert.equal(response.status, 200); const sent = await response.json() as any;
+    assert.equal(response.status, 200); const sent = (await response.json()) as any;
     let request: any;
-    for (let i = 0; i < 150; i++) { request = (await (await call('requests?id=' + sent.requestId)).json() as any).request; if (request.state === 'queued') break; await delay(20); }
+    for (let i = 0; i < 150; i++) { request = ((await (await call('requests?id=' + sent.requestId)).json()) as any).request; if (request.state === 'queued') break; await delay(20); }
     assert.equal(request.state, 'queued');
     await headless.close(); headless = await startHeadlessServer(options);
     assert.deepEqual(await f.control.health(), healthBefore);
     await inspector.rpc('inspect', 'fixture/complete', { threadId: thread.id });
-    for (let i = 0; i < 150; i++) { request = (await (await call('requests?id=' + sent.requestId)).json() as any).request; if (request.state === 'injected') break; await delay(20); }
+    for (let i = 0; i < 150; i++) { request = ((await (await call('requests?id=' + sent.requestId)).json()) as any).request; if (request.state === 'injected') break; await delay(20); }
     assert.equal(request.state, 'injected');
     const history = await inspector.rpc('inspect', 'thread/read', { threadId: thread.id, includeTurns: true });
     assert.equal(history.thread.turns.length, 2); assert.equal(history.thread.turns[1].items[0].clientId, 'actor-input:' + sent.requestId);
@@ -831,13 +837,14 @@ for (const overlays of [false, true]) test(`Read-only Core observers receive liv
     await a.rpc("reader", "thread/read", { threadId: thread.id, watch: true, includeTurns: false });
     await a.rpc("writer", "fixture/publish", { threadId: thread.id, delta: "observed" });
     await delay(30);
-    assert.ok(a.frames.some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"));
+    assert.ok(a.frames.some(
+          (frame) => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"));
     await a.rpc("reader", "thread/unsubscribe", { threadId: thread.id });
     const start = a.frames.length;
     await a.rpc("writer", "fixture/publish", { threadId: thread.id, delta: "writer only" });
     await delay(30);
-    assert.equal(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"), false);
-    assert.ok(a.frames.slice(start).some(frame => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "writer"));
+    assert.equal(a.frames.slice(start).some((frame) => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "reader"), false);
+    assert.ok(a.frames.slice(start).some((frame) => frame.method === "item/agentMessage/delta" && frame[LOGICAL_CLIENT_FIELD] === "writer"));
   } finally { await f.close(); }
 });
 
@@ -846,11 +853,12 @@ test("Core reconnect before the first client caches its successful handshake for
   let opens = 0;
   const initialized = new Set<number>(), listeners = new Set<(frame: string) => void>();
   const engine = new CodexEngineAdapter({ ...f.options, coreEndpoint: f.core.endpoint, coreAuthToken: token,
-    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: native => ({
-      get status() { return native.status; }, connect: signal => native.connect(signal), close: () => native.close(),
-      subscribeMessage: listener => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
-      subscribeStatus: listener => native.subscribeStatus(status => { if (status.state === "open") opens++; listener(status); }),
-      send: async frame => {
+    coreHostOverlays: true, logDiagnostic: () => {}, decorateNativeTransport: (native) => ({
+      get status() { return native.status; }, connect: (signal) => native.connect(signal), close: () => native.close(),
+      subscribeMessage: (listener) => { listeners.add(listener); const stop = native.subscribeMessage(listener); return () => { listeners.delete(listener); stop(); }; },
+      subscribeStatus: (listener) =>
+        native.subscribeStatus((status) => { if (status.state === "open") opens++; listener(status); }),
+      send: async (frame) => {
         const message = JSON.parse(frame);
         if (message.method === "initialize") {
           if (initialized.has(opens)) {
@@ -863,15 +871,15 @@ test("Core reconnect before the first client caches its successful handshake for
       },
     }) });
   let replacement: Awaited<ReturnType<typeof startCodexCore>> | undefined;
-  const frames: any[] = []; engine.subscribeMessage(frame => frames.push(JSON.parse(frame)));
+  const frames: any[] = []; engine.subscribeMessage((frame) => frames.push(JSON.parse(frame)));
   try {
     await engine.connect();
     await f.core.close(); replacement = await startCodexCore(f.options);
     for (let n = 0; n < 600 && !(opens >= 2 && (engine as any).physicalInitialized && engine.status.state === "open"); n++) await delay(10);
     assert.ok(opens >= 2);
     await engine.send(JSON.stringify({ id: "first-view", method: "initialize", params: {}, [LOGICAL_CLIENT_FIELD]: "first-view" }));
-    for (let n = 0; n < 100 && !frames.some(frame => frame.id === "first-view"); n++) await delay(10);
-    const reply = frames.find(frame => frame.id === "first-view");
+    for (let n = 0; n < 100 && !frames.some((frame) => frame.id === "first-view"); n++) await delay(10);
+    const reply = frames.find((frame) => frame.id === "first-view");
     assert.ok(reply?.result, "a recovered physical connection must not receive a duplicate initialize from the first View");
     assert.equal(reply.result.capabilities.extensions["opencraft/read-history"].itemDetails, true);
   } finally { await engine.close(); await replacement?.close(); await f.close(); }
@@ -884,7 +892,8 @@ for (const overlays of [false, true]) test(`directory readers learn a committed 
     await a.rpc("creator", "initialize"); await a.rpc("directory-reader", "initialize");
     const before = await a.rpc("directory-reader", "thread/list", {});
     const { thread } = await a.rpc("creator", "thread/start", { cwd: "/synthetic", ephemeral: false });
-    const events = () => a.frames.filter(frame => frame.method === "opencraft/thread-catalog/changed"
+    const events = () => a.frames.filter(
+          (frame) => frame.method === "opencraft/thread-catalog/changed"
       && frame[LOGICAL_CLIENT_FIELD] === "directory-reader" && frame.params.change?.type === "upsert"
       && frame.params.change.thread.id === thread.id);
     assert.equal(events().length, 0, "allocation is not a durable catalog entry");
@@ -896,7 +905,7 @@ for (const overlays of [false, true]) test(`directory readers learn a committed 
 });
 
 for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched creation keeps its native route and events through Host replacement without a history resume (unsupported=${emptyHistoryUnsupported})`, async () => {
-  const f = await fixture(async options => ({ ...options,
+  const f = await fixture(async (options) => ({ ...options,
     appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
@@ -919,8 +928,9 @@ for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched cr
     assert.equal((await b.rpc("browser", "fixture/subscribers", { threadId: thread.id })).count, 1);
     await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "recovered-progress" });
     await b.rpc("browser", "fixture/complete", { threadId: thread.id });
-    assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "recovered-progress"));
-    assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === receipt.turn.id));
+    assert.ok(b.frames.some(
+          (frame) => frame.method === "item/agentMessage/delta" && frame.params.delta === "recovered-progress"));
+    assert.ok(b.frames.some((frame) => frame.method === "turn/completed" && frame.params.turn.id === receipt.turn.id));
     const history = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true });
     assert.equal(history.thread.turns.length, 1);
     assert.equal(history.thread.turns[0].items[0].clientId, "first-input");
@@ -934,7 +944,7 @@ for (const emptyHistoryUnsupported of [false, true]) test(`a never-dispatched cr
 });
 
 for (const routingOnly of [false, true]) test(`Core refuses empty creation recovery without callbacks (routing-only=${routingOnly})`, async () => {
-  const f = await fixture(async options => ({ ...options,
+  const f = await fixture(async (options) => ({ ...options,
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
       { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
@@ -984,7 +994,7 @@ test("a lost first-Turn acknowledgement never turns attempted input into an empt
 
 
 for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as const) test(`an empty environment provider restores MCP without a history resume (scope=${scopeChange})`, async () => {
-  const f = await fixture(async options => ({ ...options, appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
+  const f = await fixture(async (options) => ({ ...options, appServerEndpoint: join(options.runtimeDirectory, "execution/control.sock"),
     spawnAppServer: ({ args, cwd, env }) => spawn(process.execPath,
       [new URL("../fixtures/fake-codex-unix-appserver.mjs", import.meta.url).pathname, args[2]!.slice("unix://".length)],
       { cwd, env: { ...env, FAKE_REQUIRE_DURABLE_RESUME: "1", FAKE_UNLOAD_ON_UNSUBSCRIBE: "1" }, stdio: ["pipe", "pipe", "pipe"] }),
@@ -996,7 +1006,7 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
     ...(scopeChange === "no-mcp" ? {} : { sessionMcp: () => ({ url: "http://127.0.0.1:1/mcp" }), createSessionMcp: reservation,
     restoreSessionMcp: () => { restored++; return reservation(); } }),
     decorateNativeTransport(transport: import("../../apps/opencraft-daemon/src/codex-native-core-transport.js").CodexNativeCoreTransport) {
-      const send = transport.send.bind(transport); transport.send = frame => { methods.push(JSON.parse(frame).method); return send(frame); }; return transport;
+      const send = transport.send.bind(transport); transport.send = (frame) => { methods.push(JSON.parse(frame).method); return send(frame); }; return transport;
     },
   };
   const context = { sender: { kind: "employee" as const, loginName: "alice" }, executionPrincipal: { provider: "employee", subject: "alice" }, validUntil: Date.now() + 60_000 };
@@ -1026,22 +1036,23 @@ for (const scopeChange of ["none", "account", "project", "unknown", "no-mcp"] as
     assert.ok(ack.turn.id);
     assert.equal(restored, scopeChange === "no-mcp" ? 0 : 1); assert.equal(bound.size, scopeChange === "no-mcp" ? 0 : 1);
     assert.equal(methods.includes("thread/resume"), false, "the first input cannot require nonexistent native history");
-    assert.equal(methods.filter(method => method === "turn/start").length, 1);
+    assert.equal(methods.filter((method) => method === "turn/start").length, 1);
     const read = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context);
     assert.equal(read.thread.turns.length, 1);
     await b.rpc("browser", "fixture/publish", { threadId: thread.id, delta: "restored-with-environment" });
     await b.rpc("browser", "fixture/complete", { threadId: thread.id });
-    assert.ok(b.frames.some(frame => frame.method === "item/agentMessage/delta" && frame.params.delta === "restored-with-environment"));
-    assert.ok(b.frames.some(frame => frame.method === "turn/completed" && frame.params.turn.id === ack.turn.id));
+    assert.ok(b.frames.some(
+          (frame) => frame.method === "item/agentMessage/delta" && frame.params.delta === "restored-with-environment"));
+    assert.ok(b.frames.some((frame) => frame.method === "turn/completed" && frame.params.turn.id === ack.turn.id));
     methods.length = 0;
     const second = await b.rpc("browser", "turn/start", { threadId: thread.id, clientUserMessageId: "env-next", input: [{ type: "text", text: "next synthetic input" }] }, context);
     assert.notEqual(second.turn.id, ack.turn.id);
     assert.ok(methods.includes("thread/resume"), "a later execution refreshes the native environment after the preserved first snapshot");
-    assert.equal(methods.filter(method => method === "turn/start").length, 1);
+    assert.equal(methods.filter((method) => method === "turn/start").length, 1);
     const final = await b.rpc("browser", "thread/read", { threadId: thread.id, includeTurns: true }, context);
     assert.deepEqual(final.thread.turns.map((turn: any) => turn.items[0].clientId), ["env-restored-first", "env-next"]);
     await b.rpc("browser", "fixture/complete", { threadId: thread.id });
-  } finally { await Promise.all(hosts.map(host => host.close())); runtime.close(); vault.close(); await f.close(); }
+  } finally { await Promise.all(hosts.map((host) => host.close())); runtime.close(); vault.close(); await f.close(); }
 });
 
 
@@ -1106,8 +1117,137 @@ for (const [optIn,delivery] of [[false,true],[true,false],[true,true]]) test(`hi
   const f = await fixture();
   try {
     const a = await f.adapter(true,()=>{}, { historyImageResources:optIn,
-      ...(delivery ? { prepareArtifact:async artifact=>artifact } : {}) });
+      ...(delivery ? { prepareArtifact:async (artifact) =>artifact } : {}) });
     const initialized = await a.rpc("reader","initialize");
     assert.equal(initialized.capabilities.extensions["opencraft/read-history"].imageResources,optIn&&delivery);
   } finally { await f.close(); }
+});
+
+test("physical workspace admission uses trusted per-request context, never renderer identity", async () => {
+  const f = await fixture();
+  const captures: import("../../apps/opencraft-daemon/src/codex-engine-adapter.js").CodexNativeRequestAdmission[] = [];
+  const seen: string[] = [],
+    physicalIds: unknown[] = [];
+  let lookup!: (
+    id: string | number,
+  ) => import("../../apps/opencraft-daemon/src/codex-engine-adapter.js").CodexNativeRequestAdmission | null;
+  try {
+    const a = await f.adapter(true, () => {}, {
+      decorateNativeTransport(native, admission) {
+        lookup = admission;
+        return {
+          get status() {
+            return native.status;
+          },
+          connect: (s) => native.connect(s),
+          close: () => native.close(),
+          subscribeMessage: (l) => native.subscribeMessage(l),
+          subscribeStatus: (l) => native.subscribeStatus(l),
+          async send(frame, signal, progress) {
+            const m = JSON.parse(frame);
+            if (m.method === "thread/start") {
+              const trusted = admission(m.id);
+              assert.ok(trusted);
+              assert.equal(trusted.method, m.method);
+              seen.push(trusted.context().actorContext!.actorId);
+              captures.push(trusted);
+              physicalIds.push(m.id);
+              assert.equal(
+                trusted.context().executionPrincipal?.subject,
+                "verified-" + trusted.context().actorContext!.actorId,
+              );
+            }
+            return native.send(frame, signal, progress);
+          },
+        };
+      },
+    });
+    await a.rpc("alice", "initialize");
+    await a.rpc("bob", "initialize");
+    const context = (id: string) => ({
+      sender: null,
+      validUntil: Date.now() + 60000,
+      executionPrincipal: { provider: "fixture", subject: "verified-" + id },
+      actorContext: { actorId: id, generation: 1, credentialId: null, expiresAt: Date.now() + 60000 },
+    });
+    await Promise.all(
+      ["alice", "bob"].map((id) =>
+        a.rpc(
+          id,
+          "thread/start",
+          { actorId: "forged-admin", executionPrincipal: { subject: "forged" }, environments: [] },
+          context(id),
+        ),
+      ),
+    );
+    assert.deepEqual([...seen].sort(), ["alice", "bob"]);
+    assert.notEqual(physicalIds[0], physicalIds[1]);
+    for (const admission of captures) assert.throws(() => admission.context(), /expired/);
+    for (const id of physicalIds) assert.equal(lookup(id as string), null);
+    assert.equal(lookup("unknown-request"), null);
+  } finally {
+    await f.close();
+  }
+});
+
+test("physical workspace admission rechecks revoked resource authority after asynchronous preparation", async () => {
+  const f = await fixture();
+  let current = true,
+    entered!: () => void,
+    release!: () => void,
+    forwarded = false;
+  const ready = new Promise<void>((r) => (entered = r)),
+    gate = new Promise<void>((r) => (release = r));
+  try {
+    const a = await f.adapter(true, () => {}, {
+      decorateNativeTransport(native, admission) {
+        return {
+          get status() {
+            return native.status;
+          },
+          connect: (s) => native.connect(s),
+          close: () => native.close(),
+          subscribeMessage: (l) => native.subscribeMessage(l),
+          subscribeStatus: (l) => native.subscribeStatus(l),
+          async send(frame, signal, progress) {
+            const m = JSON.parse(frame);
+            if (m.method === "thread/start") {
+              const trusted = admission(m.id);
+              assert.ok(trusted);
+              trusted.context();
+              entered();
+              await gate;
+              trusted.context();
+              forwarded = true;
+            }
+            return native.send(frame, signal, progress);
+          },
+        };
+      },
+    });
+    await a.rpc("view", "initialize");
+    const request = a.rpc(
+      "view",
+      "thread/start",
+      {},
+      {
+        sender: null,
+        resourceOwner: {
+          id: "verified-owner",
+          assertCurrent() {
+            if (!current) throw Error("resource revoked");
+          },
+        },
+      },
+    );
+    const rejected = assert.rejects(request, /resource revoked/);
+    await ready;
+    current = false;
+    release();
+    await rejected;
+    assert.equal(forwarded, false);
+  } finally {
+    release?.();
+    await f.close();
+  }
 });
