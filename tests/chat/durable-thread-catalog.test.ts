@@ -133,9 +133,14 @@ test("real remote adapter serves its server-owned catalog and keeps advanced nat
   assert.equal(first.result.catalog.state,"ready");assert.equal(nativeLists,2,"one server-owned active/archive synchronization");
   await rpc("thread/list",query);assert.equal(nativeLists,2,"another reader list does not rescan the remote directory");
   emitNative({method:"turn/started",params:{threadId:"remote",turn:{id:"live-turn",status:"inProgress"}}});
+  assert.equal((await rpc("thread/list",query)).result.data[0].status.type,"idle", "Turn notifications are not directory status authority");
+  const changesBeforeStatus = frames.filter(frame=>frame.method==="opencraft/thread-catalog/changed").length;
+  emitNative({method:"thread/status/changed",params:{threadId:"remote",status:{type:"active",activeFlags:[]}}});
   assert.equal((await rpc("thread/list",query)).result.data[0].status.type,"active");
-  assert.ok(frames.some(frame=>frame.method==="opencraft/thread-catalog/changed" && frame.params.change?.status?.type==="active"));
+  assert.ok(frames.filter(frame=>frame.method==="opencraft/thread-catalog/changed").length > changesBeforeStatus, "status update publishes an invalidation; consumers reread the owner directory");
   emitNative({method:"turn/completed",params:{threadId:"remote",turn:{id:"live-turn",status:"completed"}}});
+  assert.equal((await rpc("thread/list",query)).result.data[0].status.type,"active");
+  emitNative({method:"thread/status/changed",params:{threadId:"remote",status:{type:"idle"}}});
   assert.equal((await rpc("thread/list",query)).result.data[0].status.type,"idle");
   await rpc("thread/list",{...query,searchTerm:"native"});assert.equal(nativeLists,3,"advanced filters retain native admission and semantics");
 });
@@ -173,35 +178,34 @@ test("first partial import exposes healthy rows and all-source failure cannot ce
 });
 
 
-test("live execution survives a later idle metadata refresh and stale turn completion", async t => {
+test("authoritative directory status survives metadata refresh; Turn notifications cannot infer admission", async t => {
   const {owner} = await fixture(t);
   const catalog = new DurableThreadCatalog(owner.database, {list: async p => ({data:p.archived?[]:[row("a",10)], nextCursor:null}), changed:()=>{}});
   t.after(()=>catalog.close()); await catalog.refresh();
   catalog.observe("turn/started", {threadId:"a",turn:{id:"first"}});
-  await catalog.refresh();
-  assert.equal((await catalog.list(query)).data[0]!.status.type,"active");
-  catalog.observe("turn/started", {threadId:"a",turn:{id:"second"}});
-  catalog.observe("turn/completed", {threadId:"a",turn:{id:"first",status:"completed"}});
-  assert.equal((await catalog.list(query)).data[0]!.status.type,"active");
+  assert.equal((await catalog.list(query)).data[0]!.status.type,"idle");
   catalog.observe("thread/status/changed", {threadId:"a",status:{type:"active",activeFlags:["waitingOnApproval"]}});
   await catalog.refresh();
   assert.deepEqual((await catalog.list(query)).data[0]!.status,{type:"active",activeFlags:["waitingOnApproval"]});
+  catalog.observe("turn/started", {threadId:"a",turn:{id:"second"}});
+  catalog.observe("turn/completed", {threadId:"a",turn:{id:"first",status:"completed"}});
   catalog.observe("turn/completed", {threadId:"a",turn:{id:"second",status:"completed"}});
-  assert.equal((await catalog.list(query)).data[0]!.status.type,"idle");
-  catalog.observe("turn/started",{threadId:"a",turn:{id:"third"}});
+  assert.equal((await catalog.list(query)).data[0]!.status.type,"active", "completion does not invent a directory status");
+  catalog.observe("thread/status/changed", {threadId:"a",status:{type:"idle"}});
   const saved=JSON.parse(String(owner.database.prepare("SELECT metadata_json FROM opencraft_thread_catalog WHERE thread_id='a'").get()!.metadata_json));
-  assert.equal(saved.status.type,"notLoaded","execution never becomes durable metadata");
+  assert.equal(saved.status.type,"idle"); assert.deepEqual(saved.turns,[]);
+  assert.ok(!JSON.stringify(saved).includes("first") && !JSON.stringify(saved).includes("second"), "execution identities never become durable metadata");
   catalog.close();
   const restarted=new DurableThreadCatalog(owner.database,{list:()=>new Promise(()=>{}),changed:()=>{}});t.after(()=>restarted.close());
-  assert.equal((await restarted.list(query)).data[0]!.status.type,"notLoaded");
+  assert.equal((await restarted.list(query)).data[0]!.status.type,"idle");
 });
 
-test("disconnect discards execution facts and fences an old in-flight refresh",async t=>{
+test("resetting executor observations retains readable directory metadata during an in-flight refresh",async t=>{
  const {owner}=await fixture(t);let release:((v:unknown)=>void)|undefined;
  const catalog=new DurableThreadCatalog(owner.database,{list:async p=>p.archived?{data:[],nextCursor:null}:release===undefined?{data:[row("a",10)],nextCursor:null}:new Promise(r=>{release=r}),changed:()=>{}});
  t.after(()=>catalog.close());await catalog.refresh();catalog.observe("turn/started",{threadId:"a",turn:{id:"live"}});
  release=()=>{};const old=catalog.refresh();catalog.resetExecution();release({data:[{...row("a",10),status:{type:"active",activeFlags:[]}}],nextCursor:null});await old;
- assert.equal((await catalog.list(query)).data[0]!.status.type,"notLoaded");
+ assert.equal((await catalog.list(query)).data[0]!.status.type,"idle");
 });
 
 
@@ -210,5 +214,5 @@ test("turn start fences deletion by an older full-directory snapshot", async t=>
  const catalog=new DurableThreadCatalog(owner.database,{list:async p=>p.archived?{data:[],nextCursor:null}:hold?new Promise(r=>{release=r}):{data:[row("a",10)],nextCursor:null},changed:()=>{}},()=>at);
  t.after(()=>catalog.close());await catalog.refresh();at+=3_600_001;hold=true;const refresh=catalog.refresh();
  catalog.observe("turn/started",{threadId:"a",turn:{id:"new"}});release!({data:[],nextCursor:null});await refresh;
- assert.equal((await catalog.list(query)).data[0]!.status.type,"active");
+ assert.equal((await catalog.list(query)).data[0]!.status.type,"idle");
 });

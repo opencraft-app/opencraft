@@ -23,14 +23,16 @@ export interface ForwardedRecord {
   resources?: { path: string; id: string }[];
   transcripts?: { path: string; text: string }[];
 }
-const object = (v: unknown): Record<string, any> => {
+const object = (v: unknown): Record<string, unknown> => {
   if (!v || typeof v !== "object" || Array.isArray(v)) throw Error("invalid_chat_record");
-  return v;
+  return v as Record<string, unknown>;
 };
 const text = (v: unknown, n: number) => {
   if (typeof v !== "string" || v.length > n || /[\uD800-\uDFFF]/u.test(v)) throw Error("invalid_chat_record");
   return v;
 };
+const partKind = (v: unknown): v is ForwardedPart["kind"] =>
+  v === "text" || v === "image" || v === "file" || v === "voice" || v === "link" || v === "record" || v === "notice";
 const itemPath = (v: unknown) => {
   const s = text(v, 64);
   if (!/^\d+(?:\.\d+){0,7}$/u.test(s)) throw Error("invalid_chat_record");
@@ -51,7 +53,10 @@ export function parseForwardedRecord(value: unknown): ForwardedRecord {
         path = itemPath(e.path);
       if (paths.has(path) || !Array.isArray(e.parts) || e.parts.length > 128) throw Error("invalid_chat_record");
       paths.add(path);
-      if (e.at !== undefined && (!Number.isSafeInteger(e.at) || e.at < 0 || e.at > 8640000000000000))
+      if (
+        e.at !== undefined &&
+        (typeof e.at !== "number" || !Number.isSafeInteger(e.at) || e.at < 0 || e.at > 8640000000000000)
+      )
         throw Error("invalid_chat_record");
       return {
         path,
@@ -59,8 +64,7 @@ export function parseForwardedRecord(value: unknown): ForwardedRecord {
         ...(e.at === undefined ? {} : { at: e.at }),
         parts: e.parts.map((rawPart: unknown): ForwardedPart => {
           const p = object(rawPart);
-          if (!["text", "image", "file", "voice", "link", "record", "notice"].includes(p.kind))
-            throw Error("invalid_chat_record");
+          if (!partKind(p.kind)) throw Error("invalid_chat_record");
           return {
             kind: p.kind,
             ...(p.text === undefined ? {} : { text: text(p.text, FORWARDED_RECORD_MAX_BYTES) }),

@@ -69,7 +69,7 @@ test("Drizzle schema and recorded snapshot have no ungenerated structural change
   const expectedSql = statements.map(statement => /^\s*CREATE TABLE\b/i.test(statement)
     ? statement.replace(/\);\s*$/, ") STRICT;") : statement).join("\n");
   const current = openManagedDatabase({ path: ":memory:", migrations: SERVER_MIGRATIONS });
-  try { createSchemaValidator(expectedSql)(current.database); } finally { current.database.close(); }
+  try { createSchemaValidator(expectedSql + "\n" + schema.CHANNEL_SYNC_TRIGGERS_SQL)(current.database); } finally { current.database.close(); }
 });
 
 test("published source SQL retains all migration identities and checksums", () => {
@@ -345,4 +345,51 @@ test("missing domain receipts cannot reimport over existing canonical policy", a
   owner.database.exec("DELETE FROM opencraft_server_imports WHERE source IN ('thread-access','thread-notes'); INSERT INTO thread_access VALUES('server','retained',NULL,'shared',1,1)");
   await owner.close();
   await assert.rejects(openServerDatabase(root), /Incomplete Server import receipts/);
+});
+
+test("v6 channel identity repair preserves business rows, exact journal prefix and existing epochs", async t => {
+  for (const retained of [null, "retained-legacy-epoch"]) {
+    const root = fixture(t), path = join(root, "opencraft-server.sqlite");
+    const old = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.filter(m => m.version <= 6) });
+    old.database.prepare("INSERT INTO actor_channels(id,owner_id,title) VALUES(?,?,?)").run("retained-group", "owner", "History stays");
+    old.database.prepare("INSERT INTO actor_channel_members VALUES(?,?,?)").run("retained-group", "owner", "membership-epoch");
+    if (retained) old.database.prepare("INSERT INTO actor_channel_identity VALUES(?)").run(retained);
+    old.database.prepare("INSERT INTO actor_messages(id,seq,channel_id,author_id,target_id,content,created_at,target_kind) VALUES(?,?,?,?,?,?,?,?)")
+      .run("before-repair", 1, "retained-group", "owner", "retained-group", "Preserved message", 1, "channel");
+    assert.equal(old.database.prepare("SELECT count(*) AS n FROM actor_channel_changes").get()?.n, 0);
+    const history = old.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+    old.database.close();
+    const upgraded = await openServerDatabase(root);
+    let epoch: string;
+    try {
+      assert.equal(upgraded.outcome.status, "migrated");
+      assert.ok(upgraded.outcome.backupPath);
+      assert.deepEqual(upgraded.outcome.movedAsidePaths, []);
+      const identities = upgraded.database.prepare("SELECT epoch FROM actor_channel_identity").all();
+      assert.equal(identities.length, 1);
+      epoch = String(identities[0]!.epoch);
+      if (retained) assert.equal(epoch, retained);
+      else assert.match(epoch, /^[a-f0-9]{32}$/);
+      assert.ok(SERVER_MIGRATIONS.at(-1)!.sql.includes(schema.CHANNEL_SYNC_TRIGGERS_SQL), "reviewed custom DDL matches its owner declaration");
+      assert.equal(upgraded.database.prepare("SELECT message_id FROM actor_channel_changes").get()?.message_id, "before-repair");
+      const insert = upgraded.database.prepare("INSERT INTO actor_messages(id,seq,channel_id,author_id,target_id,content,created_at,target_kind) VALUES(?,?,?,?,?,?,?,?)");
+      assert.throws(() => sqliteTransaction(upgraded.database, () => {
+        insert.run("rolled-back", 2, "retained-group", "owner", "retained-group", "Not committed", 2, "channel");
+        throw Error("rollback fixture");
+      }), /rollback fixture/);
+      assert.equal(upgraded.database.prepare("SELECT count(*) AS n FROM actor_channel_changes WHERE message_id='rolled-back'").get()?.n, 0);
+      insert.run("after-repair", 2, "retained-group", "owner", "retained-group", "New committed message", 2, "channel");
+      assert.deepEqual(upgraded.database.prepare("SELECT message_id FROM actor_channel_changes ORDER BY revision").all().map(row => row.message_id), ["before-repair", "after-repair"]);
+      assert.equal(upgraded.database.prepare("SELECT title FROM actor_channels").get()?.title, "History stays");
+      assert.equal(upgraded.database.prepare("SELECT epoch FROM actor_channel_members").get()?.epoch, "membership-epoch");
+      assert.deepEqual(upgraded.database.prepare("SELECT * FROM schema_migrations WHERE version<=6 ORDER BY version").all(), history);
+    } finally { await upgraded.close(); }
+    const reopened = await openServerDatabase(root);
+    try {
+      assert.equal(reopened.outcome.status, "up-to-date");
+      assert.equal(reopened.database.prepare("SELECT epoch FROM actor_channel_identity").get()?.epoch, epoch!);
+      reopened.database.prepare("UPDATE schema_migrations SET checksum='tampered' WHERE version=7").run();
+    } finally { await reopened.close(); }
+    await assert.rejects(openServerDatabase(root), /checksum|history/i);
+  }
 });

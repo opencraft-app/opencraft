@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { openManagedDatabase } from "../../packages/sqlite-node/src/index.js";
+import { CodexAccountOperationError } from "../../packages/account-pool-host/src/account-diagnostics.js";
 import { AccountPoolStore } from "../../packages/account-pool-host/src/store.js";
 import { CodexSubscriptionService, parseCodexUsage } from "../../packages/account-pool-host/src/codex-usage.js";
 import { CodexAccountService } from "../../packages/account-pool-host/src/codex-account-service.js";
@@ -74,7 +75,9 @@ test("count-only usage persists per-account observations; headers and failed ref
     pool.updateSubscriptionMetadata("a", { email: "person@example.test" });
     assert.deepEqual(credits(), { availableCount: 3, observedAt: 1_000 });
     response = null;
-    await assert.rejects(service.refreshAccount("a"), /503/);
+    await assert.rejects(service.refreshAccount("a"), error => error instanceof CodexAccountOperationError
+      && error.diagnostic.code === "upstream-unavailable" && error.diagnostic.httpStatus === 503
+      && error.diagnostic.retryable === true);
     assert.deepEqual(credits(), { availableCount: 3, observedAt: 1_000 });
     response = { rate_limit_reset_credits: { available_count: 0 } };
     await service.refreshAccount("a");
@@ -137,7 +140,7 @@ test("ledger v1 upgrades without moving aside accounts, credentials, quota or af
     try {
       assert.equal(database.prepare("SELECT account_id FROM pool_affinity").get()!.account_id, "a");
       assert.equal(database.prepare("SELECT utilization FROM pool_quota").get()!.utilization, 0.3);
-      assert.equal(database.prepare("SELECT max(version) AS version FROM schema_migrations").get()!.version, 3);
+      assert.equal(database.prepare("SELECT max(version) AS version FROM schema_migrations").get()!.version, pool.outcome.appliedVersion);
     } finally { database.close(); }
   } finally { await rm(root, { recursive: true, force: true }); }
 });

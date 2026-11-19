@@ -26,16 +26,19 @@ async function fixture(t: test.TestContext) {
   return { directory, repository, credentials };
 }
 
-test("endpoint rule: HTTPS anywhere, plaintext HTTP on this machine or the local network", () => {
+test("endpoint rule: HTTPS anywhere, plaintext HTTP requires explicit opt-in outside loopback", () => {
   for (const url of ["https://api.example.com/v1", "http://127.0.0.1:8080/v1", "http://localhost/v1", "http://[::1]/v1",
     "http://10.1.2.3/v1", "http://172.16.0.1/v1", "http://172.31.255.255/v1", "http://192.168.1.20:11434/v1", "http://169.254.1.1/v1",
     "http://100.100.1.1/v1", "http://[fd12:3456::1]/v1", "http://[fe80::1]/v1", "http://[::ffff:192.168.1.2]/v1",
     "http://ollama:11434/v1", "http://gpu-box.local/v1", "http://nas.lan/v1", "http://llm.internal/v1", "http://x.home.arpa/v1"]) {
-    assert.equal(engineEndpointAllowed(url), true, url);
+    const loopback = new URL(url).protocol === "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(new URL(url).hostname);
+    assert.equal(engineEndpointAllowed(url), loopback, `${url}: network plaintext is not implicit`);
+    assert.equal(engineEndpointAllowed(url, true), true, `${url}: explicit local-network opt-in`);
   }
   for (const url of ["http://api.example.com/v1", "http://8.8.8.8/v1", "http://172.32.0.1/v1", "http://100.128.0.1/v1",
     "http://[2001:db8::1]/v1", "http://[::ffff:8.8.8.8]/v1", "ftp://10.0.0.1", "https://u:p@x.test", "https://x.test/v1?k=1", "not a url"]) {
     assert.equal(engineEndpointAllowed(url), false, url);
+    assert.equal(engineEndpointAllowed(url, true), false, `${url}: opt-in cannot authorize public plaintext or credential-bearing URLs`);
   }
 });
 

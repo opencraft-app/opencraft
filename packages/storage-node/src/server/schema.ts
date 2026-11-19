@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, blob, primaryKey, index, uniqueIndex, foreignKey, check } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, blob, primaryKey, index, uniqueIndex, foreignKey, check } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const accessAudit = sqliteTable("access_audit", {
@@ -7,12 +7,12 @@ export const accessAudit = sqliteTable("access_audit", {
   operator: text("operator").notNull(),
   binding: text("binding").notNull(),
   action: text("action").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const accessImports = sqliteTable("access_imports", {
   source: text("source").notNull().primaryKey(),
-}, table => [
+}, _table => [
 ]);
 
 export const accountInvitations = sqliteTable("account_invitations", {
@@ -23,7 +23,7 @@ export const accountInvitations = sqliteTable("account_invitations", {
   subject: text("subject").notNull(),
   actorId: text("actor_id"),
   createdBy: text("created_by").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const accountSetup = sqliteTable("account_setup", {
@@ -33,7 +33,7 @@ export const accountSetup = sqliteTable("account_setup", {
   username: text("username"),
   subject: text("subject"),
   ownerActor: text("owner_actor"),
-}, table => [
+}, _table => [
   check("account_setup_check_1", sql.raw("id=1")),
 ]);
 
@@ -44,13 +44,13 @@ export const actorAudit = sqliteTable("actor_audit", {
   actorId: text("actor_id").notNull(),
   action: text("action").notNull(),
   resource: text("resource"),
-}, table => [
+}, _table => [
 ]);
 
 export const actorAuthority = sqliteTable("actor_authority", {
   singleton: integer("singleton").primaryKey(),
   id: text("id").notNull(),
-}, table => [
+}, _table => [
   check("actor_authority_check_1", sql.raw("singleton=1")),
 ]);
 
@@ -68,7 +68,7 @@ export const actorCollaborationAudit = sqliteTable("actor_collaboration_audit", 
   resourceId: text("resource_id").notNull(),
   detail: text("detail").notNull(),
   happenedAt: integer("happened_at").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const actorCredentials = sqliteTable("actor_credentials", {
@@ -148,7 +148,7 @@ export const actorMembers = sqliteTable("actor_members", {
   actorId: text("actor_id").notNull().primaryKey(),
   role: text("role").notNull(),
   enabled: integer("enabled").notNull(),
-}, table => [
+}, _table => [
   check("actor_members_check_1", sql.raw("role IN ('admin','member')")),
   check("actor_members_check_2", sql.raw("enabled IN (0,1)")),
 ]);
@@ -216,7 +216,7 @@ export const actors = sqliteTable("actors", {
   generation: integer("generation").notNull(),
   createdAt: integer("created_at").notNull(),
   createdBy: text("created_by"),
-}, table => [
+}, _table => [
   check("actors_check_1", sql.raw("kind IN ('human','session')")),
   check("actors_check_2", sql.raw("enabled IN (0,1)")),
 ]);
@@ -248,7 +248,7 @@ export const conversationAuthorities = sqliteTable("conversation_authorities", {
 export const conversationToolBudget = sqliteTable("conversation_tool_budget", {
   authorityId: text("authority_id").notNull().primaryKey(),
   sent: integer("sent").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const conversationTurnAuthorities = sqliteTable("conversation_turn_authorities", {
@@ -263,7 +263,7 @@ export const conversationTurnAuthorities = sqliteTable("conversation_turn_author
 export const humanIdentityLabels = sqliteTable("human_identity_labels", {
   binding: text("binding").notNull().primaryKey(),
   label: text("label").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const humanLogins = sqliteTable("human_logins", {
@@ -295,7 +295,7 @@ export const members = sqliteTable("members", {
   binding: text("binding").notNull().primaryKey(),
   role: text("role").notNull(),
   enabled: integer("enabled").notNull(),
-}, table => [
+}, _table => [
   check("members_check_1", sql.raw("role IN ('admin','member')")),
   check("members_check_2", sql.raw("enabled IN (0,1)")),
 ]);
@@ -371,7 +371,7 @@ export const opencraftOrchestrationRuntimeViews = sqliteTable("opencraft_orchest
   turnId: text("turn_id"),
   state: text("state").notNull(),
   updatedAtMs: integer("updated_at_ms").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const opencraftOrchestrationToolCalls = sqliteTable("opencraft_orchestration_tool_calls", {
@@ -407,7 +407,7 @@ export const opencraftServerImports = sqliteTable("opencraft_server_imports", {
   rowCounts: text("row_counts").notNull(),
   backupPath: text("backup_path").notNull(),
   importedAt: integer("imported_at").notNull(),
-}, table => [
+}, _table => [
 ]);
 
 export const opencraftServerInstallation = sqliteTable("opencraft_server_installation", {
@@ -415,7 +415,7 @@ export const opencraftServerInstallation = sqliteTable("opencraft_server_install
   productVersion: text("product_version").notNull(),
   contractHash: text("contract_hash").notNull(),
   completedAt: integer("completed_at").notNull(),
-}, table => [
+}, _table => [
   check("opencraft_server_installation_check_1", sql.raw("singleton=1")),
 ]);
 
@@ -544,7 +544,7 @@ export const actorChannelChanges = sqliteTable("actor_channel_changes", {
 
 export const actorInboxClock = sqliteTable("actor_inbox_clock", {
   id: integer("id").primaryKey(), epoch: text("epoch").notNull(), revision: integer("revision").notNull(),
-}, table => [check("actor_inbox_clock_singleton", sql`id = 1`)]);
+}, _table => [check("actor_inbox_clock_singleton", sql`id = 1`)]);
 export const actorInboxRows = sqliteTable("actor_inbox_rows", {
   actorId: text("actor_id").notNull(), channelId: text("channel_id").notNull(),
   revision: integer("revision").notNull(), payload: text("payload"),
@@ -702,3 +702,16 @@ export const collaborationSpaceThreads = sqliteTable("collaboration_space_thread
   engineServerId: text("engine_server_id").notNull(), threadId: text("thread_id").notNull(), spaceId: text("space_id").notNull(),
 }, table => [primaryKey({columns:[table.engineServerId,table.threadId]}),
   foreignKey({columns:[table.spaceId],foreignColumns:[collaborationSpaces.id]})]);
+
+
+/** Non-table DDL owned by this schema; executed only through reviewed migrations.
+ * Drizzle SQLite snapshots do not represent triggers. Keep exact schema checks
+ * inclusive of these hooks rather than excluding triggers from validation. */
+export const CHANNEL_SYNC_TRIGGERS_SQL = `CREATE TRIGGER actor_channel_message_inserted AFTER INSERT ON actor_messages
+  WHEN new.target_kind IN ('actor','channel') BEGIN
+    INSERT INTO actor_channel_changes(channel_id,message_id) VALUES(new.channel_id,new.id);
+END;
+CREATE TRIGGER actor_channel_request_linked AFTER INSERT ON actor_execution_inputs BEGIN
+    INSERT OR REPLACE INTO actor_channel_changes(channel_id,message_id)
+      SELECT channel_id,id FROM actor_messages WHERE id=new.message_id AND target_kind IN ('actor','channel');
+END;`;

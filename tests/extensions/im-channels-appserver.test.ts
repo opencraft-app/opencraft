@@ -156,7 +156,16 @@ test(
         authority: actors.authority,
         actorId: bots[0]!.id,
       });
-      await assert.rejects(review.wire.createTransport("local-codex").connect());
+      // An unauthorized Host attach deliberately retires its physical wire.
+      // Probe on a separate connection so the channel reader remains usable.
+      const denied = connect({ authorization: "Bearer " + credentials[0]!.token });
+      try {
+        await denied.initialize();
+        await assert.rejects(denied.wire.createTransport("local-codex").connect());
+      } finally {
+        await denied.client.close();
+        denied.wire.close();
+      }
 
       const direct = await owner.client.request("opencraft/channels/direct/open", { actorId: bots[0]!.id });
       await review.client.request("opencraft/channels/subscribe", { channelId: direct.id, subscriptionId: "direct" });

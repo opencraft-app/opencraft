@@ -249,7 +249,7 @@ test("Hands defaults missing character locale to UTF-8 and preserves explicit lo
     else delete process.env.LC_CTYPE;
     await service.dispatch("process/spawn", { ...f.spawn(sample.id), env: sample.env }, scope);
     const read = () => service.dispatch("process/attach", { processHandle: sample.id, afterSequence: 0 }, scope);
-    await until(read, (value) => output(value).includes("$ "));
+    await until(read, (value) => output(value).includes("$ ") || output(value).includes("# "));
     const text = "中文输入测试";
     const escapedChinese = [344, 270, 255].map((octal) => String.fromCharCode(92) + octal).join("");
     await service.dispatch(
@@ -260,11 +260,24 @@ test("Hands defaults missing character locale to UTF-8 and preserves explicit lo
       },
       scope,
     );
-    const result = await until(read, (value) =>
-      sample.utf8 ? output(value).includes(text) : output(value).includes(escapedChinese),
+    if (sample.utf8) {
+      const result = await until(read, (value) => output(value).includes(text));
+      assert.ok(!output(result).includes(escapedChinese), sample.id);
+    }
+    // Readline versions differ in how they paint non-ASCII bytes under C.
+    // Verify the child character locale directly instead of requiring octal echo.
+    await service.dispatch(
+      "process/writeStdin",
+      {
+        processHandle: sample.id,
+        deltaBase64: Buffer.from("\x15printf '\\nCHARMAP:%s\\n' \"$(locale charmap)\"\n").toString("base64"),
+      },
+      scope,
     );
-    if (sample.utf8) assert.ok(!output(result).includes(escapedChinese), sample.id);
-    else assert.ok(!output(result).includes(text), sample.id);
+    const locale = await until(read, (value) => /\r?\nCHARMAP:[^\r\n]+/.test(output(value)));
+    const charmap = output(locale).match(/\r?\nCHARMAP:([^\r\n]+)/)![1];
+    if (sample.utf8) assert.equal(charmap, "UTF-8", sample.id);
+    else assert.match(charmap, /^(ANSI_X3\.4-1968|US-ASCII|ASCII)$/, sample.id);
     await service.dispatch("process/kill", { processHandle: sample.id }, scope);
   }
 });

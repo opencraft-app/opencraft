@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
-import { openManagedDatabase } from "@opencraft/sqlite-node";
+import { openManagedDatabase, resolveStoreMigrations } from "@opencraft/sqlite-node";
 import { OpenCraftHostStateDatabase, OPENCRAFT_HOST_STATE_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
 import { OpenCraftMessageAttachments, OPENCRAFT_MESSAGE_ATTACHMENTS_MIGRATIONS } from "../../apps/opencraft-daemon/src/opencraft-message-attachments.js";
 import { moveOwnedStorage, planOwnedStorageMove } from "../../apps/opencraft-daemon/src/owned-storage-move.js";
@@ -14,9 +14,9 @@ import { acquireOwnedStorageLease } from "../../apps/opencraft-daemon/src/owned-
 import { OWNED_STORAGE_MOVE_JOURNAL } from "../../apps/opencraft-daemon/src/owned-database-path.js";
 
 const pairs = [
-  { old: "codex-host-queue.sqlite", current: "opencraft-host-state.sqlite", migrations: OPENCRAFT_HOST_STATE_MIGRATIONS,
+  { old: "codex-host-queue.sqlite", current: "opencraft-host-state.sqlite", migrations: resolveStoreMigrations("opencraft-host-state-database", OPENCRAFT_HOST_STATE_MIGRATIONS),
     seed: "INSERT INTO message_senders VALUES ('thread','input','{}',42)" },
-  { old: "codex-message-attachments.sqlite", current: "opencraft-message-attachments.sqlite", migrations: OPENCRAFT_MESSAGE_ATTACHMENTS_MIGRATIONS,
+  { old: "codex-message-attachments.sqlite", current: "opencraft-message-attachments.sqlite", migrations: resolveStoreMigrations("opencraft-message-attachments", OPENCRAFT_MESSAGE_ATTACHMENTS_MIGRATIONS),
     seed: "INSERT INTO opencraft_message_attachments VALUES ('thread','input','file',0,'{}')" },
 ];
 const loader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;

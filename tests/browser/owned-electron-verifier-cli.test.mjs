@@ -22,7 +22,7 @@ test(
     const definition = JSON.stringify({ version: "44.8.0", chromiumVersion: "152.0.7977.167" });
     await writeFile(fork, definition);
     const files = [];
-    for (const name of ["electron", "LICENSE", "LICENSES.chromium.html"]) {
+    for (const name of ["electron", "chrome-sandbox", "LICENSE", "LICENSES.chromium.html"]) {
       const bytes = Buffer.from("fixture " + name);
       await writeFile(join(distribution, name), bytes);
       files.push({ path: name, sha256: hash(bytes), size: bytes.length });
@@ -38,10 +38,22 @@ test(
         electronVersion: "44.8.0",
         chromiumVersion: "152.0.7977.167",
         nativeCopyProbePassed: true,
+        nativeInputCausalityProbePassed: true,
+        nativeImeFocusIdentityProbePassed: true,
         files,
       }),
     );
     assert.equal(run("browser", "linux-x64", distribution, fork).status, 0);
+    const markerPath = join(distribution, "opencraft-electron-artifact.json");
+    const { readFile } = await import("node:fs/promises");
+    const marker = JSON.parse(await readFile(markerPath, "utf8"));
+    for (const field of ["nativeCopyProbePassed", "nativeInputCausalityProbePassed", "nativeImeFocusIdentityProbePassed"]) {
+      await writeFile(markerPath, JSON.stringify({ ...marker, [field]: false }));
+      const rejected = run("browser", "linux-x64", distribution, fork);
+      assert.notEqual(rejected.status, 0, `${field} is mandatory`);
+      assert.match(rejected.stderr, /native input probes are required/);
+    }
+    await writeFile(markerPath, JSON.stringify(marker));
     await writeFile(join(distribution, "electron"), "tampered");
     const invalid = run("browser", "linux-x64", distribution, fork);
     assert.notEqual(invalid.status, 0);
@@ -101,7 +113,7 @@ test(
     await mkdir(evidence);
     const definition = JSON.stringify({ version: "44.8.0", chromiumVersion: "152.0.7977.167" });
     await writeFile(fork, definition);
-    const files = ["electron", "LICENSE", "LICENSES.chromium.html"].map((name) => {
+    const files = ["electron", "chrome-sandbox", "LICENSE", "LICENSES.chromium.html"].map((name) => {
       const bytes = Buffer.from("fixture " + name);
       return { path: name, sha256: hash(bytes), size: bytes.length };
     });
@@ -115,6 +127,8 @@ test(
         electronVersion: "44.8.0",
         chromiumVersion: "152.0.7977.167",
         nativeCopyProbePassed: true,
+        nativeInputCausalityProbePassed: true,
+        nativeImeFocusIdentityProbePassed: true,
         files,
       }),
     );
@@ -124,7 +138,7 @@ test(
         "-c",
         `import stat,sys,zipfile
 with zipfile.ZipFile(sys.argv[1], 'w') as z:
- for name in ('electron','LICENSE','LICENSES.chromium.html'):
+ for name in ('electron','chrome-sandbox','LICENSE','LICENSES.chromium.html'):
   item=zipfile.ZipInfo(name);item.create_system=3;item.external_attr=(stat.S_IFREG | 0o755) << 16
   z.writestr(item, 'fixture '+name)
 `,
@@ -162,7 +176,7 @@ test(
       const dir = join(root, tampered ? "bad" : "good");
       const evidence = join(dir, "owned-electron-download-browser-linux-x64");
       await mkdir(evidence, { recursive: true });
-      const files = ["electron", "LICENSE", "LICENSES.chromium.html"].map((name) => {
+      const files = ["electron", "chrome-sandbox", "LICENSE", "LICENSES.chromium.html"].map((name) => {
         const bytes = Buffer.from("fixture " + name);
         return { path: name, sha256: hash(bytes), size: bytes.length };
       });
@@ -176,6 +190,8 @@ test(
           electronVersion: fork.version,
           chromiumVersion: fork.chromiumVersion,
           nativeCopyProbePassed: true,
+        nativeInputCausalityProbePassed: true,
+        nativeImeFocusIdentityProbePassed: true,
           files,
         }),
       );
@@ -185,7 +201,7 @@ test(
           "-c",
           `import stat,sys,zipfile
 with zipfile.ZipFile(sys.argv[1], 'w') as z:
- for name in ('electron','LICENSE','LICENSES.chromium.html'):
+ for name in ('electron','chrome-sandbox','LICENSE','LICENSES.chromium.html'):
   item=zipfile.ZipInfo(name);item.create_system=3;item.external_attr=(stat.S_IFREG | 0o755) << 16
   z.writestr(item, ('tampered' if name == 'electron' and sys.argv[2] == 'yes' else 'fixture '+name))
 `,

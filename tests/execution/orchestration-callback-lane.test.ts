@@ -541,6 +541,7 @@ test("bound execution reaches native unchanged and a lost binding never forwards
   assert.deepEqual(gateway.messages.find((m) => m.id === "lost-turn").error, {
     code: -32084,
     message: "Execution environment unavailable",
+    data: { notSubmitted: true },
   });
   assert.equal(f.requests.filter((m) => m.method === "turn/start").length, 1);
 });

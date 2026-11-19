@@ -400,8 +400,11 @@ export class ThreadDirectory {
   }
   /** Notifications mark metadata dirty; they never read history or infer execution state. */
   markDirty(id: string): void {
-    if (this.#closed || !(this.port.readMetadata || this.port.readMetadataBatch) || !id || this.#temporary.has(id)) return;
+    if (this.#closed || !id || this.#temporary.has(id)) return;
+    // Every observation fences an older directory snapshot, even when this
+    // source cannot refresh one row. A missing read port must not imply absence.
     this.#fences.set(id, ++this.#observation);
+    if (!(this.port.readMetadata || this.port.readMetadataBatch)) return;
     this.#dirty.add(id);
     if (!this.#dirtyTimer && !this.#dirtyJob) {
       this.#dirtyTimer = setTimeout(() => { this.#dirtyTimer = undefined; void this.flush().catch(() => {}); }, 25);

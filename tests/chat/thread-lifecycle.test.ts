@@ -85,7 +85,7 @@ test("archived state survives a fresh catalog and stays beside readable metadata
   try {
     await first.dispatch("thread/archive", { threadId: "thread" }, "client", delegate);
     assert.equal((await first.dispatch("thread/read", { threadId: "thread" }, "client", delegate)).thread.archived, true);
-    assert.equal((await first.dispatch("thread/resume", { threadId: "thread" }, "client", delegate)).thread.archived, true);
+    await assert.rejects(first.dispatch("thread/resume", { threadId: "thread" }, "client", delegate), /Unarchive the thread/);
   } finally { await first.close(); }
   const secondCatalog = new ThreadCatalog(path);
   const second = new ThreadLifecycle(secondCatalog, async () => ({ released: true }), () => {});

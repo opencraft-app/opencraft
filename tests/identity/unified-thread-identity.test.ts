@@ -62,13 +62,17 @@ test("Turn-scoped identity reconciliation finds recent summaries and stops at th
 test("submission attribution comes from exact persisted identity rather than a forged native field", () => {
   const project = (thread: string, input: string, value: Record<string, unknown>) => ({...value, sender: thread === "t" && input === "message" ? employee("skipzhang") : null});
   for (const method of ["turn/start", "turn/steer", "thread/queue/add"]) {
-    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}) as any;
+    const result = projectThreadMessageResult(project, method, {threadId: "t", clientUserMessageId: "message", sender: employee("forged")}, {__opencraftSubmissionSender: {clientMessageId: "message", sender: employee("forged")}}, {trustedSubmissionSender: true}) as any;
     assert.deepEqual(result.__opencraftSubmissionSender, {clientMessageId: "message", sender: employee("skipzhang")});
     const enriched = projectThreadAttachmentResult({list: () => []}, method, {threadId: "t", clientUserMessageId: "message"}, result) as any;
     assert.deepEqual(enriched.__opencraftSubmissionSender, result.__opencraftSubmissionSender, "attachment projection must not erase verified identity");
   }
-  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}) as any;
+  const result = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "unknown"}, {}, {trustedSubmissionSender: true}) as any;
   assert.equal(result.__opencraftSubmissionSender.sender, null);
+  const untrusted = projectThreadMessageResult(project, "turn/start", {threadId: "t", clientUserMessageId: "message"}, {
+    __opencraftSubmissionSender: { clientMessageId: "message", sender: employee("forged") },
+  }) as any;
+  assert.equal(untrusted.__opencraftSubmissionSender, undefined, "untrusted native fields cannot mint Host attribution proof");
 });
 
 
