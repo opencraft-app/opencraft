@@ -4553,8 +4553,9 @@ export class CodexEngineAdapter implements DuplexTransport {
       stage = "resolve-environment";
       let environment = this.options.executionEnvironment?.snapshot(this.options.executionEnvironment.execution('local-codex', threadId, inputId));
       if (environment && !await this.canInjectEnvironment(threadId)) {
-        if (environment.toJSON().configured) throw new Error("Environment variables require a Codex owner handoff");
-        environment = undefined;
+        // An empty requested environment does not prove that an independent
+        // Native owner has cleared credentials installed by a previous owner.
+        throw new Error("Environment variables require a Codex owner handoff");
       }
       if (environment) { await environment.ready(); environment.apply(process.env); }
       current();
@@ -4623,8 +4624,11 @@ export class CodexEngineAdapter implements DuplexTransport {
       if (profile) resume.permissions = profile;
       else {
         const sandbox = record(live.sandbox), modes: Record<string, string> = { dangerFullAccess: "danger-full-access", readOnly: "read-only", workspaceWrite: "workspace-write" };
-        if (sandbox.type && !modes[string(sandbox.type)]) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
-        if (sandbox.type) resume.sandbox = modes[string(sandbox.type)];
+        // An unloaded Native owner cannot supply live settings. Omitting sandbox
+        // here would apply its current default, which may be more permissive.
+        const mode = Object.hasOwn(modes, string(sandbox.type)) ? modes[string(sandbox.type)] : undefined;
+        if (!mode) throw new Error("Cannot preserve this Codex sandbox while refreshing tools");
+        resume.sandbox = mode;
       }
       // Once native configuration can change, the old confirmation is no longer
       // valid either. A partial failure must not make a later rollback look applied.

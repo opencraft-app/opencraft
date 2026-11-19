@@ -2069,7 +2069,7 @@ for (const [method, stage] of [["thread/read", "read-thread"], ["thread/unsubscr
         throw Object.assign(new Error("Bearer fixture-secret /private/path"), { code: -32005 });
       if (called === "thread/read") return { thread: { status: { type: unloaded ? "notLoaded" : "idle" } } };
       if (called === "thread/unsubscribe") { unloaded = true; return {}; }
-      return { model: "fixture-model" };
+      return { model: "fixture-model", sandbox: { type: "readOnly" } };
     };
     try {
       let failure: unknown;
@@ -2139,6 +2139,48 @@ for (const [message, expectedHint] of [
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });
 
+for (const configured of [false, true]) test(`session refresh refuses unsupported environment handoff even when configured=${configured}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-unsupported-environment-"));
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined, async () => null);
+  const internals = adapter as any, calls: string[] = [];
+  internals.options.executionEnvironment = { execution: () => ({}), snapshot: () => ({ toJSON: () => ({ configured }) }), redact: (value: unknown) => value };
+  internals.canInjectEnvironment = async () => false;
+  internals.requestPhysical = async (method: string) => { calls.push(method); return {}; };
+  try {
+    let failure: any;
+    try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+    assert.ok(failure, "an empty requested environment cannot attest the Native owner has no retained credentials");
+    const error = internals.sessionMcpFailure(failure);
+    assert.equal(error.data.stage, "resolve-environment");
+    assert.equal(error.data.reason, "environment-handoff-required");
+    assert.equal(error.data.submissionOutcome, "rejected");
+    assert.deepEqual(calls, []);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
+for (const scenario of ["unloaded", "missing", "null"] as const) test(`session refresh refuses unknown sandbox permissions: ${scenario}`, async () => {
+  const root = await mkdtemp(join(tmpdir(), "codex-tools-unknown-sandbox-"));
+  const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
+    async () => ({ url: "http://fixture/mcp" }));
+  const internals = adapter as any, calls: string[] = [];
+  internals.requestPhysical = async (method: string, params: any) => {
+    calls.push(method + (params.config ? ":apply" : ""));
+    if (method === "thread/read") return { thread: { status: { type: scenario === "unloaded" ? "notLoaded" : "idle" } } };
+    if (method === "thread/resume" && !params.config) return scenario === "null" ? { sandbox: null } : {};
+    return {};
+  };
+  try {
+    let failure: any;
+    try { await internals.prepareSessionMcp("thread", "input", "execution"); } catch (cause) { failure = cause; }
+    assert.ok(failure, "unknown original permission must reject before configuration can change");
+    const error = internals.sessionMcpFailure(failure);
+    assert.equal(error.data.stage, "preserve-permissions");
+    assert.equal(error.data.submissionOutcome, "rejected");
+    assert.deepEqual(calls, scenario === "unloaded" ? ["thread/read"] : ["thread/read", "thread/resume"]);
+    assert.equal(internals.sessionMcpConfigurations.has("thread"), false);
+  } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
+});
+
 test("session tool preparation waits for asynchronous native retirement without an environment provider", async () => {
   const root = await mkdtemp(join(tmpdir(), "codex-tools-delayed-retirement-"));
   const adapter = createRoutingAdapter(root, [], 0, undefined, undefined, undefined, false, undefined,
@@ -2153,7 +2195,7 @@ test("session tool preparation waits for asynchronous native retirement without 
       assert.ok(readsAfterRetirement >= 2, "must observe native unload before applying tools");
       applied++;
     }
-    return { model: "fixture-model" };
+    return { model: "fixture-model", sandbox: { type: "readOnly" } };
   };
   try {
     await internals.prepareSessionMcp("thread", "input", "execution");
@@ -2177,6 +2219,7 @@ for (const state of ["not-found", "archived", "recovering"] as const)
         return { thread: { status: { type: retired ? "active" : "idle" } } };
       }
       if (method === "thread/unsubscribe") retired = true;
+      if (method === "thread/resume") return { sandbox: { type: "readOnly" } };
       return {};
     };
     try {
@@ -2270,7 +2313,7 @@ test("tool reconfiguration retains original settings until restoration succeeds"
     async () => ({ url: "http://fixture/mcp" }));
   const a = adapter as any;
   let status = "idle", fail = true, unsubscribes = 0, applies = 0;
-  let live: Record<string, unknown> = { model: "fixture", reasoningEffort: "high", collaborationMode: { mode: "plan" } };
+  let live: Record<string, unknown> = { sandbox: { type: "readOnly" }, model: "fixture", reasoningEffort: "high", collaborationMode: { mode: "plan" } };
   const settings: any[] = [];
   a.requestPhysical = async (method: string, params: any) => {
     if (method === "thread/read") return { thread: { status: { type: status } } };
@@ -2412,7 +2455,7 @@ for (const [nativeMessage, reason, hint] of [
     if (method === "thread/resume" && params.config) throw Object.assign(new Error(nativeMessage), { code: -32000 });
     if (method === "thread/read") return { thread: { status: { type: unloaded ? "notLoaded" : "idle" } } };
     if (method === "thread/unsubscribe") { unloaded = true; return {}; }
-    return { model: "fixture-model" };
+    return { model: "fixture-model", sandbox: { type: "readOnly" } };
   };
   try {
     let failure: unknown;
@@ -2456,6 +2499,17 @@ async function sharedCredentialAdapter(t: test.TestContext, withMcp = false) {
   t.after(async () => { await adapter.close(); runtime.close(); vault.close(); await rm(root, { recursive: true, force: true }); });
   return { request, runtime, writes, internal, root, frames, reservations, reservation };
 }
+
+test('unsupported empty environment rejects a shared participant before Native receives input', async t => {
+  const f = await sharedCredentialAdapter(t);
+  const threadId = (await f.request('thread/start', { cwd: f.root, testNoServerRequest: true }, 'alice')).result.thread.id;
+  f.internal.canInjectEnvironment = async () => false;
+  const response = await f.request('turn/start', { threadId, input: [{ type: 'text', text: 'synthetic input' }], clientUserMessageId: 'charlie-first' }, 'charlie');
+  assert.equal(response.error?.data?.reason, 'environment-handoff-required');
+  assert.equal(response.error?.data?.submissionOutcome, 'rejected');
+  assert.equal(f.writes.filter(row => row.method === 'turn/start').length, 0);
+  assert.equal(((await f.request('test/readAcceptedInputs', {})).result as any).data.length, 0);
+});
 
 for (const creator of ['alice', null]) for (const restored of [false, true])
   test(`shared participant safely replaces creation environment before first input (creator=${creator}, restored=${restored})`, async t => {

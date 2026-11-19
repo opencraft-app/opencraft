@@ -254,6 +254,7 @@ input.on("line", line => {
     const respond = () => {
       send({ id: message.id, result: {
         thread: { id: message.params.testWrongThreadId ? "different-thread" : message.params.threadId, preview: "", ephemeral: false, turns: [] },
+        sandbox: { type: "dangerFullAccess" },
       } });
       if (message.params.testDelayMs) send({ method: "test/delayedResponseSent", params: { requestId: message.id } });
     };

@@ -601,6 +601,13 @@ partially failed configuration handoff. In those cases the Host refreshes the
 current execution environment and tools before dispatch, retaining sandbox and
 permission settings; it must not recover installed-configuration caches from
 creation provenance. An admitted shared participant may differ from the creator.
+If the owner is already unloaded and no previously captured permission profile or
+sandbox is available, preparation refuses before resuming or dispatching. Applying
+host defaults could broaden a formerly restricted session. This protects execution
+but means that session cannot continue through this handoff until its original
+permissions can be established safely. If environment injection is unsupported,
+preparation also refuses an empty requested environment: an empty request does not
+prove the independent Native owner cleared a previous participant's credentials.
 
 For paginated Native history, creation confirms the Native-owned empty index
 before publication. Persisting session metadata alone does not confirm that index.
