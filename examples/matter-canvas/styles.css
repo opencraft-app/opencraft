@@ -101,3 +101,7 @@ button.stamp { align-self: center; font-size: 12px; color: var(--ink-3); padding
 .todo button.t { flex: 1; min-width: 0; } .todo button.box { cursor: pointer; }
 .cell b small { color: var(--ink-2); font-size: 13px; }
 .sec + .none { padding: 20px 16px 8px; } .sec + .none p { margin-bottom: 0; }
+
+.lk { color: #576b95; text-decoration: underline; text-underline-offset: 3px; min-height: 28px; }
+.cell.text p { white-space: pre-wrap; margin-top: 6px; }
+.chatrow time { align-self: flex-start; padding-top: 4px; }
