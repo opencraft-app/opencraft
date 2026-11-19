@@ -19,7 +19,7 @@ export class DshSessionRoutingWorker extends DshRoutingProjection implements Dsh
   private constructor(path: string) {
     super();
     this.worker = new Worker(new URL("./dsh-session-routing-worker.mjs", import.meta.url), { workerData: { path }, execArgv: [] });
-    this.worker.on("error", error => this.fail(error));
+    this.worker.on("error", error => this.fail(error instanceof Error ? error : new Error(String(error))));
     this.worker.on("exit", () => { if (!this.stopping || !this.closeAcknowledged || this.requests.size) this.fail(new Error("DSH routing storage worker exited")); });
     this.worker.on("message", (reply: Reply) => {
       const request = this.requests.get(reply.id);

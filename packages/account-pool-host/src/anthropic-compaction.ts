@@ -20,7 +20,7 @@ export function prepareAnthropicCompaction(payload: ObjectValue): ObjectValue | 
 /** Only a genuinely completed, nonempty model summary may become a durable native checkpoint. */
 export async function anthropicCompactionResponse(upstream: Response, streaming: boolean): Promise<Response> {
   if (!upstream.ok) return upstream;
-  const result: ObjectValue | null = await upstream.json();
+  const result = await upstream.json() as ObjectValue | null;
   const summary = (result?.output ?? []).flatMap((item: any) => item.type === "message" && item.role === "assistant"
     ? (item.content ?? []).filter((part: any) => part.type === "output_text").map((part: any) => part.text) : []).join("\n");
   let response: ObjectValue;

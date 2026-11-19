@@ -65,7 +65,7 @@ async function createMemoryAgent(signing: NonNullable<GitVaultCredential['signin
       } else finish?.(signed);
     };
     socket.on('data', chunk => {
-      pending = Buffer.concat([pending, chunk]);
+      pending = Buffer.concat([pending, typeof chunk === 'string' ? Buffer.from(chunk) : chunk]);
       if (pending.length > 65_536) { socket.destroy(); return; }
       while (pending.length >= 4) {
         const size = pending.readUInt32BE(0);
