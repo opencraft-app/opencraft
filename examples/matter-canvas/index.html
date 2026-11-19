@@ -5,16 +5,22 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>OpenCraft 事项画布</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@500;700;800&family=JetBrains+Mono:wght@400;600&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<div id="app">
-  <div id="canvas" aria-label="事项画布"><div id="world"><svg id="lines" width="1" height="1" overflow="visible"></svg><div id="nodes"></div><div id="chip" hidden></div></div></div>
+<main id="page">
+  <nav id="tabs"></nav>
   <header id="head"></header>
-  <section id="dock" aria-live="polite"></section>
-  <div id="scrim" hidden data-a="close"></div>
-  <aside id="sheet" hidden></aside>
-</div>
+  <section class="card" id="board">
+    <div id="lead"></div>
+    <div id="stagewrap"><div id="stage"><svg id="lines" width="1" height="1" overflow="visible"></svg><div id="nodes"></div><div id="chip" hidden></div></div></div>
+    <div id="dock" aria-live="polite"></div>
+  </section>
+  <section class="card" id="log"></section>
+</main>
+<div id="scrim" hidden data-a="close"></div>
+<aside id="sheet" hidden></aside>
 <script src="scenario.js"></script>
 <script src="engine.js"></script>
 <script src="app.js"></script>
