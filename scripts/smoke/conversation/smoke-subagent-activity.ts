@@ -30,12 +30,18 @@ try {
     assert.equal(await page.locator(".thread-subagent-details__row").count(), 0);
     if (touch) await toggle.tap(); else { await toggle.focus(); await page.keyboard.press("Enter"); }
     await page.locator(".thread-subagent-details__row").first().waitFor();
+    assert.equal(await page.locator(".thread-subagent-details__row").count(), 3);
+    const more = page.locator(".thread-subagent-details__inner").getByRole("button");
+    assert.equal(await more.count(), 1, "the fourth member has an explicit reveal action");
+    if (touch) await more.tap(); else { await more.focus(); await page.keyboard.press("Enter"); }
+    await page.waitForFunction(() => document.querySelectorAll(".thread-subagent-details__row").length === 4);
     assert.equal(await page.locator(".thread-subagent-details__row").count(), 4);
-    assert.equal(await page.locator(".thread-subagent-details__meta").count(), 0);
+    assert.equal(await more.count(), 0, "all members are now visible");
+    assert.equal(await page.locator(".thread-subagent-details__meta").count(), 4, "each spawn retains its tool outcome in the expanded details");
     assert.equal(await page.getByText("检查静态资源与离线缓存，整理原因和修复方案。", {exact:true}).count(), 1);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({path: "/tmp/subagent-" + (touch ? "touch" : "desktop") + "-" + theme + ".png"});
-    if (touch) await toggle.tap(); else await page.keyboard.press("Enter");
+    if (touch) await toggle.tap(); else { await toggle.focus(); await page.keyboard.press("Enter"); }
     await page.waitForFunction(() => !document.querySelector(".thread-subagent-details"));
     assert.deepEqual(errors, []);
     results.push({touch, theme, passed:true});

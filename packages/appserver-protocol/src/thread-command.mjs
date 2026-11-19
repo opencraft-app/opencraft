@@ -1,30 +1,15 @@
-/** Parse argv only: no shell expansion, process, transport or authority. */
-export function parseThreadCommand(input) {
-  return parse(input);
-}
-
-/** Change only the parsed option value, never a matching literal argument. */
-export function replaceThreadCommandIdempotencyKey(input, key) {
-  if (typeof key !== "string" || !key || key.length > 16384) throw Error("Invalid thread idempotency key");
-  let index;
-  parse(input, (valueIndex) => {
-    index = valueIndex;
-  });
-  if (index === undefined) throw Error("Platform intent has no idempotency key");
-  const argv = [...input];
-  argv[index] = key;
-  return argv;
-}
-
-function parse(input, onKey) {
+/** Parse argv only: no shell expansion, process, transport or authority.
+ * Keep this function self-contained: execution-bound CLI launchers serialize it.
+ * onKey is an internal position observer used by the idempotency-key rewriter. */
+export function parseThreadCommand(input, onKey) {
   if (!Array.isArray(input) || input.length > 64 || input.some((v) => typeof v !== "string" || v.length > 16384))
     throw Error("Invalid thread argv");
   const argv = [...input];
-  let command, key;
+  let key;
   const args = {};
   if (argv[0] === "context") argv.unshift("thread");
   if (argv.shift() !== "thread") throw Error("Expected opencraft thread; use --help");
-  command = argv.shift();
+  const command = argv.shift();
   const positions = [];
   if (command === "operation" || command === "input") {
     const subcommand = argv.shift();
@@ -111,6 +96,19 @@ function parse(input, onKey) {
   if (["start", "spawn", "tell", "stop"].includes(command) && !key)
     throw Error("An explicit --idempotency-key is required");
   return { command, arguments: args, ...(key ? { idempotencyKey: key } : {}) };
+}
+
+/** Change only the parsed option value, never a matching literal argument. */
+export function replaceThreadCommandIdempotencyKey(input, key) {
+  if (typeof key !== "string" || !key || key.length > 16384) throw Error("Invalid thread idempotency key");
+  let index;
+  parseThreadCommand(input, (valueIndex) => {
+    index = valueIndex;
+  });
+  if (index === undefined) throw Error("Platform intent has no idempotency key");
+  const argv = [...input];
+  argv[index] = key;
+  return argv;
 }
 
 /** Canonical delivery semantics shared by Bot and native-execution CLI adapters.

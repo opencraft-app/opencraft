@@ -253,25 +253,38 @@ test("actual AppServer acknowledges self leave and its duplicate, instead of fai
   );
 });
 
-test("additive lifecycle migration upgrades previous schema without changing groups and rejects checksum damage", async (t) => {
+test("legacy group import preserves groups and checksum damage refuses canonical reopen", async (t) => {
+  const { SERVER_LEGACY_MIGRATIONS } = await import("@opencraft/storage-node/server-legacy");
+  const { DatabaseSync } = await import("node:sqlite");
   const root = await mkdtemp(join(tmpdir(), "lifecycle-upgrade-")),
-    path = join(root, "server.sqlite");
+    path = join(root, "actor-collaboration.sqlite");
   t.after(() => rm(root, { recursive: true, force: true }));
-  const old = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS.slice(0, -1) });
+  // This published source owner had groups at v6. Canonical Server v5 did not.
+  const old = openManagedDatabase({ path, migrations: SERVER_LEGACY_MIGRATIONS["actor-collaboration"].slice(0, 6) });
   old.database
     .prepare("INSERT INTO actor_channels(id,owner_id,title) VALUES(?,?,?)")
     .run("group:previous", "owner", "Keep this history");
   old.database.prepare("INSERT INTO actor_channel_members VALUES(?,?,?)").run("group:previous", "owner", "epoch");
+  const history = old.database.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   old.database.close();
-  const upgraded = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS });
-  assert.equal(upgraded.outcome.status, "migrated");
-  assert.equal(upgraded.database.prepare("SELECT title FROM actor_channels").get()?.title, "Keep this history");
-  assert.equal(upgraded.database.prepare("SELECT epoch FROM actor_channel_members").get()?.epoch, "epoch");
-  upgraded.database
-    .prepare("UPDATE schema_migrations SET checksum=? WHERE version=?")
-    .run("damaged", SERVER_MIGRATIONS.at(-1)!.version);
-  upgraded.database.close();
-  assert.throws(() => openManagedDatabase({ path, migrations: SERVER_MIGRATIONS }), /checksum|history/i);
+  const upgraded = await openServerDatabase(root);
+  try {
+    assert.equal(upgraded.outcome.status, "migrated");
+    assert.equal(upgraded.database.prepare("SELECT title FROM actor_channels").get()?.title, "Keep this history");
+    assert.equal(upgraded.database.prepare("SELECT epoch FROM actor_channel_members").get()?.epoch, "epoch");
+    const source = new DatabaseSync(path, { readOnly: true });
+    try {
+      assert.deepEqual(source.prepare("SELECT * FROM schema_migrations ORDER BY version").all(), history);
+    } finally {
+      source.close();
+    }
+    upgraded.database
+      .prepare("UPDATE schema_migrations SET checksum=? WHERE version=?")
+      .run("damaged", SERVER_MIGRATIONS.at(-1)!.version);
+  } finally {
+    await upgraded.close();
+  }
+  await assert.rejects(openServerDatabase(root), /checksum|history/i);
 });
 
 test("leave cancels only the departing member group-scoped queue, never another group or an already delivered input", async (t) => {

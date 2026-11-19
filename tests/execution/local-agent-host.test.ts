@@ -15,7 +15,6 @@ import { seedNewerHostStorage } from "../support/local-agent-storage-fixture.js"
 import { ConnectedAgentHost, connectedAgentCatalogEntry } from "../../apps/local-agent-host/src/connected-agents.js";
 import { ThreadCatalog } from "../../apps/local-agent-host/src/thread-catalog.js";
 import { DshExecutionAuthority } from "../../apps/local-agent-host/src/dsh-execution-authority.js";
-import { terminalOwnerLocation } from "../../apps/local-agent-host/src/terminal-owner-runtime.js";
 import { readOwnerFrames, sendOwnerFrame, TERMINAL_OWNER_PROTOCOL } from "../../apps/local-agent-host/src/terminal-owner-wire.js";
 import { connect as connectSocket } from "node:net";
 import { OpenCraftHostStateDatabase } from "../../apps/opencraft-daemon/src/opencraft-host-state-database.js";
@@ -552,8 +551,8 @@ test("process RPC survives WebSocket replacement without contacting the Agent ha
     assert.match(snapshot.output.map((c: { deltaBase64: string }) => Buffer.from(c.deltaBase64, "base64").toString()).join(""), /RPC_alive/);
   } finally {
     socket.close(); await host.close();
-    await stopTerminalOwner(directory);
-    await rm(directory, { recursive: true, force: true });
+    // This fixture owns the PTY service in-process; its registered cleanup
+    // stops it directly. The external-owner PID helper would SIGTERM this test.
   }
 });
 

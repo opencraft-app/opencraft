@@ -8,6 +8,7 @@ import {ownerAdmissionEdits,patchDshOwnerAdmission,verifyDshOwnerAdmission} from
 import { prepareDshRuntime } from "../../scripts/prepare-dsh-runtime.mjs";
 import { threadEnvironmentEdit, terminalThreadEnvironmentEdit } from "../../scripts/patch-dsh-thread-environment.mjs";
 import checkDesktopTarget from "../../scripts/check-desktop-target.cjs";
+import { ownedDesktopFixture } from "../fixtures/owned-electron.mjs";
 import { providerLifecycleEdits, nativeProviderLifecycleEdits, patchDshProviderLifecycle } from "../../scripts/patch-dsh-provider-lifecycle.mjs";
 
 async function fixture(t) {
@@ -133,7 +134,10 @@ test("desktop packaging refuses foreign native modules", async t => {
   await writeFile(join(appDir, "dist-host/desktop-identity.json"), JSON.stringify({
     production, preview, mainSha256: createHash("sha256").update(main).digest("hex"),
   }));
-  const packager = { info: { appDir }, appInfo: { productName: production.displayName, id: production.applicationId } };
+  const distribution = await ownedDesktopFixture(t);
+  const fork = JSON.parse(await readFile(new URL("../../vendor/electron/fork.json", import.meta.url), "utf8"));
+  const packager = { info: { appDir }, appInfo: { productName: production.displayName, id: production.applicationId },
+    config: { electronDist: distribution, electronVersion: fork.version } };
   const arches = { ia32: 0, x64: 1, armv7l: 2, arm64: 3 };
   const arch = arches[process.arch];
   const context = { packager, electronPlatformName: process.platform, arch };

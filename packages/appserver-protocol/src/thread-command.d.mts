@@ -3,7 +3,7 @@ export interface ThreadCommand {
   arguments: Record<string, unknown>;
   idempotencyKey?: string;
 }
-export function parseThreadCommand(argv: string[]): ThreadCommand;
+export function parseThreadCommand(argv: string[], onKey?: (valueIndex: number) => void): ThreadCommand;
 export function replaceThreadCommandIdempotencyKey(argv: string[], key: string): string[];
 
 export function threadDeliveryIntent(

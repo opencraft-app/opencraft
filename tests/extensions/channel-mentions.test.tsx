@@ -402,17 +402,15 @@ test("an unseen @ survives a latest-50 read; acknowledgements are scoped, idempo
     await storage.close();
   }
 });
-test("mention-read migration preserves the old read watermark but not unseen alerts", async (t) => {
+test("legacy inbox import preserves its read frontier without inventing historical mention alerts", async (t) => {
   const { openManagedDatabase } = await import("@opencraft/sqlite-node");
-  const { SERVER_MIGRATIONS } = await import("@opencraft/storage-node/server");
+  const { SERVER_LEGACY_MIGRATIONS } = await import("@opencraft/storage-node/server-legacy");
+  const { DatabaseSync } = await import("node:sqlite");
   const dir = await mkdtemp(join(tmpdir(), "mention-read-upgrade-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const path = join(dir, "old.sqlite"),
-    old = openManagedDatabase({
-      path,
-      migrations: SERVER_MIGRATIONS.slice(0, -1),
-    }),
-    actors = new ActorStore(old);
+  const path = join(dir, "actor-collaboration.sqlite"),
+    old = openManagedDatabase({ path, migrations: SERVER_LEGACY_MIGRATIONS["actor-collaboration"].slice(0, 7) }),
+    actors = new ActorStore(join(dir, "actors.sqlite"));
   const human = (subject: string) =>
     actors.resolveHuman(
       parsePrincipal({
@@ -428,38 +426,31 @@ test("mention-read migration preserves the old read watermark but not unseen ale
   db.prepare("INSERT INTO actor_channels(id,owner_id,title) VALUES(?,?,?)").run("room", alice.actorId, "Room");
   db.prepare("INSERT INTO actor_channel_members VALUES(?,?,?)").run("room", bob.actorId, "epoch");
   db.prepare("INSERT INTO actor_channel_reads VALUES(?,?,?,?,?)").run("room", bob.actorId, "epoch", 0, 1);
-  for (const seq of [1, 2]) {
+  for (const seq of [1, 2])
     db.prepare(
       "INSERT INTO actor_messages(id,seq,channel_id,author_id,target_id,content,created_at,target_kind) VALUES(?,?,?,?,?,?,?,?)",
     ).run("m" + seq, seq, "room", alice.actorId, "room", "Hi @Bob", Date.now(), "channel");
-    db.prepare("INSERT INTO actor_channel_mentions VALUES(?,?,?,?,?,?)").run(
-      "m" + seq,
-      bob.actorId,
-      3,
-      7,
-      "Bob",
-      "human",
-    );
-  }
-  const ledger = db.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+  const history = db.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
   actors.close();
   db.close();
-  const upgraded = openManagedDatabase({ path, migrations: SERVER_MIGRATIONS });
+  const upgraded = await openServerDatabase(dir);
   try {
-    assert.deepEqual(
-      upgraded.database
-        .prepare("SELECT message_id FROM actor_channel_mention_reads ORDER BY message_id")
-        .all()
-        .map((r: any) => r.message_id),
-      ["m1"],
+    assert.equal(upgraded.outcome.status, "migrated");
+    assert.equal(
+      upgraded.database.prepare("SELECT read_seq FROM actor_channel_reads WHERE actor_id=?").get(bob.actorId)?.read_seq,
+      1,
     );
-    assert.deepEqual(
-      upgraded.database
-        .prepare("SELECT * FROM schema_migrations WHERE version<? ORDER BY version")
-        .all(SERVER_MIGRATIONS.at(-1)!.version),
-      ledger,
-    );
+    assert.equal(upgraded.database.prepare("SELECT count(*) AS n FROM actor_messages").get()?.n, 2);
+    // Text that looks like a mention is not a trusted historical mention range.
+    assert.equal(upgraded.database.prepare("SELECT count(*) AS n FROM actor_channel_mentions").get()?.n, 0);
+    assert.equal(upgraded.database.prepare("SELECT count(*) AS n FROM actor_channel_mention_reads").get()?.n, 0);
+    const source = new DatabaseSync(path, { readOnly: true });
+    try {
+      assert.deepEqual(source.prepare("SELECT * FROM schema_migrations ORDER BY version").all(), history);
+    } finally {
+      source.close();
+    }
   } finally {
-    upgraded.database.close();
+    await upgraded.close();
   }
 });

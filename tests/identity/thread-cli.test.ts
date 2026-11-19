@@ -43,11 +43,10 @@ async function fixture(t:any) {
   const capabilities=new SessionCapabilities(),key=randomBytes(32);
   let mcp=new SessionCapabilityMcp(capabilities,key,undefined,{descriptorPath:join(root,'capability-endpoint.json'),retainEndpoint:true,authorizeExecution:async scope=>{await service.admittedExecution(scope.threadId,scope.execution!.inputId!);},threadCli:async(scope,request)=>{await waitForExecutionCliBinding(()=>service.admittedExecution(scope.threadId,scope.execution!.inputId!));return broker.cli(scope,request);}});
   await mcp.listen();
-  let gateway:Awaited<ReturnType<typeof attachGateway>>;
   const port=hostExecutionCli({directory:join(root,'cli'),endpoint:mcp.cliEndpoint,key,launcherEndpoint:()=>new URL('/thread-cli',gateway.url).href});
   const host=await BridgeHost.open({path:join(root,'host.sqlite'),backend:localTestBackend(),
     policy:{id:'cli-fixture',capacity:{cpuMillis:4000,memoryBytes:8*1024**3}},executionCli:port});
-  gateway=await attachGateway(host,key.toString('hex'));
+  const gateway=await attachGateway(host,key.toString('hex'));
   const leases:{revoke():Promise<void>}[]=[];
   t.after(async()=>{await Promise.all(leases.map(lease=>lease.revoke()));await gateway.close();await host.close();await mcp.close();await broker.close();await runtimeStorage.close();await service.close();policy.close();actors.close();await rm(root,{recursive:true,force:true});});
   const child=(threadId:string,ownerActorId=owner.actorId,driverKind='pi'):ThreadRelation=>({threadId,ownerActorId,driverKind,serverId:'server',parentThreadId:'parent',lifecycleOwnerThreadId:'parent',forkedFromId:null,visibility:'hidden',engineHostGeneration:null,nativeSessionId:threadId,runtimeStatus:'idle',rootTurnId:null,turnId:null,delegationRevision:1,autoExchangeDepth:1,hasDirectUserInput:false,userInputExcerpt:null});
@@ -323,4 +322,22 @@ test('connected execution CLI becomes readable only after the native start recei
   driver.project(JSON.stringify({id:'start',result:{turn:{id:'native-turn',items:[]}}}));
   assert.equal((await f.run(lease!.environment.OPENCRAFT_THREAD_CLI,'output',ref('old-private'))).history.entries[0].text,'Child result');
   await lease!.revoke();
+});
+
+test('serialized execution CLI parser needs no module-private helpers and preserves literal arguments', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const { parseThreadCommand, replaceThreadCommandIdempotencyKey } = await import('@opencraft/appserver-protocol/thread-command');
+  const parse = runInNewContext(`(${parseThreadCommand.toString()})`) as typeof parseThreadCommand;
+  for (const argv of [
+    ['context', '--json'],
+    ['thread', 'list', '--children', '--limit', '5'],
+    ['thread', 'tell', 'literal-reference', '--message', '--idempotency-key', '--idempotency-key', 'old'],
+  ]) {
+    assert.deepEqual(JSON.parse(JSON.stringify(parse(argv))), parseThreadCommand(argv));
+  }
+  const argv = ['thread', 'tell', 'literal-reference', '--message', '--idempotency-key', '--idempotency-key', 'old'];
+  const rewritten = replaceThreadCommandIdempotencyKey(argv, 'new');
+  assert.equal(parse(rewritten).idempotencyKey, 'new');
+  assert.equal(parse(rewritten).arguments.message, '--idempotency-key');
+  assert.equal(argv.at(-1), 'old', 'rewriting must not mutate the caller argv');
 });

@@ -1344,7 +1344,7 @@ test("definitive Codex steer rejection releases the Host claim without losing th
   }
 });
 
-test("restart preserves an unconfirmed input without blocking the next queued turn", async () => {
+test("restart preserves the uncertain admission fence until its exact Turn has a terminal receipt", async () => {
   const root = await mkdtemp(join(tmpdir(), "opencraft-codex-host-restart-"));
   const dataRoot = join(root, "data");
   await mkdir(dataRoot);
@@ -1362,11 +1362,15 @@ test("restart preserves an unconfirmed input without blocking the next queued tu
     const listed = await waitFor(frames, (frame) => frame.id === "list");
     assert.equal((listed.result as any).steering[0].id, uncertain.id);
     assert.equal((listed.result as any).steering[0].pausedReason, "steer-delivery-unconfirmed");
-    // Maintenance can already have dispatched this row before list returns.
-    // Verify durable identity and actual one-time native delivery, not a stale queued snapshot.
-    assert.equal((adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.clientUserMessageId, "later");
+    // A lost acknowledgement cannot authorize a second native input. Only an
+    // exact terminal Turn observation releases the next intent, without replay.
+    await (adapter as any).withThreadOperation("fixture-thread-1", () => (adapter as any).maintainQueue("fixture-thread-1"));
+    assert.equal((adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.state, "queued");
+    (adapter as any).receivePhysicalLine(JSON.stringify({ method: "turn/completed", params: {
+      threadId: "fixture-thread-1", turn: { id: "turn-old", status: "completed", items: [] },
+    } }));
     await waitFor(frames, () => (adapter as any).queueStore().findByClientId("fixture-thread-1", "later")?.state === "delivered");
-    assert.equal((adapter as any).queueStore().find("fixture-thread-1", uncertain.id)?.state, "unknown");
+    assert.equal((adapter as any).queueStore().find("fixture-thread-1", uncertain.id)?.state, "closed");
     await adapter.send(JSON.stringify({ id: "accepted", method: "test/readAcceptedInputs", params: {}, [LOGICAL_CLIENT_FIELD]: "client-a" }));
     const accepted = (await waitFor(frames, (frame) => frame.id === "accepted")).result as any;
     assert.deepEqual(accepted.data.map((input: any) => input.params.clientUserMessageId), ["later"]);
@@ -2295,8 +2299,9 @@ test("a queued native send with a lost acknowledgement remains unknown and never
       (adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state === "unknown");
     assert.equal(sends, 1); assert.equal((adapter as any).queuePreparationRetries.size, 0);
     const next = (await rpc("next", "thread/queue/add", { threadId, clientUserMessageId: "subsequent", input: [{ type: "text", text: "two" }] })).result as any;
-    await waitFor(frames, () => (adapter as any).queueStore().find(threadId, next.queuedSubmission.id)?.state === "delivered");
-    assert.equal(sends, 2, "subsequent input dispatches without retrying the unknown input");
+    await (adapter as any).withThreadOperation(threadId, () => (adapter as any).maintainQueue(threadId));
+    assert.equal((adapter as any).queueStore().find(threadId, next.queuedSubmission.id)?.state, "queued");
+    assert.equal(sends, 1, "neither the unknown input nor subsequent intent is dispatched without a terminal receipt");
     assert.equal((adapter as any).queueStore().find(threadId, queued.queuedSubmission.id)?.state, "unknown");
   } finally { await adapter.close(); await rm(root, { recursive: true, force: true }); }
 });

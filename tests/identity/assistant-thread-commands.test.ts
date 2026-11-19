@@ -53,7 +53,7 @@ async function fixture(t: test.TestContext) {
       const r = {
         id,
         state: b.mode === "steer" ? "queued" : "delivered",
-        targetTurnId: "turn-" + inputs,
+        targetTurnId: b.mode === "steer" ? null : "turn-" + inputs,
       };
       receipts.set(id, r);
       return r;
