@@ -105,3 +105,5 @@ button.stamp { align-self: center; font-size: 12px; color: var(--ink-3); padding
 .lk { color: #576b95; text-decoration: underline; text-underline-offset: 3px; min-height: 28px; }
 .cell.text p { white-space: pre-wrap; margin-top: 6px; }
 .chatrow time { align-self: flex-start; padding-top: 4px; }
+
+.tk em.doing { color: #d4611c; }
